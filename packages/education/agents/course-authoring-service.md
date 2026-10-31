@@ -115,7 +115,9 @@ An authorizer returns `boolean` or `{ allowed, reason?, code? }` (only `allowed:
 allows). On an auto-upgrade denial `reason` (at most 200 characters, control characters
 stripped) and `code` (`[a-z0-9._-]`, at most 64; e.g. `assignment-setting`,
 `agent-permission`, `guardian-link`) are stored on the skip; invalid values fall back to
-`not-authorized` and an empty code. A thrown error's message is never recorded.
+`not-authorized` and an empty code. A thrown error's message is never recorded. The per-enrollment `verifyDelegation` refusal is recorded the
+same way: an object refusal's `reason`/`code` (same sanitizing); a boolean refusal, a throw or no port
+records the generic `not-authorized` and an empty code.
 
 ## Reads
 

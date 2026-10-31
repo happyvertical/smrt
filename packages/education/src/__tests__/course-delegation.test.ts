@@ -615,7 +615,11 @@ describe('delegation id across course services', () => {
     const calls: Call[] = [];
     const deny = new Set<string>();
     const verified: Array<Record<string, unknown>> = [];
-    const verifier = { mode: 'allow' as 'allow' | 'deny' | 'throw' };
+    const verifier = {
+      mode: 'allow' as 'allow' | 'deny' | 'throw',
+      // When set, the verifier answers the per-enrollment auto-upgrade call with this.
+      autoUpgrade: undefined as unknown,
+    };
     const build = (withPort: boolean) =>
       new CourseGenerationReviewService(
         s.db,
@@ -631,6 +635,14 @@ describe('delegation id across course services', () => {
               verifyDelegation: (executor, call) => {
                 verified.push({ ...call, executor });
                 if (verifier.mode === 'throw') throw new Error('down');
+                if (
+                  call.operation === 'auto-upgrade' &&
+                  verifier.autoUpgrade !== undefined
+                ) {
+                  if (verifier.autoUpgrade === 'throw')
+                    throw new Error('secret store password=hunter2');
+                  return verifier.autoUpgrade as never;
+                }
                 return (
                   verifier.mode === 'allow' && !deny.has(`v:${call.operation}`)
                 );
@@ -973,7 +985,7 @@ describe('delegation id across course services', () => {
     expect(s.verified).toHaveLength(2);
   });
 
-  it('re-verifies the recorded delegation for each automatic upgrade', async () => {
+  async function autoUpgradeScenario() {
     const s = await authoring();
     const { service, agent, as, key } = s;
     const head = await as(agent, () =>
@@ -1037,6 +1049,12 @@ describe('delegation id across course services', () => {
         policyBasis: 'guardians-and-agents',
       }),
     );
+    return { s, head, releaseNew, rel1, enrollment };
+  }
+
+  it('re-verifies the recorded delegation for each automatic upgrade', async () => {
+    const { s, releaseNew, rel1, enrollment } = await autoUpgradeScenario();
+    const { service, agent, as } = s;
     // The host revokes the delegation after the opt-in: the move is skipped.
     s.deny.add('v:auto-upgrade');
     await releaseNew('A2');
@@ -1054,6 +1072,64 @@ describe('delegation id across course services', () => {
       delegatingGuardianUserId: s.guardianId,
       delegationId: 'delegation-1',
     });
+  });
+
+  it('records the verifier reason and code on a skipped automatic upgrade', async () => {
+    const cases: Array<[string, unknown, string, string]> = [
+      [
+        'object refusal',
+        {
+          allowed: false,
+          reason: 'Delegation revoked by guardian',
+          code: 'delegation-revoked',
+        },
+        'Delegation revoked by guardian',
+        'delegation-revoked',
+      ],
+      [
+        'sanitized and bounded',
+        {
+          allowed: false,
+          reason: `bad\u0000\nreason ${'x'.repeat(300)}`,
+          code: 'Not Valid!',
+        },
+        `bad  reason ${'x'.repeat(300)}`.replace(/\s+$/, '').slice(0, 200),
+        '',
+      ],
+      ['boolean refusal stays generic', false, 'not-authorized', ''],
+      ['thrown error stays generic', 'throw', 'not-authorized', ''],
+    ];
+    for (const [label, decision, reason, code] of cases) {
+      const { s, releaseNew, rel1, enrollment } = await autoUpgradeScenario();
+      s.verifier.autoUpgrade = decision;
+      await releaseNew('A2');
+      const rows = await s.db.list('enrollment_auto_upgrade_skips', {});
+      expect(rows, label).toHaveLength(1);
+      expect(rows[0], label).toMatchObject({ reason, code });
+      expect(JSON.stringify(rows[0]), label).not.toContain('hunter2');
+      const page = await s.as(s.agent, () =>
+        s.service.listAutoUpgradeSkips({
+          ...s.agent,
+          enrollmentId: enrollment.id,
+        }),
+      );
+      expect(page.items, label).toHaveLength(1);
+      expect(page.items[0], label).toMatchObject({
+        releaseId: expect.any(String),
+        reason,
+        code,
+      });
+      // The pin did not move.
+      const pin = (
+        await s.as(s.agent, () =>
+          s.service.getEnrollmentRelease({
+            ...s.agent,
+            enrollmentId: enrollment.id,
+          }),
+        )
+      ).pin;
+      expect(pin.releaseId, label).toBe(rel1.id);
+    }
   });
 
   it('treats a different delegation id as a request-key conflict', async () => {

@@ -651,18 +651,29 @@ export class CourseAuthoringService {
       throw new CourseAuthoringAuthorizationError();
   }
 
-  /** Fail closed: no port, a denial or a throw all mean the delegation is not verified. */
+  /**
+   * Fail closed: no port, a denial or a throw all mean the delegation is not
+   * verified. The decision carries the verifier's sanitized `{reason, code}` only
+   * for an object refusal; a boolean, a throw or a missing port is generic.
+   */
+  private async delegationDecision(
+    executor: DatabaseInterface,
+    request: Parameters<CourseDelegationVerifier>[1],
+  ): Promise<{ allowed: boolean; reason: string; code: string }> {
+    const verify = this.options.verifyDelegation;
+    if (typeof verify !== 'function') return readDecision(false);
+    try {
+      return readDecision(await verify(executor, request));
+    } catch {
+      return readDecision(false);
+    }
+  }
+
   private async delegationVerified(
     executor: DatabaseInterface,
     request: Parameters<CourseDelegationVerifier>[1],
   ): Promise<boolean> {
-    const verify = this.options.verifyDelegation;
-    if (typeof verify !== 'function') return false;
-    try {
-      return readDecision(await verify(executor, request)).allowed === true;
-    } catch {
-      return false;
-    }
+    return (await this.delegationDecision(executor, request)).allowed === true;
   }
 
   protected async identityRow(tx: Tx, tenantId: string, courseId: string) {
@@ -2669,9 +2680,9 @@ export class CourseAuthoringService {
       // An executor that cannot nest cannot isolate the callback: fail closed.
       if (typeof tx.transaction !== 'function') return denied;
       return await tx.transaction(async (inner) => {
-        if (
-          delegation &&
-          !(await this.delegationVerified(inner, {
+        if (delegation) {
+          // The verifier's own reason/code (sanitized) is what the skip records.
+          const verified = await this.delegationDecision(inner, {
             tenantId,
             actorUserId: choice.actorUserId,
             ...delegation,
@@ -2680,9 +2691,9 @@ export class CourseAuthoringService {
             courseId,
             enrollmentId,
             learnerId,
-          }))
-        )
-          return denied;
+          });
+          if (verified.allowed !== true) return { ...verified, allowed: false };
+        }
         return readDecision(
           await this.authorizer({
             tenantId,
