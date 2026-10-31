@@ -20,6 +20,9 @@ const logger = createLogger({ level: 'info' });
 /** Registered test snapshots already reported missing, so each warns once. */
 const reportedMissingTestManifests = new Set<string>();
 
+/** Refused test artifacts already reported, so each warns once. */
+const reportedRefusedTestArtifacts = new Set<string>();
+
 /**
  * Reads SMRT manifests for a project from the standard locations.
  *
@@ -121,9 +124,12 @@ export class LocalManifestReader {
           // A test artifact is only valid as its own run's active snapshot;
           // anywhere else its inline fixtures are phantom objects (#2760).
           if (isRefusedTestArtifact(manifest, path)) {
-            logger.debug(
-              `[ManifestManager] Skipping test artifact at ${path}; it is not this process's active test manifest`,
-            );
+            if (!reportedRefusedTestArtifacts.has(path)) {
+              reportedRefusedTestArtifacts.add(path);
+              logger.warn(
+                `[ManifestManager] Skipping test artifact at ${path}: a test run's manifest is not a build output, and this process is not that run (rebuild to replace it)`,
+              );
+            }
             continue;
           }
           return manifest;

@@ -674,6 +674,40 @@ describe('smrtPlugin local manifest writing (Issue #963)', () => {
       expect(manifest.objects[externalEntry].packageName).toBe(externalPackage);
     });
 
+    it('do not carry entries forward from a stale test-run manifest (#2760)', async () => {
+      // An older test runner wrote its test-inclusive manifest here; even
+      // entries attributed to another package (a followed import into a
+      // sibling's test file) must not survive into the build output.
+      createConsumerProject();
+      mkdirSync(join(tmpDir, '.smrt'), { recursive: true });
+      writeFileSync(
+        manifestPath(),
+        JSON.stringify({
+          artifactPurpose: 'test',
+          packageName: '@fixture/test-app',
+          objects: {
+            '@fixture/sibling:SiblingFixture': {
+              className: 'SiblingFixture',
+              packageName: '@fixture/sibling',
+              filePath: '../sibling/src/fixture.test.ts',
+            },
+          },
+        }),
+      );
+
+      const producer: any = smrtPlugin({
+        include: ['src/**/*.ts'],
+        generateTypes: false,
+      });
+      await producer.configResolved(viteConfig());
+
+      const manifest = readManifest();
+      expect(manifest.artifactPurpose).toBeUndefined();
+      expect(Object.keys(manifest.objects)).not.toContain(
+        '@fixture/sibling:SiblingFixture',
+      );
+    });
+
     it('do not keep a local object the scan no longer finds', async () => {
       // The local scan stays authoritative for the entries it owns: merging
       // must not turn .smrt/manifest.json into an append-only cache of

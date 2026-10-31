@@ -1011,9 +1011,8 @@ export const utilityCommands: Record<string, CLICommand> = {
         );
         mkdirSync(outputDir, { recursive: true });
 
-        // Write manifest.json to legacy location
+        // ManifestBuilder already published the JSON manifest here.
         const jsonPath = resolve(outputDir, 'test-manifest.json');
-        writeFileSync(jsonPath, JSON.stringify(manifest, null, 2));
 
         // Write TypeScript stub
         const tsContent = `/**
