@@ -69,6 +69,27 @@ class Issue2824DocTagCollection extends SmrtCollection<Issue2824DocTag> {
   static readonly _itemClass = Issue2824DocTag;
 }
 
+/**
+ * Ordinary child: the reference is not part of its natural key, so it
+ * resolves to NO ACTION and the cascade refuses the delete in its preflight,
+ * before any write.
+ */
+@smrt({ tableName: 'issue_2824_notes' })
+class Issue2824Note extends SmrtObject {
+  @crossPackageRef('@happyvertical/smrt-core:Issue2824Doc')
+  docId = '';
+
+  constructor(options: any = {}) {
+    super(options);
+    if (options.docId !== undefined) this.docId = options.docId;
+  }
+}
+
+@smrt()
+class Issue2824NoteCollection extends SmrtCollection<Issue2824Note> {
+  static readonly _itemClass = Issue2824Note;
+}
+
 @smrt({
   tableName: 'issue_2824_links',
   conflictColumns: ['owner_id', 'asset_id'],
@@ -137,6 +158,7 @@ describe('caller-owned native DuckDB transaction delete (#2824)', () => {
       classes: [
         'Issue2824Doc',
         'Issue2824DocTag',
+        'Issue2824Note',
         'Issue2824Link',
         'Issue2824LinkPin',
       ],
@@ -311,6 +333,57 @@ describe('caller-owned native DuckDB transaction delete (#2824)', () => {
       doc: 1,
       tags: 2,
       memory: 1,
+    });
+  });
+
+  describe('a refusal before any cascade write', () => {
+    async function referencedDoc(): Promise<Issue2824Doc> {
+      const doc = await docWithTagsAndMemory('referenced');
+      const notes = (await Issue2824NoteCollection.create({
+        db,
+      })) as Issue2824NoteCollection;
+      await (await notes.create({ docId: doc.id } as any)).save();
+      return doc;
+    }
+
+    async function unrelatedRows(): Promise<number> {
+      return db.count('issue_2824_docs', { title: 'unrelated' });
+    }
+
+    it('leaves a caller transaction usable and committing its other writes', async () => {
+      const doc = await referencedDoc();
+      await callerTransaction(async (tx) => {
+        const bound = (await Issue2824DocCollection.create({
+          db: tx,
+        })) as Issue2824DocCollection;
+        await (await bound.create({ title: 'unrelated' } as any)).save();
+        await expect(doc.withDatabase(tx, () => doc.delete())).rejects.toThrow(
+          /still reference/,
+        );
+        // Still usable: DuckDB was never put into its aborted state.
+        expect(await tx.count('issue_2824_docs', { title: 'unrelated' })).toBe(
+          1,
+        );
+      });
+      expect(await unrelatedRows()).toBe(1);
+      expect(await counts(doc.id as string)).toEqual({
+        doc: 1,
+        tags: 2,
+        memory: 1,
+      });
+    });
+
+    it('leaves a framework withTransaction() committing its other writes', async () => {
+      const doc = await referencedDoc();
+      await doc.withTransaction(async (bound) => {
+        const scoped = (await Issue2824DocCollection.create({
+          db: bound.db,
+        })) as Issue2824DocCollection;
+        await (await scoped.create({ title: 'unrelated' } as any)).save();
+        await expect(bound.delete()).rejects.toThrow(/still reference/);
+      });
+      expect(await unrelatedRows()).toBe(1);
+      expect((await counts(doc.id as string)).doc).toBe(1);
     });
   });
 

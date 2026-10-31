@@ -651,7 +651,9 @@ rollback then decides the outcome of the cascade, the owned `_smrt_contexts` and
 
 There is no savepoint, so a cascade that fails part-way cannot be undone on its
 own. On native DuckDB the framework therefore aborts the joined transaction
-(`SELECT error(...)`) before rethrowing. DuckDB then rejects every later statement
+(`SELECT error(...)`) before rethrowing, but only if the cascade has already
+written something. A refusal raised before the first write, such as the
+RESTRICT / NO ACTION preflight, leaves the caller's transaction usable. DuckDB then rejects every later statement
 with "transaction is aborted", and its `COMMIT` persists nothing. A caller that
 swallows the error therefore cannot commit a half-applied cascade, and the
 callback is never replayed. JSON-adapter caller transactions keep the detectable
