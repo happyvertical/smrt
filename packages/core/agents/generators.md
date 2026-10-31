@@ -238,6 +238,18 @@ copied; an open model leaves the collection open. A `sensitive: true` model's
 collection gets read-only MCP unless it configures `mcp` itself. The CLI treats
 a collection's `include` as the complete allowlist, as MCP and REST do.
 
+The scanner records the surfaces it copied as `inheritedExposure` on the
+collection's manifest entry. At runtime those surfaces follow the model's
+effective config, narrowed and never widened (`false` wins, `include` lists
+intersect, `exclude` lists union), so a consumer that closes the model
+(`registerOverride`, or a subclass manifest that replaces it) closes the
+undecorated collection too. On `mcp`/`cli` the runtime also caps every
+collection's generated CRUD verbs to the model's effective ones, decorated or
+not; custom methods a collection lists stay its own opt-in, closed with
+`registerOverride` on the collection class (#3468,
+`registry/__tests__/issue-3468-closed-collection-exposure.test.ts`). Surface
+tests must match `<model>collection_` tool names as well as `<model>_`.
+
 A collection opens its own methods by listing them in its own `@smrt()`. A
 collection decorator's config is merged over its model's at runtime, so repeat
 the model's CRUD verbs (and storage keys) there. The build fails with

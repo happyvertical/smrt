@@ -2573,6 +2573,11 @@ export class ManifestGenerator {
       );
       if (Object.keys(inherited).length > 0) {
         obj.decoratorConfig = { ...(obj.decoratorConfig || {}), ...inherited };
+        // Keep the copied surfaces distinguishable from the collection's own,
+        // so the runtime can follow its model's effective config (#3468).
+        obj.inheritedExposure = Object.keys(inherited) as Array<
+          keyof typeof inherited
+        >;
         logger.debug(
           `[manifest-generator] ${obj.className} inherits ${Object.keys(inherited).join(', ')} exposure from item class ${itemClass.className}`,
         );

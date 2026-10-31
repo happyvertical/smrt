@@ -87,7 +87,13 @@ import { clearSubtypeLineage } from './registry/subtype-lineage';
 
 export type { RuntimeRegistrationOverride } from './registry/runtime-overrides';
 
-import { inheritCollectionExposure } from './registry/collection-exposure';
+import {
+  COLLECTION_CRUD_SURFACES,
+  capCollectionCrudToModel,
+  inheritCollectionExposure,
+  inheritedCollectionSurface,
+  narrowInheritedCollectionSurface,
+} from './registry/collection-exposure';
 import {
   isCollectionRegistration,
   resolveCollectionItemClassName,
@@ -698,14 +704,44 @@ function resolveEffectiveConfig(
           )
         : undefined;
       if (item && item !== registered) {
-        const inherited = inheritCollectionExposure(
-          registered.config,
-          resolveEffectiveConfig(itemName as string, item, visiting),
-          {
-            collection: new Set(registered.methods.keys()),
-            item: chainMethodNames(item),
-          },
+        const itemConfig = resolveEffectiveConfig(
+          itemName as string,
+          item,
+          visiting,
         );
+        const methods = {
+          collection: new Set(registered.methods.keys()),
+          item: chainMethodNames(item),
+        };
+        const inherited: SmartObjectConfig = inheritCollectionExposure(
+          registered.config,
+          itemConfig,
+          methods,
+        );
+        // Surfaces the scanner copied from the model follow the model's
+        // effective config now (a consumer subclass or registerOverride may
+        // have closed it), never opening more than the build did (#3468).
+        for (const surface of registered.inheritedExposure ?? []) {
+          const narrowed = narrowInheritedCollectionSurface(
+            registered.config[surface],
+            inheritedCollectionSurface(surface, itemConfig, methods),
+          );
+          if (narrowed !== registered.config[surface]) {
+            (inherited as Record<string, unknown>)[surface] = narrowed;
+          }
+        }
+        // A collection never publishes a generated CRUD operation its model
+        // keeps closed, however its own surface reads (#3468).
+        for (const surface of COLLECTION_CRUD_SURFACES) {
+          const current =
+            surface in inherited
+              ? inherited[surface]
+              : registered.config[surface];
+          const capped = capCollectionCrudToModel(surface, current, itemConfig);
+          if (capped !== current) {
+            (inherited as Record<string, unknown>)[surface] = capped;
+          }
+        }
         if (Object.keys(inherited).length > 0) {
           config = { ...registered.config, ...inherited };
         }
@@ -2943,6 +2979,16 @@ export class ObjectRegistry {
           manifestEntry.packageName,
           registered.name,
         ) as QualifiedClassName;
+        didHydrate = true;
+      }
+
+      // #3468: surfaces the scanner copied from a collection's model.
+      if (
+        manifestEntry.inheritedExposure &&
+        registered.inheritedExposure?.join() !==
+          manifestEntry.inheritedExposure.join()
+      ) {
+        registered.inheritedExposure = manifestEntry.inheritedExposure;
         didHydrate = true;
       }
 

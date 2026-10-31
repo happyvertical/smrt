@@ -58,6 +58,10 @@ Generated CRUD writes stay closed. `ServiceTimeEntryCollection` hosts the only
 generated writes, `record` / `submit` / `approve` (`POST
 /servicetimeentries/<action>`, body `{ entryId }` for submit/approve), on REST
 only; MCP and CLI stay read-only until per-operation MCP authorization (#4004).
+A consumer that closes a model also closes its collection's generated CRUD;
+`ServiceTimeEntryCollection`'s own `forWork` / `pendingApproval` stay open
+until the collection class is closed with `registerOverride` too. Surface tests
+match `<model>collection_` tool names as well as `<model>_` (#3468).
 `services/time-entry-actions.ts` delegates each to `ServiceEvidenceService`, so
 the trail and snapshots are set in one place. `services/action-principal.ts`
 takes identity from the tenancy ALS, then the smrt-users session ALS, never the

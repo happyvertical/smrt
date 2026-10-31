@@ -217,6 +217,85 @@ export function inheritCollectionExposure(
   return inherited;
 }
 
+/**
+ * Combine a surface the scanner copied into a collection's manifest entry with
+ * the value its model's runtime config now implies, never opening more than
+ * either: `false` wins, `include` lists intersect, `exclude` lists union, and
+ * the copied value's other options (routes, `skipApiCheck`) are kept. A model
+ * the runtime leaves open (`undefined`) keeps the copied value, so a later
+ * registration cannot widen what the build closed (#3468).
+ */
+export function narrowInheritedCollectionSurface(
+  copied: SmartObjectConfig[ExposureSurface] | undefined,
+  current: SmartObjectConfig[ExposureSurface] | undefined,
+): SmartObjectConfig[ExposureSurface] | undefined {
+  if (copied === false || current === false) return false;
+  if (current === undefined || current === true) return copied;
+  if (copied === undefined || copied === true) return current;
+  const left = copied as { include?: unknown; exclude?: unknown };
+  const right = current as { include?: unknown; exclude?: unknown };
+  const strings = (value: unknown): string[] | undefined =>
+    Array.isArray(value)
+      ? value.filter((entry): entry is string => typeof entry === 'string')
+      : undefined;
+  const leftInclude = strings(left.include);
+  const rightInclude = strings(right.include);
+  const include =
+    leftInclude && rightInclude
+      ? leftInclude.filter((entry) => rightInclude.includes(entry))
+      : (leftInclude ?? rightInclude);
+  const exclude = [
+    ...new Set([
+      ...(strings(left.exclude) ?? []),
+      ...(strings(right.exclude) ?? []),
+    ]),
+  ];
+  const narrowed: Record<string, unknown> = { ...left };
+  delete narrowed.include;
+  delete narrowed.exclude;
+  if (include !== undefined) narrowed.include = include;
+  if (exclude.length > 0) narrowed.exclude = exclude;
+  return narrowed as SmartObjectConfig[ExposureSurface];
+}
+
+/**
+ * Close the generated CRUD operations a collection's surface opens on a
+ * collection-CRUD transport (`mcp`, `cli`) that its model's effective surface
+ * does not, by adding them to the surface's `exclude`. Custom-method names are
+ * untouched: a collection still opens its own methods by listing them. Returns
+ * the value unchanged when nothing exceeds the model, and for an abstract
+ * model, whose collection surface the build already narrows.
+ */
+export function capCollectionCrudToModel(
+  surface: ExposureSurface,
+  collectionValue: SmartObjectConfig[ExposureSurface] | undefined,
+  itemConfig: SmartObjectConfig,
+): SmartObjectConfig[ExposureSurface] | undefined {
+  if (!COLLECTION_CRUD_SURFACES.includes(surface)) return collectionValue;
+  if (collectionValue === false || itemConfig.abstract === true) {
+    return collectionValue;
+  }
+  let modelVerbs = exposedCrudVerbs(itemConfig[surface]);
+  if (surface === 'mcp' && itemConfig.sensitive === true) {
+    modelVerbs = modelVerbs.filter((verb) => CRUD_READ_VERBS.includes(verb));
+  }
+  const extra = exposedCrudVerbs(collectionValue).filter(
+    (verb) => !modelVerbs.includes(verb),
+  );
+  if (extra.length === 0) return collectionValue;
+  const base =
+    collectionValue && typeof collectionValue === 'object'
+      ? (collectionValue as { exclude?: unknown })
+      : {};
+  const excluded = Array.isArray(base.exclude)
+    ? base.exclude.filter((entry): entry is string => typeof entry === 'string')
+    : [];
+  return {
+    ...base,
+    exclude: [...new Set([...excluded, ...extra])],
+  } as SmartObjectConfig[ExposureSurface];
+}
+
 /** A CRUD write a collection opens on a transport where its model does not. */
 export interface CollectionWriteEscalation {
   surface: ExposureSurface;
