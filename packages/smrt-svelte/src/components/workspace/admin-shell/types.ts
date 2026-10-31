@@ -222,6 +222,11 @@ export interface ShellNavItem {
   attention?: boolean | string | null;
   children?: ShellNavItem[];
   /**
+   * Explicit current state. When defined it overrides the computed
+   * longest-href match for this item's own link (`aria-current`).
+   */
+  current?: boolean;
+  /**
    * Trailing action link. "Section current" means: for an item in a
    * {@link ShellNavGroup}, any item of the group, their children, or any
    * action href is the current page; for a top-level item, the item, its
