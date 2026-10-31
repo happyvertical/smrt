@@ -261,9 +261,9 @@ omitted mode retains legacy filename inference. `'explicit'` writes only
 it for its per-run snapshot `.smrt/test-runs/<run>/manifest.json`, published
 per root in `__SMRT_TEST_MANIFEST_PATHS__` (`manifest/test-artifacts.ts`).
 `LocalManifestReader.loadLocal()` (and so the runtime loader and manifest test
-databases) reads that active snapshot before `.smrt/manifest.json`; external
-package loads never read it, and a process outside the run never sees it
-(#4128). Core's own Vitest config registers `src/manifest/test-manifest.json`
+databases) reads that active snapshot before `.smrt/manifest.json` for the
+registered root only; `loadForExternalPackage()` never reads it, and a process
+outside the run never sees it (#4128). Core's own Vitest config registers `src/manifest/test-manifest.json`
 the same way. Relative output directories are resolved against the builder's
 project root.
 

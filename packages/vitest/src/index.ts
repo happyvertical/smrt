@@ -178,9 +178,11 @@ function isProcessAlive(pid: number): boolean {
 }
 
 /**
- * Remove snapshot directories whose run has ended: a run on this host whose
- * process is gone, or any run older than a day (another host or container
- * sharing the checkout cannot be probed). Live runs are never touched.
+ * Remove snapshot directories whose run has ended. A run recorded on this
+ * host is removed only once its process is gone, however long it has been
+ * running (a watch or `--ui` session can outlive a day). A run whose owner
+ * cannot be probed — no readable `owner.json`, or another host or container
+ * sharing the checkout — is removed once it is older than a day.
  */
 function pruneEndedTestRuns(root: string, keep: string): void {
   const runsDir = join(root, SMRT_TEST_RUNS_DIR);
@@ -206,12 +208,12 @@ function pruneEndedTestRuns(root: string, keep: string): void {
     } catch {
       continue;
     }
-    const ended =
-      owner?.hostname === thisHost &&
-      typeof owner.pid === 'number' &&
-      owner.pid !== process.pid &&
-      !isProcessAlive(owner.pid);
-    if (ended || ageMs > STALE_TEST_RUN_MS) {
+    const probeable =
+      owner?.hostname === thisHost && typeof owner.pid === 'number';
+    const ended = probeable
+      ? owner?.pid !== process.pid && !isProcessAlive(owner?.pid as number)
+      : ageMs > STALE_TEST_RUN_MS;
+    if (ended) {
       rmSync(runDir, { recursive: true, force: true });
     }
   }
@@ -1055,8 +1057,10 @@ async function importDiscoverBaseClassesModule(): Promise<
  * This properly handles the manifest priority order:
  * 1. .smrt/manifest.json (local build manifest)
  * 2. dist/manifest.json (production manifest)
- * A dependency's root never matches this run's active test snapshot, which
- * is registered for the plugin's own root only.
+ * `loadLocal()` would prefer an active test snapshot registered for the
+ * dependency's own root; only that root's own plugin registers one, so a
+ * dependency is read from its snapshot only when it runs in the same
+ * process or a child of its own test run.
  */
 async function loadAndRegisterManifest(
   packageName: string,

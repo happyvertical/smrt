@@ -128,6 +128,15 @@ describe('test run manifest snapshot', () => {
       hostname: hostname(),
       startedAt: now,
     });
+    // A same-host run still alive after more than a day (a long watch or
+    // `--ui` session) is never pruned.
+    const liveLongRunning = seedRun(dir, 'live-long-running', {
+      pid: process.ppid,
+      hostname: hostname(),
+      startedAt: now - 2 * day,
+    });
+    const unowned = join(dir, SMRT_TEST_RUNS_DIR, 'unowned-recent');
+    mkdirSync(unowned, { recursive: true });
     const remoteRecent = seedRun(dir, 'remote-recent', {
       pid: 1,
       hostname: `${hostname()}-elsewhere`,
@@ -144,6 +153,8 @@ describe('test run manifest snapshot', () => {
     expect(existsSync(ended)).toBe(false);
     expect(existsSync(remoteStale)).toBe(false);
     expect(existsSync(live)).toBe(true);
+    expect(existsSync(liveLongRunning)).toBe(true);
+    expect(existsSync(unowned)).toBe(true);
     expect(existsSync(remoteRecent)).toBe(true);
     expect(existsSync(resolveTestRunManifestPath(dir))).toBe(true);
   });
