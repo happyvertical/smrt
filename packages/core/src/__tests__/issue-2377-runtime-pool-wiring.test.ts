@@ -235,3 +235,28 @@ describe('SmrtClass', () => {
     expect(options.connectionTimeoutMillis).toBeUndefined();
   });
 });
+
+describe('file-backed pool identity agrees across call sites (#3046)', () => {
+  it('hands the SDK one smrt:<url> dbid from SmrtClass, resolveDatabase and the _changes route', async () => {
+    // A model write and the `_changes` stream must resolve the same SQLite
+    // connection, or in-process change signals never reach the stream.
+    const url = 'file:./issue-3046-shared-identity.db';
+    const { SmrtObject } = await import('../object.js');
+    const dbids: unknown[] = [];
+
+    await new SmrtObject({ db: url }).initialize().catch(() => undefined);
+    dbids.push(lastOptions().dbid);
+    await new SmrtObject({ db: { type: 'sqlite', url } })
+      .initialize()
+      .catch(() => undefined);
+    dbids.push(lastOptions().dbid);
+    await resolveDatabase(url);
+    dbids.push(lastOptions().dbid);
+    await resolveDatabase({ type: 'sqlite', url });
+    dbids.push(lastOptions().dbid);
+    await resolveChangesDb(url);
+    dbids.push(lastOptions().dbid);
+
+    expect(dbids).toEqual(Array(5).fill(`smrt:${url}`));
+  });
+});
