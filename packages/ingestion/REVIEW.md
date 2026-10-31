@@ -811,6 +811,18 @@ The factory unwraps this into `ItemReviewView.generation`. Stale generation is
 omitted while authorized saved reviews remain available; access denials propagate.
 The reference application still owns its fixture provisioning and HTTP transport.
 
+## Upload refusals and accepted types (#4502)
+
+`IntakeWorkspace`/`IntakeInbox` take `accept` (an `<input accept>` value)
+for their file picker, defaulting to `IntakeReviewHost.uploadAccept` (adapter
+option `uploadAccept`); it is a hint only, `upload` still enforces the host's
+allowlist. When `upload` throws `IntakeUploadRefusedError` (from `/svelte`) or
+any error with a string `userMessage` (or an error named
+`IntakeUploadRefusedError` / with `code: 'INTAKE_UPLOAD_REFUSED'`, whose
+`message` is then shown), the inbox shows that reason (trimmed, at most 500
+characters) and keeps its rows; `uploadRefusalMessage(error)` applies the same
+rule. Any other error still fails the list closed with `ingestion.error`.
+
 ## Explicit upload retries
 
 The inbox retains selected original files and the receive request identity when

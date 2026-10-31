@@ -8,7 +8,9 @@ export interface Props {
   onselect?: (itemId: string) => void;
   /** Optional per-row aside (preview, original link); receives the page entry. */
   rowAside?: Snippet<[InboxEntry]>;
+  /** File types the upload picker offers; defaults to the host's `uploadAccept`. */
+  accept?: string;
 }
-let { host, contextKey = '', onselect, rowAside }: Props = $props();
+let { host, contextKey = '', onselect, rowAside, accept }: Props = $props();
 </script>
-{#key host}{#key contextKey}<InboxView {host} {onselect} {rowAside} />{/key}{/key}
+{#key host}{#key contextKey}<InboxView {host} {onselect} {rowAside} {accept} />{/key}{/key}

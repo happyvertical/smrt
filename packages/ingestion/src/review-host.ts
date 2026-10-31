@@ -37,6 +37,8 @@ export type RowEvidenceView = Omit<InboxEvidence, 'evidence'>;
 export interface IntakeReviewHostOptions {
   /** Authenticate receipt, enforce upload limits, and request the first extraction. */
   upload: IntakeReviewHost['upload'];
+  /** File types the review components' upload picker offers; see `IntakeReviewHost.uploadAccept`. */
+  uploadAccept?: string;
   /** Read durable assignment state; assignment never grants ingestion permissions. */
   assignment(itemId: string): Promise<Assignment>;
   /**
@@ -357,6 +359,9 @@ export function createIntakeReviewHost(
       };
     },
     upload: (files, requestId) => options.upload(files, requestId),
+    ...(options.uploadAccept !== undefined
+      ? { uploadAccept: options.uploadAccept }
+      : {}),
     async preview(input) {
       if (
         !Number.isSafeInteger(input.index) ||

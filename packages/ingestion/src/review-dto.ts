@@ -205,7 +205,19 @@ export interface IntakeReviewHost {
     limit?: number;
   }): Promise<{ items: InboxEntry[]; nextCursor?: string }>;
   load(itemId: string, cursor?: string): Promise<ItemReviewView>;
+  /**
+   * Throws on every failure. A refusal the reviewer should read (a file type
+   * or size the host does not accept) is `IntakeUploadRefusedError` from
+   * `/svelte`, or any error with a string `userMessage`: the inbox shows that
+   * reason and keeps its rows. Any other error fails the list closed.
+   */
   upload(files: File[], requestId: string): Promise<{ itemId: string }>;
+  /**
+   * File types the upload picker offers (an `<input accept>` value such as
+   * `application/pdf,image/*`); a component `accept` prop wins. A hint only:
+   * `upload` still enforces the host's allowlist. Absent offers every type.
+   */
+  uploadAccept?: string;
   preview(input: {
     itemId: string;
     attemptId: string;

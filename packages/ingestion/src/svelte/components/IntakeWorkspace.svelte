@@ -14,6 +14,8 @@ export interface Props {
   onselect?: (itemId: string | undefined) => void;
   /** Optional per-row aside (preview, original link); receives the page entry. */
   rowAside?: Snippet<[InboxEntry]>;
+  /** File types the upload picker offers; defaults to the host's `uploadAccept`. */
+  accept?: string;
 }
 let {
   host,
@@ -22,6 +24,7 @@ let {
   pollMs = 2000,
   onselect,
   rowAside,
+  accept,
 }: Props = $props();
 </script>
-{#key host}{#key contextKey}<TriageView {host} {itemId} {pollMs} {onselect} {rowAside} />{/key}{/key}
+{#key host}{#key contextKey}<TriageView {host} {itemId} {pollMs} {onselect} {rowAside} {accept} />{/key}{/key}

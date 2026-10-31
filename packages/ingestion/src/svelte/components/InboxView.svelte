@@ -9,6 +9,7 @@ import type {
   IntakeReviewHost,
 } from '../../review-dto.js';
 import { M } from '../i18n.js';
+import { uploadRefusalMessage } from '../upload-refusal.js';
 import { evidenceUrl } from '../view-utils.js';
 export interface Props {
   host: IntakeReviewHost;
@@ -40,6 +41,12 @@ export interface Props {
   resolveInRow?: boolean;
   /** Numbers each page read when its request starts (`issued` on the page). */
   stamp?: () => number;
+  /**
+   * File types the picker offers (the input's `accept`, e.g.
+   * `application/pdf,image/*`); defaults to the host's `uploadAccept`. A hint
+   * only: the host's upload still enforces its own allowlist.
+   */
+  accept?: string;
 }
 let {
   host,
@@ -51,6 +58,7 @@ let {
   status,
   resolveInRow = true,
   stamp,
+  accept,
 }: Props = $props();
 const { t } = useI18n();
 const states: InboxState[] = [
@@ -71,7 +79,9 @@ let items = $state<InboxEntry[]>([]),
   files = $state<File[]>([]),
   cursor = $state<string>(),
   pending = $state(false),
-  error = $state(false);
+  error = $state(false),
+  // The host's reviewer-facing reason for refusing the last upload, if any.
+  refusal = $state<string>();
 let alive = true,
   epoch = 0;
 let uploadRequestId: string | undefined;
@@ -215,10 +225,15 @@ async function load(more = false): Promise<'shown' | 'failed' | 'superseded'> {
   }
   return page ? 'shown' : alive && ticket === epoch ? 'failed' : 'superseded';
 }
-async function mutate(operation: () => Promise<unknown>, selected = false) {
+async function mutate(
+  operation: () => Promise<unknown>,
+  selected = false,
+  refused?: (error: unknown) => string | undefined,
+) {
   if (pending) return;
   pending = true;
   error = false;
+  refusal = undefined;
   const ticket = ++epoch;
   try {
     const result = await operation();
@@ -230,8 +245,17 @@ async function mutate(operation: () => Promise<unknown>, selected = false) {
     if (selected && result && typeof result === 'object' && 'itemId' in result)
       onselect?.(String(result.itemId));
     await load();
-  } catch {
+  } catch (caught) {
     if (alive && ticket === epoch) {
+      // A host refusal with a reviewer-facing reason (a file type its
+      // allowlist refuses, say) is not an access result: the reason shows and
+      // the listed rows stay. Anything else fails closed.
+      const reason = refused?.(caught);
+      if (reason) {
+        refusal = reason;
+        pending = false;
+        return;
+      }
       items = [];
       assignments = {};
       error = true;
@@ -245,7 +269,11 @@ async function upload() {
   uploadRequestId ??= crypto.randomUUID();
   const requestId = uploadRequestId;
   const originals = [...files];
-  await mutate(() => host.upload(originals, requestId), true);
+  await mutate(
+    () => host.upload(originals, requestId),
+    true,
+    uploadRefusalMessage,
+  );
 }
 onMount(() => {
   void load();
@@ -259,9 +287,10 @@ onMount(() => {
 <Button onclick={() => load()} disabled={pending}>{t(M['ingestion.refresh'])}</Button>
 </div>
 <!-- Keep retry Files separately; an unchanged native FileList must not suppress a deliberate reselection. -->
-<FilePicker bind:files onclick={(event) => { event.currentTarget.value = ''; }} onchangefiles={() => { uploadRequestId = undefined; }} multiple label={t(M['ingestion.files'])} description={t(M['ingestion.filesHelp'])} disabled={pending} />
+<FilePicker bind:files onclick={(event) => { event.currentTarget.value = ''; }} onchangefiles={() => { uploadRequestId = undefined; refusal = undefined; }} accept={accept ?? host.uploadAccept} multiple label={t(M['ingestion.files'])} description={t(M['ingestion.filesHelp'])} disabled={pending} />
 <Button disabled={pending || !files.length} onclick={upload}>{t(M['ingestion.upload'])}</Button>
 {#if error}<p role="alert">{t(M['ingestion.error'])}</p>{/if}
+{#if refusal}<p role="alert" data-testid="upload-refused">{refusal}</p>{/if}
 {#if pending}<p role="status">{t(M['ingestion.loading'])}</p>{/if}
 {#if !pending && !error && !items.length}<p>{t(M['ingestion.empty'])}</p>{/if}
 <ul>{#each items as entry (entry.item.id)}<li data-item-id={entry.item.id} aria-current={entry.item.id === selectedId ? 'true' : undefined} class:selected={entry.item.id === selectedId}>
