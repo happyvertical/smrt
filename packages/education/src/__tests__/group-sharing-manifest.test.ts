@@ -1,11 +1,10 @@
 import { readFileSync } from 'node:fs';
+import { getTestManifestPath } from '@happyvertical/smrt-vitest';
 import { expect, it } from 'vitest';
 import { EducationSupervisorRecipe } from '../recipes.js';
 
 it('ships the supervisor recipe with closed native-UUID sharing models', () => {
-  const manifest = JSON.parse(
-    readFileSync(new URL('../../.smrt/manifest.json', import.meta.url), 'utf8'),
-  );
+  const manifest = JSON.parse(readFileSync(getTestManifestPath(), 'utf8'));
   const names = [
     'EducationGroup',
     'GroupLearnerInvitation',

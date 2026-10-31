@@ -1,0 +1,6 @@
+{
+  "name": "@fixture/smrt-issue-4128-concurrent-build",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module"
+}

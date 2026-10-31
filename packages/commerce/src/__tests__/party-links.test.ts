@@ -3,6 +3,7 @@ import { readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ObjectRegistry, smrt } from '@happyvertical/smrt-core';
+import { getTestManifestPath } from '@happyvertical/smrt-vitest';
 import { afterEach, beforeEach, describe, expect } from 'vitest';
 import { ContractCollection } from '../collections/ContractCollection.js';
 import { CustomerCollection } from '../collections/CustomerCollection.js';
@@ -43,9 +44,7 @@ describe('Contract party branches', () => {
   let contracts: ContractCollection;
 
   it('emits only applicable party edges and leaf required rules', () => {
-    const manifest = JSON.parse(
-      readFileSync(join(process.cwd(), '.smrt/manifest.json'), 'utf8'),
-    );
+    const manifest = JSON.parse(readFileSync(getTestManifestPath(), 'utf8'));
     const model = (name: string) =>
       manifest.objects[`@happyvertical/smrt-commerce:${name}`];
     expect(model('Contract').fields.customerId).toBeUndefined();

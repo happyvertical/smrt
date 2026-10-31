@@ -45,6 +45,7 @@ import {
   ensureSystemTables,
   isSmrtCollectionExtendsName,
   ObjectRegistry,
+  resolveActiveTestManifestPath,
 } from '@happyvertical/smrt-core';
 import type {
   ForeignKeyDefinition,
@@ -127,9 +128,11 @@ export interface ManifestTestDbOptions {
    * Explicit path to a manifest JSON file.
    *
    * When omitted the function searches the following locations in order:
-   * 1. `.smrt/manifest.json` — output of `smrtVitestPlugin()` / `smrt generate:test`
-   * 2. `dist/manifest.json` — production build manifest
-   * 3. `src/manifest/manifest.json` — legacy location
+   * 1. this test run's manifest snapshot — written by `smrtVitestPlugin()`
+   *    under `.smrt/test-runs/` and inherited by every worker (#4128)
+   * 2. `.smrt/manifest.json` — local build manifest
+   * 3. `dist/manifest.json` — production build manifest
+   * 4. `src/manifest/manifest.json` — legacy location
    */
   manifestPath?: string;
 
@@ -905,14 +908,47 @@ interface PostgresManifestSchemaPlan {
  * @param manifestPath - Optional explicit path to manifest
  * @returns Parsed manifest or null if not found
  */
+function defaultManifestSearchPaths(): string[] {
+  const activeTestManifest = resolveActiveTestManifestPath(process.cwd());
+  return [
+    ...(activeTestManifest ? [activeTestManifest] : []),
+    join(process.cwd(), '.smrt', 'manifest.json'),
+    join(process.cwd(), 'dist', 'manifest.json'),
+    join(process.cwd(), 'src', 'manifest', 'manifest.json'),
+  ];
+}
+
+/**
+ * This test run's manifest snapshot path (#4128): the test-inclusive manifest
+ * `smrtVitestPlugin()` generated for the project at `root`, including inline
+ * test-file fixture classes. Tests that inspect generated manifest metadata
+ * read this instead of `.smrt/manifest.json`, which production builds own and
+ * may rewrite mid-run.
+ *
+ * @throws When the current process is not inside a `smrtVitestPlugin()` run
+ *   that generated a manifest for `root`, or that snapshot no longer exists.
+ */
+export function getTestManifestPath(root: string = process.cwd()): string {
+  const manifestPath = resolveActiveTestManifestPath(root);
+  if (!manifestPath) {
+    throw new Error(
+      `[smrt-vitest] No test manifest snapshot is registered for ${root}. ` +
+        'Run under smrtVitestPlugin() with generateManifest enabled (the default).',
+    );
+  }
+  if (!existsSync(manifestPath)) {
+    throw new Error(
+      `[smrt-vitest] The test manifest snapshot ${manifestPath} registered for ${root} is missing; ` +
+        'it was removed while the run was live (for example by deleting .smrt/).',
+    );
+  }
+  return manifestPath;
+}
+
 function loadManifest(manifestPath?: string): ManifestFile | null {
   const searchPaths = manifestPath
     ? [manifestPath]
-    : [
-        join(process.cwd(), '.smrt', 'manifest.json'),
-        join(process.cwd(), 'dist', 'manifest.json'),
-        join(process.cwd(), 'src', 'manifest', 'manifest.json'),
-      ];
+    : defaultManifestSearchPaths();
 
   for (const path of searchPaths) {
     if (existsSync(path)) {
@@ -1376,8 +1412,9 @@ function extractTablesFromManifest(
  *   merged into a single `CREATE TABLE` statement that includes all columns.
  * - **FK dependency ordering** — tables are created in topological order so
  *   `REFERENCES` constraints are always satisfied.
- * - **Auto-detection** — searches `.smrt/manifest.json`, `dist/manifest.json`,
- *   and `src/manifest/manifest.json` when no `manifestPath` is given.
+ * - **Auto-detection** — searches this run's test manifest snapshot, then
+ *   `.smrt/manifest.json`, `dist/manifest.json`, and
+ *   `src/manifest/manifest.json` when no `manifestPath` is given.
  *
  * @param options - Optional manifest path, class filter, and SQLite prefix.
  * @returns An {@link IsolatedTestDbResult} — same shape as
@@ -1452,11 +1489,7 @@ export async function createIsolatedTestDbFromManifest(
   if (!manifest) {
     const checkedPaths = manifestPath
       ? [manifestPath]
-      : [
-          '.smrt/manifest.json',
-          'dist/manifest.json',
-          'src/manifest/manifest.json',
-        ];
+      : defaultManifestSearchPaths();
 
     throw new Error(
       'No manifest found. Ensure smrtVitestPlugin() is configured in vitest.config.ts ' +

@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { getTestManifestPath } from '@happyvertical/smrt-vitest';
 import { describe, expect, it } from 'vitest';
 import { separateHostedStiCollections } from '../../../core/src/consumer-plugin/hosted-sti-collections.js';
 import type { SmartObjectManifest } from '../../../core/src/scanner/types.js';
@@ -23,7 +23,7 @@ const ref = (name: string) => `@happyvertical/smrt-commerce:${name}`;
 
 function screenDefinitions() {
   const manifest = JSON.parse(
-    readFileSync(join(process.cwd(), '.smrt/manifest.json'), 'utf8'),
+    readFileSync(getTestManifestPath(), 'utf8'),
   ) as SmartObjectManifest;
   const hostedRefs = ['Customer', 'Vendor', ...SALES, ...PURCHASES].map(ref);
   const wanted = new Set(hostedRefs);

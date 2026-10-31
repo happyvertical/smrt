@@ -7,6 +7,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { TextDecoder, TextEncoder } from 'node:util';
+import { getTestManifestPath } from '@happyvertical/smrt-vitest';
 import { vi } from 'vitest';
 
 vi.hoisted(() => {
@@ -125,7 +126,7 @@ function generatedDefinitions(): Record<
 > {
   // These fixture classes belong to Vitest's local artifact, not production.
   const manifest = JSON.parse(
-    readFileSync(resolve(process.cwd(), '.smrt/manifest.json'), 'utf8'),
+    readFileSync(getTestManifestPath(), 'utf8'),
   ) as SmartObjectManifest;
   return Object.fromEntries(
     selectWebCollectionEntries(manifest).map((entry) => [

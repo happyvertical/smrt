@@ -388,7 +388,7 @@ export function loadLocalTestManifestSync(): Manifest | null | undefined {
   }
 
   // Use LocalManifestReader for unified local loading
-  // This checks: .smrt/manifest.json -> dist/manifest.json
+  // This checks: active test snapshot -> .smrt/manifest.json -> dist/manifest.json
   const manager = new LocalManifestReader(process.cwd());
   const manifest = manager.loadLocal();
 
@@ -476,9 +476,9 @@ let projectManifestRead:
 
 /**
  * The manifest of the project the process runs in (the first of
- * `<cwd>/.smrt/manifest.json`, `<cwd>/dist/manifest.json`,
- * `<cwd>/src/manifest/manifest.json`, as `LocalManifestReader.loadLocal()` reads
- * them), never seeded into the lookup caches. Only consulted to attribute a
+ * `LocalManifestReader.getLocalCandidatePaths()`: a test run's active
+ * snapshot, then `<cwd>/.smrt/manifest.json`, `<cwd>/dist/manifest.json`,
+ * `<cwd>/src/manifest/manifest.json`), never seeded into the lookup caches. Only consulted to attribute a
  * decorated class whose declaring file that manifest describes, when no loaded
  * manifest does: a plain Node/tsx script importing an app's workspace-package
  * models has not loaded the app's manifest yet (#3109). The read is reused
@@ -490,11 +490,9 @@ export function readProjectManifestSync(): SmartObjectManifest | null {
     return null;
   }
   const manager = new LocalManifestReader(process.cwd());
-  const path = [
-    manager.getOutputPath('dev'),
-    manager.getOutputPath('build'),
-    manager.getOutputPath('source'),
-  ].find((candidate) => existsSync(candidate));
+  const path = manager
+    .getLocalCandidatePaths()
+    .find((candidate) => existsSync(candidate));
   if (!path) return null;
   let mtimeMs: number;
   try {
