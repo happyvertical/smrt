@@ -421,7 +421,7 @@ describe('generated Tier-1 MCP 2026-07-28 conformance', () => {
 
 function openRawStdio() {
   const child = spawn(tsxBin, [generatedPath], {
-    cwd: packageRoot,
+    cwd: generatedAppDir,
     env: {
       ...process.env,
       DATABASE_TYPE: 'sqlite',
@@ -507,11 +507,15 @@ function openRawStdio() {
 
 function startHttpAdapter(): Promise<string> {
   return new Promise((resolveUrl, rejectStart) => {
-    httpChild = spawn(tsxBin, ['scripts/serve-generated.ts', generatedPath], {
-      cwd: packageRoot,
-      env: process.env,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
+    httpChild = spawn(
+      tsxBin,
+      [join(packageRoot, 'scripts/serve-generated.ts'), generatedPath],
+      {
+        cwd: generatedAppDir,
+        env: process.env,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    );
     let stderr = '';
     httpChild.stderr?.on('data', (chunk) => {
       stderr += String(chunk);
