@@ -190,6 +190,21 @@ root wrapper. Complete publish validation uses
 publish membership, versions and digests. This covers all publishable packages,
 including those without a convenience `verify:pack` script.
 
+The validator also runs both manifest guards for every package it packs
+(`scripts/release-manifest-guards.mjs`, #2853), so coverage does not depend on
+a package defining `prepack`. Completeness (#1483) re-scans `src/` in
+`--release` mode: the scanner must load, and a package that declares `@smrt()`
+objects without a `./manifest` export fails. The packed manifest must match the
+verified workspace manifest byte for byte. The exports guard (#2845) runs
+against the tarball installed into a scratch consumer with only its declared
+dependencies linked. Exemptions stay those of the verifiers: framework
+infrastructure packages, collection companions and bundler-only root barrels.
+A closed API/CLI/MCP surface does not exempt a public model export. `prepack`
+still runs the same verifiers in their lenient workspace mode (an unbuilt
+scanner or a missing `./manifest` export skips, and exports are checked against
+workspace `dist/`); only the release validator is fail-closed and bound to the
+tarball. A local `changeset publish` therefore gets the weaker check.
+
 ---
 
 ## 3. Build configuration
