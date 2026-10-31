@@ -11,6 +11,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   ensureDeferredSystemTableCompatibility,
+  ensureSystemTables,
   generateDDLForEngine,
   isQualifiedName,
   migratePostgresSystemTimestamps,
@@ -268,6 +269,10 @@ async function settleDeferredCompatibilityAfterMigrate(
   { verbose }: { verbose: boolean },
 ): Promise<void> {
   try {
+    // Framework `_smrt_*` tables otherwise appear only when a model first
+    // initializes against this database, so a freshly migrated one failed
+    // `db:status --parity` with every system table missing (#3297).
+    await ensureSystemTables(db, dbType);
     const { settled } = await ensureDeferredSystemTableCompatibility(
       db,
       dbType,
@@ -281,7 +286,7 @@ async function settleDeferredCompatibilityAfterMigrate(
     }
   } catch (error) {
     console.warn(
-      `⚠️  Deferred system-table compatibility did not complete: ${redactDatabaseUrlsInText(
+      `⚠️  System-table bootstrap or deferred compatibility did not complete: ${redactDatabaseUrlsInText(
         error instanceof Error ? error.message : String(error),
       )}`,
     );

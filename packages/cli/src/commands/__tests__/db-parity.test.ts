@@ -427,6 +427,42 @@ describe('live parity against a real SQLite database', () => {
     expect(parity?.systemTablesIncluded).toBe(true);
   });
 
+  it('finds no system table missing after a fresh db:migrate (#3297)', async () => {
+    autoDiscoverAndLoadMock.mockResolvedValue({
+      discovered: [
+        {
+          path: '/tmp/parity-3297/.smrt/manifest.json',
+          source: 'project',
+          objectCount: 1,
+        },
+      ],
+      totalObjects: 1,
+    });
+    const lines: string[] = [];
+    const capture = (...args: unknown[]) => lines.push(args.join(' '));
+    const spies = (['log', 'warn', 'error'] as const).map((method) =>
+      vi.spyOn(console, method).mockImplementation(capture),
+    );
+    try {
+      await requireCommandHandler(utilityCommands['db:migrate'])([], {});
+    } finally {
+      for (const spy of spies) spy.mockRestore();
+    }
+    expect(process.exitCode ?? 0, lines.join('\n')).toBe(0);
+    const { report: parity, error } = await runLiveSchemaParity();
+    expect(error).toBeNull();
+    const systemTables = [...getSystemTableShapes('sqlite').keys()];
+    expect(
+      (parity as LiveSchemaParityReport).findings
+        .filter(
+          (finding) =>
+            finding.kind === 'missing_table' &&
+            systemTables.includes(finding.table),
+        )
+        .map((finding) => finding.table),
+    ).toEqual([]);
+  });
+
   it('fails closed when no persistent database is configured', async () => {
     clearCache();
     setConfig({
