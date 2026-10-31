@@ -57,10 +57,12 @@ import {
   EnrollmentPinConflictError,
   type EnrollmentPinKind,
   type EnrollmentPinView,
+  type EnrollmentReleaseView,
   MAX_PAGE_SIZE,
   type ReleaseReviewGate,
   ReviewGateRequiredError,
   ReviewNotCurrentError,
+  type SetAutoUpgradeResult,
 } from './course-authoring-contracts.js';
 import {
   AUTHORED_IDENTITY_SOURCE_KEY,
@@ -2335,10 +2337,21 @@ export class CourseAuthoringService {
     if (!current)
       throw new EnrollmentPinConflictError('Enrollment is not pinned');
     const release = await this.releaseRow(tx, tenantId, current.releaseId);
+    // Release course ids come from the course's own release rows (one read).
+    const releaseCourseIds = new Map(
+      (
+        await tx.list('course_releases', {
+          tenant_id: tenantId,
+          'id in': [...new Set(pins.map((p) => p.releaseId))],
+        })
+      ).map((r) => [String(r.id), String(r.release_course_id)]),
+    );
     return {
       enrollmentId,
+      learnerId: current.learnerId,
       courseId: current.courseId,
       releaseId: current.releaseId,
+      releaseCourseId: String(release.release_course_id),
       releaseNumber: Number(release.release_number),
       kind: current.kind as EnrollmentPinKind,
       autoUpgrade: await this.autoUpgradeEnabled(
@@ -2350,6 +2363,7 @@ export class CourseAuthoringService {
       policyBasis: current.policyBasis,
       history: pins.map((p) => ({
         releaseId: p.releaseId,
+        releaseCourseId: releaseCourseIds.get(p.releaseId) ?? '',
         previousReleaseId: optional(p.previousReleaseId),
         kind: p.kind as EnrollmentPinKind,
         sequence: p.sequence,
@@ -2539,12 +2553,7 @@ export class CourseAuthoringService {
       requestKey: string;
       policyBasis: string;
     },
-  ): Promise<{
-    courseId: string;
-    enrollmentId: string | null;
-    enabled: boolean;
-    policyBasis: string;
-  }> {
+  ): Promise<SetAutoUpgradeResult> {
     const requestKey = requireKey(request.requestKey);
     const policyBasis = text(request.policyBasis, 'policy basis', 200, true);
     const enabled = bool(request.enabled, 'enabled');
@@ -2574,9 +2583,10 @@ export class CourseAuthoringService {
         where: { tenantId: request.tenantId, courseId: request.courseId },
         limit: 100000,
       });
-      const result = {
+      const result: SetAutoUpgradeResult = {
         courseId: request.courseId,
         enrollmentId: request.enrollmentId ?? null,
+        learnerId: enrollment ? String(enrollment.learner_id) : null,
         enabled,
         policyBasis,
       };
@@ -2775,7 +2785,7 @@ export class CourseAuthoringService {
    */
   async getEnrollmentRelease(
     request: CourseAuthoringActor & { enrollmentId: string },
-  ): Promise<{ pin: EnrollmentPinView; lessons: EffectiveLessonView[] }> {
+  ): Promise<EnrollmentReleaseView> {
     return this.run(async (tx) => {
       const enrollment = await this.enrollmentRow(
         tx,
@@ -2802,7 +2812,13 @@ export class CourseAuthoringService {
         request.tenantId,
         request.enrollmentId,
       );
-      return { pin, lessons: selection?.lessons ?? [] };
+      return {
+        learnerId: pin.learnerId,
+        courseId: pin.courseId,
+        releaseCourseId: pin.releaseCourseId,
+        pin,
+        lessons: selection?.lessons ?? [],
+      };
     });
   }
 }

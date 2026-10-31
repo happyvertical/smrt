@@ -859,6 +859,7 @@ describe('CourseAuthoringService', () => {
     expect(optIn).toEqual({
       courseId: head.courseId,
       enrollmentId,
+      learnerId: String(s.f.learner.id),
       enabled: true,
       policyBasis: 'guardians-only',
     });

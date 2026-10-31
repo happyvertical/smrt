@@ -425,8 +425,13 @@ export type AutoUpgradeSkipView = Readonly<{
 export type EnrollmentPinKind = 'initial' | 'explicit' | 'auto';
 export type EnrollmentPinView = Readonly<{
   enrollmentId: string;
+  /** The enrollment's learner, from the enrollment row; hosts never read `enrollments`. */
+  learnerId: string;
+  /** The authored course identity (`AuthoredCourse` id) the pin follows. */
   courseId: string;
   releaseId: string;
+  /** The materialized release `Course` id the enrollment is created on. */
+  releaseCourseId: string;
   releaseNumber: number;
   kind: EnrollmentPinKind;
   autoUpgrade: boolean;
@@ -434,6 +439,7 @@ export type EnrollmentPinView = Readonly<{
   policyBasis: string;
   history: ReadonlyArray<{
     releaseId: string;
+    releaseCourseId: string;
     previousReleaseId: string | null;
     kind: EnrollmentPinKind;
     sequence: number;
@@ -445,6 +451,22 @@ export type EnrollmentPinView = Readonly<{
     optInScope: 'course' | 'enrollment' | null;
     recordedAt: string;
   }>;
+}>;
+/** Result of `getEnrollmentRelease`; identity fields repeat the pin's for convenience. */
+export type EnrollmentReleaseView = Readonly<{
+  learnerId: string;
+  courseId: string;
+  releaseCourseId: string;
+  pin: EnrollmentPinView;
+  lessons: EffectiveLessonView[];
+}>;
+/** Result of `setAutoUpgrade`; `learnerId` is null for a course-level choice. */
+export type SetAutoUpgradeResult = Readonly<{
+  courseId: string;
+  enrollmentId: string | null;
+  learnerId: string | null;
+  enabled: boolean;
+  policyBasis: string;
 }>;
 export type EffectiveLessonView = Readonly<{
   lessonKey: string;

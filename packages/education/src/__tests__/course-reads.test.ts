@@ -34,6 +34,7 @@ import { submissionClasses } from './submission-workflows.js';
  *  denied read returns nothing ........................... 'authorization'
  *  listCourses state combos / discarded flag ............. 'listCourses states'
  *  summary licence/shareability/releaseCount ............. 'listCourses summary licence'
+ *  learner/course identity on pin, upgrade, history, release read  'enrollment identity fields'
  *  pagination determinism, limit cap, bad cursor ......... 'pagination'
  *  upgrade choice history (course and enrollment) ........ 'upgrade choices'
  *  skips: reason+code, boolean compat, sanitizing, throws  'skips'
@@ -740,6 +741,96 @@ describe('authorized course reads', () => {
     );
     expect(next.items.map((c) => c.sequence)).toEqual([3]);
     expect(next.nextCursor).toBeNull();
+  });
+
+  it('enrollment identity fields: learner, authored course and release course on every view', async () => {
+    const s = await setup();
+    const learnerId = String(s.f.learner.id);
+    const read = () =>
+      s.as(s.guardian, () =>
+        s.authoring.getEnrollmentRelease({
+          ...s.guardian,
+          enrollmentId: s.enrollmentId,
+        }),
+      );
+    const first = await read();
+    expect(first).toMatchObject({
+      learnerId,
+      courseId: s.course.courseId,
+      releaseCourseId: s.rel1.releaseCourseId,
+    });
+    expect(first.pin).toMatchObject({
+      enrollmentId: s.enrollmentId,
+      learnerId,
+      courseId: s.course.courseId,
+      releaseCourseId: s.rel1.releaseCourseId,
+    });
+    expect(first.pin.history[0].releaseCourseId).toBe(s.rel1.releaseCourseId);
+    // setAutoUpgrade results carry the learner for an enrollment choice, null for a course choice.
+    const enrollmentChoice = await s.optIn(s.guardian, true, s.enrollmentId);
+    expect(enrollmentChoice).toMatchObject({
+      courseId: s.course.courseId,
+      enrollmentId: s.enrollmentId,
+      learnerId,
+    });
+    expect((await s.optIn(s.guardian, true)).learnerId).toBeNull();
+    // An automatic move (history) and an explicit upgrade (result view).
+    const q = await s.question(mcq('Q-auto'));
+    const rel2 = await s.publish([['a', [q]]]);
+    const auto = await read();
+    expect(auto.pin.kind).toBe('auto');
+    expect(auto).toMatchObject({
+      learnerId,
+      courseId: s.course.courseId,
+      releaseCourseId: rel2.releaseCourseId,
+    });
+    expect(auto.pin.history.map((h) => [h.kind, h.releaseCourseId])).toEqual([
+      ['initial', s.rel1.releaseCourseId],
+      ['auto', rel2.releaseCourseId],
+    ]);
+    await s.optIn(s.guardian, false, s.enrollmentId);
+    const rel3 = await s.publish([
+      ['a', [q]],
+      ['c', [s.q1]],
+    ]);
+    const explicit = await s.upgrade(rel3.id);
+    expect(explicit).toMatchObject({
+      learnerId,
+      courseId: s.course.courseId,
+      releaseId: rel3.id,
+      releaseCourseId: rel3.releaseCourseId,
+    });
+    expect(explicit.history.at(-1)?.releaseCourseId).toBe(rel3.releaseCourseId);
+    // Tenant isolation is unchanged: the foreign actor reaches nothing.
+    await expect(
+      s.as(s.outsider, () =>
+        s.authoring.getEnrollmentRelease({
+          ...s.outsider,
+          enrollmentId: s.enrollmentId,
+        }),
+      ),
+    ).rejects.toBeInstanceOf(CourseAuthoringAuthorizationError);
+    await expect(
+      s.as(s.outsider, () =>
+        s.authoring.setAutoUpgrade({
+          ...s.outsider,
+          courseId: s.course.courseId,
+          enrollmentId: s.enrollmentId,
+          enabled: true,
+          requestKey: s.key('x'),
+          policyBasis: 'guardians-only',
+        }),
+      ),
+    ).rejects.toBeTruthy();
+    // Skip views already expose learner and course.
+    const skipped = await s.as(s.guardian, () =>
+      s.authoring.listAutoUpgradeSkips({
+        ...s.guardian,
+        enrollmentId: s.enrollmentId,
+      }),
+    );
+    for (const row of skipped.items)
+      expect(row).toMatchObject({ learnerId, courseId: s.course.courseId });
   });
 
   describe('skips', () => {
