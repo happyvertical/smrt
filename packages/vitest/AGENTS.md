@@ -49,6 +49,31 @@ Measured on a 333-file, 3,259-test unit suite, 16 cores (follow-up to #2893):
   measurements. Lazy-loading `@happyvertical/ai` in core is the
   isolation-preserving lever, tracked separately.
 
+## Workspace source resolution (#2954)
+
+- `getWorkspaceViteAliases()` aliases every exact JavaScript subpath each
+  workspace package exports from `dist/` to the source it is built from,
+  derived from that package's own `exports` map (`dist/<p>.js` ←
+  `src/<p>.ts`, `src/<p>.svelte.ts`, `src/<p>/index.ts`, or the same under
+  `src/lib/`). Hand-written entries in `src/index.ts` win, for layouts the
+  rule cannot infer. A new export is covered with no plugin edit;
+  `issue-2954-workspace-source-resolution.test.ts` fails if any dist export
+  has no derivable source.
+- Workspace `setupFiles` specifiers are mapped to source too (Vitest resolves
+  them outside `resolve.alias`).
+- The plugin is `enforce: 'pre'`, so its `resolveId` runs after Vite's alias
+  step but before Vite's own resolver. A workspace specifier the static
+  aliases did not rewrite (pattern exports such as smrt-ui `./utils/*`) is
+  mapped to its source per import; one whose exports-map target is built
+  JavaScript with no source fails the test, whether that dist file is stale
+  or missing. Exempt: packages a consumer resolves to published entries on
+  purpose (`aliasFilter` drops, or a config alias pointing at a `dist/`
+  file). Explicit file-path imports of a dist (runtime loaders under test)
+  are not specifier resolution and are left alone.
+- Typecheck is separate: packages typechecked with their composite
+  `tsconfig.json` read sibling `.d.ts` from `dist/`; run `pnpm typecheck`
+  (Turbo builds dependencies first); source-resolving typecheck is #4556.
+
 ## Vite 8 (rolldown/oxc) normalization (#2017)
 
 The plugin's `config` hook normalizes three vite 8 behaviors so consumers
