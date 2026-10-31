@@ -7,7 +7,11 @@ import {
   type SmrtSaveOptions,
   smrt,
 } from '@happyvertical/smrt-core';
-import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import {
+  getCurrentTenant,
+  TenantScoped,
+  tenantId,
+} from '@happyvertical/smrt-tenancy';
 import type { CampaignMetricSnapshotOptions } from '../types.js';
 import { Campaign } from './Campaign.js';
 import { CampaignChannel } from './CampaignChannel.js';
@@ -17,7 +21,11 @@ const persistedSnapshotState = new WeakMap<CampaignMetricSnapshot, string>();
 @TenantScoped({ mode: 'optional' })
 @smrt({
   tableName: 'campaign_metric_snapshots',
-  conflictColumns: ['dedupe_key'],
+  // The ingest API takes an opaque caller key, so it is unique per tenant
+  // (#3305 M2): two tenants may file the same key; global (NULL-tenant)
+  // evidence stays unique through the null-aware upsert, and in the database
+  // through NULLS NOT DISTINCT on PostgreSQL 15+.
+  conflictColumns: ['tenant_id', 'dedupe_key'],
   api: { include: ['list', 'get', 'create'] },
   mcp: { include: ['list', 'get', 'create'] },
   cli: { include: ['list', 'get', 'create'] },
@@ -146,7 +154,11 @@ export class CampaignMetricSnapshot extends SmrtObject {
       );
     } else if (this.dedupeKey) {
       try {
+        // The key is tenant-local: guard the owner's key, which is this
+        // row's tenant or, before the interceptor fills it in, the context's.
+        // A system context with no tenant guards the global key.
         const row = await this.db.get(this.tableName, {
+          tenant_id: this.tenantId || getCurrentTenant()?.tenantId || null,
           dedupe_key: this.dedupeKey,
         });
         if (row && row.id !== this.id) {
