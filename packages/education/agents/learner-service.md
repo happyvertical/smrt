@@ -61,9 +61,13 @@ Same-tenant membership alone never grants sibling access.
   `relationshipTypeId === guardian` rule denies), the guardian's type as
   `delegatingRelationshipTypeId`, `delegatingGuardianUserId` and `delegationId`, and decides.
   A new delegated enrollment appends one `EnrollmentAssignmentRecord` (`Enrollment` is
-  unchanged). Only `enroll` accepts a delegation (on `LearnerService` itself; subclasses without
+  unchanged). Only `enroll` and `createCurriculum` accept a delegation (on `LearnerService` itself; subclasses without
   the port refuse); every other operation ignores it, so the agent has no
   other learner authority. Catalog reads still use the agent as actor.
+  `createCurriculum` accepts the same delegated actor (`operation: 'create-curriculum'`
+  on the verifier request, `enroll` sends `'enroll'`), with identical verification, guardian
+  relationship recheck, authorizer shape and stripping of caller authority keys; each new
+  delegated curriculum appends one `CurriculumCreationRecord` (own table, `Curriculum` unchanged).
 - `startLesson` allows the learner or authorized guardian to create their own
   enrollment's lesson progress in `in_progress`. It derives learner identity
   from the validated enrollment. Repeated starts return existing state without

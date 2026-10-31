@@ -62,6 +62,7 @@ const classes = [
     'CourseUpgradeChoice',
     'EnrollmentAutoUpgradeSkip',
     'EnrollmentAssignmentRecord',
+    'CurriculumCreationRecord',
     'LearningObjective',
     'LearningObjectiveRevision',
     'Question',

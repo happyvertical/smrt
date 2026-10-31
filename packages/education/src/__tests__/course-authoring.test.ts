@@ -74,6 +74,7 @@ const authoringClasses = [
   'CourseUpgradeChoice',
   'EnrollmentAutoUpgradeSkip',
   'EnrollmentAssignmentRecord',
+  'CurriculumCreationRecord',
 ];
 const authoringTables = [
   'CourseRevision',
@@ -87,6 +88,7 @@ const authoringTables = [
   'CourseUpgradeChoice',
   'EnrollmentAutoUpgradeSkip',
   'EnrollmentAssignmentRecord',
+  'CurriculumCreationRecord',
 ];
 
 beforeAll(() => enableTenancy());

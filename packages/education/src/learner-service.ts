@@ -23,7 +23,10 @@ import {
   LessonProgressCollection,
 } from './collections.js';
 import { CourseAuthoringAuthorizationError } from './course-authoring-contracts.js';
-import { EnrollmentAssignmentRecordCollection } from './course-authoring-models.js';
+import {
+  CurriculumCreationRecordCollection,
+  EnrollmentAssignmentRecordCollection,
+} from './course-authoring-models.js';
 import { type CourseDelegation, readDelegation } from './course-delegation.js';
 import {
   orderEffectiveLessons,
@@ -92,6 +95,8 @@ export type LearnerDelegationVerifier = (
     delegationId: string;
     learnerId: string;
     courseId?: string;
+    /** Which operation is being delegated; absent only from older callers. */
+    operation?: 'create-curriculum' | 'enroll';
   },
 ) => LearnerDelegationDecision | Promise<LearnerDelegationDecision>;
 
@@ -402,7 +407,12 @@ export class LearnerService {
   protected async requireActor(
     request: LearnerRequest,
     action: Parameters<LearnerAuthorizer>[0]['action'],
-    delegation: (CourseDelegation & { courseId?: string }) | null = null,
+    delegation:
+      | (CourseDelegation & {
+          courseId?: string;
+          operation?: 'create-curriculum' | 'enroll';
+        })
+      | null = null,
   ): Promise<Learner> {
     this.assertServiceOpen();
     const context = getCurrentTenant();
@@ -475,6 +485,9 @@ export class LearnerService {
             delegationId: delegation.delegationId,
             learnerId: request.learnerId,
             ...(delegation.courseId ? { courseId: delegation.courseId } : {}),
+            ...(delegation.operation
+              ? { operation: delegation.operation }
+              : {}),
           });
           verified =
             typeof decision === 'object' && decision !== null
@@ -769,23 +782,50 @@ export class LearnerService {
     });
   }
 
+  /**
+   * Creates a planned curriculum. A delegated agent passes
+   * `delegatingGuardianUserId` + `delegationId` (as for `enroll`); the new
+   * curriculum then also appends one `CurriculumCreationRecord`.
+   */
   async createCurriculum(
-    request: LearnerRequest & { title: string },
+    request: LearnerRequest & LearnerDelegationRequest & { title: string },
   ): Promise<CurriculumView> {
+    let delegation: CourseDelegation | null;
+    try {
+      delegation = readDelegation(request);
+    } catch (error) {
+      if (error instanceof CourseAuthoringAuthorizationError)
+        throw new LearnerAuthorizationError();
+      throw error;
+    }
     return this.mutate(async (service) => {
       const learner = await service.requireActor(
         request,
         'education.learner.plan',
+        delegation ? { ...delegation, operation: 'create-curriculum' } : null,
       );
       if (typeof request.title !== 'string' || !request.title.trim())
         throw new Error('Curriculum title is required');
-      return curriculumView(
-        await (await CurriculumCollection.create({ db: service.db })).create({
+      const created = await (
+        await CurriculumCollection.create({ db: service.db })
+      ).create({
+        tenantId: request.tenantId,
+        learnerId: String(learner.id),
+        title: request.title,
+      });
+      if (delegation)
+        await (
+          await CurriculumCreationRecordCollection.create({ db: service.db })
+        ).create({
+          _insertOnly: true,
           tenantId: request.tenantId,
+          curriculumId: String(created.id),
           learnerId: String(learner.id),
-          title: request.title,
-        }),
-      );
+          actorUserId: request.actorUserId,
+          ...delegation,
+          recordedAt: new Date(),
+        });
+      return curriculumView(created);
     });
   }
 
@@ -924,7 +964,9 @@ export class LearnerService {
       const learner = await service.requireActor(
         request,
         'education.learner.plan',
-        delegation ? { ...delegation, courseId: request.courseId } : null,
+        delegation
+          ? { ...delegation, courseId: request.courseId, operation: 'enroll' }
+          : null,
       );
       await service.lock('curricula', request.curriculumId, request.tenantId);
       const curriculum = await (

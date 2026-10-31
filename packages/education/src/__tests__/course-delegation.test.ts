@@ -57,6 +57,7 @@ const classes = [
   'CourseUpgradeChoice',
   'EnrollmentAutoUpgradeSkip',
   'EnrollmentAssignmentRecord',
+  'CurriculumCreationRecord',
   'LearningObjective',
   'LearningObjectiveRevision',
   'Question',
@@ -161,6 +162,15 @@ async function setup() {
   };
   const enroll = (extra: Record<string, unknown> = {}, courseId?: string) =>
     enrollWith(learners, extra, courseId);
+  const createCurriculumWith = (
+    service: LearnerService,
+    extra: Record<string, unknown> = {},
+  ) => {
+    const r = request(extra);
+    return withTenant({ tenantId: r.tenantId, userId: r.actorUserId }, () =>
+      service.createCurriculum({ ...r, title: 'Delegated plan' } as never),
+    );
+  };
   const count = async (table: string) => (await db.list(table, {})).length;
   return {
     db,
@@ -176,6 +186,7 @@ async function setup() {
     legacy,
     unconfigured,
     enrollWith,
+    createCurriculumWith,
     deniedAgents,
     catalogCourse,
     request,
@@ -444,6 +455,157 @@ describe('delegated agent enrollment', () => {
       ),
     ).rejects.toBeInstanceOf(LearnerAuthorizationError);
     expect(s.learnerCalls).toHaveLength(0);
+  });
+});
+
+describe('delegated agent createCurriculum', () => {
+  it('creates for the delegating guardian and records the delegation once', async () => {
+    const s = await setup();
+    const before = await s.count('curricula');
+    s.learnerCalls.length = 0;
+    const view = await s.createCurriculumWith(s.learners);
+    expect(view).toMatchObject({
+      learnerId: s.f.own.learnerId,
+      title: 'Delegated plan',
+    });
+    expect(await s.count('curricula')).toBe(before + 1);
+    const rows = await s.db.list('curriculum_creation_records', {});
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      tenant_id: s.tenantId,
+      curriculum_id: view.id,
+      learner_id: s.f.own.learnerId,
+      actor_user_id: s.agentId,
+      delegating_guardian_user_id: s.guardianId,
+      delegation_id: 'delegation-1',
+    });
+    const call = s.learnerCalls.at(-1) as LearnerCall;
+    expect(call).toMatchObject({
+      action: 'education.learner.plan',
+      actorUserId: s.agentId,
+      own: false,
+      delegated: true,
+      delegatingRelationshipTypeId: String(s.f.guardianType.id),
+      delegatingGuardianUserId: s.guardianId,
+      delegationId: 'delegation-1',
+    });
+    expect(call.relationshipTypeId).toBeUndefined();
+    expect(s.verifyCalls).toHaveLength(1);
+    expect(s.verifyCalls[0]).toMatchObject({
+      tenantId: s.tenantId,
+      actorUserId: s.agentId,
+      delegatingGuardianUserId: s.guardianId,
+      delegationId: 'delegation-1',
+      learnerId: s.f.own.learnerId,
+      operation: 'create-curriculum',
+    });
+    expect(s.verifyCalls[0].courseId).toBeUndefined();
+    // Delegated enrollment now names its own operation.
+    await s.enroll();
+    expect(s.verifyCalls.at(-1)?.operation).toBe('enroll');
+  });
+
+  it('refuses without a port, on denial or throw, before the authorizer or any write', async () => {
+    const s = await setup();
+    const before = await s.count('curricula');
+    s.learnerCalls.length = 0;
+    await expect(s.createCurriculumWith(s.unconfigured)).rejects.toBeInstanceOf(
+      LearnerAuthorizationError,
+    );
+    for (const mode of ['deny', 'object-deny', 'throw'] as const) {
+      s.verifier.mode = mode;
+      await expect(
+        s.createCurriculumWith(s.learners),
+        mode,
+      ).rejects.toBeInstanceOf(LearnerAuthorizationError);
+    }
+    expect(s.learnerCalls).toHaveLength(0);
+    expect(await s.count('curricula')).toBe(before);
+    expect(await s.count('curriculum_creation_records')).toBe(0);
+  });
+
+  it('refuses a denied agent, a missing relationship, and an agent that is its own guardian', async () => {
+    const s = await setup();
+    const before = await s.count('curricula');
+    s.deniedAgents.add(s.agentId);
+    await expect(s.createCurriculumWith(s.learners)).rejects.toBeInstanceOf(
+      LearnerAuthorizationError,
+    );
+    s.deniedAgents.clear();
+    for (const extra of [
+      { guardianRelationshipId: undefined },
+      { guardianRelationshipId: randomUUID() },
+      { delegatingGuardianUserId: s.agentId },
+      { delegatingGuardianUserId: String(s.f.stranger.user.id) },
+      { actorUserId: String(s.f.alice.user.id) },
+    ])
+      await expect(
+        s.createCurriculumWith(s.learners, extra),
+        JSON.stringify(extra),
+      ).rejects.toBeInstanceOf(LearnerAuthorizationError);
+    await s.db.query('DELETE FROM profile_relationships WHERE id = ?', [
+      String(s.f.relationship.id),
+    ]);
+    await expect(s.createCurriculumWith(s.learners)).rejects.toBeInstanceOf(
+      LearnerAuthorizationError,
+    );
+    expect(await s.count('curricula')).toBe(before);
+    expect(await s.count('curriculum_creation_records')).toBe(0);
+  });
+
+  it('validates the delegation as a unit', async () => {
+    const s = await setup();
+    for (const extra of [
+      { delegatingGuardianUserId: undefined },
+      { delegationId: undefined },
+      { delegationId: 'bad\nid' },
+    ])
+      await expect(
+        s.createCurriculumWith(s.learners, extra),
+      ).rejects.toBeInstanceOf(CourseAuthoringValidationError);
+    expect(await s.count('curriculum_creation_records')).toBe(0);
+  });
+
+  it('never lets forged authority keys reach a legacy authorizer', async () => {
+    const s = await setup();
+    const before = await s.count('curricula');
+    await expect(
+      s.createCurriculumWith(s.legacy, {
+        relationshipTypeId: String(s.f.guardianType.id),
+        delegated: false,
+        own: true,
+        delegatingRelationshipTypeId: 'forged',
+      }),
+    ).rejects.toBeInstanceOf(LearnerAuthorizationError);
+    expect(await s.count('curricula')).toBe(before);
+    s.learnerCalls.length = 0;
+    await s.createCurriculumWith(s.learners, {
+      relationshipTypeId: String(s.f.guardianType.id),
+      delegated: false,
+      own: true,
+      delegatingRelationshipTypeId: 'forged',
+    });
+    const call = s.learnerCalls.at(-1) as LearnerCall;
+    expect(call.relationshipTypeId).toBeUndefined();
+    expect(call.delegated).toBe(true);
+    expect(call.own).toBe(false);
+    expect(call.delegatingRelationshipTypeId).toBe(String(s.f.guardianType.id));
+  });
+
+  it('keeps the plain guardian path unchanged', async () => {
+    const s = await setup();
+    s.learnerCalls.length = 0;
+    const r = s.f.parent;
+    const view = await s.f.as(r, () =>
+      s.learners.createCurriculum({ ...r, title: 'Plain plan' }),
+    );
+    expect(view.learnerId).toBe(s.f.own.learnerId);
+    expect(await s.count('curriculum_creation_records')).toBe(0);
+    const call = s.learnerCalls.at(-1) as LearnerCall;
+    expect(call.delegated).toBeUndefined();
+    expect(call.delegationId).toBeUndefined();
+    expect(call.relationshipTypeId).toBe(String(s.f.guardianType.id));
+    expect(s.verifyCalls).toHaveLength(0);
   });
 });
 

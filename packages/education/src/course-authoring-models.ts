@@ -697,3 +697,55 @@ export class EnrollmentAssignmentRecord extends SmrtObject {
 export class EnrollmentAssignmentRecordCollection extends SmrtCollection<EnrollmentAssignmentRecord> {
   static readonly _itemClass = EnrollmentAssignmentRecord;
 }
+
+/**
+ * Append-only audit of a delegated-agent curriculum creation: the agent, the
+ * guardian it acted for and the host's delegation id. Written only for delegated
+ * `createCurriculum` calls, in the curriculum's own transaction; `Curriculum`
+ * itself is not altered.
+ */
+@TenantScoped({ mode: 'required' })
+@smrt({
+  tableName: 'curriculum_creation_records',
+  conflictColumns: ['tenant_id', 'curriculum_id'],
+  ...closed,
+})
+export class CurriculumCreationRecord extends SmrtObject {
+  @tenantId() tenantId = '';
+  @foreignKey('Curriculum', { required: true }) curriculumId = '';
+  @foreignKey('Learner', { required: true }) learnerId = '';
+  actorUserId = '';
+  delegatingGuardianUserId = '';
+  delegationId = '';
+  recordedAt = new Date();
+  constructor(options: Record<string, unknown> = {}) {
+    super(options);
+    adopt(this, options);
+  }
+  override async delete(): Promise<void> {
+    noDelete();
+  }
+  override async save(options?: SmrtSaveOptions): Promise<this> {
+    await requireInsert(this);
+    await requireOwned(this, 'curricula', this.curriculumId, {
+      learner_id: this.learnerId,
+    });
+    requireText(this.actorUserId, 'Creation record requires the agent');
+    requireText(
+      this.delegatingGuardianUserId,
+      'Creation record requires the delegating guardian',
+      200,
+    );
+    requireText(
+      this.delegationId,
+      'Creation record requires a delegation id',
+      200,
+    );
+    validDate(this.recordedAt);
+    this.requireInsertOnSave();
+    return super.save(options);
+  }
+}
+export class CurriculumCreationRecordCollection extends SmrtCollection<CurriculumCreationRecord> {
+  static readonly _itemClass = CurriculumCreationRecord;
+}

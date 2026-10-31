@@ -16,7 +16,7 @@ unchanged lesson reuses its row), `CourseRelease`, `ReleasedLesson`,
 `CourseUpgradeChoice`. `CourseDraftHead` is the only mutable row and moves only
 through the service's expected-head compare-and-swap. `save()` on an existing
 append-only row and `delete()` throw; erasure belongs to a retention operation.
-Schema ships via normal manifest migrations (additive: nine new tables, no
+Schema ships via normal manifest migrations (additive: new tables only, no
 change to existing tables, test-pinned); the runtime never creates tables.
 
 ## Actions and host mapping
