@@ -19,6 +19,19 @@ package build. Bundling it under `dist/node_modules` leaves dangling imports
 when npm excludes that directory from tarballs. The packed MCP consumer tests
 the installed relative-import closure and real SHA-256 execution with normal and CI prepack paths (#4008).
 
+CommonJS runtime dependencies are bundled, not external (#4054). Consumers
+that exclude smrt-core from Vite dependency pre-bundling (#3843) receive
+`dist/*.js` as native browser ESM, where a bare import of a CommonJS package
+fails (`does not provide an export named 'default'`). `pluralize` is
+therefore not in `vite.config.ts` `external`; its converted module is emitted
+under `dist/vendor/` (the `entryFileNames` rule maps any bundled
+`node_modules/` module there, since npm never packs `dist/node_modules`), and
+it is a devDependency. `pnpm test:browser` also runs
+`scripts/browser-unbundled-dev.mjs`, which serves `dist/utils/naming.js`
+unbundled from a real Vite dev server (no dependency discovery) and evaluates
+it in Chromium. A new CommonJS runtime dependency on a browser-reachable path
+follows the same rule.
+
 ## How a Node-only dependency stays out
 
 Never import it statically from a module the browser graph reaches. Pick one:
@@ -47,3 +60,6 @@ not emit it), and a `browser` mapping; `browser-field.test.ts` checks all three.
 - The embedded write queue runs unqueued without async-local state; its only
   browser database, PGlite, serializes statements itself.
 - `smrt-config`'s browser loader resolves to `{}`; use `setConfig()`.
+- The whole browser entry does not yet evaluate unbundled: several modules
+  read `process.env` at module scope, and `@happyvertical/utils` imports
+  CommonJS `pluralize` itself (#4534).
