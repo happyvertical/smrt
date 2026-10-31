@@ -426,6 +426,74 @@ export function getWorkspaceExportSources(
   return entries;
 }
 
+/**
+ * The concrete runtime target (`./dist/...`) a workspace package's exports
+ * map gives `subpath`, exact or pattern, or `null` when it exports none.
+ */
+export function workspaceExportTarget(
+  packageRoot: string,
+  subpath: string,
+): string | null {
+  let exportsMap: unknown;
+  try {
+    exportsMap = JSON.parse(
+      readFileSync(join(packageRoot, 'package.json'), 'utf-8'),
+    ).exports;
+  } catch {
+    return null;
+  }
+  if (!exportsMap || typeof exportsMap !== 'object') return null;
+  const entries = exportsMap as Record<string, unknown>;
+  if (subpath in entries) return exportRuntimeTarget(entries[subpath]);
+  for (const [pattern, value] of Object.entries(entries)) {
+    const star = pattern.indexOf('*');
+    if (star < 0) continue;
+    const prefix = pattern.slice(0, star);
+    const suffix = pattern.slice(star + 1);
+    if (
+      !subpath.startsWith(prefix) ||
+      !subpath.endsWith(suffix) ||
+      subpath.length < prefix.length + suffix.length
+    ) {
+      continue;
+    }
+    const target = exportRuntimeTarget(value);
+    if (!target?.includes('*')) continue;
+    return target
+      .split('*')
+      .join(subpath.slice(prefix.length, subpath.length - suffix.length));
+  }
+  return null;
+}
+
+/**
+ * Source file for the concrete `subpath` a consumer imports from a workspace
+ * package — exact or pattern export (`"./utils/*": "./dist/utils/*"`) — for
+ * the per-import resolution in {@link smrtVitestPlugin} (#2954). Exact
+ * subpaths are normally aliased statically; pattern subpaths can only be
+ * mapped per import. A JavaScript target maps like an exact export; another
+ * asset (CSS, JSON) maps to the same relative path under `src/` or
+ * `src/lib/`. Returns `null` when nothing is exported there or no source
+ * file exists.
+ */
+export function resolveWorkspaceExportSource(
+  packageRoot: string,
+  subpath: string,
+): string | null {
+  const concrete = workspaceExportTarget(packageRoot, subpath);
+  if (!concrete) return null;
+  const jsSource = sourceForExportTarget(packageRoot, concrete);
+  if (jsSource) return jsSource;
+  const asset = /^\.\/dist\/(.+)$/.exec(concrete);
+  if (asset && !/\.m?js$/.test(concrete)) {
+    for (const base of ['src', 'src/lib']) {
+      const path = join(packageRoot, base, asset[1]);
+      if (existsSync(path)) return path;
+    }
+  }
+  return null;
+}
+
 function addAliasIfPresent(
   aliases: ViteAliasEntry[],
   find: string,
@@ -1579,11 +1647,23 @@ export function smrtVitestPlugin(
         )
     : [];
   let distGuard: ((id: string) => string | null) | undefined;
-  const workspacePackageNames = [...readWorkspacePackageRoots(root).keys()];
-  const isWorkspacePackageSpecifier = (source: string) =>
-    workspacePackageNames.some(
-      (name) => source === name || source.startsWith(`${name}/`),
-    );
+  let distExempt: ReadonlySet<string> = new Set();
+  const workspacePackages = [...readWorkspacePackageRoots(root).entries()];
+  const matchWorkspacePackageSpecifier = (
+    source: string,
+  ): { name: string; root: string; subpath: string } | null => {
+    for (const [name, packageRoot] of workspacePackages) {
+      if (source === name) return { name, root: packageRoot, subpath: '.' };
+      if (source.startsWith(`${name}/`)) {
+        return {
+          name,
+          root: packageRoot,
+          subpath: `.${source.slice(name.length)}`,
+        };
+      }
+    }
+    return null;
+  };
 
   const ensureSetupFiles = (value: string | string[] | undefined): string[] => {
     // Vitest resolves `setupFiles` specifiers itself, outside `resolve.alias`,
@@ -1653,26 +1733,47 @@ export function smrtVitestPlugin(
 
   return {
     name: 'smrt-vitest',
+    enforce: 'pre',
 
-    // Fail a consumer test whose workspace package specifier resolves to a
-    // sibling's built dist instead of its source (#2954). Aliased specifiers
-    // never reach this hook (Vite's alias step rewrites them first), so only
-    // a specifier that escaped the aliases is checked. Code that deliberately
-    // imports a dist file by path (e.g. a runtime loader under test) is not a
-    // specifier resolution and is left alone.
+    // A workspace specifier the static aliases did not rewrite — a pattern
+    // export subpath, or one with no derivable source — is resolved here
+    // (#2954). Pattern subpaths map to their source; anything still resolving
+    // to a sibling's built JavaScript fails the test, so a stale or missing
+    // dist cannot make a consumer suite pass. `enforce: 'pre'` places this
+    // after Vite's alias step (aliased specifiers never reach it) but before
+    // Vite's own resolver, which would otherwise resolve the exports map to
+    // dist first. Code that deliberately imports a dist file by path (e.g. a
+    // runtime loader under test) is not a specifier resolution and is left
+    // alone.
     async resolveId(source, importer, options) {
-      if (!distGuard || !isWorkspacePackageSpecifier(source)) {
+      const workspace = distGuard
+        ? matchWorkspacePackageSpecifier(source)
+        : null;
+      // Packages the consumer resolves to published entries on purpose keep
+      // their exports-map resolution.
+      if (!distGuard || !workspace || distExempt.has(workspace.name)) {
         return null;
       }
-      const resolved = await this.resolve(source, importer, {
-        ...options,
-        skipSelf: true,
-      });
-      const failure = resolved ? distGuard(resolved.id) : null;
-      if (failure) {
-        throw new Error(`${failure} (specifier: ${source})`);
+      if (workspace.subpath !== '.') {
+        const patternSource = resolveWorkspaceExportSource(
+          workspace.root,
+          workspace.subpath,
+        );
+        if (patternSource) return patternSource;
       }
-      return resolved;
+      // The exports map decides where Node and Vite would take the
+      // specifier; a built JavaScript target fails whether or not that file
+      // currently exists (stale or missing dist alike).
+      const target = workspaceExportTarget(workspace.root, workspace.subpath);
+      if (target && /\.m?js$/.test(target)) {
+        const failure = distGuard(
+          join(normalizeRootKey(workspace.root), target),
+        );
+        if (failure) {
+          throw new Error(`${failure} (specifier: ${source})`);
+        }
+      }
+      return null;
     },
 
     config(userConfig) {
@@ -1726,10 +1827,12 @@ export function smrtVitestPlugin(
           ? (userConfig.resolve as { alias?: unknown })
           : undefined;
       const alias = normalizeAliasEntries(resolveConfig?.alias);
-      distGuard = createWorkspaceDistGuard(
+      distExempt = packagesWithDeliberateDistEntries(
         root,
-        packagesWithDeliberateDistEntries(root, droppedSpecifiers, alias),
+        droppedSpecifiers,
+        alias,
       );
+      distGuard = createWorkspaceDistGuard(root, distExempt);
 
       return {
         // Vite 8 (rolldown/oxc) defaults — legacy @smrt() decorators and

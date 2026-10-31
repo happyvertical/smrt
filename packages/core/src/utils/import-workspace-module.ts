@@ -25,6 +25,23 @@ function findWorkspaceRoot(startDir: string): string | null {
   }
 }
 
+/** Whether `error` means the specifier could not be resolved at all. */
+function isResolutionFailure(error: unknown): boolean {
+  const { code, message } = (error ?? {}) as {
+    code?: unknown;
+    message?: unknown;
+  };
+  return (
+    code === 'ERR_MODULE_NOT_FOUND' ||
+    code === 'ERR_PACKAGE_PATH_NOT_EXPORTED' ||
+    code === 'ERR_UNSUPPORTED_DIR_IMPORT' ||
+    (typeof message === 'string' &&
+      /Failed to (?:resolve|load url)|Cannot find (?:module|package)/.test(
+        message,
+      ))
+  );
+}
+
 function resolveInstalledPackage(packageName: string): string {
   return import.meta.resolve(packageName);
 }
@@ -48,8 +65,13 @@ export async function importWorkspaceModule<T = unknown>({
     // repeats the failure that brought us here.
     try {
       return (await import(/* @vite-ignore */ packageName)) as T;
-    } catch {
-      // Fall through to the workspace fallbacks.
+    } catch (importError) {
+      // Only an unresolvable specifier falls through to the workspace
+      // fallbacks; a source module that resolved but failed to evaluate must
+      // surface, not be masked by a sibling's built dist.
+      if (!isResolutionFailure(importError)) {
+        throw importError;
+      }
     }
     const workspaceRoot = findWorkspaceRoot(process.cwd());
     if (!workspaceRoot) {

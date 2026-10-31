@@ -109,37 +109,58 @@ describe('issue #2954: workspace subpaths resolve to source', () => {
     ).toBeNull();
   });
 
-  it('fails a workspace specifier that escapes the aliases into a sibling dist', async () => {
-    const vitestRoot = join(packagesDir, 'vitest');
-    const coreDist = join(
-      realpathSync(join(packagesDir, 'core')),
-      'dist/index.js',
-    );
+  it('maps unaliased workspace subpaths to source and fails one that can only resolve to dist', async () => {
     const plugin = smrtVitestPlugin({
-      root: vitestRoot,
+      root: join(packagesDir, 'vitest'),
       generateManifest: false,
     });
     (plugin.config as (config: unknown) => unknown)({});
     const resolveId = plugin.resolveId as unknown as (
-      this: { resolve: () => Promise<{ id: string }> },
       source: string,
       importer: string | undefined,
       options: Record<string, unknown>,
     ) => Promise<unknown>;
-    const context = { resolve: async () => ({ id: coreDist }) };
+    // A pattern export subpath with a source file resolves to it.
+    expect(
+      await resolveId(
+        '@happyvertical/smrt-ui/utils/import-optional.js',
+        undefined,
+        {},
+      ),
+    ).toMatch(/packages\/smrt-ui\/src\/utils\/import-optional\.ts$/);
+    // One whose exports-map target is built JavaScript with no source fails,
+    // whether or not that dist file exists (stale or missing).
     await expect(
-      resolveId.call(
-        context,
-        '@happyvertical/smrt-core/escaped',
+      resolveId(
+        '@happyvertical/smrt-ui/utils/no-such-source.js',
         undefined,
         {},
       ),
     ).rejects.toThrow(
-      /built output of workspace package @happyvertical\/smrt-core/,
+      /built output of workspace package @happyvertical\/smrt-ui/,
     );
-    // A non-workspace specifier is never checked.
+    // Non-workspace specifiers are never touched.
+    expect(await resolveId('some-third-party', undefined, {})).toBeNull();
+  });
+
+  it('leaves packages a consumer resolves to published entries on purpose alone', async () => {
+    const plugin = smrtVitestPlugin({
+      root: join(packagesDir, 'vitest'),
+      generateManifest: false,
+      aliasFilter: ({ find }) => !find.startsWith('@happyvertical/smrt-ui'),
+    });
+    (plugin.config as (config: unknown) => unknown)({});
+    const resolveId = plugin.resolveId as unknown as (
+      source: string,
+      importer: string | undefined,
+      options: Record<string, unknown>,
+    ) => Promise<unknown>;
     expect(
-      await resolveId.call(context, 'some-third-party', undefined, {}),
+      await resolveId(
+        '@happyvertical/smrt-ui/utils/no-such-source.js',
+        undefined,
+        {},
+      ),
     ).toBeNull();
   });
 

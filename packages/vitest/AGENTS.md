@@ -61,11 +61,15 @@ Measured on a 333-file, 3,259-test unit suite, 16 cores (follow-up to #2893):
   has no derivable source.
 - Workspace `setupFiles` specifiers are mapped to source too (Vitest resolves
   them outside `resolve.alias`).
-- A workspace specifier that still resolves into a sibling's `dist/` fails
-  the test (`resolveId` guard). Exempt: the package under test, and packages
-  a consumer resolves to published entries on purpose (`aliasFilter` drops,
-  or a config alias pointing at a `dist/` file). Explicit file-path imports
-  of a dist (runtime loaders under test) are not specifier resolution.
+- The plugin is `enforce: 'pre'`, so its `resolveId` runs after Vite's alias
+  step but before Vite's own resolver. A workspace specifier the static
+  aliases did not rewrite (pattern exports such as smrt-ui `./utils/*`) is
+  mapped to its source per import; one whose exports-map target is built
+  JavaScript with no source fails the test, whether that dist file is stale
+  or missing. Exempt: packages a consumer resolves to published entries on
+  purpose (`aliasFilter` drops, or a config alias pointing at a `dist/`
+  file). Explicit file-path imports of a dist (runtime loaders under test)
+  are not specifier resolution and are left alone.
 - Typecheck is separate: packages typechecked with their composite
   `tsconfig.json` read sibling `.d.ts` from `dist/`; run `pnpm typecheck`
   (Turbo builds dependencies first); source-resolving typecheck is #4556.

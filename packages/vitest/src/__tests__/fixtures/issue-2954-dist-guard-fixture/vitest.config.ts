@@ -1,7 +1,8 @@
 /**
  * Consumer-shaped fixture for #2954: `smrtVitestPlugin()` + `pool: 'forks'`.
- * The spec loads a workspace sibling's built dist directly and expects the
- * plugin's guard to refuse it. Imports the plugin from workspace source.
+ * The spec proves sibling specifiers resolve to source and that one which can
+ * only resolve to a sibling's built dist fails. Imports the plugin from
+ * workspace source.
  */
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';

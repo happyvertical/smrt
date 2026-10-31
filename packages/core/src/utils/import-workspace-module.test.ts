@@ -47,6 +47,44 @@ describe('importWorkspaceModule', () => {
     }
   });
 
+  it('surfaces a resolved module that fails to evaluate instead of loading a dist fallback (#2954)', async () => {
+    const fixturePackageDir = new URL(
+      './node_modules/@fixture/throwing-import-package/',
+      import.meta.url,
+    );
+    await rm(fixturePackageDir, { recursive: true, force: true });
+    await mkdir(fixturePackageDir, { recursive: true });
+    await writeFile(
+      new URL('package.json', fixturePackageDir),
+      `${JSON.stringify({
+        name: '@fixture/throwing-import-package',
+        type: 'module',
+        exports: { '.': { import: './index.mjs' } },
+      })}\n`,
+    );
+    await writeFile(
+      new URL('index.mjs', fixturePackageDir),
+      "throw new Error('source failed to evaluate');\n",
+    );
+    try {
+      await expect(
+        importWorkspaceModule({
+          packageName: '@fixture/throwing-import-package',
+          sourceEntry: 'packages/missing/src/index.ts',
+          // An existing file the old fallback would have loaded silently.
+          distEntry: 'package.json',
+          purpose: 'test evaluation failures',
+        }),
+      ).rejects.toThrow('source failed to evaluate');
+    } finally {
+      await rm(new URL('./node_modules/@fixture/', import.meta.url), {
+        recursive: true,
+        force: true,
+      });
+      await removeIfEmpty(new URL('./node_modules/', import.meta.url));
+    }
+  });
+
   it('propagates ESM resolver failures when no installed package or workspace fallback is available', async () => {
     const isolatedDir = await mkdtemp(
       join(tmpdir(), 'smrt-import-workspace-module-'),

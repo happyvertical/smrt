@@ -1,7 +1,9 @@
 /**
  * #2954 probe: inside a forked consumer worker, a sibling workspace package
- * specifier — root and subpath — resolves to the very source module, never to
- * the sibling's built dist.
+ * specifier — root, derived subpath, pattern subpath — resolves to the very
+ * source module, and one that can only resolve to a sibling's built dist fails.
+ * `utils/__issue_2954_stale_probe.js` matches smrt-ui's `./utils/*` export,
+ * whose target is built JavaScript with no source file — stale dist.
  */
 import { describe, expect, it } from 'vitest';
 
@@ -19,5 +21,22 @@ describe('issue #2954 workspace source resolution probe', () => {
     const viaSpecifier = await import(/* @vite-ignore */ specifier);
     const viaSource = await import('../../../../../../smrt-web/src/ai.js');
     expect(viaSpecifier).toBe(viaSource);
+  });
+
+  it('resolves a pattern-export subpath to its source module', async () => {
+    const specifier = '@happyvertical/smrt-ui/utils/import-optional.js';
+    const viaSpecifier = await import(/* @vite-ignore */ specifier);
+    const viaSource = await import(
+      '../../../../../../smrt-ui/src/utils/import-optional.js'
+    );
+    expect(viaSpecifier).toBe(viaSource);
+  });
+
+  it('fails a specifier that can only resolve to a sibling dist', async () => {
+    const specifier =
+      '@happyvertical/smrt-ui/utils/__issue_2954_stale_probe.js';
+    await expect(import(/* @vite-ignore */ specifier)).rejects.toThrow(
+      /built output of workspace package @happyvertical\/smrt-ui/,
+    );
   });
 });
