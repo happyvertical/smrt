@@ -25,7 +25,10 @@ workspace, and `Planner Release Gate` in `publish.yml` runs after the tarballs
 are packed and before anything is published: the planner's browser suites, its
 packed tarball installed against the release tarballs, and a real
 `smrt cookbook apply` from the smrt-start template whose generated app must
-install, build and typecheck against them (`scripts/planner-release-gate.mjs`; one retry per check, and the
+install, build and typecheck against them, plus the release consumer canary
+(`scripts/release-consumer-canary.mjs`, #2975), an in-repo app installed from
+the tarballs that must build, register, resolve schemas, test and migrate
+(`scripts/planner-release-gate.mjs`; one retry per check, and the
 summary says whether the planner, the framework, or upstream drift in the
 smrt-start template or a third-party release broke it). The merge-group Publish
 Dry Run runs the same gate, so it fails before merge rather than at release.
