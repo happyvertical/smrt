@@ -83,6 +83,23 @@ import type { DatabaseInterface, SqlTableSchemaInfo } from './types.js';
 
 const logger = createLogger({ level: 'info' });
 
+/**
+ * DuckDB introspection reports an index column that needs quoting as its
+ * quoted form (`"key"`), so it never matched the manifest's `key` (#3305 M1).
+ */
+function unquoteIndexColumns(
+  schema: SqlTableSchemaInfo | null | undefined,
+): SqlTableSchemaInfo | null | undefined {
+  for (const index of schema?.indexes ?? []) {
+    index.columns = index.columns.map((column) =>
+      /^"(?:[^"]|"")+"$/.test(column)
+        ? column.slice(1, -1).replace(/""/g, '"')
+        : column,
+    );
+  }
+  return schema;
+}
+
 /** A framework-owned live foreign key whose actions differ from the manifest (#3023). */
 interface ForeignKeyActionReplacement {
   constraintName: string;
@@ -993,7 +1010,9 @@ export class SchemaComparer {
     if (this.liveSchemas.has(tableName)) {
       return this.liveSchemas.get(tableName) ?? undefined;
     }
-    const schema = await this.db.getTableSchema?.(tableName);
+    const schema = unquoteIndexColumns(
+      await this.db.getTableSchema?.(tableName),
+    );
     this.liveSchemas.set(tableName, schema);
     return schema ?? undefined;
   }
@@ -1030,7 +1049,8 @@ export class SchemaComparer {
     const schemas = await mapWithConcurrency(
       pending,
       concurrency,
-      (tableName) => Promise.resolve(this.db.getTableSchema?.(tableName)),
+      async (tableName) =>
+        unquoteIndexColumns(await this.db.getTableSchema?.(tableName)),
     );
     pending.forEach((tableName, index) => {
       this.liveSchemas.set(tableName, schemas[index]);
@@ -4233,10 +4253,12 @@ export class SchemaComparer {
       // `['tenant_id', 'key']`). The stale narrower index keeps rejecting
       // rows the model now allows, so it is dropped without the opt-in: a
       // pure relaxation that every existing row already satisfies. Requires
-      // predicate introspection so a partial index is never mistaken for it.
+      // predicate introspection so a partial index is never mistaken for it;
+      // an engine without partial indexes (DuckDB) cannot hold one, so its
+      // indexes are all full (#3305 M1).
       const supersededConflictIndex =
         idx.unique === true &&
-        predicateAware &&
+        (predicateAware || !this.supportsPartialIndexes()) &&
         dbPredicateFor(idx.name) === '' &&
         idx.columns.length > 0 &&
         idx.name ===

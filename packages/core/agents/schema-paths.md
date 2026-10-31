@@ -81,6 +81,8 @@ divergence is a bug in the generator, not an exception to add to the test.
   whose columns are a strict subset of a declared UNIQUE index. It is a pure
   relaxation (every row satisfies the wider key) and otherwise would keep
   rejecting rows the model allows. The maintenance-window rule below applies.
+  DuckDB has no partial indexes, so its indexes count as predicate-free, and
+  its quoted index columns (`"key"`) are unquoted before comparison (#3305 M1).
 - **Optional NULL tenants** retain the SDK's NULL-equal upsert identity. Generated
   framework conflict indexes with nullable keys carry `nullsNotDistinct: true`;
   PostgreSQL 15+ creates `UNIQUE NULLS NOT DISTINCT`, enabling warm single-statement
