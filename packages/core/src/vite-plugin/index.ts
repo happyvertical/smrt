@@ -33,7 +33,11 @@ import {
   resolveFileKnowledgeConfig,
 } from '../knowledge-config.js';
 import { discoverSmrtPackages } from '../manifest/discover-smrt-packages.js';
-import { selectObjectDeclarations } from '../manifest/object-declarations.js';
+import {
+  createObjectDeclarationIndex,
+  selectObjectDeclarations,
+  warnObjectDeclarationCollisions,
+} from '../manifest/object-declarations.js';
 import {
   DETERMINISTIC_GENERATED_AT,
   type SmartObjectManifest,
@@ -2118,8 +2122,10 @@ export async function generateTypeDeclarationFile(
     }
 
     // Generate one interface definition per discovered SMRT class. Same
-    // selection as generateClientModeTypes (#2749, #3296).
-    const objectInterfaces = selectObjectDeclarations(manifest)
+    // selection (and names, #3115) as generateClientModeTypes (#2749, #3296).
+    const declarations = createObjectDeclarationIndex(manifest);
+    warnObjectDeclarationCollisions(declarations, console.warn);
+    const objectInterfaces = declarations.declarations
       .map(({ interfaceName, obj }) => {
         const fields = Object.entries(obj.fields)
           .map(([fieldName, field]) => {
@@ -2157,7 +2163,9 @@ ${fields}
           customMethods: exposedMethods,
         }) => {
           const { methods = {} } = obj;
-          const interfaceName = dataInterfaceName;
+          // The row interfaces are declared in the virt-types module; this
+          // ambient module must import them, a bare name does not resolve.
+          const interfaceName = `import('@happyvertical/smrt-virt-types').${dataInterfaceName}`;
           const exposedActionNames = new Set(
             exposedMethods.map((method) => method.name),
           );
@@ -2214,7 +2222,7 @@ ${fields}
     const webCollectionInterface = selectWebCollectionEntries(manifest)
       .map(
         ({ collection, obj }) =>
-          `    ${JSON.stringify(collection)}: SmrtWebCollectionDefinition<import('@happyvertical/smrt-virt-types').${obj.className}Data>;`,
+          `    ${JSON.stringify(collection)}: SmrtWebCollectionDefinition<import('@happyvertical/smrt-virt-types').${declarations.interfaceNameFor(obj)}>;`,
       )
       .join('\n');
 

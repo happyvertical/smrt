@@ -28,7 +28,10 @@ import type {
 
 /** One generated object-type declaration and the listings it describes. */
 export interface ObjectDeclaration {
-  /** Interface name emitted for the class's row payload, e.g. `ProductData`. */
+  /**
+   * Interface name emitted for the class's row payload: `ProductData`, or a
+   * package-qualified name when distinct classes share the simple name.
+   */
   interfaceName: string;
   /**
    * The listing the declaration is rendered from: the first listing in
@@ -126,27 +129,157 @@ function orderedEntries(
   );
 }
 
+function declarationPackage(
+  manifestKey: string,
+  obj: SmartObjectDefinition,
+): string | undefined {
+  if (obj.packageName) return obj.packageName;
+  const qualifiedName = obj.qualifiedName || manifestKey;
+  const separator = qualifiedName.lastIndexOf(':');
+  return separator > 0 ? qualifiedName.slice(0, separator) : undefined;
+}
+
+/** `@ergot/market-core` -> `ErgotMarketCore`, a valid identifier prefix. */
+function packageIdentifierPrefix(packageName: string | undefined): string {
+  if (!packageName) return '';
+  const prefix = packageName
+    .split(/[^A-Za-z0-9]+/)
+    .filter(Boolean)
+    .map((part) => part[0].toUpperCase() + part.slice(1))
+    .join('');
+  return /^[0-9]/.test(prefix) ? `_${prefix}` : prefix;
+}
+
+/**
+ * Distinct classes that share one simple class name (#3115), with the
+ * qualified interface name each was given.
+ */
+export interface ObjectDeclarationCollision {
+  className: string;
+  declarations: Array<{ interfaceName: string; objectRef: string }>;
+}
+
+/** The declaration selection plus a lookup from any listing to its name. */
+export interface ObjectDeclarationIndex {
+  declarations: ObjectDeclaration[];
+  collisions: ObjectDeclarationCollision[];
+  /**
+   * The declared row interface for a listing in this manifest (by object
+   * reference). A collection class resolves through the caller to its item
+   * listing first; an object outside the manifest falls back to its simple
+   * `${className}Data`.
+   */
+  interfaceNameFor(obj: SmartObjectDefinition): string;
+}
+
 /**
  * Select one declaration per class described by the manifest, in deterministic
- * qualified-identity order of each class's first listing.
+ * qualified-identity order of each class's first listing, and name each one.
+ *
+ * Naming follows the qualified identity when simple names collide (#3115): a
+ * class whose simple name is unique keeps `${className}Data`; distinct classes
+ * sharing a simple name each get a package-qualified name
+ * (`@ergot/market-core:LicenseSale` -> `ErgotMarketCoreLicenseSaleData`) and
+ * none of them keeps the bare name, which would otherwise silently merge two
+ * classes' fields through TypeScript declaration merging. Unique simple names
+ * are reserved first, and a qualified name that is still taken gets a stable
+ * numeric suffix, so every emitted name is unique and independent of manifest
+ * insertion order.
  */
-export function selectObjectDeclarations(
+export function createObjectDeclarationIndex(
   manifest: SmartObjectManifest,
-): ObjectDeclaration[] {
+): ObjectDeclarationIndex {
   const byIdentity = new Map<string, ObjectDeclaration>();
+  const byObject = new Map<SmartObjectDefinition, ObjectDeclaration>();
   for (const [manifestKey, obj] of orderedEntries(manifest)) {
     const identity = objectDeclarationIdentity(manifestKey, obj);
     const existing = byIdentity.get(identity);
     if (existing) {
       existing.manifestKeys.push(manifestKey);
+      byObject.set(obj, existing);
       continue;
     }
-    byIdentity.set(identity, {
+    const declaration: ObjectDeclaration = {
       interfaceName: `${obj.className}Data`,
       obj,
       manifestKey,
       manifestKeys: [manifestKey],
+    };
+    byIdentity.set(identity, declaration);
+    byObject.set(obj, declaration);
+  }
+  const declarations = [...byIdentity.values()];
+
+  const byClassName = new Map<string, ObjectDeclaration[]>();
+  for (const declaration of declarations) {
+    const group = byClassName.get(declaration.obj.className) ?? [];
+    group.push(declaration);
+    byClassName.set(declaration.obj.className, group);
+  }
+
+  const used = new Set<string>();
+  for (const [className, group] of byClassName) {
+    if (group.length === 1) used.add(`${className}Data`);
+  }
+  const collisions: ObjectDeclarationCollision[] = [];
+  for (const [className, group] of byClassName) {
+    if (group.length === 1) continue;
+    for (const declaration of group) {
+      const stem = `${packageIdentifierPrefix(
+        declarationPackage(declaration.manifestKey, declaration.obj),
+      )}${className}`;
+      let interfaceName = `${stem}Data`;
+      for (let suffix = 2; used.has(interfaceName); suffix += 1) {
+        interfaceName = `${stem}${suffix}Data`;
+      }
+      used.add(interfaceName);
+      declaration.interfaceName = interfaceName;
+    }
+    collisions.push({
+      className,
+      declarations: group.map((declaration) => ({
+        interfaceName: declaration.interfaceName,
+        objectRef: declaration.obj.qualifiedName || declaration.manifestKey,
+      })),
     });
   }
-  return [...byIdentity.values()];
+
+  return {
+    declarations,
+    collisions,
+    interfaceNameFor: (obj) =>
+      byObject.get(obj)?.interfaceName ?? `${obj.className}Data`,
+  };
+}
+
+/**
+ * Select one declaration per class described by the manifest; see
+ * {@link createObjectDeclarationIndex} for identity and naming.
+ */
+export function selectObjectDeclarations(
+  manifest: SmartObjectManifest,
+): ObjectDeclaration[] {
+  return createObjectDeclarationIndex(manifest).declarations;
+}
+
+/**
+ * Report simple-name collisions once per generation, naming the qualified
+ * interface each class was given, so a consumer that referenced the bare
+ * name learns which one to use (#3115).
+ */
+export function warnObjectDeclarationCollisions(
+  index: ObjectDeclarationIndex,
+  log: (message: string) => void,
+): void {
+  for (const { className, declarations } of index.collisions) {
+    log(
+      `[smrt:types] ${declarations.length} distinct classes are named ${JSON.stringify(className)}; ` +
+        `generated row types use qualified names instead of ${className}Data: ` +
+        declarations
+          .map(
+            ({ interfaceName, objectRef }) => `${interfaceName} (${objectRef})`,
+          )
+          .join(', '),
+    );
+  }
 }

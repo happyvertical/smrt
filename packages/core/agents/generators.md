@@ -44,7 +44,17 @@ aggregated consumer manifest can name one class several times: listings with
 the same absolute declaring `filePath`, `className`, and field shape collapse
 to one declaration, rendered from the first listing in qualified-identity order
 (#3296). A path alone is machine-local evidence, so a relative or missing
-`filePath`, or disagreeing fields, keeps the listing separate. The aggregated manifest itself keeps every listing.
+`filePath`, or disagreeing fields, keeps the listing separate. The aggregated
+manifest itself keeps every listing.
+
+Names follow the qualified identity when simple names collide (#3115): a
+unique class keeps `${className}Data`; distinct classes sharing a simple name
+each get a package-qualified name (`@ergot/market-core:LicenseSale` ->
+`ErgotMarketCoreLicenseSaleData`), none keeps the bare name, and the generator
+warns with the qualified names. Client and web declarations resolve row types
+through `createObjectDeclarationIndex().interfaceNameFor()` and import them
+(`import('./smrt-objects')`, `import('@happyvertical/smrt-virt-types')`);
+a bare name does not resolve inside an ambient module.
 
 The web module also emits a build-time **`manifestHash`** constant (#1764): `computeWebManifestHash(manifest)` is a deterministic, replica-stable digest of the emitted web-collection SHAPE (name/className/endpoint/idField/actions/fields/relationships), canonicalized (recursive key sort) before `sha256 → base64url`, truncated to 16 chars — so the same schema always hashes the same, and a field add/remove/type-change/edge-change changes it. A change means old persisted client rows may mis-hydrate, so smrt-web keys its durable persistence namespace on it and its `updateAvailable` contract signal compares against it. Four co-managed emission sites must not drift: the runtime value (`generateWebModule`), the `@happyvertical/smrt-virt-web` ambient d.ts (`vite-plugin/index.ts`), the physical `@smrt/web` d.ts (`prebuild/index.ts`), and the hand-written type mirror in `@happyvertical/smrt-web` (`packages/smrt-web/src/index.ts` — dependency-free, so textual sync only).
 
