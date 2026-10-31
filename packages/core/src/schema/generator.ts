@@ -111,6 +111,8 @@ type SchemaGeneratorConfig = {
     getConfig?(className: string): {
       idType?: 'uuid' | 'text';
       conflictColumns?: string[];
+      /** A descendant's own `@smrt({ indexes })` (#3299). */
+      indexes?: unknown;
     };
     getDescendants(baseClassName: string): string[];
     getAllFields(className: string): Promise<Map<string, RegistryField>>;
@@ -640,6 +642,72 @@ export class SchemaGenerator {
       }
 
       indexes.push(index);
+    }
+  }
+
+  /**
+   * Append `@smrt({ indexes })` declared on STI **descendants** to the shared
+   * table (#3299).
+   *
+   * The base's declarations go through {@link appendDeclaredIndexes} as
+   * before. A descendant's declarations land on the same table with the same
+   * validation (known columns, 63-byte names, collisions are errors):
+   *
+   * - a UNIQUE declaration is scoped to the declaring subtype with
+   *   `WHERE _meta_type = '<qualified class>'`, so sibling subtypes that
+   *   share the column are not constrained. Like `@field({ unique })` on a
+   *   descendant, it covers the declaring class's rows only, not its own
+   *   descendants'. A UNIQUE declaration that also carries its own `where` is
+   *   refused: the combined predicate has no faithful shape on engines without
+   *   partial indexes, and the migration differ could not match it reliably;
+   * - a plain index stays unqualified (its own `where`, if any, is kept) so
+   *   base-class polymorphic reads can use it, exactly like a base
+   *   declaration.
+   *
+   * Columns are emitted exactly as declared. Nothing is tenant-prefixed: like
+   * explicit `conflictColumns`, the author includes `tenant_id` when the key
+   * is tenant-local, and a deliberately global identity stays global.
+   *
+   * @param declarations - descendant class (qualified) → its own `indexes`
+   *   config, in any order; processed sorted by class name for determinism.
+   */
+  private appendStiSubclassDeclaredIndexes(
+    indexes: Array<{
+      name: string;
+      columns: string[];
+      unique?: boolean;
+      where?: string;
+    }>,
+    declarations: Array<{ className: string; indexes: unknown }>,
+    columns: Record<string, unknown>,
+    tableName: string,
+  ): void {
+    const sorted = [...declarations].sort((a, b) =>
+      a.className < b.className ? -1 : a.className > b.className ? 1 : 0,
+    );
+    for (const { className, indexes: declared } of sorted) {
+      if (declared === undefined || declared === null) continue;
+      if (!Array.isArray(declared)) {
+        throw new Error(
+          `@smrt({ indexes }) on "${className}" (STI table "${tableName}") must be an array of index declarations.`,
+        );
+      }
+      const scoped = declared.map((entry) => {
+        const spec = this.validateDeclaredIndex(entry, tableName);
+        if (spec.unique !== true) return spec;
+        if (spec.where !== undefined) {
+          throw new Error(
+            `Declared unique index "${spec.name}" on STI subclass "${className}" (table "${tableName}") ` +
+              'cannot carry its own "where": a subclass unique index is already scoped to ' +
+              `_meta_type = '${className}'. Declare the combined index on the STI base instead.`,
+          );
+        }
+        return {
+          ...spec,
+          where: `_meta_type = ${quoteStringLiteral(className)}`,
+        };
+      });
+      this.appendDeclaredIndexes(indexes, scoped, columns, tableName);
     }
   }
 
@@ -1745,11 +1813,20 @@ export class SchemaGenerator {
     }
 
     // Indexes declared on the STI base with `@smrt({ indexes: [...] })`
-    // (#2357). Descendants share one table, so the base owns its access paths
-    // and a declaration there applies to every subtype's reads. Appended
-    // before the reference-column helper so a declared composite leading with
-    // a reference column suppresses the standalone auto index.
+    // (#2357) apply to every subtype's reads. Appended before the
+    // reference-column helper so a declared composite leading with a
+    // reference column suppresses the standalone auto index.
     this.appendDeclaredIndexes(indexes, config?.indexes, columns, tableName);
+    // ...and those declared on descendants (#3299).
+    this.appendStiSubclassDeclaredIndexes(
+      indexes,
+      descendants.map((className) => ({
+        className,
+        indexes: ObjectRegistry.getConfig?.(className)?.indexes,
+      })),
+      columns,
+      tableName,
+    );
 
     // The default list page orders by created_at (#2363) — after the declared
     // indexes, before the reference-column pass.
@@ -2012,6 +2089,16 @@ export class SchemaGenerator {
     // (#2357), before the reference-column helper so a declared composite
     // leading with a reference column suppresses the standalone auto index.
     this.appendDeclaredIndexes(indexes, config?.indexes, columns, tableName);
+    // ...and those declared on descendants (#3299).
+    this.appendStiSubclassDeclaredIndexes(
+      indexes,
+      descendants.map((className) => ({
+        className,
+        indexes: manifest.objects[className]?.decoratorConfig?.indexes,
+      })),
+      columns,
+      tableName,
+    );
 
     // The default list page orders by created_at (#2363) — after the declared
     // indexes, before the reference-column pass.
