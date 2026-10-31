@@ -220,6 +220,7 @@ export function createLocalMcpTokenAuth(
           tenantId: fields.tenantId,
           kind: fields.kind as string | undefined,
           scopes,
+          identity: { issuer: 'local-token', subject: fields.id },
           // Owner tokens bind only through the direct membership.
           tenantBinding: 'direct' as const,
         },
@@ -467,6 +468,16 @@ export function createMcpResourceAuth(
             kind: fields.kind as string | undefined,
             roles,
             scopes: [...granted],
+            // Stamped from the token this server verified, never the mapper.
+            identity: {
+              issuer,
+              subject: payload.sub,
+              ...(validString(payload.client_id)
+                ? { clientId: payload.client_id }
+                : validString(payload.azp)
+                  ? { clientId: payload.azp }
+                  : {}),
+            },
             tenantBinding:
               (fields.tenantBinding as McpTenantBinding | undefined) ??
               'direct-or-inherited',

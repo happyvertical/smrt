@@ -268,6 +268,46 @@ workflowTools: [{
 }],
 ```
 
+### Host operations, audit and typed errors
+
+`@happyvertical/smrt-app-mcp/host-operations` (browser-safe, dependency-free)
+defines one operation and projects it onto both agent surfaces:
+
+```ts
+const descriptor = { name: 'review_apply', description: '...', effect: 'write',
+  idempotent: false, openWorld: false, inputSchema, outputSchema };
+// server
+const op = defineHostOperationTool({ ...descriptor, handler: ({ arguments: a, principal }) => apply(a, principal),
+  mapError: (e) => (e instanceof ReviewNotCurrentError ? { code: e.reason, message: 'The review changed.' } : null) });
+createMcpAppServer({ workflowTools: [toMcpWorkflowTool(op)], onToolCall: (event) => audit(event) });
+// browser (descriptor only: the handler never ships)
+useWebMcpTool(() => toWebMcpSpec(descriptor, createSameOriginSessionCaller({ url: '/api/operations',
+  headers: () => ({ 'x-csrf': csrfToken() }) })));
+```
+
+- `onToolCall({ tool, principal, identity, outcome: 'ok' | 'denied' | 'error', error })`
+  fires exactly once per `tools/call` and task-creating call, including policy
+  denials, unknown tools and unauthenticated calls that never reach a handler.
+  `principal` and `identity` (`issuer`, `subject`, `clientId`) are what the
+  server authenticated (adapter-stamped from the verified token), never client
+  input; `identity` is `null` for session principals. `error` is only the safe
+  `{ code, message }`. The hook is awaited, but a throw or rejection never
+  changes the result (report via `onToolCallHookError`).
+- Handler failures: a thrown `McpToolError(code, message, details?)` or a
+  per-tool `mapError` result reaches the agent as `structuredContent.error`
+  (`{ code, message }`); anything else, including a throwing `mapError`, is
+  `mcp_tool_execution_failed` / "Workflow execution failed." Denials carry
+  `mcp_tool_not_found`, `mcp_authentication_required` or
+  `mcp_tool_access_denied` in the JSON-RPC error `data.code`.
+- The session caller `POST`s `{ arguments }` to `<url>/<name>` with
+  `credentials: 'same-origin'` and the host's CSRF headers; tenant, role and
+  user keys in arguments are dropped (the host endpoint derives authority from
+  the session and should run `executeHostOperation`, returning `{ error: { code,
+  message } }` on failure) and a typed `HostOperationError` is thrown.
+- Declare each host tool name to the build with the `hostToolNames` option of
+  `smrtPlugin`: duplicates across workflow, bespoke and MCP tools fail the
+  build.
+
 The resulting descriptor preserves `_meta.ui.resourceUri` and optional
 `_meta.ui.visibility` through SDK-v2 `tools/list`, while ordinary clients retain the text and structured result.
 The resource implementation itself is staged separately; metadata neither

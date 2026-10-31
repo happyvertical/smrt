@@ -146,7 +146,11 @@ describe('createLocalMcpTokenAuth', () => {
     // Local owner tokens always bind direct-only, whatever verify returns.
     expect(result).toEqual({
       ok: true,
-      principal: { ...owner, tenantBinding: 'direct' },
+      principal: {
+        ...owner,
+        tenantBinding: 'direct',
+        identity: { issuer: 'local-token', subject: owner.id },
+      },
     });
   });
 

@@ -38,7 +38,12 @@ function app(execute = definition.execute) {
 const safeFailure = {
   isError: true,
   content: [{ type: 'text', text: 'Workflow execution failed.' }],
-  structuredContent: { error: { message: 'Workflow execution failed.' } },
+  structuredContent: {
+    error: {
+      code: 'mcp_tool_execution_failed',
+      message: 'Workflow execution failed.',
+    },
+  },
 };
 
 describe('authored workflow runtime contract', () => {

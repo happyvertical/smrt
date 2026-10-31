@@ -52,6 +52,10 @@ import {
   GENERATED_CLIENT_CRUD_METHODS,
   generateClientModule,
 } from './generated-client.js';
+import {
+  assertNoHostToolNameCollisions,
+  type HostToolNameDeclaration,
+} from './host-tool-names.js';
 import { importBuildAwareModule } from './import-build-aware.js';
 import { injectPackageStamps, packageStampText } from './package-stamp.js';
 import {
@@ -83,6 +87,13 @@ export {
   serializeSmrtGenerationSnapshot,
   sha256SmrtGenerationSnapshot,
 } from '../generation-snapshot.js';
+export {
+  assertNoHostToolNameCollisions,
+  checkHostToolNameCollisions,
+  type HostToolNameCollision,
+  type HostToolNameDeclaration,
+  type HostToolSurface,
+} from './host-tool-names.js';
 export type {
   CliApiCoherenceViolation,
   SvelteKitOptions,
@@ -110,6 +121,13 @@ interface PackageJsonShape {
 }
 
 export interface SmrtPluginOptions {
+  /**
+   * Host-declared agent tool names (workflow, bespoke WebMCP and MCP tools,
+   * e.g. from `defineHostOperationTool`). A name two different declarations
+   * claim, or that shadows a generated model tool, fails the build naming
+   * both sources; one operation projected on several surfaces is allowed.
+   */
+  hostToolNames?: readonly HostToolNameDeclaration[];
   /** Root directory that owns generated manifests and SvelteKit routes. */
   projectRoot?: string;
   /**
@@ -660,7 +678,11 @@ export function smrtPlugin(
     },
     knowledge,
     validateCliApiCoherence = true,
+    hostToolNames,
   } = options;
+
+  // Host-vs-host duplicates need no manifest: fail before any scan.
+  if (hostToolNames) assertNoHostToolNameCollisions(hostToolNames);
 
   /**
    * Dev-watcher variant of the cli↔api coherence lint: warn instead of throw,
@@ -1746,6 +1768,20 @@ export function smrtPlugin(
             error,
           );
         }
+      }
+
+      // A host tool shadowing a generated model tool is a build failure, not
+      // an advisory: it is deliberately outside the advisory try/catch above.
+      if (hostToolNames?.length) {
+        assertNoHostToolNameCollisions(
+          hostToolNames,
+          buildWebMcpToolDefinitions(newManifest, {
+            kebabRoutes: svelteKit.kebabRoutes ?? false,
+          }).map((definition) => ({
+            name: definition.name,
+            declaredBy: `${definition.className}.${definition.action}`,
+          })),
+        );
       }
 
       const elapsed = performance.now() - startTime;

@@ -37,7 +37,14 @@ import {
   SmrtJobCollection,
 } from '@happyvertical/smrt-jobs';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { MCP_TOOL_ACCESS_DENIED_CODE, McpAccessError } from './errors.js';
+import {
+  MCP_AUTHENTICATION_REQUIRED_CODE,
+  MCP_TOOL_ACCESS_DENIED_CODE,
+  MCP_TOOL_NOT_FOUND_CODE,
+  McpAccessError,
+  type McpToolErrorInfo,
+  safeMcpToolError,
+} from './errors.js';
 import {
   type McpAppResource,
   type McpAppResourceContent,
@@ -74,8 +81,22 @@ import {
  */
 export type McpTenantBinding = 'direct' | 'direct-or-inherited';
 
+/**
+ * The verified credential identity behind a principal, stamped only by the
+ * authentication adapters (never request input, never a principal mapper):
+ * the token `issuer`, `subject` and OAuth `clientId` the server itself
+ * validated. Surfaced to {@link McpToolCallAuditEvent} for audit.
+ */
+export interface McpPrincipalIdentity {
+  issuer: string;
+  subject: string;
+  clientId?: string;
+}
+
 export interface McpAppPrincipal {
   id?: string;
+  /** Adapter-stamped verified credential identity; see {@link McpPrincipalIdentity}. */
+  identity?: McpPrincipalIdentity;
   /** Tenant boundary for task ownership and generated tenant-scoped actions. */
   tenantId?: string;
   /** Trusted operator override for generated tenant-scoped actions. */
@@ -94,6 +115,31 @@ export interface McpAppPrincipal {
 /** Minimal legacy user shape used for generated tool-call attribution. */
 export interface McpAppUser extends McpAppPrincipal {
   id: string;
+}
+
+/** How a call ended, as reported to {@link CreateMcpAppServerOptions.onToolCall}. */
+export type McpToolCallOutcome = 'ok' | 'denied' | 'error';
+
+/**
+ * One audited tool call. Every `tools/call` and task-creating call produces
+ * exactly one event, including calls refused before any handler ran
+ * (unknown or filtered tool, authentication, `toolPolicy`, workflow
+ * assertion denials).
+ *
+ * `principal` and `identity` are what this server authenticated for the
+ * request (adapter-derived), never anything the client claimed; they are
+ * `null` for an unauthenticated call or one whose adapter stamps no
+ * credential identity (session principals). `tool` is the name the caller
+ * requested (truncated), which is client-supplied for an unknown tool.
+ * `error` is only the safe `{ code, message }` an agent could see, never a
+ * stack or raw error.
+ */
+export interface McpToolCallAuditEvent {
+  tool: string;
+  principal: Readonly<McpAppPrincipal> | null;
+  identity: Readonly<McpPrincipalIdentity> | null;
+  outcome: McpToolCallOutcome;
+  error?: Readonly<McpToolErrorInfo>;
 }
 
 /** Context supplied to the optional per-tool principal policy. */
@@ -206,6 +252,15 @@ export interface CreateMcpAppServerOptions {
    * assertion gates before the handler runs.
    */
   workflowTools?: readonly McpWorkflowToolDefinition[];
+  /**
+   * Audit hook, awaited once per tool call after its outcome is known. A
+   * hook that throws or rejects never changes the tool result and never
+   * escapes; the failure is passed to `onToolCallHookError` when set. Keep it
+   * fast: a call returns after the hook settles.
+   */
+  onToolCall?: (event: McpToolCallAuditEvent) => void | Promise<void>;
+  /** Receives (never rethrown) failures of {@link onToolCall}. */
+  onToolCallHookError?: (error: unknown) => void;
   /**
    * Restrict the catalog to tools whose effect (see `mcpToolEffect`) is
    * listed, for example `['read']` until per-operation authorization exists.
@@ -718,13 +773,19 @@ export function createMcpAppServer(
     const resolved = tools.find(
       (candidate) => candidate.tool.name === input.name,
     );
-    if (!resolved) throw new McpAccessError(404, 'Unknown MCP tool.');
+    if (!resolved) {
+      throw new McpAccessError(404, 'Unknown MCP tool.', {
+        code: MCP_TOOL_NOT_FOUND_CODE,
+        retryable: false,
+      });
+    }
     const { tool, identity } = resolved;
     const publicPatterns = principal ? undefined : getPublicPatterns();
     if (!passesBasePolicy(tool, principal, publicPatterns)) {
       throw new McpAccessError(
         401,
         `Authentication is required for MCP tool: ${input.name}`,
+        { code: MCP_AUTHENTICATION_REQUIRED_CODE, retryable: false },
       );
     }
     if (!(await passesToolPolicy(tool, principal))) {
@@ -737,26 +798,162 @@ export function createMcpAppServer(
     return { args, principal, tool };
   }
 
-  async function callTool(input: CallToolInput): Promise<MCPResponse> {
-    const { args, principal } = await authorizeCall(input);
-    const workflowTool = workflowToolsByName.get(input.name);
-    if (workflowTool) {
+  function snapshotPrincipal(
+    principal: McpAppPrincipal | null,
+  ): Readonly<McpAppPrincipal> | null {
+    if (!principal) return null;
+    const copy: McpAppPrincipal = { ...principal };
+    if (principal.roles)
+      copy.roles = Object.freeze([...principal.roles]) as string[];
+    if (principal.scopes)
+      copy.scopes = Object.freeze([...principal.scopes]) as string[];
+    if (principal.identity)
+      copy.identity = Object.freeze({ ...principal.identity });
+    return Object.freeze(copy);
+  }
+
+  function identityOf(
+    principal: McpAppPrincipal | null,
+  ): Readonly<McpPrincipalIdentity> | null {
+    const identity = principal?.identity;
+    if (
+      !identity ||
+      typeof identity.issuer !== 'string' ||
+      typeof identity.subject !== 'string'
+    ) {
+      return null;
+    }
+    return Object.freeze({
+      issuer: identity.issuer,
+      subject: identity.subject,
+      ...(typeof identity.clientId === 'string'
+        ? { clientId: identity.clientId }
+        : {}),
+    });
+  }
+
+  /** Report one call. Never throws and never alters the call's result. */
+  async function audit(
+    input: CallToolInput,
+    principal: McpAppPrincipal | null,
+    outcome: McpToolCallOutcome,
+    error?: McpToolErrorInfo,
+  ): Promise<void> {
+    if (!options.onToolCall) return;
+    try {
+      await options.onToolCall(
+        Object.freeze({
+          tool: String(input.name).slice(0, 256),
+          principal: snapshotPrincipal(principal),
+          identity: identityOf(principal),
+          outcome,
+          ...(error ? { error: Object.freeze({ ...error }) } : {}),
+        }),
+      );
+    } catch (hookError) {
       try {
-        return await workflowTool.execute({ arguments: args, principal });
-      } catch (error) {
-        if (error instanceof McpAccessError) throw error;
-        // Handler exceptions may contain credentials or application records.
-        const message = 'Workflow execution failed.';
-        return {
-          isError: true,
-          content: [{ type: 'text', text: message }],
-          structuredContent: { error: { message } },
-        };
+        options.onToolCallHookError?.(hookError);
+      } catch {
+        // The error reporter is best effort too.
       }
     }
-    return makeGenerator(principal).handleToolCall({
-      method: 'tools/call',
-      params: { arguments: args, name: input.name },
+  }
+
+  /** Authorize, run and audit one call exactly once. */
+  async function audited(
+    input: CallToolInput,
+    run: (authorized: {
+      args: Record<string, unknown>;
+      principal: McpAppPrincipal | null;
+    }) => Promise<{ response: MCPResponse; failure?: McpToolErrorInfo }>,
+  ): Promise<MCPResponse> {
+    const principal = principalForCall(input);
+    let authorized: Awaited<ReturnType<typeof authorizeCall>>;
+    try {
+      authorized = await authorizeCall(input);
+    } catch (error) {
+      if (error instanceof McpAccessError) {
+        await audit(input, principal, 'denied', {
+          code: error.metadata.code ?? 'mcp_access_denied',
+          message: error.message,
+        });
+      } else {
+        await audit(input, principal, 'error', safeMcpToolError(error));
+      }
+      throw error;
+    }
+    let result: { response: MCPResponse; failure?: McpToolErrorInfo };
+    try {
+      result = await run(authorized);
+    } catch (error) {
+      if (error instanceof McpAccessError) {
+        await audit(input, principal, 'denied', {
+          code: error.metadata.code ?? 'mcp_access_denied',
+          message: error.message,
+        });
+      } else {
+        await audit(input, principal, 'error', safeMcpToolError(error));
+      }
+      throw error;
+    }
+    if (result.response.isError) {
+      await audit(
+        input,
+        principal,
+        'error',
+        result.failure ?? failureOf(result.response),
+      );
+    } else {
+      await audit(input, principal, 'ok');
+    }
+    return result.response;
+  }
+
+  /** The safe code/message of an error result a handler or generator built. */
+  function failureOf(response: MCPResponse): McpToolErrorInfo {
+    const error = (
+      response.structuredContent as { error?: unknown } | undefined
+    )?.error as { code?: unknown; message?: unknown } | undefined;
+    return safeMcpToolError(undefined, () =>
+      typeof error?.code === 'string' && typeof error?.message === 'string'
+        ? { code: error.code, message: error.message }
+        : undefined,
+    );
+  }
+
+  async function callTool(input: CallToolInput): Promise<MCPResponse> {
+    return audited(input, async ({ args, principal }) => {
+      const workflowTool = workflowToolsByName.get(input.name);
+      if (workflowTool) {
+        try {
+          return {
+            response: await workflowTool.execute({
+              arguments: args,
+              principal,
+            }),
+          };
+        } catch (error) {
+          if (error instanceof McpAccessError) throw error;
+          // Handler exceptions may contain credentials or application
+          // records: only an authored McpToolError or a mapError result
+          // reaches the agent.
+          const info = safeMcpToolError(error, workflowTool.mapError);
+          return {
+            failure: info,
+            response: {
+              isError: true,
+              content: [{ type: 'text', text: info.message }],
+              structuredContent: { error: info },
+            },
+          };
+        }
+      }
+      return {
+        response: await makeGenerator(principal).handleToolCall({
+          method: 'tools/call',
+          params: { arguments: args, name: input.name },
+        }),
+      };
     });
   }
 
@@ -778,14 +975,20 @@ export function createMcpAppServer(
   }
 
   async function callTask(input: CallToolInput): Promise<MCPResponse> {
-    const { args, principal } = await authorizeCall(input);
-    if (workflowToolsByName.has(input.name)) {
-      throw new McpAccessError(400, 'Workflow MCP tools do not support tasks.');
-    }
-    const taskStore = await taskStoreFor(principal);
-    return makeGenerator(principal, taskStore).createTask({
-      method: 'tools/call',
-      params: { arguments: args, name: input.name },
+    return audited(input, async ({ args, principal }) => {
+      if (workflowToolsByName.has(input.name)) {
+        throw new McpAccessError(
+          400,
+          'Workflow MCP tools do not support tasks.',
+        );
+      }
+      const taskStore = await taskStoreFor(principal);
+      return {
+        response: await makeGenerator(principal, taskStore).createTask({
+          method: 'tools/call',
+          params: { arguments: args, name: input.name },
+        }),
+      };
     });
   }
 

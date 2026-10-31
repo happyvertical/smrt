@@ -243,6 +243,7 @@ describe('remote protected resource', () => {
         roles: undefined,
         kind: undefined,
         tenantBinding: 'direct-or-inherited',
+        identity: { issuer: origin, subject: 'alice' },
       },
     });
   });
