@@ -423,7 +423,8 @@ export class GeneratedPrintable extends SmrtObject {
   audience: GeneratedPrintableAudience = 'learner';
   @crossPackageRef('@happyvertical/smrt-assets:Asset', { required: true })
   assetId = '';
-  @foreignKey('LessonRevision', { required: true }) lessonRevisionId = '';
+  /** Provenance only: checked in `save()`, not a database constraint, so the table depends on lessons and assets alone. */
+  lessonRevisionId = '';
   generatedByUserId = '';
   delegatingGuardianUserId = '';
   delegationId = '';
