@@ -475,6 +475,8 @@ export class EnrollmentReleasePin extends SmrtObject {
   delegatingGuardianUserId = '';
   /** Host assignment-setting value relied on; automatic moves copy the opt-in's. */
   policyBasis = '';
+  /** Scope of the opt-in an automatic move followed ('course' | 'enrollment'); empty otherwise. */
+  optInScope = '';
   requestKey = '';
   recordedAt = new Date();
   constructor(options: Record<string, unknown> = {}) {
@@ -505,6 +507,12 @@ export class EnrollmentReleasePin extends SmrtObject {
       this.sequence < 1
     )
       throw new Error('Invalid enrollment pin');
+    if (
+      this.kind === 'auto'
+        ? !['course', 'enrollment'].includes(this.optInScope)
+        : this.optInScope !== ''
+    )
+      throw new Error('Invalid enrollment pin opt-in scope');
     validDate(this.recordedAt);
     this.requireInsertOnSave();
     return super.save(options);
@@ -562,4 +570,62 @@ export class CourseUpgradeChoice extends SmrtObject {
 }
 export class CourseUpgradeChoiceCollection extends SmrtCollection<CourseUpgradeChoice> {
   static readonly _itemClass = CourseUpgradeChoice;
+}
+
+/**
+ * Append-only record of an automatic upgrade that was not performed because the
+ * host denied the per-learner assignment decision. The enrollment stays pinned.
+ */
+@TenantScoped({ mode: 'required' })
+@smrt({
+  tableName: 'enrollment_auto_upgrade_skips',
+  conflictColumns: ['tenant_id', 'enrollment_id', 'release_id'],
+  ...closed,
+})
+export class EnrollmentAutoUpgradeSkip extends SmrtObject {
+  @tenantId() tenantId = '';
+  @foreignKey('Enrollment', { required: true }) enrollmentId = '';
+  @foreignKey('Learner', { required: true }) learnerId = '';
+  @foreignKey('Course', { required: true }) courseId = '';
+  /** The release the enrollment was not moved to. */
+  @foreignKey('CourseRelease', { required: true }) releaseId = '';
+  /** 'course' or 'enrollment': the scope of the opt-in that was followed. */
+  optInScope = '';
+  optInActorUserId = '';
+  optInDelegatingGuardianUserId = '';
+  policyBasis = '';
+  reason = 'not-authorized';
+  recordedAt = new Date();
+  constructor(options: Record<string, unknown> = {}) {
+    super(options);
+    adopt(this, options);
+  }
+  override async delete(): Promise<void> {
+    noDelete();
+  }
+  override async save(options?: SmrtSaveOptions): Promise<this> {
+    await requireInsert(this);
+    await requireOwned(this, 'enrollments', this.enrollmentId, {
+      learner_id: this.learnerId,
+    });
+    await requireOwned(this, 'course_releases', this.releaseId, {
+      course_id: this.courseId,
+    });
+    requireText(
+      this.optInActorUserId,
+      'Auto-upgrade skip requires the opt-in actor',
+    );
+    requireText(this.policyBasis, 'Auto-upgrade skip requires a policy basis');
+    if (
+      !['course', 'enrollment'].includes(this.optInScope) ||
+      this.reason !== 'not-authorized'
+    )
+      throw new Error('Invalid auto-upgrade skip');
+    validDate(this.recordedAt);
+    this.requireInsertOnSave();
+    return super.save(options);
+  }
+}
+export class EnrollmentAutoUpgradeSkipCollection extends SmrtCollection<EnrollmentAutoUpgradeSkip> {
+  static readonly _itemClass = EnrollmentAutoUpgradeSkip;
 }

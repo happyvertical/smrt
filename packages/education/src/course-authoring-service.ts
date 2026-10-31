@@ -68,6 +68,7 @@ import {
   CourseRevisionCollection,
   type CourseUpgradeChoice,
   CourseUpgradeChoiceCollection,
+  EnrollmentAutoUpgradeSkipCollection,
   type EnrollmentReleasePin,
   EnrollmentReleasePinCollection,
   type LessonRevision,
@@ -1847,6 +1848,9 @@ export class CourseAuthoringService {
         actorUserId: optional(p.actorUserId),
         delegatingGuardianUserId: optional(p.delegatingGuardianUserId),
         policyBasis: p.policyBasis,
+        optInScope: p.optInScope
+          ? (p.optInScope as 'course' | 'enrollment')
+          : null,
         recordedAt: iso(p.recordedAt),
       })),
     };
@@ -1871,6 +1875,7 @@ export class CourseAuthoringService {
       kind: EnrollmentPinKind;
       requestKey: string;
       policyBasis: string;
+      optInScope?: 'course' | 'enrollment';
       sequence: number;
     },
   ) {
@@ -1887,6 +1892,7 @@ export class CourseAuthoringService {
       actorUserId: actor?.actorUserId ?? '',
       delegatingGuardianUserId: actor?.delegatingGuardianUserId ?? '',
       policyBasis: input.policyBasis,
+      optInScope: input.optInScope ?? '',
       requestKey: input.requestKey,
       recordedAt: new Date(),
     });
@@ -2097,6 +2103,55 @@ export class CourseAuthoringService {
     });
   }
 
+  /**
+   * Re-evaluates, per enrollment, the recorded opt-in actor's current authority
+   * (and their delegating guardian's) for the `assign` action. Any denial or
+   * failure means "do not move"; it never blocks the release itself.
+   */
+  private async authorizeAutoUpgrade(
+    tx: Tx,
+    tenantId: string,
+    choice: CourseUpgradeChoice,
+    enrollmentId: string,
+    learnerId: string,
+    courseId: string,
+  ): Promise<boolean> {
+    try {
+      const members = [choice.actorUserId];
+      if (choice.delegatingGuardianUserId)
+        members.push(choice.delegatingGuardianUserId);
+      for (const userId of members) {
+        if (
+          !userId ||
+          !(await tx.get('memberships', {
+            tenant_id: tenantId,
+            user_id: userId,
+            status: 'active',
+          })) ||
+          !(await tx.get('users', { id: userId, status: 'active' }))
+        )
+          return false;
+      }
+      return (
+        (await this.authorizer({
+          tenantId,
+          actorUserId: choice.actorUserId,
+          ...(choice.delegatingGuardianUserId
+            ? { delegatingGuardianUserId: choice.delegatingGuardianUserId }
+            : {}),
+          courseId,
+          enrollmentId,
+          learnerId,
+          action: 'education.course.assign',
+          operation: 'auto-upgrade',
+          executor: tx,
+        })) === true
+      );
+    } catch {
+      return false;
+    }
+  }
+
   /** Moves opted-in enrollments to a new release; each move is recorded. */
   private async autoUpgrade(
     tx: Tx,
@@ -2127,7 +2182,37 @@ export class CourseAuthoringService {
         tenant_id: tenantId,
       });
       if (!enrollment) continue;
+      const optInScope = choice.enrollmentId ? 'enrollment' : 'course';
+      const learnerId = String((enrollment as Row).learner_id);
       await this.lockEnrollment(tx, tenantId, enrollmentId);
+      if (
+        !(await this.authorizeAutoUpgrade(
+          tx,
+          tenantId,
+          choice,
+          enrollmentId,
+          learnerId,
+          courseId,
+        ))
+      ) {
+        await (
+          await EnrollmentAutoUpgradeSkipCollection.create({ db: tx })
+        ).create({
+          _insertOnly: true,
+          tenantId,
+          enrollmentId,
+          learnerId,
+          courseId,
+          releaseId: String(release.id),
+          optInScope,
+          optInActorUserId: choice.actorUserId,
+          optInDelegatingGuardianUserId: choice.delegatingGuardianUserId,
+          policyBasis: choice.policyBasis,
+          reason: 'not-authorized',
+          recordedAt: new Date(),
+        });
+        continue;
+      }
       await this.appendPin(tx, null, tenantId, enrollment as Row, {
         releaseId: String(release.id),
         courseId,
@@ -2135,6 +2220,7 @@ export class CourseAuthoringService {
         kind: 'auto',
         requestKey: `auto:${String(release.id)}`,
         policyBasis: choice.policyBasis,
+        optInScope,
         sequence: (await this.pins(tx, tenantId, enrollmentId)).length + 1,
       });
     }

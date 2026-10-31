@@ -38,6 +38,7 @@ export type CourseAuthoringOperation =
   | 'pin-enrollment'
   | 'upgrade-enrollment'
   | 'set-auto-upgrade'
+  | 'auto-upgrade'
   | 'read-enrollment'
   | 'create-question'
   | 'save-question'
@@ -289,6 +290,8 @@ export type EnrollmentPinView = Readonly<{
     actorUserId: string | null;
     delegatingGuardianUserId: string | null;
     policyBasis: string;
+    /** For automatic moves: the scope of the opt-in followed. */
+    optInScope: 'course' | 'enrollment' | null;
     recordedAt: string;
   }>;
 }>;

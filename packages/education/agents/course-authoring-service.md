@@ -69,9 +69,16 @@ wins) for future releases; each automatic move is a recorded pin without actor. 
 assignment-setting value relied on, e.g. `guardians-only`; 1-200 chars, else
 `invalid-request`), recorded with actor and delegating guardian on the pin or
 choice row and exposed on the views. An automatic move copies the basis of the
-opt-in that governs it and needs no live authorization (the opt-in was
-authorized with `assign`). A replayed request key with a different basis is a
-request-key conflict.
+opt-in that governs it, plus its `optInScope` (`course`|`enrollment`). Each
+automatic move is authorized per enrollment during `release` with action
+`assign`, operation `auto-upgrade`, that `enrollmentId`/`learnerId`, the opt-in's
+recorded actor and delegating guardian (current membership re-checked, the host
+re-evaluates the delegation or relationship) and the transaction executor; hosts
+must map `auto-upgrade` per learner from the assignment setting. A denial or
+authorizer failure never blocks the release or other enrollments: that
+enrollment stays on its pin and an `EnrollmentAutoUpgradeSkip` row records
+`not-authorized`, the opt-in scope, actor, guardian and `policyBasis`. A replayed
+request key with a different basis is a request-key conflict.
 `getEnrollmentRelease` returns the pin and effective lessons: after any move
 (automatic or explicit), started lessons stay on the immutable row they were
 started on, unstarted lessons follow the current release. `LearnerService`
@@ -98,7 +105,9 @@ restrictive licence ever recorded for it. Uploaded materials default to
 `personal-use-copy` unless the author states otherwise. Any personal-use part
 makes the course tenant-private: `GroupSharingWorkFacts.courseShareable=false`
 (reason `course-private`) for authored releases, and the policy option list hides
-them. Existing workbook personal-use scaffolds are unchanged.
+them. Work is attributed to the course of its own lesson, and any personal-use
+release anywhere in the enrollment's pin lineage also makes it `course-private`
+and hides the course from the options; unpinned enrollments are unchanged. Existing workbook personal-use scaffolds are unchanged.
 
 ## Materials
 

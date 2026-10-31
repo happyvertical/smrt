@@ -183,16 +183,42 @@ async function load(
 
       // Catalog ownership may be self, ancestor or global; the child enrollment
       // remains exact-family-owned, and the sharing proof never becomes guardian authority.
-      const course =
-        activity.captureKind === 'unfiled'
-          ? null
-          : ((
-              await authorizedCatalogCourses(
-                db,
-                request,
-                proveMetadataAuthority,
-              )
-            ).find((row) => String(row.id) === enrollment.courseId) ?? null);
+      // Work is attributed to the course its own lesson belongs to (a pinned
+      // enrollment may work on a later release); the enrollment's course is the
+      // fallback. Privacy additionally spans the whole pin lineage.
+      let course:
+        | Awaited<ReturnType<typeof authorizedCatalogCourses>>[number]
+        | null = null;
+      let lineagePrivate = false;
+      if (activity.captureKind !== 'unfiled') {
+        const visible = await authorizedCatalogCourses(
+          db,
+          request,
+          proveMetadataAuthority,
+        );
+        const lesson = await db.get('lessons', {
+          id: activity.lessonId,
+          tenant_id: request.familyTenantId,
+        });
+        const section = lesson
+          ? await db.get('course_sections', {
+              id: lesson.section_id,
+              tenant_id: request.familyTenantId,
+            })
+          : null;
+        const lessonCourseId = section ? String(section.course_id) : null;
+        course =
+          (lessonCourseId
+            ? visible.find((row) => String(row.id) === lessonCourseId)
+            : undefined) ??
+          visible.find((row) => String(row.id) === enrollment.courseId) ??
+          null;
+        lineagePrivate = await enrollmentLineagePrivate(
+          db,
+          request.familyTenantId,
+          String(enrollment.id),
+        );
+      }
       const revisions = await (
         await WorkbookAssessmentRevisionCollection.create({ db })
       ).list({ where: { ...where, attemptId: request.attemptId } });
@@ -224,9 +250,9 @@ async function load(
         courseId: course ? String(course.id) : null,
         subject: course?.subject?.trim() || null,
         parentReviewed: heads.length === 1,
-        courseShareable: course
-          ? isAuthoredReleaseGroupShareable(course)
-          : true,
+        courseShareable:
+          !lineagePrivate &&
+          (course ? isAuthoredReleaseGroupShareable(course) : true),
       });
       const revisionPermitted =
         Boolean(revision) &&
@@ -278,6 +304,38 @@ async function load(
       };
     },
   );
+}
+/** True when any release in the enrollment's pin lineage is personal-use. */
+async function enrollmentLineagePrivate(
+  db: DatabaseInterface,
+  tenantId: string,
+  enrollmentId: string,
+): Promise<boolean> {
+  const pins = await db.list('enrollment_release_pins', {
+    tenant_id: tenantId,
+    enrollment_id: enrollmentId,
+  });
+  for (const pin of pins) {
+    const release = await db.get('course_releases', {
+      id: pin.release_id,
+      tenant_id: tenantId,
+    });
+    const course = release
+      ? await db.get('courses', {
+          id: release.release_course_id,
+          tenant_id: tenantId,
+        })
+      : null;
+    if (
+      !course ||
+      !isAuthoredReleaseGroupShareable({
+        sourceKey: String(course.source_key),
+        licenseKind: course.license_kind as never,
+      })
+    )
+      return true;
+  }
+  return false;
 }
 function assessmentFrom(
   row: Awaited<ReturnType<typeof load>>,
@@ -407,11 +465,19 @@ export class GroupSharingReader {
           const unfiledEnrollments = new Set(
             unfiled.map((row) => row.enrollmentId),
           );
-          const enrolled = new Set(
-            enrollments
-              .filter((row) => !unfiledEnrollments.has(String(row.id)))
-              .map((row) => row.courseId),
-          );
+          const enrolled = new Set<string>();
+          for (const row of enrollments) {
+            if (unfiledEnrollments.has(String(row.id))) continue;
+            if (
+              await enrollmentLineagePrivate(
+                db,
+                request.familyTenantId,
+                String(row.id),
+              )
+            )
+              continue;
+            enrolled.add(row.courseId);
+          }
           const visible = await authorizedCatalogCourses(db, request, () =>
             boundary.requireGuardian(request, 'education.group.share'),
           );

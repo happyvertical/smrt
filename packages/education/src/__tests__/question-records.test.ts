@@ -64,6 +64,7 @@ const authoringExtra = [
   'CourseDiscardTombstone',
   'EnrollmentReleasePin',
   'CourseUpgradeChoice',
+  'EnrollmentAutoUpgradeSkip',
 ];
 const questionTables = [
   'LearningObjective',

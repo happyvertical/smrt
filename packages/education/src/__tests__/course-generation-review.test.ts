@@ -75,6 +75,7 @@ const classes = [
   'CourseDiscardTombstone',
   'EnrollmentReleasePin',
   'CourseUpgradeChoice',
+  'EnrollmentAutoUpgradeSkip',
   'LearningObjective',
   'LearningObjectiveRevision',
   'Question',

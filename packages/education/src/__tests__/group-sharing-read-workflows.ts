@@ -56,6 +56,17 @@ export const groupSharingReadClasses = [
   'GroupRevisionComment',
   'WorkbookPhotoDecision',
   'WorkbookContextRevision',
+  // The reader consults enrollment release pin lineage for course privacy.
+  'CourseRevision',
+  'LessonRevision',
+  'CourseDraftHead',
+  'CourseRelease',
+  'ReleasedLesson',
+  'CourseArchiveDecision',
+  'CourseDiscardTombstone',
+  'EnrollmentReleasePin',
+  'CourseUpgradeChoice',
+  'EnrollmentAutoUpgradeSkip',
 ];
 export const sharingPolicy = (): GroupSharingPolicyV1 => ({
   schemaVersion: 1,

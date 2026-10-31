@@ -14,6 +14,7 @@ import {
   MigrationGenerator,
   MigrationTracker,
 } from '@happyvertical/smrt-core/migrations';
+import { ProfileRelationshipCollection } from '@happyvertical/smrt-profiles';
 import {
   disableTenancy,
   enableTenancy,
@@ -71,6 +72,7 @@ const authoringClasses = [
   'CourseDiscardTombstone',
   'EnrollmentReleasePin',
   'CourseUpgradeChoice',
+  'EnrollmentAutoUpgradeSkip',
 ];
 const authoringTables = [
   'CourseRevision',
@@ -82,6 +84,7 @@ const authoringTables = [
   'CourseDiscardTombstone',
   'EnrollmentReleasePin',
   'CourseUpgradeChoice',
+  'EnrollmentAutoUpgradeSkip',
 ];
 
 beforeAll(() => enableTenancy());
@@ -132,10 +135,14 @@ async function setup(
     [outsider.actorUserId, [...COURSE_AUTHORING_ACTIONS]],
   ]);
   const denied = new Set<CourseAuthoringAction>();
+  const deniedLearners = new Set<string>();
+  const deniedActors = new Set<string>();
   const authorizer: CourseAuthoringAuthorizer = (call) => {
     calls.push(call);
     return (
       !denied.has(call.action) &&
+      !(call.learnerId && deniedLearners.has(call.learnerId)) &&
+      !deniedActors.has(call.actorUserId) &&
       (grants.get(call.actorUserId) ?? []).includes(call.action)
     );
   };
@@ -249,6 +256,8 @@ async function setup(
     outsider,
     calls,
     denied,
+    deniedLearners,
+    deniedActors,
     gateState,
     gateCalls,
     as,
@@ -1019,6 +1028,165 @@ describe('CourseAuthoringService', () => {
         }),
       ),
     ).rejects.toBeInstanceOf(CourseNotFoundError);
+  });
+
+  describe('automatic upgrades are authorized per learner', () => {
+    async function twoLearners() {
+      const s = await setup();
+      const { head, saved, rel } = await s.released();
+      const a = String((await s.enrollOn(rel.releaseCourseId)).id);
+      const relB = await withTenant({ tenantId: s.f.own.tenantId }, async () =>
+        (await ProfileRelationshipCollection.create({ db: s.db })).create({
+          tenantId: s.f.own.tenantId,
+          fromProfileId: String(s.f.guardian.profile.id),
+          toProfileId: String(s.f.bob.profile.id),
+          typeId: String(s.f.guardianType.id),
+        }),
+      );
+      const bobReq = {
+        ...s.f.parent,
+        learnerId: String(s.f.sibling.id),
+        guardianRelationshipId: String(relB.id),
+      };
+      const bobCurriculum = await s.f.as(bobReq, () =>
+        s.f.service.createCurriculum({ ...bobReq, title: 'Bob 2026' }),
+      );
+      const b = String(
+        (
+          await s.f.as(bobReq, () =>
+            s.f.service.enroll({
+              ...bobReq,
+              curriculumId: String(bobCurriculum.id),
+              courseId: rel.releaseCourseId,
+            }),
+          )
+        ).id,
+      );
+      const learnerB = String(s.f.sibling.id);
+      for (const enrollmentId of [a, b])
+        await s.as(s.guardian, () =>
+          s.service.pinEnrollment({
+            ...s.guardian,
+            enrollmentId,
+            releaseId: rel.id,
+            requestKey: s.key(),
+            policyBasis: 'guardians-only',
+          }),
+        );
+      const optIn = (
+        actor: CourseAuthoringActor,
+        enrollmentId?: string,
+        basis = 'guardians-and-agents',
+      ) =>
+        s.as(actor, () =>
+          s.service.setAutoUpgrade({
+            ...actor,
+            courseId: head.courseId,
+            ...(enrollmentId ? { enrollmentId } : {}),
+            enabled: true,
+            requestKey: s.key(),
+            policyBasis: basis,
+          }),
+        );
+      const releaseNext = async () => {
+        const next = await s.save(
+          head.courseId,
+          saved.headRevisionId,
+          s.lessons(['a', 'A2'], ['b', 'B2']),
+        );
+        return s.release(head.courseId, next.revisionId);
+      };
+      const pinOf = async (enrollmentId: string) => {
+        // Reads are not the subject here; lift per-learner denials meanwhile.
+        const held = [...s.deniedLearners];
+        s.deniedLearners.clear();
+        try {
+          return (
+            await s.as(s.guardian, () =>
+              s.service.getEnrollmentRelease({ ...s.guardian, enrollmentId }),
+            )
+          ).pin;
+        } finally {
+          for (const id of held) s.deniedLearners.add(id);
+        }
+      };
+      return { s, a, b, learnerB, rel, optIn, releaseNext, pinOf };
+    }
+
+    it('skips and records a learner the opt-in actor may not assign, still releasing', async () => {
+      const { s, a, b, learnerB, rel, optIn, releaseNext, pinOf } =
+        await twoLearners();
+      await optIn(s.agent);
+      s.deniedLearners.add(learnerB);
+      s.calls.length = 0;
+      const rel2 = await releaseNext();
+      expect((await pinOf(a)).releaseId).toBe(rel2.id);
+      const moved = await pinOf(a);
+      expect(moved).toMatchObject({
+        kind: 'auto',
+        policyBasis: 'guardians-and-agents',
+      });
+      expect(moved.history.at(-1)).toMatchObject({ optInScope: 'course' });
+      expect((await pinOf(b)).releaseId).toBe(rel.id);
+      const skips = await s.db.list('enrollment_auto_upgrade_skips', {});
+      expect(skips).toHaveLength(1);
+      expect(skips[0]).toMatchObject({
+        enrollment_id: b,
+        learner_id: learnerB,
+        release_id: rel2.id,
+        reason: 'not-authorized',
+        policy_basis: 'guardians-and-agents',
+        opt_in_actor_user_id: s.agent.actorUserId,
+        opt_in_delegating_guardian_user_id: s.guardian.actorUserId,
+        opt_in_scope: 'course',
+      });
+      const autoCalls = s.calls.filter((c) => c.operation === 'auto-upgrade');
+      expect(autoCalls).toHaveLength(2);
+      for (const call of autoCalls) {
+        expect(call.action).toBe('education.course.assign');
+        expect(call.actorUserId).toBe(s.agent.actorUserId);
+        expect(call.delegatingGuardianUserId).toBe(s.guardian.actorUserId);
+        expect(call.executor).not.toBe(s.db);
+      }
+      expect(autoCalls.map((c) => c.enrollmentId).sort()).toEqual(
+        [a, b].sort(),
+      );
+    });
+
+    it('skips when the recorded delegation is no longer valid', async () => {
+      const { s, a, rel, optIn, releaseNext, pinOf } = await twoLearners();
+      await optIn(s.agent, a);
+      // The host re-evaluates the delegation: the agent is no longer allowed.
+      s.deniedActors.add(s.agent.actorUserId);
+      await releaseNext();
+      expect((await pinOf(a)).releaseId).toBe(rel.id);
+      const skips = await s.db.list('enrollment_auto_upgrade_skips', {});
+      expect(skips).toHaveLength(1);
+      expect(skips[0]).toMatchObject({
+        enrollment_id: a,
+        opt_in_scope: 'enrollment',
+      });
+    });
+
+    it('skips when the authorizer throws and does not block other enrollments', async () => {
+      const { s, a, b, rel, optIn, releaseNext, pinOf } = await twoLearners();
+      await optIn(s.guardian, a);
+      await optIn(s.guardian, b);
+      const real = s.service as unknown as { authorizer: unknown };
+      const original = real.authorizer as (c: {
+        enrollmentId?: string;
+        operation: string;
+      }) => unknown;
+      real.authorizer = (c: { enrollmentId?: string; operation: string }) => {
+        if (c.operation === 'auto-upgrade' && c.enrollmentId === a)
+          throw new Error('policy store down');
+        return original(c);
+      };
+      const rel2 = await releaseNext();
+      expect((await pinOf(a)).releaseId).toBe(rel.id);
+      expect((await pinOf(b)).releaseId).toBe(rel2.id);
+      expect(await s.count('enrollment_auto_upgrade_skips')).toBe(1);
+    });
   });
 
   describe('assign action and policy basis', () => {

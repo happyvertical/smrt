@@ -54,6 +54,7 @@ const classes = [
     'CourseDiscardTombstone',
     'EnrollmentReleasePin',
     'CourseUpgradeChoice',
+    'EnrollmentAutoUpgradeSkip',
   ]),
 ];
 const page = {
