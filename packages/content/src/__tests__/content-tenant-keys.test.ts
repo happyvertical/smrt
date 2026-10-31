@@ -24,6 +24,7 @@ import {
 import {
   disableTenancy,
   enableTenancy,
+  withSuperAdminBypass,
   withSystemContext,
   withTenant,
 } from '@happyvertical/smrt-tenancy';
@@ -459,6 +460,31 @@ describe('content tenant-local natural keys (#3305 M1)', () => {
       expect(house.label).toBe('A');
       expect(house.id).toBe(override.id);
       expect(house.tenantId).toBe(tenantA);
+    });
+
+    it('does not let a super-admin bypass read another tenant keyed rows', async () => {
+      const policies = await ContentGovernancePolicyCollection.create({ db });
+      const contributors = await ContentContributorCollection.create({ db });
+      await inB(async () => {
+        const policy = await policies.create({ key: 'b-only', label: 'B' });
+        await policy.save();
+        await contributors.findOrCreateByEmail({ email: 'b@example.com' });
+      });
+      const bypassInA = <T>(fn: () => Promise<T>) =>
+        inA(() => withSuperAdminBypass(fn));
+      await expect(
+        bypassInA(() => policies.getByKey('b-only', { tenantId: tenantB })),
+      ).rejects.toThrow(/isolation/i);
+      await expect(
+        bypassInA(() =>
+          contributors.getByEmail('b@example.com', { tenantId: tenantB }),
+        ),
+      ).rejects.toThrow(/isolation/i);
+      await expect(
+        bypassInA(() =>
+          getEffectiveContentGovernanceConfig({ db, tenantId: tenantB }),
+        ),
+      ).rejects.toThrow(/isolation/i);
     });
 
     it('fails closed when a tenant context asks for another tenant definitions', async () => {

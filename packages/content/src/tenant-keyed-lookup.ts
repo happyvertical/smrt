@@ -1,8 +1,24 @@
 import type { SmrtCollection, SmrtObject } from '@happyvertical/smrt-core';
 import {
-  assertTenantReadAllowed,
   getCurrentTenant,
+  TenantIsolationError,
 } from '@happyvertical/smrt-tenancy';
+
+/**
+ * Fail closed when an active tenant context asks for another tenant's rows.
+ * Unlike the shared `assertTenantReadAllowed`, a super-admin bypass does not
+ * widen this: the content models keyed here do not opt into bypass (#2973),
+ * so the interceptor would not let the bypass through either.
+ */
+export function assertOwnTenantRead(tenantId: string, label: string): void {
+  const context = getCurrentTenant()?.tenantId;
+  if (context && context.toLowerCase() !== tenantId.toLowerCase()) {
+    throw new TenantIsolationError(
+      `Tenant isolation violation in ${label}: context tenant is '${context}' but the lookup requested '${tenantId}'`,
+      { tenantId: context, attemptedTenantId: tenantId },
+    );
+  }
+}
 
 /**
  * The tenant a keyed lookup resolves in: an explicit `tenantId` when the
@@ -43,7 +59,7 @@ export async function getByTenantKey<T extends SmrtObject>(
 ): Promise<T | null> {
   const tenantId = resolveLookupTenantId(options.tenantId);
   if (tenantId) {
-    assertTenantReadAllowed(tenantId, options.label);
+    assertOwnTenantRead(tenantId, options.label);
   }
   const sql = tenantId
     ? options.globalFallback

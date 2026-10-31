@@ -1,11 +1,11 @@
 import type { Fact, FactContentRelationship } from '@happyvertical/smrt-facts';
 import {
-  assertTenantReadAllowed,
   getCurrentTenant,
   isTenancyEnabled,
 } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import type { Content } from './content';
+import { assertOwnTenantRead } from './tenant-keyed-lookup';
 
 export type ContentReviewKind = 'facts' | 'safety' | 'custom';
 
@@ -533,7 +533,7 @@ function resolveGovernanceTenantFilter(
     // An active tenant context cannot list another tenant's definitions by
     // passing its id (#3305 M1).
     if (tenantId) {
-      assertTenantReadAllowed(
+      assertOwnTenantRead(
         tenantId,
         'loadPersistedContentGovernanceDefinitions',
       );
