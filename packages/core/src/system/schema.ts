@@ -381,8 +381,21 @@ export const POSTGRES_CHANGE_FEED_HELPER_MARKER = 'smrt-change-feed-helpers:v4';
 /** PostgreSQL helper that sequences staged change-feed appends (#2649). */
 export const POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_NAME = '_smrt_drain_changes';
 
-/** Exact PostgreSQL identity used for catalog lookup of the drain helper. */
-export const POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_IDENTITY = `${POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_NAME}(integer)`;
+/**
+ * Exact PostgreSQL identity of the drain helper (#2982): the batch limit plus
+ * the live set of sensitive tables, which the drain purges from staging and
+ * never sequences.
+ */
+export const POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_IDENTITY = `${POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_NAME}(integer,text[])`;
+
+/**
+ * Identity of the pre-#2982 single-argument drain, kept as a compatibility
+ * entry point so replicas of an older SMRT that still call
+ * `_smrt_drain_changes()` keep working during a mixed-version rollout. It
+ * delegates to the two-argument drain with no exclusions — exactly the old
+ * behavior — because it has no way to know the live sensitive set.
+ */
+export const POSTGRES_CHANGE_FEED_COMPAT_DRAIN_FUNCTION_IDENTITY = `${POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_NAME}(integer)`;
 
 /** How many staged entries one drain call sequences. */
 export const POSTGRES_CHANGE_FEED_DRAIN_BATCH = 1000;
@@ -410,10 +423,18 @@ export const POSTGRES_CHANGE_FEED_DRAIN_BATCH = 1000;
  * Failures are returned as data, like the append helper, so a drain problem
  * never aborts the caller's transaction. A failed drain leaves the staged rows
  * in place for the next attempt.
+ *
+ * Sensitive tables (#2982): `p_excluded_tables` is the caller's live
+ * sensitive set. Under the drain lock, staged rows for those tables are
+ * deleted before any sequence is allocated, and the sequencing batch skips
+ * them too, so an entry staged by an older replica (or left over from before
+ * an upgrade) never reaches `_smrt_changes`. Neither parameter has a default:
+ * a call with no arguments resolves only to the compatibility overload.
  */
 export const CREATE_POSTGRES_CHANGE_FEED_DRAIN_FUNCTION = `
 CREATE OR REPLACE FUNCTION ${POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_NAME}(
-  p_limit INTEGER DEFAULT ${POSTGRES_CHANGE_FEED_DRAIN_BATCH}
+  p_limit INTEGER,
+  p_excluded_tables TEXT[]
 )
 RETURNS TABLE(
   drained_seq BIGINT,
@@ -466,6 +487,23 @@ BEGIN
       RETURN;
     END IF;
 
+    -- The feed never records a sensitive table (#2982). Staged entries for
+    -- one — from an older replica, or staged before the table was declared
+    -- sensitive — are dropped here, before a sequence is allocated.
+    -- Bounded like the sequencing batch, so a large legacy backlog cannot make
+    -- one pass outlive statement_timeout and stall the feed; the remainder is
+    -- purged by later passes, and the batch below skips it meanwhile.
+    IF COALESCE(cardinality(p_excluded_tables), 0) > 0 THEN
+      DELETE FROM _smrt_changes_pending AS sensitive
+      WHERE sensitive.pending_id IN (
+        SELECT staged.pending_id
+        FROM _smrt_changes_pending AS staged
+        WHERE staged.table_name = ANY(p_excluded_tables)
+        ORDER BY staged.pending_id
+        LIMIT GREATEST(COALESCE(p_limit, ${POSTGRES_CHANGE_FEED_DRAIN_BATCH}), 1)
+      );
+    END IF;
+
     SELECT COALESCE(MAX(changes.seq), 0) INTO v_base FROM _smrt_changes AS changes;
 
     RETURN QUERY
@@ -474,6 +512,11 @@ BEGIN
       WHERE pending.pending_id IN (
         SELECT candidate.pending_id
         FROM _smrt_changes_pending AS candidate
+        -- A sensitive row committed after the purge above is skipped, not
+        -- sequenced; the next drain purges it.
+        WHERE NOT (
+          candidate.table_name = ANY(COALESCE(p_excluded_tables, ARRAY[]::TEXT[]))
+        )
         ORDER BY candidate.pending_id
         LIMIT GREATEST(COALESCE(p_limit, ${POSTGRES_CHANGE_FEED_DRAIN_BATCH}), 1)
       )
@@ -540,6 +583,55 @@ BEGIN
   END;
 END;
 $smrt_change_feed_drain$;
+`;
+
+/**
+ * Compatibility single-argument drain (#2982): see
+ * {@link POSTGRES_CHANGE_FEED_COMPAT_DRAIN_FUNCTION_IDENTITY}. Current SMRT
+ * never calls it.
+ */
+export const CREATE_POSTGRES_CHANGE_FEED_COMPAT_DRAIN_FUNCTION = `
+CREATE OR REPLACE FUNCTION ${POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_NAME}(
+  p_limit INTEGER DEFAULT ${POSTGRES_CHANGE_FEED_DRAIN_BATCH}
+)
+RETURNS TABLE(
+  drained_seq BIGINT,
+  drained_table TEXT,
+  drained_row_id TEXT,
+  drained_operation TEXT,
+  drained_tenant_id TEXT,
+  error_code TEXT,
+  error_message TEXT
+)
+LANGUAGE plpgsql
+SECURITY INVOKER
+AS $smrt_change_feed_drain_compat$
+-- ${POSTGRES_CHANGE_FEED_HELPER_MARKER}
+DECLARE
+  v_error_code TEXT;
+  v_error_message TEXT;
+BEGIN
+  -- Its own boundary, like the drain it delegates to: a resolution or
+  -- privilege error on the inner call must come back as data, never abort an
+  -- older replica's caller transaction (#2026).
+  BEGIN
+    RETURN QUERY
+    SELECT * FROM ${POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_NAME}(p_limit, ARRAY[]::TEXT[]);
+  EXCEPTION WHEN query_canceled OR assert_failure OR OTHERS THEN
+    GET STACKED DIAGNOSTICS
+      v_error_code = RETURNED_SQLSTATE,
+      v_error_message = MESSAGE_TEXT;
+    RETURN QUERY SELECT
+      NULL::BIGINT,
+      NULL::TEXT,
+      NULL::TEXT,
+      NULL::TEXT,
+      NULL::TEXT,
+      v_error_code,
+      v_error_message;
+  END;
+END;
+$smrt_change_feed_drain_compat$;
 `;
 
 /**
@@ -788,6 +880,55 @@ $smrt_change_feed_pending_ddl$;`,
     .join('\n');
 
 /**
+ * Install both drain overloads inside a helper DO block (#2982).
+ *
+ * The two-argument drain is the first framework routine identity added to
+ * databases that already exist, and a new function gets PostgreSQL's default
+ * ACL — which a hardened deployment (PUBLIC EXECUTE revoked, the runtime role
+ * granted explicitly by the permissions planner) would leave the runtime
+ * unable to call. When this block creates it, it therefore inherits the
+ * compatibility drain's reconciled EXECUTE grants. A role that may not grant
+ * keeps the default ACL; the permissions planner reports and repairs it.
+ */
+const POSTGRES_CHANGE_FEED_DRAIN_INSTALL = `  DECLARE
+    v_drain_created BOOLEAN :=
+      to_regprocedure('${POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_IDENTITY}') IS NULL;
+    v_grant RECORD;
+  BEGIN
+    EXECUTE $smrt_change_feed_drain_ddl$
+${CREATE_POSTGRES_CHANGE_FEED_DRAIN_FUNCTION.trim()}
+$smrt_change_feed_drain_ddl$;
+    EXECUTE $smrt_change_feed_drain_compat_ddl$
+${CREATE_POSTGRES_CHANGE_FEED_COMPAT_DRAIN_FUNCTION.trim()}
+$smrt_change_feed_drain_compat_ddl$;
+    IF v_drain_created AND (
+      SELECT p.proacl FROM pg_proc AS p
+      WHERE p.oid = to_regprocedure('${POSTGRES_CHANGE_FEED_COMPAT_DRAIN_FUNCTION_IDENTITY}')
+    ) IS NOT NULL THEN
+      BEGIN
+        EXECUTE 'REVOKE ALL ON FUNCTION ${POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_IDENTITY} FROM PUBLIC';
+        FOR v_grant IN
+          SELECT acl.grantee
+          FROM pg_proc AS p, aclexplode(p.proacl) AS acl
+          WHERE p.oid = to_regprocedure('${POSTGRES_CHANGE_FEED_COMPAT_DRAIN_FUNCTION_IDENTITY}')
+            AND acl.privilege_type = 'EXECUTE'
+        LOOP
+          IF v_grant.grantee = 0 THEN
+            EXECUTE 'GRANT EXECUTE ON FUNCTION ${POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_IDENTITY} TO PUBLIC';
+          ELSE
+            EXECUTE format(
+              'GRANT EXECUTE ON FUNCTION ${POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_IDENTITY} TO %I',
+              pg_get_userbyid(v_grant.grantee)
+            );
+          END IF;
+        END LOOP;
+      EXCEPTION WHEN insufficient_privilege THEN
+        NULL;
+      END;
+    END IF;
+  END;`;
+
+/**
  * Serialize PostgreSQL helper replacement inside one server-side statement.
  *
  * The transaction-scoped advisory lock prevents concurrent bootstraps from
@@ -803,9 +944,7 @@ BEGIN
   );
 ${POSTGRES_CHANGE_FEED_PENDING_DDL}
   DROP FUNCTION IF EXISTS ${LEGACY_POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY};
-  EXECUTE $smrt_change_feed_drain_ddl$
-${CREATE_POSTGRES_CHANGE_FEED_DRAIN_FUNCTION.trim()}
-$smrt_change_feed_drain_ddl$;
+${POSTGRES_CHANGE_FEED_DRAIN_INSTALL}
   EXECUTE $smrt_change_feed_ddl$
 ${CREATE_POSTGRES_CHANGE_FEED_APPEND_FUNCTION.trim()}
 $smrt_change_feed_ddl$;
@@ -851,9 +990,7 @@ BEGIN
     );
 ${POSTGRES_CHANGE_FEED_PENDING_DDL}
   DROP FUNCTION IF EXISTS ${LEGACY_POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY};
-  EXECUTE $smrt_change_feed_drain_ddl$
-${CREATE_POSTGRES_CHANGE_FEED_DRAIN_FUNCTION.trim()}
-$smrt_change_feed_drain_ddl$;
+${POSTGRES_CHANGE_FEED_DRAIN_INSTALL}
   IF v_append_stale THEN
     EXECUTE $smrt_change_feed_ddl$
 ${CREATE_POSTGRES_CHANGE_FEED_APPEND_FUNCTION.trim()}
@@ -907,9 +1044,7 @@ BEGIN
 ${POSTGRES_CHANGE_FEED_SCHEMA_DDL}
 ${POSTGRES_CHANGE_FEED_PENDING_DDL}
   DROP FUNCTION IF EXISTS ${LEGACY_POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY};
-  EXECUTE $smrt_change_feed_drain_ddl$
-${CREATE_POSTGRES_CHANGE_FEED_DRAIN_FUNCTION.trim()}
-$smrt_change_feed_drain_ddl$;
+${POSTGRES_CHANGE_FEED_DRAIN_INSTALL}
   IF v_append_stale THEN
     EXECUTE $smrt_change_feed_ddl$
 ${CREATE_POSTGRES_CHANGE_FEED_APPEND_FUNCTION.trim()}

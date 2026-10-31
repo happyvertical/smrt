@@ -2,9 +2,11 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import {
   CREATE_POSTGRES_CHANGE_FEED_APPEND_BATCH_FUNCTION,
   CREATE_POSTGRES_CHANGE_FEED_APPEND_FUNCTION,
+  CREATE_POSTGRES_CHANGE_FEED_COMPAT_DRAIN_FUNCTION,
   CREATE_POSTGRES_CHANGE_FEED_DRAIN_FUNCTION,
   POSTGRES_CHANGE_FEED_APPEND_BATCH_FUNCTION_IDENTITY,
   POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY,
+  POSTGRES_CHANGE_FEED_COMPAT_DRAIN_FUNCTION_IDENTITY,
   POSTGRES_CHANGE_FEED_DRAIN_BATCH,
   POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_IDENTITY,
 } from './system/schema.js';
@@ -155,8 +157,10 @@ function frameworkRoutine(identity: string, ddl: string): FrameworkRoutine {
   return {
     name: match[1],
     argumentTypes: normalizeArgumentTypes(match[2]),
+    // Only the single-argument compatibility drain keeps a default (#2982);
+    // the current drain takes both arguments explicitly.
     argumentDefaults:
-      match[1] === '_smrt_drain_changes'
+      identity === POSTGRES_CHANGE_FEED_COMPAT_DRAIN_FUNCTION_IDENTITY
         ? String(POSTGRES_CHANGE_FEED_DRAIN_BATCH)
         : null,
     result: resultFromFunctionDdl(ddl),
@@ -176,6 +180,10 @@ const frameworkRoutines = [
   frameworkRoutine(
     POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_IDENTITY,
     CREATE_POSTGRES_CHANGE_FEED_DRAIN_FUNCTION,
+  ),
+  frameworkRoutine(
+    POSTGRES_CHANGE_FEED_COMPAT_DRAIN_FUNCTION_IDENTITY,
+    CREATE_POSTGRES_CHANGE_FEED_COMPAT_DRAIN_FUNCTION,
   ),
 ];
 
