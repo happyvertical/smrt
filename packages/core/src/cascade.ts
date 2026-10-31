@@ -76,6 +76,7 @@ import {
 } from './embedded-write-queue.js';
 import { ConfigurationError, DatabaseError } from './errors.js';
 import { buildWhere } from './host.js';
+import { isKnownNativeDuckDbHandle } from './native-duckdb.js';
 // Type-only: erased at runtime, so it cannot re-enter the
 // `registry → object → cascade` import cycle.
 import type { ObjectRegistry } from './registry.js';
@@ -869,12 +870,7 @@ export async function runCascadeDelete(
     };
     const transaction = (db as TransactionCapable).transaction;
     if (typeof transaction !== 'function') return runWithoutReferences(db);
-    return withEmbeddedWriteTransaction(
-      db,
-      isEmbeddedDatabase(db),
-      runWithoutReferences,
-      isFrameworkTransactionHandle(db),
-    );
+    return runInOwningCascadeTransaction(db, runWithoutReferences);
   }
 
   const run = async (bound: DatabaseInterface): Promise<CascadeResult> => {
@@ -892,10 +888,93 @@ export async function runCascadeDelete(
     return run(db);
   }
 
+  return runInOwningCascadeTransaction(db, run);
+}
+
+/**
+ * Message of the statement that aborts a caller-owned native DuckDB
+ * transaction after a cascade failed part-way through it (#2824).
+ */
+export const CASCADE_ABORTED_CALLER_TRANSACTION =
+  'smrt: delete cascade failed inside a caller-owned DuckDB transaction; the transaction is aborted';
+
+/**
+ * Own the cascade's atomic scope (#2824).
+ *
+ * The cascade and the target's own `DELETE` run in a transaction opened on
+ * `db`. When `db` is already a transaction handle on an engine without
+ * `SAVEPOINT`, the SDK refuses the nested `transaction()` before running the
+ * callback or touching the enclosing transaction (`NestedTransactionError`).
+ * The cascade then joins that enclosing transaction directly instead of
+ * failing, which is the only atomic scope there is:
+ *
+ * - framework-owned handles (`withTransaction()`, the bulk junction path) —
+ *   unchanged since #2818;
+ * - caller-owned native DuckDB transactions (`db.transaction(tx => …)` or
+ *   `beginTransaction()` handed to `withDatabase()`). Commit and rollback stay
+ *   the caller's: a rollback discards the cascade with everything else.
+ *
+ * Joining without a savepoint means a cascade that fails after issuing some
+ * of its statements cannot be undone on its own. On native DuckDB the framework
+ * therefore aborts the joined transaction before rethrowing — DuckDB then
+ * refuses every later statement in it and its `COMMIT` persists nothing — so a
+ * caller that swallows the error can never commit a half-applied cascade. The
+ * callback runs at most once: the nested refusal happens before it starts, and
+ * nothing is replayed after it has.
+ *
+ * Other no-savepoint adapters (the JSON adapter) keep the detectable
+ * `NestedTransactionError` refusal for caller-owned transactions by default:
+ * they offer no statement that poisons the enclosing transaction, so joining
+ * could commit a partial cascade. The compatible bulk junction path (#2818)
+ * passes `reuseUnsupportedNested: true` to keep its established join-any
+ * behavior, and still gets the DuckDB abort-on-failure guard.
+ *
+ * @param db - Database the cascade is bound to (a root or a transaction handle)
+ * @param run - Cascade plus the target's own delete, on the transaction-bound db
+ * @param reuseUnsupportedNested - Join any enclosing transaction that refuses
+ *   nesting; defaults to framework-owned handles and native DuckDB
+ */
+export async function runInOwningCascadeTransaction<T>(
+  db: DatabaseInterface,
+  run: (bound: DatabaseInterface) => Promise<T>,
+  reuseUnsupportedNested?: boolean,
+): Promise<T> {
+  const nativeDuckDb = isKnownNativeDuckDbHandle(db);
   return withEmbeddedWriteTransaction(
     db,
     isEmbeddedDatabase(db),
-    run,
-    isFrameworkTransactionHandle(db),
+    async (bound) => {
+      // `bound === db` only when the nested transaction was refused and the
+      // cascade joined the enclosing one; an opened transaction is a new scope.
+      if (bound !== db || !nativeDuckDb) return run(bound);
+      try {
+        return await run(bound);
+      } catch (error) {
+        await abortJoinedDuckDbTransaction(bound);
+        throw error;
+      }
+    },
+    reuseUnsupportedNested ??
+      (isFrameworkTransactionHandle(db) || nativeDuckDb),
   );
+}
+
+/**
+ * Put a joined native DuckDB transaction into DuckDB's aborted state.
+ *
+ * A failing statement is the engine's own mechanism: after it, DuckDB rejects
+ * every statement with "Current transaction is aborted" until the transaction
+ * ends, and ending it discards its writes. The statement is expected to throw;
+ * its error is not the one the caller needs, so it is dropped.
+ */
+async function abortJoinedDuckDbTransaction(
+  db: DatabaseInterface,
+): Promise<void> {
+  try {
+    await db.query(
+      `SELECT error('${CASCADE_ABORTED_CALLER_TRANSACTION.replaceAll("'", "''")}')`,
+    );
+  } catch {
+    // Expected: this statement exists to fail.
+  }
 }
