@@ -213,6 +213,7 @@ async function setup() {
       enrollmentId,
       releaseId: rel1.id,
       requestKey: key('pin'),
+      policyBasis: 'guardians-only',
     }),
   );
   const ids = (release: {
@@ -293,6 +294,7 @@ async function setup() {
           enrollmentId,
           releaseId,
           requestKey: key('up'),
+          policyBasis: 'guardians-only',
         }),
       ),
   };

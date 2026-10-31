@@ -66,6 +66,7 @@ import {
   CourseReleaseCollection,
   type CourseRevision,
   CourseRevisionCollection,
+  type CourseUpgradeChoice,
   CourseUpgradeChoiceCollection,
   type EnrollmentReleasePin,
   EnrollmentReleasePinCollection,
@@ -1783,12 +1784,13 @@ export class CourseAuthoringService {
     return row as Row;
   }
 
-  private async autoUpgradeEnabled(
+  /** The opt-in/out row that governs an enrollment: its own, else the course's. */
+  private async governingChoice(
     tx: Tx,
     tenantId: string,
     courseId: string,
     enrollmentId: string,
-  ): Promise<boolean> {
+  ): Promise<CourseUpgradeChoice | null> {
     const choices = (
       await (
         await CourseUpgradeChoiceCollection.create({ db: tx })
@@ -1798,9 +1800,19 @@ export class CourseAuthoringService {
       })
     ).sort((a, b) => a.sequence - b.sequence);
     const own = choices.filter((c) => c.enrollmentId === enrollmentId).at(-1);
-    if (own) return own.enabled;
+    if (own) return own;
+    return choices.filter((c) => c.enrollmentId === '').at(-1) ?? null;
+  }
+
+  private async autoUpgradeEnabled(
+    tx: Tx,
+    tenantId: string,
+    courseId: string,
+    enrollmentId: string,
+  ): Promise<boolean> {
     return (
-      choices.filter((c) => c.enrollmentId === '').at(-1)?.enabled ?? false
+      (await this.governingChoice(tx, tenantId, courseId, enrollmentId))
+        ?.enabled ?? false
     );
   }
 
@@ -1826,12 +1838,15 @@ export class CourseAuthoringService {
         current.courseId,
         enrollmentId,
       ),
+      policyBasis: current.policyBasis,
       history: pins.map((p) => ({
         releaseId: p.releaseId,
         previousReleaseId: optional(p.previousReleaseId),
         kind: p.kind as EnrollmentPinKind,
         sequence: p.sequence,
         actorUserId: optional(p.actorUserId),
+        delegatingGuardianUserId: optional(p.delegatingGuardianUserId),
+        policyBasis: p.policyBasis,
         recordedAt: iso(p.recordedAt),
       })),
     };
@@ -1855,6 +1870,7 @@ export class CourseAuthoringService {
       previous: EnrollmentReleasePin | undefined;
       kind: EnrollmentPinKind;
       requestKey: string;
+      policyBasis: string;
       sequence: number;
     },
   ) {
@@ -1870,6 +1886,7 @@ export class CourseAuthoringService {
       sequence: input.sequence,
       actorUserId: actor?.actorUserId ?? '',
       delegatingGuardianUserId: actor?.delegatingGuardianUserId ?? '',
+      policyBasis: input.policyBasis,
       requestKey: input.requestKey,
       recordedAt: new Date(),
     });
@@ -1884,6 +1901,7 @@ export class CourseAuthoringService {
       enrollmentId: string;
       releaseId: string;
       requestKey: string;
+      policyBasis: string;
     },
   ): Promise<EnrollmentPinView> {
     return this.movePin(request, 'initial');
@@ -1895,6 +1913,7 @@ export class CourseAuthoringService {
       enrollmentId: string;
       releaseId: string;
       requestKey: string;
+      policyBasis: string;
     },
   ): Promise<EnrollmentPinView> {
     return this.movePin(request, 'explicit');
@@ -1905,10 +1924,12 @@ export class CourseAuthoringService {
       enrollmentId: string;
       releaseId: string;
       requestKey: string;
+      policyBasis: string;
     },
     kind: 'initial' | 'explicit',
   ): Promise<EnrollmentPinView> {
     const requestKey = requireKey(request.requestKey);
+    const policyBasis = text(request.policyBasis, 'policy basis', 200, true);
     return this.run(async (tx) => {
       const enrollment = await this.enrollmentRow(
         tx,
@@ -1918,7 +1939,7 @@ export class CourseAuthoringService {
       await this.authorize(
         tx,
         request,
-        'education.course.release',
+        'education.course.assign',
         kind === 'initial' ? 'pin-enrollment' : 'upgrade-enrollment',
         {
           enrollmentId: request.enrollmentId,
@@ -1929,7 +1950,11 @@ export class CourseAuthoringService {
       const pins = await this.pins(tx, request.tenantId, request.enrollmentId);
       const replay = pins.find((p) => p.requestKey === requestKey);
       if (replay) {
-        if (replay.kind !== kind || replay.releaseId !== request.releaseId)
+        if (
+          replay.kind !== kind ||
+          replay.releaseId !== request.releaseId ||
+          replay.policyBasis !== policyBasis
+        )
           throw new CourseRequestKeyConflictError();
         return this.pinView(tx, request.tenantId, request.enrollmentId);
       }
@@ -1974,6 +1999,7 @@ export class CourseAuthoringService {
         previous,
         kind,
         requestKey,
+        policyBasis,
         sequence: pins.length + 1,
       });
       return this.pinView(tx, request.tenantId, request.enrollmentId);
@@ -1990,13 +2016,16 @@ export class CourseAuthoringService {
       enrollmentId?: string;
       enabled: boolean;
       requestKey: string;
+      policyBasis: string;
     },
   ): Promise<{
     courseId: string;
     enrollmentId: string | null;
     enabled: boolean;
+    policyBasis: string;
   }> {
     const requestKey = requireKey(request.requestKey);
+    const policyBasis = text(request.policyBasis, 'policy basis', 200, true);
     const enabled = bool(request.enabled, 'enabled');
     return this.run(async (tx) => {
       const enrollment = request.enrollmentId
@@ -2005,7 +2034,7 @@ export class CourseAuthoringService {
       await this.authorize(
         tx,
         request,
-        'education.course.release',
+        'education.course.assign',
         'set-auto-upgrade',
         {
           courseId: request.courseId,
@@ -2028,11 +2057,13 @@ export class CourseAuthoringService {
         courseId: request.courseId,
         enrollmentId: request.enrollmentId ?? null,
         enabled,
+        policyBasis,
       };
       const replay = all.find((c) => c.requestKey === requestKey);
       if (replay) {
         if (
           replay.enabled !== enabled ||
+          replay.policyBasis !== policyBasis ||
           replay.enrollmentId !== (request.enrollmentId ?? '')
         )
           throw new CourseRequestKeyConflictError();
@@ -2058,6 +2089,7 @@ export class CourseAuthoringService {
         sequence: all.length + 1,
         actorUserId: request.actorUserId,
         delegatingGuardianUserId: request.delegatingGuardianUserId ?? '',
+        policyBasis,
         requestKey,
         recordedAt: new Date(),
       });
@@ -2083,10 +2115,13 @@ export class CourseAuthoringService {
       latest.set(pin.enrollmentId, pin);
     for (const [enrollmentId, previous] of latest) {
       if (previous.releaseId === String(release.id)) continue;
-      if (
-        !(await this.autoUpgradeEnabled(tx, tenantId, courseId, enrollmentId))
-      )
-        continue;
+      const choice = await this.governingChoice(
+        tx,
+        tenantId,
+        courseId,
+        enrollmentId,
+      );
+      if (!choice?.enabled) continue;
       const enrollment = await tx.get('enrollments', {
         id: enrollmentId,
         tenant_id: tenantId,
@@ -2099,6 +2134,7 @@ export class CourseAuthoringService {
         previous,
         kind: 'auto',
         requestKey: `auto:${String(release.id)}`,
+        policyBasis: choice.policyBasis,
         sequence: (await this.pins(tx, tenantId, enrollmentId)).length + 1,
       });
     }

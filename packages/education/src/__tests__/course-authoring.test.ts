@@ -413,13 +413,14 @@ describe('CourseAuthoringService', () => {
         () => s.service.readDraft({ ...s.guardian, courseId: head.courseId }),
       ],
       [
-        'education.course.release',
+        'education.course.assign',
         () =>
           s.service.pinEnrollment({
             ...s.guardian,
             enrollmentId: String(enrollment.id),
             releaseId: rel.id,
             requestKey: s.key(),
+            policyBasis: 'guardians-only',
           }),
       ],
       [
@@ -758,6 +759,7 @@ describe('CourseAuthoringService', () => {
           enrollmentId,
           releaseId,
           requestKey: key,
+          policyBasis: 'guardians-only',
         }),
       );
     const upgrade = (releaseId: string, key = s.key()) =>
@@ -767,6 +769,7 @@ describe('CourseAuthoringService', () => {
           enrollmentId,
           releaseId,
           requestKey: key,
+          policyBasis: 'guardians-only',
         }),
       );
     // Upgrading before pinning, and pinning a foreign enrollment, are rejected.
@@ -791,6 +794,7 @@ describe('CourseAuthoringService', () => {
           enrollmentId,
           releaseId: rel.id,
           requestKey: s.key(),
+          policyBasis: 'guardians-only',
         }),
       ),
     ).rejects.toBeInstanceOf(CourseAuthoringAuthorizationError);
@@ -828,12 +832,14 @@ describe('CourseAuthoringService', () => {
         enrollmentId,
         enabled: true,
         requestKey: 'opt-in',
+        policyBasis: 'guardians-only',
       }),
     );
     expect(optIn).toEqual({
       courseId: head.courseId,
       enrollmentId,
       enabled: true,
+      policyBasis: 'guardians-only',
     });
     const choices = await s.db.list('course_upgrade_choices', {});
     expect(choices).toHaveLength(1);
@@ -850,6 +856,7 @@ describe('CourseAuthoringService', () => {
           enrollmentId,
           enabled: false,
           requestKey: 'opt-in',
+          policyBasis: 'guardians-only',
         }),
       ),
     ).rejects.toBeInstanceOf(CourseRequestKeyConflictError);
@@ -921,6 +928,7 @@ describe('CourseAuthoringService', () => {
         enrollmentId,
         enabled: false,
         requestKey: 'opt-out',
+        policyBasis: 'guardians-only',
       }),
     );
     const four = await s.save(
@@ -972,6 +980,7 @@ describe('CourseAuthoringService', () => {
         enrollmentId: String(enrollment.id),
         releaseId: rel.id,
         requestKey: s.key(),
+        policyBasis: 'guardians-only',
       }),
     );
     await s.as(s.guardian, () =>
@@ -980,6 +989,7 @@ describe('CourseAuthoringService', () => {
         courseId: head.courseId,
         enabled: true,
         requestKey: 'course-opt-in',
+        policyBasis: 'guardians-only',
       }),
     );
     const next = await s.save(
@@ -1005,9 +1015,301 @@ describe('CourseAuthoringService', () => {
           enrollmentId: String(enrollment.id),
           enabled: true,
           requestKey: s.key(),
+          policyBasis: 'guardians-only',
         }),
       ),
     ).rejects.toBeInstanceOf(CourseNotFoundError);
+  });
+
+  describe('assign action and policy basis', () => {
+    async function pinned() {
+      const s = await setup();
+      const { head, saved, rel } = await s.released();
+      const enrollmentId = String((await s.enrollOn(rel.releaseCourseId)).id);
+      const actors = { guardian: s.guardian, agent: s.agent };
+      const pin = (
+        actor: CourseAuthoringActor,
+        releaseId: string,
+        extra: Record<string, unknown> = {},
+        key = s.key(),
+      ) =>
+        s.as(actor, () =>
+          s.service.pinEnrollment({
+            ...actor,
+            enrollmentId,
+            releaseId,
+            requestKey: key,
+            policyBasis: 'guardians-and-agents',
+            ...extra,
+          }),
+        );
+      const upgrade = (
+        actor: CourseAuthoringActor,
+        releaseId: string,
+        extra: Record<string, unknown> = {},
+        key = s.key(),
+      ) =>
+        s.as(actor, () =>
+          s.service.upgradeEnrollment({
+            ...actor,
+            enrollmentId,
+            releaseId,
+            requestKey: key,
+            policyBasis: 'guardians-and-agents',
+            ...extra,
+          }),
+        );
+      const auto = (
+        actor: CourseAuthoringActor,
+        extra: Record<string, unknown> = {},
+        key = s.key(),
+      ) =>
+        s.as(actor, () =>
+          s.service.setAutoUpgrade({
+            ...actor,
+            courseId: head.courseId,
+            enabled: true,
+            requestKey: key,
+            policyBasis: 'guardians-and-agents',
+            ...extra,
+          }),
+        );
+      const newer = async (from = saved.headRevisionId, title = 'A2') => {
+        const next = await s.save(
+          head.courseId,
+          from,
+          s.lessons(['a', title], ['b', 'B2']),
+        );
+        const made = await s.release(head.courseId, next.revisionId);
+        return Object.assign(made, { nextHead: next.headRevisionId });
+      };
+      return {
+        s,
+        head,
+        saved,
+        rel,
+        enrollmentId,
+        pin,
+        upgrade,
+        auto,
+        newer,
+        actors,
+      };
+    }
+
+    it('keeps release and assign independent grants in both directions', async () => {
+      const { s, head, saved, rel, pin, upgrade, auto } = await pinned();
+      // Without assign: release still works, every assignment operation is denied.
+      s.denied.add('education.course.assign');
+      const next = await s.save(
+        head.courseId,
+        saved.headRevisionId,
+        s.lessons(['a', 'A2'], ['b', 'B2']),
+      );
+      const rel2 = await s.release(head.courseId, next.revisionId);
+      await expect(pin(s.guardian, rel.id)).rejects.toBeInstanceOf(
+        CourseAuthoringAuthorizationError,
+      );
+      await expect(auto(s.guardian)).rejects.toBeInstanceOf(
+        CourseAuthoringAuthorizationError,
+      );
+      s.denied.clear();
+      await pin(s.guardian, rel.id);
+      s.denied.add('education.course.assign');
+      await expect(upgrade(s.guardian, rel2.id)).rejects.toBeInstanceOf(
+        CourseAuthoringAuthorizationError,
+      );
+      // Without release: pin/upgrade/auto still work, release is denied.
+      s.denied.clear();
+      s.denied.add('education.course.release');
+      expect((await upgrade(s.guardian, rel2.id)).releaseId).toBe(rel2.id);
+      expect((await auto(s.guardian)).enabled).toBe(true);
+      const third = await s.save(
+        head.courseId,
+        next.headRevisionId,
+        s.lessons(['a', 'A3']),
+      );
+      await expect(
+        s.release(head.courseId, third.revisionId),
+      ).rejects.toBeInstanceOf(CourseAuthoringAuthorizationError);
+    });
+
+    it('asks the authorizer for assign with operation, executor and delegating guardian', async () => {
+      const { s, head, rel, enrollmentId, pin, upgrade, auto, newer } =
+        await pinned();
+      const rel2 = await newer();
+      s.calls.length = 0;
+      await pin(s.agent, rel.id);
+      await upgrade(s.agent, rel2.id);
+      await auto(s.agent, { enrollmentId });
+      const byOperation = new Map(s.calls.map((c) => [c.operation, c]));
+      for (const operation of [
+        'pin-enrollment',
+        'upgrade-enrollment',
+        'set-auto-upgrade',
+      ] as const) {
+        const call = byOperation.get(operation);
+        expect(call?.action).toBe('education.course.assign');
+        expect(call?.executor).toBeDefined();
+        expect(call?.executor).not.toBe(s.db);
+        expect(call?.delegatingGuardianUserId).toBe(s.guardian.actorUserId);
+        expect(call?.actorUserId).toBe(s.agent.actorUserId);
+      }
+      expect(
+        s.calls.some(
+          (c) =>
+            c.operation !== 'release' &&
+            c.action === 'education.course.release' &&
+            [
+              'pin-enrollment',
+              'upgrade-enrollment',
+              'set-auto-upgrade',
+            ].includes(c.operation),
+        ),
+      ).toBe(false);
+      expect(head.courseId).toBeTruthy();
+    });
+
+    it('requires a bounded policy basis on pin, upgrade and auto-upgrade', async () => {
+      const { s, rel, enrollmentId, pin, upgrade, auto, newer } =
+        await pinned();
+      const rel2 = await newer();
+      for (const bad of [undefined, '', '   ', 'x'.repeat(201), 5]) {
+        await expect(
+          pin(s.guardian, rel.id, { policyBasis: bad }),
+        ).rejects.toMatchObject({ code: 'invalid-request' });
+        await expect(
+          auto(s.guardian, { policyBasis: bad }),
+        ).rejects.toMatchObject({ code: 'invalid-request' });
+        await expect(
+          auto(s.guardian, { enrollmentId, policyBasis: bad }),
+        ).rejects.toMatchObject({ code: 'invalid-request' });
+      }
+      await pin(s.guardian, rel.id);
+      for (const bad of [undefined, '', 'x'.repeat(201)])
+        await expect(
+          upgrade(s.guardian, rel2.id, { policyBasis: bad }),
+        ).rejects.toMatchObject({ code: 'invalid-request' });
+      expect(await s.count('enrollment_release_pins')).toBe(1);
+      expect(await s.count('course_upgrade_choices')).toBe(0);
+    });
+
+    it('records the basis on rows, views and automatic moves, with replay semantics', async () => {
+      const { s, head, rel, enrollmentId, pin, upgrade, auto, newer } =
+        await pinned();
+      const first = await pin(
+        s.agent,
+        rel.id,
+        { policyBasis: 'learner-may-ask' },
+        'pin-key',
+      );
+      expect(first.policyBasis).toBe('learner-may-ask');
+      expect(first.history[0]).toMatchObject({
+        policyBasis: 'learner-may-ask',
+        actorUserId: s.agent.actorUserId,
+        delegatingGuardianUserId: s.guardian.actorUserId,
+      });
+      // Same basis replays to the same result; a changed basis is a conflict.
+      expect(
+        await pin(
+          s.agent,
+          rel.id,
+          { policyBasis: 'learner-may-ask' },
+          'pin-key',
+        ),
+      ).toEqual(first);
+      await expect(
+        pin(s.agent, rel.id, { policyBasis: 'guardians-only' }, 'pin-key'),
+      ).rejects.toBeInstanceOf(CourseRequestKeyConflictError);
+      expect(await s.count('enrollment_release_pins')).toBe(1);
+
+      // Enrollment-level opt-in records its basis and the automatic move copies it.
+      const opt = await auto(
+        s.agent,
+        { enrollmentId, policyBasis: 'guardians-and-agents' },
+        'opt-key',
+      );
+      expect(opt.policyBasis).toBe('guardians-and-agents');
+      expect(
+        await auto(
+          s.agent,
+          { enrollmentId, policyBasis: 'guardians-and-agents' },
+          'opt-key',
+        ),
+      ).toEqual(opt);
+      await expect(
+        auto(
+          s.agent,
+          { enrollmentId, policyBasis: 'guardians-only' },
+          'opt-key',
+        ),
+      ).rejects.toBeInstanceOf(CourseRequestKeyConflictError);
+      const choice = (await s.db.list('course_upgrade_choices', {}))[0];
+      expect(choice).toMatchObject({
+        policy_basis: 'guardians-and-agents',
+        delegating_guardian_user_id: s.guardian.actorUserId,
+      });
+      const rel2 = await newer();
+      const moved = await s.as(s.guardian, () =>
+        s.service.getEnrollmentRelease({ ...s.guardian, enrollmentId }),
+      );
+      expect(moved.pin).toMatchObject({
+        releaseId: rel2.id,
+        kind: 'auto',
+        policyBasis: 'guardians-and-agents',
+      });
+      expect(moved.pin.history.at(-1)).toMatchObject({
+        kind: 'auto',
+        actorUserId: null,
+        policyBasis: 'guardians-and-agents',
+      });
+    });
+
+    it('records the basis on explicit upgrades and course-level automatic moves', async () => {
+      const { s, enrollmentId, rel, pin, upgrade, auto, newer } =
+        await pinned();
+      await pin(s.guardian, rel.id, { policyBasis: 'guardians-only' });
+      const rel2 = await newer();
+      const up = await upgrade(
+        s.agent,
+        rel2.id,
+        { policyBasis: 'learner-may-ask' },
+        'up-key',
+      );
+      expect(up).toMatchObject({
+        kind: 'explicit',
+        policyBasis: 'learner-may-ask',
+      });
+      expect(up.history.map((h) => h.policyBasis)).toEqual([
+        'guardians-only',
+        'learner-may-ask',
+      ]);
+      expect(
+        await upgrade(
+          s.agent,
+          rel2.id,
+          { policyBasis: 'learner-may-ask' },
+          'up-key',
+        ),
+      ).toEqual(up);
+      await expect(
+        upgrade(s.agent, rel2.id, { policyBasis: 'guardians-only' }, 'up-key'),
+      ).rejects.toBeInstanceOf(CourseRequestKeyConflictError);
+      // A course-level opt-in governs the next automatic move with its basis.
+      const courseOpt = await auto(s.guardian, {
+        policyBasis: 'learner-may-ask',
+      });
+      expect(courseOpt.policyBasis).toBe('learner-may-ask');
+      const rel3 = await newer(rel2.nextHead, 'A3');
+      const moved = await s.as(s.guardian, () =>
+        s.service.getEnrollmentRelease({ ...s.guardian, enrollmentId }),
+      );
+      expect(moved.pin).toMatchObject({
+        releaseId: rel3.id,
+        kind: 'auto',
+        policyBasis: 'learner-may-ask',
+      });
+    });
   });
 
   it('archives and unarchives reversibly without cascading', async () => {
@@ -1021,6 +1323,7 @@ describe('CourseAuthoringService', () => {
         enrollmentId,
         releaseId: rel.id,
         requestKey: s.key(),
+        policyBasis: 'guardians-only',
       }),
     );
     const lessonA = rel.lessons[0];
@@ -1075,6 +1378,7 @@ describe('CourseAuthoringService', () => {
           enrollmentId,
           releaseId: rel.id,
           requestKey: s.key(),
+          policyBasis: 'guardians-only',
         }),
       ),
     ).rejects.toBeInstanceOf(CourseArchivedError);

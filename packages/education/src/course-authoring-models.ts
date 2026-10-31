@@ -473,6 +473,8 @@ export class EnrollmentReleasePin extends SmrtObject {
   /** Empty for automatic moves, which have no actor. */
   actorUserId = '';
   delegatingGuardianUserId = '';
+  /** Host assignment-setting value relied on; automatic moves copy the opt-in's. */
+  policyBasis = '';
   requestKey = '';
   recordedAt = new Date();
   constructor(options: Record<string, unknown> = {}) {
@@ -495,6 +497,7 @@ export class EnrollmentReleasePin extends SmrtObject {
         course_id: this.courseId,
       });
     requireText(this.requestKey, 'Enrollment pin requires a request key', 300);
+    requireText(this.policyBasis, 'Enrollment pin requires a policy basis');
     if (
       !['initial', 'explicit', 'auto'].includes(this.kind) ||
       (this.kind !== 'auto' && !this.actorUserId) ||
@@ -527,6 +530,8 @@ export class CourseUpgradeChoice extends SmrtObject {
   sequence = 1;
   actorUserId = '';
   delegatingGuardianUserId = '';
+  /** Host assignment-setting value relied on for this choice. */
+  policyBasis = '';
   requestKey = '';
   recordedAt = new Date();
   constructor(options: Record<string, unknown> = {}) {
@@ -543,6 +548,7 @@ export class CourseUpgradeChoice extends SmrtObject {
       await requireOwned(this, 'enrollments', this.enrollmentId);
     requireText(this.actorUserId, 'Upgrade choice requires an actor');
     requireText(this.requestKey, 'Upgrade choice requires a request key');
+    requireText(this.policyBasis, 'Upgrade choice requires a policy basis');
     if (
       typeof this.enabled !== 'boolean' ||
       !Number.isSafeInteger(this.sequence) ||

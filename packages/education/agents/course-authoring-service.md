@@ -21,14 +21,19 @@ change to existing tables, test-pinned); the runtime never creates tables.
 
 ## Actions and host mapping
 
-`education.course.read-draft|author|generate|review|release|archive`. The host
+`education.course.read-draft|author|generate|review|release|assign|archive`. The host
 maps roles; the authorizer also receives `operation`, `courseId`,
 `enrollmentId`/`learnerId` and `delegatingGuardianUserId` (agent calls) and must
 re-validate that delegation on the supplied executor. The service checks the
 ambient tenant context, active actor and delegating-guardian membership first.
-`generated` provenance additionally needs `generate`. Enrollment pin, upgrade
-and auto-upgrade choices use `release` (deny them per `operation` for agents if
-wanted); archive and discard use `archive`. `generate` and `review` are used by the [generation and review service](course-generation-review.md).
+`generated` provenance additionally needs `generate`. Releasing and assigning
+are independent grants: `pinEnrollment`, `upgradeEnrollment` and `setAutoUpgrade`
+(operations `pin-enrollment`, `upgrade-enrollment`, `set-auto-upgrade`) use only
+`assign`, never `release`. A host maps `assign` per learner from its assignment
+setting (guardians only, guardians plus agents, learner can ask) using
+`operation`, `enrollmentId`/`learnerId` and `delegatingGuardianUserId`; a
+learner-initiated request is host policy, the service adds no learner authority.
+Archive and discard use `archive`. `generate` and `review` are used by the [generation and review service](course-generation-review.md).
 Foreign or missing courses/enrollments are not-found/denied alike.
 
 ## Writes
@@ -59,7 +64,14 @@ share mutable rows. Personal-use releases stay `draft` status (the existing rule
 `LearnerService` on a release's `releaseCourseId`, then `pinEnrollment` records
 the pin. `upgradeEnrollment` appends an explicit move to a newer release.
 `setAutoUpgrade` records an opt-in/out at course or enrollment level (enrollment
-wins) for future releases; each automatic move is a recorded pin without actor.
+wins) for future releases; each automatic move is a recorded pin without actor. Pin, upgrade and
+`setAutoUpgrade` requests require a host-supplied `policyBasis` (the
+assignment-setting value relied on, e.g. `guardians-only`; 1-200 chars, else
+`invalid-request`), recorded with actor and delegating guardian on the pin or
+choice row and exposed on the views. An automatic move copies the basis of the
+opt-in that governs it and needs no live authorization (the opt-in was
+authorized with `assign`). A replayed request key with a different basis is a
+request-key conflict.
 `getEnrollmentRelease` returns the pin and effective lessons: after any move
 (automatic or explicit), started lessons stay on the immutable row they were
 started on, unstarted lessons follow the current release. `LearnerService`

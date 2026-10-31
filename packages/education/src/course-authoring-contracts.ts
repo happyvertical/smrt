@@ -13,6 +13,7 @@ export type CourseAuthoringAction =
   | 'education.course.generate'
   | 'education.course.review'
   | 'education.course.release'
+  | 'education.course.assign'
   | 'education.course.archive';
 
 export const COURSE_AUTHORING_ACTIONS: readonly CourseAuthoringAction[] = [
@@ -21,6 +22,7 @@ export const COURSE_AUTHORING_ACTIONS: readonly CourseAuthoringAction[] = [
   'education.course.generate',
   'education.course.review',
   'education.course.release',
+  'education.course.assign',
   'education.course.archive',
 ];
 
@@ -277,12 +279,16 @@ export type EnrollmentPinView = Readonly<{
   releaseNumber: number;
   kind: EnrollmentPinKind;
   autoUpgrade: boolean;
+  /** Assignment-setting value the host relied on for the current pin. */
+  policyBasis: string;
   history: ReadonlyArray<{
     releaseId: string;
     previousReleaseId: string | null;
     kind: EnrollmentPinKind;
     sequence: number;
     actorUserId: string | null;
+    delegatingGuardianUserId: string | null;
+    policyBasis: string;
     recordedAt: string;
   }>;
 }>;
