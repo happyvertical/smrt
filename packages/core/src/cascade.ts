@@ -948,8 +948,10 @@ export const CASCADE_ABORTED_CALLER_TRANSACTION =
  * Joining without a savepoint means a cascade that fails after issuing some
  * of its writes cannot be undone on its own. On native DuckDB the framework
  * therefore aborts the joined transaction before rethrowing when the cascade
- * already wrote (a refusal before the first write, such as the RESTRICT /
- * NO ACTION preflight, leaves it untouched) — DuckDB then
+ * already issued a write (a refusal before the first write, such as the
+ * depth-0 RESTRICT / NO ACTION preflight, leaves it untouched). DuckDB's
+ * `delete()` reports a constant affected count and owned-row cleanup always
+ * runs, so in practice any failure after that preflight aborts — DuckDB then
  * refuses every later statement in it and its `COMMIT` persists nothing — so a
  * caller that swallows the error can never commit a half-applied cascade. The
  * callback runs at most once: the nested refusal happens before it starts, and

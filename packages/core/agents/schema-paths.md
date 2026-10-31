@@ -645,18 +645,27 @@ When the engine refuses to nest (`NestedTransactionError`, raised by the SDK bef
 the callback runs), the cascade joins the enclosing transaction. This happens for
 framework-owned handles, for caller-owned **native DuckDB** transactions
 (`db.transaction()` scopes and `beginTransaction()` handles passed to
-`withDatabase()`), and for the bulk junction path (#2818). The caller's commit or
+`withDatabase()`), and for the bulk junction path (#2818). A transaction handle
+counts as native DuckDB only after core has seen its root, through
+`initialize()`, `withDatabase()` or a framework transaction. Otherwise the
+handle is never treated as native by guesswork, and the delete keeps the
+`NestedTransactionError` refusal. The caller's commit or
 rollback then decides the outcome of the cascade, the owned `_smrt_contexts` and
 `_smrt_embeddings` cleanup, and the target row.
 
 There is no savepoint, so a cascade that fails part-way cannot be undone on its
 own. On native DuckDB the framework therefore aborts the joined transaction
 (`SELECT error(...)`) before rethrowing, but only if the cascade has already
-written something. DuckDB then rejects every later statement with "transaction
+issued a write. The SDK's DuckDB `delete()` reports a constant affected count,
+and the owned-row cleanup always runs. In practice, then, any failure after the
+depth-0 RESTRICT / NO ACTION preflight aborts the transaction. That includes a
+revision or write-guard conflict on the row itself, even one that changed no
+rows. DuckDB then rejects every later statement with "transaction
 is aborted", and its `COMMIT` persists nothing. A caller that swallows the error
 therefore cannot commit a half-applied cascade, and the callback is never
 replayed. By contrast, a refusal raised before the first write, such as the
-RESTRICT / NO ACTION preflight, leaves the caller's transaction usable. JSON-adapter caller transactions keep the detectable
+RESTRICT / NO ACTION preflight, leaves the caller's transaction usable.
+JSON-adapter caller transactions keep the detectable
 `NestedTransactionError` refusal, because nothing can poison them.
 
 `@crossPackageRef()` remains runtime-only: it registers relationship loading
