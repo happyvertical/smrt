@@ -290,7 +290,9 @@ import conditions anchored to the consumer package URL, using
 `import-meta-resolve`. A `types`/`import`-only export is valid; a CommonJS
 `createRequire.resolve` probe would falsely skip it, so new gated routes use
 the shared resolver. `generated-route-dependencies-packed-consumer.test.ts`
-proves all three against real packed tarballs (direct, hoisted, absent).
+proves all three against a real packed Core tarball plus minimal packages
+carrying the dependencies' real published export maps (direct, hoisted,
+absent); it does not exercise those packages' runtime graphs.
 Verify the selected target is an existing file because import-meta resolution
 can return URLs for missing files/directories. Missing/unexported dependencies
 remain skipped, ancestor-hoisted installs resolve normally, and handwritten
