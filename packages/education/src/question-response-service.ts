@@ -148,6 +148,7 @@ function revisionView(row: Row, keyed: boolean): QuestionRevisionView {
     fieldProvenance: keyed ? parse(row.field_provenance_json) : {},
     authorUserId: '',
     delegatingGuardianUserId: null,
+    delegationId: null,
     recordedAt: new Date(row.recorded_at as string | Date).toISOString(),
   };
 }

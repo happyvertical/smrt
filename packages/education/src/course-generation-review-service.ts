@@ -13,6 +13,11 @@ import {
 } from './course-authoring-contracts.js';
 import { CourseRevisionCollection } from './course-authoring-models.js';
 import {
+  delegationActorFields,
+  delegationRecordFields,
+  readDelegation,
+} from './course-delegation.js';
+import {
   COURSE_GENERATION_TERMINAL,
   type CourseGenerationEventView,
   CourseGenerationInProgressError,
@@ -288,6 +293,7 @@ export class CourseGenerationReviewService extends QuestionAuthoringService {
       resultRevisionId: orNull(row.result_revision_id),
       actorUserId: String(row.actor_user_id),
       delegatingGuardianUserId: orNull(row.delegating_guardian_user_id),
+      delegationId: orNull(row.delegation_id),
       recordedAt: iso(row.recorded_at),
     };
   }
@@ -318,6 +324,7 @@ export class CourseGenerationReviewService extends QuestionAuthoringService {
       resultRevisionId: orNull(latest.result_revision_id),
       requestedByUserId: String(job.requested_by_user_id),
       delegatingGuardianUserId: orNull(job.delegating_guardian_user_id),
+      delegationId: orNull(job.delegation_id),
       events: events.map((e) => this.eventView(e)),
     };
   }
@@ -363,7 +370,7 @@ export class CourseGenerationReviewService extends QuestionAuthoringService {
       proposalId: fields.proposalId ?? null,
       resultRevisionId: fields.resultRevisionId ?? null,
       actorUserId: actor.actorUserId,
-      delegatingGuardianUserId: actor.delegatingGuardianUserId ?? '',
+      ...delegationRecordFields(actor),
       requestKey: fields.requestKey ?? '',
       recordedAt: new Date(),
     });
@@ -393,6 +400,7 @@ export class CourseGenerationReviewService extends QuestionAuthoringService {
       courseId: request.courseId,
       expected,
       instruction,
+      delegationId: request.delegationId ?? '',
     });
     return this.run(async (tx) => {
       await this.authorize(
@@ -440,7 +448,7 @@ export class CourseGenerationReviewService extends QuestionAuthoringService {
         instruction,
         inputJson: JSON.stringify({ material: this.material(view) }),
         requestedByUserId: request.actorUserId,
-        delegatingGuardianUserId: request.delegatingGuardianUserId ?? '',
+        ...delegationRecordFields(request),
         recordedAt: new Date(),
       })) as unknown as Row;
       const row = (await tx.get('course_generation_jobs', {
@@ -610,9 +618,7 @@ export class CourseGenerationReviewService extends QuestionAuthoringService {
         const saved = await this.saveDraftIn(tx, {
           tenantId: request.tenantId,
           actorUserId: request.actorUserId,
-          ...(request.delegatingGuardianUserId
-            ? { delegatingGuardianUserId: request.delegatingGuardianUserId }
-            : {}),
+          ...delegationActorFields(request),
           courseId,
           expectedHeadRevisionId: String(job.base_revision_id),
           requestKey: `gen:${digest(String(job.id)).slice(0, 40)}`,
@@ -830,6 +836,7 @@ export class CourseGenerationReviewService extends QuestionAuthoringService {
       expected,
       decision: request.decision,
       fields,
+      delegationId: request.delegationId ?? '',
     });
     return this.run(async (tx) => {
       await this.authorize(
@@ -899,9 +906,7 @@ export class CourseGenerationReviewService extends QuestionAuthoringService {
           await this.saveDraftIn(tx, {
             tenantId: request.tenantId,
             actorUserId: request.actorUserId,
-            ...(request.delegatingGuardianUserId
-              ? { delegatingGuardianUserId: request.delegatingGuardianUserId }
-              : {}),
+            ...delegationActorFields(request),
             courseId: request.courseId,
             expectedHeadRevisionId: expected,
             requestKey: `acc:${digest([request.proposalId, requestKey]).slice(0, 40)}`,
@@ -918,7 +923,7 @@ export class CourseGenerationReviewService extends QuestionAuthoringService {
         fieldsJson: JSON.stringify(fields),
         resultRevisionId,
         actorUserId: request.actorUserId,
-        delegatingGuardianUserId: request.delegatingGuardianUserId ?? '',
+        ...delegationRecordFields(request),
         requestKey,
         payloadDigest,
         recordedAt: new Date(),
@@ -1074,6 +1079,7 @@ export class CourseGenerationReviewService extends QuestionAuthoringService {
               note: String(r.note ?? ''),
               actorUserId: String(r.actor_user_id),
               delegatingGuardianUserId: orNull(r.delegating_guardian_user_id),
+              delegationId: orNull(r.delegation_id),
               recordedAt: iso(r.recorded_at),
             }
           : null,
@@ -1111,6 +1117,7 @@ export class CourseGenerationReviewService extends QuestionAuthoringService {
       reviewerModel: String(review.reviewer_model ?? ''),
       authorUserId: String(review.author_user_id),
       delegatingGuardianUserId: orNull(review.delegating_guardian_user_id),
+      delegationId: orNull(review.delegation_id),
       recordedAt: iso(review.recorded_at),
       sections: {
         generalLevel: {
@@ -1173,6 +1180,7 @@ export class CourseGenerationReviewService extends QuestionAuthoringService {
       'tenantId',
       'actorUserId',
       'delegatingGuardianUserId',
+      'delegationId',
     ];
     if (Object.keys(request).some((k) => !known.includes(k)))
       throw new CourseAuthoringValidationError('Unsupported review member');
@@ -1204,6 +1212,7 @@ export class CourseGenerationReviewService extends QuestionAuthoringService {
       learnerSummary,
       findings,
       reviewer,
+      delegationId: request.delegationId ?? '',
     });
     return this.run(async (tx) => {
       await this.authorize(
@@ -1282,11 +1291,11 @@ export class CourseGenerationReviewService extends QuestionAuthoringService {
         disclaimer: COURSE_REVIEW_DISCLAIMER,
         generalSummary,
         learnerSummary,
-        reviewerKind: request.delegatingGuardianUserId ? 'agent' : 'guardian',
+        reviewerKind: readDelegation(request) ? 'agent' : 'guardian',
         reviewerProvider: reviewer.provider,
         reviewerModel: reviewer.model,
         authorUserId: request.actorUserId,
-        delegatingGuardianUserId: request.delegatingGuardianUserId ?? '',
+        ...delegationRecordFields(request),
         requestKey,
         payloadDigest,
         recordedAt: new Date(),
@@ -1538,6 +1547,7 @@ export class CourseGenerationReviewService extends QuestionAuthoringService {
       findingId: request.findingId,
       resolution: request.resolution,
       note,
+      delegationId: request.delegationId ?? '',
     });
     return this.run(async (tx) => {
       await this.authorize(
@@ -1585,10 +1595,7 @@ export class CourseGenerationReviewService extends QuestionAuthoringService {
           throw new CourseRequestKeyConflictError();
         throw new CourseFindingResolvedError();
       }
-      if (
-        finding.human_verification_required &&
-        request.delegatingGuardianUserId
-      )
+      if (finding.human_verification_required && readDelegation(request))
         throw new HumanVerificationRequiredError();
       await (await CourseFindingResolutionCollection.create({ db: tx })).create(
         {
@@ -1600,7 +1607,7 @@ export class CourseGenerationReviewService extends QuestionAuthoringService {
           resolution: request.resolution,
           note,
           actorUserId: request.actorUserId,
-          delegatingGuardianUserId: request.delegatingGuardianUserId ?? '',
+          ...delegationRecordFields(request),
           requestKey,
           payloadDigest,
           recordedAt: new Date(),

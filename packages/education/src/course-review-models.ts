@@ -58,6 +58,7 @@ export class CourseReview extends SmrtObject {
   reviewerModel = '';
   authorUserId = '';
   delegatingGuardianUserId = '';
+  delegationId = '';
   requestKey = '';
   payloadDigest = '';
   recordedAt = new Date();
@@ -220,6 +221,7 @@ export class CourseFindingResolution extends SmrtObject {
   @field({ type: 'text' }) note = '';
   actorUserId = '';
   delegatingGuardianUserId = '';
+  delegationId = '';
   requestKey = '';
   payloadDigest = '';
   recordedAt = new Date();

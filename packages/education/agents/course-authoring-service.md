@@ -36,6 +36,19 @@ learner-initiated request is host policy, the service adds no learner authority.
 Archive and discard use `archive`. `generate` and `review` are used by the [generation and review service](course-generation-review.md).
 Foreign or missing courses/enrollments are not-found/denied alike.
 
+Delegated actor: the authenticated actor is the agent; `delegatingGuardianUserId`
+and a host `delegationId` (opaque, 1-200 printable characters) are validated as a
+unit (one without the other is `invalid-request`; the guardian may not be the agent,
+which is denied). Validation grants nothing: the guardian keeps no authority via the
+agent, the host authorizer decides, and both users need active membership. One helper
+(`course-delegation.ts`) builds actor, authorizer and record fields. `delegationId` is
+passed to every authorizer call (all `education.course.*` actions, including the
+per-enrollment `auto-upgrade` call, which gets the opt-in's recorded id) and recorded
+(nullable on views) on revisions, releases, archive/discard, pins, opt-ins, skips
+(`optInDelegationId`; automatic pins also record the opt-in's) and generation, review
+and question records. Request-key replays compare it: another delegation id conflicts.
+Assignment (`LearnerService.enroll`) is described in the [learner contract](learner-service.md).
+
 ## Writes
 
 Every write requires a `requestKey`. A retried key replays its original result;

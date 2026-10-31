@@ -83,6 +83,7 @@ export class CourseRevision extends SmrtObject {
   sequence = 1;
   authorUserId = '';
   delegatingGuardianUserId = '';
+  delegationId = '';
   provenance = 'supplied';
   @field({ type: 'text' }) fieldProvenanceJson = '{}';
   title = '';
@@ -173,6 +174,7 @@ export class LessonRevision extends SmrtObject {
   @field({ type: 'text' }) fieldProvenanceJson = '{}';
   authorUserId = '';
   delegatingGuardianUserId = '';
+  delegationId = '';
   contentDigest = '';
   recordedAt = new Date();
   constructor(options: Record<string, unknown> = {}) {
@@ -295,6 +297,7 @@ export class CourseRelease extends SmrtObject {
   reviewId = '';
   actorUserId = '';
   delegatingGuardianUserId = '';
+  delegationId = '';
   requestKey = '';
   recordedAt = new Date();
   constructor(options: Record<string, unknown> = {}) {
@@ -379,6 +382,7 @@ export class CourseArchiveDecision extends SmrtObject {
   sequence = 1;
   actorUserId = '';
   delegatingGuardianUserId = '';
+  delegationId = '';
   requestKey = '';
   recordedAt = new Date();
   constructor(options: Record<string, unknown> = {}) {
@@ -424,6 +428,7 @@ export class CourseDiscardTombstone extends SmrtObject {
   reason = '';
   actorUserId = '';
   delegatingGuardianUserId = '';
+  delegationId = '';
   requestKey = '';
   recordedAt = new Date();
   constructor(options: Record<string, unknown> = {}) {
@@ -473,6 +478,9 @@ export class EnrollmentReleasePin extends SmrtObject {
   /** Empty for automatic moves, which have no actor. */
   actorUserId = '';
   delegatingGuardianUserId = '';
+  delegationId = '';
+  /** Automatic moves: the delegation id recorded on the opt-in followed; empty otherwise. */
+  optInDelegationId = '';
   /** Host assignment-setting value relied on; automatic moves copy the opt-in's. */
   policyBasis = '';
   /** Scope of the opt-in an automatic move followed ('course' | 'enrollment'); empty otherwise. */
@@ -538,6 +546,7 @@ export class CourseUpgradeChoice extends SmrtObject {
   sequence = 1;
   actorUserId = '';
   delegatingGuardianUserId = '';
+  delegationId = '';
   /** Host assignment-setting value relied on for this choice. */
   policyBasis = '';
   requestKey = '';
@@ -593,6 +602,7 @@ export class EnrollmentAutoUpgradeSkip extends SmrtObject {
   optInScope = '';
   optInActorUserId = '';
   optInDelegatingGuardianUserId = '';
+  optInDelegationId = '';
   policyBasis = '';
   reason = 'not-authorized';
   recordedAt = new Date();
@@ -628,4 +638,56 @@ export class EnrollmentAutoUpgradeSkip extends SmrtObject {
 }
 export class EnrollmentAutoUpgradeSkipCollection extends SmrtCollection<EnrollmentAutoUpgradeSkip> {
   static readonly _itemClass = EnrollmentAutoUpgradeSkip;
+}
+
+/**
+ * Append-only audit of a delegated-agent assignment: the agent that created the
+ * enrollment, the guardian it acted for and the host's delegation id. Written
+ * only for delegated enrollments, in the enrollment's own transaction. It is
+ * deliberately separate from `Enrollment`, whose released table is not altered.
+ */
+@TenantScoped({ mode: 'required' })
+@smrt({
+  tableName: 'enrollment_assignment_records',
+  conflictColumns: ['tenant_id', 'enrollment_id'],
+  ...closed,
+})
+export class EnrollmentAssignmentRecord extends SmrtObject {
+  @tenantId() tenantId = '';
+  @foreignKey('Enrollment', { required: true }) enrollmentId = '';
+  @foreignKey('Learner', { required: true }) learnerId = '';
+  actorUserId = '';
+  delegatingGuardianUserId = '';
+  delegationId = '';
+  recordedAt = new Date();
+  constructor(options: Record<string, unknown> = {}) {
+    super(options);
+    adopt(this, options);
+  }
+  override async delete(): Promise<void> {
+    noDelete();
+  }
+  override async save(options?: SmrtSaveOptions): Promise<this> {
+    await requireInsert(this);
+    await requireOwned(this, 'enrollments', this.enrollmentId, {
+      learner_id: this.learnerId,
+    });
+    requireText(this.actorUserId, 'Assignment record requires the agent');
+    requireText(
+      this.delegatingGuardianUserId,
+      'Assignment record requires the delegating guardian',
+      200,
+    );
+    requireText(
+      this.delegationId,
+      'Assignment record requires a delegation id',
+      200,
+    );
+    validDate(this.recordedAt);
+    this.requireInsertOnSave();
+    return super.save(options);
+  }
+}
+export class EnrollmentAssignmentRecordCollection extends SmrtCollection<EnrollmentAssignmentRecord> {
+  static readonly _itemClass = EnrollmentAssignmentRecord;
 }

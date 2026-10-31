@@ -107,6 +107,7 @@ export interface CourseReviewFindingView {
     note: string;
     actorUserId: string;
     delegatingGuardianUserId: string | null;
+    delegationId: string | null;
     recordedAt: string;
   };
 }
@@ -123,6 +124,7 @@ export interface CourseReviewView {
   reviewerModel: string;
   authorUserId: string;
   delegatingGuardianUserId: string | null;
+  delegationId: string | null;
   recordedAt: string;
   /** Separate sections: general level suitability and this learner's. */
   sections: {

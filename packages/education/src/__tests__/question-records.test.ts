@@ -110,6 +110,7 @@ async function setup() {
     tenantId: f.own.tenantId,
     actorUserId: String(f.bob.user.id),
     delegatingGuardianUserId: guardian.actorUserId,
+    delegationId: 'delegation-1',
   };
   const outsider: CourseAuthoringActor = {
     tenantId: String(f.foreign.tenantId),

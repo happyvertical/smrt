@@ -129,6 +129,7 @@ export interface CourseGenerationEventView {
   resultRevisionId: string | null;
   actorUserId: string;
   delegatingGuardianUserId: string | null;
+  delegationId: string | null;
   recordedAt: string;
 }
 export interface CourseGenerationView {
@@ -146,6 +147,7 @@ export interface CourseGenerationView {
   resultRevisionId: string | null;
   requestedByUserId: string;
   delegatingGuardianUserId: string | null;
+  delegationId: string | null;
   events: CourseGenerationEventView[];
 }
 

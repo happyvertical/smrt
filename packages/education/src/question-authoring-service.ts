@@ -11,6 +11,7 @@ import {
   CourseAuthoringService,
   type CourseAuthoringServiceOptions,
 } from './course-authoring-service.js';
+import { delegationRecordFields } from './course-delegation.js';
 import { groupSharingDigest } from './group-sharing-hash.js';
 import {
   type NormalizedQuestionContent,
@@ -244,6 +245,7 @@ export class QuestionAuthoringService extends CourseAuthoringService {
     const payloadDigest = digest({
       create: content,
       courseId: request.courseId ?? null,
+      delegationId: request.delegationId ?? '',
     });
     return this.run(async (tx) => {
       await this.authorizeWrite(
@@ -329,7 +331,7 @@ export class QuestionAuthoringService extends CourseAuthoringService {
       provenance: content.provenance,
       fieldProvenanceJson: JSON.stringify(content.fieldProvenance),
       authorUserId: actor.actorUserId,
-      delegatingGuardianUserId: actor.delegatingGuardianUserId ?? '',
+      ...delegationRecordFields(actor),
       requestKey: input.requestKey,
       payloadDigest: input.payloadDigest,
       recordedAt: new Date(),
@@ -408,6 +410,7 @@ export class QuestionAuthoringService extends CourseAuthoringService {
       questionId: request.questionId,
       operation,
       payload: plan.payload,
+      delegationId: request.delegationId ?? '',
     });
     return this.run(async (tx) => {
       const question = await this.questionRow(tx, request);
@@ -539,6 +542,7 @@ export class QuestionAuthoringService extends CourseAuthoringService {
       >,
       authorUserId: String(row.author_user_id),
       delegatingGuardianUserId: orNull(row.delegating_guardian_user_id),
+      delegationId: orNull(row.delegation_id),
       recordedAt: iso(row.recorded_at),
     };
   }
@@ -600,7 +604,11 @@ export class QuestionAuthoringService extends CourseAuthoringService {
     const requestKey = requireKey(request.requestKey);
     const externalKey = requireKey(request.externalKey, 'objective key');
     const objective = this.normalizeObjective(request.objective);
-    const payloadDigest = digest({ create: objective, externalKey });
+    const payloadDigest = digest({
+      create: objective,
+      externalKey,
+      delegationId: request.delegationId ?? '',
+    });
     return this.run(async (tx) => {
       await this.authorizeWrite(
         tx,
@@ -674,7 +682,7 @@ export class QuestionAuthoringService extends CourseAuthoringService {
         levelMax: objective.levelMax,
         provenance: objective.provenance,
         authorUserId: actor.actorUserId,
-        delegatingGuardianUserId: actor.delegatingGuardianUserId ?? '',
+        ...delegationRecordFields(actor),
         requestKey: link.requestKey,
         payloadDigest: link.payloadDigest,
         recordedAt: new Date(),
@@ -701,6 +709,7 @@ export class QuestionAuthoringService extends CourseAuthoringService {
       expected,
       objectiveId: request.objectiveId,
       objective,
+      delegationId: request.delegationId ?? '',
     });
     return this.run(async (tx) => {
       await this.authorizeWrite(

@@ -47,6 +47,17 @@ Same-tenant membership alone never grants sibling access.
   A learner cannot plan their own curriculum. Title is required.
 - `enroll` requires that guardian authority and a matching tenant curriculum.
   It returns the existing enrollment for the same curriculum/course unchanged.
+  A delegated agent may enroll: the actor is the agent; supply
+  `delegatingGuardianUserId` and the host's `delegationId` (both or neither, 1-200
+  printable characters, guardian not the agent). The service re-checks the DELEGATING
+  guardian's active membership and `guardianRelationshipId` (that guardian's profile to
+  the learner, same tenant, same executor) and never the agent's relationship; the agent
+  also needs an active membership. The authorizer receives `education.learner.plan`
+  with `own: false`, the verified `relationshipTypeId`, `delegatingGuardianUserId` and
+  `delegationId`, and decides. A new delegated enrollment appends one
+  `EnrollmentAssignmentRecord` (table added here; `Enrollment` is unchanged). Only
+  `enroll` accepts a delegation; every other operation ignores it, so the agent has no
+  other learner authority. Catalog reads still use the agent as actor.
 - `startLesson` allows the learner or authorized guardian to create their own
   enrollment's lesson progress in `in_progress`. It derives learner identity
   from the validated enrollment. Repeated starts return existing state without

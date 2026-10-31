@@ -73,6 +73,7 @@ const authoringClasses = [
   'EnrollmentReleasePin',
   'CourseUpgradeChoice',
   'EnrollmentAutoUpgradeSkip',
+  'EnrollmentAssignmentRecord',
 ];
 const authoringTables = [
   'CourseRevision',
@@ -85,6 +86,7 @@ const authoringTables = [
   'EnrollmentReleasePin',
   'CourseUpgradeChoice',
   'EnrollmentAutoUpgradeSkip',
+  'EnrollmentAssignmentRecord',
 ];
 
 beforeAll(() => enableTenancy());
@@ -120,6 +122,7 @@ async function setup(
     tenantId: f.own.tenantId,
     actorUserId: String(f.bob.user.id),
     delegatingGuardianUserId: guardian.actorUserId,
+    delegationId: 'delegation-1',
   };
   const outsider: CourseAuthoringActor = {
     tenantId: String(f.foreign.tenantId),
@@ -482,6 +485,7 @@ describe('CourseAuthoringService', () => {
     ).revision;
     expect(view.authorUserId).toBe(s.agent.actorUserId);
     expect(view.delegatingGuardianUserId).toBe(s.guardian.actorUserId);
+    expect(view.delegationId).toBe('delegation-1');
     await expect(
       s.as(s.agent, () =>
         s.service.archive({
@@ -512,6 +516,10 @@ describe('CourseAuthoringService', () => {
     }
     const delegated = s.calls.find((c) => c.delegatingGuardianUserId);
     expect(delegated?.delegatingGuardianUserId).toBe(s.guardian.actorUserId);
+    for (const call of s.calls.filter((c) => c.delegatingGuardianUserId))
+      expect(call.delegationId).toBe('delegation-1');
+    for (const call of s.calls.filter((c) => !c.delegatingGuardianUserId))
+      expect(call.delegationId).toBeUndefined();
     expect(new Set(s.calls.map((c) => c.operation))).toContain(
       'pin-enrollment',
     );
@@ -668,6 +676,7 @@ describe('CourseAuthoringService', () => {
       reviewId: 'review-1',
       actorUserId: s.agent.actorUserId,
       delegatingGuardianUserId: s.guardian.actorUserId,
+      delegationId: 'delegation-1',
       revisionId: one.revisionId,
     });
     expect(rel1.lessons.map((l) => l.lessonKey)).toEqual(['a', 'b']);
@@ -1126,7 +1135,10 @@ describe('CourseAuthoringService', () => {
         kind: 'auto',
         policyBasis: 'guardians-and-agents',
       });
-      expect(moved.history.at(-1)).toMatchObject({ optInScope: 'course' });
+      expect(moved.history.at(-1)).toMatchObject({
+        optInScope: 'course',
+        optInDelegationId: 'delegation-1',
+      });
       expect((await pinOf(b)).releaseId).toBe(rel.id);
       const skips = await s.db.list('enrollment_auto_upgrade_skips', {});
       expect(skips).toHaveLength(1);
@@ -1138,6 +1150,7 @@ describe('CourseAuthoringService', () => {
         policy_basis: 'guardians-and-agents',
         opt_in_actor_user_id: s.agent.actorUserId,
         opt_in_delegating_guardian_user_id: s.guardian.actorUserId,
+        opt_in_delegation_id: 'delegation-1',
         opt_in_scope: 'course',
       });
       const autoCalls = s.calls.filter((c) => c.operation === 'auto-upgrade');
@@ -1146,6 +1159,7 @@ describe('CourseAuthoringService', () => {
         expect(call.action).toBe('education.course.assign');
         expect(call.actorUserId).toBe(s.agent.actorUserId);
         expect(call.delegatingGuardianUserId).toBe(s.guardian.actorUserId);
+        expect(call.delegationId).toBe('delegation-1');
         expect(call.executor).not.toBe(s.db);
       }
       expect(autoCalls.map((c) => c.enrollmentId).sort()).toEqual(
@@ -1321,6 +1335,7 @@ describe('CourseAuthoringService', () => {
         expect(call?.executor).toBeDefined();
         expect(call?.executor).not.toBe(s.db);
         expect(call?.delegatingGuardianUserId).toBe(s.guardian.actorUserId);
+        expect(call?.delegationId).toBe('delegation-1');
         expect(call?.actorUserId).toBe(s.agent.actorUserId);
       }
       expect(
@@ -1376,6 +1391,7 @@ describe('CourseAuthoringService', () => {
         policyBasis: 'learner-may-ask',
         actorUserId: s.agent.actorUserId,
         delegatingGuardianUserId: s.guardian.actorUserId,
+        delegationId: 'delegation-1',
       });
       // Same basis replays to the same result; a changed basis is a conflict.
       expect(
@@ -1388,6 +1404,15 @@ describe('CourseAuthoringService', () => {
       ).toEqual(first);
       await expect(
         pin(s.agent, rel.id, { policyBasis: 'guardians-only' }, 'pin-key'),
+      ).rejects.toBeInstanceOf(CourseRequestKeyConflictError);
+      // The same key under a different delegation is a conflict, never a replay.
+      await expect(
+        pin(
+          { ...s.agent, delegationId: 'delegation-2' },
+          rel.id,
+          { policyBasis: 'learner-may-ask' },
+          'pin-key',
+        ),
       ).rejects.toBeInstanceOf(CourseRequestKeyConflictError);
       expect(await s.count('enrollment_release_pins')).toBe(1);
 

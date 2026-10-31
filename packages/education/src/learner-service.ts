@@ -22,6 +22,9 @@ import {
   LessonCollection,
   LessonProgressCollection,
 } from './collections.js';
+import { CourseAuthoringAuthorizationError } from './course-authoring-contracts.js';
+import { EnrollmentAssignmentRecordCollection } from './course-authoring-models.js';
+import { type CourseDelegation, readDelegation } from './course-delegation.js';
 import {
   orderEffectiveLessons,
   resolveEnrollmentLessons,
@@ -54,6 +57,14 @@ export interface LearnerRequest {
   guardianRelationshipId?: string;
 }
 
+/**
+ * Delegated-agent claim for assignment (`enroll` only). The actor is the agent;
+ * the guardian relationship and membership checked are the DELEGATING guardian's,
+ * never the agent's. Both members are required together and the guardian cannot
+ * be the agent. The host authorizer still decides whether the agent may act.
+ */
+export type LearnerDelegationRequest = Partial<CourseDelegation>;
+
 /** A host-owned onboarding probe; it exposes no learner or relationship data. */
 export interface LearnerSetupStatusRequest {
   tenantId: string;
@@ -82,6 +93,10 @@ export type LearnerAuthorizer = (
       | 'education.learner.setup';
     own: boolean;
     relationshipTypeId?: string;
+    /** Delegated assignment only: the guardian whose live relationship was verified. */
+    delegatingGuardianUserId?: string;
+    /** Delegated assignment only: the host's opaque delegation id. */
+    delegationId?: string;
     /** Present only for the setup-status probe; it is not a relationship grant. */
     learnerUserId?: string;
   },
@@ -355,6 +370,7 @@ export class LearnerService {
   protected async requireActor(
     request: LearnerRequest,
     action: Parameters<LearnerAuthorizer>[0]['action'],
+    delegation: CourseDelegation | null = null,
   ): Promise<Learner> {
     this.assertServiceOpen();
     const context = getCurrentTenant();
@@ -395,10 +411,31 @@ export class LearnerService {
       }))
     )
       throw new LearnerAuthorizationError();
-    const own = learner.userId === request.actorUserId;
+    // A delegated agent holds no learner or guardian authority of its own: the
+    // relationship, membership and own-learner rules apply to the delegating
+    // guardian, and the agent may not be the learner.
+    const holder = delegation?.delegatingGuardianUserId ?? request.actorUserId;
+    if (
+      delegation &&
+      (learner.userId === request.actorUserId ||
+        !(await this.db.get('users', {
+          id: request.actorUserId,
+          status: 'active',
+        })) ||
+        !(await this.db.get('memberships', {
+          tenant_id: request.tenantId,
+          user_id: holder,
+          status: 'active',
+        })))
+    )
+      throw new LearnerAuthorizationError();
+    const own = learner.userId === holder;
     let relationshipTypeId: string | undefined;
     if (!own) {
-      const user = await this.db.get('users', { id: request.actorUserId });
+      const user = await this.db.get('users', {
+        id: holder,
+        ...(delegation ? { status: 'active' } : {}),
+      });
       const relationship =
         user && request.guardianRelationshipId
           ? await this.db.get('profile_relationships', {
@@ -425,9 +462,16 @@ export class LearnerService {
       ].includes(action)
     )
       throw new LearnerAuthorizationError();
+    // Never forward caller-supplied delegation members except the validated ones.
+    const {
+      delegatingGuardianUserId: _guardian,
+      delegationId: _id,
+      ...base
+    } = request as LearnerRequest & LearnerDelegationRequest;
     if (
       (await this.authorize({
-        ...request,
+        ...base,
+        ...(delegation ?? {}),
         executor: this.db,
         action,
         own,
@@ -780,13 +824,29 @@ export class LearnerService {
       );
   }
 
+  /**
+   * Creates (or returns) the enrollment that assigns a course to a learner. A
+   * delegated agent passes `delegatingGuardianUserId` + `delegationId`; a new
+   * delegated enrollment also appends an `EnrollmentAssignmentRecord`.
+   */
   async enroll(
-    request: LearnerRequest & { curriculumId: string; courseId: string },
+    request: LearnerRequest &
+      LearnerDelegationRequest & { curriculumId: string; courseId: string },
   ): Promise<EnrollmentView> {
+    let delegation: CourseDelegation | null;
+    try {
+      delegation = readDelegation(request);
+    } catch (error) {
+      // A guardian that is the agent is an authority failure, not a typo.
+      if (error instanceof CourseAuthoringAuthorizationError)
+        throw new LearnerAuthorizationError();
+      throw error;
+    }
     return this.mutate(async (service) => {
       const learner = await service.requireActor(
         request,
         'education.learner.plan',
+        delegation,
       );
       await service.lock('curricula', request.curriculumId, request.tenantId);
       const curriculum = await (
@@ -815,15 +875,26 @@ export class LearnerService {
           throw new LearnerAuthorizationError();
         return enrollmentView(existing);
       }
-      return enrollmentView(
-        await enrollments.create({
-          tenantId: request.tenantId,
-          curriculumId: String(curriculum.id),
-          learnerId: String(learner.id),
-          courseId: request.courseId,
+      const created = await enrollments.create({
+        tenantId: request.tenantId,
+        curriculumId: String(curriculum.id),
+        learnerId: String(learner.id),
+        courseId: request.courseId,
+        _insertOnly: true,
+      });
+      if (delegation)
+        await (
+          await EnrollmentAssignmentRecordCollection.create({ db: service.db })
+        ).create({
           _insertOnly: true,
-        }),
-      );
+          tenantId: request.tenantId,
+          enrollmentId: String(created.id),
+          learnerId: String(learner.id),
+          actorUserId: request.actorUserId,
+          ...delegation,
+          recordedAt: new Date(),
+        });
+      return enrollmentView(created);
     });
   }
 

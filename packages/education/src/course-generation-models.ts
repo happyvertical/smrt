@@ -39,6 +39,7 @@ export class CourseGenerationJob extends SmrtObject {
   @field({ type: 'text' }) inputJson = '{}';
   requestedByUserId = '';
   delegatingGuardianUserId = '';
+  delegationId = '';
   recordedAt = new Date();
   constructor(options: Record<string, unknown> = {}) {
     super(options);
@@ -102,6 +103,7 @@ export class CourseGenerationEvent extends SmrtObject {
     null;
   actorUserId = '';
   delegatingGuardianUserId = '';
+  delegationId = '';
   requestKey = '';
   recordedAt = new Date();
   constructor(options: Record<string, unknown> = {}) {
@@ -196,6 +198,7 @@ export class CourseProposalDecision extends SmrtObject {
     null;
   actorUserId = '';
   delegatingGuardianUserId = '';
+  delegationId = '';
   requestKey = '';
   payloadDigest = '';
   recordedAt = new Date();

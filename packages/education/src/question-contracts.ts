@@ -145,6 +145,7 @@ export interface QuestionRevisionView {
   fieldProvenance: Partial<Record<QuestionField, QuestionProvenance>>;
   authorUserId: string;
   delegatingGuardianUserId: string | null;
+  delegationId: string | null;
   recordedAt: string;
 }
 export interface QuestionHeadView {

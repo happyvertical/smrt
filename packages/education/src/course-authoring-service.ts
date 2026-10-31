@@ -75,6 +75,7 @@ import {
   LessonRevisionCollection,
   ReleasedLessonCollection,
 } from './course-authoring-models.js';
+import { delegationRecordFields, readDelegation } from './course-delegation.js';
 import { resolveEnrollmentLessons } from './course-release-scope.js';
 import { groupSharingDigest } from './group-sharing-hash.js';
 import {
@@ -493,9 +494,9 @@ export class CourseAuthoringService {
       context.userId !== actor.actorUserId
     )
       throw new CourseAuthoringAuthorizationError();
+    const delegation = readDelegation(actor);
     const members = [actor.actorUserId];
-    if (actor.delegatingGuardianUserId)
-      members.push(actor.delegatingGuardianUserId);
+    if (delegation) members.push(delegation.delegatingGuardianUserId);
     for (const userId of members) {
       if (
         !(await tx.get('memberships', {
@@ -510,9 +511,7 @@ export class CourseAuthoringService {
     const allowed = await this.authorizer({
       tenantId: actor.tenantId,
       actorUserId: actor.actorUserId,
-      ...(actor.delegatingGuardianUserId
-        ? { delegatingGuardianUserId: actor.delegatingGuardianUserId }
-        : {}),
+      ...(delegation ?? {}),
       ...extra,
       action,
       operation,
@@ -607,7 +606,9 @@ export class CourseAuthoringService {
       requestKey,
       '',
     );
-    const payloadDigest = groupSharingDigest(canonical({ create: draft }));
+    const payloadDigest = groupSharingDigest(
+      canonical({ create: draft, delegationId: request.delegationId ?? '' }),
+    );
     return this.run(async (tx) => {
       const courseId = await derivedId('course', request.tenantId, requestKey);
       await this.authorize(tx, request, 'education.course.author', 'create', {
@@ -716,7 +717,7 @@ export class CourseAuthoringService {
       parentRevisionId: input.parent,
       sequence: input.sequence,
       authorUserId: actor.actorUserId,
-      delegatingGuardianUserId: actor.delegatingGuardianUserId ?? '',
+      ...delegationRecordFields(actor),
       provenance: draft.provenance,
       fieldProvenanceJson: JSON.stringify(draft.fieldProvenance),
       title: draft.title,
@@ -778,7 +779,12 @@ export class CourseAuthoringService {
         ),
       );
     const payloadDigest = groupSharingDigest(
-      canonical({ expected, courseId: request.courseId, draft: prepared }),
+      canonical({
+        expected,
+        courseId: request.courseId,
+        draft: prepared,
+        delegationId: request.delegationId ?? '',
+      }),
     );
     {
       await this.authorize(
@@ -934,7 +940,7 @@ export class CourseAuthoringService {
                 lesson.fields.fieldProvenance,
               ),
               authorUserId: request.actorUserId,
-              delegatingGuardianUserId: request.delegatingGuardianUserId ?? '',
+              ...delegationRecordFields(request),
               contentDigest,
               recordedAt: new Date(),
             }));
@@ -1208,6 +1214,7 @@ export class CourseAuthoringService {
       fieldProvenance: JSON.parse(revision.fieldProvenanceJson),
       authorUserId: revision.authorUserId,
       delegatingGuardianUserId: optional(revision.delegatingGuardianUserId),
+      delegationId: optional(revision.delegationId),
       recordedAt: iso(revision.recordedAt),
       sections: (
         JSON.parse(revision.sectionsJson) as Array<{
@@ -1352,7 +1359,10 @@ export class CourseAuthoringService {
         { cache: false },
       );
       if (replay) {
-        if (replay.revisionId !== request.revisionId)
+        if (
+          replay.revisionId !== request.revisionId ||
+          replay.delegationId !== (request.delegationId ?? '')
+        )
           throw new CourseRequestKeyConflictError();
         return this.releaseView(tx, request.tenantId, replay);
       }
@@ -1463,7 +1473,7 @@ export class CourseAuthoringService {
       releaseNumber: input.releaseNumber,
       reviewId: input.reviewId,
       actorUserId: actor.actorUserId,
-      delegatingGuardianUserId: actor.delegatingGuardianUserId ?? '',
+      ...delegationRecordFields(actor),
       requestKey: input.requestKey,
       recordedAt: new Date(),
     });
@@ -1582,6 +1592,7 @@ export class CourseAuthoringService {
       reviewId: optional(release.reviewId),
       actorUserId: release.actorUserId,
       delegatingGuardianUserId: optional(release.delegatingGuardianUserId),
+      delegationId: optional(release.delegationId),
       recordedAt: iso(release.recordedAt),
       lessons: lessons.sort((a, b) => a.lessonKey.localeCompare(b.lessonKey)),
     };
@@ -1623,7 +1634,11 @@ export class CourseAuthoringService {
       const action = archive ? 'archive' : 'unarchive';
       const replay = decisions.find((d) => d.requestKey === requestKey);
       if (replay) {
-        if (replay.action !== action) throw new CourseRequestKeyConflictError();
+        if (
+          replay.action !== action ||
+          replay.delegationId !== (request.delegationId ?? '')
+        )
+          throw new CourseRequestKeyConflictError();
         return this.courseState(tx, request.tenantId, request.courseId);
       }
       const archived = decisions.at(-1)?.action === 'archive';
@@ -1636,7 +1651,7 @@ export class CourseAuthoringService {
         action,
         sequence: decisions.length + 1,
         actorUserId: request.actorUserId,
-        delegatingGuardianUserId: request.delegatingGuardianUserId ?? '',
+        ...delegationRecordFields(request),
         requestKey,
         recordedAt: new Date(),
       });
@@ -1688,6 +1703,10 @@ export class CourseAuthoringService {
       if (tombstone) {
         if (tombstone.request_key !== requestKey)
           throw new CourseDiscardedError();
+        if (
+          String(tombstone.delegation_id ?? '') !== (request.delegationId ?? '')
+        )
+          throw new CourseRequestKeyConflictError();
         return this.courseState(tx, request.tenantId, request.courseId);
       }
       await this.lockHead(tx, request.tenantId, request.courseId);
@@ -1742,7 +1761,7 @@ export class CourseAuthoringService {
         ).length,
         reason,
         actorUserId: request.actorUserId,
-        delegatingGuardianUserId: request.delegatingGuardianUserId ?? '',
+        ...delegationRecordFields(request),
         requestKey,
         recordedAt: new Date(),
       });
@@ -1847,6 +1866,8 @@ export class CourseAuthoringService {
         sequence: p.sequence,
         actorUserId: optional(p.actorUserId),
         delegatingGuardianUserId: optional(p.delegatingGuardianUserId),
+        delegationId: optional(p.delegationId),
+        optInDelegationId: optional(p.optInDelegationId),
         policyBasis: p.policyBasis,
         optInScope: p.optInScope
           ? (p.optInScope as 'course' | 'enrollment')
@@ -1876,6 +1897,7 @@ export class CourseAuthoringService {
       requestKey: string;
       policyBasis: string;
       optInScope?: 'course' | 'enrollment';
+      optInDelegationId?: string;
       sequence: number;
     },
   ) {
@@ -1890,7 +1912,10 @@ export class CourseAuthoringService {
       kind: input.kind,
       sequence: input.sequence,
       actorUserId: actor?.actorUserId ?? '',
-      delegatingGuardianUserId: actor?.delegatingGuardianUserId ?? '',
+      ...(actor
+        ? delegationRecordFields(actor)
+        : { delegatingGuardianUserId: '', delegationId: '' }),
+      optInDelegationId: input.optInDelegationId ?? '',
       policyBasis: input.policyBasis,
       optInScope: input.optInScope ?? '',
       requestKey: input.requestKey,
@@ -1959,7 +1984,8 @@ export class CourseAuthoringService {
         if (
           replay.kind !== kind ||
           replay.releaseId !== request.releaseId ||
-          replay.policyBasis !== policyBasis
+          replay.policyBasis !== policyBasis ||
+          replay.delegationId !== (request.delegationId ?? '')
         )
           throw new CourseRequestKeyConflictError();
         return this.pinView(tx, request.tenantId, request.enrollmentId);
@@ -2070,6 +2096,7 @@ export class CourseAuthoringService {
         if (
           replay.enabled !== enabled ||
           replay.policyBasis !== policyBasis ||
+          replay.delegationId !== (request.delegationId ?? '') ||
           replay.enrollmentId !== (request.enrollmentId ?? '')
         )
           throw new CourseRequestKeyConflictError();
@@ -2094,7 +2121,7 @@ export class CourseAuthoringService {
         enabled,
         sequence: all.length + 1,
         actorUserId: request.actorUserId,
-        delegatingGuardianUserId: request.delegatingGuardianUserId ?? '',
+        ...delegationRecordFields(request),
         policyBasis,
         requestKey,
         recordedAt: new Date(),
@@ -2117,9 +2144,13 @@ export class CourseAuthoringService {
     courseId: string,
   ): Promise<boolean> {
     try {
+      const delegation = readDelegation({
+        actorUserId: choice.actorUserId,
+        delegatingGuardianUserId: choice.delegatingGuardianUserId,
+        delegationId: choice.delegationId,
+      });
       const members = [choice.actorUserId];
-      if (choice.delegatingGuardianUserId)
-        members.push(choice.delegatingGuardianUserId);
+      if (delegation) members.push(delegation.delegatingGuardianUserId);
       for (const userId of members) {
         if (
           !userId ||
@@ -2142,9 +2173,7 @@ export class CourseAuthoringService {
           (await this.authorizer({
             tenantId,
             actorUserId: choice.actorUserId,
-            ...(choice.delegatingGuardianUserId
-              ? { delegatingGuardianUserId: choice.delegatingGuardianUserId }
-              : {}),
+            ...(delegation ?? {}),
             courseId,
             enrollmentId,
             learnerId,
@@ -2213,6 +2242,7 @@ export class CourseAuthoringService {
           optInScope,
           optInActorUserId: choice.actorUserId,
           optInDelegatingGuardianUserId: choice.delegatingGuardianUserId,
+          optInDelegationId: choice.delegationId,
           policyBasis: choice.policyBasis,
           reason: 'not-authorized',
           recordedAt: new Date(),
@@ -2227,6 +2257,7 @@ export class CourseAuthoringService {
         requestKey: `auto:${String(release.id)}`,
         policyBasis: choice.policyBasis,
         optInScope,
+        optInDelegationId: choice.delegationId,
         sequence: (await this.pins(tx, tenantId, enrollmentId)).length + 1,
       });
     }

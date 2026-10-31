@@ -128,6 +128,7 @@ export class LearningObjectiveRevision extends SmrtObject {
   provenance = 'supplied';
   authorUserId = '';
   delegatingGuardianUserId = '';
+  delegationId = '';
   requestKey = '';
   payloadDigest = '';
   recordedAt = new Date();
@@ -245,6 +246,7 @@ export class QuestionRevision extends SmrtObject {
   @field({ type: 'text' }) fieldProvenanceJson = '{}';
   authorUserId = '';
   delegatingGuardianUserId = '';
+  delegationId = '';
   requestKey = '';
   payloadDigest = '';
   recordedAt = new Date();

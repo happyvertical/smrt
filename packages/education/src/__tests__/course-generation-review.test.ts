@@ -125,6 +125,7 @@ async function setup(
     tenantId: f.own.tenantId,
     actorUserId: String(f.bob.user.id),
     delegatingGuardianUserId: guardian.actorUserId,
+    delegationId: 'delegation-1',
   };
   const outsider: CourseAuthoringActor = {
     tenantId: String(f.foreign.tenantId),
@@ -866,9 +867,11 @@ describe('authority and tenancy', () => {
     for (const call of s.calls) {
       expect(call.executor).toBeTruthy();
       expect(call.delegatingGuardianUserId).toBe(s.guardian.actorUserId);
+      expect(call.delegationId).toBe('delegation-1');
     }
     expect(reviewView.reviewerKind).toBe('agent');
     expect(reviewView.delegatingGuardianUserId).toBe(s.guardian.actorUserId);
+    expect(reviewView.delegationId).toBe('delegation-1');
   });
 
   it('denies each operation when its action is not granted', async () => {
@@ -1275,6 +1278,7 @@ describe('educational review', () => {
       reviewerKind: 'agent',
       authorUserId: s.agent.actorUserId,
       delegatingGuardianUserId: s.guardian.actorUserId,
+      delegationId: 'delegation-1',
     });
     const byRevision = await s.as(s.guardian, () =>
       s.service.listReviews({
@@ -1447,6 +1451,7 @@ describe('release gate and discard guard', () => {
       resolution: 'addressed',
       actorUserId: s.agent.actorUserId,
       delegatingGuardianUserId: s.guardian.actorUserId,
+      delegationId: 'delegation-1',
     });
     expect(
       (await resolve(blocking.id, 'addressed', s.agent, key))

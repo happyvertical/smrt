@@ -63,6 +63,12 @@ export interface CourseAuthoringActor {
   actorUserId: string;
   /** Agent calls: the guardian whose delegation the host re-validates per check. */
   delegatingGuardianUserId?: string;
+  /**
+   * Host-supplied opaque delegation id (1-200 printable characters), required
+   * with, and only with, `delegatingGuardianUserId`. Recorded on every decision
+   * and passed to every authorizer call; it grants nothing by itself.
+   */
+  delegationId?: string;
 }
 
 export type CourseAuthoringAuthorizer = (
@@ -222,6 +228,7 @@ export interface CourseRevisionView {
   fieldProvenance: Record<string, CourseProvenance>;
   authorUserId: string;
   delegatingGuardianUserId: string | null;
+  delegationId: string | null;
   recordedAt: string;
   sections: Array<{
     sectionKey: string;
@@ -244,6 +251,7 @@ export type CourseReleaseView = Readonly<{
   reviewId: string | null;
   actorUserId: string;
   delegatingGuardianUserId: string | null;
+  delegationId: string | null;
   recordedAt: string;
   lessons: ReadonlyArray<{
     lessonKey: string;
@@ -289,6 +297,7 @@ export type EnrollmentPinView = Readonly<{
     sequence: number;
     actorUserId: string | null;
     delegatingGuardianUserId: string | null;
+    delegationId: string | null;
     policyBasis: string;
     /** For automatic moves: the scope of the opt-in followed. */
     optInScope: 'course' | 'enrollment' | null;
