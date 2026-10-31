@@ -1631,17 +1631,22 @@ describe('intake review host boundary', () => {
     expect(screen.getByText('Missing information')).toBeTruthy();
     expect(screen.getByText('title')).toBeTruthy();
     expect((prepare as HTMLButtonElement).disabled).toBe(true);
-    await fireEvent.change(
-      screen.getByRole('combobox', { name: 'Argument field' }),
-      { target: { value: 'destination' } },
+    // The schema draws `destination` as a reference field (#4503): search it
+    // and choose the candidate by its label.
+    await fireEvent.input(
+      screen.getByRole('combobox', { name: 'destination' }),
+      { target: { value: 'Auth' } },
     );
     await fireEvent.click(
-      screen.getByRole('button', { name: 'Search destinations' }),
+      await screen.findByRole('option', { name: 'Authorized destination' }),
     );
-    await screen.findByText('Authorized destination');
-    await fireEvent.click(
-      screen.getByRole('button', { name: 'Choose destination' }),
-    );
+    expect(
+      (
+        screen.getByRole('combobox', {
+          name: 'destination',
+        }) as HTMLInputElement
+      ).value,
+    ).toBe('Authorized destination');
     const draft = screen.getByRole('textbox', {
       name: 'Suggested arguments (JSON)',
     }) as HTMLTextAreaElement;
@@ -1835,12 +1840,9 @@ describe('intake review host boundary', () => {
     })) as HTMLTextAreaElement;
     const typed = JSON.stringify({ body: 'Minutes', title: 'Keep me' });
     await fireEvent.input(draft, { target: { value: typed } });
-    await fireEvent.change(
-      screen.getByRole('combobox', { name: 'Argument field' }),
-      { target: { value: 'destination' } },
-    );
-    await fireEvent.click(
-      screen.getByRole('button', { name: 'Search destinations' }),
+    await fireEvent.input(
+      screen.getByRole('combobox', { name: 'destination' }),
+      { target: { value: 'Any' } },
     );
     expect((await screen.findByRole('alert')).textContent).toContain(
       'This view is unavailable',
@@ -2066,7 +2068,8 @@ describe('intake review host boundary', () => {
     };
     render(IntakeReview, { host: host(view), itemId: 'item' });
     await screen.findByText('Extracted invoice text');
-    expect(screen.getByText('Confidence unavailable')).toBeTruthy();
+    // Absent confidence draws nothing (#4503).
+    expect(screen.queryByText('Confidence unavailable')).toBeNull();
     expect(screen.getByRole('link', { name: 'Page 3' })).toBeTruthy();
     expect(screen.queryByText(/INTERNAL_/)).toBeNull();
   });
@@ -2150,7 +2153,8 @@ describe('intake review host boundary', () => {
     render(IntakeReview, { host: host(view), itemId: 'item' });
     await screen.findByRole('button', { name: 'Approve' });
     expect(screen.queryByText('Extracted information')).toBeNull();
-    expect(screen.getByText('Confidence unavailable')).toBeTruthy();
+    // Absent confidence draws nothing (#4503).
+    expect(screen.queryByText('Confidence unavailable')).toBeNull();
     expect(screen.queryByText(/INTERNAL_/)).toBeNull();
   });
   it('binds explicit correctness to the displayed action revision and never submits approval', async () => {

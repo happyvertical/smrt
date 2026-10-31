@@ -363,6 +363,24 @@ streaming channel; status is read through the existing item/analysis APIs. The
 maintained fixture records the instruction durably and then runs the stages in
 the background so the browser proof exercises the in-place update.
 
+**Try again (#4504).** `retryInterpretation({itemId, attemptId,
+expectedRevision, requestId})` re-runs an item whose interpretation failed (the
+displayed generation is `provider_error`, or later work failed or never
+started) with no new instruction. It uses the same anchor, guards, `process`
+authority and fresh extraction plus interpretation as an instruction, carries
+the item's current configuration (an instruction or split already in effect
+included) unchanged, and records nothing in the instruction history. Superseded
+anchors, work in flight and items that did not fail throw
+`ReviewerInstructionStaleError`. A replay of the same intent (item, anchor,
+revision, `requestId`, actor) returns the first append under current `process`
+authority; the same `requestId` with another intent is a request conflict.
+`createIntakeReviewHost` exposes it as `IntakeReviewHost.retry` (stale resolves
+`{ stale: true }`) and wakes the worker through `onRetry`, else `onInstruct`.
+`ReviewView` draws a "Try again" button (`ingestion.tryAgain`) beside the
+instruction box when `host.retry` exists, the item is open, nothing is in
+flight and the interpretation failed; it binds like the instruction
+(`instruction.binding`, else the displayed generation).
+
 `feedback` is an optional explicit correctness callback, separate from approval
 choice and execution success. No learning, feedback storage or rule promotion is
 implemented by these components; #3676 owns those services. Do not pass feedback
@@ -450,6 +468,45 @@ a model may be offered, and a human choosing a handler sends nothing to a
 provider. The UI picker shows the offered catalog, so a handler hidden from it is
 only reachable by a reviewer who already holds `review` authority for it. The maintained
 browser fixture serves both operations behind CSRF and the same session scope.
+
+## Review screen presentation (#4503)
+
+All presentation only; no new authority.
+
+- **Handler labels.** A handler registration may declare `label`. It is carried
+  on the reviewer catalog only (`listHandlers`, `ItemReviewView.catalog`), never
+  on generation input, catalog digests or bindings, so adding one never stales
+  existing work. The proposal heading, action heading and "Start action as…"
+  select draw it, falling back to the handler id.
+- **State labels.** Review states draw `ingestion.reviewState.<state>` and
+  generation outcomes `ingestion.outcome.<outcome>`; an unknown value is drawn
+  as is.
+- **Arguments as fields.** Where a handler `argsSchema` declares top-level
+  `string` (plain, `date`, `date-time`), `number`, `integer`, `boolean` or
+  enum properties, or `references` declares a candidate/evidence field, the
+  suggestion draft, the action's arguments and the start form draw those as
+  fields (`title` as the label, `*` when required). A candidate reference is a
+  search box over `host.candidates`, filtered to the reference's model, showing
+  the candidate's label (the generation's offered candidates label the current
+  value); an evidence reference picks among the item's originals. The JSON text
+  stays the source of truth: fields rewrite it, and it remains editable under a
+  collapsed "Advanced" disclosure for everything else (objects, arrays,
+  unions). Without such properties the plain JSON textarea (and the
+  destination picker) are drawn as before. Server validation is unchanged.
+- **Effects.** `action.review.display` is drawn as a `<dl>`: the handler's
+  preview fields (`display.preview`, or `display.step.preview` for a plan step;
+  a flat record as is), then non-empty `dependencies`/`plan` metadata as JSON,
+  named `metadata.<key>` when a preview field already has that name
+  (`displayEntries` in `view-utils`).
+- **Assignees.** An optional `IntakeReviewHost.assignees(query)` (adapter
+  option `assignees`) answers `{ id, label }[]`; the inbox then draws a search
+  picker for the filter and each row instead of the free-text "Assignee ID".
+  `assign` still receives the id and still authorizes. A failed search offers
+  nothing.
+- **Feedback state.** `ReviewAction.feedback` (see FEEDBACK.md) presses the
+  current judgment; a further judgment supersedes it and
+  `ingestion.feedbackSent` confirms it.
+- **Confidence.** Nothing is drawn when the provider reports no confidence.
 
 ## Single-page triage workspace
 
@@ -585,6 +642,16 @@ model only, exactly as in `IntakeReview`.
   control is hidden in the workspace (`resolveInRow={false}`) so closing always
   goes through the item pane and advances.
 
+
+**List following and refresh (#4504).** Every listed row (other than the open
+item) whose entry shows a stage in flight is followed like an item left
+mid-stage, up to `WATCH_CAP` rows, `WATCH_LIMIT` reads per tick on the pane's
+backoff, so rows no longer keep "Interpreting…" until Refresh. Opt-in
+`listPollMs` on `IntakeWorkspace`/`IntakeInbox` also re-reads the listed page
+under its listed filter while any row is processing (skipped while a read or
+operation is pending or Load more appended pages). Both components export
+`refresh()` (`bind:this`), which re-reads the first page like the Refresh
+button and resolves `{ items, result: 'shown' | 'failed' | 'pending' }`.
 
 ## Maintained browser proof
 
@@ -810,6 +877,18 @@ wrapper `{ proposals: GenerationOutput }` under `analysis.result.output`.
 The factory unwraps this into `ItemReviewView.generation`. Stale generation is
 omitted while authorized saved reviews remain available; access denials propagate.
 The reference application still owns its fixture provisioning and HTTP transport.
+
+## Upload refusals and accepted types (#4502)
+
+`IntakeWorkspace`/`IntakeInbox` take `accept` (an `<input accept>` value)
+for their file picker, defaulting to `IntakeReviewHost.uploadAccept` (adapter
+option `uploadAccept`); it is a hint only, `upload` still enforces the host's
+allowlist. When `upload` throws `IntakeUploadRefusedError` (from `/svelte`) or
+any error with a string `userMessage` (or an error named
+`IntakeUploadRefusedError` / with `code: 'INTAKE_UPLOAD_REFUSED'`, whose
+`message` is then shown), the inbox shows that reason (trimmed, at most 500
+characters) and keeps its rows; `uploadRefusalMessage(error)` applies the same
+rule. Any other error still fails the list closed with `ingestion.error`.
 
 ## Explicit upload retries
 

@@ -37,6 +37,14 @@ import {
   IntakeFeedbackService,
 } from './feedback.js';
 import {
+  type GenerationLimiter,
+  type GenerationRetryPolicy,
+  generationLimiter,
+  generationRetryPolicy,
+  retryDelay,
+  shouldRetry,
+} from './generation-retry.js';
+import {
   HOST_REVIEW_FAILED,
   HOST_REVIEW_INVALID,
   normalizeHostReview,
@@ -97,6 +105,10 @@ export {
   FAILURE_CAPTURE_MAX_BYTES,
   type FailureCaptureConfiguration,
 } from './failure-capture.js';
+export {
+  GenerationLimiter,
+  type GenerationRetryPolicy,
+} from './generation-retry.js';
 export type * from './proposal-contracts.js';
 export type {
   ProposalConfiguration,
@@ -185,6 +197,10 @@ export class IngestionProposalService {
   private readonly decisionIdentity;
   private readonly generator?: ProposalConfiguration['generator'];
   private readonly decision?: NonNullable<ProposalConfiguration['decision']>;
+  private readonly retry: GenerationRetryPolicy & { attempts: number } = {
+    attempts: 1,
+  };
+  private readonly limiter?: GenerationLimiter;
   constructor(
     private readonly service: IngestionService,
     private readonly options: IngestionOptions,
@@ -217,6 +233,11 @@ export class IngestionProposalService {
           : { maxBytes: capture.maxBytes }),
         ...(capture.redact ? { redact: capture.redact.bind(capture) } : {}),
       });
+    }
+    if ('generator' in config && 'generate' in config.generator) {
+      const host = config as ProposalConfiguration;
+      this.retry = generationRetryPolicy(host.retry);
+      this.limiter = generationLimiter(host, host.concurrency);
     }
     if ('reviewSuggestion' in config && config.reviewSuggestion !== undefined) {
       if (typeof config.reviewSuggestion !== 'function')
@@ -415,9 +436,18 @@ export class IngestionProposalService {
       itemId,
       async (_db, authorize) =>
         (await this.catalog(itemId, { evidence, authorize })).map(
-          ({ handler }) => handler,
+          ({ handler }) => this.labelled(handler),
         ),
     );
+  }
+  /** Presentation copy with the registration's display label (#4503). */
+  private labelled(entry: ProposalCatalogEntry): ProposalCatalogEntry {
+    const label = this.options.execution?.handlers.find(
+      (handler) => handler.id === entry.id && handler.version === entry.version,
+    )?.label;
+    return typeof label === 'string' && label.trim()
+      ? { ...entry, label: label.trim().slice(0, 200) }
+      : entry;
   }
   /** Public retrieval derives catalog/candidates and compatibility on the server. */
   async retrieveFeedback(
@@ -657,14 +687,19 @@ export class IngestionProposalService {
     offered: GenerationOutput['offered'],
     feedback: GenerationOutput['provenance']['feedback'],
     db?: DatabaseInterface,
+    /**
+     * `retrieve` at the provider boundary (`live`); `verify` when a stored
+     * generation's lineage is re-checked on read (#4504).
+     */
+    operation: 'retrieve' | 'verify' = 'retrieve',
   ) {
     if (!feedback) return;
     if (!this.options.feedback)
       throw new Error('Feedback configuration unavailable');
-    await new IntakeFeedbackService(
-      this.options,
-      this.execution,
-    ).assertSelection(
+    const service = new IntakeFeedbackService(this.options, this.execution);
+    await (operation === 'verify'
+      ? service.verifySelection.bind(service)
+      : service.assertSelection.bind(service))(
       {
         itemId,
         query: feedback.query,
@@ -680,6 +715,16 @@ export class IngestionProposalService {
       feedback.selection,
       db,
     );
+  }
+  /** Whether the analysis lease still covers `delay` plus another full stage deadline. */
+  private async retryFits(
+    lease: AnalysisLease,
+    delay: number,
+  ): Promise<boolean> {
+    const remaining = await this.service[analysisLeaseRemaining](lease).catch(
+      () => 0,
+    );
+    return remaining > delay + this.config.limits.timeoutMs;
   }
   private async deadline<T>(
     work: (signal: AbortSignal) => Promise<T>,
@@ -917,21 +962,53 @@ export class IngestionProposalService {
           ))
         )
           throw new StageFailure('limit');
-        const generated = await this.deadline(async (signal) => {
-          try {
-            return await generator.generate(structuredClone(input), {
-              signal,
-              maxOutputBytes: maxBytes,
+        // A rejected call may be retried under the host's opt-in policy
+        // (#4504); each call has its own deadline and, when bounded, waits
+        // for a concurrency slot first. Only the final rejection is recorded.
+        let generated: Awaited<ReturnType<typeof generator.generate>>;
+        for (let attempt = 1; ; attempt++) {
+          let rejected: { error: unknown } | undefined;
+          const call = () =>
+            this.deadline(async (signal) => {
+              try {
+                return await generator.generate(structuredClone(input), {
+                  signal,
+                  maxOutputBytes: maxBytes,
+                });
+              } catch (error) {
+                rejected = { error };
+                throw error;
+              }
             });
+          try {
+            generated = await (this.limiter ? this.limiter.run(call) : call());
+            break;
           } catch (error) {
-            const raw = rawProviderOutput(error);
+            // A timeout (or anything not thrown by the generator) is final,
+            // even when the generator then rejects on the deadline's abort.
+            if (!rejected || error !== rejected.error) throw error;
+            const cause = rejected.error;
+            let delay: number | undefined;
+            try {
+              delay = shouldRetry(this.retry, cause, attempt)
+                ? retryDelay(this.retry, attempt + 1)
+                : undefined;
+            } catch {
+              // A malformed host backoff ends the retries.
+              delay = undefined;
+            }
+            if (delay !== undefined && (await this.retryFits(lease, delay))) {
+              await new Promise((resolve) => setTimeout(resolve, delay));
+              continue;
+            }
+            const raw = rawProviderOutput(cause);
             if (raw !== undefined)
               captureCandidate = { source: 'raw_response', text: () => raw };
             // Value-free by construction: status, SDK code and allowlisted
             // schema keyword names only, never the provider's free text (#4260).
-            throw new StageFailure('unavailable', providerFailureReason(error));
+            throw new StageFailure('unavailable', providerFailureReason(cause));
           }
-        });
+        }
         await this.live(
           lease,
           expected.catalogDigest,
@@ -1547,6 +1624,7 @@ export class IngestionProposalService {
           feedbackOutput.offered,
           feedbackOutput.provenance.feedback,
           db,
+          'verify',
         );
         if (afterRead) {
           await afterRead(db, current);
@@ -1556,6 +1634,7 @@ export class IngestionProposalService {
             feedbackOutput.offered,
             feedbackOutput.provenance.feedback,
             db,
+            'verify',
           );
         }
         return current;

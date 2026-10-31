@@ -18,6 +18,15 @@ judgment. A second successor conflicts. Revised actions make old bindings
 ineligible. Approval and successful execution never imply that extracted fields
 are correct.
 
+Optional `feedback.onRecorded({ db, scope, receipt, input })` (#4522) runs
+inside the transaction that stores an explicit judgment, on the same executor,
+after the judgment row (and its `supersedesId` link) is written and before the
+final `capture` recheck. Write the host's own activity entry there: it commits
+or rolls back with the judgment, and a throw rolls the judgment back and
+rejects `recordFeedback` with that error. `receipt` and `input` are copies. It
+is not called for an idempotent replay (already committed) or for
+`observeFeedback`; like `policy.adopt`, it must write only host-owned rows.
+
 Decision and downstream execution facts are captured inside their owning
 transaction, keyed by immutable event ID and signal, when the configured capture
 authority allows the optional memory projection and it fits the configured byte
@@ -290,6 +299,15 @@ displayed binding is current again. Hosts must authenticate that callback and co
 maintained browser fixture demonstrates this transport with CSRF protection and
 rejects substituted revisions.
 
+With `enableFeedback`, `createIntakeReviewHost` also loads each action's
+`ReviewAction.feedback` (#4503): this reviewer's own current (not superseded)
+judgment at the displayed revision and binding (`id`, `judgment`, `comment`,
+`recordedAt`), read through `IngestionService.listOwnFeedback`. The chosen
+button is `aria-pressed`, `ingestion.feedbackSent` shows after a judgment, and
+a further judgment sends `supersedesId` (the loaded id, else the receipt id the
+callback returned). Another reviewer's judgment is never shown as pressed; a
+failed read only leaves the pressed state off.
+
 See [the behavior matrix](../../docs/test-matrix/3676-ingestion-feedback.md) for
 validation and the frozen learning protocol, and the
 [routing projection matrix](../../docs/test-matrix/3732-ingestion-routing-projection.md)
@@ -298,6 +316,18 @@ cohort demonstrates contract-level influence, not provider quality or measured
 production improvement. Real-provider evaluation belongs to #3677. There are no
 sampled automatic outcomes in this feature; reporting that stratum as unavailable
 avoids inventing correctness labels from successful jobs.
+
+`authorize` distinguishes two read operations (#4504). `retrieve` covers
+picking new examples and revalidating a selection at the provider boundary.
+`verify` covers re-checking the stored lineage of an existing generation (the
+examples it was produced with) whenever its actions are read, reviewed,
+labelled or applied, including `getAction`/`listReviews`, and whenever the
+stored generation snapshot is read (`getCompletedAnalysis`, the review host's
+`load`, instructions, splits and Try again). A host that switches
+learning off refuses `retrieve` and keeps allowing `verify`, so items analysed
+while learning was on still load. Fail-safe for authorizers that predate
+`verify`: when `verify` returns `false` the same check is asked as `retrieve`,
+and only a refusal of both fails closed ("Feedback unavailable") as before.
 
 When interpretation requests optional examples, an explicit denial of feedback
 retrieval degrades to generation without examples or feedback provenance. Direct

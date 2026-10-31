@@ -28,8 +28,20 @@ export interface Props {
   /** Told about every selection change, e.g. to keep a URL in step; never navigates. */
   onselect?: (itemId: string | undefined) => void;
   rowAside?: Snippet<[InboxEntry]>;
+  /** File types the upload picker offers; defaults to the host's `uploadAccept`. */
+  accept?: string;
+  /** Re-read the listed page on this interval while a row is processing; off when absent. */
+  listPollMs?: number;
 }
-let { host, itemId, pollMs = 2000, onselect, rowAside }: Props = $props();
+let {
+  host,
+  itemId,
+  pollMs = 2000,
+  onselect,
+  rowAside,
+  accept,
+  listPollMs,
+}: Props = $props();
 const { t } = useI18n();
 /**
  * Most followed items read per watch tick. Followed items are read in
@@ -267,6 +279,22 @@ function left(id: string, view: ItemReviewView | undefined, busy: boolean) {
   // tick, or one already scheduled, picks the new item up).
   if (!following && watchTimer === undefined) schedule();
 }
+/**
+ * Event: a displayed row (not the open item) shows a stage in flight. It is
+ * followed like an item left mid-stage, so it does not keep "Interpreting…"
+ * until the next refresh (#4504). Rows beyond WATCH_CAP are not followed
+ * (nothing already followed is evicted for them); follow reads still take at
+ * most WATCH_LIMIT items per tick.
+ */
+function processing(id: string) {
+  if (id === selected || watched.includes(id) || started.length >= WATCH_CAP)
+    return;
+  bump(id);
+  staged.add(id);
+  watched = [...watched, id];
+  started = [...started, id];
+  if (!following && watchTimer === undefined) schedule();
+}
 /** Event: the open pane, or a follow read, was denied (returned or thrown). */
 function denied(id: string) {
   if (id === selected) {
@@ -339,6 +367,8 @@ function pageLanded(page: {
   }
   for (const id of [...newest.keys()]) if (!displayed(id)) newest.delete(id);
   for (const id of [...watched]) if (!displayed(id)) rowRemoved(id);
+  for (const row of rows)
+    if (statusOf(row).kind === 'pending') processing(row.item.id);
 }
 /** Event: a page read failed and the list failed closed (no rows). */
 function listFailed() {
@@ -613,6 +643,16 @@ function outcome(_kind: ReviewOutcome, view: ItemReviewView) {
   }
   void advance();
 }
+/**
+ * Re-read the list's first page, like its Refresh button (host-callable via
+ * `IntakeWorkspace.refresh()`). See `InboxView.refresh` for the result.
+ */
+export async function refresh(): Promise<{
+  items: InboxEntry[];
+  result: 'shown' | 'failed' | 'pending';
+}> {
+  return inbox ? inbox.refresh() : { items: [], result: 'pending' as const };
+}
 function keydown(event: KeyboardEvent) {
   if (event.defaultPrevented || event.ctrlKey || event.metaKey) return;
   const target = event.target;
@@ -643,7 +683,7 @@ function keydown(event: KeyboardEvent) {
 <svelte:window onkeydown={keydown} />
 <div class="workspace" bind:this={root} data-testid="intake-workspace">
 <div class="list-pane">
-<InboxView bind:this={inbox} {host} {rowAside} selectedId={selected} onselect={(id) => request(id)} onitems={listed} onreadstart={readStarted} {stamp} status={rowStatus} resolveInRow={false} />
+<InboxView bind:this={inbox} {host} {rowAside} {accept} {listPollMs} selectedId={selected} onselect={(id) => request(id)} onitems={listed} onreadstart={readStarted} {stamp} status={rowStatus} resolveInRow={false} />
 </div>
 <section class="item-pane" bind:this={pane} tabindex="-1" aria-label={label ?? t(M['ingestion.selectedItem'])} data-testid="workspace-item" onfocusin={noteField}>
 <div class="queue-nav" role="group" aria-label={t(M['ingestion.workspace'])}>
