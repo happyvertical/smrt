@@ -113,6 +113,14 @@ describePostgres(
         tenant,
         randomUUID(),
       );
+      // An application table whose tenants are still slugs.
+      await db.query(
+        'CREATE TABLE unrelated_things (id text PRIMARY KEY, tenant_id text)',
+      );
+      await db.query(
+        "INSERT INTO unrelated_things (id, tenant_id) VALUES ($1, 'legacy-tenant-slug')",
+        randomUUID(),
+      );
       // A legacy non-UUID value: the column is skipped, never coerced.
       await db.query(
         `INSERT INTO _smrt_dispatch (id, type, source, tenant_id)
@@ -134,7 +142,10 @@ describePostgres(
         unrelated_things: {
           tableName: 'unrelated_things',
           ddl: '',
-          columns: { id: { type: 'UUID', primaryKey: true } },
+          columns: {
+            id: { type: 'UUID', primaryKey: true },
+            tenant_id: { type: 'UUID', referenceKind: 'tenantId' },
+          },
           indexes: [],
           triggers: [],
           foreignKeys: [],
@@ -158,36 +169,82 @@ describePostgres(
       }
     });
 
-    it('previews the system tenant columns without converting them', async () => {
-      const output = await run({ 'dry-run': true });
-      for (const table of [
-        '_smrt_changes',
-        '_smrt_changes_pending',
-        '_smrt_dispatch_subscriptions',
-      ]) {
-        expect(output).toContain(
-          `"${table}" ALTER COLUMN "tenant_id" TYPE uuid`,
-        );
-      }
-      // A legacy non-UUID tenant value is reported, not coerced.
+    const SYSTEM = [
+      '_smrt_changes',
+      '_smrt_changes_pending',
+      '_smrt_dispatch',
+      '_smrt_dispatch_subscriptions',
+    ];
+
+    it('holds every system tenant column back while any sibling or tenant column is dirty', async () => {
+      let output = await run({ 'dry-run': true });
       expect(output).toContain(
         'SKIP _smrt_dispatch.tenant_id: 1 non-uuid value',
       );
-      expect(await dataType('_smrt_changes')).toBe('text');
+      for (const table of SYSTEM.filter((name) => name !== '_smrt_dispatch')) {
+        expect(output).toMatch(
+          new RegExp(
+            `SKIP ${table}\\.tenant_id: system tenant columns convert together; _smrt_dispatch\\.tenant_id is not convertible`,
+          ),
+        );
+      }
+
+      // Resolve the dirty dispatch row the only allowed way: a proven tenant
+      // or NULL (global). The application tenant column still holds a slug.
+      await query(
+        "UPDATE _smrt_dispatch SET tenant_id = NULL WHERE tenant_id = 'legacy-tenant-slug'",
+      );
+      output = await run({ 'dry-run': true });
+      expect(output).toMatch(
+        /system tenant columns convert together; application tenant column unrelated_things\.tenant_id is not convertible/,
+      );
+      // A real (non-dry) run converts nothing in this state.
+      await run({});
+      for (const table of SYSTEM) {
+        expect(await dataType(table), table).toBe('text');
+      }
     }, 60_000);
 
-    it('converts clean columns, skips the dirty one, keeps every row, and is then a no-op', async () => {
+    it('converts all system tenant columns together once clean, keeps every row, and is then a no-op', async () => {
+      await query(
+        'UPDATE unrelated_things SET tenant_id = $1 WHERE tenant_id = $2',
+        tenant,
+        'legacy-tenant-slug',
+      );
+      // An install whose helper predates #3297 inserts the text argument
+      // as-is, which a uuid column rejects; the run must replace it.
+      await query(`
+        CREATE OR REPLACE FUNCTION _smrt_append_change(
+          p_table_name TEXT, p_row_id TEXT, p_operation TEXT,
+          p_tenant_id TEXT, p_created_at TIMESTAMPTZ
+        ) RETURNS TABLE(allocated_seq BIGINT, error_code TEXT, error_message TEXT)
+        LANGUAGE plpgsql AS $stale$
+        DECLARE v_seq BIGINT;
+        BEGIN
+          BEGIN
+            INSERT INTO _smrt_changes (seq, table_name, row_id, operation, tenant_id, created_at)
+            SELECT COALESCE(MAX(seq), 0) + 1, p_table_name, p_row_id, p_operation, p_tenant_id, p_created_at
+            FROM _smrt_changes RETURNING _smrt_changes.seq INTO v_seq;
+            RETURN QUERY SELECT v_seq, NULL::TEXT, NULL::TEXT;
+          EXCEPTION WHEN OTHERS THEN
+            RETURN QUERY SELECT NULL::BIGINT, SQLSTATE::TEXT, SQLERRM::TEXT;
+          END;
+        END;
+        $stale$`);
       const before = await query(
         'SELECT seq, tenant_id::text AS tenant_id FROM _smrt_changes ORDER BY seq',
       );
-      const output = await run({});
-      expect(output).toMatch(/_smrt_dispatch\.tenant_id/);
 
-      expect(await dataType('_smrt_changes')).toBe('uuid');
-      expect(await dataType('_smrt_changes_pending')).toBe('uuid');
-      expect(await dataType('_smrt_dispatch_subscriptions')).toBe('uuid');
-      expect(await dataType('_smrt_dispatch')).toBe('text');
-
+      const preview = await run({ 'dry-run': true });
+      for (const table of SYSTEM) {
+        expect(preview).toContain(
+          `"${table}" ALTER COLUMN "tenant_id" TYPE uuid`,
+        );
+      }
+      await run({});
+      for (const table of SYSTEM) {
+        expect(await dataType(table), table).toBe('uuid');
+      }
       const after = await query(
         'SELECT seq, tenant_id::text AS tenant_id FROM _smrt_changes ORDER BY seq',
       );
@@ -197,31 +254,16 @@ describePostgres(
           tenant_id: row.tenant_id === '' ? null : row.tenant_id,
         })),
       );
-      expect(
-        await query(
-          "SELECT tenant_id FROM _smrt_dispatch WHERE tenant_id = 'legacy-tenant-slug'",
-        ),
-      ).toHaveLength(1);
 
-      // The change-feed helpers write into the converted columns.
+      // The run replaced the stale helper, so appends write uuid tenants.
       const [append] = await query(
         "SELECT * FROM _smrt_append_change('things', 'd', 'update', $1, now())",
         tenant,
       );
       expect(append).toMatchObject({ error_code: null });
-      expect(
-        String(
-          (
-            await query(
-              "SELECT prosrc FROM pg_proc WHERE proname = '_smrt_append_change'",
-            )
-          )[0]?.prosrc,
-        ),
-      ).toContain('jsonb_populate_record');
 
       const again = await run({ 'dry-run': true });
-      expect(again).not.toContain('"_smrt_changes" ALTER COLUMN');
-      expect(await dataType('_smrt_dispatch')).toBe('text');
+      expect(again).not.toContain('ALTER COLUMN "tenant_id"');
     }, 60_000);
   },
 );

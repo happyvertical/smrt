@@ -268,11 +268,21 @@ async function settleDeferredCompatibilityAfterMigrate(
   dbType: string,
   { verbose }: { verbose: boolean },
 ): Promise<void> {
+  // Framework `_smrt_*` tables otherwise appear only when a model first
+  // initializes against this database, so a freshly migrated one failed
+  // `db:status --parity` with every system table missing (#3297). Its own
+  // best-effort step, so a bootstrap failure never skips the pass below.
   try {
-    // Framework `_smrt_*` tables otherwise appear only when a model first
-    // initializes against this database, so a freshly migrated one failed
-    // `db:status --parity` with every system table missing (#3297).
     await ensureSystemTables(db, dbType);
+  } catch (error) {
+    console.warn(
+      `⚠️  System-table bootstrap did not complete: ${redactDatabaseUrlsInText(
+        error instanceof Error ? error.message : String(error),
+      )}`,
+    );
+    console.warn('   It will be retried the next time the framework starts.\n');
+  }
+  try {
     const { settled } = await ensureDeferredSystemTableCompatibility(
       db,
       dbType,
@@ -286,7 +296,7 @@ async function settleDeferredCompatibilityAfterMigrate(
     }
   } catch (error) {
     console.warn(
-      `⚠️  System-table bootstrap or deferred compatibility did not complete: ${redactDatabaseUrlsInText(
+      `⚠️  Deferred system-table compatibility did not complete: ${redactDatabaseUrlsInText(
         error instanceof Error ? error.message : String(error),
       )}`,
     );

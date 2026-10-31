@@ -231,7 +231,12 @@ holds). They convert under the same rules as application columns: a column
 holding any non-UUID value (a legacy slug tenant, a `'system'` sentinel) is
 skipped and reported, never coerced; duplicates after normalization are
 detected first; the whole run is one transaction that rolls back on failure,
-and a rerun is a no-op. The run also installs the change-feed helpers that
+and a rerun is a no-op. The four convert together or not at all: the drain
+moves staged rows from `_smrt_changes_pending` into `_smrt_changes`, and
+dispatch rows and subscriptions carry the same context tenant, so one dirty
+system column, a dirty application `tenant_id` (slug tenants still in use), or
+a still timezone-naive `_smrt_changes.created_at` holds all four back and the
+dry run says why. The run also installs the change-feed helpers that
 coerce tenant ids to the live column type, so appends keep working before,
 during and after conversion.
 
@@ -251,14 +256,20 @@ Procedure for an existing PostgreSQL deployment:
 
 1. Upgrade every SMRT process first. The new code works against TEXT and uuid
    columns alike; an older process can reinstall a drain helper that cannot
-   return a uuid tenant id.
+   return a uuid tenant id. The same holds for a fresh PostgreSQL install: do
+   not point processes from an older release at it.
 2. Inventory: `smrt db:migrate-uuid --dry-run` lists the system columns it
    would convert and any it skips as dirty. Resolve dirty values only by
    assigning a proven tenant UUID or NULL (global); never infer a tenant.
 3. Rehearse on a restored copy. `ALTER COLUMN … TYPE uuid` rewrites the table
    and holds an exclusive lock for the duration — size the window and the
    statement timeout for `_smrt_changes`, the largest system table.
-4. In the window, with writers drained, run `smrt db:migrate-uuid`, then
+4. In the window, with writers drained and no SMRT process starting (the run
+   holds the bootstrap advisory lock and exclusive table locks until it
+   commits), confirm `_smrt_changes_pending` is empty, run the audited
+   timestamp migration first if `_smrt_changes.created_at` is still
+   timezone-naive (`smrt db:migrate --postgres-timestamp-legacy-timezone UTC`),
+   then run `smrt db:migrate-uuid`, then
    `smrt db:status --parity` and `smrt db:migrate-null-equal-indexes --dry-run`
    (system-table indexes are not framework conflict indexes and report
    nothing; rerun it after any application key changes). Restart writers.
