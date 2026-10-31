@@ -15,6 +15,8 @@ import {
   CourseAuthoringValidationError,
   type CourseAuthorizationDecision,
   CourseNotFoundError,
+  CoursePolicyBasisMismatchError,
+  CourseRequestKeyConflictError,
   LearnerAuthorizationError,
   type LearnerAuthorizer,
   MAX_PAGE_SIZE,
@@ -35,6 +37,7 @@ import { submissionClasses } from './submission-workflows.js';
  *  listCourses state combos / discarded flag ............. 'listCourses states'
  *  summary licence/shareability/releaseCount ............. 'listCourses summary licence'
  *  learner/course identity on pin, upgrade, history, release read  'enrollment identity fields'
+ *  authorizer-supplied policy basis (pin/upgrade/opt-in/auto) . 'policy basis from the authorizer'
  *  pagination determinism, limit cap, bad cursor ......... 'pagination'
  *  upgrade choice history (course and enrollment) ........ 'upgrade choices'
  *  skips: reason+code, boolean compat, sanitizing, throws  'skips'
@@ -831,6 +834,210 @@ describe('authorized course reads', () => {
     );
     for (const row of skipped.items)
       expect(row).toMatchObject({ learnerId, courseId: s.course.courseId });
+  });
+
+  describe('policy basis from the authorizer', () => {
+    const grant = (
+      s: Awaited<ReturnType<typeof setup>>,
+      basis: unknown,
+      only?: string,
+    ) => {
+      s.state.override = (call) =>
+        call.action === 'education.course.assign' &&
+        (!only || call.operation === only)
+          ? {
+              allowed: true,
+              ...(basis === undefined ? {} : { policyBasis: basis as string }),
+            }
+          : undefined;
+    };
+    const rows = (s: Awaited<ReturnType<typeof setup>>, table: string) =>
+      s.db.list(table, {});
+    // A second release, and a fresh enrollment on its course for initial pins.
+    async function fixture() {
+      const s = await setup();
+      const q = await s.question(mcq('Q-basis'));
+      const rel2 = await s.publish([['a', [q]]]);
+      const fresh = await s.f.as(s.f.parent, () =>
+        s.f.service.enroll({
+          ...s.f.parent,
+          curriculumId: String(s.f.curriculum.id),
+          courseId: rel2.releaseCourseId,
+        }),
+      );
+      return { s, rel2, fresh: String(fresh.id) };
+    }
+    const pin = (
+      s: Awaited<ReturnType<typeof setup>>,
+      enrollmentId: string,
+      releaseId: string,
+      extra: Record<string, unknown> = {},
+      requestKey = s.key('pin'),
+    ) =>
+      s.as(s.guardian, () =>
+        s.authoring.pinEnrollment({
+          ...s.guardian,
+          enrollmentId,
+          releaseId,
+          requestKey,
+          ...extra,
+        } as never),
+      );
+    const optIn = (
+      s: Awaited<ReturnType<typeof setup>>,
+      extra: Record<string, unknown> = {},
+    ) =>
+      s.as(s.guardian, () =>
+        s.authoring.setAutoUpgrade({
+          ...s.guardian,
+          courseId: s.course.courseId,
+          enabled: true,
+          requestKey: s.key('opt'),
+          ...extra,
+        } as never),
+      );
+
+    it('records the authorizer basis on pin, upgrade and opt-in without a caller basis', async () => {
+      const { s, rel2, fresh } = await fixture();
+      grant(s, 'learner-setting:guardians-only');
+      const pinned = await pin(s, fresh, rel2.id);
+      expect(pinned.policyBasis).toBe('learner-setting:guardians-only');
+      const upgraded = await s.as(s.guardian, () =>
+        s.authoring.upgradeEnrollment({
+          ...s.guardian,
+          enrollmentId: s.enrollmentId,
+          releaseId: rel2.id,
+          requestKey: s.key('up'),
+        }),
+      );
+      expect(upgraded.policyBasis).toBe('learner-setting:guardians-only');
+      await optIn(s, { enrollmentId: s.enrollmentId });
+      expect((await rows(s, 'course_upgrade_choices')).at(-1)).toMatchObject({
+        policy_basis: 'learner-setting:guardians-only',
+      });
+      expect(
+        (await rows(s, 'enrollment_release_pins')).filter(
+          (r) => r.policy_basis === 'learner-setting:guardians-only',
+        ),
+      ).toHaveLength(2);
+    });
+
+    it('still accepts a caller basis alone, or an equal one; boolean decisions are unchanged', async () => {
+      const { s, rel2, fresh } = await fixture();
+      // Default authorizer returns a boolean.
+      expect(
+        (await pin(s, fresh, rel2.id, { policyBasis: 'guardians-only' }))
+          .policyBasis,
+      ).toBe('guardians-only');
+      grant(s, 'guardians-only');
+      const result = await optIn(s, { policyBasis: 'guardians-only' });
+      expect(result.policyBasis).toBe('guardians-only');
+    });
+
+    it('refuses a differing basis, a missing basis and an invalid authorizer basis without writing', async () => {
+      const { s, rel2, fresh } = await fixture();
+      const counts = async () => [
+        (await rows(s, 'enrollment_release_pins')).length,
+        (await rows(s, 'course_upgrade_choices')).length,
+      ];
+      const snapshot = await counts();
+      grant(s, 'from-host');
+      await expect(
+        pin(s, fresh, rel2.id, { policyBasis: 'from-caller' }),
+      ).rejects.toBeInstanceOf(CoursePolicyBasisMismatchError);
+      await expect(
+        optIn(s, { policyBasis: 'from-caller' }),
+      ).rejects.toMatchObject({ code: 'policy-basis-mismatch' });
+      grant(s, undefined);
+      await expect(pin(s, fresh, rel2.id)).rejects.toBeInstanceOf(
+        CourseAuthoringValidationError,
+      );
+      await expect(optIn(s)).rejects.toBeInstanceOf(
+        CourseAuthoringValidationError,
+      );
+      for (const bad of ['x'.repeat(201), '   ', 'bad\nbasis', 42]) {
+        grant(s, bad);
+        await expect(pin(s, fresh, rel2.id)).rejects.toBeInstanceOf(
+          CourseAuthoringValidationError,
+        );
+        await expect(
+          pin(s, fresh, rel2.id, { policyBasis: 'guardians-only' }),
+        ).rejects.toBeInstanceOf(CourseAuthoringValidationError);
+        await expect(optIn(s)).rejects.toBeInstanceOf(
+          CourseAuthoringValidationError,
+        );
+      }
+      expect(await counts()).toEqual(snapshot);
+    });
+
+    it('authorizes live on replay and compares the effective basis', async () => {
+      const { s, rel2, fresh } = await fixture();
+      grant(s, 'basis-a');
+      const key = s.key('replay');
+      const first = await pin(s, fresh, rel2.id, {}, key);
+      const count = (await rows(s, 'enrollment_release_pins')).length;
+      // Replay without resending the basis returns the original result.
+      expect(await pin(s, fresh, rel2.id, {}, key)).toEqual(first);
+      expect((await rows(s, 'enrollment_release_pins')).length).toBe(count);
+      // The authorizer now relies on another basis: a request-key conflict.
+      grant(s, 'basis-b');
+      await expect(pin(s, fresh, rel2.id, {}, key)).rejects.toBeInstanceOf(
+        CourseRequestKeyConflictError,
+      );
+      // Authorization is still live on a replay.
+      s.state.override = () => false;
+      await expect(pin(s, fresh, rel2.id, {}, key)).rejects.toBeInstanceOf(
+        CourseAuthoringAuthorizationError,
+      );
+    });
+
+    it('records the per-enrollment decision basis on automatic moves and skips, falling back to the opt-in basis', async () => {
+      const cases: Array<[string, unknown, boolean, string]> = [
+        ['decision basis on a move', 'per-learner', true, 'per-learner'],
+        ['fallback on a move', undefined, true, 'guardians-only'],
+        [
+          'invalid basis denies, opt-in basis kept',
+          'bad\nbasis',
+          false,
+          'guardians-only',
+        ],
+      ];
+      for (const [label, basis, moved, expected] of cases) {
+        const s = await setup();
+        await s.optIn(s.guardian, true);
+        s.state.override = (call) =>
+          call.operation === 'auto-upgrade'
+            ? {
+                allowed: true,
+                ...(basis === undefined
+                  ? {}
+                  : { policyBasis: basis as string }),
+              }
+            : undefined;
+        const q = await s.question(mcq(`Q-${label}`));
+        await s.publish([['a', [q]]]);
+        const pins = (await rows(s, 'enrollment_release_pins')).filter(
+          (r) => r.kind === 'auto',
+        );
+        const skips = await rows(s, 'enrollment_auto_upgrade_skips');
+        expect(pins.length, label).toBe(moved ? 1 : 0);
+        expect(skips.length, label).toBe(moved ? 0 : 1);
+        expect((moved ? pins : skips)[0].policy_basis, label).toBe(expected);
+      }
+      // A denial that names its own basis records it on the skip.
+      const s = await setup();
+      await s.optIn(s.guardian, true);
+      s.state.override = (call) =>
+        call.operation === 'auto-upgrade'
+          ? { allowed: false, policyBasis: 'denied-under', code: 'x' }
+          : undefined;
+      await s.publish([['a', [await s.question(mcq('Q-deny'))]]]);
+      expect((await rows(s, 'enrollment_auto_upgrade_skips'))[0]).toMatchObject(
+        {
+          policy_basis: 'denied-under',
+        },
+      );
+    });
   });
 
   describe('skips', () => {

@@ -85,11 +85,15 @@ share mutable rows. Personal-use releases stay `draft` status (the existing rule
 the pin. `upgradeEnrollment` appends an explicit move to a newer release.
 `setAutoUpgrade` records an opt-in/out at course or enrollment level (enrollment
 wins) for future releases; each automatic move is a recorded pin without actor. Pin, upgrade and
-`setAutoUpgrade` requests require a host-supplied `policyBasis` (the
-assignment-setting value relied on, e.g. `guardians-only`; 1-200 chars, else
-`invalid-request`), recorded with actor and delegating guardian on the pin or
-choice row and exposed on the views. An automatic move copies the basis of the
-opt-in that governs it, plus its `optInScope` (`course`|`enrollment`). Each
+`setAutoUpgrade` need a `policyBasis` (the assignment-setting value relied on, e.g.
+`guardians-only`; 1-200 printable chars, else `invalid-request`). The caller's is optional: the
+`assign` authorizer decision may return `policyBasis`, which then wins; both given must be equal
+(`CoursePolicyBasisMismatchError`, `policy-basis-mismatch`) and neither is `invalid-request`; an invalid
+authorizer basis is a validation error, nothing written. The authorizer runs first, also on replays, and
+replays compare the effective basis. Recorded with actor and delegating guardian on the pin or
+choice row and exposed on the views. An automatic move records the per-enrollment `auto-upgrade`
+decision's `policyBasis` (an invalid one denies the move), else the basis of the
+opt-in that governs it (the same for a skip), plus its `optInScope` (`course`|`enrollment`). Each
 automatic move is authorized per enrollment during `release` with action
 `assign`, operation `auto-upgrade`, that `enrollmentId`/`learnerId`, the opt-in's
 recorded actor and delegating guardian (current membership re-checked, the host

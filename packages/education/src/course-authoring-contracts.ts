@@ -86,6 +86,14 @@ export interface CourseAuthorizationDecision {
   allowed: boolean;
   reason?: string;
   code?: string;
+  /**
+   * `education.course.assign` only: the assignment-setting value the host relied
+   * on (1-200 printable characters). It becomes the recorded policy basis for pin,
+   * upgrade and opt-in rows, replacing the caller-supplied one; if the caller also
+   * sent one it must be equal (`CoursePolicyBasisMismatchError`). Ignored for other
+   * actions. An invalid value is a validation error and nothing is written.
+   */
+  policyBasis?: string;
 }
 
 /** Result of a host delegation check; a bare boolean is accepted as well. */
@@ -520,6 +528,15 @@ export class CourseArchivedError extends CourseAuthoringError {
 export class CourseStaleHeadError extends CourseAuthoringError {
   constructor(readonly currentHeadRevisionId: string) {
     super('stale-head', 'The draft head moved; reload and retry.');
+  }
+}
+/** The caller and the assign authorizer named different policy bases. */
+export class CoursePolicyBasisMismatchError extends CourseAuthoringError {
+  constructor() {
+    super(
+      'policy-basis-mismatch',
+      'The supplied policy basis differs from the one the authorizer relied on.',
+    );
   }
 }
 export class CourseRequestKeyConflictError extends CourseAuthoringError {

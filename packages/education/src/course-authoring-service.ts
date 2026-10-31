@@ -42,6 +42,7 @@ import {
   CourseNotFoundError,
   type CoursePage,
   type CoursePageRequest,
+  CoursePolicyBasisMismatchError,
   type CourseProvenance,
   type CourseReferenceGuard,
   type CourseReleaseView,
@@ -190,6 +191,8 @@ function readDecision(result: unknown): {
   allowed: boolean;
   reason: string;
   code: string;
+  /** Raw, unvalidated; only the assign flows read it (see `resolvePolicyBasis`). */
+  policyBasis?: unknown;
 } {
   if (typeof result === 'boolean')
     return { allowed: result, reason: SKIP_REASON, code: '' };
@@ -207,7 +210,39 @@ function readDecision(result: unknown): {
       typeof decision.code === 'string' && SKIP_CODE_PATTERN.test(decision.code)
         ? decision.code
         : '',
+    ...(decision.policyBasis === undefined || decision.policyBasis === null
+      ? {}
+      : { policyBasis: decision.policyBasis }),
   };
+}
+
+// biome-ignore lint/suspicious/noControlCharactersInRegex: reject control characters
+const BASIS_CONTROL = /[\u0000-\u001f\u007f]/;
+/** Validates one policy basis; null when absent (undefined, null or empty). */
+function basisValue(value: unknown): string | null {
+  if (value === undefined || value === null || value === '') return null;
+  if (
+    typeof value !== 'string' ||
+    value.length > 200 ||
+    !value.trim() ||
+    BASIS_CONTROL.test(value)
+  )
+    throw new CourseAuthoringValidationError('Invalid policy basis');
+  return value;
+}
+/**
+ * The effective basis: the authorizer's if it gave one, else the caller's. Both
+ * given must be equal; neither is a validation error. Invalid values throw.
+ */
+function resolvePolicyBasis(decided: unknown, supplied: unknown): string {
+  const fromHost = basisValue(decided);
+  const fromCaller = basisValue(supplied);
+  if (fromHost !== null && fromCaller !== null && fromHost !== fromCaller)
+    throw new CoursePolicyBasisMismatchError();
+  const basis = fromHost ?? fromCaller;
+  if (basis === null)
+    throw new CourseAuthoringValidationError('policy basis is required');
+  return basis;
 }
 
 function pageLimit(value: unknown): number {
@@ -602,7 +637,7 @@ export class CourseAuthoringService {
       releaseId?: string;
       releaseCourseId?: string;
     } = {},
-  ): Promise<void> {
+  ): Promise<ReturnType<typeof readDecision>> {
     const context = getCurrentTenant();
     if (
       !context ||
@@ -648,8 +683,10 @@ export class CourseAuthoringService {
       operation,
       executor: tx,
     });
-    if (readDecision(allowed).allowed !== true)
+    const decision = readDecision(allowed);
+    if (decision.allowed !== true)
       throw new CourseAuthoringAuthorizationError();
+    return decision;
   }
 
   /**
@@ -2447,7 +2484,8 @@ export class CourseAuthoringService {
       enrollmentId: string;
       releaseId: string;
       requestKey: string;
-      policyBasis: string;
+      /** Optional when the assign authorizer returns the basis. */
+      policyBasis?: string;
     },
   ): Promise<EnrollmentPinView> {
     return this.movePin(request, 'initial');
@@ -2459,7 +2497,8 @@ export class CourseAuthoringService {
       enrollmentId: string;
       releaseId: string;
       requestKey: string;
-      policyBasis: string;
+      /** Optional when the assign authorizer returns the basis. */
+      policyBasis?: string;
     },
   ): Promise<EnrollmentPinView> {
     return this.movePin(request, 'explicit');
@@ -2470,12 +2509,12 @@ export class CourseAuthoringService {
       enrollmentId: string;
       releaseId: string;
       requestKey: string;
-      policyBasis: string;
+      /** Optional when the assign authorizer returns the basis. */
+      policyBasis?: string;
     },
     kind: 'initial' | 'explicit',
   ): Promise<EnrollmentPinView> {
     const requestKey = requireKey(request.requestKey);
-    const policyBasis = text(request.policyBasis, 'policy basis', 200, true);
     return this.run(async (tx) => {
       const enrollment = await this.enrollmentRow(
         tx,
@@ -2492,7 +2531,7 @@ export class CourseAuthoringService {
               tenant_id: request.tenantId,
             })
           : null;
-      await this.authorize(
+      const decision = await this.authorize(
         tx,
         request,
         'education.course.assign',
@@ -2508,6 +2547,10 @@ export class CourseAuthoringService {
               }
             : {}),
         },
+      );
+      const policyBasis = resolvePolicyBasis(
+        decision.policyBasis,
+        request.policyBasis,
       );
       await this.lockEnrollment(tx, request.tenantId, request.enrollmentId);
       const pins = await this.pins(tx, request.tenantId, request.enrollmentId);
@@ -2580,17 +2623,17 @@ export class CourseAuthoringService {
       enrollmentId?: string;
       enabled: boolean;
       requestKey: string;
-      policyBasis: string;
+      /** Optional when the assign authorizer returns the basis. */
+      policyBasis?: string;
     },
   ): Promise<SetAutoUpgradeResult> {
     const requestKey = requireKey(request.requestKey);
-    const policyBasis = text(request.policyBasis, 'policy basis', 200, true);
     const enabled = bool(request.enabled, 'enabled');
     return this.run(async (tx) => {
       const enrollment = request.enrollmentId
         ? await this.enrollmentRow(tx, request.tenantId, request.enrollmentId)
         : null;
-      await this.authorize(
+      const decision = await this.authorize(
         tx,
         request,
         'education.course.assign',
@@ -2604,6 +2647,10 @@ export class CourseAuthoringService {
               }
             : {}),
         },
+      );
+      const policyBasis = resolvePolicyBasis(
+        decision.policyBasis,
+        request.policyBasis,
       );
       await this.writableDraft(tx, request.tenantId, request.courseId);
       await this.lockHead(tx, request.tenantId, request.courseId);
@@ -2670,8 +2717,16 @@ export class CourseAuthoringService {
     enrollmentId: string,
     learnerId: string,
     courseId: string,
-  ): Promise<{ allowed: boolean; reason: string; code: string }> {
-    const denied = readDecision(false);
+  ): Promise<{
+    allowed: boolean;
+    reason: string;
+    code: string;
+    policyBasis: string;
+  }> {
+    // The basis recorded on a move or skip: this enrollment's decision when it
+    // names one, else the opt-in's. An invalid authorizer basis denies the move.
+    const fallback = choice.policyBasis;
+    const denied = { ...readDecision(false), policyBasis: fallback };
     try {
       const delegation = readDelegation({
         actorUserId: choice.actorUserId,
@@ -2710,9 +2765,15 @@ export class CourseAuthoringService {
             enrollmentId,
             learnerId,
           });
-          if (verified.allowed !== true) return { ...verified, allowed: false };
+          if (verified.allowed !== true)
+            return {
+              allowed: false,
+              reason: verified.reason,
+              code: verified.code,
+              policyBasis: fallback,
+            };
         }
-        return readDecision(
+        const decided = readDecision(
           await this.authorizer({
             tenantId,
             actorUserId: choice.actorUserId,
@@ -2725,6 +2786,16 @@ export class CourseAuthoringService {
             executor: inner,
           }),
         );
+        try {
+          return {
+            allowed: decided.allowed,
+            reason: decided.reason,
+            code: decided.code,
+            policyBasis: basisValue(decided.policyBasis) ?? fallback,
+          };
+        } catch {
+          return denied;
+        }
       });
     } catch {
       // Never record a thrown message: the generic reason only.
@@ -2787,7 +2858,7 @@ export class CourseAuthoringService {
           optInActorUserId: choice.actorUserId,
           optInDelegatingGuardianUserId: choice.delegatingGuardianUserId,
           optInDelegationId: choice.delegationId,
-          policyBasis: choice.policyBasis,
+          policyBasis: decision.policyBasis,
           reason: decision.reason,
           code: decision.code,
           recordedAt: new Date(),
@@ -2800,7 +2871,7 @@ export class CourseAuthoringService {
         previous,
         kind: 'auto',
         requestKey: `auto:${String(release.id)}`,
-        policyBasis: choice.policyBasis,
+        policyBasis: decision.policyBasis,
         optInScope,
         optInDelegationId: choice.delegationId,
         sequence: (await this.pins(tx, tenantId, enrollmentId)).length + 1,
