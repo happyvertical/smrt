@@ -1,20 +1,25 @@
 /**
- * Generated-route dependency detection against real installed tarballs
- * (#3913). Core, smrt-users, smrt-app-runtime, and smrt-dev-mcp are packed
- * from this workspace and installed into a clean pnpm consumer, so the
- * detectors see the published `types`/`import`-only subpath exports exactly
- * as an application does — no workspace alias or fixture export map.
+ * Generated-route dependency detection against installed tarballs (#3913).
+ * Core is packed from this workspace and installed into a clean pnpm
+ * consumer with no workspace alias. smrt-users, smrt-app-runtime, and
+ * smrt-dev-mcp are packed as minimal packages that carry their real
+ * published `exports` maps (read from the workspace manifests, so they cannot
+ * drift) with stub modules at the selected targets: this isolates resolution
+ * from those packages' own runtime graphs, and keeps the test runnable in the
+ * core CI shard, which builds only Core's dependency closure. The
+ * `mcp-get-serializer-packed-consumer` test uses the same convention.
  */
 import { spawnSync } from 'node:child_process';
 import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
+  readFileSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -41,11 +46,89 @@ interface LayoutReport {
   importResolves: Record<string, string | null>;
 }
 
-const specifiers = [
-  '@happyvertical/smrt-users/sveltekit',
-  '@happyvertical/smrt-app-runtime/sveltekit',
-  '@happyvertical/smrt-dev-mcp/dev-plane',
-];
+const dependencies = [
+  {
+    name: '@happyvertical/smrt-users',
+    dir: 'users',
+    subpath: './sveltekit',
+    source: 'export function createResourceListHandler() {}\n',
+  },
+  {
+    name: '@happyvertical/smrt-app-runtime',
+    dir: 'app-runtime',
+    subpath: './sveltekit',
+    source: 'export function createSmrtSvelteKitRuntime() {}\n',
+  },
+  {
+    name: '@happyvertical/smrt-dev-mcp',
+    dir: 'smrt-dev-mcp',
+    subpath: './dev-plane',
+    source: 'export function createDevPlane() {}\n',
+  },
+] as const;
+const specifiers = dependencies.map(
+  ({ name, subpath }) => `${name}${subpath.slice(1)}`,
+);
+
+function run(command: string, args: string[], cwd: string): void {
+  const result = spawnSync(command, args, {
+    cwd,
+    encoding: 'utf8',
+    maxBuffer: 16 * 1024 * 1024,
+    timeout: 120_000,
+  });
+  expect(result.error, `${command} ${args.join(' ')}`).toBeUndefined();
+  expect(
+    result.status,
+    `${command} ${args.join(' ')}\n${result.stdout}${result.stderr}`,
+  ).toBe(0);
+}
+
+/** Pack a package with the workspace package's published export map. */
+function packPublishedExports(
+  dependency: (typeof dependencies)[number],
+  sourceRoot: string,
+  tarballs: string,
+): string {
+  const published = JSON.parse(
+    readFileSync(
+      resolve(workspaceRoot, 'packages', dependency.dir, 'package.json'),
+      'utf8',
+    ),
+  ) as { exports: Record<string, Record<string, string>> };
+  const target = published.exports[dependency.subpath];
+  if (!target?.import || Object.hasOwn(target, 'require')) {
+    throw new Error(
+      `${dependency.name}${dependency.subpath} is no longer an import-only export; revisit #3913 coverage`,
+    );
+  }
+  const source = join(sourceRoot, dependency.dir);
+  for (const [condition, file] of Object.entries(target)) {
+    const path = join(source, file);
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(
+      path,
+      condition === 'types' ? 'export {};\n' : dependency.source,
+    );
+  }
+  writeFileSync(
+    join(source, 'package.json'),
+    JSON.stringify({
+      name: dependency.name,
+      version: '0.0.0-test',
+      type: 'module',
+      exports: published.exports,
+      files: ['dist'],
+    }),
+  );
+  const destination = join(tarballs, dependency.dir);
+  run('pnpm', ['pack', '--pack-destination', destination], source);
+  const [tarball] = readdirSync(destination).filter((name) =>
+    name.endsWith('.tgz'),
+  );
+  if (!tarball) throw new Error(`pnpm pack produced no ${dependency.name}`);
+  return join(destination, tarball);
+}
 
 describe('generated route dependencies in a packed consumer (#3913)', () => {
   let consumer: PackedConsumer | undefined;
@@ -58,13 +141,29 @@ describe('generated route dependencies in a packed consumer (#3913)', () => {
     )) as PackedConsumerModule;
     consumer = createPackedConsumer({
       root: workspaceRoot,
-      packageNames: [
-        '@happyvertical/smrt-core',
-        '@happyvertical/smrt-users',
-        '@happyvertical/smrt-app-runtime',
-        '@happyvertical/smrt-dev-mcp',
-      ],
+      packageNames: ['@happyvertical/smrt-core'],
     });
+    const consumerPackagePath = join(consumer.directory, 'package.json');
+    const consumerPackage = JSON.parse(
+      readFileSync(consumerPackagePath, 'utf8'),
+    ) as { dependencies: Record<string, string> };
+    for (const dependency of dependencies) {
+      consumerPackage.dependencies[dependency.name] =
+        `file:${packPublishedExports(
+          dependency,
+          join(consumer.directory, 'route-dependency-sources'),
+          join(consumer.directory, 'route-dependency-tarballs'),
+        )}`;
+    }
+    writeFileSync(
+      consumerPackagePath,
+      `${JSON.stringify(consumerPackage, null, 2)}\n`,
+    );
+    run(
+      'pnpm',
+      ['install', '--ignore-scripts', '--no-frozen-lockfile'],
+      consumer.directory,
+    );
 
     // A workspace app with no node_modules of its own: every dependency is
     // hoisted to the consumer root (npm/yarn workspaces, pnpm hoisted).
@@ -74,9 +173,12 @@ describe('generated route dependencies in a packed consumer (#3913)', () => {
       join(hoistedRoot, 'package.json'),
       JSON.stringify({ name: 'hoisted-web', private: true, type: 'module' }),
     );
-    // A project that never installed the optional route dependencies. It is
-    // outside the consumer tree so nothing can resolve upward into it.
-    absentRoot = mkdtempSync(join(tmpdir(), 'smrt-route-deps-absent-'));
+    // A project that never installed the optional route dependencies. It is a
+    // sibling of the consumer, under the same node_modules-free ancestor the
+    // helper selected, so nothing can resolve upward into it.
+    absentRoot = mkdtempSync(
+      join(dirname(consumer.directory), '.smrt-route-deps-absent-'),
+    );
     writeFileSync(
       join(absentRoot, 'package.json'),
       JSON.stringify({ name: 'absent-web', private: true, type: 'module' }),
