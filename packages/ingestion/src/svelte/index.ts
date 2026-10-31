@@ -1,4 +1,5 @@
 export type {
+  AssigneeOption,
   Assignment,
   EvidenceView,
   HandlerArgumentIssue,
@@ -14,6 +15,7 @@ export type {
   ReviewerInstruction,
   ReviewerInstructionInput,
   ReviewerInstructionView,
+  ReviewFeedback,
   ReviewPage,
 } from '../review-dto.js';
 export { default as EvidenceViewer } from './components/EvidenceViewer.svelte';

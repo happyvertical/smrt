@@ -443,6 +443,73 @@ export class IntakeFeedbackService {
     return { id: view.id, digest: view.digest, text: view.text };
   }
   /** Internal saved-action gate; the execution owner supplies its transaction. */
+  /**
+   * The caller's own current interpretation judgment per displayed action
+   * (#4503): not superseded, recorded by this actor, bound to the action's
+   * displayed revision and binding, integrity-checked. Presentation only;
+   * the caller has already read these actions under review authority.
+   */
+  async ownJudgments(
+    itemId: string,
+    actions: ReadonlyArray<{
+      actionId: string;
+      revision: number;
+      bindingHash: string;
+    }>,
+  ): Promise<Map<string, import('./review-dto.js').ReviewFeedback>> {
+    const result = new Map<string, import('./review-dto.js').ReviewFeedback>();
+    if (!actions.length) return result;
+    const wanted = new Map(actions.map((action) => [action.actionId, action]));
+    const rows = await this.rows(
+      this.options.db,
+      "item_id=? AND kind='interpretation' AND NOT EXISTS (SELECT 1 FROM intake_feedback successor WHERE successor.tenant_id=intake_feedback.tenant_id AND successor.confidential_scope_id=intake_feedback.confidential_scope_id AND successor.supersedes_id=intake_feedback.id)",
+      [itemId],
+    );
+    const newest = new Map<string, Row>();
+    for (const row of rows) {
+      let data: Row;
+      try {
+        data = object(row.data);
+      } catch {
+        continue;
+      }
+      const { digest: stored, ...body } = data;
+      const action =
+        typeof data.actionId === 'string'
+          ? wanted.get(data.actionId)
+          : undefined;
+      if (
+        !action ||
+        typeof stored !== 'string' ||
+        digest(body) !== stored ||
+        data.reviewer !== this.scope().actorId ||
+        data.revision !== action.revision ||
+        data.bindingHash !== action.bindingHash ||
+        !['correct', 'incorrect'].includes(String(data.judgment))
+      )
+        continue;
+      const previous = newest.get(action.actionId);
+      const at = (value: Row) => new Date(value.created_at as string).getTime();
+      if (
+        !previous ||
+        at(row) > at(previous) ||
+        (at(row) === at(previous) && String(row.id) > String(previous.id))
+      )
+        newest.set(action.actionId, row);
+    }
+    for (const [actionId, row] of newest) {
+      const data = object(row.data);
+      result.set(actionId, {
+        id: String(row.id),
+        judgment: data.judgment as 'correct' | 'incorrect',
+        ...(typeof data.comment === 'string' && data.comment
+          ? { comment: data.comment }
+          : {}),
+        recordedAt: new Date(row.created_at as string).toISOString(),
+      });
+    }
+    return result;
+  }
   async assertActionLineage(
     actionId: string,
     db: DatabaseInterface,

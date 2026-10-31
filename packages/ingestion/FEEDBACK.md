@@ -299,6 +299,15 @@ displayed binding is current again. Hosts must authenticate that callback and co
 maintained browser fixture demonstrates this transport with CSRF protection and
 rejects substituted revisions.
 
+With `enableFeedback`, `createIntakeReviewHost` also loads each action's
+`ReviewAction.feedback` (#4503): this reviewer's own current (not superseded)
+judgment at the displayed revision and binding (`id`, `judgment`, `comment`,
+`recordedAt`), read through `IngestionService.listOwnFeedback`. The chosen
+button is `aria-pressed`, `ingestion.feedbackSent` shows after a judgment, and
+a further judgment sends `supersedesId` (the loaded id, else the receipt id the
+callback returned). Another reviewer's judgment is never shown as pressed; a
+failed read only leaves the pressed state off.
+
 See [the behavior matrix](../../docs/test-matrix/3676-ingestion-feedback.md) for
 validation and the frozen learning protocol, and the
 [routing projection matrix](../../docs/test-matrix/3732-ingestion-routing-projection.md)

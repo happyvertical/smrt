@@ -707,6 +707,21 @@ export class IngestionService {
   async recordFeedback(input: RecordFeedbackInput) {
     return (await this.feedback()).record(input);
   }
+  /**
+   * The caller's own current judgment per action of an item they may read
+   * (#4503); presentation only, for `ReviewAction.feedback`.
+   */
+  async listOwnFeedback(
+    itemId: string,
+    actions: ReadonlyArray<{
+      actionId: string;
+      revision: number;
+      bindingHash: string;
+    }>,
+  ) {
+    await this.item(itemId, 'read');
+    return (await this.feedback()).ownJudgments(itemId, actions);
+  }
   async observeFeedback(input: ObserveFeedbackInput) {
     return (await this.feedback()).observe(input);
   }

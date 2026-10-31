@@ -436,9 +436,18 @@ export class IngestionProposalService {
       itemId,
       async (_db, authorize) =>
         (await this.catalog(itemId, { evidence, authorize })).map(
-          ({ handler }) => handler,
+          ({ handler }) => this.labelled(handler),
         ),
     );
+  }
+  /** Presentation copy with the registration's display label (#4503). */
+  private labelled(entry: ProposalCatalogEntry): ProposalCatalogEntry {
+    const label = this.options.execution?.handlers.find(
+      (handler) => handler.id === entry.id && handler.version === entry.version,
+    )?.label;
+    return typeof label === 'string' && label.trim()
+      ? { ...entry, label: label.trim().slice(0, 200) }
+      : entry;
   }
   /** Public retrieval derives catalog/candidates and compatibility on the server. */
   async retrieveFeedback(

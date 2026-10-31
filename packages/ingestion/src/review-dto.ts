@@ -43,6 +43,12 @@ export interface ReviewAction {
   origin?: string;
   dependencies?: Record<string, ResultReference>;
   result?: ActionResult;
+  /**
+   * The reviewer's own current correctness judgment of this action at its
+   * displayed revision (#4503), when the host has feedback enabled and one
+   * was recorded. A new judgment supersedes it (`supersedesId`).
+   */
+  feedback?: ReviewFeedback;
   /** Authorized identity/CAS only; hosts must collect fresh explicit args. */
   stalePlan?: {
     id: string;
@@ -61,6 +67,19 @@ export interface ReviewAction {
     handlerVersion: string;
     attemptId: string;
   };
+}
+/** A recorded, not superseded, explicit judgment (presentation only). */
+export interface ReviewFeedback {
+  /** Feedback record id; send it as `supersedesId` to replace the judgment. */
+  id: string;
+  judgment: 'correct' | 'incorrect';
+  comment?: string;
+  recordedAt: string;
+}
+/** One assignable reviewer offered by `IntakeReviewHost.assignees`. */
+export interface AssigneeOption {
+  id: string;
+  label: string;
 }
 export interface ReviewPage {
   /** A saved target changed: omit stale generation output, retain authorized reviews. */
@@ -258,6 +277,13 @@ export interface IntakeReviewHost {
     assigneeId: string | null;
     requestId: string;
   }): Promise<void>;
+  /**
+   * Optional reviewer search for assignment (#4503). When present the inbox
+   * draws a picker (labels, searched as the reviewer types) instead of the
+   * free-text assignee id; the chosen `id` is what `assign` and the list
+   * filter receive. Presentation only: `assign` still authorizes.
+   */
+  assignees?: (query: string) => Promise<AssigneeOption[]>;
   split(input: LogicalSplitInput): Promise<void>;
   /**
    * Start a reviewer-chosen handler; the server previews and requires normal

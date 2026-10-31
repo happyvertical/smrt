@@ -11,7 +11,9 @@ service surface and create `IngestionScope` from the session.
 ## Catalog and authority
 
 Applications supply a trusted `IntakeExecutionOptions.handlers` catalog.
-`OperationHandler` has qualified ID, immutable version, description, object JSON
+`OperationHandler` has qualified ID, immutable version, description, optional
+reviewer-facing `label` (presentation only, carried on the reviewer catalog and
+never on generation input or digests; REVIEW.md), object JSON
 schemas for arguments/results, allowlisted `resultModels`, `validate`, `preview`,
 a registered `{model, action, version}` operation and explicit effect/idempotency/
 open-world capability declaration. Preview returns display, exact normalized

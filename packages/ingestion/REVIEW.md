@@ -469,6 +469,45 @@ provider. The UI picker shows the offered catalog, so a handler hidden from it i
 only reachable by a reviewer who already holds `review` authority for it. The maintained
 browser fixture serves both operations behind CSRF and the same session scope.
 
+## Review screen presentation (#4503)
+
+All presentation only; no new authority.
+
+- **Handler labels.** A handler registration may declare `label`. It is carried
+  on the reviewer catalog only (`listHandlers`, `ItemReviewView.catalog`), never
+  on generation input, catalog digests or bindings, so adding one never stales
+  existing work. The proposal heading, action heading and "Start action as…"
+  select draw it, falling back to the handler id.
+- **State labels.** Review states draw `ingestion.reviewState.<state>` and
+  generation outcomes `ingestion.outcome.<outcome>`; an unknown value is drawn
+  as is.
+- **Arguments as fields.** Where a handler `argsSchema` declares top-level
+  `string` (plain, `date`, `date-time`), `number`, `integer`, `boolean` or
+  enum properties, or `references` declares a candidate/evidence field, the
+  suggestion draft, the action's arguments and the start form draw those as
+  fields (`title` as the label, `*` when required). A candidate reference is a
+  search box over `host.candidates`, filtered to the reference's model, showing
+  the candidate's label (the generation's offered candidates label the current
+  value); an evidence reference picks among the item's originals. The JSON text
+  stays the source of truth: fields rewrite it, and it remains editable under a
+  collapsed "Advanced" disclosure for everything else (objects, arrays,
+  unions). Without such properties the plain JSON textarea (and the
+  destination picker) are drawn as before. Server validation is unchanged.
+- **Effects.** `action.review.display` is drawn as a `<dl>`: the handler's
+  preview fields (`display.preview`, or `display.step.preview` for a plan step;
+  a flat record as is), then non-empty `dependencies`/`plan` metadata as JSON,
+  named `metadata.<key>` when a preview field already has that name
+  (`displayEntries` in `view-utils`).
+- **Assignees.** An optional `IntakeReviewHost.assignees(query)` (adapter
+  option `assignees`) answers `{ id, label }[]`; the inbox then draws a search
+  picker for the filter and each row instead of the free-text "Assignee ID".
+  `assign` still receives the id and still authorizes. A failed search offers
+  nothing.
+- **Feedback state.** `ReviewAction.feedback` (see FEEDBACK.md) presses the
+  current judgment; a further judgment supersedes it and
+  `ingestion.feedbackSent` confirms it.
+- **Confidence.** Nothing is drawn when the provider reports no confidence.
+
 ## Single-page triage workspace
 
 `IntakeWorkspace` (#4215) composes the existing pieces so a reviewer works the

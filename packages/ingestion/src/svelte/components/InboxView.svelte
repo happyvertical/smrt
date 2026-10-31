@@ -1,5 +1,10 @@
 <script lang="ts">
-import { FilePicker, Input, Select } from '@happyvertical/smrt-ui/forms';
+import {
+  Combobox,
+  FilePicker,
+  Input,
+  Select,
+} from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import { onDestroy, onMount, type Snippet } from 'svelte';
@@ -312,6 +317,44 @@ async function mutate(
     }
   }
 }
+// Assignee picker (#4503): the host's search answers, newest query wins.
+let assigneeOptions = $state<{ value: string; label: string }[]>([]),
+  assigneeLabels = $state<Record<string, string>>({}),
+  assigneeSearching = $state(false),
+  assigneeQueries = 0;
+async function findAssignees(query: string) {
+  const search = host.assignees;
+  if (!search) return;
+  const ticket = ++assigneeQueries;
+  assigneeSearching = true;
+  try {
+    const found = await search(query);
+    if (!alive || ticket !== assigneeQueries) return;
+    const valid = (Array.isArray(found) ? found : [])
+      .filter(
+        (option) =>
+          typeof option?.id === 'string' &&
+          option.id &&
+          typeof option.label === 'string',
+      )
+      .slice(0, 50);
+    for (const option of valid) assigneeLabels[option.id] = option.label;
+    assigneeOptions = valid.map((option) => ({
+      value: option.id,
+      label: option.label,
+    }));
+  } catch {
+    // A failed search only offers nothing; it grants and reveals nothing.
+    if (alive && ticket === assigneeQueries) assigneeOptions = [];
+  } finally {
+    if (alive && ticket === assigneeQueries) assigneeSearching = false;
+  }
+}
+/** Picker options: clearing first (`''`), then the latest search answers. */
+const pickerOptions = (empty: string) => [
+  { value: '', label: empty },
+  ...assigneeOptions,
+];
 async function upload() {
   if (pending || !files.length) return;
   uploadRequestId ??= crypto.randomUUID();
@@ -331,7 +374,7 @@ onMount(() => {
 <h1>{t(M['ingestion.inbox'])}</h1>
 <div class="toolbar">
 <Select aria-label={t(M['ingestion.filter'])} bind:value={selectedState} disabled={pending} onchange={() => load()}><option value="">{t(M['ingestion.all'])}</option>{#each states as value}<option {value}>{t(M[`ingestion.${value}`])}</option>{/each}</Select>
-<Input aria-label={t(M['ingestion.assignee'])} bind:value={assignee} disabled={pending} />
+{#if host.assignees}<Combobox label={t(M['ingestion.assigneeName'])} options={pickerOptions(t(M['ingestion.anyAssignee']))} bind:value={assignee} valueLabel={assigneeLabels[assignee] ?? assignee} filter={false} busy={assigneeSearching} status={assigneeSearching ? t(M['ingestion.searching']) : undefined} onquery={findAssignees} disabled={pending} />{:else}<Input aria-label={t(M['ingestion.assignee'])} bind:value={assignee} disabled={pending} />{/if}
 <Button onclick={() => load()} disabled={pending}>{t(M['ingestion.refresh'])}</Button>
 </div>
 <!-- Keep retry Files separately; an unchanged native FileList must not suppress a deliberate reselection. -->
@@ -348,7 +391,7 @@ onMount(() => {
 {#if original}<a href={original} target="_blank" rel="noopener noreferrer" aria-label={`${t(M['ingestion.original'])}: ${entry.label}`}>{t(M['ingestion.original'])}</a>{/if}
 </div>{/if}{/if}
 <Button onclick={() => onselect?.(entry.item.id)} disabled={pending}>{t(M['ingestion.open'])}</Button>
-<Input aria-label={`${t(M['ingestion.assignee'])}: ${entry.label}`} bind:value={assignments[entry.item.id]} disabled={pending} />
+{#if host.assignees}<Combobox label={`${t(M['ingestion.assigneeName'])}: ${entry.label}`} options={pickerOptions(t(M['ingestion.unassigned']))} bind:value={assignments[entry.item.id]} valueLabel={assigneeLabels[assignments[entry.item.id]] ?? assignments[entry.item.id]} filter={false} busy={assigneeSearching} status={assigneeSearching ? t(M['ingestion.searching']) : undefined} onquery={findAssignees} disabled={pending} />{:else}<Input aria-label={`${t(M['ingestion.assignee'])}: ${entry.label}`} bind:value={assignments[entry.item.id]} disabled={pending} />{/if}
 <Button disabled={pending} onclick={() => mutate(() => host.assign({itemId:entry.item.id,expectedVersion:entry.assignment.version,assigneeId:assignments[entry.item.id] || null,requestId:crypto.randomUUID()}))}>{t(M['ingestion.assign'])}</Button>
 {#if resolveInRow && host.resolve && !entry.item.disposition}
 <Input aria-label={`${t(M['ingestion.resolveReason'])}: ${entry.label}`} bind:value={reasons[entry.item.id]} disabled={pending} />

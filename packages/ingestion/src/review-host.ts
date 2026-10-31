@@ -9,6 +9,8 @@ import type {
   InboxEvidence,
   IntakeReviewHost,
   ItemReviewView,
+  ReviewFeedback,
+  ReviewPage,
 } from './review-dto.js';
 import { loadInstructionView } from './review-instruction-view.js';
 import { loadReviewSummary } from './review-summary.js';
@@ -81,8 +83,14 @@ export interface IntakeReviewHostOptions {
    * part's own `filename`, else `Intake <8 hex>`.
    */
   label?(item: IntakeItemDTO, evidence: IntakeEvidenceDTO[]): string;
-  /** Expose the optional feedback UI only when the service has feedback configured. */
+  /**
+   * Expose the optional feedback UI only when the service has feedback
+   * configured. `load` then also carries each action's current judgment by
+   * this reviewer (`ReviewAction.feedback`, #4503).
+   */
   enableFeedback?: boolean;
+  /** Optional reviewer search for the assignee picker; see `IntakeReviewHost.assignees`. */
+  assignees?: IntakeReviewHost['assignees'];
   /** Optional wakeup after a durable logical split has queued extraction. */
   onSplit?(itemId: string, revision: number): Promise<void>;
   /** Optional wakeup after a durable reviewer instruction has queued reinterpretation. */
@@ -210,6 +218,41 @@ export function createIntakeReviewHost(
       // A preview failure must not block triage: list without previews.
       return named;
     }
+  };
+  /**
+   * Attach this reviewer's current judgment to each action (#4503). A failed
+   * read only leaves the pressed state off; it never blocks the review.
+   */
+  const ownFeedback = async (
+    itemId: string,
+    reviews: ReviewPage,
+  ): Promise<ReviewPage> => {
+    const judgeable = reviews.actions.filter(
+      (action) => action.args !== undefined,
+    );
+    if (!judgeable.length) return reviews;
+    let judgments: Map<string, ReviewFeedback>;
+    try {
+      judgments = await service.listOwnFeedback(
+        itemId,
+        judgeable.map((action) => ({
+          actionId: action.review.actionId,
+          revision: action.review.revision,
+          bindingHash: action.review.bindingHash,
+        })),
+      );
+    } catch {
+      return reviews;
+    }
+    return {
+      ...reviews,
+      actions: reviews.actions.map((action) => {
+        const feedback = judgments.get(action.review.actionId);
+        return feedback && action.args !== undefined
+          ? { ...action, feedback }
+          : action;
+      }),
+    };
   };
   const assignments = async (
     itemIds: string[],
@@ -339,6 +382,9 @@ export function createIntakeReviewHost(
           disposition = undefined;
         }
       const instruction = await loadInstructionView(service, itemId, analysis);
+      const judged = options.enableFeedback
+        ? await ownFeedback(itemId, reviews)
+        : reviews;
       await service.getItem(itemId);
       return {
         entry: {
@@ -351,7 +397,7 @@ export function createIntakeReviewHost(
         analysis,
         ...(catalog ? { catalog } : {}),
         ...(disposition ? { disposition } : {}),
-        reviews,
+        reviews: judged,
         ...(instruction ? { instruction } : {}),
         availability: 'available',
         ...(analysis?.configuration.stage === 'interpret'
@@ -364,6 +410,14 @@ export function createIntakeReviewHost(
       };
     },
     upload: (files, requestId) => options.upload(files, requestId),
+    ...(options.assignees
+      ? {
+          assignees: (query: string) =>
+            (options.assignees as NonNullable<IntakeReviewHost['assignees']>)(
+              query,
+            ),
+        }
+      : {}),
     ...(options.uploadAccept !== undefined
       ? { uploadAccept: options.uploadAccept }
       : {}),

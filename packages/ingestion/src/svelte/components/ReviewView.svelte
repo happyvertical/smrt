@@ -9,7 +9,8 @@ import type {
   ProposalCatalogEntry,
 } from '../../proposal-dto.js';
 import type { IntakeReviewHost, ItemReviewView } from '../../review-dto.js';
-import { M } from '../i18n.js';
+import { argumentFields } from '../argument-fields.js';
+import { M, messageKey } from '../i18n.js';
 import {
   argumentsObject,
   draftArguments,
@@ -22,6 +23,7 @@ import {
   reviewInFlight,
 } from '../view-utils.js';
 import ActionReview, { type ReviewOutcome } from './ActionReview.svelte';
+import ArgumentFields from './ArgumentFields.svelte';
 import CandidatePicker from './CandidatePicker.svelte';
 import EvidenceViewer from './EvidenceViewer.svelte';
 export interface Props {
@@ -434,6 +436,51 @@ async function run(operation: () => Promise<unknown>, outcome?: ReviewOutcome) {
     if (alive && ticket === epoch) deny();
   }
 }
+/**
+ * A handler's display label (#4503) from the reviewer catalog, matching the
+ * version first; undefined when the handler declares none.
+ */
+function handlerLabel(id: string | undefined, version: string | undefined) {
+  if (!id) return undefined;
+  const catalog = view?.catalog ?? [];
+  return (
+    catalog.find((entry) => entry.id === id && entry.version === version)
+      ?.label ?? catalog.find((entry) => entry.id === id && entry.label)?.label
+  );
+}
+/** The offered handler, else the reviewer catalog's entry: the argument fields' schema. */
+function schemaFor(id: string | undefined, version: string | undefined) {
+  if (!id || !version) return undefined;
+  return (
+    view?.generation?.offered.find(
+      (entry) => entry.handler.id === id && entry.handler.version === version,
+    )?.handler ??
+    view?.catalog?.find((entry) => entry.id === id && entry.version === version)
+  );
+}
+function offeredCandidates(
+  id: string | undefined,
+  version: string | undefined,
+) {
+  return (
+    view?.generation?.offered.find(
+      (entry) => entry.handler.id === id && entry.handler.version === version,
+    )?.candidates ?? []
+  );
+}
+const evidenceOptions = $derived(
+  (view?.evidence ?? []).map((part) => ({
+    id: part.evidence.id,
+    label: part.label,
+  })),
+);
+const drawsFields = (entry: ProposalCatalogEntry | undefined) =>
+  !!entry && argumentFields(entry.argsSchema, entry.references).length > 0;
+// Judgments sent from this view, by action revision; they outlive the reload
+// that follows each one (#4503).
+let judgments = $state<
+  Record<string, { judgment: 'correct' | 'incorrect'; id?: string }>
+>({});
 function offeredHandler(suggestion: GeneratedSuggestion) {
   return view?.generation?.offered.find(
     (entry) =>
@@ -839,18 +886,19 @@ onMount(() => {
 <h2>{t(M['ingestion.extracted'])}</h2>
 {#each extracted as segment}
 <article><pre>{segment.text}</pre>
-{#if segment.confidence !== undefined}<p>{t(M['ingestion.confidence'])}: {segment.confidence}</p>{:else}<p>{t(M['ingestion.noConfidence'])}</p>{/if}
+{#if segment.confidence !== undefined}<p>{t(M['ingestion.confidence'])}: {segment.confidence}</p>{/if}
 {#if segment.location}{@const url = locationUrl(segment.evidenceId,segment.location)}{#if url}<Button href={url} target="_blank" rel="noopener noreferrer">{locationLabel(segment.location)}</Button>{:else}<p>{locationLabel(segment.location)}</p>{/if}{/if}
 </article>
 {/each}
 {/if}
 {#if view.generation}
 {@const generation = view.generation}
-<h2>{t(M['ingestion.proposals'])}</h2><p>{generation.outcome}</p>
-{#if typeof view.analysis?.result.confidence === 'number' && Number.isFinite(view.analysis.result.confidence)}<p>{t(M['ingestion.confidence'])}: {view.analysis.result.confidence}</p>{:else}<p>{t(M['ingestion.noConfidence'])}</p>{/if}
+{@const outcomeKey = messageKey('ingestion.outcome.', generation.outcome)}
+<h2>{t(M['ingestion.proposals'])}</h2><p data-testid="generation-outcome">{outcomeKey ? t(M[outcomeKey]) : generation.outcome}</p>
+{#if typeof view.analysis?.result.confidence === 'number' && Number.isFinite(view.analysis.result.confidence)}<p>{t(M['ingestion.confidence'])}: {view.analysis.result.confidence}</p>{/if}
 {#each generation.warnings as warning}<p>{warning}</p>{/each}
 {#each generation.suggestions as suggestion,index}
-<article><h3>{suggestion.handlerId}</h3><p>{suggestion.explanation}</p><pre>{JSON.stringify(suggestion.args,null,2)}</pre>
+<article><h3>{handlerLabel(suggestion.handlerId, suggestion.handlerVersion) ?? suggestion.handlerId}</h3><p>{suggestion.explanation}</p><pre>{JSON.stringify(suggestion.args,null,2)}</pre>
 {#if suggestion.hostReview}<p data-testid="host-review">{t(M['ingestion.hostChecked'], { summary: [suggestion.hostReview.held ? t(M['ingestion.hostHeld']) : '', suggestion.hostReview.prefilled.length ? t(M['ingestion.hostFilled'], { fields: suggestion.hostReview.prefilled.join(', ') }) : '', suggestion.hostReview.reasons.length ? t(M['ingestion.hostReasons'], { reasons: suggestion.hostReview.reasons.join(', ') }) : ''].filter(Boolean).join('; ') })}</p>{/if}
 {#if suggestion.alternatives.length}<h4>{t(M['ingestion.alternatives'])}</h4><ul>{#each suggestion.alternatives as alternative}<li>{alternative}</li>{/each}</ul>{/if}
 {#if suggestion.missingFields.length}<h4>{t(M['ingestion.missing'])}</h4><ul>{#each suggestion.missingFields as missing}<li>{missing}</li>{/each}</ul>{/if}
@@ -860,8 +908,8 @@ onMount(() => {
 {@const handler = offeredHandler(suggestion)}
 {@const key = draftKey(index)}
 <p>{t(M['ingestion.completeSuggestion'])}</p>
-<Textarea aria-label={t(M['ingestion.suggestionArgs'])} bind:value={drafts[key]} rows={6} />
-{#if handler}<CandidatePicker {host} {itemId} catalog={handler} {deny} onchoose={chooseFor(index)} />{/if}
+<ArgumentFields bind:value={drafts[key]} label={t(M['ingestion.suggestionArgs'])} catalog={handler} candidates={offeredCandidates(suggestion.handlerId, suggestion.handlerVersion)} evidence={evidenceOptions} rows={6} {host} {itemId} {deny} />
+{#if handler && !drawsFields(handler)}<CandidatePicker {host} {itemId} catalog={handler} {deny} onchoose={chooseFor(index)} />{/if}
 {#if edited(index)}<p>{t(M['ingestion.reviewAgain'])}</p>{/if}
 {#if invalidDrafts[key] && !parseable(drafts[key])}<p role="alert">{t(M['ingestion.invalid'])}</p>{/if}
 {/if}
@@ -882,10 +930,10 @@ onMount(() => {
 {:else}
 {#if host.startAction && view.catalog?.some((entry) => entry.kind === 'operation')}
 <fieldset class="start"><legend>{t(M['ingestion.startAs'])}</legend>
-<Select aria-label={t(M['ingestion.startHandler'])} bind:value={startHandler} onchange={draftStart} disabled={pending}><option value="">{t(M['ingestion.startHandler'])}</option>{#each view.catalog as entry (`${entry.id}@${entry.version}`)}{#if entry.kind === 'operation'}<option value={`${entry.id}@${entry.version}`}>{entry.id}</option>{/if}{/each}</Select>
+<Select aria-label={t(M['ingestion.startHandler'])} bind:value={startHandler} onchange={draftStart} disabled={pending}><option value="">{t(M['ingestion.startHandler'])}</option>{#each view.catalog as entry (`${entry.id}@${entry.version}`)}{#if entry.kind === 'operation'}<option value={`${entry.id}@${entry.version}`}>{entry.label ?? entry.id}</option>{/if}{/each}</Select>
 {#if startEntry}
 <p>{startEntry.description}</p>
-<Textarea aria-label={t(M['ingestion.startArgs'])} bind:value={startArgs} rows={8} />
+<ArgumentFields bind:value={startArgs} label={t(M['ingestion.startArgs'])} catalog={startEntry} candidates={offeredCandidates(startEntry.id, startEntry.version)} evidence={evidenceOptions} {host} {itemId} {deny} />
 {#if startMissing.length}<h4>{t(M['ingestion.missing'])}</h4><ul>{#each startMissing as missing}<li>{missing}</li>{/each}</ul>{/if}
 <Input aria-label={t(M['ingestion.reason'])} bind:value={startReason} />
 <p>{t(M['ingestion.startHelp'])}</p>
@@ -904,7 +952,7 @@ onMount(() => {
 {/if}
 {#if !view.reviews.actions.length}<p>{t(M['ingestion.noReviews'])}</p>{/if}
 {#each view.reviews.actions as action (`${action.review.actionId}:${action.review.revision}:${action.review.reviewVersion}`)}
-<ActionReview {host} {itemId} {action} {run} {deny} ondirty={(edited) => { actionDirty[action.review.actionId] = edited; }} resolved={!!view.entry.item.disposition} currentAttemptId={action.stalePlan && view.reviews.actions.find((entry) => entry.stalePlan?.id === action.stalePlan?.id) === action ? action.attemptId : undefined} catalog={view.generation?.offered.find((entry) => entry.handler.id === action.handlerId && entry.handler.version === action.handlerVersion)?.handler} />
+<ActionReview {host} {itemId} {action} {run} {deny} label={handlerLabel(action.handlerId, action.handlerVersion)} fields={schemaFor(action.handlerId, action.handlerVersion)} candidates={offeredCandidates(action.handlerId, action.handlerVersion)} evidence={evidenceOptions} sent={judgments[`${action.review.actionId}:${action.review.revision}`]} onjudged={(judged) => { judgments[`${action.review.actionId}:${action.review.revision}`] = judged; }} ondirty={(edited) => { actionDirty[action.review.actionId] = edited; }} resolved={!!view.entry.item.disposition} currentAttemptId={action.stalePlan && view.reviews.actions.find((entry) => entry.stalePlan?.id === action.stalePlan?.id) === action ? action.attemptId : undefined} catalog={view.generation?.offered.find((entry) => entry.handler.id === action.handlerId && entry.handler.version === action.handlerVersion)?.handler} />
 {/each}
 {#if view.reviews.nextCursor}<Button onclick={() => load(loadedPages + 1)}>{t(M['ingestion.more'])}</Button>{/if}
 </div></div>

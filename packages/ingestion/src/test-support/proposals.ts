@@ -2625,6 +2625,71 @@ export function proposalSuite(
         ).rows,
       ).toHaveLength(0);
     });
+    it('review host load carries the reviewer own current judgment per action (#4503)', async () => {
+      enableFeedback();
+      const fixture = await feedbackCase();
+      const assignees = vi.fn(async (query: string) => [
+        { id: 'reviewer-1', label: `Reviewer ${query}` },
+      ]);
+      const host = createIntakeReviewHost(service, {
+        upload: async () => ({ itemId: fixture.generated.itemId }),
+        assignment: async () => ({ assigneeId: null, version: 0 }),
+        assign: async () => {},
+        evidence: async (part) => ({ label: part.partId }),
+        enableFeedback: true,
+        assignees,
+      });
+      expect(await host.assignees!('Ann')).toEqual([
+        { id: 'reviewer-1', label: 'Reviewer Ann' },
+      ]);
+      const action = async () =>
+        (await host.load(fixture.generated.itemId)).reviews.actions.find(
+          (entry) => entry.review.actionId === fixture.binding.actionId,
+        )!;
+      expect((await action()).feedback).toBeUndefined();
+      const first = await service.recordFeedback({
+        ...fixture.binding,
+        judgment: 'incorrect',
+        comment: 'Wrong route',
+        requestId: 'judged-once',
+      });
+      expect((await action()).feedback).toEqual({
+        id: first.id,
+        judgment: 'incorrect',
+        comment: 'Wrong route',
+        recordedAt: expect.any(String),
+      });
+      const second = await service.recordFeedback({
+        ...fixture.binding,
+        judgment: 'correct',
+        requestId: 'judged-twice',
+        supersedesId: first.id,
+      });
+      expect((await action()).feedback).toMatchObject({
+        id: second.id,
+        judgment: 'correct',
+      });
+      // Another reviewer's judgment is not this reviewer's pressed state.
+      const other = createIntakeReviewHost(
+        new IngestionService({
+          ...options,
+          scope: { ...options.scope, actorId: 'reviewer' },
+        }),
+        {
+          upload: async () => ({ itemId: fixture.generated.itemId }),
+          assignment: async () => ({ assigneeId: null, version: 0 }),
+          assign: async () => {},
+          evidence: async (part) => ({ label: part.partId }),
+          enableFeedback: true,
+        },
+      );
+      expect(other.assignees).toBeUndefined();
+      expect(
+        (await other.load(fixture.generated.itemId)).reviews.actions.find(
+          (entry) => entry.review.actionId === fixture.binding.actionId,
+        )?.feedback,
+      ).toBeUndefined();
+    });
     it('feedback onRecorded runs inside the judgment transaction and a throw rolls the judgment back (#4522)', async () => {
       enableFeedback();
       const fixture = await feedbackCase();
@@ -7118,6 +7183,34 @@ export function proposalSuite(
       expect((await db.query('SELECT title FROM contents')).rows).toEqual([
         { title: 'Draft' },
       ]);
+    });
+    it('carries a handler display label on the reviewer catalog only, never on generation input or digests (#4503)', async () => {
+      chooseCreate();
+      const plain = await generate();
+      const handler = handlers.find((entry) => entry.id === CREATE)!;
+      handler.label = '  Create a draft  ';
+      try {
+        const listed = await service.listHandlers(plain.itemId);
+        expect(listed.find((entry) => entry.id === CREATE)?.label).toBe(
+          'Create a draft',
+        );
+        // A label never stales existing work: the persisted catalog digest
+        // and the generator's offered handlers are unchanged.
+        await expect(
+          service.getCompletedAnalysis(plain.itemId),
+        ).resolves.toBeTruthy();
+        calls.mockClear();
+        const labelled = await generate();
+        const offered = calls.mock.calls.at(-1)![0].offered;
+        expect(offered.every((entry) => !('label' in entry.handler))).toBe(
+          true,
+        );
+        expect(labelled.output.provenance.catalogDigest).toBe(
+          plain.output.provenance.catalogDigest,
+        );
+      } finally {
+        delete handler.label;
+      }
     });
     it('filters actors, tenants, confidential scope, handlers and providers before sending any model input', async () => {
       chooseCreate();
