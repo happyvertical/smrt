@@ -356,8 +356,9 @@ Generated reads (`list`/`get`) on the REST and SvelteKit generators support cond
 
 `src/vite-plugin/dev-plane-route.ts` emits `<routesDir>/_dev/[...tool]/+server.ts`
 only when `svelteKit.devPlaneRoute.enabled === true` and
-`@happyvertical/smrt-dev-mcp/dev-plane` resolves from the consumer (same
-resolvability guard as `_resources`). The route is dev-only (`$app/environment`
+`@happyvertical/smrt-dev-mcp/dev-plane` resolves from the consumer under ESM
+import conditions (the shared `consumerResolvesImport` guard used by
+`_resources`; the subpath is `types`/`import`-only, #3913). The route is dev-only (`$app/environment`
 `dev`, else 404), refuses to start without `SMRT_DEV_MCP_TOKEN` (503), and
 delegates everything else to `createDevPlane`, passing `getSmrtConfig(...).db`
 from the embedded access prelude (below) so the plane shares the app's
