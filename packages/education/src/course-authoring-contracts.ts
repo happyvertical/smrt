@@ -87,6 +87,32 @@ export interface CourseAuthorizationDecision {
   code?: string;
 }
 
+/** Result of a host delegation check; a bare boolean is accepted as well. */
+export type CourseDelegationDecision =
+  | boolean
+  | { allowed: boolean; reason?: string; code?: string };
+
+/**
+ * Host port that verifies a delegation (the agent may act for the guardian under
+ * this id) on the supplied transaction executor. Without it every delegated
+ * request is refused; it runs before the host authorizer and never grants by
+ * itself.
+ */
+export type CourseDelegationVerifier = (
+  executor: DatabaseInterface,
+  request: {
+    tenantId: string;
+    actorUserId: string;
+    delegatingGuardianUserId: string;
+    delegationId: string;
+    action: CourseAuthoringAction;
+    operation: CourseAuthoringOperation;
+    courseId?: string;
+    enrollmentId?: string;
+    learnerId?: string;
+  },
+) => CourseDelegationDecision | Promise<CourseDelegationDecision>;
+
 export type CourseAuthoringAuthorizer = (
   request: CourseAuthoringActor & {
     action: CourseAuthoringAction;

@@ -20,6 +20,7 @@ import {
   LearnerAuthorizationError,
   type LearnerAuthorizer,
   LearnerService,
+  type LearnerServiceOptions,
 } from '../index.js';
 import { learnerClasses, learnerFixture } from './learner-workflows.js';
 
@@ -80,6 +81,8 @@ afterEach(async () => {
 
 type Call = Parameters<CourseAuthoringAuthorizer>[0];
 type LearnerCall = Parameters<LearnerAuthorizer>[0];
+type Verifier = NonNullable<LearnerServiceOptions['verifyDelegation']>;
+type VerifyCall = Parameters<Verifier>[1] & { executor: DatabaseInterface };
 
 async function setup() {
   const db = await getTestDatabase({
@@ -94,17 +97,40 @@ async function setup() {
   const agentId = String(f.bob.user.id);
   const learnerCalls: LearnerCall[] = [];
   const deniedAgents = new Set<string>();
-  const learners = new LearnerService(
+  const verifyCalls: VerifyCall[] = [];
+  const verifier = {
+    mode: 'allow' as 'allow' | 'deny' | 'throw' | 'object-deny',
+  };
+  const verifyDelegation: Verifier = (executor, call) => {
+    verifyCalls.push({ ...call, executor });
+    if (verifier.mode === 'throw') throw new Error('delegation store down');
+    if (verifier.mode === 'deny') return false;
+    if (verifier.mode === 'object-deny')
+      return { allowed: false, reason: 'revoked' };
+    return true;
+  };
+  const authorizeLearner: LearnerAuthorizer = (call) => {
+    learnerCalls.push(call);
+    return (
+      !deniedAgents.has(call.actorUserId) &&
+      (call.own ||
+        (call.delegated
+          ? call.delegatingRelationshipTypeId === f.guardianType.id
+          : call.relationshipTypeId === f.guardianType.id))
+    );
+  };
+  const learners = new LearnerService(db, authorizeLearner, () => true, {
+    verifyDelegation,
+  });
+  // A pre-existing authorizer that knows nothing about delegation.
+  const legacy = new LearnerService(
     db,
-    (call) => {
-      learnerCalls.push(call);
-      return (
-        !deniedAgents.has(call.actorUserId) &&
-        (call.own || call.relationshipTypeId === f.guardianType.id)
-      );
-    },
+    ({ own, relationshipTypeId }) =>
+      own || relationshipTypeId === f.guardianType.id,
     () => true,
+    { verifyDelegation: () => true },
   );
+  const unconfigured = new LearnerService(db, authorizeLearner, () => true);
   const courses = await CourseCollection.create({ db });
   const catalogCourse = await courses.create({
     tenantId,
@@ -119,16 +145,22 @@ async function setup() {
     delegationId: 'delegation-1',
     ...extra,
   });
-  const enroll = (extra: Record<string, unknown> = {}, courseId?: string) => {
+  const enrollWith = (
+    service: LearnerService,
+    extra: Record<string, unknown> = {},
+    courseId?: string,
+  ) => {
     const r = request(extra);
     return withTenant({ tenantId: r.tenantId, userId: r.actorUserId }, () =>
-      learners.enroll({
+      service.enroll({
         ...r,
         curriculumId: String(f.curriculum.id),
         courseId: courseId ?? String(catalogCourse.id),
       } as never),
     );
   };
+  const enroll = (extra: Record<string, unknown> = {}, courseId?: string) =>
+    enrollWith(learners, extra, courseId);
   const count = async (table: string) => (await db.list(table, {})).length;
   return {
     db,
@@ -138,6 +170,12 @@ async function setup() {
     agentId,
     learners,
     learnerCalls,
+    verifyCalls,
+    verifier,
+    verifyDelegation,
+    legacy,
+    unconfigured,
+    enrollWith,
     deniedAgents,
     catalogCourse,
     request,
@@ -171,10 +209,24 @@ describe('delegated agent enrollment', () => {
       action: 'education.learner.plan',
       actorUserId: s.agentId,
       own: false,
-      relationshipTypeId: String(s.f.guardianType.id),
+      delegated: true,
+      delegatingRelationshipTypeId: String(s.f.guardianType.id),
       delegatingGuardianUserId: s.guardianId,
       delegationId: 'delegation-1',
     });
+    // The delegating guardian's relationship is never presented as the agent's.
+    expect(call.relationshipTypeId).toBeUndefined();
+    // The port saw the executor and the ids, before the authorizer.
+    expect(s.verifyCalls).toHaveLength(1);
+    expect(s.verifyCalls[0]).toMatchObject({
+      tenantId: s.tenantId,
+      actorUserId: s.agentId,
+      delegatingGuardianUserId: s.guardianId,
+      delegationId: 'delegation-1',
+      learnerId: s.f.own.learnerId,
+      courseId: String(s.catalogCourse.id),
+    });
+    expect(s.verifyCalls[0].executor).toBeTruthy();
     // A retry returns the same enrollment and writes no second record.
     expect((await s.enroll()).id).toBe(view.id);
     expect(await s.count('enrollment_assignment_records')).toBe(1);
@@ -199,6 +251,40 @@ describe('delegated agent enrollment', () => {
     expect(call.own).toBe(false);
     expect(call.delegatingGuardianUserId).toBeUndefined();
     expect(call.delegationId).toBeUndefined();
+    expect(call.delegated).toBeUndefined();
+    expect(call.relationshipTypeId).toBe(String(s.f.guardianType.id));
+    expect(s.verifyCalls).toHaveLength(0);
+  });
+
+  it('does not let a legacy authorizer approve a delegated enrollment', async () => {
+    const s = await setup();
+    const before = await s.count('enrollments');
+    await expect(s.enrollWith(s.legacy)).rejects.toBeInstanceOf(
+      LearnerAuthorizationError,
+    );
+    expect(await s.count('enrollments')).toBe(before);
+    expect(await s.count('enrollment_assignment_records')).toBe(0);
+  });
+
+  it('refuses delegation without a configured port, or when it denies or throws', async () => {
+    const s = await setup();
+    const before = await s.count('enrollments');
+    s.learnerCalls.length = 0;
+    await expect(s.enrollWith(s.unconfigured)).rejects.toBeInstanceOf(
+      LearnerAuthorizationError,
+    );
+    for (const mode of ['deny', 'object-deny', 'throw'] as const) {
+      s.verifier.mode = mode;
+      await expect(s.enroll(), mode).rejects.toBeInstanceOf(
+        LearnerAuthorizationError,
+      );
+    }
+    // The host learner authorizer is never consulted and nothing is written.
+    expect(s.learnerCalls).toHaveLength(0);
+    expect(await s.count('enrollments')).toBe(before);
+    expect(await s.count('enrollment_assignment_records')).toBe(0);
+    s.verifier.mode = 'allow';
+    await expect(s.enroll()).resolves.toBeTruthy();
   });
 
   it('refuses when the host denies the agent', async () => {
@@ -346,13 +432,32 @@ describe('delegation id across course services', () => {
     const s = await setup();
     const calls: Call[] = [];
     const deny = new Set<string>();
-    const service = new CourseGenerationReviewService(s.db, (call) => {
-      calls.push(call);
-      return (
-        COURSE_AUTHORING_ACTIONS.includes(call.action) &&
-        !deny.has(call.operation)
+    const verified: Array<Record<string, unknown>> = [];
+    const verifier = { mode: 'allow' as 'allow' | 'deny' | 'throw' };
+    const build = (withPort: boolean) =>
+      new CourseGenerationReviewService(
+        s.db,
+        (call) => {
+          calls.push(call);
+          return (
+            COURSE_AUTHORING_ACTIONS.includes(call.action) &&
+            !deny.has(call.operation)
+          );
+        },
+        withPort
+          ? {
+              verifyDelegation: (executor, call) => {
+                verified.push({ ...call, executor });
+                if (verifier.mode === 'throw') throw new Error('down');
+                return (
+                  verifier.mode === 'allow' && !deny.has(`v:${call.operation}`)
+                );
+              },
+            }
+          : {},
       );
-    });
+    const service = build(true);
+    const unconfigured = build(false);
     const guardian: CourseAuthoringActor = {
       tenantId: s.tenantId,
       actorUserId: s.guardianId,
@@ -381,7 +486,20 @@ describe('delegation id across course services', () => {
       ],
       provenance,
     });
-    return { ...s, calls, deny, service, guardian, agent, as, key, draft };
+    return {
+      ...s,
+      calls,
+      deny,
+      verified,
+      verifier,
+      service,
+      unconfigured,
+      guardian,
+      agent,
+      as,
+      key,
+      draft,
+    };
   }
 
   it('passes and records the delegation id everywhere', async () => {
@@ -517,6 +635,16 @@ describe('delegation id across course services', () => {
       expect(call.delegationId).toBe('delegation-1');
     }
 
+    // The port ran, on an executor, for the same delegated calls, including auto-upgrade.
+    expect(s.verified.length).toBe(delegated.length);
+    for (const call of s.verified) {
+      expect(call.executor).toBeTruthy();
+      expect(call.delegationId).toBe('delegation-1');
+    }
+    expect(
+      s.verified.filter((c) => c.operation === 'auto-upgrade'),
+    ).toHaveLength(2);
+
     // Every decision record carries it.
     for (const table of [
       'course_revisions',
@@ -622,6 +750,128 @@ describe('delegation id across course services', () => {
     ).rejects.toBeInstanceOf(CourseAuthoringAuthorizationError);
     expect(s.calls.length).toBe(before);
     expect(await s.count('course_revisions')).toBe(0);
+  });
+
+  it('refuses delegated course operations without a verified delegation', async () => {
+    const s = await authoring();
+    const create = (service: CourseGenerationReviewService) =>
+      s.as(s.agent, () =>
+        service.createCourse({
+          ...s.agent,
+          requestKey: s.key(),
+          title: 'Unverified',
+          levelMin: 3,
+          levelMax: 4,
+        }),
+      );
+    await expect(create(s.unconfigured)).rejects.toBeInstanceOf(
+      CourseAuthoringAuthorizationError,
+    );
+    for (const mode of ['deny', 'throw'] as const) {
+      s.verifier.mode = mode;
+      await expect(create(s.service), mode).rejects.toBeInstanceOf(
+        CourseAuthoringAuthorizationError,
+      );
+    }
+    // The host authorizer is never reached and nothing is written.
+    expect(s.calls).toHaveLength(0);
+    expect(await s.count('course_revisions')).toBe(0);
+    // A plain guardian needs no port.
+    await expect(
+      s.as(s.guardian, () =>
+        s.unconfigured.createCourse({
+          ...s.guardian,
+          requestKey: s.key(),
+          title: 'Plain',
+          levelMin: 3,
+          levelMax: 4,
+        }),
+      ),
+    ).resolves.toBeTruthy();
+    expect(s.verified).toHaveLength(2);
+  });
+
+  it('re-verifies the recorded delegation for each automatic upgrade', async () => {
+    const s = await authoring();
+    const { service, agent, as, key } = s;
+    const head = await as(agent, () =>
+      service.createCourse({
+        ...agent,
+        requestKey: key(),
+        title: 'Auto',
+        levelMin: 3,
+        levelMax: 4,
+      }),
+    );
+    let expected = head.headRevisionId;
+    const releaseNew = async (title: string) => {
+      const saved = await as(agent, () =>
+        service.saveDraft({
+          ...agent,
+          courseId: head.courseId,
+          expectedHeadRevisionId: expected,
+          requestKey: key(),
+          draft: s.draft(title, 'supplied'),
+        }),
+      );
+      expected = saved.headRevisionId;
+      await as(agent, () =>
+        service.recordReview({
+          ...agent,
+          courseId: head.courseId,
+          revisionId: saved.revisionId,
+          requestKey: key(),
+          generalSummary: 'Suitable for the level overall in these respects.',
+          findings: [],
+        }),
+      );
+      return as(agent, () =>
+        service.release({
+          ...agent,
+          courseId: head.courseId,
+          revisionId: saved.revisionId,
+          requestKey: key(),
+        }),
+      );
+    };
+    const rel1 = await releaseNew('A');
+    const enrollment = await s.enroll({}, rel1.releaseCourseId);
+    await as(agent, () =>
+      service.pinEnrollment({
+        ...agent,
+        enrollmentId: enrollment.id,
+        releaseId: rel1.id,
+        requestKey: key(),
+        policyBasis: 'guardians-and-agents',
+      }),
+    );
+    await as(agent, () =>
+      service.setAutoUpgrade({
+        ...agent,
+        courseId: head.courseId,
+        enrollmentId: enrollment.id,
+        enabled: true,
+        requestKey: key(),
+        policyBasis: 'guardians-and-agents',
+      }),
+    );
+    // The host revokes the delegation after the opt-in: the move is skipped.
+    s.deny.add('v:auto-upgrade');
+    await releaseNew('A2');
+    const pin = (
+      await as(agent, () =>
+        service.getEnrollmentRelease({ ...agent, enrollmentId: enrollment.id }),
+      )
+    ).pin;
+    expect(pin.releaseId).toBe(rel1.id);
+    expect(await s.count('enrollment_auto_upgrade_skips')).toBe(1);
+    const auto = s.verified.filter((c) => c.operation === 'auto-upgrade');
+    expect(auto).toHaveLength(1);
+    expect(auto[0]).toMatchObject({
+      actorUserId: s.agentId,
+      delegatingGuardianUserId: s.guardianId,
+      delegationId: 'delegation-1',
+    });
   });
 
   it('treats a different delegation id as a request-key conflict', async () => {

@@ -27,6 +27,7 @@ import {
   type CourseAuthoringOperation,
   CourseAuthoringValidationError,
   type CourseAuthorizationDecision,
+  type CourseDelegationVerifier,
   CourseDiscardedError,
   CourseDiscardRefusedError,
   type CourseDraftInput,
@@ -561,6 +562,11 @@ export interface CourseAuthoringServiceOptions {
   referenceGuard?: CourseReferenceGuard;
   /** Copies uploaded originals to education-owned assets. */
   materialCopy?: CourseMaterialCopyPort;
+  /**
+   * Required for any delegated (agent) request: without it delegation fields
+   * are refused. Runs on the transaction executor before the authorizer.
+   */
+  verifyDelegation?: CourseDelegationVerifier;
 }
 
 /**
@@ -617,6 +623,18 @@ export class CourseAuthoringService {
       )
         throw new CourseAuthoringAuthorizationError();
     }
+    if (
+      delegation &&
+      !(await this.delegationVerified(tx, {
+        tenantId: actor.tenantId,
+        actorUserId: actor.actorUserId,
+        ...delegation,
+        action,
+        operation,
+        ...extra,
+      }))
+    )
+      throw new CourseAuthoringAuthorizationError();
     const allowed = await this.authorizer({
       tenantId: actor.tenantId,
       actorUserId: actor.actorUserId,
@@ -628,6 +646,20 @@ export class CourseAuthoringService {
     });
     if (readDecision(allowed).allowed !== true)
       throw new CourseAuthoringAuthorizationError();
+  }
+
+  /** Fail closed: no port, a denial or a throw all mean the delegation is not verified. */
+  private async delegationVerified(
+    executor: DatabaseInterface,
+    request: Parameters<CourseDelegationVerifier>[1],
+  ): Promise<boolean> {
+    const verify = this.options.verifyDelegation;
+    if (typeof verify !== 'function') return false;
+    try {
+      return readDecision(await verify(executor, request)).allowed === true;
+    } catch {
+      return false;
+    }
   }
 
   protected async identityRow(tx: Tx, tenantId: string, courseId: string) {
@@ -2563,8 +2595,22 @@ export class CourseAuthoringService {
       // transaction aborted (PostgreSQL 25P02). A throw means "not allowed".
       // An executor that cannot nest cannot isolate the callback: fail closed.
       if (typeof tx.transaction !== 'function') return denied;
-      return await tx.transaction(async (inner) =>
-        readDecision(
+      return await tx.transaction(async (inner) => {
+        if (
+          delegation &&
+          !(await this.delegationVerified(inner, {
+            tenantId,
+            actorUserId: choice.actorUserId,
+            ...delegation,
+            action: 'education.course.assign',
+            operation: 'auto-upgrade',
+            courseId,
+            enrollmentId,
+            learnerId,
+          }))
+        )
+          return denied;
+        return readDecision(
           await this.authorizer({
             tenantId,
             actorUserId: choice.actorUserId,
@@ -2576,8 +2622,8 @@ export class CourseAuthoringService {
             operation: 'auto-upgrade',
             executor: inner,
           }),
-        ),
-      );
+        );
+      });
     } catch {
       // Never record a thrown message: the generic reason only.
       return denied;

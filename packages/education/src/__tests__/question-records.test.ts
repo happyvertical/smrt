@@ -131,6 +131,7 @@ async function setup() {
     return (grants.get(call.actorUserId) ?? []).includes(call.action);
   };
   const service = new QuestionAuthoringService(db, authorizer, {
+    verifyDelegation: () => true,
     releaseReviewGate: () => ({ current: true, reviewId: 'review-1' }),
   });
   const as = <T>(actor: CourseAuthoringActor, fn: () => Promise<T>) =>

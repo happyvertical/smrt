@@ -178,6 +178,7 @@ async function setup(
     },
   };
   const service = new CourseGenerationReviewService(db, authorizer, {
+    verifyDelegation: () => true,
     ...(options.generator === false ? {} : { generator }),
     ...(options.timeoutMs
       ? { generationLimits: { timeoutMs: options.timeoutMs } }

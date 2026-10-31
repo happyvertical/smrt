@@ -73,6 +73,32 @@ export interface LearnerSetupStatusRequest {
 }
 export type LearnerSetupStatus = Readonly<{ needsSetup: boolean }>;
 
+/** Result of the host delegation check; a bare boolean is accepted as well. */
+export type LearnerDelegationDecision =
+  | boolean
+  | { allowed: boolean; reason?: string; code?: string };
+
+/**
+ * Host port proving that this agent may assign for this guardian under this
+ * delegation id. Required for delegated `enroll`: without it, or when it denies
+ * or throws, the request is refused before the learner authorizer is consulted.
+ */
+export type LearnerDelegationVerifier = (
+  executor: DatabaseInterface,
+  request: {
+    tenantId: string;
+    actorUserId: string;
+    delegatingGuardianUserId: string;
+    delegationId: string;
+    learnerId: string;
+    courseId?: string;
+  },
+) => LearnerDelegationDecision | Promise<LearnerDelegationDecision>;
+
+export interface LearnerServiceOptions {
+  verifyDelegation?: LearnerDelegationVerifier;
+}
+
 /** The host validates relationship type/terms and its own permission policy. */
 export type LearnerAuthorizer = (
   request: LearnerRequest & {
@@ -93,6 +119,10 @@ export type LearnerAuthorizer = (
       | 'education.learner.setup';
     own: boolean;
     relationshipTypeId?: string;
+    /** True only for a delegated assignment; `relationshipTypeId` is then undefined. */
+    delegated?: boolean;
+    /** Delegated assignment only: the DELEGATING guardian's verified relationship type. */
+    delegatingRelationshipTypeId?: string;
     /** Delegated assignment only: the guardian whose live relationship was verified. */
     delegatingGuardianUserId?: string;
     /** Delegated assignment only: the host's opaque delegation id. */
@@ -195,6 +225,7 @@ export class LearnerService {
     protected readonly db: DatabaseInterface,
     protected readonly authorize: LearnerAuthorizer,
     protected readonly authorizeCatalog: CatalogAuthorizer,
+    protected readonly learnerOptions: LearnerServiceOptions = {},
   ) {
     this.postgres = isPostgresDatabase(db);
   }
@@ -276,6 +307,7 @@ export class LearnerService {
       db,
       this.authorize,
       this.authorizeCatalog,
+      this.learnerOptions,
     ) as this;
   }
 
@@ -370,7 +402,7 @@ export class LearnerService {
   protected async requireActor(
     request: LearnerRequest,
     action: Parameters<LearnerAuthorizer>[0]['action'],
-    delegation: CourseDelegation | null = null,
+    delegation: (CourseDelegation & { courseId?: string }) | null = null,
   ): Promise<Learner> {
     this.assertServiceOpen();
     const context = getCurrentTenant();
@@ -429,6 +461,31 @@ export class LearnerService {
         })))
     )
       throw new LearnerAuthorizationError();
+    // The host proves the delegation before any relationship lookup or the
+    // learner authorizer; no port, a denial or a throw all refuse.
+    if (delegation) {
+      const verify = this.learnerOptions.verifyDelegation;
+      let verified = false;
+      if (typeof verify === 'function') {
+        try {
+          const decision = await verify(this.db, {
+            tenantId: request.tenantId,
+            actorUserId: request.actorUserId,
+            delegatingGuardianUserId: delegation.delegatingGuardianUserId,
+            delegationId: delegation.delegationId,
+            learnerId: request.learnerId,
+            ...(delegation.courseId ? { courseId: delegation.courseId } : {}),
+          });
+          verified =
+            typeof decision === 'object' && decision !== null
+              ? decision.allowed === true
+              : decision === true;
+        } catch {
+          verified = false;
+        }
+      }
+      if (!verified) throw new LearnerAuthorizationError();
+    }
     const own = learner.userId === holder;
     let relationshipTypeId: string | undefined;
     if (!own) {
@@ -471,11 +528,17 @@ export class LearnerService {
     if (
       (await this.authorize({
         ...base,
-        ...(delegation ?? {}),
+        ...(delegation
+          ? {
+              delegated: true,
+              delegatingGuardianUserId: delegation.delegatingGuardianUserId,
+              delegationId: delegation.delegationId,
+              delegatingRelationshipTypeId: relationshipTypeId,
+            }
+          : { relationshipTypeId }),
         executor: this.db,
         action,
         own,
-        relationshipTypeId,
       })) !== true
     )
       throw new LearnerAuthorizationError();
@@ -846,7 +909,7 @@ export class LearnerService {
       const learner = await service.requireActor(
         request,
         'education.learner.plan',
-        delegation,
+        delegation ? { ...delegation, courseId: request.courseId } : null,
       );
       await service.lock('curricula', request.curriculumId, request.tenantId);
       const curriculum = await (

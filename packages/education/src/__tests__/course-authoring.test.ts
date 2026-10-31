@@ -154,6 +154,7 @@ async function setup(
   };
   const gateCalls: unknown[] = [];
   const service = new CourseAuthoringService(db, authorizer, {
+    verifyDelegation: () => true,
     ...(options.gate === null
       ? {}
       : {

@@ -148,7 +148,10 @@ async function setup() {
         COURSE_AUTHORING_ACTIONS.includes(call.action)
       );
     },
-    { releaseReviewGate: () => ({ current: true, reviewId: 'review-1' }) },
+    {
+      releaseReviewGate: () => ({ current: true, reviewId: 'review-1' }),
+      verifyDelegation: () => true,
+    },
   );
   const as = <T>(actor: CourseAuthoringActor, fn: () => Promise<T>) =>
     withTenant({ tenantId: actor.tenantId, userId: actor.actorUserId }, fn);

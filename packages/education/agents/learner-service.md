@@ -47,16 +47,22 @@ Same-tenant membership alone never grants sibling access.
   A learner cannot plan their own curriculum. Title is required.
 - `enroll` requires that guardian authority and a matching tenant curriculum.
   It returns the existing enrollment for the same curriculum/course unchanged.
-  A delegated agent may enroll: the actor is the agent; supply
-  `delegatingGuardianUserId` and the host's `delegationId` (both or neither, 1-200
-  printable characters, guardian not the agent). The service re-checks the DELEGATING
-  guardian's active membership and `guardianRelationshipId` (that guardian's profile to
-  the learner, same tenant, same executor) and never the agent's relationship; the agent
-  also needs an active membership. The authorizer receives `education.learner.plan`
-  with `own: false`, the verified `relationshipTypeId`, `delegatingGuardianUserId` and
-  `delegationId`, and decides. A new delegated enrollment appends one
-  `EnrollmentAssignmentRecord` (table added here; `Enrollment` is unchanged). Only
-  `enroll` accepts a delegation; every other operation ignores it, so the agent has no
+  A delegated agent may enroll, only when the host opts in: construct
+  `LearnerService(db, authorize, authorizeCatalog, { verifyDelegation })` where
+  `verifyDelegation(executor, { tenantId, actorUserId, delegatingGuardianUserId,
+  delegationId, learnerId, courseId? }) => boolean | { allowed, reason?, code? }` runs on the
+  current executor. Without the port, or if it denies or throws, `enroll` refuses with
+  `LearnerAuthorizationError` before the learner authorizer and before any write. Supply
+  `delegatingGuardianUserId` and `delegationId` (both or neither, 1-200 printable characters,
+  guardian not the agent). After the port, the service re-checks the DELEGATING guardian's
+  active membership and `guardianRelationshipId` (that guardian's profile to the learner, same
+  tenant) and the agent's active membership. The authorizer gets `education.learner.plan`,
+  `own: false`, `delegated: true`, `relationshipTypeId` undefined (so a legacy
+  `relationshipTypeId === guardian` rule denies), the guardian's type as
+  `delegatingRelationshipTypeId`, `delegatingGuardianUserId` and `delegationId`, and decides.
+  A new delegated enrollment appends one `EnrollmentAssignmentRecord` (`Enrollment` is
+  unchanged). Only `enroll` accepts a delegation (on `LearnerService` itself; subclasses without
+  the port refuse); every other operation ignores it, so the agent has no
   other learner authority. Catalog reads still use the agent as actor.
 - `startLesson` allows the learner or authorized guardian to create their own
   enrollment's lesson progress in `in_progress`. It derives learner identity

@@ -47,6 +47,13 @@ per-enrollment `auto-upgrade` call, which gets the opt-in's recorded id) and rec
 (nullable on views) on revisions, releases, archive/discard, pins, opt-ins, skips
 (`optInDelegationId`; automatic pins also record the opt-in's) and generation, review
 and question records. Request-key replays compare it: another delegation id conflicts.
+Delegation is opt-in and fails closed: `verifyDelegation(executor, { tenantId,
+actorUserId, delegatingGuardianUserId, delegationId, action, operation, courseId?,
+enrollmentId?, learnerId? }) => boolean | { allowed, reason?, code? }` must be set in the
+service options. A delegated request without it, or when it denies or throws, is a
+`CourseAuthoringAuthorizationError` before the host authorizer runs. The per-enrollment
+`auto-upgrade` check re-verifies the opt-in's recorded delegation through the same port
+(on the savepoint executor); a failure skips the move. Plain guardians never need it.
 Assignment (`LearnerService.enroll`) is described in the [learner contract](learner-service.md).
 
 ## Writes
