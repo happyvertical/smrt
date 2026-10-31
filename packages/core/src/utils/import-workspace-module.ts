@@ -40,6 +40,17 @@ export async function importWorkspaceModule<T = unknown>({
       /* @vite-ignore */ resolveInstalledPackage(packageName)
     )) as T;
   } catch (originalError) {
+    // Inside a Vite/Vitest module graph `import.meta.resolve` is unavailable,
+    // but a bare specifier import is resolved by Vite itself, through the
+    // workspace source aliases. Without this, a test that loads a package's
+    // Vite config fell through to the sibling's possibly stale built dist
+    // below (#2954). In plain Node this resolves exactly as above, so it only
+    // repeats the failure that brought us here.
+    try {
+      return (await import(/* @vite-ignore */ packageName)) as T;
+    } catch {
+      // Fall through to the workspace fallbacks.
+    }
     const workspaceRoot = findWorkspaceRoot(process.cwd());
     if (!workspaceRoot) {
       throw originalError;
