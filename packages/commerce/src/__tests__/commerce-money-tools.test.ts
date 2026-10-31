@@ -1,4 +1,3 @@
-import { fileURLToPath } from 'node:url';
 import type { PrincipalRun, PrincipalTool } from '@happyvertical/smrt-agents';
 import {
   disableTenancy,
@@ -7,6 +6,7 @@ import {
 } from '@happyvertical/smrt-tenancy';
 import {
   createIsolatedTestDbFromManifest,
+  getTestManifestPath,
   type IsolatedTestDbResult,
 } from '@happyvertical/smrt-vitest';
 import type { DatabaseInterface } from '@happyvertical/sql';
@@ -177,9 +177,7 @@ async function addWorkedExampleLines(
 
 beforeEach(async () => {
   isolated = await createIsolatedTestDbFromManifest({
-    manifestPath: fileURLToPath(
-      new URL('../../.smrt/manifest.json', import.meta.url),
-    ),
+    manifestPath: getTestManifestPath(),
     includeObjects: [
       'Customer',
       'DocumentTax',

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { getTestDatabase } from '@happyvertical/smrt-core/testing';
 import { disableTenancy, enableTenancy } from '@happyvertical/smrt-tenancy';
+import { getTestManifestPath } from '@happyvertical/smrt-vitest';
 import { describe, expect, it } from 'vitest';
 import { allocateContractMilestones } from '../contract-billing-schedule.js';
 import {
@@ -53,7 +53,7 @@ describe('approved contract milestone billing (#4074)', () => {
 
     it('declares an empty-string column default in the manifest', () => {
       const manifest = JSON.parse(
-        readFileSync(resolve(process.cwd(), '.smrt/manifest.json'), 'utf8'),
+        readFileSync(getTestManifestPath(), 'utf8'),
       ) as {
         objects: Record<
           string,

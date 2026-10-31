@@ -102,6 +102,7 @@ const h = vi.hoisted(() => {
         }>
       > => [],
     ),
+    registerActiveTestManifestPath: vi.fn(),
     manifestGenerate: vi.fn(
       async (
         ..._args: unknown[]
@@ -250,6 +251,8 @@ vi.mock('@happyvertical/smrt-core/manifest', () => ({
   ManifestBuilder: class {
     generate = (...a: unknown[]) => h.manifestGenerate(...a);
   },
+  registerActiveTestManifestPath: (...a: unknown[]) =>
+    h.registerActiveTestManifestPath(...a),
 }));
 
 vi.mock('@happyvertical/smrt-core/manifest/discover-base-classes', () => ({
@@ -1626,6 +1629,15 @@ describe('utility command handlers', () => {
       await requireCommandHandler(utilityCommands.test)([], {});
 
       expect(spawn).toHaveBeenCalled();
+      // The run reads the generated test manifest, never `.smrt/manifest.json`
+      // (#4128, #2760).
+      expect(h.registerActiveTestManifestPath).toHaveBeenCalledWith(
+        process.cwd(),
+        resolve(process.cwd(), 'src/manifest/test-manifest.json'),
+      );
+      expect(manifestGenerate).toHaveBeenCalledWith(
+        expect.objectContaining({ outputMode: 'explicit' }),
+      );
       expect(logged()).toContain('Running tests');
     } finally {
       process.chdir(originalCwd);

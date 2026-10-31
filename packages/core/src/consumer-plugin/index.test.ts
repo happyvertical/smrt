@@ -1535,6 +1535,52 @@ describe('smrtConsumer registration generation', () => {
     );
   });
 
+  it('replaces a stale test-run manifest instead of carrying its fixtures forward (#2760)', async () => {
+    const smrtDir = join(tmpDir, '.smrt');
+    mkdirSync(smrtDir, { recursive: true });
+    writeFileSync(
+      join(smrtDir, 'manifest.json'),
+      JSON.stringify({
+        version: '1.0.0',
+        timestamp: 1,
+        artifactPurpose: 'test',
+        packageName: '@fixture/consumer-app',
+        objects: {
+          '@fixture/consumer-app:ConvNote': {
+            className: 'ConvNote',
+            qualifiedName: '@fixture/consumer-app:ConvNote',
+            packageName: '@fixture/consumer-app',
+            filePath: 'src/conv-note.test.ts',
+            fields: {},
+            methods: {},
+            decoratorConfig: {},
+          },
+        },
+      }),
+    );
+
+    await buildStart(
+      smrtConsumer({
+        packages: ['@test/pkg'],
+        generateTypes: false,
+        projectRoot: tmpDir,
+        disableScanning: true,
+      }),
+      {} as any,
+    );
+
+    const merged = JSON.parse(
+      readFileSync(join(smrtDir, 'manifest.json'), 'utf-8'),
+    );
+    expect(merged.artifactPurpose).toBeUndefined();
+    expect(merged.objects['@fixture/consumer-app:ConvNote']).toBeUndefined();
+    expect(merged.objects.ExternalThing).toBeDefined();
+    const knowledge = JSON.parse(
+      readFileSync(join(smrtDir, 'smrt-knowledge.json'), 'utf-8'),
+    );
+    expect(JSON.stringify(knowledge.objects)).not.toContain('ConvNote');
+  });
+
   it('uses inline producer knowledge options when refreshing consumer knowledge', async () => {
     writeFileSync(
       join(tmpDir, 'smrt.config.json'),

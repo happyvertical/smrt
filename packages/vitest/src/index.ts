@@ -6,7 +6,9 @@
  * external package classes aren't registered in the test manifest.
  *
  * Uses ManifestManager for unified manifest loading, which properly handles
- * the manifest priority order: .smrt/manifest.json (test) -> dist/manifest.json (production)
+ * the manifest priority order: this run's test manifest snapshot
+ * (`.smrt/test-runs/<run>/manifest.json`, #4128) -> .smrt/manifest.json ->
+ * dist/manifest.json
  *
  * @example
  * ```typescript
@@ -26,17 +28,21 @@
  * @packageDocumentation
  */
 
+import { randomBytes } from 'node:crypto';
 import {
   existsSync,
+  mkdirSync,
   readdirSync,
   readFileSync,
   realpathSync,
-  unlinkSync,
+  rmSync,
+  statSync,
+  writeFileSync,
 } from 'node:fs';
 import { createRequire } from 'node:module';
-import { dirname, join } from 'node:path';
+import { hostname } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { SmrtPluginApi } from '@happyvertical/smrt-core/vite-plugin';
 import { configDefaults, type Plugin } from 'vitest/config';
 import { isVerbose, shouldLogManifestSummaryOnce } from './log.js';
 
@@ -131,6 +137,138 @@ export function setManifestRegistrationOptionsForRoot(
 
   byRoot[key] = options;
   process.env[SMRT_VITEST_SETUP_OPTIONS_ENV_KEY] = JSON.stringify(byRoot);
+}
+
+/**
+ * Environment variable carrying the active test manifest path per project
+ * root. Mirrors `SMRT_TEST_MANIFEST_PATHS_ENV_KEY` in
+ * `@happyvertical/smrt-core/manifest` (`test-artifacts.ts`), which owns the
+ * read side; kept as a literal here so {@link smrtVitestPlugin}'s `config()`
+ * hook can publish it synchronously, before Vitest forks any pool worker
+ * (see {@link SMRT_VITEST_SETUP_OPTIONS_ENV_KEY}). Parity with core is
+ * asserted in `src/__tests__/test-run-manifest-isolation.test.ts`.
+ */
+export const SMRT_TEST_MANIFEST_PATHS_ENV_KEY = '__SMRT_TEST_MANIFEST_PATHS__';
+
+/**
+ * Directory, relative to a project root, holding one subdirectory per test
+ * run's manifest snapshot (#4128).
+ */
+export const SMRT_TEST_RUNS_DIR = '.smrt/test-runs';
+
+/** A run directory whose owner is unknown or remote is pruned after this. */
+const STALE_TEST_RUN_MS = 24 * 60 * 60 * 1000;
+
+const testRunManifestPaths = new Map<string, string>();
+
+interface TestRunOwner {
+  pid: number;
+  hostname: string;
+  startedAt: number;
+}
+
+function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    // EPERM: the process exists but belongs to someone else.
+    return (error as NodeJS.ErrnoException).code === 'EPERM';
+  }
+}
+
+/**
+ * Remove snapshot directories whose run has ended. A run recorded on this
+ * host is removed only once its process is gone, however long it has been
+ * running (a watch or `--ui` session can outlive a day). A run whose owner
+ * cannot be probed — no readable `owner.json`, or another host or container
+ * sharing the checkout — is removed once it is older than a day.
+ */
+function pruneEndedTestRuns(root: string, keep: string): void {
+  const runsDir = join(root, SMRT_TEST_RUNS_DIR);
+  let entries: string[];
+  try {
+    entries = readdirSync(runsDir);
+  } catch {
+    return;
+  }
+  const thisHost = hostname();
+  for (const entry of entries) {
+    const runDir = join(runsDir, entry);
+    if (runDir === keep) continue;
+    let owner: Partial<TestRunOwner> | undefined;
+    try {
+      owner = JSON.parse(readFileSync(join(runDir, 'owner.json'), 'utf8'));
+    } catch {
+      owner = undefined;
+    }
+    let ageMs: number;
+    try {
+      ageMs = Date.now() - (owner?.startedAt ?? statSync(runDir).mtimeMs);
+    } catch {
+      continue;
+    }
+    const probeable =
+      owner?.hostname === thisHost && typeof owner.pid === 'number';
+    const ended = probeable
+      ? owner?.pid !== process.pid && !isProcessAlive(owner?.pid as number)
+      : ageMs > STALE_TEST_RUN_MS;
+    if (ended) {
+      rmSync(runDir, { recursive: true, force: true });
+    }
+  }
+}
+
+/**
+ * The manifest snapshot path owned by this process's test run for `root`
+ * (#4128): `<root>/.smrt/test-runs/<pid>-<time>-<random>/manifest.json`.
+ *
+ * Test generation scans test-inclusive sources, so it must not share a path
+ * with production generation: `.smrt/manifest.json` is rewritten by every
+ * `smrtPlugin()` build (and by a typecheck whose Turbo graph rebuilds the
+ * package), which used to replace the test manifest while forked test
+ * workers were still reading it. Each run instead owns a directory nothing
+ * else writes; it is stable for the life of this process, so every plugin
+ * instance and config restart for the same root shares it, and removed when
+ * the process exits.
+ */
+export function resolveTestRunManifestPath(root: string): string {
+  const key = normalizeRootKey(resolve(root));
+  const existing = testRunManifestPaths.get(key);
+  if (existing) return existing;
+  const runId = `${process.pid}-${Date.now().toString(36)}-${randomBytes(4).toString('hex')}`;
+  const manifestPath = join(key, SMRT_TEST_RUNS_DIR, runId, 'manifest.json');
+  testRunManifestPaths.set(key, manifestPath);
+  const runDir = dirname(manifestPath);
+  process.once('exit', () => {
+    rmSync(runDir, { recursive: true, force: true });
+  });
+  return manifestPath;
+}
+
+/**
+ * Publish `manifestPath` as the active test manifest for `root`, merged into
+ * {@link SMRT_TEST_MANIFEST_PATHS_ENV_KEY}. Keys match core's reader: the
+ * root as given, trimmed of trailing separators, and realpath'd.
+ */
+function registerTestRunManifestPath(root: string, manifestPath: string): void {
+  let byRoot: Record<string, string> = {};
+  const raw = process.env[SMRT_TEST_MANIFEST_PATHS_ENV_KEY];
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        byRoot = parsed;
+      }
+    } catch {
+      // A malformed prior value is replaced.
+    }
+  }
+  const trimmed = root.replace(/[/\\]+$/, '') || root;
+  for (const key of new Set([root, trimmed, normalizeRootKey(root)])) {
+    byRoot[key] = manifestPath;
+  }
+  process.env[SMRT_TEST_MANIFEST_PATHS_ENV_KEY] = JSON.stringify(byRoot);
 }
 
 /**
@@ -897,19 +1035,6 @@ async function importSmrtCoreManifestModule(): Promise<
   }
 }
 
-async function importSmrtCoreKnowledgeModule(): Promise<
-  typeof import('@happyvertical/smrt-core/knowledge')
-> {
-  const specifier = '@happyvertical/smrt-core/knowledge';
-  try {
-    return await import(specifier);
-  } catch {
-    const fallbackHref = new URL('../../core/src/knowledge.ts', import.meta.url)
-      .href;
-    return await importWorkspaceSourceModule(fallbackHref);
-  }
-}
-
 async function importDiscoverBaseClassesModule(): Promise<
   typeof import('@happyvertical/smrt-core/manifest/discover-base-classes')
 > {
@@ -930,8 +1055,12 @@ async function importDiscoverBaseClassesModule(): Promise<
  * Load manifest from a package using ManifestManager
  *
  * This properly handles the manifest priority order:
- * 1. .smrt/manifest.json (test/dev manifest with all classes)
+ * 1. .smrt/manifest.json (local build manifest)
  * 2. dist/manifest.json (production manifest)
+ * `loadLocal()` would prefer an active test snapshot registered for the
+ * dependency's own root; only that root's own plugin registers one, so a
+ * dependency is read from its snapshot only when it runs in the same
+ * process or a child of its own test run.
  */
 async function loadAndRegisterManifest(
   packageName: string,
@@ -1107,16 +1236,23 @@ async function loadAndRegisterLocalManifest(
 }
 
 /**
- * Generate local manifest using ManifestBuilder
+ * Generate this run's test manifest snapshot using ManifestBuilder.
  *
  * This ensures the manifest is always fresh after adding new classes/fields.
- * The ~1-2s overhead is minimal compared to test execution time.
+ * The ~1-2s overhead is minimal compared to test execution time. The scan is
+ * test-inclusive (inline `*.test.ts` fixture classes need metadata, #2760),
+ * so it is written only to `manifestPath` — the run's own snapshot
+ * (`outputMode: 'explicit'`) — never to `.smrt/manifest.json`,
+ * `dist/manifest.json`, or their paired `smrt-knowledge.json`, which belong
+ * to production generation (#4128). A production pair therefore stays
+ * byte-identical across a test run, so knowledge freshness (#3205) holds
+ * without regenerating it from test output.
  */
 async function generateLocalManifest(
   root: string,
   options: SmrtVitestPluginOptions,
   verbose: boolean,
-  producerApi?: SmrtPluginApi,
+  manifestPath: string,
 ): Promise<boolean> {
   try {
     console.log('[smrt-vitest] Generating test manifest...');
@@ -1132,6 +1268,16 @@ async function generateLocalManifest(
         `[smrt-vitest] Discovered ${baseClasses.length} base classes (including ${baseClasses.length - 3} from external packages)`,
       );
     }
+
+    const runDir = dirname(manifestPath);
+    pruneEndedTestRuns(root, runDir);
+    mkdirSync(runDir, { recursive: true });
+    const owner: TestRunOwner = {
+      pid: process.pid,
+      hostname: hostname(),
+      startedAt: Date.now(),
+    };
+    writeFileSync(join(runDir, 'owner.json'), JSON.stringify(owner));
 
     const builder = new ManifestBuilder(root);
     const manifest = await builder.generate({
@@ -1152,10 +1298,10 @@ async function generateLocalManifest(
       includePrivateMethods: false,
       includeStaticMethods: true,
 
-      // Output configuration - write to .smrt directory (ManifestManager default)
-      outputMode: 'dev',
+      // Output configuration - only this run's snapshot (#4128)
+      outputMode: 'explicit',
       artifactPurpose: 'test',
-      outputDir: '.smrt',
+      outputDir: runDir,
       outputName: 'manifest.json',
       generateTypeStub: false,
 
@@ -1165,7 +1311,6 @@ async function generateLocalManifest(
     });
 
     const objectCount = Object.keys(manifest.objects).length;
-    await refreshTestKnowledgeArtifact(root, manifest, producerApi);
     console.log(
       `[smrt-vitest] ✓ Generated manifest with ${objectCount} object(s)`,
     );
@@ -1175,70 +1320,6 @@ async function generateLocalManifest(
     console.error('[smrt-vitest] Failed to generate manifest:', error);
     return false;
   }
-}
-
-async function refreshTestKnowledgeArtifact(
-  root: string,
-  manifest: import('@happyvertical/smrt-core/scanner/types').SmartObjectManifest,
-  producerApi?: SmrtPluginApi,
-): Promise<void> {
-  const {
-    AGENT_SURFACE_HASH_PREFIX,
-    buildDomainKnowledgeManifest,
-    publishAtomicArtifact,
-    resolveFileKnowledgeConfig,
-  } = await importSmrtCoreKnowledgeModule();
-  const manifestPath = join(root, '.smrt/manifest.json');
-  const knowledgePath = join(root, '.smrt/smrt-knowledge.json');
-  let priorKnowledge:
-    | {
-        agentSurface?: unknown;
-        sourceHashes?: Record<string, string>;
-      }
-    | undefined;
-  try {
-    priorKnowledge = JSON.parse(readFileSync(knowledgePath, 'utf8'));
-  } catch {
-    // A missing or malformed prior artifact is replaced by current generation.
-  }
-  const config = producerApi
-    ? await producerApi.resolveKnowledgeConfig(manifest)
-    : await resolveFileKnowledgeConfig(root, manifest.packageName);
-  if (config.enabled === false) {
-    if (existsSync(knowledgePath)) unlinkSync(knowledgePath);
-    return;
-  }
-  const agentSurface = producerApi
-    ? await producerApi.resolveKnowledgeAgentSurface()
-    : undefined;
-  const knowledge = buildDomainKnowledgeManifest({
-    manifest,
-    rootDir: root,
-    manifestPath,
-    config,
-    agentSurface,
-  });
-  const priorSurfaceHashes = Object.entries(
-    priorKnowledge?.sourceHashes ?? {},
-  ).filter(([key]) => key.startsWith(AGENT_SURFACE_HASH_PREFIX));
-  if (
-    !agentSurface &&
-    priorKnowledge?.agentSurface &&
-    priorSurfaceHashes.length
-  ) {
-    // Without the producer API we cannot rescan declarations. Preserve the
-    // last surface *and its old source hashes*: rebuilding hashes from files
-    // under a stale declaration would incorrectly certify it as fresh.
-    knowledge.agentSurface = priorKnowledge.agentSurface as never;
-    Object.assign(
-      knowledge.sourceHashes,
-      Object.fromEntries(priorSurfaceHashes),
-    );
-  }
-  publishAtomicArtifact({
-    path: knowledgePath,
-    content: JSON.stringify(knowledge, null, 2),
-  });
 }
 
 /**
@@ -1396,6 +1477,7 @@ export function smrtVitestPlugin(
   const verbose = isVerbose(verboseOption);
 
   let manifestsLoaded = false;
+  const testRunManifestPath = resolveTestRunManifestPath(root);
   const setupFileId = setupFile;
   const workspaceAliases = getWorkspaceViteAliases(root, {
     filter: aliasFilter,
@@ -1500,6 +1582,13 @@ export function smrtVitestPlugin(
       // logging; a project needing distinct isolation in that shape should
       // pass an explicit, distinct `root` to `smrtVitestPlugin()`.
       setManifestRegistrationOptionsForRoot(root, { packages, root, verbose });
+      // Publish this run's test manifest snapshot path just as early, for
+      // the same reason: workers forked before `configResolved()` must
+      // still read the run's own snapshot, never the production
+      // `.smrt/manifest.json` a concurrent build may rewrite (#4128).
+      if (generateManifest) {
+        registerTestRunManifestPath(root, testRunManifestPath);
+      }
 
       const rootRetry = userConfig.test?.retry as RetryConfig | undefined;
       // Build tools may copy co-located tests into both output directories.
@@ -1541,16 +1630,21 @@ export function smrtVitestPlugin(
     },
 
     // Run during config resolution to ensure manifests are loaded before tests
-    async configResolved(resolvedConfig) {
+    async configResolved() {
       if (manifestsLoaded) return;
 
       // Step 1: Generate local manifest if enabled (default: true)
       // This ensures manifest is always fresh after adding new classes/fields
       if (generateManifest) {
-        const producerApi = (resolvedConfig.plugins ?? []).find(
-          (plugin) => plugin?.name === 'smrt-auto-service',
-        )?.api as SmrtPluginApi | undefined;
-        await generateLocalManifest(root, options, verbose, producerApi);
+        // `config()` normally published this already; a caller driving
+        // `configResolved()` alone (tests, custom harnesses) still gets it.
+        registerTestRunManifestPath(root, testRunManifestPath);
+        await generateLocalManifest(
+          root,
+          options,
+          verbose,
+          testRunManifestPath,
+        );
       }
 
       // Step 2: Load the local manifest so late-imported local classes are
@@ -1721,6 +1815,7 @@ export {
   getInMemoryDbConfig,
   getTestAdapter,
   getTestDbConfig,
+  getTestManifestPath,
   type IsolatedTestDbOptions,
   type IsolatedTestDbResult,
   isPostgresAvailable,

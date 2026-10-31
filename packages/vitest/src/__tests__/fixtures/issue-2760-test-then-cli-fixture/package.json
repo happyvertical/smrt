@@ -1,0 +1,6 @@
+{
+  "name": "@fixture/smrt-issue-2760-test-then-cli",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module"
+}

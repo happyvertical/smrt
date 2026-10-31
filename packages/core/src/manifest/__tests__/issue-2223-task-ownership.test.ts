@@ -218,6 +218,12 @@ describe('Issue #2223 - test manifest task ownership', () => {
         'src/manifest/test-manifest-stub.ts',
       ]),
     );
+    // A cache hit must never restore test output over the production pair.
+    expect(
+      (turbo.tasks['generate:test'].outputs as string[]).filter((output) =>
+        output.startsWith('.smrt/'),
+      ),
+    ).toEqual([]);
     expect(turbo.tasks.build.inputs).toEqual(
       expect.arrayContaining([
         '!src/manifest/test-manifest.json',
@@ -272,64 +278,44 @@ describe('Issue #2223 - test manifest task ownership', () => {
     expect(snapshotLiveGeneratedArtifacts()).toEqual(liveBefore);
   }, 180_000);
 
-  it('invalidates cached test knowledge when its supported config changes', () => {
+  it('keeps generate:test out of the production manifest and knowledge pair (#2760)', () => {
     withIsolatedCoreFixture((fixtureDir) => {
       const fixtureWorkspace = resolve(fixtureDir, '../..');
-      const configPath = resolve(fixtureDir, 'smrt.config.json');
       const turbo = resolve(workspaceDir, 'node_modules/.bin/turbo');
-      const knowledgePath = resolve(fixtureDir, '.smrt/smrt-knowledge.json');
-
-      writeFileSync(
-        configPath,
-        JSON.stringify({ knowledge: { includeDocs: false } }),
-      );
-      const withoutDocs = getCoreTask(fixtureWorkspace, 'generate:test');
       runCommand(
         turbo,
         ['run', 'generate:test', '--filter=@happyvertical/smrt-core'],
         fixtureWorkspace,
       );
+      const testManifest = JSON.parse(
+        readFileSync(
+          resolve(fixtureDir, 'src/manifest/test-manifest.json'),
+          'utf8',
+        ),
+      );
+      expect(testManifest.artifactPurpose).toBe('test');
+      // The test-inclusive scan owns only its own artifact; the canonical
+      // `.smrt` pair is the production one `generate` wrote during the build
+      // this task depends on, so no production reader sees core's inline
+      // test fixtures.
+      const isTestFile = (entry: { filePath?: string }) =>
+        /\.(test|spec)\.tsx?$/.test(entry.filePath ?? '');
+      const local = JSON.parse(
+        readFileSync(resolve(fixtureDir, '.smrt/manifest.json'), 'utf8'),
+      );
+      expect(local.artifactPurpose).toBeUndefined();
       expect(
-        JSON.parse(readFileSync(knowledgePath, 'utf8')).agentDoc,
-      ).toBeUndefined();
-
-      writeFileSync(
-        configPath,
-        JSON.stringify({ knowledge: { includeDocs: true } }),
-      );
-      const withDocs = getCoreTask(fixtureWorkspace, 'generate:test');
-      expect(withDocs.hash).not.toBe(withoutDocs.hash);
-      runCommand(
-        turbo,
-        ['run', 'generate:test', '--filter=@happyvertical/smrt-core'],
-        fixtureWorkspace,
-      );
-
+        Object.values(
+          local.objects as Record<string, { filePath?: string }>,
+        ).filter(isTestFile),
+      ).toEqual([]);
       expect(
-        JSON.parse(readFileSync(knowledgePath, 'utf8')).agentDoc,
-      ).toContain('# @happyvertical/smrt-core');
-
-      appendFileSync(
-        resolve(fixtureDir, 'AGENTS.md'),
-        '\nfixture cache sentinel\n',
-      );
-      const withChangedInstructions = getCoreTask(
-        fixtureWorkspace,
-        'generate:test',
-      );
-      expect(withChangedInstructions.hash).not.toBe(withDocs.hash);
-      runCommand(
-        turbo,
-        ['run', 'generate:test', '--filter=@happyvertical/smrt-core'],
-        fixtureWorkspace,
-      );
-      expect(
-        JSON.parse(readFileSync(knowledgePath, 'utf8')).agentDoc,
-      ).toContain('fixture cache sentinel');
+        Object.values(
+          testManifest.objects as Record<string, { filePath?: string }>,
+        ).some(isTestFile),
+      ).toBe(true);
     });
-    // Three real Turbo generator runs can exceed 180s amid the root suite;
-    // each child command retains its separate 120s timeout.
-  }, 420_000);
+  }, 300_000);
 
   it('does not restore a nonproducer package manifest over test knowledge', () => {
     withIsolatedCoreFixture((fixtureDir) => {

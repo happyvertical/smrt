@@ -63,6 +63,7 @@ import {
   isTestEnvironment as isTestEnvFromStore,
   shouldLoadCoreTestManifest,
 } from './store.js';
+import { isRefusedTestArtifact } from './test-artifacts.js';
 
 /**
  * Extend globalThis to include manifest loader state.
@@ -388,7 +389,7 @@ export function loadLocalTestManifestSync(): Manifest | null | undefined {
   }
 
   // Use LocalManifestReader for unified local loading
-  // This checks: .smrt/manifest.json -> dist/manifest.json
+  // This checks: active test snapshot -> .smrt/manifest.json -> dist/manifest.json
   const manager = new LocalManifestReader(process.cwd());
   const manifest = manager.loadLocal();
 
@@ -423,7 +424,13 @@ export function loadLocalTestManifestSync(): Manifest | null | undefined {
         );
         const testObjectCount = Object.keys(testManifest.objects).length;
 
-        if (testObjectCount > 0) {
+        // Outside the test run that registered it, a test manifest's inline
+        // fixtures are phantom objects (#2760).
+        const refused = isRefusedTestArtifact(testManifest, testManifestPath);
+        if (refused && testObjectCount > 0) {
+          warnRefusedLocalTestManifest(testManifestPath);
+        }
+        if (testObjectCount > 0 && !refused) {
           setLocalTestManifestCache(testManifest);
           debugLog(
             `[manifest-loader] ✅ Loaded test manifest from ${testManifestPath} (${testObjectCount} objects) - preferred over empty LocalManifestReader result`,
@@ -449,6 +456,10 @@ export function loadLocalTestManifestSync(): Manifest | null | undefined {
       const testManifest: Manifest = parse(
         readFileSync(testManifestPath, 'utf-8'),
       );
+      if (isRefusedTestArtifact(testManifest, testManifestPath)) {
+        warnRefusedLocalTestManifest(testManifestPath);
+        return null;
+      }
       setLocalTestManifestCache(testManifest);
       const objectCount = Object.keys(testManifest.objects).length;
       debugLog(
@@ -470,52 +481,73 @@ export function loadLocalTestManifestSync(): Manifest | null | undefined {
   return null;
 }
 
-let projectManifestRead:
-  | { path: string; mtimeMs: number; manifest: SmartObjectManifest | null }
-  | undefined;
+const warnedRefusedLocalTestManifests = new Set<string>();
 
 /**
- * The manifest of the project the process runs in (the first of
- * `<cwd>/.smrt/manifest.json`, `<cwd>/dist/manifest.json`,
- * `<cwd>/src/manifest/manifest.json`, as `LocalManifestReader.loadLocal()` reads
- * them), never seeded into the lookup caches. Only consulted to attribute a
- * decorated class whose declaring file that manifest describes, when no loaded
- * manifest does: a plain Node/tsx script importing an app's workspace-package
- * models has not loaded the app's manifest yet (#3109). The read is reused
- * only while that file is unchanged, so a dev server that regenerates it is
- * seen; a missing manifest is never cached.
+ * Warn once that a local test manifest was refused: outside the test run that
+ * registered it, its inline fixtures would be phantom objects (#2760), and
+ * inside an unregistered run their metadata is silently missing otherwise.
  */
-export function readProjectManifestSync(): SmartObjectManifest | null {
-  if (typeof process === 'undefined' || typeof process.cwd !== 'function') {
-    return null;
-  }
-  const manager = new LocalManifestReader(process.cwd());
-  const path = [
-    manager.getOutputPath('dev'),
-    manager.getOutputPath('build'),
-    manager.getOutputPath('source'),
-  ].find((candidate) => existsSync(candidate));
-  if (!path) return null;
+function warnRefusedLocalTestManifest(path: string): void {
+  if (warnedRefusedLocalTestManifests.has(path)) return;
+  warnedRefusedLocalTestManifests.add(path);
+  logger.warn(
+    `[manifest-loader] Ignoring test manifest ${path}: it is not this process's active test manifest. Run tests under smrtVitestPlugin() (or register it with registerActiveTestManifestPath()) to use it.`,
+  );
+}
+
+const projectManifestReads = new Map<
+  string,
+  { mtimeMs: number; manifest: SmartObjectManifest | null }
+>();
+
+/** Parse `path`, reusing the previous parse while its mtime is unchanged. */
+function readProjectManifestCandidate(
+  path: string,
+): SmartObjectManifest | null | undefined {
   let mtimeMs: number;
   try {
     mtimeMs = statSync(path).mtimeMs;
   } catch {
-    return null;
+    return undefined;
   }
-  if (
-    projectManifestRead?.path === path &&
-    projectManifestRead.mtimeMs === mtimeMs
-  ) {
-    return projectManifestRead.manifest;
-  }
+  const cached = projectManifestReads.get(path);
+  if (cached?.mtimeMs === mtimeMs) return cached.manifest;
   let manifest: SmartObjectManifest | null = null;
   try {
     manifest = parse<SmartObjectManifest>(readFileSync(path, 'utf-8'));
   } catch {
     manifest = null;
   }
-  projectManifestRead = { path, mtimeMs, manifest };
+  projectManifestReads.set(path, { mtimeMs, manifest });
   return manifest;
+}
+
+/**
+ * The manifest of the project the process runs in (the first of
+ * `LocalManifestReader.getLocalCandidatePaths()`: a test run's active
+ * snapshot, then `<cwd>/.smrt/manifest.json`, `<cwd>/dist/manifest.json`,
+ * `<cwd>/src/manifest/manifest.json`, skipping a test artifact outside its
+ * own run, #2760), never seeded into the lookup caches. Only consulted to
+ * attribute a decorated class whose declaring file that manifest describes,
+ * when no loaded manifest does: a plain Node/tsx script importing an app's
+ * workspace-package models has not loaded the app's manifest yet (#3109).
+ * Each read is reused only while that file is unchanged, so a dev server that
+ * regenerates it is seen; a missing manifest is never cached.
+ */
+export function readProjectManifestSync(): SmartObjectManifest | null {
+  if (typeof process === 'undefined' || typeof process.cwd !== 'function') {
+    return null;
+  }
+  const manager = new LocalManifestReader(process.cwd());
+  for (const candidate of manager.getLocalCandidatePaths()) {
+    if (!existsSync(candidate)) continue;
+    const manifest = readProjectManifestCandidate(candidate);
+    if (manifest === undefined) return null;
+    if (isRefusedTestArtifact(manifest, candidate)) continue;
+    return manifest;
+  }
+  return null;
 }
 
 /**
@@ -754,6 +786,16 @@ function resolveWorkspacePackageJsonPath(packageName: string): string | null {
   return null;
 }
 
+/** Whether the manifest file at `path` is a refused test artifact (#2760). */
+function isRefusedTestArtifactFile(path: string): boolean {
+  try {
+    return isRefusedTestArtifact(parse(readFileSync(path, 'utf-8')), path);
+  } catch {
+    // Unreadable files are handled (and reported) by the caller's own read.
+    return false;
+  }
+}
+
 function resolveWorkspaceSourceManifestPath(packageDir: string): string | null {
   const candidates = [
     join(packageDir, 'src', 'manifest', 'manifest.json'),
@@ -761,7 +803,7 @@ function resolveWorkspaceSourceManifestPath(packageDir: string): string | null {
   ];
 
   for (const candidate of candidates) {
-    if (existsSync(candidate)) {
+    if (existsSync(candidate) && !isRefusedTestArtifactFile(candidate)) {
       return candidate;
     }
   }
@@ -909,6 +951,15 @@ export function loadExternalManifestSync(
       return null;
     }
 
+    if (isRefusedTestArtifact(manifest, manifestPath)) {
+      if (options.warn ?? true) {
+        logger.warn(
+          `Ignoring test artifact ${manifestPath} for package ${packageName}; test manifests are never dependency manifests`,
+        );
+      }
+      return null;
+    }
+
     const cachedManifest = manifest.packageName
       ? manifest
       : { ...manifest, packageName };
@@ -953,6 +1004,13 @@ export function loadManifestFromPathSync(
 
     if (!manifest.objects || typeof manifest.objects !== 'object') {
       logger.warn(`Invalid manifest structure at ${manifestPath}`);
+      return null;
+    }
+
+    if (isRefusedTestArtifact(manifest, manifestPath)) {
+      logger.warn(
+        `Ignoring test artifact ${manifestPath}; it is not this process's active test manifest`,
+      );
       return null;
     }
 
@@ -1482,7 +1540,7 @@ export function clearManifestCache(): void {
   getManifestCacheMap().clear();
   getManifestCollisionsMap().clear();
   getSTISiblingCache().clear();
-  projectManifestRead = undefined;
+  projectManifestReads.clear();
 }
 
 /**

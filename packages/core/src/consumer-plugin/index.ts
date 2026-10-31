@@ -14,6 +14,7 @@ import {
 import { buildDomainKnowledgeManifest } from '../knowledge.js';
 import { resolveFileKnowledgeConfig } from '../knowledge-config.js';
 import { manifestExportCandidates } from '../manifest/package-manifest-exports.js';
+import { isTestArtifactManifest } from '../manifest/test-artifacts.js';
 import { generateDeclarations } from '../prebuild/index.js';
 import type {
   SmartObjectDefinition,
@@ -1733,7 +1734,14 @@ async function saveAggregatedManifest(
         const existing = JSON.parse(
           fs.readFileSync(manifestPath, 'utf-8'),
         ) as Partial<ConsumerManifest>;
-        if (existing && typeof existing.objects === 'object') {
+        // A test-run manifest left here by an older test runner describes
+        // inline test fixtures, not the local project (#2760): replace it
+        // rather than carrying its objects and marker into a build output.
+        if (
+          existing &&
+          typeof existing.objects === 'object' &&
+          !isTestArtifactManifest(existing)
+        ) {
           merged = {
             ...existing,
             ...manifest,

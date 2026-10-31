@@ -623,6 +623,46 @@ export class Configured extends SmrtObject {
       expect(parsed.objects[0].decoratorConfig).toBeDefined();
     });
 
+    it('skips a test-run manifest and describes the project from source (#2760)', async () => {
+      await mkdir(join(tmpDir, '.smrt'), { recursive: true });
+      await writeFile(
+        join(tmpDir, '.smrt', 'manifest.json'),
+        JSON.stringify({
+          version: '1.0.0',
+          artifactPurpose: 'test',
+          packageName: '@test/downstream',
+          objects: {
+            '@test/downstream:ConvNote': {
+              name: 'convnote',
+              className: 'ConvNote',
+              filePath: 'src/conv.test.ts',
+              fields: {},
+              methods: {},
+            },
+          },
+        }),
+      );
+      await writeFile(
+        join(tmpDir, 'product.ts'),
+        `
+import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+
+@smrt()
+export class Product extends SmrtObject {
+  name = '';
+}
+        `.trim(),
+      );
+
+      const parsed = JSON.parse(
+        await introspectProject({ detail: 'full', directory: tmpDir }),
+      );
+      expect(parsed.manifestSource).not.toBe('manifest');
+      expect(
+        parsed.objects.map((object: { className: string }) => object.className),
+      ).toEqual(['Product']);
+    });
+
     it('should prefer generated manifest artifacts with schema indexes', async () => {
       await mkdir(join(tmpDir, '.smrt'), { recursive: true });
       await writeFile(

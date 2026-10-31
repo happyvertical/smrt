@@ -1,6 +1,10 @@
 import { createLogger } from '@happyvertical/logger';
 import type { SmartObjectManifest } from '../scanner/types.js';
 import { existsSync, join, readFileSync } from './node-host.js';
+import {
+  isRefusedTestArtifact,
+  resolveActiveTestManifestPath,
+} from './test-artifacts.js';
 
 /** The two filesystem reads a manifest load needs. */
 export interface ManifestFileAccess {
@@ -12,6 +16,12 @@ export interface ManifestFileAccess {
 const hostFileAccess: ManifestFileAccess = { existsSync, readFileSync };
 
 const logger = createLogger({ level: 'info' });
+
+/** Registered test snapshots already reported missing, so each warns once. */
+const reportedMissingTestManifests = new Set<string>();
+
+/** Refused test artifacts already reported, so each warns once. */
+const reportedRefusedTestArtifacts = new Set<string>();
 
 /**
  * Reads SMRT manifests for a project from the standard locations.
@@ -28,6 +38,12 @@ const logger = createLogger({ level: 'info' });
  * `src/manifest/manifest.json`. When loading a local project, the dev path takes
  * priority; for external packages (dependencies), the build path takes priority
  * to avoid pulling in test objects.
+ *
+ * Inside a test run, the run's active test manifest snapshot (see
+ * `test-artifacts.ts`, #4128) precedes every local path. A manifest marked
+ * `artifactPurpose: 'test'` found anywhere else is skipped (#2760). It is never written
+ * to, or read from, the standard locations, so a concurrent build cannot
+ * replace it and a process outside the run never reads it.
  */
 export class LocalManifestReader {
   constructor(
@@ -49,15 +65,37 @@ export class LocalManifestReader {
   }
 
   /**
-   * Loads the local manifest from the standard locations.
-   * Priority: .smrt/manifest.json -> dist/manifest.json -> src/manifest/manifest.json
+   * The paths {@link loadLocal} reads, in priority order: the active test
+   * manifest snapshot (only inside a test run that registered one), then
+   * `.smrt/manifest.json`, `dist/manifest.json`, `src/manifest/manifest.json`.
    */
-  loadLocal(): SmartObjectManifest | null {
-    return this._loadFromPaths([
+  getLocalCandidatePaths(): string[] {
+    const activeTestManifest = resolveActiveTestManifestPath(this.projectRoot);
+    if (
+      activeTestManifest &&
+      !this.files.existsSync(activeTestManifest) &&
+      !reportedMissingTestManifests.has(activeTestManifest)
+    ) {
+      // Falling through to the production chain silently would reproduce
+      // the #4128 symptom (fixture metadata vanishing) with no signal.
+      reportedMissingTestManifests.add(activeTestManifest);
+      logger.warn(
+        `[ManifestManager] The active test manifest ${activeTestManifest} registered for ${this.projectRoot} is missing; falling back to production manifests, so inline test fixtures are not described`,
+      );
+    }
+    return [
+      ...(activeTestManifest ? [activeTestManifest] : []),
       this.getOutputPath('dev'),
       this.getOutputPath('build'),
       this.getOutputPath('source'),
-    ]);
+    ];
+  }
+
+  /**
+   * Loads the local manifest from {@link getLocalCandidatePaths}.
+   */
+  loadLocal(): SmartObjectManifest | null {
+    return this._loadFromPaths(this.getLocalCandidatePaths());
   }
 
   /**
@@ -82,7 +120,19 @@ export class LocalManifestReader {
       if (this.files.existsSync(path)) {
         try {
           const content = this.files.readFileSync(path, 'utf-8');
-          return JSON.parse(content);
+          const manifest = JSON.parse(content);
+          // A test artifact is only valid as its own run's active snapshot;
+          // anywhere else its inline fixtures are phantom objects (#2760).
+          if (isRefusedTestArtifact(manifest, path)) {
+            if (!reportedRefusedTestArtifacts.has(path)) {
+              reportedRefusedTestArtifacts.add(path);
+              logger.warn(
+                `[ManifestManager] Skipping test artifact at ${path}: a test run's manifest is not a build output, and this process is not that run (rebuild to replace it)`,
+              );
+            }
+            continue;
+          }
+          return manifest;
         } catch (error) {
           logger.error(`[ManifestManager] Failed to read manifest at ${path}`, {
             error,
