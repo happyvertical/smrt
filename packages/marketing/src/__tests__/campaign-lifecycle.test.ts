@@ -37,7 +37,7 @@ describe('Campaign model and lifecycle', () => {
     );
     expect(
       ObjectRegistry.getConfig('CampaignMetricSnapshot').conflictColumns,
-    ).toEqual(['dedupe_key']);
+    ).toEqual(['tenant_id', 'dedupe_key']);
 
     for (const className of [
       'Campaign',

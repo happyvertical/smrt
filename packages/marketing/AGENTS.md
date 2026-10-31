@@ -30,8 +30,12 @@ publish-surface changes.
   intentionally plain strings so ads, social, messages, content, events, and
   referral programs remain peer packages. Allocation and schedule overrides
   use integer cents and dates.
-- **CampaignMetricSnapshot**: immutable period evidence with a global
-  `dedupe_key` natural key. A snapshot always carries `campaignId`; a null
+- **CampaignMetricSnapshot**: immutable period evidence with a tenant-local
+  `(tenant_id, dedupe_key)` natural key (#3305 M2): the caller key is opaque,
+  so two tenants may file the same key. `findByDedupeKey()` /
+  `getOrCreateByDedupeKey()` and the save guard resolve one owner (explicit
+  `tenantId`, else the context; neither → global evidence only; a foreign id
+  under a context fails closed), so a system-context ingest names its tenant. A snapshot always carries `campaignId`; a null
   `campaignChannelId` means campaign-level rollup evidence; when present, the
   channel must belong to that same campaign. API/MCP/CLI expose create/list/get
   only, and the save guard rejects hydrated edits, blind-id overwrites, and
@@ -98,5 +102,15 @@ render time.
   both.
 - Corrections append a new metric snapshot with a new dedupe key; never edit
   persisted evidence.
+- Key rollout (#3305 M2): `smrt db:migrate` adds
+  `campaign_metric_snapshots_tenant_id_dedupe_key_idx` and drops the superseded
+  `campaign_metric_snapshots_dedupe_key_idx`; rows are untouched. Deploy code
+  and migration together with writers drained (old code upserts against the
+  dropped arbiter); a revert needs collision analysis once tenants share keys.
+  Global (NULL-tenant) evidence is unique in the database only on PostgreSQL
+  15+ (NULLS NOT DISTINCT); elsewhere the model's null-aware check enforces it,
+  so concurrent global ingests need PostgreSQL 15+ or a single writer.
+- New snapshots must belong to their campaign's owner, and a tenant context
+  cannot file evidence for another tenant (checked before any dedupe lookup).
 - Table names are global: `campaigns`, `campaign_channels`, and
   `campaign_metric_snapshots`.
