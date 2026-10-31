@@ -425,6 +425,12 @@ export interface AdminShellProps {
   logoAlt?: string;
   /** Custom brand content, receiving whether it is in the compact rail. */
   brand?: Snippet<[{ compact: boolean }]>;
+  /**
+   * Content rendered beside the brand (e.g. a notification bell), outside the
+   * home link, in the top band and the left-rail header. Adds a
+   * `.smrt-admin-shell__brand-row` wrapper only when given.
+   */
+  brandEnd?: Snippet<[{ compact: boolean }]>;
   subtitle?: string;
   config?: ShellPanelDefaults;
   settings?: ShellSettingsDelta;

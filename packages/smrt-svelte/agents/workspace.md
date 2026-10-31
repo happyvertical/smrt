@@ -55,6 +55,7 @@ Sidebar-only shells may set `top: false`. In that mode the configured brand is
 shown at the top of the expanded tenant panel as well as in the compact rail.
 When the top header is visible, its brand is the only copy; collapsing the
 left sidebar does not add a second logo to the rail.
+`brandEnd?: Snippet<[{ compact }]>` renders beside the brand (e.g. a `NotificationBell`), outside the home link, in the top band and the left-rail header; a `.smrt-admin-shell__brand-row` wrapper exists only when `brandEnd` is given, so default markup is unchanged.
 Use `tenantRailFooter` for a control pinned below collapsed navigation; it sits
 outside the rail's scroll clip so menus can open over the workspace. Pair it
 with `WorkspaceAccountMenu compact` for an avatar-only trigger that retains the
