@@ -683,8 +683,34 @@ jobs:
     # seconds; if it has not finished in five minutes it is stuck, and failing
     # fast is correct for a job that only reports other jobs' results.
     timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read
+    env:
+      # External fork PRs skip trusted validation above; they pass only on a
+      # maintainer approval of the current head (#4558, .github/CI.md).
+      FORK_PR: >-
+        ${{ github.event_name == 'pull_request_target' &&
+        github.event.pull_request.head.repo.full_name != github.repository }}
     steps:
+      - name: Checkout trusted fork approval gate
+        if: env.FORK_PR == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          sparse-checkout: scripts/fork-pr-approval.mjs
+          sparse-checkout-cone-mode: false
+      - name: Require maintainer approval of the fork head
+        if: env.FORK_PR == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/fork-pr-approval.mjs gate
       - name: Require full validation success
+        if: env.FORK_PR != 'true'
         env:
           VALIDATE_COMMITS: ${{ needs.validate-commits.result }}
           VALIDATE_WORKFLOWS: ${{ needs.validate-workflows.result }}

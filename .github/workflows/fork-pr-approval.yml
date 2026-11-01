@@ -1,0 +1,76 @@
+name: Fork PR Approval
+
+# Maintainer approval for external fork pull requests (#4558).
+#
+# `pull_request_target` loads this file from the trusted base branch. It never
+# checks out or executes PR code: it runs scripts/fork-pr-approval.mjs from the
+# base revision. Applying the approval label re-runs the required jobs for the
+# labelled head; a new push removes the label, so approval never carries over
+# to commits a maintainer has not seen. See .github/CI.md, "External fork PRs".
+on:
+  pull_request_target:
+    branches: [main]
+    types: [labeled, synchronize]
+
+concurrency:
+  group: fork-pr-approval-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+permissions: {}
+
+jobs:
+  approve:
+    name: Apply Fork Approval
+    if: >-
+      github.event.action == 'labeled' &&
+      github.event.label.name == 'ci: fork-approved' &&
+      github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+      checks: read
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Checkout trusted base revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          sparse-checkout: scripts/fork-pr-approval.mjs
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '26.12.1'
+
+      - name: Re-run required checks for the approved head
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/fork-pr-approval.mjs approve
+
+  revoke:
+    name: Revoke Fork Approval
+    if: >-
+      github.event.action == 'synchronize' &&
+      github.event.pull_request.head.repo.full_name != github.repository &&
+      contains(github.event.pull_request.labels.*.name, 'ci: fork-approved')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Remove the approval label after a new push
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          gh api --method DELETE \
+            "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/labels/ci%3A%20fork-approved"
