@@ -71,14 +71,16 @@ Two rules apply:
    tested it.
 2. A maintainer approves the **Fork PR Validation** run. It runs the full test
    suite and the PostgreSQL suites against your branch in a sandbox with no
-   secrets.
+   secrets. If your PR changes `.github/`, the **Fork Workflow Change Guard**
+   check fails and a maintainer re-lands the change from a branch in this
+   repository instead, keeping your commits and authorship.
 3. A maintainer reviews the change. Until it is approved, the `Required CI` and
    `postgres-required` checks fail with an "awaiting maintainer approval"
    message. That is expected.
-4. Once the sandbox run passes and the review is done, a maintainer applies
-   `ci: fork-approved` and the required checks re-run and pass. Approval
-   covers that exact commit: pushing new commits removes the label, and the
-   new head needs another approval.
+4. Once the sandbox run passes, a maintainer approves the review on your latest
+   commit and applies `ci: fork-approved`; the required checks then re-run and
+   pass. Approval covers that exact commit: pushing new commits removes the
+   label, and the new head needs another review and approval.
 5. The maintainer adds the PR to the merge queue, which runs the full
    validation once more before merging.
 

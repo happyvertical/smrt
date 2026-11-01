@@ -48,28 +48,35 @@ maintainer approval gate instead (see "External fork PRs").
 
 Fork code never runs with trusted credentials before the merge queue (#4558).
 
-1. **Fork PR Validation** (`fork-pr-validation.yml`, `pull_request`) runs
+1. **Fork Workflow Change Guard** (`fork-pr-approval.yml`, `pull_request_target`)
+   fails on every fork PR push that touches `.github/` or whose changed-file
+   list is incomplete (the files API stops at 3000). Such a PR could add its
+   own workflow with a job named like a required context, so maintainers never
+   approve its workflow runs and re-land it from a same-repository branch.
+2. **Fork PR Validation** (`fork-pr-validation.yml`, `pull_request`) runs
    commitlint, the full `test-suite.yml`, and `postgres-tests.yml` for fork PRs
    only, with a read-only token, no secrets, and PR-scoped caches. Repository
    settings require a maintainer to approve each run. GitHub loads this file
    from the PR merge commit, so its result is advice: its check names are
    distinct from the required contexts.
-2. A maintainer reviews the diff, confirms that run passed, and applies
-   `ci: fork-approved`. **Fork PR Approval** (`fork-pr-approval.yml`,
-   `pull_request_target`) runs only `scripts/fork-pr-approval.mjs` from the
-   base revision. It refuses a labeller without write, maintain or admin
-   access, records a `fork-approval` commit status on that exact head, and
-   re-runs the `Required CI` and `postgres-required` jobs for it.
-3. For a fork PR, both required jobs run that script's `gate`. It passes only
+3. A maintainer reviews the head commit, submits an **Approve** review on it,
+   confirms the sandbox run passed, and applies `ci: fork-approved`. **Fork PR
+   Approval** runs only `scripts/fork-pr-approval.mjs` from the base revision.
+   It refuses a labeller without write, maintain or admin access and requires
+   a write-access user's current review to approve that exact commit (GitHub
+   records the reviewed `commit_id`). It then records a `fork-approval` commit
+   status on the head and re-runs the `Required CI` and `postgres-required`
+   jobs. If it refuses, fix the cause, then remove and re-add the label:
+   re-adding a label that is already present fires no event.
+4. For a fork PR, both required jobs run that script's `gate`. It passes only
    when the current head carries the `fork-approval` status from GitHub
    Actions, the label is present, the latest Fork PR Validation run for that
-   head succeeded, the changed-file list is complete (under the API's
-   3000-file limit), and no file under `.github/` changed. A PR that fails
-   either of the last two is re-landed from a same-repository branch.
-4. The status binds approval to one commit: a fork cannot write statuses here,
-   and a new push is a new SHA without one, so its required checks fail until
-   a maintainer approves again. The push also removes the label. The merge
-   queue's trusted full validation is unchanged and gates every merge.
+   head succeeded, and the guard's file checks pass.
+5. Approval binds to one commit: a fork cannot write statuses here, a review
+   names the commit it approved, and a new push is a new SHA, so its required
+   checks fail until a maintainer reviews and approves again. The push also
+   removes the label. The merge queue's trusted full validation is unchanged
+   and gates every merge.
 
 Every job in the two fork workflows is skipped on same-repository PRs.
 

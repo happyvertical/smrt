@@ -5,7 +5,9 @@ import {
   APPROVAL_LABEL,
   APPROVAL_STATUS_CONTEXT,
   approvalProblems,
+  fileProblems,
   gateProblems,
+  headApprovers,
   REQUIRED_CONTEXTS,
   selectRequiredJobs,
   senderProblems,
@@ -70,7 +72,7 @@ test('the gate needs a GitHub Actions approval status on the exact head', () => 
   ]) {
     const problems = gateProblems({ statuses, ...input() });
     assert.equal(problems.length, 1, JSON.stringify(statuses));
-    assert.match(problems[0], /no maintainer approval/);
+    assert.match(problems[0], /awaiting maintainer approval/);
   }
   // An approval of this head does not excuse any other failing condition.
   assert.equal(
@@ -78,6 +80,29 @@ test('the gate needs a GitHub Actions approval status on the exact head', () => 
       .length,
     1,
   );
+});
+
+test('approval binds to an Approve review of the exact head', () => {
+  const review = (login, state, commit_id = HEAD) => ({ user: { login }, state, commit_id });
+  assert.deepEqual(headApprovers([review('m', 'APPROVED')], HEAD), ['m']);
+  // Reviewed an older head: a push after review is not approved.
+  assert.deepEqual(headApprovers([review('m', 'APPROVED', 'b'.repeat(40))], HEAD), []);
+  // A later blocking or dismissed review replaces the approval; a comment does not.
+  assert.deepEqual(headApprovers([review('m', 'APPROVED'), review('m', 'CHANGES_REQUESTED')], HEAD), []);
+  assert.deepEqual(headApprovers([review('m', 'APPROVED'), review('m', 'DISMISSED')], HEAD), []);
+  assert.deepEqual(headApprovers([review('m', 'APPROVED'), review('m', 'COMMENTED')], HEAD), ['m']);
+  assert.deepEqual(
+    headApprovers([review('a', 'APPROVED'), review('b', 'CHANGES_REQUESTED')], HEAD),
+    ['a'],
+  );
+  assert.deepEqual(headApprovers([{ state: 'APPROVED', commit_id: HEAD, user: null }], HEAD), []);
+});
+
+test('the guard flags .github/ changes and incomplete file lists only', () => {
+  const pr = { changed_files: 1 };
+  assert.deepEqual(fileProblems(pr, [{ filename: 'src/a.ts' }]), []);
+  assert.match(fileProblems(pr, [{ filename: '.github/workflows/x.yml' }])[0], /do not approve/);
+  assert.match(fileProblems({ changed_files: 2 }, [{ filename: 'src/a.ts' }])[0], /incomplete/);
 });
 
 test('only write, maintain or admin access can approve', () => {
@@ -199,6 +224,12 @@ test('Fork PR Approval never checks out or runs PR code', () => {
   assert.doesNotMatch(source, /ref: \$\{\{ github\.event\.pull_request/);
   assert.doesNotMatch(source, /pnpm|npm (?:ci|install)|npx/);
   assert.match(job(source, 'revoke'), /labels\/ci%3A%20fork-approved/);
+  const guard = job(source, 'guard');
+  assert.match(guard, /name: Fork Workflow Change Guard/);
+  assert.match(guard, /head\.repo\.full_name != github\.repository/);
+  assert.match(guard, /run: node scripts\/fork-pr-approval\.mjs guard/);
+  assert.doesNotMatch(guard, /: write$/m);
+  assert.match(source, /types: \[opened, reopened, synchronize, labeled\]/);
   assert.ok(source.includes(`'${APPROVAL_LABEL}'`));
 });
 

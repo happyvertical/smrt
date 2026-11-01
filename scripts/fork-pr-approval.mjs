@@ -8,9 +8,13 @@
  * `postgres-required` come from the trusted `pull_request_target` workflows,
  * which only run this script from the base revision.
  *
+ *   guard    Runs on every fork PR push. Fails when the PR touches
+ *            `.github/` (or its file list is incomplete), so maintainers see
+ *            that before approving any fork workflow run.
  *   approve  Runs when someone applies the approval label. Requires that the
- *            labeller has write access, then records a `fork-approval` commit
- *            status on that exact head and re-runs the required jobs.
+ *            labeller has write access and that a write-access user submitted
+ *            an Approve review on that exact head commit, then records a
+ *            `fork-approval` commit status on it and re-runs the required jobs.
  *   gate     Runs inside the required jobs for a fork PR. Passes only when
  *            the current head carries that status from GitHub Actions, the
  *            label is still present, the sandbox run for the head succeeded,
@@ -46,6 +50,24 @@ function touchesGithubDir(file) {
  * @param {{ expectedHeadSha: string, pr: any, files: any[], validationRuns: any[] }} input
  * @returns {string[]} reasons the approval does not hold; empty when it does
  */
+export function fileProblems(pr, files) {
+  const problems = [];
+  if (pr.changed_files >= PR_FILES_API_LIMIT || files.length !== pr.changed_files) {
+    problems.push(
+      `the changed-file list is incomplete (${files.length} of ${pr.changed_files}); ` +
+        'a maintainer must re-land this PR from a same-repository branch',
+    );
+  }
+  const workflowFiles = files.filter(touchesGithubDir).map((file) => file.filename);
+  if (workflowFiles.length > 0) {
+    problems.push(
+      `the PR changes .github/ (${workflowFiles.join(', ')}); do not approve its workflow ` +
+        'runs, and re-land it from a same-repository branch',
+    );
+  }
+  return problems;
+}
+
 export function approvalProblems({ expectedHeadSha, pr, files, validationRuns }) {
   const problems = [];
   if (pr.state !== 'open') {
@@ -60,19 +82,7 @@ export function approvalProblems({ expectedHeadSha, pr, files, validationRuns })
   if (!labels.includes(APPROVAL_LABEL)) {
     problems.push(`a maintainer has not applied \`${APPROVAL_LABEL}\``);
   }
-  if (pr.changed_files >= PR_FILES_API_LIMIT || files.length !== pr.changed_files) {
-    problems.push(
-      `the changed-file list is incomplete (${files.length} of ${pr.changed_files}); ` +
-        'a maintainer must re-land this PR from a same-repository branch',
-    );
-  }
-  const workflowFiles = files.filter(touchesGithubDir).map((file) => file.filename);
-  if (workflowFiles.length > 0) {
-    problems.push(
-      `the PR changes .github/ (${workflowFiles.join(', ')}); a maintainer must ` +
-        're-land it from a same-repository branch',
-    );
-  }
+  problems.push(...fileProblems(pr, files));
   const runs = validationRuns
     .filter((run) => run.head_sha === expectedHeadSha && run.event === 'pull_request')
     .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
@@ -108,6 +118,25 @@ export function senderProblems(sender, permission) {
 }
 
 /**
+ * Users whose current review approves exactly `headSha`. A user's current
+ * review is their latest APPROVED, CHANGES_REQUESTED or DISMISSED one, as
+ * GitHub counts it; comment-only reviews do not change it.
+ *
+ * @param {any[]} reviews pull request reviews in API (chronological) order
+ */
+export function headApprovers(reviews, headSha) {
+  const current = new Map();
+  for (const review of reviews) {
+    if (['APPROVED', 'CHANGES_REQUESTED', 'DISMISSED'].includes(review.state) && review.user) {
+      current.set(review.user.login, review);
+    }
+  }
+  return [...current.values()]
+    .filter((review) => review.state === 'APPROVED' && review.commit_id === headSha)
+    .map((review) => review.user.login);
+}
+
+/**
  * The required-context gate for a fork PR.
  *
  * @param {{ statuses: any[] } & Parameters<typeof approvalProblems>[0]} input
@@ -121,8 +150,9 @@ export function gateProblems({ statuses, ...input }) {
     approval.creator?.login !== ACTIONS_BOT_LOGIN
   ) {
     problems.push(
-      `no maintainer approval for ${input.expectedHeadSha}: a maintainer reviews the ` +
-        `change, confirms Fork PR Validation passed, and applies \`${APPROVAL_LABEL}\``,
+      `awaiting maintainer approval of ${input.expectedHeadSha}: a maintainer reviews ` +
+        'and approves this commit, confirms Fork PR Validation passed, and applies ' +
+        `\`${APPROVAL_LABEL}\``,
     );
   }
   return [...problems, ...approvalProblems(input)];
@@ -144,7 +174,9 @@ export function selectRequiredJobs(checkRuns) {
     if (!latest) {
       problems.push(`no \`${context}\` check exists on the head yet`);
     } else if (latest.status !== 'completed') {
-      problems.push(`\`${context}\` is still ${latest.status}; re-apply the label when it finishes`);
+      problems.push(
+        `\`${context}\` is still ${latest.status}; remove and re-add the label when it finishes`,
+      );
     } else {
       jobs.push({ context, id: latest.id });
     }
@@ -190,9 +222,14 @@ function requireEnv(name) {
   return value;
 }
 
-async function loadApprovalInput({ repo, prNumber, headSha, token }) {
+async function loadFiles({ repo, prNumber, token }) {
   const { data: pr } = await api(`repos/${repo}/pulls/${prNumber}`, { token });
   const files = await paginate(`repos/${repo}/pulls/${prNumber}/files?per_page=100`, token);
+  return { pr, files };
+}
+
+async function loadApprovalInput({ repo, prNumber, headSha, token }) {
+  const { pr, files } = await loadFiles({ repo, prNumber, token });
   const validationRuns = await paginate(
     `repos/${repo}/actions/workflows/${FORK_VALIDATION_WORKFLOW}/runs?` +
       `event=pull_request&head_sha=${headSha}&per_page=100`,
@@ -213,18 +250,39 @@ function report(problems, success) {
   return 1;
 }
 
-async function approve({ repo, headSha, token, input }) {
-  const sender = requireEnv('SENDER');
-  let permission = null;
+async function readPermission(repo, login, token) {
   try {
-    ({ data: permission } = await api(
-      `repos/${repo}/collaborators/${encodeURIComponent(sender)}/permission`,
+    const { data } = await api(
+      `repos/${repo}/collaborators/${encodeURIComponent(login)}/permission`,
       { token },
-    ));
+    );
+    return data;
   } catch (error) {
-    console.log(`::warning::could not read ${sender}'s permission: ${error.message}`);
+    console.log(`::warning::could not read ${login}'s permission: ${error.message}`);
+    return null;
   }
-  const problems = [...senderProblems(sender, permission), ...approvalProblems(input)];
+}
+
+async function reviewProblems({ repo, prNumber, headSha, token }) {
+  const reviews = await paginate(`repos/${repo}/pulls/${prNumber}/reviews?per_page=100`, token);
+  for (const login of headApprovers(reviews, headSha)) {
+    if (senderProblems(login, await readPermission(repo, login, token)).length === 0) {
+      return [];
+    }
+  }
+  return [
+    `no maintainer has submitted an Approve review on ${headSha}; review this exact ` +
+      'commit, approve it, then remove and re-add the label',
+  ];
+}
+
+async function approve({ repo, prNumber, headSha, token, input }) {
+  const sender = requireEnv('SENDER');
+  const problems = [
+    ...senderProblems(sender, await readPermission(repo, sender, token)),
+    ...(await reviewProblems({ repo, prNumber, headSha, token })),
+    ...approvalProblems(input),
+  ];
   if (problems.length > 0) {
     return report(problems, '');
   }
@@ -259,6 +317,10 @@ async function main(command) {
   const token = requireEnv('GITHUB_TOKEN');
   const repo = requireEnv('GITHUB_REPOSITORY');
   const prNumber = requireEnv('PR_NUMBER');
+  if (command === 'guard') {
+    const { pr, files } = await loadFiles({ repo, prNumber, token });
+    return report(fileProblems(pr, files), 'The PR leaves .github/ unchanged.');
+  }
   const headSha = requireEnv('HEAD_SHA');
   const input = await loadApprovalInput({ repo, prNumber, headSha, token });
 
@@ -273,9 +335,9 @@ async function main(command) {
     );
   }
   if (command === 'approve') {
-    return approve({ repo, headSha, token, input });
+    return approve({ repo, prNumber, headSha, token, input });
   }
-  throw new Error('usage: fork-pr-approval.mjs <gate|approve>');
+  throw new Error('usage: fork-pr-approval.mjs <guard|gate|approve>');
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
