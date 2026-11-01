@@ -115,3 +115,41 @@ it('blocks executable links and presents mutation errors', async () => {
   await userEvent.click(screen.getByRole('button', { name: 'Mark read' }));
   expect(await screen.findByRole('alert')).toHaveTextContent('Could not mark');
 });
+
+describe('NotificationBell iconOnly and placement', () => {
+  it('shows an icon trigger whose accessible name keeps label and count', async () => {
+    const { container } = render(NotificationBell, {
+      props: { provider: provider(), iconOnly: true, label: 'Alerts' },
+    });
+    const trigger = await screen.findByRole('button', {
+      name: 'Alerts, 1 unread',
+    });
+    expect(trigger.textContent?.replace(/\s+/g, '')).toBe('1');
+    expect(trigger.textContent).not.toContain('Alerts');
+    expect(
+      trigger.querySelector(
+        'svg[aria-hidden="true"], [aria-hidden="true"] svg',
+      ),
+    ).not.toBeNull();
+    await expectNoA11yViolations(container);
+  });
+
+  it('sets the placement data attribute', () => {
+    const { container: below } = render(NotificationBell, {
+      props: { provider: provider() },
+    });
+    expect(
+      below
+        .querySelector('.smrt-notification-bell')
+        ?.getAttribute('data-placement'),
+    ).toBe('below');
+    const { container: beside } = render(NotificationBell, {
+      props: { provider: provider(), placement: 'beside' },
+    });
+    expect(
+      beside
+        .querySelector('.smrt-notification-bell')
+        ?.getAttribute('data-placement'),
+    ).toBe('beside');
+  });
+});

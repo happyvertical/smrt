@@ -98,3 +98,13 @@ in domain code for tree-shaking and clarity.
 **Missing a primitive or prop?** Add it upstream in `smrt-svelte`, don't re-roll
 downstream (e.g. the library `Avatar` gained an image-error→initials fallback
 while consolidating chat's avatar).
+
+## NotificationBell
+
+`NotificationBell` (`src/components/notifications/`) takes a `provider`, `label`
+and `limit`. `iconOnly` (default false) swaps the text trigger for an
+`aria-hidden` bell icon plus an unread count badge; the accessible name stays
+`label` + `", N unread"` (`aria-label`). `placement`: `'below'` (default,
+panel under the trigger) or `'beside'` (panel opens at the trigger's inline
+end, top-aligned, for a collapsed rail; `data-placement` on the root).
+`variant` is passed to the trigger `Button` (default `'ghost'`).

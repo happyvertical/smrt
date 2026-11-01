@@ -12,7 +12,10 @@ import {
   intakeBindingDigest as digest,
   IntakeExecutionService,
 } from './execution.js';
-import type { FeedbackConfiguration } from './feedback-contracts.js';
+import type {
+  FeedbackConfiguration,
+  FeedbackOperation,
+} from './feedback-contracts.js';
 import type {
   AdoptRuleInput,
   FeedbackBinding,
@@ -108,6 +111,11 @@ export class IntakeFeedbackService {
       if (!Number.isSafeInteger(value) || value < 1 || value > max)
         throw new Error('Invalid feedback limits');
     if (
+      this.config.onRecorded !== undefined &&
+      typeof this.config.onRecorded !== 'function'
+    )
+      throw new Error('Invalid feedback hook');
+    if (
       !Number.isFinite(this.config.minimumSimilarity) ||
       this.config.minimumSimilarity < 0.2 ||
       this.config.minimumSimilarity > 1
@@ -199,18 +207,34 @@ export class IntakeFeedbackService {
       )
     ).rows;
   }
+  /**
+   * Ask the host. `verify` (re-checking stored lineage) falls back to
+   * `retrieve` when refused, so an authorizer that predates `verify` keeps
+   * today's answer; only a refusal of both denies.
+   */
+  private async permits(
+    db: DatabaseInterface,
+    itemId: string,
+    operation: FeedbackOperation,
+  ): Promise<boolean> {
+    const scope = this.scope();
+    if (await this.config.authorize({ db, scope, itemId, operation }))
+      return true;
+    return (
+      operation === 'verify' &&
+      (await this.config.authorize({
+        db,
+        scope,
+        itemId,
+        operation: 'retrieve',
+      }))
+    );
+  }
   private async authorize(
     ctx: FeedbackActionContext,
-    operation: 'capture' | 'retrieve' | 'suggest' | 'adopt',
+    operation: FeedbackOperation,
   ) {
-    if (
-      !(await this.config.authorize({
-        db: ctx.db,
-        scope: this.scope(),
-        itemId: ctx.itemId,
-        operation,
-      }))
-    )
+    if (!(await this.permits(ctx.db, ctx.itemId, operation)))
       throw new Error('Feedback unavailable');
   }
   private checkBinding(input: FeedbackBinding, ctx: FeedbackActionContext) {
@@ -286,7 +310,8 @@ export class IntakeFeedbackService {
         throw new Error('Feedback lineage unavailable');
       this.lineage.add(key);
       try {
-        await this.assertSelection(
+        // Stored lineage is re-verified, never re-selected (#4504).
+        await this.checkSelection(
           {
             itemId: ctx.itemId,
             query: String(inherited.query),
@@ -303,6 +328,7 @@ export class IntakeFeedbackService {
           },
           inherited.selection as unknown as FeedbackReferences,
           ctx.db,
+          'verify',
         );
       } finally {
         this.lineage.delete(key);
@@ -417,6 +443,73 @@ export class IntakeFeedbackService {
     return { id: view.id, digest: view.digest, text: view.text };
   }
   /** Internal saved-action gate; the execution owner supplies its transaction. */
+  /**
+   * The caller's own current interpretation judgment per displayed action
+   * (#4503): not superseded, recorded by this actor, bound to the action's
+   * displayed revision and binding, integrity-checked. Presentation only;
+   * the caller has already read these actions under review authority.
+   */
+  async ownJudgments(
+    itemId: string,
+    actions: ReadonlyArray<{
+      actionId: string;
+      revision: number;
+      bindingHash: string;
+    }>,
+  ): Promise<Map<string, import('./review-dto.js').ReviewFeedback>> {
+    const result = new Map<string, import('./review-dto.js').ReviewFeedback>();
+    if (!actions.length) return result;
+    const wanted = new Map(actions.map((action) => [action.actionId, action]));
+    const rows = await this.rows(
+      this.options.db,
+      "item_id=? AND kind='interpretation' AND NOT EXISTS (SELECT 1 FROM intake_feedback successor WHERE successor.tenant_id=intake_feedback.tenant_id AND successor.confidential_scope_id=intake_feedback.confidential_scope_id AND successor.supersedes_id=intake_feedback.id)",
+      [itemId],
+    );
+    const newest = new Map<string, Row>();
+    for (const row of rows) {
+      let data: Row;
+      try {
+        data = object(row.data);
+      } catch {
+        continue;
+      }
+      const { digest: stored, ...body } = data;
+      const action =
+        typeof data.actionId === 'string'
+          ? wanted.get(data.actionId)
+          : undefined;
+      if (
+        !action ||
+        typeof stored !== 'string' ||
+        digest(body) !== stored ||
+        data.reviewer !== this.scope().actorId ||
+        data.revision !== action.revision ||
+        data.bindingHash !== action.bindingHash ||
+        !['correct', 'incorrect'].includes(String(data.judgment))
+      )
+        continue;
+      const previous = newest.get(action.actionId);
+      const at = (value: Row) => new Date(value.created_at as string).getTime();
+      if (
+        !previous ||
+        at(row) > at(previous) ||
+        (at(row) === at(previous) && String(row.id) > String(previous.id))
+      )
+        newest.set(action.actionId, row);
+    }
+    for (const [actionId, row] of newest) {
+      const data = object(row.data);
+      result.set(actionId, {
+        id: String(row.id),
+        judgment: data.judgment as 'correct' | 'incorrect',
+        ...(typeof data.comment === 'string' && data.comment
+          ? { comment: data.comment }
+          : {}),
+        recordedAt: new Date(row.created_at as string).toISOString(),
+      });
+    }
+    return result;
+  }
   async assertActionLineage(
     actionId: string,
     db: DatabaseInterface,
@@ -534,10 +627,19 @@ export class IntakeFeedbackService {
           )
             throw new Error('Feedback instruction exceeds retrieval budget');
         }
+        const receipt = this.receipt(row);
+        // Same transaction and executor: the host's entry commits or rolls
+        // back with the judgment (#4522).
+        await this.config.onRecorded?.({
+          db: ctx.db,
+          scope: this.scope(),
+          receipt: structuredClone(receipt),
+          input: structuredClone(frozen),
+        });
         await this.authorize(ctx, 'capture');
         if (digest(routing) !== digest(this.routing(ctx)))
           throw new Error('Routing projection changed');
-        return this.receipt(row);
+        return receipt;
       },
     );
   }
@@ -618,6 +720,7 @@ export class IntakeFeedbackService {
     row: Row,
     input: RetrieveFeedbackInput,
     executor?: DatabaseInterface,
+    operation: 'retrieve' | 'verify' = 'retrieve',
   ): Promise<FeedbackExample | undefined> {
     if (++this.exampleChecks > this.config.maxScan) return undefined;
     try {
@@ -635,7 +738,7 @@ export class IntakeFeedbackService {
         candidate.actionId,
         false,
         async (ctx) => {
-          await this.authorize(ctx, 'retrieve');
+          await this.authorize(ctx, operation);
           await this.provenance(ctx);
           const guidance = this.instructionFor(ctx);
           const [current] = await this.rows(
@@ -713,6 +816,7 @@ export class IntakeFeedbackService {
     executor?: DatabaseInterface,
     /** Re-checking an earlier selection: only integrity and revocation count. */
     lineage = false,
+    operation: 'retrieve' | 'verify' = 'retrieve',
   ): Promise<FeedbackExample | undefined> {
     if (++this.exampleChecks > this.config.maxScan) return undefined;
     try {
@@ -756,14 +860,7 @@ export class IntakeFeedbackService {
       const providers = input.providers ?? [input.model.provider];
       const scope = this.scope();
       const current = async (db: DatabaseInterface) => {
-        if (
-          !(await this.config.authorize({
-            db,
-            scope,
-            itemId,
-            operation: 'retrieve',
-          }))
-        )
+        if (!(await this.permits(db, itemId, operation)))
           throw new Error('Feedback unavailable');
         const [attempt] = (
           await db.query(
@@ -1001,6 +1098,30 @@ export class IntakeFeedbackService {
     selection: FeedbackReferences,
     executor?: DatabaseInterface,
   ): Promise<void> {
+    await this.checkSelection(input, selection, executor, 'retrieve');
+  }
+  /**
+   * Re-verify the stored selection an existing generation was produced with
+   * (#4504): the same checks as `assertSelection`, asked as `verify` (which
+   * falls back to `retrieve` for authorizers that predate it).
+   */
+  async verifySelection(
+    input: RetrieveFeedbackInput,
+    selection: FeedbackReferences,
+    executor?: DatabaseInterface,
+  ): Promise<void> {
+    await this.checkSelection(input, selection, executor, 'verify');
+  }
+  /**
+   * `retrieve` revalidates a selection before provider disclosure; `verify`
+   * re-checks the stored lineage of an existing generation (#4504).
+   */
+  private async checkSelection(
+    input: RetrieveFeedbackInput,
+    selection: FeedbackReferences,
+    executor: DatabaseInterface | undefined,
+    operation: 'retrieve' | 'verify',
+  ): Promise<void> {
     if (
       selection.version !== this.config.version ||
       selection.configurationDigest !== this.configurationDigest() ||
@@ -1020,14 +1141,7 @@ export class IntakeFeedbackService {
     const work = async (
       context: import('./execution-contracts.js').HandlerContext,
     ) => {
-      if (
-        !(await this.config.authorize({
-          db: context.db,
-          scope: this.scope(),
-          itemId: input.itemId,
-          operation: 'retrieve',
-        }))
-      )
+      if (!(await this.permits(context.db, input.itemId, operation)))
         throw new Error('Feedback unavailable');
       const examples: FeedbackExample[] = [];
       for (const expected of selection.examples) {
@@ -1039,8 +1153,8 @@ export class IntakeFeedbackService {
         const current = !row
           ? undefined
           : row.kind === 'reviewer_routing'
-            ? await this.routingExample(row, input, context.db, true)
-            : await this.example(row, input, context.db);
+            ? await this.routingExample(row, input, context.db, true, operation)
+            : await this.example(row, input, context.db, operation);
         if (
           !current ||
           current.digest !== expected.digest ||
@@ -1050,14 +1164,7 @@ export class IntakeFeedbackService {
           throw new Error('Feedback eligibility changed');
         examples.push(current);
       }
-      if (
-        !(await this.config.authorize({
-          db: context.db,
-          scope: this.scope(),
-          itemId: input.itemId,
-          operation: 'retrieve',
-        }))
-      )
+      if (!(await this.permits(context.db, input.itemId, operation)))
         throw new Error('Feedback unavailable');
       return { ...selection, examples };
     };

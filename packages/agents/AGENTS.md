@@ -6,7 +6,7 @@ Agent framework for autonomous actors with inter-agent messaging, interest-based
 
 | Module | Contract |
 | --- | --- |
-| [Data-surface discovery](agents/data-surface-discovery.md) | Summary discovery, row-count hints, and allowed field values |
+| [Data-surface discovery](agents/data-surface-discovery.md) | Summary discovery, row-count hints, allowed values, `id`/request aliases |
 
 ## Agent Lifecycle
 
