@@ -319,6 +319,17 @@ export interface AssistantTurnAuthor {
   authorFailedInvocation?: (
     invocation: ToolInvocation,
   ) => AuthoredToolReply | null;
+  /**
+   * Keep a recovered rejection out of the thread (#4505). Default `false`:
+   * every failed call is persisted as it happens. When `true`, a
+   * `recoverable` failure (the tool refused the arguments, see
+   * {@link ToolFailureRecord.recoverable}) is held until the turn's tool
+   * loop ends and dropped if a later call of the same tool in the same turn
+   * succeeded; otherwise it is persisted then, in call order. Denials and
+   * execution errors are never held. The audit sink still receives every
+   * failure.
+   */
+  collapseRecoveredFailures?: boolean;
 }
 
 /** The default persisted row for a failed server tool call (#4383). */
@@ -333,6 +344,7 @@ function defaultFailedInvocationReply(
       args: failure.args,
       status: failure.status,
       errorCode: failure.errorCode,
+      ...(failure.recoverable ? { recoverable: true } : {}),
     },
   };
 }
@@ -837,6 +849,71 @@ async function runTurn<M>(
     ? (await import('./services/ChatService.js')).sendAgentReply
     : null;
 
+  // Recoverable rejections held until a later success or the turn's end
+  // (#4505, `collapseRecoveredFailures`).
+  const collapseRecovered = author?.collapseRecoveredFailures === true;
+  const heldFailures: Array<{
+    invocation: ToolInvocation;
+    failure: ToolFailureRecord;
+  }> = [];
+  const persistInvocation = async (
+    invocation: ToolInvocation,
+    failure: ToolFailureRecord | null,
+  ): Promise<void> => {
+    if (!author || !sendAgentReply) return;
+    const reply = failure
+      ? author.authorFailedInvocation
+        ? author.authorFailedInvocation(invocation)
+        : defaultFailedInvocationReply(failure)
+      : author.authorInvocation?.(invocation);
+    if (!reply) return;
+    try {
+      const message = await sendAgentReply(author.chatService, {
+        tenantId: author.tenantId,
+        agentSessionId: author.agentSessionId,
+        threadId: author.threadId ?? null,
+        replyToMessageId: originMessageId ?? null,
+        kind: 'tool',
+        content: reply.content,
+        messageType: reply.messageType ?? 'tool_result',
+        toolCallData: reply.toolCallData ?? null,
+        ...(failure
+          ? {
+              metadata: {
+                toolStatus: failure.status,
+                errorKind: failure.errorKind,
+                errorCode: failure.errorCode,
+                ...(failure.recoverable ? { recoverable: true } : {}),
+              },
+            }
+          : {}),
+      });
+      emit({ type: 'message', message: serialize(message) });
+    } catch (error) {
+      // A failed call's diagnostic row is best-effort (the session gate
+      // refuses an unoffered tool's name): never a dock step (#4383).
+      if (failure) return;
+      // The tool ran; only its transcript entry failed. Keep the turn going
+      // and say so in the step log rather than failing the whole reply.
+      emit({
+        type: 'step',
+        step: {
+          kind: 'tool_result',
+          callId: `author-${invocation.slug}`,
+          tool: invocation.slug,
+          label: labelFor(invocation.slug),
+          ok: false,
+          error: 'not_saved',
+        },
+      });
+      try {
+        (options.onError ?? defaultLogError)(error);
+      } catch {
+        // Logging never breaks the turn.
+      }
+    }
+  };
+
   const outcome = await runToolLoop({
     ai: options.ai,
     messages,
@@ -932,61 +1009,30 @@ async function runTurn<M>(
       // A deduped repeat of a failed call (#4382) has no failure record and
       // is not a success either: keep it out of `authorInvocation`.
       if (!invocation.ok && !failure) return;
-      const reply = failure
-        ? author.authorFailedInvocation
-          ? author.authorFailedInvocation(invocation)
-          : defaultFailedInvocationReply(failure)
-        : author.authorInvocation?.(invocation);
-      if (!reply) return;
-      try {
-        const message = await sendAgentReply(author.chatService, {
-          tenantId: author.tenantId,
-          agentSessionId: author.agentSessionId,
-          threadId: author.threadId ?? null,
-          replyToMessageId: originMessageId ?? null,
-          kind: 'tool',
-          content: reply.content,
-          messageType: reply.messageType ?? 'tool_result',
-          toolCallData: reply.toolCallData ?? null,
-          ...(failure
-            ? {
-                metadata: {
-                  toolStatus: failure.status,
-                  errorKind: failure.errorKind,
-                  errorCode: failure.errorCode,
-                },
-              }
-            : {}),
-        });
-        emit({ type: 'message', message: serialize(message) });
-      } catch (error) {
-        // A failed call's diagnostic row is best-effort (the session gate
-        // refuses an unoffered tool's name): never a dock step (#4383).
-        if (failure) return;
-        // The tool ran; only its transcript entry failed. Keep the turn going
-        // and say so in the step log rather than failing the whole reply.
-        emit({
-          type: 'step',
-          step: {
-            kind: 'tool_result',
-            callId: `author-${invocation.slug}`,
-            tool: invocation.slug,
-            label: labelFor(invocation.slug),
-            ok: false,
-            error: 'not_saved',
-          },
-        });
-        try {
-          (options.onError ?? defaultLogError)(error);
-        } catch {
-          // Logging never breaks the turn.
+      if (collapseRecovered) {
+        if (invocation.ok) {
+          // A later success of the same tool recovers its held rejections.
+          for (let index = heldFailures.length - 1; index >= 0; index -= 1) {
+            if (heldFailures[index].invocation.slug === invocation.slug) {
+              heldFailures.splice(index, 1);
+            }
+          }
+        } else if (failure?.recoverable) {
+          heldFailures.push({ invocation, failure });
+          return;
         }
       }
+      await persistInvocation(invocation, failure);
     },
   }).then(
     (value) => ({ loop: value }),
     (error: unknown) => ({ failure: error }),
   );
+  // Rejections no later call of their tool recovered are persisted now, in
+  // call order, before the turn's reply (#4505).
+  for (const held of heldFailures.splice(0)) {
+    await persistInvocation(held.invocation, held.failure);
+  }
 
   if ('failure' in outcome) {
     const text = providerErrorReplyText(

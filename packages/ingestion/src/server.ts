@@ -41,8 +41,8 @@ import {
   type StoredFailureCapture,
   storedFailureCapture,
 } from './failure-capture.js';
+import { assertGenerationBounds } from './generation-retry.js';
 import { storableJSONText, storableText } from './json-storage.js';
-
 import { ProposalsNotConfiguredError } from './proposal-errors.js';
 import { assertProposalLimits } from './proposal-limits.js';
 import { redactedCeiling, UNFINISHED_ACTION_STATES } from './redaction.js';
@@ -78,6 +78,7 @@ import type {
 import { GenerationSourceStaleError } from './proposal-errors.js';
 import type {
   InboxState,
+  InterpretationRetryInput,
   LogicalSplitInput,
   ReviewerInstruction,
   ReviewerInstructionInput,
@@ -550,6 +551,7 @@ export class IngestionService {
     if (options.proposals) {
       assertProposalLimits(options.proposals.limits);
       assertFailureCapture(options.proposals.failureCapture);
+      assertGenerationBounds(options.proposals);
     }
     if (options.proposalRead) {
       assertProposalLimits(options.proposalRead.limits);
@@ -704,6 +706,21 @@ export class IngestionService {
   }
   async recordFeedback(input: RecordFeedbackInput) {
     return (await this.feedback()).record(input);
+  }
+  /**
+   * The caller's own current judgment per action of an item they may read
+   * (#4503); presentation only, for `ReviewAction.feedback`.
+   */
+  async listOwnFeedback(
+    itemId: string,
+    actions: ReadonlyArray<{
+      actionId: string;
+      revision: number;
+      bindingHash: string;
+    }>,
+  ) {
+    await this.item(itemId, 'read');
+    return (await this.feedback()).ownJudgments(itemId, actions);
   }
   async observeFeedback(input: ObserveFeedbackInput) {
     return (await this.feedback()).observe(input);
@@ -2785,6 +2802,136 @@ export class IngestionService {
       true,
     );
     if (!result) throw new Error('Reviewer instruction unavailable');
+    return result;
+  }
+  /**
+   * "Try again" for an item whose interpretation failed (#4504): the displayed
+   * generation ended in `provider_error`, or work after it failed or never
+   * started. Queues the same fresh extraction plus interpretation as
+   * `recordReviewerInstruction`, from the same anchor and under the same
+   * guards and `process` authority, but records no instruction: the item's
+   * current configuration (any instruction or split already in effect
+   * included) is carried unchanged. Throws `ReviewerInstructionStaleError`
+   * when the anchor is superseded, work is in flight, or nothing failed, a
+   * refresh signal. A replay of the same intent (item, anchor, revision,
+   * requestId and actor) returns the first append under current `process`
+   * authority; the same `requestId` with another intent is a conflict.
+   */
+  async retryInterpretation(
+    input: InterpretationRetryInput,
+  ): Promise<{ id: string; revision: number }> {
+    const frozen = structuredClone(input);
+    nonempty(frozen.requestId);
+    nonempty(frozen.attemptId);
+    integer(frozen.expectedRevision);
+    // The request key carries the intent digest, so a replay is matched by
+    // requestId and refused as a conflict when anything else differs.
+    const intent = digest({
+      kind: 'interpretation_retry',
+      itemId: frozen.itemId,
+      attemptId: frozen.attemptId,
+      expectedRevision: frozen.expectedRevision,
+      requestId: frozen.requestId,
+      actorId: this.scope.actorId,
+    });
+    const requestPrefix = `retry:${frozen.requestId}:`;
+    const requestKey = `${requestPrefix}${intent}`;
+    const replayOf = (rows: Row[]) => {
+      const found = rows.find((row) =>
+        String(object(row.data).requestKey ?? '').startsWith(requestPrefix),
+      );
+      if (!found) return null;
+      if (object(found.data).requestKey !== requestKey)
+        throw new Error('Interpretation retry request conflict');
+      return { id: String(found.id), revision: Number(found.revision) };
+    };
+    const replay = await this.tx(async (db) => {
+      await this.lock(db, frozen.itemId);
+      await this.item(frozen.itemId, 'process', db);
+      return replayOf(
+        await this.rows(db, 'intake_analyses', 'item_id=?', [frozen.itemId]),
+      );
+    });
+    if (replay) {
+      // Idempotency acknowledges only an intent the current reviewer may still access.
+      await (await this.proposalReader())[generationSnapshotRead](
+        frozen.itemId,
+        (work) => this.tx(work),
+        (db) =>
+          this.completedAnalysisSnapshot(
+            db,
+            frozen.itemId,
+            frozen.attemptId,
+            false,
+          ),
+        undefined,
+        true,
+      );
+      return replay;
+    }
+    let result: { id: string; revision: number } | undefined;
+    await (await this.proposalReader())[generationSnapshotRead](
+      frozen.itemId,
+      (work) => this.tx(work),
+      (db) =>
+        this.completedAnalysisSnapshot(
+          db,
+          frozen.itemId,
+          frozen.attemptId,
+          false,
+        ),
+      async (db, current) => {
+        await this.lock(db, frozen.itemId);
+        const item = await this.item(frozen.itemId, 'process', db);
+        // A duplicate that committed after the unlocked replay check: replay
+        // it (same intent) or refuse it (conflict), never append again.
+        const duplicate = replayOf(
+          await this.rows(db, 'intake_analyses', 'item_id=?', [frozen.itemId]),
+        );
+        if (duplicate) {
+          result = duplicate;
+          return;
+        }
+        if (Number(item.analysis_revision) !== frozen.expectedRevision)
+          throw new ReviewerInstructionStaleError();
+        let carriedConfiguration: Record<string, unknown> | undefined;
+        if (current.revision !== frozen.expectedRevision) {
+          // Only failed (or never started) later work is retried; in-flight
+          // or superseded work is a refresh signal, like an instruction.
+          const later = await this.laterWork(db, item, current.revision);
+          if (later.phase !== 'failed')
+            throw new ReviewerInstructionStaleError();
+          carriedConfiguration = later.configuration;
+        } else if (
+          object(current.result.output.proposals).outcome !== 'provider_error'
+        )
+          throw new ReviewerInstructionStaleError();
+        const pin = object(object(current.configuration.proposals).source);
+        const source = await this.completedAnalysisSnapshot(
+          db,
+          frozen.itemId,
+          String(pin.attemptId),
+          false,
+        );
+        for (const key of [
+          'attemptId',
+          'revision',
+          'inputDigest',
+          'outputDigest',
+          'evidenceDigest',
+        ] as const)
+          if (pin[key] !== source[key])
+            throw new Error('Interpretation source changed');
+        result = await this.appendAnalysis(
+          db,
+          frozen.itemId,
+          carriedConfiguration ?? source.configuration,
+          requestKey,
+        );
+      },
+      true,
+    );
+    if (!result) throw new Error('Interpretation retry unavailable');
     return result;
   }
   /**

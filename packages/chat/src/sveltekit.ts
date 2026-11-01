@@ -361,6 +361,13 @@ export interface MountAssistantRoutesOptions {
    * tool name must be on `allowedTools`, which is mirrored onto the session.
    */
   authorInvocation?: (invocation: ToolInvocation) => AuthoredToolReply | null;
+  /**
+   * Keep a rejected call out of the thread when a later call of the same
+   * tool in the same turn succeeded (#4505; see
+   * `AssistantTurnAuthor.collapseRecoveredFailures`). Only `recoverable`
+   * (validation-class) failures are collapsed. Default `false`.
+   */
+  collapseRecoveredFailures?: boolean;
   onUsage?: (usage: ToolLoopUsage, context: AssistantRequestContext) => void;
   audit?: PrincipalAuditSink;
   postgresRls?: boolean;
@@ -1257,6 +1264,9 @@ export function mountAssistantRoutes(
           threadId: String(thread.id),
           ...(options.authorInvocation
             ? { authorInvocation: options.authorInvocation }
+            : {}),
+          ...(options.collapseRecoveredFailures
+            ? { collapseRecoveredFailures: true }
             : {}),
         },
       },
