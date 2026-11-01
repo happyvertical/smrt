@@ -2,7 +2,9 @@
 
 [AGENTS.md](AGENTS.md) and [.agents/project.yaml](.agents/project.yaml) define
 repository policy and tracker routing. This page is a navigation aid; shared
-lifecycle procedures are maintained in `happyvertical/have-config`.
+lifecycle procedures are maintained in `happyvertical/have-config`. They govern
+maintainer and agent work; outside contributors follow
+[CONTRIBUTING.md](CONTRIBUTING.md) instead.
 
 ## Starting work on an issue
 
@@ -21,7 +23,8 @@ when project tracker configuration selects that workflow.
 
 ## Repository references
 
-- [CONTRIBUTING.md](CONTRIBUTING.md): setup, coding conventions, contribution scope.
+- [CONTRIBUTING.md](CONTRIBUTING.md): the outside-contributor guide and fork PR path.
+- [.github/CI.md](.github/CI.md#external-fork-prs): how fork PRs are validated and approved.
 - [TESTING_STANDARD.md](TESTING_STANDARD.md): test design and package release gates.
 - [AGENTS.md](AGENTS.md): framework invariants and validation entrypoints.
 - [standards](docs/content/standards.md): packaging and documentation contracts.
