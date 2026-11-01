@@ -58,17 +58,17 @@
     "@happyvertical/smrt-playground": "workspace:*",
     "@happyvertical/smrt-svelte": "workspace:*",
     "@happyvertical/smrt-ui": "workspace:*",
-    "@sveltejs/adapter-static": "^3.0.10",
-    "@sveltejs/kit": "2.69.1",
-    "@sveltejs/vite-plugin-svelte": "^7.3.0",
-    "svelte": "^5.57.1",
+    "@sveltejs/adapter-static": "^4.0.1",
+    "@sveltejs/kit": "2.69.3",
+    "@sveltejs/vite-plugin-svelte": "^7.3.1",
+    "svelte": "^5.57.3",
     "tinyglobby": "0.2.17",
-    "tsx": "^4.23.13",
+    "tsx": "^4.23.15",
     "vite": "8.1.6"
   },
   "peerDependencies": {
     "svelte": "^5.57.0",
-    "vite": "^8.1.6"
+    "vite": "8.3.5"
   },
   "peerDependenciesMeta": {
     "svelte": {
@@ -79,9 +79,9 @@
     }
   },
   "devDependencies": {
-    "@sveltejs/package": "^2.5.8",
-    "@types/node": "24.13.6",
-    "svelte-check": "^4.7.6",
+    "@sveltejs/package": "^3.0.2",
+    "@types/node": "26.6.6",
+    "svelte-check": "^4.7.7",
     "typescript": "6.0.3",
     "vitest": "4.1.10"
   },

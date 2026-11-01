@@ -66,15 +66,15 @@
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-jobs": "workspace:*",
     "@happyvertical/sql": "catalog:",
-    "@modelcontextprotocol/server": "2.3.1",
-    "jose": "^6.2.12",
+    "@modelcontextprotocol/server": "2.4.0",
+    "jose": "^6.2.14",
     "parse5": "8.0.1"
   },
   "devDependencies": {
-    "@modelcontextprotocol/client": "2.3.1",
-    "@modelcontextprotocol/conformance": "0.2.0-alpha.11",
+    "@modelcontextprotocol/client": "2.4.0",
+    "@modelcontextprotocol/conformance": "0.2.0-alpha.12",
     "@modelcontextprotocol/node": "2.1.2",
-    "@types/node": "24.13.6",
+    "@types/node": "26.6.6",
     "typescript": "6.0.3",
     "vite": "8.1.6",
     "vitest": "4.1.10"

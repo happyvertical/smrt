@@ -35,7 +35,7 @@
     "prepack": "node ../../scripts/prepack-package.js"
   },
   "peerDependencies": {
-    "@sveltejs/kit": "^2.20.0"
+    "@sveltejs/kit": "2.70.3"
   },
   "peerDependenciesMeta": {
     "@sveltejs/kit": {
@@ -54,8 +54,8 @@
   "devDependencies": {
     "@happyvertical/smrt-vitest": "workspace:*",
     "@sveltejs/kit": "2.70.3",
-    "@types/node": "24.13.6",
-    "tsx": "^4.23.13",
+    "@types/node": "26.6.6",
+    "tsx": "^4.23.15",
     "typescript": "6.0.3",
     "vite": "8.1.6",
     "vitest": "4.1.10"
