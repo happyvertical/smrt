@@ -100,7 +100,7 @@ jobs:
     # still gets its own uniquely named database, dropped afterwards.
     services:
       postgres:
-        image: postgres:18-alpine@sha256:6c538e7206ea40ff740ef27883529390a690b6ead6ba96b44c67a9f7c638e8fd
+        image: postgres:18-alpine@sha256:10a5c69a83035ab5239f5620d708520e8b28f5aa1f2b20143e6024532edadfb5
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres

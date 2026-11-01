@@ -74,9 +74,9 @@
     "@happyvertical/smrt-voice": "workspace:*",
     "@happyvertical/smrt-webhooks": "workspace:*",
     "@libsql/client": "0.18.0",
-    "@sveltejs/vite-plugin-svelte": "^7.3.0",
-    "@types/node": "24.13.6",
-    "svelte": "^5.57.1",
+    "@sveltejs/vite-plugin-svelte": "^7.3.1",
+    "@types/node": "26.6.6",
+    "svelte": "^5.57.3",
     "typescript": "6.0.3",
     "vite": "8.1.6",
     "vitest": "4.1.10"

@@ -71,7 +71,7 @@
     "@happyvertical/sql": "catalog:",
     "@happyvertical/utils": "catalog:",
     "cors": "^2.8.6",
-    "express": "^5.2.1"
+    "express": "^5.3.0"
   },
   "peerDependencies": {
     "svelte": "^5.57.0"
@@ -83,15 +83,15 @@
   },
   "devDependencies": {
     "@originjs/vite-plugin-federation": "^1.4.1",
-    "@sveltejs/package": "^2.5.8",
-    "@sveltejs/vite-plugin-svelte": "^7.3.0",
+    "@sveltejs/package": "^3.0.2",
+    "@sveltejs/vite-plugin-svelte": "^7.3.1",
     "@types/cors": "2.8.19",
     "@types/express": "^5.0.6",
-    "@types/node": "24.13.6",
+    "@types/node": "26.6.6",
     "@happyvertical/smrt-vitest": "workspace:*",
-    "concurrently": "^10.0.5",
-    "svelte": "^5.57.1",
-    "svelte-check": "^4.7.6",
+    "concurrently": "^10.0.6",
+    "svelte": "^5.57.3",
+    "svelte-check": "^4.7.7",
     "typescript": "6.0.3",
     "vite": "8.1.6",
     "vitest": "4.1.10"

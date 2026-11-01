@@ -31,12 +31,12 @@
     "worker:schedule": "smrt app worker schedule"
   },
   "devDependencies": {
-    "@sveltejs/adapter-node": "^5.5.7",
+    "@sveltejs/adapter-node": "^6.0.1",
     "@sveltejs/kit": "2.70.3",
-    "@sveltejs/vite-plugin-svelte": "^7.3.0",
-    "@types/node": "^24.13.6",
-    "svelte": "^5.57.1",
-    "svelte-check": "^4.7.6",
+    "@sveltejs/vite-plugin-svelte": "^7.3.1",
+    "@types/node": "^26.6.6",
+    "svelte": "^5.57.3",
+    "svelte-check": "^4.7.7",
     "typescript": "6.0.3",
     "vite": "8.3.3",
     "@happyvertical/smrt-cli": "^0.57.44"
@@ -52,8 +52,8 @@
     "@happyvertical/smrt-ui": "^0.57.44",
     "@happyvertical/smrt-users": "^0.57.44",
     "@happyvertical/smrt-web": "^0.57.44",
-    "@happyvertical/sql": "^0.89.12",
-    "@modelcontextprotocol/server": "^2.3.1",
+    "@happyvertical/sql": "^0.111.3",
+    "@modelcontextprotocol/server": "^2.4.0",
     "@happyvertical/smrt-reports": "^0.57.44"
   }
 }
