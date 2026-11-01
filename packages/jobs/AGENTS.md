@@ -52,6 +52,17 @@ A job `timeout` only races the handler's promise — JavaScript cannot preempt a
 - **`'warn'`**: the handler is **not** raced against the timeout — it runs to completion, and at the deadline the runner logs a warning and emits a `timeout-warning` job event. A slow-but-successful handler still completes successfully.
 - **`'kill'`**: treated identically to `'fail'`. In-process JavaScript has no thread interruption, so a true "kill" of a running handler is impossible without worker isolation; this value is honest that it only fails the job row, it does not stop the handler. Prefer `'fail'` unless you specifically want the label.
 
+## Cooperative cancellation (`context.signal`)
+
+Handlers receive `context.signal`, a plain `AbortSignal` (pass it to `fetch` or an LLM SDK). It aborts when:
+
+- the job row is observed as `cancelled` while the handler runs (reason: exported `JobCancelledError`). The runner polls the owned row every `cancelPollInterval` (default 1s) with one read-only `SELECT status`; unref'd and cleared in `finally`. Poll errors are ignored.
+- the job times out under `timeoutBehavior` `'fail'`/`'kill'` (reason: `JobTimeoutError`), so the orphaned handler can stop. `'warn'` never aborts.
+
+Cooperative only: aborting changes no lifecycle state, retry policy, terminal-write guard or event. A handler that ignores the signal behaves exactly as before; one that rejects with the abort reason cannot overwrite `cancelled`/`failed` (the `WHERE worker_id=? AND status='running'` guard drops its terminal write). Not aborted on runner shutdown. `isRunnerExecutionContext` and MCP-task invocations are unchanged; they receive the same `signal`.
+
+**Why no dedup key / usage record here:** a caller dedup key and per-attempt usage live in `smrt-education` (generation jobs are unique on `(tenant_id, request_key)` with replay; generation usage records hold input/output tokens, cost and `usageJson`). Jobs only owns execution and cancellation.
+
 ## Worker liveness & recovery (#1474)
 
 Recovery keys on **worker-process liveness**, never per-job heartbeat freshness (a CPU-bound synchronous handler used to starve the heartbeat and false-recover its own running jobs).

@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.57.45
+
+### Patch Changes
+
+- ### Features
+  
+  - job cancel signal, private asset metadata, generated printables, refusal outcome (#4549)
+- @happyvertical/smrt-config@0.57.45
+  - @happyvertical/smrt-scanner@0.57.45
+  - @happyvertical/smrt-types@0.57.45
+
 ## 0.57.44
 
 ### Patch Changes
