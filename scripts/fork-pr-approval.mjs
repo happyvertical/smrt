@@ -8,23 +8,30 @@
  * `postgres-required` come from the trusted `pull_request_target` workflows,
  * which only run this script from the base revision.
  *
- *   gate     Runs inside those required jobs for a fork PR. Passes only on a
- *            re-run (attempt > 1, which only someone with write access can
- *            cause) of the current head, while the approval label is present,
- *            the sandbox run for that head succeeded, and the PR leaves
- *            `.github/` alone.
- *   approve  Runs when a maintainer applies the approval label. Re-runs the
- *            required jobs for the labelled head so the gate evaluates.
+ *   approve  Runs when someone applies the approval label. Requires that the
+ *            labeller has write access, then records a `fork-approval` commit
+ *            status on that exact head and re-runs the required jobs.
+ *   gate     Runs inside the required jobs for a fork PR. Passes only when
+ *            the current head carries that status from GitHub Actions, the
+ *            label is still present, the sandbox run for the head succeeded,
+ *            and the PR leaves `.github/` alone.
  *
- * The merge queue's full trusted validation still gates every merge.
+ * The status binds approval to one commit: a fork cannot write statuses to
+ * this repository, and a new push is a new SHA with no status. The merge
+ * queue's full trusted validation still gates every merge.
  */
 
 import { pathToFileURL } from 'node:url';
 
 export const APPROVAL_LABEL = 'ci: fork-approved';
+export const APPROVAL_STATUS_CONTEXT = 'fork-approval';
 export const FORK_VALIDATION_WORKFLOW = 'fork-pr-validation.yml';
 export const REQUIRED_CONTEXTS = ['Required CI', 'postgres-required'];
 const ACTIONS_APP_SLUG = 'github-actions';
+const ACTIONS_BOT_LOGIN = 'github-actions[bot]';
+const APPROVER_PERMISSIONS = new Set(['admin', 'write']);
+// GET pulls/{n}/files stops at this many files without reporting truncation.
+const PR_FILES_API_LIMIT = 3000;
 
 function touchesGithubDir(file) {
   return [file.filename, file.previous_filename].some(
@@ -53,6 +60,12 @@ export function approvalProblems({ expectedHeadSha, pr, files, validationRuns })
   if (!labels.includes(APPROVAL_LABEL)) {
     problems.push(`a maintainer has not applied \`${APPROVAL_LABEL}\``);
   }
+  if (pr.changed_files >= PR_FILES_API_LIMIT || files.length !== pr.changed_files) {
+    problems.push(
+      `the changed-file list is incomplete (${files.length} of ${pr.changed_files}); ` +
+        'a maintainer must re-land this PR from a same-repository branch',
+    );
+  }
   const workflowFiles = files.filter(touchesGithubDir).map((file) => file.filename);
   if (workflowFiles.length > 0) {
     problems.push(
@@ -79,18 +92,40 @@ export function approvalProblems({ expectedHeadSha, pr, files, validationRuns })
 }
 
 /**
+ * Whether the labeller may approve: write, maintain or admin access. The
+ * collaborator-permission API reports maintain as `write` and triage as `read`.
+ *
+ * @param {{ permission?: string } | null} permission API response, null on error
+ */
+export function senderProblems(sender, permission) {
+  if (APPROVER_PERMISSIONS.has(permission?.permission)) {
+    return [];
+  }
+  return [
+    `${sender} applied \`${APPROVAL_LABEL}\` without write access ` +
+      `(${permission?.permission ?? 'unknown'}); only maintainers can approve a fork PR`,
+  ];
+}
+
+/**
  * The required-context gate for a fork PR.
  *
- * @param {{ runAttempt: number } & Parameters<typeof approvalProblems>[0]} input
+ * @param {{ statuses: any[] } & Parameters<typeof approvalProblems>[0]} input
+ *   statuses: commit statuses on the head, newest first (the API's order)
  */
-export function gateProblems({ runAttempt, ...input }) {
-  if (!(runAttempt > 1)) {
-    return [
-      'fork PRs pass this check only after a maintainer reviews the change, ' +
-        `confirms Fork PR Validation passed, and applies \`${APPROVAL_LABEL}\``,
-    ];
+export function gateProblems({ statuses, ...input }) {
+  const approval = statuses.find((status) => status.context === APPROVAL_STATUS_CONTEXT);
+  const problems = [];
+  if (
+    approval?.state !== 'success' ||
+    approval.creator?.login !== ACTIONS_BOT_LOGIN
+  ) {
+    problems.push(
+      `no maintainer approval for ${input.expectedHeadSha}: a maintainer reviews the ` +
+        `change, confirms Fork PR Validation passed, and applies \`${APPROVAL_LABEL}\``,
+    );
   }
-  return approvalProblems(input);
+  return [...problems, ...approvalProblems(input)];
 }
 
 /**
@@ -178,6 +213,48 @@ function report(problems, success) {
   return 1;
 }
 
+async function approve({ repo, headSha, token, input }) {
+  const sender = requireEnv('SENDER');
+  let permission = null;
+  try {
+    ({ data: permission } = await api(
+      `repos/${repo}/collaborators/${encodeURIComponent(sender)}/permission`,
+      { token },
+    ));
+  } catch (error) {
+    console.log(`::warning::could not read ${sender}'s permission: ${error.message}`);
+  }
+  const problems = [...senderProblems(sender, permission), ...approvalProblems(input)];
+  if (problems.length > 0) {
+    return report(problems, '');
+  }
+  const checkRuns = await paginate(
+    `repos/${repo}/commits/${headSha}/check-runs?per_page=100`,
+    token,
+    (data) => data.check_runs,
+  );
+  const { jobs, problems: jobProblems } = selectRequiredJobs(checkRuns);
+  if (jobProblems.length > 0) {
+    return report(jobProblems, '');
+  }
+  await api(`repos/${repo}/statuses/${headSha}`, {
+    method: 'POST',
+    token,
+    body: {
+      state: 'success',
+      context: APPROVAL_STATUS_CONTEXT,
+      description: `Approved by ${sender}`.slice(0, 140),
+    },
+  });
+  console.log(`Recorded ${APPROVAL_STATUS_CONTEXT} on ${headSha} for ${sender}.`);
+  for (const job of jobs) {
+    // A GitHub Actions check run id is its job id.
+    await api(`repos/${repo}/actions/jobs/${job.id}/rerun`, { method: 'POST', token });
+    console.log(`Re-ran ${job.context} (job ${job.id}) for ${headSha}.`);
+  }
+  return 0;
+}
+
 async function main(command) {
   const token = requireEnv('GITHUB_TOKEN');
   const repo = requireEnv('GITHUB_REPOSITORY');
@@ -186,36 +263,19 @@ async function main(command) {
   const input = await loadApprovalInput({ repo, prNumber, headSha, token });
 
   if (command === 'gate') {
-    const runAttempt = Number(requireEnv('GITHUB_RUN_ATTEMPT'));
+    const statuses = await paginate(
+      `repos/${repo}/commits/${headSha}/statuses?per_page=100`,
+      token,
+    );
     return report(
-      gateProblems({ runAttempt, ...input }),
+      gateProblems({ statuses, ...input }),
       `Fork PR head ${headSha} is maintainer-approved and passed Fork PR Validation.`,
     );
   }
-
   if (command === 'approve') {
-    const problems = approvalProblems(input);
-    if (problems.length > 0) {
-      return report(problems, '');
-    }
-    const checkRuns = await paginate(
-      `repos/${repo}/commits/${headSha}/check-runs?per_page=100`,
-      token,
-      (data) => data.check_runs,
-    );
-    const { jobs, problems: jobProblems } = selectRequiredJobs(checkRuns);
-    if (jobProblems.length > 0) {
-      return report(jobProblems, '');
-    }
-    for (const job of jobs) {
-      // A GitHub Actions check run id is its job id.
-      await api(`repos/${repo}/actions/jobs/${job.id}/rerun`, { method: 'POST', token });
-      console.log(`Re-ran ${job.context} (job ${job.id}) for ${headSha}.`);
-    }
-    return 0;
+    return approve({ repo, headSha, token, input });
   }
-
-  throw new Error(`usage: fork-pr-approval.mjs <gate|approve>`);
+  throw new Error('usage: fork-pr-approval.mjs <gate|approve>');
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

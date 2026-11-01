@@ -4,17 +4,15 @@ name: Fork PR Approval
 #
 # `pull_request_target` loads this file from the trusted base branch. It never
 # checks out or executes PR code: it runs scripts/fork-pr-approval.mjs from the
-# base revision. Applying the approval label re-runs the required jobs for the
-# labelled head; a new push removes the label, so approval never carries over
-# to commits a maintainer has not seen. See .github/CI.md, "External fork PRs".
+# base revision. When someone with write access applies the approval label, it
+# records a `fork-approval` commit status on that exact head and re-runs the
+# required jobs. A new push is a new SHA without that status, so approval
+# never carries over; the label is also removed. See .github/CI.md,
+# "External fork PRs".
 on:
   pull_request_target:
     branches: [main]
     types: [labeled, synchronize]
-
-concurrency:
-  group: fork-pr-approval-${{ github.event.pull_request.number }}
-  cancel-in-progress: false
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
@@ -30,11 +28,17 @@ jobs:
       github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # Only approvals share a queue, so another label event cannot cancel a
+    # pending revoke.
+    concurrency:
+      group: fork-pr-approve-${{ github.event.pull_request.number }}
+      cancel-in-progress: false
     permissions:
       actions: write
       checks: read
       contents: read
       pull-requests: read
+      statuses: write
     steps:
       - name: Checkout trusted base revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -54,6 +58,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          SENDER: ${{ github.event.sender.login }}
         run: node scripts/fork-pr-approval.mjs approve
 
   revoke:

@@ -687,6 +687,7 @@ jobs:
       actions: read
       contents: read
       pull-requests: read
+      statuses: read
     env:
       # External fork PRs skip trusted validation above; they pass only on a
       # maintainer approval of the current head (#4558, .github/CI.md).

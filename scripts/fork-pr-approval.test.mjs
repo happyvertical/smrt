@@ -3,10 +3,12 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
   APPROVAL_LABEL,
+  APPROVAL_STATUS_CONTEXT,
   approvalProblems,
   gateProblems,
   REQUIRED_CONTEXTS,
   selectRequiredJobs,
+  senderProblems,
 } from './fork-pr-approval.mjs';
 
 const HEAD = 'a'.repeat(40);
@@ -18,6 +20,7 @@ function input(overrides = {}) {
       state: 'open',
       head: { sha: HEAD },
       labels: [{ name: APPROVAL_LABEL }],
+      changed_files: 1,
     },
     files: [{ filename: 'packages/core/src/index.ts' }],
     validationRuns: [
@@ -33,6 +36,12 @@ function input(overrides = {}) {
   };
 }
 
+const approvalStatus = {
+  context: APPROVAL_STATUS_CONTEXT,
+  state: 'success',
+  creator: { login: 'github-actions[bot]' },
+};
+
 function workflow(name) {
   return readFileSync(new URL(`../.github/workflows/${name}`, import.meta.url), 'utf8');
 }
@@ -47,14 +56,46 @@ function job(source, name) {
 
 test('an approved, sandbox-green head with no .github change passes', () => {
   assert.deepEqual(approvalProblems(input()), []);
-  assert.deepEqual(gateProblems({ runAttempt: 2, ...input() }), []);
+  assert.deepEqual(gateProblems({ statuses: [approvalStatus], ...input() }), []);
 });
 
-test('the first run attempt never passes, whatever the approval state', () => {
-  const problems = gateProblems({ runAttempt: 1, ...input() });
-  assert.equal(problems.length, 1);
-  assert.match(problems[0], /maintainer/);
-  assert.equal(gateProblems({ runAttempt: Number.NaN, ...input() }).length, 1);
+test('the gate needs a GitHub Actions approval status on the exact head', () => {
+  for (const statuses of [
+    [],
+    [{ ...approvalStatus, context: 'other' }],
+    [{ ...approvalStatus, state: 'pending' }],
+    [{ ...approvalStatus, creator: { login: 'some-user' } }],
+    // Newest first: a later non-success status supersedes an older approval.
+    [{ ...approvalStatus, state: 'failure' }, approvalStatus],
+  ]) {
+    const problems = gateProblems({ statuses, ...input() });
+    assert.equal(problems.length, 1, JSON.stringify(statuses));
+    assert.match(problems[0], /no maintainer approval/);
+  }
+  // An approval of this head does not excuse any other failing condition.
+  assert.equal(
+    gateProblems({ statuses: [approvalStatus], ...input({ files: [{ filename: '.github/x.yml' }] }) })
+      .length,
+    1,
+  );
+});
+
+test('only write, maintain or admin access can approve', () => {
+  assert.deepEqual(senderProblems('maint', { permission: 'admin' }), []);
+  assert.deepEqual(senderProblems('maint', { permission: 'write' }), []);
+  for (const permission of [{ permission: 'read' }, { permission: 'none' }, {}, null]) {
+    const problems = senderProblems('someone', permission);
+    assert.equal(problems.length, 1, JSON.stringify(permission));
+    assert.match(problems[0], /without write access/);
+  }
+});
+
+test('a truncated or mismatched changed-file list fails closed', () => {
+  for (const changed_files of [2, 3000, 3500]) {
+    const problems = approvalProblems(input({ pr: { ...input().pr, changed_files } }));
+    assert.equal(problems.length, 1, String(changed_files));
+    assert.match(problems[0], /incomplete/);
+  }
 });
 
 test('a missing label, moved head or closed PR is refused', () => {
@@ -72,7 +113,7 @@ test('any change under .github/, including a rename out of it, is refused', () =
     { filename: '.github/actions/setup-environment/action.yml' },
     { filename: 'moved.yml', previous_filename: '.github/workflows/test-suite.yml' },
   ]) {
-    const problems = approvalProblems(input({ files: [file] }));
+    const problems = approvalProblems(input({ files: [file], pr: { ...input().pr, changed_files: 1 } }));
     assert.equal(problems.length, 1, JSON.stringify(file));
     assert.match(problems[0], /\.github\//);
   }
@@ -144,7 +185,12 @@ test('Fork PR Approval never checks out or runs PR code', () => {
   const source = workflow('fork-pr-approval.yml');
   assert.match(source, /^  pull_request_target:$/m);
   assert.match(source, /^permissions: \{\}$/m);
+  // A workflow-level group would let any label event cancel a pending revoke.
+  assert.doesNotMatch(source, /^concurrency:/m);
   const approve = job(source, 'approve');
+  assert.match(approve, /^      statuses: write$/m);
+  assert.match(approve, /SENDER: \$\{\{ github\.event\.sender\.login \}\}/);
+  assert.doesNotMatch(job(source, 'revoke'), /concurrency:/);
   assert.match(approve, /github\.event\.label\.name == 'ci: fork-approved'/);
   assert.match(approve, /head\.repo\.full_name != github\.repository/);
   assert.match(approve, /ref: \$\{\{ github\.sha \}\}/);
@@ -178,13 +224,16 @@ test('each required context gates a fork PR on the trusted approval script only'
       assert.match(step, /if: env\.FORK_PR != 'true'/, `${file}: ${step.split('\n')[0]}`);
     }
     assert.match(required, /^      actions: read$/m, file);
+    assert.match(required, /^      statuses: read$/m, file);
   }
 });
 
-test('every caller of postgres-tests.yml grants the gate its actions: read', () => {
+test('every caller of postgres-tests.yml grants the gate its read permissions', () => {
   for (const file of ['on-demand-validation.yml', 'fork-pr-validation.yml']) {
     const source = workflow(file);
     const caller = source.slice(source.indexOf('uses: ./.github/workflows/postgres-tests.yml'));
-    assert.match(caller.split(/^  [a-z]/m)[0], /^      actions: read$/m, file);
+    const permissions = caller.split(/^  [a-z]/m)[0];
+    assert.match(permissions, /^      actions: read$/m, file);
+    assert.match(permissions, /^      statuses: read$/m, file);
   }
 });

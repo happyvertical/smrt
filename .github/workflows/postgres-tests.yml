@@ -193,6 +193,7 @@ jobs:
       actions: read
       contents: read
       pull-requests: read
+      statuses: read
     env:
       # External fork PRs run these suites in the sandboxed Fork PR Validation
       # workflow; here they pass only on a maintainer approval of the current

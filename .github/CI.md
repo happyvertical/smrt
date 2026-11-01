@@ -56,17 +56,20 @@ Fork code never runs with trusted credentials before the merge queue (#4558).
    distinct from the required contexts.
 2. A maintainer reviews the diff, confirms that run passed, and applies
    `ci: fork-approved`. **Fork PR Approval** (`fork-pr-approval.yml`,
-   `pull_request_target`) then re-runs the `Required CI` and
-   `postgres-required` jobs for that head. It runs only
-   `scripts/fork-pr-approval.mjs` from the base revision.
+   `pull_request_target`) runs only `scripts/fork-pr-approval.mjs` from the
+   base revision. It refuses a labeller without write, maintain or admin
+   access, records a `fork-approval` commit status on that exact head, and
+   re-runs the `Required CI` and `postgres-required` jobs for it.
 3. For a fork PR, both required jobs run that script's `gate`. It passes only
-   on a re-run (attempt > 1, which needs write access) when the label is
-   present, the head is unchanged, the latest Fork PR Validation run for that
-   head succeeded, and no file under `.github/` changed. A PR that changes
-   `.github/` is re-landed from a same-repository branch.
-4. A new push removes the label, and the new head's first run fails until a
-   maintainer approves it again. The merge queue's trusted full validation is
-   unchanged and gates every merge.
+   when the current head carries the `fork-approval` status from GitHub
+   Actions, the label is present, the latest Fork PR Validation run for that
+   head succeeded, the changed-file list is complete (under the API's
+   3000-file limit), and no file under `.github/` changed. A PR that fails
+   either of the last two is re-landed from a same-repository branch.
+4. The status binds approval to one commit: a fork cannot write statuses here,
+   and a new push is a new SHA without one, so its required checks fail until
+   a maintainer approves again. The push also removes the label. The merge
+   queue's trusted full validation is unchanged and gates every merge.
 
 Every job in the two fork workflows is skipped on same-repository PRs.
 

@@ -82,8 +82,9 @@ jobs:
     if: github.event.pull_request.head.repo.full_name != github.repository
     uses: ./.github/workflows/postgres-tests.yml
     permissions:
-      # postgres-required declares it for the fork gate, unused on this path.
+      # postgres-required declares these for the fork gate, unused on this path.
       actions: read
       contents: read
       packages: read
       pull-requests: read
+      statuses: read

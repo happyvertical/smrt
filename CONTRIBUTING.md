@@ -76,8 +76,9 @@ Two rules apply:
    `postgres-required` checks fail with an "awaiting maintainer approval"
    message. That is expected.
 4. Once the sandbox run passes and the review is done, a maintainer applies
-   `ci: fork-approved` and the required checks re-run and pass. Pushing new
-   commits removes the label, and the new head needs another approval.
+   `ci: fork-approved` and the required checks re-run and pass. Approval
+   covers that exact commit: pushing new commits removes the label, and the
+   new head needs another approval.
 5. The maintainer adds the PR to the merge queue, which runs the full
    validation once more before merging.
 
