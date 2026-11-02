@@ -157,6 +157,8 @@ import {
   POSTGRES_CHANGE_FEED_APPEND_BATCH_FUNCTION_NAME,
   POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY,
   POSTGRES_CHANGE_FEED_APPEND_FUNCTION_NAME,
+  POSTGRES_CHANGE_FEED_COMPAT_DRAIN_FUNCTION_IDENTITY,
+  POSTGRES_CHANGE_FEED_DRAIN_BATCH,
   POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_IDENTITY,
   POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_NAME,
   POSTGRES_CHANGE_FEED_HELPER_MARKER,
@@ -659,6 +661,7 @@ async function postgresChangeFeedHelpersCurrent(
          ${currentHelperProbe(POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY)} AS function_name,
          ${currentHelperProbe(POSTGRES_CHANGE_FEED_APPEND_BATCH_FUNCTION_IDENTITY)} AS batch_function_name,
          ${currentHelperProbe(POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_IDENTITY)} AS drain_function_name,
+         ${currentHelperProbe(POSTGRES_CHANGE_FEED_COMPAT_DRAIN_FUNCTION_IDENTITY)} AS compat_drain_function_name,
          to_regclass('${POSTGRES_CHANGE_FEED_PENDING_TABLE}') AS pending_table_name`,
     ),
   );
@@ -666,6 +669,7 @@ async function postgresChangeFeedHelpersCurrent(
     rows[0]?.function_name &&
       rows[0]?.batch_function_name &&
       rows[0]?.drain_function_name &&
+      rows[0]?.compat_drain_function_name &&
       rows[0]?.pending_table_name,
   );
 }
@@ -688,6 +692,7 @@ async function getPostgresChangeFeedSchemaState(
          ${currentHelperProbe(POSTGRES_CHANGE_FEED_APPEND_BATCH_FUNCTION_IDENTITY)} AS batch_function_name,
          to_regclass('${POSTGRES_CHANGE_FEED_PENDING_TABLE}') AS pending_table_name,
          ${currentHelperProbe(POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_IDENTITY)} AS drain_function_name,
+         ${currentHelperProbe(POSTGRES_CHANGE_FEED_COMPAT_DRAIN_FUNCTION_IDENTITY)} AS compat_drain_function_name,
          (
            SELECT data_type
            FROM information_schema.columns
@@ -702,7 +707,11 @@ async function getPostgresChangeFeedSchemaState(
     functionExists: Boolean(rows[0]?.function_name),
     batchFunctionExists: Boolean(rows[0]?.batch_function_name),
     pendingTableExists: Boolean(rows[0]?.pending_table_name),
-    drainFunctionExists: Boolean(rows[0]?.drain_function_name),
+    // Both drain entry points: the current one, and the single-argument one
+    // older replicas still call during a rollout (#2982).
+    drainFunctionExists: Boolean(
+      rows[0]?.drain_function_name && rows[0]?.compat_drain_function_name,
+    ),
     createdAtType: rows[0]?.created_at_type
       ? String(rows[0].created_at_type)
       : null,
@@ -1239,9 +1248,17 @@ async function drainChangeFeedDetailed(
   // behind, with a hard iteration cap so a persistent failure cannot spin.
   const maxPasses = Math.max(1, options.maxPasses ?? MAX_DRAIN_PASSES);
   for (let pass = 0; pass < maxPasses; pass++) {
+    // The live sensitive set rides with every drain (#2982): the helper drops
+    // their staged rows before allocating a sequence, so the feed never
+    // records them — including entries an older replica staged. It travels as
+    // one JSON parameter, like the batch append's payload.
+    const p = placeholders(db);
     const rows = getQueryRows(
       await db.query(
-        `SELECT * FROM ${POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_NAME}()`,
+        `SELECT * FROM ${POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_NAME}(` +
+          `${POSTGRES_CHANGE_FEED_DRAIN_BATCH}, ` +
+          `ARRAY(SELECT jsonb_array_elements_text(${p(1)}::jsonb)))`,
+        JSON.stringify(getChangeFeedSensitiveTables()),
       ),
     );
     const failure = rows.find((row) => row.error_code != null);

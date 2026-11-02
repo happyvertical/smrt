@@ -28,7 +28,7 @@ Polling-based execution engine. Config: `concurrency` (5), `pollInterval` (1s), 
    canonical hydration. Runner-owned `db`, `id`, and hydration options cannot be
    overridden by agent config; missing persisted targets fail before method
    dispatch. Jobs without `objectId` construct a static-like instance
-5. **Internal args**: `_agentConfig` and `_scheduleId` stripped from args before calling method
+5. **Internal args**: `_agentConfig` and `_scheduleId` stripped from args before calling method. `_agentConfig` goes through `resolveLazyConfig()` with this job's identity as resolver context (`agentId` = `objectId`, qualified `agentClass`, `tenantId`, `scheduleId`, `jobId`; #2806). That identity comes from the job row only, never from scanning other agents. `scheduleId` is echoed from args unverified and is informational only
 6. Calls the requested method on the initialized instance
 7. Terminal/retry writes are **conditional** (`WHERE worker_id=? AND status='running'`) so a recovered row is never stomped
 8. Retry: uses strategy from `@happyvertical/jobs`, schedules future `runAt` on failure. A handler error's own hints win (#3308): `error.retryable === false` fails the job terminally; a positive `error.retryAfterMs` (capped at 24 h) is a floor on the strategy's delay
