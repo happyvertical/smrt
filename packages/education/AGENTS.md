@@ -34,6 +34,39 @@ sharing separate from guardian Grade authority. Photo-first receipt/context
 capture uses [WorkbookPhotoService](agents/photo-intake.md); covers/references
 never create learning evidence, and blank exercises need explicit work intent.
 
+Revisioned authored courses, release, archive, enrollment pins and licence use
+[CourseAuthoringService](agents/course-authoring-service.md). Keep history
+append-only, require request keys, and never weaken personal-use-copy rules.
+
+Generation proposals into new draft revisions and revision-bound educational
+review use [CourseGenerationReviewService](agents/course-generation-review.md).
+Keep supplied content unless a decision is recorded; reviews carry no score.
+
+Immutable questions, answer keys/rubrics, stable learning objectives, worksheet
+render ids and exact-revision references use [QuestionAuthoringService](agents/question-records.md).
+Keep keys out of learner bundles; a missing key stays null. `attachGeneratedPrintable`
+stores the rendered PDFs; the guardian copy is always an `answer-key`, never `printable`.
+
 Source import: [host boundary and transaction contract](agents/source-import.md).
 `SourceImportService` requires host opt-in, matching active actor/tenant and
 explicit licensing authorization; never add a system/global write bypass.
+
+Family-owned unassigned originals and audited learner adoption use
+[FamilyIntakeService](agents/family-intake.md). Keep family source scope immutable;
+assignment alone never creates learning history or grants learner inbox access.
+
+Publisher catalog previews use [the preview contract](agents/catalog-previews.md).
+Keep independent image rights and source revisions; serve via `CatalogPreviewService`
+with live actor/tenant authorization, never direct provider image URLs.
+
+Enrollment Plan projections and guardian-only parent notes use
+[the Plan contract](agents/learner-plan.md). Keep awaiting review separate from
+Continue; note authority/provenance never grants learner access or learning evidence.
+
+Homeschool group sharing uses [GroupSharingService](agents/group-sharing.md),
+its read-only reader and revision comment service. Group tenants never become
+family ancestors or guardians. Enumerate only the group-owned opaque roster index,
+then revalidate each exact family edge and current policy. Media delivery must call
+the reader on every request; signed storage URLs are not a sharing grant. Saved
+parent comment visibility applies on every child read. Progress with feedback
+disabled contains counts only, never correctness, scores or concept labels.

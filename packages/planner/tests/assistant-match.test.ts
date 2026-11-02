@@ -207,7 +207,8 @@ describe('focused prompt', () => {
     }
     expect(bakery).toBeLessThan(full);
     expect(none).toBeLessThan(bakery);
-    expect(bakery).toBeLessThan(3700);
+    // Grows with the catalogue: 3.8k at smrt 0.57.36's 55 recipes.
+    expect(bakery).toBeLessThan(4100);
   });
 });
 

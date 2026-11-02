@@ -37,7 +37,7 @@ export {
 
 import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 import type {
   DomainKnowledgeAgentSurface,
   DomainKnowledgeConfig,
@@ -147,7 +147,7 @@ export function buildDomainKnowledgeManifest(
   const packageJson = options.packageJson ?? readPackageJson(rootDir) ?? {};
   const packageName = options.manifest.packageName ?? packageJson.name;
   const packageVersion = options.manifest.packageVersion ?? packageJson.version;
-  const agentDocPath = existingPath(rootDir, 'AGENTS.md');
+  const agentDocPath = findAgentDocPath(rootDir);
   const agentDocContent = agentDocPath
     ? readFileSync(agentDocPath, 'utf8')
     : undefined;
@@ -155,7 +155,14 @@ export function buildDomainKnowledgeManifest(
   const agentDoc = includeDocs ? agentDocContent : undefined;
   // Module doc PATHS are always resolved so their hashes gate freshness even
   // when doc bodies are excluded from the artifact — same stance as `agents`.
-  const moduleDocPaths = resolveAgentModuleDocPaths(rootDir, agentDocContent);
+  // Module docs are linked relative to the package root, so only an AGENTS.md
+  // that lives AT the root resolves them; an inherited workspace-level one
+  // links docs relative to its own directory.
+  const moduleDocSource =
+    agentDocPath && dirname(agentDocPath) === resolve(rootDir)
+      ? agentDocContent
+      : undefined;
+  const moduleDocPaths = resolveAgentModuleDocPaths(rootDir, moduleDocSource);
   const allDependencies = {
     ...record(packageJson.dependencies),
     ...record(packageJson.devDependencies),
@@ -228,7 +235,7 @@ export function buildDomainKnowledgeManifest(
     agentDoc,
     moduleDocs:
       includeDocs && moduleDocPaths.length > 0
-        ? readAgentModuleDocs(rootDir, agentDocContent)
+        ? readAgentModuleDocs(rootDir, moduleDocSource)
         : undefined,
     agentSurface,
     ...(options.manifest.recipes && options.manifest.recipes.length > 0
@@ -1262,6 +1269,33 @@ function fileHashSource(path: string | undefined): HashSource | undefined {
 function existingPath(rootDir: string, path: string): string | undefined {
   const fullPath = join(rootDir, path);
   return existsSync(fullPath) ? fullPath : undefined;
+}
+
+/**
+ * Locate the agent doc: `AGENTS.md` in the project root, else in the nearest
+ * ancestor up to the workspace root (the nearest directory holding
+ * `pnpm-workspace.yaml`, else the git root). Never walks past that boundary; if
+ * no boundary exists above the project root, only the root itself is checked.
+ */
+function findAgentDocPath(rootDir: string): string | undefined {
+  const start = resolve(rootDir);
+  const atRoot = existingPath(start, 'AGENTS.md');
+  if (atRoot) return atRoot;
+  const chain: string[] = [];
+  for (let dir = start; ; dir = dirname(dir)) {
+    chain.push(dir);
+    if (
+      existsSync(join(dir, 'pnpm-workspace.yaml')) ||
+      existsSync(join(dir, '.git'))
+    ) {
+      for (const candidate of chain.slice(1)) {
+        const found = existingPath(candidate, 'AGENTS.md');
+        if (found) return found;
+      }
+      return undefined;
+    }
+    if (dirname(dir) === dir) return undefined;
+  }
 }
 
 function readPackageJson(rootDir: string): PackageJsonLike | null {

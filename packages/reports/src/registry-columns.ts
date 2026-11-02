@@ -35,6 +35,77 @@ export async function tenantColumn(className: string): Promise<string | null> {
   return tenantIdField;
 }
 
+type SchemaTables = Record<
+  string,
+  { columns?: Record<string, { type?: unknown }> }
+>;
+
+/**
+ * Reads column types for one report build. The tables come from the same
+ * merged assembly migration uses (manifest columns plus runtime overlays such
+ * as `tenantScoped`'s tenant_id), built at most once per build. If assembling
+ * them fails for a reason elsewhere in the registry, types fall back to each
+ * class's own built schema, and a column neither describes is unknown.
+ */
+export function columnTypeReader(): (
+  className: string,
+  column: string,
+) => string | null {
+  let tables: SchemaTables | null | undefined;
+  const merged = (): SchemaTables | null => {
+    if (tables === undefined) {
+      try {
+        tables = ObjectRegistry.getAllSchemasAsDefinitions() as SchemaTables;
+      } catch {
+        tables = null;
+      }
+    }
+    return tables;
+  };
+  const upper = (type: unknown) =>
+    typeof type === 'string' ? type.toUpperCase() : null;
+
+  return (className, column) => {
+    const table = ObjectRegistry.getTableName(className);
+    const fromTable = table
+      ? upper(merged()?.[table]?.columns?.[column]?.type)
+      : null;
+    if (fromTable) return fromTable;
+    // An STI child's columns live on its base table's schema.
+    const names = [className];
+    if (ObjectRegistry.getTableStrategy(className) === 'sti') {
+      const base = ObjectRegistry.getSTIBase(className);
+      if (base) names.push(base);
+    }
+    for (const name of names) {
+      const type = upper(
+        ObjectRegistry.getSchema(name)?.columns?.[column]?.type,
+      );
+      if (type) return type;
+    }
+    return null;
+  };
+}
+
+/**
+ * Whether two key columns must be compared as text: one is UUID and the other
+ * TEXT (a text reference against a uuid id, which Postgres has no operator
+ * for). Every other pair, same-typed, undescribed or another mismatch,
+ * compares as it is, so indexes still serve the join and numeric keys are
+ * never compared by their text form.
+ */
+export function compareAsText(
+  types: (className: string, column: string) => string | null,
+  left: { className: string; column: string },
+  right: { className: string; column: string },
+): boolean {
+  const pair = [
+    types(left.className, left.column),
+    types(right.className, right.column),
+  ];
+  return pair.includes('UUID') && pair.includes('TEXT');
+}
+
 /** The registry field properties that decide who may read a column. */
 export interface PolicyField {
   sensitive?: boolean;

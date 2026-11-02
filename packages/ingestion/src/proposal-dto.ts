@@ -42,6 +42,12 @@ export interface ProposalCatalogEntry {
   id: string;
   version: string;
   description: string;
+  /**
+   * The handler's reviewer-facing display name (#4503), present only on the
+   * reviewer catalog (`listHandlers`, `ItemReviewView.catalog`) when the
+   * handler declares one. Never part of generation input or digests.
+   */
+  label?: string;
   kind: 'operation' | 'plan';
   /** A plan has no invented aggregate classification; its ordered definition is pinned. */
   capability: CapabilityDeclaration | null;

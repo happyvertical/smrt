@@ -422,10 +422,31 @@ export function checkKnowledgeGraphFreshness(
     return issues;
   }
 
-  const recordedPaths = Object.keys(graph.sourceHashes ?? {});
-  for (const [artifactPath, expectedHash] of Object.entries(
-    graph.sourceHashes ?? {},
-  )) {
+  const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+    typeof value === 'object' && value !== null && !Array.isArray(value);
+  const graphValue: unknown = graph;
+  // A graph without `sourceHashes` records no artifacts (as before #3075);
+  // only shapes that used to throw are reported as malformed.
+  const sourceHashesValue = isPlainObject(graphValue)
+    ? (graphValue.sourceHashes ?? {})
+    : undefined;
+  if (
+    !isPlainObject(graphValue) ||
+    !isPlainObject(sourceHashesValue) ||
+    Object.values(sourceHashesValue).some((hash) => typeof hash !== 'string')
+  ) {
+    issues.push({
+      severity: 'error',
+      code: 'stale-knowledge-graph',
+      message: `${graphPath} is malformed (expected an object with a \`sourceHashes\` map of string hashes); run \`pnpm knowledge:graph\``,
+      file: graphPath,
+    });
+    return issues;
+  }
+
+  const sourceHashes = sourceHashesValue as Record<string, string>;
+  const recordedPaths = Object.keys(sourceHashes);
+  for (const [artifactPath, expectedHash] of Object.entries(sourceHashes)) {
     const absoluteArtifactPath = `${rootDir}/${artifactPath}`;
     if (!existsSync(absoluteArtifactPath)) {
       issues.push({

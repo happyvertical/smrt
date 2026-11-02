@@ -266,6 +266,40 @@ export const ID_FIELD_FILTER_OPERATORS: DataQueryFilterOperator[] = [
   'notIn',
 ];
 
+/** Null tests (#4448), declared only on a field whose column can hold null. */
+export const NULL_TEST_FILTER_OPERATORS: DataQueryFilterOperator[] = [
+  'isNotNull',
+  'isNull',
+];
+
+function isNullTest(operator: DataQueryFilterOperator): boolean {
+  return operator === 'isNull' || operator === 'isNotNull';
+}
+
+/**
+ * The declared field ids of `qualifiedName` whose column can hold null (#4448),
+ * read from the manifest schema: a column that is neither `notNull` nor the
+ * primary key. A field with no schema column is left out, so a null test is
+ * never advertised on storage nobody has described.
+ */
+export function nullableColumnFieldIds(
+  qualifiedName: string,
+  fieldIds: Iterable<string>,
+): Set<string> {
+  const schema =
+    ObjectRegistry.getSchema(qualifiedName) ??
+    ObjectRegistry.getSchema(getClassName(qualifiedName));
+  const columns = schema?.columns ?? {};
+  const ids = new Set<string>();
+  for (const id of fieldIds) {
+    const column = columns[toSnakeCase(id)] ?? columns[id];
+    if (column && column.notNull !== true && column.primaryKey !== true) {
+      ids.add(id);
+    }
+  }
+  return ids;
+}
+
 /** Canonical UUID text: the only value a native UUID column can equal. */
 const UUID_VALUE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -306,6 +340,8 @@ export function assertIdFieldConditions(
   if (!filter || idFields.size === 0) return;
   if (filter.kind === 'condition') {
     if (!idFields.has(filter.field)) return;
+    // A null test compares no id value, and IS NULL is valid on any UUID column.
+    if (isNullTest(filter.operator)) return;
     if (!ID_FIELD_FILTER_OPERATORS.includes(filter.operator)) {
       queryFail(
         `Data query operator ${filter.operator} is not allowed for ${filter.field}: it holds ids, which support only ${ID_FIELD_FILTER_OPERATORS.join(', ')}`,
@@ -528,15 +564,24 @@ async function buildQuerySchemaForClass(
   >;
   const tenantField = getTenantScopedConfig(qualifiedName)?.field ?? 'tenantId';
   const idFields = uuidColumnFieldIds(qualifiedName, registered.keys());
+  const nullableFields = nullableColumnFieldIds(
+    qualifiedName,
+    registered.keys(),
+  );
   const fields: DataQueryFieldDescriptor[] = [];
   for (const [name, field] of registered) {
     if (isPolicyExcludedField(name, field, tenantField, options.exclude))
       continue;
     const type = queryFieldType(field.type);
     if (!type) continue;
-    const filterOperators = idFields.has(name)
+    const valueOperators = idFields.has(name)
       ? [...ID_FIELD_FILTER_OPERATORS]
       : filterOperatorsFor(type);
+    // JSON stays unfilterable: no value operator, so no null test either.
+    const filterOperators =
+      valueOperators && nullableFields.has(name)
+        ? [...valueOperators, ...NULL_TEST_FILTER_OPERATORS]
+        : valueOperators;
     const values = idFields.has(name)
       ? undefined
       : declaredEnumValues(
@@ -743,6 +788,10 @@ function inverseOperator(
       return 'notIn';
     case 'notIn':
       return 'in';
+    case 'isNull':
+      return 'isNotNull';
+    case 'isNotNull':
+      return 'isNull';
     case 'like':
       return queryFail(
         'Data queries cannot negate a like predicate',
@@ -762,6 +811,11 @@ function conditionToDnf(
   const single = (whereKey: string, whereValue: unknown): WhereDnf => [
     [{ [whereKey]: whereValue }],
   ];
+
+  // Null tests (#4448): `{ field: null }` is IS NULL and `{ 'field !=': null }`
+  // IS NOT NULL, so each is the exact complement of the other under negation.
+  if (operator === 'isNull') return single(field, null);
+  if (operator === 'isNotNull') return single(key('!='), null);
 
   if (operator === 'in') {
     const values = (value as unknown[]) ?? [];
@@ -793,7 +847,7 @@ function conditionToDnf(
   }
 
   const suffixes: Record<
-    Exclude<DataQueryFilterOperator, 'in' | 'notIn'>,
+    Exclude<DataQueryFilterOperator, 'in' | 'notIn' | 'isNull' | 'isNotNull'>,
     string
   > = {
     eq: '',

@@ -1,5 +1,6 @@
 import {
   crossPackageRef,
+  field,
   foreignKey,
   SmrtCollection,
   SmrtObject,
@@ -110,13 +111,19 @@ export class ClientCharge extends SmrtObject {
   projectId: string = '';
   workRefType: string = '';
   workRefId: string = '';
+  @field({ description: 'Who supplied the service that was used.' })
   provider: string = '';
+  @field({ description: 'The service that was used.' })
   serviceKey: string = '';
+  @field({
+    description: 'What was used, such as messages sent or minutes of audio.',
+  })
   metricKey: string = '';
   /**
    * Metered quantity — genuinely fractional (`duration.seconds`, token counts
    * scaled by a rate), so it stays DECIMAL.
    */
+  @field({ description: 'How much of it was used.' })
   quantity: number = 0.0;
   /**
    * Charge in **integer minor units** of {@link currency} (#2401).
@@ -126,7 +133,9 @@ export class ClientCharge extends SmrtObject {
    * `CommercialService.calculateAmount()` rounds to a whole minor unit at the
    * one boundary where the fractional pricing terms meet money.
    */
+  @field({ description: 'What it cost, in cents.' })
   amount: number = 0;
+  @field({ description: 'The currency the amount is in, such as USD.' })
   currency: string = 'USD';
   @foreignKey('PricingRule')
   pricingRuleId: string = '';
@@ -134,7 +143,11 @@ export class ClientCharge extends SmrtObject {
   @foreignKey('PriceBook')
   priceBookId: string = '';
   pricingSnapshot: string = '{}';
+  @field({
+    description: 'Where the charge stands: draft, approved or adjusted.',
+  })
   status: 'draft' | 'approved' | 'adjusted' = 'draft';
+  @field({ description: 'When the charge was approved.' })
   approvedAt: Date | null = null;
 
   getPricingSnapshot(): Record<string, unknown> {

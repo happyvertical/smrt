@@ -3,7 +3,13 @@
  * @packageDocumentation
  */
 
-import { field, foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  field,
+  foreignKey,
+  SmrtObject,
+  type SmrtSaveOptions,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { OpportunityConversionOptions } from '../types.js';
 
@@ -108,7 +114,7 @@ export class OpportunityConversion extends SmrtObject {
    * `OpportunityConversionCollection.recordConversion()`, which finds
    * first and reports `{ created: false }`.
    */
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     if (this.opportunityId && this.targetKind && this.targetId) {
       try {
         const res = await this.db.query(
@@ -137,7 +143,7 @@ export class OpportunityConversion extends SmrtObject {
         // DB not ready / table absent — nothing persisted to collide with.
       }
     }
-    return (await super.save()) as this;
+    return (await super.save(options)) as this;
   }
 }
 

@@ -23,8 +23,9 @@ export interface ResourceGrantOptions extends SmrtObjectOptions {
 
 /**
  * An exact tenant/resource/user/permission decision. This deliberately does
- * not replace tenant RBAC: ResourceGrantResolver only allows after the normal
- * operation guard has allowed the same permission.
+ * not replace tenant RBAC: `checkResourceOperationPermission` (in
+ * `ResourceGrantService.ts`) only allows after the normal operation guard has
+ * allowed the same permission.
  */
 @smrt({
   // Grant records reveal resource/user authorization relationships. The public

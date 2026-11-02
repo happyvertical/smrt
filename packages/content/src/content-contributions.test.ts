@@ -832,6 +832,45 @@ describe('content contributions', () => {
     );
   });
 
+  it('persists promoted content as the STI subclass of targetContentType (#4265)', async () => {
+    const promote = async (typeKey: string, title: string) => {
+      const submitted = await contributions.submitWebContribution({
+        typeKey,
+        contributorEmail: 'sti@example.com',
+        contributorName: 'Sti Source',
+        title,
+        body: 'Body text.',
+        tenantId: 'tenant-1',
+      });
+      let contentId = submitted.content?.id;
+      if (!contentId) {
+        const record = await contributions.get({
+          id: submitted.contribution.id,
+        });
+        const approved = await record?.approveAction({});
+        contentId = approved?.content?.id;
+      }
+      const stored = await db.get('contents', { id: contentId });
+      return String(stored?._meta_type);
+    };
+
+    expect(await promote('letter', 'Typed letter')).toMatch(/:Article$/);
+
+    configureContentContributions({
+      types: [
+        {
+          key: 'odd',
+          label: 'Odd',
+          allowedChannels: ['web'],
+          allowText: true,
+          allowEmptyText: true,
+          promotion: { targetContentType: 'newsletter-unknown' },
+        },
+      ],
+    });
+    expect(await promote('odd', 'Unknown type')).toMatch(/:Content$/);
+  });
+
   it('approves a held contribution into draft content and draft assets via content_assets', async () => {
     const submitted = await contributions.submitWebContribution({
       typeKey: 'letter',

@@ -20,6 +20,7 @@ import type {
   DataQueryFilter,
   DataQueryFilterOperator,
   DataQueryFreshness,
+  DataQueryNullCondition,
   DataQueryPage,
   DataQueryRequest,
   DataQueryResult,
@@ -78,6 +79,13 @@ const FILTER_OPERATORS = new Set<DataQueryFilterOperator>([
   'in',
   'notIn',
   'like',
+  'isNull',
+  'isNotNull',
+]);
+/** Null tests (#4448): conditions that take no `value`. */
+const NULL_OPERATORS = new Set<DataQueryFilterOperator>([
+  'isNull',
+  'isNotNull',
 ]);
 const FORBIDDEN_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 
@@ -803,6 +811,21 @@ function normalizeFilter(
         `Data query operator ${operator} is not allowed for ${field}`,
         'DATA_QUERY_OPERATOR_NOT_ALLOWED',
       );
+    }
+    if (NULL_OPERATORS.has(operator)) {
+      // A null test takes no value. An explicit `null` is tolerated because
+      // models write `"value": null` alongside it, and is dropped so both
+      // spellings share one canonical form and fingerprint.
+      if (object.value !== undefined && object.value !== null) {
+        return fail(
+          `Data query ${operator} takes no value; omit value: {"kind":"condition","field":${JSON.stringify(field)},"operator":"${operator}"}`,
+        );
+      }
+      return {
+        kind: 'condition',
+        field,
+        operator: operator as DataQueryNullCondition['operator'],
+      };
     }
     if (operator === 'in' || operator === 'notIn') {
       if (!Array.isArray(object.value) || object.value.length === 0) {

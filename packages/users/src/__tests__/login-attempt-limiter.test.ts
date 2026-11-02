@@ -47,6 +47,42 @@ describe('LoginAttemptLimiter', () => {
     if (existsSync(dbPath)) rmSync(dbPath, { force: true });
   });
 
+  it.each([
+    'subject',
+    'source',
+  ] as const)('reports the actual earliest reserved %s window deadline', async (short) => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const started = Date.parse('2026-10-29T18:00:00.000Z');
+    vi.setSystemTime(started);
+    const limiter = await LoginAttemptLimiter.create({
+      ...options,
+      audit: false,
+      subject: { windowSeconds: short === 'subject' ? 1 : 100 },
+      source: { windowSeconds: short === 'source' ? 1 : 100 },
+    });
+    const first = expectAllowed(
+      await limiter.reserve({
+        kind: 'deadline',
+        subject: 'first',
+        source: 'first',
+        retainOnSuccess: true,
+      }),
+    );
+    expect(first.budgetExpiresAt).toBe(started + 1000);
+    await first.succeed();
+    vi.setSystemTime(started + 900);
+    const second = expectAllowed(
+      await limiter.reserve({
+        kind: 'deadline',
+        subject: short === 'subject' ? 'first' : 'second',
+        source: short === 'source' ? 'first' : 'second',
+        retainOnSuccess: true,
+      }),
+    );
+    expect(second.budgetExpiresAt).toBe(started + 1000);
+    await second.succeed();
+  });
+
   it('uses package-prefixed, change-feed-sensitive tables', () => {
     expect(new UsersLoginAttempt().tableName).toBe('users_login_attempts');
     expect(new UsersLoginAuditEvent().tableName).toBe(

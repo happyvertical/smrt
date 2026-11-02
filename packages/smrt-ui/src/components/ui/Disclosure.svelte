@@ -14,6 +14,8 @@ export interface Props {
   onopenchange?: (open: boolean) => void;
   /** Additional CSS class names. */
   class?: string;
+  /** Target density; omit to inherit the ThemeProvider setting. */
+  density?: 'comfortable' | 'touch';
 }
 
 let {
@@ -23,6 +25,7 @@ let {
   children,
   onopenchange,
   class: className = '',
+  density,
 }: Props = $props();
 
 function handleToggle(event: Event) {
@@ -36,7 +39,7 @@ function handleToggle(event: Event) {
 }
 </script>
 
-<details class="disclosure {className}" bind:open ontoggle={handleToggle} data-smrt-component="Disclosure">
+<details class="disclosure {className}" data-density={density} bind:open ontoggle={handleToggle} data-smrt-component="Disclosure">
   <summary aria-disabled={disabled} onclick={(event) => disabled && event.preventDefault()}>
     <span>{title}</span><span class="chevron" aria-hidden="true">⌄</span>
   </summary>
@@ -47,7 +50,10 @@ function handleToggle(event: Event) {
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
   .disclosure { border-bottom: var(--smrt-hairline); color: var(--smrt-color-on-surface); }
-  summary { display: flex; justify-content: space-between; gap: var(--smrt-spacing-3); padding: var(--smrt-spacing-3) 0; font: var(--smrt-typography-title-small-font); cursor: pointer; list-style: none; }
+  .disclosure[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min); }
+  .disclosure[data-density='comfortable'] { --smrt-control-target-min: 0px; }
+  .disclosure[data-density='touch'] summary { align-items: center; }
+  summary { display: flex; min-height: var(--smrt-control-target-min); justify-content: space-between; gap: var(--smrt-spacing-3); padding: var(--smrt-spacing-3) 0; font: var(--smrt-typography-title-small-font); cursor: pointer; list-style: none; }
   summary::-webkit-details-marker { display: none; }
   summary:focus-visible { outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color); outline-offset: var(--smrt-focus-ring-offset); }
   summary[aria-disabled='true'] { opacity: .5; cursor: not-allowed; }

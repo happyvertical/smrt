@@ -25,6 +25,7 @@ import {
   LearnerService,
 } from './learner-service.js';
 import type { Grade, Submission, SubmissionKind } from './submissions.js';
+import { readWorkbookCompletion } from './workbook-completion.js';
 
 /** A single captured page. No model patches or pre-existing asset IDs are accepted. */
 export interface SubmissionPage {
@@ -163,7 +164,7 @@ export class SubmissionService extends LearnerService {
     return this.runtime;
   }
   protected async storePage(
-    request: LearnerRequest,
+    request: Pick<LearnerRequest, 'tenantId' | 'actorUserId'>,
     profileId: string,
     page: SubmissionPage,
   ): Promise<Asset> {
@@ -230,18 +231,29 @@ export class SubmissionService extends LearnerService {
         throw new Error('Invalid capture page');
     }
   }
+  private async lockProgressOwner(
+    request: LearnerRequest & { enrollmentId: string },
+  ): Promise<void> {
+    // Match WorkbookService's lock order so generic guardian grading cannot race
+    // capture or an explicit completion decision on the same learner.
+    if (
+      await this.findWorkbookActivity(request, {
+        enrollmentId: request.enrollmentId,
+      })
+    )
+      await this.db.query(
+        'UPDATE learners SET id = id WHERE id = ? AND tenant_id = ?',
+        [request.learnerId, request.tenantId],
+      );
+    await this.lock('enrollments', request.enrollmentId, request.tenantId);
+  }
   private async progress(
     request: LessonRequest,
     action: Parameters<LearnerAuthorizer>[0]['action'],
   ) {
     const enrollment = await this.requireEnrollment(request, action);
-    await this.lock('enrollments', request.enrollmentId, request.tenantId);
-    const catalog = await this.catalog(request, enrollment.courseId);
-    if (
-      !catalog.sections.some((section) =>
-        section.lessons.some(({ lesson }) => lesson.id === request.lessonId),
-      )
-    )
+    await this.lockProgressOwner(request);
+    if (!(await this.lessonInScope(request, enrollment, request.lessonId)))
       throw new LearnerAuthorizationError();
     const collection = await LessonProgressCollection.create({ db: this.db });
     let progress = await collection.get(
@@ -291,12 +303,9 @@ export class SubmissionService extends LearnerService {
       },
       { cache: false },
     );
-    const catalog = await this.catalog(request, enrollment.courseId);
     if (
       !progress ||
-      !catalog.sections.some((section) =>
-        section.lessons.some(({ lesson }) => lesson.id === row.lessonId),
-      )
+      !(await this.lessonInScope(request, enrollment, row.lessonId))
     )
       throw new LearnerAuthorizationError();
     return { row, progress };
@@ -448,12 +457,7 @@ export class SubmissionService extends LearnerService {
       request,
       'education.learner.submit',
     );
-    const catalog = await this.catalog(request, enrollment.courseId);
-    if (
-      !catalog.sections.some((section) =>
-        section.lessons.some(({ lesson }) => lesson.id === request.lessonId),
-      )
-    )
+    if (!(await this.lessonInScope(request, enrollment, request.lessonId)))
       throw new LearnerAuthorizationError();
   }
 
@@ -760,6 +764,46 @@ export class SubmissionService extends LearnerService {
       request.actorUserId,
     );
   }
+  /** Latest retained completed-work evidence; lesson completion is independent. */
+  async getLatestLessonSubmission(
+    request: LessonRequest,
+  ): Promise<SubmissionView | null> {
+    const enrollment = await this.requireEnrollment(
+      request,
+      'education.learner.read',
+    );
+    if (!(await this.lessonInScope(request, enrollment, request.lessonId)))
+      throw new LearnerAuthorizationError();
+    const progress = await (
+      await LessonProgressCollection.create({ db: this.db })
+    ).get(
+      {
+        enrollmentId: request.enrollmentId,
+        learnerId: request.learnerId,
+        lessonId: request.lessonId,
+        tenantId: request.tenantId,
+      },
+      { cache: false },
+    );
+    if (!progress) return null;
+    const [row] = await (
+      await SubmissionCollection.create({ db: this.db })
+    ).list({
+      where: {
+        tenantId: request.tenantId,
+        learnerId: request.learnerId,
+        lessonId: request.lessonId,
+        progressId: String(progress.id),
+        kind: 'completed_work',
+        'status in': ['captured', 'needs_review', 'graded'],
+      },
+      orderBy: ['submittedAt DESC', 'id DESC'],
+      limit: 1,
+    });
+    return row
+      ? this.getSubmission({ ...request, submissionId: String(row.id) })
+      : null;
+  }
   private async grade(
     request: LearnerRequest,
     row: Submission,
@@ -803,8 +847,25 @@ export class SubmissionService extends LearnerService {
     });
     row.status = 'graded';
     await row.save();
-    progress.status = 'complete';
-    progress.completedAt = new Date();
+    const workbookActivity = await this.findWorkbookActivity(request, {
+      enrollmentId: progress.enrollmentId,
+      lessonId: row.lessonId,
+    });
+    const completion = workbookActivity
+      ? await readWorkbookCompletion(this.db, {
+          tenantId: request.tenantId,
+          learnerId: request.learnerId,
+          activityId: String(workbookActivity.id),
+        })
+      : null;
+    progress.status = completion
+      ? completion.completion.status === 'complete'
+        ? 'complete'
+        : 'in_progress'
+      : 'complete';
+    progress.completedAt = completion
+      ? completion.completion.completedAt
+      : new Date();
     // The authoritative guardian score supersedes any automated proposal.
     progress.bestScore = score;
     await progress.save();
@@ -815,7 +876,7 @@ export class SubmissionService extends LearnerService {
   ): Promise<SubmissionView> {
     return this.mutate(async (service) => {
       await service.requireEnrollment(request, 'education.learner.grade');
-      await service.lock('enrollments', request.enrollmentId, request.tenantId);
+      await service.lockProgressOwner(request);
       const { row, progress } = await service.requireSubmission(
         request,
         'education.learner.grade',
@@ -995,14 +1056,7 @@ export class SubmissionService extends LearnerService {
       request,
       'education.learner.read',
     );
-    const catalog = await this.catalog(request, enrollment.courseId);
-    if (
-      !catalog.sections.some((section) =>
-        section.lessons.some(
-          ({ lesson }) => String(lesson.id) === request.lessonId,
-        ),
-      )
-    )
+    if (!(await this.lessonInScope(request, enrollment, request.lessonId)))
       throw new LearnerAuthorizationError();
     const link = await (
       await LessonAssetCollection.create({ db: this.db })
@@ -1011,6 +1065,9 @@ export class SubmissionService extends LearnerService {
         tenantId: request.tenantId,
         lessonId: request.lessonId,
         assetId: request.assetId,
+        // Explicit and load-bearing: only the `printable` relationship is ever
+        // signed. The guardian-only `answer-key` copy of a generated worksheet
+        // (QuestionAuthoringService.attachGeneratedPrintable) must never match.
         relationship: 'printable',
       },
       { cache: false },

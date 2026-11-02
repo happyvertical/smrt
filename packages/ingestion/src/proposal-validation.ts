@@ -420,11 +420,12 @@ export function boundGeneratedExplanations(raw: unknown): {
   return { output, truncated };
 }
 /**
- * Drop repeated `alternatives` and `missingFields` entries (by canonical JSON,
- * keeping the first) from fresh generator output before validation (#4286).
+ * Drop repeated `alternatives` and `missingFields` entries, and repeated whole
+ * suggestions (same handlerId, handlerVersion and args; #4450), by canonical JSON,
+ * keeping the first, from fresh generator output before validation (#4286).
  * The provider grammar no longer carries `uniqueItems` (#4260), so a model can
  * repeat an entry; the validator still enforces `uniqueItems` on the result.
- * Only these two suggestion-level lists are touched; anything malformed or
+ * Nothing else is touched; anything malformed or
  * non-JSON is left for the validator to reject. The input is not mutated.
  */
 export function dedupeGeneratedLists(raw: unknown): {
@@ -451,23 +452,55 @@ export function dedupeGeneratedLists(raw: unknown): {
     removed += list.length - kept.length;
     return kept;
   };
-  const output = {
-    ...raw,
-    suggestions: suggestions.map((suggestion: unknown) => {
-      if (
-        !suggestion ||
-        typeof suggestion !== 'object' ||
-        Array.isArray(suggestion)
-      )
-        return suggestion;
-      const entry = { ...(suggestion as Record<string, unknown>) };
-      for (const field of ['alternatives', 'missingFields'])
-        if (Array.isArray(entry[field]))
-          entry[field] = unique(entry[field] as unknown[]);
-      return entry;
-    }),
-  };
-  return { output, removed };
+  const cleaned = suggestions.map((suggestion: unknown) => {
+    if (
+      !suggestion ||
+      typeof suggestion !== 'object' ||
+      Array.isArray(suggestion)
+    )
+      return suggestion;
+    const entry = { ...(suggestion as Record<string, unknown>) };
+    for (const field of ['alternatives', 'missingFields'])
+      if (Array.isArray(entry[field]))
+        entry[field] = unique(entry[field] as unknown[]);
+    return entry;
+  });
+  // A later suggestion with the same handler, handler version and canonical
+  // (key-sorted) args as an earlier one is the same action; storing both would
+  // let a reviewer approve and run it twice (#4450). Malformed entries pass
+  // through for the validator to reject.
+  const seen = new Set<string>();
+  const kept = cleaned.filter((suggestion: unknown) => {
+    if (
+      !suggestion ||
+      typeof suggestion !== 'object' ||
+      Array.isArray(suggestion)
+    )
+      return true;
+    const { handlerId, handlerVersion, args } = suggestion as Record<
+      string,
+      unknown
+    >;
+    if (
+      typeof handlerId !== 'string' ||
+      typeof handlerVersion !== 'string' ||
+      !args ||
+      typeof args !== 'object' ||
+      Array.isArray(args)
+    )
+      return true;
+    let key: string;
+    try {
+      key = intakeBindingDigest([handlerId, handlerVersion, args]);
+    } catch {
+      return true;
+    }
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  removed += cleaned.length - kept.length;
+  return { output: { ...raw, suggestions: kept }, removed };
 }
 export function validateSuggestions(
   raw: unknown,

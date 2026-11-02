@@ -162,6 +162,8 @@ components only render a policy that was resolved on the server.
 
 ## Example application
 
-The [s-m-r-t SaaS starter field-policy walkthrough](https://github.com/happyvertical/smrt-saas-starter/pull/51)
-uses s-m-r-t `0.40.61` and shows the owner/admin controls and the member-facing
-personal form flow in a working application.
+The field-policy walkthrough in the now-archived `smrt-saas-starter`
+([pinned pull request](https://github.com/happyvertical/smrt-saas-starter/pull/51),
+s-m-r-t `0.40.61`) showed the owner/admin controls and the member-facing
+personal form flow in a working application. [smrt-start](https://github.com/happyvertical/smrt-start)
+is the current template.

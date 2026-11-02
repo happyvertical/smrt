@@ -46,6 +46,23 @@ describe('AdminShell theme hooks', () => {
     );
   });
 
+  it('exposes band, left rail and tenant stack spacing as custom properties', () => {
+    expect(ruleBody(shell, '.smrt-admin-shell__band')).toContain(
+      'var(--smrt-admin-shell-band-padding-inline, var(--smrt-spacing-4))',
+    );
+    expect(
+      ruleBody(shell, '.smrt-admin-shell__edge--left .smrt-admin-shell__rail'),
+    ).toContain(
+      'var(--smrt-admin-shell-left-rail-padding, var(--smrt-spacing-3))',
+    );
+    expect(shell).toContain(
+      'padding-inline: var(--smrt-admin-shell-left-rail-padding-collapsed, var(--smrt-spacing-2))',
+    );
+    expect(ruleBody(shell, '.smrt-admin-shell__tenant-stack')).toContain(
+      'gap: var(--smrt-admin-shell-tenant-gap, var(--smrt-spacing-3))',
+    );
+  });
+
   it('lets an app set the shell title font family', () => {
     expect(ruleBody(title, '.smrt-shell-title')).toMatch(
       /font-family:\s*var\(--smrt-shell-title-font-family/,

@@ -37,6 +37,29 @@ silently match every row. `valuesEnforced: false` (valid only with `values`) mar
 skips that check; the normalized schema keeps only the `false` form. Range and
 `like` operators, result rows, and facets are never checked against the set.
 
+## Null tests (#4448)
+
+`isNull` and `isNotNull` are `condition` operators with no `value`:
+`{"kind":"condition","field":"endedAt","operator":"isNull"}`. A field offers
+them only when its `filterOperators` declares them, which adapters do only for
+storage that can hold null; `data.inspect` shows them with the other
+operators. The canonical form has no `value` key; an explicit `"value": null`
+is accepted and dropped, so both spellings share one fingerprint, and any
+other value fails with the valueless shape in the message. They never touch
+allowed values (#4381). The types split `DataQueryCondition` into
+`DataQueryValueCondition` (`DataQueryValueOperator`) and
+`DataQueryNullCondition` (`DataQueryNullOperator`, `value?: never`).
+
+Existing requests keep their meaning and canonical form. `eq null` / `ne null`
+were already accepted wherever `eq`/`ne` are declared and still lower to
+`IS NULL` / `IS NOT NULL`; `isNull` is a distinct canonical form with its own
+fingerprint, not a rewrite of `eq null`. Null semantics of value operators are
+the adapter's (SQL three-valued logic): the SMRT collection and content
+adapters treat `ne x`/`notIn` as null-inclusive (`IS NULL OR <> x`), and the
+report adapter's `ne x`/`notIn` is a plain `<>` that excludes nulls. Negation
+maps `isNull` and `isNotNull` onto each other, an exact complement in every
+adapter.
+
 Only normalized `DataQueryResult` envelopes cross REST, MCP, WebMCP, and browser
 boundaries. Adapter-specific report/content context wraps the base envelope; it
 does not add unsafe fields or SQL-like controls.

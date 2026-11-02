@@ -76,6 +76,7 @@ export const M = defineMessages({
   'ingestion.saveSplit': 'Save split and reprocess',
   'ingestion.instructions': 'Instructions for the assistant',
   'ingestion.reinterpret': 'Re-read with these instructions',
+  'ingestion.tryAgain': 'Try again',
   'ingestion.reinterpreting': 'Reinterpreting…',
   'ingestion.appliedInstruction':
     'Suggestions were produced under this instruction',
@@ -149,4 +150,43 @@ export const M = defineMessages({
   'ingestion.triage.apply': 'Approved, not yet applied',
   'ingestion.triage.failed': 'Failed',
   'ingestion.triage.missing': 'missing {fields}',
+  'ingestion.fields': 'Arguments',
+  'ingestion.advanced': 'Advanced: edit as JSON',
+  'ingestion.fieldsUnavailable':
+    'Fix the JSON under Advanced to edit these fields.',
+  'ingestion.unset': 'Not set',
+  'ingestion.searching': 'Searching…',
+  'ingestion.noMatches': 'No matches',
+  'ingestion.assigneeName': 'Assignee',
+  'ingestion.anyAssignee': 'Anyone',
+  'ingestion.reviewState.proposed': 'Proposed',
+  'ingestion.reviewState.waiting_review': 'Waiting for review',
+  'ingestion.reviewState.authorized': 'Approved, not yet applied',
+  'ingestion.reviewState.deferred': 'Deferred',
+  'ingestion.reviewState.rejected': 'Rejected',
+  'ingestion.reviewState.claimed': 'Starting',
+  'ingestion.reviewState.executing': 'Applying',
+  'ingestion.reviewState.outcome_unknown': 'Outcome unknown',
+  'ingestion.reviewState.succeeded': 'Applied',
+  'ingestion.reviewState.failed': 'Failed',
+  'ingestion.reviewState.stale': 'Out of date',
+  'ingestion.reviewState.expired': 'Expired',
+  'ingestion.reviewState.unavailable': 'Unavailable',
+  'ingestion.outcome.proposals': 'Suggestions ready',
+  'ingestion.outcome.needs_review': 'Needs review',
+  'ingestion.outcome.unknown': 'Not understood',
+  'ingestion.outcome.ambiguous': 'Ambiguous',
+  'ingestion.outcome.no_action': 'No action suggested',
+  'ingestion.outcome.provider_error': 'Interpretation failed',
 });
+/**
+ * The message key for a server value (a review state, a generation outcome),
+ * or undefined when none exists; callers then draw the value itself.
+ */
+export function messageKey(
+  prefix: 'ingestion.reviewState.' | 'ingestion.outcome.',
+  value: string,
+): keyof typeof M | undefined {
+  const key = `${prefix}${value}`;
+  return Object.hasOwn(M, key) ? (key as keyof typeof M) : undefined;
+}

@@ -6,7 +6,7 @@
  * client-data engine collection, transactions, live state — is real.
  */
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   createDefinitionFetchers,
   createSmrtCollection,
@@ -496,6 +496,85 @@ describe('hydration seeding (#1761)', () => {
     // Still just the one revalidation — no extra fetch was triggered.
     expect(scripted.calls.list).toBe(1);
 
+    await collection.cleanup();
+  });
+
+  it('returns rows in the latest list order, not the order they were first seeded in', async () => {
+    // The server sorts the list (newest first); a revalidation that reorders
+    // rows already in the collection must reorder toArray too. p2 also changes
+    // so the revalidation emits a change event to wait on.
+    const scripted = makeScriptedFetchers([
+      { id: 'p3', name: 'third' },
+      { id: 'p1', name: 'first' },
+      { id: 'p2', name: 'second, edited' },
+    ]);
+    const collection = createSmrtCollection(
+      productDefinition('products-list-order'),
+      {
+        fetchers: scripted.fetchers,
+        staleTimeMs: 0,
+        initialData: [
+          { id: 'p1', name: 'first' },
+          { id: 'p2', name: 'second' },
+          { id: 'p3', name: 'third' },
+        ],
+      },
+    );
+
+    await collection.preload();
+    expect(collection.toArray.map((row) => row.id)).toEqual(['p1', 'p2', 'p3']);
+
+    if (collection.get('p2')?.name !== 'second, edited') {
+      await new Promise<void>((resolve) => {
+        const sub = collection.subscribeChanges(() => {
+          if (collection.get('p2')?.name === 'second, edited') {
+            sub.unsubscribe();
+            resolve();
+          }
+        });
+      });
+    }
+    expect(collection.toArray.map((row) => row.id)).toEqual(['p3', 'p1', 'p2']);
+
+    // A row the list has not returned yet (an optimistic insert) comes after
+    // the listed rows.
+    collection.insert({ id: 'local-1', name: 'new' });
+    expect(collection.toArray.map((row) => row.id)).toEqual([
+      'p3',
+      'p1',
+      'p2',
+      'local-1',
+    ]);
+
+    await collection.cleanup();
+  });
+
+  it('notifies subscribers when a revalidation only reorders identical rows', async () => {
+    const scripted = makeScriptedFetchers([
+      { id: 'p3', name: 'third' },
+      { id: 'p1', name: 'first' },
+      { id: 'p2', name: 'second' },
+    ]);
+    const collection = createSmrtCollection(
+      productDefinition('products-list-reorder-only'),
+      {
+        fetchers: scripted.fetchers,
+        staleTimeMs: 0,
+        initialData: [
+          { id: 'p1', name: 'first' },
+          { id: 'p2', name: 'second' },
+          { id: 'p3', name: 'third' },
+        ],
+      },
+    );
+    const notified = vi.fn();
+    const sub = collection.subscribeChanges(notified);
+
+    await collection.preload();
+    await vi.waitFor(() => expect(notified).toHaveBeenCalled());
+    expect(collection.toArray.map((row) => row.id)).toEqual(['p3', 'p1', 'p2']);
+
+    sub.unsubscribe();
     await collection.cleanup();
   });
 

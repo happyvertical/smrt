@@ -66,6 +66,8 @@ export {
   validThresholds,
 } from './plan-terms.js';
 export type { PlanVersionReplacement } from './plan-versioning.js';
+// Planner recipe (#4409)
+export { SubscriptionPlansRecipe } from './recipes.js';
 export type {
   AssignPriceBooksInput,
   AutoTopUpGrant,

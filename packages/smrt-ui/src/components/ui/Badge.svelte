@@ -51,6 +51,13 @@ const { variant = 'default', size = 'md', children, ...rest }: Props = $props();
     background: var(--smrt-color-surface-container-high);
     color: var(--smrt-color-on-surface);
   }
+  /* Quiet neutral status: outlined, square-cornered and unfilled so it does not read as a tonal button. */
+  .smrt-badge__neutral {
+    background: transparent;
+    color: var(--smrt-color-on-surface-variant);
+    border-color: var(--smrt-color-outline-variant);
+    border-radius: var(--smrt-radius-small);
+  }
   .smrt-badge__primary {
     background: var(--smrt-color-primary-container);
     color: var(--smrt-color-on-primary-container);

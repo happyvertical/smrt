@@ -17,7 +17,11 @@ import type { PhoneBottomBarEntry } from './types.js';
 interface Props {
   /** Bar entries, left to right. */
   items: (PhoneBottomBarItem | PhoneBottomBarEntry)[];
-  /** Renders `iconName`s that are not built-in shell icons. */
+  /**
+   * Renders icon names (`icon` as a string, or `iconName`) that are not
+   * built-in shell icons, the same contract as `TenantNav`'s `iconComponent`:
+   * built-in names draw as shell icons, any other name goes to it with `size`.
+   */
   iconComponent?: Component<{ name: string; size?: number }>;
   /** Accessible name of the nav landmark (default "Main"). */
   label?: string;
@@ -40,11 +44,12 @@ function accessibleName(item: PhoneBottomBarEntry): string {
 </script>
 
 {#snippet content(item: PhoneBottomBarEntry)}
+  {@const name = typeof item.icon === 'string' ? item.icon : item.iconName}
   <span class="smrt-phone-bottom-bar__icon" aria-hidden="true">
-    {#if item.icon}
+    {#if item.icon && typeof item.icon !== 'string'}
       <item.icon size={22} />
     {:else}
-      <ShellSectionIcon name={item.iconName ?? SHELL_PLACEHOLDER_ICON} size={22} {iconComponent} />
+      <ShellSectionIcon name={name ?? SHELL_PLACEHOLDER_ICON} size={22} {iconComponent} />
     {/if}
     {#if item.badge}
       <span class="smrt-phone-bottom-bar__badge">

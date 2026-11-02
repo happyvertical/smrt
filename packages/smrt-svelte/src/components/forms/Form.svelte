@@ -1042,12 +1042,19 @@ async function stageForWebMcp(args: Record<string, unknown>): Promise<string> {
     : `Staged ${completed} changes for review; ${rejected} rejected`;
 }
 
+// WebMCP tool names allow [A-Za-z0-9_-]; replace only other characters so
+// already-valid default names keep their exact spelling (#3302).
+function defaultStageToolName(base: string): string {
+  const safe = base.replace(/[^A-Za-z0-9_-]+/g, '_');
+  return `${safe || 'form'}_stage_changes`;
+}
+
 useWebMcpTool(
   () => {
     if (!webmcp) return null;
     const options = typeof webmcp === 'object' ? webmcp : {};
     return {
-      name: options.name ?? `${collection ?? resolvedFormId}_stage_changes`,
+      name: options.name ?? defaultStageToolName(collection ?? resolvedFormId),
       description:
         options.description ??
         `Propose changes to the ${collection ?? name ?? resolvedFormId} form for local human review`,

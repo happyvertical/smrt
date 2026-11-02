@@ -526,6 +526,7 @@ function reportColumn(
   field: ReportFieldDefinition,
   registryField: RegistryField | undefined,
   joins: readonly ReportJoinDefinition[] = [],
+  nullableColumns: ReadonlySet<string> = new Set(),
 ): ReportColumnDescriptor | undefined {
   const policy = fieldPolicy(registryField);
   // A descriptor is an exposure boundary. Without a principal/permission
@@ -547,7 +548,12 @@ function reportColumn(
   const report = field.report;
   if (!report) return undefined;
   const type = queryType(field.type ?? registryField?.type);
-  const filterOperators = filterOperatorsFor(type);
+  const valueOperators = filterOperatorsFor(type);
+  // Null tests (#4448) only where the materialized column can hold null.
+  const filterOperators =
+    valueOperators && nullableColumns.has(id)
+      ? [...valueOperators, ...NULL_TEST_OPERATORS]
+      : valueOperators;
   const base: ReportColumnDescriptor = {
     id,
     fieldName: field.fieldName,
@@ -624,6 +630,28 @@ function toQueryField(
       ? {}
       : { filterOperators: [...column.filterOperators] }),
   };
+}
+
+/** Null tests (#4448): condition operators that take no value. */
+const NULL_TEST_OPERATORS: readonly DataQueryFilterOperator[] = [
+  'isNotNull',
+  'isNull',
+];
+
+/**
+ * Materialized report columns that can hold null (#4448), read from the
+ * report class's manifest schema: present, not `notNull`, and not the primary
+ * key. A column the schema does not describe gets no null test.
+ */
+function nullableReportColumns(reportClassName: string): Set<string> {
+  const columns = ObjectRegistry.getSchema(reportClassName)?.columns ?? {};
+  const nullable = new Set<string>();
+  for (const [name, column] of Object.entries(columns)) {
+    if (column.notNull !== true && column.primaryKey !== true) {
+      nullable.add(name);
+    }
+  }
+  return nullable;
 }
 
 function filterOperatorsFor(
@@ -988,11 +1016,17 @@ export async function buildReportAdapterDescriptor(
   const tenantField = configuredTenantField(
     registered?.tenantScopedConfig?.field,
   );
+  const nullableColumns = nullableReportColumns(definition.reportClassName);
   const columns = [
     identityColumn(),
     ...definition.fields
       .map((field) =>
-        reportColumn(field, fields.get(field.fieldName), definition.joins),
+        reportColumn(
+          field,
+          fields.get(field.fieldName),
+          definition.joins,
+          nullableColumns,
+        ),
       )
       .filter((field): field is ReportColumnDescriptor => Boolean(field)),
   ].sort((left, right) => left.id.localeCompare(right.id));
@@ -1153,6 +1187,10 @@ function inverseOperator(
       return 'notIn';
     case 'notIn':
       return 'in';
+    case 'isNull':
+      return 'isNotNull';
+    case 'isNotNull':
+      return 'isNull';
     case 'like':
       return reportFilterError(
         'Report filters do not support negating a LIKE predicate',
@@ -1169,6 +1207,10 @@ function collectionCondition(
   const scalar = (key: string, scalarValue: unknown): MaterializedWhere => [
     [{ [key]: scalarValue }],
   ];
+
+  // Null tests (#4448): `{ col: null }` is IS NULL, `{ 'col !=': null }` IS NOT NULL.
+  if (operator === 'isNull') return scalar(field, null);
+  if (operator === 'isNotNull') return scalar(keyFor('!='), null);
 
   if (operator === 'in') {
     const values = value as Array<string | number | boolean | null>;
@@ -1188,7 +1230,7 @@ function collectionCondition(
   }
 
   const suffix: Record<
-    Exclude<DataQueryFilterOperator, 'in' | 'notIn'>,
+    Exclude<DataQueryFilterOperator, 'in' | 'notIn' | 'isNull' | 'isNotNull'>,
     string
   > = {
     eq: '',

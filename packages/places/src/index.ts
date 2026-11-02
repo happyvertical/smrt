@@ -20,6 +20,7 @@ export { PLACE_MAIN_ASSET_RELATIONSHIP, Place } from './models/Place';
 export type { PlaceAssetOptions } from './models/PlaceAsset';
 export { PlaceAsset } from './models/PlaceAsset';
 export { PlaceType } from './models/PlaceType';
+export { PlacesLocationsRecipe } from './recipes';
 
 // Export types
 export type {

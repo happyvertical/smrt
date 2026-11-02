@@ -1,6 +1,7 @@
 # BEGIN SMRT auto-generated routes (Vite plugin)
 src/routes/api/v1/_changes/+server.ts
 src/routes/api/v1/_events/+server.ts
+src/routes/api/v1/_resources/+server.ts
 src/routes/api/v1/contentcontributionattachments/\[id\]/+server.ts
 src/routes/api/v1/contentcontributionattachments/+server.ts
 src/routes/api/v1/contentcontributionattachments/listForContribution/+server.ts

@@ -2,6 +2,7 @@
 import {
   SmrtObject,
   type SmrtObjectOptions,
+  type SmrtSaveOptions,
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
@@ -29,9 +30,9 @@ export class SalesGovernanceState extends SmrtObject {
     if (options.revision !== undefined) this.revision = options.revision;
     if (options.payload !== undefined) this.payload = options.payload;
   }
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     assertGovernanceWrite(this.db);
-    return super.save();
+    return super.save(options);
   }
   override async delete(): Promise<void> {
     throw new Error('Sales governance state is service-owned');

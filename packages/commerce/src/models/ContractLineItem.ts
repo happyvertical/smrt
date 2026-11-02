@@ -8,6 +8,7 @@ import {
   field,
   foreignKey,
   SmrtObject,
+  type SmrtSaveOptions,
   smrt,
 } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
@@ -267,13 +268,16 @@ export class ContractLineItem extends SmrtObject {
     return this;
   }
 
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     const { saveContractLineItem } = await import('../contract-money.js');
-    return (await saveContractLineItem(this)) as this;
+    return (await saveContractLineItem(this, options)) as this;
   }
 
   /** @internal Contract aggregate persistence only. */
-  async saveDerived(capability: DocumentMoneyWriteCapability): Promise<this> {
+  async saveDerived(
+    capability: DocumentMoneyWriteCapability,
+    options?: SmrtSaveOptions,
+  ): Promise<this> {
     if (capability !== DOCUMENT_MONEY_WRITE)
       throw new Error('Contract line money write capability is required');
     // Money is integer minor units: refuse a major-unit price before it can
@@ -287,7 +291,7 @@ export class ContractLineItem extends SmrtObject {
           'UNSAFE_MONEY',
           `Contract line ${field} ${value} must be a safe integer number of minor units`,
         );
-    return (await super.save()) as this;
+    return (await super.save(options)) as this;
   }
 
   override async delete(

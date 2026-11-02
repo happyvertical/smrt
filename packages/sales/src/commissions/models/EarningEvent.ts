@@ -26,7 +26,12 @@
  * @packageDocumentation
  */
 
-import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  field,
+  SmrtObject,
+  type SmrtSaveOptions,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { EarningEventOptions } from '../types.js';
 
@@ -165,7 +170,7 @@ export class EarningEvent extends SmrtObject {
    *   through `EarningEventCollection.getOrCreateByDedupeKey()`, which
    *   finds first and never upserts.
    */
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     const captured = persistedEventState.get(this);
     if (captured !== undefined) {
       if (captured !== this.serializeState()) {
@@ -210,7 +215,7 @@ export class EarningEvent extends SmrtObject {
         // DB not ready / table absent — nothing persisted to protect yet.
       }
     }
-    const result = (await super.save()) as this;
+    const result = (await super.save(options)) as this;
     persistedEventState.set(this, this.serializeState());
     return result;
   }

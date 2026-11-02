@@ -58,7 +58,13 @@
  * @packageDocumentation
  */
 
-import { field, foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  field,
+  foreignKey,
+  SmrtObject,
+  type SmrtSaveOptions,
+  smrt,
+} from '@happyvertical/smrt-core';
 import {
   getCurrentTenant,
   TenantScoped,
@@ -164,7 +170,7 @@ export class EarnerSourceAttribution extends SmrtObject {
    *    tenant interception) because the guard must see the earner's true
    *    tenant even when saving from another tenant's context.
    */
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     if (!this.earnerId || !this.sourceKind || !this.sourceId) {
       throw new Error(
         `EarnerSourceAttribution ${this.id ?? '<new>'}: earnerId, ` +
@@ -172,7 +178,7 @@ export class EarnerSourceAttribution extends SmrtObject {
       );
     }
     await this.assertEarnerTenantCoherence();
-    return (await super.save()) as this;
+    return (await super.save(options)) as this;
   }
 
   private async assertEarnerTenantCoherence(): Promise<void> {

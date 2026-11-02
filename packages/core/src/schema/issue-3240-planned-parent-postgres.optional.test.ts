@@ -179,7 +179,8 @@ describe.skipIf(!pgUrl)('planned parent foreign-key preflight (#3240)', () => {
   it('fails closed when the empty-child probe fails', async () => {
     const original = db.query.bind(db);
     vi.spyOn(db, 'query').mockImplementation((sql, ...args) => {
-      if (sql === `SELECT 1 FROM "${child}" LIMIT 1`)
+      // Any child probe (whole-table or the #4424 non-NULL column probe).
+      if (sql.startsWith(`SELECT 1 FROM "${child}"`))
         return Promise.reject(new Error('probe unavailable'));
       return original(sql, ...args);
     });

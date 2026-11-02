@@ -343,6 +343,13 @@ function rescopeGlobalFlag(
   // map is loaded lazily, so the first parse pass sees object commands only.
   const firstOptionIndex = start + Math.max(wordCount, 1);
 
+  // The built-in `version` command aliases `-v`, so `parseCliArgs` swallows a
+  // `-v` after a subcommand too (#2942). Route it to the long option of a
+  // subcommand that declares `short: 'v'` (e.g. `--verbose`).
+  const shortVOption = Object.entries(command?.options ?? {}).find(
+    ([name, option]) => option.short === 'v' && name !== SCOPED_GLOBAL_FLAG,
+  )?.[0];
+
   let rewritten = false;
   const rescoped = [...argv];
   for (let index = firstOptionIndex; index < rescoped.length; index += 1) {
@@ -351,6 +358,11 @@ function rescopeGlobalFlag(
     // shared parser already gives it.
     if (token === '--') {
       break;
+    }
+    if (token === '-v' && shortVOption) {
+      rescoped[index] = `--${shortVOption}`;
+      rewritten = true;
+      continue;
     }
     if (token === flag) {
       rescoped[index] = aliasFlag;
@@ -1400,6 +1412,20 @@ export class CLIGenerator {
   }
 
   /**
+   * True when argv starts with a command word other than the version command
+   * itself (so a `-v` after it is not the global `smrt -v`).
+   */
+  private leadsWithOtherCommand(argv: string[], version: CLICommand): boolean {
+    const leading = argv[firstArgumentIndex(argv)];
+    return (
+      !!leading &&
+      !leading.startsWith('-') &&
+      leading !== version.name &&
+      !version.aliases?.includes(leading)
+    );
+  }
+
+  /**
    * Execute a parsed command
    */
   async executeCommand(
@@ -1432,6 +1458,18 @@ export class CLIGenerator {
         parsed.args = reParsed.args;
         parsed.options = reParsed.options;
       }
+    }
+
+    // `parseCliArgs` reports `version` for a `-v` anywhere in argv. When a
+    // subcommand leads, defer that: a subcommand declaring `short: 'v'` owns
+    // the flag (#2942); otherwise the version command still runs below.
+    const swallowedVersion =
+      command?.name === 'version' &&
+      this.leadsWithOtherCommand(processedArgv, command)
+        ? command
+        : undefined;
+    if (swallowedVersion) {
+      command = undefined;
     }
 
     if (command) {
@@ -1512,7 +1550,7 @@ export class CLIGenerator {
       [],
       builtInCommands,
     );
-    const builtInCommand =
+    let builtInCommand =
       builtInMatch.command ??
       builtInCommands[parsed.command] ??
       Object.values(builtInCommands).find(
@@ -1520,6 +1558,14 @@ export class CLIGenerator {
           cmd.name === parsed.command ||
           cmd.aliases?.includes(parsed.command ?? ''),
       );
+    if (swallowedVersion) {
+      const ownsShortV = Object.values(
+        builtInMatch.command?.options ?? {},
+      ).some((option) => option.short === 'v');
+      if (!ownsShortV) {
+        builtInCommand = swallowedVersion;
+      }
+    }
     if (builtInCommand) {
       // Validate required arguments (args wrapped in [...] are optional)
       const requiredArgCount = countRequiredArgs(builtInCommand.args);

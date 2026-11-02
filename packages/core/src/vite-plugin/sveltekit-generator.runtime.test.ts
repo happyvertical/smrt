@@ -113,7 +113,12 @@ function writeWorkspaceUsersShim(projectRoot: string): void {
     join(packageDir, 'package.json'),
     JSON.stringify(
       {
-        exports: { './sveltekit': './sveltekit.js' },
+        exports: {
+          './sveltekit': {
+            types: './sveltekit.d.ts',
+            import: './sveltekit.js',
+          },
+        },
         name: '@happyvertical/smrt-users',
         type: 'module',
         version: '1.0.0',
@@ -136,6 +141,10 @@ function writeWorkspaceUsersShim(projectRoot: string): void {
       '  };',
       '}',
     ].join('\n'),
+  );
+  writeFileSync(
+    join(packageDir, 'sveltekit.d.ts'),
+    'export declare function createResourceListHandler(options: { ensureRegistry: () => void | Promise<void>; kebabRoutes?: boolean }): () => Promise<Response>;\n',
   );
 }
 
@@ -1815,7 +1824,7 @@ describe('generated SvelteKit helper runtime', () => {
     ).toBe(false);
   });
 
-  it('generates and executes the _resources route when smrt-users is resolvable (#2663)', async () => {
+  it('generates and executes the _resources route for import-only smrt-users (#2663, #4493)', async () => {
     writeWorkspaceUsersShim(projectRoot);
     writeFileSync(
       join(projectRoot, '.gitignore'),

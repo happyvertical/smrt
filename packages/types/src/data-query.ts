@@ -17,8 +17,8 @@ export type DataQueryScalar = string | number | boolean | null;
 /** A stable, adapter-defined field identifier. It is never a property path. */
 export type DataQueryFieldId = string;
 
-/** Operators map to an adapter's allowlisted, typed predicate implementation. */
-export type DataQueryFilterOperator =
+/** Operators that compare a field with a caller-supplied `value`. */
+export type DataQueryValueOperator =
   | 'eq'
   | 'ne'
   | 'gt'
@@ -29,13 +29,38 @@ export type DataQueryFilterOperator =
   | 'notIn'
   | 'like';
 
-/** One typed predicate. `in` and `notIn` require a non-empty value array. */
-export interface DataQueryCondition {
+/**
+ * Null tests (#4448): `isNull` matches a row whose field holds no value,
+ * `isNotNull` one that holds any value. They take no `value`, and adapters
+ * declare them only on fields whose storage can actually hold null.
+ */
+export type DataQueryNullOperator = 'isNull' | 'isNotNull';
+
+/** Operators map to an adapter's allowlisted, typed predicate implementation. */
+export type DataQueryFilterOperator =
+  | DataQueryValueOperator
+  | DataQueryNullOperator;
+
+/** A predicate comparing a field with a value. `in`/`notIn` take a non-empty array. */
+export interface DataQueryValueCondition {
   kind: 'condition';
   field: DataQueryFieldId;
-  operator: DataQueryFilterOperator;
+  operator: DataQueryValueOperator;
   value: DataQueryScalar | DataQueryScalar[];
 }
+
+/** A null test (#4448). The canonical form never carries a `value`. */
+export interface DataQueryNullCondition {
+  kind: 'condition';
+  field: DataQueryFieldId;
+  operator: DataQueryNullOperator;
+  value?: never;
+}
+
+/** One typed predicate: a value comparison or a null test. */
+export type DataQueryCondition =
+  | DataQueryValueCondition
+  | DataQueryNullCondition;
 
 /** Bounded, recursive filter expression with explicit boolean semantics. */
 export type DataQueryFilter =
@@ -127,6 +152,10 @@ export interface DataQueryFieldDescriptor {
   projectable?: boolean;
   sortable?: boolean;
   facetable?: boolean;
+  /**
+   * Operators a condition on this field may use. Declare `isNull`/`isNotNull`
+   * only where the field's storage can hold null (#4448).
+   */
   filterOperators?: DataQueryFilterOperator[];
   /**
    * Closed set of values the field holds, in declaration order (#4381).

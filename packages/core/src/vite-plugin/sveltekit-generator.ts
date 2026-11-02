@@ -13,10 +13,10 @@ import {
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { createRequire } from 'node:module';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { DomainKnowledgeConfig } from '@happyvertical/smrt-types';
+import { resolve as resolveImport } from 'import-meta-resolve';
 import { generateConditionalGetRouteHelper } from '../generators/conditional-get.js';
 import {
   type ApiMethodExposure,
@@ -2448,14 +2448,16 @@ function formatRegistrationImport(importedObject: {
 
 /**
  * Whether `@happyvertical/smrt-app-runtime/sveltekit` resolves from the
- * consumer at `projectRoot` (same signal as `consumerHasSmrtUsers`).
+ * consumer at `projectRoot` under ESM import conditions (same signal as
+ * `consumerHasSmrtUsers`), with an existing file target.
  */
 function consumerHasSmrtAppRuntime(projectRoot: string): boolean {
   try {
-    createRequire(
+    const target = resolveImport(
+      '@happyvertical/smrt-app-runtime/sveltekit',
       pathToFileURL(join(projectRoot, 'package.json')).href,
-    ).resolve('@happyvertical/smrt-app-runtime/sveltekit');
-    return true;
+    );
+    return statSync(fileURLToPath(target)).isFile();
   } catch {
     return false;
   }

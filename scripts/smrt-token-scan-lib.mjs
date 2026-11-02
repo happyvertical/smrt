@@ -129,6 +129,11 @@ export const OVERRIDE_HOOKS = new Set([
   '--smrt-admin-shell-scrollbar-thumb',
   '--smrt-admin-shell-scrollbar-thumb-hover',
   '--smrt-admin-shell-scrollbar-track',
+  // AdminShell insets (#3457): unset keeps the spacing-token defaults.
+  '--smrt-admin-shell-band-padding-inline',
+  '--smrt-admin-shell-left-rail-padding',
+  '--smrt-admin-shell-left-rail-padding-collapsed',
+  '--smrt-admin-shell-tenant-gap',
   '--smrt-shell-title-font-family',
   '--smrt-control-hit-size',
   '--smrt-popover-panel-padding',
@@ -136,4 +141,7 @@ export const OVERRIDE_HOOKS = new Set([
   // SortableHeader knobs: set by a parent (JobList in another package) or by the app.
   '--smrt-sortable-header-padding',
   '--smrt-sortable-header-font-weight',
+  // DataTable head: unset keeps the sunken surface and on-surface text.
+  '--smrt-data-table-head-bg',
+  '--smrt-data-table-head-color',
 ]);

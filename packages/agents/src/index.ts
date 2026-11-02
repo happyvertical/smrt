@@ -296,6 +296,8 @@ export {
   dataQueryOrderByTerms,
   executeSmrtCollectionQuery,
   ID_FIELD_FILTER_OPERATORS,
+  NULL_TEST_FILTER_OPERATORS,
+  nullableColumnFieldIds,
   type SmrtCollectionDataSurfaceAction,
   type SmrtCollectionQueryCollection,
   type SmrtCollectionQueryScope,

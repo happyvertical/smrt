@@ -476,7 +476,9 @@ export async function extractWithProviders(
       if (metadata.encrypted) fail('unsupported_type');
       if (!Number.isSafeInteger(metadata.pageCount) || metadata.pageCount < 1)
         fail('malformed_output');
-      capability(identity, false, false, 'page');
+      // The extractor enforces the page cap itself and sets `truncated` and
+      // omitted pages when it is hit, so completion is reported (#4452).
+      capability(identity, false, false, 'page', 'reported');
       const pages = Math.min(metadata.pageCount, request.limits.maxPages);
       for (let page = 1; page <= pages; page++) {
         check();

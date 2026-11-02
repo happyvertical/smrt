@@ -3,9 +3,11 @@ import {
   field,
   foreignKey,
   SmrtObject,
+  type SmrtSaveOptions,
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import { validateRubricResults } from './question-rubric.js';
 
 const closed = { api: false, mcp: false, cli: false } as const;
 
@@ -110,7 +112,7 @@ export class Submission extends SmrtObject {
     applyOptions(this, options);
   }
 
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     await immutableIdentity(this, {
       learner_id: this.learnerId,
       lesson_id: this.lessonId,
@@ -153,7 +155,7 @@ export class Submission extends SmrtObject {
       throw new Error(
         'Submission requires its tenant learner, lesson, and progress record',
       );
-    return super.save();
+    return super.save(options);
   }
 }
 
@@ -176,7 +178,7 @@ export class SubmissionIntakeBinding extends SmrtObject {
     applyOptions(this, options);
   }
 
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     if (!this.tenantId?.trim() || !this.intakeItemId?.trim())
       throw new Error('Submission intake binding requires tenant and item');
     if (this.intakeItemId.length > 200)
@@ -189,7 +191,7 @@ export class SubmissionIntakeBinding extends SmrtObject {
       }))
     )
       throw new Error('Submission intake binding must match its submission');
-    return super.save();
+    return super.save(options);
   }
 }
 
@@ -213,9 +215,9 @@ export class ScannedSubmission extends Submission {
     this.extracted = stringifyJsonObject(value, 'Extracted answers');
   }
 
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     requireNonnegativeInteger(this.pageCount, 'Page count');
-    return super.save();
+    return super.save(options);
   }
 }
 
@@ -231,10 +233,10 @@ export class ExternalCompletion extends Submission {
     applyOptions(this, options);
   }
 
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     requireEnum(this.reportedBy, ['learner', 'guardian', 'source']);
     requireScore(this.reportedScore, 'Reported score');
-    return super.save();
+    return super.save(options);
   }
 }
 
@@ -262,7 +264,7 @@ export class SubmissionAsset extends SmrtObject {
     applyOptions(this, options);
   }
 
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     await immutableIdentity(this, {
       submission_id: this.submissionId,
       asset_id: this.assetId,
@@ -290,7 +292,7 @@ export class SubmissionAsset extends SmrtObject {
       }))
     )
       throw new Error('Submission assets must be owned by the learner profile');
-    return super.save();
+    return super.save(options);
   }
 }
 
@@ -309,6 +311,12 @@ export class Grade extends SmrtObject {
   @field({ type: 'integer', nullable: true }) pointsPossible: number | null =
     null;
   rubricResults = '{}';
+  /**
+   * Exact immutable question revision this grade assesses. Nullable and
+   * additive: legacy grades leave it unset and keep unvalidated rubric results.
+   */
+  @field({ type: 'text', nullable: true }) questionRevisionId: string | null =
+    null;
   feedback = '';
   gradedAt = new Date();
 
@@ -325,7 +333,7 @@ export class Grade extends SmrtObject {
     this.rubricResults = stringifyJsonObject(value, 'Rubric results');
   }
 
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     await immutableIdentity(this, {
       submission_id: this.submissionId,
     });
@@ -349,6 +357,18 @@ export class Grade extends SmrtObject {
       this.pointsEarned > this.pointsPossible
     )
       throw new Error('Points earned cannot exceed points possible');
-    return super.save();
+    if (this.questionRevisionId !== null) {
+      const revision = await this.db.get('question_revisions', {
+        id: this.questionRevisionId,
+        tenant_id: this.tenantId,
+      });
+      if (!revision)
+        throw new Error('Grade requires its tenant question revision');
+      validateRubricResults(
+        revision.rubric_json as string | null,
+        this.getRubricResults(),
+      );
+    }
+    return super.save(options);
   }
 }

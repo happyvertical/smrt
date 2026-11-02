@@ -228,6 +228,28 @@ describe('partitionSchemaChanges', () => {
     expect(migrations[1].index?.unique).toBe(true);
   });
 
+  it('carries renamedFrom through on an index rename (#3307)', () => {
+    const { migrations } = partitionSchemaChanges(
+      [
+        {
+          type: 'add_index',
+          table: 'tenants',
+          name: 'tenants_tenant_id_slug_idx',
+          renamedFrom: 'tenants_slug_context_idx',
+          index: {
+            name: 'tenants_tenant_id_slug_idx',
+            columns: ['tenant_id', 'slug', 'context'],
+            unique: true,
+          },
+          sql: 'ALTER INDEX IF EXISTS "tenants_slug_context_idx" RENAME TO "tenants_tenant_id_slug_idx"',
+        },
+      ],
+      () => 'Tenant',
+    );
+
+    expect(migrations[0]?.renamedFrom).toBe('tenants_slug_context_idx');
+  });
+
   it('skips drop_index when name is missing', () => {
     const { migrations } = partitionSchemaChanges(
       [

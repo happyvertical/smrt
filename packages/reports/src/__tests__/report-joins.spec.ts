@@ -466,8 +466,11 @@ describe('report joins and row expressions (#3903)', () => {
   });
 
   it('compiles the join with the tenant and soft-delete guards in its ON condition', async () => {
+    // SQLite: the text reference and the id are both TEXT there, so no cast
+    // (report-joins-dialects.optional.test.ts covers the uuid dialects).
     const spec = compileReportDefinition(
       await buildReportDefinition(JoinLabourReport),
+      'sqlite',
     );
     expect(spec.fromAlias).toBe('src');
     expect(spec.joins).toEqual([

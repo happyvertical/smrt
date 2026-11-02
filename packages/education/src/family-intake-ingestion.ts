@@ -1,0 +1,127 @@
+/** Public family receipt bridge; transport source identity never supplies authority. */
+import { createHash } from 'node:crypto';
+import type {
+  IngestionScope,
+  IngestionService,
+  ReceiveInput,
+} from '@happyvertical/smrt-ingestion/server';
+import {
+  type FamilyIntakeRequest,
+  familyIntakeScopeId,
+} from './family-intake-contracts.js';
+import type { FamilyIntakeService } from './family-intake-service.js';
+import {
+  intakeOriginalEvidence,
+  supportedIntakeOriginal,
+} from './intake-original-evidence.js';
+import type { SubmissionPage } from './submission-service.js';
+
+type Input = {
+  ingestion: IngestionService;
+  scope: Readonly<IngestionScope>;
+  family: FamilyIntakeService;
+  request: FamilyIntakeRequest;
+};
+function assertScope(input: Input) {
+  if (
+    input.scope.tenantId !== input.request.tenantId ||
+    input.scope.actorId !== input.request.actorUserId ||
+    input.scope.confidentialScopeId !==
+      familyIntakeScopeId(input.request.tenantId)
+  )
+    throw new Error('Family intake scope mismatch');
+}
+/** Receive before learner attribution; duplicate deliveries repair interrupted retention. */
+export async function receiveFamilyIntake(
+  input: Input & { receive: ReceiveInput },
+) {
+  assertScope(input);
+  await input.family.authorizeFamilyIntake(
+    input.request,
+    'education.family-intake.receive',
+  );
+  const receipt = await input.ingestion.receive(input.receive);
+  if (!('itemId' in receipt) || !receipt.itemId)
+    return { receipt, intake: null };
+  return {
+    receipt,
+    intake: await retainFamilyIntakeReceipt({
+      ...input,
+      itemId: receipt.itemId,
+    }),
+  };
+}
+/** Copy authorized original evidence once into durable education ownership. */
+export async function retainFamilyIntakeReceipt(
+  input: Input & { itemId: string },
+) {
+  assertScope(input);
+  await input.family.authorizeFamilyIntake(
+    input.request,
+    'education.family-intake.receive',
+  );
+  const identity = await input.ingestion.getReceiptSource(input.itemId);
+  const evidence = await input.ingestion.getEvidence(input.itemId);
+  if (evidence.length > 200)
+    throw new Error('Family receipt evidence exceeds limit');
+  const source = {
+    ...identity,
+    evidence: evidence.map((e) => ({
+      evidenceId: e.id,
+      partId: e.partId,
+      parentEvidenceId: e.parentEvidenceId,
+      mimeType: e.mediaType,
+      sha256: e.contentHash,
+    })),
+  };
+  const supported = supportedIntakeOriginal;
+  const originalEvidence = intakeOriginalEvidence(evidence);
+  if (
+    originalEvidence.some(
+      (e) => e.mediaType !== 'application/json' && !supported(e.mediaType),
+    )
+  )
+    throw new Error(
+      'Unsupported family original: only JPEG, PNG, WebP and PDF are supported',
+    );
+  const originals = originalEvidence.filter((e) => supported(e.mediaType));
+  if (
+    !originals.length ||
+    originals.length > 100 ||
+    originals.some(
+      (e) => e.byteLength < 1 || e.byteLength > 25 * 1024 * 1024,
+    ) ||
+    originals.reduce((n, e) => n + e.byteLength, 0) > 100 * 1024 * 1024
+  )
+    throw new Error('Unsupported or oversized family intake');
+  const pages: SubmissionPage[] = [];
+  const extensions = {
+    'image/png': 'png',
+    'image/jpeg': 'jpg',
+    'image/webp': 'webp',
+    'application/pdf': 'pdf',
+  };
+  for (const original of originals) {
+    if (!Object.hasOwn(extensions, original.mediaType))
+      throw new Error('Unsupported family original');
+    const data = await input.ingestion.readEvidence(input.itemId, original.id);
+    if (
+      data.length !== original.byteLength ||
+      createHash('sha256').update(data).digest('hex') !== original.contentHash
+    )
+      throw new Error('Family receipt integrity mismatch');
+    pages.push({
+      name:
+        original.filename ||
+        `${original.id}.${extensions[original.mediaType as keyof typeof extensions]}`,
+      mimeType: original.mediaType as SubmissionPage['mimeType'],
+      data: Buffer.from(data),
+    });
+  }
+  return input.family.retainFamilyIntake({
+    ...input.request,
+    itemId: input.itemId,
+    source,
+    pages,
+  });
+}

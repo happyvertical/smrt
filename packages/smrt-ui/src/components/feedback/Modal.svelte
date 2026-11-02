@@ -46,6 +46,8 @@ export interface Props {
   ariaLabel?: string;
   /** ARIA described by ID */
   ariaDescribedBy?: string;
+  /** Target density; omit to inherit the ThemeProvider setting. */
+  density?: 'comfortable' | 'touch';
 }
 
 let {
@@ -62,6 +64,7 @@ let {
   children,
   ariaLabel,
   ariaDescribedBy,
+  density,
 }: Props = $props();
 
 let dialogEl: HTMLDialogElement | null = $state(null);
@@ -125,7 +128,7 @@ const placementClass = $derived(`modal--${placement}`);
   onkeydown={handleKeydown}
   oncancel={handleCancel}
   aria-label={ariaLabel ?? title}
-  aria-describedby={ariaDescribedBy} data-smrt-component="Modal"
+  aria-describedby={ariaDescribedBy} data-density={density} data-smrt-component="Modal"
 >
   <div class="modal__container">
     {#if header}
@@ -331,12 +334,15 @@ const placementClass = $derived(`modal--${placement}`);
     line-height: var(--smrt-typography-headline-small-line-height, 1.4);
   }
 
+  .modal[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min); }
+  .modal[data-density='comfortable'] { --smrt-control-target-min: 0px; }
+
   .modal__close {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 32px;
-    height: 32px;
+    width: max(32px, var(--smrt-control-target-min));
+    height: max(32px, var(--smrt-control-target-min));
     padding: 0;
     border: none;
     background: transparent;

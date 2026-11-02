@@ -448,7 +448,7 @@ describe('generated list normalization (#4286)', () => {
       outcome: 'proposals',
       suggestions: [
         suggestion(['b', 'a', 'b', 'a', 'c'], ['x', 'x']),
-        suggestion(['a'], ['y', 'z', 'y']),
+        { ...suggestion(['a'], ['y', 'z', 'y']), args: { n: 1 } },
       ],
       splits: [],
     };
@@ -459,7 +459,7 @@ describe('generated list normalization (#4286)', () => {
       ...raw,
       suggestions: [
         suggestion(['b', 'a', 'c'], ['x']),
-        suggestion(['a'], ['y', 'z']),
+        { ...suggestion(['a'], ['y', 'z']), args: { n: 1 } },
       ],
     });
     // The generator's reply is not mutated.
@@ -517,6 +517,35 @@ describe('generated list normalization (#4286)', () => {
         output: value,
         removed: 0,
       });
+  });
+
+  it('drops a later suggestion with the same handler, version and canonical args (#4450)', () => {
+    const make = (handlerId: string, handlerVersion: string, args: object) => ({
+      ...suggestion([], []),
+      handlerId,
+      handlerVersion,
+      args,
+    });
+    const raw = {
+      outcome: 'proposals',
+      suggestions: [
+        make('bill', '1', { total: 5, vendor: { b: 1, a: 2 } }),
+        make('bill', '1', { vendor: { a: 2, b: 1 }, total: 5 }),
+        make('bill', '2', { total: 5, vendor: { a: 2, b: 1 } }),
+        make('other', '1', { total: 5, vendor: { a: 2, b: 1 } }),
+        make('bill', '1', { total: 6, vendor: { a: 2, b: 1 } }),
+        make('bill', '1', { total: 5, vendor: { a: 2, b: 1 } }),
+      ],
+      splits: [],
+    };
+    const { output, removed } = dedupeGeneratedLists(raw);
+    expect(removed).toBe(2);
+    expect((output as typeof raw).suggestions).toEqual([
+      raw.suggestions[0],
+      raw.suggestions[2],
+      raw.suggestions[3],
+      raw.suggestions[4],
+    ]);
   });
 
   it('normalizes deterministically, so the digest is stable', () => {

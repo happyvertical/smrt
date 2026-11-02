@@ -65,6 +65,18 @@ function lane(name: string) {
 }
 
 describe('Board', () => {
+  it('exposes laneWidth as the --smrt-board-lane-width custom property', () => {
+    const { container, rerender } = render(Board<SupportCard, BoardColumn>, {
+      props: props(),
+    });
+    const root = container.querySelector('.smrt-board') as HTMLElement;
+    expect(root.style.getPropertyValue('--smrt-board-lane-width')).toBe('');
+    rerender(props({ laneWidth: '15rem' }));
+    expect(root.style.getPropertyValue('--smrt-board-lane-width')).toBe(
+      '15rem',
+    );
+  });
+
   it('moves generic support cards in uncontrolled mode with a typed keyboard intent', async () => {
     const user = userEvent.setup();
     const onmove = vi.fn();

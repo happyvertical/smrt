@@ -7,6 +7,7 @@ TTS voice profiles with two creation modes: AI design or audio cloning. Word-lev
 - **VoiceProfile**: two mutually exclusive modes — `designPrompt` (AI-generated from description) XOR `sampleAssetId` (cloned from audio). Status: `pending → processing → ready/failed`. `voiceData` is opaque provider-specific storage. `defaultSpeed` (0.5-2.0), `defaultPitch` (-20 to 20 semitones).
 - **VoiceSample**: audio training data. `duration`, `transcription`, `quality` (low/medium/high), `sampleRate`, `format`. Validation: `meetsMinDuration` (≥3 sec), `isSuitableForCloning` (≥3 sec AND quality ≠ low).
 - **VoiceOutput** (extends Content): generated TTS audio. `sourceText`, `audioAssetId`, `wordTimings` array `[{word, start, end}]` in seconds for lip-sync. `audioMetadata` (sampleRate, format, channels, bitDepth, provider, model). Computed: `wordCount`, `wordsPerSecond`, `getWordAtTime(seconds)`.
+- **Recipe `voice.profiles`** (`src/recipes.ts`, help in `src/profiles.recipe.md`): lists voices, sample clips and generated speech for the planner and other catalog hosts. Fields it shows carry `@field({ description })` in plain words; keep them when editing the models. Voice outputs are made by the speech service, so the help describes reading and removing them, not writing them.
 
 ## Gotchas
 

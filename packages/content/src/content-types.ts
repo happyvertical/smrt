@@ -5,7 +5,7 @@
  * contents table with _meta_type discriminator.
  */
 
-import { foreignKey, smrt } from '@happyvertical/smrt-core';
+import { foreignKey, ObjectRegistry, smrt } from '@happyvertical/smrt-core';
 import { Content, type ContentOptions } from './content';
 
 /**
@@ -112,4 +112,28 @@ export class Mirror extends Content {
       dedupeKey: this.dedupeKey,
     };
   }
+}
+
+/**
+ * Map a `Content.type` value (e.g. a contribution's `promotion.targetContentType`)
+ * to the qualified STI discriminator of its registered subclass.
+ *
+ * Unknown types resolve to the base `Content` discriminator so callers always
+ * persist a valid `_meta_type`.
+ */
+export function resolveContentMetaType(
+  type: string | null | undefined,
+): string {
+  const subclass =
+    type === 'article'
+      ? Article
+      : type === 'document'
+        ? ContentDocument
+        : type === 'mirror'
+          ? Mirror
+          : Content;
+  return (
+    ObjectRegistry.getClassByConstructor(subclass)?.qualifiedName ??
+    `@happyvertical/smrt-content:${subclass.name}`
+  );
 }

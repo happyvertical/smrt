@@ -1,5 +1,11 @@
 <script lang="ts">
-import { Form, Input, Select, Textarea } from '@happyvertical/smrt-ui/forms';
+import {
+  Checkbox,
+  Form,
+  Input,
+  Select,
+  Textarea,
+} from '@happyvertical/smrt-ui/forms';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import type { AgentSettingsSchema } from '../../ui.js';
 
@@ -106,17 +112,13 @@ async function handleSubmit() {
   {#each schema.fields as field (field.id)}
     <div class="field">
       {#if field.type === 'boolean'}
-        <label class="checkbox" for={field.id}>
-          <!-- raw-primitive-allow: native checkbox preserves checkbox semantics without requiring a Provider -->
-          <input
-            id={field.id}
-            type="checkbox"
-            checked={Boolean(draft[field.id])}
-            onchange={(event) => setBoolean(field.id, event)}
-            disabled={readonly || saving}
-          />
-          <span>{field.label}</span>
-        </label>
+        <Checkbox
+          id={field.id}
+          label={field.label}
+          checked={Boolean(draft[field.id])}
+          onchange={(event) => setBoolean(field.id, event)}
+          disabled={readonly || saving}
+        />
       {:else}
         <label for={field.id}>{field.label}</label>
         {#if field.type === 'select'}
@@ -183,12 +185,6 @@ async function handleSubmit() {
 
   label {
     font-weight: var(--smrt-typography-weight-semibold, 600);
-  }
-
-  .checkbox {
-    display: flex;
-    align-items: center;
-    gap: var(--smrt-spacing-2, 0.5rem);
   }
 
   small {

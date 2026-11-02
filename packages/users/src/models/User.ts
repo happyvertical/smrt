@@ -8,6 +8,7 @@ import {
   field,
   SmrtObject,
   type SmrtObjectOptions,
+  type SmrtSaveOptions,
   smrt,
 } from '@happyvertical/smrt-core';
 import { normalizeIdentityEmail } from '@happyvertical/smrt-profiles';
@@ -202,11 +203,11 @@ export class User extends SmrtObject implements UserContract {
   }
 
   /** Keep the durable email key derived from the public email field. */
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     this.email = normalizeEmail(this.email);
     this.emailKey = this.email || null;
     this.username = normalizeUsername(this.username) || null;
     this.usernameKey = this.username;
-    return super.save();
+    return super.save(options);
   }
 }

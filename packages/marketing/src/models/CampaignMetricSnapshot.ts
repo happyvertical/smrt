@@ -1,6 +1,12 @@
 /** Immutable period performance evidence for a campaign or campaign channel. */
 
-import { field, foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  field,
+  foreignKey,
+  SmrtObject,
+  type SmrtSaveOptions,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { CampaignMetricSnapshotOptions } from '../types.js';
 import { Campaign } from './Campaign.js';
@@ -20,37 +26,66 @@ export class CampaignMetricSnapshot extends SmrtObject {
   @tenantId({ nullable: true })
   tenantId: string | null = null;
 
+  @field({ description: 'The campaign these results belong to.' })
   @foreignKey(Campaign, { required: true })
   campaignId: string = '';
 
   /** Null for campaign rollups; set for channel-scoped evidence. */
+  @field({
+    description:
+      'The channel these results came from. Empty when they cover the whole campaign.',
+  })
   @foreignKey(CampaignChannel, { nullable: true })
   campaignChannelId: string | null = null;
 
-  @field({ required: true })
+  @field({
+    required: true,
+    description: 'The first day of the period these results cover.',
+  })
   periodStart: Date = new Date();
 
-  @field({ required: true })
+  @field({
+    required: true,
+    description: 'The last day of the period these results cover.',
+  })
   periodEnd: Date = new Date();
 
+  @field({ description: 'What was spent in the period, in cents.' })
   spendCents: number = 0;
 
+  @field({ description: 'How many times the campaign was shown.' })
   impressions: number = 0;
 
+  @field({ description: 'How many times someone clicked through.' })
   clicks: number = 0;
 
+  @field({
+    description: 'How many people did what the campaign asked, such as buying.',
+  })
   conversions: number = 0;
 
+  @field({ description: 'How many new leads came in.' })
   leads: number = 0;
 
-  @field({ type: 'integer', nullable: true })
+  @field({
+    type: 'integer',
+    nullable: true,
+    description: 'The sales brought in during the period, in cents, if known.',
+  })
   revenueCents: number | null = null;
 
   /** Ingestion source such as `google_ads`, `meta`, or `rollup_job`. */
-  @field({ required: true })
+  @field({
+    required: true,
+    description: 'Where these results were reported from.',
+  })
   source: string = '';
 
-  @field({ required: true })
+  @field({
+    required: true,
+    description:
+      'The reference this result is filed under, so the same report is never counted twice.',
+  })
   dedupeKey: string = '';
 
   constructor(options: CampaignMetricSnapshotOptions = {}) {
@@ -93,7 +128,7 @@ export class CampaignMetricSnapshot extends SmrtObject {
     return this;
   }
 
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     this.assertMetrics();
     await this.assertChannelMatchesCampaign();
     const captured = persistedSnapshotState.get(this);
@@ -132,7 +167,7 @@ export class CampaignMetricSnapshot extends SmrtObject {
       }
     }
 
-    const result = (await super.save()) as this;
+    const result = (await super.save(options)) as this;
     persistedSnapshotState.set(this, this.serializeState());
     return result;
   }

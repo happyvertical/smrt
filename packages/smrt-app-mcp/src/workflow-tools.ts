@@ -8,6 +8,7 @@ import {
   type ToolEffect,
   type ToolJsonSchema,
 } from '@happyvertical/smrt-core/generators/mcp';
+import type { McpToolErrorMapper } from './errors.js';
 import type { McpAppPrincipal } from './server.js';
 
 /** Trusted server context supplied to an application-owned workflow handler. */
@@ -42,11 +43,18 @@ export interface McpWorkflowToolDefinition {
   /** Preserved extension metadata. It is never used as an authorization input. */
   metadata?: Record<string, unknown>;
   execute(context: McpWorkflowToolContext): MCPResponse | Promise<MCPResponse>;
+  /**
+   * Map a handler failure to a safe `{ code, message }` for the agent. A
+   * thrown `McpToolError` is already safe and wins; other errors reach this
+   * mapper. Return nothing (or throw) to keep the generic failure message.
+   */
+  mapError?: McpToolErrorMapper;
 }
 
 export interface McpWorkflowTool {
   tool: MCPTool;
   execute: McpWorkflowToolDefinition['execute'];
+  mapError?: McpToolErrorMapper;
 }
 
 const TOOL_NAME = /^[a-z][a-z0-9_]{0,63}$/;
@@ -233,6 +241,12 @@ export function createMcpWorkflowTool(
   if (typeof definition.execute !== 'function') {
     throw new TypeError('Workflow tool execute must be a function.');
   }
+  if (
+    definition.mapError !== undefined &&
+    typeof definition.mapError !== 'function'
+  ) {
+    throw new TypeError('Workflow tool mapError must be a function.');
+  }
   if (!['read', 'write', 'destructive'].includes(definition.effect)) {
     throw new TypeError(
       'Workflow tool effect must be read, write, or destructive.',
@@ -313,5 +327,6 @@ export function createMcpWorkflowTool(
       ...(Object.keys(meta).length > 0 ? { _meta: meta } : {}),
     },
     execute: definition.execute,
+    ...(definition.mapError ? { mapError: definition.mapError } : {}),
   };
 }

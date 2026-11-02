@@ -852,6 +852,74 @@ describe('buildDomainKnowledgeManifest', () => {
   });
 });
 
+describe('AGENTS.md discovery in a monorepo (#3476)', () => {
+  let repo: string;
+  let app: string;
+  beforeEach(() => {
+    repo = mkdtempSync(join(tmpdir(), 'smrt-agents-walk-'));
+    app = join(repo, 'apps', 'office');
+    mkdirSync(app, { recursive: true });
+    writeFileSync(join(app, 'package.json'), '{"name":"@example/office"}');
+  });
+  afterEach(() => {
+    rmSync(repo, { recursive: true, force: true });
+  });
+
+  it('finds the workspace-root AGENTS.md from the app root', () => {
+    writeFileSync(join(repo, 'pnpm-workspace.yaml'), 'packages: []\n');
+    writeFileSync(join(repo, 'AGENTS.md'), '# Repo rules');
+    const artifact = buildFixtureArtifact(app);
+    expect(artifact.agentDoc).toBe('# Repo rules');
+    expect(artifact.agentDocPath).toBe(join('..', '..', 'AGENTS.md'));
+    expect(artifact.sourceHashes.agents).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it('prefers the nearest AGENTS.md', () => {
+    writeFileSync(join(repo, 'pnpm-workspace.yaml'), 'packages: []\n');
+    writeFileSync(join(repo, 'AGENTS.md'), '# Repo rules');
+    mkdirSync(join(repo, 'apps'), { recursive: true });
+    writeFileSync(join(repo, 'apps', 'AGENTS.md'), '# Apps rules');
+    expect(buildFixtureArtifact(app).agentDoc).toBe('# Apps rules');
+    writeFileSync(join(app, 'AGENTS.md'), '# App rules');
+    const artifact = buildFixtureArtifact(app);
+    expect(artifact.agentDoc).toBe('# App rules');
+    expect(artifact.agentDocPath).toBe('AGENTS.md');
+  });
+
+  it('falls back to the git root when there is no pnpm workspace file', () => {
+    writeFileSync(join(repo, '.git'), 'gitdir: elsewhere\n');
+    writeFileSync(join(repo, 'AGENTS.md'), '# Git root rules');
+    expect(buildFixtureArtifact(app).agentDoc).toBe('# Git root rules');
+  });
+
+  it('never walks past the workspace root', () => {
+    const outer = repo;
+    const inner = join(outer, 'inner');
+    const innerApp = join(inner, 'apps', 'web');
+    mkdirSync(innerApp, { recursive: true });
+    writeFileSync(join(outer, 'AGENTS.md'), '# Outer rules');
+    writeFileSync(join(inner, 'pnpm-workspace.yaml'), 'packages: []\n');
+    const artifact = buildFixtureArtifact(innerApp);
+    expect(artifact.agentDoc).toBeUndefined();
+    expect(artifact.agentDocPath).toBeUndefined();
+    expect(artifact.sourceHashes.agents).toBeUndefined();
+  });
+
+  it('checks only the project root when no workspace boundary exists', () => {
+    // repo (a tmp dir) has neither pnpm-workspace.yaml nor .git above the app.
+    writeFileSync(join(repo, 'AGENTS.md'), '# Stray rules');
+    expect(buildFixtureArtifact(app).agentDoc).toBeUndefined();
+  });
+
+  it('does not resolve module docs against the app root for an inherited doc', () => {
+    writeFileSync(join(repo, 'pnpm-workspace.yaml'), 'packages: []\n');
+    writeFileSync(join(repo, 'AGENTS.md'), 'See [x](agents/x.md)');
+    mkdirSync(join(app, 'agents'));
+    writeFileSync(join(app, 'agents', 'x.md'), 'x');
+    expect(buildFixtureArtifact(app).moduleDocs).toBeUndefined();
+  });
+});
+
 describe('resolveAgentModuleDocPaths', () => {
   let rootDir: string;
 

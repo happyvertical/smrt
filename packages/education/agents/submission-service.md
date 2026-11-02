@@ -45,7 +45,12 @@ non-authoritative Grade until guardian review.
 `reviewSubmission` accepts an existing authorized submission and optional score
 and feedback. `attestLesson` creates/reuses an Attestation for a matching progress
 item without requiring uploads. Both require a verified guardian and create a
-new guardian Grade, set submission to `graded` and progress to `complete`.
+new guardian Grade and set submission to `graded`. Ordinary non-workbook progress
+becomes `complete`. Workbook-backed progress instead uses its explicit parent
+completion decision; grading alone leaves it in progress, including through a
+plain SubmissionService instance. Existing explicit completion on the current
+attempt is retained. The owning workbook join determines this policy, never a
+caller flag.
 Omitted/null score is unscored; zero is a real score. The latest guardian grade
 wins over auto/AI/instructor proposals, and its score replaces progress's score.
 Review history is retained. ExternalCompletion is available for trusted server
@@ -55,6 +60,16 @@ submissions and automatic grading are not implemented.
 `getSubmission` returns only submission metadata, page asset IDs and the selected
 grade. It does not include catalog answers, extracted answers, storage paths,
 model objects, or database handles.
+
+`getLatestLessonSubmission` takes the learner request, `enrollmentId` and
+`lessonId`, repeats live read authorization and exact enrollment/catalog lesson
+scope, and returns the same safe view or `null` when no eligible work exists.
+It reads at most one submission for that exact progress, choosing `completed_work`
+in `captured`, `needs_review` or `graded` status by `submittedAt DESC, id DESC`.
+Blank references, extracting and rejected work are excluded. Committed capture
+is retained evidence; it does not assert lesson completion. Hosts select completed
+lessons from authorized progress separately. An empty safe page list does not
+fall back to older work; asset signing still requires its own live authorization.
 
 ## Storage and signed routes
 

@@ -22,7 +22,11 @@
  * @packageDocumentation
  */
 
-import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  SmrtObject,
+  type SmrtSaveOptions,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import { hasConnectedPaymentAuthority } from '../connected-payments-internal.js';
 import {
@@ -421,7 +425,7 @@ export class PaymentIntent extends SmrtObject {
    * closes the repoint hole; freezing the backing fields would instead block
    * legitimate corrections, so we re-verify.
    */
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     const priorRow = await this.loadPersistedRow();
     const prior = priorRow
       ? (priorRow.status as PaymentIntentStatus)
@@ -475,7 +479,7 @@ export class PaymentIntent extends SmrtObject {
       await this.assertBackedByCompletedPayment();
     }
 
-    const result = (await super.save()) as this;
+    const result = (await super.save(options)) as this;
     loadedIntentStatus.set(this, this.status);
     return result;
   }

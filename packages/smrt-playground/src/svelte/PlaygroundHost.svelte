@@ -429,7 +429,7 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
     </aside>
     {/if}
 
-    <main class="workspace">
+    <svelte:element this={embedded ? 'div' : 'main'} class="workspace">
       {#if selectedModule}
         <header class="workspace-header">
           <div class="breadcrumbs">
@@ -520,7 +520,7 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
           <p>The shared host is ready, but nothing exports playground entries yet.</p>
         </div>
       {/if}
-    </main>
+    </svelte:element>
   </div>
 {/snippet}
 

@@ -321,6 +321,76 @@ describe('db:diff (real SQLite + real SchemaComparer)', () => {
     expect(out).not.toContain('no migrations needed');
   });
 
+  function mockDiff(changes: unknown[]): void {
+    declareSchema({
+      widgets: {
+        tableName: 'widgets',
+        columns: { id: { type: 'TEXT', primaryKey: true } },
+        indexes: [],
+      },
+    });
+    vi.spyOn(SchemaComparer.prototype, 'compare').mockResolvedValue({
+      has_changes: true,
+      added_tables: [],
+      dropped_tables: [],
+      orphan_tables: [],
+      changes,
+    } as never);
+  }
+
+  it('lists advisory-only type upgrades as not applied, not auto-applied (#3042)', async () => {
+    mockDiff([
+      {
+        type: 'type_upgrade',
+        table: 'widgets',
+        name: 'executable_col',
+        mismatch: { expected: 'JSONB', actual: 'JSON' },
+        sql: 'ALTER TABLE "widgets" ALTER COLUMN "executable_col" TYPE JSONB',
+      },
+      {
+        type: 'type_upgrade',
+        table: 'widgets',
+        name: 'blocked_col',
+        mismatch: { expected: 'JSONB', actual: 'JSON' },
+        advisory: { severity: 'warning', message: 'duplicate keys block it' },
+      },
+    ]);
+
+    await requireCommandHandler(dbDiffCommand)([], {});
+
+    const out = output();
+    const autoApplied = out.indexOf('(auto-applied by smrt db:migrate)');
+    const notApplied = out.indexOf('Type upgrades not applied (advisory only)');
+    expect(out).toContain('Type upgrades (1):');
+    expect(autoApplied).toBeGreaterThan(-1);
+    expect(notApplied).toBeGreaterThan(autoApplied);
+    expect(out.slice(0, notApplied)).toContain('widgets.executable_col');
+    expect(out.slice(0, notApplied)).not.toContain('widgets.blocked_col');
+    expect(out.slice(notApplied)).toContain('widgets.blocked_col');
+    expect(out.slice(notApplied)).toContain('duplicate keys block it');
+  });
+
+  it('renders an index rename as ~ old -> new, not a new index (#3307)', async () => {
+    mockDiff([
+      {
+        type: 'add_index',
+        table: 'widgets',
+        name: 'widgets_tenant_id_slug_idx',
+        renamedFrom: 'widgets_slug_context_idx',
+        index: { name: 'widgets_tenant_id_slug_idx', columns: ['a'] },
+        sql: 'ALTER INDEX IF EXISTS "widgets_slug_context_idx" RENAME TO "widgets_tenant_id_slug_idx"',
+      },
+    ]);
+
+    await requireCommandHandler(dbDiffCommand)([], {});
+
+    const out = output();
+    expect(out).toContain(
+      '~ widgets_slug_context_idx -> widgets_tenant_id_slug_idx on widgets',
+    );
+    expect(out).not.toContain('+ widgets_tenant_id_slug_idx');
+  });
+
   it('lists orphan indexes to drop when --drop-indexes is set', async () => {
     await createTable('CREATE TABLE widgets (id TEXT PRIMARY KEY, name TEXT)');
     const db = await getDatabase({ type: 'sqlite', url: dbUrl });

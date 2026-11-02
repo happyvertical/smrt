@@ -7,7 +7,12 @@
  */
 
 import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
-import { crossPackageRef, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  crossPackageRef,
+  field,
+  SmrtObject,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { SpeechVoice } from '@happyvertical/speech';
 
@@ -154,33 +159,47 @@ export class VoiceProfile extends SmrtObject {
   /**
    * Human-readable name for the voice profile
    */
+  @field({ description: 'What you call this voice, such as "Warm narrator".' })
   name: string = '';
 
   /**
    * Description of the voice characteristics
    */
+  @field({
+    description: 'A note on how the voice sounds and what you use it for.',
+  })
   description: string | null = null;
 
   /**
    * ISO language code (e.g., 'en-US', 'zh-CN')
    */
+  @field({ description: 'The language the voice speaks.' })
   language: string = 'en-US';
 
   /**
    * Voice gender classification
    */
+  @field({ description: 'Whether the voice sounds male, female or neutral.' })
   gender: VoiceGender = 'neutral';
 
   /**
    * Natural language description for voice design
    * Used when creating a voice from scratch via AI
    */
+  @field({
+    description:
+      'Describe the voice you want in your own words, when there is no clip to copy.',
+  })
   designPrompt: string | null = null;
 
   /**
    * Asset ID of the audio sample for voice cloning
    * Should be at least 3 seconds of clear speech
    */
+  @field({
+    description:
+      'The recorded clip the voice is copied from, when there is one. Leave it empty for a described voice.',
+  })
   @crossPackageRef('@happyvertical/smrt-assets:Asset')
   sampleAssetId: string | null = null;
 
@@ -209,6 +228,10 @@ export class VoiceProfile extends SmrtObject {
    * - ready: Voice is ready for use
    * - failed: Voice generation failed
    */
+  @field({
+    description:
+      'Where the voice stands: waiting, being prepared, ready to use, or failed. The speech service updates it.',
+  })
   status: VoiceProfileStatus = 'pending';
 
   /**

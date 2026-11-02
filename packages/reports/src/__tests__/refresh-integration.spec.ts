@@ -487,7 +487,8 @@ async function createRuntimeTables(db: DatabaseInterface): Promise<void> {
       id TEXT PRIMARY KEY, slug TEXT NOT NULL, context TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
       worker_id TEXT NOT NULL, pid INTEGER, hostname TEXT, started_at TEXT,
-      heartbeat_at TEXT, lease_expires_at TEXT, status TEXT NOT NULL DEFAULT 'running'
+      heartbeat_at TEXT, lease_expires_at TEXT, status TEXT NOT NULL DEFAULT 'running',
+      queues TEXT
     )
   `);
   await db.query(

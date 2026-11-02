@@ -1,5 +1,71 @@
 # @happyvertical/smrt-assets-ergot
 
+## 0.57.46
+
+### Patch Changes
+
+- @happyvertical/smrt-assets@0.57.46
+
+## 0.57.45
+
+### Patch Changes
+
+- @happyvertical/smrt-assets@0.57.45
+
+## 0.57.44
+
+### Patch Changes
+
+- @happyvertical/smrt-assets@0.57.44
+
+## 0.57.43
+
+### Patch Changes
+
+- @happyvertical/smrt-assets@0.57.43
+
+## 0.57.42
+
+### Patch Changes
+
+- @happyvertical/smrt-assets@0.57.42
+
+## 0.57.41
+
+### Patch Changes
+
+- @happyvertical/smrt-assets@0.57.41
+
+## 0.57.40
+
+### Patch Changes
+
+- @happyvertical/smrt-assets@0.57.40
+
+## 0.57.39
+
+### Patch Changes
+
+- @happyvertical/smrt-assets@0.57.39
+
+## 0.57.38
+
+### Patch Changes
+
+- @happyvertical/smrt-assets@0.57.38
+
+## 0.57.37
+
+### Patch Changes
+
+- @happyvertical/smrt-assets@0.57.37
+
+## 0.57.36
+
+### Patch Changes
+
+- @happyvertical/smrt-assets@0.57.36
+
 ## 0.57.35
 
 ### Patch Changes

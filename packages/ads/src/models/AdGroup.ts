@@ -5,6 +5,7 @@
 
 import {
   crossPackageRef,
+  field,
   foreignKey,
   SmrtObject,
   type SmrtObjectOptions,
@@ -76,22 +77,36 @@ export class AdGroup extends SmrtObject {
   @crossPackageRef('@happyvertical/smrt-commerce:SalesContract', {
     validateSubtype: true,
   })
+  @field({
+    description:
+      'The sales contract this campaign is sold under, if there is one.',
+  })
   contractId: string = '';
 
   /**
    * Delivery tier ID (FK to AdDeliveryTier)
    */
   @foreignKey('AdDeliveryTier')
+  @field({
+    description:
+      'The priority tier the campaign runs in. Tiers are tried in order when more than one campaign could show.',
+  })
   tierId: string = '';
 
   /**
    * Display name (e.g., "Summer Sale - Desktop")
    */
+  @field({
+    description: 'What you call the campaign, for example Summer sale.',
+  })
   name: string = '';
 
   /**
    * Vertical/category tag slug from smrt-tags (context="advertising")
    */
+  @field({
+    description: 'The category the campaign belongs to, such as retail.',
+  })
   verticalSlug: string = '';
 
   /**
@@ -107,26 +122,37 @@ export class AdGroup extends SmrtObject {
   /**
    * Campaign start date
    */
+  @field({ description: 'The first day the campaign can show.' })
   startDate: Date | null = null;
 
   /**
    * Campaign end date
    */
+  @field({ description: 'The last day the campaign can show.' })
   endDate: Date | null = null;
 
   /**
    * Daily budget limit
    */
+  @field({
+    description:
+      'The most to spend in one day. The app shows this but does not stop the campaign by itself.',
+  })
   dailyBudget: number = 0.0;
 
   /**
    * Total campaign budget
    */
+  @field({ description: 'The most to spend over the whole campaign.' })
   totalBudget: number = 0.0;
 
   /**
    * Current status
    */
+  @field({
+    description:
+      'Where the campaign stands: draft, active, paused or completed. Only active campaigns show ads.',
+  })
   status: AdGroupStatus = AdGroupStatus.DRAFT;
 
   constructor(options: AdGroupOptions = {}) {

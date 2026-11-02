@@ -1,5 +1,150 @@
 # @happyvertical/smrt-core
 
+## 0.57.46
+
+### Patch Changes
+
+- ### Features
+  
+  - intake train from teamworks-os QA (#4502 #4503 #4504 #4522) (#4542) (ingestion)
+  - AssistantDock markdown, query aliases, surfaceId naming (#4505 #4507) (#4529) (chat,agents)
+  - shell train from teamworks-os QA (#4497-#4501) (#4528) (smrt-svelte,smrt-ui,features)
+- @happyvertical/smrt-config@0.57.46
+  - @happyvertical/smrt-scanner@0.57.46
+  - @happyvertical/smrt-types@0.57.46
+
+## 0.57.45
+
+### Patch Changes
+
+- ### Features
+  
+  - job cancel signal, private asset metadata, generated printables, refusal outcome (#4549)
+- @happyvertical/smrt-config@0.57.45
+  - @happyvertical/smrt-scanner@0.57.45
+  - @happyvertical/smrt-types@0.57.45
+
+## 0.57.44
+
+### Patch Changes
+
+- ### Features
+  
+  - course authoring revisions, question records, generation and review (#4519) (education)
+- @happyvertical/smrt-config@0.57.44
+  - @happyvertical/smrt-scanner@0.57.44
+  - @happyvertical/smrt-types@0.57.44
+
+## 0.57.43
+
+### Patch Changes
+
+- ### Features
+  
+  - simplify the Export tab into a summary and two cards (#4511) (planner)
+- @happyvertical/smrt-config@0.57.43
+  - @happyvertical/smrt-scanner@0.57.43
+  - @happyvertical/smrt-types@0.57.43
+
+## 0.57.42
+
+### Patch Changes
+
+- ### Features
+  
+  - release family learning workflows and compatible browser runtime (#4509)
+- @happyvertical/smrt-config@0.57.42
+  - @happyvertical/smrt-scanner@0.57.42
+  - @happyvertical/smrt-types@0.57.42
+
+## 0.57.41
+
+### Patch Changes
+
+- ### Features
+  
+  - require parent decisions for workbook completion (#4490) (education)
+  - add learner Plan reads and guardian enrollment notes (#4489) (education)
+- @happyvertical/smrt-config@0.57.41
+  - @happyvertical/smrt-scanner@0.57.41
+  - @happyvertical/smrt-types@0.57.41
+
+## 0.57.40
+
+### Patch Changes
+
+- @happyvertical/smrt-config@0.57.40
+  - @happyvertical/smrt-scanner@0.57.40
+  - @happyvertical/smrt-types@0.57.40
+
+## 0.57.39
+
+### Patch Changes
+
+- ### Features
+  
+  - add authorized publisher catalog previews (#4484) (education)
+  
+  ### Other Changes
+  
+  - chore: sync sdk packages to v0.111.0 (#4471) (deps)
+- @happyvertical/smrt-config@0.57.39
+  - @happyvertical/smrt-scanner@0.57.39
+  - @happyvertical/smrt-types@0.57.39
+
+## 0.57.38
+
+### Patch Changes
+
+- ### Features
+  
+  - retain family intake before learner assignment (#4479) (education)
+  
+  ### Bug Fixes
+  
+  - patch train 2026-10-28 (29 issues) (#4474)
+- @happyvertical/smrt-config@0.57.38
+  - @happyvertical/smrt-scanner@0.57.38
+  - @happyvertical/smrt-types@0.57.38
+
+## 0.57.37
+
+### Patch Changes
+
+- ### Features
+  
+  - end the tool phase after repeated deduped calls (#4391) (#4467) (chat)
+  - data-query null test (isNull/isNotNull) (#4448) (#4460) (core,agents,reports,content)
+  - package-level planner recipes for ten packages (#4409) (#4457) (recipes)
+  
+  ### Bug Fixes
+  
+  - teamworks release train (chat, reports, ui density, worker queues) (#4472)
+  - compare text/uuid join keys as text on Postgres and DuckDB (#4441) (#4446) (reports)
+  - count historyLimit in replayed turns, not raw rows (#4458) (#4466) (chat)
+  
+  ### Other Changes
+  
+  - chore: sync sdk packages to v0.110.0 (#4465) (deps)
+- @happyvertical/smrt-config@0.57.37
+  - @happyvertical/smrt-scanner@0.57.37
+  - @happyvertical/smrt-types@0.57.37
+
+## 0.57.36
+
+### Patch Changes
+
+- ### Features
+  
+  - reconcile disputes with verified checkout ownership (#4423) (commerce)
+  
+  ### Other Changes
+  
+  - docs: describe business objects and generated interfaces (#4434) (core)
+- @happyvertical/smrt-config@0.57.36
+  - @happyvertical/smrt-scanner@0.57.36
+  - @happyvertical/smrt-types@0.57.36
+
 ## 0.57.35
 
 ### Patch Changes

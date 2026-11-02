@@ -4,10 +4,13 @@ import {
   type DataSurfaceBridgeMessage,
   type DataSurfaceBridgePeer,
 } from '@happyvertical/smrt-chat';
+import { ObjectRegistry } from '@happyvertical/smrt-core';
 import { createDataSurfaceRegistry } from '@happyvertical/smrt-ui/data';
 import { describe, expect, it, vi } from 'vitest';
+import { Content } from '../content.js';
 import {
   buildContentListSurfaceDescriptor,
+  CONTENT_LIST_COLUMN_DESCRIPTIONS,
   createContentListController,
 } from './content-list-controller.js';
 import {
@@ -494,5 +497,38 @@ describe('ContentList mounted data surface', () => {
       reason: 'disconnected',
     });
     bridge.dispose();
+  });
+});
+
+describe('ContentList surface column descriptions (#3303)', () => {
+  it('publishes the model field description on each described column', () => {
+    const descriptor = buildContentListSurfaceDescriptor();
+    const described = Object.fromEntries(
+      descriptor.columns
+        .filter((column) => column.description)
+        .map((column) => [column.id, column.description]),
+    );
+    expect(described).toEqual(CONTENT_LIST_COLUMN_DESCRIPTIONS);
+    expect(described.title).toBeTruthy();
+  });
+
+  it('stays identical to the Content model @field descriptions', () => {
+    const fields = ObjectRegistry.getFields(
+      ObjectRegistry.getClassByConstructor(Content)?.qualifiedName ?? 'Content',
+    );
+    const fieldNames: Record<string, string> = {
+      type: 'type',
+      title: 'title',
+      author: 'author',
+      status: 'status',
+      publish: 'publish_date',
+    };
+    for (const [columnId, description] of Object.entries(
+      CONTENT_LIST_COLUMN_DESCRIPTIONS,
+    )) {
+      expect(fields.get(fieldNames[columnId])?._meta?.description).toBe(
+        description,
+      );
+    }
   });
 });

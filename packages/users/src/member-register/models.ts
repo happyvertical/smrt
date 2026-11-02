@@ -5,6 +5,7 @@ import {
   foreignKey,
   SmrtCollection,
   SmrtObject,
+  type SmrtSaveOptions,
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
@@ -110,11 +111,11 @@ export class LegalMemberStatusHistory extends SmrtObject {
   reason = '';
   @field({ type: 'text', nullable: true }) actorRef: string | null = null;
   /** History is corrected by appending another effective entry, never rewriting it. */
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     if (this.id && (await this.db.get(this.tableName, { id: this.id })))
       throw new Error('Legal member status history is append-only.');
     this.requireInsertOnSave();
-    return super.save();
+    return super.save(options);
   }
   override async delete(): Promise<void> {
     throw new Error('Legal member status history cannot be deleted.');
@@ -151,11 +152,11 @@ export class LegalMemberReference extends SmrtObject {
   /** Original evidence withdrawn by this append-only dated record. */
   @foreignKey('LegalMemberReference', { nullable: true, onDelete: 'RESTRICT' })
   revokesId: string | null = null;
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     if (this.id && (await this.db.get(this.tableName, { id: this.id })))
       throw new Error('Legal member references are append-only.');
     this.requireInsertOnSave();
-    return super.save();
+    return super.save(options);
   }
   override async delete(): Promise<void> {
     throw new Error('Legal member references cannot be deleted.');
@@ -216,11 +217,11 @@ export class MemberEligibilitySnapshot extends SmrtObject {
     unknown
   > | null = null;
   /** Record-date evidence is immutable; a later request creates a new snapshot. */
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     if (this.id && (await this.db.get(this.tableName, { id: this.id })))
       throw new Error('Member eligibility snapshots are immutable.');
     this.requireInsertOnSave();
-    return super.save();
+    return super.save(options);
   }
   override async delete(): Promise<void> {
     throw new Error('Member eligibility snapshots cannot be deleted.');

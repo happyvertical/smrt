@@ -1,6 +1,6 @@
 # s-m-r-t SvelteKit starter
 
-This is the small, ground-up starting point for s-m-r-t 0.43.10. It contains
+This is the small, ground-up starting point for s-m-r-t. It contains
 one Notes object and a profile-aware operational surface for local, self-hosted, and
 managed-cloud environments. It does not provision external providers.
 
@@ -387,13 +387,13 @@ hydrated rows so the first render does not issue a duplicate request:
 Import the live runtime only from routes that use it. Static pages and the root
 layout should keep using server loads and should not pay for browser data tools.
 
-## 10. Graduate to smrt-saas-starter
+## 10. Graduate to smrt-start
 
 Stay here while you are learning the object model or building a focused app
-from first principles. Move to `smrt-saas-starter` when you want a
-production-shaped SaaS baseline with onboarding, billing/subscriptions,
-background workers, provider configuration, deployment conventions, and
-mobile surfaces. Those concerns are intentionally absent here.
+from first principles. Move to
+[`smrt-start`](https://github.com/happyvertical/smrt-start), the canonical
+application template, when you want a production-shaped baseline. Those
+concerns are intentionally absent here.
 
 ## Runtime profiles and deployment
 

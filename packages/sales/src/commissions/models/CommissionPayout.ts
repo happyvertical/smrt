@@ -38,6 +38,7 @@ import {
   field,
   foreignKey,
   SmrtObject,
+  type SmrtSaveOptions,
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
@@ -445,7 +446,7 @@ export class CommissionPayout extends SmrtObject {
    *    matching {@link complete}'s invariant, regardless of how the status
    *    was set.
    */
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     this.validateTotals();
     await this.assertRoutingUnchanged();
     const prior = await this.resolvePriorStatus();
@@ -461,7 +462,7 @@ export class CommissionPayout extends SmrtObject {
         `CommissionPayout ${this.id ?? '<new>'}: a completed payout requires a paymentReference (use complete()).`,
       );
     }
-    const result = (await super.save()) as this;
+    const result = (await super.save(options)) as this;
     loadedPayoutStatus.set(this, this.status);
     return result;
   }

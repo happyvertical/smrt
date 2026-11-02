@@ -1,6 +1,7 @@
 /**
- * The Export tab mounted in a DOM: its sections, the action groups (Reset is
- * never beside Copy prompt), and the Copy button with a stubbed clipboard.
+ * The Export tab mounted in a DOM: the summary, prompt and download cards all
+ * visible by default, Import and Reset collapsed apart from them, and the Copy
+ * button with a stubbed clipboard.
  */
 import { flushSync, mount, tick, unmount } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -76,15 +77,17 @@ describe('the export panel', () => {
       conversation: [],
     });
     expect(target.textContent).toContain('Host unavailable');
-    expect(buttons(actions!)).toContain('Download cookbook');
-    expect(
-      [...actions!.querySelectorAll('button')].find((b) =>
-        b.textContent?.includes('Download cookbook'),
-      )?.disabled,
-    ).toBe(false);
+    const download = [
+      ...target.querySelectorAll(
+        '[data-export-section="file"] [data-export-actions="download"] button',
+      ),
+    ].find((b) => b.textContent?.trim() === 'Download cookbook') as
+      | HTMLButtonElement
+      | undefined;
+    expect(download?.disabled).toBe(false);
   });
 
-  it('puts the host action before optional details and keeps technical content collapsed', async () => {
+  it('puts the host action above the cards and keeps only Import and Reset collapsed', async () => {
     app = mount(ExportPanel, {
       target,
       context,
@@ -94,18 +97,33 @@ describe('the export panel', () => {
     expect(buttons(target).slice(0, 3)).toEqual([
       'Build it',
       'Copy prompt',
+      'Copy command',
+    ]);
+    const build = target.querySelector('.build-step');
+    const cards = [...target.querySelectorAll('[data-smrt-component="Card"]')];
+    expect(build?.textContent).toContain('Build your app');
+    expect(cards).toHaveLength(2);
+    for (const card of cards)
+      expect(
+        (build?.compareDocumentPosition(card) ?? 0) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    expect(target.querySelector('h2')?.textContent).toBe('Export');
+    expect(
+      [...target.querySelectorAll('h3')].map((h) => h.textContent),
+    ).toEqual([
+      'Build your app',
+      'In this cookbook',
+      'Copy prompt',
       'Download cookbook',
     ]);
-    const sections = [...target.querySelectorAll('[data-export-section]')];
-    expect(sections[0]?.getAttribute('data-export-section')).toBe('prompt');
-    for (const details of target.querySelectorAll('details'))
-      expect(details.open).toBe(false);
-    expect(target.querySelector('h2')?.textContent).toBe(
-      'Ready for the next step?',
-    );
-    expect(target.querySelector('.build-step')?.textContent).toContain(
-      'Build your app',
-    );
+    const closed = [...target.querySelectorAll('details')];
+    expect(
+      closed.map((d) =>
+        d.querySelector('summary')?.textContent?.replace('⌄', '').trim(),
+      ),
+    ).toEqual(['Preview JSON', 'Import or reset project']);
+    for (const details of closed) expect(details.open).toBe(false);
   });
 
   it('downloads the exact same native export text and filename the host receives', async () => {
@@ -144,11 +162,13 @@ describe('the export panel', () => {
         },
       });
       await settle();
-      const actions = target.querySelector('[data-export-actions="primary"]')!;
-      const find = (label: string) =>
-        [...actions.querySelectorAll('button')].find(
+      const find = (label: string) => {
+        const found = [...target.querySelectorAll('button')].find(
           (b) => b.textContent?.trim() === label,
-        )!;
+        );
+        if (!found) throw new Error(`Expected a ${label} button`);
+        return found;
+      };
       find('Continue').click();
       await settle();
       find('Download cookbook').click();
@@ -178,52 +198,61 @@ describe('the export panel', () => {
     expect(summary?.textContent).toContain('brand colour #b45309');
     expect(summary?.textContent).toContain('Layout');
 
+    // Summary, prompt and run command are never inside a closed disclosure.
+    expect(summary?.closest('details')).toBeNull();
+    expect(section('prompt')?.closest('details')).toBeNull();
     const box = section('prompt')?.querySelector('textarea');
+    expect(box?.closest('details')).toBeNull();
     expect(box?.readOnly).toBe(true);
+    expect(box?.getAttribute('aria-label')).toBe(
+      'Prompt for your coding agent',
+    );
     expect(box?.value).toBe(buildAgentPrompt(cookbookStore.snapshot()).text);
     expect(section('prompt')?.textContent).toMatch(/About \d+(\.\d)? KB/);
 
     const file = section('file');
     expect(file?.textContent).toContain('bakery.cookbook.json');
     expect(file?.textContent).toMatch(/\(\d+(\.\d)? KB\)/);
+    expect(
+      file?.querySelector('[data-export-command]')?.closest('details'),
+    ).toBeNull();
     expect(file?.querySelector('[data-export-command]')?.textContent).toMatch(
       /^npx -y @happyvertical\/smrt-cli@\d+\.\d+\.\d+ cookbook apply bakery\.cookbook\.json bakery$/,
     );
-    const preview = file?.querySelector('details details');
+    const preview = file?.querySelector('details');
     expect(preview?.textContent).toContain('Preview JSON');
     expect(
       JSON.parse(preview?.querySelector('pre')?.textContent ?? ''),
     ).toEqual(cookbookStore.snapshot());
   });
 
-  it('keeps Reset away from the primary actions', async () => {
+  it('keeps Import and Reset collapsed, apart from the cards', async () => {
     app = mount(ExportPanel, { target, context });
     await settle();
-    const primary = target.querySelector('[data-export-actions="primary"]');
+    const download = target.querySelector('[data-export-actions="download"]');
     const replace = target.querySelector('[data-export-actions="replace"]');
-    expect(primary && buttons(primary)).toEqual([
-      'Copy prompt',
-      'Download cookbook',
-    ]);
+    expect(download && buttons(download)).toEqual(['Download cookbook']);
     expect(replace && buttons(replace)).toEqual(['Import cookbook…']);
-    expect(
-      target.querySelector('[data-export-section="replace"]')?.textContent,
-    ).toContain('Reset project');
+    const section = target.querySelector('[data-export-section="replace"]');
+    expect(section?.textContent).toContain('Reset project');
+    expect(section?.querySelector('details')?.open).toBe(false);
+    expect(section?.querySelector('summary')?.textContent).toContain(
+      'Import or reset project',
+    );
     const all = buttons(target);
     expect(all.indexOf('Reset project')).toBeGreaterThan(
       all.indexOf('Copy command'),
     );
   });
 
-  it('adds Send to kitchen to the primary group when a kitchen is linked', async () => {
+  it('adds Send to kitchen to the download card when a kitchen is linked', async () => {
     kitchenState.configure({ endpoint: '/api/kitchen/cookbook' }, 'tok');
     app = mount(ExportPanel, { target, context });
     await settle();
-    const primary = target.querySelector('[data-export-actions="primary"]');
-    expect(primary && buttons(primary)).toEqual([
-      'Copy prompt',
-      'Send to kitchen',
+    const download = target.querySelector('[data-export-actions="download"]');
+    expect(download && buttons(download)).toEqual([
       'Download cookbook',
+      'Send to kitchen',
     ]);
   });
 
@@ -277,7 +306,7 @@ describe('the export panel', () => {
     const box = target.querySelector<HTMLTextAreaElement>(
       '[data-export-section="prompt"] textarea',
     );
-    expect(box?.closest('details')?.open).toBe(true);
+    expect(box?.closest('details')).toBeNull();
     expect(document.activeElement).toBe(box);
     expect(
       target.querySelector('[data-export-section="prompt"] [role="status"]')

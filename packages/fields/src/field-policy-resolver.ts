@@ -1,4 +1,3 @@
-import { importWorkspaceModule } from '@happyvertical/smrt-core/utils/import-workspace-module';
 import {
   assertTenantReadAllowed,
   getCurrentTenant,
@@ -398,7 +397,9 @@ async function defaultTenantHierarchyLoader(
   options: SmrtClassOptions,
 ): Promise<FieldPolicyTenantHierarchyProvider | null> {
   try {
-    const usersModule = await importWorkspaceModule<FieldPolicyUsersModule>({
+    const usersModule = await (
+      await import('@happyvertical/smrt-core/utils/import-workspace-module')
+    ).importWorkspaceModule<FieldPolicyUsersModule>({
       packageName: '@happyvertical/smrt-users',
       sourceEntry: 'packages/users/src/collections/index.ts',
       purpose: 'tenant-aware field policy resolution',

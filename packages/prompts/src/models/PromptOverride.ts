@@ -1,8 +1,10 @@
 import { getPackageConfig } from '@happyvertical/smrt-config';
 import {
   field,
+  RuntimeError,
   SmrtObject,
   type SmrtObjectOptions,
+  type SmrtSaveOptions,
   smrt,
 } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/sql';
@@ -120,7 +122,7 @@ export class PromptOverride extends SmrtObject {
     };
   }
 
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     const previousIdentity = await this.getPersistedIdentity();
     this.normalizeParamsForPersistence();
     await this.validatePromptOverride();
@@ -134,8 +136,8 @@ export class PromptOverride extends SmrtObject {
 
     const result =
       identityChanged && previousIdentity
-        ? await this.saveAfterIdentityChange()
-        : await super.save();
+        ? await this.saveAfterIdentityChange(options)
+        : await super.save(options);
 
     if (identityChanged && previousIdentity) {
       invalidatePromptCache(
@@ -148,15 +150,19 @@ export class PromptOverride extends SmrtObject {
     return result;
   }
 
-  private async saveAfterIdentityChange(): Promise<this> {
+  private async saveAfterIdentityChange(
+    options?: SmrtSaveOptions,
+  ): Promise<this> {
     if (typeof this.db.beginTransaction === 'function') {
-      return this.saveAfterIdentityChangeInTransaction();
+      return this.saveAfterIdentityChangeInTransaction(options);
     }
 
-    return this.saveAfterIdentityChangeWithDeferredDelete();
+    return this.saveAfterIdentityChangeWithDeferredDelete(options);
   }
 
-  private async saveAfterIdentityChangeInTransaction(): Promise<this> {
+  private async saveAfterIdentityChangeInTransaction(
+    options?: SmrtSaveOptions,
+  ): Promise<this> {
     const originalDb = this._db;
     const originalOptionsDb = this.options.db;
     const tx = (await this.db.beginTransaction?.()) as
@@ -164,14 +170,20 @@ export class PromptOverride extends SmrtObject {
       | undefined;
 
     if (!tx) {
-      return this.saveAfterIdentityChangeWithDeferredDelete();
+      return this.saveAfterIdentityChangeWithDeferredDelete(options);
     }
 
     try {
       this._db = tx;
       this.options.db = tx;
-      await super.delete();
-      const result = await super.save();
+      // The caller's revision guards the ORIGINAL row (checked by the delete);
+      // the replacement is a fresh insert and must not carry the update guard.
+      await super.delete(
+        options?.expectedUpdatedAt === undefined
+          ? undefined
+          : { expectedUpdatedAt: options.expectedUpdatedAt },
+      );
+      const result = await super.save(withoutRevisionGuard(options));
       await tx.commit();
       return result;
     } catch (error) {
@@ -187,10 +199,23 @@ export class PromptOverride extends SmrtObject {
     }
   }
 
-  private async saveAfterIdentityChangeWithDeferredDelete(): Promise<this> {
+  private async saveAfterIdentityChangeWithDeferredDelete(
+    options?: SmrtSaveOptions,
+  ): Promise<this> {
     const previousId = this.id;
     if (!previousId) {
-      return super.save();
+      return super.save(options);
+    }
+
+    // Without a transaction, a check here and the later unguarded delete are
+    // not atomic: a concurrent update could be deleted. Fail closed rather
+    // than accept a revision guard that cannot be honoured (#4408).
+    if (options?.expectedUpdatedAt !== undefined) {
+      throw new RuntimeError(
+        `${this.constructor.name} identity changes honour expectedUpdatedAt only inside a transaction`,
+        'RUNTIME_REVISION_GUARD_REQUIRES_TRANSACTION',
+        { className: this.constructor.name, id: previousId },
+      );
     }
 
     const replacementId = crypto.randomUUID();
@@ -198,7 +223,7 @@ export class PromptOverride extends SmrtObject {
     this.id = replacementId;
 
     try {
-      const result = await super.save();
+      const result = await super.save(withoutRevisionGuard(options));
       replacementSaved = true;
       await this.db.delete(this.tableName, { id: previousId });
       return result;
@@ -365,4 +390,13 @@ export class PromptOverride extends SmrtObject {
               | undefined) ?? null),
     };
   }
+}
+
+/** The replacement row of an identity change is an insert, not a guarded update. */
+function withoutRevisionGuard(
+  options: SmrtSaveOptions | undefined,
+): SmrtSaveOptions | undefined {
+  if (!options || options.expectedUpdatedAt === undefined) return options;
+  const { expectedUpdatedAt: _expected, ...rest } = options;
+  return rest;
 }

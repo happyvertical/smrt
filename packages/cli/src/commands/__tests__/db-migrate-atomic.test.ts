@@ -495,6 +495,38 @@ describe('db:migrate atomic schema execution', () => {
     );
   }, 15_000);
 
+  it('logs an index rename as a rename, not a creation (#3307)', async () => {
+    compareMock.mockResolvedValue({
+      added_tables: [],
+      dropped_tables: [],
+      has_changes: true,
+      changes: [
+        {
+          type: 'add_index',
+          table: 'contents',
+          renamedFrom: 'contents_slug_context_idx',
+          index: {
+            name: 'contents_tenant_id_slug_idx',
+            columns: ['tenant_id', 'slug', 'context'],
+          },
+          sql: 'ALTER INDEX IF EXISTS "contents_slug_context_idx" RENAME TO "contents_tenant_id_slug_idx"',
+        },
+      ],
+    });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { utilityCommands } = await import('../utilities.js');
+
+    await requireCommandHandler(utilityCommands['db:migrate'])([], {});
+
+    const logged = logSpy.mock.calls.flat().join('\n');
+    expect(logged).toContain(
+      'Renamed index contents_slug_context_idx -> contents_tenant_id_slug_idx on contents',
+    );
+    expect(logged).not.toContain('Created index contents_tenant_id_slug_idx');
+  }, 15_000);
+
   it('does not enable concurrent-index mode without --postgres-safe', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => {});
     vi.spyOn(console, 'warn').mockImplementation(() => {});

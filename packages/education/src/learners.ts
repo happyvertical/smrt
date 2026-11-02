@@ -3,6 +3,7 @@ import {
   field,
   foreignKey,
   SmrtObject,
+  type SmrtSaveOptions,
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
@@ -75,7 +76,7 @@ export class Learner extends SmrtObject {
     this.settings = JSON.stringify(value);
   }
 
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     await immutableIdentity(this, {
       user_id: this.userId,
       profile_id: this.profileId,
@@ -102,7 +103,7 @@ export class Learner extends SmrtObject {
       );
     if (!Number.isSafeInteger(this.level) || this.level < 0)
       throw new Error('Learner level must be a nonnegative integer');
-    return super.save();
+    return super.save(options);
   }
 }
 
@@ -120,7 +121,7 @@ export class Curriculum extends SmrtObject {
     super(options);
     applyOptions(this, options);
   }
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     await immutableIdentity(this, { learner_id: this.learnerId });
     requireEnum(this.status, ['planned', 'active', 'completed', 'archived']);
     if (
@@ -130,7 +131,7 @@ export class Curriculum extends SmrtObject {
       }))
     )
       throw new Error('Curriculum requires its tenant learner');
-    return super.save();
+    return super.save(options);
   }
 }
 
@@ -161,7 +162,7 @@ export class Enrollment extends SmrtObject {
     super(options);
     applyOptions(this, options);
   }
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     await immutableIdentity(this, {
       curriculum_id: this.curriculumId,
       learner_id: this.learnerId,
@@ -187,7 +188,7 @@ export class Enrollment extends SmrtObject {
       this.targetMinutesPerWeek < 0
     )
       throw new Error('Target minutes must be a nonnegative integer');
-    return super.save();
+    return super.save(options);
   }
 }
 
@@ -221,7 +222,28 @@ export class LessonProgress extends SmrtObject {
     super(options);
     applyOptions(this, options);
   }
-  override async save(): Promise<this> {
+  /**
+   * A pinned enrollment may follow a later release, whose lessons live on that
+   * release's own materialized Course row. Hosts that have not migrated the
+   * authoring tables keep the strict enrollment-course rule.
+   */
+  private async inPinnedRelease(courseId: string): Promise<boolean> {
+    if (!(await this.db.tableExists('enrollment_release_pins'))) return false;
+    const pins = await this.db.list('enrollment_release_pins', {
+      tenant_id: this.tenantId,
+      enrollment_id: this.enrollmentId,
+    });
+    for (const pin of pins) {
+      const release = await this.db.get('course_releases', {
+        id: pin.release_id,
+        tenant_id: this.tenantId,
+      });
+      if (release?.release_course_id === courseId) return true;
+    }
+    return false;
+  }
+
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     await immutableIdentity(this, {
       enrollment_id: this.enrollmentId,
       learner_id: this.learnerId,
@@ -241,13 +263,16 @@ export class LessonProgress extends SmrtObject {
       tenant_id: this.tenantId,
     });
     const lesson = await this.db.get('lessons', { id: this.lessonId });
+    const section = lesson
+      ? await this.db.get('course_sections', { id: lesson.section_id })
+      : null;
     if (
       !enrollment ||
-      !lesson ||
-      !(await this.db.get('course_sections', {
-        id: lesson.section_id,
-        course_id: enrollment.course_id,
-      }))
+      !section ||
+      !(
+        section.course_id === enrollment.course_id ||
+        (await this.inPinnedRelease(String(section.course_id)))
+      )
     )
       throw new Error(
         'Progress requires its enrollment learner and course lesson',
@@ -262,6 +287,6 @@ export class LessonProgress extends SmrtObject {
         this.bestScore > 1)
     )
       throw new Error('Score must be null or a number from zero to one');
-    return super.save();
+    return super.save(options);
   }
 }

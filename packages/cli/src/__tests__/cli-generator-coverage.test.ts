@@ -1204,6 +1204,34 @@ describe('CLIGenerator - subcommand-scoped --version (regression #2279)', () => 
     ).toBe('version');
   });
 
+  it('routes a trailing -v to a subcommand declaring short "v" (#2942)', () => {
+    const migrate: CLICommand = {
+      name: 'db:migrate-uuid',
+      description: 'Migrate ids',
+      args: [],
+      options: {
+        'dry-run': { type: 'boolean', description: 'Dry run', default: false },
+        verbose: {
+          type: 'boolean',
+          description: 'Verbose',
+          default: false,
+          short: 'v',
+        },
+      },
+    };
+    const parsed = parseCliCommandArgs(
+      ['db:migrate-uuid', '--dry-run', '-v'],
+      [migrate],
+    );
+    expect(parsed.command).toBe('db:migrate-uuid');
+    expect(parsed.options.verbose).toBe(true);
+    expect(parsed.options['dry-run']).toBe(true);
+    expect(parseCliCommandArgs(['-v'], [migrate]).command).toBe('version');
+    expect(parseCliCommandArgs(['--version'], [migrate]).command).toBe(
+      'version',
+    );
+  });
+
   it('leaves --help alone so subcommand help still works', () => {
     expect(
       parseCliCommandArgs(['generate-mcp', '--help'], [generateMcp]).command,

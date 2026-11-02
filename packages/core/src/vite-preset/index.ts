@@ -8,7 +8,11 @@
  */
 
 import { smrtConsumer } from '../consumer-plugin/index.js';
-import { type SmrtPluginOptions, smrtPlugin } from '../vite-plugin/index.js';
+import {
+  type HostToolNameDeclaration,
+  type SmrtPluginOptions,
+  smrtPlugin,
+} from '../vite-plugin/index.js';
 import type {
   SmrtDecoratorConfig,
   SmrtUserConfig,
@@ -56,6 +60,14 @@ export interface SmrtPresetOptions {
    * under `oxc.decorator` itself are never overwritten.
    */
   decorators?: boolean;
+  /**
+   * Host-declared agent tool names (workflow, bespoke WebMCP and MCP tools),
+   * forwarded unchanged to `smrtPlugin({ hostToolNames })`. A name two
+   * different declarations claim, or that shadows a generated model tool,
+   * fails the build; one operation (`declaredBy`) on several surfaces is
+   * allowed. Omit to skip the check.
+   */
+  hostToolNames?: readonly HostToolNameDeclaration[];
 }
 
 export const SMRT_PRESET_DEFAULTS = {
@@ -241,6 +253,8 @@ export async function smrt(
       configFileName,
     },
   };
+  if (options.hostToolNames)
+    pluginOptions.hostToolNames = options.hostToolNames;
   plugins.push(smrtPlugin(pluginOptions));
   return plugins;
 }

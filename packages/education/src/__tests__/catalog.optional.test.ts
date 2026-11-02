@@ -5,6 +5,7 @@ import {
 } from '@happyvertical/smrt-vitest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { CourseCollection, CourseSectionCollection } from '../collections.js';
+import { assertCatalogPreviewPersistence } from './catalog-preview-persistence.js';
 import { assertRepresentationMigration } from './catalog-representation-persistence.js';
 import {
   assertAuthorizedPagination,
@@ -27,6 +28,16 @@ import {
       });
       try {
         await assertRepresentationMigration(isolated.baseDb, 'postgres');
+      } finally {
+        await isolated.cleanup();
+      }
+    });
+    it('migrates and persists immutable revision-bound publisher previews', async () => {
+      const isolated = await createIsolatedTestDbFromManifest({
+        includeObjects: ['CatalogResource', 'CatalogSyncState'],
+      });
+      try {
+        await assertCatalogPreviewPersistence(isolated.baseDb, 'postgres');
       } finally {
         await isolated.cleanup();
       }

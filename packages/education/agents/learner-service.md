@@ -47,6 +47,27 @@ Same-tenant membership alone never grants sibling access.
   A learner cannot plan their own curriculum. Title is required.
 - `enroll` requires that guardian authority and a matching tenant curriculum.
   It returns the existing enrollment for the same curriculum/course unchanged.
+  A delegated agent may enroll, only when the host opts in: construct
+  `LearnerService(db, authorize, authorizeCatalog, { verifyDelegation })` where
+  `verifyDelegation(executor, { tenantId, actorUserId, delegatingGuardianUserId,
+  delegationId, learnerId, courseId? }) => boolean | { allowed, reason?, code? }` runs on the
+  current executor. Without the port, or if it denies or throws, `enroll` refuses with
+  `LearnerAuthorizationError` before the learner authorizer and before any write. Supply
+  `delegatingGuardianUserId` and `delegationId` (both or neither, 1-200 printable characters,
+  guardian not the agent). After the port, the service re-checks the DELEGATING guardian's
+  active membership and `guardianRelationshipId` (that guardian's profile to the learner, same
+  tenant) and the agent's active membership. The authorizer gets `education.learner.plan`,
+  `own: false`, `delegated: true`, `relationshipTypeId` undefined (so a legacy
+  `relationshipTypeId === guardian` rule denies), the guardian's type as
+  `delegatingRelationshipTypeId`, `delegatingGuardianUserId` and `delegationId`, and decides.
+  A new delegated enrollment appends one `EnrollmentAssignmentRecord` (`Enrollment` is
+  unchanged). Only `enroll` and `createCurriculum` accept a delegation (on `LearnerService` itself; subclasses without
+  the port refuse); every other operation ignores it, so the agent has no
+  other learner authority. Catalog reads still use the agent as actor.
+  `createCurriculum` accepts the same delegated actor (`operation: 'create-curriculum'`
+  on the verifier request, `enroll` sends `'enroll'`), with identical verification, guardian
+  relationship recheck, authorizer shape and stripping of caller authority keys; each new
+  delegated curriculum appends one `CurriculumCreationRecord` (own table, `Curriculum` unchanged).
 - `startLesson` allows the learner or authorized guardian to create their own
   enrollment's lesson progress in `in_progress`. It derives learner identity
   from the validated enrollment. Repeated starts return existing state without
@@ -54,6 +75,18 @@ Same-tenant membership alone never grants sibling access.
 - `listProgress` reads only the validated learner/enrollment and lessons still
   visible in that enrollment's course. Inconsistent persisted links fail
   closed or are omitted from the list.
+- An enrollment with an `EnrollmentReleasePin` uses its effective lesson set
+  instead of `enrollment.courseId` alone (`resolveEnrollmentLessons`, shared
+  with `CourseAuthoringService.getEnrollmentRelease`, on the current executor):
+  lessons started (non-`not_started` status or attempts) stay on their original
+  immutable rows in any release the enrollment followed; the rest follow the
+  current pin, in that release's order. `nextLessons`, `assignmentLessons`,
+  `listProgress`, plan reads, `startLesson` and submission/workbook lesson
+  assertions all use it, so a lesson outside the set is rejected and progress
+  rows never move. Unpinned enrollments (or hosts without the authoring
+  tables) read their own course as before. Pins recorded for another learner
+  fail closed. `LessonProgress` accepts a lesson on any release course the
+  enrollment is pinned to; no data migration.
 
 Service results are data-only views, with no persistence or database methods.
 Extra request fields are never model patches: a learner cannot set score,

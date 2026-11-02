@@ -740,6 +740,24 @@ export function foundationSuite(
       expect(await service.getEvidence(id)).toHaveLength(1);
       expect((await service.receive(receive())).kind).toBe('duplicate');
     });
+    it('reads immutable receipt source identity only through current scoped authority', async () => {
+      const input = receive();
+      const id = await accepted();
+      expect(await service.getReceiptSource(id)).toEqual({
+        sourceId: input.sourceId,
+        sourceVersion: input.sourceVersion,
+        deliveryKey: input.deliveryKey,
+      });
+      for (const scope of [
+        { ...options.scope, tenantId: otherTenant },
+        { ...options.scope, confidentialScopeId: 'other' },
+      ])
+        await expect(
+          new IngestionService({ ...options, scope }).getReceiptSource(id),
+        ).rejects.toThrow();
+      allowed = false;
+      await expect(service.getReceiptSource(id)).rejects.toThrow();
+    });
     it('rejects unsafe filenames from direct receive callers and cleans stored names on read (#4214)', async () => {
       // Built from code points: no invisible character appears in source.
       const rlo = String.fromCodePoint(0x202e);

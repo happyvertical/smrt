@@ -482,6 +482,41 @@ describe('assistant turn', () => {
       expect(ran).toEqual(['data.discover']);
     });
 
+    it('reports an unregistered tool call without echoing its name (#4453)', async () => {
+      const sentence = 'Let me think about which tool to use here';
+      const ran: string[] = [];
+      const events = await collect(
+        runAssistantTurn({
+          ai: scriptedAI([
+            calls([sentence, {}, 'bad'], ['data-discover', {}, 'good']),
+            text('Done.'),
+          ]),
+          db,
+          principal: principal(),
+          audit: () => {},
+          userMessage: 'go',
+          extraTools: [readTool(ran)],
+          describeTool: (name) => (name === 'data.discover' ? 'Looking' : name),
+        }),
+      );
+      const results = events.flatMap((e) =>
+        e.type === 'step' && e.step.kind === 'tool_result' ? [e.step] : [],
+      );
+      const bad = results.find((r) => r.callId === 'bad');
+      expect(bad).toMatchObject({
+        tool: 'unknown_tool',
+        label: 'Unknown tool',
+        ok: false,
+      });
+      expect(
+        JSON.stringify(events.filter((e) => e.type !== 'token')),
+      ).not.toContain('which tool');
+      expect(results.find((r) => r.callId === 'good')).toMatchObject({
+        tool: 'data.discover',
+        label: 'Looking',
+      });
+    });
+
     it('does not offer a server tool missing from the principal allow-list', async () => {
       const ran: string[] = [];
       const ai = scriptedAI([calls(['data-discover', {}]), text('no tools')]);
@@ -962,6 +997,166 @@ describe('assistant turn', () => {
       expect(seen).toEqual([]);
     });
 
+    it('marks a validation failure recoverable and collapses it once the same tool recovers, opt-in (#4505)', async () => {
+      const chatService = await ChatService.create({ tenantId, db });
+      await chatService.initialize();
+      const { session } = await chatService.createAgentSession({
+        tenantId,
+        agentId: 'turn-agent',
+        actorProfileId: 'human-profile',
+        allowedTools: ['data.discover'],
+      });
+      // Rejects a call that passes `bad` (a 400: the model can fix it).
+      const picky: PrincipalTool = {
+        ...readTool([]),
+        async execute({ args }) {
+          if (args.bad !== undefined) {
+            throw Object.assign(new Error('Unsupported key "bad".'), {
+              status: 400,
+              code: 'DATA_SURFACE_REQUEST_INVALID',
+            });
+          }
+          return { surfaces: ['articles'] };
+        },
+      };
+      const run = (rounds: Round[], collapseRecoveredFailures?: boolean) =>
+        collect(
+          runAssistantTurn({
+            ai: scriptedAI(rounds),
+            db,
+            principal: principal(),
+            audit: () => {},
+            userMessage: 'discover',
+            extraTools: [picky],
+            author: {
+              chatService,
+              agentSessionId: session.id as string,
+              tenantId,
+              ...(collapseRecoveredFailures !== undefined
+                ? { collapseRecoveredFailures }
+                : {}),
+            },
+          }),
+        );
+      const rows = (events: Awaited<ReturnType<typeof run>>) =>
+        events
+          .filter((e) => e.type === 'message')
+          .map(
+            (e) =>
+              e.message as {
+                role: string;
+                content: string;
+                metadata: unknown;
+                toolCallData?: unknown;
+              },
+          );
+      const parse = (value: unknown) =>
+        typeof value === 'string' ? JSON.parse(value) : value;
+      const recovered = [
+        calls(['data-discover', { bad: 1 }]),
+        calls(['data-discover', {}]),
+        text('Found articles.'),
+      ];
+
+      // Default: the rejection is persisted, now marked recoverable.
+      const plain = rows(await run(recovered));
+      expect(plain.map((row) => row.role)).toEqual(['tool', 'assistant']);
+      expect(parse(plain[0].metadata)).toEqual({
+        toolStatus: 'error',
+        errorKind: 'invalid_request',
+        errorCode: 'DATA_SURFACE_REQUEST_INVALID',
+        recoverable: true,
+      });
+      expect(parse(plain[0].toolCallData)).toMatchObject({
+        name: 'data.discover',
+        status: 'error',
+        recoverable: true,
+      });
+      expect(rows(await run(recovered, false)).map((r) => r.role)).toEqual([
+        'tool',
+        'assistant',
+      ]);
+
+      // Opt-in: a later success of the same tool drops the rejection.
+      expect(rows(await run(recovered, true)).map((r) => r.content)).toEqual([
+        'Found articles.',
+      ]);
+
+      // Opt-in, never recovered: both rejections are persisted, in call
+      // order, before the reply.
+      const unrecovered = rows(
+        await run(
+          [
+            calls(['data-discover', { bad: 1 }]),
+            calls(['data-discover', { bad: 2 }]),
+            text('Sorry.'),
+          ],
+          true,
+        ),
+      );
+      expect(unrecovered.map((row) => row.role)).toEqual([
+        'tool',
+        'tool',
+        'assistant',
+      ]);
+      expect(
+        unrecovered.slice(0, 2).map((row) => parse(row.toolCallData).args),
+      ).toEqual([{ bad: 1 }, { bad: 2 }]);
+    });
+
+    it('never collapses a non-recoverable failure (#4505)', async () => {
+      const chatService = await ChatService.create({ tenantId, db });
+      await chatService.initialize();
+      const { session } = await chatService.createAgentSession({
+        tenantId,
+        agentId: 'turn-agent',
+        actorProfileId: 'human-profile',
+        allowedTools: ['data.discover'],
+      });
+      let attempt = 0;
+      const flaky: PrincipalTool = {
+        ...readTool([]),
+        async execute() {
+          attempt += 1;
+          if (attempt === 1) {
+            throw Object.assign(new Error('Data surface query failed.'), {
+              status: 502,
+              code: 'DATA_SURFACE_QUERY_FAILED',
+            });
+          }
+          return { surfaces: ['articles'] };
+        },
+      };
+      const events = await collect(
+        runAssistantTurn({
+          ai: scriptedAI([
+            calls(['data-discover', {}]),
+            calls(['data-discover', { retry: true }]),
+            text('Found articles.'),
+          ]),
+          db,
+          principal: principal(),
+          audit: () => {},
+          userMessage: 'discover',
+          extraTools: [flaky],
+          author: {
+            chatService,
+            agentSessionId: session.id as string,
+            tenantId,
+            collapseRecoveredFailures: true,
+          },
+        }),
+      );
+      const persisted = events
+        .filter((e) => e.type === 'message')
+        .map((e) => e.message as { role: string; metadata: unknown });
+      expect(persisted.map((row) => row.role)).toEqual(['tool', 'assistant']);
+      const metadata = persisted[0].metadata;
+      expect(
+        typeof metadata === 'string' ? JSON.parse(metadata) : metadata,
+      ).not.toHaveProperty('recoverable');
+    });
+
     it('persists allowed tool results and the reply through the agent bridge', async () => {
       const chatService = await ChatService.create({ tenantId, db });
       await chatService.initialize();
@@ -1011,6 +1206,68 @@ describe('assistant turn', () => {
       expect(isFallbackReply(done.message as { metadata?: unknown })).toBe(
         false,
       );
+    });
+
+    it('stops on repeated calls, persists capReason, and forwards maxRepeatedCalls (#4391)', async () => {
+      const chatService = await ChatService.create({ tenantId, db });
+      await chatService.initialize();
+      const { session } = await chatService.createAgentSession({
+        tenantId,
+        agentId: 'turn-agent-repeat',
+        actorProfileId: 'human-profile',
+        allowedTools: ['data.discover'],
+      });
+      const run = (maxRepeatedCalls?: number) => {
+        const ai = scriptedAI([
+          calls(['data-discover', {}, 'd1']),
+          calls(['data-discover', {}, 'd2']),
+          calls(['data-discover', {}, 'd3']),
+          text('One surface: articles.'),
+        ]);
+        return collect(
+          runAssistantTurn({
+            ai,
+            db,
+            principal: principal(),
+            audit: () => {},
+            userMessage: 'what data is there?',
+            extraTools: [readTool([])],
+            maxSteps: 3,
+            ...(maxRepeatedCalls !== undefined ? { maxRepeatedCalls } : {}),
+            author: {
+              chatService,
+              agentSessionId: session.id as string,
+              tenantId,
+              authorInvocation: () => null,
+            },
+          }),
+        ).then((events) => ({ ai, events }));
+      };
+      const { ai, events } = await run();
+      const done = events.find((e) => e.type === 'done') as Extract<
+        AssistantTurnEvent,
+        { type: 'done' }
+      >;
+      expect(done).toMatchObject({
+        stoppedReason: 'repeated_calls',
+        capReason: 'repeated_calls',
+        message: { content: 'One surface: articles.' },
+      });
+      // Three tool rounds hit the limit; the fourth call had no tools.
+      expect(ai.offered.at(-1)).toEqual([]);
+      const metadata = (done.message as { metadata?: unknown }).metadata;
+      expect(
+        typeof metadata === 'string' ? JSON.parse(metadata) : metadata,
+      ).toEqual({
+        stoppedReason: 'repeated_calls',
+        capReason: 'repeated_calls',
+      });
+
+      const off = await run(0);
+      expect(off.events.find((e) => e.type === 'done')).toMatchObject({
+        stoppedReason: 'max_steps',
+        capReason: 'max_steps',
+      });
     });
   });
 
@@ -1102,6 +1359,62 @@ describe('assistant turn', () => {
       expect(isFallbackReply(done.message as { metadata?: unknown })).toBe(
         true,
       );
+    });
+
+    it('stores providerErrorFallback when a model call throws (#4454)', async () => {
+      const codes: Array<string | undefined> = [];
+      const failing: Round = () => {
+        throw Object.assign(new Error('boom'), { code: 'API_ERROR' });
+      };
+      const { events, done } = await authored([failing], {
+        providerErrorFallback: (code: string | undefined) => {
+          codes.push(code);
+          return 'The assistant is unavailable right now.';
+        },
+        onError: () => {},
+      });
+      expect(codes).toEqual(['API_ERROR']);
+      expect(done.stoppedReason).toBe('provider_error');
+      expect(done.message).toMatchObject({
+        content: 'The assistant is unavailable right now.',
+        role: 'assistant',
+      });
+      expect(isFallbackReply(done.message as { metadata?: unknown })).toBe(
+        true,
+      );
+      expect(events.some((e) => e.type === 'error')).toBe(false);
+    });
+
+    it('accepts a plain-string providerErrorFallback', async () => {
+      const { done } = await authored(
+        [
+          () => {
+            throw new Error('down');
+          },
+        ],
+        { providerErrorFallback: 'Try again later.', onError: () => {} },
+      );
+      expect(done.stoppedReason).toBe('provider_error');
+      expect(done.message).toMatchObject({ content: 'Try again later.' });
+    });
+
+    it('keeps the error event when no providerErrorFallback is set or it declines', async () => {
+      const failing: Round = () => {
+        throw new Error('down');
+      };
+      for (const extra of [
+        {},
+        { providerErrorFallback: () => undefined },
+        { providerErrorFallback: '  ' },
+      ]) {
+        const { events, done } = await authored([failing], {
+          ...extra,
+          onError: () => {},
+        });
+        expect(events.some((e) => e.type === 'error')).toBe(true);
+        expect(events.some((e) => e.type === 'message')).toBe(false);
+        expect(done).toBeUndefined();
+      }
     });
 
     it('treats a quiet stream end twice as a timeout (older SDKs)', async () => {

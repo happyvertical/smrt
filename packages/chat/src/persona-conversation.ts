@@ -274,6 +274,11 @@ export interface PersonaConversationTurnOptions {
   extraTools?: PrincipalTool[];
   /** Max tool-executing rounds. */
   maxSteps?: number;
+  /**
+   * Deduped repeats of one read-only call that end the tool phase (#4391;
+   * forwarded). Default `DEFAULT_MAX_REPEATED_CALLS` (2); `0` turns it off.
+   */
+  maxRepeatedCalls?: number;
   /** Model id. */
   model?: string;
   /** Sampling temperature. */
@@ -446,6 +451,9 @@ export async function runPersonaConversationTurn(
     principal: principalBindingFor(persona),
     db,
     maxSteps: options.maxSteps,
+    ...(options.maxRepeatedCalls !== undefined
+      ? { maxRepeatedCalls: options.maxRepeatedCalls }
+      : {}),
     model: options.model,
     temperature: options.temperature,
     maxTokens: options.maxTokens,
@@ -589,11 +597,13 @@ async function authorConversationReply(input: {
             args: record.args,
             status: record.status,
             errorCode: record.errorCode,
+            ...(record.recoverable ? { recoverable: true } : {}),
           },
           metadata: {
             toolStatus: record.status,
             errorKind: record.errorKind,
             errorCode: record.errorCode,
+            ...(record.recoverable ? { recoverable: true } : {}),
           },
         });
         toolMessages.push(message);

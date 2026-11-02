@@ -5,7 +5,7 @@
 // Register the package manifest before this module's @smrt() decorator
 // runs, whichever chunk the library build places it in (#3098).
 import '../__smrt-register__.js';
-import { smrt } from '@happyvertical/smrt-core';
+import { field, smrt } from '@happyvertical/smrt-core';
 import type { SlackMessageOptions } from '../types';
 import { Message } from './Message';
 
@@ -18,13 +18,28 @@ import { Message } from './Message';
   widenParentExposure: { api: ['create'] },
 })
 export class SlackMessage extends Message {
+  @field({ description: 'The identifier of the channel this message is in.' })
   channelId = '';
+  @field({ description: 'The name of the channel this message was posted in.' })
   channelName = '';
+  @field({ description: "The workspace's own reference for this message." })
   slackTs = ''; // Slack message timestamp (unique ID)
+  @field({
+    description:
+      "The workspace's own reference for the thread this message belongs to.",
+  })
   slackThreadTs = ''; // Thread parent timestamp
+  @field({ description: 'The reactions people added to this message.' })
   reactions = ''; // JSON array of {name, count, users[]}
+  @field({ description: 'Whether this message was edited after posting.' })
   isEdited = false;
+  @field({
+    description: 'The kind of message, such as one from a person or a bot.',
+  })
   messageType = ''; // 'message', 'bot_message', etc.
+  @field({
+    description: 'The rich layout of the message as the workspace stores it.',
+  })
   blocks = ''; // JSON - Slack Block Kit blocks
 
   constructor(options: SlackMessageOptions = {}) {

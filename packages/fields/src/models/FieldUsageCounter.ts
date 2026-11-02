@@ -2,6 +2,7 @@ import {
   field,
   SmrtObject,
   type SmrtObjectOptions,
+  type SmrtSaveOptions,
   smrt,
 } from '@happyvertical/smrt-core';
 import {
@@ -302,10 +303,10 @@ export class FieldUsageCounter extends SmrtObject {
     return this.submissionCount < this.setCount;
   }
 
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     await this.assertRowOwnedByAmbientContext('save');
     this.validateFieldUsageCounter();
-    return super.save();
+    return super.save(options);
   }
 
   override async delete(): Promise<void> {

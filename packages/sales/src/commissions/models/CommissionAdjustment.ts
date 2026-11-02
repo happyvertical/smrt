@@ -22,6 +22,7 @@ import {
   field,
   foreignKey,
   SmrtObject,
+  type SmrtSaveOptions,
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
@@ -158,9 +159,9 @@ export class CommissionAdjustment extends SmrtObject {
    * field except `payoutId` must match the captured snapshot. Corrections
    * to a wrong adjustment are new counter-adjustments, never edits.
    */
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     this.assertImmutableOncePersisted();
-    const result = (await super.save()) as this;
+    const result = (await super.save(options)) as this;
     if (!frozenAdjustmentSnapshot.has(this)) {
       frozenAdjustmentSnapshot.set(this, this.serializeFrozenSnapshot());
     }

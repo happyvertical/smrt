@@ -13,6 +13,7 @@ import {
   foreignKey,
   isUniqueViolationError,
   SmrtObject,
+  type SmrtSaveOptions,
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
@@ -164,7 +165,7 @@ export class ExpenseReceipt extends SmrtObject {
    *   missing or foreign-tenant expense or asset, or a change to an
    *   immutable column.
    */
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     const label = this.id || '<new>';
     this.tenantId = normalizeTenantId(this.tenantId);
     this.contentSha256 = normalizeSha256(
@@ -217,7 +218,7 @@ export class ExpenseReceipt extends SmrtObject {
     }
 
     try {
-      return await super.save();
+      return await super.save(options);
     } catch (error) {
       if (inserting && isUniqueViolationError(error)) {
         throw await this.classifyInsertConflict(error);

@@ -43,28 +43,64 @@ export class Place extends SmrtHierarchical {
   tenantId: string | null = null;
 
   // Core fields
+  @field({
+    description:
+      'What kind of place this is, such as a building, a room or a storage zone.',
+  })
   @foreignKey('PlaceType')
   typeId = ''; // FK to PlaceType
   // parentId inherited from SmrtHierarchical (nullable, self-reference)
+  @field({
+    description:
+      'What the place is called, such as "Main warehouse" or "Aisle 4".',
+  })
   name = ''; // Place name/title
+  @field({ description: 'A few words about the place and what happens there.' })
   description = ''; // Optional description
 
   // Optional geo fields (all nullable for abstract places)
-  @field({ type: 'decimal' })
+  @field({
+    type: 'decimal',
+    description:
+      'How far north or south the place is on a map. Leave empty for a place that is not on a map.',
+  })
   latitude: number | null = null;
-  @field({ type: 'decimal' })
+  @field({
+    type: 'decimal',
+    description:
+      'How far east or west the place is on a map. Leave empty for a place that is not on a map.',
+  })
   longitude: number | null = null;
+  @field({ description: 'The number of the building on its street.' })
   streetNumber = '';
+  @field({ description: 'The name of the street the place is on.' })
   streetName = '';
+  @field({ description: 'The town or city the place is in.' })
   city = '';
+  @field({ description: 'The state, province or region the place is in.' })
   region = '';
+  @field({ description: 'The country the place is in.' })
   country = '';
+  @field({ description: 'The postal or zip code of the address.' })
   postalCode = '';
+  @field({
+    description: 'The short two-letter code for the country, such as CA or US.',
+  })
   countryCode = '';
+  @field({
+    description: 'The time zone the place keeps, such as America/Toronto.',
+  })
   timezone = '';
 
   // Metadata
+  @field({
+    description:
+      'The reference the map provider uses for this place, filled in when the app looks it up.',
+  })
   externalId = ''; // External system identifier
+  @field({
+    description: 'Which map provider the place was looked up from, if any.',
+  })
   source = ''; // Where this place came from (e.g., 'google', 'osm')
   metadata = ''; // JSON metadata stored as text
 

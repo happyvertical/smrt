@@ -13,12 +13,14 @@
 
 import {
   createSmrtCollection,
+  createSmrtWebClient,
+  invalidateSmrtWebCollections,
   type SmrtCrudFetchers,
   type SmrtWebCollection,
   type SmrtWebCollectionDefinition,
 } from '@happyvertical/smrt-web';
 import { flushSync, mount, unmount } from 'svelte';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { LiveCollection } from '../live-collection.svelte.js';
 import Harness from './harness.svelte';
 
@@ -157,6 +159,90 @@ describe('liveCollection', () => {
     expect(view.isLoading).toBe(true);
     expect(view.status).toBe('loading');
     expect(view.error).toBeNull();
+  });
+
+  it('surfaces an initial read failure instead of remaining in loading', async () => {
+    const collection = createSmrtCollection(
+      productDefinition('live-read-error'),
+      {
+        fetchers: {
+          list: async () => {
+            throw new Error('Network unavailable');
+          },
+          create: async () => ({}),
+        },
+        retry: false,
+      },
+    );
+    const view = track(mountView(collection));
+    await vi.waitFor(() => {
+      flushSync();
+      expect(view.status).toBe('error');
+    });
+    expect(view.isError).toBe(true);
+    expect(view.isLoading).toBe(false);
+    expect(view.error).not.toBeNull();
+    await collection.cleanup();
+  });
+
+  it('reports a failed background sync while retaining the last good rows and recovers', async () => {
+    const client = createSmrtWebClient();
+    let fail = false;
+    const collection = createSmrtCollection(
+      productDefinition('live-sync-error'),
+      {
+        client,
+        retry: false,
+        fetchers: {
+          list: async () => {
+            if (fail) throw new Error('Refresh unavailable');
+            return [{ id: 'p1', name: 'Cached' }];
+          },
+          create: async () => ({}),
+        },
+      },
+    );
+    const view = track(mountView(collection));
+    await collection.preload();
+    flushSync();
+    fail = true;
+    invalidateSmrtWebCollections(client, ['live-sync-error']);
+    await vi.waitFor(() => {
+      flushSync();
+      expect(view.isError).toBe(true);
+    });
+    expect(view.error).toBe('sync-error');
+    expect(view.rows).toEqual([{ id: 'p1', name: 'Cached' }]);
+    fail = false;
+    invalidateSmrtWebCollections(client, ['live-sync-error']);
+    await vi.waitFor(() => {
+      flushSync();
+      expect(view.isReady).toBe(true);
+    });
+    expect(view.error).toBeNull();
+    await collection.cleanup();
+  });
+
+  it('cleans up an owned collection with active readers and permits later unmount', async () => {
+    const scripted = makeScriptedFetchers([{ id: 'p1', name: 'Widget' }]);
+    let detached = false;
+    const collection = createSmrtCollection(productDefinition('live-cleanup'), {
+      fetchers: scripted.fetchers,
+      capabilities: [
+        {
+          name: 'lifetime',
+          teardown: () => {
+            detached = true;
+          },
+        },
+      ],
+    });
+    track(mountView(collection));
+    await collection.preload();
+    flushSync();
+    await expect(collection.cleanup()).resolves.toBeUndefined();
+    expect(detached).toBe(true);
+    flushSync();
   });
 
   it('reflects an optimistic insert reactively and settles its pending state', async () => {

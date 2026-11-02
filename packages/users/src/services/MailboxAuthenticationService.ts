@@ -1,5 +1,6 @@
 /** Independent emailed mailbox authentication for existing active canonical users. */
 import {
+  isEmbeddedDatabase,
   isPostgresDatabase,
   type SmrtClassOptions,
 } from '@happyvertical/smrt-core';
@@ -41,6 +42,119 @@ export interface AuthenticatedMailbox {
   tenantId: string;
 }
 
+/** Immutable destination selected by the trusted server before its caller transaction. */
+export type MailboxAuthenticationRequestScope =
+  | { purpose: 'returning'; email: string }
+  | { purpose: 'invitation'; tenantId: string; email: string };
+declare const mailboxReservationBrand: unique symbol;
+/** Opaque one-use budget capability; never serialize, copy, or return to a browser. */
+export type MailboxRequestReservation = Readonly<{
+  [mailboxReservationBrand]: true;
+}>;
+type ReservationState = {
+  scope: MailboxAuthenticationRequestScope;
+  sourceKey: string;
+  limiter: LoginAttemptLimiter;
+  expiresAt: number;
+};
+const mailboxReservations = new WeakMap<object, ReservationState>();
+function normalizedScope(
+  scope: MailboxAuthenticationRequestScope,
+): MailboxAuthenticationRequestScope {
+  if (
+    !scope ||
+    typeof scope.email !== 'string' ||
+    !['returning', 'invitation'].includes(scope.purpose)
+  )
+    throw new Error('Invalid mailbox request scope');
+  if (scope.purpose === 'invitation') {
+    if (typeof scope.tenantId !== 'string' || !scope.tenantId.trim())
+      throw new Error('Invitation request tenant is required');
+    return {
+      purpose: 'invitation',
+      tenantId: scope.tenantId,
+      email: normalizeEmail(scope.email),
+    };
+  }
+  return { purpose: 'returning', email: normalizeEmail(scope.email) };
+}
+function scopeKey(scope: MailboxAuthenticationRequestScope): string {
+  return scope.purpose === 'invitation'
+    ? JSON.stringify(['invitation', scope.tenantId, scope.email])
+    : JSON.stringify(['returning', scope.email]);
+}
+/**
+ * Reserve AND settle retained send budget before entering the caller transaction.
+ * Malformed/unknown returning email deliberately consumes the same source budget.
+ * This capability carries no release/refund operation and expires no later than
+ * any reserved key's actual window end or thirty seconds, whichever comes first.
+ */
+export async function reserveMailboxAuthenticationRequest(input: {
+  limiter: LoginAttemptLimiter;
+  scope: MailboxAuthenticationRequestScope;
+  sourceKey: string;
+}): Promise<MailboxRequestReservation> {
+  const scope = normalizedScope(input.scope);
+  const deadline = await reserveMailboxRequest({
+    limiter: input.limiter,
+    subject: scopeKey(scope),
+    sourceKey: input.sourceKey,
+  });
+  if (!Number.isFinite(deadline))
+    throw new Error('Mailbox request budget deadline is unavailable');
+  const reservation = Object.freeze({}) as MailboxRequestReservation;
+  mailboxReservations.set(reservation, {
+    scope,
+    limiter: input.limiter,
+    sourceKey: input.sourceKey.trim(),
+    expiresAt: Math.min(Date.now() + 30_000, deadline),
+  });
+  return reservation;
+}
+/** Internal one-use claim: delete synchronously, before any request work can await. */
+export function claimMailboxAuthenticationRequest(input: {
+  reservation?: MailboxRequestReservation;
+  limiter?: LoginAttemptLimiter;
+  sourceKey: string;
+  db: DatabaseInterface;
+}) {
+  let state: ReservationState | undefined;
+  if (input.reservation !== undefined) {
+    state = mailboxReservations.get(input.reservation);
+    mailboxReservations.delete(input.reservation);
+    if (
+      !state ||
+      state.limiter !== input.limiter ||
+      state.sourceKey !== input.sourceKey?.trim()
+    )
+      throw new Error('Mailbox request reservation is unavailable');
+  }
+  if (!input.limiter)
+    throw new Error(
+      'Mailbox authentication requests require an independently supplied root-executor login limiter',
+    );
+  if (!state && isEmbeddedDatabase(input.db))
+    throw new Error(
+      'Embedded mailbox requests require a pre-transaction reservation',
+    );
+  const assertFresh = () => {
+    if (state && Date.now() >= state.expiresAt)
+      throw new Error('Mailbox request reservation has expired');
+  };
+  assertFresh();
+  return {
+    reserved: state !== undefined,
+    assertFresh,
+    assertScope(scope: MailboxAuthenticationRequestScope) {
+      assertFresh();
+      if (state && scopeKey(state.scope) !== scopeKey(normalizedScope(scope)))
+        throw new Error(
+          'Mailbox request reservation does not match destination',
+        );
+    },
+  };
+}
+
 /** Canonical shared request budget; keys are hashed/peppered by LoginAttemptLimiter. */
 export async function reserveMailboxRequest(input: {
   subject: string;
@@ -56,12 +170,13 @@ export async function reserveMailboxRequest(input: {
   const lease = await input.limiter.reserve({
     kind: 'mailbox-request',
     subject: `mailbox:${input.subject}`,
-    source: `mailbox:${input.sourceKey}`,
+    source: `mailbox:${input.sourceKey.trim()}`,
     retainOnSuccess: true,
   });
   if (!lease.allowed) throw new LoginRateLimitError(lease);
   // Every request consumes budget equally, even unknown accounts or transport errors.
   await lease.succeed();
+  return lease.budgetExpiresAt;
 }
 
 /** Preserve existing signed-in identity and session ceilings during mailbox login. */
@@ -135,27 +250,37 @@ export class MailboxAuthenticationService {
     email: string;
     sourceKey: string;
     deliver: MailboxAuthenticationDelivery;
+    reservation?: MailboxRequestReservation;
   }): Promise<{ requested: true }> {
+    const reservation = claimMailboxAuthenticationRequest({
+      reservation: input.reservation,
+      limiter: this.auth.loginLimiter,
+      sourceKey: input.sourceKey,
+      db: this.options.db as DatabaseInterface,
+    });
+    reservation.assertScope({ purpose: 'returning', email: input.email });
     if (typeof input.deliver !== 'function')
       throw new Error('Mailbox authentication delivery is required');
     const started = performance.now();
     try {
-      await reserveMailboxRequest({
-        subject: normalizeEmail(input.email),
-        sourceKey: input.sourceKey,
-        limiter: this.auth.loginLimiter,
-      });
+      if (!reservation.reserved)
+        await reserveMailboxRequest({
+          subject: normalizeEmail(input.email),
+          sourceKey: input.sourceKey,
+          limiter: this.auth.loginLimiter,
+        });
       return await withSystemContext(async () => {
         const identity = isValidEmail(input.email)
           ? await this.eligible(input.email)
           : null;
+        reservation.assertFresh();
         if (identity) {
-          const proof = await (await this.links()).generate(
-            identity.user.email,
-            {
-              subject: identity.binding,
-            },
-          );
+          const links = await this.links();
+          reservation.assertFresh();
+          const proof = await links.generate(identity.user.email, {
+            subject: identity.binding,
+          });
+          reservation.assertFresh();
           await input.deliver({
             email: normalizeIdentityEmail(identity.user.email),
             ...proof,

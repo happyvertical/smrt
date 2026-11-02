@@ -112,6 +112,21 @@ export interface SmrtDevModule {
   id: string | null;
 }
 export interface SmrtDevServer {
+  /** Vite 6+ SSR native-loading transport; older servers do not expose environments. */
+  environments?: Record<
+    string,
+    {
+      fetchModule?: (
+        id: string,
+        importer?: string,
+        options?: {
+          cached?: boolean;
+          startOffset?: number;
+          inlineSourceMap?: boolean;
+        },
+      ) => Promise<unknown>;
+    }
+  >;
   config: { root: string };
   middlewares: {
     use(

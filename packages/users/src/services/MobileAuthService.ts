@@ -56,6 +56,7 @@ import {
 import type { Membership } from '../models/Membership.js';
 import type { Role } from '../models/Role.js';
 import type { Tenant } from '../models/Tenant.js';
+import { withoutListBounds } from './authorization-read-options.js';
 import {
   OidcLoginError,
   OidcLoginService,
@@ -640,7 +641,7 @@ export class MobileAuthService {
     });
     this.userCollection = await UserCollection.create(this.classOptions);
     this.membershipCollection = await MembershipCollection.create(
-      this.classOptions,
+      withoutListBounds(this.classOptions),
     );
     this.roleCollection = await RoleCollection.create(this.classOptions);
     this.tenantCollection = await TenantCollection.create(this.classOptions);

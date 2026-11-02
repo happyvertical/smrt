@@ -1,5 +1,82 @@
 # @happyvertical/smrt-dev-mcp
 
+## 0.57.46
+
+### Patch Changes
+
+- @happyvertical/smrt-scanner@0.57.46
+  - @happyvertical/smrt-types@0.57.46
+
+## 0.57.45
+
+### Patch Changes
+
+- @happyvertical/smrt-scanner@0.57.45
+  - @happyvertical/smrt-types@0.57.45
+
+## 0.57.44
+
+### Patch Changes
+
+- @happyvertical/smrt-scanner@0.57.44
+  - @happyvertical/smrt-types@0.57.44
+
+## 0.57.43
+
+### Patch Changes
+
+- @happyvertical/smrt-scanner@0.57.43
+  - @happyvertical/smrt-types@0.57.43
+
+## 0.57.42
+
+### Patch Changes
+
+- @happyvertical/smrt-scanner@0.57.42
+  - @happyvertical/smrt-types@0.57.42
+
+## 0.57.41
+
+### Patch Changes
+
+- @happyvertical/smrt-scanner@0.57.41
+  - @happyvertical/smrt-types@0.57.41
+
+## 0.57.40
+
+### Patch Changes
+
+- @happyvertical/smrt-scanner@0.57.40
+  - @happyvertical/smrt-types@0.57.40
+
+## 0.57.39
+
+### Patch Changes
+
+- @happyvertical/smrt-scanner@0.57.39
+  - @happyvertical/smrt-types@0.57.39
+
+## 0.57.38
+
+### Patch Changes
+
+- @happyvertical/smrt-scanner@0.57.38
+  - @happyvertical/smrt-types@0.57.38
+
+## 0.57.37
+
+### Patch Changes
+
+- @happyvertical/smrt-scanner@0.57.37
+  - @happyvertical/smrt-types@0.57.37
+
+## 0.57.36
+
+### Patch Changes
+
+- @happyvertical/smrt-scanner@0.57.36
+  - @happyvertical/smrt-types@0.57.36
+
 ## 0.57.35
 
 ### Patch Changes

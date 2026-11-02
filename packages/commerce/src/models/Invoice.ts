@@ -8,6 +8,7 @@ import {
   field,
   foreignKey,
   SmrtObject,
+  type SmrtSaveOptions,
   smrt,
 } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
@@ -683,16 +684,30 @@ export class Invoice extends SmrtObject {
    *  - **Whole minor units and non-negativity** are enforced on all amounts.
    *  - **Status transitions** are validated against the prior persisted status.
    */
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     const { saveInvoice } = await import('../document-money.js');
-    return (await saveInvoice(this)) as this;
+    return (await saveInvoice(this, options)) as this;
   }
 
   /** @internal Aggregate persistence only. */
-  async saveDerived(capability: DocumentMoneyWriteCapability): Promise<this> {
+  async saveDerived(
+    capability: DocumentMoneyWriteCapability,
+    options?: SmrtSaveOptions,
+  ): Promise<this> {
     if (capability !== DOCUMENT_MONEY_WRITE)
       throw new Error('Invoice money write capability is required');
-    await claimAllocationParent(this, 'invoice');
+    // The claim is the compare-and-swap against the caller's revision (it
+    // advances the stored revision), so the guarded save below must expect the
+    // revision the claim just wrote rather than the caller's pre-claim one.
+    const expectedUpdatedAt = options?.expectedUpdatedAt;
+    await claimAllocationParent(this, 'invoice', expectedUpdatedAt);
+    const saveOptions =
+      expectedUpdatedAt === undefined
+        ? options
+        : {
+            ...options,
+            expectedUpdatedAt: this.updated_at ?? expectedUpdatedAt,
+          };
     const persisted = await this.isSaved();
     const prior = await this.resolvePriorStatus(persisted);
 
@@ -749,7 +764,7 @@ export class Invoice extends SmrtObject {
     await this.assertDraftDeliveryHistory(persisted);
 
     await assertAllocationParent(this, 'invoice');
-    const result = (await super.save()) as this;
+    const result = (await super.save(saveOptions)) as this;
     loadedInvoiceStatus.set(this, this.status);
     return result;
   }

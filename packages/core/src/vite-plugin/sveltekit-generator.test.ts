@@ -27,15 +27,22 @@ vi.mock('node:fs', () => ({
     },
   ),
   readdirSync: vi.fn(),
-  statSync: vi.fn(),
+  statSync: vi.fn(() => ({ isFile: () => true, isDirectory: () => false })),
   unlinkSync: vi.fn(),
 }));
 
-// consumerHasSmrtUsers (resources-route.ts, #2663) resolves via
-// node:module's createRequire rather than existsSync — see that module's
-// doc comment. Mock the require it constructs so _resources tests below
-// control whether resolution succeeds.
-const mockSmrtUsersResolve = vi.fn<(specifier: string) => string>();
+// The users and application-runtime ESM probes have independent fixture
+// controls. The separate CommonJS mock preserves unrelated dev-plane detection.
+const mockSmrtUsersResolve =
+  vi.fn<(specifier: string, parent?: string) => string>();
+const mockSmrtAppRuntimeResolve =
+  vi.fn<(specifier: string, parent: string) => string>();
+vi.mock('import-meta-resolve', () => ({
+  resolve: (specifier: string, parent: string) =>
+    specifier === '@happyvertical/smrt-app-runtime/sveltekit'
+      ? mockSmrtAppRuntimeResolve(specifier, parent)
+      : mockSmrtUsersResolve(specifier, parent),
+}));
 vi.mock('node:module', () => ({
   createRequire: () => ({ resolve: mockSmrtUsersResolve }),
 }));
@@ -192,15 +199,20 @@ describe('SvelteKit Route Generator', () => {
     vi.mocked(existsSync).mockReturnValue(false);
     vi.mocked(readFileSync).mockReturnValue('');
     vi.mocked(readdirSync).mockReturnValue([]);
-    // Consumer resolution: every package resolves except the application
-    // runtime, so the default config stays the self-contained legacy shape.
+    mockSmrtAppRuntimeResolve.mockImplementation((specifier) => {
+      throw Object.assign(new Error(`Cannot find module '${specifier}'`), {
+        code: 'ERR_MODULE_NOT_FOUND',
+      });
+    });
+    // The default config stays the self-contained legacy shape while the
+    // independently controlled users discovery endpoint remains available.
     mockSmrtUsersResolve.mockImplementation((specifier) => {
       if (specifier.startsWith('@happyvertical/smrt-app-runtime')) {
         throw Object.assign(new Error(`Cannot find module '${specifier}'`), {
           code: 'MODULE_NOT_FOUND',
         });
       }
-      return `/fake/node_modules/${specifier}.js`;
+      return `file:///fake/node_modules/${specifier}.js`;
     });
   });
 
@@ -343,8 +355,8 @@ describe('SvelteKit Route Generator', () => {
 
     it('generates a runtime-shaped config when the app installs smrt-app-runtime (#3416)', async () => {
       vi.mocked(existsSync).mockReturnValue(false);
-      mockSmrtUsersResolve.mockImplementation(
-        (specifier) => `/fake/node_modules/${specifier}.js`,
+      mockSmrtAppRuntimeResolve.mockImplementation(
+        (specifier) => `file:///fake/node_modules/${specifier}.js`,
       );
 
       await generateSvelteKitRoutes(
@@ -4541,7 +4553,7 @@ describe('SvelteKit Route Generator', () => {
     function resolveSmrtUsers(): void {
       mockSmrtUsersResolve.mockImplementation((specifier) => {
         if (specifier === '@happyvertical/smrt-users/sveltekit') {
-          return '/fake/node_modules/@happyvertical/smrt-users/dist/sveltekit.js';
+          return 'file:///fake/node_modules/@happyvertical/smrt-users/dist/sveltekit.js';
         }
         throw Object.assign(new Error(`Cannot find module '${specifier}'`), {
           code: 'MODULE_NOT_FOUND',
@@ -4697,7 +4709,7 @@ describe('consumer external import and reserved resource routes (#2852)', () => 
         ? 'export const GET = () => new Response();'
         : '',
     );
-    mockSmrtUsersResolve.mockImplementation(() => '/fake/sveltekit.js');
+    mockSmrtUsersResolve.mockImplementation(() => 'file:///fake/sveltekit.js');
     const manifest: SmartObjectManifest = {
       version: '1',
       timestamp: 0,

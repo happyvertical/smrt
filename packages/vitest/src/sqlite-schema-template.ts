@@ -3,6 +3,7 @@ import {
   copyFileSync,
   existsSync,
   mkdirSync,
+  readdirSync,
   renameSync,
   rmSync,
 } from 'node:fs';
@@ -58,6 +59,43 @@ export function disposeSqliteSchemaTemplateState(): void {
   globalState.__smrtVitestSqliteSchemaTemplates?.dispose();
 }
 
+const SCHEMA_TEMPLATE_PREFIX = 'smrt-vitest-schema-templates-';
+
+/** True unless the PID is provably gone; EPERM means it exists. */
+function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code !== 'ESRCH';
+  }
+}
+
+/**
+ * Remove template directories leaked by workers that were killed before their
+ * exit hook ran (#3333). Only directories whose owning PID is dead are removed;
+ * the current process and any live PID are never touched.
+ */
+function sweepStaleSchemaTemplateDirectories(root: string): void {
+  try {
+    for (const entry of readdirSync(root)) {
+      if (!entry.startsWith(SCHEMA_TEMPLATE_PREFIX)) continue;
+      const pid = Number(
+        entry.slice(SCHEMA_TEMPLATE_PREFIX.length).split('-')[0],
+      );
+      if (!Number.isInteger(pid) || pid <= 0 || pid === process.pid) continue;
+      if (isProcessAlive(pid)) continue;
+      try {
+        rmSync(join(root, entry), { recursive: true, force: true });
+      } catch {
+        // Best effort: another sweeper may have removed it first.
+      }
+    }
+  } catch {
+    // Best effort: an unreadable tmpdir must not fail test setup.
+  }
+}
+
 function getSqliteSchemaTemplateState(): SqliteSchemaTemplateState {
   const globalState = globalThis as GlobalWithSqliteSchemaTemplates;
   const existing = globalState.__smrtVitestSqliteSchemaTemplates;
@@ -65,9 +103,10 @@ function getSqliteSchemaTemplateState(): SqliteSchemaTemplateState {
     return existing;
   }
 
+  sweepStaleSchemaTemplateDirectories(tmpdir());
   const directory = join(
     tmpdir(),
-    `smrt-vitest-schema-templates-${process.pid}-${randomUUID().slice(0, 8)}`,
+    `${SCHEMA_TEMPLATE_PREFIX}${process.pid}-${randomUUID().slice(0, 8)}`,
   );
   mkdirSync(directory, { recursive: true });
 

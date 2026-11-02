@@ -11,7 +11,10 @@ import {
   ProfileTypeCollection,
 } from '@happyvertical/smrt-profiles';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { UserCollection } from '../collections/UserCollection.js';
+import {
+  requireExistingOwnedPerson,
+  UserCollection,
+} from '../collections/UserCollection.js';
 import { UserStatus } from '../types/index.js';
 
 /** Never adopts a matching unowned Profile or revives an unavailable User. */
@@ -22,6 +25,7 @@ export async function provisionCanonicalMailboxIdentity(
     status: UserStatus.ACTIVE | UserStatus.PENDING;
     allowPending: boolean;
     lock?: boolean;
+    existingProfilePolicy?: 'canonical-global' | 'owned-person';
     refuse: (message: string) => Error;
   },
 ) {
@@ -40,19 +44,25 @@ export async function provisionCanonicalMailboxIdentity(
     );
     user = await users.get({ id: user.id }, { cache: false });
     if (!user || normalizeIdentityEmail(user.email) !== email)
-      throw input.refuse('Identity is unavailable');
+      throw input.refuse('Invitation user is unavailable');
   }
   let profileId: string;
   if (user) {
+    if (normalizeIdentityEmail(user.email) !== email)
+      throw input.refuse('Invitation user is unavailable');
     if (
       user.status !== UserStatus.ACTIVE &&
       !(input.allowPending && user.status === UserStatus.PENDING)
     )
       throw input.refuse('Invitation user is unavailable');
-    const profile = await profiles.requireCanonicalGlobalPerson(
-      user.profileId,
-      email,
-    );
+    const profile =
+      input.existingProfilePolicy === 'owned-person' &&
+      user.status === UserStatus.ACTIVE
+        ? await requireExistingOwnedPerson(
+            options.db as DatabaseInterface,
+            requiredId(user.id),
+          )
+        : await profiles.requireCanonicalGlobalPerson(user.profileId, email);
     profileId = requiredId(profile.id);
     const owners = await users.list({ where: { profileId }, limit: 2 });
     if (owners.length !== 1 || owners[0].id !== user.id)

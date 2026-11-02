@@ -1,7 +1,7 @@
 # template-sveltekit
 
 Minimal SvelteKit project template used by `smrt gnode create --template=sveltekit`.
-It is the ground-up alternative to `smrt-saas-starter`.
+It is the ground-up alternative to `smrt-start`.
 
 ## Exports
 

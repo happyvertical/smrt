@@ -1,8 +1,18 @@
 import { ObjectRegistry, type SmrtObject } from '@happyvertical/smrt-core';
 import { toSnakeCase } from '@happyvertical/smrt-core/utils';
-import type { AggregateExpression, WhereClause } from '@happyvertical/sql';
+import type {
+  AggregateExpression,
+  SqlAdapterType,
+  WhereClause,
+} from '@happyvertical/sql';
 import { getRuntimeReportOptions } from './decorators.js';
-import { fieldColumn, fieldPolicy, tenantColumn } from './registry-columns.js';
+import {
+  columnTypeReader,
+  compareAsText,
+  fieldColumn,
+  fieldPolicy,
+  tenantColumn,
+} from './registry-columns.js';
 import type {
   AggregateSelectExpr,
   AggregateSpec,
@@ -173,6 +183,7 @@ async function resolveJoins(
   const resolved: ReportJoinDefinition[] = [];
   if (!joins) return resolved;
   const sourceTenant = await tenantColumn(sourceName);
+  const columnType = columnTypeReader();
 
   for (const [alias, join] of Object.entries(joins)) {
     if (
@@ -224,6 +235,22 @@ async function resolveJoins(
       );
     }
     const softDelete = await fieldColumn(className, 'deletedAt');
+    // Keys of different schema types (a text reference to a uuid id) compare
+    // as text: Postgres has no text = uuid operator, and a text value that is
+    // not a uuid then matches nothing instead of failing the rebuild.
+    const keyAsText = compareAsText(
+      columnType,
+      { className: sourceName, column: onColumn },
+      { className, column: targetColumn },
+    );
+    const tenantAsText =
+      joinedTenant && sourceTenant
+        ? compareAsText(
+            columnType,
+            { className: sourceName, column: sourceTenant },
+            { className, column: joinedTenant },
+          )
+        : false;
     resolved.push({
       alias,
       className,
@@ -231,8 +258,15 @@ async function resolveJoins(
       type: join.type ?? 'left',
       sourceColumn: onColumn,
       targetColumn,
+      ...(keyAsText ? { keyAsText: true } : {}),
       ...(joinedTenant && sourceTenant
-        ? { tenantColumns: { source: sourceTenant, joined: joinedTenant } }
+        ? {
+            tenantColumns: {
+              source: sourceTenant,
+              joined: joinedTenant,
+              ...(tenantAsText ? { asText: true } : {}),
+            },
+          }
         : {}),
       ...(softDelete ? { softDeleteColumn: softDelete } : {}),
     });
@@ -447,20 +481,40 @@ export function getReportGroupingColumns(
 }
 
 /** The join condition: the key, the tenant match, and no soft-deleted related row. */
-function joinCondition(join: ReportJoinDefinition): AggregateExpression {
+function joinCondition(
+  join: ReportJoinDefinition,
+  adapterType: SqlAdapterType | undefined,
+): AggregateExpression {
+  // SQLite stores a uuid as TEXT, so its keys already compare; a cast there
+  // would only stop the joined id's index serving the join.
+  const castable = adapterType !== 'sqlite';
+  const equal = (
+    left: string,
+    right: string,
+    asText: boolean | undefined,
+  ): AggregateExpression =>
+    asText && castable
+      ? {
+          op: 'eq',
+          left: { op: 'asText', operand: { col: left } },
+          right: { op: 'asText', operand: { col: right } },
+        }
+      : { op: 'eq', left: { col: left }, right: { col: right } };
   const conditions: AggregateExpression[] = [
-    {
-      op: 'eq',
-      left: { col: `${REPORT_SOURCE_ALIAS}.${join.sourceColumn}` },
-      right: { col: `${join.alias}.${join.targetColumn}` },
-    },
+    equal(
+      `${REPORT_SOURCE_ALIAS}.${join.sourceColumn}`,
+      `${join.alias}.${join.targetColumn}`,
+      join.keyAsText,
+    ),
   ];
   if (join.tenantColumns) {
-    conditions.push({
-      op: 'eq',
-      left: { col: `${REPORT_SOURCE_ALIAS}.${join.tenantColumns.source}` },
-      right: { col: `${join.alias}.${join.tenantColumns.joined}` },
-    });
+    conditions.push(
+      equal(
+        `${REPORT_SOURCE_ALIAS}.${join.tenantColumns.source}`,
+        `${join.alias}.${join.tenantColumns.joined}`,
+        join.tenantColumns.asText,
+      ),
+    );
   }
   if (join.softDeleteColumn) {
     conditions.push({
@@ -473,8 +527,15 @@ function joinCondition(join: ReportJoinDefinition): AggregateExpression {
     : { op: 'and', operands: conditions };
 }
 
+/**
+ * Compile a report definition to an aggregate spec. `adapterType` is the
+ * database the spec will run on: a join whose key columns have different
+ * schema types (a text reference to a uuid id) compares them as text, except
+ * on SQLite, where both are already TEXT. Omitted, the join casts.
+ */
 export function compileReportDefinition(
   definition: ReportDefinition,
+  adapterType?: SqlAdapterType,
 ): AggregateSpec {
   const select: AggregateSelectExpr[] = [];
   const groupBy: string[] = [];
@@ -538,7 +599,7 @@ export function compileReportDefinition(
             table: join.table,
             alias: join.alias,
             type: join.type,
-            on: joinCondition(join),
+            on: joinCondition(join, adapterType),
           })),
         }
       : {}),

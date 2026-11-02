@@ -25,6 +25,8 @@ export interface Props {
   onclose?: () => void;
   /** Accessibility label for the drawer dialog. */
   ariaLabel?: string;
+  /** Target density; omit to inherit the ThemeProvider setting. */
+  density?: 'comfortable' | 'touch';
 }
 
 let {
@@ -39,7 +41,8 @@ let {
   footer,
   onclose,
   ariaLabel,
+  density,
 }: Props = $props();
 </script>
 
-<Modal bind:open {title} {size} placement={side} {showClose} {closeOnBackdrop} onClose={onclose} {header} {footer} {children} {ariaLabel} />
+<Modal bind:open {title} {size} placement={side} {showClose} {closeOnBackdrop} onClose={onclose} {header} {footer} {children} {ariaLabel} {density} />

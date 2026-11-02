@@ -16,7 +16,6 @@
  * per-deployment decision documented in this package's AGENTS.md.
  */
 
-import { importWorkspaceModule } from '@happyvertical/smrt-core/utils/import-workspace-module';
 import {
   getCurrentTenant,
   isSuperAdminBypass,
@@ -165,7 +164,9 @@ export async function ensureFieldUsageLearningSchedules(
   let agentsModule = options.agentsModule;
   if (!agentsModule) {
     try {
-      agentsModule = await importWorkspaceModule<FieldUsageAgentsModule>({
+      agentsModule = await (
+        await import('@happyvertical/smrt-core/utils/import-workspace-module')
+      ).importWorkspaceModule<FieldUsageAgentsModule>({
         packageName: '@happyvertical/smrt-agents',
         sourceEntry: 'packages/agents/src/index.ts',
         purpose: 'field usage learning schedule installation',

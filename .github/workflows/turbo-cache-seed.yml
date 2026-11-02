@@ -153,6 +153,45 @@ jobs:
             echo "::warning::${failed} turbogha_ cache deletions failed; they will be retried by the next seed or expire"
           fi
 
+      # setup-environment keys the pnpm store (~830 MB) by lockfile hash, so
+      # every lockfile change on main leaves the previous store behind until
+      # 7-day idle eviction (#3122). Delete main's store entries whose key is
+      # not the current lockfile's, but only once the current entry exists,
+      # so a failed save never leaves main without a store.
+      - name: Prune superseded pnpm-store cache entries
+        if: success() && github.ref == 'refs/heads/main'
+        continue-on-error: true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          STORE_PREFIX: ${{ runner.os }}-pnpm-store-
+          CURRENT_KEY: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+        run: |
+          set -euo pipefail
+          entries=$(gh api --paginate \
+            "repos/${GITHUB_REPOSITORY}/actions/caches?key=${STORE_PREFIX}&ref=${GITHUB_REF}&per_page=100" \
+            --jq '.actions_caches[] | [.id, .key] | @tsv')
+          if ! printf '%s\n' "$entries" | awk -F'\t' -v k="$CURRENT_KEY" '$2 == k {found=1} END {exit !found}'; then
+            echo "::warning::no current pnpm-store entry ${CURRENT_KEY} in ${GITHUB_REF}; skipping prune"
+            exit 0
+          fi
+          ids=$(printf '%s\n' "$entries" | awk -F'\t' -v k="$CURRENT_KEY" 'NF && $2 != k {print $1}')
+          total=$(printf '%s' "$ids" | grep -c . || true)
+          deleted=0
+          failed=0
+          for id in $ids; do
+            if gh api -X DELETE "repos/${GITHUB_REPOSITORY}/actions/caches/${id}" --silent; then
+              deleted=$((deleted + 1))
+            else
+              failed=$((failed + 1))
+            fi
+          done
+          echo "pruned ${deleted} of ${total} superseded pnpm-store entries in ${GITHUB_REF}" \
+            "(kept ${CURRENT_KEY}, ${failed} failed)"
+          if [ "$failed" -gt 0 ]; then
+            echo "::warning::${failed} pnpm-store cache deletions failed; the next seed retries them"
+          fi
+
       # Cheap observability: the turbogha_ pool shares the repository's
       # 10 GiB Actions cache quota with mobile.yml's Gradle entries under
       # LRU eviction. Watch this before trusting the fallback lane.

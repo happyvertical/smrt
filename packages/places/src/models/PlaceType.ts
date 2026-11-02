@@ -15,9 +15,14 @@ import type { PlaceTypeOptions } from '../types';
 })
 export class PlaceType extends SmrtObject {
   // id and slug are inherited from SmrtObject
-  @field({ required: true })
+  @field({
+    required: true,
+    description:
+      'The name of the kind of place, such as "Building", "Room" or "Zone".',
+  })
   name: string = ''; // Type name (e.g., 'Town', 'City', 'Country')
 
+  @field({ description: 'A few words about when to use this kind of place.' })
   description?: string; // Optional description
 
   // Timestamps

@@ -44,6 +44,7 @@ import type { ChatService } from './services/index.js';
 import {
   DEFAULT_EMPTY_ANSWER_FALLBACK,
   FALLBACK_HISTORY_PLACEHOLDER,
+  isModelTimeoutError,
   noteFinishReason,
   replyContentFor,
   reportsFinishReason,
@@ -374,8 +375,9 @@ async function* streamPlainConversation(
 
   let content = '';
   let finishReason: string | undefined;
-  // A blank stream is retried once (#4379). A newer SDK throws `AI_TIMEOUT`
-  // on a timeout. Older SDKs (<= 0.108.0) can end a timed-out stream quietly:
+  // A blank stream is retried once (#4379). A newer SDK (ai >= 0.111) throws
+  // `AI_TIMEOUT` on a timeout, before or mid-stream, which gets the same
+  // timeout text. Older SDKs (<= 0.108.0) can end a timed-out stream quietly:
   // no text and no finish reason. That shape is a suspected timeout only for
   // an AI boundary that has reported finish reasons before (so their absence
   // is anomalous) and only when both attempts end that way; any other blank
@@ -403,7 +405,12 @@ async function* streamPlainConversation(
         }
       }
     } catch (error) {
-      yield { type: 'error', error: toErrorMessage(error) };
+      yield {
+        type: 'error',
+        error: isModelTimeoutError(error)
+          ? CHAT_STREAM_TIMEOUT_ERROR
+          : toErrorMessage(error),
+      };
       return;
     }
     if (content.trim()) break;
@@ -621,11 +628,30 @@ function sseBody(
   });
 }
 
-/** Trim + cap the incoming messages, dropping empty/invalid entries. */
+/**
+ * How many trailing entries {@link normalizeMessages} inspects to fill
+ * {@link MAX_CHAT_STREAM_MESSAGES} kept messages (#4458): a bound on the
+ * scan, so a request padded with tool or empty entries cannot make it walk
+ * an unbounded array.
+ */
+const MAX_CHAT_STREAM_SCAN = MAX_CHAT_STREAM_MESSAGES * 10;
+
+/**
+ * Trim + cap the incoming messages, dropping empty/invalid entries. The cap
+ * counts the messages kept, not the entries sent (#4458): a client that
+ * echoes stored tool rows (or blanks) does not lose conversation turns to
+ * them. The scan walks back at most {@link MAX_CHAT_STREAM_SCAN} entries.
+ */
 function normalizeMessages(messages: ChatStreamMessage[]): ChatStreamMessage[] {
   if (!Array.isArray(messages)) return [];
   const out: ChatStreamMessage[] = [];
-  for (const message of messages.slice(-MAX_CHAT_STREAM_MESSAGES)) {
+  const stop = Math.max(0, messages.length - MAX_CHAT_STREAM_SCAN);
+  for (
+    let i = messages.length - 1;
+    i >= stop && out.length < MAX_CHAT_STREAM_MESSAGES;
+    i -= 1
+  ) {
+    const message = messages[i];
     const role = message?.role;
     if (role !== 'user' && role !== 'assistant' && role !== 'system') continue;
     const content =
@@ -640,7 +666,7 @@ function normalizeMessages(messages: ChatStreamMessage[]): ChatStreamMessage[] {
         : {}),
     });
   }
-  return out;
+  return out.reverse();
 }
 
 /**

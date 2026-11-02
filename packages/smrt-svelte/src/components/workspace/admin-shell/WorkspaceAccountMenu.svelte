@@ -1,7 +1,7 @@
 <script lang="ts">
 import type { DropdownPlacement } from '@happyvertical/smrt-ui';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
-import { Avatar } from '@happyvertical/smrt-ui/ui';
+import { Avatar, Button } from '@happyvertical/smrt-ui/ui';
 import { tick } from 'svelte';
 import { M } from '../../../i18n/strings.workspace.js';
 import type { WorkspaceAccountTenant } from './types.js';
@@ -141,7 +141,10 @@ let open = $state(false);
 let signingOut = $state(false);
 let signOutFailed = $state(false);
 let wrapEl = $state<HTMLElement | null>(null);
-let triggerEl = $state<HTMLButtonElement | null>(null);
+// Button owns its root element, so the trigger is found by its part marker.
+const triggerEl = () =>
+  wrapEl?.querySelector<HTMLButtonElement>('[data-smrt-part="trigger"]') ??
+  null;
 let itemEls = $state<Array<HTMLElement | null>>([]);
 const enabled = $derived(
   entries.map((entry, i) => (entry.disabled ? -1 : i)).filter((i) => i >= 0),
@@ -156,7 +159,7 @@ async function openMenu(focusLast = false) {
 
 function closeMenu(refocus = true) {
   open = false;
-  if (refocus) triggerEl?.focus();
+  if (refocus) triggerEl()?.focus();
 }
 
 async function runSignOut() {
@@ -260,10 +263,9 @@ $effect(() => {
   title={summaryTitle}
   data-smrt-component="WorkspaceAccountMenu"
 >
-  <!-- raw-primitive-allow: menu trigger owns aria-haspopup/aria-expanded/aria-controls and an avatar + identity layout the Button primitive does not model -->
-  <button
-    bind:this={triggerEl}
-    type="button"
+  <Button
+    variant="ghost"
+    {density}
     class="smrt-workspace-account-menu__trigger"
     data-smrt-part="trigger"
     aria-label={compact ? `${t(M['ui.workspace_account_menu.open'])} ${summaryTitle}` : undefined}
@@ -285,7 +287,7 @@ $effect(() => {
       {/if}
     </span>
     <span class="smrt-workspace-account-menu__indicator" aria-hidden="true">•••</span>
-  </button>
+  </Button>
 
   {#if open}
     <div class="smrt-workspace-account-menu__popover smrt-workspace-account-menu__popover--{placement}" data-smrt-part="panel">
@@ -348,12 +350,17 @@ $effect(() => {
     --smrt-control-target-min: 0px;
   }
 
-  .smrt-workspace-account-menu__trigger {
-    appearance: none;
+  /* The trigger is a Button; its label span carries the grid layout. */
+  .smrt-workspace-account-menu :global(.smrt-workspace-account-menu__trigger .smrt-button__content) {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr) auto;
     align-items: center;
+    justify-content: stretch;
     gap: var(--smrt-spacing-2);
+    width: 100%;
+    min-width: 0;
+  }
+  .smrt-workspace-account-menu :global(.smrt-workspace-account-menu__trigger) {
     box-sizing: border-box;
     width: 100%;
     min-width: 0;
@@ -368,46 +375,25 @@ $effect(() => {
     text-align: start;
     cursor: pointer;
   }
-  /* State layer: a currentColor veil over the trigger. */
-  .smrt-workspace-account-menu__trigger::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    border-radius: inherit;
+  /* Button supplies hover, pressed, focus and disabled states; add the open one. */
+  .smrt-workspace-account-menu :global(.smrt-workspace-account-menu__trigger[aria-expanded='true']::after) {
     background: currentColor;
-    opacity: 0;
-    pointer-events: none;
-  }
-  .smrt-workspace-account-menu__trigger:hover:not(:disabled)::after {
-    opacity: var(--smrt-state-hover);
-  }
-  .smrt-workspace-account-menu__trigger[aria-expanded='true']::after {
     opacity: var(--smrt-state-selected);
-  }
-  .smrt-workspace-account-menu__trigger:active:not(:disabled)::after {
-    opacity: var(--smrt-state-pressed);
-  }
-  .smrt-workspace-account-menu__trigger:focus-visible {
-    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
-    outline-offset: var(--smrt-focus-ring-offset);
-  }
-  .smrt-workspace-account-menu__trigger:disabled {
-    opacity: var(--smrt-state-disabled);
-    cursor: default;
   }
 
   .smrt-workspace-account-menu[data-compact] {
     width: auto;
   }
-  .smrt-workspace-account-menu[data-compact] .smrt-workspace-account-menu__trigger {
-    display: grid;
-    place-items: center;
-    grid-template-columns: minmax(0, 1fr);
+  .smrt-workspace-account-menu[data-compact] :global(.smrt-workspace-account-menu__trigger) {
     min-width: max(2.75rem, var(--smrt-control-target-min));
     padding: var(--smrt-spacing-1);
     border-color: transparent;
     border-radius: var(--smrt-radius-full);
     background: transparent;
+  }
+  .smrt-workspace-account-menu[data-compact] :global(.smrt-workspace-account-menu__trigger .smrt-button__content) {
+    place-items: center;
+    grid-template-columns: minmax(0, 1fr);
   }
   .smrt-workspace-account-menu[data-compact] .smrt-workspace-account-menu__identity,
   .smrt-workspace-account-menu[data-compact] .smrt-workspace-account-menu__indicator {
@@ -544,8 +530,8 @@ $effect(() => {
   }
   /* Forced colors (#3908): selected and open states keep a non-colour indicator. */
   @media (forced-colors: active) {
-    .smrt-workspace-account-menu__trigger[aria-expanded='true']:not(:focus-visible) { outline: var(--smrt-focus-ring-width) solid Highlight; outline-offset: calc(-1 * var(--smrt-focus-ring-width)); }
-    .smrt-workspace-account-menu__trigger:disabled { opacity: 1; color: GrayText; }
+    .smrt-workspace-account-menu :global(.smrt-workspace-account-menu__trigger[aria-expanded='true']:not(:focus-visible)) { outline: var(--smrt-focus-ring-width) solid Highlight; outline-offset: calc(-1 * var(--smrt-focus-ring-width)); }
+    .smrt-workspace-account-menu :global(.smrt-workspace-account-menu__trigger:disabled) { opacity: 1; color: GrayText; }
   }
 }
 </style>

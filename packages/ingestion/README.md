@@ -430,3 +430,9 @@ returns the retained binding, including under concurrent delivery, but still
 rechecks both permissions. A different decision conflicts. Once reviewed,
 normal matching-host `repairDispatches()` may enqueue work separately. Hosts
 without legacy tenants need not configure recovery at all.
+
+`IngestionService.getReceiptSource(itemId)` returns the authorized immutable
+source ID, source version and delivery identity for domain retention/recovery.
+It uses the same current read/tenant/confidential-scope boundary as evidence
+reads and exposes no source configuration or credentials. Delivery identity is
+provenance, never authority.

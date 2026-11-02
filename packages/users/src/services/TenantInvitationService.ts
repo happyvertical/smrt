@@ -1,5 +1,5 @@
 /** Pending invitations with explicit, signed single-use acceptance. @packageDocumentation */
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import {
   isPostgresDatabase,
   type SmrtClassOptions,
@@ -18,8 +18,10 @@ import { SessionCollection } from '../collections/SessionCollection.js';
 import { TenantCollection } from '../collections/TenantCollection.js';
 import {
   type OidcProfileOwnerAuthorizerContext,
+  requireExistingOwnedPerson,
   UserCollection,
 } from '../collections/UserCollection.js';
+import type { Membership } from '../models/Membership.js';
 import { isValidEmail } from '../models/User.js';
 import { MembershipStatus, TenantStatus, UserStatus } from '../types/index.js';
 import { provisionCanonicalMailboxIdentity } from './canonical-mailbox-identity.js';
@@ -27,17 +29,21 @@ import type { LoginAttemptLimiter } from './LoginAttemptLimiter.js';
 import { MagicLinkService } from './MagicLinkService.js';
 import {
   assertMailboxSessionCompatibility,
+  claimMailboxAuthenticationRequest,
   type MailboxAuthenticationDelivery,
+  type MailboxRequestReservation,
   reserveMailboxRequest,
 } from './MailboxAuthenticationService.js';
 import { SessionService } from './SessionService.js';
 
 /** Host-authorized invitation destination and least-privilege system role. */
-export interface PrepareTenantInvitationInput {
+export type PrepareTenantInvitationInput = {
   tenantId: string;
   email: string;
-  roleSlug: string;
-}
+} & (
+  | { roleSlug: string; roleId?: never }
+  | { roleId: string; roleSlug?: never }
+);
 /** Persisted pending access; active means the exact membership already existed. */
 export interface PreparedTenantInvitation {
   userId: string;
@@ -59,6 +65,8 @@ export class TenantInvitationError extends Error {
 /** Signing is required only when issuing or accepting an invitation. */
 export interface TenantInvitationServiceOptions extends SmrtClassOptions {
   transaction: 'caller';
+  /** Explicitly preserve an existing active User's owned family Person. */
+  existingProfilePolicy?: 'canonical-global' | 'owned-person';
   secret?: string;
   tokenExpiry?: number;
   /** Required for requestMailboxAuthentication(): supply a root-executor limiter independent of the caller transaction. Other operations may omit it. */
@@ -93,6 +101,7 @@ export class TenantInvitationService {
       secret?: string;
       tokenExpiry?: number;
       loginLimiter?: LoginAttemptLimiter;
+      existingProfilePolicy?: 'canonical-global' | 'owned-person';
     },
   ) {}
 
@@ -102,6 +111,13 @@ export class TenantInvitationService {
   ): Promise<TenantInvitationService> {
     if (!options.db || options.transaction !== 'caller')
       throw new Error('Tenant invitation requires a caller-owned transaction');
+    if (
+      options.existingProfilePolicy !== undefined &&
+      !['canonical-global', 'owned-person'].includes(
+        options.existingProfilePolicy,
+      )
+    )
+      throw new Error('Invalid invitation existing profile policy');
     return new TenantInvitationService(
       {
         db: options.db,
@@ -112,6 +128,7 @@ export class TenantInvitationService {
         secret: options.secret,
         tokenExpiry: options.tokenExpiry,
         loginLimiter: options.loginLimiter,
+        existingProfilePolicy: options.existingProfilePolicy,
       },
     );
   }
@@ -121,11 +138,89 @@ export class TenantInvitationService {
     membershipId: string;
   }): Promise<IssuedTenantInvitation> {
     return await withSystemContext(async () => {
-      const records = await this.invitationRecords(input.membershipId);
+      let records = await this.invitationRecords(input.membershipId);
+      await records.membership.remember({
+        scope: 'smrt/tenant-invitation',
+        key: 'generation',
+        value: { generation: randomUUID(), revoked: false },
+      });
+      records = await this.invitationRecords(input.membershipId);
       const links = await this.magicLinks(records.binding);
       const result = await links.generate(records.user.email);
       return { membershipId: input.membershipId, ...result };
     });
+  }
+
+  /** Host-authorized cancellation of pending access; active memberships are never disabled. */
+  async revoke(input: { membershipId: string }): Promise<void> {
+    return withSystemContext(async () => {
+      if (
+        typeof input.membershipId !== 'string' ||
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(
+          input.membershipId,
+        )
+      )
+        throw new TenantInvitationError('Invitation is unavailable', 403);
+      const memberships = await MembershipCollection.create(this.options);
+      let membership = await memberships.get(
+        { id: input.membershipId },
+        { cache: false },
+      );
+      if (!membership?.userId)
+        throw new TenantInvitationError('Invitation is unavailable', 403);
+      const userId = membership.userId;
+      const db = this.options.db as DatabaseInterface;
+      if (isPostgresDatabase(db)) {
+        await db.query('SELECT id FROM users WHERE id = ? FOR UPDATE', userId);
+        await db.query(
+          'SELECT id FROM memberships WHERE id = ? FOR UPDATE',
+          input.membershipId,
+        );
+      }
+      membership = await memberships.get(
+        { id: input.membershipId },
+        { cache: false },
+      );
+      if (
+        !membership ||
+        membership.userId !== userId ||
+        membership.status !== MembershipStatus.PENDING
+      )
+        throw new TenantInvitationError(
+          'Only pending invitations may be revoked',
+        );
+      await this.generation(membership);
+      await membership.remember({
+        scope: 'smrt/tenant-invitation',
+        key: 'generation',
+        value: { generation: randomUUID(), revoked: true },
+      });
+      membership.status = MembershipStatus.INACTIVE;
+      await membership.save();
+    });
+  }
+
+  private async generation(
+    membership: Membership,
+  ): Promise<{ generation: string; revoked: boolean } | null> {
+    const value = await membership.recall({
+      scope: 'smrt/tenant-invitation',
+      key: 'generation',
+    });
+    if (value === null) return null;
+    if (
+      typeof value !== 'object' ||
+      value === null ||
+      !('generation' in value) ||
+      typeof value.generation !== 'string' ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(
+        value.generation,
+      ) ||
+      !('revoked' in value) ||
+      typeof value.revoked !== 'boolean'
+    )
+      throw new TenantInvitationError('Invitation state is unavailable', 403);
+    return { generation: value.generation, revoked: value.revoked };
   }
 
   /**
@@ -140,18 +235,31 @@ export class TenantInvitationService {
     token: string;
     sourceKey: string;
     deliver: MailboxAuthenticationDelivery;
+    reservation?: MailboxRequestReservation;
   }): Promise<{ expiresAt: Date }> {
+    const reservation = claimMailboxAuthenticationRequest({
+      reservation: input.reservation,
+      limiter: this.signing.loginLimiter,
+      sourceKey: input.sourceKey,
+      db: this.options.db as DatabaseInterface,
+    });
     if (typeof input.deliver !== 'function')
       throw new TenantInvitationError(
         'Mailbox authentication delivery is required',
       );
-    await reserveMailboxRequest({
-      subject: `invitation:${input.membershipId}`,
-      sourceKey: input.sourceKey,
-      limiter: this.signing.loginLimiter,
-    });
+    if (!reservation.reserved)
+      await reserveMailboxRequest({
+        subject: `invitation:${input.membershipId}`,
+        sourceKey: input.sourceKey,
+        limiter: this.signing.loginLimiter,
+      });
     return await withSystemContext(async () => {
       const records = await this.invitationRecords(input.membershipId);
+      reservation.assertScope({
+        purpose: 'invitation',
+        tenantId: requiredId(records.membership.tenantId),
+        email: records.user.email,
+      });
       const grant = await (await this.magicLinks(records.binding)).inspect(
         input.token,
       );
@@ -160,9 +268,10 @@ export class TenantInvitationService {
           'Invitation identity does not match',
           403,
         );
-      const proof = await (
-        await this.mailboxLinks(records.binding, input.token)
-      ).generate(records.user.email);
+      const links = await this.mailboxLinks(records.binding, input.token);
+      reservation.assertFresh();
+      const proof = await links.generate(records.user.email);
+      reservation.assertFresh();
       await input.deliver({
         email: normalizeIdentityEmail(records.user.email),
         ...proof,
@@ -311,6 +420,9 @@ export class TenantInvitationService {
       );
     return await withSystemContext(async () => {
       const records = await this.invitationRecords(input.membershipId);
+      await (
+        await ProfileCollection.create(this.options)
+      ).requireCanonicalGlobalPerson(records.profileId, records.user.email);
       if (
         !context.claims.email ||
         normalizeIdentityEmail(context.claims.email) !==
@@ -423,10 +535,17 @@ export class TenantInvitationService {
     const profiles = await ProfileCollection.create(this.options);
     let profile: Profile;
     try {
-      profile = await profiles.requireCanonicalGlobalPerson(
-        user.profileId,
-        user.email,
-      );
+      profile =
+        this.signing.existingProfilePolicy === 'owned-person' &&
+        user.status === UserStatus.ACTIVE
+          ? await requireExistingOwnedPerson(
+              this.options.db as DatabaseInterface,
+              userId,
+            )
+          : await profiles.requireCanonicalGlobalPerson(
+              user.profileId,
+              user.email,
+            );
     } catch (error) {
       if (error instanceof CanonicalPersonProfileError)
         throw new TenantInvitationError(
@@ -439,6 +558,10 @@ export class TenantInvitationService {
       throw new TenantInvitationError(
         'Invitation identity ownership is inconsistent',
       );
+    const generation = await this.generation(membership);
+    if (generation?.revoked)
+      throw new TenantInvitationError('Invitation is unavailable', 403);
+    await this.requireInvitationRole(membership.roleId, membership.tenantId);
     const profileId = requiredId(profile.id);
     const binding = createHash('sha256')
       .update(
@@ -448,10 +571,29 @@ export class TenantInvitationService {
           profileId,
           membership.tenantId,
           membership.roleId,
+          ...(generation ? [generation.generation] : []),
         ]),
       )
       .digest('hex');
     return { user, membership, profile, profileId, binding };
+  }
+
+  private async requireInvitationRole(
+    roleId: string,
+    tenantId: string,
+  ): Promise<void> {
+    const db = this.options.db as DatabaseInterface;
+    if (isPostgresDatabase(db))
+      await db.query('SELECT id FROM roles WHERE id = ? FOR UPDATE', roleId);
+    const role = await (await RoleCollection.create(this.options)).get(
+      { id: roleId },
+      { cache: false },
+    );
+    if (
+      !role ||
+      (role.tenantId !== tenantId && !(role.tenantId == null && role.isSystem))
+    )
+      throw new TenantInvitationError('Invitation role is unavailable', 403);
   }
 
   /** Prepare or replay a pending membership, preserving all existing authority. */
@@ -460,7 +602,12 @@ export class TenantInvitationService {
   ): Promise<PreparedTenantInvitation> {
     if (
       !input.tenantId?.trim() ||
-      !input.roleSlug?.trim() ||
+      (input.roleSlug !== undefined && input.roleId !== undefined) ||
+      (!input.roleSlug?.trim() && !input.roleId?.trim()) ||
+      (input.roleId !== undefined &&
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(
+          input.roleId,
+        )) ||
       !isValidEmail(input.email)
     )
       throw new TenantInvitationError('Invalid tenant invitation input');
@@ -474,7 +621,18 @@ export class TenantInvitationService {
       if (!tenant || tenant.status !== TenantStatus.ACTIVE)
         throw new TenantInvitationError('Invitation tenant is unavailable');
       const roles = await RoleCollection.create(this.options);
-      const role = await roles.findSystemRoleBySlug(input.roleSlug);
+      const role = input.roleId
+        ? await roles.get({ id: input.roleId }, { cache: false })
+        : await roles.findSystemRoleBySlug(input.roleSlug as string);
+      if (
+        input.roleId &&
+        role &&
+        role.tenantId !== input.tenantId &&
+        !(role.tenantId == null && role.isSystem)
+      )
+        throw new TenantInvitationError(
+          'Invitation role belongs to another tenant',
+        );
       if (!role?.id)
         throw new TenantInvitationError(
           'Invitation system role is unavailable',
@@ -485,10 +643,21 @@ export class TenantInvitationService {
           email,
           status: UserStatus.PENDING,
           allowPending: true,
+          lock: true,
+          existingProfilePolicy: this.signing.existingProfilePolicy,
           refuse: (message) => new TenantInvitationError(message),
         },
       );
       const userId = requiredId(user.id);
+      const db = this.options.db as DatabaseInterface;
+      if (isPostgresDatabase(db)) {
+        await db.query('SELECT id FROM users WHERE id = ? FOR UPDATE', userId);
+        await db.query(
+          'SELECT id FROM memberships WHERE user_id = ? AND tenant_id = ? FOR UPDATE',
+          userId,
+          input.tenantId,
+        );
+      }
       const memberships = await MembershipCollection.create(this.options);
       const matches = await memberships.list({
         where: { userId, tenantId: input.tenantId },
@@ -498,6 +667,20 @@ export class TenantInvitationService {
         throw new TenantInvitationError('Invitation membership is ambiguous');
       let membership = matches[0];
       if (membership) {
+        const state = await this.generation(membership);
+        if (
+          membership.status === MembershipStatus.INACTIVE &&
+          state?.revoked &&
+          membership.roleId === role.id
+        ) {
+          membership.status = MembershipStatus.PENDING;
+          await membership.remember({
+            scope: 'smrt/tenant-invitation',
+            key: 'generation',
+            value: { generation: state.generation, revoked: false },
+          });
+          await membership.save();
+        }
         if (
           membership.status !== MembershipStatus.ACTIVE &&
           membership.status !== MembershipStatus.PENDING
@@ -520,6 +703,10 @@ export class TenantInvitationService {
           status: MembershipStatus.PENDING,
         });
       }
+      await this.requireInvitationRole(
+        requiredId(membership.roleId),
+        input.tenantId,
+      );
       return {
         userId,
         profileId,

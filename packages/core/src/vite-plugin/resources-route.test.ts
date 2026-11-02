@@ -12,6 +12,7 @@
 
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Mock node:fs module (same pattern as changes-route.test.ts / events-route.test.ts)
@@ -22,15 +23,15 @@ vi.mock('node:fs', () => ({
   readFileSync: vi.fn(),
   readdirSync: vi.fn(),
   unlinkSync: vi.fn(),
+  statSync: vi.fn(() => ({ isFile: () => true })),
 }));
 
-// consumerHasSmrtUsers resolves via node:module's createRequire rather than
-// existsSync (see the module doc — a hardcoded physical path misses
-// workspace-hoisted installs). Mock the require it constructs so each test
-// controls whether resolution succeeds.
-const mockResolve = vi.fn<(specifier: string) => string>();
-vi.mock('node:module', () => ({
-  createRequire: () => ({ resolve: mockResolve }),
+// Resolve the exact generated import under ESM conditions from the consumer.
+// Real import-only/hoisted/missing target fixtures live in resources-route-resolution.test.ts.
+const mockResolve = vi.fn<(specifier: string, parent: string) => string>();
+vi.mock('import-meta-resolve', () => ({
+  resolve: (specifier: string, parent: string) =>
+    mockResolve(specifier, parent),
 }));
 
 // Import after mocking
@@ -52,7 +53,7 @@ const baseOptions: SvelteKitOptions = {
 function resolveSmrtUsers(): void {
   mockResolve.mockImplementation((specifier) => {
     if (specifier === '@happyvertical/smrt-users/sveltekit') {
-      return '/fake/node_modules/@happyvertical/smrt-users/dist/sveltekit.js';
+      return 'file:///fake/node_modules/@happyvertical/smrt-users/dist/sveltekit.js';
     }
     throw Object.assign(new Error(`Cannot find module '${specifier}'`), {
       code: 'MODULE_NOT_FOUND',
@@ -101,6 +102,7 @@ describe('consumerHasSmrtUsers (#2663)', () => {
     expect(consumerHasSmrtUsers(projectRoot)).toBe(true);
     expect(mockResolve).toHaveBeenCalledWith(
       '@happyvertical/smrt-users/sveltekit',
+      pathToFileURL(join(projectRoot, 'package.json')).href,
     );
   });
 

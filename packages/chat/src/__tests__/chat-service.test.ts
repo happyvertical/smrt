@@ -252,6 +252,98 @@ describe('ChatService', () => {
     });
   });
 
+  // #4458: a history builder passes the roles it replays, so `limit` counts
+  // those rows alone and persisted tool rows never take a slot.
+  describe('Role-filtered message reads', () => {
+    async function seed(roles: Array<'user' | 'assistant' | 'tool'>) {
+      const room = await chat.createRoom({
+        tenantId: 'tenant-1',
+        name: 'History Room',
+        roomType: 'agent',
+        actorProfileId: 'profile-1',
+      });
+      const thread = await chat.startThread({
+        tenantId: 'tenant-1',
+        roomId: room.id as string,
+        actorProfileId: 'profile-1',
+        title: 'History',
+      });
+      const base = Date.UTC(2026, 0, 1);
+      for (const [index, role] of roles.entries()) {
+        for (const threadId of [thread.id as string, null]) {
+          const row = await raw.messages.create({
+            tenantId: 'tenant-1',
+            roomId: room.id as string,
+            threadId,
+            senderProfileId: 'profile-1',
+            content: `${role}-${index}`,
+            role,
+            messageType: role === 'tool' ? 'tool_result' : 'text',
+            created_at: new Date(base + index * 1000),
+          });
+          await row.save();
+        }
+      }
+      return { roomId: room.id as string, threadId: thread.id as string };
+    }
+
+    it('counts only the requested roles, however many tool rows sit between', async () => {
+      // u, 200 tool rows, a, u, 200 tool rows, a.
+      const tools = Array.from({ length: 200 }, () => 'tool' as const);
+      const { roomId, threadId } = await seed([
+        'user',
+        ...tools,
+        'assistant',
+        'user',
+        ...tools,
+        'assistant',
+      ]);
+      const roles = ['user', 'assistant'] as const;
+      const thread = await chat.getThreadMessages({
+        threadId,
+        actorProfileId: 'profile-1',
+        tenantId: 'tenant-1',
+        limit: 3,
+        roles,
+      });
+      // The scan is bounded by `limit`: exactly 3 rows, oldest first.
+      expect(thread.map((m) => m.content)).toEqual([
+        'assistant-201',
+        'user-202',
+        'assistant-403',
+      ]);
+      const room = await chat.getRoomMessages({
+        roomId,
+        actorProfileId: 'profile-1',
+        tenantId: 'tenant-1',
+        limit: 3,
+        roles,
+      });
+      expect(room.map((m) => m.content)).toEqual([
+        'assistant-403',
+        'user-202',
+        'assistant-201',
+      ]);
+    });
+
+    it('reads every role when roles is omitted or empty (unchanged)', async () => {
+      const { threadId } = await seed(['user', 'tool', 'assistant']);
+      for (const roles of [undefined, []]) {
+        const messages = await chat.getThreadMessages({
+          threadId,
+          actorProfileId: 'profile-1',
+          tenantId: 'tenant-1',
+          limit: 2,
+          roles,
+        });
+        expect(messages.map((m) => m.content)).toEqual([
+          'tool-1',
+          'assistant-2',
+        ]);
+      }
+    });
+  });
+
   describe('Participants', () => {
     it('should add a participant to a room', async () => {
       const room = await chat.createRoom({

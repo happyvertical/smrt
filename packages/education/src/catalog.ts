@@ -4,6 +4,7 @@ import {
   GlobalInterceptors,
   ObjectRegistry,
   SmrtObject,
+  type SmrtSaveOptions,
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
@@ -73,7 +74,7 @@ export class Course extends SmrtObject {
   }
 
   /** A personal copy remains pinned to its original family and license. */
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     if (this.licenseKind === 'personal-use-copy' && !this.tenantId) {
       throw new Error('personal-use-copy courses require an owning tenant');
     }
@@ -112,7 +113,7 @@ export class Course extends SmrtObject {
           'Persisted courses require explicit re-authoring to change tenant or license',
         );
     }
-    return await super.save();
+    return await super.save(options);
   }
 }
 
@@ -133,7 +134,7 @@ export class CourseSection extends SmrtObject {
     super(options);
     applyModelOptions(this as unknown as Record<string, unknown>, options);
   }
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     await requireParentTenant(this, 'courses', this.courseId);
     const prior = this.id
       ? await this.db.get('course_sections', { id: this.id })
@@ -150,7 +151,7 @@ export class CourseSection extends SmrtObject {
         'Persisted sections require explicit re-authoring to change parent',
       );
 
-    return await super.save();
+    return await super.save(options);
   }
 }
 
@@ -172,7 +173,7 @@ export class Lesson extends SmrtObject {
     super(options);
     applyModelOptions(this as unknown as Record<string, unknown>, options);
   }
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     await requireParentTenant(this, 'course_sections', this.sectionId);
     const prior = this.id
       ? await this.db.get('lessons', { id: this.id })
@@ -189,7 +190,7 @@ export class Lesson extends SmrtObject {
         'Persisted lessons require explicit re-authoring to change parent',
       );
 
-    return await super.save();
+    return await super.save(options);
   }
 }
 

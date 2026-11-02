@@ -239,15 +239,15 @@ describe('the export panel', () => {
     expect(body).not.toContain('Send to kitchen');
   });
 
-  it('puts Send to kitchen between Copy prompt and Download when linked', () => {
+  it('puts Send to kitchen in the download card, after the prompt card, when linked', () => {
     kitchenState.configure(endpoint, kitchen.token);
     const { body } = render(ExportPanel, { context });
     expect(body).toContain('Send to kitchen');
     expect(body.indexOf('Copy prompt')).toBeLessThan(
       body.indexOf('Send to kitchen'),
     );
-    expect(body.indexOf('Send to kitchen')).toBeLessThan(
-      body.indexOf('Download cookbook'),
+    expect(body.indexOf('Send to kitchen')).toBeGreaterThan(
+      body.indexOf('id="file-heading"'),
     );
     expect(body).not.toContain('needs its link');
   });

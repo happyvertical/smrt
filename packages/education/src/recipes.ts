@@ -1,5 +1,13 @@
 import { SmrtRecipe } from '@happyvertical/smrt-core';
 import { Course, CourseSection, Lesson } from './catalog.js';
+import {
+  EducationGroup,
+  GroupLearnerInvitation,
+  GroupLearnerMembership,
+  GroupLearnerRosterEntry,
+  GroupRevisionComment,
+  GroupSharingPolicy,
+} from './group-sharing-models.js';
 import { Curriculum, Enrollment, Learner, LessonProgress } from './learners.js';
 import { LessonAsset } from './lesson-assets.js';
 
@@ -52,6 +60,40 @@ export class EducationLearnerRecipe extends SmrtRecipe {
       icon: 'users',
       description: 'Authorized learners in this family.',
       noun: 'learner',
+    },
+  ];
+}
+
+/** Group composition metadata; hosts retain all session and route authority. */
+export class EducationSupervisorRecipe extends SmrtRecipe {
+  static id = 'education.supervisor';
+  static help = './education-supervisor.recipe.md';
+  static label = 'Homeschool groups';
+  static summary =
+    'Review parent-authorized learning work and retain revision-bound comments.';
+  static synonyms = ['homeschool groups', 'supervisor review'];
+  static section = {
+    id: 'education',
+    label: 'Education',
+    icon: 'users',
+    description: 'Courses and lessons for learning.',
+  };
+  static models = [
+    EducationGroup,
+    GroupLearnerInvitation,
+    GroupLearnerMembership,
+    GroupLearnerRosterEntry,
+    GroupSharingPolicy,
+    GroupRevisionComment,
+  ];
+  static runtime = 'both' as const;
+  static nav = [
+    {
+      label: 'Groups',
+      model: EducationGroup,
+      icon: 'users',
+      description: 'Groups and currently authorized shared learning work.',
+      noun: 'group',
     },
   ];
 }

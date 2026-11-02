@@ -5,6 +5,7 @@
 
 import {
   crossPackageRef,
+  field,
   foreignKey,
   SmrtObject,
   type SmrtObjectOptions,
@@ -70,53 +71,80 @@ export class AdVariation extends SmrtObject {
    * Ad group ID (FK to AdGroup)
    */
   @foreignKey('AdGroup')
+  @field({ description: 'The campaign this ad belongs to.' })
   groupId: string = '';
 
   /**
    * Ad format ID (FK to AdFormat)
    */
   @foreignKey('AdFormat')
+  @field({ description: 'The ad size this ad is made for.' })
   formatId: string = '';
 
   /**
    * Asset ID (FK to smrt-assets Asset, cross-package)
    */
   @crossPackageRef('@happyvertical/smrt-assets:Asset')
+  @field({ description: 'The picture people see.' })
   assetId: string = '';
 
   /**
    * Display name (e.g., "Version A - Blue CTA")
    */
+  @field({
+    description: 'What you call this ad, for example Version A, blue button.',
+  })
   name: string = '';
 
   /**
    * Click destination URL
    */
+  @field({ description: 'The web address people go to when they tap the ad.' })
   clickUrl: string = '';
 
   /**
    * Accessibility alt text
    */
+  @field({
+    description:
+      'A few words that describe the picture for people who cannot see it.',
+  })
   altText: string = '';
 
   /**
    * A/B testing weight (higher = more likely to be selected)
    */
+  @field({
+    description:
+      'How often this ad shows compared with the others in its campaign: an ad with weight 2 shows twice as often as one with weight 1.',
+  })
   weight: number = 1;
 
   /**
    * Current status
    */
+  @field({
+    description:
+      'Where the ad stands: draft, active or paused. Only active ads show.',
+  })
   status: AdVariationStatus = AdVariationStatus.DRAFT;
 
   /**
    * Denormalized impression count (updated async)
    */
+  @field({
+    description:
+      'How many times the ad has been shown. The app counts this as it serves ads and refreshes it a little later.',
+  })
   impressions: number = 0;
 
   /**
    * Denormalized click count (updated async)
    */
+  @field({
+    description:
+      'How many times the ad has been tapped. The app counts this as it serves ads and refreshes it a little later.',
+  })
   clicks: number = 0;
 
   constructor(options: AdVariationOptions = {}) {

@@ -15,6 +15,8 @@ export interface LivenessTickerOptions {
   leaseTtlMs: number;
   /** Renewal cadence in milliseconds. */
   leaseTickMs: number;
+  /** Queues the runner polls, re-written on every renewal. */
+  queues?: string[];
 }
 
 export interface LivenessTicker {
@@ -51,6 +53,20 @@ export async function runLivenessTicker(
     const expiresAt = new Date(
       now.getTime() + options.leaseTtlMs,
     ).toISOString();
+    if (options.queues) {
+      await db.query(
+        `UPDATE _smrt_workers
+            SET lease_expires_at = ?,
+                heartbeat_at = ?,
+                queues = ?
+          WHERE worker_id = ?`,
+        expiresAt,
+        now.toISOString(),
+        JSON.stringify(options.queues),
+        options.workerKey,
+      );
+      return;
+    }
     await db.query(
       `UPDATE _smrt_workers
           SET lease_expires_at = ?,

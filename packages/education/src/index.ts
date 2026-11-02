@@ -70,6 +70,18 @@ export {
 export type { CatalogPolicyDecision } from './catalog-policy.js';
 export { CatalogPolicy } from './catalog-policy.js';
 export type {
+  CatalogPreview,
+  CatalogPreviewLoader,
+  CatalogPreviewStore,
+} from './catalog-preview.js';
+export {
+  CATALOG_PREVIEW_MAX_BYTES,
+  CATALOG_PREVIEW_MAX_DIMENSION,
+  CatalogPreviewService,
+  catalogPreviewFor,
+  normalizeCatalogPreview,
+} from './catalog-preview.js';
+export type {
   CatalogReadStore,
   CatalogResourceView,
 } from './catalog-read-service.js';
@@ -114,12 +126,85 @@ export {
   VideoCollection,
   WorksheetCollection,
 } from './collections.js';
+export * from './course-authoring-contracts.js';
+export {
+  AUTHORED_IDENTITY_SOURCE_KEY,
+  AUTHORED_RELEASE_SOURCE_KEY,
+  isAuthoredReleaseGroupShareable,
+  isGroupShareableLicense,
+  mostRestrictiveLicense,
+} from './course-authoring-licence.js';
+export * from './course-authoring-models.js';
+export type { CourseAuthoringServiceOptions } from './course-authoring-service.js';
+export { CourseAuthoringService } from './course-authoring-service.js';
+export * from './course-generation-contracts.js';
+export * from './course-generation-models.js';
+export {
+  applyProposalFields,
+  draftFromRevision,
+  planProposal,
+  validateCourseGenerationOutput,
+} from './course-generation-output.js';
+export {
+  COURSE_PROPOSAL_ARGS_SCHEMA,
+  COURSE_PROPOSAL_HANDLER,
+  createProposalCourseGenerator,
+} from './course-generation-proposal-generator.js';
+export type { CourseGenerationReviewServiceOptions } from './course-generation-review-service.js';
+export { CourseGenerationReviewService } from './course-generation-review-service.js';
+export * from './course-review-contracts.js';
+export { courseReviewContextDigest } from './course-review-digest.js';
+export type {
+  FixtureReviewer,
+  ReviewEvaluationCaseResult,
+  ReviewEvaluationReport,
+  ReviewerFinding,
+  ReviewFixtureCase,
+  ReviewFixtureMaterial,
+  SeededFlaw,
+} from './course-review-evaluation.js';
+export { evaluateReviewer } from './course-review-evaluation.js';
+export {
+  createCourseReferenceGuard,
+  createReviewBackedReleaseGate,
+} from './course-review-gate.js';
+export * from './course-review-models.js';
 export type {
   CourseSourceConfig,
   CourseSourceKind,
   SourceSharing,
 } from './course-source.js';
 export { CourseSource, CourseSourceCollection } from './course-source.js';
+export type { EnrollmentParentNoteView } from './enrollment-note-service.js';
+export {
+  ENROLLMENT_NOTE_MAX_LENGTH,
+  EnrollmentParentNote,
+  EnrollmentParentNoteCollection,
+  validateEnrollmentNote,
+} from './enrollment-notes.js';
+export * from './family-intake-contracts.js';
+export {
+  FamilyIntake,
+  FamilyIntakeAsset,
+  FamilyIntakeAssetCollection,
+  FamilyIntakeCollection,
+  FamilyIntakeDecision,
+  FamilyIntakeDecisionCollection,
+} from './family-intake-models.js';
+export type {
+  GroupSharingAction,
+  GroupSharingAuthorizer,
+} from './group-sharing-authorization.js';
+export type {
+  AddRevisionCommentRequest,
+  ListRevisionCommentsRequest,
+  SetCommentChildVisibilityRequest,
+} from './group-sharing-comments.js';
+export * from './group-sharing-contracts.js';
+export * from './group-sharing-models.js';
+export { evaluateGroupSharingPolicy } from './group-sharing-policy.js';
+export { GroupSharingService } from './group-sharing-service.js';
+export { isGroupTenant } from './group-sharing-workspace.js';
 export type {
   AuthorizedCatalogFeed,
   HearthCatalogProviderId,
@@ -152,6 +237,11 @@ export {
   importEasyPeasyGrade4Theme,
 } from './hearth-easy-peasy-grade4.js';
 export type {
+  EnrollmentPlanView,
+  PlanLessonView,
+} from './learner-plan-service.js';
+export { LearnerPlanService } from './learner-plan-service.js';
+export type {
   CurriculumView,
   EnrollmentView,
   LearnerAuthorizer,
@@ -169,7 +259,39 @@ export type { EnrollmentStatus, LessonProgressStatus } from './learners.js';
 export { Curriculum, Enrollment, Learner, LessonProgress } from './learners.js';
 export type { LessonAssetRelationship } from './lesson-assets.js';
 export { LessonAsset } from './lesson-assets.js';
-export { EducationCatalogRecipe, EducationLearnerRecipe } from './recipes.js';
+export type { QuestionAuthoringServiceOptions } from './question-authoring-service.js';
+export { QuestionAuthoringService } from './question-authoring-service.js';
+export {
+  type NormalizedQuestionContent,
+  normalizeQuestionContent,
+} from './question-content.js';
+export * from './question-contracts.js';
+export * from './question-models.js';
+export {
+  renderGuardianWorksheetPdf,
+  renderLearnerWorksheetPdf,
+} from './question-printable.js';
+export {
+  buildGuardianWorksheet,
+  buildLearnerWorksheet,
+  type WorksheetRenderInput,
+  worksheetVersionId,
+} from './question-render.js';
+export * from './question-response-contracts.js';
+export type {
+  GuardianCorrectionRequest,
+  RecordQuestionResponseRequest,
+} from './question-response-service.js';
+export { QuestionResponseService } from './question-response-service.js';
+export {
+  parseQuestionRubric,
+  validateRubricResults,
+} from './question-rubric.js';
+export {
+  EducationCatalogRecipe,
+  EducationLearnerRecipe,
+  EducationSupervisorRecipe,
+} from './recipes.js';
 export type {
   EasyPeasyRegistration,
   EnsureEasyPeasyCourseSourceRequest,
@@ -235,6 +357,10 @@ export {
   SubmissionIntakeBinding,
 } from './submissions.js';
 export { normalizeWorkbookAnswerRegions } from './workbook-answer-regions.js';
+export {
+  WorkbookCompletionDecision,
+  WorkbookCompletionDecisionCollection,
+} from './workbook-completion.js';
 export * from './workbook-contracts.js';
 export * from './workbook-layout.js';
 export * from './workbook-models.js';

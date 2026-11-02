@@ -187,11 +187,47 @@ the authorized education timeline independently of optional scratch processing.
 Workbook feedback is projected only from the revision/release workflow. The base
 `SubmissionService` recognizes authoritative `WorkbookActivity` lesson ownership,
 including calls through a plain service instance. Own-learner compatibility views
-withhold Grade and grade-derived status; learner progress projections withhold
-bestScore/completedAt and do not let completion alter next-lesson selection.
-Guardian and ordinary non-workbook projections retain their existing behavior.
+withhold Grade and bestScore. Every workbook progress projection uses the explicit
+parent decision for status and completedAt; historical grade-derived completion
+alone is Doing with no completion date. Ordinary non-workbook projections retain
+their existing behavior.
 This applies in both feedback policy modes; direct feedback remains provisional
 and does not authorize compatibility Grade disclosure.
+
+## Explicit parent completion
+
+`completeWorkbookActivity` requires the current verified guardian, exact activity,
+submissionId, expectedAttemptId, explicit expectedHeadId (including null), and a
+bounded requestKey. The SDK independently denies own learners for
+`education.learner.complete`, even when a host callback grants it. The head token
+is the latest guardian revision, otherwise latest AI revision, otherwise null;
+null permits a parent's judgment without any assessment. The decision and progress
+update share the authorized transaction and learner serialization lock. No grade,
+assessment, feedback release, or learner visibility is created by completion.
+Generic guardian grading of workbook submissions also cannot complete work.
+
+`WorkbookCompletionDecision` retains immutable server actor/time, attempt,
+submission, head provenance, and retry key. Exact retries return that historical
+decision even after a correction; changed retries and stale selectors reject with
+`WorkbookCompletionConflictError` (changed_retry, stale_attempt, stale_head, or
+already_complete). Hosts should acknowledge recording and reread current state,
+never interpret a historical retry as completing a newer attempt.
+
+Completion persists across later assessment or guardian review on the same
+attempt. A newly captured correction or independent practice attempt makes the
+previous decision historical and returns the current work to Doing. Corrections
+retain their episode and must name the current predecessor; fresh practice keeps
+its existing separate episode path. No legacy Grade is converted into a decision.
+
+Activity lists and timelines expose own-safe `completion` (status and nullable
+completedAt), currentAttemptId, and latestSubmissionId. These current pointers
+are independent of history pagination. Timeline completionContext is guardian-only
+and carries the selectors to display and later submit verbatim; own learners
+receive null. Per-attempt completionDecision provenance is also guardian-only.
+The existing attempt headId continues to mean guardian review head.
+
+Deploy the ordinary additive manifest migration before recording decisions. Reads
+of an unmigrated decision table report Doing; runtime handlers never create it.
 
 Generic capture/resubmission rejects workbook enrollment or lesson scaffolding,
 including idempotent retries. Only the protected exact-activity owning workflow

@@ -1,5 +1,170 @@
 # @happyvertical/smrt-projects
 
+## 0.57.46
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.57.46
+  - @happyvertical/smrt-prompts@0.57.46
+  - @happyvertical/smrt-svelte@0.57.46
+  - @happyvertical/smrt-subscriptions@0.57.46
+  - @happyvertical/smrt-tenancy@0.57.46
+  - @happyvertical/smrt-timesheets@0.57.46
+  - @happyvertical/smrt-config@0.57.46
+  - @happyvertical/smrt-ui@0.57.46
+  - @happyvertical/smrt-types@0.57.46
+
+## 0.57.45
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.57.45
+  - @happyvertical/smrt-prompts@0.57.45
+  - @happyvertical/smrt-svelte@0.57.45
+  - @happyvertical/smrt-subscriptions@0.57.45
+  - @happyvertical/smrt-tenancy@0.57.45
+  - @happyvertical/smrt-timesheets@0.57.45
+  - @happyvertical/smrt-config@0.57.45
+  - @happyvertical/smrt-ui@0.57.45
+  - @happyvertical/smrt-types@0.57.45
+
+## 0.57.44
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.57.44
+  - @happyvertical/smrt-prompts@0.57.44
+  - @happyvertical/smrt-svelte@0.57.44
+  - @happyvertical/smrt-subscriptions@0.57.44
+  - @happyvertical/smrt-tenancy@0.57.44
+  - @happyvertical/smrt-timesheets@0.57.44
+  - @happyvertical/smrt-config@0.57.44
+  - @happyvertical/smrt-ui@0.57.44
+  - @happyvertical/smrt-types@0.57.44
+
+## 0.57.43
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.57.43
+  - @happyvertical/smrt-prompts@0.57.43
+  - @happyvertical/smrt-svelte@0.57.43
+  - @happyvertical/smrt-subscriptions@0.57.43
+  - @happyvertical/smrt-tenancy@0.57.43
+  - @happyvertical/smrt-timesheets@0.57.43
+  - @happyvertical/smrt-config@0.57.43
+  - @happyvertical/smrt-ui@0.57.43
+  - @happyvertical/smrt-types@0.57.43
+
+## 0.57.42
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.57.42
+  - @happyvertical/smrt-prompts@0.57.42
+  - @happyvertical/smrt-svelte@0.57.42
+  - @happyvertical/smrt-subscriptions@0.57.42
+  - @happyvertical/smrt-tenancy@0.57.42
+  - @happyvertical/smrt-timesheets@0.57.42
+  - @happyvertical/smrt-config@0.57.42
+  - @happyvertical/smrt-ui@0.57.42
+  - @happyvertical/smrt-types@0.57.42
+
+## 0.57.41
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.57.41
+  - @happyvertical/smrt-prompts@0.57.41
+  - @happyvertical/smrt-svelte@0.57.41
+  - @happyvertical/smrt-subscriptions@0.57.41
+  - @happyvertical/smrt-tenancy@0.57.41
+  - @happyvertical/smrt-timesheets@0.57.41
+  - @happyvertical/smrt-config@0.57.41
+  - @happyvertical/smrt-ui@0.57.41
+  - @happyvertical/smrt-types@0.57.41
+
+## 0.57.40
+
+### Patch Changes
+
+- Updated dependencies [1770cf6]
+  - @happyvertical/smrt-ui@0.57.40
+  - @happyvertical/smrt-prompts@0.57.40
+  - @happyvertical/smrt-svelte@0.57.40
+  - @happyvertical/smrt-subscriptions@0.57.40
+  - @happyvertical/smrt-tenancy@0.57.40
+  - @happyvertical/smrt-timesheets@0.57.40
+  - @happyvertical/smrt-config@0.57.40
+  - @happyvertical/smrt-core@0.57.40
+  - @happyvertical/smrt-types@0.57.40
+
+## 0.57.39
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.57.39
+  - @happyvertical/smrt-prompts@0.57.39
+  - @happyvertical/smrt-svelte@0.57.39
+  - @happyvertical/smrt-subscriptions@0.57.39
+  - @happyvertical/smrt-tenancy@0.57.39
+  - @happyvertical/smrt-timesheets@0.57.39
+  - @happyvertical/smrt-config@0.57.39
+  - @happyvertical/smrt-ui@0.57.39
+  - @happyvertical/smrt-types@0.57.39
+
+## 0.57.38
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.57.38
+  - @happyvertical/smrt-prompts@0.57.38
+  - @happyvertical/smrt-svelte@0.57.38
+  - @happyvertical/smrt-subscriptions@0.57.38
+  - @happyvertical/smrt-tenancy@0.57.38
+  - @happyvertical/smrt-timesheets@0.57.38
+  - @happyvertical/smrt-config@0.57.38
+  - @happyvertical/smrt-ui@0.57.38
+  - @happyvertical/smrt-types@0.57.38
+
+## 0.57.37
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.57.37
+  - @happyvertical/smrt-prompts@0.57.37
+  - @happyvertical/smrt-svelte@0.57.37
+  - @happyvertical/smrt-subscriptions@0.57.37
+  - @happyvertical/smrt-tenancy@0.57.37
+  - @happyvertical/smrt-timesheets@0.57.37
+  - @happyvertical/smrt-config@0.57.37
+  - @happyvertical/smrt-ui@0.57.37
+  - @happyvertical/smrt-types@0.57.37
+
+## 0.57.36
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.57.36
+  - @happyvertical/smrt-prompts@0.57.36
+  - @happyvertical/smrt-svelte@0.57.36
+  - @happyvertical/smrt-subscriptions@0.57.36
+  - @happyvertical/smrt-tenancy@0.57.36
+  - @happyvertical/smrt-timesheets@0.57.36
+  - @happyvertical/smrt-config@0.57.36
+  - @happyvertical/smrt-ui@0.57.36
+  - @happyvertical/smrt-types@0.57.36
+
 ## 0.57.35
 
 ### Patch Changes

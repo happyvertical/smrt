@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CLIGenerator } from '../cli-generator.js';
+import { dbMigrateUuidCommand } from '../commands/db-migrate-uuid.js';
 
 describe('smrt generate-mcp --version (regression #2279)', () => {
   let cli: CLIGenerator;
@@ -50,5 +51,46 @@ describe('smrt generate-mcp --version (regression #2279)', () => {
 
     const generated = await readFile(outputPath, 'utf-8');
     expect(generated).toContain('const SERVER_VERSION = "0.1.0"');
+  });
+});
+
+describe('smrt db:migrate-uuid -v (regression #2942)', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  function makeCli(): CLIGenerator {
+    const cli = new CLIGenerator({ prompt: false, colors: false });
+    vi.spyOn(
+      cli as unknown as { tryLoadUserClasses: () => Promise<void> },
+      'tryLoadUserClasses',
+    ).mockResolvedValue(undefined);
+    return cli;
+  }
+
+  it('hands -v to the subcommand instead of printing the version', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const handler = vi
+      .spyOn(dbMigrateUuidCommand, 'handler')
+      .mockResolvedValue(undefined);
+
+    await makeCli().generateHandler()(['db:migrate-uuid', '--dry-run', '-v']);
+
+    expect(handler).toHaveBeenCalledTimes(1);
+    const options = handler.mock.calls[0][1] as Record<string, unknown>;
+    expect(options.verbose).toBe(true);
+    expect(options['dry-run']).toBe(true);
+    expect(log).not.toHaveBeenCalledWith(expect.stringMatching(/ v\d/));
+  });
+
+  it('still prints the version for a global -v and --version', async () => {
+    for (const flag of ['-v', '--version']) {
+      const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const handler = vi
+        .spyOn(dbMigrateUuidCommand, 'handler')
+        .mockResolvedValue(undefined);
+      await makeCli().generateHandler()([flag]);
+      expect(handler).not.toHaveBeenCalled();
+      expect(log).toHaveBeenCalledWith(expect.stringMatching(/ v\d/));
+      vi.restoreAllMocks();
+    }
   });
 });

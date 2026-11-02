@@ -1,6 +1,12 @@
 /** Generic versioned, effective-dated commercial terms. */
 
-import { field, foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  field,
+  foreignKey,
+  SmrtObject,
+  type SmrtSaveOptions,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import {
   type AgreementOptions,
@@ -241,7 +247,7 @@ export class Agreement extends SmrtObject {
     this.status = this.status === 'draft' ? 'cancelled' : 'terminated';
   }
 
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     // Natural identity is semantic JSON, never caller property order/spacing.
     const partyA = this.getPartyA();
     const partyB = this.getPartyB();
@@ -258,7 +264,7 @@ export class Agreement extends SmrtObject {
     // Preflight reads are advisory: a racing create must never upsert over
     // an existing immutable version after both callers observed absence.
     if (!this.isPersisted) this.requireInsertOnSave();
-    const result = (await super.save()) as this;
+    const result = (await super.save(options)) as this;
     loadedStatus.set(this, this.status);
     if (this.status !== 'draft' && !frozenTerms.has(this)) {
       frozenTerms.set(this, this.serializeFrozenTerms());

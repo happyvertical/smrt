@@ -4,6 +4,7 @@
  */
 
 import {
+  field,
   SmrtObject,
   type SmrtObjectOptions,
   smrt,
@@ -54,21 +55,34 @@ export class AdDeliveryTier extends SmrtObject {
   /**
    * Display name (e.g., "Sponsorship", "Standard", "House")
    */
+  @field({
+    description:
+      'What the tier is called, for example Sponsorship, Standard or House.',
+  })
   name: string = '';
 
   /**
    * Priority level (lower = higher priority: 1, 2, 3...)
    */
+  @field({
+    description:
+      'The order tiers are tried in: 1 is tried first, then 2, and so on.',
+  })
   priority: number = 0;
 
   /**
    * Pricing model for this tier
    */
+  @field({
+    description:
+      'How ads in this tier are charged: a fixed price, per thousand showings, per click, or per sale.',
+  })
   pricingModel: PricingModel = PricingModel.CPM;
 
   /**
    * Optional description
    */
+  @field({ description: 'A note about what this tier is for.' })
   description: string = '';
 
   constructor(options: AdDeliveryTierOptions = {}) {

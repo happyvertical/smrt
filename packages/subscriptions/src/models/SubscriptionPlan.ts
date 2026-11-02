@@ -1,4 +1,5 @@
 import {
+  field,
   SmrtObject,
   type SmrtSaveOptions,
   smrt,
@@ -49,21 +50,55 @@ export class SubscriptionPlan extends SmrtObject implements PlanTerms {
   @tenantId({ nullable: true })
   tenantId: string | null = null;
 
+  @field({
+    description:
+      'A short code that identifies the plan, such as starter or pro.',
+  })
   planKey: string = '';
+  @field({ description: 'What the plan is called, as customers see it.' })
   name: string = '';
+  @field({ description: 'A sentence or two about what the plan offers.' })
   description: string = '';
+  @field({
+    description: 'Whether the plan is a draft, on sale (active) or archived.',
+  })
   status: SubscriptionPlanStatus = 'active';
+  @field({
+    description:
+      'Where the plan sits when plans are listed; lower numbers come first.',
+  })
   sortOrder: number = 0;
   /**
    * Plan price in **integer minor units** of {@link currency} — `$19.99` is
    * `1999`. The `= 0` initializer is load-bearing: SMRT maps an integer literal
    * to INTEGER and a decimal literal to DECIMAL, and money is exact (#2401).
    */
+  @field({
+    description:
+      'What the plan costs each billing period, in cents, as a whole number.',
+  })
   priceAmount: number = 0;
+  @field({ description: 'The currency the price is in, such as USD.' })
   currency: string = 'USD';
+  @field({
+    description:
+      'How often the subscriber is billed: every day, week, month or year.',
+  })
   billingInterval: BillingInterval = 'month';
+  @field({
+    description:
+      'Whether the plan is free, has a fixed price, or lets the subscriber choose what to pay. It cannot change once the plan is saved.',
+  })
   pricingMode: PricingMode = 'fixed';
+  @field({
+    description:
+      'For a pay-what-you-can plan, the least a subscriber may pay, in cents.',
+  })
   minimumAmount: number = 0;
+  @field({
+    description:
+      'For a pay-what-you-can plan, the amount suggested to the subscriber, in cents.',
+  })
   suggestedAmount: number = 0;
   /** Optional provider binding; plan semantics never require a provider. */
   externalProvider: string | null = null;

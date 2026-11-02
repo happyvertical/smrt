@@ -2,6 +2,7 @@ import {
   field,
   SmrtCollection,
   SmrtObject,
+  type SmrtSaveOptions,
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
@@ -62,14 +63,14 @@ export class CourseSource extends SmrtObject {
     }
   }
 
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     if (
       !['private', 'group', 'global'].includes(this.sharing) ||
       !['manual', 'url', 'adapter'].includes(this.kind)
     )
       throw new Error('Invalid CourseSource kind or sharing.');
     this.getConfig();
-    return super.save();
+    return super.save(options);
   }
 }
 

@@ -8,6 +8,7 @@
 import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
 import {
   crossPackageRef,
+  field,
   foreignKey,
   SmrtObject,
   smrt,
@@ -128,6 +129,7 @@ export class VoiceSample extends SmrtObject {
   /**
    * Voice profile this sample belongs to
    */
+  @field({ description: 'The voice this clip belongs to.' })
   @foreignKey(() => VoiceProfile)
   voiceProfileId: string | null = null;
 
@@ -135,18 +137,24 @@ export class VoiceSample extends SmrtObject {
    * Asset ID of the audio file
    * References an Asset in smrt-assets
    */
+  @field({ description: 'The audio file of the recording.' })
   @crossPackageRef('@happyvertical/smrt-assets:Asset')
   assetId: string | null = null;
 
   /**
    * Sample duration in seconds
    */
+  @field({
+    description:
+      'How long the clip runs, in seconds. At least three is needed.',
+  })
   duration: number = 0;
 
   /**
    * Transcription of what was said in the sample
    * Used for alignment and quality verification
    */
+  @field({ description: 'The words spoken in the clip, written out.' })
   transcription: string | null = null;
 
   /**
@@ -155,6 +163,10 @@ export class VoiceSample extends SmrtObject {
    * - medium: Acceptable quality
    * - high: Clear audio, good length
    */
+  @field({
+    description:
+      'How clean the recording is: low, medium or high. A low one cannot be used to copy a voice.',
+  })
   quality: SampleQuality = 'medium';
 
   /**
@@ -175,6 +187,7 @@ export class VoiceSample extends SmrtObject {
   /**
    * Whether this is the primary sample for the voice profile
    */
+  @field({ description: 'Tick the one clip that best represents the voice.' })
   isPrimary: boolean = false;
 
   constructor(options: VoiceSampleOptions = {}) {

@@ -690,6 +690,32 @@ the output inside that message's own `MessageBubble`, below its text:
 Validate the payload's shape in the snippet, and render it with ordinary
 Svelte markup, never `{@html}`.
 
+### Rendering assistant answers: `messageFormat` and `renderMessage` (#4505)
+
+Assistant text renders verbatim by default (`messageFormat="text"`). Pass
+`messageFormat="markdown"` to render stored assistant messages and the
+streaming reply through `renderAssistantMarkdown` (`assistant-markdown.ts`):
+paragraphs with single-newline breaks, `#`–`###` headings, one-level `-`/`*`/`+`
+and numbered lists, fenced and inline code, `**bold**`/`__bold__`,
+`*italic*`/`_italic_`, and `[text](https://…)` links. It escapes every input
+character first, then emits only that fixed tag set; a link needs an absolute
+`http:`/`https:` URL and gets `target="_blank" rel="noopener noreferrer"`,
+anything else stays literal text. Its output is the only `{@html}` in the
+dock. User, system and tool messages stay plain text.
+
+A host with its own renderer passes a `renderMessage` snippet instead; it
+wins over `messageFormat` and receives `{ message, streaming }`. While a reply
+streams, `message` is a stand-in (`id: 'assistant-dock-streaming'`) holding
+the text so far:
+
+```svelte
+<AssistantDock {transport} {registry}>
+  {#snippet renderMessage({ message, streaming })}
+    <MyMarkdown source={message.content} live={streaming} />
+  {/snippet}
+</AssistantDock>
+```
+
 ### Proposing an action and observing the result (#2989)
 
 The dock creates its own controller. `oncontroller` hands that controller
@@ -896,13 +922,20 @@ assistant works and show a status instead (Anytown's watch mode).
   `maxTurnMs` besides `maxSteps`; all three span every browser round trip
   (the continuation carries `tokens` and `startedAt`). When one runs out the
   model gets a last round without tools and the turn ends with
-  `stoppedReason: 'budget'` (or `'max_steps'`). `describeTool(name, args)`
-  also gets a call's arguments, so a step can say "Opening Events".
+  `stoppedReason: 'budget'` (or `'max_steps'`). A read-only call repeated
+  `maxRepeatedCalls` times (default 2) ends the same way with
+  `'repeated_calls'` (#4391). `describeTool(name, args)` also gets a call's
+  arguments, so a step can say "Opening Events".
 - **No answer (server, #4379).** A blank final reply is retried once
   without tools. If it stays blank the turn ends `stoppedReason: 'empty'`;
   a timed-out model call (`requestTimeoutMs`, or the provider's default)
   ends it `'timeout'`. Both store `emptyAnswerFallback` (default
-  `DEFAULT_EMPTY_ANSWER_FALLBACK`) as the reply, never `'Done.'`. See
+  `DEFAULT_EMPTY_ANSWER_FALLBACK`) as the reply, never `'Done.'`.   A model call that throws (`AIError` `API_ERROR`, a 5xx, a dropped
+  connection) is answered only when the host sets `providerErrorFallback`
+  (text, or `(code, error) => text | undefined`): the text is stored with
+  `metadata.fallback: 'provider_error'` and the turn ends
+  `stoppedReason: 'provider_error'`; unset, the turn emits an `error` event and
+  stores nothing. See
   [packages/chat/agents/tool-loop.md](../packages/chat/agents/tool-loop.md).
 - **Settle (browser).** After a step's browser tools ran, the dock waits before
   resuming: the host `settle` hook (e.g. "SvelteKit is no longer
@@ -917,7 +950,8 @@ assistant works and show a status instead (Anytown's watch mode).
   `state` is `running`, `paused`, `waiting`, `done`, `failed` or `cancelled`.
   `waitingFor.kind` says what the person is needed for: `confirm` (a call
   waits for Allow), `choice` / `review` (a host hold, a previewed action, or
-  a staged proposal-only write), or `continue` (a step or budget limit).
+  a staged proposal-only write), or `continue` (a step or budget limit;
+  never `repeated_calls`, where another leg would only repeat the call).
   `acknowledgeRun()` clears the staged/limit waits once the person has seen
   them; `dismissRun()` forgets a finished run.
 - **Pause.** `pauseRun()` holds the next step (before the page tools run and

@@ -1,5 +1,72 @@
 # @happyvertical/smrt-ui
 
+## 0.57.46
+
+### Patch Changes
+
+- @happyvertical/smrt-types@0.57.46
+
+## 0.57.45
+
+### Patch Changes
+
+- @happyvertical/smrt-types@0.57.45
+
+## 0.57.44
+
+### Patch Changes
+
+- @happyvertical/smrt-types@0.57.44
+
+## 0.57.43
+
+### Patch Changes
+
+- @happyvertical/smrt-types@0.57.43
+
+## 0.57.42
+
+### Patch Changes
+
+- @happyvertical/smrt-types@0.57.42
+
+## 0.57.41
+
+### Patch Changes
+
+- @happyvertical/smrt-types@0.57.41
+
+## 0.57.40
+
+### Patch Changes
+
+- 1770cf6: A `ThemeProvider` nested inside another `ThemeProvider` now themes only its own wrapper and no longer writes `data-theme`, `data-color-scheme`, the `dark` class, `color-scheme`, `data-contrast`, `data-density` or `data-smrt-theme-changing` onto `<html>`, so an embedded widget (the planner `AppShell`) cannot retheme its host page. The new `scope` prop (`'document' | 'local'`) defaults to `document` for a root provider and `local` when nested.
+- @happyvertical/smrt-types@0.57.40
+
+## 0.57.39
+
+### Patch Changes
+
+- @happyvertical/smrt-types@0.57.39
+
+## 0.57.38
+
+### Patch Changes
+
+- @happyvertical/smrt-types@0.57.38
+
+## 0.57.37
+
+### Patch Changes
+
+- @happyvertical/smrt-types@0.57.37
+
+## 0.57.36
+
+### Patch Changes
+
+- @happyvertical/smrt-types@0.57.36
+
 ## 0.57.35
 
 ### Patch Changes

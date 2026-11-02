@@ -17,10 +17,7 @@ import {
   loadPersistedContentGovernanceDefinitions,
   resolveEffectiveContentGovernance,
 } from './content-governance';
-import {
-  type ContentQueryCollection,
-  executeContentQuery,
-} from './content-query';
+import { executeContentQuery } from './content-query';
 import {
   type ResolveHostname,
   redactUrlCredentials,
@@ -226,10 +223,7 @@ export class Contents extends SmrtCollection<Content> {
    * @returns A validated, bounded `DataQueryResult`.
    */
   public async queryAction(options: unknown): Promise<DataQueryResult> {
-    return executeContentQuery(
-      this as unknown as ContentQueryCollection,
-      options,
-    );
+    return executeContentQuery(this, options);
   }
 
   public async browseFacts(

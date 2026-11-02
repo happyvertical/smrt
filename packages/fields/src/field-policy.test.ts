@@ -725,6 +725,84 @@ describe('FieldPolicy write-time validation', () => {
     expect(categoryRows[0].help).toBe('moving');
   });
 
+  it('guarded identity change succeeds with the current revision (#4408)', async () => {
+    const created = await policies.create({
+      objectRef,
+      fieldName: 'summary',
+      scopeType: 'app',
+      help: 'moving',
+    });
+    const row = await policies.get({ id: created.id }, { cache: false });
+    if (!row?.updated_at) throw new Error('expected persisted revision');
+
+    row.fieldName = 'category';
+    await row.save({ expectedUpdatedAt: row.updated_at });
+
+    expect(
+      await policies.list({ where: { objectRef, fieldName: 'summary' } }),
+    ).toHaveLength(0);
+    const moved = await policies.list({
+      where: { objectRef, fieldName: 'category' },
+    });
+    expect(moved).toHaveLength(1);
+    expect(moved[0].help).toBe('moving');
+  });
+
+  it('guarded identity change with a stale revision rejects and keeps the row (#4408)', async () => {
+    const created = await policies.create({
+      objectRef,
+      fieldName: 'summary',
+      scopeType: 'app',
+      help: 'stays',
+    });
+    const row = await policies.get({ id: created.id }, { cache: false });
+    if (!row) throw new Error('expected row');
+
+    row.fieldName = 'category';
+    await expect(
+      row.save({ expectedUpdatedAt: '2000-01-01T00:00:00.000Z' }),
+    ).rejects.toMatchObject({ code: 'RUNTIME_REVISION_CONFLICT' });
+
+    const kept = await policies.list({
+      where: { objectRef, fieldName: 'summary' },
+    });
+    expect(kept).toHaveLength(1);
+    expect(kept[0].help).toBe('stays');
+    expect(
+      await policies.list({ where: { objectRef, fieldName: 'category' } }),
+    ).toHaveLength(0);
+  });
+
+  it('refuses a guarded identity change without a transaction and keeps the row (#4408)', async () => {
+    const created = await policies.create({
+      objectRef,
+      fieldName: 'summary',
+      scopeType: 'app',
+      help: 'stays',
+    });
+    const row = await policies.get({ id: created.id }, { cache: false });
+    if (!row?.updated_at) throw new Error('expected persisted revision');
+    // Force the no-transaction path: its check and delete are not atomic.
+    const noTx = vi
+      .spyOn(row.db, 'beginTransaction')
+      .mockResolvedValue(undefined as never);
+    try {
+      row.fieldName = 'category';
+      await expect(
+        row.save({ expectedUpdatedAt: row.updated_at }),
+      ).rejects.toMatchObject({
+        code: 'RUNTIME_REVISION_GUARD_REQUIRES_TRANSACTION',
+      });
+    } finally {
+      noTx.mockRestore();
+    }
+    const kept = await policies.list({
+      where: { objectRef, fieldName: 'summary' },
+    });
+    expect(kept).toHaveLength(1);
+    expect(kept[0].help).toBe('stays');
+  });
+
   it('fails closed on writes that cross the ambient tenant context', async () => {
     const contextTenant = randomUUID();
     const otherTenant = randomUUID();

@@ -1,6 +1,12 @@
 /** Append-only evidence of one verified provider webhook event. */
 
-import { field, foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  field,
+  foreignKey,
+  SmrtObject,
+  type SmrtSaveOptions,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type {
   AgreementExecutionEventOptions,
@@ -77,7 +83,7 @@ export class AgreementExecutionEvent extends SmrtObject {
     return this;
   }
 
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     const captured = persistedEventState.get(this);
     if (captured !== undefined && captured !== this.serializeState()) {
       throw new Error(
@@ -85,7 +91,7 @@ export class AgreementExecutionEvent extends SmrtObject {
       );
     }
     if (captured === undefined && !this.isPersisted) this.requireInsertOnSave();
-    const result = (await super.save()) as this;
+    const result = (await super.save(options)) as this;
     persistedEventState.set(this, this.serializeState());
     return result;
   }

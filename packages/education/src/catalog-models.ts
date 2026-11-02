@@ -6,6 +6,10 @@ import type {
   CatalogResourceRepresentation,
   CatalogVisibility,
 } from './catalog-contracts.js';
+import {
+  type CatalogPreview,
+  normalizeCatalogPreview,
+} from './catalog-preview.js';
 
 const closed = { api: false, mcp: false, cli: false } as const;
 
@@ -35,6 +39,17 @@ export class CatalogResource extends SmrtObject {
   availableFormats = '[]';
   /** Serialized observed representation; JSON null is legacy absence. */
   representation = 'null';
+  /** Exact revision-bound publisher preview, not an original or private asset grant. */
+  preview = 'null';
+
+  getPreview(): CatalogPreview | undefined {
+    return normalizeCatalogPreview(this.preview);
+  }
+  setPreview(value: CatalogPreview | undefined): void {
+    if (value !== undefined && !normalizeCatalogPreview(value))
+      throw new Error('Invalid catalog preview metadata.');
+    this.preview = JSON.stringify(normalizeCatalogPreview(value) ?? null);
+  }
 
   getRepresentation(): CatalogResourceRepresentation | undefined {
     return normalizeCatalogRepresentation(this.representation);

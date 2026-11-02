@@ -6,6 +6,7 @@
 import { SmrtCollection } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { RolePermission } from '../models/RolePermission.js';
+import { withoutListBounds } from '../services/authorization-read-options.js';
 import {
   normalizeOperationPermissionAction,
   type PermissionCatalog,
@@ -301,8 +302,13 @@ export class RolePermissionCollection extends SmrtCollection<RolePermission> {
         : await catalogService.syncPermissionCatalog();
     const catalog =
       options.catalog ?? syncResult?.catalog ?? catalogService.getCatalog();
-    const permissions = await PermissionCollection.create(this.options);
-    const roles = await RoleCollection.create(this.options);
+    // Seeding reads must be complete: a caller's list bounds would drop
+    // permissions (reported missing) and, with `prune`, existing grants (#3050).
+    const unboundedOptions = withoutListBounds(this.options);
+    const permissions = await PermissionCollection.create(unboundedOptions);
+    const roles = await RoleCollection.create(unboundedOptions);
+    const unboundedGrants =
+      await RolePermissionCollection.create(unboundedOptions);
     const catalogSlugs = catalog.permissions.map(
       (permission) => permission.slug,
     );
@@ -366,7 +372,7 @@ export class RolePermissionCollection extends SmrtCollection<RolePermission> {
       result.matched[roleSlug].push(...sortedMatchedSlugs);
 
       const existingPermissionIds = new Set(
-        await this.getPermissionIds(role.id),
+        await unboundedGrants.getPermissionIds(role.id),
       );
       const targetPermissionIds = new Set<string>();
 

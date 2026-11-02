@@ -54,10 +54,19 @@ export class ContentContributor extends SmrtObject {
   @crossPackageRef('@happyvertical/smrt-profiles:Profile')
   profileId = '';
 
-  @field({ required: true })
+  @field({
+    required: true,
+    description: 'The email address the contributor writes in from.',
+  })
   email = '';
 
+  @field({ description: 'The name the contributor goes by.' })
   name = '';
+
+  @field({
+    description:
+      'How far you trust what they send in: standard, trusted or blocked.',
+  })
   trustLevel: ContentContributorTrustLevel = 'standard';
   metadata = '';
 

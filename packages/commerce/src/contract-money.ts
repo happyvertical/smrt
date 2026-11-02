@@ -1,5 +1,6 @@
 /** Transactional Contract money aggregate persistence. */
 
+import type { SmrtSaveOptions } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
 import { getTenantId } from '@happyvertical/smrt-tenancy';
 import { ContractCollection } from './collections/ContractCollection.js';
@@ -399,7 +400,10 @@ function requireContractTenant(tenantId: string | null): string {
 }
 
 /** Save a Contract and recompute its money aggregate. */
-export async function saveContract(input: Contract): Promise<Contract> {
+export async function saveContract(
+  input: Contract,
+  options?: SmrtSaveOptions,
+): Promise<Contract> {
   const tenantId = requireContractTenant(
     input.tenantId ?? getTenantId() ?? null,
   );
@@ -448,7 +452,7 @@ export async function saveContract(input: Contract): Promise<Contract> {
             settings.taxRegistrations,
           );
         }
-        return contract.saveDerived(DOCUMENT_MONEY_WRITE);
+        return contract.saveDerived(DOCUMENT_MONEY_WRITE, options);
       }
       return withLockedContract(
         scope.db,
@@ -491,7 +495,7 @@ export async function saveContract(input: Contract): Promise<Contract> {
               !stored.moneySnapshotId
             )
               contract.moneySnapshotId = crypto.randomUUID();
-            return contract.saveDerived(DOCUMENT_MONEY_WRITE);
+            return contract.saveDerived(DOCUMENT_MONEY_WRITE, options);
           }
           if (isFrozen(stored)) {
             assertUnchanged(
@@ -500,7 +504,7 @@ export async function saveContract(input: Contract): Promise<Contract> {
               FROZEN_CONTRACT_FIELDS,
               'Contract',
             );
-            return contract.saveDerived(DOCUMENT_MONEY_WRITE);
+            return contract.saveDerived(DOCUMENT_MONEY_WRITE, options);
           }
           const freezing = contract.status !== ContractStatus.DRAFT;
           const snapshotId = freezing
@@ -533,7 +537,7 @@ export async function saveContract(input: Contract): Promise<Contract> {
             contract.partyTaxId = party?.taxId ?? '';
             contract.moneySnapshotId = snapshotId;
           }
-          return contract.saveDerived(DOCUMENT_MONEY_WRITE);
+          return contract.saveDerived(DOCUMENT_MONEY_WRITE, options);
         },
       );
     }),
@@ -543,6 +547,7 @@ export async function saveContract(input: Contract): Promise<Contract> {
 /** Save a line and atomically recompute its Contract aggregate. */
 export async function saveContractLineItem(
   input: ContractLineItem,
+  options?: SmrtSaveOptions,
 ): Promise<ContractLineItem> {
   const tenantId = requireContractTenant(
     input.tenantId ?? getTenantId() ?? null,
@@ -584,11 +589,11 @@ export async function saveContractLineItem(
               FROZEN_LINE_FIELDS,
               'Contract line',
             );
-            return line.saveDerived(DOCUMENT_MONEY_WRITE);
+            return line.saveDerived(DOCUMENT_MONEY_WRITE, options);
           }
           line.contractId = contractId;
           line.tenantId = scope.tenantId;
-          await line.saveDerived(DOCUMENT_MONEY_WRITE);
+          await line.saveDerived(DOCUMENT_MONEY_WRITE, options);
           const all = [
             ...lines.filter((candidate) => candidate.id !== line.id),
             line,

@@ -1,5 +1,5 @@
 import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
-import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { field, foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { ContentVersionKind } from './content-governance';
 import { normalizeContentTransparency } from './content-transparency';
@@ -49,14 +49,27 @@ export interface ContentVersionOptions extends SmrtObjectOptions {
 })
 export class ContentVersion extends SmrtObject {
   @foreignKey('Content', { required: true, onDelete: 'CASCADE' })
+  @field({ description: 'The piece this version belongs to.' })
   contentId = '';
 
+  @field({ description: 'The number of this version, counting up from one.' })
   version = 1;
+
+  @field({
+    description:
+      'Why the version was saved: a draft, a review, a publication or a correction.',
+  })
   kind: ContentVersionKind = 'manual';
+
+  @field({ description: 'The headline as it was in this version.' })
   title = '';
   description = '';
   body = '';
+
+  @field({ description: 'Where the piece stood when this version was saved.' })
   status = 'draft';
+
+  @field({ description: 'A short note on what changed in this version.' })
   summary = '';
   snapshot = '{}';
   metadata = '';
@@ -64,6 +77,7 @@ export class ContentVersion extends SmrtObject {
   @tenantId({ nullable: true })
   tenantId: string | null = null;
 
+  @field({ description: 'When this version was saved.' })
   createdAt = new Date();
   updatedAt = new Date();
 

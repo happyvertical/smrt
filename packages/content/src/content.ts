@@ -755,6 +755,10 @@ export class Content
   /**
    * Content type classification
    */
+  @field({
+    description:
+      'What kind of piece this is, such as an article or a document.',
+  })
   public type: string | null = null;
 
   /**
@@ -772,27 +776,34 @@ export class Content
   /**
    * Author of the content
    */
+  @field({ description: 'Who wrote this piece.' })
   public author: string | null = null;
 
   /**
    * Human-readable name for SMRT framework compatibility
    */
-  @field({ required: true })
+  @field({
+    required: true,
+    description: 'A short name used to find this piece in lists.',
+  })
   public name: string = '';
 
   /**
    * Content title
    */
+  @field({ description: 'The headline readers see.' })
   public title = '';
 
   /**
    * Short description or summary
    */
+  @field({ description: 'A one or two sentence summary of the piece.' })
   public description: string | null = null;
 
   /**
    * Main content body text
    */
+  @field({ description: 'The full text of the piece.' })
   public body = '';
 
   /**
@@ -803,6 +814,7 @@ export class Content
   /**
    * Date when content was published
    */
+  @field({ description: 'The date the piece went out, or is due to go out.' })
   public publish_date: Date | null = null;
 
   /**
@@ -828,6 +840,7 @@ export class Content
   /**
    * Content tags
    */
+  @field({ description: 'Words that group pieces by subject.' })
   public tags: string[] = [];
 
   /**
@@ -835,11 +848,18 @@ export class Content
    * Format: 'parent/child' (e.g., 'politics/local')
    * Each content belongs to exactly ONE category
    */
+  @field({
+    description: 'The one section the piece belongs to, such as news or local.',
+  })
   public category: string | null = null;
 
   /**
    * Publication status
    */
+  @field({
+    description:
+      'Where the piece stands: draft, in review, published or archived.',
+  })
   public status: 'published' | 'draft' | 'review' | 'archived' | 'deleted' =
     'draft';
 

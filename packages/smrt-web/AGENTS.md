@@ -63,6 +63,16 @@ module you are editing. This file keeps what holds in every module.
    smrt-sites pages. Consumers load the runtime only on surfaces that use live
    collections.
 
+## Internal engine lifecycle (#4508)
+
+TanStack DB and the Svelte binding share the 1.0 RC family; the query adapter
+is 1.5+. Keep their peer requirements aligned when updating dependencies.
+SMRT preserves `isPersisted.promise` through an adapter over `when('settled')`.
+Online handlers await explicit refetch; queued writes await synced-store
+confirmation instead. Hydration must await `writeUpsert` before dispatching a
+mutation. Owned collection cleanup includes dependents so active live queries
+are stopped before capability teardown.
+
 ## Conventions
 
 - **WebMCP definition mirror** — `WebMcpToolDefinition` textually mirrors the

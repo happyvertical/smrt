@@ -313,6 +313,19 @@ async function confirmDelete(): Promise<void> {
   .smrt-detail-screen__pairs dd {
     margin: 0;
   }
+  .smrt-detail-screen__reference {
+    color: var(--smrt-color-primary);
+    text-decoration: underline;
+    text-underline-offset: 0.15em;
+    border-radius: var(--smrt-radius-sm);
+  }
+  .smrt-detail-screen__reference:hover {
+    text-decoration-thickness: 0.125em;
+  }
+  .smrt-detail-screen__reference:focus-visible {
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: var(--smrt-focus-ring-offset);
+  }
   .smrt-detail-screen__block {
     margin: 0;
     white-space: pre-wrap;

@@ -27,6 +27,7 @@ you are editing. This file keeps what holds across the package.
 - **ContentContributionType**: Configures intake channels, rules, and promotion mapping. Keyed per tenant (`tenant_id`, `key`); NULL-tenant rows are the global defaults each tenant can override by key
 - **ContentContributionRevision**: Revision history for held submissions
 - **ContentContributionAttachment**: Held file metadata; becomes an `Asset` on promotion
+- **Recipe `content.articles`** (`src/recipes.ts`, help in `src/articles.recipe.md`): Articles over the exposed `Content` base narrowed to `type = 'article'` (the `Article` subclass is closed), plus versions, corrections, reviews and contributions for the planner and other catalog hosts. Fields it shows carry `@field({ description })` in plain words; keep them when editing the models.
 
 ## Contents Collection
 

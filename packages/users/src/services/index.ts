@@ -91,8 +91,11 @@ export {
 export {
   type AuthenticatedMailbox,
   type MailboxAuthenticationDelivery,
+  type MailboxAuthenticationRequestScope,
   MailboxAuthenticationService,
   type MailboxAuthenticationServiceOptions,
+  type MailboxRequestReservation,
+  reserveMailboxAuthenticationRequest,
 } from './MailboxAuthenticationService.js';
 export {
   MobileAuthError,

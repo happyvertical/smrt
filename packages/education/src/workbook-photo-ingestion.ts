@@ -11,6 +11,7 @@ import {
 import { getCurrentTenant, withTenant } from '@happyvertical/smrt-tenancy';
 import { registerPermissionDefinitions } from '@happyvertical/smrt-users';
 import { processEducationAnalysis } from './ingestion.js';
+import { intakeOriginalEvidence } from './intake-original-evidence.js';
 import type { LearnerRequest } from './learner-service.js';
 import type { SubmissionPage } from './submission-service.js';
 import {
@@ -119,11 +120,18 @@ export function workbookPhotoIntakeHandlers(input: {
     context: Parameters<OperationHandler['validate']>[1],
     work: (service: WorkbookPhotoService) => Promise<T>,
   ): Promise<T> => {
-    assertScope(context.scope, input.request);
+    const checked = async (service: WorkbookPhotoService) => {
+      await service.assertWorkbookPhotoScope(
+        input.request,
+        context.scope,
+        context.itemId,
+      );
+      return work(service);
+    };
     if (!context.policy.requireReview)
       throw new Error('Photo intake requires review policy');
     if (!context.principal)
-      return input.workbooks.withExecutor(context.db, work);
+      return input.workbooks.withExecutor(context.db, checked);
     const tenant = getCurrentTenant();
     if (
       !tenant ||
@@ -139,7 +147,7 @@ export function workbookPhotoIntakeHandlers(input: {
         userId: input.request.actorUserId,
         superAdminBypass: false,
       },
-      () => input.workbooks.withExecutor(context.db, work),
+      () => input.workbooks.withExecutor(context.db, checked),
     );
   };
   const authorize = async (
@@ -232,8 +240,7 @@ export function workbookPhotoIntakeTargetResolver(input: {
   workbooks: WorkbookPhotoService;
   request: LearnerRequest;
 }): import('@happyvertical/smrt-ingestion/execution').IntakeExecutionOptions['assertTarget'] {
-  return async ({ db, scope, model, id, revision }) => {
-    assertScope(scope, input.request);
+  return async ({ db, scope, itemId, model, id, revision }) => {
     if (model !== '@happyvertical/smrt-education:Workbook')
       throw new Error('Photo target unavailable');
     const books = await withTenant(
@@ -244,9 +251,10 @@ export function workbookPhotoIntakeTargetResolver(input: {
         superAdminBypass: false,
       },
       () =>
-        input.workbooks.withExecutor(db, (service) =>
-          service.listWorkbookPhotoWorkbooks(input.request),
-        ),
+        input.workbooks.withExecutor(db, async (service) => {
+          await service.assertWorkbookPhotoScope(input.request, scope, itemId);
+          return service.listWorkbookPhotoWorkbooks(input.request);
+        }),
     );
     const book = books.find((book) => book.id === id);
     if (!book) throw new Error('Photo target unavailable');
@@ -333,8 +341,12 @@ export async function preserveWorkbookPhotoIdentification(input: {
   workbooks: WorkbookPhotoService;
   request: LearnerRequest & { intakeId: string };
 }) {
-  assertScope(input.scope, input.request);
   const view = await input.workbooks.getWorkbookPhotoIntake(input.request);
+  await input.workbooks.assertWorkbookPhotoScope(
+    input.request,
+    input.scope,
+    view.itemId,
+  );
   let snapshot: Awaited<ReturnType<IngestionService['getCompletedAnalysis']>>;
   try {
     snapshot = await input.ingestion.getCompletedAnalysis(view.itemId);
@@ -403,9 +415,8 @@ export async function preserveWorkbookPhotoIdentification(input: {
       generation.suggestions.length === 1 &&
       suggestions[0].alternatives.length === 0 &&
       generation.splits.length === 0,
-    sourceHashes: snapshot.evidence
-      .filter((e) => e.parentEvidenceId === null)
-      .sort((a, b) => a.partId.localeCompare(b.partId))
+    sourceHashes: intakeOriginalEvidence(snapshot.evidence)
+      .filter((e) => e.mediaType !== 'application/json')
       .map((e) => e.contentHash),
     provenance: {
       attemptId: snapshot.attemptId,
@@ -427,8 +438,12 @@ export async function processWorkbookPhotoAnalysis(
     request: LearnerRequest & { intakeId: string };
   },
 ) {
-  assertScope(input.scope, input.request);
   const view = await input.workbooks.getWorkbookPhotoIntake(input.request);
+  await input.workbooks.assertWorkbookPhotoScope(
+    input.request,
+    input.scope,
+    view.itemId,
+  );
   if (view.itemId !== input.itemId)
     throw new Error('Photo worker receipt mismatch');
   const processing = await processEducationAnalysis(input);

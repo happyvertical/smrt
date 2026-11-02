@@ -12,6 +12,7 @@ AI video production pipeline: characters, performers, scenes, shots, sequences, 
 - **VideoComposition** (extends Content): top-level container — `fps`, `width`, `height`, `durationInFrames`, `renderStatus`/`renderProgress`.
 - **VideoShotCharacter**: junction (shot ↔ character) with role (primary/secondary/background), position, duration.
 - **VideoWorkflow**: ComfyUI template. `workflowJson`, `nodeMapping` (maps semantic names → node IDs), `workflowType` (prebake/broadcast/lipsync/postprod/custom). `injectParameters()` deep-clones workflow + overwrites `node.inputs`.
+- **Recipe `video.library`** (`src/recipes.ts`, help in `src/library.recipe.md`): lists videos, sequences, shots, characters and scenes for the planner and other catalog hosts. Fields it shows carry `@field({ description })` in plain words; keep them when editing the models. Performer, VideoWorkflow, CompositeJob and the owned-asset joins are left out on purpose.
 
 ## Design Principles
 

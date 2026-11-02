@@ -62,6 +62,12 @@ tool policy; `./sveltekit` owns the stateless Streamable HTTP transport.
   attestation and a global, unauthenticated, read-only, non-tenant catalog with
   no principal-aware policy.
 
+- Host operations (`./host-operations`, browser-safe) are authored once and
+  projected by `toMcpWorkflowTool`/`toWebMcpSpec`. `onToolCall` audits every
+  call once; its principal/identity come from the adapter, and a failing hook
+  never alters a result. Only `McpToolError`/`mapError` output reaches agents.
+  Details: README "Host operations, audit and typed errors".
+
 ## Gotchas
 
 - Public tool patterns are still constrained by read-only detection.

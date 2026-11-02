@@ -8,6 +8,7 @@ import {
   foreignKey,
   type Meta,
   SmrtObject,
+  type SmrtSaveOptions,
   smrt,
 } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
@@ -434,16 +435,16 @@ export class Contract extends SmrtObject {
    * Validate the amounts and the status transition before persisting, then
    * save. Inherited by every STI subtype (Estimate/Order/Lease/.../LicenseSale),
    * so a forged `status` on any of them is caught here. LicenseSale layers its
-   * own rights-immutability guard on top via `super.save()`. See S5 audit
+   * own rights-immutability guard on top via `super.save(options)`. See S5 audit
    * #1390.
    *
    * `subtotal` / `taxAmount` / `totalAmount` are mass-assignable on the
    * generated create/update routes, so the minor-units check runs on every
    * write surface (#2401).
    */
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     const { saveContract } = await import('../contract-money.js');
-    return (await saveContract(this)) as this;
+    return (await saveContract(this, options)) as this;
   }
 
   /** Received purchase monetary history cannot be deleted. */
@@ -465,7 +466,10 @@ export class Contract extends SmrtObject {
   }
 
   /** @internal Contract aggregate persistence only. */
-  async saveDerived(capability: DocumentMoneyWriteCapability): Promise<this> {
+  async saveDerived(
+    capability: DocumentMoneyWriteCapability,
+    options?: SmrtSaveOptions,
+  ): Promise<this> {
     if (capability !== DOCUMENT_MONEY_WRITE)
       throw new Error('Contract money write capability is required');
     assertIntegerMinorUnits('Contract', this.reference || this.id || '<new>', [
@@ -476,7 +480,7 @@ export class Contract extends SmrtObject {
     ]);
     const prior = await this.resolvePriorStatus();
     this.assertContractStatusTransition(prior);
-    const result = (await super.save()) as this;
+    const result = (await super.save(options)) as this;
     loadedContractStatus.set(this, this.status);
     return result;
   }
@@ -1006,9 +1010,9 @@ export class LicenseSale extends SalesContract {
    * caller transitions to `ACCEPTED` and saves — `validateImmutable`
    * picks that up post-save on the next call.
    */
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     this.validateImmutable();
-    const result = (await super.save()) as this;
+    const result = (await super.save(options)) as this;
     // If this save transitioned the row to ACCEPTED, freeze the
     // snapshot for future saves.
     if (

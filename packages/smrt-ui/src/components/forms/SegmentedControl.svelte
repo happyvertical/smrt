@@ -252,16 +252,19 @@ useControlRegistration(() => {
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
-  .segmented { display: inline-flex; border: var(--smrt-hairline-strong); border-radius: var(--smrt-radius-full); overflow: hidden; }
+  .segmented { display: inline-flex; flex-wrap: wrap; max-inline-size: 100%; border: var(--smrt-hairline-strong); border-radius: var(--smrt-radius-full); overflow: hidden; }
   .segmented.full-width { display: flex; width: 100%; }
-  label { position: relative; display: inline-flex; align-items: center; justify-content: center; flex: 1; min-height: 2.5rem; padding: 0 var(--smrt-spacing-4); border: 0; border-right: var(--smrt-hairline-strong); background: var(--smrt-color-surface); color: var(--smrt-color-on-surface); cursor: pointer; }
+  label { position: relative; display: inline-flex; align-items: center; justify-content: center; flex: 1 1 0%; min-width: max-content; text-align: center; min-height: 2.5rem; padding: 0 var(--smrt-spacing-4); border: 0; border-right: var(--smrt-hairline-strong); background: var(--smrt-color-surface); color: var(--smrt-color-on-surface); cursor: pointer; }
+  /* Options share the row equally while they fit; one that would clip wraps onto a further row instead (#4462). */
   label:last-child { border-right: 0; } label.selected { background: var(--smrt-color-secondary-container); color: var(--smrt-color-on-secondary-container); }
   label:has(input:focus-visible) { outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color); outline-offset: calc(var(--smrt-focus-ring-width) * -1); } label.disabled, label:has(input:disabled) { opacity: .5; cursor: not-allowed; }
   :global(.segmented[data-smrt-highlighted='true']) { outline: 3px solid var(--smrt-color-tertiary); outline-offset: 4px; }
 
   .segmented[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min); }
   .segmented[data-density='comfortable'] { --smrt-control-target-min: 0px; }
-  label { min-height: max(2.5rem, var(--smrt-control-target-min)); min-width: var(--smrt-control-target-min); }
+  label { min-height: max(2.5rem, var(--smrt-control-target-min)); }
+  /* The touch target width rides on the text so the label keeps its content minimum (a negative calc clamps to 0). */
+  label > span { min-width: calc(var(--smrt-control-target-min) - 2 * var(--smrt-spacing-4)); }
   input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: inherit; }
   /* Forced colors (#3908): system colours where colour alone carries meaning. */
   @media (forced-colors: active) {

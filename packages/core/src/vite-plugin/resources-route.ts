@@ -34,8 +34,8 @@
  *
  * So this route uses a **resolvable-dependency check**: does the exact
  * subpath the generated file imports — `@happyvertical/smrt-users/sveltekit`
- * — resolve from the consumer's `projectRoot`, via a `createRequire` rooted
- * at the consumer's own `package.json`? That is stronger than reading
+ * — resolve under ESM import conditions from the consumer's `projectRoot`,
+ * anchored to its own `package.json` URL? That is stronger than reading
  * `package.json`'s `dependencies` block (which can list a package that was
  * never installed) and, unlike a single hardcoded
  * `node_modules/@happyvertical/smrt-users/package.json` path, it uses
@@ -48,7 +48,11 @@
  * does not list `./package.json`, so resolving that path would throw
  * `ERR_PACKAGE_PATH_NOT_EXPORTED` even when the package is genuinely
  * installed — resolving the subpath the route actually imports sidesteps
- * that and checks precisely the thing that must succeed at build time.
+ * that and checks precisely the thing that must succeed at build time. Use
+ * import conditions because the published subpath may expose only `types` and
+ * `import`, without a CommonJS `require` or `default` branch. The ESM resolver
+ * can return a URL for a missing file or directory, so verify that the selected
+ * target is an existing file before emitting a route that imports it.
  *
  * An explicit `sveltekit: { resourcesRoute: { enabled: false } }` escape
  * hatch is also available, matching `changesRoute`/`eventsRoute`, for a
@@ -80,10 +84,16 @@
  * manual `.gitignore` edit outside the managed block is preserved.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { resolve as resolveImport } from 'import-meta-resolve';
 import { AUTO_GENERATED_ROUTE_HEADER } from './route-header.js';
 import { resolveSvelteKitConfigImport } from './sveltekit-config-import.js';
 import type { SvelteKitOptions } from './sveltekit-generator.js';
@@ -97,11 +107,11 @@ import type { SvelteKitOptions } from './sveltekit-generator.js';
  */
 export function consumerHasSmrtUsers(projectRoot: string): boolean {
   try {
-    const consumerRequire = createRequire(
+    const target = resolveImport(
+      '@happyvertical/smrt-users/sveltekit',
       pathToFileURL(join(projectRoot, 'package.json')).href,
     );
-    consumerRequire.resolve('@happyvertical/smrt-users/sveltekit');
-    return true;
+    return statSync(fileURLToPath(target)).isFile();
   } catch {
     return false;
   }

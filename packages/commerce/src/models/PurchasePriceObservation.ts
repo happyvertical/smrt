@@ -2,6 +2,7 @@ import {
   field,
   SmrtObject,
   type SmrtObjectOptions,
+  type SmrtSaveOptions,
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
@@ -29,19 +30,20 @@ export class PurchasePriceObservation extends SmrtObject {
     ] as const)
       if (options[key] !== undefined) this[key] = options[key];
   }
-  override async save(): Promise<this> {
+  override async save(_options?: SmrtSaveOptions): Promise<this> {
     throw new Error(
       'Purchase price observations require their owning commands',
     );
   }
   async saveObserved(
     capability: typeof OBSERVED_PURCHASE_WRITE,
+    options?: SmrtSaveOptions,
   ): Promise<this> {
     if (capability !== OBSERVED_PURCHASE_WRITE)
       throw new Error(
         'Purchase price observations require their owning commands',
       );
-    return super.save();
+    return super.save(options);
   }
   override async delete(): Promise<void> {
     throw new Error('Original purchase price evidence cannot be deleted');

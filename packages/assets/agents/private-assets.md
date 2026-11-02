@@ -20,6 +20,13 @@ and ordinary policy reads remain public-only. This does not promise full package
 browser runtime support: existing tenancy dependencies retain their own platform
 limitations.
 
+Hosts that only need display metadata call `runtime.getPrivateAssetMetadata({
+tenantId, actorUserId, assetId })` after the same host authorization. It resolves
+the owner internally, performs a guarded read of exactly that one ID, and returns
+an allowlisted projection (never owner, `sourceUri`, description or metadata) or
+`null` for missing, public and other-tenant assets. It never exposes the
+capability.
+
 Private writes require the same capability. Classification and ownership of an
 existing private record are immutable. Core applies a mandatory persisted-write
 predicate at the final database mutation, including natural-key adoption, so an

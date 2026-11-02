@@ -10,7 +10,8 @@ const ids = (description: string, values?: readonly string[]): JsonSchema => ({
   type: 'array',
   description,
   minItems: 1,
-  maxItems: 50,
+  // Room for every recipe in the catalog at once (55 at smrt 0.57.36).
+  maxItems: 100,
   items: values?.length
     ? { type: 'string', enum: [...values] }
     : { type: 'string', minLength: 1 },

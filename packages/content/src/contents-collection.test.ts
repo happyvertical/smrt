@@ -1,8 +1,9 @@
 import { writeFile } from 'node:fs/promises';
 import { fetchDocument } from '@happyvertical/documents';
 import { ensureDirectoryExists } from '@happyvertical/files';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
 import { Content } from './content';
+import type { ContentQueryCollection } from './content-query';
 import { Contents } from './contents';
 
 vi.mock('node:fs/promises', () => ({
@@ -407,5 +408,11 @@ describe('Contents collection helpers', () => {
       ['tenant-1'],
       { allowRawOnTenantScoped: true },
     );
+  });
+});
+
+describe('Contents type contract (#3224)', () => {
+  it('is assignable to ContentQueryCollection without a cast', () => {
+    expectTypeOf<Contents>().toExtend<ContentQueryCollection>();
   });
 });

@@ -4,6 +4,7 @@ import {
   foreignKey,
   SmrtCollection,
   SmrtObject,
+  type SmrtSaveOptions,
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
@@ -91,7 +92,7 @@ export class AttendanceCorrection extends SmrtObject {
     return parseTimesheetJson<T | null>(this.afterState, null);
   }
 
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     // Insert and acknowledgement are both service-only: a generic save() or
     // collection create() must not fabricate or countersign ledger history.
     if (!isCorrectionWrite(this))
@@ -142,7 +143,7 @@ export class AttendanceCorrection extends SmrtObject {
         );
     }
     this.id ??= crypto.randomUUID();
-    return super.save();
+    return super.save(options);
   }
 
   override async delete(): Promise<void> {

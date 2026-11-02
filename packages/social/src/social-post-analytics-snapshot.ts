@@ -59,17 +59,26 @@ export class SocialPostAnalyticsSnapshot extends SmrtObject {
   @tenantId({ nullable: true })
   tenantId: string | null = null;
 
+  @field({ description: 'The post these numbers are for.' })
   @foreignKey(SocialPost)
   socialPostId: string | null = null;
 
-  @field({ required: true })
+  @field({
+    required: true,
+    description: 'The platform that reported the numbers.',
+  })
   platform: SocialPlatformType | null = null;
 
+  @field({
+    description:
+      'The views, likes, comments, shares and clicks the platform reported.',
+  })
   analytics: PostAnalytics = {};
 
   @field({ type: 'json', nullable: true })
   raw: RawAnalyticsPayload = null;
 
+  @field({ description: 'When these numbers were taken from the platform.' })
   capturedAt: Date = new Date();
 
   constructor(options: SocialPostAnalyticsSnapshotOptions = {}) {

@@ -2,6 +2,7 @@ import {
   crossPackageRef,
   field,
   SmrtObject,
+  type SmrtSaveOptions,
   smrt,
 } from '@happyvertical/smrt-core';
 import { AccountCollection } from '@happyvertical/smrt-ledgers';
@@ -94,7 +95,7 @@ export class TaxComponent extends SmrtObject {
     return this;
   }
 
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     if (!this.name.trim())
       throw new Error('Tax component requires a nonempty name');
     if (!isPercent(this.percent)) {
@@ -113,10 +114,13 @@ export class TaxComponent extends SmrtObject {
         ? await components.get({ id: this.id }, { cache: false })
         : null;
       if (persisted && canonicalPercent(persisted.percent) !== this.percent) {
-        const referenced = await this.isReferenced(persisted);
+        const callerRevision = options?.expectedUpdatedAt;
+        const referenced = await this.isReferenced(persisted, callerRevision);
         // claimRevision advanced the row's version; the pending save must use
         // that version rather than its stale caller snapshot.
         this.updated_at = persisted.updated_at;
+        if (callerRevision !== undefined && persisted.updated_at)
+          options = { ...options, expectedUpdatedAt: persisted.updated_at };
         if (referenced) {
           throw new MoneyValidationError(
             'PERCENT_OUT_OF_RANGE',
@@ -136,17 +140,20 @@ export class TaxComponent extends SmrtObject {
           );
         }
       }
-      return (await super.save()) as this;
+      return (await super.save(options)) as this;
     });
   }
 
-  private async isReferenced(persisted: TaxComponent): Promise<boolean> {
+  private async isReferenced(
+    persisted: TaxComponent,
+    expectedUpdatedAt?: Date | string,
+  ): Promise<boolean> {
     if (!this.id) return false;
     if (!persisted.updated_at)
       throw new Error('Referenced tax component is missing its revision');
     // Claim before inspecting references. TaxCode.save() claims the same row
     // before attaching it, so a concurrent rate edit must reload and retry.
-    await persisted.claimRevision(persisted.updated_at);
+    await persisted.claimRevision(expectedUpdatedAt ?? persisted.updated_at);
     const { TaxCodeCollection } = await import(
       '../collections/TaxCodeCollection.js'
     );

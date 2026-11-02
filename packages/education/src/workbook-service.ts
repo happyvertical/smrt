@@ -6,8 +6,14 @@ import {
   CourseSectionCollection,
   CurriculumCollection,
   EnrollmentCollection,
+  LessonProgressCollection,
+  SubmissionCollection,
   WorksheetCollection,
 } from './collections.js';
+import {
+  summarizeWorkbookEvidence,
+  type WorkbookEvidenceInput,
+} from './group-sharing-policy.js';
 import {
   LearnerAuthorizationError,
   type LearnerAuthorizer,
@@ -20,6 +26,11 @@ import {
 } from './submission-service.js';
 import { normalizeWorkbookAnswerRegions } from './workbook-answer-regions.js';
 import {
+  readWorkbookCompletion,
+  type WorkbookCompletionDecision,
+  WorkbookCompletionDecisionCollection,
+} from './workbook-completion.js';
+import {
   aggregateWorkbookQuestions,
   validateWorkbookAssessment,
   WORKBOOK_MATH_VOCABULARY,
@@ -28,6 +39,8 @@ import {
   WorkbookAssessmentValidationError,
   type WorkbookAssistance,
   type WorkbookAttemptView,
+  WorkbookCompletionConflictError,
+  type WorkbookCompletionDecisionView,
   type WorkbookConceptSummary,
   type WorkbookPreservationState,
   type WorkbookRevisionView,
@@ -88,6 +101,20 @@ function revisionView(row: WorkbookAssessmentRevision): WorkbookRevisionView {
     sourceRevisionId: row.sourceRevisionId,
     decisionReason: row.decisionReason,
     assessment: JSON.parse(row.assessmentJson),
+  };
+}
+
+function completionDecisionView(
+  row: WorkbookCompletionDecision,
+): WorkbookCompletionDecisionView {
+  return {
+    id: String(row.id),
+    activityId: row.activityId,
+    attemptId: row.attemptId,
+    submissionId: row.submissionId,
+    feedbackHeadId: row.feedbackHeadId,
+    actorUserId: row.actorUserId,
+    completedAt: new Date(row.recordedAt),
   };
 }
 
@@ -210,7 +237,17 @@ export class WorkbookService extends SubmissionService {
       : null;
     if (head && (!projectedBook || (head.canonicalActivityId && !target)))
       throw new LearnerAuthorizationError();
+    const completion = await readWorkbookCompletion(this.db, {
+      tenantId: row.tenantId,
+      learnerId: row.learnerId,
+      activityId: String(row.id),
+    });
     return {
+      currentAttemptId: completion.currentAttempt
+        ? String(completion.currentAttempt.id)
+        : null,
+      latestSubmissionId: completion.currentAttempt?.submissionId ?? null,
+      completion: completion.completion,
       id: String(row.id),
       learnerId: row.learnerId,
       workbookKey: projectedBook?.workbookKey ?? '',
@@ -819,6 +856,35 @@ export class WorkbookService extends SubmissionService {
         )
           throw new LearnerAuthorizationError();
       }
+      if (request.previousSubmissionId) {
+        const current = await readWorkbookCompletion(service.db, {
+          tenantId: request.tenantId,
+          learnerId: request.learnerId,
+          activityId: request.activityId,
+        });
+        if (
+          current.currentAttempt?.submissionId !== request.previousSubmissionId
+        ) {
+          const priorSubmissions = await (
+            await SubmissionCollection.create({ db: service.db })
+          ).list({
+            where: {
+              tenantId: request.tenantId,
+              learnerId: request.learnerId,
+              lessonId: row.lessonId,
+              captureKey: request.requestKey,
+            },
+          });
+          if (
+            !priorSubmissions.some((submission) =>
+              current.attempts.some(
+                (attempt) => attempt.submissionId === submission.id,
+              ),
+            )
+          )
+            throw new WorkbookCompletionConflictError('stale_attempt');
+        }
+      }
       const capture = {
         ...request,
         enrollmentId: row.enrollmentId,
@@ -880,7 +946,22 @@ export class WorkbookService extends SubmissionService {
         policyVersion: workbook?.policyVersion ?? 1,
         assistance,
         actorUserId: request.actorUserId,
-        capturedAt: submission.submittedAt,
+        // Independent practice episodes have no predecessor edge. Preserve their
+        // capture order even when the server clock ties or moves backwards.
+        capturedAt: new Date(
+          Math.max(
+            new Date(submission.submittedAt).getTime(),
+            ...(
+              await attempts.list({
+                where: {
+                  tenantId: request.tenantId,
+                  learnerId: request.learnerId,
+                  activityId: request.activityId,
+                },
+              })
+            ).map((prior) => new Date(prior.capturedAt).getTime() + 1),
+          ),
+        ),
         sourceHashes: JSON.stringify(sourceHashes),
       });
       return service.attemptView(request, row, attempt);
@@ -1503,6 +1584,91 @@ export class WorkbookService extends SubmissionService {
       return revisionView(result.row);
     });
   }
+  async completeWorkbookActivity(
+    request: AttemptRequest & {
+      expectedAttemptId: string;
+      expectedHeadId: string | null;
+      requestKey: string;
+    },
+  ): Promise<WorkbookCompletionDecisionView> {
+    return this.composeMutation(async (service) => {
+      await service.requireActor(request, 'education.learner.complete');
+      await service.serialize(request);
+      const { row } = await service.activity(
+        request,
+        'education.learner.complete',
+      );
+      nonempty(request.requestKey, 'completion request key');
+      nonempty(request.expectedAttemptId, 'completion attempt');
+      nonempty(request.submissionId, 'completion submission');
+      if (request.expectedHeadId !== null)
+        nonempty(request.expectedHeadId, 'completion feedback head');
+      const decisions = await WorkbookCompletionDecisionCollection.create({
+        db: service.db,
+      });
+      const prior = await decisions.get(
+        {
+          tenantId: request.tenantId,
+          activityId: request.activityId,
+          requestKey: request.requestKey,
+        },
+        { cache: false },
+      );
+      if (prior) {
+        if (
+          prior.learnerId !== request.learnerId ||
+          prior.actorUserId !== request.actorUserId ||
+          prior.attemptId !== request.expectedAttemptId ||
+          prior.submissionId !== request.submissionId ||
+          prior.feedbackHeadId !== request.expectedHeadId
+        )
+          throw new WorkbookCompletionConflictError('changed_retry');
+        return completionDecisionView(prior);
+      }
+      const current = await readWorkbookCompletion(service.db, {
+        tenantId: request.tenantId,
+        learnerId: request.learnerId,
+        activityId: request.activityId,
+      });
+      if (
+        !current.currentAttempt ||
+        current.currentAttempt.id !== request.expectedAttemptId ||
+        current.currentAttempt.submissionId !== request.submissionId
+      )
+        throw new WorkbookCompletionConflictError('stale_attempt');
+      if (current.feedbackHeadId !== request.expectedHeadId)
+        throw new WorkbookCompletionConflictError('stale_head');
+      if (current.decision)
+        throw new WorkbookCompletionConflictError('already_complete');
+      const decision = await decisions.create({
+        tenantId: request.tenantId,
+        learnerId: request.learnerId,
+        activityId: request.activityId,
+        attemptId: request.expectedAttemptId,
+        submissionId: request.submissionId,
+        feedbackHeadId: request.expectedHeadId,
+        actorUserId: request.actorUserId,
+        requestKey: request.requestKey,
+        _insertOnly: true,
+      });
+      const progress = await (
+        await LessonProgressCollection.create({ db: service.db })
+      ).get(
+        {
+          tenantId: request.tenantId,
+          learnerId: request.learnerId,
+          enrollmentId: row.enrollmentId,
+          lessonId: row.lessonId,
+        },
+        { cache: false },
+      );
+      if (!progress) throw new LearnerAuthorizationError();
+      progress.status = 'complete';
+      progress.completedAt = new Date(decision.recordedAt);
+      await progress.save();
+      return completionDecisionView(decision);
+    });
+  }
   async releaseWorkbookFeedback(
     request: AttemptRequest & {
       revisionId: string;
@@ -1650,6 +1816,11 @@ export class WorkbookService extends SubmissionService {
   ): Promise<WorkbookTimeline> {
     const { row, workbook, learner } = await this.activity(request);
     const own = learner.userId === request.actorUserId;
+    const completion = await readWorkbookCompletion(this.db, {
+      tenantId: request.tenantId,
+      learnerId: request.learnerId,
+      activityId: request.activityId,
+    });
     const limit = request.limit ?? 25;
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100)
       throw new Error('Invalid timeline limit');
@@ -1749,9 +1920,30 @@ export class WorkbookService extends SubmissionService {
             createdAt: d.recordedAt,
           })),
         headId: own ? null : headId ? String(headId) : null,
+        completionDecision: own
+          ? null
+          : (() => {
+              const decision = completion.decisions.find(
+                (value) => value.attemptId === attempt.id,
+              );
+              return decision ? completionDecisionView(decision) : null;
+            })(),
       });
     }
     return {
+      currentAttemptId: completion.currentAttempt
+        ? String(completion.currentAttempt.id)
+        : null,
+      latestSubmissionId: completion.currentAttempt?.submissionId ?? null,
+      completion: completion.completion,
+      completionContext:
+        own || !completion.currentAttempt
+          ? null
+          : {
+              attemptId: String(completion.currentAttempt.id),
+              submissionId: completion.currentAttempt.submissionId,
+              expectedHeadId: completion.feedbackHeadId,
+            },
       activity: await this.activityView(row, workbook),
       attempts,
       nextCursor:
@@ -1773,8 +1965,7 @@ export class WorkbookService extends SubmissionService {
         activityId: request.activityId,
       },
     });
-    const summaries = new Map<string, WorkbookConceptSummary>();
-    const independentSeen = new Set<string>();
+    const evidence: WorkbookEvidenceInput[] = [];
     // Parent captures always precede corrections regardless of random UUID order.
     const ordered = [...attempts].sort(
       (a, b) =>
@@ -1789,94 +1980,16 @@ export class WorkbookService extends SubmissionService {
         confirmed ?? revisions.filter((r) => r.kind === 'ai').at(-1);
       if (!effective) continue;
       const assessment = revisionView(effective).assessment;
-      for (const q of assessment.questions)
-        for (const conceptId of q.conceptIds) {
-          const key = `${assessment.vocabulary.namespace}:${assessment.vocabulary.version}:${conceptId}`;
-          let summary = summaries.get(key);
-          if (!summary) {
-            summary = {
-              namespace: assessment.vocabulary.namespace,
-              version: assessment.vocabulary.version,
-              conceptId,
-              label: assessment.vocabulary.concepts.find(
-                (c) => c.id === conceptId,
-              )!.label,
-              confirmed: {
-                independent: 0,
-                assisted: 0,
-                unknown: 0,
-                correct: 0,
-                needsCorrection: 0,
-                unassessed: 0,
-              },
-              provisional: 0,
-              episodes: [],
-              revisionIds: [],
-              cues: [],
-              observations: [],
-            };
-            summaries.set(key, summary);
-          }
-          if (!summary.episodes.includes(attempt.episodeId))
-            summary.episodes.push(attempt.episodeId);
-          if (!summary.revisionIds.includes(String(effective.id)))
-            summary.revisionIds.push(String(effective.id));
-          const observationAssistance =
-            attempt.previousAttemptId && attempt.assistance === 'independent'
-              ? 'unknown'
-              : (attempt.assistance as WorkbookAssistance);
-          summary.observations.push({
-            submissionId: attempt.submissionId,
-            revisionId: String(effective.id),
-            questionId: q.id,
-            episodeId: attempt.episodeId,
-            result: q.result,
-            assistance: observationAssistance,
-            isCorrection: Boolean(attempt.previousAttemptId),
-            capturedAt: attempt.capturedAt,
-            confirmed: Boolean(confirmed),
-          });
-          if (!confirmed) {
-            summary.provisional++;
-            continue;
-          }
-          if (q.result === 'unassessed') {
-            summary.confirmed.unassessed++;
-            continue;
-          }
-          const episodeQuestion = `${key}:${attempt.episodeId}:${q.id}`;
-          const assistance =
-            attempt.previousAttemptId && attempt.assistance === 'independent'
-              ? 'unknown'
-              : (attempt.assistance as WorkbookAssistance);
-          if (
-            assistance !== 'independent' ||
-            !independentSeen.has(episodeQuestion)
-          )
-            summary.confirmed[assistance]++;
-          if (assistance === 'independent')
-            independentSeen.add(episodeQuestion);
-          if (q.result === 'correct') summary.confirmed.correct++;
-          else summary.confirmed.needsCorrection++;
-          if (
-            attempt.previousAttemptId &&
-            q.result === 'correct' &&
-            !summary.cues.includes('improving on this item')
-          )
-            summary.cues.push('improving on this item');
-        }
-    }
-    for (const summary of summaries.values()) {
-      if (!summary.confirmed.independent)
-        summary.cues.push('needs a fresh independent check');
-      if (summary.confirmed.needsCorrection)
-        summary.cues.push('needs practice');
-      if (!summary.confirmed.correct && !summary.confirmed.needsCorrection)
-        summary.cues.push('not enough evidence');
+      evidence.push({
+        attempt,
+        revisionId: String(effective.id),
+        assessment,
+        confirmed: Boolean(confirmed),
+      });
     }
     return {
       algorithmVersion: 'workbook-descriptive-v1',
-      concepts: [...summaries.values()],
+      concepts: summarizeWorkbookEvidence(evidence),
     };
   }
 }

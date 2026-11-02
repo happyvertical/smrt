@@ -7,7 +7,7 @@
 
 import { randomUUID } from 'node:crypto';
 import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
-import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { SecretService } from '@happyvertical/smrt-secrets';
 import {
   getCurrentTenant,
@@ -217,11 +217,15 @@ export class SocialAccount extends SmrtObject {
   /**
    * Human-readable name for the account
    */
+  @field({ description: 'A name you will recognise this account by.' })
   name: string = '';
 
   /**
    * Social platform type
    */
+  @field({
+    description: 'Which platform it is on: YouTube, X, Threads or Bluesky.',
+  })
   platform: SocialPlatformType = 'youtube';
 
   /**
@@ -232,11 +236,13 @@ export class SocialAccount extends SmrtObject {
   /**
    * Platform username/handle
    */
+  @field({ description: 'The username or handle you post under.' })
   platformUsername: string | null = null;
 
   /**
    * Profile URL on the platform
    */
+  @field({ description: 'The web address of your profile on the platform.' })
   platformUrl: string | null = null;
 
   /**
@@ -274,11 +280,15 @@ export class SocialAccount extends SmrtObject {
   /**
    * Whether the account is active
    */
+  @field({
+    description: 'Whether posts can still go out from this account.',
+  })
   isActive: boolean = true;
 
   /**
    * Default hashtags to add to posts
    */
+  @field({ description: 'Hashtags added to every post from this account.' })
   defaultHashtags: string[] = [];
 
   /**
@@ -297,6 +307,10 @@ export class SocialAccount extends SmrtObject {
    * - reply: Post link as a reply (better for X algorithm)
    * - none: Don't include link
    */
+  @field({
+    description:
+      'Where a shared link goes: in the text, as a reply, or left out.',
+  })
   linkBehavior: LinkBehavior = 'description';
 
   /**
@@ -312,6 +326,9 @@ export class SocialAccount extends SmrtObject {
   /**
    * Account connection status
    */
+  @field({
+    description: 'Whether the account is connected, or needs signing in again.',
+  })
   status: AccountStatus = 'connected';
 
   /**

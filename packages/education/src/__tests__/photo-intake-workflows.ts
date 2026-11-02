@@ -910,16 +910,16 @@ export function photoIntakeTests(
           ),
         ).rejects.toThrow(),
       );
-      expect(
-        (
-          await f.as(f.own, () =>
-            f.service.getWorkbookTimeline({
-              ...f.own,
-              activityId: activity.id,
-            }),
-          )
-        ).attempts.find((a) => a.id === second.id)?.revisions,
-      ).toEqual([]);
+      // Completion needs an unambiguous current attempt. Corrupt ancestry fails
+      // closed for the timeline as well as question context; no partial head is used.
+      await expect(
+        f.as(f.own, () =>
+          f.service.getWorkbookTimeline({
+            ...f.own,
+            activityId: activity.id,
+          }),
+        ),
+      ).rejects.toThrow('Workbook current attempt is ambiguous');
     } finally {
       await f.finish();
     }

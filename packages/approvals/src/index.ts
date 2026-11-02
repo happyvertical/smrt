@@ -74,6 +74,7 @@ export {
   MANAGE_APPROVAL_POLICY_PERMISSION,
   registerApprovalPermissions,
 } from './permissions.js';
+export { ApprovalsRecipe } from './recipes.js';
 export {
   type ApprovalResult,
   ApprovalService,

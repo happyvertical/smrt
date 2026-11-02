@@ -66,6 +66,11 @@ export type DataSurfaceRowCountHint = number | string;
 /** Summary-mode `data.discover` entry. */
 export interface DataSurfaceSummary {
   id: string;
+  /**
+   * The same value as `id`, under the argument name `data.inspect` and
+   * `data.query` take (#4507), so a model copies the key it is asked for.
+   */
+  surfaceId?: string;
   label: string;
   description?: string;
   rowCountHint?: DataSurfaceRowCountHint;
@@ -362,6 +367,7 @@ export class DataSurfaceRequestError extends Error {
 const DATA_QUERY_REQUEST_SHAPE_HINT =
   'Request shape: {"mode":"rows"|"count"|"facets", "projection":[field], ' +
   '"filter":{"kind":"condition","field":f,"operator":op,"value":v} | ' +
+  '{"kind":"condition","field":f,"operator":"isNull"|"isNotNull"} | ' +
   '{"kind":"all"|"any","filters":[filter]} | {"kind":"not","filter":filter}, ' +
   '"sort":[{"field":f,"direction":"asc"|"desc"}], ' +
   '"page":{"kind":"offset","offset":0,"limit":n}, "facets":[{"field":f,"limit":n}]}. ' +
@@ -378,6 +384,17 @@ const EXECUTOR_REQUEST_ERROR_CODES = new Set([
   'DATA_QUERY_VALUE_INVALID',
   'DATA_QUERY_OPERATOR_NOT_ALLOWED',
   'DATA_QUERY_UNSUPPORTED',
+]);
+
+/**
+ * Core error codes a malformed filter raises — the only failures that can
+ * stem from a null-test attempt, so the only ones that carry its hint.
+ */
+const NULL_HINT_ERROR_CODES: ReadonlySet<string> = new Set([
+  'INVALID_DATA_QUERY',
+  'FORBIDDEN_DATA_QUERY',
+  'DATA_QUERY_OPERATOR_NOT_ALLOWED',
+  'DATA_QUERY_VALUE_NOT_ALLOWED',
 ]);
 
 function fieldList(
@@ -438,11 +455,19 @@ function validQueryExample(
     field.filterOperators?.includes('in'),
   );
   const field = inField ?? filterable[0];
-  const filter = field
-    ? inField
-      ? `,"filter":{"kind":"condition","field":${JSON.stringify(field.id)},"operator":"in","value":["<value>","<value>"]}`
-      : `,"filter":{"kind":"condition","field":${JSON.stringify(field.id)},"operator":${JSON.stringify(field.filterOperators?.[0])},"value":"<value>"}`
-    : '';
+  const nullTest = nullTestAttempt(request, schema);
+  const firstOperator = field?.filterOperators?.[0];
+  const filter = nullTest
+    ? `,"filter":${nullTestFilter(nullTest)}`
+    : field
+      ? inField
+        ? `,"filter":{"kind":"condition","field":${JSON.stringify(field.id)},"operator":"in","value":["<value>","<value>"]}`
+        : `,"filter":{"kind":"condition","field":${JSON.stringify(field.id)},"operator":${JSON.stringify(firstOperator)}${
+            firstOperator && NULL_TEST_OPERATORS.has(firstOperator)
+              ? ''
+              : ',"value":"<value>"'
+          }}`
+      : '';
   let body: string;
   if (mode === 'facets') {
     const facet = schema.fields.find((candidate) => candidate.facetable);
@@ -458,6 +483,113 @@ function validQueryExample(
 }
 
 const FILTER_KINDS = new Set(['condition', 'all', 'any', 'not']);
+
+/** Null tests (#4448): condition operators that take no value. */
+const NULL_TEST_OPERATORS: ReadonlySet<string> = new Set([
+  'isNull',
+  'isNotNull',
+]);
+
+/** Strings a model writes when it means "no value" rather than the literal text. */
+const NULL_LIKE_TEXT = /^\s*(?:null|nil|none|undefined|empty|missing)?\s*$/i;
+
+/**
+ * Operator or kind names a model reaches for when it wants a null test. Any
+ * name in this vocabulary that the field does not declare is read as one.
+ */
+const NULL_TEST_NAME =
+  /^(?:is_?)?(?:not_?)?(?:null|nil|none|empty|missing|blank|exists?|present|defined|undefined|set|unset)$/i;
+
+/** Names whose intent is "has a value", so the example uses `isNotNull`. */
+const NOT_NULL_INTENT =
+  /not_?(?:null|nil|none|empty|missing|blank)|^(?:is_?)?(?:exists?|present|defined|set)$/i;
+
+interface NullTestAttempt {
+  field: string;
+  operator: 'isNull' | 'isNotNull';
+}
+
+/**
+ * The first filter node that looks like an attempt to test a nullable field
+ * for an empty value (#4448): `eq`/`ne` with `null`, `"null"`, `""`, or `[]`;
+ * a `not` filter naming a `field` directly; or a kind/operator such as
+ * `"exists"` or `"is_null"`. Only fields that declare `isNull` in the visible
+ * schema qualify, and only the schema's field id and a fixed operator ever
+ * reach the message — never caller text.
+ */
+function nullTestAttempt(
+  request: unknown,
+  schema: DataQuerySchema,
+): NullTestAttempt | undefined {
+  let found: NullTestAttempt | undefined;
+  // `negated` counts enclosing `not` filters, so `not(eq "null")` suggests
+  // isNotNull rather than its opposite.
+  const walk = (filter: unknown, depth: number, negated: boolean) => {
+    if (found || !isRecord(filter) || depth > 16) return;
+    const descriptor =
+      typeof filter.field === 'string'
+        ? schema.fields.find((field) => field.id === filter.field)
+        : undefined;
+    if (descriptor?.filterOperators?.includes('isNull')) {
+      const operator =
+        typeof filter.operator === 'string' ? filter.operator : undefined;
+      const kind = typeof filter.kind === 'string' ? filter.kind : undefined;
+      const value = filter.value;
+      const nullLikeValue =
+        value === undefined ||
+        value === null ||
+        (typeof value === 'string' && NULL_LIKE_TEXT.test(value)) ||
+        (Array.isArray(value) && value.length === 0);
+      const declared = (name: string | undefined) =>
+        name !== undefined &&
+        (descriptor.filterOperators as readonly string[]).includes(name);
+      const nullName = (name: string | undefined) =>
+        name !== undefined && !declared(name) && NULL_TEST_NAME.test(name);
+      const attempted =
+        (kind === 'condition' &&
+          (operator === 'eq' || operator === 'ne') &&
+          nullLikeValue) ||
+        (kind === 'not' && filter.filter === undefined) ||
+        nullName(kind) ||
+        nullName(operator);
+      if (attempted) {
+        const notNull =
+          operator === 'ne' ||
+          [kind, operator].some(
+            (name) => name !== undefined && NOT_NULL_INTENT.test(name),
+          );
+        // A `not` that names the field itself negates its own operator, if any.
+        const flip = negated !== (kind === 'not' && operator !== undefined);
+        found = {
+          field: descriptor.id,
+          operator: notNull !== flip ? 'isNotNull' : 'isNull',
+        };
+        return;
+      }
+    }
+    const children = Array.isArray(filter.filters)
+      ? filter.filters
+      : [filter.filter];
+    const childNegated = filter.kind === 'not' ? !negated : negated;
+    for (const child of children) walk(child, depth + 1, childNegated);
+  };
+  walk(isRecord(request) ? request.filter : undefined, 0, false);
+  return found;
+}
+
+function nullTestFilter(attempt: NullTestAttempt): string {
+  return `{"kind":"condition","field":${JSON.stringify(attempt.field)},"operator":"${attempt.operator}"}`;
+}
+
+/** The hint naming the null-test operators for a detected attempt (#4448). */
+function nullTestHint(request: unknown, schema: DataQuerySchema): string {
+  const attempt = nullTestAttempt(request, schema);
+  if (!attempt) return '';
+  return (
+    `To test whether ${attempt.field} is empty, use operator "isNull" with no value ` +
+    `(or "isNotNull" for rows that have one): ${nullTestFilter(attempt)}. `
+  );
+}
 
 /**
  * A targeted hint when a filter's `kind` is not one of the four (#4378):
@@ -485,7 +617,9 @@ function filterKindHint(request: unknown): string {
   return (
     'A filter kind is condition, all, any or not. ' +
     (operators.length > 0
-      ? `${operators.join(', ')} is an operator: use {"kind":"condition","field":f,"operator":${JSON.stringify(operators[0])},"value":v}. `
+      ? `${operators.join(', ')} is an operator: use {"kind":"condition","field":f,"operator":${JSON.stringify(operators[0])}${
+          NULL_TEST_OPERATORS.has(operators[0]) ? '' : ',"value":v'
+        }}. `
       : '') +
     (logical
       ? 'For OR use {"kind":"any","filters":[...]}; for AND use {"kind":"all","filters":[...]}. '
@@ -505,6 +639,11 @@ function explainRequestError(
   surfaceId: string,
 ): DataSurfaceRequestError {
   const reason = error.publicMessage.replace(/\.?$/, '.');
+  // A rejected filter that looks like a null test on a nullable field points
+  // at isNull/isNotNull first (#4448); other request errors keep their hint.
+  const nullHint = NULL_HINT_ERROR_CODES.has(error.code)
+    ? nullTestHint(request, schema)
+    : '';
   let hint: string;
   switch (error.code) {
     case 'DATA_QUERY_FIELD_NOT_ALLOWED':
@@ -567,10 +706,10 @@ function explainRequestError(
       break;
     }
     default:
-      hint = `${filterKindHint(request)}${DATA_QUERY_REQUEST_SHAPE_HINT}`;
+      hint = `${requestAliasHint(request)}${filterKindHint(request)}${DATA_QUERY_REQUEST_SHAPE_HINT}`;
   }
   return new DataSurfaceRequestError(
-    `${reason} ${hint} ${validQueryExample(surfaceId, schema, request)}`,
+    `${reason} ${nullHint}${hint} ${validQueryExample(surfaceId, schema, request)}`,
     error.code,
   );
 }
@@ -728,6 +867,7 @@ function summary(surface: DataSurfaceDefinition): DataSurfaceSummary {
   const description = summaryDescription(surface.description);
   return {
     id: surface.id,
+    surfaceId: surface.id,
     label: firstSummaryLine(surface.label) ?? surface.id,
     ...(description ? { description } : {}),
     ...rowCountHintEntry(surface),
@@ -1271,7 +1411,122 @@ const DATA_QUERY_REQUEST_KEYS = [
   'facets',
   'version',
   'requestId',
+  // SQL-ish aliases (#4505), mapped once they are inside request.
+  'select',
+  'where',
+  'orderBy',
+  'limit',
+  'offset',
 ] as const;
+
+/**
+ * SQL-ish request keys a model reaches for first (#4505), and the canonical
+ * key each one stands for. {@link applyRequestAliases} maps an alias only
+ * when its canonical key is absent (for `limit`/`offset`, when `page` has no
+ * such entry); otherwise the alias stays in place and fails validation as an
+ * unsupported key, with {@link requestAliasHint} naming the canonical key.
+ */
+const DATA_QUERY_REQUEST_ALIASES = {
+  select: 'projection',
+  where: 'filter',
+  orderBy: 'sort',
+  limit: 'page.limit',
+  offset: 'page.offset',
+} as const;
+
+type DataQueryRequestAlias = keyof typeof DATA_QUERY_REQUEST_ALIASES;
+
+/** `"updated_at desc"` / `{field}` / `[...]` as canonical sort terms. */
+function sortFromOrderBy(value: unknown): unknown {
+  const term = (entry: unknown): unknown => {
+    if (typeof entry === 'string') {
+      const [field, direction, ...extra] = entry.trim().split(/\s+/);
+      const lower = direction?.toLowerCase();
+      if (
+        !field ||
+        extra.length > 0 ||
+        (lower !== undefined && lower !== 'asc' && lower !== 'desc')
+      ) {
+        return entry;
+      }
+      return { field, direction: lower ?? 'asc' };
+    }
+    if (isRecord(entry) && entry.direction === undefined) {
+      return { ...entry, direction: 'asc' };
+    }
+    return entry;
+  };
+  if (typeof value === 'string') {
+    return value
+      .split(',')
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .map(term);
+  }
+  if (Array.isArray(value)) return value.map(term);
+  if (isRecord(value)) return [term(value)];
+  return value;
+}
+
+/**
+ * Map the SQL-ish aliases in a raw request onto the canonical grammar
+ * (#4505) before validation. Values are moved, never invented or dropped:
+ * whatever lands in the canonical key is still validated against the visible
+ * schema exactly as if the model had written it there.
+ */
+function applyRequestAliases(
+  raw: Record<string, unknown>,
+): Record<string, unknown> {
+  const next: Record<string, unknown> = { ...raw };
+  if (Object.hasOwn(next, 'select') && !Object.hasOwn(next, 'projection')) {
+    const { select } = next;
+    next.projection =
+      typeof select === 'string'
+        ? select
+            .split(',')
+            .map((part) => part.trim())
+            .filter(Boolean)
+        : select;
+    delete next.select;
+  }
+  if (Object.hasOwn(next, 'where') && !Object.hasOwn(next, 'filter')) {
+    next.filter = next.where;
+    delete next.where;
+  }
+  if (Object.hasOwn(next, 'orderBy') && !Object.hasOwn(next, 'sort')) {
+    next.sort = sortFromOrderBy(next.orderBy);
+    delete next.orderBy;
+  }
+  for (const key of ['limit', 'offset'] as const) {
+    if (!Object.hasOwn(next, key)) continue;
+    if (next.page === undefined) {
+      next.page = { [key]: next[key] };
+    } else if (isRecord(next.page) && !Object.hasOwn(next.page, key)) {
+      next.page = { ...next.page, [key]: next[key] };
+    } else {
+      continue;
+    }
+    delete next[key];
+  }
+  return next;
+}
+
+/** A hint for an alias left in place beside its canonical key (#4505). */
+function requestAliasHint(request: unknown): string {
+  if (!isRecord(request)) return '';
+  const left = (
+    Object.keys(DATA_QUERY_REQUEST_ALIASES) as DataQueryRequestAlias[]
+  ).filter((alias) => Object.hasOwn(request, alias));
+  if (left.length === 0) return '';
+  return `${left
+    .map(
+      (alias) =>
+        `${alias} is an alias of ${DATA_QUERY_REQUEST_ALIASES[alias]}, which the request already sets`,
+    )
+    .join('; ')}: send only ${left
+    .map((alias) => DATA_QUERY_REQUEST_ALIASES[alias])
+    .join(', ')}. `;
+}
 
 /** Valid-shape example used before the surface is known. */
 const GENERIC_QUERY_EXAMPLE =
@@ -1289,6 +1544,10 @@ const GENERIC_QUERY_EXAMPLE =
  *   `query` object standing in for `request`, or a `query` object that is
  *   `request`'s only key, is unwrapped the same way: the intent is
  *   unambiguous and every key inside it is then validated as usual.
+ * - A lone top-level `id` string (#4507) — `data.discover` lists each
+ *   surface under `id` — stands for `surfaceId` when no top-level
+ *   `surfaceId` was given and nothing else sits beside it except, for
+ *   query, `request` (or its `query` wrapper). Any other `id` is left alone.
  * - Two different ids (top level vs nested) are a request error.
  * - No id at all is a request error, never a denial.
  *
@@ -1300,6 +1559,19 @@ function placeSurfaceId(
   tool: 'query' | 'inspect',
 ): Record<string, unknown> {
   let next: Record<string, unknown> = { ...args };
+  if (
+    !Object.hasOwn(next, 'surfaceId') &&
+    typeof next.id === 'string' &&
+    next.id &&
+    Object.keys(next).every(
+      (key) =>
+        key === 'id' ||
+        (tool === 'query' && (key === 'request' || key === 'query')),
+    )
+  ) {
+    const { id, ...rest } = next;
+    next = { ...rest, surfaceId: id };
+  }
   if (
     tool === 'query' &&
     !Object.hasOwn(next, 'request') &&
@@ -1386,18 +1658,19 @@ function requestFromArgs(
     raw = rest;
   }
   if (!isRecord(raw)) return raw;
+  const aliased = applyRequestAliases(raw);
   const request: Record<string, unknown> = {
-    ...raw,
-    version: raw.version ?? 1,
-    requestId: raw.requestId ?? `dq_${randomUUID()}`,
-    mode: raw.mode ?? (raw.facets !== undefined ? 'facets' : 'rows'),
+    ...aliased,
+    version: aliased.version ?? 1,
+    requestId: aliased.requestId ?? `dq_${randomUUID()}`,
+    mode: aliased.mode ?? (aliased.facets !== undefined ? 'facets' : 'rows'),
   };
-  if (isRecord(raw.page)) {
-    const kind = raw.page.kind ?? 'offset';
+  if (isRecord(aliased.page)) {
+    const kind = aliased.page.kind ?? 'offset';
     request.page = {
-      ...raw.page,
+      ...aliased.page,
       kind,
-      ...(kind === 'offset' ? { offset: raw.page.offset ?? 0 } : {}),
+      ...(kind === 'offset' ? { offset: aliased.page.offset ?? 0 } : {}),
     };
   }
   return request;
@@ -1413,6 +1686,8 @@ const DATA_QUERY_OPERATORS = [
   'in',
   'notIn',
   'like',
+  'isNull',
+  'isNotNull',
 ] as const;
 
 const DATA_QUERY_SCALAR_SCHEMA = [
@@ -1452,7 +1727,8 @@ export const DATA_QUERY_TOOL_PARAMETERS: Record<string, unknown> = {
           items: { type: 'string' },
           maxItems: 50,
           description:
-            'rows only. Projectable fields to return; the identity field is always included.',
+            'rows only. Projectable fields to return; the identity field is always included. ' +
+            'Alias: select (an array or a comma-separated string), when projection is absent.',
         },
         filter: {
           type: 'object',
@@ -1460,8 +1736,10 @@ export const DATA_QUERY_TOOL_PARAMETERS: Record<string, unknown> = {
             'Optional. A condition {"kind":"condition","field":f,"operator":op,"value":v}; ' +
             '{"kind":"all"|"any","filters":[...]} to AND/OR nested filters; or {"kind":"not","filter":{...}}. ' +
             'field must list op in its filterOperators (data.inspect). value is a scalar, or a non-empty array (max 100) for in/notIn. ' +
+            'isNull/isNotNull test for an empty value and take no value: {"kind":"condition","field":f,"operator":"isNull"}. ' +
             'like takes SQL wildcards (%council%) on string fields. Datetimes are RFC 3339 instants (2026-09-01T00:00:00Z). ' +
-            'String fields whose only operators are eq/ne/in/notIn hold ids: compare them with complete id values.',
+            'String fields whose only value operators are eq/ne/in/notIn (isNull/isNotNull aside) hold ids: compare them with complete id values. ' +
+            'Alias: where, when filter is absent.',
           properties: {
             kind: { type: 'string', enum: ['condition', 'all', 'any', 'not'] },
             field: { type: 'string' },
@@ -1483,7 +1761,8 @@ export const DATA_QUERY_TOOL_PARAMETERS: Record<string, unknown> = {
         sort: {
           type: 'array',
           description:
-            'rows only. Sortable fields, earlier terms first. Empty values sort first ascending and last descending.',
+            'rows only. Sortable fields, earlier terms first. Empty values sort first ascending and last descending. ' +
+            'Alias: orderBy, when sort is absent; it also takes "field desc" strings (comma-separated) and defaults direction to asc.',
           items: {
             type: 'object',
             additionalProperties: false,
@@ -1499,7 +1778,8 @@ export const DATA_QUERY_TOOL_PARAMETERS: Record<string, unknown> = {
           additionalProperties: false,
           description:
             'rows only. {"kind":"offset","offset":0,"limit":10}; kind defaults to offset and offset to 0. limit is capped at the surface maxPageLimit. ' +
-            'Use {"kind":"cursor","after":nextCursor,"limit":n} only where supports.cursorPagination.',
+            'Use {"kind":"cursor","after":nextCursor,"limit":n} only where supports.cursorPagination. ' +
+            'Aliases: limit and offset beside page (inside request) fill page.limit/page.offset when page does not set them.',
           properties: {
             kind: { type: 'string', enum: ['offset', 'cursor'] },
             offset: { type: 'integer', minimum: 0 },
@@ -1548,8 +1828,25 @@ const DATA_QUERY_TOOL_DESCRIPTION =
 const DATA_DISCOVER_FULL_TOOL_DESCRIPTION =
   'List data surfaces and their safe, readable fields.';
 const DATA_DISCOVER_SUMMARY_TOOL_DESCRIPTION =
-  'List the data surfaces you can read (id, label, short description). ' +
-  "Call data.inspect for a surface's fields and operators before querying.";
+  'List the data surfaces you can read (surfaceId, label, short description). ' +
+  'Call data.inspect with {"surfaceId": <surfaceId>} for a surface\'s fields and operators before querying.';
+
+const DATA_INSPECT_TOOL_DESCRIPTION =
+  'Inspect one readable data surface schema: its fields, filter operators, sort and facet fields, and page limits. ' +
+  'Takes {"surfaceId": <the id data.discover lists for the surface>}.';
+
+/** JSON schema for `data.inspect`'s arguments (#4507). */
+export const DATA_INSPECT_TOOL_PARAMETERS: Record<string, unknown> = {
+  type: 'object',
+  required: ['surfaceId'],
+  properties: {
+    surfaceId: {
+      type: 'string',
+      description: 'The id data.discover lists for the surface.',
+    },
+  },
+  additionalProperties: false,
+};
 
 function tool(
   slug: string,
@@ -1742,13 +2039,8 @@ export function createDataSurfaceTools(
   const inspect = tool(
     DATA_INSPECT_TOOL_SLUG,
     DATA_INSPECT_FUNCTION_NAME,
-    'Inspect one readable data surface schema.',
-    {
-      type: 'object',
-      required: ['surfaceId'],
-      properties: { surfaceId: { type: 'string' } },
-      additionalProperties: false,
-    },
+    DATA_INSPECT_TOOL_DESCRIPTION,
+    DATA_INSPECT_TOOL_PARAMETERS,
     async ({ run, args }) => {
       await assertAllowed(run, 'inspect', DATA_INSPECT_TOOL_SLUG);
       const placed = placeSurfaceId(args, 'inspect');

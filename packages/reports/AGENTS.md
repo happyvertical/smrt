@@ -39,6 +39,11 @@ component tests. `./playground` supplies each screen's preview.
   totals, and dimension facets. At source-query compilation,
   dimension and bucket filters compile to `WHERE`, aggregate-measure filters
   compile to `HAVING`, and mixed `OR`/`NOT` filter scopes fail closed.
+- A column whose materialized schema column is neither `notNull` nor the
+  primary key also declares `isNull`/`isNotNull` (#4448), compiled to
+  `IS NULL`/`IS NOT NULL`. Report `ne`/`notIn` stay plain `<>` and exclude
+  nulls. The null tests are left out of `reportDefinitionFingerprint()`, so
+  views stored before them keep their binding.
 - `id` is the only row identity. It must be a non-empty persisted string and is
   never replaced by a display index or page position.
 - The descriptor is an exposure boundary. Sensitive/secret fields, fields with
@@ -122,7 +127,7 @@ See [core recipes](../core/agents/recipes.md).
 
 - Report cache tables are normal `@smrt()` tables. Runtime refresh must not create schema.
 - Store report metadata under field `_meta.__report`; scanner and runtime decorators must stay aligned.
-- Joins, row expressions and filtered measures (#3903) compile to the SDK's `AggregateSpec` (`fromAlias`, `joins`, `expr`, `filter`); expressions are literal data nodes because the scanner reads decorator arguments statically. Qualify every source column with `src` once a report joins (refresh filters do), put the tenant match in the join's `ON`, and joined reports rebuild (an incremental request is run as a rebuild), and drilldown refuses joined or computed group keys.
+- Joins, row expressions and filtered measures (#3903) compile to the SDK's `AggregateSpec` (`fromAlias`, `joins`, `expr`, `filter`); expressions are literal data nodes because the scanner reads decorator arguments statically. Qualify every source column with `src` once a report joins (refresh filters do), put the tenant match in the join's `ON`, and joined reports rebuild (an incremental request is run as a rebuild), and drilldown refuses joined or computed group keys. A join key (or tenant pair) that is TEXT against UUID in the merged migration schema (text reference to a uuid id, #4441) compares as `asText` on both sides on every dialect but SQLite; `compileReportDefinition(definition, adapterType)` needs the real adapter for that, and same-typed keys stay uncast.
 - Keep SQL generation portable. Use the SDK `buildAggregate()`/`bucketExpr()` helpers for time buckets and `$N` placeholders.
 - Do not add a local aggregate SQL builder here; the implementation lives in `@happyvertical/sql`.
 - Refresh runtime tables are schema-managed. Runtime refresh must fail clearly when `_smrt_report_runs`, `_smrt_report_watermarks`, or `_smrt_report_locks` have not been migrated.

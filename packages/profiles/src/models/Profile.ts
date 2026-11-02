@@ -19,6 +19,7 @@ import {
   oneToMany,
   SmrtObject,
   type SmrtObjectOptions,
+  type SmrtSaveOptions,
   smrt,
 } from '@happyvertical/smrt-core';
 import { resolvePrompt } from '@happyvertical/smrt-prompts';
@@ -121,11 +122,11 @@ export class Profile extends SmrtObject {
   }
 
   /** Keep the durable identity key derived from the public email field. */
-  override async save(): Promise<this> {
+  override async save(options?: SmrtSaveOptions): Promise<this> {
     this.emailKey = this.email?.trim()
       ? normalizeIdentityEmail(this.email)
       : null;
-    return super.save();
+    return super.save(options);
   }
 
   /**

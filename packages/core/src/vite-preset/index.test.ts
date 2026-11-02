@@ -405,6 +405,56 @@ describe('smrt() Vite preset', () => {
     });
   });
 
+  describe('hostToolNames forwarding (#4520)', () => {
+    const decl = (
+      name: string,
+      surface: 'workflow' | 'bespoke' | 'mcp',
+      declaredBy: string,
+    ) => ({ name, surface, declaredBy });
+
+    it('fails construction on duplicates across surfaces, like smrtPlugin', async () => {
+      const hostToolNames = [
+        decl('dup_tool', 'workflow', 'A.op'),
+        decl('dup_tool', 'mcp', 'B.op'),
+      ];
+      let direct: unknown;
+      try {
+        smrtPlugin({ hostToolNames });
+      } catch (e) {
+        direct = e;
+      }
+      expect(direct).toBeInstanceOf(Error);
+      await expect(
+        smrt({ projectRoot: root, packages: [], hostToolNames }),
+      ).rejects.toThrow((direct as Error).message);
+    });
+
+    it('accepts clean names and one operation on several surfaces', async () => {
+      await expect(
+        smrt({
+          projectRoot: root,
+          packages: [],
+          hostToolNames: [
+            decl('a_tool', 'workflow', 'A.op'),
+            decl('b_tool', 'bespoke', 'B.op'),
+            decl('c_tool', 'workflow', 'C.op'),
+            decl('c_tool', 'mcp', 'C.op'),
+          ],
+        }),
+      ).resolves.toBeInstanceOf(Array);
+    });
+
+    it('is unchanged without the option', async () => {
+      const plugins = await smrt({ projectRoot: root, packages: [] });
+      const withEmpty = await smrt({
+        projectRoot: root,
+        packages: [],
+        hostToolNames: [],
+      });
+      expect(withEmpty.map((p) => p.name)).toEqual(plugins.map((p) => p.name));
+    });
+  });
+
   describe('equivalence with the two-plugin form', () => {
     it('generates identical output for the same inputs', async () => {
       const manual = [

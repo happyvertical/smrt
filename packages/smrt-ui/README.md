@@ -41,7 +41,7 @@ pnpm add @happyvertical/smrt-ui
 | Disclosure and overlays | `Popover`, `Disclosure`, `Accordion`/`AccordionItem`, `Modal`, `Drawer`/`Sheet`, `PhoneSheet`, `ConfirmDialog` |
 | Feedback | `Alert`, `ToastViewport`, `Progress`, `Meter`, `Spinner`, `LoadingOverlay`, `WorkingStrip` |
 | Collections | `CollectionToolbar`, `CollectionList`/`ContentList`, `DataTable`, `Pagination` |
-| Layout and navigation | `Container`, `PageLayout`, `Grid`, `ActionGroup`, `Header`, `Footer`, `PageHeader`, `EmptyState`, `Tabs`, `FilterChips` |
+| Layout and navigation | `Container`, `PageLayout`, `Grid`, `Stack`, `DescriptionList`, `ActionGroup`, `Header`, `Footer`, `PageHeader`, `EmptyState`, `Tabs`, `FilterChips` |
 | Calendar | `CalendarView` (deprecated: `Calendar`, `DayView`) |
 
 ### Phone surfaces
@@ -230,7 +230,10 @@ tone overrides the built-in domain scheme while label, size, and outline variant
 continue to work independently. Tones use the active theme's paired container
 and text tokens. Without a tone, known domain statuses retain their existing
 colors and unknown statuses retain the neutral fallback. `StatusTone` is exported
-as a TypeScript type from the package root.
+as a TypeScript type from the package root. `StatusBadge` also spreads rest
+props (`data-*`, `aria-*`, `title`, ...) onto its root `<span>`; `class` is not
+accepted. It and the other display components are importable from
+`@happyvertical/smrt-ui/display` as well as the package root.
 
 ### Touch targets for Checkbox, Radio and Switch
 
@@ -1138,6 +1141,22 @@ vertical gap.
 Use `PageLayout` inside an application shell to give each route responsive
 gutters, block padding, vertical rhythm, and the width appropriate to its
 content. It never creates a scroll container or claims viewport height.
+Use `Stack` for vertical or horizontal rhythm from the spacing tokens
+(`gap` `xs` to `xl`, optional `align`, `justify` and `wrap`), and
+`DescriptionList` for a term/description grid that collapses to one column on
+narrow screens (pass `items`, or `<dt>`/`<dd>` children).
+
+```svelte
+<script>
+  import { DescriptionList, Stack } from '@happyvertical/smrt-ui/layout';
+</script>
+
+<Stack gap="lg">
+  <DescriptionList items={[{ term: 'Status', description: 'Open' }]} />
+  <Stack direction="horizontal" gap="sm" wrap>...</Stack>
+</Stack>
+```
+
 Use `ActionGroup` for adjacent page or card actions; it wraps with token spacing
 and can justify actions at the start or end without form-specific behavior.
 
