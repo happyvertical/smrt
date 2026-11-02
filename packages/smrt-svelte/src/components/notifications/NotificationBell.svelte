@@ -193,6 +193,9 @@ $effect(() => {
   ol { display: grid; gap: var(--smrt-spacing-2); padding: 0; list-style: none; }
   li { padding-block: var(--smrt-spacing-2); border-block-end: var(--smrt-hairline); }
   li[data-read='false'] { border-inline-start: 3px solid var(--smrt-color-primary); padding-inline-start: var(--smrt-spacing-2); }
+  /* Notice titles are links: themed like the panel's other text, not the browser's default link blue (#4567). */
+  li a { color: var(--smrt-color-primary); font-weight: var(--smrt-typography-weight-semibold, 600); text-decoration: underline; text-underline-offset: 0.15em; }
+  li a:hover, li a:focus-visible { color: var(--smrt-color-on-surface); }
   p { overflow-wrap: anywhere; }
 }
 </style>

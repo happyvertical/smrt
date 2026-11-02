@@ -113,4 +113,5 @@ own changes, so a host can close the panel itself. The panel light-dismisses
 (#4566): a pointer-down outside the bell (document capture, like `Popover`),
 Escape at the document level wherever focus is (returns focus to the trigger),
 and activating a notice link (closes without refocusing, so navigation keeps
-focus).
+focus). Notice titles are links styled in `--smrt-color-primary` with an
+underline, not the browser default (#4567).
