@@ -108,3 +108,9 @@ and `limit`. `iconOnly` (default false) swaps the text trigger for an
 panel under the trigger) or `'beside'` (panel opens at the trigger's inline
 end, top-aligned, for a collapsed rail; `data-placement` on the root).
 `variant` is passed to the trigger `Button` (default `'ghost'`).
+`open` is bindable (`bind:open`) and `onopenchange(open)` reports the bell's
+own changes, so a host can close the panel itself. The panel light-dismisses
+(#4566): a pointer-down outside the bell (document capture, like `Popover`),
+Escape at the document level wherever focus is (returns focus to the trigger),
+and activating a notice link (closes without refocusing, so navigation keeps
+focus).
