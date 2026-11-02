@@ -17,7 +17,8 @@ authorizer, private media delivery, facet semantics and migration/test matrix.
 
 Guardians author courses with `CourseAuthoringService`: append-only course and
 lesson revisions, a reviewed release that materializes immutable lessons,
-reversible archive, and recorded enrollment pins and upgrades. See the
+reversible archive, recorded enrollment pins and upgrades, a recorded
+visibility (`family`, `groups`, `public`) and an education-owned cover image. See the
 [course authoring contract](agents/course-authoring-service.md).
 
 ## Install

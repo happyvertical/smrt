@@ -21,7 +21,7 @@ change to existing tables, test-pinned); the runtime never creates tables.
 
 ## Actions and host mapping
 
-`education.course.read-draft|author|generate|review|release|assign|archive`. The host
+`education.course.read-draft|author|generate|review|release|assign|archive|set-visibility|set-cover`. The host
 maps roles; the authorizer also receives `operation`, `courseId`,
 `enrollmentId`/`learnerId` and `delegatingGuardianUserId` (agent calls) and must
 re-validate that delegation on the supplied executor. The service checks the
@@ -143,6 +143,49 @@ course is not-found, a foreign enrollment a denial). Lists take `limit` (default
   authorizer, `education.learner.read`; the learner or an authorized guardian): only the
   enrollment's effective lessons (else `QuestionResponseScopeError`), keyless bundle,
   no materials or provenance, personal-use body withheld (`bodyWithheld`).
+
+## Visibility and cover
+
+Two optional attributes live on the stable `AuthoredCourse` identity row (added
+columns `visibility`, `cover_asset_id` on `courses`; additive, migration-tested on
+a populated database). Each change is an append-only row (`CourseVisibilityChange`,
+`CourseCoverChange`: previous, new, actor, delegation, request key, time) and every
+write needs a `requestKey`; the same key with another payload is
+`CourseRequestKeyConflictError`, an unchanged value writes nothing. Reads degrade
+to `family` and no cover on a database without the columns; a write without the
+change tables throws `schema-unavailable`.
+
+- `setVisibility({ courseId, visibility: 'family'|'groups'|'public', requestKey })`
+  (action `education.course.set-visibility`, operation `set-visibility`). Default
+  is `family`. A stored value of `''` (never set, including every course authored
+  before this existed) reads as `family`; an explicit `setVisibility('family')` on
+  such a course is recorded (it is how a host pins a course family-only).
+  A course whose licence is `personal-use-copy` (head revision or any release,
+  which never loosens) refuses `groups` and `public` with
+  `CourseVisibilityRefusedError` (`visibility-refused`). A revision that turns a
+  `groups`/`public` course personal-use narrows it to `family` in the same
+  transaction with a change row (`reason: 'licence'`, request key
+  `licence:<revisionId>`). `AuthoredCourse.save()` also refuses the combination.
+- `listCourses({ visibility })` filters by effective visibility; views
+  (`CourseSummaryView`, `CourseStateView`) carry `visibility` and `coverAssetId`.
+- `setCover({ courseId, assetId: string | null, requestKey })` (action
+  `education.course.set-cover`, operation `set-cover`; `null` clears). The asset
+  must be a material this course copied into the tenant (`materialCopy`: the only
+  education-owned provenance the service records), with image content type
+  (png, jpeg, webp, gif), in the course's tenant, never `answer-key` in any lesson
+  revision or released lesson link, and readable by the acting user through the
+  asset guard (a private asset only when its owner is the actor's profile).
+  Anything else is `CourseCoverInvalidError` (`cover-invalid`, `reason`:
+  `missing`, `not-image`, `not-course-material`, `answer-key`, `unreadable`);
+  fail closed. A host that wants a standalone cover adds the image as an
+  attachment material of a lesson first.
+- `release` snapshots the current cover onto the immutable release Course row
+  (re-checked for eligibility, not for the releasing actor's read; dropped if no
+  longer eligible). `CourseReleaseView.coverAssetId` and
+  `latestRelease.coverAssetId` report it; later cover changes never rewrite it.
+- Group sharing: see [group sharing](group-sharing.md#authored-course-visibility).
+  `public` is a read-filter label: no marketplace, no payment, and no cross-tenant
+  read exists for it.
 
 ## Archive and discard
 
