@@ -121,6 +121,25 @@ that declares `svelte` anyway only loses an optional context import.
 Transitive-only object modules are loaded through `importSmrtDependency()`
 from their provider's context, which needs no root import.
 
+**TypeScript-source providers are Vite-only (#3092).** A workspace package
+linked into the consumer may export TypeScript source (`"import":
+"./src/index.ts"`). Plain Node cannot evaluate it as a provider (no `./x.js` →
+`./x.ts` rewriting, no type stripping under `node_modules`, no decorator
+stripping), so any register import whose target resolves to `.ts`/`.mts`/
+`.cts`/`.tsx` (`resolvesToTypeScriptSource`, ESM `import` conditions from the
+consumer, or from the provider for transitive modules) is emitted as
+`SMRT_VITE_RUNTIME ? await import(...) : {}` with `SMRT_VITE_RUNTIME =
+Boolean(import.meta.env)`, and its export/collection consistency throws are
+gated the same way. Vite SSR therefore registers those constructors exactly as
+before, while `smrt db:migrate` and CLIs load the register, warn once on
+stderr, and rely on `.smrt/manifest.json` for those objects. Generation warns
+too. Not covered: the compiled worker artifact (`.smrt/runtime/register.js`) is
+a Vite build, so `import.meta.env` is constant there and the externalized
+TypeScript import still fails when a plain-Node worker starts. Publish a
+compiled JS export to register such objects outside Vite.
+Regression: the `#3092` tests in `index.test.ts` (plain-Node and real Vite
+`ssrLoadModule` loads of one generated register, and the transitive gating).
+
 Selective SSR compilation compares a JavaScript barrel's `svelte` export target
 against the package instance visible from its actual importer. pnpm may install
 the same version in multiple peer contexts; the app-root package directory is
