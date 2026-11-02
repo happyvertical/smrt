@@ -717,6 +717,12 @@ Prompts:
 - `@happyvertical/smrt-core` -- manifest and object registry
 - `@happyvertical/smrt-types` -- shared domain knowledge contract
 
+The Node HTTP adapter declares a server peer dependency; keep the adapter,
+server, and test client on a coherent supported release set. `pnpm verify:pack`
+from this package installs the packed production graph in a cold consumer with
+strict peer validation, so workspace resolution cannot hide an incompatible
+published pair.
+
 ## License
 
 MIT
