@@ -98,6 +98,8 @@ export class QuestionExtractionRecord extends SmrtObject {
   sourceKind: QuestionExtractionSourceKind = 'worksheet_scan';
   /** Digest of the reviewed proposal arguments; binds the later human decision. */
   proposalDigest = '';
+  /** Digest of every preserve input (grounding, extractor, worksheets): same-key replays must match. */
+  inputDigest = '';
   @field({ type: 'text' }) extractorJson = '{}';
   @field({ type: 'text' }) extractionJson = '{}';
   @field({ type: 'text' }) matchJson = '{}';
@@ -116,6 +118,7 @@ export class QuestionExtractionRecord extends SmrtObject {
     requireText(this.analysisAttemptId, 'Extraction requires an attempt');
     requireText(this.sourceIdentity, 'Extraction requires a source identity');
     requireText(this.proposalDigest, 'Extraction requires a proposal digest');
+    requireText(this.inputDigest, 'Extraction requires an input digest');
     requireText(this.recordedByUserId, 'Extraction requires an actor');
     if (!QUESTION_EXTRACTION_SOURCE_KINDS.includes(this.sourceKind))
       throw new Error('Invalid extraction source kind');

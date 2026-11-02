@@ -42,6 +42,12 @@ identity, then `applyExtraction`.
   so unreadable or unsupported content is marked, never dropped. Items that
   cannot be read keep their key and numbering with `status` `unreadable` or
   `unsupported` and a null prompt; other gaps go in `omissions`.
+- What ingestion itself did not extract stays visible. A retained original with
+  no result, and pages that ingestion omitted or failed, are kept in the
+  grounding: the extractor may cite them, and any it does not cover are added as
+  `unreadable` pages with a `not_extracted` omission. Truncation and
+  `source_incomplete` warnings are carried to `extraction.sourceWarnings` and
+  the handler preview. More than 1000 pages is refused, never trimmed.
 - Questions hold printed text only. Learner handwriting goes in `studentWork`
   (null `observed` when illegible) and never becomes question content.
 - Anchors cite an original `evidenceId`, a physical page the provider
@@ -59,7 +65,8 @@ identity, then `applyExtraction`.
 `matchExtractedQuestions(extraction, worksheets, { expectedWorksheetVersionId })`
 is pure. A match needs a worksheet identity (the `wsv1-` id generated printables
 print in their footer, or a host-supplied expectation), plus the printed
-position (`1`, `1.`, `Q1`) of an item on that worksheet. Section label, a
+position (`1`, `1.`, `Q1`) of an item on that worksheet. Every claimant of a
+position counts, including one that fails a layout check. Section label, a
 source-printed response type, and choice and subpart counts must agree. Prompt
 text is never used. A printed id that disagrees with the expectation, any layout
 conflict, or two items claiming one position is `ambiguous` and stays
@@ -73,8 +80,9 @@ response services.
 
 `sourceIdentity` is a digest of the source kind and the sorted retained evidence
 hashes, never text. Preserve is idempotent per (tenant, intake item, analysis
-attempt); a different payload for the same attempt throws
-`CourseRequestKeyConflictError`. Apply writes questions through `createQuestion`
+attempt). A different payload for the same attempt throws
+`CourseRequestKeyConflictError`. The payload includes the grounding, the
+extractor identity and the expected and supplied worksheets. Apply writes questions through `createQuestion`
 with request key `qx:<sourceIdentity>:<questionKey>`, so re-ingesting the same
 bytes replays the same questions (`replayed`). Identical prompts under different
 keys stay separate records. If the same source is extracted again with different

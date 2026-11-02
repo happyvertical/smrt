@@ -444,15 +444,48 @@ export function normalizeQuestionExtraction(
     };
   });
   // Coverage: each retained source, and each of its known pages, is reported.
+  // What ingestion itself never extracted is added visibly, never dropped.
+  const notExtracted: QuestionExtraction['omissions'] = [];
   for (const source of grounding.sources) {
     const required = source.pages.length ? source.pages : [null];
     for (const p of required) {
       const covered =
         pageKeys.has(`${source.evidenceId}\u0000${p ?? ''}`) ||
         (p === null && pageKeys.has(`${source.evidenceId}\u00001`));
-      if (!covered) bad('Extraction omits a retained source page');
+      if (covered) continue;
+      const missing =
+        source.extracted === false ||
+        (p !== null && (source.omittedPages ?? []).includes(p));
+      if (!missing) bad('Extraction omits a retained source page');
+      pages.push({
+        evidenceId: source.evidenceId,
+        page: p,
+        role: 'unknown',
+        readability: 'unreadable',
+      });
+      notExtracted.push({
+        evidenceId: source.evidenceId,
+        page: p,
+        reason: 'not_extracted',
+        description:
+          'Not extracted by ingestion (truncated output or a failed page).',
+      });
     }
   }
+  const sourceWarnings = [
+    ...new Set([
+      ...list(grounding.warnings ?? [], 16, 'source warnings').map((w) => {
+        if (typeof w !== 'string' || !/^[a-z][a-z0-9_.-]{0,47}$/.test(w))
+          bad('Invalid source warning');
+        return w as string;
+      }),
+      ...(grounding.sources.some(
+        (s) => s.extracted === false || s.incomplete || s.omittedPages?.length,
+      )
+        ? ['source_incomplete']
+        : []),
+    ]),
+  ].sort();
 
   const sectionIds = new Set<string>();
   const sections = list(v.sections, MAX_EXTRACTED_SECTIONS, 'sections').map(
@@ -530,7 +563,8 @@ export function normalizeQuestionExtraction(
     sections,
     questions,
     studentWork,
-    omissions,
+    omissions: [...omissions, ...notExtracted],
+    sourceWarnings,
   };
 }
 
@@ -798,9 +832,14 @@ export function matchExtractedQuestions(
     };
   });
   // Two extracted items claiming one position: neither is attached.
+  // Every claimant of an existing position counts, including ones that failed a
+  // layout check, so a contested position never matches.
   const claims = new Map<number, number>();
   for (const m of proposed)
-    if (m.outcome === 'matched' && m.ordinal !== null)
+    if (
+      m.ordinal !== null &&
+      (m.outcome === 'matched' || m.reason === 'layout_conflict')
+    )
       claims.set(m.ordinal, (claims.get(m.ordinal) ?? 0) + 1);
   const questions = proposed.map((m) =>
     m.outcome === 'matched' && (claims.get(m.ordinal as number) ?? 0) > 1

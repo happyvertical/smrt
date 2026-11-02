@@ -18,6 +18,7 @@ import { intakeOriginalEvidence } from './intake-original-evidence.js';
 import type { WorksheetBundle } from './question-contracts.js';
 import { QUESTION_EXTRACTION_ARGS_SCHEMA } from './question-extraction.js';
 import {
+  MAX_EXTRACTED_PAGES,
   type QuestionExtractionGrounding,
   QuestionExtractionPendingError,
   QuestionExtractionValidationError,
@@ -111,6 +112,7 @@ function summary(view: QuestionExtractionView) {
     ).length,
     studentWork: view.studentWork.length,
     omissions: view.extraction.omissions.length,
+    sourceWarnings: view.extraction.sourceWarnings,
     extractionReviewRequired: true,
   };
 }
@@ -192,6 +194,7 @@ type Snapshot = Awaited<ReturnType<IngestionService['getCompletedAnalysis']>>;
 /** Retained original evidence of one completed analysis, as extraction grounding. */
 export function questionExtractionGrounding(
   snapshot: Snapshot,
+  warnings: readonly string[] = [],
 ): QuestionExtractionGrounding {
   const results = Array.isArray(snapshot.result.output?.results)
     ? (snapshot.result.output.results as unknown[])
@@ -199,7 +202,39 @@ export function questionExtractionGrounding(
   const originals = intakeOriginalEvidence(snapshot.evidence ?? []).filter(
     (e) => e.mediaType !== 'application/json',
   );
-  const sources = originals.flatMap((evidence) => {
+  type Location = {
+    kind?: string;
+    page?: number;
+    startPage?: number;
+    endPage?: number;
+  };
+  /** Physical pages named by one location; ranges are expanded, never trimmed. */
+  const pagesOf = (location: Location | undefined): number[] => {
+    const valid = (n: unknown): n is number =>
+      Number.isSafeInteger(n) && (n as number) > 0;
+    if (location?.kind === 'page' && valid(location.page))
+      return [location.page];
+    if (
+      location?.kind === 'pages' &&
+      valid(location.startPage) &&
+      valid(location.endPage) &&
+      location.endPage >= location.startPage
+    ) {
+      if (location.endPage - location.startPage >= MAX_EXTRACTED_PAGES)
+        throw new QuestionExtractionValidationError('Too many source pages');
+      return Array.from(
+        { length: location.endPage - location.startPage + 1 },
+        (_, i) => (location.startPage as number) + i,
+      );
+    }
+    return [];
+  };
+  const sources = originals.map((evidence) => {
+    const base = {
+      evidenceId: evidence.id,
+      sha256: evidence.contentHash,
+      mediaType: evidence.mediaType,
+    };
     const result = results.find(
       (value) =>
         !!value &&
@@ -210,50 +245,61 @@ export function questionExtractionGrounding(
           ?.contentHash === evidence.contentHash,
     ) as
       | {
-          capabilities?: { location?: string }[];
-          segments?: {
-            location?: { kind?: string; page?: number };
-            observedRegions?: unknown;
-          }[];
+          segments?: { location?: Location; observedRegions?: unknown }[];
+          errors?: { location?: Location }[];
+          omitted?: Location[];
+          truncated?: boolean;
         }
       | undefined;
-    if (!result) return [];
+    // A retained original with no result is still a source: it must stay visible.
+    if (!result) return { ...base, pages: [], extracted: false };
     const segments = Array.isArray(result.segments) ? result.segments : [];
-    const pageCapable =
-      Array.isArray(result.capabilities) &&
-      result.capabilities.some((c) => c.location === 'page');
-    const pages = pageCapable
-      ? [
-          ...new Set(
-            segments.flatMap((s) =>
-              s.location?.kind === 'page' &&
-              Number.isSafeInteger(s.location.page) &&
-              (s.location.page ?? 0) > 0
-                ? [s.location.page as number]
-                : [],
-            ),
-          ),
-        ]
-          .sort((a, b) => a - b)
-          .slice(0, 1000)
-      : [];
+    const failed = [
+      ...(Array.isArray(result.omitted) ? result.omitted : []),
+      ...(Array.isArray(result.errors)
+        ? result.errors.map((e) => e?.location)
+        : []),
+    ];
+    const extractedPages = segments.flatMap((s) => pagesOf(s.location));
+    const omittedPages = [...new Set(failed.flatMap((l) => pagesOf(l)))]
+      .filter((p) => !extractedPages.includes(p))
+      .sort((a, b) => a - b);
+    const pages = [...new Set([...extractedPages, ...omittedPages])].sort(
+      (a, b) => a - b,
+    );
+    if (pages.length > MAX_EXTRACTED_PAGES)
+      throw new QuestionExtractionValidationError('Too many source pages');
     const catalogs = evidence.mediaType.startsWith('image/')
       ? segments
           .filter((s) => s.location?.kind === 'source')
           .map((s) => normalizeObservedImageRegions(s.observedRegions))
           .filter((c) => c !== undefined)
       : [];
-    return [
-      {
-        evidenceId: evidence.id,
-        sha256: evidence.contentHash,
-        mediaType: evidence.mediaType,
-        pages,
-        ...(catalogs.length === 1 ? { observedRegions: catalogs[0] } : {}),
-      },
-    ];
+    const incomplete = result.truncated === true || failed.length > 0;
+    return {
+      ...base,
+      pages,
+      ...(omittedPages.length ? { omittedPages } : {}),
+      ...(incomplete ? { incomplete: true } : {}),
+      ...(catalogs.length === 1 ? { observedRegions: catalogs[0] } : {}),
+    };
   });
-  return { version: 1, extractionAttemptId: snapshot.attemptId, sources };
+  const codes = [
+    ...new Set([
+      ...warnings.filter((w) => /^[a-z][a-z0-9_.-]{0,47}$/.test(w)),
+      ...(snapshot.result.output?.truncated === true
+        ? ['source_incomplete']
+        : []),
+    ]),
+  ]
+    .sort()
+    .slice(0, 16);
+  return {
+    version: 1,
+    extractionAttemptId: snapshot.attemptId,
+    ...(codes.length ? { warnings: codes } : {}),
+    sources,
+  };
 }
 
 /**
@@ -313,7 +359,7 @@ export async function preserveQuestionExtractionAnalysis(input: {
     ...input.request,
     intakeItemId: input.itemId,
     analysisAttemptId: snapshot.attemptId,
-    grounding: questionExtractionGrounding(snapshot),
+    grounding: questionExtractionGrounding(snapshot, generation.warnings ?? []),
     extractor: {
       provider: generative.provider,
       model: generative.model,

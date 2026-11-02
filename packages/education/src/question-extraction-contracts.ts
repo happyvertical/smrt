@@ -83,11 +83,14 @@ export const EXTRACTED_LEGIBILITY: readonly ExtractedLegibility[] = [
 export type ExtractedOmissionReason =
   | 'unreadable'
   | 'unsupported'
-  | 'out_of_scope';
+  | 'out_of_scope'
+  /** Ingestion did not extract it (truncated output or a failed page). */
+  | 'not_extracted';
 export const EXTRACTED_OMISSION_REASONS: readonly ExtractedOmissionReason[] = [
   'unreadable',
   'unsupported',
   'out_of_scope',
+  'not_extracted',
 ];
 
 /** Source anchor as cited by the extractor: evidence, physical page, region id. */
@@ -183,18 +186,31 @@ export interface QuestionExtraction
   extends Omit<QuestionExtractionInput, 'questions' | 'studentWork'> {
   questions: ExtractedQuestion[];
   studentWork: ExtractedStudentWork[];
+  /**
+   * Source completeness codes from ingestion (for example `source_incomplete`).
+   * Non-empty means the extraction was made from partial input: review it as such.
+   */
+  sourceWarnings: string[];
 }
 
 /** Retained evidence an extraction may cite, from one completed ingestion analysis. */
 export interface QuestionExtractionGrounding {
   version: 1;
   extractionAttemptId: string;
+  /** Bounded ingestion warning codes (`^[a-z][a-z0-9_.-]{0,47}$`), carried to the review. */
+  warnings?: string[];
   sources: Array<{
     evidenceId: string;
     sha256: string;
     mediaType: string;
-    /** Known physical pages; empty for single images and page-less sources. */
+    /** Known physical pages (extracted and omitted); empty for single images and page-less sources. */
     pages: number[];
+    /** Pages ingestion reported but did not extract (truncated or failed). */
+    omittedPages?: number[];
+    /** False when ingestion produced no result for this original at all. */
+    extracted?: boolean;
+    /** True when ingestion reported truncation or errors for this original. */
+    incomplete?: boolean;
     observedRegions?: {
       version: 1;
       coordinateSpace: 'display-oriented';

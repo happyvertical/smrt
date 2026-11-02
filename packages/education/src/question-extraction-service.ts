@@ -192,6 +192,18 @@ export class QuestionExtractionService extends QuestionAuthoringService {
       extraction.sourceKind,
       request.grounding,
     );
+    // Same intake attempt, different inputs is a conflict, never a silent replay.
+    const inputDigest = questionExtractionProposalDigest({
+      proposalDigest,
+      sourceIdentity,
+      grounding: request.grounding,
+      extractor: identity,
+      expectedWorksheetVersionId: request.expectedWorksheetVersionId ?? null,
+      worksheets: (request.worksheets ?? []).map((w) => [
+        w.worksheetVersionId,
+        w.items.map((i) => [i.ordinal, i.questionRevisionId]),
+      ]),
+    });
     const worksheets = [...(request.worksheets ?? [])];
     const id =
       extraction.worksheetVersionId ?? request.expectedWorksheetVersionId;
@@ -221,7 +233,10 @@ export class QuestionExtractionService extends QuestionAuthoringService {
           analysis_attempt_id: request.analysisAttemptId,
         })) as Row | null;
         if (existing) {
-          if (existing.proposal_digest !== proposalDigest)
+          if (
+            existing.proposal_digest !== proposalDigest ||
+            existing.input_digest !== inputDigest
+          )
             throw new CourseRequestKeyConflictError();
           return this.view(tx, existing);
         }
@@ -248,6 +263,7 @@ export class QuestionExtractionService extends QuestionAuthoringService {
           sourceIdentity,
           sourceKind: extraction.sourceKind,
           proposalDigest,
+          inputDigest,
           extractorJson: JSON.stringify(identity),
           extractionJson: JSON.stringify(extraction),
           matchJson: JSON.stringify(match),

@@ -38,6 +38,7 @@ import {
   educationQuestionExtractionHandler,
   preserveQuestionExtractionAnalysis,
   QUESTION_EXTRACTION_HANDLER_ID,
+  questionExtractionGrounding,
 } from '../ingestion.js';
 import { learnerFixture } from './learner-workflows.js';
 import { submissionClasses } from './submission-workflows.js';
@@ -411,6 +412,114 @@ describe('validation', () => {
   });
 });
 
+describe('partial sources', () => {
+  const partial = grounding({
+    warnings: ['source_incomplete', 'bad_code'],
+    sources: [
+      {
+        evidenceId: PDF,
+        sha256: 'b'.repeat(64),
+        mediaType: 'application/pdf',
+        pages: [1, 2],
+        omittedPages: [2],
+        incomplete: true,
+      },
+      {
+        evidenceId: IMG,
+        sha256: 'a'.repeat(64),
+        mediaType: 'image/jpeg',
+        pages: [],
+        extracted: false,
+      },
+    ],
+  });
+  const onlyPageOne = args({
+    pages: [
+      { evidenceId: PDF, page: 1, role: 'exercise', readability: 'readable' },
+    ],
+    questions: [
+      question({ anchors: [{ evidenceId: PDF, page: 1, regionId: null }] }),
+    ],
+    studentWork: [],
+  });
+
+  it('adds what ingestion never extracted as visible entries and warns', () => {
+    const out = normalizeQuestionExtraction(onlyPageOne, partial);
+    expect(out.pages).toEqual([
+      { evidenceId: PDF, page: 1, role: 'exercise', readability: 'readable' },
+      { evidenceId: PDF, page: 2, role: 'unknown', readability: 'unreadable' },
+      {
+        evidenceId: IMG,
+        page: null,
+        role: 'unknown',
+        readability: 'unreadable',
+      },
+    ]);
+    expect(out.omissions.map((o) => [o.evidenceId, o.page, o.reason])).toEqual([
+      [PDF, 2, 'not_extracted'],
+      [IMG, null, 'not_extracted'],
+    ]);
+    expect(out.sourceWarnings).toEqual(['bad_code', 'source_incomplete']);
+    // An extractor may honestly cite an omitted page.
+    expect(
+      normalizeQuestionExtraction(
+        args({
+          pages: [
+            {
+              evidenceId: PDF,
+              page: 1,
+              role: 'exercise',
+              readability: 'readable',
+            },
+            {
+              evidenceId: PDF,
+              page: 2,
+              role: 'unknown',
+              readability: 'unreadable',
+            },
+            {
+              evidenceId: IMG,
+              page: null,
+              role: 'cover',
+              readability: 'unreadable',
+            },
+          ],
+          questions: [],
+          studentWork: [],
+          omissions: [
+            {
+              evidenceId: PDF,
+              page: 2,
+              reason: 'unreadable',
+              description: 'Torn',
+            },
+          ],
+        }),
+        partial,
+      ).omissions,
+    ).toHaveLength(1);
+  });
+
+  it('still refuses an extracted page the extractor left out', () => {
+    expectInvalid(
+      args({
+        pages: [
+          {
+            evidenceId: PDF,
+            page: 2,
+            role: 'exercise',
+            readability: 'readable',
+          },
+        ],
+        questions: [],
+        studentWork: [],
+      }),
+      partial,
+    );
+    expectInvalid(onlyPageOne, { ...partial, warnings: ['NOT A CODE'] });
+  });
+});
+
 describe('identity', () => {
   it('is derived from source kind and evidence hashes, never from text', () => {
     const g = grounding();
@@ -574,6 +683,27 @@ describe('matching', () => {
       'duplicate_position',
     ]);
     expect(dup.every((q) => q.questionRevisionId === null)).toBe(true);
+    // One compatible and one conflicting claimant of position 1: neither attaches.
+    const contested = matchExtractedQuestions(
+      extraction({
+        ...base,
+        questions: [
+          question(),
+          question({
+            key: 'u:other:1',
+            numbering: '1',
+            responseType: 'numeric',
+          }),
+        ],
+        studentWork: [],
+      }),
+      [worksheet()],
+    ).questions;
+    expect(contested.map((q) => q.reason)).toEqual([
+      'duplicate_position',
+      'layout_conflict',
+    ]);
+    expect(contested.every((q) => q.questionRevisionId === null)).toBe(true);
     // Printed id disagreeing with the host's expectation: nothing attaches.
     expect(
       matchExtractedQuestions(extraction(base), [worksheet()], {
@@ -832,6 +962,30 @@ describe('preserve', () => {
     expect(await s.count('question_extractions')).toBe(1);
     await expect(
       s.preserve(args({ questions: [question({ prompt: 'Changed' })] })),
+    ).rejects.toBeInstanceOf(CourseRequestKeyConflictError);
+    // Same attempt and arguments, different retained evidence: a conflict too.
+    await expect(
+      s.preserve(args(), {
+        g: grounding({
+          sources: grounding().sources.map((x) => ({
+            ...x,
+            sha256: 'e'.repeat(64),
+          })),
+        }),
+      }),
+    ).rejects.toBeInstanceOf(CourseRequestKeyConflictError);
+    await expect(
+      s.as(s.guardian, () =>
+        s.service.preserveExtraction({
+          ...s.guardian,
+          intakeItemId: 'item-1',
+          analysisAttemptId: 'attempt-1',
+          grounding: grounding(),
+          extractor: { provider: 'test', model: 'vision', version: '1' },
+          extraction: args(),
+          expectedWorksheetVersionId: WSV,
+        }),
+      ),
     ).rejects.toBeInstanceOf(CourseRequestKeyConflictError);
     await expect(s.preserve({ ...args(), extra: true })).rejects.toBeInstanceOf(
       QuestionExtractionValidationError,
@@ -1220,6 +1374,95 @@ describe('ingestion', () => {
     );
     expect(result).toEqual({ extractionId: view.extractionId });
     expect(await s.count('questions')).toBe(1);
+  });
+
+  it('keeps a missing result and omitted pages in grounding, and shows the warning', async () => {
+    const s = await setup();
+    const snap = snapshot([suggestion(args())], 'needs_review');
+    // A second retained original that ingestion produced no result for.
+    snap.evidence.push({
+      id: PDF,
+      contentHash: 'b'.repeat(64),
+      mediaType: 'application/pdf',
+      parentEvidenceId: null,
+      partId: 'p2',
+    });
+    (snap.result.output.proposals as Record<string, unknown>).warnings = [
+      'source_incomplete',
+    ];
+    expect(
+      questionExtractionGrounding(snap as never).sources.find(
+        (x) => x.evidenceId === PDF,
+      ),
+    ).toMatchObject({ pages: [], extracted: false });
+    const view = await s.as(s.guardian, () =>
+      preserveQuestionExtractionAnalysis({
+        ingestion: fakeIngestion(snap),
+        extractions: s.service,
+        request: s.guardian,
+        itemId: 'item-1',
+      }),
+    );
+    expect(view.extraction.sourceWarnings).toEqual(['source_incomplete']);
+    expect(view.extraction.pages.map((p) => [p.evidenceId, p.page])).toEqual([
+      [IMG, null],
+      [PDF, null],
+    ]);
+    expect(view.extraction.omissions.at(-1)).toMatchObject({
+      evidenceId: PDF,
+      reason: 'not_extracted',
+    });
+    // The missing original changes the source identity: no false replay later.
+    expect(view.sourceIdentity).not.toBe(
+      questionExtractionSourceIdentity('worksheet_scan', grounding()),
+    );
+    // With a truncated result, omitted pages are known, citable and required.
+    (snap.result.output.results as unknown[]).push({
+      evidence: { id: PDF, contentHash: 'b'.repeat(64) },
+      segments: [{ location: { kind: 'page', page: 1 } }],
+      omitted: [{ kind: 'pages', startPage: 2, endPage: 3 }],
+      errors: [],
+      truncated: true,
+    });
+    expect(
+      questionExtractionGrounding(snap as never).sources.find(
+        (x) => x.evidenceId === PDF,
+      ),
+    ).toMatchObject({
+      pages: [1, 2, 3],
+      omittedPages: [2, 3],
+      incomplete: true,
+    });
+    const handler = educationQuestionExtractionHandler({
+      extractions: s.service,
+      request: s.guardian,
+    });
+    const preview = await s.as(s.guardian, () =>
+      handler.preview(
+        args() as never,
+        {
+          db: s.db,
+          scope: {
+            tenantId: s.guardian.tenantId,
+            actorId: s.guardian.actorUserId,
+          },
+          itemId: 'item-1',
+          policy: { requireReview: true },
+          assertTarget: async () => {},
+        } as unknown as HandlerContext,
+      ),
+    );
+    expect(preview.display.sourceWarnings).toEqual(['source_incomplete']);
+  });
+
+  it('refuses an absurd page range instead of truncating it', () => {
+    const snap = snapshot([]);
+    (snap.result.output.results[0] as Record<string, unknown>).omitted = [
+      { kind: 'pages', startPage: 1, endPage: 5000 },
+    ];
+    expect(() => questionExtractionGrounding(snap as never)).toThrow(
+      QuestionExtractionValidationError,
+    );
   });
 
   it('reports pending, missing and competing proposals as typed pending errors', async () => {
