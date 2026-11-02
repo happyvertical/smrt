@@ -84,16 +84,9 @@
  * manual `.gitignore` edit outside the managed block is preserved.
  */
 
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  statSync,
-  writeFileSync,
-} from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
-import { resolve as resolveImport } from 'import-meta-resolve';
+import { consumerResolvesImport } from './consumer-import.js';
 import { AUTO_GENERATED_ROUTE_HEADER } from './route-header.js';
 import { resolveSvelteKitConfigImport } from './sveltekit-config-import.js';
 import type { SvelteKitOptions } from './sveltekit-generator.js';
@@ -106,15 +99,10 @@ import type { SvelteKitOptions } from './sveltekit-generator.js';
  * physical path) is the chosen signal.
  */
 export function consumerHasSmrtUsers(projectRoot: string): boolean {
-  try {
-    const target = resolveImport(
-      '@happyvertical/smrt-users/sveltekit',
-      pathToFileURL(join(projectRoot, 'package.json')).href,
-    );
-    return statSync(fileURLToPath(target)).isFile();
-  } catch {
-    return false;
-  }
+  return consumerResolvesImport(
+    projectRoot,
+    '@happyvertical/smrt-users/sveltekit',
+  );
 }
 
 /** Whether this invocation will own the `_resources` output file. */

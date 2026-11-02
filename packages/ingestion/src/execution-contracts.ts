@@ -29,6 +29,13 @@ interface HandlerBase {
   id: string;
   version: string;
   description: string;
+  /**
+   * Optional reviewer-facing display name (#4503), shown wherever the review
+   * components draw the handler (`id` otherwise). Presentation only: it is
+   * carried on the reviewer catalog (`listHandlers`), never on generation
+   * input, catalog digests or bindings, so adding one does not stale work.
+   */
+  label?: string;
   argsSchema: IntakeValues;
   resultSchema: IntakeValues;
   /** Schema-allowlisted record-ID fields, never arbitrary expression values. */

@@ -241,4 +241,15 @@ describe('StatusBadge', () => {
     });
     await expectNoA11yViolations(container);
   });
+
+  it('capitalizes by default and leaves the label as-is on request', () => {
+    render(StatusBadge, {
+      props: { status: 'ok', 'data-testid': 'a' } as never,
+    });
+    render(StatusBadge, {
+      props: { status: 'ok', case: 'as-is', 'data-testid': 'b' } as never,
+    });
+    expect(screen.getByTestId('a').classList.contains('as-is')).toBe(false);
+    expect(screen.getByTestId('b').classList.contains('as-is')).toBe(true);
+  });
 });

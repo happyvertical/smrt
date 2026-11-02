@@ -33,6 +33,8 @@ Apps and agents should depend on the public **asset runtime** rather than hand-w
 - `AssetRuntime.linkDerivation(source, derivative, { role })` — record provenance without touching bytes.
 - `AssetRuntime.setExtractionStatus(asset, status, { error?, extractedAt? })` — write canonical extraction metadata into the asset's description JSON sidecar. Non-destructive: if `description` is free-form prose or non-object JSON, the original value is preserved under the reserved `text` key instead of being overwritten. Existing JSON objects are merged into.
 
+- `AssetRuntime.getPrivateAssetMetadata({ tenantId, actorUserId, assetId })` → `PrivateAssetMetadata | null` — authorized, tenant-scoped display metadata read of one PRIVATE asset so hosts never read `assets` rows. Trusted server capability (host authorizes first); requires an ambient tenant actor matching `tenantId`/`actorUserId` exactly (throws otherwise, including empty ids). Result is an allowlist (`id, tenantId, name, mimeType, version, typeSlug, statusSlug, createdAt, updatedAt`); never owner, `sourceUri`, description/metadata sidecars. There is no size field on `Asset`. Missing, public and other-tenant assets all return `null`. Internally resolves the owner from the tenant-scoped private row, then reads through the guarded collection inside a one-id `withPrivateAssetAccess` that closes on return; inside an existing scope it can only narrow (throws `cannot widen` otherwise).
+
 Agents that need asset I/O should accept an `AssetRuntimeLike` in their options rather than asking callers to pass a store + collection separately.
 
 ## Serving contract
@@ -89,3 +91,5 @@ Registered slots: `asset-manager` (admin), `asset-grid` / `asset-list` (list), `
 `Asset.accessMode` and the mandatory owning interceptor protect private records
 across generated and parent STI surfaces. Use the exact actor/owner/ID capability
 only after host authorization; see [private assets](agents/private-assets.md).
+For display metadata (name, mime type, version) use `AssetRuntime.getPrivateAssetMetadata`
+instead of reading raw `assets` rows to discover the owner.

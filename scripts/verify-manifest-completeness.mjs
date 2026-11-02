@@ -7,13 +7,19 @@
  * created), which is exactly how `@happyvertical/smrt-jobs@0.27.41` shipped a
  * manifest missing `SmrtWorker` and broke every consumer's `TaskRunner.start()`.
  *
- * Usage: node scripts/verify-manifest-completeness.mjs [packageDir]
+ * Usage: node scripts/verify-manifest-completeness.mjs [packageDir] [--release]
  *   - packageDir defaults to the current working directory (so `prepack` can
  *     invoke it without arguments from each package directory).
+ *   - `--release` is the fail-closed mode the release pipeline uses for every
+ *     publishable package (`scripts/release-manifest-guards.mjs`, issue #2853):
+ *     an unbuilt or unloadable scanner fails instead of skipping, and a package
+ *     that declares `@smrt()` objects without a `./manifest` export fails
+ *     instead of skipping. The framework-infrastructure exemption still applies.
  *
  * Exit codes:
  *   0 — manifest complete, or check not applicable (package publishes no
- *       manifest / is framework infrastructure / scanner not built).
+ *       manifest / is framework infrastructure / scanner not built, the last
+ *       two only outside `--release`).
  *   1 — manifest is stale/incomplete or missing while objects exist in source.
  *
  * @see https://github.com/happyvertical/smrt/issues/1483
@@ -25,7 +31,33 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(scriptDir, '..');
-const packageDir = resolve(process.argv[2] ?? process.cwd());
+const args = process.argv.slice(2);
+const releaseMode = args.includes('--release');
+const unknownFlags = args.filter(
+  (arg) => arg.startsWith('-') && arg !== '--release',
+);
+if (unknownFlags.length > 0) {
+  console.error(
+    `[verify-manifest] ❌ unknown option(s): ${unknownFlags.join(', ')}`,
+  );
+  process.exit(1);
+}
+const packageDir = resolve(
+  args.find((arg) => !arg.startsWith('-')) ?? process.cwd(),
+);
+
+// Outside --release a missing scanner is a skip (prepack may run before a full
+// build); at release time it would silently disable the guard, so it fails.
+function scannerUnavailable(message) {
+  if (releaseMode) {
+    console.error(
+      `[verify-manifest] ❌ ${message}; release mode requires the manifest completeness check to run.`,
+    );
+    process.exit(1);
+  }
+  console.warn(`[verify-manifest] ${message}; skipping manifest completeness check.`);
+  process.exit(0);
+}
 
 // The scanner exposes verifyManifestCompleteness from its built output. The
 // publish pipeline builds every workspace package before per-package prepack
@@ -34,10 +66,9 @@ const packageDir = resolve(process.argv[2] ?? process.cwd());
 // guard is a safety net, not a hard dependency of every publish path.
 const scannerDist = resolve(repoRoot, 'packages/scanner/dist/index.js');
 if (!existsSync(scannerDist)) {
-  console.warn(
-    `[verify-manifest] @happyvertical/smrt-scanner is not built at ${scannerDist}; skipping manifest completeness check.`,
+  scannerUnavailable(
+    `@happyvertical/smrt-scanner is not built at ${scannerDist}`,
   );
-  process.exit(0);
 }
 
 let verifyManifestCompleteness;
@@ -46,13 +77,13 @@ try {
     pathToFileURL(scannerDist).href
   ));
 } catch (error) {
-  console.warn(
-    `[verify-manifest] Could not load scanner module; skipping check: ${error.message}`,
-  );
-  process.exit(0);
+  scannerUnavailable(`Could not load scanner module (${error.message})`);
 }
 
-const result = await verifyManifestCompleteness({ packageDir });
+const result = await verifyManifestCompleteness({
+  packageDir,
+  requireManifestExport: releaseMode,
+});
 const label = result.packageName ?? packageDir;
 
 if (result.status === 'ok') {

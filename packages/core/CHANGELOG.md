@@ -1,5 +1,29 @@
 # @happyvertical/smrt-core
 
+## 0.57.46
+
+### Patch Changes
+
+- ### Features
+  
+  - intake train from teamworks-os QA (#4502 #4503 #4504 #4522) (#4542) (ingestion)
+  - AssistantDock markdown, query aliases, surfaceId naming (#4505 #4507) (#4529) (chat,agents)
+  - shell train from teamworks-os QA (#4497-#4501) (#4528) (smrt-svelte,smrt-ui,features)
+- @happyvertical/smrt-config@0.57.46
+  - @happyvertical/smrt-scanner@0.57.46
+  - @happyvertical/smrt-types@0.57.46
+
+## 0.57.45
+
+### Patch Changes
+
+- ### Features
+  
+  - job cancel signal, private asset metadata, generated printables, refusal outcome (#4549)
+- @happyvertical/smrt-config@0.57.45
+  - @happyvertical/smrt-scanner@0.57.45
+  - @happyvertical/smrt-types@0.57.45
+
 ## 0.57.44
 
 ### Patch Changes

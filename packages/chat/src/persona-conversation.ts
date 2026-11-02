@@ -597,11 +597,13 @@ async function authorConversationReply(input: {
             args: record.args,
             status: record.status,
             errorCode: record.errorCode,
+            ...(record.recoverable ? { recoverable: true } : {}),
           },
           metadata: {
             toolStatus: record.status,
             errorKind: record.errorKind,
             errorCode: record.errorCode,
+            ...(record.recoverable ? { recoverable: true } : {}),
           },
         });
         toolMessages.push(message);

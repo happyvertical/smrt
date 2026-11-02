@@ -33,6 +33,14 @@ export interface JobProgressInput {
 export interface JobExecutionContext {
   job: JobContext & { tenantId?: string | null };
   logger: Logger;
+  /**
+   * Cooperative cancellation signal. Aborts when the job row is observed as
+   * `cancelled` (reason: `JobCancelledError`) or when the job times out under
+   * `timeoutBehavior` `'fail'`/`'kill'` (reason: `JobTimeoutError`). A plain
+   * `AbortSignal`: pass it to `fetch` or an LLM SDK. Handlers that ignore it
+   * behave exactly as before; aborting never changes job lifecycle state.
+   */
+  signal: AbortSignal;
   event(input: JobEventInput): Promise<void>;
   progress(input: JobProgressInput): Promise<void>;
   log(

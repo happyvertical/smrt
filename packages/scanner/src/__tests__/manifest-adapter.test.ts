@@ -65,6 +65,46 @@ describe('ManifestAdapter', () => {
         });
       });
 
+      it('should infer boolean from a bare @field({ default: <boolean> }) (#4295)', () => {
+        const bare = (
+          args: string,
+          extra: Partial<RawFieldDefinition> = {},
+        ): RawFieldDefinition => ({
+          name: 'archived',
+          accessibility: 'public',
+          typeAnnotation: null,
+          initializer: null,
+          optional: false,
+          hasDecimalPoint: false,
+          numericValue: null,
+          decorators: [{ name: 'field', arguments: [args] }],
+          isStatic: false,
+          readonly: false,
+          line: 1,
+          ...extra,
+        });
+
+        const flag = adapter.convertField(bare('{ default: false }'));
+        expect(flag?.type).toBe('boolean');
+        expect(flag?.default).toBe(false);
+        expect(flag?.required).toBe(false);
+        expect(
+          adapter.convertField(bare('{ required: true, default: true }'))
+            ?.required,
+        ).toBe(true);
+        // Only a boolean default is type evidence; others keep the text default.
+        expect(adapter.convertField(bare("{ default: 'no' }"))?.type).toBe(
+          'text',
+        );
+        expect(adapter.convertField(bare('{ default: 0 }'))?.type).toBe('text');
+        // An annotation still wins over the decorator default.
+        expect(
+          adapter.convertField(
+            bare('{ default: false }', { typeAnnotation: 'string' }),
+          )?.type,
+        ).toBe('text');
+      });
+
       it('should let nullable override required in @field options', () => {
         const field: RawFieldDefinition = {
           name: 'optionalName',

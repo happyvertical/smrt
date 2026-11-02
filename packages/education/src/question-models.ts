@@ -1,4 +1,5 @@
 import {
+  crossPackageRef,
   field,
   foreignKey,
   SmrtCollection,
@@ -9,6 +10,9 @@ import {
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import { normalizeQuestionContent } from './question-content.js';
 import {
+  GENERATED_PRINTABLE_AUDIENCES,
+  GENERATED_PRINTABLE_RELATIONSHIPS,
+  type GeneratedPrintableAudience,
   QUESTION_COMPLETION_MODES,
   QUESTION_PROVENANCES,
   type QuestionContentInput,
@@ -385,4 +389,72 @@ export class QuestionResponse extends SmrtObject {
 }
 export class QuestionResponseCollection extends SmrtCollection<QuestionResponse> {
   static readonly _itemClass = QuestionResponse;
+}
+
+/**
+ * Append-only record that a released lesson's worksheet render was attached to
+ * the print queue: one row per tenant, lesson, worksheet version and audience.
+ * The unique index is what makes concurrent first attaches converge. It holds
+ * ids only (never keys or locators); the PDF is a private education-owned asset.
+ */
+@TenantScoped({ mode: 'required' })
+@smrt({
+  tableName: 'generated_printables',
+  conflictColumns: [
+    'tenant_id',
+    'lesson_id',
+    'worksheet_version_id',
+    'audience',
+  ],
+  indexes: [
+    {
+      name: 'generated_printables_identity_unique',
+      columns: ['tenantId', 'lessonId', 'worksheetVersionId', 'audience'],
+      unique: true,
+    },
+  ],
+  ...closed,
+})
+export class GeneratedPrintable extends SmrtObject {
+  @tenantId() tenantId = '';
+  @foreignKey('Lesson', { required: true }) lessonId = '';
+  worksheetVersionId = '';
+  /** `learner` (relationship `printable`) or `guardian` (relationship `answer-key`). */
+  audience: GeneratedPrintableAudience = 'learner';
+  @crossPackageRef('@happyvertical/smrt-assets:Asset', { required: true })
+  assetId = '';
+  /** Provenance only: checked in `save()`, not a database constraint, so the table depends on lessons and assets alone. */
+  lessonRevisionId = '';
+  generatedByUserId = '';
+  delegatingGuardianUserId = '';
+  delegationId = '';
+  recordedAt = new Date();
+  constructor(options: Record<string, unknown> = {}) {
+    super(options);
+    adopt(this, options);
+  }
+  override async delete(): Promise<void> {
+    noDelete();
+  }
+  override async save(options?: SmrtSaveOptions): Promise<this> {
+    await requireInsert(this);
+    await requireOwned(this, 'lessons', this.lessonId);
+    await requireOwned(this, 'lesson_revisions', this.lessonRevisionId);
+    await requireOwned(this, 'assets', this.assetId);
+    requireText(
+      this.worksheetVersionId,
+      'Printable requires a worksheet version',
+    );
+    requireText(this.generatedByUserId, 'Printable requires an actor');
+    if (!GENERATED_PRINTABLE_AUDIENCES.includes(this.audience))
+      throw new Error('Invalid printable audience');
+    if (!GENERATED_PRINTABLE_RELATIONSHIPS[this.audience])
+      throw new Error('Invalid printable audience');
+    validDate(this.recordedAt);
+    this.requireInsertOnSave();
+    return super.save(options);
+  }
+}
+export class GeneratedPrintableCollection extends SmrtCollection<GeneratedPrintable> {
+  static readonly _itemClass = GeneratedPrintable;
 }

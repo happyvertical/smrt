@@ -108,6 +108,23 @@ describe('FeatureSettingsPanel', () => {
     expect(target.querySelectorAll('form')).toHaveLength(2);
   });
 
+  it('hides the key and package lines with showKeys=false but keeps the form input', () => {
+    const target = render({
+      showKeys: false,
+      features: [{ ...DRAFTS, packageName: '@test/app' }],
+    });
+    expect(target.querySelector('.fs-key')).toBeNull();
+    expect(target.querySelector('.fs-package')).toBeNull();
+    expect(
+      target.querySelector<HTMLInputElement>('input[name="featureKey"]')?.value,
+    ).toBe(DRAFTS.featureKey);
+    const shown = render({
+      features: [{ ...DRAFTS, packageName: '@test/app' }],
+    });
+    expect(shown.querySelector('.fs-key')).not.toBeNull();
+    expect(shown.querySelector('.fs-package')).not.toBeNull();
+  });
+
   it('falls back to the key when a definition has no label or description', () => {
     const target = render({
       features: [

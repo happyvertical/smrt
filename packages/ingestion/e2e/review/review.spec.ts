@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile, writeFile } from 'node:fs/promises';
-import { expect, type Page, test } from '@playwright/test';
+import { expect, type Locator, type Page, test } from '@playwright/test';
 import { embeddedPDF } from '../../src/test-support/extraction-fixtures.js';
 import { twoPagePDF } from './fixtures.js';
 
@@ -32,6 +32,19 @@ async function upload(
   );
   return new URL(page.url()).searchParams.get('itemId')!;
 }
+/**
+ * Where a handler schema draws argument fields, the raw JSON sits under a
+ * collapsed "Advanced" disclosure (#4503); open each as a reviewer would
+ * before typing. Value assertions read the JSON with `includeHidden`.
+ */
+async function reveal(scope: Page | Locator) {
+  await scope.getByTestId('advanced-arguments').first().waitFor();
+  const closed = scope.locator(
+    'details[data-testid="advanced-arguments"]:not([open]) > summary',
+  );
+  for (let count = await closed.count(); count > 0; count--)
+    await closed.first().click();
+}
 async function csrf(page: Page) {
   return (await (await page.request.get('/api/session')).json()).csrf as string;
 }
@@ -53,16 +66,19 @@ test('real PDF upload, exact correction, stale tab refusal, reload and one actua
   await expect(page.getByTestId('intake-review')).toContainText(
     'Meeting minutes',
   );
+  // Absent provider confidence draws nothing (#4503).
   await expect(
     page.getByText('Confidence unavailable', { exact: true }),
-  ).toBeVisible();
+  ).toHaveCount(0);
   await page
     .getByRole('button', { name: 'Prepare review', exact: true })
     .click();
   const args = page.getByRole('textbox', {
+    includeHidden: true,
     name: 'Exact arguments (JSON)',
     exact: true,
   });
+  await reveal(page);
   await expect(args).toBeVisible();
   const snapshot = await (
     await page.request.get(`/api/load?itemId=${itemId}`)
@@ -76,6 +92,7 @@ test('real PDF upload, exact correction, stale tab refusal, reload and one actua
   await expect(
     other.getByRole('button', { name: 'Approve', exact: true }),
   ).toBeVisible();
+  await reveal(page);
   await args.fill(
     JSON.stringify({
       title: 'Human reviewed title',
@@ -89,7 +106,11 @@ test('real PDF upload, exact correction, stale tab refusal, reload and one actua
     .getByRole('button', { name: 'Save edits for new review', exact: true })
     .click();
   await expect(
-    page.getByRole('textbox', { name: 'Exact arguments (JSON)', exact: true }),
+    page.getByRole('textbox', {
+      includeHidden: true,
+      name: 'Exact arguments (JSON)',
+      exact: true,
+    }),
   ).toHaveValue(/Human reviewed title/);
   await other.getByRole('button', { name: 'Approve', exact: true }).click();
   await expect(other.getByRole('alert')).toBeVisible();
@@ -171,7 +192,11 @@ test('real PDF upload, exact correction, stale tab refusal, reload and one actua
   ).toBe(409);
   await page.reload();
   await expect(
-    page.getByRole('textbox', { name: 'Exact arguments (JSON)', exact: true }),
+    page.getByRole('textbox', {
+      includeHidden: true,
+      name: 'Exact arguments (JSON)',
+      exact: true,
+    }),
   ).toHaveValue(/Human reviewed title/);
   const reloaded = await (
     await page.request.get(`/api/load?itemId=${itemId}`)
@@ -182,14 +207,18 @@ test('real PDF upload, exact correction, stale tab refusal, reload and one actua
   await expect(
     page.getByRole('button', { name: 'Apply approved action', exact: true }),
   ).toBeVisible();
-  await page
-    .getByRole('textbox', { name: 'Exact arguments (JSON)', exact: true })
-    .fill(
-      JSON.stringify({
-        title: 'Final approved title',
-        body: 'Human reviewed minutes',
-      }),
-    );
+  const approved = page.getByRole('textbox', {
+    includeHidden: true,
+    name: 'Exact arguments (JSON)',
+    exact: true,
+  });
+  await reveal(page);
+  await approved.fill(
+    JSON.stringify({
+      title: 'Final approved title',
+      body: 'Human reviewed minutes',
+    }),
+  );
   await expect(
     page.getByRole('button', { name: 'Apply approved action', exact: true }),
   ).toBeDisabled();
@@ -299,9 +328,11 @@ test('a reviewer completes a needs_review suggestion through the ordinary previe
   });
   expect(forged.status()).toBe(409);
   const draft = page.getByRole('textbox', {
+    includeHidden: true,
     name: 'Suggested arguments (JSON)',
     exact: true,
   });
+  await reveal(page);
   await draft.fill(
     JSON.stringify({
       ...snapshot.generation.suggestions[0].args,
@@ -311,6 +342,7 @@ test('a reviewer completes a needs_review suggestion through the ordinary previe
   await expect(prepare).toBeEnabled();
   await prepare.click();
   const args = page.getByRole('textbox', {
+    includeHidden: true,
     name: 'Exact arguments (JSON)',
     exact: true,
   });
@@ -901,8 +933,10 @@ test('reviewer starts a chosen handler through preview and approval, and closes 
     '@happyvertical/smrt-ingestion-reference:create-draft@1',
   );
   const args = review.getByRole('textbox', {
+    includeHidden: true,
     name: 'Initial arguments (JSON)',
   });
+  await reveal(review);
   // Pre-filled from the same-handler suggestion, then changed by the reviewer.
   await expect(args).toHaveValue(/Reviewed intake draft/);
   await review
