@@ -394,7 +394,7 @@ Key behavior:
 - web and email intake normalize into the same contribution package
 - one contribution can contain one primary text submission plus zero or more held files
 - asset-only submissions are allowed when the type permits empty text
-- contributors are resolved by email and linked to a `Profile`
+- contributors are resolved by email within one tenant (`(tenant_id, email)`) and linked to a `Profile` of the same tenant
 - trust levels are `standard`, `trusted`, or `blocked`
 - intake rules can accept, quarantine, or reject before editorial review
 - approval promotes into normal draft `Content` and `Asset` records with provenance metadata
@@ -607,7 +607,7 @@ reassemble into a live tag.
 | `ContentContribution` | Held inbound submission with approval, rejection, withdrawal, and promotion actions |
 | `ContentContributions` | Contribution collection with web intake, email ingestion, inbox, and contributor views |
 | `ContentContributionType` | Persisted contribution-type override for app-defined intake rules and promotion mapping |
-| `ContentContributor` | Contributor profile/trust record resolved by email |
+| `ContentContributor` | Contributor profile/trust record resolved by email within its tenant |
 | `ContentContributionRevision` | Revision history for held submissions |
 | `ContentContributionAttachment` | Held file metadata that only becomes an `Asset` on promotion |
 | `ContentGovernancePolicy` | Persisted review policy definition |

@@ -4,6 +4,7 @@ import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import {
   type ContentGovernanceProfileDefinition,
   type ContentReviewRequirement,
+  findTenantReferencesToGlobalKey,
   getEffectiveContentGovernanceConfig,
   hasStaticContentGovernanceProfile,
 } from './content-governance';
@@ -23,7 +24,11 @@ export interface ContentGovernanceProfileOptions extends SmrtObjectOptions {
 @TenantScoped({ mode: 'optional' })
 @smrt({
   tableName: 'content_governance_profiles',
-  conflictColumns: ['key'],
+  // A key is unique per tenant: a tenant row overrides the global (NULL-tenant)
+  // profile of the same key instead of colliding with it or with another
+  // tenant's. Global rows stay unique on key through the null-aware upsert,
+  // and in the database through NULLS NOT DISTINCT on PostgreSQL 15+ (#3305 M1).
+  conflictColumns: ['tenant_id', 'key'],
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
   mcp: { include: ['list', 'get', 'create', 'update', 'delete'] },
   cli: { skipApiCheck: true },
@@ -108,8 +113,11 @@ export class ContentGovernanceProfile extends SmrtObject {
   protected override async validateBeforeSave(): Promise<void> {
     await super.validateBeforeSave();
 
+    // Check references in this row's own scope (#3305 M1): a tenant row
+    // against that tenant's overrides plus the global layer.
     const effective = await getEffectiveContentGovernanceConfig({
       db: this.db,
+      tenantId: this.tenantId || undefined,
     });
     const availablePolicyKeys = new Set(
       effective.policies.map((policy) => policy.key),
@@ -126,8 +134,12 @@ export class ContentGovernanceProfile extends SmrtObject {
   }
 
   override async delete(): Promise<void> {
+    // Check references in this row's own scope (#3305 M1): a tenant row
+    // against that tenant's overrides plus the global layer; a global row
+    // also against every tenant that relies on it.
     const effective = await getEffectiveContentGovernanceConfig({
       db: this.db,
+      tenantId: this.tenantId || undefined,
     });
     const hasFallback = hasStaticContentGovernanceProfile(this.key);
     const referencedBy = effective.assignments
@@ -137,6 +149,16 @@ export class ContentGovernanceProfile extends SmrtObject {
           assignment.correctionProfileKey === this.key,
       )
       .map((assignment) => assignment.key || assignment.contentType);
+
+    if (!this.tenantId && !hasFallback && referencedBy.length === 0) {
+      referencedBy.push(
+        ...(await findTenantReferencesToGlobalKey({
+          db: this.db,
+          kind: 'profile',
+          key: this.key,
+        })),
+      );
+    }
 
     if (!hasFallback && referencedBy.length > 0) {
       throw new Error(
