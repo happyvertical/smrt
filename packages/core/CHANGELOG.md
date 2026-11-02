@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.57.49
+
+### Patch Changes
+
+- ### Features
+  
+  - learner completion, pace, visibility, tutor records, bundle import (#4593) (education)
+- @happyvertical/smrt-config@0.57.49
+  - @happyvertical/smrt-scanner@0.57.49
+  - @happyvertical/smrt-types@0.57.49
+
 ## 0.57.48
 
 ### Patch Changes
