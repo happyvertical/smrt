@@ -4,10 +4,12 @@ export type {
   CourseLicenseKind,
   CourseModality,
   CourseStatus,
+  CourseVisibility,
   LessonCompletionRule,
 } from './catalog.js';
 export {
   AuthoredCourse,
+  COURSE_VISIBILITIES,
   Course,
   CourseSection,
   Exercise,
@@ -138,6 +140,45 @@ export {
 export * from './course-authoring-models.js';
 export type { CourseAuthoringServiceOptions } from './course-authoring-service.js';
 export { CourseAuthoringService } from './course-authoring-service.js';
+export {
+  type BundleReader,
+  BundleReaderRegistry,
+  type BundleStructure,
+  type BundleStructureLesson,
+  type BundleStructureSection,
+  bundleProposalOutput,
+  type ClassifiedBundleMember,
+  type CourseBundlePlan,
+  classifyBundleMember,
+  courseBundleIdentity,
+  createBundleReaderRegistry,
+  manifestBundleReader,
+  naturalCompare,
+  type PreparedBundle,
+  parseBundleManifest,
+  pdfIsEncrypted,
+  plainBundleReader,
+  planCourseBundle,
+  unpackBundle,
+} from './course-bundle.js';
+export * from './course-bundle-contracts.js';
+export * from './course-bundle-models.js';
+export {
+  type AcceptedCourseBundleMember,
+  type CourseBundleImportResult,
+  CourseBundleImportService,
+  type CourseBundleImportServiceOptions,
+  type CourseBundleImportView,
+  type CourseBundleMemberView,
+  type ImportCourseBundleRequest,
+  type ProposeBundleStructureRequest,
+} from './course-bundle-service.js';
+export {
+  normalizeBundlePath,
+  type RawBundleMember,
+  readFileSet,
+  readZipArchive,
+} from './course-bundle-zip.js';
 export * from './course-generation-contracts.js';
 export * from './course-generation-models.js';
 export {
@@ -176,6 +217,10 @@ export type {
   SourceSharing,
 } from './course-source.js';
 export { CourseSource, CourseSourceCollection } from './course-source.js';
+export {
+  authoredVisibilityPermitsGroups,
+  effectiveCourseVisibility,
+} from './course-visibility.js';
 export type { EnrollmentParentNoteView } from './enrollment-note-service.js';
 export {
   ENROLLMENT_NOTE_MAX_LENGTH,
@@ -239,8 +284,12 @@ export {
 } from './hearth-easy-peasy-grade4.js';
 export type { LessonProgressTransitionKind } from './learner-history.js';
 export {
+  EnrollmentPaceChange,
+  EnrollmentPaceChangeCollection,
   EnrollmentStatusChange,
   EnrollmentStatusChangeCollection,
+  LessonCompletionRecord,
+  LessonCompletionRecordCollection,
   LessonProgressTransition,
   LessonProgressTransitionCollection,
 } from './learner-history.js';
@@ -250,7 +299,9 @@ export type {
 } from './learner-plan-service.js';
 export { LearnerPlanService } from './learner-plan-service.js';
 export type {
+  CompleteOwnLessonResult,
   CurriculumView,
+  EnrollmentPace,
   EnrollmentView,
   LearnerAuthorizer,
   LearnerRequest,
@@ -259,17 +310,26 @@ export type {
   LearnerView,
   LessonProgressView,
   PutBackLessonResult,
+  SetEnrollmentPaceResult,
   SetEnrollmentStatusResult,
 } from './learner-service.js';
 export {
   ENROLLMENT_STATUS_TRANSITIONS,
+  EnrollmentNotActiveError,
+  EnrollmentPaceError,
   EnrollmentStatusTransitionError,
   LearnerAuthorizationError,
   LearnerHistoryUnavailableError,
   LearnerService,
   LearnerValidationError,
+  LessonAlreadyCompleteError,
   LessonPutBackError,
+  LessonSkippedError,
+  MAX_LESSONS_PER_WEEK,
+  MAX_NEXT_LESSONS_COUNT,
+  MIN_LESSONS_PER_WEEK,
   requirePolicyBasis,
+  WorkbookOwnedLessonError,
 } from './learner-service.js';
 export type { EnrollmentStatus, LessonProgressStatus } from './learners.js';
 export { Curriculum, Enrollment, Learner, LessonProgress } from './learners.js';
@@ -390,6 +450,26 @@ export {
   SubmissionAsset,
   SubmissionIntakeBinding,
 } from './submissions.js';
+export type { TutorContextRequest } from './tutor-context-service.js';
+export { TutorContextService } from './tutor-context-service.js';
+export * from './tutor-contracts.js';
+export {
+  TutorExchange,
+  TutorExchangeCollection,
+  TutorSession,
+  TutorSessionClosure,
+  TutorSessionClosureCollection,
+  TutorSessionCollection,
+} from './tutor-models.js';
+export type {
+  AppendTutorExchangeRequest,
+  ListTutorSessionsRequest,
+  OpenTutorSessionRequest,
+  TutorExchangeView,
+  TutorSessionView,
+  TutorSessionWithExchanges,
+} from './tutor-session-service.js';
+export { TutorSessionService } from './tutor-session-service.js';
 export { normalizeWorkbookAnswerRegions } from './workbook-answer-regions.js';
 export {
   WorkbookCompletionDecision,

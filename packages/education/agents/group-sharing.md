@@ -276,3 +276,23 @@ family kind. The helper provides no arbitrary cross-tenant directory.
 | Behavior/invariant | Trigger | Positive | Negative/failure | Actor/context | Executor/transaction | Runtime/dialect | External edge | Level | Command |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | G33 workspace kind | trusted exact resource lookup | existing family false; active/inactive group true | blank/malformed/absent tenant; ambiguous group rows; PostgreSQL RLS-hidden or indeterminate zero refuses family; database failures propagate | host-selected exact tenant, no synthetic session/context | caller-supplied executor, fresh reads; no writes | Node SQLite/PostgreSQL | status/membership/role absence never implies family or grants | integration | `pnpm --filter @happyvertical/smrt-education exec vitest run src/__tests__/group-sharing-workspace.test.ts` (same file with TEST_DB_ADAPTER=postgres and isolated DATABASE_URL) |
+
+## Authored course visibility
+
+Authored-course `visibility` (see [course authoring](course-authoring-service.md))
+only ever narrows group sharing; it never adds a reader, a tenant or a facet.
+
+Before: every authored release that was not personal-use was eligible (policy
+options, `listSharedWork`, preview) subject to the policy, edge and review rules.
+After: the same, except an authored release whose identity is explicitly recorded
+as `family` (including any unrecognized stored value) is `course-private`: it is
+absent from the policy options and its work evaluates `course-private`, also when
+only another release of that course is in the enrollment's pin lineage.
+`groups` and `public` change nothing relative to before. A course whose visibility
+was never recorded (everything authored before visibility existed) also behaves as
+before, so existing contracts and tests are unchanged; hosts that want a default
+of "family only" call `setVisibility('family')` explicitly. `public` is a listing
+label only; no reviewed cross-tenant read path exists for it, so it grants nothing.
+Non-authored courses, answer keys and personal-use rules are untouched, and a
+database without the visibility column or release tables reads as never recorded.
+The gate is `authoredVisibilityPermitsGroups(db, tenantId, releaseCourseId)`.

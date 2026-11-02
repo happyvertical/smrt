@@ -1,5 +1,9 @@
 import type { DatabaseInterface } from '@happyvertical/sql';
-import type { CourseLicenseKind, CourseModality } from './catalog.js';
+import type {
+  CourseLicenseKind,
+  CourseModality,
+  CourseVisibility,
+} from './catalog.js';
 import type { LessonAssetRelationship } from './lesson-assets.js';
 import type {
   LessonLayoutParams,
@@ -14,7 +18,9 @@ export type CourseAuthoringAction =
   | 'education.course.review'
   | 'education.course.release'
   | 'education.course.assign'
-  | 'education.course.archive';
+  | 'education.course.archive'
+  | 'education.course.set-visibility'
+  | 'education.course.set-cover';
 
 export const COURSE_AUTHORING_ACTIONS: readonly CourseAuthoringAction[] = [
   'education.course.read-draft',
@@ -24,6 +30,8 @@ export const COURSE_AUTHORING_ACTIONS: readonly CourseAuthoringAction[] = [
   'education.course.release',
   'education.course.assign',
   'education.course.archive',
+  'education.course.set-visibility',
+  'education.course.set-cover',
 ];
 
 /** Which service operation asked, so a host can deny agents specific operations. */
@@ -34,6 +42,8 @@ export type CourseAuthoringOperation =
   | 'release'
   | 'archive'
   | 'unarchive'
+  | 'set-visibility'
+  | 'set-cover'
   | 'discard'
   | 'pin-enrollment'
   | 'upgrade-enrollment'
@@ -64,7 +74,9 @@ export type CourseAuthoringOperation =
   | 'attach-printable'
   | 'preserve-question-extraction'
   | 'read-question-extraction'
-  | 'apply-question-extraction';
+  | 'apply-question-extraction'
+  | 'import-course-bundle'
+  | 'read-course-bundle';
 
 /** Trusted identity supplied by the host session, never by a browser form. */
 export interface CourseAuthoringActor {
@@ -314,6 +326,8 @@ export type CourseReleaseView = Readonly<{
   revisionId: string;
   releaseNumber: number;
   releaseCourseId: string;
+  /** The cover snapshotted onto this release; null when the course had none. */
+  coverAssetId: string | null;
   reviewId: string | null;
   actorUserId: string;
   delegatingGuardianUserId: string | null;
@@ -338,6 +352,10 @@ export type CourseStateView = Readonly<{
   licenseKind: CourseLicenseKind;
   /** Personal-use material makes the course tenant-private and never group-shareable. */
   groupShareable: boolean;
+  /** `family` unless set otherwise (see `setVisibility`). */
+  visibility: CourseVisibility;
+  /** The education-owned cover image asset, or null (hosts render a fallback). */
+  coverAssetId: string | null;
   headRevisionId: string | null;
   releases: ReadonlyArray<{
     id: string;
@@ -386,6 +404,8 @@ export type CourseSummaryView = Readonly<{
    * false until the course has a release (nothing to share).
    */
   groupShareable: boolean;
+  visibility: CourseVisibility;
+  coverAssetId: string | null;
   /** Number of releases (0 for a draft-only course). */
   releaseCount: number;
   /** The draft head; `revisionId` is the expected-head token for the next save. */
@@ -399,6 +419,8 @@ export type CourseSummaryView = Readonly<{
     revisionId: string;
     releaseNumber: number;
     releaseCourseId: string;
+    /** The cover snapshotted onto that release. */
+    coverAssetId: string | null;
     recordedAt: string;
   }> | null;
   archive: Readonly<{
@@ -592,5 +614,28 @@ export class CourseMaterialCopyError extends CourseAuthoringError {
     message = 'Course material could not be copied to an owned asset.',
   ) {
     super('material-copy-failed', message);
+  }
+}
+
+/** Result of `setVisibility`/`setCover`: the course state after the (maybe unchanged) write. */
+export type CourseVisibilityResult = CourseStateView;
+export type CourseCoverResult = CourseStateView;
+
+/** A personal-use-copy course can never be shared with groups or listed publicly. */
+export class CourseVisibilityRefusedError extends CourseAuthoringError {
+  constructor(readonly visibility: CourseVisibility) {
+    super(
+      'visibility-refused',
+      'A personal-use course can only be family-visible.',
+    );
+  }
+}
+/** The cover asset is missing, foreign, not an image, an answer key or unreadable. */
+export class CourseCoverInvalidError extends CourseAuthoringError {
+  constructor(readonly reason: string) {
+    super(
+      'cover-invalid',
+      'The cover must be a readable education-owned image.',
+    );
   }
 }

@@ -33,7 +33,9 @@ import {
   resolveEnrollmentLessons,
 } from './course-release-scope.js';
 import {
+  EnrollmentPaceChangeCollection,
   EnrollmentStatusChangeCollection,
+  LessonCompletionRecordCollection,
   LessonProgressTransitionCollection,
   type LessonProgressTransitionKind,
 } from './learner-history.js';
@@ -129,7 +131,11 @@ export type LearnerAuthorizer = (
       | 'education.learner.setup'
       | 'education.progress.put-back'
       | 'education.enrollment.set-status'
-      | 'education.learner.attest-own';
+      | 'education.learner.attest-own'
+      | 'education.progress.complete-own'
+      | 'education.enrollment.set-pace'
+      | 'education.tutor.read'
+      | 'education.tutor.exchange';
     own: boolean;
     relationshipTypeId?: string;
     /** True only for a delegated assignment; `relationshipTypeId` is then undefined. */
@@ -197,6 +203,45 @@ export class EnrollmentStatusTransitionError extends LearnerValidationError {
   }
 }
 
+/** `completeOwnLesson` on an enrollment that is not `active`. */
+export class EnrollmentNotActiveError extends LearnerValidationError {
+  constructor(readonly status: Enrollment['status']) {
+    super(`An enrollment that is ${status} cannot have lessons completed`);
+    this.name = 'EnrollmentNotActiveError';
+  }
+}
+
+/**
+ * `completeOwnLesson` on a lesson already complete through another path
+ * (guardian attestation or grade, or workbook completion). A repeat of the
+ * learner's own completion is an idempotent no-op instead.
+ */
+export class LessonAlreadyCompleteError extends LearnerValidationError {
+  constructor() {
+    super('The lesson is already complete');
+    this.name = 'LessonAlreadyCompleteError';
+  }
+}
+
+/**
+ * `completeOwnLesson` on a lesson with a physical workbook activity, whose
+ * completion is owned by the workbook completion decision.
+ */
+export class WorkbookOwnedLessonError extends LearnerValidationError {
+  constructor() {
+    super('A workbook lesson is completed through the workbook workflow');
+    this.name = 'WorkbookOwnedLessonError';
+  }
+}
+
+/** `completeOwnLesson` on a lesson that was skipped. */
+export class LessonSkippedError extends LearnerValidationError {
+  constructor() {
+    super('A skipped lesson cannot be completed');
+    this.name = 'LessonSkippedError';
+  }
+}
+
 /** A required history table has not been migrated on this host. */
 export class LearnerHistoryUnavailableError extends Error {
   constructor(readonly table: string) {
@@ -211,6 +256,33 @@ export type PutBackLessonResult = Readonly<{
   /** Null when the lesson never had progress (nothing to put back). */
   progress: LessonProgressView | null;
 }>;
+
+/** Result of `completeOwnLesson`; `changed` is false for an idempotent replay. */
+export type CompleteOwnLessonResult = Readonly<{
+  changed: boolean;
+  progress: LessonProgressView;
+}>;
+
+/** Result of `setEnrollmentPace`; `changed` is false when the pace is unchanged. */
+export type SetEnrollmentPaceResult = Readonly<{
+  changed: boolean;
+  enrollment: EnrollmentView;
+}>;
+
+/** Lessons per week bounds of an enrollment pace, and the `nextLessons` count cap. */
+export const MIN_LESSONS_PER_WEEK = 1;
+export const MAX_LESSONS_PER_WEEK = 14;
+export const MAX_NEXT_LESSONS_COUNT = MAX_LESSONS_PER_WEEK;
+
+/** `setEnrollmentPace` was given a pace that is not 1-14 whole lessons a week. */
+export class EnrollmentPaceError extends LearnerValidationError {
+  constructor() {
+    super(
+      `Pace must be null or a whole number of lessons per week from ${MIN_LESSONS_PER_WEEK} to ${MAX_LESSONS_PER_WEEK}`,
+    );
+    this.name = 'EnrollmentPaceError';
+  }
+}
 
 /** Result of `setEnrollmentStatus`; `changed` is false when already in that status. */
 export type SetEnrollmentStatusResult = Readonly<{
@@ -254,7 +326,10 @@ export type EnrollmentView = Readonly<{
   curriculumId: string;
   courseId: string;
   status: Enrollment['status'];
+  /** Planned lessons per week (1-14), or null when no pace is set. */
+  pace: EnrollmentPace | null;
 }>;
+export type EnrollmentPace = Readonly<{ lessonsPerWeek: number }>;
 export type LessonProgressView = Readonly<{
   id: string;
   learnerId: string;
@@ -275,13 +350,17 @@ function curriculumView(row: Curriculum): CurriculumView {
     status: row.status,
   };
 }
-function enrollmentView(row: Enrollment): EnrollmentView {
+/** Data-only projection shared with the plan service. */
+export function enrollmentView(row: Enrollment): EnrollmentView {
   return {
     id: String(row.id),
     learnerId: row.learnerId,
     curriculumId: row.curriculumId,
     courseId: row.courseId,
     status: row.status,
+    pace: row.paceLessonsPerWeek
+      ? { lessonsPerWeek: row.paceLessonsPerWeek }
+      : null,
   };
 }
 function progressView(row: LessonProgress): LessonProgressView {
@@ -1221,11 +1300,12 @@ export class LearnerService {
   }
 
   /**
-   * Projects the first unfinished lesson in each authorized enrollment. No
+   * Projects the first unfinished lesson in each authorized enrollment, or up
+   * to `count` (an integer from 1 to 14, default 1) in lesson order. No
    * catalog assets, answer material, model handles, or source locators escape.
    */
   async nextLessons(
-    request: LearnerRequest & { enrollmentId?: string },
+    request: LearnerRequest & { enrollmentId?: string; count?: number },
   ): Promise<
     ReadonlyArray<{
       enrollment: EnrollmentView;
@@ -1238,6 +1318,11 @@ export class LearnerService {
       };
     }>
   > {
+    const count = request.count === undefined ? 1 : request.count;
+    if (!Number.isInteger(count) || count < 1 || count > MAX_NEXT_LESSONS_COUNT)
+      throw new LearnerValidationError(
+        `Count must be a whole number from 1 to ${MAX_NEXT_LESSONS_COUNT}`,
+      );
     const enrollments = request.enrollmentId
       ? [
           await this.requireEnrollment(
@@ -1279,24 +1364,27 @@ export class LearnerService {
           ),
         ),
       );
-      const next = scope.entries.find(({ lesson: candidate }) => {
-        const progress = byLesson.get(String(candidate.id));
-        return !progress || !['complete', 'skipped'].includes(progress.status);
-      });
-      if (!next) continue;
-      const { lesson, course } = next;
-      const progress = byLesson.get(String(lesson.id));
-      result.push({
-        enrollment: enrollmentView(enrollment),
-        progress: progress ?? null,
-        lesson: {
-          id: String(lesson.id),
-          title: lesson.title,
-          kind: lesson.constructor.name,
-          requiresOnlineResource:
-            course.modality === 'online' || lesson.constructor.name === 'Video',
-        },
-      });
+      const unfinished = scope.entries
+        .filter(({ lesson: candidate }) => {
+          const progress = byLesson.get(String(candidate.id));
+          return (
+            !progress || !['complete', 'skipped'].includes(progress.status)
+          );
+        })
+        .slice(0, count);
+      for (const { lesson, course } of unfinished)
+        result.push({
+          enrollment: enrollmentView(enrollment),
+          progress: byLesson.get(String(lesson.id)) ?? null,
+          lesson: {
+            id: String(lesson.id),
+            title: lesson.title,
+            kind: lesson.constructor.name,
+            requiresOnlineResource:
+              course.modality === 'online' ||
+              lesson.constructor.name === 'Video',
+          },
+        });
     }
     return result;
   }
@@ -1552,6 +1640,218 @@ export class LearnerService {
         learnerId: enrollment.learnerId,
         fromStatus: from,
         toStatus: status,
+        actorUserId: request.actorUserId,
+        policyBasis,
+        recordedAt: new Date(),
+      });
+      return { changed: true, enrollment: enrollmentView(enrollment) };
+    });
+  }
+
+  /**
+   * The learner completes their own lesson of any kind under
+   * `education.progress.complete-own`; the host decides per setting, for the
+   * learner and for a guardian it also allows. Moves progress to `complete`,
+   * sets `completedAt` and appends a `LessonCompletionRecord` with the actor,
+   * `policyBasis` and optional `evidence.submissionId` (which must be a
+   * submission of this tenant, learner and lesson). Counters and score are
+   * untouched and no score is invented. Guardian `attestLesson` is unchanged.
+   *
+   * Repeat rule: when the lesson already completed through this path
+   * (a completion record exists) the call returns `{ changed: false }`. A
+   * lesson complete any other way (guardian attestation or grade, workbook
+   * completion) throws `LessonAlreadyCompleteError`; `skipped` throws
+   * `LessonSkippedError`; an enrollment that is not `active` throws
+   * `EnrollmentNotActiveError`.
+   */
+  async completeOwnLesson(
+    request: LearnerRequest & {
+      enrollmentId: string;
+      lessonId: string;
+      policyBasis: string;
+      evidence?: { submissionId: string };
+    },
+  ): Promise<CompleteOwnLessonResult> {
+    const policyBasis = requirePolicyBasis(request.policyBasis);
+    const evidence = request.evidence;
+    if (
+      evidence !== undefined &&
+      (typeof evidence !== 'object' ||
+        evidence === null ||
+        typeof evidence.submissionId !== 'string' ||
+        !evidence.submissionId.trim())
+    )
+      throw new LearnerValidationError('Evidence needs a submission id');
+    return this.mutate(async (service) => {
+      const enrollment = await service.requireEnrollment(
+        request,
+        'education.progress.complete-own',
+      );
+      await service.lock('enrollments', request.enrollmentId, request.tenantId);
+      if (enrollment.status !== 'active')
+        throw new EnrollmentNotActiveError(enrollment.status);
+      if (!(await service.lessonInScope(request, enrollment, request.lessonId)))
+        throw new LearnerAuthorizationError();
+      let row = await (
+        await LessonProgressCollection.create({ db: service.db })
+      ).get(
+        {
+          enrollmentId: String(enrollment.id),
+          lessonId: request.lessonId,
+          tenantId: request.tenantId,
+        },
+        { cache: false },
+      );
+      if (row && row.learnerId !== enrollment.learnerId)
+        throw new LearnerAuthorizationError();
+      const hasTables =
+        (await service.db.tableExists('lesson_completion_records')) === true;
+      const projected = row
+        ? await service.projectProgress(request, row)
+        : null;
+      if (
+        row &&
+        (row.status === 'complete' || projected?.status === 'complete')
+      ) {
+        const prior = hasTables
+          ? await service.db.get('lesson_completion_records', {
+              tenant_id: request.tenantId,
+              progress_id: String(row.id),
+            })
+          : null;
+        if (prior && row.status === 'complete')
+          return { changed: false, progress: projected as LessonProgressView };
+        throw new LessonAlreadyCompleteError();
+      }
+      if (row?.status === 'skipped') throw new LessonSkippedError();
+      if (
+        await service.findWorkbookActivity(request, {
+          enrollmentId: String(enrollment.id),
+          lessonId: request.lessonId,
+        })
+      )
+        throw new WorkbookOwnedLessonError();
+      if (!hasTables)
+        throw new LearnerHistoryUnavailableError('lesson_completion_records');
+      if (evidence) {
+        // Evidence is a submission of this learner and lesson on this progress.
+        const submission = row
+          ? await service.db.get('submissions', {
+              id: evidence.submissionId,
+              tenant_id: request.tenantId,
+              learner_id: enrollment.learnerId,
+              lesson_id: request.lessonId,
+              progress_id: String(row.id),
+            })
+          : null;
+        if (!submission || submission.status === 'rejected')
+          throw new LearnerAuthorizationError();
+      }
+      const from = row?.status ?? 'not_started';
+      const now = new Date();
+      if (!row)
+        row = await (
+          await LessonProgressCollection.create({ db: service.db })
+        ).create({
+          tenantId: request.tenantId,
+          enrollmentId: String(enrollment.id),
+          learnerId: enrollment.learnerId,
+          lessonId: request.lessonId,
+          status: 'complete',
+          completedAt: now,
+        });
+      else {
+        row.status = 'complete';
+        row.completedAt = now;
+        await row.save();
+      }
+      await (
+        await LessonCompletionRecordCollection.create({ db: service.db })
+      ).create({
+        _insertOnly: true,
+        tenantId: request.tenantId,
+        progressId: String(row.id),
+        enrollmentId: row.enrollmentId,
+        learnerId: row.learnerId,
+        lessonId: row.lessonId,
+        fromStatus: from,
+        actorUserId: request.actorUserId,
+        policyBasis,
+        submissionId: evidence?.submissionId ?? null,
+        recordedAt: now,
+      });
+      if (await service.db.tableExists('lesson_progress_transitions'))
+        await service.recordProgressTransition(request, row, from, 'complete');
+      return {
+        changed: true,
+        progress: await service.projectProgress(request, row),
+      };
+    });
+  }
+
+  /**
+   * Sets or clears (`pace: null`) an enrollment's planned lessons per week
+   * (a whole number from 1 to 14) under `education.enrollment.set-pace`; the
+   * host decides whether a learner may act on their own enrollment. Appends an
+   * immutable `EnrollmentPaceChange` with the actor, `policyBasis` and the
+   * previous and new value (`0` means no pace). An unchanged pace is an
+   * idempotent `{ changed: false }` that records nothing; an invalid pace
+   * throws `EnrollmentPaceError`. Status, progress and history are untouched.
+   */
+  async setEnrollmentPace(
+    request: LearnerRequest & {
+      enrollmentId: string;
+      pace: EnrollmentPace | null;
+      policyBasis: string;
+    },
+  ): Promise<SetEnrollmentPaceResult> {
+    const policyBasis = requirePolicyBasis(request.policyBasis);
+    const raw = request.pace;
+    let lessonsPerWeek = 0;
+    if (raw !== null) {
+      const value =
+        typeof raw === 'object' && raw !== undefined
+          ? (raw as EnrollmentPace).lessonsPerWeek
+          : undefined;
+      if (
+        typeof value !== 'number' ||
+        !Number.isInteger(value) ||
+        value < MIN_LESSONS_PER_WEEK ||
+        value > MAX_LESSONS_PER_WEEK
+      )
+        throw new EnrollmentPaceError();
+      lessonsPerWeek = value;
+    }
+    return this.mutate(async (service) => {
+      await service.requireEnrollment(request, 'education.enrollment.set-pace');
+      await service.lock('enrollments', request.enrollmentId, request.tenantId);
+      const enrollment = await (
+        await EnrollmentCollection.create({ db: service.db })
+      ).get(
+        {
+          id: request.enrollmentId,
+          learnerId: request.learnerId,
+          tenantId: request.tenantId,
+        },
+        { cache: false },
+      );
+      if (!enrollment) throw new LearnerAuthorizationError();
+      const previous = enrollment.paceLessonsPerWeek;
+      if (previous === lessonsPerWeek)
+        return { changed: false, enrollment: enrollmentView(enrollment) };
+      if (!(await service.db.tableExists('enrollment_pace_changes')))
+        throw new LearnerHistoryUnavailableError('enrollment_pace_changes');
+      enrollment.paceLessonsPerWeek = lessonsPerWeek;
+      await enrollment.save();
+      await (
+        await EnrollmentPaceChangeCollection.create({ db: service.db })
+      ).create({
+        _insertOnly: true,
+        tenantId: request.tenantId,
+        enrollmentId: String(enrollment.id),
+        learnerId: enrollment.learnerId,
+        previousLessonsPerWeek: previous,
+        newLessonsPerWeek: lessonsPerWeek,
         actorUserId: request.actorUserId,
         policyBasis,
         recordedAt: new Date(),

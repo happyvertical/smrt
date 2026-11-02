@@ -7,7 +7,7 @@ import {
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
-import type { CourseLicenseKind } from './catalog.js';
+import { COURSE_VISIBILITIES, type CourseLicenseKind } from './catalog.js';
 
 const closed = { api: false, mcp: false, cli: false } as const;
 const LICENSES = [
@@ -410,6 +410,108 @@ export class CourseArchiveDecision extends SmrtObject {
 }
 export class CourseArchiveDecisionCollection extends SmrtCollection<CourseArchiveDecision> {
   static readonly _itemClass = CourseArchiveDecision;
+}
+
+/**
+ * Append-only record of every visibility change of an authored course: the
+ * previous and new value, the actor and why ('request' for `setVisibility`,
+ * 'licence' when a personal-use revision narrowed the course back to family).
+ */
+@TenantScoped({ mode: 'required' })
+@smrt({
+  tableName: 'course_visibility_changes',
+  conflictColumns: ['tenant_id', 'course_id', 'request_key'],
+  ...closed,
+})
+export class CourseVisibilityChange extends SmrtObject {
+  @tenantId() tenantId = '';
+  @foreignKey('Course', { required: true }) courseId = '';
+  sequence = 1;
+  previousVisibility = 'family';
+  visibility = 'family';
+  reason = 'request';
+  actorUserId = '';
+  delegatingGuardianUserId = '';
+  delegationId = '';
+  requestKey = '';
+  recordedAt = new Date();
+  constructor(options: Record<string, unknown> = {}) {
+    super(options);
+    adopt(this, options);
+  }
+  override async delete(): Promise<void> {
+    noDelete();
+  }
+  override async save(options?: SmrtSaveOptions): Promise<this> {
+    await requireInsert(this);
+    await requireOwned(this, 'courses', this.courseId);
+    requireText(this.actorUserId, 'Visibility change requires an actor');
+    requireText(
+      this.requestKey,
+      'Visibility change requires a request key',
+      300,
+    );
+    const visibilities: readonly string[] = COURSE_VISIBILITIES;
+    if (
+      !visibilities.includes(this.previousVisibility) ||
+      !visibilities.includes(this.visibility) ||
+      !['request', 'licence'].includes(this.reason) ||
+      !Number.isSafeInteger(this.sequence) ||
+      this.sequence < 1
+    )
+      throw new Error('Invalid visibility change');
+    validDate(this.recordedAt);
+    this.requireInsertOnSave();
+    return super.save(options);
+  }
+}
+export class CourseVisibilityChangeCollection extends SmrtCollection<CourseVisibilityChange> {
+  static readonly _itemClass = CourseVisibilityChange;
+}
+
+/** Append-only record of every cover change; an empty asset id means "no cover". */
+@TenantScoped({ mode: 'required' })
+@smrt({
+  tableName: 'course_cover_changes',
+  conflictColumns: ['tenant_id', 'course_id', 'request_key'],
+  ...closed,
+})
+export class CourseCoverChange extends SmrtObject {
+  @tenantId() tenantId = '';
+  @foreignKey('Course', { required: true }) courseId = '';
+  sequence = 1;
+  previousAssetId = '';
+  assetId = '';
+  actorUserId = '';
+  delegatingGuardianUserId = '';
+  delegationId = '';
+  requestKey = '';
+  recordedAt = new Date();
+  constructor(options: Record<string, unknown> = {}) {
+    super(options);
+    adopt(this, options);
+  }
+  override async delete(): Promise<void> {
+    noDelete();
+  }
+  override async save(options?: SmrtSaveOptions): Promise<this> {
+    await requireInsert(this);
+    await requireOwned(this, 'courses', this.courseId);
+    requireText(this.actorUserId, 'Cover change requires an actor');
+    requireText(this.requestKey, 'Cover change requires a request key', 300);
+    if (
+      this.previousAssetId === this.assetId ||
+      !Number.isSafeInteger(this.sequence) ||
+      this.sequence < 1
+    )
+      throw new Error('Invalid cover change');
+    validDate(this.recordedAt);
+    this.requireInsertOnSave();
+    return super.save(options);
+  }
+}
+export class CourseCoverChangeCollection extends SmrtCollection<CourseCoverChange> {
+  static readonly _itemClass = CourseCoverChange;
 }
 
 /** Audit record left when an unreferenced draft is discarded. */

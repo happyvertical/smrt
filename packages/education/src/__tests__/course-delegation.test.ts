@@ -52,6 +52,8 @@ const classes = [
   'CourseRelease',
   'ReleasedLesson',
   'CourseArchiveDecision',
+  'CourseVisibilityChange',
+  'CourseCoverChange',
   'CourseDiscardTombstone',
   'EnrollmentReleasePin',
   'CourseUpgradeChoice',
@@ -809,6 +811,22 @@ describe('delegation id across course services', () => {
       kind: 'explicit',
       delegationId: 'delegation-1',
     });
+    await as(agent, () =>
+      service.setVisibility({
+        ...agent,
+        courseId: head.courseId,
+        visibility: 'groups',
+        requestKey: key(),
+      }),
+    );
+    await as(agent, () =>
+      service.setCover({
+        ...agent,
+        courseId: head.courseId,
+        assetId: null,
+        requestKey: key(),
+      }),
+    );
     await as(agent, () =>
       service.archive({ ...agent, courseId: head.courseId, requestKey: key() }),
     );

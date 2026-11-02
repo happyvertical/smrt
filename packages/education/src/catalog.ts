@@ -120,8 +120,32 @@ export class Course extends SmrtObject {
 @smrt({ tableName: 'courses', ...closed })
 export class ExternalCourse extends Course {}
 
+/** Who an authored course is meant for: its family, its family's groups, a public listing label. */
+export const COURSE_VISIBILITIES = ['family', 'groups', 'public'] as const;
+export type CourseVisibility = (typeof COURSE_VISIBILITIES)[number];
+
 @smrt({ tableName: 'courses', ...closed })
-export class AuthoredCourse extends Course {}
+export class AuthoredCourse extends Course {
+  /**
+   * Authored-course visibility; '' means never set (reads as 'family'). Only the
+   * course-authoring service writes it, with an append-only change row.
+   */
+  visibility: CourseVisibility | '' = '';
+  /** Education-owned image asset shown as the course cover; '' means none. */
+  coverAssetId = '';
+  constructor(options: Record<string, unknown> = {}) {
+    super(options);
+    applyModelOptions(this as unknown as Record<string, unknown>, options);
+  }
+  override async save(options?: SmrtSaveOptions): Promise<this> {
+    if (
+      this.licenseKind === 'personal-use-copy' &&
+      (this.visibility === 'groups' || this.visibility === 'public')
+    )
+      throw new Error('personal-use-copy courses can only be family-visible');
+    return await super.save(options);
+  }
+}
 
 @TenantScoped({ mode: 'optional' })
 @smrt({ ...closed })

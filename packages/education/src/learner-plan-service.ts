@@ -9,6 +9,7 @@ import { EnrollmentNoteService } from './enrollment-note-service.js';
 import {
   type EnrollmentLessonScope,
   type EnrollmentView,
+  enrollmentView,
   LearnerAuthorizationError,
   type LearnerRequest,
   type LessonProgressView,
@@ -88,13 +89,7 @@ export class LearnerPlanService extends EnrollmentNoteService {
     request: LearnerRequest & { enrollmentId: string },
   ): Promise<EnrollmentPlanView> {
     const row = await this.requireEnrollment(request, 'education.learner.read');
-    const enrollment: EnrollmentView = {
-      id: String(row.id),
-      learnerId: row.learnerId,
-      curriculumId: row.curriculumId,
-      courseId: row.courseId,
-      status: row.status,
-    };
+    const enrollment: EnrollmentView = enrollmentView(row);
     const unavailable: EnrollmentPlanView = {
       enrollment,
       availability: 'unavailable',

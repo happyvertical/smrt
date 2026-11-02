@@ -17,7 +17,8 @@ authorizer, private media delivery, facet semantics and migration/test matrix.
 
 Guardians author courses with `CourseAuthoringService`: append-only course and
 lesson revisions, a reviewed release that materializes immutable lessons,
-reversible archive, and recorded enrollment pins and upgrades. See the
+reversible archive, recorded enrollment pins and upgrades, a recorded
+visibility (`family`, `groups`, `public`) and an education-owned cover image. See the
 [course authoring contract](agents/course-authoring-service.md).
 
 ## Install
@@ -101,7 +102,27 @@ host's permission decision. Sibling membership does not grant access.
 `putBackLesson` returns started work to `not_started` and `setEnrollmentStatus`
 starts, pauses, resumes or drops an enrollment along a fixed transition table;
 both append immutable history (actor, and for status the host policy basis)
-and never touch submissions, grades or other progress.
+and never touch submissions, grades or other progress. `completeOwnLesson`
+lets a learner mark their own lesson of any kind done when the host's
+`education.progress.complete-own` decision allows it, recording the actor, the
+host setting and optional evidence submission; guardian `attestLesson` is
+unchanged. `setEnrollmentPace` sets or clears an enrollment's planned lessons
+per week (1 to 14) under the host's `education.enrollment.set-pace` decision with
+an immutable change row, and `nextLessons({ count })` returns a week's set of
+unfinished lessons (default one).
+`TutorContextService.compose` builds a bounded, learner-safe `TutorContext`
+(lesson text, learner-visible questions, own progress, released feedback; for the
+learner audience only `answerKeyAvailable`, never keys, rubrics, notes or storage
+URIs) under the host's `education.tutor.read` decision, and `TutorSessionService`
+(`open`, `append`, `close`, `listForLearner`; `education.tutor.exchange` and
+`education.tutor.read`) keeps append-only guardian-readable transcripts. No model
+call happens in the package; see [tutor contract](agents/tutor-context.md).
+
+`CourseBundleImportService` imports a course zip (optional closed `manifest.json`)
+or file set under hard size, ratio, path and entry bounds, keeps unsupported and
+duplicate members as append-only evidence, hands accepted members to ingestion and
+proposes sections and lessons through `CourseGenerationReviewService`; see
+[bundle import](agents/course-bundle-import.md).
 Repeated starts preserve the existing progress, including attempts and scores.
 A new curriculum/year creates a distinct enrollment and fresh progress history.
 An unscored lesson has `bestScore: null`, distinct from zero. The service does
