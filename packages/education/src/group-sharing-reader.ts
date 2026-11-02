@@ -21,6 +21,7 @@ import {
   SubmissionCollection,
 } from './collections.js';
 import { isAuthoredReleaseGroupShareable } from './course-authoring-licence.js';
+import { authoredVisibilityPermitsGroups } from './course-visibility.js';
 import {
   type GroupSharingAction,
   type GroupSharingAuthorizer,
@@ -252,7 +253,14 @@ async function load(
         parentReviewed: heads.length === 1,
         courseShareable:
           !lineagePrivate &&
-          (course ? isAuthoredReleaseGroupShareable(course) : true),
+          (course
+            ? isAuthoredReleaseGroupShareable(course) &&
+              (await authoredVisibilityPermitsGroups(
+                db,
+                request.familyTenantId,
+                String(course.id),
+              ))
+            : true),
       });
       const revisionPermitted =
         Boolean(revision) &&
@@ -333,7 +341,8 @@ async function enrollmentLineagePrivate(
       !isAuthoredReleaseGroupShareable({
         sourceKey: String(course.source_key),
         licenseKind: course.license_kind as never,
-      })
+      }) ||
+      !(await authoredVisibilityPermitsGroups(db, tenantId, String(course.id)))
     )
       return true;
   }
@@ -483,14 +492,21 @@ export class GroupSharingReader {
           const visible = await authorizedCatalogCourses(db, request, () =>
             boundary.requireGuardian(request, 'education.group.share'),
           );
-          const courses = visible
-            .filter(
-              (course) =>
-                course.id &&
-                course.sourceKey !== 'unfiled-work' &&
-                isAuthoredReleaseGroupShareable(course) &&
-                enrolled.has(String(course.id)),
+          const permitted: typeof visible = [];
+          for (const course of visible)
+            if (
+              course.id &&
+              course.sourceKey !== 'unfiled-work' &&
+              isAuthoredReleaseGroupShareable(course) &&
+              enrolled.has(String(course.id)) &&
+              (await authoredVisibilityPermitsGroups(
+                db,
+                request.familyTenantId,
+                String(course.id),
+              ))
             )
+              permitted.push(course);
+          const courses = permitted
             .map((course) => ({
               id: String(course.id),
               label: course.title,

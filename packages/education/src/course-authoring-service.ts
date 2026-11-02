@@ -1,11 +1,19 @@
-import { withPrivateAssetAccess } from '@happyvertical/smrt-assets';
+import {
+  AssetCollection,
+  withPrivateAssetAccess,
+} from '@happyvertical/smrt-assets';
 import {
   isEmbeddedDatabase,
   withEmbeddedWriteTransaction,
 } from '@happyvertical/smrt-core';
 import { getCurrentTenant } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import type { CourseLicenseKind, CourseModality } from './catalog.js';
+import {
+  COURSE_VISIBILITIES,
+  type CourseLicenseKind,
+  type CourseModality,
+  type CourseVisibility,
+} from './catalog.js';
 import {
   AuthoredCourseCollection,
   CourseSectionCollection,
@@ -24,9 +32,11 @@ import {
   type CourseAuthoringActor,
   CourseAuthoringAuthorizationError,
   type CourseAuthoringAuthorizer,
+  CourseAuthoringError,
   type CourseAuthoringOperation,
   CourseAuthoringValidationError,
   type CourseAuthorizationDecision,
+  CourseCoverInvalidError,
   type CourseDelegationVerifier,
   CourseDiscardedError,
   CourseDiscardRefusedError,
@@ -53,6 +63,7 @@ import {
   type CourseStateView,
   type CourseSummaryView,
   type CourseUpgradeChoiceView,
+  CourseVisibilityRefusedError,
   DEFAULT_PAGE_SIZE,
   EnrollmentPinConflictError,
   type EnrollmentPinKind,
@@ -73,6 +84,7 @@ import {
 } from './course-authoring-licence.js';
 import {
   CourseArchiveDecisionCollection,
+  CourseCoverChangeCollection,
   CourseDiscardTombstoneCollection,
   CourseDraftHeadCollection,
   type CourseRelease,
@@ -81,6 +93,7 @@ import {
   CourseRevisionCollection,
   type CourseUpgradeChoice,
   CourseUpgradeChoiceCollection,
+  CourseVisibilityChangeCollection,
   EnrollmentAutoUpgradeSkipCollection,
   type EnrollmentReleasePin,
   EnrollmentReleasePinCollection,
@@ -90,6 +103,7 @@ import {
 } from './course-authoring-models.js';
 import { delegationRecordFields, readDelegation } from './course-delegation.js';
 import { resolveEnrollmentLessons } from './course-release-scope.js';
+import { effectiveCourseVisibility } from './course-visibility.js';
 import { groupSharingDigest } from './group-sharing-hash.js';
 import {
   type LessonLayoutParams,
@@ -173,6 +187,7 @@ const bool = (value: unknown, what: string): boolean => {
 };
 const iso = (date: Date | string) => new Date(date).toISOString();
 const optional = (value: string | null | undefined) => value || null;
+const COVER_MIME_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
 
 type Row = Record<string, unknown>;
 type Tx = DatabaseInterface;
@@ -903,7 +918,9 @@ export class CourseAuthoringService {
         sections: input.sections,
       }),
     );
-    return (await CourseRevisionCollection.create({ db: tx })).create({
+    const revision = await (
+      await CourseRevisionCollection.create({ db: tx })
+    ).create({
       _insertOnly: true,
       tenantId: actor.tenantId,
       courseId: input.courseId,
@@ -927,6 +944,10 @@ export class CourseAuthoringService {
       contentDigest,
       recordedAt: new Date(),
     });
+    // A course that turned personal-use can never stay shared or public.
+    if (input.licenseKind === 'personal-use-copy')
+      await this.narrowForLicence(tx, actor, input.courseId, revision);
+    return revision;
   }
 
   /**
@@ -1517,6 +1538,9 @@ export class CourseAuthoringService {
       state,
       licenseKind,
       groupShareable: isGroupShareableLicense(licenseKind),
+      // Reads degrade to the defaults on a database without the added columns.
+      visibility: effectiveCourseVisibility(course.visibility),
+      coverAssetId: optional(course.cover_asset_id as string | undefined),
       headRevisionId: head ? String(head.head_revision_id) : null,
       releases,
     };
@@ -1529,10 +1553,19 @@ export class CourseAuthoringService {
    */
   async listCourses(
     request: CourseAuthoringActor &
-      CoursePageRequest & { includeDiscarded?: boolean },
+      CoursePageRequest & {
+        includeDiscarded?: boolean;
+        /** Only courses whose effective visibility is this value. */
+        visibility?: CourseVisibility;
+      },
   ): Promise<CoursePage<CourseSummaryView>> {
     pageLimit(request.limit);
     decodeCursor(request.cursor);
+    if (
+      request.visibility !== undefined &&
+      !(COURSE_VISIBILITIES as readonly unknown[]).includes(request.visibility)
+    )
+      throw new CourseAuthoringValidationError('Invalid visibility');
     const includeDiscarded =
       request.includeDiscarded === undefined
         ? false
@@ -1556,7 +1589,13 @@ export class CourseAuthoringService {
           tenant_id: request.tenantId,
           source_key: AUTHORED_IDENTITY_SOURCE_KEY,
         })
-      ).filter((row) => includeDiscarded || !discarded.has(String(row.id)));
+      )
+        .filter((row) => includeDiscarded || !discarded.has(String(row.id)))
+        .filter(
+          (row) =>
+            request.visibility === undefined ||
+            effectiveCourseVisibility(row.visibility) === request.visibility,
+        );
       const page = paginate(
         identities,
         (row) => [millis(row.created_at), String(row.id)],
@@ -1669,6 +1708,8 @@ export class CourseAuthoringService {
           sourceKey: AUTHORED_RELEASE_SOURCE_KEY,
           licenseKind,
         }),
+      visibility: effectiveCourseVisibility(row.visibility),
+      coverAssetId: optional(row.cover_asset_id as string | undefined),
       releaseCount: releases.length,
       head:
         head && revision
@@ -1684,6 +1725,10 @@ export class CourseAuthoringService {
             revisionId: String(latest.revision_id),
             releaseNumber: Number(latest.release_number),
             releaseCourseId: String(latest.release_course_id),
+            coverAssetId: optional(
+              lookup.releaseCourses.get(String(latest.release_course_id))
+                ?.cover_asset_id as string | undefined,
+            ),
             recordedAt: iso(latest.recorded_at as string | Date),
           }
         : null,
@@ -1985,8 +2030,19 @@ export class CourseAuthoringService {
     const lessons = view.sections.flatMap((s) => s.lessons);
     const personal = view.licenseKind === 'personal-use-copy';
     const modalities = new Set(lessons.map((l) => l.modality));
+    // The cover is snapshotted onto the immutable release row. It is re-checked
+    // for eligibility (not for the releasing actor's read), and dropped if no
+    // longer eligible, so a release never carries an answer key as its cover.
+    const identity = await this.identityRow(tx, actor.tenantId, view.courseId);
+    const cover = String(identity.cover_asset_id ?? '');
+    const coverAssetId =
+      cover &&
+      !(await this.coverIneligibility(tx, actor.tenantId, view.courseId, cover))
+        ? cover
+        : '';
     await (await AuthoredCourseCollection.create({ db: tx })).create({
       id: input.releaseCourseId,
+      coverAssetId,
       tenantId: actor.tenantId,
       title: view.title,
       summary: view.summary,
@@ -2129,6 +2185,14 @@ export class CourseAuthoringService {
       revisionId: release.revisionId,
       releaseNumber: release.releaseNumber,
       releaseCourseId: release.releaseCourseId,
+      coverAssetId: optional(
+        (
+          await tx.get('courses', {
+            id: release.releaseCourseId,
+            tenant_id: tenantId,
+          })
+        )?.cover_asset_id as string | undefined,
+      ),
       reviewId: optional(release.reviewId),
       actorUserId: release.actorUserId,
       delegatingGuardianUserId: optional(release.delegatingGuardianUserId),
@@ -2136,6 +2200,348 @@ export class CourseAuthoringService {
       recordedAt: iso(release.recordedAt),
       lessons: lessons.sort((a, b) => a.lessonKey.localeCompare(b.lessonKey)),
     };
+  }
+
+  // -- visibility and cover -------------------------------------------------
+
+  /** Most restrictive of the head revision and every release's materialized course. */
+  private async effectiveLicence(
+    tx: Tx,
+    tenantId: string,
+    courseId: string,
+  ): Promise<CourseLicenseKind> {
+    const head = await tx.get('course_draft_heads', {
+      tenant_id: tenantId,
+      course_id: courseId,
+    });
+    const revision = head
+      ? await tx.get('course_revisions', {
+          id: head.head_revision_id,
+          tenant_id: tenantId,
+        })
+      : null;
+    const kinds: CourseLicenseKind[] = [
+      (revision?.license_kind ?? 'own-work') as CourseLicenseKind,
+    ];
+    for (const release of await tx.list('course_releases', {
+      tenant_id: tenantId,
+      course_id: courseId,
+    })) {
+      const course = await tx.get('courses', {
+        id: release.release_course_id,
+        tenant_id: tenantId,
+      });
+      kinds.push((course?.license_kind ?? 'own-work') as CourseLicenseKind);
+    }
+    return mostRestrictiveLicense(kinds);
+  }
+
+  private async requireChangeTable(tx: Tx, table: string) {
+    if (!(await tx.tableExists(table)))
+      throw new CourseAuthoringError(
+        'schema-unavailable',
+        'Course visibility and cover require the latest education schema.',
+      );
+  }
+
+  /**
+   * Sets who the course is meant for. `groups` is the precondition for sharing a
+   * released course with the family's groups; `public` is a listing label only
+   * and grants no read. A personal-use-copy course (any part, ever) can only be
+   * `family`. Appends a change row (actor, previous, new, time); a request that
+   * leaves the stored value unchanged writes nothing.
+   */
+  async setVisibility(
+    request: CourseAuthoringActor & {
+      courseId: string;
+      visibility: CourseVisibility;
+      requestKey: string;
+    },
+  ): Promise<CourseStateView> {
+    const requestKey = requireKey(request.requestKey);
+    if (
+      !(COURSE_VISIBILITIES as readonly unknown[]).includes(request.visibility)
+    )
+      throw new CourseAuthoringValidationError('Invalid visibility');
+    return this.run(async (tx) => {
+      await this.authorize(
+        tx,
+        request,
+        'education.course.set-visibility',
+        'set-visibility',
+        { courseId: request.courseId },
+      );
+      await this.writableDraft(tx, request.tenantId, request.courseId);
+      await this.requireChangeTable(tx, 'course_visibility_changes');
+      await this.lockHead(tx, request.tenantId, request.courseId);
+      const changes = (
+        await (
+          await CourseVisibilityChangeCollection.create({ db: tx })
+        ).list({
+          where: { tenantId: request.tenantId, courseId: request.courseId },
+          limit: 100000,
+        })
+      ).sort((a, b) => a.sequence - b.sequence);
+      const replay = changes.find((c) => c.requestKey === requestKey);
+      if (replay) {
+        if (
+          replay.visibility !== request.visibility ||
+          replay.reason !== 'request' ||
+          replay.delegationId !== (request.delegationId ?? '')
+        )
+          throw new CourseRequestKeyConflictError();
+        return this.courseState(tx, request.tenantId, request.courseId);
+      }
+      const identity = await this.identityRow(
+        tx,
+        request.tenantId,
+        request.courseId,
+      );
+      const stored = String(identity.visibility ?? '');
+      if (stored === request.visibility)
+        return this.courseState(tx, request.tenantId, request.courseId);
+      if (
+        request.visibility !== 'family' &&
+        (await this.effectiveLicence(
+          tx,
+          request.tenantId,
+          request.courseId,
+        )) === 'personal-use-copy'
+      )
+        throw new CourseVisibilityRefusedError(request.visibility);
+      await (await CourseVisibilityChangeCollection.create({ db: tx })).create({
+        _insertOnly: true,
+        tenantId: request.tenantId,
+        courseId: request.courseId,
+        sequence: changes.length + 1,
+        previousVisibility: effectiveCourseVisibility(stored),
+        visibility: request.visibility,
+        reason: 'request',
+        actorUserId: request.actorUserId,
+        ...delegationRecordFields(request),
+        requestKey,
+        recordedAt: new Date(),
+      });
+      await this.writeIdentity(tx, request.tenantId, request.courseId, {
+        visibility: request.visibility,
+      });
+      return this.courseState(tx, request.tenantId, request.courseId);
+    });
+  }
+
+  /** Narrows to family (with a change row) when a revision made the course personal-use. */
+  private async narrowForLicence(
+    tx: Tx,
+    actor: CourseAuthoringActor,
+    courseId: string,
+    revision: CourseRevision,
+  ) {
+    const identity = await this.identityRow(tx, actor.tenantId, courseId);
+    const stored = String(identity.visibility ?? '');
+    if (stored !== 'groups' && stored !== 'public') return;
+    await this.requireChangeTable(tx, 'course_visibility_changes');
+    const changes = await tx.list('course_visibility_changes', {
+      tenant_id: actor.tenantId,
+      course_id: courseId,
+    });
+    await (await CourseVisibilityChangeCollection.create({ db: tx })).create({
+      _insertOnly: true,
+      tenantId: actor.tenantId,
+      courseId,
+      sequence: changes.length + 1,
+      previousVisibility: stored,
+      visibility: 'family',
+      reason: 'licence',
+      actorUserId: actor.actorUserId,
+      ...delegationRecordFields(actor),
+      requestKey: `licence:${String(revision.id)}`,
+      recordedAt: new Date(),
+    });
+    await this.writeIdentity(tx, actor.tenantId, courseId, {
+      visibility: 'family',
+    });
+  }
+
+  private async writeIdentity(
+    tx: Tx,
+    tenantId: string,
+    courseId: string,
+    values: { visibility?: CourseVisibility; coverAssetId?: string },
+  ) {
+    const course = await (
+      await AuthoredCourseCollection.create({ db: tx })
+    ).get({ id: courseId, tenantId }, { cache: false });
+    if (!course) throw new CourseNotFoundError();
+    if (values.visibility !== undefined) course.visibility = values.visibility;
+    if (values.coverAssetId !== undefined)
+      course.coverAssetId = values.coverAssetId;
+    await course.save();
+  }
+
+  /**
+   * Why an asset cannot be this course's cover, or null. Education-owned means a
+   * material this course copied into the tenant (`materialCopy`); it must be an
+   * image and never an answer key anywhere in the tenant.
+   */
+  private async coverIneligibility(
+    tx: Tx,
+    tenantId: string,
+    courseId: string,
+    assetId: string,
+  ): Promise<string | null> {
+    const asset = await tx.get('assets', { id: assetId, tenant_id: tenantId });
+    if (!asset) return 'missing';
+    if (!COVER_MIME_TYPES.includes(String(asset.mime_type ?? '').toLowerCase()))
+      return 'not-image';
+    let known = false;
+    for (const row of await tx.list('lesson_revisions', {
+      tenant_id: tenantId,
+      course_id: courseId,
+    }))
+      for (const m of JSON.parse(String(row.materials_json)) as Array<{
+        assetId: string;
+        relationship: string;
+      }>)
+        if (m.assetId === assetId) {
+          known = true;
+          if (m.relationship === 'answer-key') return 'answer-key';
+        }
+    if (!known) return 'not-course-material';
+    // A released answer-key link anywhere in the tenant keeps the asset private.
+    if (
+      await tx.get('lesson_assets', {
+        tenant_id: tenantId,
+        asset_id: assetId,
+        relationship: 'answer-key',
+      })
+    )
+      return 'answer-key';
+    return null;
+  }
+
+  /** Fails closed: the asset must be readable by this very actor through the asset guard. */
+  private async coverReadable(
+    tx: Tx,
+    actor: CourseAuthoringActor,
+    assetId: string,
+  ): Promise<boolean> {
+    try {
+      const raw = await tx.get('assets', {
+        id: assetId,
+        tenant_id: actor.tenantId,
+      });
+      if (!raw) return false;
+      const read = async () => {
+        const assets = await AssetCollection.create({ db: tx });
+        const asset = await assets.get(assetId, { cache: false });
+        return Boolean(asset) && asset?.tenantId === actor.tenantId;
+      };
+      if (raw.access_mode !== 'private') return await read();
+      const user = await tx.get('users', { id: actor.actorUserId });
+      const owner = raw.owner_profile_id ? String(raw.owner_profile_id) : '';
+      if (!owner || !user || String(user.profile_id ?? '') !== owner)
+        return false;
+      return await withPrivateAssetAccess(
+        {
+          tenantId: actor.tenantId,
+          actorUserId: actor.actorUserId,
+          ownerProfileId: owner,
+          assetIds: [assetId],
+        },
+        read,
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Sets (or, with `assetId: null`, clears) the course cover: an education-owned
+   * image the actor can read, never an answer key. The next release snapshots it
+   * onto the release row. Appends a change row; an unchanged cover writes nothing.
+   */
+  async setCover(
+    request: CourseAuthoringActor & {
+      courseId: string;
+      assetId: string | null;
+      requestKey: string;
+    },
+  ): Promise<CourseStateView> {
+    const requestKey = requireKey(request.requestKey);
+    if (
+      request.assetId !== null &&
+      (typeof request.assetId !== 'string' ||
+        !request.assetId ||
+        request.assetId.length > 200)
+    )
+      throw new CourseAuthoringValidationError('Invalid cover asset');
+    const assetId = request.assetId ?? '';
+    return this.run(async (tx) => {
+      await this.authorize(
+        tx,
+        request,
+        'education.course.set-cover',
+        'set-cover',
+        { courseId: request.courseId },
+      );
+      await this.writableDraft(tx, request.tenantId, request.courseId);
+      await this.requireChangeTable(tx, 'course_cover_changes');
+      await this.lockHead(tx, request.tenantId, request.courseId);
+      const changes = (
+        await (
+          await CourseCoverChangeCollection.create({ db: tx })
+        ).list({
+          where: { tenantId: request.tenantId, courseId: request.courseId },
+          limit: 100000,
+        })
+      ).sort((a, b) => a.sequence - b.sequence);
+      const replay = changes.find((c) => c.requestKey === requestKey);
+      if (replay) {
+        if (
+          replay.assetId !== assetId ||
+          replay.delegationId !== (request.delegationId ?? '')
+        )
+          throw new CourseRequestKeyConflictError();
+        return this.courseState(tx, request.tenantId, request.courseId);
+      }
+      const identity = await this.identityRow(
+        tx,
+        request.tenantId,
+        request.courseId,
+      );
+      const current = String(identity.cover_asset_id ?? '');
+      if (current === assetId)
+        return this.courseState(tx, request.tenantId, request.courseId);
+      if (assetId) {
+        const reason =
+          (await this.coverIneligibility(
+            tx,
+            request.tenantId,
+            request.courseId,
+            assetId,
+          )) ??
+          ((await this.coverReadable(tx, request, assetId))
+            ? null
+            : 'unreadable');
+        if (reason) throw new CourseCoverInvalidError(reason);
+      }
+      await (await CourseCoverChangeCollection.create({ db: tx })).create({
+        _insertOnly: true,
+        tenantId: request.tenantId,
+        courseId: request.courseId,
+        sequence: changes.length + 1,
+        previousAssetId: current,
+        assetId,
+        actorUserId: request.actorUserId,
+        ...delegationRecordFields(request),
+        requestKey,
+        recordedAt: new Date(),
+      });
+      await this.writeIdentity(tx, request.tenantId, request.courseId, {
+        coverAssetId: assetId,
+      });
+      return this.courseState(tx, request.tenantId, request.courseId);
+    });
   }
 
   // -- archive and discard --------------------------------------------------

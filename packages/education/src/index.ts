@@ -4,10 +4,12 @@ export type {
   CourseLicenseKind,
   CourseModality,
   CourseStatus,
+  CourseVisibility,
   LessonCompletionRule,
 } from './catalog.js';
 export {
   AuthoredCourse,
+  COURSE_VISIBILITIES,
   Course,
   CourseSection,
   Exercise,
@@ -176,6 +178,10 @@ export type {
   SourceSharing,
 } from './course-source.js';
 export { CourseSource, CourseSourceCollection } from './course-source.js';
+export {
+  authoredVisibilityPermitsGroups,
+  effectiveCourseVisibility,
+} from './course-visibility.js';
 export type { EnrollmentParentNoteView } from './enrollment-note-service.js';
 export {
   ENROLLMENT_NOTE_MAX_LENGTH,
