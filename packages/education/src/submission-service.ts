@@ -12,7 +12,9 @@ import {
   AttestationCollection,
   GradeCollection,
   LessonAssetCollection,
+  LessonCollection,
   LessonProgressCollection,
+  LessonSelfAttestationCollection,
   ScannedSubmissionCollection,
   SubmissionAssetCollection,
   SubmissionCollection,
@@ -21,8 +23,11 @@ import {
 import {
   LearnerAuthorizationError,
   type LearnerAuthorizer,
+  LearnerHistoryUnavailableError,
   type LearnerRequest,
   LearnerService,
+  LearnerValidationError,
+  requirePolicyBasis,
 } from './learner-service.js';
 import type { Grade, Submission, SubmissionKind } from './submissions.js';
 import { readWorkbookCompletion } from './workbook-completion.js';
@@ -71,6 +76,12 @@ export type SubmissionView = Readonly<{
   awaitingParentRelease?: boolean;
   /** Effective source privacy: every derived revision needs explicit release. */
   sourceRequiresParentRelease?: boolean;
+  /**
+   * True for a learner's own attestation (`attestOwnLesson`). A guardian
+   * grade on it means the guardian confirmed it; without one it is only the
+   * learner's statement and must not be read as completion.
+   */
+  selfReported?: boolean;
   grade: null | {
     id: string;
     graderKind: Grade['graderKind'];
@@ -78,6 +89,26 @@ export type SubmissionView = Readonly<{
     feedback: string;
   };
 }>;
+/** Lesson kinds a learner may attest on their own: nothing to photograph. */
+export const SELF_ATTESTABLE_LESSON_KINDS: ReadonlyArray<string> =
+  Object.freeze(['Reading', 'Video']);
+
+/** `attestOwnLesson` was asked for a lesson that is not Reading or Video. */
+export class OwnAttestationLessonKindError extends LearnerValidationError {
+  constructor(readonly kind: string) {
+    super(`A ${kind} lesson cannot be self-attested`);
+    this.name = 'OwnAttestationLessonKindError';
+  }
+}
+
+/** `attestOwnLesson` refused because the lesson already has other evidence or is finished. */
+export class OwnAttestationConflictError extends LearnerValidationError {
+  constructor(readonly status: string) {
+    super(`A ${status} lesson cannot be self-attested`);
+    this.name = 'OwnAttestationConflictError';
+  }
+}
+
 type LessonRequest = LearnerRequest & {
   enrollmentId: string;
   lessonId: string;
@@ -421,6 +452,14 @@ export class SubmissionService extends LearnerService {
           { lessonId: row.lessonId },
         ),
       );
+    const selfReported =
+      (await this.db.tableExists('lesson_self_attestations')) &&
+      Boolean(
+        await this.db.get('lesson_self_attestations', {
+          tenant_id: row.tenantId,
+          submission_id: String(row.id),
+        }),
+      );
     return {
       id: String(row.id),
       learnerId: row.learnerId,
@@ -438,6 +477,7 @@ export class SubmissionService extends LearnerService {
       pages: awaitingParentRelease ? [] : pages,
       ...(awaitingParentRelease ? { awaitingParentRelease: true } : {}),
       ...(photo.guardianOrigin ? { sourceRequiresParentRelease: true } : {}),
+      ...(selfReported ? { selfReported: true } : {}),
       grade:
         grade && !withheld && !awaitingParentRelease
           ? {
@@ -976,6 +1016,93 @@ export class SubmissionService extends LearnerService {
         request.score ?? null,
         request.feedback ?? '',
       );
+    });
+  }
+  /**
+   * The learner's own "I read it" / "I watched it" for a Reading or Video
+   * lesson, under `education.learner.attest-own` (refused for any other actor
+   * before the host is asked). Writes an ungraded `Attestation` marked by a
+   * `LessonSelfAttestation` with the learner as actor and the host's
+   * `policyBasis`, and moves progress to `submitted` (one attempt) to await
+   * guardian confirmation through `attestLesson` or `reviewSubmission`. It is
+   * not a grade and never completes the lesson. A repeat returns the same
+   * attestation; submitted, review, complete or skipped progress without one
+   * refuses with `OwnAttestationConflictError`.
+   */
+  async attestOwnLesson(
+    request: LessonRequest & { policyBasis: string; notes?: string },
+  ): Promise<SubmissionView> {
+    const policyBasis = requirePolicyBasis(request.policyBasis);
+    const notes = request.notes ?? '';
+    if (typeof notes !== 'string' || notes.length > 2000)
+      throw new LearnerValidationError('Attestation notes must be short text');
+    return this.mutate(async (service) => {
+      const progress = await service.progress(
+        request,
+        'education.learner.attest-own',
+      );
+      const lesson = await (
+        await LessonCollection.create({ db: service.db })
+      ).get({ id: request.lessonId }, { cache: false });
+      const kind = lesson?.constructor.name ?? 'unknown';
+      if (!SELF_ATTESTABLE_LESSON_KINDS.includes(kind))
+        throw new OwnAttestationLessonKindError(kind);
+      if (!(await service.db.tableExists('lesson_self_attestations')))
+        throw new LearnerHistoryUnavailableError('lesson_self_attestations');
+      const marks = await LessonSelfAttestationCollection.create({
+        db: service.db,
+      });
+      const prior = await marks.get(
+        { tenantId: request.tenantId, progressId: String(progress.id) },
+        { cache: false },
+      );
+      const attestations = await AttestationCollection.create({
+        db: service.db,
+      });
+      if (prior) {
+        const replay = await attestations.get(
+          { id: prior.submissionId, tenantId: request.tenantId },
+          { cache: false },
+        );
+        if (!replay) throw new LearnerAuthorizationError();
+        return service.view(replay, request.actorUserId);
+      }
+      if (
+        progress.status !== 'in_progress' &&
+        progress.status !== 'not_started'
+      )
+        throw new OwnAttestationConflictError(progress.status);
+      if (
+        await attestations.get(
+          { progressId: String(progress.id), tenantId: request.tenantId },
+          { cache: false },
+        )
+      )
+        throw new OwnAttestationConflictError('attested');
+      const row = await attestations.create({
+        tenantId: request.tenantId,
+        learnerId: request.learnerId,
+        lessonId: request.lessonId,
+        progressId: String(progress.id),
+        notes,
+        submittedAt: new Date(),
+      });
+      await marks.create({
+        _insertOnly: true,
+        tenantId: request.tenantId,
+        submissionId: String(row.id),
+        progressId: String(progress.id),
+        learnerId: request.learnerId,
+        lessonId: request.lessonId,
+        actorUserId: request.actorUserId,
+        policyBasis,
+        recordedAt: new Date(),
+      });
+      progress.status = 'submitted';
+      progress.startedAt ??= new Date();
+      progress.attempts += 1;
+      await progress.save();
+      return service.view(row, request.actorUserId);
     });
   }
   async signSubmissionAsset(

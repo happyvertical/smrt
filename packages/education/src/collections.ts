@@ -63,6 +63,7 @@ import {
   Attestation,
   ExternalCompletion,
   Grade,
+  LessonSelfAttestation,
   ScannedSubmission,
   Submission,
   SubmissionAsset,
@@ -82,6 +83,9 @@ export class ExternalCompletionCollection extends SmrtCollection<ExternalComplet
 }
 export class AttestationCollection extends SmrtCollection<Attestation> {
   static readonly _itemClass = Attestation;
+}
+export class LessonSelfAttestationCollection extends SmrtCollection<LessonSelfAttestation> {
+  static readonly _itemClass = LessonSelfAttestation;
 }
 export class GradeCollection extends SmrtCollection<Grade> {
   static readonly _itemClass = Grade;

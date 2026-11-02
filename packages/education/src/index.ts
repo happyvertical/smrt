@@ -118,6 +118,7 @@ export {
   LessonAssetCollection,
   LessonCollection,
   LessonProgressCollection,
+  LessonSelfAttestationCollection,
   ReadingCollection,
   ScannedSubmissionCollection,
   SubmissionAssetCollection,
@@ -351,6 +352,9 @@ export type {
   SubmissionView,
 } from './submission-service.js';
 export {
+  OwnAttestationConflictError,
+  OwnAttestationLessonKindError,
+  SELF_ATTESTABLE_LESSON_KINDS,
   SubmissionService,
   SubmissionStorageCleanupError,
   WorkbookWorkflowRequiredError,
@@ -366,6 +370,7 @@ export {
   Attestation,
   ExternalCompletion,
   Grade,
+  LessonSelfAttestation,
   ScannedSubmission,
   Submission,
   SubmissionAsset,

@@ -128,7 +128,8 @@ export type LearnerAuthorizer = (
       | 'education.learner.review-response'
       | 'education.learner.setup'
       | 'education.progress.put-back'
-      | 'education.enrollment.set-status';
+      | 'education.enrollment.set-status'
+      | 'education.learner.attest-own';
     own: boolean;
     relationshipTypeId?: string;
     /** True only for a delegated assignment; `relationshipTypeId` is then undefined. */
@@ -605,6 +606,9 @@ export class LearnerService {
       if (!relationship) throw new LearnerAuthorizationError();
       relationshipTypeId = String(relationship.type_id);
     }
+    // A self-attestation is the learner's own statement; guardians use attestLesson.
+    if (!own && action === 'education.learner.attest-own')
+      throw new LearnerAuthorizationError();
     // A learner cannot turn their own grant into a planning/guardian capability.
     if (
       own &&
