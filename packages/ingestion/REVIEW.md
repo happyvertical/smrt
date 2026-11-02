@@ -878,6 +878,21 @@ The factory unwraps this into `ItemReviewView.generation`. Stale generation is
 omitted while authorized saved reviews remain available; access denials propagate.
 The reference application still owns its fixture provisioning and HTTP transport.
 
+## Upload drop zone (#4587)
+
+The inbox's upload leads the view, before the state filter and the rows, so it
+is found on an empty inbox too, and it is a drop zone by default:
+`IntakeWorkspace`/`IntakeInbox` (and `InboxView`) take `dropzone` (default
+`true`), which gives smrt-ui `FilePicker` its full-width, dashed drop-area
+presentation (the picker accepted dropped files before; it just did not look
+like it). Files dropped on it are selected exactly as picked ones (same retained originals, request
+identity and refusal handling below), click-to-pick still opens the native
+chooser, and `accept` / `uploadAccept` and the host's allowlist apply unchanged.
+Its description is `ingestion.filesDrop` ("Drop files here, or browse.")
+followed by `ingestion.filesHelp`, so a host that overrides the help text with
+its own allowlist wording keeps it. `dropzone={false}` keeps the plain picker,
+with `ingestion.filesHelp` alone, in the same place.
+
 ## Upload refusals and accepted types (#4502)
 
 `IntakeWorkspace`/`IntakeInbox` take `accept` (an `<input accept>` value)
