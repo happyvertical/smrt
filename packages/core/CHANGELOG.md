@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.57.48
+
+### Patch Changes
+
+- ### Features
+  
+  - lead the inbox with an upload drop zone (#4587) (#4591) (ingestion)
+- @happyvertical/smrt-config@0.57.48
+  - @happyvertical/smrt-scanner@0.57.48
+  - @happyvertical/smrt-types@0.57.48
+
 ## 0.57.47
 
 ### Patch Changes
