@@ -18,6 +18,10 @@ describe('jsonValuesEqual (#4604)', () => {
     expect(jsonValuesEqual([1, 2], [2, 1])).toBe(false);
     expect(jsonValuesEqual([1], [1, 1])).toBe(false);
     expect(jsonValuesEqual([], {})).toBe(false);
+    // Holes are not skipped: `[ , ]` persists as `[null]`, not `[42]`.
+    // biome-ignore lint/suspicious/noSparseArray: the sparse array is the case under test.
+    expect(jsonValuesEqual([, 1], [42, 1])).toBe(false);
+    expect(jsonValuesEqual(new Array(1), [42])).toBe(false);
   });
 
   it('treats undefined-valued keys as absent but null as a value', () => {

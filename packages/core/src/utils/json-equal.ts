@@ -99,7 +99,12 @@ export function jsonValuesEqual(a: unknown, b: unknown, depth = 0): boolean {
     if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) {
       return false;
     }
-    return a.every((item, index) => jsonValuesEqual(item, b[index], depth + 1));
+    // Index loop, not `every()`: `every()` skips holes, so a sparse array
+    // would match any value at that index.
+    for (let index = 0; index < a.length; index += 1) {
+      if (!jsonValuesEqual(a[index], b[index], depth + 1)) return false;
+    }
+    return true;
   }
 
   if (isPlainObject(a) && isPlainObject(b)) {
