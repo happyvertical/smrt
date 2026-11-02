@@ -71,7 +71,22 @@ Same-tenant membership alone never grants sibling access.
 - `startLesson` allows the learner or authorized guardian to create their own
   enrollment's lesson progress in `in_progress`. It derives learner identity
   from the validated enrollment. Repeated starts return existing state without
-  resetting counters, scores, completion, or timestamps.
+  resetting counters, scores, completion, or timestamps. A `not_started` row
+  (a put-back lesson) moves to `in_progress` again with its counters, score and
+  first `startedAt` kept.
+- `putBackLesson({ enrollmentId, lessonId })` takes `in_progress` work back to
+  `not_started` for the learner or an authorized guardian under
+  `education.progress.put-back` (the host decides; own is not blocked). The
+  progress row keeps its one (enrollment, lesson) identity, so each change
+  appends an immutable `LessonProgressTransition` (from, to, kind, actor,
+  time) in the same transaction; restarting appends a `start` row when the
+  table exists. Counters, score, submissions, grades, workbook and evidence
+  rows are never touched. It returns `{ changed, progress }`: no progress or
+  already `not_started` is an idempotent no-op. `submitted`, `needs_review`,
+  `complete`, `skipped` (stored or workbook-projected) refuse with
+  `LessonPutBackError` (`.status`); completion is undone only through guardian
+  paths. A host without `lesson_progress_transitions` gets
+  `LearnerHistoryUnavailableError` from put-back; other operations still run.
 - `listProgress` reads only the validated learner/enrollment and lessons still
   visible in that enrollment's course. Inconsistent persisted links fail
   closed or are omitted from the list.

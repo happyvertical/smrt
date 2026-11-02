@@ -32,6 +32,10 @@ import {
   orderEffectiveLessons,
   resolveEnrollmentLessons,
 } from './course-release-scope.js';
+import {
+  LessonProgressTransitionCollection,
+  type LessonProgressTransitionKind,
+} from './learner-history.js';
 import type {
   Curriculum,
   Enrollment,
@@ -121,7 +125,8 @@ export type LearnerAuthorizer = (
       | 'education.learner.complete'
       | 'education.learner.respond'
       | 'education.learner.review-response'
-      | 'education.learner.setup';
+      | 'education.learner.setup'
+      | 'education.progress.put-back';
     own: boolean;
     relationshipTypeId?: string;
     /** True only for a delegated assignment; `relationshipTypeId` is then undefined. */
@@ -143,6 +148,41 @@ export class LearnerAuthorizationError extends Error {
     this.name = 'LearnerAuthorizationError';
   }
 }
+
+/** Base for request-shape and state-conflict errors raised by learner workflows. */
+export class LearnerValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'LearnerValidationError';
+  }
+}
+
+/**
+ * `putBackLesson` refused because the lesson is past the point a learner can
+ * take it back: submitted, under review, complete or skipped. Completion is
+ * undone only through the guardian paths.
+ */
+export class LessonPutBackError extends LearnerValidationError {
+  constructor(readonly status: LessonProgress['status']) {
+    super(`A ${status} lesson cannot be put back`);
+    this.name = 'LessonPutBackError';
+  }
+}
+
+/** A required history table has not been migrated on this host. */
+export class LearnerHistoryUnavailableError extends Error {
+  constructor(readonly table: string) {
+    super(`Education history table ${table} is not migrated`);
+    this.name = 'LearnerHistoryUnavailableError';
+  }
+}
+
+/** Result of `putBackLesson`; `changed` is false for an idempotent replay. */
+export type PutBackLessonResult = Readonly<{
+  changed: boolean;
+  /** Null when the lesson never had progress (nothing to put back). */
+  progress: LessonProgressView | null;
+}>;
 
 /** Service results contain data only, with no transaction-bound model handle. */
 export type LearnerView = Readonly<{
@@ -1260,7 +1300,35 @@ export class LearnerService {
     );
   }
 
-  /** Start once. Caller-supplied learner/status/score/counter patches are never applied. */
+  /** Appends one progress status change in the caller's transaction. */
+  protected async recordProgressTransition(
+    request: LearnerRequest,
+    row: LessonProgress,
+    from: LessonProgress['status'],
+    kind: LessonProgressTransitionKind,
+  ): Promise<void> {
+    await (
+      await LessonProgressTransitionCollection.create({ db: this.db })
+    ).create({
+      _insertOnly: true,
+      tenantId: request.tenantId,
+      progressId: String(row.id),
+      enrollmentId: row.enrollmentId,
+      learnerId: row.learnerId,
+      lessonId: row.lessonId,
+      fromStatus: from,
+      toStatus: row.status,
+      kind,
+      actorUserId: request.actorUserId,
+      recordedAt: new Date(),
+    });
+  }
+
+  /**
+   * Start once. Caller-supplied learner/status/score/counter patches are never
+   * applied. A lesson that was put back (`not_started`) moves to `in_progress`
+   * again, keeping its counters, score and first start time.
+   */
   async startLesson(
     request: LearnerRequest & { enrollmentId: string; lessonId: string },
   ): Promise<LessonProgressView> {
@@ -1286,6 +1354,19 @@ export class LearnerService {
       if (existing) {
         if (existing.learnerId !== enrollment.learnerId)
           throw new LearnerAuthorizationError();
+        if (existing.status === 'not_started') {
+          existing.status = 'in_progress';
+          existing.startedAt ??= new Date();
+          await existing.save();
+          // Hosts that have not migrated the history table keep the old start.
+          if (await service.db.tableExists('lesson_progress_transitions'))
+            await service.recordProgressTransition(
+              request,
+              existing,
+              'not_started',
+              'start',
+            );
+        }
         return service.projectProgress(request, existing);
       }
       return service.projectProgress(
@@ -1300,6 +1381,67 @@ export class LearnerService {
           _insertOnly: true,
         }),
       );
+    });
+  }
+
+  /**
+   * Takes a started lesson back to `not_started` for the learner or an
+   * authorized guardian (`education.progress.put-back`). Only `in_progress`
+   * progress moves; the earlier state is appended to the progress history.
+   * Counters, score, submissions, grades, workbook and evidence records are
+   * never touched. Already not started (or never started) is an idempotent
+   * no-op; submitted, review, complete and skipped lessons refuse with
+   * `LessonPutBackError`.
+   */
+  async putBackLesson(
+    request: LearnerRequest & { enrollmentId: string; lessonId: string },
+  ): Promise<PutBackLessonResult> {
+    return this.mutate(async (service) => {
+      const enrollment = await service.requireEnrollment(
+        request,
+        'education.progress.put-back',
+      );
+      await service.lock('enrollments', request.enrollmentId, request.tenantId);
+      if (!(await service.lessonInScope(request, enrollment, request.lessonId)))
+        throw new LearnerAuthorizationError();
+      const existing = await (
+        await LessonProgressCollection.create({ db: service.db })
+      ).get(
+        {
+          enrollmentId: String(enrollment.id),
+          lessonId: request.lessonId,
+          tenantId: request.tenantId,
+        },
+        { cache: false },
+      );
+      if (!existing) return { changed: false, progress: null };
+      if (existing.learnerId !== enrollment.learnerId)
+        throw new LearnerAuthorizationError();
+      // Workbook completion can make stored in-progress work read as complete.
+      const projected = await service.projectProgress(request, existing);
+      if (
+        existing.status === 'not_started' &&
+        projected.status === 'not_started'
+      )
+        return { changed: false, progress: projected };
+      if (existing.status !== 'in_progress')
+        throw new LessonPutBackError(existing.status);
+      if (projected.status !== 'in_progress')
+        throw new LessonPutBackError(projected.status);
+      if (!(await service.db.tableExists('lesson_progress_transitions')))
+        throw new LearnerHistoryUnavailableError('lesson_progress_transitions');
+      existing.status = 'not_started';
+      await existing.save();
+      await service.recordProgressTransition(
+        request,
+        existing,
+        'in_progress',
+        'put-back',
+      );
+      return {
+        changed: true,
+        progress: await service.projectProgress(request, existing),
+      };
     });
   }
 }

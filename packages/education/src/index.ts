@@ -236,6 +236,11 @@ export {
   importEasyPeasyGrade4Course,
   importEasyPeasyGrade4Theme,
 } from './hearth-easy-peasy-grade4.js';
+export type { LessonProgressTransitionKind } from './learner-history.js';
+export {
+  LessonProgressTransition,
+  LessonProgressTransitionCollection,
+} from './learner-history.js';
 export type {
   EnrollmentPlanView,
   PlanLessonView,
@@ -250,10 +255,14 @@ export type {
   LearnerSetupStatusRequest,
   LearnerView,
   LessonProgressView,
+  PutBackLessonResult,
 } from './learner-service.js';
 export {
   LearnerAuthorizationError,
+  LearnerHistoryUnavailableError,
   LearnerService,
+  LearnerValidationError,
+  LessonPutBackError,
 } from './learner-service.js';
 export type { EnrollmentStatus, LessonProgressStatus } from './learners.js';
 export { Curriculum, Enrollment, Learner, LessonProgress } from './learners.js';
