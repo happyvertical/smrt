@@ -411,6 +411,26 @@ export {
   SubmissionAsset,
   SubmissionIntakeBinding,
 } from './submissions.js';
+export type { TutorContextRequest } from './tutor-context-service.js';
+export { TutorContextService } from './tutor-context-service.js';
+export * from './tutor-contracts.js';
+export {
+  TutorExchange,
+  TutorExchangeCollection,
+  TutorSession,
+  TutorSessionClosure,
+  TutorSessionClosureCollection,
+  TutorSessionCollection,
+} from './tutor-models.js';
+export type {
+  AppendTutorExchangeRequest,
+  ListTutorSessionsRequest,
+  OpenTutorSessionRequest,
+  TutorExchangeView,
+  TutorSessionView,
+  TutorSessionWithExchanges,
+} from './tutor-session-service.js';
+export { TutorSessionService } from './tutor-session-service.js';
 export { normalizeWorkbookAnswerRegions } from './workbook-answer-regions.js';
 export {
   WorkbookCompletionDecision,

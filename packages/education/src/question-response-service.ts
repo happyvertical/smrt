@@ -122,7 +122,7 @@ function checkAgainst(content: QuestionResponseContent, revision: Row) {
 }
 
 /** Never reads or carries keys for the learner audience; guardians get them. */
-function revisionView(row: Row, keyed: boolean): QuestionRevisionView {
+export function revisionView(row: Row, keyed: boolean): QuestionRevisionView {
   const parse = (value: unknown) => JSON.parse(String(value));
   return {
     id: String(row.id),
@@ -348,7 +348,7 @@ export class QuestionResponseService extends LearnerService {
   }
 
   /** Effective lesson row to its immutable lesson revision's ordered question refs. */
-  private async lessonQuestions(
+  protected async lessonQuestions(
     tenantId: string,
     enrollment: { id: unknown; learnerId: string },
     lessonId: string,
@@ -393,7 +393,7 @@ export class QuestionResponseService extends LearnerService {
     };
   }
 
-  private async revisionRow(
+  protected async revisionRow(
     request: { tenantId: string },
     ref: { questionRevisionId: string },
   ): Promise<Row> {

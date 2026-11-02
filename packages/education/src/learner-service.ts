@@ -133,7 +133,9 @@ export type LearnerAuthorizer = (
       | 'education.enrollment.set-status'
       | 'education.learner.attest-own'
       | 'education.progress.complete-own'
-      | 'education.enrollment.set-pace';
+      | 'education.enrollment.set-pace'
+      | 'education.tutor.read'
+      | 'education.tutor.exchange';
     own: boolean;
     relationshipTypeId?: string;
     /** True only for a delegated assignment; `relationshipTypeId` is then undefined. */
