@@ -117,6 +117,12 @@ URIs) under the host's `education.tutor.read` decision, and `TutorSessionService
 (`open`, `append`, `close`, `listForLearner`; `education.tutor.exchange` and
 `education.tutor.read`) keeps append-only guardian-readable transcripts. No model
 call happens in the package; see [tutor contract](agents/tutor-context.md).
+
+`CourseBundleImportService` imports a course zip (optional closed `manifest.json`)
+or file set under hard size, ratio, path and entry bounds, keeps unsupported and
+duplicate members as append-only evidence, hands accepted members to ingestion and
+proposes sections and lessons through `CourseGenerationReviewService`; see
+[bundle import](agents/course-bundle-import.md).
 Repeated starts preserve the existing progress, including attempts and scores.
 A new curriculum/year creates a distinct enrollment and fresh progress history.
 An unscored lesson has `bestScore: null`, distinct from zero. The service does

@@ -104,5 +104,8 @@ Both ship through normal manifest migrations. The originals stay in ingestion
 and are never copied. Imported material keeps its course licence; extraction
 does not change sharing.
 
-Not in this release: zip/bundle manifests (SMRT #4578), automatic new
+Zip and manifest bundles are handled before extraction by
+[CourseBundleImportService](course-bundle-import.md) (SMRT #4578).
+
+Not in this release: automatic new
 revisions on `source_changed`, and media assets for extracted diagrams.
