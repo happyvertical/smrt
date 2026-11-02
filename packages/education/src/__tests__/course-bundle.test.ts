@@ -390,6 +390,17 @@ describe('path validation', () => {
     ).toBe('duplicate_name');
     expect(reason(() => readFileSet([]))).toBe('empty_bundle');
   });
+
+  it('enforces a lowered maxTotalBytes on a plain file set like an archive', () => {
+    const files = [
+      { path: 'a.txt', bytes: Buffer.from('a'.repeat(600)) },
+      { path: 'b.txt', bytes: Buffer.from('b'.repeat(600)) },
+    ];
+    expect(
+      reason(() => readFileSet(files, limits({ maxTotalBytes: 1000 }))),
+    ).toBe('total_too_large');
+    expect(readFileSet(files, limits({ maxTotalBytes: 1200 }))).toHaveLength(2);
+  });
 });
 
 describe('limits', () => {
@@ -514,6 +525,51 @@ describe('classification and planning', () => {
     expect(reason(() => planCourseBundle(readFileSet(files)))).toBe(
       'too_many_lessons',
     );
+  });
+
+  it('refuses a lesson whose combined text is over the body cap instead of dropping it', () => {
+    const files = [
+      {
+        path: 'manifest.json',
+        bytes: Buffer.from(
+          JSON.stringify({
+            version: 1,
+            sections: [
+              {
+                key: 's',
+                title: 'S',
+                lessons: [
+                  {
+                    key: 'long',
+                    title: 'Long',
+                    members: [{ path: 'a.txt' }, { path: 'b.txt' }],
+                  },
+                ],
+              },
+            ],
+          }),
+        ),
+      },
+      { path: 'a.txt', bytes: Buffer.from('a'.repeat(60)) },
+      { path: 'b.txt', bytes: Buffer.from('b'.repeat(60)) },
+    ];
+    const capped = limits({ maxLessonBodyChars: 100 });
+    let refused: unknown;
+    try {
+      planCourseBundle(readFileSet(files, capped), undefined, capped);
+    } catch (error) {
+      refused = error;
+    }
+    expect(refused).toBeInstanceOf(CourseBundleRefusedError);
+    expect(refused).toMatchObject({
+      reason: 'lesson_too_large',
+      entry: 'long',
+    });
+    // Each member alone fits; together they fit under the default cap.
+    const plan = planCourseBundle(readFileSet(files));
+    expect(
+      (bundleProposalOutput(plan).lessons[0] as { body?: string }).body,
+    ).toHaveLength(122);
   });
 
   describe('manifest', () => {

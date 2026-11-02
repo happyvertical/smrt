@@ -110,7 +110,8 @@ export type CourseBundleRefusalReason =
   | 'manifest_missing_member'
   | 'manifest_duplicate_member'
   | 'duplicate_key'
-  | 'too_many_lessons';
+  | 'too_many_lessons'
+  | 'lesson_too_large';
 
 /**
  * The whole bundle is refused: it is hostile, damaged or outside the contract.

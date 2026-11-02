@@ -57,6 +57,11 @@ listener never affects the import.
 | `maxLessonBodyChars` | 100 000 |
 | archive nesting | 1: a zip inside a zip is never expanded |
 
+A lesson whose combined text members exceed `maxLessonBodyChars` refuses the
+bundle (`lesson_too_large`, `entry` = lesson key) at import; text is never
+trimmed or dropped. A plain file set enforces `maxTotalBytes` on its member
+bytes exactly as an archive does on inflated bytes.
+
 The reader (`course-bundle-zip.ts`) parses the end record and central directory,
 validates every offset and size against the real buffer, inflates with
 `maxOutputLength` equal to the declared size (declared sizes are never trusted:

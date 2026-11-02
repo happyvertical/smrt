@@ -562,7 +562,7 @@ export function planCourseBundle(
           role: lesson.roles[i] ?? '',
         });
       });
-  return {
+  const plan: CourseBundlePlan = {
     readerId: prepared.readerId,
     manifestVersion: prepared.manifestVersion,
     bundleIdentity: courseBundleIdentity(raw),
@@ -570,6 +570,9 @@ export function planCourseBundle(
     structure,
     placements,
   };
+  // Check lesson bodies at import time so an over-cap lesson writes nothing.
+  bundleProposalOutput(plan, limits);
+  return plan;
 }
 
 /** Closed proposal output (`validateCourseGenerationOutput` shape) for a structure. */
@@ -597,11 +600,15 @@ export function bundleProposalOutput(
         })
         .map((m) => (m as ClassifiedBundleMember).text as string)
         .join('\n\n');
+      // Refuse, never trim: a lesson whose combined text is over the cap
+      // would otherwise be proposed with its supplied content silently lost.
+      if (body.length > limits.maxLessonBodyChars)
+        throw new CourseBundleRefusedError('lesson_too_large', lesson.key);
       return {
         sectionKey: section.key,
         sectionTitle: section.title,
         title: lesson.title,
-        ...(body && body.length <= limits.maxLessonBodyChars ? { body } : {}),
+        ...(body ? { body } : {}),
       };
     }),
   );

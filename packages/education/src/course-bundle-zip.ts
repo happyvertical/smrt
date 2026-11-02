@@ -378,6 +378,7 @@ export function readFileSet(
   const names = new Set<string>();
   const out: RawBundleMember[] = [];
   let total = 0;
+  let memberTotal = 0;
   onProgress?.(0, files.length);
   for (const file of files) {
     const { path, directory } = normalizeBundlePath(file?.path, limits);
@@ -397,6 +398,9 @@ export function readFileSet(
         refusal: 'entry_too_large',
       });
     } else {
+      // Same member-byte bound as an archive's inflated total.
+      memberTotal += file.bytes.length;
+      if (memberTotal > limits.maxTotalBytes) return refuse('total_too_large');
       out.push({
         path,
         size: file.bytes.length,
