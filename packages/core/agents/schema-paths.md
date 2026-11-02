@@ -181,6 +181,34 @@ Unknown columns, malformed entries, and a name collision with a different index
 all fail generation — a silently dropped index only surfaces later as a
 production slowdown. Keep both config rebuild sites aligned.
 
+### STI subclasses declare indexes on the shared table (#3299)
+
+`@smrt({ indexes })` on an STI **descendant** is emitted on the shared table
+by `appendStiSubclassDeclaredIndexes()` (both STI entry points, after the
+base's declarations; `getAllSchemasAsDefinitions()` and `getTestDatabase()`
+inherit it). It goes through the same validation as a base declaration: known
+columns, the 63-byte name limit, and errors on a collision. A UNIQUE
+declaration is scoped to the declaring subtype with
+`WHERE _meta_type = '<qualified class>'`, so siblings sharing the column are
+not constrained. As with `@field({ unique })` on a descendant, each class in
+the declaring class's own subtree gets a partial copy
+(`<declared name, cut to 52>_<10-hex digest>`), so uniqueness holds per
+concrete class there too, not across the subtree. DuckDB/JSON skip these
+rather than widen them. A subclass UNIQUE with its own `where` is refused; declare a
+combined predicate on the base. A plain subclass index stays unqualified, so
+polymorphic reads can use it. Columns are emitted exactly as declared and are
+never tenant-prefixed, as with explicit `conflictColumns`: put `tenant_id`
+first for a tenant-local key (`['tenantId', 'rampEventId']`). Leave it out
+only for a reviewed global identity (#3305 dispositions).
+
+Migration: `db:migrate` adds the new index by name. A UNIQUE index fails
+closed (the migration rolls back) when existing rows already duplicate the
+key. Find and repair those rows first, scoped to the subtype
+(`_meta_type = '<qualified class>'`), and never by deleting history to make
+the index fit. With `db:migrate --postgres-safe` it is built `CONCURRENTLY`.
+A failed concurrent build leaves an INVALID index, which the next run drops
+and rebuilds after the data is repaired.
+
 ### Relationship targets resolve to a class name on both paths
 
 `@foreignKey`/`@oneToMany`/`@manyToMany` accept a class, a name string, or a
