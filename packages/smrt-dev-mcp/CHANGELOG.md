@@ -1,5 +1,12 @@
 # @happyvertical/smrt-dev-mcp
 
+## 0.57.47
+
+### Patch Changes
+
+- @happyvertical/smrt-scanner@0.57.47
+  - @happyvertical/smrt-types@0.57.47
+
 ## 0.57.46
 
 ### Patch Changes

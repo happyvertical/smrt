@@ -1,5 +1,53 @@
 # @happyvertical/smrt-core
 
+## 0.57.47
+
+### Patch Changes
+
+- ### Features
+  
+  - extract and match structured questions from scans and imports (#4580) (education)
+  - learner put-back, enrollment status and self-attestation (#4579) (education)
+  - add source-bound mailbox enrollment and trial fixes (#4456) (users)
+  - give config resolvers the resolving agent's identity and persisted value (#2806) (#4551) (core)
+  - gate publication on an executable packed-consumer canary (#2975) (#4535) (release)
+  
+  ### Bug Fixes
+  
+  - keep test fixtures out of production manifest consumers (#2760) (#4552) (core)
+  - keep framework base classes out of the generated client (#3295) (#4547) (core)
+  - resolve every workspace export to source in consumer tests (#2954) (#4561) (vitest)
+  - keep collection tools closed when their model closes (#3468) (#4548) (core)
+  - name generated row types by qualified identity on simple-name collisions (#3115) (#4537) (core)
+  - resolve captured aliases in custom action parameter schemas (#4327) (#4539) (core)
+  - native uuid tenant ids in PostgreSQL system tables (#3297) (#4557) (core,cli)
+  - tenant-scope campaign metric snapshot dedupe keys (#3305 M2) (#4540) (marketing)
+  - bell light dismiss and Glass light AA primary (#4566 #4567) (#4576) (smrt-svelte,smrt-ui)
+  - keep sensitive tables out of the PostgreSQL change-feed drain (#2982) (#4555) (core)
+  - tenant-scope contributor and governance natural keys (#3305 M1) (#4533) (content)
+  - isolate test manifests from concurrent production generation (#4128) (#4538) (vitest)
+  - emit one row-type declaration per class across manifest listings (#3296) (#4526) (core)
+  - keep collection manifests from owning their model table (#3956) (#4531) (core)
+  - tenant-local replay keys for earning events, commissions and payouts (#3305 D1) (#4545) (sales)
+  - resolve one deterministic sync-apply target per segment (#2807) (#4550) (core)
+  - emit STI subclass-declared indexes on the shared table (#3299) (#4553) (core)
+  - support legacy cascade deletes inside caller-owned DuckDB transactions (#2824) (#4546) (core)
+  - ship a self-contained ./core so smrt kitchen loads the cached planner (#4238) (#4543) (planner)
+  - bundle CommonJS pluralize so dist stays native ESM (#4054) (#4536) (core)
+  - keep .smrt/register.js Node-loadable with TypeScript-source providers (#3092) (#4532) (core)
+  - honor PostgreSQL pool configuration regardless of resolution order (#3046) (#4530) (core)
+  - align static and runtime boolean field inference (#4295) (#4527) (core)
+  - resolve generated route dependencies with consumer ESM conditions (#3913) (#4525) (core)
+  - run manifest guards centrally for every packed package (#2853) (#4524) (release)
+  
+  ### Other Changes
+  
+  - chore: sync sdk packages to v0.111.3 (#4560) (deps)
+  - ci: validate fork PRs in a sandbox behind a maintainer approval gate (#4562)
+- @happyvertical/smrt-config@0.57.47
+  - @happyvertical/smrt-scanner@0.57.47
+  - @happyvertical/smrt-types@0.57.47
+
 ## 0.57.46
 
 ### Patch Changes
