@@ -51,6 +51,21 @@ completion decision; grading alone leaves it in progress, including through a
 plain SubmissionService instance. Existing explicit completion on the current
 attempt is retained. The owning workbook join determines this policy, never a
 caller flag.
+`attestOwnLesson({ enrollmentId, lessonId, policyBasis, notes? })` is the
+learner's own "I read it" / "I watched it" for `SELF_ATTESTABLE_LESSON_KINDS`
+(Reading, Video) under `education.learner.attest-own`. Any other actor is
+refused before the host authorizer; the host decides from its own setting
+(passed as `policyBasis`, 1-200 characters) whether the learner may. It writes
+an ungraded `Attestation` and an insert-only `LessonSelfAttestation` (learner
+actor, basis), moves progress to `submitted` with one attempt, and creates no
+Grade: it is not a grade and never completes the lesson. A repeat returns the
+same attestation. Other kinds throw `OwnAttestationLessonKindError`;
+submitted, review, complete, skipped or already-attested progress throws
+`OwnAttestationConflictError`. Submission views carry `selfReported: true` for
+it; a guardian confirms with `attestLesson` (which grades that attestation) or
+`reviewSubmission`, and the guardian grade then distinguishes confirmed from
+self-reported evidence. A host without `lesson_self_attestations` gets
+`LearnerHistoryUnavailableError`.
 Omitted/null score is unscored; zero is a real score. The latest guardian grade
 wins over auto/AI/instructor proposals, and its score replaces progress's score.
 Review history is retained. ExternalCompletion is available for trusted server

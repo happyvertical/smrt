@@ -32,6 +32,11 @@ import {
   orderEffectiveLessons,
   resolveEnrollmentLessons,
 } from './course-release-scope.js';
+import {
+  EnrollmentStatusChangeCollection,
+  LessonProgressTransitionCollection,
+  type LessonProgressTransitionKind,
+} from './learner-history.js';
 import type {
   Curriculum,
   Enrollment,
@@ -121,7 +126,10 @@ export type LearnerAuthorizer = (
       | 'education.learner.complete'
       | 'education.learner.respond'
       | 'education.learner.review-response'
-      | 'education.learner.setup';
+      | 'education.learner.setup'
+      | 'education.progress.put-back'
+      | 'education.enrollment.set-status'
+      | 'education.learner.attest-own';
     own: boolean;
     relationshipTypeId?: string;
     /** True only for a delegated assignment; `relationshipTypeId` is then undefined. */
@@ -142,6 +150,86 @@ export class LearnerAuthorizationError extends Error {
     super('Education learner access is not authorized.');
     this.name = 'LearnerAuthorizationError';
   }
+}
+
+/** Base for request-shape and state-conflict errors raised by learner workflows. */
+export class LearnerValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'LearnerValidationError';
+  }
+}
+
+/**
+ * `putBackLesson` refused because the lesson is past the point a learner can
+ * take it back: submitted, under review, complete or skipped. Completion is
+ * undone only through the guardian paths.
+ */
+export class LessonPutBackError extends LearnerValidationError {
+  constructor(readonly status: LessonProgress['status']) {
+    super(`A ${status} lesson cannot be put back`);
+    this.name = 'LessonPutBackError';
+  }
+}
+
+/**
+ * Statuses `setEnrollmentStatus` may move an enrollment to, keyed by its
+ * current status. `completed` is reached only through the completion path.
+ */
+export const ENROLLMENT_STATUS_TRANSITIONS: Readonly<
+  Record<Enrollment['status'], ReadonlyArray<Enrollment['status']>>
+> = Object.freeze({
+  planned: Object.freeze(['active'] as const),
+  active: Object.freeze(['paused', 'dropped'] as const),
+  paused: Object.freeze(['active', 'dropped'] as const),
+  completed: Object.freeze([] as const),
+  dropped: Object.freeze([] as const),
+});
+
+/** `setEnrollmentStatus` asked for a move the transition table does not allow. */
+export class EnrollmentStatusTransitionError extends LearnerValidationError {
+  constructor(
+    readonly from: Enrollment['status'],
+    readonly to: string,
+  ) {
+    super(`An enrollment cannot move from ${from} to ${to}`);
+    this.name = 'EnrollmentStatusTransitionError';
+  }
+}
+
+/** A required history table has not been migrated on this host. */
+export class LearnerHistoryUnavailableError extends Error {
+  constructor(readonly table: string) {
+    super(`Education history table ${table} is not migrated`);
+    this.name = 'LearnerHistoryUnavailableError';
+  }
+}
+
+/** Result of `putBackLesson`; `changed` is false for an idempotent replay. */
+export type PutBackLessonResult = Readonly<{
+  changed: boolean;
+  /** Null when the lesson never had progress (nothing to put back). */
+  progress: LessonProgressView | null;
+}>;
+
+/** Result of `setEnrollmentStatus`; `changed` is false when already in that status. */
+export type SetEnrollmentStatusResult = Readonly<{
+  changed: boolean;
+  enrollment: EnrollmentView;
+}>;
+
+// biome-ignore lint/suspicious/noControlCharactersInRegex: reject control characters
+const POLICY_BASIS_CONTROL = /[\u0000-\u001f\u007f]/;
+/** The host setting relied on: 1-200 characters, no control characters. */
+export function requirePolicyBasis(value: unknown): string {
+  if (
+    typeof value !== 'string' ||
+    !value.trim() ||
+    value.length > 200 ||
+    POLICY_BASIS_CONTROL.test(value)
+  )
+    throw new LearnerValidationError('A valid policy basis is required');
+  return value;
 }
 
 /** Service results contain data only, with no transaction-bound model handle. */
@@ -518,6 +606,9 @@ export class LearnerService {
       if (!relationship) throw new LearnerAuthorizationError();
       relationshipTypeId = String(relationship.type_id);
     }
+    // A self-attestation is the learner's own statement; guardians use attestLesson.
+    if (!own && action === 'education.learner.attest-own')
+      throw new LearnerAuthorizationError();
     // A learner cannot turn their own grant into a planning/guardian capability.
     if (
       own &&
@@ -1241,26 +1332,53 @@ export class LearnerService {
     });
     const byLesson = new Map(progresses.map((row) => [row.lessonId, row]));
     return Promise.all(
-      scope.entries.map(async ({ lesson, course }) => ({
-        enrollment: enrollmentView(enrollment),
-        progress: byLesson.get(String(lesson.id))
-          ? await this.projectProgress(
-              request,
-              byLesson.get(String(lesson.id))!,
-            )
-          : null,
-        lesson: {
-          id: String(lesson.id),
-          title: lesson.title,
-          kind: lesson.constructor.name,
-          requiresOnlineResource:
-            course.modality === 'online' || lesson.constructor.name === 'Video',
-        },
-      })),
+      scope.entries.map(async ({ lesson, course }) => {
+        const row = byLesson.get(String(lesson.id));
+        return {
+          enrollment: enrollmentView(enrollment),
+          progress: row ? await this.projectProgress(request, row) : null,
+          lesson: {
+            id: String(lesson.id),
+            title: lesson.title,
+            kind: lesson.constructor.name,
+            requiresOnlineResource:
+              course.modality === 'online' ||
+              lesson.constructor.name === 'Video',
+          },
+        };
+      }),
     );
   }
 
-  /** Start once. Caller-supplied learner/status/score/counter patches are never applied. */
+  /** Appends one progress status change in the caller's transaction. */
+  protected async recordProgressTransition(
+    request: LearnerRequest,
+    row: LessonProgress,
+    from: LessonProgress['status'],
+    kind: LessonProgressTransitionKind,
+  ): Promise<void> {
+    await (
+      await LessonProgressTransitionCollection.create({ db: this.db })
+    ).create({
+      _insertOnly: true,
+      tenantId: request.tenantId,
+      progressId: String(row.id),
+      enrollmentId: row.enrollmentId,
+      learnerId: row.learnerId,
+      lessonId: row.lessonId,
+      fromStatus: from,
+      toStatus: row.status,
+      kind,
+      actorUserId: request.actorUserId,
+      recordedAt: new Date(),
+    });
+  }
+
+  /**
+   * Start once. Caller-supplied learner/status/score/counter patches are never
+   * applied. A lesson that was put back (`not_started`) moves to `in_progress`
+   * again, keeping its counters, score and first start time.
+   */
   async startLesson(
     request: LearnerRequest & { enrollmentId: string; lessonId: string },
   ): Promise<LessonProgressView> {
@@ -1286,6 +1404,19 @@ export class LearnerService {
       if (existing) {
         if (existing.learnerId !== enrollment.learnerId)
           throw new LearnerAuthorizationError();
+        if (existing.status === 'not_started') {
+          existing.status = 'in_progress';
+          existing.startedAt ??= new Date();
+          await existing.save();
+          // Hosts that have not migrated the history table keep the old start.
+          if (await service.db.tableExists('lesson_progress_transitions'))
+            await service.recordProgressTransition(
+              request,
+              existing,
+              'not_started',
+              'start',
+            );
+        }
         return service.projectProgress(request, existing);
       }
       return service.projectProgress(
@@ -1300,6 +1431,132 @@ export class LearnerService {
           _insertOnly: true,
         }),
       );
+    });
+  }
+
+  /**
+   * Takes a started lesson back to `not_started` for the learner or an
+   * authorized guardian (`education.progress.put-back`). Only `in_progress`
+   * progress moves; the earlier state is appended to the progress history.
+   * Counters, score, submissions, grades, workbook and evidence records are
+   * never touched. Already not started (or never started) is an idempotent
+   * no-op; submitted, review, complete and skipped lessons refuse with
+   * `LessonPutBackError`.
+   */
+  async putBackLesson(
+    request: LearnerRequest & { enrollmentId: string; lessonId: string },
+  ): Promise<PutBackLessonResult> {
+    return this.mutate(async (service) => {
+      const enrollment = await service.requireEnrollment(
+        request,
+        'education.progress.put-back',
+      );
+      await service.lock('enrollments', request.enrollmentId, request.tenantId);
+      if (!(await service.lessonInScope(request, enrollment, request.lessonId)))
+        throw new LearnerAuthorizationError();
+      const existing = await (
+        await LessonProgressCollection.create({ db: service.db })
+      ).get(
+        {
+          enrollmentId: String(enrollment.id),
+          lessonId: request.lessonId,
+          tenantId: request.tenantId,
+        },
+        { cache: false },
+      );
+      if (!existing) return { changed: false, progress: null };
+      if (existing.learnerId !== enrollment.learnerId)
+        throw new LearnerAuthorizationError();
+      // Workbook completion can make stored in-progress work read as complete.
+      const projected = await service.projectProgress(request, existing);
+      if (
+        existing.status === 'not_started' &&
+        projected.status === 'not_started'
+      )
+        return { changed: false, progress: projected };
+      if (existing.status !== 'in_progress')
+        throw new LessonPutBackError(existing.status);
+      if (projected.status !== 'in_progress')
+        throw new LessonPutBackError(projected.status);
+      if (!(await service.db.tableExists('lesson_progress_transitions')))
+        throw new LearnerHistoryUnavailableError('lesson_progress_transitions');
+      existing.status = 'not_started';
+      await existing.save();
+      await service.recordProgressTransition(
+        request,
+        existing,
+        'in_progress',
+        'put-back',
+      );
+      return {
+        changed: true,
+        progress: await service.projectProgress(request, existing),
+      };
+    });
+  }
+  /**
+   * Moves an enrollment along `ENROLLMENT_STATUS_TRANSITIONS` under
+   * `education.enrollment.set-status`; the host decides whether a learner may
+   * act on their own enrollment. Records the actor and `policyBasis` in an
+   * `EnrollmentStatusChange`. The first activation sets `startedAt`. Progress,
+   * submissions and history are never touched. Requesting the current status
+   * is an idempotent no-op; any other move refuses with
+   * `EnrollmentStatusTransitionError`.
+   */
+  async setEnrollmentStatus(
+    request: LearnerRequest & {
+      enrollmentId: string;
+      status: Enrollment['status'];
+      policyBasis: string;
+    },
+  ): Promise<SetEnrollmentStatusResult> {
+    const policyBasis = requirePolicyBasis(request.policyBasis);
+    const status = request.status;
+    return this.mutate(async (service) => {
+      await service.requireEnrollment(
+        request,
+        'education.enrollment.set-status',
+      );
+      await service.lock('enrollments', request.enrollmentId, request.tenantId);
+      // Re-read under the lock so concurrent changes see each other.
+      const enrollment = await (
+        await EnrollmentCollection.create({ db: service.db })
+      ).get(
+        {
+          id: request.enrollmentId,
+          learnerId: request.learnerId,
+          tenantId: request.tenantId,
+        },
+        { cache: false },
+      );
+      if (!enrollment) throw new LearnerAuthorizationError();
+      const from = enrollment.status;
+      if (status === from)
+        return { changed: false, enrollment: enrollmentView(enrollment) };
+      if (
+        typeof status !== 'string' ||
+        !ENROLLMENT_STATUS_TRANSITIONS[from]?.includes(status)
+      )
+        throw new EnrollmentStatusTransitionError(from, String(status));
+      if (!(await service.db.tableExists('enrollment_status_changes')))
+        throw new LearnerHistoryUnavailableError('enrollment_status_changes');
+      enrollment.status = status;
+      if (status === 'active') enrollment.startedAt ??= new Date();
+      await enrollment.save();
+      await (
+        await EnrollmentStatusChangeCollection.create({ db: service.db })
+      ).create({
+        _insertOnly: true,
+        tenantId: request.tenantId,
+        enrollmentId: String(enrollment.id),
+        learnerId: enrollment.learnerId,
+        fromStatus: from,
+        toStatus: status,
+        actorUserId: request.actorUserId,
+        policyBasis,
+        recordedAt: new Date(),
+      });
+      return { changed: true, enrollment: enrollmentView(enrollment) };
     });
   }
 }

@@ -118,6 +118,7 @@ export {
   LessonAssetCollection,
   LessonCollection,
   LessonProgressCollection,
+  LessonSelfAttestationCollection,
   ReadingCollection,
   ScannedSubmissionCollection,
   SubmissionAssetCollection,
@@ -236,6 +237,13 @@ export {
   importEasyPeasyGrade4Course,
   importEasyPeasyGrade4Theme,
 } from './hearth-easy-peasy-grade4.js';
+export type { LessonProgressTransitionKind } from './learner-history.js';
+export {
+  EnrollmentStatusChange,
+  EnrollmentStatusChangeCollection,
+  LessonProgressTransition,
+  LessonProgressTransitionCollection,
+} from './learner-history.js';
 export type {
   EnrollmentPlanView,
   PlanLessonView,
@@ -250,10 +258,18 @@ export type {
   LearnerSetupStatusRequest,
   LearnerView,
   LessonProgressView,
+  PutBackLessonResult,
+  SetEnrollmentStatusResult,
 } from './learner-service.js';
 export {
+  ENROLLMENT_STATUS_TRANSITIONS,
+  EnrollmentStatusTransitionError,
   LearnerAuthorizationError,
+  LearnerHistoryUnavailableError,
   LearnerService,
+  LearnerValidationError,
+  LessonPutBackError,
+  requirePolicyBasis,
 } from './learner-service.js';
 export type { EnrollmentStatus, LessonProgressStatus } from './learners.js';
 export { Curriculum, Enrollment, Learner, LessonProgress } from './learners.js';
@@ -336,6 +352,9 @@ export type {
   SubmissionView,
 } from './submission-service.js';
 export {
+  OwnAttestationConflictError,
+  OwnAttestationLessonKindError,
+  SELF_ATTESTABLE_LESSON_KINDS,
   SubmissionService,
   SubmissionStorageCleanupError,
   WorkbookWorkflowRequiredError,
@@ -351,6 +370,7 @@ export {
   Attestation,
   ExternalCompletion,
   Grade,
+  LessonSelfAttestation,
   ScannedSubmission,
   Submission,
   SubmissionAsset,

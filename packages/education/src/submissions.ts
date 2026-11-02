@@ -240,9 +240,78 @@ export class ExternalCompletion extends Submission {
   }
 }
 
-/** A guardian's statement that work was completed. */
+/**
+ * A statement that work was completed. Guardians attest through
+ * `SubmissionService.attestLesson`; a learner's own statement is marked by a
+ * `LessonSelfAttestation` row and stays ungraded until a guardian confirms it.
+ */
 @smrt({ tableName: 'submissions', ...closed })
 export class Attestation extends Submission {}
+
+/**
+ * Marks an `Attestation` as self-reported by the learner (Reading/Video
+ * "I read it" / "I watched it"), with the host policy setting relied on.
+ * Insert-only; it is not a grade and never completes the lesson.
+ */
+@TenantScoped({ mode: 'required' })
+@smrt({
+  tableName: 'lesson_self_attestations',
+  conflictColumns: ['tenant_id', 'submission_id'],
+  ...closed,
+})
+export class LessonSelfAttestation extends SmrtObject {
+  @tenantId() tenantId = '';
+  @foreignKey('Submission', { required: true }) submissionId = '';
+  @foreignKey('LessonProgress', { required: true }) progressId = '';
+  @foreignKey('Learner', { required: true }) learnerId = '';
+  @foreignKey('Lesson', { required: true }) lessonId = '';
+  /** The learner's own user; a self-attestation has no other actor. */
+  actorUserId = '';
+  /** Host setting value that let this learner attest their own lesson. */
+  policyBasis = '';
+  recordedAt = new Date();
+
+  constructor(options: Record<string, unknown> = {}) {
+    super(options);
+    applyOptions(this, options);
+  }
+
+  override async delete(): Promise<void> {
+    throw new Error('Self-attestation history is immutable');
+  }
+
+  override async save(options?: SmrtSaveOptions): Promise<this> {
+    if (!this.tenantId?.trim()) throw new Error('Education requires a tenant');
+    if (this.id && (await this.db.get(this.tableName, { id: this.id })))
+      throw new Error('Self-attestation history is immutable');
+    if (
+      !(await this.db.get('submissions', {
+        id: this.submissionId,
+        tenant_id: this.tenantId,
+        learner_id: this.learnerId,
+        lesson_id: this.lessonId,
+        progress_id: this.progressId,
+        _meta_type: '@happyvertical/smrt-education:Attestation',
+      })) ||
+      !(await this.db.get('learners', {
+        id: this.learnerId,
+        tenant_id: this.tenantId,
+        user_id: this.actorUserId,
+      }))
+    )
+      throw new Error(
+        'Self-attestation requires its tenant attestation and learner actor',
+      );
+    if (
+      typeof this.policyBasis !== 'string' ||
+      !this.policyBasis.trim() ||
+      this.policyBasis.length > 200
+    )
+      throw new Error('Self-attestation requires a policy basis');
+    this.requireInsertOnSave();
+    return super.save(options);
+  }
+}
 
 /** The tenant-owned files attached to a submission. */
 @TenantScoped({ mode: 'required' })
