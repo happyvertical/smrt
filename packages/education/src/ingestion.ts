@@ -1284,6 +1284,12 @@ export {
 
 export { FamilyIntakeService } from './family-intake-service.js';
 export {
+  educationQuestionExtractionHandler,
+  preserveQuestionExtractionAnalysis,
+  QUESTION_EXTRACTION_HANDLER_ID,
+  questionExtractionGrounding,
+} from './question-extraction-ingestion.js';
+export {
   preserveWorkbookPhotoIdentification,
   processWorkbookPhotoAnalysis,
   receiveWorkbookPhotoIntake,

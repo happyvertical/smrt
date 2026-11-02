@@ -47,6 +47,11 @@ render ids and exact-revision references use [QuestionAuthoringService](agents/q
 Keep keys out of learner bundles; a missing key stays null. `attachGeneratedPrintable`
 stores the rendered PDFs; the guardian copy is always an `answer-key`, never `printable`.
 
+Structured questions from scans and imported course files use
+[QuestionExtractionService](agents/question-extraction.md) and the `extract-questions`
+ingestion handler. Anchors come from provider region catalogs only; match by worksheet
+id and layout, never text; ambiguous matches stay unattached; source-keyed replays.
+
 Source import: [host boundary and transaction contract](agents/source-import.md).
 `SourceImportService` requires host opt-in, matching active actor/tenant and
 explicit licensing authorization; never add a system/global write bypass.
