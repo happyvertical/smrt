@@ -18,6 +18,7 @@
 
 import type { SchemaDefinition } from './schema/types.js';
 import { toSnakeCase } from './utils';
+import { jsonNumbersRoundTrip } from './utils/json-equal';
 
 /** Columns the save path always writes, whatever their stored value. */
 const ALWAYS_ASSIGNED = new Set(['id', 'updated_at']);
@@ -122,41 +123,7 @@ export function timestampMicros(
   return (BigInt(wall) - BigInt(offsetMinutes) * 60000n) * 1000n + micros;
 }
 
-const JSON_NUMBER = /-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/y;
-
-/**
- * Whether every number literal in JSON text survives `JSON.parse` exactly.
- *
- * `JSON.parse` reads numbers as doubles, so `9007199254740993` and
- * `9007199254740992` parse to the same value. A literal is exact when the
- * double it parses to prints back as the same text; anything else (unsafe
- * integers, more digits than a double holds, `1.0`, `1e2`) makes the text
- * unprovable. Digits inside JSON strings are not numbers and are skipped.
- */
-export function jsonNumbersRoundTrip(text: string): boolean {
-  let inString = false;
-  for (let index = 0; index < text.length; index += 1) {
-    const char = text[index];
-    if (inString) {
-      if (char === '\\') index += 1;
-      else if (char === '"') inString = false;
-      continue;
-    }
-    if (char === '"') {
-      inString = true;
-      continue;
-    }
-    if (char === '-' || (char >= '0' && char <= '9')) {
-      JSON_NUMBER.lastIndex = index;
-      const match = JSON_NUMBER.exec(text);
-      if (!match) return false;
-      const literal = match[0];
-      if (JSON.stringify(Number(literal)) !== literal) return false;
-      index += literal.length - 1;
-    }
-  }
-  return true;
-}
+export { jsonNumbersRoundTrip };
 
 function canonicalJson(value: unknown): string | undefined {
   let parsed = value;
