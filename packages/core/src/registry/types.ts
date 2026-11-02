@@ -1163,6 +1163,12 @@ export interface RegisteredClass {
   extends?: string;
   /** Generic type arg from `SmrtCollection<X>` — marks collection classes. */
   extendsTypeArg?: string;
+  /**
+   * Manifest classification of a collection class: the model it manages
+   * (`SmartObjectDefinition.collectionOf`). A registration carrying it is a
+   * collection and never claims a physical table (#3956).
+   */
+  collectionOf?: string;
   /** Full inheritance chain from base to this class (cached for performance) */
   inheritanceChain?: string[];
   /** Merged fields from entire inheritance chain (cached, includes parent fields) */

@@ -2532,6 +2532,13 @@ export class ManifestGenerator {
         `[manifest-generator] ${obj.className} is a collection class for ${itemClass.className}`,
       );
 
+      // Record the classification itself: collection entries also carry the
+      // model's tableName and schema (for routes and parity), so without it
+      // a runtime that cannot walk the parent chain or match prototypes
+      // (another core copy, an unloaded parent manifest) would count the
+      // collection as a second owner of the model's table (#3956).
+      obj.collectionOf = itemClass.qualifiedName || itemClass.className;
+
       if (isCollection) {
         // Inherit tableName from item class (which may have inherited it from STI base)
         if (itemClass.decoratorConfig?.tableName) {
