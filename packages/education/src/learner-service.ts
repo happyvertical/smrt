@@ -33,6 +33,7 @@ import {
   resolveEnrollmentLessons,
 } from './course-release-scope.js';
 import {
+  EnrollmentPaceChangeCollection,
   EnrollmentStatusChangeCollection,
   LessonCompletionRecordCollection,
   LessonProgressTransitionCollection,
@@ -131,7 +132,8 @@ export type LearnerAuthorizer = (
       | 'education.progress.put-back'
       | 'education.enrollment.set-status'
       | 'education.learner.attest-own'
-      | 'education.progress.complete-own';
+      | 'education.progress.complete-own'
+      | 'education.enrollment.set-pace';
     own: boolean;
     relationshipTypeId?: string;
     /** True only for a delegated assignment; `relationshipTypeId` is then undefined. */
@@ -259,6 +261,27 @@ export type CompleteOwnLessonResult = Readonly<{
   progress: LessonProgressView;
 }>;
 
+/** Result of `setEnrollmentPace`; `changed` is false when the pace is unchanged. */
+export type SetEnrollmentPaceResult = Readonly<{
+  changed: boolean;
+  enrollment: EnrollmentView;
+}>;
+
+/** Lessons per week bounds of an enrollment pace, and the `nextLessons` count cap. */
+export const MIN_LESSONS_PER_WEEK = 1;
+export const MAX_LESSONS_PER_WEEK = 14;
+export const MAX_NEXT_LESSONS_COUNT = MAX_LESSONS_PER_WEEK;
+
+/** `setEnrollmentPace` was given a pace that is not 1-14 whole lessons a week. */
+export class EnrollmentPaceError extends LearnerValidationError {
+  constructor() {
+    super(
+      `Pace must be null or a whole number of lessons per week from ${MIN_LESSONS_PER_WEEK} to ${MAX_LESSONS_PER_WEEK}`,
+    );
+    this.name = 'EnrollmentPaceError';
+  }
+}
+
 /** Result of `setEnrollmentStatus`; `changed` is false when already in that status. */
 export type SetEnrollmentStatusResult = Readonly<{
   changed: boolean;
@@ -301,7 +324,10 @@ export type EnrollmentView = Readonly<{
   curriculumId: string;
   courseId: string;
   status: Enrollment['status'];
+  /** Planned lessons per week (1-14), or null when no pace is set. */
+  pace: EnrollmentPace | null;
 }>;
+export type EnrollmentPace = Readonly<{ lessonsPerWeek: number }>;
 export type LessonProgressView = Readonly<{
   id: string;
   learnerId: string;
@@ -322,13 +348,17 @@ function curriculumView(row: Curriculum): CurriculumView {
     status: row.status,
   };
 }
-function enrollmentView(row: Enrollment): EnrollmentView {
+/** Data-only projection shared with the plan service. */
+export function enrollmentView(row: Enrollment): EnrollmentView {
   return {
     id: String(row.id),
     learnerId: row.learnerId,
     curriculumId: row.curriculumId,
     courseId: row.courseId,
     status: row.status,
+    pace: row.paceLessonsPerWeek
+      ? { lessonsPerWeek: row.paceLessonsPerWeek }
+      : null,
   };
 }
 function progressView(row: LessonProgress): LessonProgressView {
@@ -1268,11 +1298,12 @@ export class LearnerService {
   }
 
   /**
-   * Projects the first unfinished lesson in each authorized enrollment. No
+   * Projects the first unfinished lesson in each authorized enrollment, or up
+   * to `count` (an integer from 1 to 14, default 1) in lesson order. No
    * catalog assets, answer material, model handles, or source locators escape.
    */
   async nextLessons(
-    request: LearnerRequest & { enrollmentId?: string },
+    request: LearnerRequest & { enrollmentId?: string; count?: number },
   ): Promise<
     ReadonlyArray<{
       enrollment: EnrollmentView;
@@ -1285,6 +1316,11 @@ export class LearnerService {
       };
     }>
   > {
+    const count = request.count === undefined ? 1 : request.count;
+    if (!Number.isInteger(count) || count < 1 || count > MAX_NEXT_LESSONS_COUNT)
+      throw new LearnerValidationError(
+        `Count must be a whole number from 1 to ${MAX_NEXT_LESSONS_COUNT}`,
+      );
     const enrollments = request.enrollmentId
       ? [
           await this.requireEnrollment(
@@ -1326,24 +1362,27 @@ export class LearnerService {
           ),
         ),
       );
-      const next = scope.entries.find(({ lesson: candidate }) => {
-        const progress = byLesson.get(String(candidate.id));
-        return !progress || !['complete', 'skipped'].includes(progress.status);
-      });
-      if (!next) continue;
-      const { lesson, course } = next;
-      const progress = byLesson.get(String(lesson.id));
-      result.push({
-        enrollment: enrollmentView(enrollment),
-        progress: progress ?? null,
-        lesson: {
-          id: String(lesson.id),
-          title: lesson.title,
-          kind: lesson.constructor.name,
-          requiresOnlineResource:
-            course.modality === 'online' || lesson.constructor.name === 'Video',
-        },
-      });
+      const unfinished = scope.entries
+        .filter(({ lesson: candidate }) => {
+          const progress = byLesson.get(String(candidate.id));
+          return (
+            !progress || !['complete', 'skipped'].includes(progress.status)
+          );
+        })
+        .slice(0, count);
+      for (const { lesson, course } of unfinished)
+        result.push({
+          enrollment: enrollmentView(enrollment),
+          progress: byLesson.get(String(lesson.id)) ?? null,
+          lesson: {
+            id: String(lesson.id),
+            title: lesson.title,
+            kind: lesson.constructor.name,
+            requiresOnlineResource:
+              course.modality === 'online' ||
+              lesson.constructor.name === 'Video',
+          },
+        });
     }
     return result;
   }
@@ -1745,6 +1784,77 @@ export class LearnerService {
         changed: true,
         progress: await service.projectProgress(request, row),
       };
+    });
+  }
+
+  /**
+   * Sets or clears (`pace: null`) an enrollment's planned lessons per week
+   * (a whole number from 1 to 14) under `education.enrollment.set-pace`; the
+   * host decides whether a learner may act on their own enrollment. Appends an
+   * immutable `EnrollmentPaceChange` with the actor, `policyBasis` and the
+   * previous and new value (`0` means no pace). An unchanged pace is an
+   * idempotent `{ changed: false }` that records nothing; an invalid pace
+   * throws `EnrollmentPaceError`. Status, progress and history are untouched.
+   */
+  async setEnrollmentPace(
+    request: LearnerRequest & {
+      enrollmentId: string;
+      pace: EnrollmentPace | null;
+      policyBasis: string;
+    },
+  ): Promise<SetEnrollmentPaceResult> {
+    const policyBasis = requirePolicyBasis(request.policyBasis);
+    const raw = request.pace;
+    let lessonsPerWeek = 0;
+    if (raw !== null) {
+      const value =
+        typeof raw === 'object' && raw !== undefined
+          ? (raw as EnrollmentPace).lessonsPerWeek
+          : undefined;
+      if (
+        typeof value !== 'number' ||
+        !Number.isInteger(value) ||
+        value < MIN_LESSONS_PER_WEEK ||
+        value > MAX_LESSONS_PER_WEEK
+      )
+        throw new EnrollmentPaceError();
+      lessonsPerWeek = value;
+    }
+    return this.mutate(async (service) => {
+      await service.requireEnrollment(request, 'education.enrollment.set-pace');
+      await service.lock('enrollments', request.enrollmentId, request.tenantId);
+      const enrollment = await (
+        await EnrollmentCollection.create({ db: service.db })
+      ).get(
+        {
+          id: request.enrollmentId,
+          learnerId: request.learnerId,
+          tenantId: request.tenantId,
+        },
+        { cache: false },
+      );
+      if (!enrollment) throw new LearnerAuthorizationError();
+      const previous = enrollment.paceLessonsPerWeek;
+      if (previous === lessonsPerWeek)
+        return { changed: false, enrollment: enrollmentView(enrollment) };
+      if (!(await service.db.tableExists('enrollment_pace_changes')))
+        throw new LearnerHistoryUnavailableError('enrollment_pace_changes');
+      enrollment.paceLessonsPerWeek = lessonsPerWeek;
+      await enrollment.save();
+      await (
+        await EnrollmentPaceChangeCollection.create({ db: service.db })
+      ).create({
+        _insertOnly: true,
+        tenantId: request.tenantId,
+        enrollmentId: String(enrollment.id),
+        learnerId: enrollment.learnerId,
+        previousLessonsPerWeek: previous,
+        newLessonsPerWeek: lessonsPerWeek,
+        actorUserId: request.actorUserId,
+        policyBasis,
+        recordedAt: new Date(),
+      });
+      return { changed: true, enrollment: enrollmentView(enrollment) };
     });
   }
 }

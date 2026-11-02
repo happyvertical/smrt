@@ -239,6 +239,8 @@ export {
 } from './hearth-easy-peasy-grade4.js';
 export type { LessonProgressTransitionKind } from './learner-history.js';
 export {
+  EnrollmentPaceChange,
+  EnrollmentPaceChangeCollection,
   EnrollmentStatusChange,
   EnrollmentStatusChangeCollection,
   LessonCompletionRecord,
@@ -254,6 +256,7 @@ export { LearnerPlanService } from './learner-plan-service.js';
 export type {
   CompleteOwnLessonResult,
   CurriculumView,
+  EnrollmentPace,
   EnrollmentView,
   LearnerAuthorizer,
   LearnerRequest,
@@ -262,11 +265,13 @@ export type {
   LearnerView,
   LessonProgressView,
   PutBackLessonResult,
+  SetEnrollmentPaceResult,
   SetEnrollmentStatusResult,
 } from './learner-service.js';
 export {
   ENROLLMENT_STATUS_TRANSITIONS,
   EnrollmentNotActiveError,
+  EnrollmentPaceError,
   EnrollmentStatusTransitionError,
   LearnerAuthorizationError,
   LearnerHistoryUnavailableError,
@@ -275,6 +280,9 @@ export {
   LessonAlreadyCompleteError,
   LessonPutBackError,
   LessonSkippedError,
+  MAX_LESSONS_PER_WEEK,
+  MAX_NEXT_LESSONS_COUNT,
+  MIN_LESSONS_PER_WEEK,
   requirePolicyBasis,
   WorkbookOwnedLessonError,
 } from './learner-service.js';

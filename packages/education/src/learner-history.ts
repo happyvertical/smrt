@@ -226,3 +226,52 @@ export class LessonCompletionRecord extends SmrtObject {
 export class LessonCompletionRecordCollection extends SmrtCollection<LessonCompletionRecord> {
   static readonly _itemClass = LessonCompletionRecord;
 }
+
+/**
+ * Append-only audit of one enrollment pace change made through
+ * `LearnerService.setEnrollmentPace`: the actor, the host policy setting
+ * relied on and the previous and new lessons per week (`0` means no pace).
+ */
+@TenantScoped({ mode: 'required' })
+@smrt({ tableName: 'enrollment_pace_changes', ...closed })
+export class EnrollmentPaceChange extends SmrtObject {
+  @tenantId() tenantId = '';
+  @foreignKey('Enrollment', { required: true }) enrollmentId = '';
+  @foreignKey('Learner', { required: true }) learnerId = '';
+  previousLessonsPerWeek = 0;
+  newLessonsPerWeek = 0;
+  actorUserId = '';
+  policyBasis = '';
+  recordedAt = new Date();
+  constructor(options: Record<string, unknown> = {}) {
+    super(options);
+    adopt(this, options);
+  }
+  override async delete(): Promise<void> {
+    noDelete();
+  }
+  override async save(options?: SmrtSaveOptions): Promise<this> {
+    await requireInsert(this);
+    if (
+      !(await this.db.get('enrollments', {
+        id: this.enrollmentId,
+        tenant_id: this.tenantId,
+        learner_id: this.learnerId,
+      }))
+    )
+      throw new Error('Pace history requires its tenant enrollment');
+    for (const value of [this.previousLessonsPerWeek, this.newLessonsPerWeek])
+      if (!Number.isSafeInteger(value) || value < 0 || value > 14)
+        throw new Error('Invalid enrollment pace change');
+    if (this.previousLessonsPerWeek === this.newLessonsPerWeek)
+      throw new Error('Invalid enrollment pace change');
+    requireText(this.actorUserId, 'Pace history requires an actor');
+    requireText(this.policyBasis, 'Pace history requires a policy basis');
+    validDate(this.recordedAt);
+    this.requireInsertOnSave();
+    return super.save(options);
+  }
+}
+export class EnrollmentPaceChangeCollection extends SmrtCollection<EnrollmentPaceChange> {
+  static readonly _itemClass = EnrollmentPaceChange;
+}

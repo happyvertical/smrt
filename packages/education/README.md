@@ -105,7 +105,10 @@ and never touch submissions, grades or other progress. `completeOwnLesson`
 lets a learner mark their own lesson of any kind done when the host's
 `education.progress.complete-own` decision allows it, recording the actor, the
 host setting and optional evidence submission; guardian `attestLesson` is
-unchanged.
+unchanged. `setEnrollmentPace` sets or clears an enrollment's planned lessons
+per week (1 to 14) under the host's `education.enrollment.set-pace` decision with
+an immutable change row, and `nextLessons({ count })` returns a week's set of
+unfinished lessons (default one).
 Repeated starts preserve the existing progress, including attempts and scores.
 A new curriculum/year creates a distinct enrollment and fresh progress history.
 An unscored lesson has `bestScore: null`, distinct from zero. The service does

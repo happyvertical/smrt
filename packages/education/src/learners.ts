@@ -157,6 +157,8 @@ export class Enrollment extends SmrtObject {
   startedAt: Date | null = null;
   completedAt: Date | null = null;
   targetMinutesPerWeek = 0;
+  /** Planned lessons per week (1-14); `0` means no pace is set. */
+  paceLessonsPerWeek = 0;
   sortOrder = 0;
   constructor(options: Record<string, unknown> = {}) {
     super(options);
@@ -188,6 +190,12 @@ export class Enrollment extends SmrtObject {
       this.targetMinutesPerWeek < 0
     )
       throw new Error('Target minutes must be a nonnegative integer');
+    if (
+      !Number.isSafeInteger(this.paceLessonsPerWeek) ||
+      this.paceLessonsPerWeek < 0 ||
+      this.paceLessonsPerWeek > 14
+    )
+      throw new Error('Pace must be zero or 1 to 14 lessons per week');
     return super.save(options);
   }
 }
