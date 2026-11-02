@@ -1,0 +1,115 @@
+name: Fork PR Approval
+
+# Maintainer approval for external fork pull requests (#4558).
+#
+# `pull_request_target` loads this file from the trusted base branch. It never
+# checks out or executes PR code: it runs scripts/fork-pr-approval.mjs from the
+# base revision. When someone with write access applies the approval label and
+# a write-access user has submitted an Approve review on that exact head, it
+# records a `fork-approval` commit status on the head and re-runs the required
+# jobs. The guard job flags fork PRs that touch .github/ before anyone approves
+# their workflow runs. A new push is a new SHA without that status, so approval
+# never carries over; the label is also removed. See .github/CI.md,
+# "External fork PRs".
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, reopened, synchronize, labeled]
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+permissions: {}
+
+jobs:
+  guard:
+    # A fork PR that changes .github/ can add its own workflow with a job named
+    # like a required context. Never approve its workflow runs; re-land it.
+    name: Fork Workflow Change Guard
+    if: >-
+      contains(fromJSON('["opened","reopened","synchronize"]'), github.event.action) &&
+      github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Checkout trusted base revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          sparse-checkout: scripts/fork-pr-approval.mjs
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '26.12.1'
+
+      - name: Refuse .github/ changes from a fork
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: node scripts/fork-pr-approval.mjs guard
+
+  approve:
+    name: Apply Fork Approval
+    if: >-
+      github.event.action == 'labeled' &&
+      github.event.label.name == 'ci: fork-approved' &&
+      github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Only approvals share a queue, so another label event cannot cancel a
+    # pending revoke.
+    concurrency:
+      group: fork-pr-approve-${{ github.event.pull_request.number }}
+      cancel-in-progress: false
+    permissions:
+      actions: write
+      checks: read
+      contents: read
+      pull-requests: read
+      statuses: write
+    steps:
+      - name: Checkout trusted base revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          sparse-checkout: scripts/fork-pr-approval.mjs
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '26.12.1'
+
+      - name: Re-run required checks for the approved head
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          SENDER: ${{ github.event.sender.login }}
+        run: node scripts/fork-pr-approval.mjs approve
+
+  revoke:
+    name: Revoke Fork Approval
+    if: >-
+      github.event.action == 'synchronize' &&
+      github.event.pull_request.head.repo.full_name != github.repository &&
+      contains(github.event.pull_request.labels.*.name, 'ci: fork-approved')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Remove the approval label after a new push
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          gh api --method DELETE \
+            "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/labels/ci%3A%20fork-approved"
