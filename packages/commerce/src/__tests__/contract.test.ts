@@ -12,6 +12,7 @@ import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { SmrtCollection } from '@happyvertical/smrt-core';
+import { getTestManifestPath } from '@happyvertical/smrt-vitest';
 import { afterEach, beforeEach, describe, expect } from 'vitest';
 import { ContractCollection } from '../collections/ContractCollection.js';
 import { CustomerCollection } from '../collections/CustomerCollection.js';
@@ -54,9 +55,7 @@ describe('Contract', () => {
 
   describe('Purchase order delivery header', () => {
     it('exposes delivery fields as subtype metadata without widening the base schema', () => {
-      const manifest = JSON.parse(
-        readFileSync(join(process.cwd(), '.smrt/manifest.json'), 'utf8'),
-      );
+      const manifest = JSON.parse(readFileSync(getTestManifestPath(), 'utf8'));
       const fields =
         manifest.objects['@happyvertical/smrt-commerce:PurchaseOrder'].fields;
       expect(fields.expectedDate).toMatchObject({

@@ -18,11 +18,33 @@ Without the plugin → "unregistered class" / "No field metadata found" errors.
 
 ## What the Plugin Does
 
-1. Scans `src/**/*.ts` for SMRT classes via ManifestBuilder
+1. Scans `src/**/*.ts` for SMRT classes via ManifestBuilder into this run's
+   test manifest snapshot (see below)
 2. Discovers `@happyvertical/smrt-*` dependencies from package.json
 3. Loads external manifests via ManifestManager
 4. Registers all classes in ObjectRegistry
 5. Watch mode caveat: manifest only generated at startup — restart vitest after adding new classes/fields
+
+## Test manifest snapshot (#4128)
+
+- Test generation is test-inclusive, so it writes only
+  `.smrt/test-runs/<pid>-<time>-<rand>/manifest.json` (`outputMode:
+  'explicit'`). `.smrt/manifest.json`, `dist/manifest.json` and paired
+  knowledge are production outputs; never write test output there, and do not
+  regenerate production knowledge from a test scan.
+- `config()` publishes the path synchronously in
+  `__SMRT_TEST_MANIFEST_PATHS__` (keyed by root; core's
+  `test-artifacts.ts` owns the read side, parity tested) so forked workers
+  inherit it. `LocalManifestReader.loadLocal()`, the runtime manifest loader and
+  `createIsolatedTestDbFromManifest()` read it first for the registered root
+  only (a dependency's root matches only when its own run registered it).
+- Tests inspecting generated metadata use `getTestManifestPath()`, not a
+  literal `.smrt/manifest.json`.
+- The run directory is removed on process exit; startup prunes same-host
+  directories only once their owner PID is gone (any age), and directories
+  with an unprobeable owner (foreign host, missing `owner.json`) once older
+  than a day. Regression:
+  `src/__tests__/issue-4128-concurrent-build-isolation.test.ts`.
 
 ## Pool and isolation (#2897)
 
@@ -240,4 +262,4 @@ Pattern: render → assert role/name/state → drive with user-event → prove a
 - `src/svelte-setup.ts` — Svelte component-test setup (jest-dom, cleanup, dialog polyfill)
 - `src/svelte.ts` — component-test surface (Testing Library + a11y, one import)
 - `src/a11y.ts` — `expectNoA11yViolations` (axe-core)
-- `src/test-db.ts` — createIsolatedTestDb, createIsolatedTestDbFromManifest, createTestDb
+- `src/test-db.ts` — createIsolatedTestDb, createIsolatedTestDbFromManifest, createTestDb, getTestManifestPath

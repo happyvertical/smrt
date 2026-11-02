@@ -21,6 +21,7 @@ import { join } from 'node:path';
 import { ObjectRegistry } from '@happyvertical/smrt-core';
 import {
   createIsolatedTestDb,
+  getTestManifestPath,
   type IsolatedTestDbResult,
 } from '@happyvertical/smrt-vitest';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -139,10 +140,7 @@ describe('RBAC/identity generated CRUD lockdown (#1400)', () => {
 
   it('keeps the generated User ownership and email arbiters unique', async () => {
     const manifest = JSON.parse(
-      await readFile(
-        new URL('../../.smrt/manifest.json', import.meta.url),
-        'utf8',
-      ),
+      await readFile(getTestManifestPath(), 'utf8'),
     ) as {
       objects: Record<
         string,
