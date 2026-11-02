@@ -258,6 +258,9 @@ describe('LearnerService.nextLessons count', () => {
     await withFixture(async (f) => {
       const { tracked: service, own, as, enrollment } = f;
       const request = { ...own, enrollmentId: String(enrollment.id) };
+      // Pin the order: equal sort orders tie-break on random ids.
+      f.secondLesson.sortOrder = 1;
+      await f.secondLesson.save();
       const single = await as(own, () => service.nextLessons(request));
       expect(single).toHaveLength(1);
       expect(single[0].lesson.id).toBe(String(f.lesson.id));
