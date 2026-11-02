@@ -31,10 +31,14 @@ import type {
  * Translucent whites with subtle color tints
  */
 const lightColors: ColorPalette = {
-  // Primary - Apple system blue
-  primary: '#007aff',
+  // Primary - Apple system blue, darkened for text. `#007aff` is only 3.6:1
+  // on `background` and 4.0:1 on white, so ghost buttons and links (which
+  // draw their text in `primary`) failed WCAG AA 4.5:1 on every light Glass
+  // surface; `#0066cc` clears it on all of them (5.0:1 on `#f2f2f7`) while
+  // `onPrimary` white stays 5.6:1 on filled controls (#4567).
+  primary: '#0066cc',
   onPrimary: '#ffffff',
-  primaryContainer: 'rgba(0, 122, 255, 0.15)',
+  primaryContainer: 'rgba(0, 102, 204, 0.15)',
   onPrimaryContainer: '#003d80',
 
   // Secondary - System gray
@@ -187,7 +191,7 @@ const darkColors: ColorPalette = {
   // Inverse
   inverseSurface: '#f2f2f7',
   inverseOnSurface: '#000000',
-  inversePrimary: '#007aff',
+  inversePrimary: '#0066cc',
 
   // Effects
   shadow: 'rgba(0, 0, 0, 0.4)',
