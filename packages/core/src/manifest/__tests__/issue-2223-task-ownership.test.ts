@@ -282,6 +282,13 @@ describe('Issue #2223 - test manifest task ownership', () => {
     withIsolatedCoreFixture((fixtureDir) => {
       const fixtureWorkspace = resolve(fixtureDir, '../..');
       const turbo = resolve(workspaceDir, 'node_modules/.bin/turbo');
+      // The canonical `.smrt` pair is the production one `generate` writes.
+      // Produce it here rather than assuming an earlier build left it: the
+      // fixture copy excludes `.smrt/`, and `generate:test` depends only on
+      // upstream builds (and may replay from the Turbo cache without running).
+      generateProductionFixture(fixtureDir);
+      const smrtDir = resolve(fixtureDir, '.smrt');
+      const productionBefore = snapshotPath(smrtDir);
       runCommand(
         turbo,
         ['run', 'generate:test', '--filter=@happyvertical/smrt-core'],
@@ -294,14 +301,14 @@ describe('Issue #2223 - test manifest task ownership', () => {
         ),
       );
       expect(testManifest.artifactPurpose).toBe('test');
-      // The test-inclusive scan owns only its own artifact; the canonical
-      // `.smrt` pair is the production one `generate` wrote during the build
-      // this task depends on, so no production reader sees core's inline
-      // test fixtures.
+      // The test-inclusive scan owns only its own artifact and leaves the
+      // production pair byte-identical, so no production reader sees core's
+      // inline test fixtures.
+      expect(snapshotPath(smrtDir)).toEqual(productionBefore);
       const isTestFile = (entry: { filePath?: string }) =>
         /\.(test|spec)\.tsx?$/.test(entry.filePath ?? '');
       const local = JSON.parse(
-        readFileSync(resolve(fixtureDir, '.smrt/manifest.json'), 'utf8'),
+        readFileSync(resolve(smrtDir, 'manifest.json'), 'utf8'),
       );
       expect(local.artifactPurpose).toBeUndefined();
       expect(
