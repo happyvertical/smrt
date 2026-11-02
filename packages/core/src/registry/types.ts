@@ -1164,6 +1164,12 @@ export interface RegisteredClass {
   /** Generic type arg from `SmrtCollection<X>` — marks collection classes. */
   extendsTypeArg?: string;
   /**
+   * Generated surfaces in `config` the scanner copied from this collection's
+   * model (`SmartObjectDefinition.inheritedExposure`); they follow the
+   * model's effective config at runtime, never widening (#3468).
+   */
+  inheritedExposure?: Array<'api' | 'mcp' | 'cli'>;
+  /**
    * Manifest classification of a collection class: the model it manages
    * (`SmartObjectDefinition.collectionOf`). A registration carrying it is a
    * collection and never claims a physical table (#3956).

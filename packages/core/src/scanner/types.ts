@@ -566,6 +566,14 @@ export interface SmartObjectDefinition {
   extendsQualified?: string; // Base class qualified name
   extendsTypeArg?: string; // Generic type argument (e.g., "Meeting" from "SmrtCollection<Meeting>")
   /**
+   * Generated surfaces (`api`/`mcp`/`cli`) in `decoratorConfig` that the
+   * scanner copied from a collection's model rather than the collection
+   * declaring them. The runtime re-derives these from the model's effective
+   * config, so a consumer that closes the model (a subclass or
+   * `registerOverride`) closes the undecorated collection too (#3468).
+   */
+  inheritedExposure?: Array<'api' | 'mcp' | 'cli'>;
+  /**
    * The model a collection class manages, as the scanner resolved it
    * (qualified when the model has a package). Present only on collection
    * entries; it classifies the entry as a collection, which never owns its

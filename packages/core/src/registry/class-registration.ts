@@ -2027,6 +2027,7 @@ function registerUntracked(
     sourceFilePath, // Store source file for collision detection (Issue #555)
     extends: extendsClass, // Capture parent class name from manifest OR prototype chain
     extendsTypeArg: manifestEntry?.extendsTypeArg, // SmrtCollection<T> generic arg
+    inheritedExposure: manifestEntry?.inheritedExposure, // #3468
     collectionOf: manifestEntry?.collectionOf, // #3956 manifest collection classification
     tenantScopedConfig, // Multi-tenancy config (Issue #688)
     tenantScopedConfigSource,
@@ -2645,6 +2646,11 @@ function mergeManifestIntoExistingRegistration(
     existing.sourceFilePath = objectDef.filePath;
   }
 
+  // #3468: which surfaces of the merged config the scanner copied from the
+  // collection's model, so they keep following the model at runtime.
+  if (objectDef.inheritedExposure) {
+    existing.inheritedExposure = objectDef.inheritedExposure;
+  }
   // A class registered before its manifest loaded learns it is a collection
   // here, so it stops claiming its model's table (#3956).
   if (objectDef.collectionOf) existing.collectionOf = objectDef.collectionOf;
@@ -2929,6 +2935,7 @@ function registerFromManifestUntracked(
     replacedQualifiedNames: [...replacedQualifiedNames],
     extends: qualifiedExtends, // Issue #1004: Pre-computed qualified parent
     extendsTypeArg: objectDef.extendsTypeArg, // SmrtCollection<T> generic arg
+    inheritedExposure: objectDef.inheritedExposure, // #3468
     collectionOf: objectDef.collectionOf, // #3956 manifest collection classification
     visibility, // New: Visibility control for manifest filtering
   };

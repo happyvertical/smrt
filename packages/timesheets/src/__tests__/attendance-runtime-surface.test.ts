@@ -46,7 +46,10 @@ it('lets a consumer close attendance routes without replacement models or schema
   const tools = await new MCPGenerator().generateTools();
   expect(
     tools.filter((tool) =>
-      /^(attendancepunch|attendancebreak)_/.test(tool.name),
+      // Collection tools reach the same rows (#3468).
+      /^(attendancepunch|attendancebreak|attendancesegment)(collection)?_/.test(
+        tool.name,
+      ),
     ),
   ).toEqual([]);
 });
@@ -61,7 +64,9 @@ it('exposes no generated operation for the append-only correction ledger', async
   }
   const tools = await new MCPGenerator().generateTools();
   expect(
-    tools.filter((tool) => /^attendancecorrection_/.test(tool.name)),
+    tools.filter((tool) =>
+      /^attendancecorrection(collection)?_/.test(tool.name),
+    ),
   ).toEqual([]);
   expect(ObjectRegistry.getTenantScopedConfig(key)?.mode).toBe('required');
 });
