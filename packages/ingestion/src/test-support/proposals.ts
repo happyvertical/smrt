@@ -21,6 +21,8 @@ import {
 import { loadReviewAnalysis } from '../../reference/review-analysis.js';
 import { intakeBindingDigest } from '../execution.js';
 import type {
+  ExecutionAccessInput,
+  HandlerContext,
   IntakeExecutionOptions,
   IntakeHandler,
   OperationHandler,
@@ -134,7 +136,34 @@ export function proposalSuite(
     let clock: Date;
     let permissions: string[];
     let providerAllowed: boolean;
-    let authorizedExecutor: DatabaseInterface;
+    let authorizedExecutors: WeakMap<DatabaseInterface, Set<string>>;
+    function authorizationKey(
+      input: Pick<
+        ExecutionAccessInput,
+        'itemId' | 'scope' | 'handlerId' | 'operation'
+      >,
+    ) {
+      return JSON.stringify([
+        input.itemId,
+        input.scope.tenantId,
+        input.scope.actorId,
+        input.scope.confidentialScopeId,
+        input.handlerId,
+        input.operation,
+      ]);
+    }
+    function candidateExecutorMatches(context: HandlerContext) {
+      return (
+        authorizedExecutors.get(context.db)?.has(
+          authorizationKey({
+            itemId: context.itemId,
+            scope: context.scope,
+            handlerId: ATTACH,
+            operation: 'preview',
+          }),
+        ) ?? false
+      );
+    }
     let policyVersion: string;
     let policyMaxBytes: number;
     let reviewerAllowed: boolean;
@@ -199,6 +228,7 @@ export function proposalSuite(
       executionAuthorizations = 0;
       executionThrows = false;
       executionRefuses = false;
+      authorizedExecutors = new WeakMap();
       permissions = ['contents.create', 'contents.addAsset'];
       if (dialect === 'postgres') {
         const base = process.env.DATABASE_URL;
@@ -236,7 +266,7 @@ export function proposalSuite(
           evidenceId: { kind: 'evidence' },
         },
         candidates: async (_query, context, page) => {
-          expect(context.db).toBe(authorizedExecutor);
+          expect(candidateExecutorMatches(context)).toBe(true);
           const rows = (
             await context.db.query(
               'SELECT id,title,updated_at FROM contents WHERE tenant_id=? AND context=? ORDER BY id LIMIT ?',
@@ -261,21 +291,29 @@ export function proposalSuite(
       };
       const execution: IntakeExecutionOptions = {
         handlers,
-        authorize: async ({ scope, db: executor }) => {
-          authorizedExecutor = executor;
+        authorize: async (input) => {
+          const { scope, db: executor } = input;
           executionAuthorizations++;
           if (executionThrows)
             throw new Error('execution authorization unavailable');
           const deniedOnce = denyNextAuthorize;
           denyNextAuthorize = false;
+          const permitted =
+            !executionRefuses &&
+            !deniedOnce &&
+            allowed &&
+            scope.tenantId === tenant &&
+            scope.confidentialScopeId === 'private' &&
+            ['owner', 'reviewer'].includes(scope.actorId);
+          if (permitted) {
+            // Concurrent requests authorize distinct owning transactions.
+            const requests =
+              authorizedExecutors.get(executor) ?? new Set<string>();
+            requests.add(authorizationKey(input));
+            authorizedExecutors.set(executor, requests);
+          }
           return {
-            allowed:
-              !executionRefuses &&
-              !deniedOnce &&
-              allowed &&
-              scope.tenantId === tenant &&
-              scope.confidentialScopeId === 'private' &&
-              ['owner', 'reviewer'].includes(scope.actorId),
+            allowed: permitted,
             reviewer: reviewerAllowed,
             principalId: principalOverride ?? principal,
             permissions,
@@ -681,6 +719,39 @@ export function proposalSuite(
         configuration.concurrency = 1;
         const first = await generation();
         const second = await generation();
+        const candidateFailures: Array<{
+          name: string;
+          executorMatches: boolean;
+        }> = [];
+        const discovery = handlers[1].discovery!;
+        const candidates = discovery.candidates!;
+        const knownItems = new Set([first.itemId, second.itemId]);
+        const arrived = new Set<string>();
+        let releaseCandidates!: () => void;
+        const bothCandidates = new Promise<void>((resolve) => {
+          releaseCandidates = resolve;
+        });
+        discovery.candidates = async (query, context, page) => {
+          try {
+            // Only PostgreSQL permits both owning transactions to arrive here.
+            if (dialect === 'postgres' && knownItems.has(context.itemId)) {
+              arrived.add(context.itemId);
+              if (arrived.size === 2) releaseCandidates();
+              await bothCandidates;
+            }
+            return await candidates(query, context, page);
+          } catch (error) {
+            if (candidateFailures.length < 4)
+              candidateFailures.push({
+                name:
+                  error instanceof Error
+                    ? error.name.slice(0, 80)
+                    : 'non_error',
+                executorMatches: candidateExecutorMatches(context),
+              });
+            throw error;
+          }
+        };
         let active = 0,
           peak = 0;
         const answer = calls.getMockImplementation()!;
@@ -695,10 +766,27 @@ export function proposalSuite(
           new IngestionService(options).generateProposals(first.lease),
           new IngestionService(options).generateProposals(second.lease),
         ]);
-        expect(calls).toHaveBeenCalledTimes(2);
-        expect(peak).toBe(1);
-        expect((await output(first.lease)).outcome).toBe('proposals');
-        expect((await output(second.lease)).outcome).toBe('proposals');
+        const results = [await output(first.lease), await output(second.lease)];
+        const diagnostic = JSON.stringify({
+          results: results.map((result) => ({
+            outcome: result.outcome,
+            warnings: result.warnings
+              .slice(0, 8)
+              .map((warning) => warning.slice(0, 80)),
+            failure: result.provenance.failure
+              ? {
+                  category: result.provenance.failure.category,
+                  reason: result.provenance.failure.reason?.slice(0, 160),
+                }
+              : undefined,
+            offeredHandlers: result.offered.length,
+          })),
+          candidateFailures,
+        });
+        expect(calls, diagnostic).toHaveBeenCalledTimes(2);
+        expect(peak, diagnostic).toBe(1);
+        expect(results[0].outcome, diagnostic).toBe('proposals');
+        expect(results[1].outcome, diagnostic).toBe('proposals');
       });
       it('refuses invalid retry and concurrency settings at construction', () => {
         for (const proposals of [

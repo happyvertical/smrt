@@ -98,7 +98,9 @@ async function verifyPackedPlugin() {
     const consumerRoot = join(packedTempDir, 'consumer');
     mkdirSync(consumerRoot);
     writeFileSync(join(consumerRoot, 'package.json'), JSON.stringify({ private: true, type: 'module' }));
-    execFileSync('npm', ['install', '--omit=dev', '--no-audit', '--no-fund', '--cache', join(packedTempDir, 'cache'), ...tarballs], {
+    // A successful cold install must validate the adapter's published server peer.
+    // Workspace resolution can hide an incompatible exact pair (#4592).
+    execFileSync('npm', ['install', '--strict-peer-deps', '--omit=dev', '--no-audit', '--no-fund', '--cache', join(packedTempDir, 'cache'), ...tarballs], {
       cwd: consumerRoot,
       encoding: 'utf8',
     });

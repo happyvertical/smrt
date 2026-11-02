@@ -2250,21 +2250,21 @@ importers:
         specifier: ^0.111.3
         version: 0.111.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@modelcontextprotocol/server':
-        specifier: 2.3.1
-        version: 2.3.1
+        specifier: 2.4.0
+        version: 2.4.0
     devDependencies:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
         version: link:../vitest
       '@modelcontextprotocol/client':
-        specifier: 2.3.1
-        version: 2.3.1
+        specifier: 2.4.0
+        version: 2.4.0
       '@modelcontextprotocol/conformance':
         specifier: 0.2.0-alpha.11
         version: 0.2.0-alpha.11(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)
       '@modelcontextprotocol/node':
         specifier: 2.1.2
-        version: 2.1.2(@modelcontextprotocol/server@2.3.1)
+        version: 2.1.2(@modelcontextprotocol/server@2.4.0)
       '@playwright/test':
         specifier: ^1.63.0
         version: 1.63.0
@@ -3351,8 +3351,8 @@ importers:
         specifier: ^0.111.3
         version: 0.111.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@modelcontextprotocol/server':
-        specifier: 2.3.1
-        version: 2.3.1
+        specifier: 2.4.0
+        version: 2.4.0
       jose:
         specifier: ^6.2.12
         version: 6.2.12
@@ -3361,14 +3361,14 @@ importers:
         version: 8.0.1
     devDependencies:
       '@modelcontextprotocol/client':
-        specifier: 2.3.1
-        version: 2.3.1
+        specifier: 2.4.0
+        version: 2.4.0
       '@modelcontextprotocol/conformance':
         specifier: 0.2.0-alpha.11
         version: 0.2.0-alpha.11(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)
       '@modelcontextprotocol/node':
         specifier: 2.1.2
-        version: 2.1.2(@modelcontextprotocol/server@2.3.1)
+        version: 2.1.2(@modelcontextprotocol/server@2.4.0)
       '@types/node':
         specifier: 24.13.2
         version: 24.13.2
@@ -3392,10 +3392,10 @@ importers:
         version: link:../types
       '@modelcontextprotocol/node':
         specifier: 2.1.2
-        version: 2.1.2(@modelcontextprotocol/server@2.3.1)
+        version: 2.1.2(@modelcontextprotocol/server@2.4.0)
       '@modelcontextprotocol/server':
-        specifier: 2.3.1
-        version: 2.3.1
+        specifier: 2.4.0
+        version: 2.4.0
     devDependencies:
       '@happyvertical/smrt-config':
         specifier: workspace:*
@@ -3407,8 +3407,8 @@ importers:
         specifier: ^0.111.3
         version: 0.111.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@modelcontextprotocol/client':
-        specifier: 2.3.1
-        version: 2.3.1
+        specifier: 2.4.0
+        version: 2.4.0
       '@modelcontextprotocol/conformance':
         specifier: 0.2.0-alpha.11
         version: 0.2.0-alpha.11(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)
@@ -6069,12 +6069,20 @@ packages:
     resolution: {integrity: sha512-mIGZXpHsjnZ6lD+gD/WCMpR5k8yVQQ8nNFH1N0Srf7AvnwTUMYD6pvTY8ng2+He5FfV7YMZLmrjL7cLa/cc3dQ==}
     engines: {node: '>=20'}
 
+  '@modelcontextprotocol/client@2.4.0':
+    resolution: {integrity: sha512-LgrD2OphHuG12vfKFKz6SOnq7bKHQmhGJIAYdD+MZBn2npHEyry6uD8zvktodtl5CQM85MO0anUyD9JwmUmxww==}
+    engines: {node: '>=20'}
+
   '@modelcontextprotocol/conformance@0.2.0-alpha.11':
     resolution: {integrity: sha512-imPK9tx5gQsL6ZKQq4MrsyDYfSaIwpRmX6+ogjbeAXs9LGvxkBxWcY7KcS7TvwaBk/ZiVWl6b/naF4q83UwDRA==}
     hasBin: true
 
   '@modelcontextprotocol/core@2.3.1':
     resolution: {integrity: sha512-laVmIhPGpWi7rG9q+0UigblRN0Hws/Yjlb6qLFtVqryXVLkc4h+yN8z731POD2LnAGQlFe7/tXhUm7Bi0YB91g==}
+    engines: {node: '>=20'}
+
+  '@modelcontextprotocol/core@2.4.0':
+    resolution: {integrity: sha512-z8QBKqdfXLPzkLQuG4xp8hrVEMm1PZ1IgxMN2sMbJiFiAKOWXnAzogXn2W4aqIBlP1ea6U5yiqVquvUNM1Cj6Q==}
     engines: {node: '>=20'}
 
   '@modelcontextprotocol/node@2.1.2':
@@ -6095,6 +6103,10 @@ packages:
 
   '@modelcontextprotocol/server@2.3.1':
     resolution: {integrity: sha512-e59MfWuSssj6DoQ96JCTqdW1AXT5/XtnTl0WWd6MU1Ka434fFUGGosCLJbGNySDhHGvxQWoRWK137FXYFkYNWw==}
+    engines: {node: '>=20'}
+
+  '@modelcontextprotocol/server@2.4.0':
+    resolution: {integrity: sha512-rgR9yxSaAJ+bcsi/XroT/S2AfPiIWloXAnrdfYSCms9ivVju0ishu/wW0J21Ho6+ZOR1r7RyeRbjiRuF87ix5Q==}
     engines: {node: '>=20'}
 
   '@msgpackr-extract/msgpackr-extract-darwin-arm64@3.0.4':
@@ -13812,6 +13824,16 @@ snapshots:
       pkce-challenge: 5.0.1
       zod: 4.6.7
 
+  '@modelcontextprotocol/client@2.4.0':
+    dependencies:
+      '@modelcontextprotocol/core': 2.4.0
+      cross-spawn: 7.0.6
+      eventsource: 3.0.7
+      eventsource-parser: 3.1.0
+      jose: 6.2.12
+      pkce-challenge: 5.0.1
+      zod: 4.6.7
+
   '@modelcontextprotocol/conformance@0.2.0-alpha.11(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)':
     dependencies:
       '@modelcontextprotocol/sdk': 1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.6.7)
@@ -13833,10 +13855,14 @@ snapshots:
     dependencies:
       zod: 4.6.7
 
-  '@modelcontextprotocol/node@2.1.2(@modelcontextprotocol/server@2.3.1)':
+  '@modelcontextprotocol/core@2.4.0':
+    dependencies:
+      zod: 4.6.7
+
+  '@modelcontextprotocol/node@2.1.2(@modelcontextprotocol/server@2.4.0)':
     dependencies:
       '@hono/node-server': 1.19.15(hono@4.12.27)
-      '@modelcontextprotocol/server': 2.3.1
+      '@modelcontextprotocol/server': 2.4.0
       hono: 4.12.27
 
   '@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.6.7)':
@@ -13866,6 +13892,11 @@ snapshots:
   '@modelcontextprotocol/server@2.3.1':
     dependencies:
       '@modelcontextprotocol/core': 2.3.1
+      zod: 4.6.7
+
+  '@modelcontextprotocol/server@2.4.0':
+    dependencies:
+      '@modelcontextprotocol/core': 2.4.0
       zod: 4.6.7
 
   '@msgpackr-extract/msgpackr-extract-darwin-arm64@3.0.4':
