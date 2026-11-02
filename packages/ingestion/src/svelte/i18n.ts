@@ -17,6 +17,7 @@ export const M = defineMessages({
   'ingestion.upload': 'Upload',
   'ingestion.files': 'Choose intake files',
   'ingestion.filesHelp': 'Select documents, images, email, or audio.',
+  'ingestion.filesDrop': 'Drop files here, or browse.',
   'ingestion.more': 'Load more',
   'ingestion.open': 'Review',
   'ingestion.processing': 'Processing',

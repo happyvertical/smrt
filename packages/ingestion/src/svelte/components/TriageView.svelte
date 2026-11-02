@@ -30,6 +30,8 @@ export interface Props {
   rowAside?: Snippet<[InboxEntry]>;
   /** File types the upload picker offers; defaults to the host's `uploadAccept`. */
   accept?: string;
+  /** Offer the upload as a drop zone at the top of the inbox (default); `false` keeps the plain picker (#4587). */
+  dropzone?: boolean;
   /** Re-read the listed page on this interval while a row is processing; off when absent. */
   listPollMs?: number;
 }
@@ -40,6 +42,7 @@ let {
   onselect,
   rowAside,
   accept,
+  dropzone,
   listPollMs,
 }: Props = $props();
 const { t } = useI18n();
@@ -683,7 +686,7 @@ function keydown(event: KeyboardEvent) {
 <svelte:window onkeydown={keydown} />
 <div class="workspace" bind:this={root} data-testid="intake-workspace">
 <div class="list-pane">
-<InboxView bind:this={inbox} {host} {rowAside} {accept} {listPollMs} selectedId={selected} onselect={(id) => request(id)} onitems={listed} onreadstart={readStarted} {stamp} status={rowStatus} resolveInRow={false} />
+<InboxView bind:this={inbox} {host} {rowAside} {accept} {dropzone} {listPollMs} selectedId={selected} onselect={(id) => request(id)} onitems={listed} onreadstart={readStarted} {stamp} status={rowStatus} resolveInRow={false} />
 </div>
 <section class="item-pane" bind:this={pane} tabindex="-1" aria-label={label ?? t(M['ingestion.selectedItem'])} data-testid="workspace-item" onfocusin={noteField}>
 <div class="queue-nav" role="group" aria-label={t(M['ingestion.workspace'])}>

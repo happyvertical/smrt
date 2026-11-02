@@ -10,6 +10,8 @@ export interface Props {
   rowAside?: Snippet<[InboxEntry]>;
   /** File types the upload picker offers; defaults to the host's `uploadAccept`. */
   accept?: string;
+  /** Offer the upload as a drop zone at the top of the inbox (default); `false` keeps the plain picker (#4587). */
+  dropzone?: boolean;
   /** Re-read the list on this interval (ms) while a listed row is still processing; off when absent. */
   listPollMs?: number;
 }
@@ -19,6 +21,7 @@ let {
   onselect,
   rowAside,
   accept,
+  dropzone,
   listPollMs,
 }: Props = $props();
 let inbox = $state<ReturnType<typeof InboxView>>();
@@ -35,4 +38,4 @@ export function refresh(): Promise<{
     : Promise.resolve({ items: [], result: 'pending' as const });
 }
 </script>
-{#key host}{#key contextKey}<InboxView bind:this={inbox} {host} {onselect} {rowAside} {accept} {listPollMs} />{/key}{/key}
+{#key host}{#key contextKey}<InboxView bind:this={inbox} {host} {onselect} {rowAside} {accept} {dropzone} {listPollMs} />{/key}{/key}

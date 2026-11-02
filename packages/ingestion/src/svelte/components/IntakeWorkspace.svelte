@@ -16,6 +16,8 @@ export interface Props {
   rowAside?: Snippet<[InboxEntry]>;
   /** File types the upload picker offers; defaults to the host's `uploadAccept`. */
   accept?: string;
+  /** Offer the upload as a drop zone at the top of the inbox (default); `false` keeps the plain picker (#4587). */
+  dropzone?: boolean;
   /**
    * Re-read the list on this interval (ms) while a listed row is still
    * processing. Off when absent; processing rows are followed either way.
@@ -30,6 +32,7 @@ let {
   onselect,
   rowAside,
   accept,
+  dropzone,
   listPollMs,
 }: Props = $props();
 let triage = $state<ReturnType<typeof TriageView>>();
@@ -46,4 +49,4 @@ export function refresh(): Promise<{
     : Promise.resolve({ items: [], result: 'pending' as const });
 }
 </script>
-{#key host}{#key contextKey}<TriageView bind:this={triage} {host} {itemId} {pollMs} {onselect} {rowAside} {accept} {listPollMs} />{/key}{/key}
+{#key host}{#key contextKey}<TriageView bind:this={triage} {host} {itemId} {pollMs} {onselect} {rowAside} {accept} {dropzone} {listPollMs} />{/key}{/key}
