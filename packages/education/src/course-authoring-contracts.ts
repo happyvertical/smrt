@@ -74,7 +74,9 @@ export type CourseAuthoringOperation =
   | 'attach-printable'
   | 'preserve-question-extraction'
   | 'read-question-extraction'
-  | 'apply-question-extraction';
+  | 'apply-question-extraction'
+  | 'import-course-bundle'
+  | 'read-course-bundle';
 
 /** Trusted identity supplied by the host session, never by a browser form. */
 export interface CourseAuthoringActor {

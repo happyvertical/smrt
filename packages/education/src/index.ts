@@ -140,6 +140,45 @@ export {
 export * from './course-authoring-models.js';
 export type { CourseAuthoringServiceOptions } from './course-authoring-service.js';
 export { CourseAuthoringService } from './course-authoring-service.js';
+export {
+  type BundleReader,
+  BundleReaderRegistry,
+  type BundleStructure,
+  type BundleStructureLesson,
+  type BundleStructureSection,
+  bundleProposalOutput,
+  type ClassifiedBundleMember,
+  type CourseBundlePlan,
+  classifyBundleMember,
+  courseBundleIdentity,
+  createBundleReaderRegistry,
+  manifestBundleReader,
+  naturalCompare,
+  type PreparedBundle,
+  parseBundleManifest,
+  pdfIsEncrypted,
+  plainBundleReader,
+  planCourseBundle,
+  unpackBundle,
+} from './course-bundle.js';
+export * from './course-bundle-contracts.js';
+export * from './course-bundle-models.js';
+export {
+  type AcceptedCourseBundleMember,
+  type CourseBundleImportResult,
+  CourseBundleImportService,
+  type CourseBundleImportServiceOptions,
+  type CourseBundleImportView,
+  type CourseBundleMemberView,
+  type ImportCourseBundleRequest,
+  type ProposeBundleStructureRequest,
+} from './course-bundle-service.js';
+export {
+  normalizeBundlePath,
+  type RawBundleMember,
+  readFileSet,
+  readZipArchive,
+} from './course-bundle-zip.js';
 export * from './course-generation-contracts.js';
 export * from './course-generation-models.js';
 export {

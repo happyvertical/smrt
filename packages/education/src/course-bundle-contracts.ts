@@ -1,0 +1,193 @@
+import { CourseAuthoringError } from './course-authoring-contracts.js';
+
+const KiB = 1024;
+const MiB = 1024 * KiB;
+
+/**
+ * Hard ceilings for untrusted course bundles (SMRT #4578). A host may lower any
+ * of them per call (`resolveCourseBundleLimits`) but never raise them. Declared
+ * sizes in an archive are never trusted: every cap is enforced on the bytes
+ * actually produced.
+ */
+export interface CourseBundleLimits {
+  /** Largest accepted archive (or total input of a plain file set), in bytes. */
+  maxArchiveBytes: number;
+  /** Most entries (files and directories) in one archive or file set. */
+  maxEntries: number;
+  /** Largest single inflated member. A larger honest member is recorded refused. */
+  maxEntryBytes: number;
+  /** Largest sum of inflated members. */
+  maxTotalBytes: number;
+  /** Largest inflated/compressed ratio for a member above `ratioFloorBytes`. */
+  maxCompressionRatio: number;
+  /** Members at or below this inflated size skip the ratio check. */
+  ratioFloorBytes: number;
+  /** Longest normalised path, in UTF-8 bytes. */
+  maxPathBytes: number;
+  /** Longest path segment, in UTF-8 bytes. */
+  maxSegmentBytes: number;
+  /** Deepest directory path (segments, including the file name). */
+  maxPathDepth: number;
+  /** Largest `manifest.json`. */
+  maxManifestBytes: number;
+  /** Most lessons one bundle may propose (matches the proposal schema). */
+  maxLessons: number;
+  /** Longest text member used as a lesson body, in characters. */
+  maxLessonBodyChars: number;
+}
+
+export const COURSE_BUNDLE_LIMITS: Readonly<CourseBundleLimits> = Object.freeze(
+  {
+    maxArchiveBytes: 100 * MiB,
+    maxEntries: 200,
+    maxEntryBytes: 50 * MiB,
+    maxTotalBytes: 200 * MiB,
+    maxCompressionRatio: 100,
+    ratioFloorBytes: 64 * KiB,
+    maxPathBytes: 512,
+    maxSegmentBytes: 255,
+    maxPathDepth: 8,
+    maxManifestBytes: 256 * KiB,
+    maxLessons: 50,
+    maxLessonBodyChars: 100_000,
+  },
+);
+
+/** Nested archives are never expanded: depth is one, and a zip member is unsupported evidence. */
+export const COURSE_BUNDLE_MAX_ARCHIVE_DEPTH = 1;
+/** The only manifest schema version. */
+export const COURSE_BUNDLE_MANIFEST_VERSION = 1;
+/** Manifest location: the archive (or file set) root. */
+export const COURSE_BUNDLE_MANIFEST_PATH = 'manifest.json';
+
+/** Clamp a host override to the hard ceilings; invalid values fall back to the ceiling. */
+export function resolveCourseBundleLimits(
+  override: Partial<CourseBundleLimits> = {},
+): CourseBundleLimits {
+  const out = { ...COURSE_BUNDLE_LIMITS };
+  for (const key of Object.keys(out) as Array<keyof CourseBundleLimits>) {
+    const value = override[key];
+    if (
+      value !== undefined &&
+      Number.isSafeInteger(value) &&
+      value >= 1 &&
+      value <= COURSE_BUNDLE_LIMITS[key]
+    )
+      out[key] = value;
+  }
+  return out;
+}
+
+export type CourseBundleRefusalReason =
+  | 'archive_too_large'
+  | 'not_a_zip'
+  | 'truncated'
+  | 'ambiguous_end_record'
+  | 'zip64_unsupported'
+  | 'multi_disk'
+  | 'too_many_entries'
+  | 'invalid_central_directory'
+  | 'invalid_entry'
+  | 'unsupported_method'
+  | 'encrypted_entry'
+  | 'symlink_entry'
+  | 'special_entry'
+  | 'invalid_path'
+  | 'path_too_deep'
+  | 'duplicate_name'
+  | 'entry_out_of_range'
+  | 'overlapping_entries'
+  | 'local_header_mismatch'
+  | 'compression_ratio'
+  | 'total_too_large'
+  | 'size_mismatch'
+  | 'bad_crc'
+  | 'inflate_failed'
+  | 'empty_bundle'
+  | 'manifest_invalid'
+  | 'manifest_version'
+  | 'manifest_unknown_key'
+  | 'manifest_missing_member'
+  | 'manifest_duplicate_member'
+  | 'duplicate_key'
+  | 'too_many_lessons';
+
+/**
+ * The whole bundle is refused: it is hostile, damaged or outside the contract.
+ * `reason` is stable; `entry` names the offending member path when one applies
+ * (untrusted text, never rendered as markup).
+ */
+export class CourseBundleRefusedError extends CourseAuthoringError {
+  constructor(
+    readonly reason: CourseBundleRefusalReason,
+    readonly entry?: string,
+  ) {
+    super('course-bundle-refused', `Course bundle refused: ${reason}.`);
+  }
+}
+export class CourseBundleNotFoundError extends CourseAuthoringError {
+  constructor() {
+    super('course-bundle-not-found', 'Course bundle import was not found.');
+  }
+}
+
+/** What the bytes of a bundle member turned out to be (by content, never by name alone). */
+export type CourseBundleMemberKind =
+  | 'pdf'
+  | 'image'
+  | 'text'
+  | 'manifest'
+  | 'unsupported';
+export type CourseBundleMemberStatus =
+  /** Supported, unique content: handed to extraction and eligible for a lesson. */
+  | 'accepted'
+  /** Identical bytes to an earlier accepted member: evidence only, never extracted twice. */
+  | 'duplicate'
+  /** Visible but not understood (unknown type, nested archive, unreadable text). */
+  | 'unsupported'
+  /** Understood and refused (encrypted PDF, oversize member). */
+  | 'refused'
+  /** The bundle manifest itself. */
+  | 'metadata';
+export type CourseBundleMemberReason =
+  | 'unsupported_type'
+  | 'nested_archive'
+  | 'unreadable_text'
+  | 'encrypted_pdf'
+  | 'entry_too_large'
+  | 'duplicate_content';
+
+export const COURSE_BUNDLE_PAGE_ROLES = [
+  'exercise',
+  'example',
+  'instructions',
+  'cover',
+  'answer_key',
+  'mixed',
+  'unknown',
+] as const;
+export type CourseBundlePageRole = (typeof COURSE_BUNDLE_PAGE_ROLES)[number];
+
+/** Named progress stages, in order. */
+export const COURSE_BUNDLE_STAGES = [
+  'unpack',
+  'classify',
+  'extract',
+  'propose',
+] as const;
+export type CourseBundleStage = (typeof COURSE_BUNDLE_STAGES)[number];
+/** One progress event. A stage emits `completed: 0` first and `completed === total` last. */
+export interface CourseBundleProgress {
+  stage: CourseBundleStage;
+  completed: number;
+  total: number;
+}
+/** Observer only: a throwing listener never changes the import. */
+export type CourseBundleProgressListener = (
+  event: CourseBundleProgress,
+) => void;
+
+/** A bundle supplied as one zip archive or as a plain set of files. */
+export type CourseBundleInput =
+  | { archive: Uint8Array }
+  | { files: ReadonlyArray<{ path: string; bytes: Uint8Array }> };
