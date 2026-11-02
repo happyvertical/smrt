@@ -7,10 +7,8 @@ import {
 import {
   CanonicalPersonProfileError,
   normalizeIdentityEmail,
-  Person,
   type Profile,
   ProfileCollection,
-  ProfileTypeCollection,
 } from '@happyvertical/smrt-profiles';
 import { withSystemContext } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
@@ -26,6 +24,7 @@ import {
 import type { Membership } from '../models/Membership.js';
 import { isValidEmail } from '../models/User.js';
 import { MembershipStatus, TenantStatus, UserStatus } from '../types/index.js';
+import { provisionCanonicalMailboxIdentity } from './canonical-mailbox-identity.js';
 import type { LoginAttemptLimiter } from './LoginAttemptLimiter.js';
 import { MagicLinkService } from './MagicLinkService.js';
 import {
@@ -638,72 +637,17 @@ export class TenantInvitationService {
         throw new TenantInvitationError(
           'Invitation system role is unavailable',
         );
-      const users = await UserCollection.create(this.options);
-      const profiles = await ProfileCollection.create(this.options);
-      let user = await users.findCanonicalByEmail(email);
-      let profileId: string;
-      if (user) {
-        const db = this.options.db as DatabaseInterface;
-        if (isPostgresDatabase(db)) {
-          await db.query(
-            'SELECT id FROM users WHERE id = ? FOR UPDATE',
-            user.id,
-          );
-          user = await users.get({ id: requiredId(user.id) }, { cache: false });
-        }
-        if (!user || normalizeIdentityEmail(user.email) !== email)
-          throw new TenantInvitationError('Invitation user is unavailable');
-        if (
-          user.status !== UserStatus.ACTIVE &&
-          user.status !== UserStatus.PENDING
-        )
-          throw new TenantInvitationError('Invitation user is unavailable');
-        const profile =
-          this.signing.existingProfilePolicy === 'owned-person' &&
-          user.status === UserStatus.ACTIVE
-            ? await requireExistingOwnedPerson(
-                this.options.db as DatabaseInterface,
-                requiredId(user.id),
-              )
-            : await profiles.requireCanonicalGlobalPerson(
-                user.profileId,
-                email,
-              );
-        profileId = requiredId(profile.id);
-        const owners = await users.list({ where: { profileId }, limit: 2 });
-        if (owners.length !== 1 || owners[0].id !== user.id)
-          throw new TenantInvitationError(
-            'Invitation identity ownership is inconsistent',
-          );
-      } else {
-        // Matching unowned Profile email is not proof of ownership.
-        if (await profiles.findUniqueGlobalPersonByEmail(email))
-          throw new TenantInvitationError(
-            'Invitation email requires explicit identity reconciliation',
-          );
-        const types = await ProfileTypeCollection.create(this.options);
-        const personType = await types.getOrCreateGlobalBySlug('person', {
-          name: 'Person',
-          description: 'Individual person profile',
-        });
-        const person = new Person({
-          ...this.options,
-          tenantId: null,
-          typeId: requiredId(personType.id),
-          slug: `invitation-${randomUUID()}`,
-          name: email,
+      const { user, profileId } = await provisionCanonicalMailboxIdentity(
+        this.options,
+        {
           email,
-        });
-        await person.initialize();
-        await person.save();
-        profileId = requiredId(person.id);
-        await profiles.reserveCanonicalIdentityEmail(profileId, email);
-        user = await users.create({
-          email,
-          profileId,
           status: UserStatus.PENDING,
-        });
-      }
+          allowPending: true,
+          lock: true,
+          existingProfilePolicy: this.signing.existingProfilePolicy,
+          refuse: (message) => new TenantInvitationError(message),
+        },
+      );
       const userId = requiredId(user.id);
       const db = this.options.db as DatabaseInterface;
       if (isPostgresDatabase(db)) {
