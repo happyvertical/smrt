@@ -241,6 +241,8 @@ export type { LessonProgressTransitionKind } from './learner-history.js';
 export {
   EnrollmentStatusChange,
   EnrollmentStatusChangeCollection,
+  LessonCompletionRecord,
+  LessonCompletionRecordCollection,
   LessonProgressTransition,
   LessonProgressTransitionCollection,
 } from './learner-history.js';
@@ -250,6 +252,7 @@ export type {
 } from './learner-plan-service.js';
 export { LearnerPlanService } from './learner-plan-service.js';
 export type {
+  CompleteOwnLessonResult,
   CurriculumView,
   EnrollmentView,
   LearnerAuthorizer,
@@ -263,13 +266,17 @@ export type {
 } from './learner-service.js';
 export {
   ENROLLMENT_STATUS_TRANSITIONS,
+  EnrollmentNotActiveError,
   EnrollmentStatusTransitionError,
   LearnerAuthorizationError,
   LearnerHistoryUnavailableError,
   LearnerService,
   LearnerValidationError,
+  LessonAlreadyCompleteError,
   LessonPutBackError,
+  LessonSkippedError,
   requirePolicyBasis,
+  WorkbookOwnedLessonError,
 } from './learner-service.js';
 export type { EnrollmentStatus, LessonProgressStatus } from './learners.js';
 export { Curriculum, Enrollment, Learner, LessonProgress } from './learners.js';

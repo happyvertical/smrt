@@ -101,7 +101,11 @@ host's permission decision. Sibling membership does not grant access.
 `putBackLesson` returns started work to `not_started` and `setEnrollmentStatus`
 starts, pauses, resumes or drops an enrollment along a fixed transition table;
 both append immutable history (actor, and for status the host policy basis)
-and never touch submissions, grades or other progress.
+and never touch submissions, grades or other progress. `completeOwnLesson`
+lets a learner mark their own lesson of any kind done when the host's
+`education.progress.complete-own` decision allows it, recording the actor, the
+host setting and optional evidence submission; guardian `attestLesson` is
+unchanged.
 Repeated starts preserve the existing progress, including attempts and scores.
 A new curriculum/year creates a distinct enrollment and fresh progress history.
 An unscored lesson has `bestScore: null`, distinct from zero. The service does

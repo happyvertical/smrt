@@ -1,4 +1,5 @@
 import {
+  field,
   foreignKey,
   SmrtCollection,
   SmrtObject,
@@ -42,7 +43,7 @@ function validDate(value: Date) {
 }
 
 /** Service operation that moved one lesson's progress status. */
-export type LessonProgressTransitionKind = 'put-back' | 'start';
+export type LessonProgressTransitionKind = 'put-back' | 'start' | 'complete';
 
 /**
  * Append-only status history for one `LessonProgress` row. The progress row
@@ -84,7 +85,7 @@ export class LessonProgressTransition extends SmrtObject {
     if (
       !PROGRESS_STATUSES.includes(this.fromStatus) ||
       !PROGRESS_STATUSES.includes(this.toStatus) ||
-      !['put-back', 'start'].includes(this.kind)
+      !['put-back', 'start', 'complete'].includes(this.kind)
     )
       throw new Error('Invalid progress transition');
     requireText(this.actorUserId, 'Progress history requires an actor');
@@ -154,4 +155,74 @@ export class EnrollmentStatusChange extends SmrtObject {
 }
 export class EnrollmentStatusChangeCollection extends SmrtCollection<EnrollmentStatusChange> {
   static readonly _itemClass = EnrollmentStatusChange;
+}
+
+/**
+ * Append-only record that a learner (or an authorized guardian acting through
+ * the same path) completed one lesson via `LearnerService.completeOwnLesson`:
+ * the actor, the host policy setting relied on and the optional evidence
+ * submission. At most one row exists per progress row, which is also how a
+ * replay is recognised as already done through this path.
+ */
+@TenantScoped({ mode: 'required' })
+@smrt({
+  tableName: 'lesson_completion_records',
+  conflictColumns: ['tenant_id', 'progress_id'],
+  ...closed,
+})
+export class LessonCompletionRecord extends SmrtObject {
+  @tenantId() tenantId = '';
+  @foreignKey('LessonProgress', { required: true }) progressId = '';
+  @foreignKey('Enrollment', { required: true }) enrollmentId = '';
+  @foreignKey('Learner', { required: true }) learnerId = '';
+  @foreignKey('Lesson', { required: true }) lessonId = '';
+  /** Progress status before completion. */
+  fromStatus: LessonProgressStatus = 'not_started';
+  actorUserId = '';
+  /** Host setting value that let this actor complete the lesson. */
+  policyBasis = '';
+  /** Optional evidence `Submission` of this learner and lesson. */
+  @field({ type: 'text', nullable: true }) submissionId: string | null = null;
+  recordedAt = new Date();
+  constructor(options: Record<string, unknown> = {}) {
+    super(options);
+    adopt(this, options);
+  }
+  override async delete(): Promise<void> {
+    noDelete();
+  }
+  override async save(options?: SmrtSaveOptions): Promise<this> {
+    await requireInsert(this);
+    if (
+      !(await this.db.get('lesson_progress', {
+        id: this.progressId,
+        tenant_id: this.tenantId,
+        enrollment_id: this.enrollmentId,
+        learner_id: this.learnerId,
+        lesson_id: this.lessonId,
+      }))
+    )
+      throw new Error('Completion history requires its tenant progress');
+    if (
+      this.submissionId !== null &&
+      !(await this.db.get('submissions', {
+        id: this.submissionId,
+        tenant_id: this.tenantId,
+        learner_id: this.learnerId,
+        lesson_id: this.lessonId,
+        progress_id: this.progressId,
+      }))
+    )
+      throw new Error('Completion evidence must belong to the same progress');
+    if (!PROGRESS_STATUSES.includes(this.fromStatus))
+      throw new Error('Invalid completion record');
+    requireText(this.actorUserId, 'Completion history requires an actor');
+    requireText(this.policyBasis, 'Completion history requires a policy basis');
+    validDate(this.recordedAt);
+    this.requireInsertOnSave();
+    return super.save(options);
+  }
+}
+export class LessonCompletionRecordCollection extends SmrtCollection<LessonCompletionRecord> {
+  static readonly _itemClass = LessonCompletionRecord;
 }

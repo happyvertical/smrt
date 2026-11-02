@@ -101,6 +101,23 @@ Same-tenant membership alone never grants sibling access.
   submissions and history never cascade. Bad input throws
   `LearnerValidationError`; a host without `enrollment_status_changes` gets
   `LearnerHistoryUnavailableError`.
+- `completeOwnLesson({ enrollmentId, lessonId, policyBasis, evidence?: { submissionId } })`
+  moves progress to `complete` (any lesson kind, `completedAt` set, a missing
+  row created) under `education.progress.complete-own`; the host decides per
+  setting and may allow a guardian too (own is not blocked). It appends an
+  immutable `LessonCompletionRecord` (actor, `policyBasis`, prior status,
+  optional evidence submission, at most one per progress) and a `complete`
+  `LessonProgressTransition` when that optional table exists. `evidence`
+  must be a non-rejected submission of the same tenant, learner, lesson and
+  progress, else `LearnerAuthorizationError`. Counters, score and start time
+  are untouched; no score is invented. Returns `{ changed, progress }`.
+  Repeat rule: a lesson already completed through this path (a record exists)
+  returns `{ changed: false }`; one complete any other way (guardian
+  `attestLesson`/grade, workbook completion) throws `LessonAlreadyCompleteError`.
+  Also `EnrollmentNotActiveError` (`.status`; only `active` enrollments),
+  `LessonSkippedError`, `WorkbookOwnedLessonError` (a workbook lesson completes
+  through its workbook decision), and `LearnerHistoryUnavailableError` without
+  `lesson_completion_records`. Guardian `attestLesson` is unchanged.
 - `listProgress` reads only the validated learner/enrollment and lessons still
   visible in that enrollment's course. Inconsistent persisted links fail
   closed or are omitted from the list.

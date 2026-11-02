@@ -34,6 +34,7 @@ import {
 } from './course-release-scope.js';
 import {
   EnrollmentStatusChangeCollection,
+  LessonCompletionRecordCollection,
   LessonProgressTransitionCollection,
   type LessonProgressTransitionKind,
 } from './learner-history.js';
@@ -129,7 +130,8 @@ export type LearnerAuthorizer = (
       | 'education.learner.setup'
       | 'education.progress.put-back'
       | 'education.enrollment.set-status'
-      | 'education.learner.attest-own';
+      | 'education.learner.attest-own'
+      | 'education.progress.complete-own';
     own: boolean;
     relationshipTypeId?: string;
     /** True only for a delegated assignment; `relationshipTypeId` is then undefined. */
@@ -197,6 +199,45 @@ export class EnrollmentStatusTransitionError extends LearnerValidationError {
   }
 }
 
+/** `completeOwnLesson` on an enrollment that is not `active`. */
+export class EnrollmentNotActiveError extends LearnerValidationError {
+  constructor(readonly status: Enrollment['status']) {
+    super(`An enrollment that is ${status} cannot have lessons completed`);
+    this.name = 'EnrollmentNotActiveError';
+  }
+}
+
+/**
+ * `completeOwnLesson` on a lesson already complete through another path
+ * (guardian attestation or grade, or workbook completion). A repeat of the
+ * learner's own completion is an idempotent no-op instead.
+ */
+export class LessonAlreadyCompleteError extends LearnerValidationError {
+  constructor() {
+    super('The lesson is already complete');
+    this.name = 'LessonAlreadyCompleteError';
+  }
+}
+
+/**
+ * `completeOwnLesson` on a lesson with a physical workbook activity, whose
+ * completion is owned by the workbook completion decision.
+ */
+export class WorkbookOwnedLessonError extends LearnerValidationError {
+  constructor() {
+    super('A workbook lesson is completed through the workbook workflow');
+    this.name = 'WorkbookOwnedLessonError';
+  }
+}
+
+/** `completeOwnLesson` on a lesson that was skipped. */
+export class LessonSkippedError extends LearnerValidationError {
+  constructor() {
+    super('A skipped lesson cannot be completed');
+    this.name = 'LessonSkippedError';
+  }
+}
+
 /** A required history table has not been migrated on this host. */
 export class LearnerHistoryUnavailableError extends Error {
   constructor(readonly table: string) {
@@ -210,6 +251,12 @@ export type PutBackLessonResult = Readonly<{
   changed: boolean;
   /** Null when the lesson never had progress (nothing to put back). */
   progress: LessonProgressView | null;
+}>;
+
+/** Result of `completeOwnLesson`; `changed` is false for an idempotent replay. */
+export type CompleteOwnLessonResult = Readonly<{
+  changed: boolean;
+  progress: LessonProgressView;
 }>;
 
 /** Result of `setEnrollmentStatus`; `changed` is false when already in that status. */
@@ -1557,6 +1604,147 @@ export class LearnerService {
         recordedAt: new Date(),
       });
       return { changed: true, enrollment: enrollmentView(enrollment) };
+    });
+  }
+
+  /**
+   * The learner completes their own lesson of any kind under
+   * `education.progress.complete-own`; the host decides per setting, for the
+   * learner and for a guardian it also allows. Moves progress to `complete`,
+   * sets `completedAt` and appends a `LessonCompletionRecord` with the actor,
+   * `policyBasis` and optional `evidence.submissionId` (which must be a
+   * submission of this tenant, learner and lesson). Counters and score are
+   * untouched and no score is invented. Guardian `attestLesson` is unchanged.
+   *
+   * Repeat rule: when the lesson already completed through this path
+   * (a completion record exists) the call returns `{ changed: false }`. A
+   * lesson complete any other way (guardian attestation or grade, workbook
+   * completion) throws `LessonAlreadyCompleteError`; `skipped` throws
+   * `LessonSkippedError`; an enrollment that is not `active` throws
+   * `EnrollmentNotActiveError`.
+   */
+  async completeOwnLesson(
+    request: LearnerRequest & {
+      enrollmentId: string;
+      lessonId: string;
+      policyBasis: string;
+      evidence?: { submissionId: string };
+    },
+  ): Promise<CompleteOwnLessonResult> {
+    const policyBasis = requirePolicyBasis(request.policyBasis);
+    const evidence = request.evidence;
+    if (
+      evidence !== undefined &&
+      (typeof evidence !== 'object' ||
+        evidence === null ||
+        typeof evidence.submissionId !== 'string' ||
+        !evidence.submissionId.trim())
+    )
+      throw new LearnerValidationError('Evidence needs a submission id');
+    return this.mutate(async (service) => {
+      const enrollment = await service.requireEnrollment(
+        request,
+        'education.progress.complete-own',
+      );
+      await service.lock('enrollments', request.enrollmentId, request.tenantId);
+      if (enrollment.status !== 'active')
+        throw new EnrollmentNotActiveError(enrollment.status);
+      if (!(await service.lessonInScope(request, enrollment, request.lessonId)))
+        throw new LearnerAuthorizationError();
+      let row = await (
+        await LessonProgressCollection.create({ db: service.db })
+      ).get(
+        {
+          enrollmentId: String(enrollment.id),
+          lessonId: request.lessonId,
+          tenantId: request.tenantId,
+        },
+        { cache: false },
+      );
+      if (row && row.learnerId !== enrollment.learnerId)
+        throw new LearnerAuthorizationError();
+      const hasTables =
+        (await service.db.tableExists('lesson_completion_records')) === true;
+      const projected = row
+        ? await service.projectProgress(request, row)
+        : null;
+      if (
+        row &&
+        (row.status === 'complete' || projected?.status === 'complete')
+      ) {
+        const prior = hasTables
+          ? await service.db.get('lesson_completion_records', {
+              tenant_id: request.tenantId,
+              progress_id: String(row.id),
+            })
+          : null;
+        if (prior && row.status === 'complete')
+          return { changed: false, progress: projected as LessonProgressView };
+        throw new LessonAlreadyCompleteError();
+      }
+      if (row?.status === 'skipped') throw new LessonSkippedError();
+      if (
+        await service.findWorkbookActivity(request, {
+          enrollmentId: String(enrollment.id),
+          lessonId: request.lessonId,
+        })
+      )
+        throw new WorkbookOwnedLessonError();
+      if (!hasTables)
+        throw new LearnerHistoryUnavailableError('lesson_completion_records');
+      if (evidence) {
+        // Evidence is a submission of this learner and lesson on this progress.
+        const submission = row
+          ? await service.db.get('submissions', {
+              id: evidence.submissionId,
+              tenant_id: request.tenantId,
+              learner_id: enrollment.learnerId,
+              lesson_id: request.lessonId,
+              progress_id: String(row.id),
+            })
+          : null;
+        if (!submission || submission.status === 'rejected')
+          throw new LearnerAuthorizationError();
+      }
+      const from = row?.status ?? 'not_started';
+      const now = new Date();
+      if (!row)
+        row = await (
+          await LessonProgressCollection.create({ db: service.db })
+        ).create({
+          tenantId: request.tenantId,
+          enrollmentId: String(enrollment.id),
+          learnerId: enrollment.learnerId,
+          lessonId: request.lessonId,
+          status: 'complete',
+          completedAt: now,
+        });
+      else {
+        row.status = 'complete';
+        row.completedAt = now;
+        await row.save();
+      }
+      await (
+        await LessonCompletionRecordCollection.create({ db: service.db })
+      ).create({
+        _insertOnly: true,
+        tenantId: request.tenantId,
+        progressId: String(row.id),
+        enrollmentId: row.enrollmentId,
+        learnerId: row.learnerId,
+        lessonId: row.lessonId,
+        fromStatus: from,
+        actorUserId: request.actorUserId,
+        policyBasis,
+        submissionId: evidence?.submissionId ?? null,
+        recordedAt: now,
+      });
+      if (await service.db.tableExists('lesson_progress_transitions'))
+        await service.recordProgressTransition(request, row, from, 'complete');
+      return {
+        changed: true,
+        progress: await service.projectProgress(request, row),
+      };
     });
   }
 }
