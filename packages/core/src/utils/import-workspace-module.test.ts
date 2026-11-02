@@ -47,6 +47,119 @@ describe('importWorkspaceModule', () => {
     }
   });
 
+  it('surfaces a resolved module that fails to evaluate instead of loading a dist fallback (#2954)', async () => {
+    const fixturePackageDir = new URL(
+      './node_modules/@fixture/throwing-import-package/',
+      import.meta.url,
+    );
+    await rm(fixturePackageDir, { recursive: true, force: true });
+    await mkdir(fixturePackageDir, { recursive: true });
+    await writeFile(
+      new URL('package.json', fixturePackageDir),
+      `${JSON.stringify({
+        name: '@fixture/throwing-import-package',
+        type: 'module',
+        exports: { '.': { import: './index.mjs' } },
+      })}\n`,
+    );
+    await writeFile(
+      new URL('index.mjs', fixturePackageDir),
+      "throw new Error('source failed to evaluate');\n",
+    );
+    try {
+      await expect(
+        importWorkspaceModule({
+          packageName: '@fixture/throwing-import-package',
+          sourceEntry: 'packages/missing/src/index.ts',
+          // An existing file the old fallback would have loaded silently.
+          distEntry: 'package.json',
+          purpose: 'test evaluation failures',
+        }),
+      ).rejects.toThrow('source failed to evaluate');
+    } finally {
+      await rm(new URL('./node_modules/@fixture/', import.meta.url), {
+        recursive: true,
+        force: true,
+      });
+      await removeIfEmpty(new URL('./node_modules/', import.meta.url));
+    }
+  });
+
+  it('surfaces a missing import inside a resolved module instead of loading a dist fallback (#2954)', async () => {
+    const fixturePackageDir = new URL(
+      './node_modules/@fixture/nested-missing-import-package/',
+      import.meta.url,
+    );
+    await rm(fixturePackageDir, { recursive: true, force: true });
+    await mkdir(fixturePackageDir, { recursive: true });
+    await writeFile(
+      new URL('package.json', fixturePackageDir),
+      `${JSON.stringify({
+        name: '@fixture/nested-missing-import-package',
+        type: 'module',
+        exports: { '.': { import: './index.mjs' } },
+      })}\n`,
+    );
+    await writeFile(
+      new URL('index.mjs', fixturePackageDir),
+      "export * from './not-written-yet.mjs';\n",
+    );
+    try {
+      await expect(
+        importWorkspaceModule({
+          packageName: '@fixture/nested-missing-import-package',
+          sourceEntry: 'packages/missing/src/index.ts',
+          distEntry: 'package.json',
+          purpose: 'test nested resolution failures',
+        }),
+      ).rejects.toThrow(/not-written-yet/);
+    } finally {
+      await rm(new URL('./node_modules/@fixture/', import.meta.url), {
+        recursive: true,
+        force: true,
+      });
+      await removeIfEmpty(new URL('./node_modules/', import.meta.url));
+    }
+  });
+
+  it('falls back when the installed package does not export the requested subpath', async () => {
+    const fixturePackageDir = new URL(
+      './node_modules/@fixture/unexported-subpath-package/',
+      import.meta.url,
+    );
+    await rm(fixturePackageDir, { recursive: true, force: true });
+    await mkdir(fixturePackageDir, { recursive: true });
+    await writeFile(
+      new URL('package.json', fixturePackageDir),
+      `${JSON.stringify({
+        name: '@fixture/unexported-subpath-package',
+        type: 'module',
+        exports: { '.': { import: './index.mjs' } },
+      })}\n`,
+    );
+    await writeFile(
+      new URL('index.mjs', fixturePackageDir),
+      'export const root = true;\n',
+    );
+    try {
+      // No workspace source exists for the fallback, so its own error names
+      // the purpose: proof the export error fell through instead of throwing.
+      await expect(
+        importWorkspaceModule({
+          packageName: '@fixture/unexported-subpath-package/missing',
+          sourceEntry: 'packages/definitely-missing/src/index.ts',
+          purpose: 'test unexported subpaths',
+        }),
+      ).rejects.toThrow(/for test unexported subpaths/);
+    } finally {
+      await rm(new URL('./node_modules/@fixture/', import.meta.url), {
+        recursive: true,
+        force: true,
+      });
+      await removeIfEmpty(new URL('./node_modules/', import.meta.url));
+    }
+  });
+
   it('propagates ESM resolver failures when no installed package or workspace fallback is available', async () => {
     const isolatedDir = await mkdtemp(
       join(tmpdir(), 'smrt-import-workspace-module-'),

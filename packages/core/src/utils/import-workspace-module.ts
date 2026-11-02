@@ -25,6 +25,44 @@ function findWorkspaceRoot(startDir: string): string | null {
   }
 }
 
+/**
+ * Whether `error` means `packageName` itself could not be resolved. A module
+ * that resolved but failed on one of its own imports (a missing relative
+ * file, a missing dependency) reports the same codes, so the failed
+ * specifier must name the package for the caller to fall back.
+ */
+function isResolutionFailure(error: unknown, packageName: string): boolean {
+  const { code, message } = (error ?? {}) as {
+    code?: unknown;
+    message?: unknown;
+  };
+  if (typeof message !== 'string') return false;
+  // Node and Vite cite the package's package.json, not the specifier, when
+  // the package exists but does not export the requested path.
+  if (
+    code === 'ERR_PACKAGE_PATH_NOT_EXPORTED' ||
+    /is not exported|not defined by "exports"|No "exports" main/.test(message)
+  ) {
+    const owner = packageName.startsWith('@')
+      ? packageName.split('/').slice(0, 2).join('/')
+      : packageName.split('/')[0];
+    return message.replace(/\\/g, '/').includes(`/${owner}/package.json`);
+  }
+  const namesPackage =
+    message.includes(`'${packageName}'`) ||
+    message.includes(`"${packageName}"`) ||
+    message.includes(` ${packageName} `) ||
+    message.endsWith(` ${packageName}`);
+  return (
+    namesPackage &&
+    (code === 'ERR_MODULE_NOT_FOUND' ||
+      code === 'ERR_PACKAGE_PATH_NOT_EXPORTED' ||
+      /Failed to (?:resolve|load url)|Cannot find (?:module|package)/.test(
+        message,
+      ))
+  );
+}
+
 function resolveInstalledPackage(packageName: string): string {
   return import.meta.resolve(packageName);
 }
@@ -40,6 +78,22 @@ export async function importWorkspaceModule<T = unknown>({
       /* @vite-ignore */ resolveInstalledPackage(packageName)
     )) as T;
   } catch (originalError) {
+    // Inside a Vite/Vitest module graph `import.meta.resolve` is unavailable,
+    // but a bare specifier import is resolved by Vite itself, through the
+    // workspace source aliases. Without this, a test that loads a package's
+    // Vite config fell through to the sibling's possibly stale built dist
+    // below (#2954). In plain Node this resolves exactly as above, so it only
+    // repeats the failure that brought us here.
+    try {
+      return (await import(/* @vite-ignore */ packageName)) as T;
+    } catch (importError) {
+      // Only an unresolvable specifier falls through to the workspace
+      // fallbacks; a source module that resolved but failed to evaluate must
+      // surface, not be masked by a sibling's built dist.
+      if (!isResolutionFailure(importError, packageName)) {
+        throw importError;
+      }
+    }
     const workspaceRoot = findWorkspaceRoot(process.cwd());
     if (!workspaceRoot) {
       throw originalError;
