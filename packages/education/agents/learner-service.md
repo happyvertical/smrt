@@ -87,6 +87,20 @@ Same-tenant membership alone never grants sibling access.
   `LessonPutBackError` (`.status`); completion is undone only through guardian
   paths. A host without `lesson_progress_transitions` gets
   `LearnerHistoryUnavailableError` from put-back; other operations still run.
+- `setEnrollmentStatus({ enrollmentId, status, policyBasis })` moves an
+  enrollment along `ENROLLMENT_STATUS_TRANSITIONS`: planned→active,
+  active→paused|dropped, paused→active|dropped. `completed` is reached only by
+  the completion path; completed and dropped are final. The authorizer gets
+  `education.enrollment.set-status` and decides whether a learner may act on
+  their own enrollment. `policyBasis` (1-200 characters, no control characters,
+  `requirePolicyBasis`) names the host setting relied on; it and the actor are
+  appended to an immutable `EnrollmentStatusChange` with the change, as
+  `pinEnrollment` records its basis. The first activation sets `startedAt`.
+  The current status is an idempotent `{ changed: false }`; any other move
+  throws `EnrollmentStatusTransitionError` (`.from`, `.to`). Progress,
+  submissions and history never cascade. Bad input throws
+  `LearnerValidationError`; a host without `enrollment_status_changes` gets
+  `LearnerHistoryUnavailableError`.
 - `listProgress` reads only the validated learner/enrollment and lessons still
   visible in that enrollment's course. Inconsistent persisted links fail
   closed or are omitted from the list.
@@ -106,7 +120,7 @@ Same-tenant membership alone never grants sibling access.
 Service results are data-only views, with no persistence or database methods.
 Extra request fields are never model patches: a learner cannot set score,
 attempt count, or completion status through this API. Curriculum activation,
-completion transitions and dashboard aggregation are not supported by this
+enrollment completion and dashboard aggregation are not supported by this
 base service. SubmissionService extends its owning transaction/auth boundary for
 capture and guardian grading; see [submission contract](submission-service.md).
 Direct model writes require trusted authority.

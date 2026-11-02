@@ -6,7 +6,7 @@ import {
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
-import type { LessonProgressStatus } from './learners.js';
+import type { EnrollmentStatus, LessonProgressStatus } from './learners.js';
 
 const closed = { api: false, mcp: false, cli: false } as const;
 const PROGRESS_STATUSES: readonly LessonProgressStatus[] = [
@@ -95,4 +95,63 @@ export class LessonProgressTransition extends SmrtObject {
 }
 export class LessonProgressTransitionCollection extends SmrtCollection<LessonProgressTransition> {
   static readonly _itemClass = LessonProgressTransition;
+}
+
+const ENROLLMENT_STATUSES: readonly EnrollmentStatus[] = [
+  'planned',
+  'active',
+  'paused',
+  'completed',
+  'dropped',
+];
+
+/**
+ * Append-only audit of one enrollment status change made through
+ * `LearnerService.setEnrollmentStatus`: who changed it and the host policy
+ * setting relied on, in the same transaction as the change.
+ */
+@TenantScoped({ mode: 'required' })
+@smrt({ tableName: 'enrollment_status_changes', ...closed })
+export class EnrollmentStatusChange extends SmrtObject {
+  @tenantId() tenantId = '';
+  @foreignKey('Enrollment', { required: true }) enrollmentId = '';
+  @foreignKey('Learner', { required: true }) learnerId = '';
+  fromStatus: EnrollmentStatus = 'planned';
+  toStatus: EnrollmentStatus = 'planned';
+  actorUserId = '';
+  /** Host setting value that allowed this actor to change the status. */
+  policyBasis = '';
+  recordedAt = new Date();
+  constructor(options: Record<string, unknown> = {}) {
+    super(options);
+    adopt(this, options);
+  }
+  override async delete(): Promise<void> {
+    noDelete();
+  }
+  override async save(options?: SmrtSaveOptions): Promise<this> {
+    await requireInsert(this);
+    if (
+      !(await this.db.get('enrollments', {
+        id: this.enrollmentId,
+        tenant_id: this.tenantId,
+        learner_id: this.learnerId,
+      }))
+    )
+      throw new Error('Enrollment history requires its tenant enrollment');
+    if (
+      !ENROLLMENT_STATUSES.includes(this.fromStatus) ||
+      !ENROLLMENT_STATUSES.includes(this.toStatus) ||
+      this.fromStatus === this.toStatus
+    )
+      throw new Error('Invalid enrollment status change');
+    requireText(this.actorUserId, 'Enrollment history requires an actor');
+    requireText(this.policyBasis, 'Enrollment history requires a policy basis');
+    validDate(this.recordedAt);
+    this.requireInsertOnSave();
+    return super.save(options);
+  }
+}
+export class EnrollmentStatusChangeCollection extends SmrtCollection<EnrollmentStatusChange> {
+  static readonly _itemClass = EnrollmentStatusChange;
 }

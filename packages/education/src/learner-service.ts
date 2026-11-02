@@ -33,6 +33,7 @@ import {
   resolveEnrollmentLessons,
 } from './course-release-scope.js';
 import {
+  EnrollmentStatusChangeCollection,
   LessonProgressTransitionCollection,
   type LessonProgressTransitionKind,
 } from './learner-history.js';
@@ -126,7 +127,8 @@ export type LearnerAuthorizer = (
       | 'education.learner.respond'
       | 'education.learner.review-response'
       | 'education.learner.setup'
-      | 'education.progress.put-back';
+      | 'education.progress.put-back'
+      | 'education.enrollment.set-status';
     own: boolean;
     relationshipTypeId?: string;
     /** True only for a delegated assignment; `relationshipTypeId` is then undefined. */
@@ -169,6 +171,31 @@ export class LessonPutBackError extends LearnerValidationError {
   }
 }
 
+/**
+ * Statuses `setEnrollmentStatus` may move an enrollment to, keyed by its
+ * current status. `completed` is reached only through the completion path.
+ */
+export const ENROLLMENT_STATUS_TRANSITIONS: Readonly<
+  Record<Enrollment['status'], ReadonlyArray<Enrollment['status']>>
+> = Object.freeze({
+  planned: Object.freeze(['active'] as const),
+  active: Object.freeze(['paused', 'dropped'] as const),
+  paused: Object.freeze(['active', 'dropped'] as const),
+  completed: Object.freeze([] as const),
+  dropped: Object.freeze([] as const),
+});
+
+/** `setEnrollmentStatus` asked for a move the transition table does not allow. */
+export class EnrollmentStatusTransitionError extends LearnerValidationError {
+  constructor(
+    readonly from: Enrollment['status'],
+    readonly to: string,
+  ) {
+    super(`An enrollment cannot move from ${from} to ${to}`);
+    this.name = 'EnrollmentStatusTransitionError';
+  }
+}
+
 /** A required history table has not been migrated on this host. */
 export class LearnerHistoryUnavailableError extends Error {
   constructor(readonly table: string) {
@@ -183,6 +210,26 @@ export type PutBackLessonResult = Readonly<{
   /** Null when the lesson never had progress (nothing to put back). */
   progress: LessonProgressView | null;
 }>;
+
+/** Result of `setEnrollmentStatus`; `changed` is false when already in that status. */
+export type SetEnrollmentStatusResult = Readonly<{
+  changed: boolean;
+  enrollment: EnrollmentView;
+}>;
+
+// biome-ignore lint/suspicious/noControlCharactersInRegex: reject control characters
+const POLICY_BASIS_CONTROL = /[\u0000-\u001f\u007f]/;
+/** The host setting relied on: 1-200 characters, no control characters. */
+export function requirePolicyBasis(value: unknown): string {
+  if (
+    typeof value !== 'string' ||
+    !value.trim() ||
+    value.length > 200 ||
+    POLICY_BASIS_CONTROL.test(value)
+  )
+    throw new LearnerValidationError('A valid policy basis is required');
+  return value;
+}
 
 /** Service results contain data only, with no transaction-bound model handle. */
 export type LearnerView = Readonly<{
@@ -1442,6 +1489,71 @@ export class LearnerService {
         changed: true,
         progress: await service.projectProgress(request, existing),
       };
+    });
+  }
+  /**
+   * Moves an enrollment along `ENROLLMENT_STATUS_TRANSITIONS` under
+   * `education.enrollment.set-status`; the host decides whether a learner may
+   * act on their own enrollment. Records the actor and `policyBasis` in an
+   * `EnrollmentStatusChange`. The first activation sets `startedAt`. Progress,
+   * submissions and history are never touched. Requesting the current status
+   * is an idempotent no-op; any other move refuses with
+   * `EnrollmentStatusTransitionError`.
+   */
+  async setEnrollmentStatus(
+    request: LearnerRequest & {
+      enrollmentId: string;
+      status: Enrollment['status'];
+      policyBasis: string;
+    },
+  ): Promise<SetEnrollmentStatusResult> {
+    const policyBasis = requirePolicyBasis(request.policyBasis);
+    const status = request.status;
+    return this.mutate(async (service) => {
+      await service.requireEnrollment(
+        request,
+        'education.enrollment.set-status',
+      );
+      await service.lock('enrollments', request.enrollmentId, request.tenantId);
+      // Re-read under the lock so concurrent changes see each other.
+      const enrollment = await (
+        await EnrollmentCollection.create({ db: service.db })
+      ).get(
+        {
+          id: request.enrollmentId,
+          learnerId: request.learnerId,
+          tenantId: request.tenantId,
+        },
+        { cache: false },
+      );
+      if (!enrollment) throw new LearnerAuthorizationError();
+      const from = enrollment.status;
+      if (status === from)
+        return { changed: false, enrollment: enrollmentView(enrollment) };
+      if (
+        typeof status !== 'string' ||
+        !ENROLLMENT_STATUS_TRANSITIONS[from]?.includes(status)
+      )
+        throw new EnrollmentStatusTransitionError(from, String(status));
+      if (!(await service.db.tableExists('enrollment_status_changes')))
+        throw new LearnerHistoryUnavailableError('enrollment_status_changes');
+      enrollment.status = status;
+      if (status === 'active') enrollment.startedAt ??= new Date();
+      await enrollment.save();
+      await (
+        await EnrollmentStatusChangeCollection.create({ db: service.db })
+      ).create({
+        _insertOnly: true,
+        tenantId: request.tenantId,
+        enrollmentId: String(enrollment.id),
+        learnerId: enrollment.learnerId,
+        fromStatus: from,
+        toStatus: status,
+        actorUserId: request.actorUserId,
+        policyBasis,
+        recordedAt: new Date(),
+      });
+      return { changed: true, enrollment: enrollmentView(enrollment) };
     });
   }
 }
