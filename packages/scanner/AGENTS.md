@@ -55,7 +55,8 @@ executes the source.
 - `verifyManifestCompleteness({ packageDir })` — publish guard: re-scans `src/`
   and asserts every `@smrt()` object reached `dist/manifest.json` (issue #1483).
   Returns `ok` / `incomplete` / `missing-manifest` / `scan-error` / `skipped`.
-  Driven by `scripts/verify-manifest-completeness.mjs` from `prepack`.
+  Driven by `scripts/verify-manifest-completeness.mjs` (prepack; release
+  `--release` = `requireManifestExport`, #2853).
 - `discoverSourceFiles(options)` — shared bounded source-discovery policy used
   by `OxcScanner` and the core manifest preflight.
 - `extractAgentSurface` / `scanSvelteAgentSurface` / `mergeAgentSurfaces` —
@@ -325,11 +326,11 @@ place, `toKnowledgeAgentSurface` in `vite-plugin/index.ts`.
   access) — `type` still reads `'any'` for compatibility, so that flag is the
   only thing separating it from an authored `any`. `memberTypes` carries the
   members of an INLINE object literal, which `extractTypeName` otherwise
-  flattens to `'object'`; NAMED bags stay unexpanded on purpose. Core's API
-  wire-ability gate fails closed on both (#2686). The bare `object` keyword is
-  resolved for parameters only — `ManifestAdapter.inferFromAnnotation` gives an
-  `object`-typed FIELD a `{}` column default, so naming it in `extractTypeName`
-  would silently change DDL.
+  flattens to `'object'`; NAMED bags stay unexpanded. Core's API
+  wire-ability gate fails closed on both (#2686). Bare `object` resolves for
+  parameters only: `ManifestAdapter.inferFromAnnotation` gives an `object`
+  FIELD a `{}` column default, so naming it in `extractTypeName` would change
+  DDL. Same-module aliases: `resolvedType` (#4327).
 - **`@method()` config is read with `requireLiteralValues`**, like `@smrt()`: an
   unresolvable value is a scan error, because a dropped `expose: false` restores
   the routing the author was withholding. `decoratorConfig` is `undefined` for

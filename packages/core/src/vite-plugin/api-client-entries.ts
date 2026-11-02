@@ -12,6 +12,10 @@ import {
   createManifestClassNamePredicate,
   resolveApiMethodExposure,
 } from '../generators/custom-action.js';
+import {
+  createObjectDeclarationIndex,
+  type ObjectDeclarationIndex,
+} from '../manifest/object-declarations.js';
 import { isFrameworkBaseClass } from '../registry/framework-base-classes.js';
 import type {
   SmartObjectDefinition,
@@ -40,7 +44,11 @@ export interface ApiClientEntry {
   obj: SmartObjectDefinition;
   /** Canonical collection key or deterministic class-derived secondary key. */
   clientKey: string;
-  /** Row-payload interface used by CRUD methods for this entry. */
+  /**
+   * Row-payload interface used by CRUD methods for this entry: the declared
+   * name from the shared declaration selection (package-qualified when
+   * distinct classes share a simple name, #3115).
+   */
   dataInterfaceName: string;
   /** Standard client operations whose server routes are actually emitted. */
   crudMethods: ApiClientCrudMethod[];
@@ -364,13 +372,14 @@ function exposesApiClientSurface(
 function resolveDataInterfaceName(
   obj: SmartObjectDefinition,
   manifest: SmartObjectManifest,
+  declarations: ObjectDeclarationIndex,
 ): string {
   if (!isCollectionManifestClass(manifest, obj)) {
-    return `${obj.className}Data`;
+    return declarations.interfaceNameFor(obj);
   }
 
   const itemObject = resolveCollectionItemObject(manifest, obj);
-  return `${itemObject?.className || obj.className}Data`;
+  return declarations.interfaceNameFor(itemObject ?? obj);
 }
 
 function sharedCollectionModelDepth(
@@ -487,6 +496,7 @@ export function selectApiClientEntries(
   // A secondary key must never shadow any canonical endpoint, including a
   // later collection whose canonical owner has not been emitted yet.
   const reservedCanonicalKeys = new Set(canonicalOwners.keys());
+  const declarations = createObjectDeclarationIndex(manifest);
   const usedKeys = new Set<string>();
 
   return orderedCandidates.map(({ objectName, obj }) => {
@@ -511,7 +521,7 @@ export function selectApiClientEntries(
       objectName,
       obj,
       clientKey,
-      dataInterfaceName: resolveDataInterfaceName(obj, manifest),
+      dataInterfaceName: resolveDataInterfaceName(obj, manifest, declarations),
       crudMethods: resolveGeneratedEndpointCrudMethods(
         obj.collection,
         manifest,

@@ -1,13 +1,12 @@
 import { readFileSync } from 'node:fs';
+import { getTestManifestPath } from '@happyvertical/smrt-vitest';
 import { expect, it } from 'vitest';
 
 it('emits every concrete photo ownership and provenance column in the manifest schema', () => {
   // Vitest's package scanner writes this before test collection. Runtime SQLite
   // table generation can mask a missing manifest column; PostgreSQL consumes
   // these structured columns directly.
-  const manifest = JSON.parse(
-    readFileSync(new URL('../../.smrt/manifest.json', import.meta.url), 'utf8'),
-  );
+  const manifest = JSON.parse(readFileSync(getTestManifestPath(), 'utf8'));
   const tables = {
     WorkbookPhotoIntake: ['item_id', 'actor_user_id', 'content_digest'],
     WorkbookPhotoAsset: [

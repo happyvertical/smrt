@@ -12,6 +12,7 @@
 
 import { SmrtCollection } from '@happyvertical/smrt-core';
 import { Commission } from '../models/Commission.js';
+import { findByReplayKey, resolveReplayOwner } from '../replay-owner.js';
 import type { CommissionStatus } from '../types.js';
 
 export class CommissionCollection extends SmrtCollection<Commission> {
@@ -41,11 +42,21 @@ export class CommissionCollection extends SmrtCollection<Commission> {
     });
   }
 
-  /** Look up a commission by its idempotency natural key. */
-  async findByDedupeKey(dedupeKey: string): Promise<Commission | null> {
+  /**
+   * Look up a commission by its idempotency natural key within one owner
+   * (#3305 D1): `options.tenantId` (the event's tenant, for background
+   * calculation), else the active context; neither → global rows only.
+   */
+  async findByDedupeKey(
+    dedupeKey: string,
+    options: { tenantId?: string | null } = {},
+  ): Promise<Commission | null> {
     if (!dedupeKey) return null;
-    const results = await this.list({ where: { dedupeKey }, limit: 1 });
-    return results[0] ?? null;
+    const owner = resolveReplayOwner(
+      options.tenantId,
+      'CommissionCollection.findByDedupeKey',
+    );
+    return findByReplayKey(this, 'dedupe_key', dedupeKey, owner);
   }
 
   /**

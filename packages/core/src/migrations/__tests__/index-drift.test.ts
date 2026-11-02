@@ -823,3 +823,142 @@ describe('SchemaComparer index drift', () => {
     });
   });
 });
+
+describe('superseded conflict-identity index on DuckDB (#3305 M1)', () => {
+  let db: DatabaseInterface;
+
+  beforeEach(async () => {
+    db = await getDatabase({ type: 'duckdb', url: ':memory:' });
+    await db.query(
+      'CREATE TABLE tenants (id TEXT PRIMARY KEY, slug TEXT, context TEXT, _meta_type TEXT, tenant_id TEXT);',
+    );
+  });
+
+  afterEach(async () => {
+    if (db && typeof db.close === 'function') {
+      await db.close();
+    }
+  });
+
+  it('drops the narrower SMRT-named unique key without --drop-indexes on an engine without partial indexes', async () => {
+    await db.query('CREATE UNIQUE INDEX tenants_slug_idx ON tenants(slug);');
+    await db.query(
+      "INSERT INTO tenants (id, slug, context, _meta_type, tenant_id) VALUES ('a', 'letters', '', 'T', 't1');",
+    );
+    const widened = tableSchema({
+      columns: {
+        id: { type: 'TEXT', primaryKey: true },
+        slug: { type: 'TEXT' },
+        context: { type: 'TEXT' },
+        _meta_type: { type: 'TEXT' },
+        tenant_id: { type: 'TEXT' },
+      },
+      indexes: [
+        {
+          name: 'tenants_tenant_id_slug_idx',
+          columns: ['tenant_id', 'slug'],
+          unique: true,
+        },
+      ],
+    });
+    const comparer = new SchemaComparer(db, { engineHint: 'duckdb' });
+    const diff = await comparer.compare({ tenants: widened });
+    expect(
+      diff.changes
+        .filter((c) => c.type === 'add_index' || c.type === 'drop_index')
+        .map((c) => `${c.type}:${c.name}`),
+    ).toEqual([
+      'add_index:tenants_tenant_id_slug_idx',
+      'drop_index:tenants_slug_idx',
+    ]);
+    for (const change of diff.changes) {
+      if (change.sql) await db.query(change.sql);
+    }
+    await db.query(
+      "INSERT INTO tenants (id, slug, context, _meta_type, tenant_id) VALUES ('b', 'letters', '', 'T', 't2');",
+    );
+    await expect(
+      db.query(
+        "INSERT INTO tenants (id, slug, context, _meta_type, tenant_id) VALUES ('c', 'letters', '', 'T', 't1');",
+      ),
+    ).rejects.toThrow();
+    const after = await comparer.compare({ tenants: widened });
+    expect(
+      after.changes.filter(
+        (c) => c.type === 'add_index' || c.type === 'drop_index',
+      ),
+    ).toEqual([]);
+  });
+
+  it('matches index columns DuckDB reports quoted, such as a "key" column', async () => {
+    await db.query(
+      'CREATE TABLE policies (id TEXT PRIMARY KEY, "key" TEXT, tenant_id TEXT);',
+    );
+    await db.query('CREATE UNIQUE INDEX policies_key_idx ON policies("key");');
+    const widened = tableSchema({
+      tableName: 'policies',
+      ddl: 'CREATE TABLE policies (id TEXT PRIMARY KEY, "key" TEXT, tenant_id TEXT);',
+      columns: {
+        id: { type: 'TEXT', primaryKey: true },
+        key: { type: 'TEXT' },
+        tenant_id: { type: 'TEXT' },
+      },
+      indexes: [
+        {
+          name: 'policies_tenant_id_key_idx',
+          columns: ['tenant_id', 'key'],
+          unique: true,
+        },
+      ],
+    });
+    const comparer = new SchemaComparer(db, { engineHint: 'duckdb' });
+    const diff = await comparer.compare({ policies: widened });
+    expect(
+      diff.changes
+        .filter((c) => c.type === 'add_index' || c.type === 'drop_index')
+        .map((c) => `${c.type}:${c.name}`),
+    ).toEqual([
+      'add_index:policies_tenant_id_key_idx',
+      'drop_index:policies_key_idx',
+    ]);
+    for (const change of diff.changes) {
+      if (change.sql) await db.query(change.sql);
+    }
+    const after = await new SchemaComparer(db, {
+      engineHint: 'duckdb',
+    }).compare({
+      policies: widened,
+    });
+    expect(
+      after.changes.filter(
+        (c) => c.type === 'add_index' || c.type === 'drop_index',
+      ),
+    ).toEqual([]);
+  });
+
+  it('keeps a unique index that is not SMRT-named for its columns', async () => {
+    await db.query(
+      'CREATE UNIQUE INDEX tenants_custom_slug_guard ON tenants(slug);',
+    );
+    const comparer = new SchemaComparer(db, { engineHint: 'duckdb' });
+    const diff = await comparer.compare({
+      tenants: tableSchema({
+        columns: {
+          id: { type: 'TEXT', primaryKey: true },
+          slug: { type: 'TEXT' },
+          context: { type: 'TEXT' },
+          _meta_type: { type: 'TEXT' },
+          tenant_id: { type: 'TEXT' },
+        },
+        indexes: [
+          {
+            name: 'tenants_tenant_id_slug_idx',
+            columns: ['tenant_id', 'slug'],
+            unique: true,
+          },
+        ],
+      }),
+    });
+    expect(diff.changes.filter((c) => c.type === 'drop_index')).toEqual([]);
+  });
+});

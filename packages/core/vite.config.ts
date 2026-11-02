@@ -82,7 +82,12 @@ export default defineConfig({
         format: 'es' as const,
         preserveModules: true,
         preserveModulesRoot: 'src',
-        entryFileNames: '[name].js',
+        // Bundled third-party modules (#4054) keep their own files under
+        // `vendor/`: npm and pnpm never pack a `node_modules` directory.
+        entryFileNames: (chunk) =>
+          chunk.name.includes('node_modules/')
+            ? `vendor/${chunk.name.replace(/^.*node_modules\//, '')}.js`
+            : '[name].js',
         chunkFileNames: 'chunks/[name]-[hash].js',
       },
       external: [
@@ -148,7 +153,8 @@ export default defineConfig({
         '@langchain/openai',
         '@langchain/anthropic',
         'date-fns',
-        'pluralize',
+        // pluralize is CommonJS: bundle it so dist stays native ESM for
+        // consumers that serve smrt-core unbundled in Vite dev (#4054).
         'uuid',
         '@paralleldrive/cuid2',
         'yaml',

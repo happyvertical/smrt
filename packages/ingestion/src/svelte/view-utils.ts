@@ -338,3 +338,44 @@ export function observedPages(view: ItemReviewView): Record<string, number> {
       for (const page of group) note(split.evidenceId, page);
   return pages;
 }
+
+/**
+ * Rows of a reviewer display for a definition list (#4503). The handler's own
+ * preview fields (`display.preview`, or `display.step.preview` for a plan
+ * step; a flat record is taken as is) come first, text as is and anything
+ * else as JSON; non-empty framework metadata (`dependencies`, `plan`) follows
+ * as JSON under its key (`metadata.<key>` when a preview field has that name).
+ */
+export function displayEntries(display: unknown): Array<[string, string]> {
+  const isRecord = (value: unknown): value is Record<string, unknown> =>
+    !!value && typeof value === 'object' && !Array.isArray(value);
+  const shown = (value: unknown) =>
+    typeof value === 'string' ? value : JSON.stringify(value);
+  const empty = (value: unknown) =>
+    value === undefined ||
+    value === null ||
+    (Array.isArray(value) && !value.length) ||
+    (isRecord(value) && !Object.keys(value).length);
+  if (!isRecord(display)) return [];
+  const source = isRecord(display.step) ? display.step : display;
+  if (!isRecord(source.preview))
+    return Object.entries(source).map(([key, value]) => [key, shown(value)]);
+  const rows: Array<[string, string]> = Object.entries(source.preview).map(
+    ([key, value]) => [key, shown(value)],
+  );
+  for (const [key, value] of [
+    ...Object.entries(source).filter(([key]) => key !== 'preview'),
+    ...(source === display
+      ? []
+      : Object.entries(display).filter(([key]) => key !== 'step')),
+  ])
+    if (!empty(value)) {
+      // A preview field of the same name wins; metadata is then qualified,
+      // so every row name stays unique (it keys the rendered list).
+      let name = key;
+      while (rows.some(([shownName]) => shownName === name))
+        name = `metadata.${name}`;
+      rows.push([name, shown(value)]);
+    }
+  return rows;
+}

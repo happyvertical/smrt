@@ -24,6 +24,7 @@ import {
   type SmartObjectManifest,
 } from '@happyvertical/smrt-core';
 import { buildDomainKnowledgeManifest } from '@happyvertical/smrt-core/knowledge';
+import { getTestManifestPath } from '@happyvertical/smrt-vitest';
 import { describe, expect, it } from 'vitest';
 import '../index.js';
 import { PermissionCatalogService } from '../services/PermissionCatalogService.js';
@@ -114,7 +115,7 @@ describe('generated CLI lockdown for identity/RBAC models (#3742)', () => {
 
   it('emits no mutating CLI surface for locked models in smrt-knowledge', async () => {
     const manifest = JSON.parse(
-      await readFile(resolve(PACKAGE_ROOT, '.smrt/manifest.json'), 'utf8'),
+      await readFile(getTestManifestPath(PACKAGE_ROOT), 'utf8'),
     ) as SmartObjectManifest;
     const knowledge = buildDomainKnowledgeManifest({
       manifest,

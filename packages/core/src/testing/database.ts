@@ -478,7 +478,21 @@ export async function getTestDatabase(
     string,
     { schema: SchemaDefinition; className: string }
   >();
-  const authoritativeSchemas = ObjectRegistry.getAllSchemasAsDefinitions();
+  // An explicit `classes` list scopes the authoritative build to the tables
+  // those classes use plus their foreign-key closure, so table ownership is
+  // checked for everything this database creates but an unrelated collision
+  // elsewhere in the registry cannot abort it. The implicit list builds and
+  // checks every registered table (#3956).
+  const authoritativeSchemas = ObjectRegistry.getAllSchemasAsDefinitions(
+    isImplicitClassList
+      ? undefined
+      : {
+          tables: classNames.flatMap((className) => {
+            const tableName = ObjectRegistry.getTableName(className);
+            return tableName ? [tableName] : [];
+          }),
+        },
+  );
 
   for (const className of classNames) {
     // R11: the registration carries idType (native uuid vs text); read it
@@ -583,13 +597,35 @@ export async function getTestDatabase(
     });
   }
 
+  // A scoped build already holds the merged FK closure; a reference only the
+  // registry-generated schema carries extends it on demand, still checked.
+  const extendedScope = new Set<string>();
+  const authoritativeSchema = (
+    tableName: string,
+  ): SchemaDefinition | undefined => {
+    if (
+      !authoritativeSchemas[tableName] &&
+      !isImplicitClassList &&
+      !extendedScope.has(tableName)
+    ) {
+      extendedScope.add(tableName);
+      const extension = ObjectRegistry.getAllSchemasAsDefinitions({
+        tables: [tableName],
+      });
+      for (const [name, schema] of Object.entries(extension)) {
+        authoritativeSchemas[name] ??= schema;
+      }
+    }
+    return authoritativeSchemas[tableName];
+  };
+
   // Explicitly requested test classes still need their registered parents.
   // Add the authoritative dependency closure so a child-only request cannot
   // emit a physical reference to a table this helper never creates.
   const addDependencies = (schema: SchemaDefinition): void => {
     for (const foreignKey of schemaForeignKeysForEngine(schema, ddlEngine)) {
       if (schemas.has(foreignKey.referencesTable)) continue;
-      const dependency = authoritativeSchemas[foreignKey.referencesTable];
+      const dependency = authoritativeSchema(foreignKey.referencesTable);
       if (!dependency) continue;
       const effectiveDependency = omitForeignKeyConstraints
         ? omitTestForeignKeyConstraints(dependency)

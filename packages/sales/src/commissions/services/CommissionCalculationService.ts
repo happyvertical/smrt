@@ -373,7 +373,9 @@ export class CommissionCalculationService {
       // Second idempotency belt: an exact dedupe-key hit (however it came
       // to exist) is returned rather than re-created — creating through the
       // conflictColumns upsert would otherwise UPDATE the existing row.
-      const priorByKey = await this.commissions.findByDedupeKey(dedupeKey);
+      const priorByKey = await this.commissions.findByDedupeKey(dedupeKey, {
+        tenantId: event.tenantId,
+      });
       if (priorByKey) {
         existing.push(priorByKey);
         continue;
@@ -433,10 +435,11 @@ export class CommissionCalculationService {
           error instanceof Error &&
           error.message.includes('immutable audit rows')
         ) {
-          const winner = await this.commissions.list({
-            where: { dedupeKey },
-            limit: 1,
-          });
+          const winner = [
+            await this.commissions.findByDedupeKey(dedupeKey, {
+              tenantId: event.tenantId,
+            }),
+          ].filter((row): row is Commission => row !== null);
           if (winner[0]) {
             existing.push(winner[0]);
             continue;

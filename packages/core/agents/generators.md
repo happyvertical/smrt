@@ -38,9 +38,40 @@ qualified-identity order (`orderedManifestObjectEntries`), so when two models
 share one collection the last writer of each route file — and therefore the
 CRUD method set `resolveGeneratedEndpointCrudMethods` mirrors into
 `smrt-client.d.ts` — is stable across scan orders (#2754).
+The generated sync-apply route keys `SYNC_TARGETS` by segment and resolves one
+owner per segment among models exposing a mutating op: STI base (an
+API-enabled base without mutating ops fails the segment closed), else first in
+qualified-identity order. A shared segment's registry key and write policy are
+byte-stable across scan orders (#2807).
 For aggregated manifests, inheritance and item-type references resolve exact
 qualified names first, then package-local simple names, then a stable identity
 fallback so duplicate class names across packages cannot reintroduce ordering.
+
+Object row-type declarations (`XData` in `smrt-objects.d.ts`, `smrt-types.d.ts`,
+the Vite ambient `virtual-modules.d.ts`, and the `@smrt/types` module) are one
+per CLASS, selected by `selectObjectDeclarations()` in
+`src/manifest/object-declarations.ts`; every emitter reads it. Built workspace
+libraries list a consumed model under their own package name (#3110), so an
+aggregated consumer manifest can name one class several times: listings with
+the same absolute declaring `filePath`, `className`, and field shape collapse
+to one declaration, rendered from the first listing in qualified-identity order
+(#3296). A path alone is machine-local evidence, so a relative or missing
+`filePath`, or disagreeing fields, keeps the listing separate. The aggregated
+manifest itself keeps every listing.
+
+Names follow the qualified identity when simple names collide (#3115): a
+unique class keeps `${className}Data`; distinct classes sharing a simple name
+each get a package-qualified name (`@ergot/market-core:LicenseSale` ->
+`ErgotMarketCoreLicenseSaleData`), none keeps the bare name (a stem without a
+known package is suffixed), and the generator warns with each name and every
+listing it covers. The prefix is the package of the declaration's first
+listing in qualified-identity order, which for a class relisted by consumer
+packages (#3296) need not be the declaring package. One class whose listings
+disagree on fields (a stale relisting) also forms a collision group, so it
+loses its bare name until the stale package is rebuilt. Client and web declarations resolve row types
+through `createObjectDeclarationIndex().interfaceNameFor()` and import them
+(`import('./smrt-objects')`, `import('@happyvertical/smrt-virt-types')`);
+a bare name does not resolve inside an ambient module.
 
 The web module also emits a build-time **`manifestHash`** constant (#1764): `computeWebManifestHash(manifest)` is a deterministic, replica-stable digest of the emitted web-collection SHAPE (name/className/endpoint/idField/actions/fields/relationships), canonicalized (recursive key sort) before `sha256 → base64url`, truncated to 16 chars — so the same schema always hashes the same, and a field add/remove/type-change/edge-change changes it. A change means old persisted client rows may mis-hydrate, so smrt-web keys its durable persistence namespace on it and its `updateAvailable` contract signal compares against it. Four co-managed emission sites must not drift: the runtime value (`generateWebModule`), the `@happyvertical/smrt-virt-web` ambient d.ts (`vite-plugin/index.ts`), the physical `@smrt/web` d.ts (`prebuild/index.ts`), and the hand-written type mirror in `@happyvertical/smrt-web` (`packages/smrt-web/src/index.ts` — dependency-free, so textual sync only).
 
@@ -335,6 +366,18 @@ namespaces. Typed CLI actions may use standard flag names such as `limit`,
 `offset`, `where`, and `format` without those values being stripped as CRUD
 flags.
 
+A parameter typed with a bare alias name declared in the method's own module
+(`type ActionOptions = Record<string, unknown>`) is resolved by the scanner
+(`resolveParameterAlias`, `packages/scanner/src/oxc-parser.ts`). Chains are
+followed, and the alias target is recorded as `resolvedType` beside the authored
+`type`, using only the declaring module's aliases, so neither a same-named alias
+elsewhere nor a subclass in another module can rebind an inherited parameter.
+Schema emitters and argument decoders read `declaredParameterType(parameter)`
+rather than `parameter.type`. A cyclic or over-long chain sets
+`aliasUnresolved` and is advertised with no type constraint. An imported or
+unknown name keeps the existing fallback, and the wire-ability gate still
+judges the authored name (#4327).
+
 MCP static dispatch resolves the exact qualified registry entry's model
 constructor first, then its registered `collectionConstructor`. Manifest-backed
 collection resources can retain a stub model constructor after generated
@@ -363,8 +406,9 @@ Generated reads (`list`/`get`) on the REST and SvelteKit generators support cond
 
 `src/vite-plugin/dev-plane-route.ts` emits `<routesDir>/_dev/[...tool]/+server.ts`
 only when `svelteKit.devPlaneRoute.enabled === true` and
-`@happyvertical/smrt-dev-mcp/dev-plane` resolves from the consumer (same
-resolvability guard as `_resources`). The route is dev-only (`$app/environment`
+`@happyvertical/smrt-dev-mcp/dev-plane` resolves from the consumer under ESM
+import conditions (the shared `consumerResolvesImport` guard used by
+`_resources`; the subpath is `types`/`import`-only, #3913). The route is dev-only (`$app/environment`
 `dev`, else 404), refuses to start without `SMRT_DEV_MCP_TOKEN` (503), and
 delegates everything else to `createDevPlane`, passing `getSmrtConfig(...).db`
 from the embedded access prelude (below) so the plane shares the app's

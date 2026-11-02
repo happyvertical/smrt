@@ -16,6 +16,7 @@ import {
   withSystemContext,
   withTenant,
 } from '@happyvertical/smrt-tenancy';
+import { getTestManifestPath } from '@happyvertical/smrt-vitest';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { CLIGenerator } from '../../cli/src/cli-generator.js';
 // Registers smrt-users' Tenant/Membership so test databases cover hierarchy
@@ -983,7 +984,7 @@ describe('smrt-fields generated surfaces', () => {
     // the same artifact consumer migrations consume, and the only place the
     // per-class schemas stay distinct.
     const manifest = JSON.parse(
-      readFileSync(resolve(process.cwd(), '.smrt/manifest.json'), 'utf8'),
+      readFileSync(getTestManifestPath(), 'utf8'),
     ) as {
       objects?: Record<
         string,
@@ -1045,7 +1046,7 @@ describe('smrt-fields generated surfaces', () => {
     // pairs here so a future collection config cannot silently fall back to
     // SmrtObject's `(slug, context)` index.
     const manifest = JSON.parse(
-      readFileSync(resolve(process.cwd(), '.smrt/manifest.json'), 'utf8'),
+      readFileSync(getTestManifestPath(), 'utf8'),
     ) as {
       objects?: Record<
         string,

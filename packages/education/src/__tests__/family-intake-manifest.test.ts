@@ -1,10 +1,9 @@
 import { readFileSync } from 'node:fs';
+import { getTestManifestPath } from '@happyvertical/smrt-vitest';
 import { expect, it } from 'vitest';
 
 it('publishes closed tenant-owned family schemas independently from learner attribution', () => {
-  const manifest = JSON.parse(
-    readFileSync(new URL('../../.smrt/manifest.json', import.meta.url), 'utf8'),
-  );
+  const manifest = JSON.parse(readFileSync(getTestManifestPath(), 'utf8'));
   const expected = {
     FamilyIntake: [
       'item_id',

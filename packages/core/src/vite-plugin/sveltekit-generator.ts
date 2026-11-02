@@ -14,14 +14,13 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { DomainKnowledgeConfig } from '@happyvertical/smrt-types';
-import { resolve as resolveImport } from 'import-meta-resolve';
 import { generateConditionalGetRouteHelper } from '../generators/conditional-get.js';
 import {
   type ApiMethodExposure,
   CRUD_OPERATIONS,
   createManifestClassNamePredicate,
+  declaredParameterType,
   declaredTypeAcceptsDate,
   isCrudOperation,
   isFrameworkLifecycleMethod,
@@ -50,6 +49,7 @@ import type {
   SmartObjectManifest,
 } from '../scanner/types';
 import { generateChangesRoute } from './changes-route.js';
+import { consumerResolvesImport } from './consumer-import.js';
 import {
   generateDevPlaneRoute,
   willGenerateDevPlaneRoute,
@@ -1213,8 +1213,8 @@ function buildActionInvocationArgs(
     // hydrated on both because a JSON body cannot carry one either (#2686).
     const decoder =
       httpMethod === 'GET'
-        ? queryStringDecoderFor(parameter.type)
-        : declaredTypeAcceptsDate(parameter.type)
+        ? queryStringDecoderFor(declaredParameterType(parameter))
+        : declaredTypeAcceptsDate(declaredParameterType(parameter))
           ? 'toCustomActionDate'
           : undefined;
     return decoder ? `${decoder}(${access}) as ActionArgs[${index}]` : access;
@@ -2449,18 +2449,14 @@ function formatRegistrationImport(importedObject: {
 /**
  * Whether `@happyvertical/smrt-app-runtime/sveltekit` resolves from the
  * consumer at `projectRoot` under ESM import conditions (same signal as
- * `consumerHasSmrtUsers`), with an existing file target.
+ * `consumerHasSmrtUsers`; see `consumer-import.ts`), with an existing file
+ * target.
  */
 function consumerHasSmrtAppRuntime(projectRoot: string): boolean {
-  try {
-    const target = resolveImport(
-      '@happyvertical/smrt-app-runtime/sveltekit',
-      pathToFileURL(join(projectRoot, 'package.json')).href,
-    );
-    return statSync(fileURLToPath(target)).isFile();
-  } catch {
-    return false;
-  }
+  return consumerResolvesImport(
+    projectRoot,
+    '@happyvertical/smrt-app-runtime/sveltekit',
+  );
 }
 
 /** Default config module for apps that install the application runtime. */
@@ -3878,8 +3874,8 @@ function generateActionRouteTemplate(
     for (const parameter of spec.actionDef.parameters ?? []) {
       const decoder =
         spec.routeConfig?.method === 'GET'
-          ? queryStringDecoderFor(parameter.type)
-          : declaredTypeAcceptsDate(parameter.type)
+          ? queryStringDecoderFor(declaredParameterType(parameter))
+          : declaredTypeAcceptsDate(declaredParameterType(parameter))
             ? 'toCustomActionDate'
             : undefined;
       if (decoder) decoderImports.add(decoder);

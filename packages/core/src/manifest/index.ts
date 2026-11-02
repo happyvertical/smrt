@@ -25,6 +25,11 @@ export {
   loadLocalTestManifestSync,
   loadManifestFromPathSync,
 } from './manifest-loader';
+export {
+  registerActiveTestManifestPath,
+  resolveActiveTestManifestPath,
+  SMRT_TEST_MANIFEST_PATHS_ENV_KEY,
+} from './test-artifacts';
 
 const EMPTY_STATIC_MANIFEST: SmartObjectManifest = {
   version: '1.0.0',

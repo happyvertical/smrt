@@ -12,7 +12,7 @@ import { expect, it, vi } from 'vitest';
 import type { Plugin } from 'vitest/config';
 import { discoverSmrtPackages } from '../../../core/src/manifest/discover-smrt-packages.js';
 import { generateSvelteKitRoutes } from '../../../core/src/vite-plugin/sveltekit-generator.js';
-import { smrtVitestPlugin } from '../index.js';
+import { resolveTestRunManifestPath, smrtVitestPlugin } from '../index.js';
 
 async function invokeConfigResolved(
   plugin: Plugin,
@@ -43,8 +43,11 @@ it('actual test generation preserves production bytes and never creates a produc
     writeFileSync(productionPath, sentinel);
     await invokeConfigResolved(smrtVitestPlugin({ root }), { plugins: [] });
     expect(readFileSync(productionPath, 'utf8')).toBe(sentinel);
+    // The test manifest is this run's own snapshot, never the production
+    // working copy a concurrent build rewrites (#4128).
+    expect(existsSync(join(root, '.smrt/manifest.json'))).toBe(false);
     const local = JSON.parse(
-      readFileSync(join(root, '.smrt/manifest.json'), 'utf8'),
+      readFileSync(resolveTestRunManifestPath(root), 'utf8'),
     );
     expect(local.artifactPurpose).toBe('test');
     expect(local.objects).toEqual({});
@@ -98,9 +101,10 @@ it('keeps actual generated registration byte-identical before and after a depend
       plugins: [],
     });
     expect(
-      JSON.parse(readFileSync(join(provider, '.smrt/manifest.json'), 'utf8'))
+      JSON.parse(readFileSync(resolveTestRunManifestPath(provider), 'utf8'))
         .artifactPurpose,
     ).toBe('test');
+    expect(existsSync(join(provider, '.smrt/manifest.json'))).toBe(false);
     expect(await generate()).toBe(before);
     rmSync(join(root, '.smrt/discovery-cache.json'));
     expect(await generate()).toBe(before);
@@ -158,7 +162,7 @@ it('uses the configured root for the initial base-class inventory and generated 
       '[smrt-vitest] Discovered 4 base classes (including 1 from external packages)',
     );
     const manifest = JSON.parse(
-      readFileSync(join(root, '.smrt/manifest.json'), 'utf8'),
+      readFileSync(resolveTestRunManifestPath(root), 'utf8'),
     );
     expect(manifest.smrtDependencies).toEqual([provider]);
     expect(

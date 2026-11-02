@@ -1,5 +1,10 @@
 <script lang="ts">
-import { FilePicker, Input, Select } from '@happyvertical/smrt-ui/forms';
+import {
+  Combobox,
+  FilePicker,
+  Input,
+  Select,
+} from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import { onDestroy, onMount, type Snippet } from 'svelte';
@@ -9,7 +14,8 @@ import type {
   IntakeReviewHost,
 } from '../../review-dto.js';
 import { M } from '../i18n.js';
-import { evidenceUrl } from '../view-utils.js';
+import { uploadRefusalMessage } from '../upload-refusal.js';
+import { entryStatus, evidenceUrl } from '../view-utils.js';
 export interface Props {
   host: IntakeReviewHost;
   onselect?: (itemId: string) => void;
@@ -40,6 +46,19 @@ export interface Props {
   resolveInRow?: boolean;
   /** Numbers each page read when its request starts (`issued` on the page). */
   stamp?: () => number;
+  /**
+   * File types the picker offers (the input's `accept`, e.g.
+   * `application/pdf,image/*`); defaults to the host's `uploadAccept`. A hint
+   * only: the host's upload still enforces its own allowlist.
+   */
+  accept?: string;
+  /**
+   * Re-read the listed page on this interval (ms) while any displayed row is
+   * still processing, under the filter it was listed with. Off when absent
+   * (as before). Skipped while a read or operation is pending and while Load
+   * more has appended pages, which a re-read would drop.
+   */
+  listPollMs?: number;
 }
 let {
   host,
@@ -51,6 +70,8 @@ let {
   status,
   resolveInRow = true,
   stamp,
+  accept,
+  listPollMs,
 }: Props = $props();
 const { t } = useI18n();
 const states: InboxState[] = [
@@ -71,9 +92,13 @@ let items = $state<InboxEntry[]>([]),
   files = $state<File[]>([]),
   cursor = $state<string>(),
   pending = $state(false),
-  error = $state(false);
+  error = $state(false),
+  // The host's reviewer-facing reason for refusing the last upload, if any.
+  refusal = $state<string>();
 let alive = true,
-  epoch = 0;
+  epoch = 0,
+  // Load more appended a page to the displayed rows.
+  appended = false;
 let uploadRequestId: string | undefined;
 // The filter the displayed rows were listed under (the inputs may have been
 // edited since); `patch` keeps a row only while it still matches it.
@@ -122,6 +147,38 @@ export function patch(entry: InboxEntry, keep = false): InboxEntry[] {
   return $state.snapshot(items) as InboxEntry[];
 }
 /**
+ * Re-read the first page, like Refresh (the filter as the controls show it).
+ * Resolves with the displayed rows and `shown`, `failed` (the list failed
+ * closed), or `pending` when a read or operation was in flight (nothing was
+ * read) or a newer read superseded this one.
+ */
+export async function refresh(): Promise<{
+  items: InboxEntry[];
+  result: 'shown' | 'failed' | 'pending';
+}> {
+  const read = pending ? 'superseded' : await load();
+  return {
+    items: $state.snapshot(items) as InboxEntry[],
+    result: read === 'superseded' ? 'pending' : read,
+  };
+}
+// Follow processing rows by re-reading the listed page (opt-in, #4504).
+$effect(() => {
+  const every = listPollMs;
+  if (!every || !Number.isFinite(every) || every <= 0) return;
+  const timer = setInterval(() => {
+    if (
+      !alive ||
+      pending ||
+      appended ||
+      !items.some((entry) => entryStatus(entry).kind === 'pending')
+    )
+      return;
+    void load(false, true);
+  }, every);
+  return () => clearInterval(timer);
+});
+/**
  * Append the next page, if any. Resolves with the displayed rows and what
  * happened: `appended` (or `none` when there is no further page), `pending`
  * when another read was in flight or superseded this one (nothing was
@@ -153,7 +210,11 @@ onDestroy(() => {
  * failed (the rows were cleared), `superseded` when a newer read or the
  * component's end fenced it.
  */
-async function load(more = false): Promise<'shown' | 'failed' | 'superseded'> {
+async function load(
+  more = false,
+  /** Re-read the first page under the listed filter (a poll), not the inputs. */
+  relist = false,
+): Promise<'shown' | 'failed' | 'superseded'> {
   const ticket = ++epoch;
   onreadstart?.();
   pending = true;
@@ -165,12 +226,13 @@ async function load(more = false): Promise<'shown' | 'failed' | 'superseded'> {
   // The displayed rows stay (controls disabled while pending) until the new
   // page arrives, so a workspace can keep patching and navigating them; a
   // failed read still clears them.
-  const filter = more
-    ? listed
-    : {
-        state: selectedState ? (selectedState as InboxState) : undefined,
-        assigneeId: assignee || undefined,
-      };
+  const filter =
+    more || relist
+      ? listed
+      : {
+          state: selectedState ? (selectedState as InboxState) : undefined,
+          assigneeId: assignee || undefined,
+        };
   try {
     const issued = stamp?.();
     const read = await host.list({ ...filter, cursor: next });
@@ -187,6 +249,7 @@ async function load(more = false): Promise<'shown' | 'failed' | 'superseded'> {
     };
     const kept = more ? { assignments, reasons } : undefined;
     items = more ? [...items, ...added] : read.items;
+    appended = more;
     cursor = read.nextCursor;
     assignments = Object.fromEntries(
       items.map((entry) => [
@@ -215,10 +278,15 @@ async function load(more = false): Promise<'shown' | 'failed' | 'superseded'> {
   }
   return page ? 'shown' : alive && ticket === epoch ? 'failed' : 'superseded';
 }
-async function mutate(operation: () => Promise<unknown>, selected = false) {
+async function mutate(
+  operation: () => Promise<unknown>,
+  selected = false,
+  refused?: (error: unknown) => string | undefined,
+) {
   if (pending) return;
   pending = true;
   error = false;
+  refusal = undefined;
   const ticket = ++epoch;
   try {
     const result = await operation();
@@ -230,8 +298,17 @@ async function mutate(operation: () => Promise<unknown>, selected = false) {
     if (selected && result && typeof result === 'object' && 'itemId' in result)
       onselect?.(String(result.itemId));
     await load();
-  } catch {
+  } catch (caught) {
     if (alive && ticket === epoch) {
+      // A host refusal with a reviewer-facing reason (a file type its
+      // allowlist refuses, say) is not an access result: the reason shows and
+      // the listed rows stay. Anything else fails closed.
+      const reason = refused?.(caught);
+      if (reason) {
+        refusal = reason;
+        pending = false;
+        return;
+      }
       items = [];
       assignments = {};
       error = true;
@@ -240,12 +317,54 @@ async function mutate(operation: () => Promise<unknown>, selected = false) {
     }
   }
 }
+// Assignee picker (#4503): the host's search answers, newest query wins.
+let assigneeOptions = $state<{ value: string; label: string }[]>([]),
+  assigneeLabels = $state<Record<string, string>>({}),
+  assigneeSearching = $state(false),
+  assigneeQueries = 0;
+async function findAssignees(query: string) {
+  const search = host.assignees;
+  if (!search) return;
+  const ticket = ++assigneeQueries;
+  assigneeSearching = true;
+  try {
+    const found = await search(query);
+    if (!alive || ticket !== assigneeQueries) return;
+    const valid = (Array.isArray(found) ? found : [])
+      .filter(
+        (option) =>
+          typeof option?.id === 'string' &&
+          option.id &&
+          typeof option.label === 'string',
+      )
+      .slice(0, 50);
+    for (const option of valid) assigneeLabels[option.id] = option.label;
+    assigneeOptions = valid.map((option) => ({
+      value: option.id,
+      label: option.label,
+    }));
+  } catch {
+    // A failed search only offers nothing; it grants and reveals nothing.
+    if (alive && ticket === assigneeQueries) assigneeOptions = [];
+  } finally {
+    if (alive && ticket === assigneeQueries) assigneeSearching = false;
+  }
+}
+/** Picker options: clearing first (`''`), then the latest search answers. */
+const pickerOptions = (empty: string) => [
+  { value: '', label: empty },
+  ...assigneeOptions,
+];
 async function upload() {
   if (pending || !files.length) return;
   uploadRequestId ??= crypto.randomUUID();
   const requestId = uploadRequestId;
   const originals = [...files];
-  await mutate(() => host.upload(originals, requestId), true);
+  await mutate(
+    () => host.upload(originals, requestId),
+    true,
+    uploadRefusalMessage,
+  );
 }
 onMount(() => {
   void load();
@@ -255,13 +374,14 @@ onMount(() => {
 <h1>{t(M['ingestion.inbox'])}</h1>
 <div class="toolbar">
 <Select aria-label={t(M['ingestion.filter'])} bind:value={selectedState} disabled={pending} onchange={() => load()}><option value="">{t(M['ingestion.all'])}</option>{#each states as value}<option {value}>{t(M[`ingestion.${value}`])}</option>{/each}</Select>
-<Input aria-label={t(M['ingestion.assignee'])} bind:value={assignee} disabled={pending} />
+{#if host.assignees}<Combobox label={t(M['ingestion.assigneeName'])} options={pickerOptions(t(M['ingestion.anyAssignee']))} bind:value={assignee} valueLabel={assigneeLabels[assignee] ?? assignee} filter={false} busy={assigneeSearching} status={assigneeSearching ? t(M['ingestion.searching']) : undefined} onquery={findAssignees} disabled={pending} />{:else}<Input aria-label={t(M['ingestion.assignee'])} bind:value={assignee} disabled={pending} />{/if}
 <Button onclick={() => load()} disabled={pending}>{t(M['ingestion.refresh'])}</Button>
 </div>
 <!-- Keep retry Files separately; an unchanged native FileList must not suppress a deliberate reselection. -->
-<FilePicker bind:files onclick={(event) => { event.currentTarget.value = ''; }} onchangefiles={() => { uploadRequestId = undefined; }} multiple label={t(M['ingestion.files'])} description={t(M['ingestion.filesHelp'])} disabled={pending} />
+<FilePicker bind:files onclick={(event) => { event.currentTarget.value = ''; }} onchangefiles={() => { uploadRequestId = undefined; refusal = undefined; }} accept={accept ?? host.uploadAccept} multiple label={t(M['ingestion.files'])} description={t(M['ingestion.filesHelp'])} disabled={pending} />
 <Button disabled={pending || !files.length} onclick={upload}>{t(M['ingestion.upload'])}</Button>
 {#if error}<p role="alert">{t(M['ingestion.error'])}</p>{/if}
+{#if refusal}<p role="alert" data-testid="upload-refused">{refusal}</p>{/if}
 {#if pending}<p role="status">{t(M['ingestion.loading'])}</p>{/if}
 {#if !pending && !error && !items.length}<p>{t(M['ingestion.empty'])}</p>{/if}
 <ul>{#each items as entry (entry.item.id)}<li data-item-id={entry.item.id} aria-current={entry.item.id === selectedId ? 'true' : undefined} class:selected={entry.item.id === selectedId}>
@@ -271,7 +391,7 @@ onMount(() => {
 {#if original}<a href={original} target="_blank" rel="noopener noreferrer" aria-label={`${t(M['ingestion.original'])}: ${entry.label}`}>{t(M['ingestion.original'])}</a>{/if}
 </div>{/if}{/if}
 <Button onclick={() => onselect?.(entry.item.id)} disabled={pending}>{t(M['ingestion.open'])}</Button>
-<Input aria-label={`${t(M['ingestion.assignee'])}: ${entry.label}`} bind:value={assignments[entry.item.id]} disabled={pending} />
+{#if host.assignees}<Combobox label={`${t(M['ingestion.assigneeName'])}: ${entry.label}`} options={pickerOptions(t(M['ingestion.unassigned']))} bind:value={assignments[entry.item.id]} valueLabel={assigneeLabels[assignments[entry.item.id]] ?? assignments[entry.item.id]} filter={false} busy={assigneeSearching} status={assigneeSearching ? t(M['ingestion.searching']) : undefined} onquery={findAssignees} disabled={pending} />{:else}<Input aria-label={`${t(M['ingestion.assignee'])}: ${entry.label}`} bind:value={assignments[entry.item.id]} disabled={pending} />{/if}
 <Button disabled={pending} onclick={() => mutate(() => host.assign({itemId:entry.item.id,expectedVersion:entry.assignment.version,assigneeId:assignments[entry.item.id] || null,requestId:crypto.randomUUID()}))}>{t(M['ingestion.assign'])}</Button>
 {#if resolveInRow && host.resolve && !entry.item.disposition}
 <Input aria-label={`${t(M['ingestion.resolveReason'])}: ${entry.label}`} bind:value={reasons[entry.item.id]} disabled={pending} />

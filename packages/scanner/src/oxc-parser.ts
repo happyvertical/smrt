@@ -595,6 +595,7 @@ export function parseFile(filePath: string): FileScanResult {
           classes.push(extracted);
         }
       }
+      resolveLocalParameterAliases(classes, typeAliases);
       reportUnresolvedSpreads(ctx.unresolved, filePath, sourceText, errors);
       agentSurface = maybeExtractAgentSurface(program, sourceText, filePath);
       if (sourceMayDeclareRecipe(sourceText)) {
@@ -837,6 +838,7 @@ export function parseSource(
           classes.push(extracted);
         }
       }
+      resolveLocalParameterAliases(classes, typeAliases);
       reportUnresolvedSpreads(ctx.unresolved, filename, sourceText, errors);
       agentSurface = maybeExtractAgentSurface(program, sourceText, filename);
       if (sourceMayDeclareRecipe(sourceText)) {
@@ -1107,6 +1109,69 @@ export function extractTypeAliases(body: Statement[]): Record<string, string> {
     }
   }
   return aliases;
+}
+
+/** Alias-chain bound; a longer chain is treated like a cycle. */
+const MAX_PARAMETER_ALIAS_DEPTH = 8;
+
+const BARE_TYPE_IDENTIFIER = /^[A-Za-z_$][\w$]*$/;
+
+/**
+ * Resolve a method parameter whose declared type is a bare identifier naming
+ * a type alias (or enum) declared in the SAME module (#4327).
+ *
+ * The manifest keeps the authored name in `type` (generated code and docs
+ * still read it) and records the alias target as `resolvedType`, which the
+ * schema and coercion consumers read instead. Only the declaring module's own
+ * aliases are consulted -- never the project-wide flattened map -- so a
+ * same-named alias in another file or package cannot leak in, and an
+ * inherited method keeps the resolution made in its declaring file. A cyclic
+ * or over-long chain sets `aliasUnresolved` instead of guessing. An imported
+ * or otherwise unknown name is left untouched.
+ *
+ * @internal Exported for testing
+ */
+export function resolveParameterAlias(
+  type: string | null,
+  aliases: Record<string, string>,
+): { resolvedType: string } | { aliasUnresolved: true } | undefined {
+  if (
+    !type ||
+    !BARE_TYPE_IDENTIFIER.test(type) ||
+    !Object.hasOwn(aliases, type)
+  ) {
+    return undefined;
+  }
+  const seen = new Set<string>();
+  let current = type;
+  while (
+    BARE_TYPE_IDENTIFIER.test(current) &&
+    Object.hasOwn(aliases, current)
+  ) {
+    if (seen.has(current) || seen.size >= MAX_PARAMETER_ALIAS_DEPTH) {
+      return { aliasUnresolved: true };
+    }
+    seen.add(current);
+    current = aliases[current].trim();
+  }
+  return { resolvedType: current };
+}
+
+/** Apply {@link resolveParameterAlias} to every method parameter of `classes`. */
+function resolveLocalParameterAliases(
+  classes: RawClassDefinition[],
+  aliases: Record<string, string>,
+): void {
+  if (Object.keys(aliases).length === 0) return;
+  for (const classDef of classes) {
+    for (const method of classDef.methods) {
+      for (const parameter of method.parameters) {
+        if (parameter.typeUnresolved) continue;
+        const resolution = resolveParameterAlias(parameter.type, aliases);
+        if (resolution) Object.assign(parameter, resolution);
+      }
+    }
+  }
 }
 
 /**

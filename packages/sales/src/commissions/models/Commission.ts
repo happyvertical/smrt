@@ -33,6 +33,7 @@ import {
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import { assertWritableInContext, rowOwner } from '../replay-owner.js';
 import type {
   CommissionBasis,
   CommissionCalculationTrace,
@@ -66,9 +67,10 @@ const loadedCommissionStatus = new WeakMap<Commission, CommissionStatus>();
 
 @TenantScoped({ mode: 'optional' })
 @smrt({
-  // Idempotent creation: dedupeKey is the natural key so a retried
-  // calculation upserts instead of duplicating.
-  conflictColumns: ['dedupe_key'],
+  // Idempotent creation: (tenant_id, dedupeKey) is the natural key
+  // (#3305 D1), so a retried calculation by the same owner resolves to the
+  // existing row; another tenant's same key is its own commission.
+  conflictColumns: ['tenant_id', 'dedupe_key'],
   // Audit rows: create/list/get only — no generated update or delete.
   // Lifecycle mutations happen through the guarded transition methods and
   // the settlement/payout services.
@@ -400,6 +402,7 @@ export class Commission extends SmrtObject {
    * persisted row may only advance one legal step.
    */
   override async save(options?: SmrtSaveOptions): Promise<this> {
+    assertWritableInContext(this.tenantId, 'Commission.save');
     const prior = await this.resolvePriorStatus();
     this.assertStatusTransition(prior);
     await this.assertDedupeKeyNotTaken();
@@ -419,10 +422,18 @@ export class Commission extends SmrtObject {
   private async assertDedupeKeyNotTaken(): Promise<void> {
     if (!this.dedupeKey) return;
     try {
-      const res = await this.db.query(
-        `SELECT CAST(id AS VARCHAR) AS id FROM ${this.tableName} WHERE dedupe_key = $1`,
-        this.dedupeKey,
-      );
+      // The key is tenant-local (#3305 D1): only this row's owner's key.
+      const owner = rowOwner(this.tenantId);
+      const res = owner
+        ? await this.db.query(
+            `SELECT CAST(id AS VARCHAR) AS id FROM ${this.tableName} WHERE dedupe_key = $1 AND tenant_id = $2`,
+            this.dedupeKey,
+            owner,
+          )
+        : await this.db.query(
+            `SELECT CAST(id AS VARCHAR) AS id FROM ${this.tableName} WHERE dedupe_key = $1 AND tenant_id IS NULL`,
+            this.dedupeKey,
+          );
       const rows = Array.isArray(res)
         ? (res as Record<string, unknown>[])
         : ((res as { rows?: Record<string, unknown>[] }).rows ?? []);

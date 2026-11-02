@@ -3,19 +3,17 @@
  * for Customer and Vendor, and hints presentation widgets on its text fields.
  *
  * Reads the manifest the smrt-vitest plugin generates from source before the
- * run (`.smrt/manifest.json`), i.e. exactly what the scanner emits.
+ * run (`getTestManifestPath()`), i.e. exactly what the scanner emits.
  */
 
 import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { findSelectorFor } from '@happyvertical/smrt-core/ui-metadata';
+import { getTestManifestPath } from '@happyvertical/smrt-vitest';
 import { describe, expect, it } from 'vitest';
 import { COMMERCE_UI_SLOTS } from '../ui.js';
 
 type ManifestField = { _meta?: { ui?: { widget?: string } } };
-const manifest = JSON.parse(
-  readFileSync(resolve(process.cwd(), '.smrt/manifest.json'), 'utf8'),
-) as {
+const manifest = JSON.parse(readFileSync(getTestManifestPath(), 'utf8')) as {
   objects: Record<string, { fields: Record<string, ManifestField> }>;
   uiSelectors: Record<string, { slotId: string; selects: string }>;
 };
