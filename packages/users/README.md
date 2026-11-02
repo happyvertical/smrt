@@ -54,6 +54,54 @@ auth action. Default English messages are registered by the auth module.
 The endpoint in this example is application-owned. It must call the package
 handler/service on the server; it is not a generated public identity API.
 
+### Source-bound mailbox enrollment
+
+`MailboxEnrollmentService` proves mailbox ownership before an application
+creates a destination. Unlike returning-user mailbox authentication, it needs
+no existing User or membership. It creates no session or membership. Both calls
+require an initialized caller transaction executor:
+
+```typescript
+const enrollment = await MailboxEnrollmentService.create({
+  db: tx, transaction: 'caller', secret, loginLimiter: rootLimiter,
+});
+await enrollment.request({
+  email: storedSubmission.recipient,
+  binding: canonicalSourceBinding,
+  sourceKey: trustedClientAddress,
+  deliver: sendMailboxProof,
+}); // { requested: true }; proof goes only to the normalized mailbox callback
+
+const identity = await enrollment.authenticate({
+  token: submittedProof,
+  binding: canonicalSourceBinding,
+  expectedUserId: currentUser?.id,
+  sessionId: currentSession?.id,
+}); // { userId, profileId, email }; active canonical global User + Person
+// Authorize and write host destination/membership using this same tx.
+```
+
+Recompute `binding` from trusted immutable source data on every call, for
+example `JSON.stringify(['host:submission:v1', workspaceId, submissionId,
+payloadSha256, normalizedRecipient])`. Never trust a posted binding, workspace,
+recipient or destination. The proof signs its SHA-256 digest with the isolated
+`smrt:mailbox-enrollment:v1` issuer, expires in ten minutes, and is single use.
+It cannot authenticate through login or invitation endpoints.
+
+`rootLimiter` must persist independently of `tx`; request budgets survive
+transport failure and rollback. SQLite's single connection needs an independent
+limiter store. The trusted `deliver` callback must send only to its supplied
+`email`, never return or log the token, and reject on transport failure. A proof
+mailed by a rolled-back request is unusable. There is no durable outbox here.
+
+Authenticate reuses only an active, unambiguous, canonically owned global
+identity. It refuses pending/suspended/inactive Users and unowned matching
+Profiles instead of adopting them. Existing actor/session constraints use the
+same first-class-session policy as mailbox login. Keep proof consumption,
+identity creation and all host writes in one transaction and roll back on any
+error. Concurrent distinct proofs may hit canonical identity conflicts: retry
+the entire transaction after rollback. The failed proof remains available.
+
 ### Application discovery conformance
 
 The SvelteKit `createResourceListHandler()` export produces the app CLI

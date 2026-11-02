@@ -364,7 +364,33 @@ describe('application state custody', () => {
         ...options,
         environment: { XDG_STATE_HOME: redirected },
       }),
-    ).toThrow(/unsafe/);
+    ).toThrow(
+      `Application state path component is unsafe: ${redirected} (symbolic link). Select an explicit trusted canonical path; on macOS /tmp is commonly /private/tmp. Do not automatically trust symlink targets.`,
+    );
+    expect(
+      existsSync(join(options.sourceRoot, '.smrt-state-state-proof')),
+    ).toBe(false);
+  });
+
+  it('accepts an explicitly selected canonical state directory', () => {
+    const directory = temporary('state-canonical');
+    const options = stateOptions(directory);
+    const canonical = join(directory, 'canonical-state');
+    mkdirSync(canonical, { mode: 0o700 });
+    const alias = join(directory, 'state-alias');
+    symlinkSync(canonical, alias);
+    expect(() =>
+      prepareApplicationStateRoot({
+        ...options,
+        environment: { XDG_STATE_HOME: alias },
+      }),
+    ).toThrow(/symbolic link/);
+    const stateRoot = prepareApplicationStateRoot({
+      ...options,
+      environment: { XDG_STATE_HOME: realpathSync(alias) },
+    });
+    expect(stateRoot.startsWith(canonical)).toBe(true);
+    expect(statSync(stateRoot).mode & 0o777).toBe(0o700);
   });
 
   it('rejects a group/world-writable state ancestor', () => {

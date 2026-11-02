@@ -105,7 +105,12 @@ export function prepareApplicationStateRoot(
     component = join(component, part);
     try {
       const details = lstatSync(component);
-      if (details.isSymbolicLink() || !details.isDirectory()) {
+      if (details.isSymbolicLink()) {
+        throw new Error(
+          `Application state path component is unsafe: ${component} (symbolic link). Select an explicit trusted canonical path; on macOS /tmp is commonly /private/tmp. Do not automatically trust symlink targets.`,
+        );
+      }
+      if (!details.isDirectory()) {
         throw new Error(
           `Application state path component is unsafe: ${component}`,
         );

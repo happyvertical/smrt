@@ -177,13 +177,13 @@ describe('consumer type generation for one class listed by several packages (#32
     expect(countMatches(types, /export type LicenseSaleData\b/g)).toBe(1);
 
     // Duplicate `export type` aliases are a hard TS2300 error; the generated
-    // row-type declarations must type-check together. (`smrt-client.d.ts`
-    // names its row types without importing them, a separate defect that the
-    // qualified-name work of #3115 resolves.)
+    // declarations must type-check together (smrt-client.d.ts imports its row
+    // types since #3115).
     expect(
       declarationErrors(typesDir, [
         'smrt-objects.d.ts',
         'smrt-types.d.ts',
+        'smrt-client.d.ts',
         'smrt-web.d.ts',
         'smrt-manifest.d.ts',
       ]),

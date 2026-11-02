@@ -218,3 +218,62 @@ that "must be remapped," even though `db:migrate-uuid` converts it cleanly.
 Treat that specific `db:status` precondition as informational until the two
 probes are unified; trust `db:migrate-uuid --dry-run` for the authoritative
 convertibility answer.
+
+## System-table tenant ids (#3297)
+
+Framework system tables never enter the manifest, so `db:migrate-uuid` used to
+leave their TEXT tenant columns alone. On PostgreSQL, fresh installs now create
+`_smrt_changes.tenant_id`, `_smrt_changes_pending.tenant_id`,
+`_smrt_dispatch.tenant_id` and `_smrt_dispatch_subscriptions.tenant_id` as
+native `uuid`, and `db:migrate-uuid` treats those four as declared UUID (only
+when a real manifest was discovered, so the fail-closed empty gate still
+holds). They convert under the same rules as application columns: a column
+holding any non-UUID value (a legacy slug tenant, a `'system'` sentinel) is
+skipped and reported, never coerced; duplicates after normalization are
+detected first; the whole run is one transaction that rolls back on failure,
+and a rerun is a no-op. The four convert together or not at all: the drain
+moves staged rows from `_smrt_changes_pending` into `_smrt_changes`, and
+dispatch rows and subscriptions carry the same context tenant, so one dirty
+system column, a dirty application `tenant_id` (slug tenants still in use), or
+a still timezone-naive `_smrt_changes.created_at` holds all four back and the
+dry run says why. The run also installs the change-feed helpers that
+coerce tenant ids to the live column type, so appends keep working before,
+during and after conversion.
+
+Not converted, by design: `_smrt_contexts.owner_id` (collection-memory scope
+keys such as `__collection__:<tenantId>` and object/agent ids),
+`_smrt_run_once_claims.tenant_id`/`actor` (a NOT NULL claim scope and an
+arbitration namespace), `_smrt_dispatch.processed_by` (a subscriber name),
+`_smrt_schema_migrations.applied_by` (a hostname), and
+`_smrt_ai_usage.tenant_id`, whose external-agent usage API accepts any
+non-empty text tenant id. `secret_audit_logs` already stores UUID `tenant_id` /
+`user_id` and moves a non-UUID actor such as `'system'` into `details`.
+`_smrt_jobs.task_owner_id` is a TEXT owner encoding (a JSON
+`[tenantId, principalId]` composite, or a raw tenant id from the generated MCP
+runtime), not a tenant foreign key.
+
+Procedure for an existing PostgreSQL deployment:
+
+1. Upgrade every SMRT process first. The new code works against TEXT and uuid
+   columns alike; an older process can reinstall a drain helper that cannot
+   return a uuid tenant id. The same holds for a fresh PostgreSQL install: do
+   not point processes from an older release at it.
+2. Inventory: `smrt db:migrate-uuid --dry-run` lists the system columns it
+   would convert and any it skips as dirty. Resolve dirty values only by
+   assigning a proven tenant UUID or NULL (global); never infer a tenant.
+3. Rehearse on a restored copy. `ALTER COLUMN … TYPE uuid` rewrites the table
+   and holds an exclusive lock for the duration — size the window and the
+   statement timeout for `_smrt_changes`, the largest system table.
+4. In the window, with writers drained and no SMRT process starting (the run
+   holds the bootstrap advisory lock and exclusive table locks until it
+   commits), confirm `_smrt_changes_pending` is empty, run the audited
+   timestamp migration first if `_smrt_changes.created_at` is still
+   timezone-naive (`smrt db:migrate --postgres-timestamp-legacy-timezone UTC`),
+   then run `smrt db:migrate-uuid`, then
+   `smrt db:status --parity` and `smrt db:migrate-null-equal-indexes --dry-run`
+   (system-table indexes are not framework conflict indexes and report
+   nothing; rerun it after any application key changes). Restart writers.
+5. Recovery: a failed run rolls back completely. A completed conversion can be
+   reversed with `ALTER TABLE <t> ALTER COLUMN tenant_id TYPE text USING
+   tenant_id::text`; the helpers accept either type.
+

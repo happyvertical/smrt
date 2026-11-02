@@ -41,8 +41,44 @@ the trusted base branch rather than contributor-controlled merge YAML. It passes
 a PR head SHA to reusable general-CI workflows only when the head repository
 equals `github.repository`; merge-group and trusted push workflows use the
 same hosted runner. External fork PRs keep a base-revision hosted control-plane
-check, while the trusted validation call is skipped and `Required CI` rejects
-the run on that skipped result.
+check while the trusted validation call is skipped; their `Required CI` runs the
+maintainer approval gate instead (see "External fork PRs").
+
+### External fork PRs
+
+Fork code never runs with trusted credentials before the merge queue (#4558).
+
+1. **Fork Workflow Change Guard** (`fork-pr-approval.yml`, `pull_request_target`)
+   fails on every fork PR push that touches `.github/` or whose changed-file
+   list is incomplete (the files API stops at 3000). Such a PR could add its
+   own workflow with a job named like a required context, so maintainers never
+   approve its workflow runs and re-land it from a same-repository branch.
+2. **Fork PR Validation** (`fork-pr-validation.yml`, `pull_request`) runs
+   commitlint, the full `test-suite.yml`, and `postgres-tests.yml` for fork PRs
+   only, with a read-only token, no secrets, and PR-scoped caches. Repository
+   settings require a maintainer to approve each run. GitHub loads this file
+   from the PR merge commit, so its result is advice: its check names are
+   distinct from the required contexts.
+3. A maintainer reviews the head commit, submits an **Approve** review on it,
+   confirms the sandbox run passed, and applies `ci: fork-approved`. **Fork PR
+   Approval** runs only `scripts/fork-pr-approval.mjs` from the base revision.
+   It refuses a labeller without write, maintain or admin access and requires
+   a write-access user's current review to approve that exact commit (GitHub
+   records the reviewed `commit_id`). It then records a `fork-approval` commit
+   status on the head and re-runs the `Required CI` and `postgres-required`
+   jobs. If it refuses, fix the cause, then remove and re-add the label:
+   re-adding a label that is already present fires no event.
+4. For a fork PR, both required jobs run that script's `gate`. It passes only
+   when the current head carries the `fork-approval` status from GitHub
+   Actions, the label is present, the latest Fork PR Validation run for that
+   head succeeded, and the guard's file checks pass.
+5. Approval binds to one commit: a fork cannot write statuses here, a review
+   names the commit it approved, and a new push is a new SHA, so its required
+   checks fail until a maintainer reviews and approves again. The push also
+   removes the label. The merge queue's trusted full validation is unchanged
+   and gates every merge.
+
+Every job in the two fork workflows is skipped on same-repository PRs.
 
 `CI_NODE_RUNNER_ENABLED` is gone from this tree — nothing reads it, and the
 migration it was conditioned on is live. If the repository still defines the
@@ -404,7 +440,7 @@ dispatch-only `on-demand-validation.yml`. There is no enabling variable.
 - **`scope`** (hosted) decides whether suites run: a same-repository PR runs
   them unless every changed file is Markdown or under `docs/`; merge groups and
   every other event always run them. External fork PRs never execute trusted
-  PR-head code.
+  PR-head code; Fork PR Validation calls this workflow in the sandbox instead.
 - **Registered PostgreSQL Suites** uses two `ubuntu-latest` jobs, each with
   its own PostgreSQL 18 service: ingestion and every remaining registered
   suite. The selector discovers workspaces through pnpm and partitions the
@@ -418,7 +454,8 @@ dispatch-only `on-demand-validation.yml`. There is no enabling variable.
 - **`postgres-required`** (hosted) is the lane's single aggregate status and
   the context the ruleset requires. It always reports: it passes when `scope` skipped the suites for a
   docs-only PR, and fails when either matrix shard did not succeed or the PR is from a
-  fork (the same policy `Required CI` applies).
+  fork without maintainer approval (the gate `Required CI` applies; see
+  "External fork PRs").
 
 The suites connect as `smrt_ci`, created per run as `LOGIN CREATEDB CREATEROLE
 NOSUPERUSER NOBYPASSRLS` and asserted before use. A superuser bypasses
