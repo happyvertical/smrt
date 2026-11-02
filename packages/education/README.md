@@ -98,6 +98,10 @@ can `getLearner`, `startLesson`, and `listProgress` for their own work.
 Guardian access requires a same-tenant directed `ProfileRelationship` plus the
 host's permission decision. Sibling membership does not grant access.
 
+`putBackLesson` returns started work to `not_started` and `setEnrollmentStatus`
+starts, pauses, resumes or drops an enrollment along a fixed transition table;
+both append immutable history (actor, and for status the host policy basis)
+and never touch submissions, grades or other progress.
 Repeated starts preserve the existing progress, including attempts and scores.
 A new curriculum/year creates a distinct enrollment and fresh progress history.
 An unscored lesson has `bestScore: null`, distinct from zero. The service does
@@ -114,7 +118,9 @@ integration on both SQLite and PostgreSQL.
 
 `SubmissionService` captures tenant-owned uploads, reviews or attests work with
 optional guardian scores, signs authorized asset claims, and splits private
-PDF packets by page range. It reuses learner ownership and transaction checks.
+PDF packets by page range. `attestOwnLesson` lets a learner mark their own
+Reading or Video lesson done as a self-reported, ungraded attestation that a
+guardian then confirms. It reuses learner ownership and transaction checks.
 See the [submission integration contract](agents/submission-service.md) for
 inputs, retry rules, signing requirements and external-storage compensation.
 
