@@ -1332,22 +1332,21 @@ export class LearnerService {
     });
     const byLesson = new Map(progresses.map((row) => [row.lessonId, row]));
     return Promise.all(
-      scope.entries.map(async ({ lesson, course }) => ({
-        enrollment: enrollmentView(enrollment),
-        progress: byLesson.get(String(lesson.id))
-          ? await this.projectProgress(
-              request,
-              byLesson.get(String(lesson.id))!,
-            )
-          : null,
-        lesson: {
-          id: String(lesson.id),
-          title: lesson.title,
-          kind: lesson.constructor.name,
-          requiresOnlineResource:
-            course.modality === 'online' || lesson.constructor.name === 'Video',
-        },
-      })),
+      scope.entries.map(async ({ lesson, course }) => {
+        const row = byLesson.get(String(lesson.id));
+        return {
+          enrollment: enrollmentView(enrollment),
+          progress: row ? await this.projectProgress(request, row) : null,
+          lesson: {
+            id: String(lesson.id),
+            title: lesson.title,
+            kind: lesson.constructor.name,
+            requiresOnlineResource:
+              course.modality === 'online' ||
+              lesson.constructor.name === 'Video',
+          },
+        };
+      }),
     );
   }
 
