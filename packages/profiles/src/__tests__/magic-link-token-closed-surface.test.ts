@@ -9,12 +9,13 @@
  * The scanner and `ObjectRegistry.getConfig()` now read `exclude: ['*']` as
  * closed. The admin-visibility CLI `list` the model declares stays.
  */
-import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 import { ObjectRegistry } from '@happyvertical/smrt-core';
 import {
   isApiActionEnabledForObject,
   MCPGenerator,
 } from '@happyvertical/smrt-core/generators';
+import { ManifestManager } from '@happyvertical/smrt-core/manifest';
 import type { SmartObjectManifest } from '@happyvertical/smrt-core/scanner/types';
 import { resolveApiActionSet } from '@happyvertical/smrt-core/vite-plugin';
 import { describe, expect, it } from 'vitest';
@@ -28,12 +29,15 @@ describe('MagicLinkToken generated surface (#3468)', () => {
     for (const action of ['list', 'get', 'create', 'update', 'delete']) {
       expect(isApiActionEnabledForObject(MODEL, action), action).toBe(false);
     }
-    const manifest = JSON.parse(
-      await readFile(
-        new URL('../../.smrt/manifest.json', import.meta.url),
-        'utf8',
-      ),
-    ) as SmartObjectManifest;
+    // The package manifest as this process resolves it: the test run's
+    // active snapshot under smrtVitestPlugin() (#4128), else the production
+    // output. Never the literal `.smrt/manifest.json`: a Turbo cache hit
+    // restores `dist/**` only, so that file is absent in CI.
+    const manifest = new ManifestManager(
+      fileURLToPath(new URL('../../', import.meta.url)),
+    ).loadLocal() as SmartObjectManifest | null;
+    expect(manifest).not.toBeNull();
+    if (!manifest) return;
     for (const key of [MODEL, COLLECTION]) {
       const objectDef = manifest.objects[key];
       expect(objectDef, key).toBeDefined();
