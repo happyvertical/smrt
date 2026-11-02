@@ -943,15 +943,16 @@ export async function createDispatchBus(
     // Already a DatabaseInterface (has query method)
     db = dbConfig as DatabaseInterface;
   } else if ('type' in dbConfig && 'url' in dbConfig) {
-    // Database config object - use getDatabase with type and url.
-    // Bounded like every other runtime pool so a dispatch-bus connection is
-    // not the one unbounded PostgreSQL client in the process (#2377).
+    // Database config object. Bounded like every other runtime pool so a
+    // dispatch-bus connection is not the one unbounded PostgreSQL client in
+    // the process (#2377), and forwarded whole: rebuilding `{ type, url }`
+    // dropped `max`, the pool timeouts, and any `dbid`, so a bus built from
+    // the application's config opened its own default-sized pool (#3046).
     db = await withStartupRetry(
       () =>
         getDatabase(
           applyPostgresRuntimeTimeouts({
-            type: dbConfig.type as 'sqlite' | 'postgres' | 'duckdb',
-            url: dbConfig.url,
+            ...dbConfig,
           }) as Parameters<typeof getDatabase>[0],
         ),
       options.startupRetry,

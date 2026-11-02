@@ -85,7 +85,8 @@ export function collectRegistryConflictTargets(): Record<
 
 /**
  * Matches core's collection classification, including a registered collection
- * subclass whose immediate parent is another collection class. Unknown
+ * subclass whose immediate parent is another collection class and the
+ * manifest's `collectionOf` classification (#3956). Unknown
  * registrations stay included so a malformed registry cannot hide a real
  * persistence target from a fail-closed parity check.
  */
@@ -95,7 +96,11 @@ export function isCollectionRegistration(className: string): boolean {
     ...ObjectRegistry.getInheritanceChain(className),
   ]) {
     const registered = ObjectRegistry.getClass(name);
-    if (registered && isSmrtCollectionExtendsName(registered.extends)) {
+    if (
+      registered &&
+      (registered.collectionOf ||
+        isSmrtCollectionExtendsName(registered.extends))
+    ) {
       return true;
     }
   }

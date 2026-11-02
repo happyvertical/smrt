@@ -1065,6 +1065,9 @@ export class SubmissionService extends LearnerService {
         tenantId: request.tenantId,
         lessonId: request.lessonId,
         assetId: request.assetId,
+        // Explicit and load-bearing: only the `printable` relationship is ever
+        // signed. The guardian-only `answer-key` copy of a generated worksheet
+        // (QuestionAuthoringService.attachGeneratedPrintable) must never match.
         relationship: 'printable',
       },
       { cache: false },

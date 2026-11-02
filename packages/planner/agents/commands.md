@@ -64,6 +64,13 @@ Part of the [planner guidance](../AGENTS.md). Paths are relative to `packages/pl
   export; the only Node-built-in module here).
   Everything it imports must stay rune-free and import JSON with `with { type: 'json' }`;
   `tests/core-package.test.ts` packages with svelte-package and runs it under bare `node`.
+  `pnpm build` then runs `scripts/bundle-core.ts`, which rebuilds `dist/core/index.js` as one ES
+  module with every non-built-in import inlined (#4238): `smrt kitchen` extracts the tarball into
+  its cache and never installs the planner's dependencies. The entry therefore carries its own copy
+  of the smrt-core cookbook engine and the smrt-commerce/-ui/-reports helpers it uses; it must stay
+  pure (no shared registry state). `verify-packed-planner.mjs` rejects a packed `./core` that
+  imports anything but `node:` modules, and the release gate runs the real `smrt kitchen` against
+  the extracted tarball (`pnpm test:kitchen -- <tgz>`).
   `theme/theme.ts` reads the preset list from smrt-ui's Node-safe `@happyvertical/smrt-ui/themes/presets`
   (no copy, no drift test).
 

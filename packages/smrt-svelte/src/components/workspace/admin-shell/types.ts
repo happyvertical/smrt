@@ -222,6 +222,11 @@ export interface ShellNavItem {
   attention?: boolean | string | null;
   children?: ShellNavItem[];
   /**
+   * Explicit current state. When defined it overrides the computed
+   * longest-href match for this item's own link (`aria-current`).
+   */
+  current?: boolean;
+  /**
    * Trailing action link. "Section current" means: for an item in a
    * {@link ShellNavGroup}, any item of the group, their children, or any
    * action href is the current page; for a top-level item, the item, its
@@ -420,6 +425,12 @@ export interface AdminShellProps {
   logoAlt?: string;
   /** Custom brand content, receiving whether it is in the compact rail. */
   brand?: Snippet<[{ compact: boolean }]>;
+  /**
+   * Content rendered beside the brand (e.g. a notification bell), outside the
+   * home link, in the top band and the left-rail header. Adds a
+   * `.smrt-admin-shell__brand-row` wrapper only when given.
+   */
+  brandEnd?: Snippet<[{ compact: boolean }]>;
   subtitle?: string;
   config?: ShellPanelDefaults;
   settings?: ShellSettingsDelta;

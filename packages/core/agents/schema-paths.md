@@ -181,6 +181,34 @@ Unknown columns, malformed entries, and a name collision with a different index
 all fail generation — a silently dropped index only surfaces later as a
 production slowdown. Keep both config rebuild sites aligned.
 
+### STI subclasses declare indexes on the shared table (#3299)
+
+`@smrt({ indexes })` on an STI **descendant** is emitted on the shared table
+by `appendStiSubclassDeclaredIndexes()` (both STI entry points, after the
+base's declarations; `getAllSchemasAsDefinitions()` and `getTestDatabase()`
+inherit it). It goes through the same validation as a base declaration: known
+columns, the 63-byte name limit, and errors on a collision. A UNIQUE
+declaration is scoped to the declaring subtype with
+`WHERE _meta_type = '<qualified class>'`, so siblings sharing the column are
+not constrained. As with `@field({ unique })` on a descendant, each class in
+the declaring class's own subtree gets a partial copy
+(`<declared name, cut to 52>_<10-hex digest>`), so uniqueness holds per
+concrete class there too, not across the subtree. DuckDB/JSON skip these
+rather than widen them. A subclass UNIQUE with its own `where` is refused; declare a
+combined predicate on the base. A plain subclass index stays unqualified, so
+polymorphic reads can use it. Columns are emitted exactly as declared and are
+never tenant-prefixed, as with explicit `conflictColumns`: put `tenant_id`
+first for a tenant-local key (`['tenantId', 'rampEventId']`). Leave it out
+only for a reviewed global identity (#3305 dispositions).
+
+Migration: `db:migrate` adds the new index by name. A UNIQUE index fails
+closed (the migration rolls back) when existing rows already duplicate the
+key. Find and repair those rows first, scoped to the subtype
+(`_meta_type = '<qualified class>'`), and never by deleting history to make
+the index fit. With `db:migrate --postgres-safe` it is built `CONCURRENTLY`.
+A failed concurrent build leaves an INVALID index, which the next run drops
+and rebuilds after the data is repaired.
+
 ### Relationship targets resolve to a class name on both paths
 
 `@foreignKey`/`@oneToMany`/`@manyToMany` accept a class, a name string, or a
@@ -201,12 +229,32 @@ manifest generator resolves unqualified targets in the declaring package.
 Keep the merged schema in parity tests: `getTestDatabase()` preserves its
 authoritative FK metadata over the generated columns, so testing only the
 standalone generator cannot prove the constraint that reaches the database.
+With an explicit `classes` list, `getTestDatabase()` builds that authoritative
+schema with `getAllSchemasAsDefinitions({ tables })`: only the requested tables
+and their foreign-key closure are merged and ownership-checked
+(`CONFIG_TABLE_NAME_COLLISION` still fires for any of them), so an unrelated
+collision elsewhere in the registry cannot abort the setup. The implicit list
+checks every registered table (#3956).
 
 Field decorator registration retains constructor ownership separately from the
 simple-name inspection view. Custom decorators should pass the callback's
 constructor as `registerFieldDecorator`'s fourth argument. Omit it only for
 intentional legacy string-only metadata; that legacy metadata still composes
 with constructor-owned options, but mirrored public decorator fields do not.
+
+### Decorator-only field types agree on both paths (#4295)
+
+A compiled model registered without a manifest entry sees only `@field()`
+options, never the initializer or annotation the scanner reads. Without an
+explicit `type`, a boolean `default` infers `boolean` on both paths
+(`inferDecoratorOnlyFieldType` in `src/registry/class-registration.ts`, step
+3.7 of the scanner's `ManifestAdapter.inferFieldType`); anything else falls
+back to `text`. Numbers are never inferred at runtime (`0` and `0.0` are the
+same value), so a runtime-only numeric field must declare
+`type: 'integer' | 'decimal'`. Loading the manifest later still replaces the
+decorator-only type. A database whose column was built from the old TEXT
+expectation is not auto-cast; parity reports the drift for an explicit
+migration.
 
 ### A SQLite type change is a table rebuild (#2370)
 
@@ -635,6 +683,38 @@ swap outside the batch transaction. A change toward `CASCADE` / `SET NULL` /
 `SET DEFAULT` still applies (the manifest declares it) but carries a
 `warning` advisory that `db:diff`, `db:status` and `db:migrate` print as
 DESTRUCTIVE.
+
+### Deletes inside a caller-owned transaction
+
+`runCascadeDelete()` owns the cascade's atomic scope through
+`runInOwningCascadeTransaction()` in `src/cascade.ts` (#2824). A root handle opens
+its own transaction. A transaction handle on an engine with savepoints nests.
+When the engine refuses to nest (`NestedTransactionError`, raised by the SDK before
+the callback runs), the cascade joins the enclosing transaction. This happens for
+framework-owned handles, for caller-owned **native DuckDB** transactions
+(`db.transaction()` scopes and `beginTransaction()` handles passed to
+`withDatabase()`), and for the bulk junction path (#2818). A transaction handle
+counts as native DuckDB only after core has seen its root, through
+`initialize()`, `withDatabase()` or a framework transaction. Otherwise the
+handle is never treated as native by guesswork, and the delete keeps the
+`NestedTransactionError` refusal. The caller's commit or
+rollback then decides the outcome of the cascade, the owned `_smrt_contexts` and
+`_smrt_embeddings` cleanup, and the target row.
+
+There is no savepoint, so a cascade that fails part-way cannot be undone on its
+own. On native DuckDB the framework therefore aborts the joined transaction
+(`SELECT error(...)`) before rethrowing, but only if the cascade has already
+issued a write. The SDK's DuckDB `delete()` reports a constant affected count,
+and the owned-row cleanup always runs. In practice, then, any failure after the
+depth-0 RESTRICT / NO ACTION preflight aborts the transaction. That includes a
+revision or write-guard conflict on the row itself, even one that changed no
+rows. DuckDB then rejects every later statement with "transaction
+is aborted", and its `COMMIT` persists nothing. A caller that swallows the error
+therefore cannot commit a half-applied cascade, and the callback is never
+replayed. By contrast, a refusal raised before the first write, such as the
+RESTRICT / NO ACTION preflight, leaves the caller's transaction usable.
+JSON-adapter caller transactions keep the detectable
+`NestedTransactionError` refusal, because nothing can poison them.
 
 `@crossPackageRef()` remains runtime-only: it registers relationship loading
 and indexes but deliberately emits no physical constraint, avoiding circular

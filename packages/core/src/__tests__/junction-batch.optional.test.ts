@@ -208,18 +208,26 @@ for (const type of ['sqlite', 'duckdb', 'postgres'] as const) {
       });
 
       it.skipIf(type !== 'duckdb')(
-        'preserves the detectable legacy caller-transaction limitation (#2824)',
+        'deletes a legacy row inside a caller-owned transaction and honours its rollback (#2824)',
         async () => {
           await links.setLinks('legacy-owner', ['before']);
           const row = (await links.byLeft('legacy-owner'))[0];
           if (!db.transaction)
             throw new Error('DuckDB transaction is required');
+          // The cascade joins the caller's transaction (DuckDB has no
+          // savepoint), so the caller's rollback discards the delete...
           await expect(
             db.transaction(async (tx) => {
               await row.withDatabase(tx, () => row.delete());
+              throw new Error('caller aborts');
             }),
-          ).rejects.toThrow('Nested transactions are not supported');
+          ).rejects.toThrow('caller aborts');
           expect((await links.byLeft('legacy-owner'))[0].id).toBe(row.id);
+          // ...and its commit persists it.
+          await db.transaction(async (tx) => {
+            await row.withDatabase(tx, () => row.delete());
+          });
+          expect(await links.byLeft('legacy-owner')).toEqual([]);
         },
       );
 

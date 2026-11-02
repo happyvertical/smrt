@@ -71,16 +71,44 @@ function reveal() {
   return { x: 12, duration: ready && !reduced && canAnimate ? 260 : 0 };
 }
 
-function isActive(item: ShellNavItem): boolean {
-  return item.href === currentHref || currentHref.startsWith(`${item.href}/`);
+function matches(href: string): boolean {
+  return href === currentHref || currentHref.startsWith(`${href}/`);
+}
+
+/** Longest matching href across every link in this nav (#4499). */
+const bestMatch = $derived.by(() => {
+  let best = -1;
+  const consider = (href: string) => {
+    if (matches(href) && href.length > best) best = href.length;
+  };
+  const walk = (entries: ShellNavItem[]) => {
+    for (const item of entries) {
+      consider(item.href);
+      if (item.action) consider(item.action.href);
+      if (item.children) walk(item.children);
+    }
+  };
+  walk(items);
+  for (const group of groups) walk(group.items);
+  return best;
+});
+
+function isActive(item: { href: string; current?: boolean }): boolean {
+  if (item.current !== undefined) return item.current;
+  return matches(item.href) && item.href.length === bestMatch;
+}
+
+/** Plain prefix match, used for "contains current" parent state. */
+function isLooseActive(item: ShellNavItem): boolean {
+  return item.current ?? matches(item.href);
 }
 
 /** True when the item, any child, or its action link is the current page. */
 function isItemCurrent(item: ShellNavItem): boolean {
   return (
-    isActive(item) ||
-    !!item.children?.some((child) => isActive(child)) ||
-    (!!item.action && isActive(item.action))
+    isLooseActive(item) ||
+    !!item.children?.some((child) => isLooseActive(child)) ||
+    (!!item.action && matches(item.action.href))
   );
 }
 

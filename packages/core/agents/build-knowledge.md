@@ -121,6 +121,25 @@ that declares `svelte` anyway only loses an optional context import.
 Transitive-only object modules are loaded through `importSmrtDependency()`
 from their provider's context, which needs no root import.
 
+**TypeScript-source providers are Vite-only (#3092).** A workspace package
+linked into the consumer may export TypeScript source (`"import":
+"./src/index.ts"`). Plain Node cannot evaluate it as a provider (no `./x.js` →
+`./x.ts` rewriting, no type stripping under `node_modules`, no decorator
+stripping), so any register import whose target resolves to `.ts`/`.mts`/
+`.cts`/`.tsx` (`resolvesToTypeScriptSource`, ESM `import` conditions from the
+consumer, or from the provider for transitive modules) is emitted as
+`SMRT_VITE_RUNTIME ? await import(...) : {}` with `SMRT_VITE_RUNTIME =
+Boolean(import.meta.env)`, and its export/collection consistency throws are
+gated the same way. Vite SSR therefore registers those constructors exactly as
+before, while `smrt db:migrate` and CLIs load the register, warn once on
+stderr, and rely on `.smrt/manifest.json` for those objects. Generation warns
+too. Not covered: the compiled worker artifact (`.smrt/runtime/register.js`) is
+a Vite build, so `import.meta.env` is constant there and the externalized
+TypeScript import still fails when a plain-Node worker starts. Publish a
+compiled JS export to register such objects outside Vite.
+Regression: the `#3092` tests in `index.test.ts` (plain-Node and real Vite
+`ssrLoadModule` loads of one generated register, and the transitive gating).
+
 Selective SSR compilation compares a JavaScript barrel's `svelte` export target
 against the package instance visible from its actual importer. pnpm may install
 the same version in multiple peer contexts; the app-root package directory is
@@ -281,11 +300,18 @@ admin auth.
 
 ## Vite Plugin
 
-`_resources` and application-runtime config detection resolve their exact
-`@happyvertical/smrt-users/sveltekit` and `@happyvertical/smrt-app-runtime/sveltekit`
-imports with ESM import conditions anchored
-to the consumer package URL, using `import-meta-resolve`. A `types`/`import`-only
-export is valid; a CommonJS `createRequire.resolve` probe would falsely skip it.
+Every generated file gated on a consumer dependency (`_resources` →
+`@happyvertical/smrt-users/sveltekit`, application-runtime config →
+`@happyvertical/smrt-app-runtime/sveltekit`, `_dev` →
+`@happyvertical/smrt-dev-mcp/dev-plane`) detects it through
+`consumerResolvesImport` (`src/vite-plugin/consumer-import.ts`, #3913): ESM
+import conditions anchored to the consumer package URL, using
+`import-meta-resolve`. A `types`/`import`-only export is valid; a CommonJS
+`createRequire.resolve` probe would falsely skip it, so new gated routes use
+the shared resolver. `generated-route-dependencies-packed-consumer.test.ts`
+proves all three against a real packed Core tarball plus minimal packages
+carrying the dependencies' real published export maps (direct, hoisted,
+absent); it does not exercise those packages' runtime graphs.
 Verify the selected target is an existing file because import-meta resolution
 can return URLs for missing files/directories. Missing/unexported dependencies
 remain skipped, ancestor-hoisted installs resolve normally, and handwritten

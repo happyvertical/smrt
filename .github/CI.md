@@ -242,7 +242,7 @@ reason recorded next to the setting or here:
   suites), and the `planner-release-gate` jobs in `publish.yml` and
   `publish-dry-run.yml` at 60, whose work is
   bounded the same way as `m5-reference-gate`'s: two browser suites, one
-  consumer install and one generated application, each tried at most twice,
+  consumer install, the consumer canary and one generated application, each tried at most twice,
   plus one control application when the generated one fails.
 - `required-ci` and `test-packages-result`, which only read `needs.*.result`.
   Both finish in seconds, so failing fast is correct for a job that just
@@ -504,7 +504,18 @@ every library cookbook with the built CLI, and runs a real
 `smrt cookbook apply` (from the public smrt-start template, as a user runs it,
 its smrt packages pinned to the release version by the CLI) whose app must install,
 build and typecheck with every `@happyvertical` package overridden to the
-release tarballs. Each check is retried once; the job summary and error
+release tarballs. It also runs the release consumer canary
+(`scripts/release-consumer-canary.mjs`, #2975): the hermetic app in
+`scripts/fixtures/release-consumer-canary` installs smrt-core, smrt-tags,
+smrt-vitest and smrt-cli from the release tarballs (every release package
+overridden to its tarball) and must build, import its generated
+`.smrt/register.js` under plain Node and under smrt-vitest with every class
+under its declaring package and schemas resolved, typecheck, and run
+`smrt db:migrate` / `db:status --json` (no drift, the expected tables
+created). Third-party and SDK dependencies resolve live with the repository's
+overrides and release-age exclusions, and there is no control run, so a
+failure is this release's or a newly published dependency's. It fails on
+0.51.8 and 0.51.10 (#2970) and passes on 0.51.11. Each check is retried once; the job summary and error
 annotation say whether the planner or the framework broke, and
 `publish-release` needs it to succeed. When the generated app fails, the gate
 repeats the apply as the published release generates it (the published CLI,

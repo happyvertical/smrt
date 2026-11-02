@@ -72,6 +72,7 @@ const questionTables = [
   'Question',
   'QuestionRevision',
   'QuestionResponse',
+  'GeneratedPrintable',
 ];
 const allClasses = [
   ...new Set([...workbookClasses, ...authoringExtra, ...questionTables]),
@@ -1290,7 +1291,7 @@ describe('question and learning-objective records', () => {
   });
 
   it('ships the schema change as an additive manifest diff', async () => {
-    // Rebuild the pre-change schema: no question tables, none of the new columns.
+    // Rebuild the pre-change schema: no question or generated_printables tables, none of the new columns.
     const db = await getTestDatabase({
       type: 'sqlite',
       url: ':memory:',
@@ -1319,6 +1320,7 @@ describe('question and learning-objective records', () => {
     );
     expect(diff.added_tables.map((t) => t.tableName).sort()).toEqual(
       [
+        'generated_printables',
         'learning_objectives',
         'learning_objective_revisions',
         'question_responses',

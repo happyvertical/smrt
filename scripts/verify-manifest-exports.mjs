@@ -15,7 +15,9 @@
  *
  * Usage: node scripts/verify-manifest-exports.mjs [packageDir]
  *   - packageDir defaults to the current working directory (so `prepack` can
- *     invoke it without arguments from each package directory).
+ *     invoke it without arguments from each package directory). The release
+ *     validator runs it for every packed package against the installed
+ *     tarball (`release-manifest-guards.mjs`, issue #2853).
  *
  * Exit codes:
  *   0 — every manifest object resolves to a real export, or the check does

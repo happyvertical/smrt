@@ -29,6 +29,7 @@ import {
   CourseFindingResolvedError,
   CourseGenerationInProgressError,
   CourseGenerationNotFoundError,
+  CourseGenerationRefusal,
   CourseGenerationReviewService,
   CourseGeneratorNotConfiguredError,
   type CourseGeneratorRequest,
@@ -153,6 +154,10 @@ async function setup(
     usage: undefined as Record<string, number> | undefined,
     responseModel: undefined as string | undefined,
     error: null as Error | null,
+    returnRefusal: null as {
+      refusal: { category?: string; explanation?: string };
+      usage?: Record<string, number>;
+    } | null,
     hold: null as Promise<void> | null,
     waitForAbort: false,
     calls: [] as CourseGeneratorRequest[],
@@ -169,6 +174,7 @@ async function setup(
         );
       if (gen.hold) await gen.hold;
       if (gen.error) throw gen.error;
+      if (gen.returnRefusal) return gen.returnRefusal;
       return {
         output: gen.output,
         completion: 'complete',
@@ -592,6 +598,77 @@ describe('generation proposals', () => {
     expect(row?.instruction).toBe('Fill gaps');
     // A failed job stays failed; the request key still returns it.
     expect((await s.run(job.jobId)).status).toBe('failed');
+  });
+
+  it.each([
+    ['thrown', true],
+    ['returned', false],
+  ])('records a %s model refusal as a distinct outcome with usage', async (_label, thrown) => {
+    const s = await setup();
+    const c = await s.course();
+    const revisions = await s.count('course_revisions');
+    const usage = { inputTokens: 80, outputTokens: 12, costUsd: 0.004 };
+    if (thrown)
+      s.gen.error = new CourseGenerationRefusal({
+        category: 'safety',
+        explanation: 'I cannot write that.\u0000',
+        usage,
+        responseModel: 'stub-model-refusal',
+      });
+    else
+      s.gen.returnRefusal = {
+        refusal: { category: 'safety', explanation: 'I cannot write that.' },
+        usage,
+      };
+    const job = await s.request(c);
+    const refused = await s.run(job.jobId);
+    expect(refused).toMatchObject({
+      status: 'refused',
+      errorCode: 'refused',
+      refusal: { category: 'safety', explanation: 'I cannot write that.' },
+      usage: { inputTokens: 80, outputTokens: 12, cost: 0.004 },
+      proposalId: null,
+      resultRevisionId: null,
+    });
+    expect(refused.events.map((e) => e.status)).toEqual([
+      'queued',
+      'running',
+      'refused',
+    ]);
+    // Not published, not retried: head and revisions unchanged, run replays it.
+    expect(await s.head(c.courseId)).toBe(c.headRevisionId);
+    expect(await s.count('course_revisions')).toBe(revisions);
+    s.gen.error = null;
+    s.gen.returnRefusal = null;
+    const calls = s.gen.calls.length;
+    expect((await s.run(job.jobId)).status).toBe('refused');
+    expect(s.gen.calls.length).toBe(calls);
+    expect(
+      (await s.db.list('course_proposals', { job_id: job.jobId })).length,
+    ).toBe(0);
+  });
+
+  it('bounds a refusal without category or oversized explanation', async () => {
+    const s = await setup();
+    const c = await s.course();
+    s.gen.returnRefusal = {
+      refusal: { explanation: 'x'.repeat(5000) },
+    };
+    const refused = await s.run((await s.request(c)).jobId);
+    expect(refused.status).toBe('refused');
+    expect(refused.refusal?.category).toBeNull();
+    expect(refused.refusal?.explanation.length).toBe(2000);
+  });
+
+  it('keeps a plain provider throw as provider-error', async () => {
+    const s = await setup();
+    const c = await s.course();
+    s.gen.error = new Error('boom');
+    expect(await s.run((await s.request(c)).jobId)).toMatchObject({
+      status: 'failed',
+      errorCode: 'provider-error',
+      refusal: null,
+    });
   });
 
   it('rejects invalid provider output without touching the draft', async () => {
