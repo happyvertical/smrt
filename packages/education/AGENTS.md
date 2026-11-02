@@ -75,3 +75,7 @@ then revalidate each exact family edge and current policy. Media delivery must c
 the reader on every request; signed storage URLs are not a sharing grant. Saved
 parent comment visibility applies on every child read. Progress with feedback
 disabled contains counts only, never correctness, scores or concept labels.
+
+Learner-safe tutor context and append-only tutor transcripts use
+[TutorContextService and TutorSessionService](agents/tutor-context.md). Learner
+audience never carries keys, rubrics, notes or storage URIs; no AI call here.

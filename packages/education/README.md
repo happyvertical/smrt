@@ -110,6 +110,13 @@ unchanged. `setEnrollmentPace` sets or clears an enrollment's planned lessons
 per week (1 to 14) under the host's `education.enrollment.set-pace` decision with
 an immutable change row, and `nextLessons({ count })` returns a week's set of
 unfinished lessons (default one).
+`TutorContextService.compose` builds a bounded, learner-safe `TutorContext`
+(lesson text, learner-visible questions, own progress, released feedback; for the
+learner audience only `answerKeyAvailable`, never keys, rubrics, notes or storage
+URIs) under the host's `education.tutor.read` decision, and `TutorSessionService`
+(`open`, `append`, `close`, `listForLearner`; `education.tutor.exchange` and
+`education.tutor.read`) keeps append-only guardian-readable transcripts. No model
+call happens in the package; see [tutor contract](agents/tutor-context.md).
 Repeated starts preserve the existing progress, including attempts and scores.
 A new curriculum/year creates a distinct enrollment and fresh progress history.
 An unscored lesson has `bestScore: null`, distinct from zero. The service does
