@@ -438,6 +438,18 @@ describe('TutorContextService', () => {
     }
   });
 
+  it('bounds: a JSON-expanding lesson body still fits the serialized ceiling', async () => {
+    const s = await tutorSetup({
+      body: '\u0001'.repeat(MAX_TUTOR_BODY_CHARS),
+      questionCount: 2,
+    });
+    const context = await s.compose(s.f.own, 'learner');
+    expect(JSON.stringify(context).length).toBeLessThanOrEqual(
+      MAX_TUTOR_CONTEXT_CHARS,
+    );
+    expect(context.truncated).toBe(true);
+  });
+
   it('authorizer: asks education.tutor.read with own flag on the current executor', async () => {
     const s = await tutorSetup();
     s.calls.length = 0;

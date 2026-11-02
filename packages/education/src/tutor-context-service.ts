@@ -363,6 +363,25 @@ export class TutorContextService extends QuestionResponseService {
         ...(q.rubric != null ? { rubric: null } : {}),
         prompt: q.prompt.slice(0, 40),
       }));
+    // JSON escaping can still push the lesson body, feedback or objectives past
+    // the ceiling (a control character serializes to six characters): halve
+    // those in turn until the serialized context fits.
+    for (let guard = 0; !fits() && guard < 32; guard++) {
+      truncated = true;
+      if (base.lesson && base.lesson.body.length > 0)
+        base.lesson = {
+          ...base.lesson,
+          body: base.lesson.body.slice(0, base.lesson.body.length >> 1),
+        };
+      else if (base.feedback && base.feedback.text.length > 0)
+        base.feedback = {
+          ...base.feedback,
+          text: base.feedback.text.slice(0, base.feedback.text.length >> 1),
+        };
+      else if (base.objectives.length > 0)
+        base.objectives = base.objectives.slice(0, -1);
+      else break;
+    }
     return build();
   }
 
