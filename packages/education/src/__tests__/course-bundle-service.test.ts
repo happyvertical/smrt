@@ -445,6 +445,72 @@ describe('structure proposal', () => {
     expect(await s.count('enrollment_release_pins')).toBe(0);
   });
 
+  it('never lets answer-key or mixed text members into lesson bodies', async () => {
+    const KEY = 'SENTINEL-ANSWER-KEY-7731';
+    const MIXED = 'SENTINEL-MIXED-PAGE-2290';
+    const keyed = {
+      ...manifest,
+      sections: [
+        {
+          key: 'unit-1',
+          title: 'Unit One',
+          lessons: [
+            {
+              key: 'sums',
+              title: 'Sums',
+              members: [
+                { path: 'notes.txt', role: 'instructions' },
+                { path: 'key.txt', role: 'answer_key' },
+                { path: 'mixed.txt', role: 'mixed' },
+              ],
+            },
+            {
+              key: 'keyonly',
+              title: 'Key only',
+              members: [{ path: 'key2.txt', role: 'answer_key' }],
+            },
+          ],
+        },
+      ],
+    };
+    const keyedArchive = () => ({
+      archive: buildZip([
+        { name: 'manifest.json', data: JSON.stringify(keyed) },
+        { name: 'notes.txt', data: 'Read this first.' },
+        { name: 'key.txt', data: KEY },
+        { name: 'mixed.txt', data: MIXED },
+        { name: 'key2.txt', data: `${KEY} again` },
+      ]),
+    });
+    const s = await setup();
+    const c = await s.course();
+    const { import: view } = await s.importBundle(keyedArchive());
+    const generation = await s.as(s.guardian, () =>
+      s.service.proposeStructure({
+        ...s.guardian,
+        importId: view.importId,
+        bundle: keyedArchive(),
+        courseId: c.courseId,
+        expectedHeadRevisionId: c.headRevisionId,
+      }),
+    );
+    const draft = await s.as(s.guardian, () =>
+      s.service.readDraft({
+        ...s.guardian,
+        courseId: c.courseId,
+        revisionId: generation.resultRevisionId as string,
+      }),
+    );
+    const lessons = draft.revision.sections.flatMap((x) => x.lessons);
+    expect(lessons.map((l) => l.title)).toEqual(['Sums', 'Key only']);
+    expect(lessons[0]?.body).toBe('Read this first.');
+    const serialized = JSON.stringify({ generation, draft });
+    expect(serialized).not.toContain(KEY);
+    expect(serialized).not.toContain(MIXED);
+    // The members remain recorded evidence.
+    expect(await s.count('course_bundle_members')).toBe(5);
+  });
+
   it('replays per course and bundle, and refuses a changed request for the same key', async () => {
     const s = await setup();
     const c = await s.course();

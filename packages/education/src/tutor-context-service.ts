@@ -322,6 +322,47 @@ export class TutorContextService extends QuestionResponseService {
       questions = questions.filter((q) => q !== drop);
       truncated = true;
     }
+    // The focused question alone can still be oversized: shrink its lists and
+    // text in steps, keeping its identity (revision id) until the very end.
+    const fits = () =>
+      JSON.stringify(build()).length <= MAX_TUTOR_CONTEXT_CHARS;
+    const shrinkFocus = (
+      apply: (q: TutorQuestionItem) => TutorQuestionItem,
+    ) => {
+      questions = questions.map((q) =>
+        q.questionRevisionId === focus ? apply(q) : q,
+      );
+      truncated = true;
+    };
+    const textCuts = [1000, 400, 150, 40];
+    for (let step = 0; step < textCuts.length && !fits(); step++) {
+      const text = textCuts[step];
+      const lists = Math.max(1, 6 >> step);
+      const clip = (value: string) =>
+        value.length > text ? value.slice(0, text) : value;
+      shrinkFocus((q) => ({
+        ...q,
+        prompt: clip(q.prompt),
+        choices: q.choices
+          .slice(0, lists)
+          .map((c) => ({ id: c.id, label: clip(c.label) })),
+        subparts: q.subparts
+          .slice(0, lists)
+          .map((p) => ({ partKey: p.partKey, prompt: clip(p.prompt) })),
+        ...(q.answerKey != null ? { answerKey: clip(q.answerKey) } : {}),
+        ...(q.rubric != null ? { rubric: clip(q.rubric) } : {}),
+      }));
+    }
+    // Last resort: drop bulky optional fields before identity.
+    if (!fits())
+      shrinkFocus((q) => ({
+        ...q,
+        choices: [],
+        subparts: [],
+        ...(q.answerKey != null ? { answerKey: null } : {}),
+        ...(q.rubric != null ? { rubric: null } : {}),
+        prompt: q.prompt.slice(0, 40),
+      }));
     return build();
   }
 

@@ -16,6 +16,7 @@ import {
   type LearnerAuthorizer,
   LearnerValidationError,
   MAX_TUTOR_BODY_CHARS,
+  MAX_TUTOR_CHOICES,
   MAX_TUTOR_CONTEXT_CHARS,
   MAX_TUTOR_PROMPT_CHARS,
   MAX_TUTOR_QUESTIONS,
@@ -94,6 +95,7 @@ async function tutorSetup(
     prompt?: string;
     questionCount?: number;
     withKey?: boolean;
+    huge?: boolean;
   } = {},
 ) {
   const db = await getTestDatabase({
@@ -133,13 +135,23 @@ async function tutorSetup(
     }),
   );
   const withKey = options.withKey ?? true;
+  const big = (n: number) => options.huge === true && n === 0;
   const content = (n: number): QuestionContentInput => ({
-    prompt: n === 0 && options.prompt ? options.prompt : `Question ${n + 1}`,
+    prompt: big(n)
+      ? 'q'.repeat(MAX_TUTOR_PROMPT_CHARS)
+      : n === 0 && options.prompt
+        ? options.prompt
+        : `Question ${n + 1}`,
     responseType: 'multiple-choice',
-    choices: [
-      { id: 'a', label: 'One' },
-      { id: 'b', label: 'Two' },
-    ],
+    choices: big(n)
+      ? Array.from({ length: MAX_TUTOR_CHOICES }, (_, i) => ({
+          id: i === 0 ? 'a' : `c${i}`,
+          label: '\\"'.repeat(MAX_TUTOR_PROMPT_CHARS / 2),
+        }))
+      : [
+          { id: 'a', label: 'One' },
+          { id: 'b', label: 'Two' },
+        ],
     objectiveIds: [String(objective.id)],
     ...(withKey
       ? {
@@ -403,6 +415,27 @@ describe('TutorContextService', () => {
     expect(focused.focusQuestionRevisionId).toBe(last);
     expect(focused.questions.map((q) => q.questionRevisionId)).toContain(last);
     expect(focused.questions).toHaveLength(MAX_TUTOR_QUESTIONS);
+  });
+
+  it('bounds: an oversized focused question is shrunk to fit, keeping its identity', async () => {
+    const s = await tutorSetup({ huge: true, questionCount: 3 });
+    const focus = s.questionIds[0];
+    for (const [actor, audience] of [
+      [s.f.own, 'learner'],
+      [s.f.parent, 'guardian'],
+    ] as const) {
+      const context = await s.compose(actor, audience, {
+        questionRevisionId: focus,
+      });
+      expect(JSON.stringify(context).length).toBeLessThanOrEqual(
+        MAX_TUTOR_CONTEXT_CHARS,
+      );
+      expect(context.truncated).toBe(true);
+      expect(context.focusQuestionRevisionId).toBe(focus);
+      expect(context.questions.map((q) => q.questionRevisionId)).toContain(
+        focus,
+      );
+    }
   });
 
   it('authorizer: asks education.tutor.read with own flag on the current executor', async () => {

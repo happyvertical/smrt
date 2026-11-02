@@ -482,4 +482,63 @@ describe('TutorSessionService', () => {
       ),
     ).rejects.toBeInstanceOf(LearnerValidationError);
   });
+  it('guardian-audience sessions are invisible and immutable to the learner', async () => {
+    const SENTINEL = 'SENTINEL-GUARDIAN-ANSWER-KEY-5521';
+    const s = await setup();
+    const guardianSession = await s.f.as(s.f.parent, () =>
+      s.service.open({
+        ...s.f.parent,
+        requestKey: 'g-open',
+        audience: 'guardian',
+        enrollmentId: s.enrollmentId,
+        lessonId: s.lessonId,
+      }),
+    );
+    await s.append(
+      guardianSession.id,
+      { role: 'tutor', text: `Key: ${SENTINEL}` },
+      s.f.parent,
+    );
+    const learnerSession = await s.open();
+    const exchangesBefore = await s.db.list('tutor_exchanges', {});
+    const read = (extra: Record<string, unknown> = {}) =>
+      s.f.as(s.f.own, () => s.service.listForLearner({ ...s.f.own, ...extra }));
+    for (const result of [
+      await read(),
+      await read({ sessionId: guardianSession.id }),
+      await read({ lessonId: s.lessonId }),
+      await read({ enrollmentId: s.enrollmentId }),
+    ]) {
+      expect(JSON.stringify(result)).not.toContain(SENTINEL);
+      expect(result.sessions.map((x) => x.id)).not.toContain(
+        guardianSession.id,
+      );
+    }
+    expect((await read()).sessions.map((x) => x.id)).toContain(
+      learnerSession.id,
+    );
+    await expect(s.append(guardianSession.id)).rejects.toBeInstanceOf(
+      LearnerAuthorizationError,
+    );
+    await expect(
+      s.f.as(s.f.own, () =>
+        s.service.close({ ...s.f.own, sessionId: guardianSession.id }),
+      ),
+    ).rejects.toBeInstanceOf(LearnerAuthorizationError);
+    expect(await s.db.list('tutor_exchanges', {})).toHaveLength(
+      exchangesBefore.length,
+    );
+    expect(await s.db.list('tutor_session_closures', {})).toHaveLength(0);
+    // The guardian still reads and closes it.
+    const guardianView = await s.f.as(s.f.parent, () =>
+      s.service.listForLearner({
+        ...s.f.parent,
+        sessionId: guardianSession.id,
+      }),
+    );
+    expect(JSON.stringify(guardianView)).toContain(SENTINEL);
+    await s.f.as(s.f.parent, () =>
+      s.service.close({ ...s.f.parent, sessionId: guardianSession.id }),
+    );
+  });
 });

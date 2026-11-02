@@ -322,6 +322,11 @@ export class TutorSessionService extends LearnerService {
         throw new LearnerAuthorizationError();
       const session = await service.session(request, request.sessionId);
       if (
+        String(session.audience) === 'guardian' &&
+        learner.userId === request.actorUserId
+      )
+        throw new LearnerAuthorizationError();
+      if (
         request.lessonId !== undefined &&
         request.lessonId !== orNull(session.lesson_id)
       )
@@ -401,8 +406,16 @@ export class TutorSessionService extends LearnerService {
   ): Promise<TutorSessionView & { changed: boolean }> {
     return this.mutate(async (service) => {
       await service.requireTables(service.db);
-      await service.requireActor(request, 'education.tutor.exchange');
+      const learner = await service.requireActor(
+        request,
+        'education.tutor.exchange',
+      );
       const session = await service.session(request, request.sessionId);
+      if (
+        String(session.audience) === 'guardian' &&
+        learner.userId === request.actorUserId
+      )
+        throw new LearnerAuthorizationError();
       const existing = await service.closure(request, request.sessionId);
       if (existing)
         return { ...sessionView(session, existing.closed_at), changed: false };
@@ -446,7 +459,7 @@ export class TutorSessionService extends LearnerService {
       after < 0
     )
       throw new LearnerValidationError('Invalid tutor list bounds');
-    await this.requireActor(request, 'education.tutor.read');
+    const reader = await this.requireActor(request, 'education.tutor.read');
     if (request.enrollmentId)
       await this.requireEnrollment(
         request as LearnerRequest & { enrollmentId: string },
@@ -459,7 +472,17 @@ export class TutorSessionService extends LearnerService {
     if (request.enrollmentId) where.enrollment_id = request.enrollmentId;
     if (request.lessonId) where.lesson_id = request.lessonId;
     if (request.sessionId) where.id = request.sessionId;
-    const rows = (await this.db.list('tutor_sessions', where)) as Row[];
+    // Guardian-audience transcripts may quote answer keys; the learner never
+    // reads them (fail closed: they look like missing sessions).
+    const rows = (
+      (await this.db.list('tutor_sessions', where)) as Row[]
+    ).filter(
+      (row) =>
+        !(
+          String(row.audience) === 'guardian' &&
+          reader.userId === request.actorUserId
+        ),
+    );
     rows.sort(
       (a, b) =>
         new Date(b.opened_at as string).getTime() -

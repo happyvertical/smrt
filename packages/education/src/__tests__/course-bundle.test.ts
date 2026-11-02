@@ -583,6 +583,41 @@ describe('classification and planning', () => {
       expect(output.lessons[0]?.body).toBe('Read this first.');
     });
 
+    it('withholds answer_key and mixed text from lesson bodies', () => {
+      const set: Array<[string, Buffer | string]> = [
+        manifest({
+          version: 1,
+          sections: [
+            {
+              key: 's',
+              title: 'S',
+              lessons: [
+                {
+                  key: 'l',
+                  title: 'L',
+                  members: [
+                    { path: 'a.txt', role: 'instructions' },
+                    { path: 'k.txt', role: 'answer_key' },
+                    { path: 'm.txt', role: 'mixed' },
+                  ],
+                },
+              ],
+            },
+          ],
+        }),
+        ['a.txt', 'Public text.'],
+        ['k.txt', 'SENTINEL-KEY'],
+        ['m.txt', 'SENTINEL-MIXED'],
+      ];
+      const p = plan(set);
+      const output = bundleProposalOutput(p);
+      const json = JSON.stringify(output);
+      expect(json).not.toContain('SENTINEL');
+      expect(json).toContain('Public text.');
+      expect(output.rationale).toContain('2 answer-key or mixed member(s)');
+      expect(p.members.filter((m) => m.status === 'accepted')).toHaveLength(3);
+    });
+
     const bad = (
       mutate: (m: typeof valid) => unknown,
       expected: CourseBundleRefusalReason,

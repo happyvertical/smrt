@@ -578,11 +578,23 @@ export function bundleProposalOutput(
   limits: CourseBundleLimits = COURSE_BUNDLE_LIMITS,
 ) {
   const byName = new Map(plan.members.map((m) => [m.path, m]));
+  // Answer-key and mixed members stay recorded evidence but never become
+  // learner-visible lesson text, whatever the manifest says about the lesson.
+  const withheldRole = (path: string) => {
+    const role = plan.placements.get(path)?.role;
+    return role === 'answer_key' || role === 'mixed';
+  };
+  let withheld = 0;
   const lessons = plan.structure.sections.flatMap((section) =>
     section.lessons.map((lesson) => {
       const body = lesson.paths
         .map((p) => byName.get(p))
         .filter((m) => m?.status === 'accepted' && m.kind === 'text')
+        .filter((m) => {
+          if (!withheldRole((m as ClassifiedBundleMember).path)) return true;
+          withheld++;
+          return false;
+        })
         .map((m) => (m as ClassifiedBundleMember).text as string)
         .join('\n\n');
       return {
@@ -596,6 +608,6 @@ export function bundleProposalOutput(
   return {
     course: plan.structure.subject ? { subject: plan.structure.subject } : {},
     lessons,
-    rationale: `Proposed from a course bundle (${plan.readerId}, ${plan.bundleIdentity}). The host reviews and accepts; nothing is published.`,
+    rationale: `Proposed from a course bundle (${plan.readerId}, ${plan.bundleIdentity}). The host reviews and accepts; nothing is published.${withheld ? ` ${withheld} answer-key or mixed member(s) were withheld from lesson text.` : ''}`,
   };
 }

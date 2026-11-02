@@ -105,7 +105,9 @@ a manifest each accepted member is one lesson, sections come from the top-level
 directory and order is natural path order (digit runs compare numerically, no
 locale). Manifest order: the manifest, declared members, then the rest by path.
 Lesson bodies are the readable text members of a lesson, joined; PDFs and images
-are never inlined.
+are never inlined. Members whose declared role is `answer_key` or `mixed` never
+contribute text to a lesson body (they remain recorded evidence members); the
+proposal rationale only counts how many were withheld.
 
 ## Readers
 
