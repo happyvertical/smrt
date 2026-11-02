@@ -1687,7 +1687,7 @@ function registerUntracked(
         // Decorator for field not in manifest - add it
         const newMeta: FieldMeta = decoratorOptions;
         const newField: RegisteredField = {
-          type: opts.type || 'text',
+          type: opts.type || inferDecoratorOnlyFieldType(opts),
           _meta: newMeta,
         };
 
@@ -1721,7 +1721,7 @@ function registerUntracked(
 
         fields.set(fieldName, newField);
         verboseLog(
-          `[registry]   ✅ Added field ${fieldName} from decorator: type=${opts.type || 'text'}`,
+          `[registry]   ✅ Added field ${fieldName} from decorator: type=${newField.type}`,
         );
       }
     }
@@ -2028,6 +2028,7 @@ function registerUntracked(
     extends: extendsClass, // Capture parent class name from manifest OR prototype chain
     extendsTypeArg: manifestEntry?.extendsTypeArg, // SmrtCollection<T> generic arg
     inheritedExposure: manifestEntry?.inheritedExposure, // #3468
+    collectionOf: manifestEntry?.collectionOf, // #3956 manifest collection classification
     tenantScopedConfig, // Multi-tenancy config (Issue #688)
     tenantScopedConfigSource,
     visibility, // Visibility control for manifest filtering
@@ -2301,6 +2302,25 @@ interface DecoratorFieldOptions {
   readPermission?: unknown;
   related?: string;
   [key: string]: unknown;
+}
+
+/**
+ * Column type for a decorator-only field (no manifest entry) that declares no
+ * explicit `type` (#4295).
+ *
+ * The runtime sees only the decorator options, never the property initializer
+ * or annotation the static scanner reads, so the decorator `default` is the
+ * only type evidence both paths share. A boolean default is unambiguous and
+ * the scanner reads it the same way (`ManifestAdapter.inferFieldType`), so it
+ * maps to `boolean`. A number is deliberately NOT inferred: `0` and `0.0` are
+ * the same JavaScript value, so the source-level integer/decimal rule cannot
+ * be applied here and guessing INTEGER would mis-type a decimal column.
+ * Runtime-only numeric fields must declare `type: 'integer' | 'decimal'`.
+ */
+function inferDecoratorOnlyFieldType(
+  opts: DecoratorFieldOptions,
+): RegisteredField['type'] {
+  return typeof opts.default === 'boolean' ? 'boolean' : 'text';
 }
 
 /**
@@ -2631,6 +2651,9 @@ function mergeManifestIntoExistingRegistration(
   if (objectDef.inheritedExposure) {
     existing.inheritedExposure = objectDef.inheritedExposure;
   }
+  // A class registered before its manifest loaded learns it is a collection
+  // here, so it stops claiming its model's table (#3956).
+  if (objectDef.collectionOf) existing.collectionOf = objectDef.collectionOf;
 
   // The manifest's collection is authoritative (it carries STI inheritance):
   // a class decorated before its manifest loaded registered a derived one,
@@ -2913,6 +2936,7 @@ function registerFromManifestUntracked(
     extends: qualifiedExtends, // Issue #1004: Pre-computed qualified parent
     extendsTypeArg: objectDef.extendsTypeArg, // SmrtCollection<T> generic arg
     inheritedExposure: objectDef.inheritedExposure, // #3468
+    collectionOf: objectDef.collectionOf, // #3956 manifest collection classification
     visibility, // New: Visibility control for manifest filtering
   };
   // #3338: a deprecated alias must never name a second live class.

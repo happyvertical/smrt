@@ -221,6 +221,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     logoSrc,
     logoAlt = '',
     brand,
+    brandEnd,
     subtitle = '',
     config,
     settings,
@@ -1327,7 +1328,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
 {/snippet}
 
 {#snippet shellBrand(compact = false)}
-  <ShellBrand {title} {subtitle} {homeHref} {logoSrc} {logoAlt} {brand} {compact} />
+  <ShellBrand {title} {subtitle} {homeHref} {logoSrc} {logoAlt} {brand} {brandEnd} {compact} />
 {/snippet}
 
 {#snippet slotGroup(name: ShellSlot)}

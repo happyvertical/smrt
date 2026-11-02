@@ -4,6 +4,7 @@ import {
   buildCascadePlan,
   cascadeReferencesTo,
   runCascadeDelete,
+  runInOwningCascadeTransaction,
 } from './cascade';
 import {
   CHANGE_FEED_WAS_PERSISTED_KEY,
@@ -2520,9 +2521,11 @@ export class SmrtObject extends SmrtClass {
     if (!GlobalInterceptors.supportsBulkMutation(first.getResolvedClassName()))
       return false;
     if (removed.length > 0) {
-      const cascade = await withEmbeddedWriteTransaction(
+      // The cascade's owning boundary (#2824): joins a no-savepoint enclosing
+      // transaction as before (#2818), and aborts a joined native DuckDB one
+      // if the grouped delete fails part-way through it.
+      const cascade = await runInOwningCascadeTransaction(
         first.db,
-        isEmbeddedDatabase(first.db),
         async (db) => {
           const ids = removed.map((item) => item.id as string);
           const result = await cascadeReferencesTo(db, ObjectRegistry, {

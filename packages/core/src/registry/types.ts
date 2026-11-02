@@ -1169,6 +1169,12 @@ export interface RegisteredClass {
    * model's effective config at runtime, never widening (#3468).
    */
   inheritedExposure?: Array<'api' | 'mcp' | 'cli'>;
+  /**
+   * Manifest classification of a collection class: the model it manages
+   * (`SmartObjectDefinition.collectionOf`). A registration carrying it is a
+   * collection and never claims a physical table (#3956).
+   */
+  collectionOf?: string;
   /** Full inheritance chain from base to this class (cached for performance) */
   inheritanceChain?: string[];
   /** Merged fields from entire inheritance chain (cached, includes parent fields) */

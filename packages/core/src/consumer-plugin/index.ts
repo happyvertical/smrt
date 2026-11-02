@@ -5,8 +5,9 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { DomainKnowledgeAgentSurface } from '@happyvertical/smrt-types';
+import { resolve as resolveImport } from 'import-meta-resolve';
 import {
   loadVerifiedSmrtGenerationSnapshot,
   type SmrtGenerationSnapshotOptions,
@@ -172,6 +173,38 @@ function readInstalledPackageJson(
     ) as ConsumerPackageJson;
   } catch {
     return undefined;
+  }
+}
+
+const TYPESCRIPT_SOURCE_PATTERN = /(?<!\.d)\.(?:[cm]?ts|tsx)$/;
+
+/**
+ * Whether `specifier` resolves, under Node's ESM `import` conditions from
+ * `fromDir`, to a TypeScript source file (#3092). Workspace packages often
+ * publish `"import": "./src/index.ts"` for an app that only runs them through
+ * Vite. Plain Node cannot evaluate such a module as a SMRT provider: it does
+ * not rewrite `./x.js` specifiers to `./x.ts`, never strips types inside
+ * `node_modules`, and cannot strip `@smrt()` decorators at all. An
+ * unresolvable specifier answers `false`, leaving the existing import (and its
+ * existing failure mode) unchanged.
+ *
+ * @internal Exported for tests.
+ */
+export function resolvesToTypeScriptSource(
+  specifier: string,
+  fromDir: string,
+): boolean {
+  try {
+    const target = resolveImport(
+      specifier,
+      pathToFileURL(path.join(fromDir, 'package.json')).href,
+    );
+    return (
+      target.startsWith('file:') &&
+      TYPESCRIPT_SOURCE_PATTERN.test(fileURLToPath(target))
+    );
+  } catch {
+    return false;
   }
 }
 
@@ -1826,8 +1859,31 @@ async function generateRegistrationFile(
   const importsByPath = new Map<string, Map<string, string>>();
   const transitiveNamespaces = new Map<
     string,
-    { binding: string; providerPackageName: string; importPath: string }
+    {
+      binding: string;
+      providerPackageName: string;
+      importPath: string;
+      viteOnly: boolean;
+    }
   >();
+  // Modules that resolve to TypeScript source (#3092): Vite SSR compiles
+  // them, plain Node cannot. The register imports them only under Vite.
+  const typeScriptSourceMemo = new Map<string, boolean>();
+  const isTypeScriptSource = (specifier: string, fromDir: string): boolean => {
+    const key = `${fromDir}\0${specifier}`;
+    let answer = typeScriptSourceMemo.get(key);
+    if (answer === undefined) {
+      answer = resolvesToTypeScriptSource(specifier, fromDir);
+      typeScriptSourceMemo.set(key, answer);
+    }
+    return answer;
+  };
+  const viteOnlyImportPaths = new Set<string>();
+  const markViteOnlyImport = (importPath: string): void => {
+    if (isTypeScriptSource(importPath, projectRoot)) {
+      viteOnlyImportPaths.add(importPath);
+    }
+  };
   const transitiveBindings = new Map<
     string,
     { binding: string; namespaceBinding: string; exportName: string }
@@ -1835,6 +1891,7 @@ async function generateRegistrationFile(
   const transitiveCollectionChecks: Array<{
     collectionBinding: string;
     itemBinding: string;
+    viteOnly: boolean;
   }> = [];
   let nextImportBinding = 0;
   const getImportBinding = (importPath: string, exportName: string): string => {
@@ -1847,6 +1904,7 @@ async function generateRegistrationFile(
       importsByPath.get(importPath) ?? new Map<string, string>();
     specifiers.set(exportName, binding);
     importsByPath.set(importPath, specifiers);
+    markViteOnlyImport(importPath);
     return binding;
   };
   const getTransitiveBinding = (
@@ -1857,10 +1915,18 @@ async function generateRegistrationFile(
     const namespaceKey = `${providerPackageName}\0${importPath}`;
     let namespace = transitiveNamespaces.get(namespaceKey);
     if (!namespace) {
+      const providerPackageJson = findInstalledPackageJson(
+        providerPackageName,
+        projectRoot,
+      );
       namespace = {
         binding: `__smrt_transitive_provider_${transitiveNamespaces.size}`,
         providerPackageName,
         importPath,
+        viteOnly: Boolean(
+          providerPackageJson &&
+            isTypeScriptSource(importPath, path.dirname(providerPackageJson)),
+        ),
       };
       transitiveNamespaces.set(namespaceKey, namespace);
     }
@@ -2058,6 +2124,10 @@ async function generateRegistrationFile(
       transitiveCollectionChecks.push({
         collectionBinding,
         itemBinding: exportBinding,
+        viteOnly:
+          transitiveNamespaces.get(
+            `${providerPackageName as string}\0${importPath}`,
+          )?.viteOnly ?? false,
       });
     }
     importedEntryCount++;
@@ -2123,6 +2193,7 @@ async function generateRegistrationFile(
     );
     if (!contextImport || importsByPath.has(contextImport)) continue;
     importsByPath.set(contextImport, new Map());
+    markViteOnlyImport(contextImport);
   }
 
   // Skip generation if no external entries
@@ -2136,10 +2207,42 @@ async function generateRegistrationFile(
   const sortedImports = Array.from(importsByPath.entries()).sort(
     ([left], [right]) => left.localeCompare(right),
   );
-  const imports = sortedImports.map(
-    ([importPath], index) =>
-      `import * as __smrt_provider_${index} from '${importPath}';`,
+  const imports = sortedImports.flatMap(([importPath], index) =>
+    viteOnlyImportPaths.has(importPath)
+      ? []
+      : [`import * as __smrt_provider_${index} from '${importPath}';`],
   );
+  // A TypeScript-source module is imported only when Vite evaluates the
+  // register (`import.meta.env` exists only there). Under plain Node its
+  // namespace is empty, so its objects stay unregistered while their
+  // manifests still reach `.smrt/manifest.json` (#3092).
+  const viteOnlyImports = sortedImports.flatMap(([importPath], index) =>
+    viteOnlyImportPaths.has(importPath)
+      ? [
+          `const __smrt_provider_${index} = SMRT_VITE_RUNTIME ? await import(${JSON.stringify(importPath)}) : {};`,
+        ]
+      : [],
+  );
+  const viteOnlyModules = [
+    ...viteOnlyImportPaths,
+    ...Array.from(transitiveNamespaces.values())
+      .filter(({ viteOnly }) => viteOnly)
+      .map(({ importPath }) => importPath),
+  ].sort((left, right) => left.localeCompare(right));
+  const uniqueViteOnlyModules = [...new Set(viteOnlyModules)];
+  if (uniqueViteOnlyModules.length > 0) {
+    console.warn(
+      `[smrt:consumer] ${uniqueViteOnlyModules.join(', ')} resolve${uniqueViteOnlyModules.length === 1 ? 's' : ''} to TypeScript source; .smrt/register.js imports ${uniqueViteOnlyModules.length === 1 ? 'it' : 'them'} only under Vite. Plain Node (smrt db:migrate, CLIs) keeps their manifests but does not register their constructors; the compiled worker artifact (.smrt/runtime/register.js) still imports them and cannot start under plain Node. Publish a compiled JavaScript export to register them outside Vite (#3092).`,
+    );
+  }
+  const viteRuntimePrelude =
+    uniqueViteOnlyModules.length > 0
+      ? `const SMRT_VITE_RUNTIME = Boolean(import.meta.env);
+if (!SMRT_VITE_RUNTIME) {
+  console.warn(${JSON.stringify(`[smrt:register] Skipped TypeScript-source modules under plain Node: ${uniqueViteOnlyModules.join(', ')}. Their manifests remain available; their constructors are registered only under Vite (#3092).`)});
+}
+`
+      : '';
   const importDeclarations = sortedImports.flatMap(([, specifiers], index) =>
     Array.from(specifiers.entries())
       .sort(([left], [right]) => left.localeCompare(right))
@@ -2152,20 +2255,27 @@ async function generateRegistrationFile(
     transitiveNamespaces.values(),
   )
     .sort((left, right) => left.binding.localeCompare(right.binding))
-    .map(
-      ({ binding, providerPackageName, importPath }) =>
-        `const ${binding} = await importSmrtDependency(${JSON.stringify(importPath)}, ${JSON.stringify(providerPackageName)});`,
-    );
+    .map(({ binding, providerPackageName, importPath, viteOnly }) => {
+      const load = `await importSmrtDependency(${JSON.stringify(importPath)}, ${JSON.stringify(providerPackageName)})`;
+      return viteOnly
+        ? `const ${binding} = SMRT_VITE_RUNTIME ? ${load} : {};`
+        : `const ${binding} = ${load};`;
+    });
+  const viteOnlyNamespaceBindings = new Set(
+    Array.from(transitiveNamespaces.values())
+      .filter(({ viteOnly }) => viteOnly)
+      .map(({ binding }) => binding),
+  );
   const transitiveDeclarations = Array.from(transitiveBindings.entries())
     .sort(([left], [right]) => left.localeCompare(right))
     .map(
       ([, { binding, namespaceBinding, exportName }]) =>
         `const ${binding} = getSmrtExport(${namespaceBinding}, ${JSON.stringify(exportName)});
-if (!${binding}) throw new Error(${JSON.stringify(`[smrt:consumer] Provider-owned module did not export ${exportName}`)});`,
+if (${viteOnlyNamespaceBindings.has(namespaceBinding) ? 'SMRT_VITE_RUNTIME && ' : ''}!${binding}) throw new Error(${JSON.stringify(`[smrt:consumer] Provider-owned module did not export ${exportName}`)});`,
     );
   const transitiveCollectionDeclarations = transitiveCollectionChecks.map(
-    ({ collectionBinding, itemBinding }) =>
-      `if (${collectionBinding}._itemClass !== ${itemBinding}) throw new Error('[smrt:consumer] Provider-owned collection does not match its item constructor');`,
+    ({ collectionBinding, itemBinding, viteOnly }) =>
+      `if (${viteOnly ? 'SMRT_VITE_RUNTIME && ' : ''}${collectionBinding}._itemClass !== ${itemBinding}) throw new Error('[smrt:consumer] Provider-owned collection does not match its item constructor');`,
   );
   const registrationManifestLiteral = JSON.stringify(
     JSON.stringify(registrationManifests),
@@ -2216,6 +2326,7 @@ const importSmrtDependency = async (specifier, providerPackageName) => {
 `
     : ''
 }
+${viteRuntimePrelude}${viteOnlyImports.join('\n')}
 ${transitiveNamespaceDeclarations.join('\n')}
 ${importDeclarations.join('\n')}
 ${transitiveDeclarations.join('\n')}

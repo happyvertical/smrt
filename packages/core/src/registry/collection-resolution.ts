@@ -113,6 +113,13 @@ export function isCollectionRegistration(
   registered: RegisteredClass,
   lookup: CollectionRegistrationLookup,
 ): boolean {
+  // The scanner resolved the chain at build time with every source in view;
+  // its classification holds even when this runtime cannot resolve the
+  // parent registration or holds a different core copy's SmrtCollection
+  // (#3956).
+  if (registered.collectionOf) {
+    return true;
+  }
   if (isSmrtCollectionExtendsName(registered.extends)) {
     return true;
   }

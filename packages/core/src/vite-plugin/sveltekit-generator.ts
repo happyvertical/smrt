@@ -14,9 +14,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { DomainKnowledgeConfig } from '@happyvertical/smrt-types';
-import { resolve as resolveImport } from 'import-meta-resolve';
 import { generateConditionalGetRouteHelper } from '../generators/conditional-get.js';
 import {
   type ApiMethodExposure,
@@ -50,6 +48,7 @@ import type {
   SmartObjectManifest,
 } from '../scanner/types';
 import { generateChangesRoute } from './changes-route.js';
+import { consumerResolvesImport } from './consumer-import.js';
 import {
   generateDevPlaneRoute,
   willGenerateDevPlaneRoute,
@@ -2449,18 +2448,14 @@ function formatRegistrationImport(importedObject: {
 /**
  * Whether `@happyvertical/smrt-app-runtime/sveltekit` resolves from the
  * consumer at `projectRoot` under ESM import conditions (same signal as
- * `consumerHasSmrtUsers`), with an existing file target.
+ * `consumerHasSmrtUsers`; see `consumer-import.ts`), with an existing file
+ * target.
  */
 function consumerHasSmrtAppRuntime(projectRoot: string): boolean {
-  try {
-    const target = resolveImport(
-      '@happyvertical/smrt-app-runtime/sveltekit',
-      pathToFileURL(join(projectRoot, 'package.json')).href,
-    );
-    return statSync(fileURLToPath(target)).isFile();
-  } catch {
-    return false;
-  }
+  return consumerResolvesImport(
+    projectRoot,
+    '@happyvertical/smrt-app-runtime/sveltekit',
+  );
 }
 
 /** Default config module for apps that install the application runtime. */

@@ -9,9 +9,15 @@ import {
   readFileSync,
   writeFileSync,
 } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { assertNoPackedTests } from './package-test-artifacts.mjs';
 import { findUnsupportedDependencyProtocols } from './publish-artifacts-lib.mjs';
+import { runReleaseManifestGuards } from './release-manifest-guards.mjs';
+
+// Sibling verifiers resolve from this script, not the working directory, so a
+// fixture workspace can exercise the real release lifecycle (#2853).
+const scriptsDir = dirname(fileURLToPath(import.meta.url));
 
 function fail(message) {
   console.error(`❌ ${message}`);
@@ -266,7 +272,7 @@ for (const pkg of shardPackages) {
   const verifyResult = spawnSync(
     process.execPath,
     [
-      join(repoRoot, 'scripts', 'verify-package-types-exports.js'),
+      join(scriptsDir, 'verify-package-types-exports.js'),
       pkg.dir,
       '--tarball',
       tarballPath,
@@ -295,7 +301,7 @@ for (const pkg of shardPackages) {
     const registerImportResult = spawnSync(
       process.execPath,
       [
-        join(repoRoot, 'scripts', 'verify-generated-register-import.mjs'),
+        join(scriptsDir, 'verify-generated-register-import.mjs'),
         '--package-dir',
         pkg.dir,
         '--tarball',
@@ -323,7 +329,7 @@ for (const pkg of shardPackages) {
     const oidcConsumerResult = spawnSync(
       process.execPath,
       [
-        join(repoRoot, 'scripts', 'verify-users-oidc-owner-authorization.mjs'),
+        join(scriptsDir, 'verify-users-oidc-owner-authorization.mjs'),
         '--package-dir',
         pkg.dir,
         '--tarball',
@@ -350,7 +356,7 @@ for (const pkg of shardPackages) {
   if (pkg.name === '@happyvertical/smrt-planner') {
     const plannerResult = spawnSync(
       process.execPath,
-      [join(repoRoot, 'scripts', 'verify-packed-planner.mjs'), tarballPath],
+      [join(scriptsDir, 'verify-packed-planner.mjs'), tarballPath],
       {
         cwd: repoRoot,
         stdio: 'inherit',
@@ -367,6 +373,20 @@ for (const pkg of shardPackages) {
     if (plannerResult.status !== 0) {
       fail(`Packed planner verification failed for ${pkg.name}`);
     }
+  }
+
+  // Central manifest guards (#2853): every packed package, whether or not it
+  // defines `prepack`, must ship a manifest that lists every source @smrt()
+  // object and advertises only objects its packed exports actually provide.
+  const manifestGuards = runReleaseManifestGuards({
+    packageDir: pkg.dir,
+    tarballPath,
+  });
+  for (const log of manifestGuards.logs) console.log(log);
+  if (!manifestGuards.ok) {
+    fail(
+      `Release manifest guards failed for ${pkg.name}: ${manifestGuards.failures.join(', ')}`,
+    );
   }
 
   const packageJson = JSON.parse(

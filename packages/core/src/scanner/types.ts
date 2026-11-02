@@ -560,6 +560,14 @@ export interface SmartObjectDefinition {
    * `registerOverride`) closes the undecorated collection too (#3468).
    */
   inheritedExposure?: Array<'api' | 'mcp' | 'cli'>;
+  /**
+   * The model a collection class manages, as the scanner resolved it
+   * (qualified when the model has a package). Present only on collection
+   * entries; it classifies the entry as a collection, which never owns its
+   * model's table, without re-deriving that from constructor identity or a
+   * parent registration at runtime (#3956).
+   */
+  collectionOf?: string;
   tools?: Array<{
     type: 'function';
     function: {

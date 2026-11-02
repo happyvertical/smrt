@@ -2993,6 +2993,14 @@ export class ObjectRegistry {
         registered.inheritedExposure = manifestEntry.inheritedExposure;
         didHydrate = true;
       }
+      // #3956: the manifest classifies collection classes explicitly.
+      if (
+        manifestEntry.collectionOf &&
+        registered.collectionOf !== manifestEntry.collectionOf
+      ) {
+        registered.collectionOf = manifestEntry.collectionOf;
+        didHydrate = true;
+      }
 
       // Store extends info for getAllFields() to use (if present)
       const manifestParent = manifestParentUpdate(registered, manifestEntry);
@@ -3085,8 +3093,10 @@ export class ObjectRegistry {
   /**
    * Get all registered schemas as SchemaDefinition objects
    */
-  static getAllSchemasAsDefinitions(): Record<string, SchemaDefinition> {
-    return _getAllSchemasAsDefinitions();
+  static getAllSchemasAsDefinitions(
+    options?: Parameters<typeof _getAllSchemasAsDefinitions>[0],
+  ): Record<string, SchemaDefinition> {
+    return _getAllSchemasAsDefinitions(options);
   }
   /**
    * Get compiled validation functions for a registered class

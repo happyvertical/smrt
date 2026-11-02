@@ -11,24 +11,23 @@
  */
 
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
 import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { consumerResolvesImport } from './consumer-import.js';
 import { AUTO_GENERATED_ROUTE_HEADER } from './route-header.js';
 import { generateCollectionAccessImports } from './sveltekit-config-import.js';
 import type { SvelteKitOptions } from './sveltekit-generator.js';
 
-/** Whether `@happyvertical/smrt-dev-mcp/dev-plane` resolves from the consumer. */
+/**
+ * Whether `@happyvertical/smrt-dev-mcp/dev-plane` resolves from the consumer
+ * under ESM import conditions to an existing file. The published subpath is
+ * `types`/`import`-only, so a CommonJS `createRequire.resolve` probe would
+ * always skip an installed dev-plane (#3913).
+ */
 export function consumerHasSmrtDevMcp(projectRoot: string): boolean {
-  try {
-    const consumerRequire = createRequire(
-      pathToFileURL(join(projectRoot, 'package.json')).href,
-    );
-    consumerRequire.resolve('@happyvertical/smrt-dev-mcp/dev-plane');
-    return true;
-  } catch {
-    return false;
-  }
+  return consumerResolvesImport(
+    projectRoot,
+    '@happyvertical/smrt-dev-mcp/dev-plane',
+  );
 }
 
 /** Whether this invocation will own the `_dev/[...tool]` output file. */
