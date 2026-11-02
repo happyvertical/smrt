@@ -468,6 +468,35 @@ Like `failureCapture`, the hook is not public read configuration and never enter
 frozen configuration or digests. Hosts keep it synchronous-cheap: it runs inside
 the generation lease.
 
+### Retry and concurrency (opt-in, #4504)
+
+```ts
+proposals: {
+  // ...
+  retry: {
+    attempts: 3,                                  // total calls, 1..10; default 1
+    backoffMs: (attempt) => 500 * 2 ** (attempt - 2), // or a number, 0..60000; default 0
+    retryable: (error) => (error as { status?: number }).status === 529,
+  },
+  concurrency: 4,                                 // 1..1000; default unlimited
+},
+```
+
+`retry` retries a rejected `generator.generate` call; absent (or
+`attempts: 1`) keeps one call as before. `retryable(error, attempt)` sees the
+generator's rejection (default: retry every rejection; a throwing predicate
+means no). Each call gets its own `limits.timeoutMs` deadline; a timeout is
+final, as are validation failures of a returned reply. A retry is skipped when
+the analysis lease could not cover the backoff plus another full deadline, and
+a malformed `backoffMs` answer ends the retries. Only the final rejection is
+recorded (`provider_error`, category `unavailable`, value-free reason).
+`concurrency` bounds `generate` calls in flight across every service built
+from the same configuration object (FIFO); a queued call's deadline starts
+when it gets a slot. Both are validated at `IngestionService` construction and,
+like `reviewSuggestion`, never enter frozen configuration, digests or
+`proposalReadConfiguration`. A reviewer can still re-run a finally failed item
+with "Try again" (REVIEW.md, `retryInterpretation`).
+
 ### Failed-attempt capture (opt-in, #4285)
 
 The value-free reason cannot show what the model actually sent. A host that

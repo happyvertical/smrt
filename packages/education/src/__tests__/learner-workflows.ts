@@ -39,6 +39,7 @@ export const learnerClasses = [
   'CourseSection',
   'Lesson',
   'LessonAsset',
+  'GeneratedPrintable',
   'Asset',
   'Tenant',
   'User',

@@ -24,6 +24,7 @@ import {
   type CourseGenerationLimits,
   CourseGenerationNotFoundError,
   CourseGenerationOutputError,
+  CourseGenerationRefusal,
   type CourseGenerationStatus,
   type CourseGenerationUsageView,
   type CourseGenerationView,
@@ -34,6 +35,8 @@ import {
   CourseProposalFieldError,
   CourseProposalNotFoundError,
   type CourseProposalView,
+  MAX_REFUSAL_CATEGORY_LENGTH,
+  MAX_REFUSAL_EXPLANATION_LENGTH,
 } from './course-generation-contracts.js';
 import {
   CourseGenerationEventCollection,
@@ -134,6 +137,26 @@ const iso = (date: unknown) => new Date(date as string | Date).toISOString();
 const orNull = (value: unknown) => (value ? String(value) : null);
 const numOrNull = (value: unknown) =>
   value === null || value === undefined ? null : Number(value);
+
+/** Bounded, plain-text refusal detail; untrusted provider text is never trusted. */
+function boundedRefusal(source: unknown) {
+  const read = (value: unknown, max: number) => {
+    if (typeof value !== 'string' || !value.trim()) return null;
+    // Drop control characters (keeping tab and newline) without a control-char regex.
+    const text = Array.from(value)
+      .filter((ch) => {
+        const code = ch.codePointAt(0) as number;
+        return code === 9 || code === 10 || (code >= 32 && code !== 127);
+      })
+      .join('');
+    return text.slice(0, max);
+  };
+  const detail = (source ?? {}) as Record<string, unknown>;
+  return {
+    category: read(detail.category, MAX_REFUSAL_CATEGORY_LENGTH),
+    explanation: read(detail.explanation, MAX_REFUSAL_EXPLANATION_LENGTH) ?? '',
+  };
+}
 
 function normalizeUsage(usage: unknown) {
   const raw: Record<string, number> = {};
@@ -320,6 +343,19 @@ export class CourseGenerationReviewService extends QuestionAuthoringService {
       model: String(running.model ?? ''),
       usage: this.usageView(latest),
       errorCode: orNull(latest.error_code),
+      refusal:
+        latest.status === 'refused'
+          ? (() => {
+              const stored = JSON.parse(String(latest.detail || '{}')) as {
+                category?: string | null;
+                explanation?: string;
+              };
+              return {
+                category: stored.category ?? null,
+                explanation: stored.explanation ?? '',
+              };
+            })()
+          : null,
       proposalId: orNull(latest.proposal_id),
       resultRevisionId: orNull(latest.result_revision_id),
       requestedByUserId: String(job.requested_by_user_id),
@@ -520,32 +556,49 @@ export class CourseGenerationReviewService extends QuestionAuthoringService {
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.limits.timeoutMs);
-    let result: Awaited<
-      ReturnType<CourseMaterialGenerator['generate']>
+    let result: Extract<
+      Awaited<ReturnType<CourseMaterialGenerator['generate']>>,
+      { output: unknown }
     > | null = null;
     let failure: { code: string } | null = null;
+    let refusal: ReturnType<typeof boundedRefusal> | null = null;
+    let refusalUsage: Record<string, number> | undefined;
+    let refusalModel: string | undefined;
     try {
-      result = await generator.generate(generatorRequest, {
+      const returned = await generator.generate(generatorRequest, {
         signal: controller.signal,
         maxOutputBytes: this.limits.maxOutputBytes,
       });
-      if (
-        JSON.stringify(result?.output ?? null).length >
-        this.limits.maxOutputBytes
-      )
-        failure = { code: 'output-too-large' };
-    } catch {
-      failure = {
-        code: controller.signal.aborted ? 'provider-timeout' : 'provider-error',
-      };
+      if (returned && typeof returned === 'object' && 'refusal' in returned) {
+        refusal = boundedRefusal(returned.refusal);
+        refusalUsage = returned.usage;
+        refusalModel = returned.responseModel;
+      } else {
+        result = returned;
+        if (
+          JSON.stringify(result?.output ?? null).length >
+          this.limits.maxOutputBytes
+        )
+          failure = { code: 'output-too-large' };
+      }
+    } catch (error) {
+      if (error instanceof CourseGenerationRefusal) {
+        refusal = boundedRefusal(error);
+        refusalUsage = error.usage;
+        refusalModel = error.responseModel;
+      } else
+        failure = {
+          code: controller.signal.aborted
+            ? 'provider-timeout'
+            : 'provider-error',
+        };
     } finally {
       clearTimeout(timer);
     }
-    const usage = normalizeUsage(result?.usage);
+    const usage = normalizeUsage(result?.usage ?? refusalUsage);
+    const modelName = result?.responseModel ?? refusalModel;
     const responseModel =
-      typeof result?.responseModel === 'string'
-        ? result.responseModel.slice(0, 200)
-        : '';
+      typeof modelName === 'string' ? modelName.slice(0, 200) : '';
     const outcome = {
       ...identity,
       responseModel,
@@ -583,6 +636,16 @@ export class CourseGenerationReviewService extends QuestionAuthoringService {
           return this.generationView(tx, job);
         };
         if (error) return fail(error.code);
+        if (refusal) {
+          // A distinct, terminal outcome: usage kept, never retried, no draft.
+          await this.appendEvent(tx, request, job, sequence, {
+            status: 'refused',
+            ...outcome,
+            errorCode: 'refused',
+            detail: JSON.stringify(refusal),
+          });
+          return this.generationView(tx, job);
+        }
         if (failure) return fail(failure.code);
         await this.lockHead(tx, request.tenantId, courseId);
         const head = await this.headView(tx, request.tenantId, courseId);

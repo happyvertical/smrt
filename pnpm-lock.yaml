@@ -1281,9 +1281,6 @@ importers:
       oxc-transform:
         specifier: 0.150.0
         version: 0.150.0
-      pluralize:
-        specifier: ^8.0.0
-        version: 8.0.0
       tsx:
         specifier: ^4.23.13
         version: 4.23.13
@@ -1315,6 +1312,9 @@ importers:
       ajv:
         specifier: 8.20.0
         version: 8.20.0
+      pluralize:
+        specifier: ^8.0.0
+        version: 8.0.0
       reflect-metadata:
         specifier: 0.2.2
         version: 0.2.2

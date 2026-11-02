@@ -5,19 +5,66 @@ export type CourseGenerationStatus =
   | 'running'
   | 'succeeded'
   | 'failed'
-  | 'cancelled';
+  | 'cancelled'
+  | 'refused';
 export const COURSE_GENERATION_STATUSES: readonly CourseGenerationStatus[] = [
   'queued',
   'running',
   'succeeded',
   'failed',
   'cancelled',
+  'refused',
 ];
 export const COURSE_GENERATION_TERMINAL: readonly CourseGenerationStatus[] = [
   'succeeded',
   'failed',
   'cancelled',
+  'refused',
 ];
+
+/** Longest recorded refusal category and explanation, in characters. */
+export const MAX_REFUSAL_CATEGORY_LENGTH = 100;
+export const MAX_REFUSAL_EXPLANATION_LENGTH = 2000;
+
+/** What a provider said when it declined to produce the requested material. */
+export interface CourseGenerationRefusalDetail {
+  /** Provider-neutral label such as `safety` or `policy`; untrusted, bounded. */
+  category?: string;
+  /** The provider's own explanation; untrusted, bounded, never rendered as HTML. */
+  explanation?: string;
+}
+
+/**
+ * A model refusal, as a typed outcome rather than a provider error. A generator
+ * may throw it, or return `{ refusal }`. The service records `refused` with the
+ * usage the refusal carries, never retries it and never proposes content.
+ */
+export class CourseGenerationRefusal extends Error {
+  readonly category?: string;
+  readonly explanation?: string;
+  readonly usage?: Record<string, number>;
+  readonly responseModel?: string;
+  constructor(
+    detail: CourseGenerationRefusalDetail & {
+      usage?: Record<string, number>;
+      responseModel?: string;
+    } = {},
+  ) {
+    super('The provider refused to generate the requested material.');
+    this.name = 'CourseGenerationRefusal';
+    this.category = detail.category;
+    this.explanation = detail.explanation;
+    this.usage = detail.usage;
+    this.responseModel = detail.responseModel;
+  }
+}
+
+/** The returned form of a refusal; `refusal` is never part of proposal `output`. */
+export interface CourseGeneratorRefusalResult {
+  refusal: CourseGenerationRefusalDetail;
+  usage?: Record<string, number>;
+  responseModel?: string;
+}
 
 /** Provider identity, shaped like the ingestion `ProviderIdentity`. */
 export interface CourseGeneratorIdentity {
@@ -47,12 +94,15 @@ export interface CourseMaterialGenerator {
   generate(
     request: CourseGeneratorRequest,
     options: { signal: AbortSignal; maxOutputBytes: number },
-  ): Promise<{
-    output: unknown;
-    completion: 'complete' | 'unknown';
-    usage?: Record<string, number>;
-    responseModel?: string;
-  }>;
+  ): Promise<
+    | {
+        output: unknown;
+        completion: 'complete' | 'unknown';
+        usage?: Record<string, number>;
+        responseModel?: string;
+      }
+    | CourseGeneratorRefusalResult
+  >;
 }
 
 export interface CourseGenerationLimits {
@@ -143,6 +193,8 @@ export interface CourseGenerationView {
   model: string;
   usage: CourseGenerationUsageView;
   errorCode: string | null;
+  /** Set only when `status` is `refused`. */
+  refusal: { category: string | null; explanation: string } | null;
   proposalId: string | null;
   resultRevisionId: string | null;
   requestedByUserId: string;

@@ -43,6 +43,12 @@ export interface ReviewAction {
   origin?: string;
   dependencies?: Record<string, ResultReference>;
   result?: ActionResult;
+  /**
+   * The reviewer's own current correctness judgment of this action at its
+   * displayed revision (#4503), when the host has feedback enabled and one
+   * was recorded. A new judgment supersedes it (`supersedesId`).
+   */
+  feedback?: ReviewFeedback;
   /** Authorized identity/CAS only; hosts must collect fresh explicit args. */
   stalePlan?: {
     id: string;
@@ -61,6 +67,19 @@ export interface ReviewAction {
     handlerVersion: string;
     attemptId: string;
   };
+}
+/** A recorded, not superseded, explicit judgment (presentation only). */
+export interface ReviewFeedback {
+  /** Feedback record id; send it as `supersedesId` to replace the judgment. */
+  id: string;
+  judgment: 'correct' | 'incorrect';
+  comment?: string;
+  recordedAt: string;
+}
+/** One assignable reviewer offered by `IntakeReviewHost.assignees`. */
+export interface AssigneeOption {
+  id: string;
+  label: string;
 }
 export interface ReviewPage {
   /** A saved target changed: omit stale generation output, retain authorized reviews. */
@@ -162,6 +181,13 @@ export interface ReviewerInstructionView {
   /** Record/retry binding when no current generation is displayable: the latest completed generation attempt and the item's current revision. */
   binding?: { attemptId: string; expectedRevision: number };
 }
+/** Re-run a failed interpretation with no new instruction (#4504); bound like an instruction. */
+export interface InterpretationRetryInput {
+  itemId: string;
+  attemptId: string;
+  expectedRevision: number;
+  requestId: string;
+}
 export interface LogicalSplitInput {
   itemId: string;
   attemptId: string;
@@ -205,7 +231,19 @@ export interface IntakeReviewHost {
     limit?: number;
   }): Promise<{ items: InboxEntry[]; nextCursor?: string }>;
   load(itemId: string, cursor?: string): Promise<ItemReviewView>;
+  /**
+   * Throws on every failure. A refusal the reviewer should read (a file type
+   * or size the host does not accept) is `IntakeUploadRefusedError` from
+   * `/svelte`, or any error with a string `userMessage`: the inbox shows that
+   * reason and keeps its rows. Any other error fails the list closed.
+   */
   upload(files: File[], requestId: string): Promise<{ itemId: string }>;
+  /**
+   * File types the upload picker offers (an `<input accept>` value such as
+   * `application/pdf,image/*`); a component `accept` prop wins. A hint only:
+   * `upload` still enforces the host's allowlist. Absent offers every type.
+   */
+  uploadAccept?: string;
   preview(input: {
     itemId: string;
     attemptId: string;
@@ -239,6 +277,13 @@ export interface IntakeReviewHost {
     assigneeId: string | null;
     requestId: string;
   }): Promise<void>;
+  /**
+   * Optional reviewer search for assignment (#4503). When present the inbox
+   * draws a picker (labels, searched as the reviewer types) instead of the
+   * free-text assignee id; the chosen `id` is what `assign` and the list
+   * filter receive. Presentation only: `assign` still authorizes.
+   */
+  assignees?: (query: string) => Promise<AssigneeOption[]>;
   split(input: LogicalSplitInput): Promise<void>;
   /**
    * Start a reviewer-chosen handler; the server previews and requires normal
@@ -260,6 +305,15 @@ export interface IntakeReviewHost {
   instruct?: (
     input: ReviewerInstructionInput,
   ) => Promise<void | { stale: true } | { invalid: true }>;
+  /**
+   * "Try again" for an item whose interpretation failed (a provider error,
+   * timeout, or a reinterpretation that never started): queue the same fresh
+   * extraction plus interpretation as `instruct`, recording no instruction.
+   * Bound like `instruct` (`ReviewerInstructionView.binding`, else the
+   * displayed generation). Resolves `{ stale: true }` when the anchor is
+   * superseded, work is in flight or nothing failed: a refresh signal.
+   */
+  retry?: (input: InterpretationRetryInput) => Promise<void | { stale: true }>;
   /** Explicit correctness judgment only; never called implicitly after review or apply. */
   feedback?: (
     input: import('./feedback-dto.js').RecordFeedbackInput,
