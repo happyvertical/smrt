@@ -138,7 +138,11 @@ and repository rules.
   overwrites (#4145, `issue-4145-*.test.ts`). The schema
   planner rejects a table claimed by two unrelated classes
   (`CONFIG_TABLE_NAME_COLLISION`): only one STI family shares a table (#3098);
-  collections (including `SmrtReportCollection`) never claim one. Consumer
+  collections (including `SmrtReportCollection`) never claim one. The scanner
+  stamps each collection entry with `collectionOf` (its model) and the
+  registry's collection classifier trusts it first, so a collection stays a
+  non-owner even when runtime cannot walk its parent or holds another core
+  copy's `SmrtCollection` (#3956, `issue-3956-*.test.ts`). Consumer
   gates: `registry/__tests__/issue-3110-*.test.ts`, `issue-3109-*.test.ts`,
   `packages/bundle-gate/src/__tests__/consumer-same-name.spec.ts`.
 - A collection class never publishes more than its model: unset surfaces
@@ -157,7 +161,8 @@ and repository rules.
   `expose: true` bypasses the heuristic ALONE, and an explicit `api.include` or
   `api.routes` entry keeps its pre-#2686 route. Fail closed on scanner
   uncertainty: read `parameters[].typeUnresolved`, never the `'any'` it
-  substitutes. Accepting `Date` as wire-able and hydrating it
+  substitutes. Custom-action schemas and decoders read
+  `declaredParameterType()`, not `parameter.type` (#4327). Accepting `Date` as wire-able and hydrating it
   (`toCustomActionDate`) are one decision — changing either breaks the other.
   The runtime `APIGenerator` transport stays declaration-gated: `rest.ts`
   dispatch and `preflight-route.ts` prediction both read

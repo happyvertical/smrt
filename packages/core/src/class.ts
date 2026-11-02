@@ -53,7 +53,10 @@ import {
 import { createFilesystemAdapter } from './filesystem-loader.js';
 import { getDatabase, importAI } from './host.js';
 import { noteNativeDuckDbHandle } from './native-duckdb.js';
-import { applyPostgresRuntimeTimeouts } from './postgres-timeouts.js';
+import {
+  applyPostgresRuntimeTimeouts,
+  resolveRuntimePoolDbid,
+} from './postgres-timeouts.js';
 import { detectEngine } from './schema/ddl/index.js';
 import { SignalBus } from './signals/bus.js';
 import { ensureSystemTables as ensureFrameworkSystemTables } from './system/bootstrap.js';
@@ -607,15 +610,15 @@ export class SmrtClass {
           // Preserve connection sharing for file-backed databases while leaving
           // true in-memory databases isolated per instance.
           const isMemoryDb = this.options.db === ':memory:';
-          // PostgreSQL URLs pick up the runtime timeout bounds, and the dbid is
-          // derived from the bounded URL so the same rewrite at every call site
-          // still resolves to one shared pool (#2377).
+          // PostgreSQL URLs pick up the runtime timeout bounds (#2377); the
+          // pool identity comes from the one shared rule so a PostgreSQL pool
+          // is keyed on its effective pool options, not the URL alone (#3046).
           const bounded = applyPostgresRuntimeTimeouts({
             url: this.options.db,
           });
           this._db = await getDatabase({
             ...bounded,
-            ...(isMemoryDb ? {} : { dbid: `smrt:${bounded.url}` }),
+            ...(isMemoryDb ? {} : { dbid: resolveRuntimePoolDbid(bounded) }),
           } as unknown as Parameters<typeof getDatabase>[0]);
         } else if ('query' in this.options.db) {
           // Format 2: Already a DatabaseInterface instance - return as-is
@@ -651,7 +654,9 @@ export class SmrtClass {
           // not accept structurally, so route through its parameter type.
           this._db = await getDatabase({
             ...bounded,
-            ...(isMemoryDb ? {} : { dbid: `smrt:${bounded.url ?? dbUrl}` }),
+            ...(isMemoryDb
+              ? {}
+              : { dbid: resolveRuntimePoolDbid(bounded, dbUrl) }),
           } as unknown as Parameters<typeof getDatabase>[0]);
         }
 

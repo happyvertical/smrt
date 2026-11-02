@@ -112,6 +112,62 @@ export class Widget extends SmrtObject {
     expect(result.reason).toMatch(/does not publish a \.\/manifest/);
   });
 
+  // Issue #2853: the release pipeline runs the guard for every publishable
+  // package, so omitting the ./manifest export must not be a way out of it.
+  describe('release mode (requireManifestExport)', () => {
+    it('reports missing-manifest when source declares objects but no ./manifest export exists', async () => {
+      writePackage({ withManifestExport: false });
+
+      const result = await verifyManifestCompleteness({
+        packageDir: pkgDir,
+        requireManifestExport: true,
+      });
+
+      expect(result.status).toBe('missing-manifest');
+      expect(result.missing).toEqual(['@happyvertical/smrt-fixture:Widget']);
+      expect(result.reason).toMatch(/publishes no \.\/manifest export/);
+    });
+
+    it('still skips a package with neither a ./manifest export nor @smrt objects', async () => {
+      writeFileSync(
+        join(pkgDir, 'package.json'),
+        JSON.stringify({
+          name: '@happyvertical/smrt-fixture',
+          version: '0.0.0',
+          exports: { '.': { import: './dist/index.js' } },
+        }),
+      );
+      mkdirSync(join(pkgDir, 'src'), { recursive: true });
+      writeFileSync(join(pkgDir, 'src', 'plain.ts'), 'export const x = 1;\n');
+
+      const result = await verifyManifestCompleteness({
+        packageDir: pkgDir,
+        requireManifestExport: true,
+      });
+
+      expect(result.status).toBe('skipped');
+      expect(result.reason).toMatch(/declares no @smrt\(\) objects/);
+    });
+
+    it('keeps the framework-infrastructure exemption', async () => {
+      const skipDir = join(pkgDir, 'types');
+      mkdirSync(join(skipDir, 'src'), { recursive: true });
+      writeFileSync(
+        join(skipDir, 'package.json'),
+        JSON.stringify({ name: '@happyvertical/smrt-types' }),
+      );
+      writeFileSync(join(skipDir, 'src', 'widget.ts'), WIDGET_SOURCE);
+
+      const result = await verifyManifestCompleteness({
+        packageDir: skipDir,
+        requireManifestExport: true,
+      });
+
+      expect(result.status).toBe('skipped');
+      expect(result.reason).toMatch(/framework infrastructure/);
+    });
+  });
+
   it('skips when there is no package.json', async () => {
     const result = await verifyManifestCompleteness({
       packageDir: join(pkgDir, 'does-not-exist'),

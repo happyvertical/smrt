@@ -19,7 +19,12 @@ import {
   classifyContractPurchase,
   isContractSnapshotReportEligible,
 } from '../contract-money.js';
-import { Order, PurchaseOrder, SupplierQuote } from '../models/Contract.js';
+import {
+  Estimate,
+  Order,
+  PurchaseOrder,
+  SupplierQuote,
+} from '../models/Contract.js';
 import { ContractStatus } from '../types/index.js';
 
 describe('Contract money persistence (#3933)', () => {
@@ -101,6 +106,60 @@ describe('Contract money persistence (#3933)', () => {
       return { gst: gstCode.id, gstPst: gstPstCode.id, exempt: exemptCode.id };
     });
   }
+
+  it.each([
+    'none',
+    'inclusive',
+    'exclusive',
+  ] as const)('resolves new Estimate input %s from tenant settings and preserves a later draft selection', async (requested) => {
+    const tenantId = `estimate-mode-${requested}`;
+    await withTenant({ tenantId }, async () => {
+      const settings = await TaxSettingsCollection.create({ db });
+      const current = await settings.getOrCreateForTenant(tenantId);
+      current.defaultLineAmountType = 'exclusive';
+      await current.save();
+      const customers = await CustomerCollection.create({ db });
+      const customer = await customers.create({});
+      const estimate = new Estimate({
+        db,
+        customerId: customer.id,
+        currency: 'CAD',
+        lineAmountType: requested,
+      });
+      await estimate.initialize();
+      await estimate.save();
+      const contracts = await ContractCollection.create({ db });
+      const created = await contracts.get(
+        { id: estimate.id },
+        { cache: false },
+      );
+      expect(created?.lineAmountType).toBe('exclusive');
+      if (!created) throw new Error('Expected the saved Estimate');
+      const codes = await TaxCodeCollection.create({ db });
+      await codes.create({
+        code: 'outside',
+        name: 'Out of scope',
+        kind: 'out-of-scope',
+        components: [],
+      });
+      created.lineAmountType = 'none';
+      await created.save();
+      const lines = await ContractLineItemCollection.create({ db });
+      await lines.create({
+        contractId: created.id,
+        description: 'Service',
+        quantity: 2,
+        unitPrice: 1000,
+      });
+      const updated = await contracts.get({ id: created.id }, { cache: false });
+      expect(updated).toMatchObject({
+        lineAmountType: 'none',
+        subtotal: 2000,
+        taxAmount: 0,
+        totalAmount: 2000,
+      });
+    });
+  });
 
   it('classifies both STI branches and keeps declined snapshots reportable', () => {
     class CustomPurchaseOrder extends PurchaseOrder {}

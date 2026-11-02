@@ -214,7 +214,7 @@ CREATE TABLE IF NOT EXISTS content_contributors (
   trust_level TEXT,
   metadata TEXT
 );
-CREATE UNIQUE INDEX IF NOT EXISTS content_contributors_email_idx ON content_contributors (email);
+CREATE UNIQUE INDEX IF NOT EXISTS content_contributors_tenant_id_email_idx ON content_contributors (tenant_id, email);
 `;
 
 const CONTENT_CONTRIBUTIONS_SCHEMA = `

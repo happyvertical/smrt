@@ -305,6 +305,16 @@ lock, writer lease, state root, artifact-path custody, portability) are
 importable without side effects from `@happyvertical/smrt-cli/app`. Contract
 details: [agents/app-commands.md](agents/app-commands.md).
 
+On macOS, `/tmp` commonly links to `/private/tmp`. Local setup rejects symbolic
+links in state/data path components and reports the rejected component. For an
+isolated trial home, first inspect and trust the intended directory, then select
+its canonical spelling explicitly, for example
+`HOME=/private/tmp/my-owned-trial-home pnpm app:setup`. Use that same home for
+later app commands and the running app. Select a canonical `SMRT_DATA_DIR` too
+if overriding data storage. The directories must still meet ownership,
+permissions, and source-tree separation checks; resolving a link is not proof
+that its target is trusted. The runtime never automatically trusts symlinks.
+
 ### Auto-Generated Object Commands
 
 For each registered s-m-r-t object, the CLI generates:

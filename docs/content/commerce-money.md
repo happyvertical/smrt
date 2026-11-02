@@ -64,6 +64,24 @@ total again.
 explicit no-tax mode and produces a zero-tax reporting row without inventing a
 code ID.
 
+## Contract and Estimate persistence
+
+On a Contract's first save (including Estimate and other STI subtypes),
+`tenantTaxSettings` supplies `defaultLineAmountType` and `taxRoundingScope`.
+Those settings replace caller-provided values, including `lineAmountType: 'none'`.
+Generated REST creation therefore may return `exclusive` even when the request
+specified `none`; the returned and subsequently read values describe the saved
+mode. A zero-tax total alone does not establish that the mode is `none`.
+
+`none` is a real out-of-scope calculation mode, not an inheritance sentinel.
+To select it for an individual document, save the new draft, then update the
+persisted draft with `lineAmountType: 'none'`; an active, direction-compatible
+`out-of-scope` tax code must exist when its lines are calculated. Draft updates
+retain the chosen mode rather than reapplying tenant defaults. Existing freeze
+rules still apply when the document leaves draft. Unknown or malformed input
+validation is a separate contract; this first-save resolution does not establish
+that arbitrary input is valid.
+
 ## Tax inputs and results
 
 A calculator tax code has an ID, one of four kinds, and components:

@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getTestDatabase } from '@happyvertical/smrt-core';
@@ -7,6 +7,7 @@ import {
   enableTenancy,
   withTenant,
 } from '@happyvertical/smrt-tenancy';
+import { getTestManifestPath } from '@happyvertical/smrt-vitest';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { DevelopmentRequestHistoryCollection } from '../collections/DevelopmentRequestHistories';
@@ -20,13 +21,7 @@ import { ManagedProjectClient } from '../managed-client';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const packageRoot = join(here, '..', '..');
-const manifestPath = (() => {
-  const candidates = [
-    join(packageRoot, '.smrt', 'manifest.json'),
-    join(packageRoot, 'dist', 'manifest.json'),
-  ];
-  return candidates.find((path) => existsSync(path)) ?? candidates[0];
-})();
+const manifestPath = getTestManifestPath(packageRoot);
 
 describe('managed project integrations', () => {
   let db: DatabaseInterface;

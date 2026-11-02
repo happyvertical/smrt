@@ -23,6 +23,7 @@ import {
   type MailboxAuthenticationDelivery,
   reserveMailboxAuthenticationRequest,
 } from '../services/MailboxAuthenticationService.js';
+import { MailboxEnrollmentService } from '../services/MailboxEnrollmentService.js';
 import { PasswordCredentialService } from '../services/PasswordCredentialService.js';
 import { SessionService } from '../services/SessionService.js';
 import {
@@ -189,6 +190,63 @@ describe('family invitation exact role and preserved identity', () => {
       fn,
     );
   }
+  it('keeps source-bound enrollment global-only while owned-person invitations preserve the family identity', async () => {
+    const beforeUser = await db.get('users', { id: userId });
+    const beforeProfile = await db.get('profiles', { id: profileId });
+    const binding = JSON.stringify([
+      'family-enrollment-boundary',
+      tenantId,
+      email,
+    ]);
+    let delivered: Mail | undefined;
+    await db.transaction(async (executor) => {
+      const enrollment = await MailboxEnrollmentService.create({
+        db: executor,
+        transaction: 'caller',
+        secret,
+        loginLimiter: limiter,
+      });
+      expect(
+        await enrollment.request({
+          email,
+          binding,
+          sourceKey: 'trusted-test-client',
+          deliver: async (mail) => {
+            delivered = mail;
+          },
+        }),
+      ).toEqual({ requested: true });
+    });
+    if (!delivered) throw new Error('No captured enrollment mail');
+    const proof = delivered;
+    expect(proof.email).toBe(email);
+    await expect(
+      db.transaction(async (executor) =>
+        (
+          await MailboxEnrollmentService.create({
+            db: executor,
+            transaction: 'caller',
+            secret,
+          })
+        ).authenticate({ token: proof.token, binding, expectedUserId: userId }),
+      ),
+    ).rejects.toThrow();
+    expect(
+      (
+        await db.query(
+          'SELECT nonce FROM users_magic_link_tokens WHERE used = ?',
+          false,
+        )
+      ).rows,
+    ).toHaveLength(1);
+    await expect(prepare()).resolves.toMatchObject({
+      userId,
+      profileId,
+      status: 'pending',
+    });
+    expect(await db.get('users', { id: userId })).toEqual(beforeUser);
+    expect(await db.get('profiles', { id: profileId })).toEqual(beforeProfile);
+  });
   it('preserves existing family Person through tenant-role prepare and password-session acceptance', async () => {
     const sessions = await SessionService.create({ db });
     const initialSession = await sessions.createSession(userId, sourceId, {

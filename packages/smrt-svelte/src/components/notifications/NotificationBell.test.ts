@@ -115,3 +115,104 @@ it('blocks executable links and presents mutation errors', async () => {
   await userEvent.click(screen.getByRole('button', { name: 'Mark read' }));
   expect(await screen.findByRole('alert')).toHaveTextContent('Could not mark');
 });
+
+describe('NotificationBell iconOnly and placement', () => {
+  it('shows an icon trigger whose accessible name keeps label and count', async () => {
+    const { container } = render(NotificationBell, {
+      props: { provider: provider(), iconOnly: true, label: 'Alerts' },
+    });
+    const trigger = await screen.findByRole('button', {
+      name: 'Alerts, 1 unread',
+    });
+    expect(trigger.textContent?.replace(/\s+/g, '')).toBe('1');
+    expect(trigger.textContent).not.toContain('Alerts');
+    expect(
+      trigger.querySelector(
+        'svg[aria-hidden="true"], [aria-hidden="true"] svg',
+      ),
+    ).not.toBeNull();
+    await expectNoA11yViolations(container);
+  });
+
+  it('sets the placement data attribute', () => {
+    const { container: below } = render(NotificationBell, {
+      props: { provider: provider() },
+    });
+    expect(
+      below
+        .querySelector('.smrt-notification-bell')
+        ?.getAttribute('data-placement'),
+    ).toBe('below');
+    const { container: beside } = render(NotificationBell, {
+      props: { provider: provider(), placement: 'beside' },
+    });
+    expect(
+      beside
+        .querySelector('.smrt-notification-bell')
+        ?.getAttribute('data-placement'),
+    ).toBe('beside');
+  });
+});
+
+describe('NotificationBell light dismiss (#4566)', () => {
+  function linked() {
+    const source = provider();
+    source.list.mockResolvedValue([
+      {
+        id: 'one',
+        title: 'Go there',
+        occurredAt: '2026-01-01',
+        href: '#there',
+      },
+    ]);
+    return source;
+  }
+
+  it('closes on a pointer-down outside the bell, not inside the panel', async () => {
+    render(NotificationBell, { provider: linked() });
+    const trigger = screen.getByRole('button', { name: /Notifications/ });
+    await userEvent.click(trigger);
+    await screen.findByText('Go there');
+    await userEvent.pointer({
+      keys: '[MouseLeft>]',
+      target: screen.getByRole('dialog'),
+    });
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    await userEvent.pointer({ keys: '[MouseLeft>]', target: document.body });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('closes on Escape after focus has left the panel and returns focus to the trigger', async () => {
+    render(NotificationBell, { provider: linked() });
+    const trigger = screen.getByRole('button', { name: /Notifications/ });
+    await userEvent.click(trigger);
+    await screen.findByText('Go there');
+    (document.activeElement as HTMLElement | null)?.blur();
+    expect(document.activeElement).toBe(document.body);
+    await userEvent.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+  });
+
+  it('closes when a notice link is followed without pulling focus back to the trigger', async () => {
+    const onopenchange = vi.fn();
+    render(NotificationBell, { provider: linked(), onopenchange });
+    const trigger = screen.getByRole('button', { name: /Notifications/ });
+    await userEvent.click(trigger);
+    expect(onopenchange).toHaveBeenLastCalledWith(true);
+    await userEvent.click(
+      await screen.findByRole('link', { name: 'Go there' }),
+    );
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(onopenchange).toHaveBeenLastCalledWith(false);
+    expect(trigger).not.toHaveFocus();
+  });
+
+  it('lets a host control the panel through the open prop', async () => {
+    const view = render(NotificationBell, { provider: linked(), open: true });
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    await view.rerender({ provider: linked(), open: false });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+});

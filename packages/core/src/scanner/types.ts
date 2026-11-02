@@ -236,6 +236,19 @@ export interface MethodParameterDefinition {
    * before #2686.
    */
   unionBranches?: ParameterTypeBranch[];
+  /**
+   * Target of a same-module type alias when `type` is a bare alias name,
+   * following alias chains (`type Options = Record<string, unknown>` gives
+   * `'Record<string, unknown>'`). Schema and argument-coercion consumers read
+   * it through `declaredParameterType()`; `type` keeps the authored name for
+   * generated code and docs (#4327).
+   */
+  resolvedType?: string;
+  /**
+   * `type` names a same-module alias whose chain is cyclic or too deep to
+   * follow; consumers must not guess a type for it (#4327).
+   */
+  aliasUnresolved?: boolean;
 }
 
 /** One branch of a top-level union parameter type (#2686). */
@@ -552,6 +565,14 @@ export interface SmartObjectDefinition {
   extends?: string; // Base class name (simple name, not qualified)
   extendsQualified?: string; // Base class qualified name
   extendsTypeArg?: string; // Generic type argument (e.g., "Meeting" from "SmrtCollection<Meeting>")
+  /**
+   * The model a collection class manages, as the scanner resolved it
+   * (qualified when the model has a package). Present only on collection
+   * entries; it classifies the entry as a collection, which never owns its
+   * model's table, without re-deriving that from constructor identity or a
+   * parent registration at runtime (#3956).
+   */
+  collectionOf?: string;
   tools?: Array<{
     type: 'function';
     function: {

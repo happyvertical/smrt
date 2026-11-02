@@ -126,6 +126,15 @@ const NODE_ONLY_GROUPS: ReadonlyArray<{
   },
   {
     reason:
+      'Test-run manifest snapshot contract (#4128): a process-environment map written by the Vitest runner and read by Node test workers; a browser has no test run to join',
+    names: [
+      'SMRT_TEST_MANIFEST_PATHS_ENV_KEY',
+      'registerActiveTestManifestPath',
+      'resolveActiveTestManifestPath',
+    ],
+  },
+  {
+    reason:
       'Knowledge graph and artifact publishing (scanner/knowledge, filesystem); belongs behind `@happyvertical/smrt-core/knowledge`',
     names: [
       'AGENT_SURFACE_HASH_PREFIX',
