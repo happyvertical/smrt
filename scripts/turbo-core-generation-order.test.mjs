@@ -53,7 +53,11 @@ test('core test generation runs after the production pair writer and never overw
       assert.equal(readFileSync('src/manifest/test-manifest.json', 'utf8'), 'test');
     `);
     execFileSync('pnpm', ['install'], { cwd: root, stdio: 'pipe', timeout: 30000 });
-    const run = (task) => execFileSync(join(repository, 'node_modules/.bin/turbo'), ['run', task], {
+    // Own the cache and never read the remote one: the fixture is byte-identical
+    // on every run, so in CI a remote hit would replay every task without
+    // executing build.mjs, and `.smrt/` is not a declared output to restore.
+    const cacheArguments = [`--cache-dir=${join(root, '.turbo/cache')}`, '--cache=local:rw'];
+    const run = (task) => execFileSync(join(repository, 'node_modules/.bin/turbo'), ['run', task, ...cacheArguments], {
       cwd: root, encoding: 'utf8', timeout: 30000,
     });
     run('typecheck');
