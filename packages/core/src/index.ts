@@ -261,15 +261,19 @@ export * from './knowledge';
 // Lazy / execute-time config resolvers (for agent_config and similar
 // snapshot-prone payloads — see issue #1161)
 export type {
+  ConfigResolutionContext,
   ConfigResolver,
+  ConfigResolverContext,
   LazyConfigSentinel,
   ResolveLazyConfigOptions,
 } from './lazy-config';
 export {
+  createConfigResolverContext,
   getClassConfigResolvers,
   getConfigResolver,
   isLazyConfigSentinel,
   listConfigResolvers,
+  preferPersisted,
   registerConfigResolver,
   resetConfigResolvers,
   resolveLazyConfig,

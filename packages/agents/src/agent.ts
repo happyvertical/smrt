@@ -275,12 +275,24 @@ export abstract class Agent extends SmrtObject {
    * the persisted value (or to whatever
    * {@link ResolveLazyConfigOptions.onError} dictates).
    *
+   * Each resolver receives a `ConfigResolverContext` (#2806): this agent
+   * instance's `agentId`, canonical `agentClass`, `tenantId`, `scheduleId`,
+   * and the value its own persisted config holds for the key (`persisted`,
+   * `hasPersisted`). A per-agent value such as the agent's own AI credential
+   * should not be clobbered by a deployment default: wrap the default in
+   * `preferPersisted()` (or return `undefined` when `context.hasPersisted`).
+   * Never pick an agent by scanning the tenant's `agent_configs` rows — with
+   * several agents of one class per tenant that hands one agent another's
+   * credential; use `context.agentId`.
+   *
    * @example
    * ```typescript
    * class Praeco extends Agent {
    *   static override configResolvers = {
    *     assetStorage: () => resolveSharedAssetStorage(),
    *     aiKey: async () => loadAIKeyFromSecretsManager(),
+   *     ai: preferPersisted(() => deploymentDefaultAi()),
+   *     region: ({ agentId }) => lookupRegionFor(agentId),
    *   };
    * }
    * ```
