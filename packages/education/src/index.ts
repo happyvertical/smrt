@@ -266,6 +266,20 @@ export {
   normalizeQuestionContent,
 } from './question-content.js';
 export * from './question-contracts.js';
+export {
+  extractedQuestionContent,
+  matchExtractedQuestions,
+  normalizeQuestionExtraction,
+  QUESTION_EXTRACTION_ARGS_SCHEMA,
+  questionExtractionSourceIdentity,
+} from './question-extraction.js';
+export * from './question-extraction-contracts.js';
+export * from './question-extraction-models.js';
+export {
+  type PreserveQuestionExtractionRequest,
+  QuestionExtractionService,
+  questionExtractionProposalDigest,
+} from './question-extraction-service.js';
 export * from './question-models.js';
 export {
   renderGuardianWorksheetPdf,

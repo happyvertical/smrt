@@ -61,7 +61,10 @@ export type CourseAuthoringOperation =
   | 'list-upgrade-choices'
   | 'list-auto-upgrade-skips'
   | 'read-released-lesson'
-  | 'attach-printable';
+  | 'attach-printable'
+  | 'preserve-question-extraction'
+  | 'read-question-extraction'
+  | 'apply-question-extraction';
 
 /** Trusted identity supplied by the host session, never by a browser form. */
 export interface CourseAuthoringActor {
