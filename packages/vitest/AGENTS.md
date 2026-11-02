@@ -40,6 +40,13 @@ Without the plugin → "unregistered class" / "No field metadata found" errors.
   only (a dependency's root matches only when its own run registered it).
 - Tests inspecting generated metadata use `getTestManifestPath()`, not a
   literal `.smrt/manifest.json`.
+- Production consumers refuse `artifactPurpose: 'test'` manifests outside
+  their registered run (#2760), and worker bulk registration skips inline
+  `.test.`/`.spec.` entries (#2750); both are covered by nested-run regressions
+  (`issue-2760-test-then-cli-parity`, `issue-2750` fixture's
+  `inline-fixture.spec.ts`). Processes started outside the run — CLIs,
+  generated servers with a sanitized env — need a production manifest, never
+  the snapshot.
 - The run directory is removed on process exit; startup prunes same-host
   directories only once their owner PID is gone (any age), and directories
   with an unprobeable owner (foreign host, missing `owner.json`) once older

@@ -291,7 +291,14 @@ function readKnowledgeSummary(packageDir: string): WorkbenchKnowledgeSummary {
   ];
 
   const knowledgePath = knowledgeCandidates.find((path) => existsSync(path));
-  const manifestPath = manifestCandidates.find((path) => existsSync(path));
+  // A test run's manifest lists inline test fixtures (#2760); only build
+  // outputs describe the package.
+  const manifestPath = manifestCandidates.find(
+    (path) =>
+      existsSync(path) &&
+      readJsonIfExists<Record<string, unknown>>(path)?.artifactPurpose !==
+        'test',
+  );
   const knowledge = knowledgePath
     ? readJsonIfExists<Record<string, unknown>>(knowledgePath)
     : null;

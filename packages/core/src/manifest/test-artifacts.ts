@@ -16,11 +16,27 @@
  * rewriting `.smrt/manifest.json` cannot change it. A process started without
  * the variable (a CLI, a build) never sees a test snapshot.
  *
- * Filesystem access goes through the lazy Node host, so this module stays
- * browser-safe (#2838): without a Node host only exact root keys match.
+ * Filesystem access is resolved lazily through `process.getBuiltinModule`, so
+ * this module stays browser-safe (#2838): without a Node host only exact root
+ * keys match.
  */
 
-import { nodeHost } from './node-host.js';
+/**
+ * `fs.realpathSync` on a Node host, resolved lazily like `node-host.ts` does.
+ * Inlined rather than imported so this module stays a leaf: `store.ts` and the
+ * loaders import it, and `node-host.ts` imports `store.ts`.
+ */
+function realpath(path: string): string | undefined {
+  if (typeof process === 'undefined') return undefined;
+  const getBuiltinModule = (
+    process as typeof process & { getBuiltinModule?: (id: string) => unknown }
+  ).getBuiltinModule;
+  if (typeof getBuiltinModule !== 'function') return undefined;
+  const fs = getBuiltinModule('node:fs') as
+    | typeof import('node:fs')
+    | undefined;
+  return fs?.realpathSync(path);
+}
 
 /**
  * Environment variable mapping a project root to its active test manifest
@@ -54,7 +70,7 @@ function rootKeys(projectRoot: string): string[] {
   const trimmed = projectRoot.replace(/[/\\]+$/, '');
   if (trimmed) keys.add(trimmed);
   try {
-    const real = nodeHost()?.fs.realpathSync(projectRoot);
+    const real = realpath(projectRoot);
     if (real) keys.add(real);
   } catch {
     // A root that does not exist yet only matches by its literal key.
@@ -94,4 +110,36 @@ export function registerActiveTestManifestPath(
     byRoot[key] = manifestPath;
   }
   process.env[SMRT_TEST_MANIFEST_PATHS_ENV_KEY] = JSON.stringify(byRoot);
+}
+
+/** Whether `manifest` is a test-generation artifact (`artifactPurpose: 'test'`). */
+export function isTestArtifactManifest(manifest: unknown): boolean {
+  return (
+    !!manifest &&
+    typeof manifest === 'object' &&
+    (manifest as { artifactPurpose?: unknown }).artifactPurpose === 'test'
+  );
+}
+
+/** Whether `manifestPath` is an active test manifest registered in this process. */
+export function isActiveTestManifestPath(manifestPath: string): boolean {
+  return Object.values(readEnvMap()).some((value) => value === manifestPath);
+}
+
+/**
+ * Whether a manifest read from `manifestPath` must be refused (#2760): a
+ * test-generation artifact is only ever valid as the active test manifest of
+ * the run that registered it. Anywhere else — a stale `.smrt/manifest.json`
+ * left by an older test runner, a copied or restored test manifest, or any
+ * read by a process outside the run (CLI generation, `db:status --parity`,
+ * generated servers, agent tooling) — its inline test-file fixtures would
+ * surface as phantom domain objects.
+ */
+export function isRefusedTestArtifact(
+  manifest: unknown,
+  manifestPath: string,
+): boolean {
+  return (
+    isTestArtifactManifest(manifest) && !isActiveTestManifestPath(manifestPath)
+  );
 }

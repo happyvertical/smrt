@@ -38,6 +38,7 @@ import {
   selectObjectDeclarations,
   warnObjectDeclarationCollisions,
 } from '../manifest/object-declarations.js';
+import { isTestArtifactManifest } from '../manifest/test-artifacts.js';
 import {
   DETERMINISTIC_GENERATED_AT,
   type SmartObjectManifest,
@@ -617,6 +618,12 @@ function mergeExternalManifestEntries(
   }
 
   if (!existing?.objects || typeof existing.objects !== 'object') {
+    return manifest;
+  }
+
+  // A test-run manifest left here by an older test runner is not build state:
+  // replace it rather than carrying any of its entries forward (#2760).
+  if (isTestArtifactManifest(existing)) {
     return manifest;
   }
 

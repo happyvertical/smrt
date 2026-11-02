@@ -176,6 +176,40 @@ describe('confined runtime boot (#1831)', () => {
       rmSync(empty, { recursive: true, force: true });
     }
   });
+
+  it('never boots a test-run manifest as the project surface (#2760)', async () => {
+    resetRuntimeBootForTests();
+    ObjectRegistry.clear();
+    const tested = mkdtempSync(join(tmpdir(), 'smrt-2760-test-artifact-'));
+    try {
+      installRuntimeFixture(tested);
+      mkdirSync(join(tested, '.smrt'), { recursive: true });
+      writeFileSync(
+        join(tested, '.smrt', 'manifest.json'),
+        JSON.stringify({
+          moduleType: 'smrt',
+          artifactPurpose: 'test',
+          packageName: '@acme/app',
+          objects: {
+            '@acme/app:ConvNote': {
+              name: 'convNote',
+              className: 'ConvNote',
+              filePath: 'src/conv.test.ts',
+              fields: {},
+            },
+          },
+        }),
+      );
+      const boot = await bootRuntime({ projectRoot: tested });
+      expect(boot.manifests.every((m) => m.kind === 'dependency')).toBe(true);
+      expect(boot.diagnostics.map((d) => d.code)).toContain(
+        'project_manifest_test_artifact',
+      );
+      expect(ObjectRegistry.getClass('ConvNote')).toBeUndefined();
+    } finally {
+      rmSync(tested, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('observation tools (#1831)', () => {

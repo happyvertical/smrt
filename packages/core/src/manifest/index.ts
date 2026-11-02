@@ -26,6 +26,9 @@ export {
   loadManifestFromPathSync,
 } from './manifest-loader';
 export {
+  isActiveTestManifestPath,
+  isRefusedTestArtifact,
+  isTestArtifactManifest,
   registerActiveTestManifestPath,
   resolveActiveTestManifestPath,
   SMRT_TEST_MANIFEST_PATHS_ENV_KEY,

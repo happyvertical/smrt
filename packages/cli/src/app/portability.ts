@@ -128,7 +128,15 @@ export function manifestTables(sourceRoot: string): ManifestTable[] {
   }
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
     objects?: Record<string, unknown>;
+    artifactPurpose?: unknown;
   };
+  // A test run's manifest lists inline test fixtures, not application
+  // tables (#2760).
+  if (manifest.artifactPurpose === 'test') {
+    throw new Error(
+      'Build the application before exporting or importing data: .smrt/manifest.json is a test artifact, not a build output.',
+    );
+  }
   const tables = new Map<string, ManifestTable>();
   for (const rawDefinition of Object.values(manifest.objects || {})) {
     const definition = rawDefinition as {

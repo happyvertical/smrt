@@ -4,6 +4,7 @@ import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import {
   createQualifiedName,
   isQualifiedName,
+  isRefusedTestArtifact,
   ObjectRegistry,
   parseQualifiedName,
 } from '@happyvertical/smrt-core';
@@ -659,7 +660,8 @@ async function loadDependencyManifest(
     }
 
     const manifest = await tryLoadManifestFile(manifestPath);
-    if (manifest) {
+    // A dependency's test-run manifest is never its published surface (#2760).
+    if (manifest && !isRefusedTestArtifact(manifest, manifestPath)) {
       return {
         manifest,
         resolverPath: packageJsonPath,

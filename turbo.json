@@ -76,9 +76,7 @@
       ],
       "outputs": [
         "src/manifest/test-manifest.json",
-        "src/manifest/test-manifest-stub.ts",
-        ".smrt/manifest.json",
-        ".smrt/smrt-knowledge.json"
+        "src/manifest/test-manifest-stub.ts"
       ],
       "cache": true
     },

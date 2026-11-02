@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 const repository = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const { packageManager } = JSON.parse(readFileSync(join(repository, 'package.json'), 'utf8'));
 
-test('core test generation waits for its production pair writer, including cached runs', () => {
+test('core test generation runs after the production pair writer and never overwrites it, including cached runs (#2760)', () => {
   const root = mkdtempSync(join(tmpdir(), 'smrt-core-generation-order-'));
   const core = join(root, 'packages/core');
   const write = (path, content) => {
@@ -34,21 +34,30 @@ test('core test generation waits for its production pair writer, including cache
       mkdirSync('dist', { recursive: true });
       writeFileSync('dist/ready', 'production complete');
     `);
+    // generate:test owns only src/manifest/test-manifest.json (its declared
+    // Turbo output); the .smrt pair is production output that it must leave
+    // alone (#2760), so a cached replay restores the test manifest and the
+    // production pair keeps the bytes the build wrote.
     write(join(core, 'test-manifest.mjs'), `
       import assert from 'node:assert/strict';
-      import { existsSync, writeFileSync } from 'node:fs';
-      assert.ok(existsSync('dist/ready'), 'test pair writer ran before production completed');
-      writeFileSync('.smrt/manifest.json', 'test');
-      writeFileSync('.smrt/smrt-knowledge.json', 'test');
+      import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+      assert.ok(existsSync('dist/ready'), 'test manifest writer ran before production completed');
+      mkdirSync('src/manifest', { recursive: true });
+      writeFileSync('src/manifest/test-manifest.json', 'test');
     `);
     write(join(core, 'check.mjs'), `
       import assert from 'node:assert/strict';
       import { readFileSync } from 'node:fs';
-      assert.equal(readFileSync('.smrt/manifest.json', 'utf8'), 'test');
-      assert.equal(readFileSync('.smrt/smrt-knowledge.json', 'utf8'), 'test');
+      assert.equal(readFileSync('.smrt/manifest.json', 'utf8'), 'production');
+      assert.equal(readFileSync('.smrt/smrt-knowledge.json', 'utf8'), 'production');
+      assert.equal(readFileSync('src/manifest/test-manifest.json', 'utf8'), 'test');
     `);
     execFileSync('pnpm', ['install'], { cwd: root, stdio: 'pipe', timeout: 30000 });
-    const run = (task) => execFileSync(join(repository, 'node_modules/.bin/turbo'), ['run', task], {
+    // Own the cache and never read the remote one: the fixture is byte-identical
+    // on every run, so in CI a remote hit would replay every task without
+    // executing build.mjs, and `.smrt/` is not a declared output to restore.
+    const cacheArguments = [`--cache-dir=${join(root, '.turbo/cache')}`, '--cache=local:rw'];
+    const run = (task) => execFileSync(join(repository, 'node_modules/.bin/turbo'), ['run', task, ...cacheArguments], {
       cwd: root, encoding: 'utf8', timeout: 30000,
     });
     run('typecheck');
