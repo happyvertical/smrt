@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.57.50
+
+### Patch Changes
+
+- ### Bug Fixes
+  
+  - publish a compatible split protocol dependency graph (#4595) (mcp)
+- @happyvertical/smrt-config@0.57.50
+  - @happyvertical/smrt-scanner@0.57.50
+  - @happyvertical/smrt-types@0.57.50
+
 ## 0.57.49
 
 ### Patch Changes
