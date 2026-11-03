@@ -38,10 +38,7 @@ import {
   WORK_MATH_VOCABULARY,
   type WorkAssessment,
 } from '../lesson-work-contracts.js';
-import {
-  LessonActivityCollection,
-  WorkbookCollection,
-} from '../lesson-work-models.js';
+import { LessonActivityCollection } from '../lesson-work-models.js';
 import { LessonWorkService } from '../lesson-work-service.js';
 import { WorkbookPhotoService } from '../workbook-photo-service.js';
 import { learnerFixture } from './learner-workflows.js';
@@ -56,7 +53,7 @@ export const groupSharingReadClassesWithoutAuthoring = [
   'GroupSharingPolicy',
   'GroupRevisionComment',
   'WorkbookPhotoDecision',
-  'WorkbookContextRevision',
+  'BookContextRevision',
 ];
 export const groupSharingReadClasses = [
   ...groupSharingReadClassesWithoutAuthoring,
@@ -97,7 +94,7 @@ export async function sharingReadFixture(db: DatabaseInterface) {
   const activity = await f.as(f.parent, () =>
     workbook.resolveBookPageActivity({
       ...f.parent,
-      workbookKey: 'synthetic-share',
+      bookKey: 'synthetic-share',
       title: 'Synthetic',
       pageKey: 'p1',
       pageLabel: '1',
@@ -318,27 +315,14 @@ export function groupSharingReadContractTests(
             courseId: String(course.id),
           }),
         );
-        const activity = await x.as(x.parent, async () => {
-          const workbook = await (
-            await WorkbookCollection.create({ db: handle.db })
-          ).create({
+        const activity = await x.as(x.parent, async () =>
+          (await LessonActivityCollection.create({ db: handle.db })).create({
             tenantId: x.parent.tenantId,
             learnerId: x.parent.learnerId,
-            workbookKey: `catalog-${tag}`,
-            title: `Synthetic ${tag} workbook`,
-          });
-          return (
-            await LessonActivityCollection.create({ db: handle.db })
-          ).create({
-            tenantId: x.parent.tenantId,
-            learnerId: x.parent.learnerId,
-            workbookId: String(workbook.id),
             enrollmentId: enrollment.id,
             lessonId: String(lesson.id),
-            pageKey: 'p1',
-            pageLabel: '1',
-          });
-        });
+          }),
+        );
         const attempt = await x.as(x.parent, () =>
           x.workbook.captureLessonWork({
             ...x.parent,
@@ -828,7 +812,7 @@ export function groupSharingReadContractTests(
       const practiceActivity = await x.as(x.parent, () =>
         x.workbook.resolveBookPageActivity({
           ...x.parent,
-          workbookKey: 'synthetic-share',
+          bookKey: 'synthetic-share',
           title: 'Synthetic',
           pageKey: 'p2',
           pageLabel: '2',
@@ -848,7 +832,7 @@ export function groupSharingReadContractTests(
       const hiddenActivity = await x.as(x.parent, () =>
         x.workbook.resolveBookPageActivity({
           ...x.parent,
-          workbookKey: 'withheld-progress-book',
+          bookKey: 'withheld-progress-book',
           title: 'Withheld book',
           pageKey: 'hidden',
           pageLabel: 'Hidden',
@@ -1027,7 +1011,7 @@ export function groupSharingReadContractTests(
       const otherActivity = await x.as(x.parent, () =>
         x.workbook.resolveBookPageActivity({
           ...x.parent,
-          workbookKey: 'synthetic-share',
+          bookKey: 'synthetic-share',
           title: 'Synthetic',
           pageKey: 'p-other',
           pageLabel: 'Other',

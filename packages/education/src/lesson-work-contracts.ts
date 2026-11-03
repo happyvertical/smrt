@@ -1,3 +1,4 @@
+import type { LessonPageView } from './lesson-pages.js';
 /** Explicit help observations; absence never attests independence. */
 export type WorkAssistance = 'independent' | 'assisted' | 'unknown';
 export interface WorkConcept {
@@ -223,25 +224,53 @@ export class WorkCompletionConflictError extends Error {
   }
 }
 
+/** Filing cannot place work there: `not-enrolled` (a non-book course the learner is not enrolled in), `lesson-required` (an authored or shared course: append the lesson first), `lesson-outside-course`. */
+export class LessonWorkPlacementError extends Error {
+  constructor(
+    readonly code: 'not-enrolled' | 'lesson-required' | 'lesson-outside-course',
+  ) {
+    super(`Lesson work cannot be placed: ${code}`);
+    this.name = 'LessonWorkPlacementError';
+  }
+}
+/** Where a piece of lesson work belongs: a course, the learner's enrollment, lesson and page. */
+export interface LessonWorkPlacement {
+  courseId: string;
+  enrollmentId: string;
+  lessonId: string;
+  lessonPageId: string | null;
+}
 export interface LessonActivityView {
   currentAttemptId: string | null;
   latestSubmissionId: string | null;
   completion: WorkCompletionState;
-  filing?: {
+  /**
+   * `identified`: captured on a known lesson. `unfiled`: a loose page with only
+   * technical routing. `filed`: unfiled work placed by a guardian filing.
+   */
+  filing: {
     state: 'unfiled' | 'filed' | 'identified';
-    workbookId: string | null;
-    canonicalActivityId: string | null;
+    placement: LessonWorkPlacement | null;
     revisionId: string | null;
   };
   id: string;
   learnerId: string;
-  workbookKey: string;
-  title: string;
-  edition: string;
-  pageKey: string;
-  pageLabel: string;
+  /** Capture routing: corrections and submission reads use these; they never move. */
   enrollmentId: string;
   lessonId: string;
+  /** The effective course (filing placement or routing); '' while unfiled. */
+  courseId: string;
+  courseTitle: string;
+  /** Book identity of the effective course; '' when it is not a book. */
+  bookKey: string;
+  bookEdition: string;
+  lessonTitle: string;
+  /** Effective page key/label; unfiled work reads `receipt:<id>` / `Captured work`. */
+  pageKey: string;
+  pageLabel: string;
+  /** Pages of the effective lesson, in order. */
+  pages: LessonPageView[];
+  /** The effective course's work policy (default on while unfiled). */
   reviewRequired: boolean;
   policyVersion: number;
 }

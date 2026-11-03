@@ -223,6 +223,8 @@ export {
   authoredVisibilityPermitsGroups,
   effectiveCourseVisibility,
 } from './course-visibility.js';
+export type { WorkbookMigrationReport } from './course-work-migration.js';
+export { migrateWorkbooksToCourses } from './course-work-migration.js';
 export type { EnrollmentParentNoteView } from './enrollment-note-service.js';
 export {
   ENROLLMENT_NOTE_MAX_LENGTH,
@@ -351,6 +353,7 @@ export type { EnrollmentStatus, LessonProgressStatus } from './learners.js';
 export { Curriculum, Enrollment, Learner, LessonProgress } from './learners.js';
 export type { LessonAssetRelationship } from './lesson-assets.js';
 export { LessonAsset } from './lesson-assets.js';
+export * from './lesson-pages.js';
 export {
   WorkCompletionDecision,
   WorkCompletionDecisionCollection,

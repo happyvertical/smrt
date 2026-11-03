@@ -14,7 +14,7 @@ describe('LessonWorkService observed layout sqlite', () =>
       classes: [
         ...workbookClasses,
         'WorkbookPhotoDecision',
-        'WorkbookContextRevision',
+        'BookContextRevision',
       ],
     });
     return {

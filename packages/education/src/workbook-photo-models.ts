@@ -214,20 +214,20 @@ export class WorkbookPhotoDecision extends SmrtObject {
 export class WorkbookPhotoDecisionCollection extends SmrtCollection<WorkbookPhotoDecision> {
   static readonly _itemClass = WorkbookPhotoDecision;
 }
-/** Versioned contextual metadata; never edits Workbook identity or learning evidence. */
+/** Versioned contextual metadata; never edits book identity or learning evidence. */
 @TenantScoped({ mode: 'required' })
 @smrt({
-  tableName: 'workbook_context_revisions',
+  tableName: 'book_context_revisions',
   conflictColumns: ['tenant_id', 'decision_id'],
   ...closed,
 })
-export class WorkbookContextRevision extends SmrtObject {
+export class BookContextRevision extends SmrtObject {
   @tenantId() tenantId = '';
   @foreignKey('Learner', { required: true }) learnerId = '';
   override async delete(): Promise<void> {
     denyHistoryDeletion();
   }
-  @foreignKey('Workbook', { required: true }) workbookId = '';
+  @foreignKey('Course', { required: true }) courseId = '';
   @foreignKey('WorkbookPhotoDecision', { required: true }) decisionId = '';
   @field({ type: 'text' }) metadataJson = '{}';
   constructor(options: Record<string, unknown> = {}) {
@@ -242,13 +242,12 @@ export class WorkbookContextRevision extends SmrtObject {
   override async save(options?: SmrtSaveOptions): Promise<this> {
     await assertPhotoHistory(this);
     if (
-      !(await this.db.get('workbooks', {
-        id: this.workbookId,
+      !(await this.db.get('courses', {
+        id: this.courseId,
         tenant_id: this.tenantId,
-        learner_id: this.learnerId,
       }))
     )
-      throw new Error('Workbook context ownership mismatch');
+      throw new Error('Book context ownership mismatch');
     if (
       !(await this.db.get('workbook_photo_decisions', {
         id: this.decisionId,
@@ -256,10 +255,10 @@ export class WorkbookContextRevision extends SmrtObject {
         learner_id: this.learnerId,
       }))
     )
-      throw new Error('Workbook context decision ownership mismatch');
+      throw new Error('Book context decision ownership mismatch');
     return super.save(options);
   }
 }
-export class WorkbookContextRevisionCollection extends SmrtCollection<WorkbookContextRevision> {
-  static readonly _itemClass = WorkbookContextRevision;
+export class BookContextRevisionCollection extends SmrtCollection<BookContextRevision> {
+  static readonly _itemClass = BookContextRevision;
 }

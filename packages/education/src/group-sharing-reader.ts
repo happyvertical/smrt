@@ -54,7 +54,6 @@ import {
   LessonActivityCollection,
   WorkAssessmentRevisionCollection,
   WorkAttemptCollection,
-  WorkbookCollection,
 } from './lesson-work-models.js';
 import type { SubmissionServiceOptions } from './submission-service.js';
 
@@ -147,7 +146,6 @@ async function load(
       if (!progress) throw denied();
       if (activity.captureKind === 'unfiled') {
         if (
-          activity.workbookId !== null ||
           !activity.photoIntakeId ||
           !(await db.get('workbook_photo_intakes', {
             id: activity.photoIntakeId,
@@ -158,10 +156,7 @@ async function load(
           throw denied();
       } else if (
         activity.captureKind !== 'identified' ||
-        !activity.workbookId ||
-        !(await (
-          await WorkbookCollection.create({ db })
-        ).get({ ...where, id: activity.workbookId }, { cache: false }))
+        activity.photoIntakeId !== null
       )
         throw denied();
       if (

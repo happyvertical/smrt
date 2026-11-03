@@ -19,71 +19,16 @@ function optionsFor(target: object, options: Record<string, unknown>) {
       (target as Record<string, unknown>)[key] = value;
 }
 
-/** Education-owned private workbook record. Mutations go through LessonWorkService. */
-@TenantScoped({ mode: 'required' })
-@smrt({
-  tableName: 'workbooks',
-  conflictColumns: ['tenant_id', 'learner_id', 'workbook_key'],
-  ...closed,
-})
-export class Workbook extends SmrtObject {
-  @tenantId() tenantId = '';
-  @foreignKey('Learner', { required: true }) learnerId = '';
-  workbookKey = '';
-  title = '';
-  edition = '';
-  reviewRequired = true;
-  policyVersion = 1;
-  constructor(options: Record<string, unknown> = {}) {
-    super(options);
-    optionsFor(this, options);
-  }
-  override async save(options?: SmrtSaveOptions): Promise<this> {
-    if (!this.tenantId.trim()) throw new Error('Lesson work requires tenant');
-    if (
-      !(await this.db.get('learners', {
-        id: this.learnerId,
-        tenant_id: this.tenantId,
-      }))
-    )
-      throw new Error('Lesson work parent ownership mismatch');
-    if (
-      this.id &&
-      (await this.db.get(this.tableName, { id: this.id })) &&
-      !(await this.db.get(this.tableName, {
-        id: this.id,
-        tenant_id: this.tenantId,
-        learner_id: this.learnerId,
-        workbook_key: this.workbookKey,
-        title: this.title,
-        edition: this.edition,
-      }))
-    )
-      throw new Error('Workbook identity cannot change');
-    if (
-      typeof this.reviewRequired !== 'boolean' ||
-      !Number.isSafeInteger(this.policyVersion) ||
-      this.policyVersion < 1
-    )
-      throw new Error('Invalid workbook policy');
-    return super.save(options);
-  }
-}
-export class WorkbookCollection extends SmrtCollection<Workbook> {
-  static readonly _itemClass = Workbook;
-}
-
-/** Education-owned private workbook record. Mutations go through LessonWorkService. */
+/** Education-owned private lesson work record. Mutations go through LessonWorkService. */
 @TenantScoped({ mode: 'required' })
 @smrt({
   tableName: 'workbook_activities',
-  conflictColumns: ['tenant_id', 'workbook_id', 'page_key'],
+  conflictColumns: ['tenant_id', 'enrollment_id', 'lesson_id'],
   ...closed,
 })
 export class LessonActivity extends SmrtObject {
   @tenantId() tenantId = '';
   @foreignKey('Learner', { required: true }) learnerId = '';
-  @foreignKey('Workbook', { nullable: true }) workbookId: string | null = null;
   @field({ type: 'text', required: true, default: 'identified' })
   captureKind = 'identified';
   @foreignKey('WorkbookPhotoIntake', { nullable: true }) photoIntakeId:
@@ -91,8 +36,6 @@ export class LessonActivity extends SmrtObject {
     | null = null;
   @foreignKey('Enrollment', { required: true }) enrollmentId = '';
   @foreignKey('Lesson', { required: true }) lessonId = '';
-  pageKey = '';
-  pageLabel = '';
   constructor(options: Record<string, unknown> = {}) {
     super(options);
     optionsFor(this, options);
@@ -107,10 +50,17 @@ export class LessonActivity extends SmrtObject {
     if (this.id && (await this.db.get(this.tableName, { id: this.id })))
       throw new Error('Lesson work history is immutable');
     if (!['identified', 'unfiled'].includes(this.captureKind))
-      throw new Error('Invalid workbook capture kind');
+      throw new Error('Invalid lesson work capture kind');
+    const enrollment = await this.db.get('enrollments', {
+      id: this.enrollmentId,
+      tenant_id: this.tenantId,
+      learner_id: this.learnerId,
+    });
+    if (!enrollment) throw new Error('Lesson work enrollment mismatch');
+    if (!(await this.db.get('lessons', { id: this.lessonId })))
+      throw new Error('Lesson work lesson mismatch');
     if (this.captureKind === 'unfiled') {
       if (
-        this.workbookId !== null ||
         !this.photoIntakeId ||
         !(await this.db.get('workbook_photo_intakes', {
           id: this.photoIntakeId,
@@ -126,30 +76,6 @@ export class LessonActivity extends SmrtObject {
         })
       )
         throw new Error('Photo receipt already has a work unit');
-    } else if (
-      this.photoIntakeId !== null ||
-      !this.workbookId ||
-      !(await this.db.get('workbooks', {
-        id: this.workbookId,
-        tenant_id: this.tenantId,
-        learner_id: this.learnerId,
-      }))
-    )
-      throw new Error('Lesson work parent ownership mismatch');
-    if (
-      !(await this.db.get('enrollments', {
-        id: this.enrollmentId,
-        tenant_id: this.tenantId,
-        learner_id: this.learnerId,
-      }))
-    )
-      throw new Error('Lesson work enrollment mismatch');
-    if (this.captureKind === 'unfiled') {
-      const enrollment = await this.db.get('enrollments', {
-        id: this.enrollmentId,
-        tenant_id: this.tenantId,
-        learner_id: this.learnerId,
-      });
       const lesson = await this.db.get('lessons', {
         id: this.lessonId,
         tenant_id: this.tenantId,
@@ -159,12 +85,12 @@ export class LessonActivity extends SmrtObject {
         (await this.db.get('course_sections', {
           id: lesson.section_id,
           tenant_id: this.tenantId,
-          course_id: enrollment?.course_id,
+          course_id: enrollment.course_id,
         }));
       if (
         !section ||
         !(await this.db.get('courses', {
-          id: enrollment?.course_id,
+          id: enrollment.course_id,
           tenant_id: this.tenantId,
           license_kind: 'personal-use-copy',
           source_key: 'unfiled-work',
@@ -174,7 +100,8 @@ export class LessonActivity extends SmrtObject {
         throw new Error(
           'Unfiled work requires exact private technical routing',
         );
-    }
+    } else if (this.photoIntakeId !== null)
+      throw new Error('Placed lesson work has no unfiled receipt');
     return super.save(options);
   }
 }
@@ -182,28 +109,34 @@ export class LessonActivityCollection extends SmrtCollection<LessonActivity> {
   static readonly _itemClass = LessonActivity;
 }
 
-/** Append-only association; the source work unit and its routing never move. */
+/**
+ * Append-only placement of unfiled work: the head names the course, the
+ * learner's enrollment, lesson and optional lesson page the work now belongs
+ * to. Activity, attempt, submission and assessment IDs never move.
+ */
 @TenantScoped({ mode: 'required' })
 @smrt({
-  tableName: 'workbook_work_filings',
+  tableName: 'lesson_work_filings',
   conflictColumns: ['tenant_id', 'source_activity_id', 'request_key'],
   ...closed,
 })
-export class WorkbookWorkFiling extends SmrtObject {
+export class LessonWorkFiling extends SmrtObject {
   @tenantId() tenantId = '';
   @foreignKey('Learner', { required: true }) learnerId = '';
   @foreignKey('LessonActivity', { required: true }) sourceActivityId = '';
-  @foreignKey('Workbook', { required: true }) workbookId = '';
-  @foreignKey('LessonActivity', { nullable: true }) canonicalActivityId:
-    | string
-    | null = null;
-  @foreignKey('WorkbookWorkFiling', { nullable: true }) previousRevisionId:
+  @foreignKey('Course', { required: true }) courseId = '';
+  @foreignKey('Enrollment', { required: true }) enrollmentId = '';
+  @foreignKey('Lesson', { required: true }) lessonId = '';
+  @foreignKey('LessonPage', { nullable: true }) lessonPageId: string | null =
+    null;
+  @foreignKey('LessonWorkFiling', { nullable: true }) previousRevisionId:
     | string
     | null = null;
   actorUserId = '';
   requestKey = '';
   reason = '';
   digest = '';
+  recordedAt = new Date();
   constructor(options: Record<string, unknown> = {}) {
     super(options);
     optionsFor(this, options);
@@ -215,32 +148,40 @@ export class WorkbookWorkFiling extends SmrtObject {
     if (this.id && (await this.db.get(this.tableName, { id: this.id })))
       throw new Error('Lesson work history is immutable');
     const owner = { tenant_id: this.tenantId, learner_id: this.learnerId };
+    const enrollment =
+      this.tenantId &&
+      (await this.db.get('enrollments', { ...owner, id: this.enrollmentId }));
     if (
       !this.tenantId ||
       !this.actorUserId ||
       !this.requestKey.trim() ||
       !this.reason.trim() ||
       !/^[a-f0-9]{64}$/.test(this.digest) ||
+      !enrollment ||
       !(await this.db.get('workbook_activities', {
         ...owner,
         id: this.sourceActivityId,
         capture_kind: 'unfiled',
-        workbook_id: null,
-      })) ||
-      !(await this.db.get('workbooks', { ...owner, id: this.workbookId }))
+      }))
     )
-      throw new Error('Workbook filing ownership mismatch');
+      throw new Error('Lesson work filing ownership mismatch');
+    const lesson = await this.db.get('lessons', { id: this.lessonId });
+    const section =
+      lesson &&
+      (await this.db.get('course_sections', {
+        id: lesson.section_id,
+        course_id: this.courseId,
+      }));
+    if (!section || String(enrollment.course_id) !== this.courseId)
+      throw new Error('Lesson work filing target mismatch');
     if (
-      this.canonicalActivityId &&
-      (this.canonicalActivityId === this.sourceActivityId ||
-        !(await this.db.get('workbook_activities', {
-          ...owner,
-          id: this.canonicalActivityId,
-          workbook_id: this.workbookId,
-          capture_kind: 'identified',
-        })))
+      this.lessonPageId &&
+      !(await this.db.get('lesson_pages', {
+        id: this.lessonPageId,
+        lesson_id: this.lessonId,
+      }))
     )
-      throw new Error('Workbook filing target mismatch');
+      throw new Error('Lesson work filing page mismatch');
     if (
       this.previousRevisionId &&
       !(await this.db.get(this.tableName, {
@@ -249,7 +190,7 @@ export class WorkbookWorkFiling extends SmrtObject {
         source_activity_id: this.sourceActivityId,
       }))
     )
-      throw new Error('Workbook filing predecessor mismatch');
+      throw new Error('Lesson work filing predecessor mismatch');
     if (
       await this.db.get(this.tableName, {
         ...owner,
@@ -257,15 +198,15 @@ export class WorkbookWorkFiling extends SmrtObject {
         previous_revision_id: this.previousRevisionId,
       })
     )
-      throw new Error('Workbook filing predecessor already superseded');
+      throw new Error('Lesson work filing predecessor already superseded');
     return super.save(options);
   }
 }
-export class WorkbookWorkFilingCollection extends SmrtCollection<WorkbookWorkFiling> {
-  static readonly _itemClass = WorkbookWorkFiling;
+export class LessonWorkFilingCollection extends SmrtCollection<LessonWorkFiling> {
+  static readonly _itemClass = LessonWorkFiling;
 }
 
-/** Education-owned private workbook record. Mutations go through LessonWorkService. */
+/** Education-owned private lesson work record. Mutations go through LessonWorkService. */
 @TenantScoped({ mode: 'required' })
 @smrt({
   tableName: 'workbook_attempts',
@@ -352,7 +293,7 @@ export class WorkAttemptCollection extends SmrtCollection<WorkAttempt> {
   static readonly _itemClass = WorkAttempt;
 }
 
-/** Education-owned private workbook record. Mutations go through LessonWorkService. */
+/** Education-owned private lesson work record. Mutations go through LessonWorkService. */
 @TenantScoped({ mode: 'required' })
 @smrt({
   tableName: 'workbook_assessment_revisions',
@@ -433,7 +374,7 @@ export class WorkAssessmentRevisionCollection extends SmrtCollection<WorkAssessm
   static readonly _itemClass = WorkAssessmentRevision;
 }
 
-/** Education-owned private workbook record. Mutations go through LessonWorkService. */
+/** Education-owned private lesson work record. Mutations go through LessonWorkService. */
 @TenantScoped({ mode: 'required' })
 @smrt({
   tableName: 'workbook_feedback_releases',

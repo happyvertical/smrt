@@ -194,25 +194,13 @@ export async function assertPlanProgress(f: Fixture) {
 }
 
 export async function assertPlanWorkbookBinding(f: Fixture) {
-  const { WorkbookCollection, LessonActivityCollection } = await import(
-    '../lesson-work-models.js'
-  );
-  const workbook = await f.as(f.parent, async () =>
-    (await WorkbookCollection.create({ db: f.db })).create({
-      tenantId: f.parent.tenantId,
-      learnerId: f.parent.learnerId,
-      workbookKey: 'plan-binding',
-      title: 'Workbook',
-    }),
-  );
+  const { LessonActivityCollection } = await import('../lesson-work-models.js');
   const activity = await f.as(f.parent, async () =>
     (await LessonActivityCollection.create({ db: f.db })).create({
       tenantId: f.parent.tenantId,
       learnerId: f.parent.learnerId,
-      workbookId: String(workbook.id),
       enrollmentId: f.enrollment.id,
       lessonId: String(f.lesson.id),
-      pageKey: 'p1',
     }),
   );
   const laterCurriculum = await f.as(f.parent, () =>
@@ -229,10 +217,8 @@ export async function assertPlanWorkbookBinding(f: Fixture) {
     (await LessonActivityCollection.create({ db: f.db })).create({
       tenantId: f.parent.tenantId,
       learnerId: f.parent.learnerId,
-      workbookId: String(workbook.id),
       enrollmentId: laterEnrollment.id,
       lessonId: String(f.lesson.id),
-      pageKey: 'p2',
     }),
   );
   await f.as(f.parent, async () =>

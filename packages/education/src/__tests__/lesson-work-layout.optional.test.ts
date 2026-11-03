@@ -17,7 +17,7 @@ afterAll(() => disableTenancy());
         includeObjects: [
           ...workbookClasses,
           'WorkbookPhotoDecision',
-          'WorkbookContextRevision',
+          'BookContextRevision',
         ],
       });
       return { db: isolated.baseDb, cleanup: isolated.cleanup };

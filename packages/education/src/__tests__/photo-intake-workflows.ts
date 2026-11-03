@@ -24,7 +24,7 @@ import {
   workbookPhotoIntakeTargetResolver,
 } from '../workbook-photo-ingestion.js';
 import {
-  WorkbookContextRevisionCollection,
+  BookContextRevisionCollection,
   WorkbookPhotoDecisionCollection,
   WorkbookPhotoIntakeCollection,
 } from '../workbook-photo-models.js';
@@ -39,7 +39,7 @@ export const photoClasses = [
   'WorkbookPhotoIntake',
   'WorkbookPhotoAsset',
   'WorkbookPhotoDecision',
-  'WorkbookContextRevision',
+  'BookContextRevision',
 ];
 export function photoIntakeTests(
   factory: () => Promise<{
@@ -120,7 +120,7 @@ export function photoIntakeTests(
       expect(resolved.identification?.workbook).toBeUndefined();
       expect(resolved.activity?.filing?.state).toBe('unfiled');
       expect(
-        await f.as(f.own, () => f.service.listWorkbookPhotoWorkbooks(f.own)),
+        await f.as(f.own, () => f.service.listPhotoBookCourses(f.own)),
       ).toEqual([]);
       const attempt = await f.as(f.own, () =>
         f.service.captureWorkbookPhotoIntake({
@@ -143,8 +143,9 @@ export function photoIntakeTests(
       );
       if (!captured.activity) throw new Error('No durable work unit');
       const activity = captured.activity;
-      expect(activity.workbookKey).toBe('');
-      expect(activity.title).toBe('');
+      expect(activity.bookKey).toBe('');
+      expect(activity.courseTitle).toBe('');
+      expect(activity.filing.placement).toBeNull();
       const marking = {
         ...f.parent,
         activityId: activity.id,
@@ -243,19 +244,45 @@ export function photoIntakeTests(
         f.service.getConceptEvidenceSummary(marking),
       );
       const filed = await f.as(f.parent, () =>
-        f.service.fileWorkbookWork({
+        f.service.fileLessonWork({
           ...f.parent,
           activityId: activity.id,
-          newWorkbook: { title: 'Arithmetic', edition: '1' },
+          newBook: { title: 'Arithmetic', edition: '1' },
+          pageKey: 'p12',
+          pageLabel: 'Page 12',
           expectedRevisionId: null,
           requestKey: 'file-real-book',
           reason: 'Guardian files existing work',
         }),
       );
       expect(filed.id).toBe(activity.id);
-      expect(filed.filing?.state).toBe('filed');
+      expect(filed.filing.state).toBe('filed');
+      // Routing never moves; the placement does.
       expect(filed.enrollmentId).toBe(activity.enrollmentId);
       expect(filed.lessonId).toBe(activity.lessonId);
+      expect(filed.courseTitle).toBe('Arithmetic');
+      expect(filed.bookEdition).toBe('1');
+      expect(filed.pageKey).toBe('p12');
+      expect(filed.pageLabel).toBe('Page 12');
+      expect(filed.filing.placement?.lessonId).not.toBe(activity.lessonId);
+      expect(filed.filing.placement?.courseId).toBe(filed.courseId);
+      expect(
+        (
+          await f.as(f.parent, () =>
+            f.service.listLessonActivities({ ...f.parent, filing: 'unfiled' }),
+          )
+        ).map((a) => a.id),
+      ).not.toContain(activity.id);
+      expect(
+        (
+          await f.as(f.parent, () =>
+            f.service.listLessonActivities({
+              ...f.parent,
+              courseId: filed.courseId,
+            }),
+          )
+        ).map((a) => a.id),
+      ).toEqual([activity.id]);
       expect(
         await f.as(f.parent, () =>
           f.service.getConceptEvidenceSummary(marking),
@@ -1180,7 +1207,7 @@ export function photoIntakeTests(
           pages: f.pages,
         }),
       );
-      expect(photo.workbookId).toBeNull();
+      expect(photo.bookCourseId).toBeNull();
       const req = { ...f.parent, intakeId: photo.id };
       const first = await f.as(f.parent, () =>
         f.service.resolveWorkbookPhotoIntake({
@@ -1189,7 +1216,7 @@ export function photoIntakeTests(
           identification: f.identification,
         }),
       );
-      expect(first.workbookId).toEqual(expect.any(String));
+      expect(first.bookCourseId).toEqual(expect.any(String));
       expect(first.activity).toBeNull();
       expect(first.submissionId).toBeNull();
       const second = await f.as(f.parent, () =>
@@ -1206,12 +1233,12 @@ export function photoIntakeTests(
           },
         }),
       );
-      expect(second.workbookId).toEqual(expect.any(String));
-      expect(second.workbookId).not.toBe(first.workbookId);
+      expect(second.bookCourseId).toEqual(expect.any(String));
+      expect(second.bookCourseId).not.toBe(first.bookCourseId);
       expect(
         (await f.as(f.parent, () => f.service.getWorkbookPhotoIntake(req)))
-          .workbookId,
-      ).toBe(second.workbookId);
+          .bookCourseId,
+      ).toBe(second.bookCourseId);
       await f.as(f.own, () =>
         expect(
           f.service.getWorkbookPhotoIntake({ ...f.own, intakeId: photo.id }),
@@ -1255,7 +1282,7 @@ export function photoIntakeTests(
           identification: { kind: 'uncertain', workState: 'unknown' },
         }),
       );
-      expect(unresolved.workbookId).toBeNull();
+      expect(unresolved.bookCourseId).toBeNull();
     } finally {
       await f.finish();
     }
@@ -1315,7 +1342,7 @@ export function photoIntakeTests(
             identification: { ...f.identification, notes: 'changed' },
           }),
         ).rejects.toThrow('conflict');
-        const context = await WorkbookContextRevisionCollection.create({
+        const context = await BookContextRevisionCollection.create({
           db: f.db,
         });
         expect(
@@ -1741,12 +1768,8 @@ export function photoIntakeTests(
         const cover = await generate('cover');
         expect(cover.status).toBe('resolved');
         expect(cover.activity).toBeNull();
-        expect(await f.service.listWorkbookPhotoWorkbooks(f.own)).toHaveLength(
-          1,
-        );
-        const candidate = (
-          await f.service.listWorkbookPhotoWorkbooks(f.own)
-        )[0];
+        expect(await f.service.listPhotoBookCourses(f.own)).toHaveLength(1);
+        const candidate = (await f.service.listPhotoBookCourses(f.own))[0];
         // Exact malformed live-model shape: a selected candidate does not waive
         // the required workbookKey. Keep it pending, never repair the payload.
         proposal = {
@@ -1771,26 +1794,22 @@ export function photoIntakeTests(
           ).suggestions[0].missingFields,
         ).toContain('/identification/workbook/workbookKey');
         proposal.identification.workbook = {
-          workbookKey: candidate.workbookKey,
+          workbookKey: candidate.bookKey,
           title: candidate.title,
           edition: candidate.edition,
         };
         const reference = await generate('reference-existing-identity');
         expect(reference.status).toBe('resolved');
         expect(reference.identification?.workbook?.workbookKey).toBe(
-          candidate.workbookKey,
+          candidate.bookKey,
         );
         expect(reference.activity).toBeNull();
         expect(reference.submissionId).toBeNull();
-        expect(await f.service.listWorkbookPhotoWorkbooks(f.own)).toHaveLength(
-          1,
-        );
+        expect(await f.service.listPhotoBookCourses(f.own)).toHaveLength(1);
         proposal.identification.workbook.publisher = 'Conflicting Press';
         const conflicting = await generate('reference-conflicting-publisher');
         expect(conflicting.status).toBe('pending');
-        expect(await f.service.listWorkbookPhotoWorkbooks(f.own)).toHaveLength(
-          1,
-        );
+        expect(await f.service.listPhotoBookCourses(f.own)).toHaveLength(1);
         proposal.identification.workbook = { ...f.identification.workbook! };
         proposal.identification.kind = 'cover';
         proposal.workbookId = undefined;
@@ -2042,9 +2061,9 @@ export function photoIntakeTests(
       if (!resolved.activity) throw new Error('Missing activity');
       const activity = resolved.activity;
       await f.as(f.parent, () =>
-        f.service.setWorkbookFeedbackPolicy({
+        f.service.setCourseWorkPolicy({
           ...f.parent,
-          activityId: activity.id,
+          courseId: activity.courseId,
           expectedPolicyVersion: activity.policyVersion,
           reviewRequired: false,
         }),

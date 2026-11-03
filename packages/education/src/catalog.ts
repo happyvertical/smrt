@@ -68,6 +68,17 @@ export class Course extends SmrtObject {
   estimatedMinutes = 0;
   modality: CourseModality = 'online';
   status: CourseStatus = 'draft';
+  /**
+   * Optional physical-book identity: '' means the course is not a book. A
+   * family holds at most one course per book key; the key never changes.
+   */
+  bookKey = '';
+  /** Printed edition of the book; '' means unknown. */
+  bookEdition = '';
+  /** Course work policy: learners see AI marks only after a guardian release. */
+  workReviewRequired = true;
+  /** Compare-and-swap version of the work policy; captures snapshot it. */
+  workPolicyVersion = 1;
   constructor(options: Record<string, unknown> = {}) {
     super(options);
     applyModelOptions(this as unknown as Record<string, unknown>, options);
@@ -75,6 +86,26 @@ export class Course extends SmrtObject {
 
   /** A personal copy remains pinned to its original family and license. */
   override async save(options?: SmrtSaveOptions): Promise<this> {
+    if (
+      typeof this.bookKey !== 'string' ||
+      this.bookKey.length > 200 ||
+      typeof this.bookEdition !== 'string' ||
+      this.bookEdition.length > 200 ||
+      typeof this.workReviewRequired !== 'boolean' ||
+      !Number.isSafeInteger(this.workPolicyVersion) ||
+      this.workPolicyVersion < 1
+    )
+      throw new Error('Invalid course book identity or work policy');
+    if (this.bookKey) {
+      if (!this.tenantId)
+        throw new Error('A book course requires an owning family');
+      const holders = await this.db.list(this.tableName, {
+        tenant_id: this.tenantId,
+        book_key: this.bookKey,
+      });
+      if (holders.some((row) => String(row.id) !== String(this.id ?? '')))
+        throw new Error('The family already has a course for this book');
+    }
     if (this.licenseKind === 'personal-use-copy' && !this.tenantId) {
       throw new Error('personal-use-copy courses require an owning tenant');
     }
@@ -112,6 +143,9 @@ export class Course extends SmrtObject {
         throw new Error(
           'Persisted courses require explicit re-authoring to change tenant or license',
         );
+      const priorBook = String(row.bookKey ?? row.book_key ?? '');
+      if (priorBook && priorBook !== this.bookKey)
+        throw new Error('A course book key cannot change');
     }
     return await super.save(options);
   }

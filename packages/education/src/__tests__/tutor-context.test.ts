@@ -63,7 +63,7 @@ const classes = [
     'Question',
     'QuestionRevision',
     'QuestionResponse',
-    'Workbook',
+    'LessonPage',
     'LessonActivity',
     'WorkAttempt',
     'WorkAssessmentRevision',
@@ -673,8 +673,6 @@ describe('TutorContextService', () => {
         enrollment_id: s.enrollmentId,
         lesson_id: s.lessonId,
         capture_kind: 'identified',
-        page_key: 'p1',
-        page_label: 'Page 1',
       }),
     );
     await s.db.insert(

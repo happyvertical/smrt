@@ -61,7 +61,7 @@ export function groupSharingMigrationContractTests(
       const activity = await f.as(f.parent, () =>
         workbook.resolveBookPageActivity({
           ...f.parent,
-          workbookKey: 'pre-sharing-history',
+          bookKey: 'pre-sharing-history',
           title: 'Existing family workbook',
           pageKey: 'p1',
           pageLabel: '1',

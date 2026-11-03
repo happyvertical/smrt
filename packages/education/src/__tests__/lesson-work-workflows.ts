@@ -35,9 +35,9 @@ export const workbookClasses = [
   'AssetTag',
   'ProfileAsset',
   'Tag',
-  'Workbook',
+  'LessonPage',
   'LessonActivity',
-  'WorkbookWorkFiling',
+  'LessonWorkFiling',
   'WorkbookPhotoIntake',
   'WorkbookPhotoAsset',
   'FamilyIntake',
@@ -64,7 +64,7 @@ export async function workbookFixture(
   );
   const create = {
     ...f.parent,
-    workbookKey: 'synthetic-copy-v1',
+    bookKey: 'synthetic-copy-v1',
     title: 'Synthetic workbook',
     edition: 'v1',
     pageKey: 'section-a:p7',
@@ -287,9 +287,9 @@ export function workbookContractTests(
       let capture = f.capture;
       if (!reviewRequired) {
         await f.as(f.parent, () =>
-          f.service.setWorkbookFeedbackPolicy({
+          f.service.setCourseWorkPolicy({
             ...f.parent,
-            activityId: f.activity.id,
+            courseId: f.activity.courseId,
             expectedPolicyVersion: 1,
             reviewRequired: false,
           }),
@@ -589,9 +589,9 @@ export function workbookContractTests(
       let target = f.attempt;
       if (!reviewRequired) {
         await f.as(f.parent, () =>
-          f.service.setWorkbookFeedbackPolicy({
+          f.service.setCourseWorkPolicy({
             ...f.parent,
-            activityId: f.activity.id,
+            courseId: f.activity.courseId,
             expectedPolicyVersion: 1,
             reviewRequired: false,
           }),
@@ -777,7 +777,7 @@ export function workbookContractTests(
       const edition2 = await f.as(f.parent, () =>
         f.service.resolveBookPageActivity({
           ...f.create,
-          workbookKey: 'edition2-copy',
+          bookKey: 'edition2-copy',
           edition: 'v2',
         }),
       );
@@ -923,9 +923,9 @@ export function workbookContractTests(
     const f = await fixture();
     try {
       await f.as(f.parent, () =>
-        f.service.setWorkbookFeedbackPolicy({
+        f.service.setCourseWorkPolicy({
           ...f.parent,
-          activityId: f.activity.id,
+          courseId: f.activity.courseId,
           expectedPolicyVersion: 1,
           reviewRequired: false,
         }),
@@ -1328,9 +1328,9 @@ export function workbookContractTests(
           f.service.withTransaction(async (s) => {
             await s.reviewWorkAssessment(review);
             try {
-              await s.setWorkbookFeedbackPolicy({
+              await s.setCourseWorkPolicy({
                 ...f.parent,
-                activityId: f.activity.id,
+                courseId: f.activity.courseId,
                 expectedPolicyVersion: 999,
                 reviewRequired: false,
               });

@@ -15,6 +15,7 @@ import { intakeOriginalEvidence } from './intake-original-evidence.js';
 import type { LearnerRequest } from './learner-service.js';
 import type { SubmissionPage } from './submission-service.js';
 import {
+  type PhotoBookCourseView,
   validateWorkbookPhotoIdentification,
   type WorkbookPhotoProposal,
 } from './workbook-photo-contracts.js';
@@ -181,13 +182,13 @@ export function workbookPhotoIntakeHandlers(input: {
         references: {
           workbookId: {
             kind: 'candidate',
-            model: '@happyvertical/smrt-education:Workbook',
+            model: '@happyvertical/smrt-education:Course',
           },
         },
         candidates: async (query, context, page) => {
           await authorize(context);
           const books = await bound(context, (service) =>
-            service.listWorkbookPhotoWorkbooks(input.request),
+            service.listPhotoBookCourses(input.request),
           );
           const needle = query.toLowerCase();
           const ordered = [...books].sort(
@@ -198,10 +199,11 @@ export function workbookPhotoIntakeHandlers(input: {
           );
           return {
             items: ordered.slice(0, page.limit).map((book) => ({
-              model: '@happyvertical/smrt-education:Workbook',
+              model: '@happyvertical/smrt-education:Course',
               id: book.id,
               revision: workbookRevision(book),
-              label: JSON.stringify(book),
+              // Provider wire shape: the book identity block is `workbook`.
+              label: JSON.stringify(wireCandidate(book)),
             })),
             hasMore: ordered.length > page.limit,
           };
@@ -232,6 +234,10 @@ export function workbookPhotoIntakeHandlers(input: {
     },
   ];
 }
+function wireCandidate(book: PhotoBookCourseView) {
+  const { bookKey, ...rest } = book;
+  return { ...rest, workbookKey: bookKey };
+}
 function workbookRevision(book: unknown) {
   return `workbook:${createHash('sha256').update(canonical(book)).digest('hex')}`;
 }
@@ -241,7 +247,7 @@ export function workbookPhotoIntakeTargetResolver(input: {
   request: LearnerRequest;
 }): import('@happyvertical/smrt-ingestion/execution').IntakeExecutionOptions['assertTarget'] {
   return async ({ db, scope, itemId, model, id, revision }) => {
-    if (model !== '@happyvertical/smrt-education:Workbook')
+    if (model !== '@happyvertical/smrt-education:Course')
       throw new Error('Photo target unavailable');
     const books = await withTenant(
       {
@@ -253,7 +259,7 @@ export function workbookPhotoIntakeTargetResolver(input: {
       () =>
         input.workbooks.withExecutor(db, async (service) => {
           await service.assertWorkbookPhotoScope(input.request, scope, itemId);
-          return service.listWorkbookPhotoWorkbooks(input.request);
+          return service.listPhotoBookCourses(input.request);
         }),
     );
     const book = books.find((book) => book.id === id);

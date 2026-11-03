@@ -1213,7 +1213,7 @@ describe('question and learning-objective records', () => {
     await f.as(f.parent, async () => {
       const activity = await workbook.resolveBookPageActivity({
         ...f.parent,
-        workbookKey: 'wb',
+        bookKey: 'wb',
         title: 'Workbook',
         edition: '',
         pageKey: 'p1',

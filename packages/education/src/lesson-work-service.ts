@@ -1,5 +1,6 @@
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { PDFDocument } from 'pdf-lib';
+import type { Course } from './catalog.js';
 import type { CatalogAuthorizer } from './catalog-service.js';
 import {
   CourseCollection,
@@ -20,6 +21,11 @@ import {
   type LearnerRequest,
 } from './learner-service.js';
 import {
+  LessonPageCollection,
+  lessonPageView,
+  validLessonPageKey,
+} from './lesson-pages.js';
+import {
   readWorkCompletion,
   type WorkCompletionDecision,
   WorkCompletionDecisionCollection,
@@ -27,6 +33,8 @@ import {
 import {
   aggregateWorkQuestions,
   type LessonActivityView,
+  type LessonWorkPlacement,
+  LessonWorkPlacementError,
   validateWorkAssessment,
   WORK_MATH_VOCABULARY,
   type WorkAssessment,
@@ -44,14 +52,12 @@ import {
 import {
   type LessonActivity,
   LessonActivityCollection,
+  type LessonWorkFiling,
+  LessonWorkFilingCollection,
   type WorkAssessmentRevision,
   WorkAssessmentRevisionCollection,
   type WorkAttempt,
   WorkAttemptCollection,
-  type Workbook,
-  WorkbookCollection,
-  type WorkbookWorkFiling,
-  WorkbookWorkFilingCollection,
   WorkFeedbackDeliveryCollection,
   WorkFeedbackReleaseCollection,
 } from './lesson-work-models.js';
@@ -87,6 +93,17 @@ function digest(value: unknown) {
     .update(JSON.stringify(canonical(value)))
     .digest('hex');
 }
+function createdTime(row: object): number {
+  const value = (row as { created_at?: unknown }).created_at;
+  return value ? new Date(value as string).getTime() : 0;
+}
+/** A UUID-shaped id derived from its parts, so concurrent first inserts collide. */
+function deterministicId(parts: unknown[]): string {
+  const hex = digest(parts);
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-5${hex.slice(13, 16)}-${(
+    (Number.parseInt(hex[16], 16) & 3) | 8
+  ).toString(16)}${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+}
 function nonempty(value: string, label: string) {
   if (typeof value !== 'string' || !value.trim() || value.length > 200)
     throw new Error(`Invalid ${label}`);
@@ -118,7 +135,7 @@ function completionDecisionView(
   };
 }
 
-/** Actor-bound durable physical workbook workflow. No generated write surface. */
+/** Actor-bound durable lesson work workflow. No generated write surface. */
 export class LessonWorkService extends SubmissionService {
   constructor(
     db: DatabaseInterface,
@@ -139,7 +156,7 @@ export class LessonWorkService extends SubmissionService {
     ) as this;
   }
   private async serialize(request: LearnerRequest) {
-    // One lock order for workbook identities, policies, captures and decisions.
+    // One lock order for book identities, policies, captures and decisions.
     await this.db.query(
       'UPDATE learners SET id=id WHERE id=? AND tenant_id=?',
       [request.learnerId, request.tenantId],
@@ -161,40 +178,29 @@ export class LessonWorkService extends SubmissionService {
       { cache: false },
     );
     if (!row) throw new LearnerAuthorizationError();
-    const workbook = row.workbookId
-      ? await (await WorkbookCollection.create({ db: this.db })).get(
-          {
-            id: row.workbookId,
-            tenantId: request.tenantId,
-            learnerId: request.learnerId,
-          },
-          { cache: false },
-        )
-      : null;
-    if (row.captureKind === 'unfiled') {
-      if (
-        row.workbookId !== null ||
-        !row.photoIntakeId ||
+    if (
+      row.captureKind === 'unfiled' &&
+      (!row.photoIntakeId ||
         !(await this.db.get('workbook_photo_intakes', {
           id: row.photoIntakeId,
           tenant_id: request.tenantId,
           learner_id: request.learnerId,
-        }))
-      )
-        throw new LearnerAuthorizationError();
-    } else if (!workbook) throw new LearnerAuthorizationError();
+        })))
+    )
+      throw new LearnerAuthorizationError();
     await this.requireEnrollment(
       { ...request, enrollmentId: row.enrollmentId },
       action,
     );
-    return { row, workbook, learner };
+    return { row, learner };
   }
   private async filingHead(
     row: LessonActivity,
-  ): Promise<WorkbookWorkFiling | null> {
+  ): Promise<LessonWorkFiling | null> {
     if (row.captureKind !== 'unfiled') return null;
+    if (!(await this.db.tableExists('lesson_work_filings'))) return null;
     const rows = await (
-      await WorkbookWorkFilingCollection.create({ db: this.db })
+      await LessonWorkFilingCollection.create({ db: this.db })
     ).list({
       where: {
         tenantId: row.tenantId,
@@ -205,38 +211,93 @@ export class LessonWorkService extends SubmissionService {
     const superseded = new Set(rows.map((r) => r.previousRevisionId));
     const heads = rows.filter((r) => !superseded.has(String(r.id)));
     if (heads.length > 1)
-      throw new Error('Workbook filing history has conflicting heads');
+      throw new Error('Lesson work filing history has conflicting heads');
     return heads[0] ?? null;
+  }
+  /** Effective placement: the filing head for filed work, else its own routing. */
+  private async placement(
+    row: LessonActivity,
+    replay?: LessonWorkFiling,
+  ): Promise<{
+    head: LessonWorkFiling | null;
+    placement: LessonWorkPlacement | null;
+  }> {
+    const head = replay ?? (await this.filingHead(row));
+    if (head)
+      return {
+        head,
+        placement: {
+          courseId: head.courseId,
+          enrollmentId: head.enrollmentId,
+          lessonId: head.lessonId,
+          lessonPageId: head.lessonPageId,
+        },
+      };
+    if (row.captureKind === 'unfiled') return { head: null, placement: null };
+    const enrollment = await this.db.get('enrollments', {
+      id: row.enrollmentId,
+      tenant_id: row.tenantId,
+    });
+    if (!enrollment) throw new LearnerAuthorizationError();
+    const pages = await this.lessonPages(row.tenantId, row.lessonId);
+    return {
+      head: null,
+      placement: {
+        courseId: String(enrollment.course_id),
+        enrollmentId: row.enrollmentId,
+        lessonId: row.lessonId,
+        lessonPageId: pages[0] ? String(pages[0].id) : null,
+      },
+    };
+  }
+  private async lessonPages(tenantId: string, lessonId: string) {
+    if (!(await this.db.tableExists('lesson_pages'))) return [];
+    const rows = await (
+      await LessonPageCollection.create({ db: this.db })
+    ).list({ where: { lessonId }, limit: 1000 });
+    return rows
+      .filter((r) => r.tenantId === null || r.tenantId === tenantId)
+      .sort(
+        (a, b) =>
+          a.sortOrder - b.sortOrder ||
+          a.pageKey.localeCompare(b.pageKey) ||
+          String(a.id).localeCompare(String(b.id)),
+      );
   }
   private async activityView(
     row: LessonActivity,
-    book: Workbook | null,
-    replay?: WorkbookWorkFiling,
+    replay?: LessonWorkFiling,
   ): Promise<LessonActivityView> {
-    const head = replay ?? (await this.filingHead(row));
-    const projectedBook = head
-      ? await (await WorkbookCollection.create({ db: this.db })).get(
-          {
-            id: head.workbookId,
-            tenantId: row.tenantId,
-            learnerId: row.learnerId,
-          },
-          { cache: false },
-        )
-      : book;
-    const target = head?.canonicalActivityId
-      ? await (await LessonActivityCollection.create({ db: this.db })).get(
-          {
-            id: head.canonicalActivityId,
-            tenantId: row.tenantId,
-            learnerId: row.learnerId,
-            workbookId: head.workbookId,
-          },
-          { cache: false },
-        )
+    const { head, placement } = await this.placement(row, replay);
+    // Visibility comes from the exact-tenant enrollment, which may name a
+    // global or ancestor catalog course; the course row is display only.
+    const courseRow = placement
+      ? await this.db.get('courses', { id: placement.courseId })
       : null;
-    if (head && (!projectedBook || (head.canonicalActivityId && !target)))
-      throw new LearnerAuthorizationError();
+    if (placement && !courseRow) throw new LearnerAuthorizationError();
+    const course = courseRow
+      ? {
+          id: String(courseRow.id),
+          title: String(courseRow.title ?? ''),
+          bookKey: String(courseRow.book_key ?? ''),
+          bookEdition: String(courseRow.book_edition ?? ''),
+          workReviewRequired: ![false, 0, '0', 'f', 'false'].includes(
+            courseRow.work_review_required as never,
+          ),
+          workPolicyVersion: Number(courseRow.work_policy_version ?? 1) || 1,
+        }
+      : null;
+    const lesson = placement
+      ? await this.db.get('lessons', { id: placement.lessonId })
+      : null;
+    const pages = placement
+      ? (await this.lessonPages(row.tenantId, placement.lessonId)).map(
+          lessonPageView,
+        )
+      : [];
+    const page = placement?.lessonPageId
+      ? pages.find((p) => p.id === placement.lessonPageId)
+      : undefined;
     const completion = await readWorkCompletion(this.db, {
       tenantId: row.tenantId,
       learnerId: row.learnerId,
@@ -250,15 +311,22 @@ export class LessonWorkService extends SubmissionService {
       completion: completion.completion,
       id: String(row.id),
       learnerId: row.learnerId,
-      workbookKey: projectedBook?.workbookKey ?? '',
-      title: projectedBook?.title ?? '',
-      edition: projectedBook?.edition ?? '',
-      pageKey: target?.pageKey ?? row.pageKey,
-      pageLabel: target?.pageLabel ?? row.pageLabel,
       enrollmentId: row.enrollmentId,
       lessonId: row.lessonId,
-      reviewRequired: book?.reviewRequired ?? true,
-      policyVersion: book?.policyVersion ?? 1,
+      courseId: course ? String(course.id) : '',
+      courseTitle: course?.title ?? '',
+      bookKey: course?.bookKey ?? '',
+      bookEdition: course?.bookEdition ?? '',
+      lessonTitle: lesson ? String(lesson.title ?? '') : '',
+      pageKey: placement
+        ? (page?.pageKey ?? '')
+        : `receipt:${row.photoIntakeId}`,
+      pageLabel: placement
+        ? (page?.label ?? String(lesson?.title ?? ''))
+        : 'Captured work',
+      pages,
+      reviewRequired: course?.workReviewRequired ?? true,
+      policyVersion: course?.workPolicyVersion ?? 1,
       filing: {
         state:
           row.captureKind === 'unfiled'
@@ -266,8 +334,7 @@ export class LessonWorkService extends SubmissionService {
               ? 'filed'
               : 'unfiled'
             : 'identified',
-        workbookId: projectedBook ? String(projectedBook.id) : null,
-        canonicalActivityId: target ? String(target.id) : null,
+        placement,
         revisionId: head ? String(head.id) : null,
       },
     };
@@ -275,8 +342,8 @@ export class LessonWorkService extends SubmissionService {
   async getLessonActivity(
     request: ActivityRequest,
   ): Promise<LessonActivityView> {
-    const { row, workbook } = await this.activity(request);
-    return this.activityView(row, workbook);
+    const { row } = await this.activity(request);
+    return this.activityView(row);
   }
   /** Receipt-bound technical routing only; the caller already owns the surrounding mutation. */
   protected async resolveUnfiledActivityInScope(
@@ -313,7 +380,7 @@ export class LessonWorkService extends SubmissionService {
         { ...request, activityId: String(existing.id) },
         action,
       );
-      return this.activityView(found.row, found.workbook);
+      return this.activityView(found.row);
     }
     const key = digest([request.tenantId, request.learnerId, request.intakeId]);
     const course = await (
@@ -373,24 +440,206 @@ export class LessonWorkService extends SubmissionService {
       learnerId: request.learnerId,
       captureKind: 'unfiled',
       photoIntakeId: request.intakeId,
-      workbookId: null,
       enrollmentId: String(enrollment.id),
       lessonId: String(lesson.id),
-      pageKey: `receipt:${request.intakeId}`,
-      pageLabel: 'Captured work',
     });
     await this.requireEnrollment(
       { ...request, enrollmentId: row.enrollmentId },
       action,
     );
-    return this.activityView(row, null);
+    return this.activityView(row);
   }
-  /** Append a filing association without modifying capture policy or learning history. */
-  async fileWorkbookWork(
+  /** The family's course for a book key, created on first use. */
+  protected async bookCourse(
+    request: LearnerRequest,
+    book: { bookKey: string; title: string; edition?: string },
+    create = true,
+  ): Promise<Course | null> {
+    nonempty(book.bookKey, 'book key');
+    nonempty(book.title, 'book title');
+    if (
+      book.edition !== undefined &&
+      (typeof book.edition !== 'string' || book.edition.length > 200)
+    )
+      throw new Error('Invalid edition');
+    const courses = await CourseCollection.create({ db: this.db });
+    const found = await courses.get(
+      { tenantId: request.tenantId, bookKey: book.bookKey },
+      { cache: false },
+    );
+    if (found) {
+      if (
+        found.title !== book.title ||
+        found.bookEdition !== (book.edition ?? '')
+      )
+        throw new Error('Book key already names another title or edition');
+      return found;
+    }
+    if (!create) return null;
+    // A deterministic id makes a concurrent first use of the same key collide.
+    return courses.create({
+      _insertOnly: true,
+      id: deterministicId(['book-course', request.tenantId, book.bookKey]),
+      slug: `book-${digest([request.tenantId, book.bookKey])}`,
+      tenantId: request.tenantId,
+      title: book.title,
+      licenseKind: 'personal-use-copy',
+      sourceKey: 'book',
+      sourceRef: book.bookKey,
+      modality: 'printable',
+      bookKey: book.bookKey,
+      bookEdition: book.edition ?? '',
+    });
+  }
+  /** The learner's enrollment in a course; book courses enroll on first use. */
+  protected async courseEnrollment(
+    request: LearnerRequest,
+    course: Course,
+    action: Parameters<LearnerAuthorizer>[0]['action'],
+  ): Promise<string> {
+    const rows = (
+      await (
+        await EnrollmentCollection.create({ db: this.db })
+      ).list({
+        where: {
+          tenantId: request.tenantId,
+          learnerId: request.learnerId,
+          courseId: String(course.id),
+        },
+      })
+    )
+      .filter((r) => r.status !== 'dropped')
+      .sort(
+        (a, b) =>
+          createdTime(a) - createdTime(b) ||
+          String(a.id).localeCompare(String(b.id)),
+      );
+    if (rows[0]) {
+      await this.requireEnrollment(
+        { ...request, enrollmentId: String(rows[0].id) },
+        action,
+      );
+      return String(rows[0].id);
+    }
+    // Only the family's own courses can be seen without an enrollment, and
+    // only its own book courses enroll on first use.
+    if (course.tenantId !== request.tenantId)
+      throw new LearnerAuthorizationError();
+    if (!course.bookKey) throw new LessonWorkPlacementError('not-enrolled');
+    const key = digest([request.tenantId, request.learnerId, course.id]);
+    const curriculum = await (
+      await CurriculumCollection.create({ db: this.db })
+    ).create({
+      _insertOnly: true,
+      slug: `book-plan-${key}`,
+      tenantId: request.tenantId,
+      learnerId: request.learnerId,
+      title: course.title,
+    });
+    const enrollment = await (
+      await EnrollmentCollection.create({ db: this.db })
+    ).create({
+      _insertOnly: true,
+      tenantId: request.tenantId,
+      learnerId: request.learnerId,
+      curriculumId: String(curriculum.id),
+      courseId: String(course.id),
+      status: 'active',
+    });
+    return String(enrollment.id);
+  }
+  /** Append a one-page Worksheet lesson to a family book or plain course. */
+  protected async appendPageLesson(
+    request: LearnerRequest,
+    course: Course,
+    page: { pageKey?: string; pageLabel: string },
+  ): Promise<{ lessonId: string; lessonPageId: string | null }> {
+    if (
+      course.tenantId !== request.tenantId ||
+      ['authored', 'authored-release'].includes(course.sourceKey)
+    )
+      throw new LessonWorkPlacementError('lesson-required');
+    const sections = (
+      await (
+        await CourseSectionCollection.create({ db: this.db })
+      ).list({
+        where: { tenantId: request.tenantId, courseId: String(course.id) },
+      })
+    ).sort(
+      (a, b) =>
+        a.sortOrder - b.sortOrder ||
+        createdTime(a) - createdTime(b) ||
+        String(a.id).localeCompare(String(b.id)),
+    );
+    const section =
+      sections[0] ??
+      (await (
+        await CourseSectionCollection.create({ db: this.db })
+      ).create({
+        _insertOnly: true,
+        slug: `book-pages-${course.id}`,
+        tenantId: request.tenantId,
+        courseId: String(course.id),
+        title: 'Pages',
+      }));
+    const identity = page.pageKey ?? `label:${page.pageLabel}`;
+    const lessons = await this.db.list('lessons', {
+      tenant_id: request.tenantId,
+      section_id: String(section.id),
+    });
+    const lesson = await (
+      await WorksheetCollection.create({ db: this.db })
+    ).create({
+      _insertOnly: true,
+      slug: `book-page-${digest([course.id, identity])}`,
+      tenantId: request.tenantId,
+      sectionId: String(section.id),
+      title: page.pageLabel,
+      sortOrder: lessons.length,
+      completionRule: 'submit',
+    });
+    if (!page.pageKey)
+      return { lessonId: String(lesson.id), lessonPageId: null };
+    const created = await (
+      await LessonPageCollection.create({ db: this.db })
+    ).create({
+      _insertOnly: true,
+      tenantId: request.tenantId,
+      courseId: String(course.id),
+      lessonId: String(lesson.id),
+      pageKey: page.pageKey,
+      label: page.pageLabel,
+    });
+    return { lessonId: String(lesson.id), lessonPageId: String(created.id) };
+  }
+  /** Pages with this key across the course, earliest first. */
+  private async coursePages(courseId: string, pageKey: string) {
+    if (!(await this.db.tableExists('lesson_pages'))) return [];
+    return (
+      await (
+        await LessonPageCollection.create({ db: this.db })
+      ).list({
+        where: { courseId, pageKey },
+      })
+    ).sort(
+      (a, b) =>
+        createdTime(a) - createdTime(b) ||
+        String(a.id).localeCompare(String(b.id)),
+    );
+  }
+  /**
+   * Place unfiled work in a course: an existing lesson (and page), the page
+   * with that key, or a newly appended page lesson in a family book/plain
+   * course. Authored courses need the lesson first (`appendLesson`). Append-only;
+   * the work keeps its IDs, attempts and captured review policy.
+   */
+  async fileLessonWork(
     request: ActivityRequest & {
-      workbookId?: string;
-      newWorkbook?: { title: string; edition?: string; workbookKey?: string };
-      canonicalActivityId?: string;
+      courseId?: string;
+      newBook?: { title: string; edition?: string; bookKey?: string };
+      lessonId?: string;
+      pageKey?: string;
+      pageLabel?: string;
       expectedRevisionId: string | null;
       requestKey: string;
       reason: string;
@@ -399,69 +648,66 @@ export class LessonWorkService extends SubmissionService {
     return this.composeMutation(async (service) => {
       await service.requireActor(request, 'education.learner.plan');
       await service.serialize(request);
-      const { row, workbook } = await service.activity(
-        request,
-        'education.learner.plan',
-      );
+      const { row } = await service.activity(request, 'education.learner.plan');
       if (row.captureKind !== 'unfiled')
         throw new Error('Only unfiled captured work can be filed');
       nonempty(request.requestKey, 'filing request key');
       nonempty(request.reason, 'filing reason');
-      const createsBook = request.newWorkbook !== undefined;
-      if ((request.workbookId !== undefined) === createsBook)
-        throw new Error(
-          'Choose exactly one existing workbook or new workbook metadata',
-        );
-      let newBook:
-        | { workbookKey: string; title: string; edition: string }
-        | undefined;
+      const createsBook = request.newBook !== undefined;
+      if ((request.courseId !== undefined) === createsBook)
+        throw new Error('Choose exactly one existing course or new book');
+      let newBook: { bookKey: string; title: string; edition: string } | null =
+        null;
       if (createsBook) {
-        const metadata = request.newWorkbook;
+        const metadata = request.newBook;
         if (
           !metadata ||
           typeof metadata !== 'object' ||
           Array.isArray(metadata)
         )
-          throw new Error('Invalid new workbook metadata');
-        nonempty(metadata.title, 'new workbook title');
+          throw new Error('Invalid new book metadata');
+        nonempty(metadata.title, 'new book title');
         if (
           metadata.edition !== undefined &&
           (typeof metadata.edition !== 'string' ||
             metadata.edition.length > 200)
         )
-          throw new Error('Invalid new workbook edition');
-        if (metadata.workbookKey !== undefined)
-          nonempty(metadata.workbookKey, 'new workbook key');
-        if (request.canonicalActivityId !== undefined)
-          throw new Error(
-            'New workbook metadata cannot claim a canonical activity',
-          );
+          throw new Error('Invalid new book edition');
+        if (metadata.bookKey !== undefined)
+          nonempty(metadata.bookKey, 'new book key');
+        if (request.lessonId !== undefined)
+          throw new Error('A new book has no existing lesson');
         newBook = {
-          workbookKey:
-            metadata.workbookKey ??
+          bookKey:
+            metadata.bookKey ??
             `manual:${digest([request.tenantId, request.learnerId, request.activityId, request.requestKey])}`,
           title: metadata.title,
           edition: metadata.edition ?? '',
         };
-      } else nonempty(request.workbookId as string, 'filing workbook');
-      if (request.canonicalActivityId !== undefined)
-        nonempty(request.canonicalActivityId, 'filing activity');
+      } else nonempty(request.courseId as string, 'filing course');
+      if (request.lessonId !== undefined)
+        nonempty(request.lessonId, 'filing lesson');
+      if (request.pageKey !== undefined && !validLessonPageKey(request.pageKey))
+        throw new Error('Invalid filing page key');
+      if (request.pageLabel !== undefined)
+        nonempty(request.pageLabel, 'filing page label');
       if (
         request.expectedRevisionId !== null &&
         (typeof request.expectedRevisionId !== 'string' ||
           !request.expectedRevisionId)
       )
         throw new Error('Invalid expected filing revision');
-      const payload = {
-        workbookId: request.workbookId,
-        ...(newBook ? { newWorkbook: newBook } : {}),
-        canonicalActivityId: request.canonicalActivityId ?? null,
+      const hash = digest({
+        courseId: request.courseId ?? null,
+        newBook,
+        lessonId: request.lessonId ?? null,
+        pageKey: request.pageKey ?? null,
+        pageLabel: request.pageLabel ?? null,
         previousRevisionId: request.expectedRevisionId,
         actorUserId: request.actorUserId,
         reason: request.reason,
-      };
-      const hash = digest(payload);
-      const filings = await WorkbookWorkFilingCollection.create({
+      });
+      const filings = await LessonWorkFilingCollection.create({
         db: service.db,
       });
       const prior = await filings.get(
@@ -475,81 +721,168 @@ export class LessonWorkService extends SubmissionService {
       );
       if (prior) {
         if (prior.digest !== hash)
-          throw new Error('Workbook filing retry changed');
-        return service.activityView(row, workbook, prior);
+          throw new Error('Lesson work filing retry changed');
+        return service.activityView(row, prior);
       }
       const head = await service.filingHead(row);
       if ((head ? String(head.id) : null) !== request.expectedRevisionId)
-        throw new Error('Workbook filing head changed');
-      const books = await WorkbookCollection.create({ db: service.db });
-      let targetBook: Workbook | null;
-      if (newBook) {
-        targetBook = await books.get(
-          {
-            tenantId: request.tenantId,
-            learnerId: request.learnerId,
-            workbookKey: newBook.workbookKey,
-          },
-          { cache: false },
-        );
-        if (
-          targetBook &&
-          (targetBook.title !== newBook.title ||
-            targetBook.edition !== newBook.edition)
-        )
-          throw new Error(
-            'Workbook key already names another title or edition',
+        throw new Error('Lesson work filing head changed');
+      const course = newBook
+        ? await service.bookCourse(request, newBook)
+        : await (await CourseCollection.create({ db: service.db })).get(
+            { id: request.courseId },
+            { cache: false },
           );
-        targetBook ??= await books.create({
-          _insertOnly: true,
-          slug: `workbook-${digest([request.tenantId, request.learnerId, newBook.workbookKey])}`,
-          tenantId: request.tenantId,
-          learnerId: request.learnerId,
-          ...newBook,
-        });
-      } else
-        targetBook = await books.get(
-          {
-            id: request.workbookId,
-            tenantId: request.tenantId,
-            learnerId: request.learnerId,
-          },
-          { cache: false },
-        );
-      if (!targetBook) throw new LearnerAuthorizationError();
-      const targetWorkbookId = String(targetBook.id);
-      if (request.canonicalActivityId) {
-        const target = await service.activity(
-          { ...request, activityId: request.canonicalActivityId },
-          'education.learner.plan',
+      if (
+        !course ||
+        course.sourceKey === 'unfiled-work' ||
+        course.status === 'archived'
+      )
+        throw new LearnerAuthorizationError();
+      const enrollmentId = await service.courseEnrollment(
+        request,
+        course,
+        'education.learner.plan',
+      );
+      const label = request.pageLabel ?? request.pageKey ?? 'Captured work';
+      let lessonId: string;
+      let lessonPageId: string | null = null;
+      if (request.lessonId) {
+        const scope = await service.lessonScope(
+          request,
+          await service.requireEnrollment(
+            { ...request, enrollmentId },
+            'education.learner.plan',
+          ),
         );
         if (
-          target.row.captureKind !== 'identified' ||
-          target.row.workbookId !== targetWorkbookId ||
-          target.row.id === row.id
+          !scope.entries.some(
+            ({ lesson }) => String(lesson.id) === request.lessonId,
+          )
         )
-          throw new Error('Workbook filing target mismatch');
+          throw new LessonWorkPlacementError('lesson-outside-course');
+        lessonId = request.lessonId;
+        if (request.pageKey) {
+          const pages = await LessonPageCollection.create({ db: service.db });
+          const lesson = await service.db.get('lessons', { id: lessonId });
+          const existing = await pages.get(
+            { lessonId, pageKey: request.pageKey },
+            { cache: false },
+          );
+          lessonPageId = existing
+            ? String(existing.id)
+            : String(
+                (
+                  await pages.create({
+                    _insertOnly: true,
+                    tenantId: lesson?.tenant_id ?? null,
+                    courseId: String(
+                      (
+                        await service.db.get('course_sections', {
+                          id: lesson?.section_id,
+                        })
+                      )?.course_id,
+                    ),
+                    lessonId,
+                    pageKey: request.pageKey,
+                    label,
+                    sortOrder: (
+                      await service.lessonPages(request.tenantId, lessonId)
+                    ).length,
+                  })
+                ).id,
+              );
+        }
+      } else {
+        const match = request.pageKey
+          ? (await service.coursePages(String(course.id), request.pageKey))[0]
+          : undefined;
+        if (match) {
+          lessonId = match.lessonId;
+          lessonPageId = String(match.id);
+        } else {
+          const appended = await service.appendPageLesson(request, course, {
+            pageKey: request.pageKey,
+            pageLabel: label,
+          });
+          lessonId = appended.lessonId;
+          lessonPageId = appended.lessonPageId;
+        }
       }
-      await filings.create({
+      const filing = await filings.create({
         _insertOnly: true,
-        workbookId: targetWorkbookId,
-        canonicalActivityId: payload.canonicalActivityId,
-        previousRevisionId: payload.previousRevisionId,
-        actorUserId: payload.actorUserId,
-        reason: payload.reason,
         tenantId: request.tenantId,
         learnerId: request.learnerId,
         sourceActivityId: request.activityId,
+        courseId: String(course.id),
+        enrollmentId,
+        lessonId,
+        lessonPageId,
+        previousRevisionId: request.expectedRevisionId,
+        actorUserId: request.actorUserId,
         requestKey: request.requestKey,
+        reason: request.reason,
         digest: hash,
       });
-      return service.activityView(row, workbook);
+      await service.syncPlacedProgress(request, row, {
+        enrollmentId,
+        lessonId,
+      });
+      return service.activityView(row, filing);
+    });
+  }
+  /**
+   * Mirror placed work onto the target lesson's progress: Done when the work's
+   * current attempt is complete, otherwise Doing. A projection, not evidence.
+   */
+  protected async syncPlacedProgress(
+    request: LearnerRequest,
+    row: LessonActivity,
+    target: { enrollmentId: string; lessonId: string },
+  ): Promise<void> {
+    const state = await readWorkCompletion(this.db, {
+      tenantId: request.tenantId,
+      learnerId: request.learnerId,
+      activityId: String(row.id),
+    });
+    const progress = await LessonProgressCollection.create({ db: this.db });
+    const existing = await progress.get(
+      {
+        tenantId: request.tenantId,
+        learnerId: request.learnerId,
+        enrollmentId: target.enrollmentId,
+        lessonId: target.lessonId,
+      },
+      { cache: false },
+    );
+    const complete = state.completion.status === 'complete';
+    if (existing) {
+      if (complete && existing.status !== 'complete') {
+        existing.status = 'complete';
+        existing.completedAt = state.completion.completedAt;
+        await existing.save();
+      } else if (!complete && existing.status === 'not_started') {
+        existing.status = 'submitted';
+        existing.startedAt ??= new Date();
+        await existing.save();
+      }
+      return;
+    }
+    await progress.create({
+      tenantId: request.tenantId,
+      learnerId: request.learnerId,
+      enrollmentId: target.enrollmentId,
+      lessonId: target.lessonId,
+      status: complete ? 'complete' : 'submitted',
+      startedAt: new Date(),
+      completedAt: complete ? state.completion.completedAt : null,
+      attempts: state.attempts.length,
     });
   }
   /** Explicit keys distinguish editions, repeated printed labels and page sides. */
   async resolveBookPageActivity(
     request: LearnerRequest & {
-      workbookKey: string;
+      bookKey: string;
       title: string;
       edition?: string;
       pageKey: string;
@@ -563,7 +896,7 @@ export class LessonWorkService extends SubmissionService {
   /** Owning intake extension: caller validates evidence before upload-authorized creation. */
   protected async resolveBookPageActivityInScope(
     request: LearnerRequest & {
-      workbookKey: string;
+      bookKey: string;
       title: string;
       edition?: string;
       pageKey: string;
@@ -574,152 +907,67 @@ export class LessonWorkService extends SubmissionService {
     const service = this;
     await service.requireActor(request, action);
     await service.serialize(request);
-    for (const [label, value] of Object.entries({
-      workbookKey: request.workbookKey,
-      title: request.title,
-      pageKey: request.pageKey,
-      pageLabel: request.pageLabel,
-    }))
-      nonempty(value, label);
-    if (
-      request.edition !== undefined &&
-      (typeof request.edition !== 'string' || request.edition.length > 200)
-    )
-      throw new Error('Invalid edition');
-    const books = await WorkbookCollection.create({ db: service.db });
-    let book = await books.get(
-      {
-        tenantId: request.tenantId,
-        learnerId: request.learnerId,
-        workbookKey: request.workbookKey,
-      },
-      { cache: false },
-    );
-    if (
-      book &&
-      (book.title !== request.title || book.edition !== (request.edition ?? ''))
-    )
-      throw new Error('Workbook key already names another title or edition');
-    book ??= await books.create({
-      _insertOnly: true,
-      slug: `workbook-${digest([request.tenantId, request.learnerId, request.workbookKey])}`,
-      tenantId: request.tenantId,
-      learnerId: request.learnerId,
-      workbookKey: request.workbookKey,
-      title: request.title,
-      edition: request.edition ?? '',
-    });
+    if (!validLessonPageKey(request.pageKey))
+      throw new Error('Invalid pageKey');
+    nonempty(request.pageLabel, 'pageLabel');
+    const course = await service.bookCourse(request, request);
+    if (!course) throw new LearnerAuthorizationError();
+    const pages = await service.coursePages(String(course.id), request.pageKey);
     const activities = await LessonActivityCollection.create({
       db: service.db,
     });
-    const existing = await activities.get(
-      {
-        tenantId: request.tenantId,
-        learnerId: request.learnerId,
-        workbookId: String(book.id),
-        pageKey: request.pageKey,
-      },
-      { cache: false },
-    );
-    if (existing) {
-      if (existing.pageLabel !== request.pageLabel)
-        throw new Error('Page key already names another activity');
-      return service.activityView(existing, book);
-    }
-    // One private enrollment per family learner/workbook, with explicit pages.
-    const siblings = await activities.list({
-      where: {
-        tenantId: request.tenantId,
-        learnerId: request.learnerId,
-        workbookId: String(book.id),
-      },
-      limit: 1,
-    });
-    let enrollmentId: string;
-    let sectionId: string;
-    if (siblings[0]) {
-      const enrollment = await service.requireEnrollment(
-        { ...request, enrollmentId: siblings[0].enrollmentId },
-        action,
-      );
-      const lesson = await (
-        await WorksheetCollection.create({ db: service.db })
-      ).get(
-        { id: siblings[0].lessonId, tenantId: request.tenantId },
+    // A learner keeps the page lesson their earlier work used (merged books).
+    for (const page of pages) {
+      const existing = await activities.get(
+        {
+          tenantId: request.tenantId,
+          learnerId: request.learnerId,
+          lessonId: page.lessonId,
+          captureKind: 'identified',
+        },
         { cache: false },
       );
-      if (!lesson) throw new LearnerAuthorizationError();
-      enrollmentId = String(enrollment.id);
-      sectionId = lesson.sectionId;
-    } else {
-      const course = await (
-        await CourseCollection.create({ db: service.db })
-      ).create({
-        _insertOnly: true,
-        slug: `workbook-${book.id}`,
-        tenantId: request.tenantId,
-        title: request.title,
-        licenseKind: 'personal-use-copy',
-        sourceKey: 'physical-workbook',
-        sourceRef: String(book.id),
-        modality: 'printable',
-      });
-      const section = await (
-        await CourseSectionCollection.create({ db: service.db })
-      ).create({
-        _insertOnly: true,
-        slug: `workbook-pages-${book.id}`,
-        tenantId: request.tenantId,
-        courseId: String(course.id),
-        title: 'Workbook pages',
-      });
-      const curriculum = await (
-        await CurriculumCollection.create({ db: service.db })
-      ).create({
-        _insertOnly: true,
-        slug: `workbook-plan-${book.id}`,
-        tenantId: request.tenantId,
-        learnerId: request.learnerId,
-        title: request.title,
-      });
-      const enrollment = await (
-        await EnrollmentCollection.create({ db: service.db })
-      ).create({
-        _insertOnly: true,
-        tenantId: request.tenantId,
-        learnerId: request.learnerId,
-        curriculumId: String(curriculum.id),
-        courseId: String(course.id),
-        status: 'active',
-      });
-      enrollmentId = String(enrollment.id);
-      sectionId = String(section.id);
+      if (existing) {
+        if (page.label !== request.pageLabel)
+          throw new Error('Page key already names another activity');
+        await service.activity(
+          { ...request, activityId: String(existing.id) },
+          action,
+        );
+        return service.activityView(existing);
+      }
     }
-    const lesson = await (
-      await WorksheetCollection.create({ db: service.db })
-    ).create({
-      _insertOnly: true,
-      slug: `workbook-page-${digest([book.id, request.pageKey])}`,
-      tenantId: request.tenantId,
-      sectionId,
-      title: request.pageLabel,
-      completionRule: 'submit',
-    });
+    if (pages[0] && pages[0].label !== request.pageLabel)
+      throw new Error('Page key already names another activity');
+    const enrollmentId = await service.courseEnrollment(
+      request,
+      course,
+      action,
+    );
+    const lessonId =
+      pages[0]?.lessonId ??
+      (
+        await service.appendPageLesson(request, course, {
+          pageKey: request.pageKey,
+          pageLabel: request.pageLabel,
+        })
+      ).lessonId;
     const row = await activities.create({
       _insertOnly: true,
-      slug: `workbook-activity-${digest([book.id, request.pageKey])}`,
+      slug: `lesson-activity-${digest([request.learnerId, enrollmentId, lessonId])}`,
       tenantId: request.tenantId,
       learnerId: request.learnerId,
-      workbookId: String(book.id),
       enrollmentId,
-      lessonId: String(lesson.id),
-      pageKey: request.pageKey,
-      pageLabel: request.pageLabel,
+      lessonId,
     });
-    return service.activityView(row, book);
+    return service.activityView(row);
   }
+  /** Every activity of the learner, optionally only those placed in one course. */
   async listLessonActivities(
-    request: LearnerRequest,
+    request: LearnerRequest & {
+      courseId?: string;
+      filing?: 'unfiled' | 'filed' | 'identified';
+    },
   ): Promise<LessonActivityView[]> {
     await this.requireActor(request, 'education.learner.read');
     const rows = await (
@@ -729,38 +977,67 @@ export class LessonWorkService extends SubmissionService {
     });
     const result: LessonActivityView[] = [];
     for (const row of rows) {
-      const found = await this.activity({
-        ...request,
-        activityId: String(row.id),
-      });
-      result.push(await this.activityView(row, found.workbook));
+      await this.activity({ ...request, activityId: String(row.id) });
+      const view = await this.activityView(row);
+      if (request.courseId !== undefined && view.courseId !== request.courseId)
+        continue;
+      if (request.filing !== undefined && view.filing.state !== request.filing)
+        continue;
+      result.push(view);
     }
     return result;
   }
-  async setWorkbookFeedbackPolicy(
-    request: ActivityRequest & {
+  /**
+   * Family course work policy. A guardian needs plan authority over every
+   * learner enrolled in the course; captures keep their snapshot.
+   */
+  async setCourseWorkPolicy(
+    request: LearnerRequest & {
+      courseId: string;
       expectedPolicyVersion: number;
       reviewRequired: boolean;
     },
-  ): Promise<LessonActivityView> {
+  ): Promise<{
+    courseId: string;
+    reviewRequired: boolean;
+    policyVersion: number;
+  }> {
     return this.composeMutation(async (service) => {
       await service.requireActor(request, 'education.learner.plan');
       await service.serialize(request);
-      const { row, workbook } = await service.activity(
-        request,
-        'education.learner.plan',
+      const course = await (
+        await CourseCollection.create({ db: service.db })
+      ).get(
+        { id: request.courseId, tenantId: request.tenantId },
+        { cache: false },
       );
-      if (!workbook || row.captureKind === 'unfiled')
-        throw new Error('Unfiled work has no workbook policy');
+      if (!course) throw new LearnerAuthorizationError();
+      const enrollments = await service.db.list('enrollments', {
+        tenant_id: request.tenantId,
+        course_id: request.courseId,
+      });
+      if (!enrollments.some((e) => String(e.learner_id) === request.learnerId))
+        throw new LearnerAuthorizationError();
+      for (const learnerId of new Set(
+        enrollments.map((e) => String(e.learner_id)),
+      ))
+        await service.requireActor(
+          { ...request, learnerId },
+          'education.learner.plan',
+        );
       if (
         typeof request.reviewRequired !== 'boolean' ||
-        workbook.policyVersion !== request.expectedPolicyVersion
+        course.workPolicyVersion !== request.expectedPolicyVersion
       )
-        throw new Error('Workbook policy changed');
-      workbook.reviewRequired = request.reviewRequired;
-      workbook.policyVersion++;
-      await workbook.save();
-      return service.activityView(row, workbook);
+        throw new Error('Course work policy changed');
+      course.workReviewRequired = request.reviewRequired;
+      course.workPolicyVersion++;
+      await course.save();
+      return {
+        courseId: String(course.id),
+        reviewRequired: course.workReviewRequired,
+        policyVersion: course.workPolicyVersion,
+      };
     });
   }
   private async attempt(
@@ -792,7 +1069,7 @@ export class LessonWorkService extends SubmissionService {
       enrollmentId: row.enrollmentId,
       submissionId: attempt.submissionId,
     });
-    // Workbook feedback always travels through the revision policy, never Grade.
+    // Lesson work feedback always travels through the revision policy, never Grade.
     return {
       id: String(attempt.id),
       submissionId: attempt.submissionId,
@@ -818,10 +1095,11 @@ export class LessonWorkService extends SubmissionService {
     return this.composeMutation(async (service) => {
       await service.requireActor(request, 'education.learner.submit');
       await service.serialize(request);
-      const { row, workbook } = await service.activity(
+      const { row } = await service.activity(
         request,
         'education.learner.submit',
       );
+      const policy = await service.activityView(row);
       if (row.captureKind === 'unfiled' && !request.previousSubmissionId) {
         const receipt = await service.db.get('workbook_photo_intakes', {
           id: row.photoIntakeId,
@@ -942,8 +1220,8 @@ export class LessonWorkService extends SubmissionService {
         submissionId: submission.id,
         previousAttemptId: previous ? String(previous.id) : null,
         episodeId: previous?.episodeId ?? id,
-        reviewRequired: workbook?.reviewRequired ?? true,
-        policyVersion: workbook?.policyVersion ?? 1,
+        reviewRequired: policy.reviewRequired,
+        policyVersion: policy.policyVersion,
         assistance,
         actorUserId: request.actorUserId,
         // Independent practice episodes have no predecessor edge. Preserve their
@@ -1808,7 +2086,7 @@ export class LessonWorkService extends SubmissionService {
       revisionId?: string;
     },
   ): Promise<WorkTimeline> {
-    const { row, workbook, learner } = await this.activity(request);
+    const { row, learner } = await this.activity(request);
     const own = learner.userId === request.actorUserId;
     const completion = await readWorkCompletion(this.db, {
       tenantId: request.tenantId,
@@ -1938,7 +2216,7 @@ export class LessonWorkService extends SubmissionService {
               submissionId: completion.currentAttempt.submissionId,
               expectedHeadId: completion.feedbackHeadId,
             },
-      activity: await this.activityView(row, workbook),
+      activity: await this.activityView(row),
       attempts,
       nextCursor:
         start + limit < all.length ? String(all[start + limit - 1].id) : null,

@@ -27,7 +27,7 @@ async function workbookFixture(
   );
   const create = {
     ...f.parent,
-    workbookKey: 'synthetic-copy-v1',
+    bookKey: 'synthetic-copy-v1',
     title: 'Synthetic workbook',
     edition: 'v1',
     pageKey: 'section-a:p7',

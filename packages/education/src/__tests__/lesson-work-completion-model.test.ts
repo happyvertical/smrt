@@ -37,7 +37,7 @@ it('keeps immutable decisions on their exact current attempt and rejects identit
     await f.as(f.parent, async () => {
       const activity = await service.resolveBookPageActivity({
         ...f.parent,
-        workbookKey: 'completion-model',
+        bookKey: 'completion-model',
         title: 'Synthetic workbook',
         edition: '',
         pageKey: 'p1',
