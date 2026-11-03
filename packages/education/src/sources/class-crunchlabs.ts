@@ -171,27 +171,63 @@ function locate(file: ClassCrunchLabsFile): Located | null {
   return null;
 }
 
-const VERSION = /^v\.?\s*\d+(\.\d+)*(\s*copy)?$/i;
-/** A readable title from a CrunchLabs file name. */
+const VERSION = /^v\.?\s*\d+(\.\d+)*[._\s]*(copy)?$/i;
+const LESSON_CODE = /^L0*\d{1,2}(\.\d+)?[\s_.-]+/i;
+/** A part that is the unit name, allowing a version suffix or a one-letter typo of the end. */
+function isUnitPart(part: string, unitKey: string): boolean {
+  const key = compact(part);
+  if (!unitKey || !key) return false;
+  return (
+    key === unitKey ||
+    key.startsWith(`${unitKey}v`) ||
+    (key.length >= 8 &&
+      key.length >= unitKey.length - 2 &&
+      unitKey.startsWith(key))
+  );
+}
+/**
+ * A readable title from a CrunchLabs file name: the letter prefix, lesson code,
+ * unit name, version, `copy` and stray dots are dropped
+ * (`A. L01_Teacher Mission Manual_Unit_v1.0.pdf` -> `Teacher Mission Manual`),
+ * and a trailing ` - detail` becomes `(detail)` (`Poster - 8.5x11` ->
+ * `Poster (8.5×11)`).
+ */
 function titleOf(fileName: string, unit: string): string {
-  const stem = fileName.replace(/\.[A-Za-z0-9]{1,8}$/, '').replace(LETTER, '');
+  const stem = fileName
+    .replace(/\.[A-Za-z0-9]{1,8}$/, '')
+    .replace(LETTER, '')
+    .replace(LESSON_CODE, '');
   const unitKey = compact(unit);
   const parts = stem
     .split('_')
-    .map(squash)
-    .filter(
-      (part) =>
-        part &&
-        !VERSION.test(part) &&
-        !(unitKey && compact(part) === unitKey) &&
-        !(unitKey && compact(part).startsWith(`${unitKey}v`)),
-    );
-  const title = (parts.length ? parts.join(' - ') : stem)
-    .replace(/\s*\bv\.?\s*\d+(\.\d+)*\s*$/i, '')
-    .replace(/\s*\bcopy\s*$/i, '')
-    .trim();
-  return squash(title).slice(0, 200) || stem.slice(0, 200);
+    .map((part) => squash(part).replace(/^[.\s]+|[.\s]+$/g, ''))
+    .filter((part) => part && !VERSION.test(part) && !isUnitPart(part, unitKey))
+    .map((part) =>
+      part
+        .replace(/\s*\bv\.?\s*\d+(\.\d+)*[.\s]*(copy)?$/i, '')
+        .replace(/\s*\bcopy$/i, '')
+        .replace(/^(.+?)\s+-\s+(.+)$/, '$1 ($2)')
+        .replace(/(\d)\s*x\s*(\d)/gi, '$1\u00d7$2')
+        .trim(),
+    )
+    .filter(Boolean);
+  const title = parts.join(' - ');
+  return squash(title).slice(0, 200) || squash(stem).slice(0, 200);
 }
+
+const SMALL_WORDS = new Set([
+  'a',
+  'an',
+  'and',
+  'at',
+  'for',
+  'in',
+  'of',
+  'on',
+  'the',
+  'to',
+  'with',
+]);
 
 const KIND_LABELS: Readonly<Record<string, string>> = Object.freeze({
   Recap: 'Recap',
@@ -215,6 +251,16 @@ function humanize(value: string): string {
       .replace(/([A-Za-z])(\d)/g, '$1 $2')
       .replace(/[-_]+/g, ' '),
   );
+}
+
+/** An activity name in title case with small words lower: `PlayWithPlungers` -> `Play with Plungers`. */
+function activityTitle(value: string): string {
+  return humanize(value)
+    .split(' ')
+    .map((w, i) =>
+      i > 0 && SMALL_WORDS.has(w.toLowerCase()) ? w.toLowerCase() : w,
+    )
+    .join(' ');
 }
 
 // -- videos -------------------------------------------------------------------
@@ -778,13 +824,23 @@ export async function buildClassCrunchLabsBundle(
     audience?: MaterialAudience;
     title: string;
   };
+  // Two different files that tidy to one title in a place are told apart, not shown twice.
+  const usedTitles = new Set<string>();
+  const uniqueTitle = (m: Material) => {
+    const place = m.lesson === null ? 'unit' : lessonKey(m.lesson);
+    let title = m.title;
+    for (let n = 2; usedTitles.has(`${place}|${title.toLowerCase()}`); n++)
+      title = `${m.title} (${n})`.slice(0, 200);
+    usedTitles.add(`${place}|${title.toLowerCase()}`);
+    return title;
+  };
   const decl = (m: Material, path: string): Decl => ({
     path,
     role: m.role,
     ...(m.audience !== LESSON_ASSET_DEFAULT_AUDIENCE[m.role]
       ? { audience: m.audience }
       : {}),
-    title: m.title,
+    title: uniqueTitle(m),
   });
   const courseMembers: Decl[] = [];
   const lessons = new Map<
@@ -875,6 +931,19 @@ export async function buildClassCrunchLabsBundle(
     report.pages.push({ lesson: n, path: log.path, pages: to });
   }
 
+  // `Lesson N`, with the activity the lesson's hands-on video names when there is one.
+  const lessonTitle = (n: number) => {
+    const named = videoNames
+      .filter((v) => v.lesson === n && v.title)
+      .sort((a, b) => stepOrder(a.step, b.step));
+    const source =
+      named.find((v) => v.kind === 'StudentHandsOnExploration') ??
+      named.find((v) => v.kind === 'DesignChallenge');
+    return source
+      ? `Lesson ${n}: ${activityTitle(source.title)}`.slice(0, 200)
+      : `Lesson ${n}`;
+  };
+
   const manifestLessons = [...lessons.keys()]
     .sort((a, b) => a - b)
     .map((n) => {
@@ -898,7 +967,7 @@ export async function buildClassCrunchLabsBundle(
         });
       return {
         key: lessonKey(n),
-        title: `Lesson ${n}`,
+        title: lessonTitle(n),
         // Unit-wide position, so parts of a split unit merge in lesson order.
         order: n,
         members: entry.members,

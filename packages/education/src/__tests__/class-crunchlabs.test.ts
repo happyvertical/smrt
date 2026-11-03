@@ -236,6 +236,87 @@ const lessonOf = (b: Awaited<ReturnType<typeof build>>, key: string) =>
     }>
   )[0]?.lessons.find((l) => l.key === key);
 
+describe('readable titles (#4642)', () => {
+  const U = 'Zoom Boom';
+  const R = 'Zoom Boom Unit Material (Motion)_Class CrunchLabs';
+  const Z1 = `${R}/${U}_Lesson 1`;
+  const Z3 = `${R}/${U}_Lesson 3`;
+  const W = `${R}/${U}_All Unit Wide Materials`;
+  const f = (path: string, label: string) => ({
+    path,
+    bytes: tinyPdf(label),
+  });
+  const files = [
+    f(`${Z1}/A. L01_Teacher Mission Manual_${U}_v1.0.pdf`, 'a'),
+    f(`${Z1}/B. L01_Mission Launch Deck Slides_${U}_v1.1_.pdf`, 'b'),
+    f(`${Z1}/C. L01_Student Mission Log_${U} v.1.1.pdf`, 'c'),
+    f(
+      `${Z1}/D. L01_Status Check Lesson Assessment Guidance_${U}_v1.0..pdf`,
+      'd',
+    ),
+    f(`${Z1}/D. L01_Status Check Lesson Assessment_${U}_v1.0 copy.pdf`, 'e'),
+    f(`${Z1}/D. L01_Status Check Lesson Assessment_${U}_v1.0.pdf`, 'f'),
+    f(`${Z1}/E. L01_Handouts_${U}_v1.0.pdf`, 'g'),
+    f(`${Z1}/F. L01_Trading Cards_${U}_v1.0.pdf`, 'h'),
+    f(`${Z3}/A. L03_Teacher Mission Manual_${U}_v1.0.pdf`, 'i'),
+    f(`${W}/F. Other Materials/SQIREL Poster - 8.5x11.pdf`, 'j'),
+    f(`${W}/F. Other Materials/SQUIRL Poster - Letter by Letter.pdf`, 'k'),
+    {
+      path: `${W}/G. Videos/L01.4_Video_StudentHandsOnExploration_CarnivalGames_${U}-006.mp4`,
+      bytes: Buffer.from('v'),
+    },
+    {
+      path: `${W}/G. Videos/L03.6_Video_StudentHandsOnExploration_PlayWithPlungers_${U}-002.mp4`,
+      bytes: Buffer.from('v'),
+    },
+  ];
+  it('tidies material titles and names lessons for their activity', async () => {
+    const b = await buildClassCrunchLabsBundle({
+      files: memoryClassCrunchLabsSource(files),
+      pageCounter: async () => 2,
+    });
+    const sections = b.manifest.sections as Array<{
+      lessons: Array<{ key: string; title: string; members: Decl[] }>;
+    }>;
+    const lessons = sections.flatMap((x) => x.lessons);
+    expect(lessons.map((l) => l.title)).toEqual([
+      'Lesson 1: Carnival Games',
+      'Lesson 3: Play with Plungers',
+    ]);
+    expect(lessons[0]?.members.map((m) => m.title).sort()).toEqual([
+      'Handouts',
+      'Mission Launch Deck Slides',
+      'Status Check Lesson Assessment',
+      'Status Check Lesson Assessment (2)',
+      'Status Check Lesson Assessment Guidance',
+      'Student Mission Log',
+      'Teacher Mission Manual',
+      'Trading Cards',
+    ]);
+    expect(
+      (b.manifest.courseMembers as Decl[]).map((m) => m.title).sort(),
+    ).toEqual([
+      'SQIREL Poster (8.5\u00d711)',
+      'SQUIRL Poster (Letter by Letter)',
+    ]);
+  });
+  it('falls back to Lesson N when no video names an activity', async () => {
+    const b = await buildClassCrunchLabsBundle({
+      files: memoryClassCrunchLabsSource(
+        files.filter((x) => !/\.mp4$/.test(x.path)),
+      ),
+      pageCounter: async () => 2,
+    });
+    const sections = b.manifest.sections as Array<{
+      lessons: Array<{ title: string }>;
+    }>;
+    expect(sections.flatMap((x) => x.lessons.map((l) => l.title))).toEqual([
+      'Lesson 1',
+      'Lesson 3',
+    ]);
+  });
+});
+
 describe('layout and mapping to manifest v2', () => {
   it('maps the lettered files to roles and audiences, lessons and course members', async () => {
     const b = await build();
@@ -277,7 +358,7 @@ describe('layout and mapping to manifest v2', () => {
     ]);
     // titles are readable, not file names
     expect(byName('Teacher Mission Manual')?.title).toBe(
-      'L01 - Teacher Mission Manual',
+      'Teacher Mission Manual',
     );
     const course = (b.manifest.courseMembers as Decl[]).map((m) => [
       m.role,

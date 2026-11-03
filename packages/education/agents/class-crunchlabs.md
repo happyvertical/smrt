@@ -55,6 +55,25 @@ skipped) or `memoryClassCrunchLabsSource(files)`. It never reads video files.
 - The unit-wide "(all lessons)" combined files repeat the per-lesson files and
   are large, so they are left out unless `includeUnitWideAggregates` (reported as
   `aggregate-of-lessons`); the supply list, posters and other extras are kept.
+- Titles (#4642): a material's title is its file name tidied: the letter prefix,
+  lesson code (`L02`), unit name, version (`v1.0`, `v.1.1`), `copy` and stray dots
+  and underscores are dropped (`A. L01_Teacher Mission Manual_<Unit>_v1.0.pdf` is
+  `Teacher Mission Manual`; `... Assessment (Editable)` keeps its qualifier), and a
+  trailing ` - detail` becomes `(detail)` (`SQIREL Poster - 8.5x11` is `SQIREL
+  Poster (8.5×11)`). Two different files that tidy to one title in the same
+  lesson or the course are told apart as `Title (2)`; byte-identical copies are
+  already collapsed by de-duplication. A lesson is titled `Lesson N: Activity`
+  from the first `StudentHandsOnExploration` video name of that lesson (else its
+  `DesignChallenge` one), in title case with small words lower
+  (`L03.6_Video_StudentHandsOnExploration_PlayWithPlungers` is `Lesson 3: Play
+  with Plungers`); with no such video it stays `Lesson N`. Video names are read
+  whether or not a playlist matched them. Manuals and slides are not opened for
+  titles. Titles are manifest data, so a section or lesson title that differs from
+  an already attached part of the same unit is `part-conflict` (see the bundle
+  import's shared-placement rules, which are deliberately not relaxed): a unit
+  imported before this change keeps its `Lesson N` titles, and getting the new
+  titles means importing the unit again into a fresh course (a different course
+  id, not `courseId` of the old one).
 - Lesson pages: the first mission log of a lesson gets a `Mission log` range
   from `pageCounter` (`createClassCrunchLabsPageCounter({ converter? })` counts
   PDFs with pdf-lib and Word files by rendering them through the converter).
