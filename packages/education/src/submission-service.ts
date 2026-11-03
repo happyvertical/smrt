@@ -591,6 +591,13 @@ export class SubmissionService extends LearnerService {
     },
   ): Promise<void> {
     await this.requireEnrollment(request, 'education.learner.read');
+    if (
+      await this.isReleaseGatedEnrollment(
+        request.tenantId,
+        request.enrollmentId,
+      )
+    )
+      throw new LessonWorkWorkflowRequiredError();
     let lessonId = request.lessonId;
     if (request.previousSubmissionId) {
       const previous = await (
@@ -641,7 +648,14 @@ export class SubmissionService extends LearnerService {
       if (scope) {
         if (!activity || String(activity.id) !== scope.activityId)
           throw new LearnerAuthorizationError();
-      } else if (activity && (await service.isReleaseGatedWork(activity)))
+      } else if (
+        (activity && (await service.isReleaseGatedWork(activity))) ||
+        // Gate on the course too: a book page with no activity yet is book work.
+        (await service.isReleaseGatedEnrollment(
+          request.tenantId,
+          request.enrollmentId,
+        ))
+      )
         throw new LessonWorkWorkflowRequiredError();
       service.validatePages(request.pages);
       if (request.notes !== undefined && typeof request.notes !== 'string')
@@ -1835,6 +1849,12 @@ export class SubmissionService extends LearnerService {
       { cache: false },
     );
     if (!link || !this.options.signAsset) throw new LearnerAuthorizationError();
+    // A printable the family made guardian-only is not the learner's to sign.
+    if (
+      (await this.learnerAudienceOnly(request)) &&
+      materialAudience(link.relationship, link.audience) !== 'learner'
+    )
+      throw new LearnerAuthorizationError();
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
     const url = await this.options.signAsset(
       Object.freeze({

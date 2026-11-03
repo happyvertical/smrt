@@ -224,10 +224,19 @@ export class WorkCompletionConflictError extends Error {
   }
 }
 
-/** Filing cannot place work there: `not-enrolled` (a non-book course the learner is not enrolled in), `lesson-required` (an authored or shared course: append the lesson first), `lesson-outside-course`. */
+/**
+ * Filing cannot place work there: `not-enrolled` (a non-book course the
+ * learner is not enrolled in), `lesson-required` (an authored or shared course:
+ * append the lesson first), `lesson-outside-course`, or `shared-lesson-page`
+ * (a new page key on a lesson the family does not own).
+ */
 export class LessonWorkPlacementError extends Error {
   constructor(
-    readonly code: 'not-enrolled' | 'lesson-required' | 'lesson-outside-course',
+    readonly code:
+      | 'not-enrolled'
+      | 'lesson-required'
+      | 'lesson-outside-course'
+      | 'shared-lesson-page',
   ) {
     super(`Lesson work cannot be placed: ${code}`);
     this.name = 'LessonWorkPlacementError';

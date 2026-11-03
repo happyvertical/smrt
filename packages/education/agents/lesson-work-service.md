@@ -30,8 +30,10 @@ and the learner sees the grade. **Book and loose-page work** (a course with
 `bookKey`, or unfiled photo work): marks reach the learner only through an explicit
 release, grading does not complete, and only `completeLessonActivity` does.
 Generic `captureSubmission`/`resubmitSubmission` refuse such work with
-`LessonWorkWorkflowRequiredError`; hosts call `assertOrdinarySubmissionScope`
-(enrollment, lesson, predecessor) before creating a generic intake receipt.
+`LessonWorkWorkflowRequiredError`, judged by the enrollment's course (book key or
+unfiled routing) as well as an existing activity, so an untouched book page is
+refused too; hosts call `assertOrdinarySubmissionScope` (enrollment, lesson,
+predecessor) before creating a generic intake receipt.
 
 ## Books and pages
 
@@ -298,7 +300,8 @@ review, release and concept-evidence contracts apply.
 lessonId?, pageKey?, pageLabel?, expectedRevisionId, requestKey, reason})` is the
 guardian's placement (plan authority). Exactly one of `courseId`/`newBook`. The
 target lesson is the given lesson (which must be in the learner's enrollment of that
-course; a page key matches or adds a `LessonPage` on it), else the course's page with
+course; a page key matches or adds a `LessonPage` on it, adding only on a
+family-owned lesson, else `shared-lesson-page`), else the course's page with
 `pageKey`, else a new one-page Worksheet lesson in a family book or plain course.
 An authored course needs the lesson first: append it with
 `CourseAuthoringService.appendLesson` and file with its `lessonId`

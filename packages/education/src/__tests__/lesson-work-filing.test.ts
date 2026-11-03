@@ -574,6 +574,33 @@ it('places work only in enrolled courses and on lessons of that course', async (
     expect(placed.pages.map((p) => [p.pageKey, p.label])).toEqual([
       ['p2', 'Second page'],
     ]);
+    // A shared catalog lesson never gains family-written pages.
+    const global = await f.db.get('lessons', { id: String(f.lesson.id) });
+    for (const [table, column] of [
+      ['courses', 'id'],
+      ['course_sections', 'course_id'],
+    ])
+      await f.db.query(
+        `UPDATE ${table} SET tenant_id = NULL WHERE ${column} = ?`,
+        [String(f.course.id)],
+      );
+    await f.db.query('UPDATE lessons SET tenant_id = NULL WHERE id = ?', [
+      String(f.lesson.id),
+    ]);
+    const shared = f.as(f.parent, () =>
+      f.service.fileLessonWork({
+        ...base,
+        courseId: String(f.course.id),
+        lessonId: String(f.lesson.id),
+        pageKey: 'p9',
+        expectedRevisionId: placed.filing.revisionId,
+        requestKey: 'shared-page',
+      }),
+    );
+    await expect(shared).rejects.toThrow();
+    expect(await f.db.list('lesson_pages', { lesson_id: global?.id })).toEqual(
+      [],
+    );
   } finally {
     await f.close();
   }

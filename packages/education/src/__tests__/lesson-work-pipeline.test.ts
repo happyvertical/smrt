@@ -323,6 +323,38 @@ it('keeps book and loose-page work on the lesson work workflow', async () => {
     await f.as(f.own, () =>
       f.plain.assertOrdinarySubmissionScope({ ...f.own, ...f.target }),
     );
+    // The course decides, not an existing activity: a book lesson without
+    // any work yet is still book work, and so is the bare enrollment.
+    const pageLesson = await f.db.get('lessons', { id: page.lessonId });
+    const blank = {
+      ...pageLesson,
+      id: globalThis.crypto.randomUUID(),
+      slug: globalThis.crypto.randomUUID(),
+      title: 'Untouched page',
+    };
+    const columns = Object.keys(blank);
+    await f.db.query(
+      `INSERT INTO lessons (${columns.join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`,
+      Object.values(blank),
+    );
+    await expect(
+      f.as(f.own, () =>
+        f.plain.captureSubmission({
+          ...scope,
+          lessonId: blank.id,
+          requestKey: 'untouched',
+          pages: [png('y')],
+        }),
+      ),
+    ).rejects.toBeInstanceOf(LessonWorkWorkflowRequiredError);
+    await expect(
+      f.as(f.own, () =>
+        f.plain.assertOrdinarySubmissionScope({
+          ...f.own,
+          enrollmentId: page.enrollmentId,
+        }),
+      ),
+    ).rejects.toBeInstanceOf(LessonWorkWorkflowRequiredError);
     const attempt = await f.as(f.own, () =>
       f.work.captureLessonWork({
         ...f.own,

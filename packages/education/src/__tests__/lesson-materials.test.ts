@@ -301,6 +301,29 @@ describe('lesson materials by audience', () => {
           }),
         ),
       ).rejects.toThrow();
+      // The older printable signer follows the audience too.
+      const printable = await f.link('printable', 'public', 8);
+      const signPrintable = (request: typeof f.own) =>
+        f.as(request, () =>
+          f.service.signLessonPrintable({
+            ...request,
+            ...f.scope,
+            assetId: printable.assetId,
+          }),
+        );
+      await signPrintable(f.own);
+      await f.as(f.parent, () =>
+        f.service.setMaterialAudience({
+          ...f.parent,
+          enrollmentId: f.scope.enrollmentId,
+          scope: 'lesson',
+          kind: 'file',
+          materialId: String(printable.id),
+          audience: 'guardian',
+        }),
+      );
+      await expect(signPrintable(f.own)).rejects.toThrow();
+      await signPrintable(f.parent);
       // Another family never reads these materials.
       await expect(
         f.as({ ...f.parent, tenantId: String(f.foreign.tenantId) }, () =>

@@ -781,13 +781,17 @@ export class LessonWorkService extends SubmissionService {
             { lessonId, pageKey: request.pageKey },
             { cache: false },
           );
+          // A family may add pages only to its own lessons; shared or
+          // global catalog structure is never written by a family filing.
+          if (!existing && lesson?.tenant_id !== request.tenantId)
+            throw new LessonWorkPlacementError('shared-lesson-page');
           lessonPageId = existing
             ? String(existing.id)
             : String(
                 (
                   await pages.create({
                     _insertOnly: true,
-                    tenantId: lesson?.tenant_id ?? null,
+                    tenantId: request.tenantId,
                     courseId: String(
                       (
                         await service.db.get('course_sections', {

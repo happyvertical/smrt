@@ -1257,14 +1257,25 @@ export class LearnerService {
     activity: LessonActivity,
   ): Promise<boolean> {
     if (activity.captureKind === 'unfiled') return true;
+    return this.isReleaseGatedEnrollment(
+      activity.tenantId,
+      activity.enrollmentId,
+    );
+  }
+
+  /** An enrollment in a book course or in unfiled photo routing. */
+  protected async isReleaseGatedEnrollment(
+    tenantId: string,
+    enrollmentId: string,
+  ): Promise<boolean> {
     const enrollment = await this.db.get('enrollments', {
-      id: activity.enrollmentId,
-      tenant_id: activity.tenantId,
+      id: enrollmentId,
+      tenant_id: tenantId,
     });
     const course =
       enrollment &&
       (await this.db.get('courses', { id: enrollment.course_id }));
-    return Boolean(course?.book_key);
+    return Boolean(course?.book_key) || course?.source_key === 'unfiled-work';
   }
 
   /** Compatibility progress never transports a workbook learner's feedback. */

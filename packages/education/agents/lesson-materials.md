@@ -29,7 +29,8 @@ themself sees only learner-audience rows; an authorized guardian sees all. The
 catalog projection without answer keys (every learner-facing catalog read) applies
 the same rule. `signLessonMaterial`/`signCourseMaterial` sign only a file in the
 actor's own list (claim scope `lesson:<id>` / `course:<id>`); a guessed id of
-guardian material is denied. Storage URIs never appear.
+guardian material is denied. `signLessonPrintable` applies the same audience
+rule to the learner. Storage URIs never appear.
 
 `setMaterialAudience({enrollmentId, scope, kind, materialId, audience})` lets a
 guardian with plan authority change a family-owned row within the role's bounds.
