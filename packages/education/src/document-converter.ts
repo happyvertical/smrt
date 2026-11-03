@@ -51,6 +51,12 @@ export interface DocumentConversionRequest {
 export interface DocumentConversionResult {
   /** The rendered document as a PDF. */
   pdf: Uint8Array;
+  /**
+   * Optional image of the first page (PNG, JPEG or WebP), when the converter
+   * can draw one. Absent or unusable reads as "no thumbnail"; it never costs
+   * the member its pages.
+   */
+  thumbnail?: Uint8Array | null;
 }
 
 /** Render an Office document to PDF. Implementations must not retain the bytes. */
@@ -308,6 +314,8 @@ export interface FakeDocumentConverterOptions {
   delayMs?: number;
   /** Bytes to return instead of the built-in one-page PDF. */
   output?: Uint8Array;
+  /** First-page image to return beside the PDF (none by default). */
+  thumbnail?: Uint8Array;
 }
 
 /** Deterministic in-memory converter for tests. Records every call. */
@@ -351,6 +359,7 @@ export class FakeDocumentConverter implements DocumentConverter {
         Buffer.from(
           `%PDF-1.4\n% rendered ${request.kind} ${request.bytes.byteLength}\n%%EOF\n`,
         ),
+      ...(this.options.thumbnail ? { thumbnail: this.options.thumbnail } : {}),
     };
   }
 }

@@ -540,8 +540,23 @@ export interface ClassCrunchLabsBundlePart {
   /** The lesson numbers this part carries. */
   lessons: number[];
 }
+/**
+ * The stable unit key every part of a unit carries (`course.key`): the
+ * provider and the unit name folded to a manifest key.
+ */
+export function classCrunchLabsUnitKey(unitName: string): string {
+  const slug = unitName
+    .normalize('NFKD')
+    .replace(/[^A-Za-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .toLowerCase()
+    .slice(0, 100);
+  return `${CLASS_CRUNCHLABS_PROVIDER_ID}:${slug || 'unit'}`;
+}
 export interface ClassCrunchLabsBuild {
   unit: string;
+  /** The unit key in every part's manifest (`course.key`). */
+  unitKey: string;
   /**
    * The bundles to import, in order, each with `CourseBundleImportService`. A
    * unit that fits one archive is one part; a large one is split by lesson
@@ -884,6 +899,8 @@ export async function buildClassCrunchLabsBundle(
       return {
         key: lessonKey(n),
         title: `Lesson ${n}`,
+        // Unit-wide position, so parts of a split unit merge in lesson order.
+        order: n,
         members: entry.members,
         ...(pageRanges.has(n) ? { pages: pageRanges.get(n) } : {}),
         ...(videos.length ? { videos } : {}),
@@ -943,13 +960,25 @@ export async function buildClassCrunchLabsBundle(
       'too_large',
       'The unit-wide materials leave no room for any lesson in the same bundle part.',
     );
-  const parts: ClassCrunchLabsBundlePart[] = groups.map((group) => {
+  const courseKey = classCrunchLabsUnitKey(unitName);
+  const parts: ClassCrunchLabsBundlePart[] = groups.map((group, index) => {
     const manifest = {
       version: COURSE_BUNDLE_MANIFEST_VERSION_2,
-      course: { subject: CLASS_CRUNCHLABS_SUBJECT },
+      course: {
+        subject: CLASS_CRUNCHLABS_SUBJECT,
+        key: courseKey,
+        title: unitName.slice(0, 300),
+      },
+      // Every part names the unit, so `attachCourse` merges them into one course.
+      part: { index: index + 1, count: groups.length },
       ...(group.course.length ? { courseMembers: group.course } : {}),
       sections: [
-        { key: 'unit', title: unitName.slice(0, 300), lessons: group.lessons },
+        {
+          key: 'unit',
+          title: unitName.slice(0, 300),
+          order: 0,
+          lessons: group.lessons,
+        },
       ],
     };
     const used = new Set(
@@ -988,6 +1017,7 @@ export async function buildClassCrunchLabsBundle(
   report.parts = parts.length;
   return {
     unit: unitName,
+    unitKey: courseKey,
     parts,
     bundle: first.bundle,
     manifest: first.manifest,

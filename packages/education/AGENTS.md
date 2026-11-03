@@ -60,7 +60,9 @@ id and layout, never text; ambiguous matches stay unattached; source-keyed repla
 Course bundles (zip with a closed manifest v1 or v2, or a file set; Word/PowerPoint members render through an injected `DocumentConverter`, fail closed; v2 carries material roles, audience, lesson pages, course members and YouTube references) use
 [CourseBundleImportService](agents/course-bundle-import.md). Parse only with the
 bounded reader; refuse, never trim, hostile input; unsupported members stay
-visible; proposals only, nothing auto-published.
+visible; nothing auto-published. `attachCourse` makes one family draft course per
+unit key (parts merge in any order, mismatches fail closed); review choices never
+open keys, guidance or an editable original to a learner.
 
 Class CrunchLabs (a download read into a manifest v2 bundle; an operator-only
 global catalog provider until the operator's single public switch):

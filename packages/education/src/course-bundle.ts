@@ -64,7 +64,12 @@ export interface ClassifiedBundleMember {
   /** Decoded body of a readable text member. */
   text: string | null;
   /** Word/PowerPoint only: the PDF the converter rendered (set before the evidence is written). */
-  rendered: { bytes: Uint8Array; sha256: string } | null;
+  rendered: {
+    bytes: Uint8Array;
+    sha256: string;
+    /** First-page image when the converter drew one; null otherwise. */
+    thumbnail?: RenderedThumbnail | null;
+  } | null;
   /** Word/PowerPoint only: text read by the injected `OfficeTextReader`, when available. */
   officeText: OfficeText | null;
 }
@@ -72,6 +77,8 @@ export interface ClassifiedBundleMember {
 export interface BundleStructureLesson {
   key: string;
   title: string;
+  /** Unit-wide position; defaults to the position in the bundle. */
+  order?: number;
   /** Member paths in declared order. */
   paths: string[];
   /**
@@ -90,10 +97,14 @@ export interface BundleStructureLesson {
 export interface BundleStructureSection {
   key: string;
   title: string;
+  /** Unit-wide position; defaults to the position in the bundle. */
+  order?: number;
   lessons: BundleStructureLesson[];
 }
 export interface BundleStructure {
   subject?: string;
+  /** Version 2: the unit this bundle is (a part of), when the manifest names one. */
+  unit?: ManifestV2['unit'];
   sections: BundleStructureSection[];
   /** Version 2: members that belong to the course rather than a lesson. */
   courseMembers?: ManifestV2['courseMembers'];
@@ -150,6 +161,18 @@ export function pdfIsEncrypted(bytes: Uint8Array): boolean {
 }
 function startsWith(bytes: Uint8Array, signature: readonly number[], at = 0) {
   return signature.every((b, i) => bytes[at + i] === b);
+}
+/** PNG, JPEG or WebP by signature (a thumbnail check), else null. */
+export function sniffImageMediaType(bytes: Uint8Array): string | null {
+  if (startsWith(bytes, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
+    return 'image/png';
+  if (startsWith(bytes, [0xff, 0xd8, 0xff])) return 'image/jpeg';
+  if (
+    startsWith(bytes, [0x52, 0x49, 0x46, 0x46]) &&
+    startsWith(bytes, [0x57, 0x45, 0x42, 0x50], 8)
+  )
+    return 'image/webp';
+  return null;
 }
 function sniff(
   bytes: Uint8Array,
@@ -472,13 +495,16 @@ export const manifestV2BundleReader: BundleReader = {
       order: [COURSE_BUNDLE_MANIFEST_PATH, ...declared, ...rest],
       structure: () => ({
         ...(manifest.subject ? { subject: manifest.subject } : {}),
+        ...(manifest.unit ? { unit: manifest.unit } : {}),
         courseMembers: manifest.courseMembers,
         sections: manifest.sections.map((s) => ({
           key: s.key,
           title: s.title,
+          ...(s.order !== undefined ? { order: s.order } : {}),
           lessons: s.lessons.map((l) => ({
             key: l.key,
             title: l.title,
+            ...(l.order !== undefined ? { order: l.order } : {}),
             paths: l.members.map((m) => m.path),
             roles: l.members.map((m) => m.role),
             audiences: l.members.map((m) => m.audience),
@@ -716,10 +742,20 @@ export function classifyBundle(
  * `rendered`/`officeText` are present on a fresh render, absent when the outcome
  * is only recalled from recorded evidence.
  */
+/** A first-page image of a rendered member, as the converter drew it. */
+export interface RenderedThumbnail {
+  bytes: Uint8Array;
+  sha256: string;
+  mediaType: string;
+}
 export type OfficeOutcome =
   | {
       ok: true;
-      rendered?: { bytes: Uint8Array; sha256: string };
+      rendered?: {
+        bytes: Uint8Array;
+        sha256: string;
+        thumbnail?: RenderedThumbnail | null;
+      };
       officeText?: OfficeText | null;
     }
   | { ok: false; reason: CourseBundleMemberReason };
@@ -859,7 +895,9 @@ export function planBundleMaterials(
       const original = byName.get(member.duplicateOf);
       return original?.status === 'accepted' ? original : null;
     }
-    plan.skipped.push({ path, reason: member.reason ?? member.status });
+    // A member named twice (a material and its page range) is skipped once.
+    if (!plan.skipped.some((x) => x.path === path))
+      plan.skipped.push({ path, reason: member.reason ?? member.status });
     return null;
   };
   const add = (

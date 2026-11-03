@@ -275,8 +275,9 @@ export interface AddClassCrunchLabsUnitResult {
  * "Add to a course": re-checks that the actor may see this listing (an
  * operator-only listing is refused to everyone else, whatever the client
  * sends), reads the family's download into a manifest v2 bundle and imports it.
- * Propose the structure and apply the materials for each `build.parts[i].bundle` as usual;
- * the course is a `personal-use-copy` (`build.licenseKind`).
+ * Store each part's accepted members, then `service.attachCourse` each
+ * `build.parts[i].bundle` (any order): every part lands in one family course,
+ * a `personal-use-copy` (`build.licenseKind`).
  */
 export async function addClassCrunchLabsUnit(
   request: AddClassCrunchLabsUnitRequest,

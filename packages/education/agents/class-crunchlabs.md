@@ -31,9 +31,9 @@ files, playlists, pageCounter?, receiveMember? })` re-checks
 `canAddClassCrunchLabsUnit(actor, policy, listing)`: visibility is derived from the
 host's own `listing.publicListing` (operator unless the literal `true`), never from
 the record or any caller-supplied visibility or licence; an operator-only listing
-is refused to every other family, and the course actor must be the catalog actor, builds the bundle and imports each part. Then propose
-structure and `applyMaterials` per part as for any bundle. Courses are
-`personal-use-copy` (`build.licenseKind`).
+is refused to every other family, and the course actor must be the catalog actor, builds the bundle and imports each part. Then store each
+part's accepted members and `attachCourse` every part (any order): they merge
+into one family course. Courses are `personal-use-copy` (`build.licenseKind`).
 
 ## Reading a download
 
@@ -74,7 +74,11 @@ skipped) or `memoryClassCrunchLabsSource(files)`. It never reads video files.
   `build.parts` (default 90 MiB each; the first part carries the course members and
   any lesson that fits beside them, others go to the first part with room; if no
   lesson fits beside the course members the build refuses with `too_large`); `build.bundle`
-  and `build.manifest` are the first part.
+  and `build.manifest` are the first part. Every part's manifest names the unit
+  (`course.key` = `build.unitKey`, `classCrunchLabsUnitKey(unit)`, and `course.title`),
+  its `part` (`index`/`count`) and each lesson's unit-wide `order` (the lesson
+  number), so `attachCourse` merges the parts in lesson order whatever order they
+  arrive in.
 
 The `report` lists lessons, members, parts, pages, matched and unmatched videos,
 duplicates, ignored files and warnings. Fixtures in tests are synthetic files

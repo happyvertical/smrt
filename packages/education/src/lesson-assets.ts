@@ -69,12 +69,21 @@ export function materialAudience(
   return effective;
 }
 
+/**
+ * What a material file is relative to a rendering: `original` (an editable
+ * Word/PowerPoint file kept beside its rendering: always guardian-only) or
+ * `rendered` (the PDF rendered from an original). `''` is a file as supplied.
+ */
+export const MATERIAL_RENDITIONS = ['original', 'rendered'] as const;
+export type MaterialRendition = (typeof MATERIAL_RENDITIONS)[number];
+
 /** Guarded private-asset check: the host must hold the exact capability. */
 async function requirePrivateAsset(
   row: SmrtObject & { tenantId: string | null; assetId: string },
+  assetId: string = row.assetId,
 ) {
   const assets = await AssetCollection.create({ db: row.db });
-  const asset = await assets.get(row.assetId, { cache: false });
+  const asset = await assets.get(assetId, { cache: false });
   if (
     !row.tenantId ||
     !asset ||
@@ -85,6 +94,56 @@ async function requirePrivateAsset(
     throw new Error(
       'Private lesson material requires an authorized private asset',
     );
+}
+
+type MaterialRow = SmrtObject & {
+  tenantId: string | null;
+  assetId: string;
+  relationship: LessonAssetRelationship;
+  audience: MaterialAudience | '';
+  rendition: MaterialRendition | '';
+  renditionOfAssetId: string | null;
+  thumbnailAssetId: string | null;
+};
+
+/**
+ * Rendition and thumbnail rules shared by lesson and course material. An
+ * original is never learner-audience; only a rendering names its original; a
+ * new thumbnail must be an asset of the same tenant, and a private one when the
+ * material itself must be private (checked under the host's capability).
+ */
+async function checkRendition(row: MaterialRow, privateOnly: boolean) {
+  if (
+    row.rendition !== '' &&
+    !(MATERIAL_RENDITIONS as readonly string[]).includes(row.rendition)
+  )
+    throw new Error('Invalid material rendition');
+  if (
+    row.rendition === 'original' &&
+    materialAudience(row.relationship, row.audience) !== 'guardian'
+  )
+    throw new Error('An editable original is guardian-only material');
+  if (
+    row.renditionOfAssetId &&
+    (row.rendition !== 'rendered' || row.renditionOfAssetId === row.assetId)
+  )
+    throw new Error('Only a rendering names the original it came from');
+  if (!row.thumbnailAssetId) return;
+  const prior = row.id
+    ? await row.db.get(row.tableName, { id: row.id, tenant_id: row.tenantId })
+    : null;
+  if (prior && prior.thumbnail_asset_id === row.thumbnailAssetId) return;
+  if (row.thumbnailAssetId === row.assetId)
+    throw new Error('A thumbnail is a separate image asset');
+  if (privateOnly) await requirePrivateAsset(row, row.thumbnailAssetId);
+  else if (
+    !row.tenantId ||
+    !(await row.db.get('assets', {
+      id: row.thumbnailAssetId,
+      tenant_id: row.tenantId,
+    }))
+  )
+    throw new Error('A material thumbnail must be an asset of the same family');
 }
 
 async function courseOf(
@@ -117,6 +176,14 @@ export class LessonAsset extends SmrtObject {
   sortOrder = 0;
   /** '' reads as the role default (`materialAudience`). */
   audience: MaterialAudience | '' = '';
+  /** `original` / `rendered` for a Word/PowerPoint material, '' for a file as supplied. */
+  rendition: MaterialRendition | '' = '';
+  /** A rendering: the original asset it was rendered from. */
+  @crossPackageRef('@happyvertical/smrt-assets:Asset', { nullable: true })
+  renditionOfAssetId: string | null = null;
+  /** Optional first-page image of this material, recorded by the rendering step. */
+  @crossPackageRef('@happyvertical/smrt-assets:Asset', { nullable: true })
+  thumbnailAssetId: string | null = null;
   constructor(options: Record<string, unknown> = {}) {
     super(options);
     for (const [key, value] of Object.entries(options)) {
@@ -145,11 +212,11 @@ export class LessonAsset extends SmrtObject {
     const course = await courseOf(this, String(section.course_id));
     // Guarded get proves the host supplied the exact actor/owner/asset
     // capability. Never infer authorization from a raw Asset row.
-    if (
+    const privateOnly =
       GUARDIAN_ONLY_RELATIONSHIPS.has(this.relationship) ||
-      course.license_kind === 'personal-use-copy'
-    )
-      await requirePrivateAsset(this);
+      course.license_kind === 'personal-use-copy';
+    if (privateOnly) await requirePrivateAsset(this);
+    await checkRendition(this, privateOnly);
     return await super.save(options);
   }
 }
@@ -176,6 +243,14 @@ export class CourseAsset extends SmrtObject {
   audience: MaterialAudience | '' = '';
   title = '';
   sortOrder = 0;
+  /** `original` / `rendered` for a Word/PowerPoint material, '' for a file as supplied. */
+  rendition: MaterialRendition | '' = '';
+  /** A rendering: the original asset it was rendered from. */
+  @crossPackageRef('@happyvertical/smrt-assets:Asset', { nullable: true })
+  renditionOfAssetId: string | null = null;
+  /** Optional first-page image of this material, recorded by the rendering step. */
+  @crossPackageRef('@happyvertical/smrt-assets:Asset', { nullable: true })
+  thumbnailAssetId: string | null = null;
   constructor(options: Record<string, unknown> = {}) {
     super(options);
     for (const [key, value] of Object.entries(options))
@@ -187,11 +262,11 @@ export class CourseAsset extends SmrtObject {
     if (typeof this.title !== 'string' || this.title.length > 200)
       throw new Error('Invalid course material title');
     const course = await courseOf(this, this.courseId);
-    if (
+    const privateOnly =
       GUARDIAN_ONLY_RELATIONSHIPS.has(this.relationship) ||
-      course.license_kind === 'personal-use-copy'
-    )
-      await requirePrivateAsset(this);
+      course.license_kind === 'personal-use-copy';
+    if (privateOnly) await requirePrivateAsset(this);
+    await checkRendition(this, privateOnly);
     return await super.save(options);
   }
 }

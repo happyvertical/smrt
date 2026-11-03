@@ -36,6 +36,7 @@ import {
   type LessonAssetRelationship,
   LessonExternalVideoCollection,
   type MaterialAudience,
+  type MaterialRendition,
   materialAudience,
   parseYouTubeReference,
 } from './lesson-assets.js';
@@ -186,7 +187,45 @@ export type LessonMaterialView = Readonly<{
   videoId: string | null;
   /** Privacy-enhanced embed URL for an external video. */
   embedUrl: string | null;
+  /** Files only: the stored asset's MIME type, null when the host recorded none. */
+  mimeType: string | null;
+  /**
+   * Files only: `original` (the editable Word/PowerPoint file, guardian-only),
+   * `rendered` (the PDF rendered from an original), or null for a file as supplied.
+   */
+  rendition: MaterialRendition | null;
+  /** The other half of an original/rendered pair when this actor may see it. */
+  pairedMaterialId: string | null;
+  /**
+   * Files only: a first-page image recorded by the rendering step, null when
+   * none was (no converter, or it drew none). Sign with `thumbnail: true`.
+   */
+  thumbnailAssetId: string | null;
 }>;
+
+type FileRow = Record<string, unknown>;
+/** Pair visible originals with their renderings (same role, `rendition_of_asset_id`). */
+function pairRenditions(rows: FileRow[], views: LessonMaterialView[]) {
+  const out = views.map((v) => ({ ...v })) as Array<{
+    -readonly [K in keyof LessonMaterialView]: LessonMaterialView[K];
+  }>;
+  rows.forEach((row, i) => {
+    const of = row.rendition_of_asset_id;
+    if (row.rendition !== 'rendered' || !of) return;
+    const j = rows.findIndex(
+      (r) =>
+        r.rendition === 'original' &&
+        r.asset_id === of &&
+        r.relationship === row.relationship,
+    );
+    const a = out[i];
+    const b = out[j];
+    if (j < 0 || !a || !b) return;
+    a.pairedMaterialId = b.id;
+    b.pairedMaterialId = a.id;
+  });
+  return out as LessonMaterialView[];
+}
 
 /** The page key a file carries: its own, or `p<position>` for older rows. */
 export function submissionPageKey(pageKey: string, sortOrder: number): string {
@@ -1449,9 +1488,43 @@ export class SubmissionService extends LearnerService {
       !learnerOnly || materialAudience(relationship, audience) === 'learner'
     );
   }
-  private async materialName(assetId: string) {
+  private async materialAsset(assetId: string) {
     const asset = await this.db.get('assets', { id: assetId });
-    return String(asset?.name ?? '');
+    return {
+      name: String(asset?.name ?? ''),
+      mimeType: asset?.mime_type ? String(asset.mime_type) : null,
+    };
+  }
+  private async fileView(
+    row: FileRow,
+    scope: 'lesson' | 'course',
+  ): Promise<LessonMaterialView> {
+    const asset = await this.materialAsset(String(row.asset_id));
+    return {
+      id: String(row.id),
+      kind: 'file',
+      scope,
+      relationship: row.relationship as LessonAssetRelationship,
+      audience: materialAudience(
+        String(row.relationship),
+        String(row.audience ?? ''),
+      ),
+      title: (scope === 'course' && String(row.title ?? '')) || asset.name,
+      order: Number(row.sort_order) || 0,
+      assetId: String(row.asset_id),
+      provider: null,
+      videoId: null,
+      embedUrl: null,
+      mimeType: asset.mimeType,
+      rendition:
+        row.rendition === 'original' || row.rendition === 'rendered'
+          ? row.rendition
+          : null,
+      pairedMaterialId: null,
+      thumbnailAssetId: row.thumbnail_asset_id
+        ? String(row.thumbnail_asset_id)
+        : null,
+    };
   }
   /**
    * A lesson's materials for this actor: files by role and audience, then
@@ -1505,24 +1578,9 @@ export class SubmissionService extends LearnerService {
               String(a.id).localeCompare(String(b.id)),
           )
       : [];
-    const result: LessonMaterialView[] = [];
-    for (const row of files)
-      result.push({
-        id: String(row.id),
-        kind: 'file',
-        scope: 'lesson',
-        relationship: row.relationship as LessonAssetRelationship,
-        audience: materialAudience(
-          String(row.relationship),
-          String(row.audience ?? ''),
-        ),
-        title: await this.materialName(String(row.asset_id)),
-        order: Number(row.sort_order) || 0,
-        assetId: String(row.asset_id),
-        provider: null,
-        videoId: null,
-        embedUrl: null,
-      });
+    const fileViews: LessonMaterialView[] = [];
+    for (const row of files) fileViews.push(await this.fileView(row, 'lesson'));
+    const result = pairRenditions(files, fileViews);
     for (const row of videos)
       result.push({
         id: String(row.id),
@@ -1539,6 +1597,10 @@ export class SubmissionService extends LearnerService {
           row.provider as ExternalVideoProvider,
           String(row.video_id),
         ),
+        mimeType: null,
+        rendition: null,
+        pairedMaterialId: null,
+        thumbnailAssetId: null,
       });
     return result;
   }
@@ -1571,27 +1633,9 @@ export class SubmissionService extends LearnerService {
           Number(a.sort_order) - Number(b.sort_order) ||
           String(a.id).localeCompare(String(b.id)),
       );
-    const result: LessonMaterialView[] = [];
-    for (const row of rows)
-      result.push({
-        id: String(row.id),
-        kind: 'file',
-        scope: 'course',
-        relationship: row.relationship as LessonAssetRelationship,
-        audience: materialAudience(
-          String(row.relationship),
-          String(row.audience ?? ''),
-        ),
-        title:
-          String(row.title ?? '') ||
-          (await this.materialName(String(row.asset_id))),
-        order: Number(row.sort_order) || 0,
-        assetId: String(row.asset_id),
-        provider: null,
-        videoId: null,
-        embedUrl: null,
-      });
-    return result;
+    const views: LessonMaterialView[] = [];
+    for (const row of rows) views.push(await this.fileView(row, 'course'));
+    return pairRenditions(rows, views);
   }
   private async signMaterial(
     request: LearnerRequest & { enrollmentId: string },
@@ -1613,24 +1657,30 @@ export class SubmissionService extends LearnerService {
     );
     return { url, expiresAt };
   }
-  /** Sign one lesson file the actor may see (learners: learner audience only). */
+  /**
+   * Sign one lesson file the actor may see (learners: learner audience only),
+   * or its recorded thumbnail with `thumbnail: true`.
+   */
   async signLessonMaterial(
-    request: LessonRequest & { materialId: string },
+    request: LessonRequest & { materialId: string; thumbnail?: boolean },
   ): Promise<{ url: string; expiresAt: Date }> {
     const visible = await this.listLessonMaterials(request);
     const material = visible.find(
       (m) => m.kind === 'file' && m.id === request.materialId,
     );
-    if (!material?.assetId) throw new LearnerAuthorizationError();
-    return this.signMaterial(
-      request,
-      `lesson:${request.lessonId}`,
-      material.assetId,
-    );
+    const assetId = request.thumbnail
+      ? material?.thumbnailAssetId
+      : material?.assetId;
+    if (!assetId) throw new LearnerAuthorizationError();
+    return this.signMaterial(request, `lesson:${request.lessonId}`, assetId);
   }
-  /** Sign one course-level file the actor may see. */
+  /** Sign one course-level file the actor may see, or its thumbnail. */
   async signCourseMaterial(
-    request: LearnerRequest & { enrollmentId: string; materialId: string },
+    request: LearnerRequest & {
+      enrollmentId: string;
+      materialId: string;
+      thumbnail?: boolean;
+    },
   ): Promise<{ url: string; expiresAt: Date }> {
     const enrollment = await this.requireEnrollment(
       request,
@@ -1638,12 +1688,11 @@ export class SubmissionService extends LearnerService {
     );
     const visible = await this.listCourseMaterials(request);
     const material = visible.find((m) => m.id === request.materialId);
-    if (!material?.assetId) throw new LearnerAuthorizationError();
-    return this.signMaterial(
-      request,
-      `course:${enrollment.courseId}`,
-      material.assetId,
-    );
+    const assetId = request.thumbnail
+      ? material?.thumbnailAssetId
+      : material?.assetId;
+    if (!assetId) throw new LearnerAuthorizationError();
+    return this.signMaterial(request, `course:${enrollment.courseId}`, assetId);
   }
   /** Re-save a family material join under the exact private-asset capability. */
   private async saveFamilyMaterial(
@@ -1719,7 +1768,8 @@ export class SubmissionService extends LearnerService {
         if (!row) throw new LearnerAuthorizationError();
         if (
           materialAudience(row.relationship, request.audience) !==
-          request.audience
+            request.audience ||
+          (row.rendition === 'original' && request.audience !== 'guardian')
         )
           throw new LearnerValidationError('Invalid material audience');
         row.audience = request.audience;
@@ -1766,7 +1816,13 @@ export class SubmissionService extends LearnerService {
             );
       if (!row) throw new LearnerAuthorizationError();
       const role = 'relationship' in row ? row.relationship : 'video';
-      if (materialAudience(role, request.audience) !== request.audience)
+      if (
+        materialAudience(role, request.audience) !== request.audience ||
+        // An editable original stays with the adult; its rendering is what a learner gets.
+        ('rendition' in row &&
+          row.rendition === 'original' &&
+          request.audience !== 'guardian')
+      )
         throw new LearnerValidationError('Invalid material audience');
       row.audience = request.audience;
       if ('assetId' in row)

@@ -5,7 +5,8 @@
  * allowlisted external videos. Pure parsing; nothing here reads bytes.
  *
  * ```json
- * { "version": 2, "course": { "subject": "Science" },
+ * { "version": 2, "course": { "subject": "Science", "key": "unit-a", "title": "Unit A" },
+ *   "part": { "index": 1, "count": 2 },
  *   "courseMembers": [ { "path": "unit/supplies.pdf", "role": "attachment" } ],
  *   "sections": [ { "key": "unit", "title": "Unit", "lessons": [ {
  *     "key": "l1", "title": "Lesson 1",
@@ -71,15 +72,42 @@ export interface ManifestV2Video {
 export interface ManifestV2Lesson {
   key: string;
   title: string;
+  /** Declared unit-wide position; absent means the position in this manifest. */
+  order?: number;
   members: ManifestV2Member[];
   pages: ManifestV2PageRange[];
   videos: ManifestV2Video[];
 }
+/**
+ * The unit a bundle belongs to: a stable key shared by every part of a unit
+ * split across bundles, the course title, and which part this bundle is.
+ */
+export interface ManifestV2Unit {
+  key: string;
+  title: string;
+  /** 1-based part number. */
+  part: number;
+  /** How many parts the unit has. */
+  parts: number;
+}
 export interface ManifestV2 {
   subject?: string;
-  sections: Array<{ key: string; title: string; lessons: ManifestV2Lesson[] }>;
+  /** Present when the manifest names its unit (`course.key`). */
+  unit?: ManifestV2Unit;
+  sections: Array<{
+    key: string;
+    title: string;
+    /** Declared unit-wide position; absent means the position in this manifest. */
+    order?: number;
+    lessons: ManifestV2Lesson[];
+  }>;
   courseMembers: ManifestV2Member[];
 }
+
+/** Most parts one unit may be split into. */
+export const COURSE_BUNDLE_MAX_PARTS = 50;
+/** Highest explicit section or lesson `order`. */
+export const COURSE_BUNDLE_MAX_ORDER = 9_999;
 
 function audienceOf(
   role: LessonAssetRelationship,
@@ -121,21 +149,52 @@ export function parseBundleManifestV2(
   }
   const root = closedObject(
     parsed,
-    ['version', 'course', 'sections', 'courseMembers'],
+    ['version', 'course', 'part', 'sections', 'courseMembers'],
     'manifest',
   );
   if (root.version !== COURSE_BUNDLE_MANIFEST_VERSION_2)
     return refuse('manifest_version', 'manifest.version');
   const manifest: ManifestV2 = { sections: [], courseMembers: [] };
+  let unitKey: string | null = null;
+  let unitTitle = '';
   if (root.course !== undefined) {
-    const course = closedObject(root.course, ['subject'], 'manifest.course');
+    const course = closedObject(
+      root.course,
+      ['subject', 'key', 'title'],
+      'manifest.course',
+    );
     if (course.subject !== undefined)
       manifest.subject = manifestText(
         course.subject,
         'manifest.course.subject',
         200,
       );
+    if (course.key !== undefined)
+      unitKey = manifestKey(course.key, 'manifest.course.key');
+    if (course.title !== undefined)
+      unitTitle = manifestText(course.title, 'manifest.course.title', 300);
   }
+  // A part of a split unit must name the unit, so its parts can be merged.
+  let part = 1;
+  let parts = 1;
+  if (root.part !== undefined) {
+    const decl = closedObject(root.part, ['index', 'count'], 'manifest.part');
+    parts = integer(
+      decl.count,
+      'manifest.part.count',
+      1,
+      COURSE_BUNDLE_MAX_PARTS,
+    );
+    part = integer(decl.index, 'manifest.part.index', 1, parts);
+    if (unitKey === null) return refuse('manifest_invalid', 'manifest.part');
+  }
+  if (unitKey !== null)
+    manifest.unit = { key: unitKey, title: unitTitle, part, parts };
+  // Kept only when declared, so merged parts compare declared orders alone.
+  const order = (value: unknown, path: string) =>
+    value === undefined
+      ? {}
+      : { order: integer(value, path, 0, COURSE_BUNDLE_MAX_ORDER) };
   const listed = new Set<string>();
   const member = (raw: unknown, mp: string): ManifestV2Member => {
     const decl = closedObject(raw, ['path', 'role', 'audience', 'title'], mp);
@@ -183,7 +242,11 @@ export function parseBundleManifestV2(
   let lessons = 0;
   for (const [s, rawSection] of (root.sections as unknown[]).entries()) {
     const sp = `manifest.sections.${s}`;
-    const section = closedObject(rawSection, ['key', 'title', 'lessons'], sp);
+    const section = closedObject(
+      rawSection,
+      ['key', 'title', 'order', 'lessons'],
+      sp,
+    );
     const sectionKey = manifestKey(section.key, `${sp}.key`);
     if (sectionKeys.has(sectionKey)) refuse('duplicate_key', `${sp}.key`);
     sectionKeys.add(sectionKey);
@@ -194,7 +257,7 @@ export function parseBundleManifestV2(
       const lp = `${sp}.lessons.${l}`;
       const lesson = closedObject(
         rawLesson,
-        ['key', 'title', 'members', 'pages', 'videos'],
+        ['key', 'title', 'order', 'members', 'pages', 'videos'],
         lp,
       );
       const lessonKey = manifestKey(lesson.key, `${lp}.key`);
@@ -291,6 +354,7 @@ export function parseBundleManifestV2(
       outLessons.push({
         key: lessonKey,
         title: manifestText(lesson.title, `${lp}.title`, 300),
+        ...order(lesson.order, `${lp}.order`),
         members: lessonMembers,
         pages,
         videos,
@@ -299,6 +363,7 @@ export function parseBundleManifestV2(
     manifest.sections.push({
       key: sectionKey,
       title: manifestText(section.title, `${sp}.title`, 300),
+      ...order(section.order, `${sp}.order`),
       lessons: outLessons,
     });
   }

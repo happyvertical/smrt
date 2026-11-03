@@ -1,4 +1,5 @@
 import {
+  field,
   foreignKey,
   SmrtCollection,
   SmrtObject,
@@ -268,4 +269,257 @@ export class CourseBundleRendering extends SmrtObject {
 }
 export class CourseBundleRenderingCollection extends SmrtCollection<CourseBundleRendering> {
   static readonly _itemClass = CourseBundleRendering;
+}
+
+/**
+ * Append-only record that one imported bundle (a part of a unit) was attached
+ * to a family course (SMRT #4632). Unique per import, and per (course, part):
+ * a unit's parts merge into one course, each part once.
+ */
+@TenantScoped({ mode: 'required' })
+@smrt({
+  tableName: 'course_bundle_attachments',
+  conflictColumns: ['tenant_id', 'import_id'],
+  indexes: [
+    {
+      name: 'course_bundle_attachments_import_unique',
+      columns: ['tenantId', 'importId'],
+      unique: true,
+    },
+    {
+      name: 'course_bundle_attachments_part_unique',
+      columns: ['tenantId', 'courseId', 'partIndex'],
+      unique: true,
+    },
+  ],
+  ...closed,
+})
+export class CourseBundleAttachment extends SmrtObject {
+  @tenantId() tenantId = '';
+  @foreignKey('CourseBundleImport', { required: true }) importId = '';
+  @foreignKey('Course', { required: true }) courseId = '';
+  /** The unit key (`course.key`), or `bundle:<identity>` for an unnamed bundle. */
+  unitKey = '';
+  partIndex = 1;
+  partCount = 1;
+  attachedByUserId = '';
+  recordedAt = new Date();
+  constructor(options: Record<string, unknown> = {}) {
+    super(options);
+    adopt(this, options);
+  }
+  override async delete(): Promise<void> {
+    noDelete();
+  }
+  override async save(options?: SmrtSaveOptions): Promise<this> {
+    await requireInsert(this);
+    requireText(this.unitKey, 'Attachment requires a unit key', 200);
+    requireText(this.attachedByUserId, 'Attachment requires an actor');
+    if (
+      !Number.isSafeInteger(this.partCount) ||
+      !Number.isSafeInteger(this.partIndex) ||
+      this.partCount < 1 ||
+      this.partIndex < 1 ||
+      this.partIndex > this.partCount
+    )
+      throw new Error('Invalid bundle part');
+    if (
+      !(await this.db.get('course_bundle_imports', {
+        id: this.importId,
+        tenant_id: this.tenantId,
+      })) ||
+      !(await this.db.get('courses', {
+        id: this.courseId,
+        tenant_id: this.tenantId,
+      }))
+    )
+      throw new Error('Course bundle parent ownership mismatch');
+    this.requireInsertOnSave();
+    return super.save(options);
+  }
+}
+export class CourseBundleAttachmentCollection extends SmrtCollection<CourseBundleAttachment> {
+  static readonly _itemClass = CourseBundleAttachment;
+}
+
+/**
+ * A guardian's audience choice for one material of an import, made in review
+ * before the bundle is attached (SMRT #4632). One row per (import, target);
+ * a later choice replaces the earlier one. `target` is `file:<member path>` or
+ * `video:<lesson key>:<video id>`. Attaching applies it; after attach the
+ * material's own audience is changed with `setMaterialAudience`.
+ */
+@TenantScoped({ mode: 'required' })
+@smrt({
+  tableName: 'course_bundle_audience_choices',
+  conflictColumns: ['tenant_id', 'import_id', 'target'],
+  indexes: [
+    {
+      name: 'course_bundle_audience_choices_unique',
+      columns: ['tenantId', 'importId', 'target'],
+      unique: true,
+    },
+  ],
+  ...closed,
+})
+export class CourseBundleAudienceChoice extends SmrtObject {
+  @tenantId() tenantId = '';
+  @foreignKey('CourseBundleImport', { required: true }) importId = '';
+  target = '';
+  audience = '';
+  chosenByUserId = '';
+  chosenAt = new Date();
+  constructor(options: Record<string, unknown> = {}) {
+    super(options);
+    adopt(this, options);
+  }
+  override async save(options?: SmrtSaveOptions): Promise<this> {
+    if (!this.tenantId?.trim())
+      throw new Error('Course bundle evidence requires a tenant');
+    requireText(this.target, 'Audience choice requires a target', 700);
+    requireText(this.chosenByUserId, 'Audience choice requires an actor');
+    if (!['learner', 'guardian'].includes(this.audience))
+      throw new Error('Invalid audience choice');
+    const prior = this.id
+      ? await this.db.get(this.tableName, { id: this.id })
+      : null;
+    if (
+      prior &&
+      (prior.tenant_id !== this.tenantId ||
+        prior.import_id !== this.importId ||
+        prior.target !== this.target)
+    )
+      throw new Error('An audience choice cannot move');
+    if (
+      !(await this.db.get('course_bundle_imports', {
+        id: this.importId,
+        tenant_id: this.tenantId,
+      }))
+    )
+      throw new Error('Course bundle parent ownership mismatch');
+    return super.save(options);
+  }
+}
+export class CourseBundleAudienceChoiceCollection extends SmrtCollection<CourseBundleAudienceChoice> {
+  static readonly _itemClass = CourseBundleAudienceChoice;
+}
+
+/**
+ * Where a unit's section or lesson sits, and whether its position was declared
+ * (SMRT #4632). Parts of a split unit that share a key must agree: declared
+ * orders must match, a declared and an implicit order conflict, and between
+ * implicit positions the part with the lowest index decides, whatever order
+ * the parts arrive in. One row per (course, kind, key).
+ */
+@TenantScoped({ mode: 'required' })
+@smrt({
+  tableName: 'course_bundle_placements',
+  conflictColumns: ['tenant_id', 'course_id', 'kind', 'key'],
+  indexes: [
+    {
+      name: 'course_bundle_placements_unique',
+      columns: ['tenantId', 'courseId', 'kind', 'key'],
+      unique: true,
+    },
+  ],
+  ...closed,
+})
+export class CourseBundlePlacement extends SmrtObject {
+  @tenantId() tenantId = '';
+  @foreignKey('Course', { required: true }) courseId = '';
+  /** `section` or `lesson`. */
+  kind = 'section';
+  key = '';
+  title = '';
+  /** The manifest's `order`, null when the part left it implicit. */
+  @field({ type: 'integer', nullable: true }) declaredOrder: number | null =
+    null;
+  /** The position in the deciding part, used when no order is declared. */
+  implicitOrder = 0;
+  /** The part that decided an implicit position (the lowest seen). */
+  partIndex = 1;
+  constructor(options: Record<string, unknown> = {}) {
+    super(options);
+    adopt(this, options);
+  }
+  override async save(options?: SmrtSaveOptions): Promise<this> {
+    if (!this.tenantId?.trim())
+      throw new Error('Course bundle evidence requires a tenant');
+    if (!['section', 'lesson'].includes(this.kind))
+      throw new Error('Invalid placement kind');
+    requireText(this.key, 'Placement requires a key', 120);
+    requireText(this.title, 'Placement requires a title', 300);
+    requireCount(this.implicitOrder, 'Invalid placement order');
+    if (this.declaredOrder !== null)
+      requireCount(this.declaredOrder, 'Invalid placement order');
+    if (!Number.isSafeInteger(this.partIndex) || this.partIndex < 1)
+      throw new Error('Invalid bundle part');
+    const prior = this.id
+      ? await this.db.get(this.tableName, { id: this.id })
+      : null;
+    if (
+      prior &&
+      (prior.tenant_id !== this.tenantId ||
+        prior.course_id !== this.courseId ||
+        prior.kind !== this.kind ||
+        prior.key !== this.key)
+    )
+      throw new Error('A placement cannot move');
+    if (
+      !(await this.db.get('courses', {
+        id: this.courseId,
+        tenant_id: this.tenantId,
+      }))
+    )
+      throw new Error('Course bundle parent ownership mismatch');
+    return super.save(options);
+  }
+}
+export class CourseBundlePlacementCollection extends SmrtCollection<CourseBundlePlacement> {
+  static readonly _itemClass = CourseBundlePlacement;
+}
+
+/**
+ * The one row every attach of a unit serializes on (SMRT #4632): one per
+ * (family, unit key), created if absent and then locked at the start of the
+ * attach transaction, before anything that decides the outcome is read. On
+ * PostgreSQL a concurrent first create of the same key waits for the other
+ * transaction and then adopts its row. Never deleted; nothing else is stored.
+ */
+@TenantScoped({ mode: 'required' })
+@smrt({
+  tableName: 'course_bundle_units',
+  conflictColumns: ['tenant_id', 'unit_key'],
+  indexes: [
+    {
+      name: 'course_bundle_units_unique',
+      columns: ['tenantId', 'unitKey'],
+      unique: true,
+    },
+  ],
+  ...closed,
+})
+export class CourseBundleUnit extends SmrtObject {
+  @tenantId() tenantId = '';
+  /** `course.key`, or `bundle:<identity>` for an unnamed bundle. */
+  unitKey = '';
+  /** The family course the unit's parts attach to (derived, may not exist yet). */
+  courseId = '';
+  constructor(options: Record<string, unknown> = {}) {
+    super(options);
+    adopt(this, options);
+  }
+  override async delete(): Promise<void> {
+    noDelete();
+  }
+  override async save(options?: SmrtSaveOptions): Promise<this> {
+    if (!this.tenantId?.trim())
+      throw new Error('Course bundle evidence requires a tenant');
+    requireText(this.unitKey, 'Unit requires a key', 200);
+    requireText(this.courseId, 'Unit requires a course id', 64);
+    return super.save(options);
+  }
+}
+export class CourseBundleUnitCollection extends SmrtCollection<CourseBundleUnit> {
+  static readonly _itemClass = CourseBundleUnit;
 }
