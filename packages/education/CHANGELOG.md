@@ -1,5 +1,21 @@
 # @happyvertical/smrt-education
 
+## 0.59.0
+
+### Minor Changes
+
+- 1c0d242: Class CrunchLabs source: `buildClassCrunchLabsBundle` reads a unit download (a folder or Drive zip parts; `folderClassCrunchLabsSource` from the Node-only `@happyvertical/smrt-education/node`) into manifest v2 bundle parts with roles and audiences, mission-log pages and YouTube references matched from an injected course playlist. `createClassCrunchLabsCatalogAdapter` lists units under Science as an operator-only provider (new `operator` catalog visibility via `CatalogPolicy({ operatorTenantIds })`, licence "free curriculum, permission pending") until the operator sets the single `publicListing` switch; `addClassCrunchLabsUnit` runs the import into the family's course. Files are never hosted.
+- 1c0d242: Course bundle manifest version 2: a closed schema with material roles and audience (answer keys and assessment guidance always guardian-only), lesson page ranges, course-level members and allowlisted YouTube references. `CourseBundleImportService.applyMaterials` writes `CourseAsset`, `LessonAsset` (slides keep the original deck and the rendered pages), `LessonPage` and `LessonExternalVideo`; `retryRendering` deliberately and idempotently repairs a transient converter failure; `createOfficeTextReader` adapts the SDK `extractOffice`. Breaking: member evidence gains `audience`, `course_bundle_renderings` is a new table, and `AcceptedCourseBundleMember` gains `audience` and `courseLevel`.
+
+### Patch Changes
+
+- @happyvertical/smrt-assets@0.59.0
+  - @happyvertical/smrt-core@0.59.0
+  - @happyvertical/smrt-ingestion@0.59.0
+  - @happyvertical/smrt-profiles@0.59.0
+  - @happyvertical/smrt-tenancy@0.59.0
+  - @happyvertical/smrt-users@0.59.0
+
 ## 0.58.0
 
 ### Patch Changes
