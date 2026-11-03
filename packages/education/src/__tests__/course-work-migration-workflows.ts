@@ -73,6 +73,13 @@ export async function assertWorkbookMigration(
     context: '',
     tenant_id: tenantId,
   });
+  // Only this fixture's two families: a shared PostgreSQL test database also
+  // holds rows written concurrently by other suites.
+  const tenants = [f.parent.tenantId, other.parent.tenantId];
+  const listOwn = async (table: string) =>
+    (
+      await Promise.all(tenants.map((t) => db.list(table, { tenant_id: t })))
+    ).flat();
   try {
     // Legacy schema: the retired tables and activity columns.
     await db.query(
@@ -88,9 +95,10 @@ export async function assertWorkbookMigration(
       await db.query(
         `ALTER TABLE workbook_activities ADD COLUMN ${column} ${column === 'workbook_id' ? uuid : 'TEXT'}`,
       );
-    // The retired natural key: NULL book links must not collide afterwards.
+    // The retired natural key, which the data migration drops. (Plain unique:
+    // a shared PostgreSQL test database already holds other suites' rows.)
     await db.query(
-      `CREATE UNIQUE INDEX workbook_activities_tenant_id_workbook_id_idx ON workbook_activities (tenant_id, workbook_id, page_key)${engine === 'postgres' ? ' NULLS NOT DISTINCT' : ''}`,
+      'CREATE UNIQUE INDEX workbook_activities_tenant_id_workbook_id_idx ON workbook_activities (tenant_id, workbook_id, page_key)',
     );
 
     const tenantId = f.parent.tenantId;
@@ -409,9 +417,10 @@ export async function assertWorkbookMigration(
       }),
     );
     if (!courseSchema) throw new Error('Missing course schema');
+    // Children first: lesson_work_filings references lesson_pages.
     for (const table of [
-      'lesson_pages',
       'lesson_work_filings',
+      'lesson_pages',
       'book_context_revisions',
     ])
       await db.query(`DROP TABLE "${table}"`);
@@ -424,7 +433,7 @@ export async function assertWorkbookMigration(
       await db.query(`ALTER TABLE "courses" DROP COLUMN "${column}"`);
     const before = Object.fromEntries(
       await Promise.all(
-        HISTORY.map(async (t) => [t, sorted(await db.list(t, {}))] as const),
+        HISTORY.map(async (t) => [t, sorted(await listOwn(t))] as const),
       ),
     );
     const diff = await new SchemaComparer(db, { engineHint: engine }).compare(
@@ -498,7 +507,7 @@ export async function assertWorkbookMigration(
             'lesson_pages',
             'lesson_work_filings',
             'book_context_revisions',
-          ].map(async (t) => [t, sorted(await db.list(t, {}))] as const),
+          ].map(async (t) => [t, sorted(await listOwn(t))] as const),
         ),
       );
     const migrated = await snapshot();
@@ -516,9 +525,9 @@ export async function assertWorkbookMigration(
     for (const table of HISTORY.filter(
       (t) => t !== 'lesson_progress' && t !== 'lessons',
     ))
-      expect(sorted(await db.list(table, {}))).toEqual(before[table]);
+      expect(sorted(await listOwn(table))).toEqual(before[table]);
     // Lessons are unchanged; the one new lesson holds the book-only filing.
-    const lessonsAfter = sorted(await db.list('lessons', {}));
+    const lessonsAfter = sorted(await listOwn('lessons'));
     expect(
       lessonsAfter.filter((l) => before.lessons.some((b) => b.id === l.id)),
     ).toEqual(before.lessons);
@@ -527,7 +536,7 @@ export async function assertWorkbookMigration(
         .filter((l) => !before.lessons.some((b) => b.id === l.id))
         .map((l) => l.title),
     ).toEqual(['Captured work']);
-    const progressIds = (await db.list('lesson_progress', {})).map((r) => r.id);
+    const progressIds = (await listOwn('lesson_progress')).map((r) => r.id);
     for (const row of before.lesson_progress)
       expect(progressIds).toContain(row.id);
 
@@ -540,8 +549,9 @@ export async function assertWorkbookMigration(
     expect(bookCourses[0]).toMatchObject({
       source_key: 'book',
       book_edition: '2015',
-      work_policy_version: 3,
     });
+    // Raw PostgreSQL rows return BIGINT as text.
+    expect(Number(bookCourses[0].work_policy_version)).toBe(3);
     // Strictest policy wins: Bob's copy required review.
     expect(
       [true, 1, '1'].includes(bookCourses[0].work_review_required as never),

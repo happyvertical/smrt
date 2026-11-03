@@ -95,12 +95,7 @@ async function fixture() {
   const db = await getTestDatabase({
     type: 'sqlite',
     url: ':memory:',
-    classes: [
-      ...submissionClasses,
-      'CourseAsset',
-      'LessonExternalVideo',
-      'LessonPage',
-    ],
+    classes: submissionClasses,
   });
   const f = await learnerFixture(db);
   const claims: string[] = [];

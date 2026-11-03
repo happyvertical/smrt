@@ -35,7 +35,6 @@ export const workbookClasses = [
   'AssetTag',
   'ProfileAsset',
   'Tag',
-  'LessonPage',
   'LessonActivity',
   'LessonWorkFiling',
   'WorkbookPhotoIntake',
