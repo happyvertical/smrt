@@ -1,5 +1,19 @@
 # @happyvertical/smrt-core
 
+## 0.60.0
+
+### Minor Changes
+
+- ### Breaking Changes
+  
+  - import a bundle into one family course with lesson materials (#4633) (education)
+
+### Patch Changes
+
+- @happyvertical/smrt-config@0.60.0
+  - @happyvertical/smrt-scanner@0.60.0
+  - @happyvertical/smrt-types@0.60.0
+
 ## 0.59.1
 
 ### Patch Changes

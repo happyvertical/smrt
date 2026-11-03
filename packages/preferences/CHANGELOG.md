@@ -1,5 +1,15 @@
 # @happyvertical/smrt-preferences
 
+## 0.60.0
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.60.0
+  - @happyvertical/smrt-svelte@0.60.0
+  - @happyvertical/smrt-tenancy@0.60.0
+  - @happyvertical/smrt-users@0.60.0
+
 ## 0.59.1
 
 ### Patch Changes
