@@ -1,0 +1,1205 @@
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { getTestDatabase } from '@happyvertical/smrt-core';
+import {
+  disableTenancy,
+  enableTenancy,
+  withTenant,
+} from '@happyvertical/smrt-tenancy';
+import { PDFDocument } from 'pdf-lib';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import {
+  addClassCrunchLabsUnit,
+  buildClassCrunchLabsBundle,
+  type CatalogActor,
+  CatalogPolicy,
+  type CatalogSourceRecord,
+  CLASS_CRUNCHLABS_LICENSE_PENDING,
+  CLASS_CRUNCHLABS_PROVIDER_ID,
+  CLASS_CRUNCHLABS_PUBLIC_LISTING_DEFAULT,
+  ClassCrunchLabsError,
+  type ClassCrunchLabsPlaylist,
+  CourseBundleImportService,
+  canAddClassCrunchLabsUnit,
+  classCrunchLabsPreviewEmbedUrl,
+  classCrunchLabsUnitOfPlaylist,
+  createClassCrunchLabsCatalogAdapter,
+  createClassCrunchLabsPageCounter,
+  FakeDocumentConverter,
+  folderClassCrunchLabsSource,
+  matchClassCrunchLabsVideos,
+  memoryClassCrunchLabsSource,
+  parseClassCrunchLabsVideoName,
+  parsePlaylistItemTitle,
+  pickUnitPlaylist,
+  planCourseBundle,
+  readFileSet,
+} from '../index.js';
+import { buildZip, tinyPdf } from './bundle-zip-writer.js';
+import { learnerClasses, learnerFixture } from './learner-workflows.js';
+import { officeDocx, officePptx, officeXlsx } from './office-fixtures.js';
+
+/*
+ * Class CrunchLabs source (#4616), see docs/test-matrix/4616-class-crunchlabs.md.
+ * Every fixture is synthetic: tiny generated files named like a unit download.
+ * No test reads the real download or the network; the playlist is injected.
+ */
+const ROOT = 'Marble Run Unit Material (Motion)_Class CrunchLabs';
+const WIDE = `${ROOT}/Marble Run_All Unit Wide Materials`;
+const L1 = `${ROOT}/Marble Run_Lesson 1`;
+const L2 = `${ROOT}/Marble Run_Lesson 2`;
+
+type Entry = { path: string; bytes: Uint8Array; exportId?: string };
+/** A synthetic unit with the lettered layout. Identical labels give identical bytes. */
+function unitFiles(exportId = '20261102T000000Z'): Entry[] {
+  const e = (path: string, bytes: Uint8Array): Entry => ({
+    path,
+    bytes,
+    exportId,
+  });
+  return [
+    e(
+      `${WIDE}/A. Marble Run_Teacher Mission Manual (all lessons)/Unit Wide Teacher Mission Manual_ALL INCLUSIVE_Marble Run_v1.0.pdf`,
+      tinyPdf('wide manual'),
+    ),
+    e(
+      `${WIDE}/A. Marble Run_Teacher Mission Manual (all lessons)/B. Class CrunchLabs_ Teacher Handbook_v1.0.docx`,
+      officeDocx('handbook'),
+    ),
+    e(
+      `${WIDE}/B. Marble Run_Unit Mission Launch Deck Slides (all lessons)/Marble Run_Unit-Wide Mission Launch Deck Slides (all lessons)_v1.1_.pptx`,
+      officePptx('wide deck'),
+    ),
+    e(
+      `${WIDE}/C. Marble Run_Student Mission Log (all lessons)/Unit WideStudent Mission Log_Marble Run v.1.1.docx`,
+      officeDocx('wide log'),
+    ),
+    e(
+      `${WIDE}/D. Marble Run_Assessments (all lessons)/Unit Wide Assessment Guidance_Marble Run_v1.0.pdf`,
+      tinyPdf('wide guidance'),
+    ),
+    e(
+      `${WIDE}/D. Marble Run_Assessments (all lessons)/Unit Wide Status Checks (Editable)_Marble Run_v1.0.docx`,
+      officeDocx('wide checks'),
+    ),
+    e(
+      `${WIDE}/D. Marble Run_Assessments (all lessons)/Unit Wide Status Checks_Marble Run_v1.0.pdf`,
+      tinyPdf('wide checks pdf'),
+    ),
+    e(
+      `${WIDE}/E. Marble Run_Handouts (all lessons)/Unit Wide Handouts_Marble Run_v1.0.pdf`,
+      tinyPdf('wide handouts'),
+    ),
+    e(
+      `${WIDE}/F. Other Materials (all lessons)/L02_Trading Cards_Marble Run_v1.0.pdf`,
+      tinyPdf('cards'),
+    ),
+    e(
+      `${WIDE}/F. Other Materials (all lessons)/SQIREL Poster_18x24_Marble Run_v1.0.pdf`,
+      tinyPdf('poster'),
+    ),
+    e(`${WIDE}/Supply List_Marble Run_v1.0.xlsx`, officeXlsx('supplies')),
+    e(`${WIDE}/Marble Run_UnitTeaserVideo.mp4`, Buffer.from('mp4')),
+    e(
+      `${WIDE}/G. Marble Run_Videos (all lessons)/L01.2_Video_AnchorCheckIn_Marble Run.mp4`,
+      Buffer.from('v'),
+    ),
+    e(
+      `${WIDE}/G. Marble Run_Videos (all lessons)/L01.4_Video_MaterialsPrep_Ramps_Marble  Run.mp4`,
+      Buffer.from('v'),
+    ),
+    e(
+      `${WIDE}/G. Marble Run_Videos (all lessons)/L01.4_Video_StudentHandsOnExploration_Ramps_Marble Run.mp4`,
+      Buffer.from('v'),
+    ),
+    e(
+      `${WIDE}/G. Marble Run_Videos (all lessons)/L02.1_Video_Recap_Marble Run.mp4`,
+      Buffer.from('v'),
+    ),
+    e(
+      `${WIDE}/G. Marble Run_Videos (all lessons)/L02.9_Video_CheckIn_Marble Run.mp4`,
+      Buffer.from('v'),
+    ),
+    e(
+      `${WIDE}/G. Marble Run_Videos (all lessons)/UnitTeaserVideo_Marble Run.mp4`,
+      Buffer.from('v'),
+    ),
+    e(
+      `${L1}/A. L01_Teacher Mission Manual_Marble Run_v1.0.pdf`,
+      tinyPdf('l1 manual'),
+    ),
+    e(
+      `${L1}/B. L01_Mission Launch Deck Slides_Marble Run_v1.1_.pptx`,
+      officePptx('l1 deck'),
+    ),
+    e(
+      `${L1}/C. L01_Student Mission Log_Marble Run v.1.1.docx`,
+      officeDocx('l1 log'),
+    ),
+    e(
+      `${L1}/D. L01_Status Check Lesson Assessment_Marble Run_v1.0.pdf`,
+      tinyPdf('l1 check'),
+    ),
+    e(
+      `${L1}/D. L01_Status Check Lesson Assessment (Editable)_Marble Run_v1.0.docx`,
+      officeDocx('l1 check editable'),
+    ),
+    e(
+      `${L1}/D. L01_Status Check Lesson Assessment Guidance_Marble Run_v1.0..pdf`,
+      tinyPdf('l1 guidance'),
+    ),
+    e(
+      `${L2}/A. L02_Teacher Mission Manual_Marble Run_v1.0.pdf`,
+      tinyPdf('l2 manual'),
+    ),
+    e(
+      `${L2}/C. L02_Student Mission Log_Marble Run v.1.1.docx`,
+      officeDocx('l2 log'),
+    ),
+    e(
+      `${L2}/D. L02_Status Check Lesson Assessment_Marble Run_v1.0.pdf`,
+      tinyPdf('l2 check'),
+    ),
+    e(
+      `${L2}/D. L02_Status Check Lesson Assessment_Marble Run_v1.0 copy.pdf`,
+      tinyPdf('l2 check'),
+    ),
+    e(`${L2}/E. L02_Handouts_Marble Run_v1.0.pdf`, tinyPdf('l2 handouts')),
+    e(`${L2}/F. L02_Trading Cards_Marble Run_v1.0.pdf`, tinyPdf('cards')),
+    e(`${L2}/F. SQIREL Poster_18x24_Marble Run_v1.0.pdf`, tinyPdf('poster')),
+    e('Have Feedback About the Unit_.docx', officeDocx('feedback')),
+  ];
+}
+
+const PLAYLIST: ClassCrunchLabsPlaylist = {
+  id: 'PLmarblerun01',
+  title: 'Marble Run | Class CrunchLabs',
+  items: [
+    {
+      videoId: 'AAAAAAAAAA1',
+      title: 'Marble Run | L01.2 | Anchor Check-In',
+      position: 1,
+    },
+    {
+      videoId: 'AAAAAAAAAA2',
+      title: 'Marble Run Lesson 1 Step 4: Materials Prep - Ramps',
+      position: 2,
+    },
+    {
+      videoId: 'AAAAAAAAAA3',
+      title: 'Marble Run Lesson 1 Step 4: Student Hands-On Exploration - Ramps',
+      position: 3,
+    },
+    {
+      videoId: 'AAAAAAAAAA4',
+      title: 'Marble Run | L02.1 | Recap',
+      position: 4,
+    },
+    { videoId: 'AAAAAAAAAA5', title: 'Unit trailer', position: 5 },
+  ],
+};
+const OTHER_PLAYLIST: ClassCrunchLabsPlaylist = {
+  id: 'PLsolaroven01',
+  title: 'Solar Oven | Class CrunchLabs',
+  items: [
+    {
+      videoId: 'BBBBBBBBBB1',
+      title: 'Solar Oven | L01.2 | Anchor Check-In',
+      position: 1,
+    },
+  ],
+};
+const playlists = (...list: ClassCrunchLabsPlaylist[]) => ({
+  playlists: async () => list,
+});
+
+const build = (files = unitFiles(), extra: Record<string, unknown> = {}) =>
+  buildClassCrunchLabsBundle({
+    files: memoryClassCrunchLabsSource(files),
+    includeUnitWideAggregates: true,
+    playlists: playlists(PLAYLIST, OTHER_PLAYLIST),
+    pageCounter: async () => 4,
+    ...extra,
+  });
+
+type Decl = { path: string; role: string; audience?: string; title: string };
+const lessonOf = (b: Awaited<ReturnType<typeof build>>, key: string) =>
+  (
+    b.manifest.sections as Array<{
+      lessons: Array<{
+        key: string;
+        members: Decl[];
+        pages?: unknown[];
+        videos?: Array<Record<string, unknown>>;
+      }>;
+    }>
+  )[0]?.lessons.find((l) => l.key === key);
+
+describe('layout and mapping to manifest v2', () => {
+  it('maps the lettered files to roles and audiences, lessons and course members', async () => {
+    const b = await build();
+    expect(b.unit).toBe('Marble Run');
+    expect(b.licenseKind).toBe('personal-use-copy');
+    expect(b.manifest).toMatchObject({
+      version: 2,
+      course: { subject: 'Science' },
+    });
+    const l1 = lessonOf(b, 'lesson-01');
+    const role = (d?: Decl) => [d?.role, d?.audience ?? 'default'];
+    const byName = (name: string) =>
+      l1?.members.find((m) => m.path.includes(name));
+    expect(role(byName('Teacher Mission Manual'))).toEqual([
+      'teacher-guide',
+      'default',
+    ]);
+    expect(role(byName('Mission Launch Deck'))).toEqual(['slides', 'default']);
+    expect(role(byName('Student Mission Log'))).toEqual([
+      'learner-pages',
+      'default',
+    ]);
+    expect(role(byName('Assessment_Marble'))).toEqual([
+      'assessment',
+      'default',
+    ]);
+    expect(role(byName('(Editable)'))).toEqual(['assessment', 'guardian']);
+    expect(role(byName('Guidance'))).toEqual([
+      'assessment-guidance',
+      'default',
+    ]);
+    const l2 = lessonOf(b, 'lesson-02');
+    expect(l2?.members.map((m) => m.role).sort()).toEqual([
+      'assessment',
+      'handout',
+      'learner-pages',
+      'printable',
+      'teacher-guide',
+    ]);
+    // titles are readable, not file names
+    expect(byName('Teacher Mission Manual')?.title).toBe(
+      'L01 - Teacher Mission Manual',
+    );
+    const course = (b.manifest.courseMembers as Decl[]).map((m) => [
+      m.role,
+      m.audience ?? 'default',
+    ]);
+    expect(course).toEqual(
+      expect.arrayContaining([
+        ['teacher-guide', 'default'],
+        ['slides', 'default'],
+        ['learner-pages', 'default'],
+        ['assessment-guidance', 'default'],
+        ['assessment', 'guardian'],
+        ['assessment', 'default'],
+        ['handout', 'default'],
+        ['printable', 'default'],
+        ['attachment', 'default'],
+      ]),
+    );
+    expect(
+      (b.manifest.courseMembers as Decl[]).find((m) => m.role === 'attachment')
+        ?.path,
+    ).toBe('unit/Supply List_Marble Run_v1.0.xlsx');
+  });
+
+  it('produces a bundle the manifest v2 reader accepts, with guardian-only roles guardian', async () => {
+    const b = await build();
+    const plan = planCourseBundle(readFileSet(b.bundle.files));
+    expect(plan.readerId).toBe('manifest-v2');
+    const mats = plan.materials.materials;
+    for (const m of mats.filter(
+      (x) =>
+        x.role === 'assessment-guidance' ||
+        x.role === 'teacher-guide' ||
+        x.role === 'slides',
+    ))
+      expect(m.audience).toBe('guardian');
+    for (const m of mats.filter((x) => x.role === 'learner-pages'))
+      expect(m.audience).toBe('learner');
+    expect(plan.materials.skipped).toEqual([]);
+    expect(plan.members.some((m) => m.status === 'refused')).toBe(false);
+  });
+
+  it('reports what it ignored without reading it', async () => {
+    const b = await build();
+    expect(b.report.ignored).toEqual(
+      expect.arrayContaining([
+        {
+          path: 'Have Feedback About the Unit_.docx',
+          reason: 'outside-unit-folders',
+        },
+      ]),
+    );
+    expect(b.report.videos.unitLevel.sort()).toEqual([
+      'Marble Run_UnitTeaserVideo.mp4',
+      'UnitTeaserVideo_Marble Run.mp4',
+    ]);
+    const paths = b.bundle.files.map((f) => f.path);
+    expect(paths.some((p) => p.endsWith('.mp4'))).toBe(false);
+    expect(paths[0]).toBe('manifest.json');
+  });
+
+  it('is deterministic', async () => {
+    const a = await build();
+    const b = await build(unitFiles().reverse());
+    expect(Buffer.from(a.bundle.files[0]?.bytes ?? []).toString()).toBe(
+      Buffer.from(b.bundle.files[0]?.bytes ?? []).toString(),
+    );
+  });
+});
+
+describe('unit-wide aggregates', () => {
+  it('leaves out the combined "(all lessons)" files by default and keeps the supply list, posters and handbook', async () => {
+    const b = await build(unitFiles(), { includeUnitWideAggregates: false });
+    const course = (b.manifest.courseMembers as Decl[]).map((m) => [
+      m.role,
+      m.path.split('/').pop(),
+    ]);
+    expect(course.sort()).toEqual([
+      ['attachment', 'Supply List_Marble Run_v1.0.xlsx'],
+      ['printable', 'SQIREL Poster_18x24_Marble Run_v1.0.pdf'],
+      ['teacher-guide', 'B. Class CrunchLabs_ Teacher Handbook_v1.0.docx'],
+    ]);
+    const skipped = b.report.ignored.filter(
+      (i) => i.reason === 'aggregate-of-lessons',
+    );
+    expect(skipped.map((i) => i.path.split('/').pop()).sort()).toEqual([
+      'Marble Run_Unit-Wide Mission Launch Deck Slides (all lessons)_v1.1_.pptx',
+      'Unit Wide Assessment Guidance_Marble Run_v1.0.pdf',
+      'Unit Wide Handouts_Marble Run_v1.0.pdf',
+      'Unit Wide Status Checks (Editable)_Marble Run_v1.0.docx',
+      'Unit Wide Status Checks_Marble Run_v1.0.pdf',
+      'Unit Wide Teacher Mission Manual_ALL INCLUSIVE_Marble Run_v1.0.pdf',
+      'Unit WideStudent Mission Log_Marble Run v.1.1.docx',
+    ]);
+    // every lesson keeps its own materials
+    expect(lessonOf(b, 'lesson-01')?.members).toHaveLength(6);
+  });
+});
+
+describe('large units', () => {
+  it('splits a unit that does not fit one archive into parts by lesson, course members first', async () => {
+    const files = unitFiles().map((f) =>
+      f.path.includes('Lesson') && f.path.endsWith('.pdf')
+        ? { ...f, bytes: Buffer.concat([f.bytes, Buffer.alloc(3000)]) }
+        : f,
+    );
+    const whole = await build(files);
+    expect(whole.parts).toHaveLength(1);
+    expect(whole.report.parts).toBe(1);
+    const split = await build(files, { maxPartBytes: 25_000 });
+    expect(split.parts.length).toBeGreaterThan(1);
+    expect(split.report.parts).toBe(split.parts.length);
+    expect(split.parts.flatMap((p) => p.lessons)).toEqual([1, 2]);
+    // course members only in the first part, every part a valid manifest v2 bundle
+    expect(split.parts[0]?.manifest.courseMembers).toBeDefined();
+    for (const part of split.parts.slice(1))
+      expect(part.manifest.courseMembers).toBeUndefined();
+    for (const part of split.parts) {
+      const plan = planCourseBundle(readFileSet(part.bundle.files));
+      expect(plan.readerId).toBe('manifest-v2');
+      expect(plan.members.some((m) => m.status === 'refused')).toBe(false);
+    }
+    // together the parts carry exactly the files of the whole
+    const names = (parts: typeof split.parts) =>
+      parts
+        .flatMap((p) => p.bundle.files.map((f) => f.path))
+        .filter((p) => p !== 'manifest.json')
+        .sort();
+    expect(names(split.parts)).toEqual(names(whole.parts));
+    expect(split.bundle).toBe(split.parts[0]?.bundle);
+    await expect(build(files, { maxPartBytes: 2_000 })).rejects.toMatchObject({
+      code: 'too_large',
+    });
+  });
+});
+
+describe('de-duplication', () => {
+  it('keeps one copy of identical content: the lesson-named file in its lesson, posters unit wide, no "copy"', async () => {
+    const b = await build();
+    const dup = b.report.duplicates.map((d) => [
+      d.path.split('/').pop(),
+      d.duplicateOf.split('/').pop(),
+    ]);
+    expect(dup).toEqual(
+      expect.arrayContaining([
+        [
+          'L02_Trading Cards_Marble Run_v1.0.pdf',
+          'F. L02_Trading Cards_Marble Run_v1.0.pdf',
+        ],
+        [
+          'F. SQIREL Poster_18x24_Marble Run_v1.0.pdf',
+          'SQIREL Poster_18x24_Marble Run_v1.0.pdf',
+        ],
+        [
+          'D. L02_Status Check Lesson Assessment_Marble Run_v1.0 copy.pdf',
+          'D. L02_Status Check Lesson Assessment_Marble Run_v1.0.pdf',
+        ],
+      ]),
+    );
+    const l2 = lessonOf(b, 'lesson-02');
+    expect(l2?.members.filter((m) => m.role === 'printable')).toHaveLength(1);
+    expect(l2?.members.some((m) => /copy/.test(m.path))).toBe(false);
+    const poster = (b.manifest.courseMembers as Decl[]).filter((m) =>
+      /Poster/.test(m.path),
+    );
+    expect(poster).toHaveLength(1);
+    expect(
+      new Set(
+        b.bundle.files.map((f) => Buffer.from(f.bytes).toString('base64')),
+      ).size,
+    ).toBe(b.bundle.files.length);
+  });
+
+  it('collapses repeated exports of the same unit, newest wins', async () => {
+    const first = unitFiles('20261102T000000Z');
+    const second = unitFiles('20261103T000000Z');
+    const changed = second.find((f) =>
+      f.path.includes('L01_Teacher Mission Manual'),
+    );
+    if (changed) changed.bytes = tinyPdf('l1 manual REVISED');
+    const b = await build([...first, ...second]);
+    expect(b.report.duplicateExports).toBeGreaterThan(20);
+    expect(b.report.superseded).toBe(1);
+    const manual = b.bundle.files.find((f) =>
+      f.path.includes('L01_Teacher Mission Manual'),
+    );
+    expect(Buffer.from(manual?.bytes ?? []).toString()).toContain('REVISED');
+    const once = await build();
+    expect(b.bundle.files.map((f) => f.path)).toEqual(
+      once.bundle.files.map((f) => f.path),
+    );
+  });
+
+  it('uses crc and size, not bytes, to recognise a repeated export', async () => {
+    const source = unitFiles();
+    const files = source.flatMap((f, i) => [
+      { ...f, size: f.bytes.byteLength, crc32: String(i), exportId: '1' },
+      { ...f, size: f.bytes.byteLength, crc32: String(i), exportId: '2' },
+    ]);
+    const b = await build(files as Entry[]);
+    expect(b.report.superseded).toBe(0);
+    // every file but the one outside the unit folders is seen in both exports
+    expect(b.report.duplicateExports).toBe(source.length - 1);
+  });
+});
+
+describe('unit selection', () => {
+  it('needs a name when a download holds several units, and says which', async () => {
+    const solar = unitFiles().map((f) => ({
+      ...f,
+      path: f.path.replaceAll('Marble Run', 'Solar Oven'),
+    }));
+    const files = [...unitFiles(), ...solar];
+    await expect(build(files)).rejects.toMatchObject({
+      code: 'multiple_units',
+      detail: ['Marble Run', 'Solar Oven'],
+    });
+    const picked = await build(files, { unit: 'solar  oven' });
+    expect(picked.unit).toBe('Solar Oven');
+    expect(picked.bundle.files.every((f) => !f.path.includes('Marble'))).toBe(
+      true,
+    );
+    await expect(build(files, { unit: 'Nope' })).rejects.toMatchObject({
+      code: 'no_unit',
+    });
+  });
+
+  it('refuses a download with no unit folders or no usable material', async () => {
+    await expect(
+      build([{ path: 'readme.txt', bytes: Buffer.from('x') }]),
+    ).rejects.toBeInstanceOf(ClassCrunchLabsError);
+    await expect(
+      build([
+        { path: `${ROOT}/Marble Run_Lesson 1/notes.pdf`, bytes: tinyPdf('n') },
+      ]),
+    ).rejects.toMatchObject({ code: 'empty_unit' });
+  });
+});
+
+describe('lesson pages from the mission log', () => {
+  it('writes a page range per lesson from the counted pages', async () => {
+    const b = await build(unitFiles(), { pageCounter: async () => 6 });
+    const l1 = lessonOf(b, 'lesson-01');
+    expect(l1?.pages).toEqual([
+      {
+        member: expect.stringContaining('lesson-01/C. L01_Student Mission Log'),
+        from: 1,
+        to: 6,
+        label: 'Mission log',
+      },
+    ]);
+    expect(b.report.pages).toHaveLength(2);
+    const plan = planCourseBundle(readFileSet(b.bundle.files));
+    expect(
+      plan.materials.pages
+        .filter((p) => p.lessonKey === 'lesson-01')
+        .map((p) => p.pageKey),
+    ).toEqual(['p1', 'p2', 'p3', 'p4', 'p5', 'p6']);
+  });
+
+  it('writes no pages, and says so, when the count is unknown', async () => {
+    const none = await build(unitFiles(), { pageCounter: undefined });
+    expect(lessonOf(none, 'lesson-01')?.pages).toBeUndefined();
+    expect(
+      none.report.warnings.filter((w) => /page count is unknown/.test(w)),
+    ).toHaveLength(2);
+    const failing = await build(unitFiles(), {
+      pageCounter: async () => {
+        throw new Error('boom');
+      },
+    });
+    expect(lessonOf(failing, 'lesson-02')?.pages).toBeUndefined();
+  });
+
+  it('counts real PDFs, and Word files through the injected converter', async () => {
+    const doc = await PDFDocument.create();
+    for (let i = 0; i < 3; i++) doc.addPage();
+    const three = await doc.save();
+    const direct = createClassCrunchLabsPageCounter();
+    expect(await direct({ bytes: three, kind: 'pdf' })).toBe(3);
+    expect(await direct({ bytes: officeDocx('a'), kind: 'docx' })).toBeNull();
+    expect(
+      await direct({ bytes: tinyPdf('not really'), kind: 'pdf' }),
+    ).toBeNull();
+    const viaConverter = createClassCrunchLabsPageCounter({
+      converter: new FakeDocumentConverter({ output: three }),
+    });
+    expect(await viaConverter({ bytes: officeDocx('a'), kind: 'docx' })).toBe(
+      3,
+    );
+    const down = createClassCrunchLabsPageCounter({
+      converter: new FakeDocumentConverter({ failWith: 'unavailable' }),
+    });
+    expect(await down({ bytes: officeDocx('a'), kind: 'docx' })).toBeNull();
+  });
+});
+
+describe('video names and YouTube playlist matching', () => {
+  it('parses Lnn.step_Video_Kind_Title names', () => {
+    const parse = (n: string) => parseClassCrunchLabsVideoName(n, 'Marble Run');
+    expect(parse('L02.9_Video_MaterialsPrep_ZoomBoom_Marble  Run.mp4')).toEqual(
+      {
+        lesson: 2,
+        step: '9',
+        kind: 'MaterialsPrep',
+        title: 'Zoom Boom',
+      },
+    );
+    expect(parse('L03.1b_Video_Recap_Marble Run.mp4')).toEqual({
+      lesson: 3,
+      step: '1b',
+      kind: 'Recap',
+      title: '',
+    });
+    expect(
+      parse('L01.4 Video_MaterialsPrep_CarnivalGames_Marble Run-005.mp4')
+        ?.title,
+    ).toBe('Carnival Games');
+    expect(parse('L06.14_Video_ZBonus_Marble Run.mp4')?.kind).toBe('ZBonus');
+    expect(
+      parse('L03.9_Video_StudentHandsOnExploration_SumoSpheres2_Marble Run.mp4')
+        ?.title,
+    ).toBe('Sumo Spheres 2');
+    expect(parse('UnitTeaserVideo_Marble Run.mp4')).toBeNull();
+    expect(parse('notes.mp4')).toBeNull();
+  });
+
+  it('reads the lesson and step an item title names', () => {
+    expect(parsePlaylistItemTitle('Marble Run | L03.6 | Plungers')).toEqual({
+      lesson: 3,
+      step: '6',
+    });
+    expect(parsePlaylistItemTitle('Lesson 3, Step 06: Plungers')).toEqual({
+      lesson: 3,
+      step: '6',
+    });
+    expect(parsePlaylistItemTitle('L01-2 Anchor')).toEqual({
+      lesson: 1,
+      step: '2',
+    });
+    expect(parsePlaylistItemTitle('Lesson 3 recap')).toBeNull();
+    expect(parsePlaylistItemTitle('Unit trailer')).toBeNull();
+  });
+
+  it('picks the unit playlist by unit, ignoring case and punctuation', () => {
+    expect(pickUnitPlaylist([PLAYLIST, OTHER_PLAYLIST], 'marble run')?.id).toBe(
+      'PLmarblerun01',
+    );
+    expect(pickUnitPlaylist([OTHER_PLAYLIST], 'Marble Run')).toBeNull();
+    expect(
+      pickUnitPlaylist(
+        [
+          {
+            ...OTHER_PLAYLIST,
+            unit: 'Marble Run',
+            title: 'Marble Run: the whole course',
+          },
+        ],
+        'Marble Run',
+      )?.id,
+    ).toBe('PLsolaroven01');
+  });
+
+  it('matches by unit, lesson and step, as external references on the lesson', async () => {
+    const b = await build();
+    expect(b.report.videos.playlist).toEqual({
+      id: 'PLmarblerun01',
+      title: PLAYLIST.title,
+    });
+    expect(
+      b.report.videos.matched.map((v) => [v.lesson, v.step, v.kind, v.videoId]),
+    ).toEqual([
+      [1, '2', 'AnchorCheckIn', 'AAAAAAAAAA1'],
+      [1, '4', 'MaterialsPrep', 'AAAAAAAAAA2'],
+      [1, '4', 'StudentHandsOnExploration', 'AAAAAAAAAA3'],
+      [2, '1', 'Recap', 'AAAAAAAAAA4'],
+    ]);
+    // the same step shared by two videos is told apart by the item titles
+    expect(b.report.videos.unmatched).toEqual([
+      { lesson: 2, step: '9', kind: 'CheckIn', title: '', reason: 'no_item' },
+    ]);
+    expect(b.report.videos.unusedPlaylistItems).toBe(0);
+    expect(lessonOf(b, 'lesson-01')?.videos).toEqual([
+      { reference: 'AAAAAAAAAA1', title: 'Anchor check-in', step: 1 },
+      {
+        reference: 'AAAAAAAAAA2',
+        title: 'Materials prep: Ramps',
+        step: 2,
+        audience: 'guardian',
+      },
+      {
+        reference: 'AAAAAAAAAA3',
+        title: 'Hands-on exploration: Ramps',
+        step: 3,
+      },
+    ]);
+    expect(lessonOf(b, 'lesson-02')?.videos).toEqual([
+      { reference: 'AAAAAAAAAA4', title: 'Recap', step: 1 },
+    ]);
+    const plan = planCourseBundle(readFileSet(b.bundle.files));
+    expect(
+      plan.materials.videos.map((v) => [
+        v.lessonKey,
+        v.videoId,
+        v.stepOrder,
+        v.audience,
+      ]),
+    ).toEqual([
+      ['lesson-01', 'AAAAAAAAAA1', 1, 'learner'],
+      ['lesson-01', 'AAAAAAAAAA2', 2, 'guardian'],
+      ['lesson-01', 'AAAAAAAAAA3', 3, 'learner'],
+      ['lesson-02', 'AAAAAAAAAA4', 1, 'learner'],
+    ]);
+  });
+
+  it('leaves videos unmatched rather than guessing', () => {
+    const video = (kind: string, title: string) => ({
+      lesson: 1,
+      step: '4',
+      kind,
+      title,
+    });
+    const item = (id: string, title: string, position: number) => ({
+      videoId: id.padEnd(11, 'x'),
+      title,
+      position,
+    });
+    const ambiguous = matchClassCrunchLabsVideos(
+      [video('MaterialsPrep', ''), video('Recap', '')],
+      {
+        id: 'p',
+        title: 'p',
+        items: [item('a', 'L01.4 one', 1), item('b', 'L01.4 two', 2)],
+      },
+    );
+    expect(ambiguous.matched).toEqual([]);
+    expect(ambiguous.unmatched.map((u) => u.reason)).toEqual([
+      'ambiguous',
+      'ambiguous',
+    ]);
+    const taken = matchClassCrunchLabsVideos(
+      [video('Recap', ''), video('Recap', 'Again')],
+      { id: 'p', title: 'p', items: [item('a', 'L01.4 Recap', 1)] },
+    );
+    expect(taken.matched).toHaveLength(1);
+    expect(taken.unmatched.map((u) => u.reason)).toEqual(['item_taken']);
+    // an item with a malformed video id is never used
+    const bad = matchClassCrunchLabsVideos([video('Recap', '')], {
+      id: 'p',
+      title: 'p',
+      items: [{ videoId: 'short', title: 'L01.4 Recap', position: 1 }],
+    });
+    expect(bad.unmatched[0]?.reason).toBe('no_item');
+  });
+
+  it('reports every video unmatched without a playlist source or a playlist for the unit', async () => {
+    const none = await build(unitFiles(), { playlists: undefined });
+    expect(none.report.videos.matched).toEqual([]);
+    expect(
+      none.report.videos.unmatched.every((u) => u.reason === 'no_playlist'),
+    ).toBe(true);
+    expect(none.report.warnings).toContain(
+      'No playlist source was given; videos were not matched.',
+    );
+    expect(lessonOf(none, 'lesson-01')?.videos).toBeUndefined();
+    const missing = await build(unitFiles(), {
+      playlists: playlists(OTHER_PLAYLIST),
+    });
+    expect(missing.report.videos.playlist).toBeNull();
+    expect(
+      missing.report.warnings.some((w) => /No YouTube course playlist/.test(w)),
+    ).toBe(true);
+  });
+
+  it('never touches the network: the playlist source is the only input and files are never fetched', async () => {
+    const calls: string[] = [];
+    const b = await build(unitFiles(), {
+      playlists: {
+        playlists: async () => {
+          calls.push('playlists');
+          return [PLAYLIST];
+        },
+      },
+    });
+    expect(calls).toEqual(['playlists']);
+    expect(b.report.videos.matched).toHaveLength(4);
+  });
+});
+
+describe('through the import service', () => {
+  const opened: Array<{ close?: () => Promise<void> }> = [];
+  beforeAll(() => enableTenancy());
+  afterAll(() => disableTenancy());
+  afterEach(async () => {
+    for (const db of opened.splice(0)) await db.close?.();
+  });
+  async function service() {
+    const db = await getTestDatabase({
+      type: 'sqlite',
+      url: ':memory:',
+      classes: [
+        ...learnerClasses,
+        'CourseBundleImport',
+        'CourseBundleMember',
+        'CourseBundleRendering',
+      ],
+    });
+    opened.push(db);
+    const f = await learnerFixture(db);
+    const svc = new CourseBundleImportService(db, () => true, {
+      converter: new FakeDocumentConverter(),
+    });
+    const guardian: CatalogActor = {
+      tenantId: f.own.tenantId,
+      actorUserId: f.parent.actorUserId,
+      roles: ['guardian'],
+    };
+    return { db, svc, guardian };
+  }
+  const record = async (
+    publicListing?: boolean,
+  ): Promise<CatalogSourceRecord> => {
+    const page = await createClassCrunchLabsCatalogAdapter({
+      playlists: playlists(PLAYLIST),
+      ...(publicListing === undefined ? {} : { publicListing }),
+    }).enumerate({
+      checkpoint: {
+        providerId: CLASS_CRUNCHLABS_PROVIDER_ID,
+        complete: false,
+        importedCount: 0,
+        failures: [],
+      },
+    });
+    return page.records[0] as CatalogSourceRecord;
+  };
+
+  it('imports a unit into the family course: roles, audience, pages and videos arrive on the evidence', async () => {
+    const s = await service();
+    const guardian = s.guardian;
+    const policy = new CatalogPolicy({
+      operatorTenantIds: [guardian.tenantId],
+    });
+    const received: string[] = [];
+    const out = await withTenant(
+      { tenantId: guardian.tenantId, userId: guardian.actorUserId },
+      async () =>
+        addClassCrunchLabsUnit({
+          service: s.svc,
+          actor: {
+            tenantId: guardian.tenantId,
+            actorUserId: guardian.actorUserId,
+          },
+          catalogActor: guardian,
+          record: await record(),
+          policy,
+          files: memoryClassCrunchLabsSource(unitFiles()),
+          playlists: playlists(PLAYLIST, OTHER_PLAYLIST),
+          pageCounter: async () => 3,
+          receiveMember: (m) => void received.push(`${m.role}:${m.audience}`),
+        }),
+    );
+    expect(out.build.licenseKind).toBe('personal-use-copy');
+    expect(out.result.import).toMatchObject({
+      readerId: 'manifest-v2',
+      manifestVersion: 2,
+      unsupportedCount: 0,
+      refusedCount: 0,
+    });
+    expect(out.result.materials.videos).toHaveLength(4);
+    expect(out.result.materials.pages).toHaveLength(6);
+    expect(received).toContain('teacher-guide:guardian');
+    expect(received).toContain('learner-pages:learner');
+    expect(received).toContain('slides:guardian');
+    expect(received).toContain('assessment-guidance:guardian');
+    expect(
+      out.result.accepted.find((m) => m.courseLevel && m.role === 'attachment')
+        ?.kind,
+    ).toBe('xlsx');
+  });
+});
+
+describe('the catalog provider', () => {
+  const checkpoint = {
+    providerId: CLASS_CRUNCHLABS_PROVIDER_ID,
+    complete: false,
+    importedCount: 0,
+    failures: [],
+  };
+  const guardianOf = (tenantId: string): CatalogActor => ({
+    tenantId,
+    actorUserId: 'u1',
+    roles: ['guardian'],
+  });
+  const sync = (config: { publicListing?: boolean } = {}) =>
+    createClassCrunchLabsCatalogAdapter({
+      playlists: playlists(PLAYLIST, OTHER_PLAYLIST),
+      ...config,
+    }).enumerate({ checkpoint });
+
+  it('lists units under Science with their playlist as the preview, operator-only by default', async () => {
+    expect(CLASS_CRUNCHLABS_PUBLIC_LISTING_DEFAULT).toBe(false);
+    const page = await sync();
+    expect(page).toMatchObject({ complete: true });
+    expect(
+      page.records.map((r) => [r.providerId, r.stableId, r.title]),
+    ).toEqual([
+      ['class-crunchlabs', 'unit:marble-run', 'Marble Run'],
+      ['class-crunchlabs', 'unit:solar-oven', 'Solar Oven'],
+    ]);
+    const [record] = page.records;
+    expect(record).toMatchObject({
+      subjects: ['Science'],
+      resourceType: 'curriculum-unit',
+      author: 'Class CrunchLabs',
+      canonicalUrl: 'https://www.youtube.com/playlist?list=PLmarblerun01',
+      availableFormats: [],
+      visibility: 'operator',
+      licenseEvidence: {
+        state: 'unknown',
+        exceptions: CLASS_CRUNCHLABS_LICENSE_PENDING,
+        permittedOperations: [],
+      },
+    });
+    expect(record?.revision).toMatch(/^r1-[0-9a-f]{24}$/);
+    expect(classCrunchLabsPreviewEmbedUrl(record as CatalogSourceRecord)).toBe(
+      'https://www.youtube-nocookie.com/embed/videoseries?list=PLmarblerun01',
+    );
+    expect(
+      classCrunchLabsPreviewEmbedUrl({
+        providerId: 'ck12',
+        canonicalUrl: record?.canonicalUrl as string,
+      }),
+    ).toBeNull();
+    expect(
+      classCrunchLabsPreviewEmbedUrl({
+        providerId: CLASS_CRUNCHLABS_PROVIDER_ID,
+        canonicalUrl: 'https://evil.test/playlist?list=PLmarblerun01',
+      }),
+    ).toBeNull();
+  });
+
+  it('is visible only to operator-designated families, and to nobody by default', async () => {
+    const [record] = (await sync()).records as [CatalogSourceRecord];
+    const operator = new CatalogPolicy({ operatorTenantIds: ['t-operator'] });
+    expect(operator.canView(record, guardianOf('t-operator'))).toBe(true);
+    expect(operator.canView(record, guardianOf('t-other'))).toBe(false);
+    // a teacher role in another family does not help
+    expect(
+      operator.canView(record, {
+        ...guardianOf('t-other'),
+        roles: ['teacher'],
+      }),
+    ).toBe(false);
+    expect(new CatalogPolicy().canView(record, guardianOf('t-operator'))).toBe(
+      false,
+    );
+    expect(
+      new CatalogPolicy({ operatorTenantIds: [''] }).canView(
+        record,
+        guardianOf(''),
+      ),
+    ).toBe(false);
+    expect(operator.authorize(record, 'link', guardianOf('t-other'))).toEqual({
+      allowed: false,
+      reason: 'operator-only',
+    });
+    // while permission is pending nothing is permitted, even to the operator
+    expect(
+      operator.authorize(record, 'link', guardianOf('t-operator')),
+    ).toMatchObject({
+      allowed: false,
+      reason: 'unverified-license',
+    });
+  });
+
+  it('goes public only on the single explicit switch, and only for the literal true', async () => {
+    for (const publicListing of [
+      undefined,
+      false,
+      1,
+      'true',
+      {},
+    ] as unknown as boolean[]) {
+      const page = await sync({ publicListing });
+      expect(page.records.every((r) => r.visibility === 'operator')).toBe(true);
+    }
+    const open = await sync({ publicListing: true });
+    const [record] = open.records as [CatalogSourceRecord];
+    expect(record).toMatchObject({
+      visibility: 'catalog',
+      licenseEvidence: { state: 'verified', permittedOperations: ['link'] },
+    });
+    expect(new CatalogPolicy().canView(record, guardianOf('t-anyone'))).toBe(
+      true,
+    );
+    expect(
+      new CatalogPolicy().authorize(record, 'link', guardianOf('t-anyone')),
+    ).toEqual({
+      allowed: true,
+    });
+    // files are never hosted: nothing else is permitted
+    expect(
+      new CatalogPolicy().authorize(record, 'download', guardianOf('t-anyone'))
+        .allowed,
+    ).toBe(false);
+    // flipping the switch changes the revision so the next sync rewrites the rows
+    const closed = (await sync()).records[0] as CatalogSourceRecord;
+    expect(closed.revision).not.toBe(record.revision);
+  });
+
+  it('keeps the feed honest when the playlist source fails or is given a cursor', async () => {
+    const failing = createClassCrunchLabsCatalogAdapter({
+      playlists: {
+        playlists: async () => {
+          throw new Error('quota exceeded');
+        },
+      },
+    });
+    expect(await failing.enumerate({ checkpoint })).toMatchObject({
+      records: [],
+      complete: false,
+      paused: true,
+      exclusions: [{ code: 'provider_feed_failed', message: 'quota exceeded' }],
+    });
+    expect(
+      await createClassCrunchLabsCatalogAdapter({
+        playlists: playlists(PLAYLIST),
+      }).enumerate({
+        cursor: 'x',
+        checkpoint,
+      }),
+    ).toMatchObject({
+      complete: false,
+      exclusions: [{ code: 'unsupported_provider_cursor' }],
+    });
+    const skipped = createClassCrunchLabsCatalogAdapter({
+      playlists: playlists(
+        { ...PLAYLIST, id: 'bad id!' },
+        { ...PLAYLIST, title: '  ' },
+        PLAYLIST,
+        { ...PLAYLIST, id: 'PLmarblerun02' },
+      ),
+    });
+    expect((await skipped.enumerate({ checkpoint })).records).toHaveLength(1);
+  });
+
+  it('names the unit from the playlist', () => {
+    expect(
+      classCrunchLabsUnitOfPlaylist({ title: 'Marble Run | Class CrunchLabs' }),
+    ).toBe('Marble Run');
+    expect(
+      classCrunchLabsUnitOfPlaylist({ title: 'Marble Run (Motion) - Course' }),
+    ).toBe('Marble Run');
+    expect(
+      classCrunchLabsUnitOfPlaylist({ title: 'x', unit: ' Marble Run ' }),
+    ).toBe('Marble Run');
+  });
+
+  it('refuses "Add to a course" to families that cannot see the listing, whatever the client sends', async () => {
+    const policy = new CatalogPolicy({ operatorTenantIds: ['t-operator'] });
+    const [record] = (await sync()).records as [CatalogSourceRecord];
+    expect(
+      canAddClassCrunchLabsUnit(record, guardianOf('t-operator'), policy),
+    ).toBe(true);
+    expect(
+      canAddClassCrunchLabsUnit(record, guardianOf('t-other'), policy),
+    ).toBe(false);
+    expect(
+      canAddClassCrunchLabsUnit(
+        { ...record, providerId: 'ck12' },
+        guardianOf('t-operator'),
+        policy,
+      ),
+    ).toBe(false);
+    const db = await getTestDatabase({
+      type: 'sqlite',
+      url: ':memory:',
+      classes: [
+        'CourseBundleImport',
+        'CourseBundleMember',
+        'CourseBundleRendering',
+      ],
+    });
+    try {
+      const svc = new CourseBundleImportService(db, () => true);
+      let read = 0;
+      const files = {
+        files: async () => {
+          read++;
+          return [];
+        },
+      };
+      const other = guardianOf('t-other');
+      await expect(
+        addClassCrunchLabsUnit({
+          service: svc,
+          actor: { tenantId: other.tenantId, actorUserId: other.actorUserId },
+          catalogActor: other,
+          record,
+          policy,
+          files,
+          playlists: playlists(PLAYLIST),
+        }),
+      ).rejects.toMatchObject({ code: 'access_denied' });
+      // an actor that differs from the catalog identity is refused too
+      const operator = guardianOf('t-operator');
+      await expect(
+        addClassCrunchLabsUnit({
+          service: svc,
+          actor: { tenantId: 't-other', actorUserId: operator.actorUserId },
+          catalogActor: operator,
+          record,
+          policy,
+          files,
+          playlists: playlists(PLAYLIST),
+        }),
+      ).rejects.toMatchObject({ code: 'access_denied' });
+      expect(read).toBe(0);
+    } finally {
+      await db.close?.();
+    }
+  });
+});
+
+describe('reading a download from disk', () => {
+  let dir = '';
+  afterEach(async () => {
+    if (dir) await rm(dir, { recursive: true, force: true });
+    dir = '';
+  });
+
+  it('reads zip parts lazily, a loose folder, and collapses repeated exports', async () => {
+    dir = await mkdtemp(join(tmpdir(), 'crunchlabs-'));
+    const entries = unitFiles().filter((f) => !f.path.endsWith('.mp4'));
+    // Drive-style parts of two exports, split across zips
+    const half = Math.ceil(entries.length / 2);
+    const part = (list: Entry[]) =>
+      Buffer.from(buildZip(list.map((f) => ({ name: f.path, data: f.bytes }))));
+    for (const stamp of ['20261102T164712Z', '20261103T040555Z']) {
+      await writeFile(
+        join(
+          dir,
+          `Marble Run Unit Material_Class CrunchLabs-${stamp}-1-001.zip`,
+        ),
+        part(entries.slice(0, half)),
+      );
+      await writeFile(
+        join(
+          dir,
+          `Marble Run Unit Material_Class CrunchLabs-${stamp}-1-002.zip`,
+        ),
+        part(entries.slice(half)),
+      );
+    }
+    // a loose, already-unzipped lesson and junk the reader must skip
+    await mkdir(join(dir, 'loose', 'Marble Run_Lesson 3'), { recursive: true });
+    await writeFile(
+      join(
+        dir,
+        'loose',
+        'Marble Run_Lesson 3',
+        'A. L03_Teacher Mission Manual_Marble Run_v1.0.pdf',
+      ),
+      tinyPdf('l3 manual'),
+    );
+    await writeFile(join(dir, '.DS_Store'), 'junk');
+    await writeFile(
+      join(dir, 'L01.4 Video_MaterialsPrep_Ramps_Marble  Run-005.mp4'),
+      'mp4',
+    );
+    await symlink('/etc/passwd', join(dir, 'link.pdf'));
+
+    const listed = await folderClassCrunchLabsSource(dir).files();
+    expect(listed.some((f) => f.path.endsWith('.DS_Store'))).toBe(false);
+    expect(listed.some((f) => f.path.includes('link.pdf'))).toBe(false);
+    const fromZip = listed.find((f) =>
+      f.path.includes('L01_Teacher Mission Manual'),
+    );
+    expect(fromZip?.crc32).toMatch(/^[0-9a-f]{8}$/);
+    expect(fromZip?.exportId).toMatch(/^2026110[23]T/);
+    expect(Buffer.from((await fromZip?.read()) ?? []).toString()).toContain(
+      'l1 manual',
+    );
+
+    const b = await buildClassCrunchLabsBundle({
+      files: folderClassCrunchLabsSource(dir),
+      playlists: playlists(PLAYLIST),
+      pageCounter: async () => 2,
+    });
+    expect(b.report.duplicateExports).toBe(
+      entries.filter((f) => /Marble Run_(All|Lesson)/.test(f.path)).length,
+    );
+    expect(b.report.superseded).toBe(0);
+    expect(lessonOf(b, 'lesson-03')?.members).toHaveLength(1);
+    // the mission logs and decks are real OOXML and pass the bundle's own checks
+    const plan = planCourseBundle(readFileSet(b.bundle.files));
+    expect(
+      plan.members.filter((m) => m.kind === 'docx').length,
+    ).toBeGreaterThan(0);
+  });
+
+  it('refuses a zip entry whose checksum or size does not hold', async () => {
+    dir = await mkdtemp(join(tmpdir(), 'crunchlabs-'));
+    const good = Buffer.from(
+      buildZip([
+        {
+          name: `${L1}/A. L01_Teacher Mission Manual_Marble Run_v1.0.pdf`,
+          data: tinyPdf('manual'),
+          method: 0,
+        },
+      ]),
+    );
+    const bad = Buffer.from(good);
+    // flip a byte of the stored payload: the CRC no longer matches
+    const at = bad.indexOf('manual');
+    bad[at] = bad[at] === 0x6d ? 0x6e : 0x6d;
+    await writeFile(join(dir, 'bad.zip'), bad);
+    const [file] = await folderClassCrunchLabsSource(dir).files();
+    await expect(file?.read()).rejects.toThrow(/checksum|size/);
+    await writeFile(join(dir, 'bad.zip'), Buffer.from('not a zip at all'));
+    await expect(folderClassCrunchLabsSource(dir).files()).rejects.toThrow(
+      /not a readable zip/,
+    );
+  });
+});

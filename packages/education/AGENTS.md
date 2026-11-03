@@ -62,6 +62,11 @@ Course bundles (zip with a closed manifest v1 or v2, or a file set; Word/PowerPo
 bounded reader; refuse, never trim, hostile input; unsupported members stay
 visible; proposals only, nothing auto-published.
 
+Class CrunchLabs (a download read into a manifest v2 bundle; an operator-only
+global catalog provider until the operator's single public switch):
+[source contract](agents/class-crunchlabs.md). Never host its files; `operator`
+visibility needs the host's `operatorTenantIds`.
+
 Source import: [host boundary and transaction contract](agents/source-import.md).
 `SourceImportService` requires host opt-in, matching active actor/tenant and
 explicit licensing authorization; never add a system/global write bypass.

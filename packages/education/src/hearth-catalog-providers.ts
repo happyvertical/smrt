@@ -10,7 +10,8 @@ import { parseOerCommonsRssFeed } from './sources/oer-commons-rss-parser.js';
 export type HearthCatalogProviderId =
   | 'illustrative-mathematics'
   | 'ck12'
-  | 'oer-commons';
+  | 'oer-commons'
+  | 'class-crunchlabs';
 
 /**
  * A host-supplied integration for a provider-approved metadata feed. The
@@ -82,6 +83,11 @@ export const providerFeedRequirements: readonly ProviderFeedRequirement[] = [
     providerId: 'oer-commons',
     requirement:
       'OER Commons-approved paginated metadata-feed access with each record’s publisher and license fields.',
+  },
+  {
+    providerId: 'class-crunchlabs',
+    requirement:
+      'Class CrunchLabs permission (pending). Until then the provider is operator-only; making it public is the operator’s single publicListing switch (see createClassCrunchLabsCatalogAdapter).',
   },
 ];
 

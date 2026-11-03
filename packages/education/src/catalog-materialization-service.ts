@@ -143,6 +143,8 @@ export class CatalogMaterializationService {
       throw new Error(
         'Teacher-only material cannot be materialized for learners.',
       );
+    if (resource.visibility === 'operator')
+      throw new Error('Operator-only listings are never materialized.');
     const operation = isPrintableAcquisitionFormat(acquisition.format)
       ? 'print'
       : 'download';

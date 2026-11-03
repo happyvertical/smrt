@@ -288,6 +288,7 @@ export {
   createPublicIllustrativeMathematicsK5Adapter,
   providerFeedRequirements,
 } from './hearth-catalog-providers.js';
+export * from './hearth-class-crunchlabs.js';
 export type {
   EasyPeasyGrade4Course,
   EasyPeasyGrade4Theme,
@@ -433,6 +434,8 @@ export type {
   SourceImportResult,
 } from './source-import-service.js';
 export { SourceImportService } from './source-import-service.js';
+export * from './sources/class-crunchlabs.js';
+export { folderClassCrunchLabsSource } from './sources/class-crunchlabs-files.js';
 export type {
   ParsedSourceCourse,
   ParsedSourceLesson,
