@@ -7,6 +7,7 @@ import {
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import { parseInterestTheme } from './learner-interest-theme.js';
 import type { EnrollmentStatus, LessonProgressStatus } from './learners.js';
 
 const closed = { api: false, mcp: false, cli: false } as const;
@@ -274,4 +275,63 @@ export class EnrollmentPaceChange extends SmrtObject {
 }
 export class EnrollmentPaceChangeCollection extends SmrtCollection<EnrollmentPaceChange> {
   static readonly _itemClass = EnrollmentPaceChange;
+}
+
+/**
+ * Append-only audit of one learner interest theme change made through
+ * `LearnerService.setInterestTheme`: the actor, the host policy setting relied
+ * on and the previous and new theme (empty label = none). It stores only the
+ * learner-safe label and key.
+ */
+@TenantScoped({ mode: 'required' })
+@smrt({ tableName: 'learner_interest_theme_changes', ...closed })
+export class LearnerInterestThemeChange extends SmrtObject {
+  @tenantId() tenantId = '';
+  @foreignKey('Learner', { required: true }) learnerId = '';
+  previousLabel = '';
+  previousKey = '';
+  newLabel = '';
+  newKey = '';
+  actorUserId = '';
+  policyBasis = '';
+  recordedAt = new Date();
+  constructor(options: Record<string, unknown> = {}) {
+    super(options);
+    adopt(this, options);
+  }
+  override async delete(): Promise<void> {
+    noDelete();
+  }
+  override async save(options?: SmrtSaveOptions): Promise<this> {
+    await requireInsert(this);
+    if (
+      !(await this.db.get('learners', {
+        id: this.learnerId,
+        tenant_id: this.tenantId,
+      }))
+    )
+      throw new Error('Interest theme history requires its tenant learner');
+    for (const [label, key] of [
+      [this.previousLabel, this.previousKey],
+      [this.newLabel, this.newKey],
+    ]) {
+      if (!label && !key) continue;
+      const theme = parseInterestTheme({ label, key });
+      if (!theme || theme.label !== label || theme.key !== key)
+        throw new Error('Invalid interest theme change');
+    }
+    if (
+      this.previousLabel === this.newLabel &&
+      this.previousKey === this.newKey
+    )
+      throw new Error('Invalid interest theme change');
+    requireText(this.actorUserId, 'Theme history requires an actor');
+    requireText(this.policyBasis, 'Theme history requires a policy basis');
+    validDate(this.recordedAt);
+    this.requireInsertOnSave();
+    return super.save(options);
+  }
+}
+export class LearnerInterestThemeChangeCollection extends SmrtCollection<LearnerInterestThemeChange> {
+  static readonly _itemClass = LearnerInterestThemeChange;
 }

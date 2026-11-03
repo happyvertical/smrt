@@ -7,6 +7,7 @@ import {
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import { parseInterestTheme } from './learner-interest-theme.js';
 
 const closed = { api: false, mcp: false, cli: false } as const;
 
@@ -51,6 +52,10 @@ export class Learner extends SmrtObject {
   birthDate: Date | null = null;
   level = 0;
   settings = '{}';
+  /** Interest theme label (`''` = none); see `learner-interest-theme.ts`. */
+  interestThemeLabel = '';
+  /** Optional stable host key for the theme; only with a label. */
+  interestThemeKey = '';
 
   constructor(options: Record<string, unknown> = {}) {
     super(options);
@@ -103,6 +108,18 @@ export class Learner extends SmrtObject {
       );
     if (!Number.isSafeInteger(this.level) || this.level < 0)
       throw new Error('Learner level must be a nonnegative integer');
+    if (this.interestThemeLabel || this.interestThemeKey) {
+      const theme = parseInterestTheme({
+        label: this.interestThemeLabel,
+        key: this.interestThemeKey,
+      });
+      if (
+        !theme ||
+        theme.label !== this.interestThemeLabel ||
+        theme.key !== this.interestThemeKey
+      )
+        throw new Error('Invalid learner interest theme');
+    }
     return super.save(options);
   }
 }

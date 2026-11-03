@@ -227,3 +227,63 @@ export class CourseProposalDecision extends SmrtObject {
 export class CourseProposalDecisionCollection extends SmrtCollection<CourseProposalDecision> {
   static readonly _itemClass = CourseProposalDecision;
 }
+
+/**
+ * The structured brief of one generation job and the theme it resolved to:
+ * written once with the job, never rewritten, so the guardian review can show
+ * the objective, the theme used and whether it was a per-request override.
+ */
+@TenantScoped({ mode: 'required' })
+@smrt({
+  tableName: 'course_generation_briefs',
+  conflictColumns: ['tenant_id', 'job_id'],
+  ...closed,
+})
+export class CourseGenerationBriefRecord extends SmrtObject {
+  @tenantId() tenantId = '';
+  @foreignKey('CourseGenerationJob', { required: true }) jobId = '';
+  @foreignKey('Course', { required: true }) courseId = '';
+  target = 'course';
+  subject = '';
+  category = '';
+  area = '';
+  /** Whole grade level; `-1` means none was given. */
+  grade = -1;
+  @field({ type: 'text' }) objective = '';
+  learningObjectiveId = '';
+  learnerId = '';
+  themeLabel = '';
+  themeKey = '';
+  themeSource = 'none';
+  recordedAt = new Date();
+  constructor(options: Record<string, unknown> = {}) {
+    super(options);
+    adopt(this, options);
+  }
+  override async delete(): Promise<void> {
+    noDelete();
+  }
+  override async save(options?: SmrtSaveOptions): Promise<this> {
+    await requireInsert(this);
+    await requireOwned(this, 'course_generation_jobs', this.jobId, {
+      course_id: this.courseId,
+    });
+    if (!['course', 'lesson'].includes(this.target))
+      throw new Error('Invalid generation target');
+    if (!['override', 'saved', 'none'].includes(this.themeSource))
+      throw new Error('Invalid generation theme source');
+    if (
+      (this.themeSource === 'none') !== !this.themeLabel ||
+      (this.themeKey && !this.themeLabel)
+    )
+      throw new Error('Generation theme and its source disagree');
+    if (!Number.isSafeInteger(this.grade) || this.grade < -1 || this.grade > 12)
+      throw new Error('Invalid generation grade');
+    validDate(this.recordedAt);
+    this.requireInsertOnSave();
+    return super.save(options);
+  }
+}
+export class CourseGenerationBriefRecordCollection extends SmrtCollection<CourseGenerationBriefRecord> {
+  static readonly _itemClass = CourseGenerationBriefRecord;
+}

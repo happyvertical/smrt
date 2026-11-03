@@ -1,4 +1,15 @@
 import { CourseAuthoringError } from './course-authoring-contracts.js';
+import type {
+  InterestTheme,
+  InterestThemeInput,
+} from './learner-interest-theme.js';
+import type {
+  QuestionAnswerKey,
+  QuestionChoice,
+  QuestionResponseType,
+  QuestionRubric,
+  QuestionSubpart,
+} from './question-contracts.js';
 
 export type CourseGenerationStatus =
   | 'queued'
@@ -73,6 +84,74 @@ export interface CourseGeneratorIdentity {
   version: string;
 }
 
+/**
+ * What a generation request produces: the whole course (today's behaviour and
+ * the default) or exactly one lesson with its worksheet, answer key and themed
+ * explanations.
+ */
+export type CourseGenerationTarget = 'course' | 'lesson';
+export const COURSE_GENERATION_TARGETS: readonly CourseGenerationTarget[] = [
+  'course',
+  'lesson',
+];
+
+/** Where the theme used for a request came from. */
+export type CourseGenerationThemeSource = 'override' | 'saved' | 'none';
+
+/** Longest structured field (subject, category, area), in characters. */
+export const MAX_GENERATION_BRIEF_FIELD_CHARS = 200;
+/** Longest objective statement, in characters. */
+export const MAX_GENERATION_OBJECTIVE_CHARS = 1000;
+/** Highest grade level a structured request may name (0 is kindergarten). */
+export const MAX_GENERATION_GRADE = 12;
+
+/**
+ * Structured fields a host may carry on a generation request next to the free
+ * `instruction`. All are optional except that a `lesson` target needs an
+ * objective (from `objective` or, failing that, `area`). Untrusted text: it is
+ * bounded, stored and sent to the provider as data, never as authority.
+ */
+export interface CourseGenerationBriefInput {
+  /** Defaults to `course`. */
+  target?: CourseGenerationTarget;
+  subject?: string;
+  category?: string;
+  /** The specific skill to learn, for example "multiplying by tens". */
+  area?: string;
+  /** Whole grade level, 0-12. */
+  grade?: number;
+  /**
+   * The curriculum's objective for a lesson. The theme never changes it; it is
+   * carried verbatim in the generation brief and the proposal.
+   */
+  objective?: string;
+  /** Stable `LearningObjective` id the generated questions are linked to. */
+  learningObjectiveId?: string;
+  /** The learner the request is for; needed to fall back to their saved theme. */
+  learnerId?: string;
+  /**
+   * Per-request theme. When present it wins for this request only; it never
+   * changes the learner's saved preference.
+   */
+  theme?: InterestThemeInput | null;
+}
+
+/** The resolved, stored brief: what the provider is asked and what review shows. */
+export interface CourseGenerationBrief {
+  target: CourseGenerationTarget;
+  subject: string;
+  category: string;
+  area: string;
+  grade: number | null;
+  objective: string;
+  learningObjectiveId: string | null;
+  learnerId: string | null;
+  /** The theme used for story and examples only, or null when there was none. */
+  theme: InterestTheme | null;
+  /** `override` (this request), `saved` (the learner's preference) or `none`. */
+  themeSource: CourseGenerationThemeSource;
+}
+
 /** What a generator is given: the exact snapshot retained on the job. */
 export interface CourseGeneratorRequest {
   tenantId: string;
@@ -81,6 +160,12 @@ export interface CourseGeneratorRequest {
   instruction: string;
   /** Immutable snapshot of the base revision; never contains answer keys. */
   material: unknown;
+  /**
+   * The resolved structured brief, when the request carried one. For a `lesson`
+   * target the generator must return exactly one lesson that teaches
+   * `brief.objective`; the theme may change only its story and examples.
+   */
+  brief?: CourseGenerationBrief;
 }
 
 /**
@@ -111,6 +196,16 @@ export interface CourseGenerationLimits {
 }
 
 /** Closed, validated generation output. Absent members are not proposed. */
+/** One generated question (lesson target only); the answer key is required. */
+export interface CourseGenerationProposalQuestion {
+  prompt: string;
+  responseType: QuestionResponseType;
+  choices?: QuestionChoice[];
+  subparts?: QuestionSubpart[];
+  answerKey: QuestionAnswerKey;
+  rubric?: QuestionRubric;
+  pointsPossible?: number;
+}
 export interface CourseGenerationProposalLesson {
   /** Existing lesson to propose changes to; omitted for a new lesson. */
   lessonKey?: string;
@@ -121,6 +216,10 @@ export interface CourseGenerationProposalLesson {
   body?: string;
   estimatedMinutes?: number;
   difficulty?: number;
+  /** Lesson target only. Always equals the brief's objective once validated. */
+  objective?: string;
+  /** Lesson target only: the worksheet. Answer keys never reach a learner view. */
+  questions?: CourseGenerationProposalQuestion[];
 }
 export interface CourseGenerationProposal {
   course: { summary?: string; subject?: string; objectives?: string[] };
@@ -155,6 +254,8 @@ export interface CourseProposalView {
   /** The new draft revision holding only additions and fills. */
   resultRevisionId: string;
   rationale: string;
+  /** The brief the proposal answered: objective, theme and where the theme came from. */
+  brief: CourseGenerationBrief | null;
   fields: CourseProposalFieldView[];
 }
 
@@ -188,6 +289,8 @@ export interface CourseGenerationView {
   baseRevisionId: string;
   requestKey: string;
   instruction: string;
+  /** The resolved structured brief; null for a plain instruction-only request. */
+  brief: CourseGenerationBrief | null;
   status: CourseGenerationStatus;
   provider: string;
   model: string;
@@ -240,5 +343,12 @@ export class CourseProposalFieldError extends CourseAuthoringError {
       'proposal-field-not-decidable',
       'Only undecided conflicting proposal fields can be decided.',
     );
+  }
+}
+
+/** The structured brief was malformed or inconsistent with its target. */
+export class CourseGenerationBriefError extends CourseAuthoringError {
+  constructor(readonly field: string) {
+    super('invalid-generation-brief', 'The generation brief is not valid.');
   }
 }

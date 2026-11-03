@@ -18,7 +18,11 @@ import {
   readDelegation,
 } from './course-delegation.js';
 import {
+  COURSE_GENERATION_TARGETS,
   COURSE_GENERATION_TERMINAL,
+  type CourseGenerationBrief,
+  CourseGenerationBriefError,
+  type CourseGenerationBriefInput,
   type CourseGenerationEventView,
   CourseGenerationInProgressError,
   type CourseGenerationLimits,
@@ -35,10 +39,14 @@ import {
   CourseProposalFieldError,
   CourseProposalNotFoundError,
   type CourseProposalView,
+  MAX_GENERATION_BRIEF_FIELD_CHARS,
+  MAX_GENERATION_GRADE,
+  MAX_GENERATION_OBJECTIVE_CHARS,
   MAX_REFUSAL_CATEGORY_LENGTH,
   MAX_REFUSAL_EXPLANATION_LENGTH,
 } from './course-generation-contracts.js';
 import {
+  CourseGenerationBriefRecordCollection,
   CourseGenerationEventCollection,
   CourseGenerationJobCollection,
   CourseProposalCollection,
@@ -82,9 +90,14 @@ import {
 } from './course-review-models.js';
 import { groupSharingDigest } from './group-sharing-hash.js';
 import {
+  interestThemeFromColumns,
+  parseInterestTheme,
+} from './learner-interest-theme.js';
+import {
   QuestionAuthoringService,
   type QuestionAuthoringServiceOptions,
 } from './question-authoring-service.js';
+import type { LessonQuestionRefInput } from './question-contracts.js';
 
 const NAMESPACE = 'smrt.education.course-generation-review.v1';
 const KEY_PATTERN = /^[A-Za-z0-9._:@/-]{1,200}$/;
@@ -191,6 +204,76 @@ function normalizeUsage(usage: unknown) {
     cost,
     costCurrency:
       cost !== null && ('costUsd' in raw || 'cost_usd' in raw) ? 'USD' : null,
+  };
+}
+
+/** Bounded plain text for a brief field; control characters are refused. */
+function briefText(value: unknown, field: string, max: number): string {
+  if (value === undefined || value === null || value === '') return '';
+  if (typeof value !== 'string' || value.length > max)
+    throw new CourseGenerationBriefError(field);
+  for (let i = 0; i < value.length; i++) {
+    const code = value.charCodeAt(i);
+    if ((code < 32 && code !== 9 && code !== 10) || code === 127)
+      throw new CourseGenerationBriefError(field);
+  }
+  return value.trim();
+}
+
+/**
+ * Validates the structured request fields. A `lesson` target needs an
+ * objective, taken from `objective` or else `area`. The theme override is
+ * parsed here but resolved against the learner's saved theme in the
+ * transaction.
+ */
+function normalizeBrief(input: CourseGenerationBriefInput) {
+  if (!input || typeof input !== 'object' || Array.isArray(input))
+    throw new CourseGenerationBriefError('brief');
+  const target = input.target ?? 'course';
+  if (!COURSE_GENERATION_TARGETS.includes(target))
+    throw new CourseGenerationBriefError('target');
+  const field = (value: unknown, name: string) =>
+    briefText(value, name, MAX_GENERATION_BRIEF_FIELD_CHARS);
+  const area = field(input.area, 'area');
+  const objective =
+    briefText(input.objective, 'objective', MAX_GENERATION_OBJECTIVE_CHARS) ||
+    area;
+  if (target === 'lesson' && !objective)
+    throw new CourseGenerationBriefError('objective');
+  let grade: number | null = null;
+  if (input.grade !== undefined && input.grade !== null) {
+    if (
+      !Number.isSafeInteger(input.grade) ||
+      input.grade < 0 ||
+      input.grade > MAX_GENERATION_GRADE
+    )
+      throw new CourseGenerationBriefError('grade');
+    grade = input.grade;
+  }
+  for (const [name, value] of [
+    ['learningObjectiveId', input.learningObjectiveId],
+    ['learnerId', input.learnerId],
+  ] as const)
+    if (
+      value !== undefined &&
+      (typeof value !== 'string' || !KEY_PATTERN.test(value))
+    )
+      throw new CourseGenerationBriefError(name);
+  let override: { label: string; key: string } | null = null;
+  if (input.theme !== undefined && input.theme !== null) {
+    override = parseInterestTheme(input.theme);
+    if (!override) throw new CourseGenerationBriefError('theme');
+  }
+  return {
+    target,
+    subject: field(input.subject, 'subject'),
+    category: field(input.category, 'category'),
+    area,
+    grade,
+    objective,
+    learningObjectiveId: input.learningObjectiveId ?? null,
+    learnerId: input.learnerId ?? null,
+    override,
   };
 }
 
@@ -338,6 +421,7 @@ export class CourseGenerationReviewService extends QuestionAuthoringService {
       baseRevisionId: String(job.base_revision_id),
       requestKey: String(job.request_key),
       instruction: String(job.instruction),
+      brief: await this.briefFor(tx, String(job.tenant_id), String(job.id)),
       status: String(latest.status) as CourseGenerationStatus,
       provider: String(running.provider ?? ''),
       model: String(running.model ?? ''),
@@ -424,6 +508,12 @@ export class CourseGenerationReviewService extends QuestionAuthoringService {
       expectedHeadRevisionId: string;
       requestKey: string;
       instruction?: string;
+      /**
+       * Structured request fields and the target (`course` by default, or one
+       * `lesson`). A per-request `theme` wins over the learner's saved theme
+       * for this request only and never changes the saved preference.
+       */
+      brief?: CourseGenerationBriefInput;
     },
   ): Promise<CourseGenerationView> {
     const requestKey = requireKey(request.requestKey);
@@ -432,11 +522,14 @@ export class CourseGenerationReviewService extends QuestionAuthoringService {
       'expected head',
     );
     const instruction = boundedText(request.instruction, 'instruction', 4000);
+    const brief =
+      request.brief === undefined ? null : normalizeBrief(request.brief);
     const payloadDigest = digest({
       courseId: request.courseId,
       expected,
       instruction,
       delegationId: request.delegationId ?? '',
+      ...(brief ? { brief } : {}),
     });
     return this.run(async (tx) => {
       await this.authorize(
@@ -444,7 +537,10 @@ export class CourseGenerationReviewService extends QuestionAuthoringService {
         request,
         'education.course.generate',
         'request-generation',
-        { courseId: request.courseId },
+        {
+          courseId: request.courseId,
+          ...(brief?.learnerId ? { learnerId: brief.learnerId } : {}),
+        },
       );
       await this.writableDraft(tx, request.tenantId, request.courseId);
       const existing = await tx.get('course_generation_jobs', {
@@ -471,6 +567,9 @@ export class CourseGenerationReviewService extends QuestionAuthoringService {
         request.courseId,
         expected,
       );
+      const resolved = brief
+        ? await this.resolveBrief(tx, request, brief)
+        : null;
       const job = (await (
         await CourseGenerationJobCollection.create({ db: tx })
       ).create({
@@ -491,12 +590,112 @@ export class CourseGenerationReviewService extends QuestionAuthoringService {
         id: String(job.id),
         tenant_id: request.tenantId,
       })) as Row;
+      if (resolved)
+        await (
+          await CourseGenerationBriefRecordCollection.create({ db: tx })
+        ).create({
+          _insertOnly: true,
+          tenantId: request.tenantId,
+          jobId: String(job.id),
+          courseId: request.courseId,
+          target: resolved.target,
+          subject: resolved.subject,
+          category: resolved.category,
+          area: resolved.area,
+          grade: resolved.grade ?? -1,
+          objective: resolved.objective,
+          learningObjectiveId: resolved.learningObjectiveId ?? '',
+          learnerId: resolved.learnerId ?? '',
+          themeLabel: resolved.theme?.label ?? '',
+          themeKey: resolved.theme?.key ?? '',
+          themeSource: resolved.themeSource,
+          recordedAt: new Date(),
+        });
       await this.appendEvent(tx, request, row, 1, {
         status: 'queued',
         requestKey,
       });
       return this.generationView(tx, row);
     });
+  }
+
+  /**
+   * Resolves the theme (override, else the learner's saved one, else none) and
+   * checks the learner and objective belong to the tenant. Nothing here writes
+   * to the learner: the saved preference is only ever read.
+   */
+  private async resolveBrief(
+    tx: Tx,
+    actor: CourseAuthoringActor,
+    input: ReturnType<typeof normalizeBrief>,
+  ): Promise<CourseGenerationBrief> {
+    if (!(await tx.tableExists('course_generation_briefs')))
+      throw new CourseAuthoringError(
+        'schema-unavailable',
+        'Structured generation requests require the latest education schema.',
+      );
+    if (
+      input.learningObjectiveId &&
+      !(await tx.get('learning_objectives', {
+        id: input.learningObjectiveId,
+        tenant_id: actor.tenantId,
+      }))
+    )
+      throw new CourseGenerationBriefError('learningObjectiveId');
+    let saved: { label: string; key: string } | null = null;
+    if (input.learnerId) {
+      const learner = await tx.get('learners', {
+        id: input.learnerId,
+        tenant_id: actor.tenantId,
+      });
+      if (!learner) throw new CourseNotFoundError();
+      saved = interestThemeFromColumns(
+        learner.interest_theme_label,
+        learner.interest_theme_key,
+      );
+    }
+    const theme = input.override ?? saved ?? null;
+    return {
+      target: input.target,
+      subject: input.subject,
+      category: input.category,
+      area: input.area,
+      grade: input.grade,
+      objective: input.objective,
+      learningObjectiveId: input.learningObjectiveId,
+      learnerId: input.learnerId,
+      theme: theme ?? null,
+      themeSource: input.override ? 'override' : saved ? 'saved' : 'none',
+    };
+  }
+
+  /** The stored brief of a job; null for plain requests and un-migrated hosts. */
+  private async briefFor(
+    tx: Tx,
+    tenantId: string,
+    jobId: string,
+  ): Promise<CourseGenerationBrief | null> {
+    if (!(await tx.tableExists('course_generation_briefs'))) return null;
+    const row = (await tx.get('course_generation_briefs', {
+      tenant_id: tenantId,
+      job_id: jobId,
+    })) as Row | null;
+    if (!row) return null;
+    const grade = Number(row.grade);
+    return {
+      target: String(row.target) as CourseGenerationBrief['target'],
+      subject: String(row.subject ?? ''),
+      category: String(row.category ?? ''),
+      area: String(row.area ?? ''),
+      grade: grade >= 0 ? grade : null,
+      objective: String(row.objective ?? ''),
+      learningObjectiveId: orNull(row.learning_objective_id),
+      learnerId: orNull(row.learner_id),
+      theme: interestThemeFromColumns(row.theme_label, row.theme_key),
+      themeSource: String(
+        row.theme_source,
+      ) as CourseGenerationBrief['themeSource'],
+    };
   }
 
   /**
@@ -537,6 +736,7 @@ export class CourseGenerationReviewService extends QuestionAuthoringService {
         ...identity,
       });
       const input = JSON.parse(String(job.input_json)) as { material: unknown };
+      const brief = await this.briefFor(tx, request.tenantId, String(job.id));
       return {
         courseId: String(job.course_id),
         generatorRequest: {
@@ -545,6 +745,7 @@ export class CourseGenerationReviewService extends QuestionAuthoringService {
           jobId: String(job.id),
           instruction: String(job.instruction),
           material: input.material,
+          ...(brief ? { brief } : {}),
         } satisfies CourseGeneratorRequest,
       };
     });
@@ -657,6 +858,7 @@ export class CourseGenerationReviewService extends QuestionAuthoringService {
           courseId,
           String(job.base_revision_id),
         );
+        const brief = await this.briefFor(tx, request.tenantId, String(job.id));
         let proposal: ReturnType<typeof validateCourseGenerationOutput>;
         try {
           proposal = validateCourseGenerationOutput(
@@ -664,6 +866,7 @@ export class CourseGenerationReviewService extends QuestionAuthoringService {
             new Set(
               base.sections.flatMap((s) => s.lessons.map((l) => l.lessonKey)),
             ),
+            brief,
           );
         } catch (e) {
           if (e instanceof CourseGenerationOutputError)
@@ -672,10 +875,37 @@ export class CourseGenerationReviewService extends QuestionAuthoringService {
         }
         const plan = planProposal(base, proposal);
         const draft = draftFromRevision(base);
+        // A lesson target writes its worksheet as immutable question records in
+        // this transaction, linked to the brief's objective, so a failure here
+        // leaves neither questions nor a draft behind.
+        const questionRefs = new Map<number, LessonQuestionRefInput[]>();
+        if (brief?.target === 'lesson') {
+          const refs: LessonQuestionRefInput[] = [];
+          for (const [n, q] of (
+            proposal.lessons[0].questions ?? []
+          ).entries()) {
+            const created = await this.createQuestionIn(tx, {
+              tenantId: request.tenantId,
+              actorUserId: request.actorUserId,
+              ...delegationActorFields(request),
+              courseId,
+              requestKey: `gq:${digest([String(job.id), n]).slice(0, 40)}`,
+              content: {
+                ...q,
+                ...(brief.learningObjectiveId
+                  ? { objectiveIds: [brief.learningObjectiveId] }
+                  : {}),
+                provenance: 'generated',
+              },
+            });
+            refs.push({ questionRevisionId: created.headRevisionId });
+          }
+          questionRefs.set(0, refs);
+        }
         applyProposalFields(
           draft,
           plan.filter((p) => p.status === 'added' || p.status === 'filled'),
-          { jobId: String(job.id) },
+          { jobId: String(job.id), questionRefs },
         );
         draft.provenance = 'generated';
         const saved = await this.saveDraftIn(tx, {
@@ -809,6 +1039,7 @@ export class CourseGenerationReviewService extends QuestionAuthoringService {
       baseRevisionId: String(proposal.base_revision_id),
       resultRevisionId: String(proposal.result_revision_id),
       rationale: String(proposal.rationale),
+      brief: await this.briefFor(tx, tenantId, String(proposal.job_id)),
       fields: plan.map((p) => ({
         field: p.field,
         status: p.status,

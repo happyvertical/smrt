@@ -131,6 +131,26 @@ Same-tenant membership alone never grants sibling access.
   without `enrollment_pace_changes` gets `LearnerHistoryUnavailableError`.
   Apply the additive migration (new column plus table) before deploying writes;
   reads of an un-migrated table report no pace.
+- `setInterestTheme({ theme: { label, key? } | null, policyBasis })` stores the
+  learner's interest theme under `education.learner.set-interest-theme`. The
+  label is a short plain string (1-60 characters after whitespace is collapsed;
+  control characters, `@`, `://` and `www.` are refused so it cannot carry
+  contact details) and the optional key is lowercase `[a-z0-9-]` up to 40
+  characters. The package ships no starter list: the host owns its keys
+  (for Hearth `minecraft`, `roman`, `hockey`, `baseball`, `football`, `soccer`,
+  `cars`) and family-added themes are free labels without a key. A guardian with
+  an effective relationship may set any of their learners' themes; the learner
+  may set their own when the host authorizer answers `own: true` as allowed;
+  another learner's theme needs the actor's own guardian relationship, so a
+  learner, sibling or stranger is refused by the same actor/tenant checks as
+  every other operation. It is a skin for stories and examples only; it never
+  changes an objective. Columns `learners.interest_theme_label` and
+  `interest_theme_key` (additive; empty = none) hold the value and each change
+  appends a `LearnerInterestThemeChange` (actor, `policyBasis`, previous and new
+  value). An unchanged value is `{ changed: false }`; a bad value is
+  `InterestThemeError`; a host without `learner_interest_theme_changes` gets
+  `LearnerHistoryUnavailableError`. `getLearner` returns `interestTheme`
+  (`{ label, key } | null`). Apply the additive migration before deploying.
 - `nextLessons({ enrollmentId?, count? })`: `count` is an integer from 1 to
   14 (`MAX_NEXT_LESSONS_COUNT`, default 1, else `LearnerValidationError`) and
   returns up to that many unfinished (not complete or skipped) lessons per

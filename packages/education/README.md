@@ -109,7 +109,12 @@ host setting and optional evidence submission; guardian `attestLesson` is
 unchanged. `setEnrollmentPace` sets or clears an enrollment's planned lessons
 per week (1 to 14) under the host's `education.enrollment.set-pace` decision with
 an immutable change row, and `nextLessons({ count })` returns a week's set of
-unfinished lessons (default one).
+unfinished lessons (default one). `setInterestTheme` stores a learner's interest
+theme (a short plain label and an optional stable key such as `minecraft`; the
+host owns its starter list) under `education.learner.set-interest-theme`: a
+guardian may set any of their learners' themes, a learner only their own
+(the host decides), nobody another learner's. Each change appends an immutable
+row; `getLearner` and the tutor context read it back.
 `TutorContextService.compose` builds a bounded, learner-safe `TutorContext`
 (lesson text, learner-visible questions, own progress, released feedback; for the
 learner audience only `answerKeyAvailable`, never keys, rubrics, notes or storage
@@ -123,6 +128,18 @@ or file set under hard size, ratio, path and entry bounds, keeps unsupported and
 duplicate members as append-only evidence, hands accepted members to ingestion and
 proposes sections and lessons through `CourseGenerationReviewService`; see
 [bundle import](agents/course-bundle-import.md).
+`requestGeneration` also accepts a structured `brief` (subject, category, area,
+grade, objective, a `course` or one-`lesson` target and a per-request interest
+theme that beats the learner's saved theme for that request only); the theme used
+and whether it was an override show on the guardian's review, and `release`
+accepts a `policyBasis` so a host can honour its own approve-requested-lessons
+setting without bypassing the review gate; see
+[generation and review](agents/course-generation-review.md).
+`CourseAuthoringService.appendLesson` adds one lesson (materials and question
+records included) to a released course as a new, optionally released revision:
+append-only, idempotent by request key, refused on archived, unreleased or
+foreign courses; enrollments stay on their pinned release until the host
+upgrades them; see [course authoring](agents/course-authoring-service.md).
 Repeated starts preserve the existing progress, including attempts and scores.
 A new curriculum/year creates a distinct enrollment and fresh progress history.
 An unscored lesson has `bestScore: null`, distinct from zero. The service does

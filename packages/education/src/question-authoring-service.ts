@@ -303,6 +303,24 @@ export class QuestionAuthoringService extends CourseAuthoringService {
       content: QuestionContentInput;
     },
   ): Promise<QuestionHeadView> {
+    requireKey(request.requestKey);
+    this.normalize(request.content);
+    return this.run((tx) => this.createQuestionIn(tx, request));
+  }
+
+  /**
+   * The create path on a caller-supplied transaction, so a composed write (a
+   * generated lesson's worksheet) shares authorization, the request key and the
+   * transaction with the rest of the unit.
+   */
+  protected async createQuestionIn(
+    tx: Tx,
+    request: CourseAuthoringActor & {
+      requestKey: string;
+      courseId?: string;
+      content: QuestionContentInput;
+    },
+  ): Promise<QuestionHeadView> {
     const requestKey = requireKey(request.requestKey);
     const content = this.normalize(request.content);
     const payloadDigest = digest({
@@ -310,51 +328,49 @@ export class QuestionAuthoringService extends CourseAuthoringService {
       courseId: request.courseId ?? null,
       delegationId: request.delegationId ?? '',
     });
-    return this.run(async (tx) => {
-      await this.authorizeWrite(
-        tx,
-        request,
-        usesGenerated(content),
-        'create-question',
-        request.courseId,
-      );
-      if (request.courseId)
-        await this.identityRow(tx, request.tenantId, request.courseId);
-      const questionId = derived('question', request.tenantId, requestKey);
-      const existing = await tx.get('questions', {
-        id: questionId,
-        tenant_id: request.tenantId,
-      });
-      if (existing) {
-        const first = await tx.get('question_revisions', {
-          tenant_id: request.tenantId,
-          question_id: questionId,
-          request_key: requestKey,
-        });
-        if (!first || first.payload_digest !== payloadDigest)
-          throw new CourseRequestKeyConflictError();
-        return { questionId, headRevisionId: String(first.id), sequence: 1 };
-      }
-      await this.requireReferences(tx, request.tenantId, content);
-      await (await QuestionCollection.create({ db: tx })).create({
-        _insertOnly: true,
-        id: questionId,
-        tenantId: request.tenantId,
-        courseId: request.courseId ?? null,
-        createdByUserId: request.actorUserId,
-        requestKey,
-        recordedAt: new Date(),
-      });
-      const revision = await this.appendQuestionRevision(tx, request, {
-        questionId,
-        parent: null,
-        sequence: 1,
-        requestKey,
-        payloadDigest,
-        content,
-      });
-      return { questionId, headRevisionId: revision, sequence: 1 };
+    await this.authorizeWrite(
+      tx,
+      request,
+      usesGenerated(content),
+      'create-question',
+      request.courseId,
+    );
+    if (request.courseId)
+      await this.identityRow(tx, request.tenantId, request.courseId);
+    const questionId = derived('question', request.tenantId, requestKey);
+    const existing = await tx.get('questions', {
+      id: questionId,
+      tenant_id: request.tenantId,
     });
+    if (existing) {
+      const first = await tx.get('question_revisions', {
+        tenant_id: request.tenantId,
+        question_id: questionId,
+        request_key: requestKey,
+      });
+      if (!first || first.payload_digest !== payloadDigest)
+        throw new CourseRequestKeyConflictError();
+      return { questionId, headRevisionId: String(first.id), sequence: 1 };
+    }
+    await this.requireReferences(tx, request.tenantId, content);
+    await (await QuestionCollection.create({ db: tx })).create({
+      _insertOnly: true,
+      id: questionId,
+      tenantId: request.tenantId,
+      courseId: request.courseId ?? null,
+      createdByUserId: request.actorUserId,
+      requestKey,
+      recordedAt: new Date(),
+    });
+    const revision = await this.appendQuestionRevision(tx, request, {
+      questionId,
+      parent: null,
+      sequence: 1,
+      requestKey,
+      payloadDigest,
+      content,
+    });
+    return { questionId, headRevisionId: revision, sequence: 1 };
   }
 
   private async appendQuestionRevision(

@@ -38,6 +38,7 @@ export const COURSE_AUTHORING_ACTIONS: readonly CourseAuthoringAction[] = [
 export type CourseAuthoringOperation =
   | 'create'
   | 'save-draft'
+  | 'append-lesson'
   | 'read-draft'
   | 'release'
   | 'archive'
@@ -320,6 +321,17 @@ export interface CourseHeadView {
   headRevisionId: string;
   version: number;
 }
+/** Result of `appendLesson`: the new revision and, unless skipped, its release. */
+export type CourseAppendLessonView = Readonly<{
+  courseId: string;
+  /** The appended revision; the new draft head. */
+  revisionId: string;
+  version: number;
+  lessonKey: string;
+  /** The release of that revision; null when `release: false` was requested. */
+  release: CourseReleaseView | null;
+}>;
+
 export type CourseReleaseView = Readonly<{
   id: string;
   courseId: string;
@@ -332,6 +344,8 @@ export type CourseReleaseView = Readonly<{
   actorUserId: string;
   delegatingGuardianUserId: string | null;
   delegationId: string | null;
+  /** The host setting the release relied on (for example an auto-approve); null if none. */
+  policyBasis: string | null;
   recordedAt: string;
   lessons: ReadonlyArray<{
     lessonKey: string;
@@ -549,6 +563,19 @@ export class CourseDiscardedError extends CourseAuthoringError {
 export class CourseArchivedError extends CourseAuthoringError {
   constructor() {
     super('course-archived', 'Course is archived; unarchive it first.');
+  }
+}
+/**
+ * `appendLesson` was refused for the course's state: it has no release yet
+ * (`not-released`), its head holds changes that are not released
+ * (`unreleased-changes`), or the lesson key or section is already taken
+ * (`duplicate-lesson`).
+ */
+export class CourseAppendRefusedError extends CourseAuthoringError {
+  constructor(
+    readonly reason: 'not-released' | 'unreleased-changes' | 'duplicate-lesson',
+  ) {
+    super('append-refused', `Lesson append refused: ${reason}.`);
   }
 }
 export class CourseStaleHeadError extends CourseAuthoringError {

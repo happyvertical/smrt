@@ -4,12 +4,16 @@ import type {
   CourseRevisionView,
 } from './course-authoring-contracts.js';
 import {
+  type CourseGenerationBrief,
   CourseGenerationOutputError,
   type CourseGenerationProposal,
   type CourseGenerationProposalLesson,
+  type CourseGenerationProposalQuestion,
   type CourseProposalFieldStatus,
 } from './course-generation-contracts.js';
 import { groupSharingDigest } from './group-sharing-hash.js';
+import { normalizeQuestionContent } from './question-content.js';
+import type { LessonQuestionRefInput } from './question-contracts.js';
 
 const KEY = /^[A-Za-z0-9._:-]{1,120}$/;
 const hasControl = (value: string) => {
@@ -49,15 +53,52 @@ function int(value: unknown, path: string, max: number): number {
   return value as number;
 }
 
+const MAX_GENERATED_QUESTIONS = 50;
+const QUESTION_KEYS = [
+  'prompt',
+  'responseType',
+  'choices',
+  'subparts',
+  'answerKey',
+  'rubric',
+  'pointsPossible',
+] as const;
+const sameText = (a: string, b: string) =>
+  a.trim().replace(/\s+/g, ' ') === b.trim().replace(/\s+/g, ' ');
+
+/** A generated question: closed keys, the shared content rules and a required answer key. */
+function question(
+  raw: unknown,
+  path: string,
+): CourseGenerationProposalQuestion {
+  const q = closed(raw, QUESTION_KEYS, path);
+  if (q.answerKey === undefined || q.answerKey === null)
+    throw new CourseGenerationOutputError(`${path}.answerKey`);
+  try {
+    normalizeQuestionContent({
+      ...(q as object),
+      provenance: 'generated',
+    } as never);
+  } catch {
+    throw new CourseGenerationOutputError(path);
+  }
+  return q as unknown as CourseGenerationProposalQuestion;
+}
+
 /**
  * Validates untrusted provider output against the closed proposal schema.
  * `existingLessonKeys` are the lessons of the snapshot the job ran against: a
- * proposal may only address a lesson that exists there.
+ * proposal may only address a lesson that exists there. With a `lesson` target
+ * the proposal must be exactly one new lesson with a body, a worksheet whose
+ * questions all carry answer keys, and (when stated) the brief's own objective:
+ * a theme may change story and examples, never the objective.
  */
 export function validateCourseGenerationOutput(
   output: unknown,
   existingLessonKeys: ReadonlySet<string>,
+  brief?: Pick<CourseGenerationBrief, 'target' | 'objective'> | null,
 ): CourseGenerationProposal {
+  const lessonTarget = brief?.target === 'lesson';
   const root = closed(output, ['course', 'lessons', 'rationale'], 'output');
   const courseRaw =
     root.course === undefined
@@ -82,6 +123,12 @@ export function validateCourseGenerationOutput(
   const lessonsRaw = root.lessons ?? [];
   if (!Array.isArray(lessonsRaw) || lessonsRaw.length > 50)
     throw new CourseGenerationOutputError('lessons');
+  if (lessonTarget) {
+    if (Object.keys(course).length)
+      throw new CourseGenerationOutputError('course');
+    if (lessonsRaw.length !== 1)
+      throw new CourseGenerationOutputError('lessons');
+  }
   const seen = new Set<string>();
   const lessons = lessonsRaw.map((raw, i): CourseGenerationProposalLesson => {
     const path = `lessons.${i}`;
@@ -95,9 +142,18 @@ export function validateCourseGenerationOutput(
         'body',
         'estimatedMinutes',
         'difficulty',
+        'objective',
+        'questions',
       ],
       path,
     );
+    if (
+      !lessonTarget &&
+      (l.objective !== undefined || l.questions !== undefined)
+    )
+      throw new CourseGenerationOutputError(
+        `${path}.${l.objective !== undefined ? 'objective' : 'questions'}`,
+      );
     const lesson: CourseGenerationProposalLesson = {};
     if (l.lessonKey !== undefined) {
       if (
@@ -132,6 +188,28 @@ export function validateCourseGenerationOutput(
       );
     if (l.difficulty !== undefined)
       lesson.difficulty = int(l.difficulty, `${path}.difficulty`, 10);
+    if (lessonTarget) {
+      if (lesson.lessonKey || lesson.body === undefined)
+        throw new CourseGenerationOutputError(
+          `${path}.${lesson.lessonKey ? 'lessonKey' : 'body'}`,
+        );
+      // The model may echo the objective but can never change it.
+      if (l.objective !== undefined) {
+        const echoed = str(l.objective, `${path}.objective`, 1000);
+        if (!sameText(echoed, brief?.objective ?? ''))
+          throw new CourseGenerationOutputError(`${path}.objective`);
+      }
+      lesson.objective = brief?.objective ?? '';
+      if (
+        !Array.isArray(l.questions) ||
+        l.questions.length < 1 ||
+        l.questions.length > MAX_GENERATED_QUESTIONS
+      )
+        throw new CourseGenerationOutputError(`${path}.questions`);
+      lesson.questions = l.questions.map((q, n) =>
+        question(q, `${path}.questions.${n}`),
+      );
+    }
     if (lesson.lessonKey && Object.keys(lesson).length === 1)
       throw new CourseGenerationOutputError(path);
     return lesson;
@@ -274,7 +352,11 @@ export function draftFromRevision(view: CourseRevisionView): CourseDraftInput {
 export function applyProposalFields(
   draft: CourseDraftInput,
   entries: ReadonlyArray<ProposalFieldPlan>,
-  options: { jobId: string },
+  options: {
+    jobId: string;
+    /** Worksheet refs of generated new lessons, by `new-lesson:<n>` index. */
+    questionRefs?: ReadonlyMap<number, LessonQuestionRefInput[]>;
+  },
 ): { missing: string[] } {
   const missing: string[] = [];
   for (const entry of entries) {
@@ -322,8 +404,11 @@ export function applyProposalFields(
         estimatedMinutes: 'generated',
         difficulty: 'generated',
       } as const;
+      const refs = options.questionRefs?.get(index);
       section.lessons.push({
         lessonKey: generatedLessonKey(options.jobId, index),
+        ...(refs?.length ? { lessonType: 'worksheet' as const } : {}),
+        ...(refs?.length ? { questions: refs } : {}),
         title: proposed.title as string,
         ...(proposed.body === undefined ? {} : { body: proposed.body }),
         ...(proposed.estimatedMinutes === undefined

@@ -14,6 +14,7 @@ import {
   type CourseAuthoringActor,
   LearnerAuthorizationError,
   type LearnerAuthorizer,
+  LearnerService,
   LearnerValidationError,
   MAX_TUTOR_BODY_CHARS,
   MAX_TUTOR_CHOICES,
@@ -70,6 +71,7 @@ const classes = [
     'TutorSession',
     'TutorSessionClosure',
     'TutorExchange',
+    'LearnerInterestThemeChange',
   ]),
 ];
 
@@ -565,6 +567,73 @@ describe('TutorContextService', () => {
     expect(context.questions).toEqual([]);
     expect(context.learner).toMatchObject({ displayName: 'Alice', level: 0 });
   });
+  it('interest theme: both audiences read the learner-safe theme and nothing private beside it', async () => {
+    const s = await tutorSetup();
+    const none = await s.compose(s.f.own, 'learner');
+    expect(none.learner.interestTheme).toBeNull();
+    // Guardian-only sentinels in the learner row's free settings JSON.
+    await s.f.as(s.f.parent, async () => {
+      const row = await s.f.learners.get({ id: String(s.f.learner.id) });
+      if (!row) throw new Error('missing learner');
+      row.setSettings({ guardianOnly: 'SENTINEL-LEARNER-SETTING-7731' });
+      await row.save();
+    });
+    await s.f.as(s.f.parent, () =>
+      new LearnerService(
+        s.db,
+        ({ own, relationshipTypeId }) =>
+          own || relationshipTypeId === s.f.guardianType.id,
+        () => true,
+      ).setInterestTheme({
+        ...s.f.parent,
+        theme: { label: 'Minecraft', key: 'minecraft' },
+        policyBasis: 'guardian',
+      }),
+    );
+    for (const audience of ['learner', 'guardian'] as const) {
+      const context = await s.compose(
+        audience === 'learner' ? s.f.own : s.f.parent,
+        audience,
+      );
+      expect(context.learner.interestTheme).toEqual({
+        label: 'Minecraft',
+        key: 'minecraft',
+      });
+      expect(Object.keys(context.learner).sort()).toEqual([
+        'displayName',
+        'id',
+        'interestTheme',
+        'level',
+      ]);
+      const text = JSON.stringify(context);
+      for (const sentinel of [
+        'SENTINEL-LEARNER-SETTING-7731',
+        S.key,
+        S.rubric,
+        S.note,
+      ])
+        if (audience === 'learner') expect(text).not.toContain(sentinel);
+      expect(text).not.toContain('SENTINEL-LEARNER-SETTING-7731');
+    }
+    // A changed theme changes the context digest, so sessions can tell.
+    const before = (await s.compose(s.f.own, 'learner')).contextHash;
+    await s.f.as(s.f.parent, () =>
+      new LearnerService(
+        s.db,
+        ({ own, relationshipTypeId }) =>
+          own || relationshipTypeId === s.f.guardianType.id,
+        () => true,
+      ).setInterestTheme({
+        ...s.f.parent,
+        theme: null,
+        policyBasis: 'guardian',
+      }),
+    );
+    const after = await s.compose(s.f.own, 'learner');
+    expect(after.learner.interestTheme).toBeNull();
+    expect(after.contextHash).not.toBe(before);
+  });
+
   it('feedback: the learner sees only released feedback text; a guardian sees the newest', async () => {
     const s = await tutorSetup();
     const tenant = s.f.own.tenantId;
