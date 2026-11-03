@@ -1046,6 +1046,215 @@ describe('video names and YouTube playlist matching', () => {
     expect(bad.unmatched[0]?.reason).toBe('no_item');
   });
 
+  describe('matching without step numbers', () => {
+    const v = (lesson: number, step: string, kind: string, title = '') => ({
+      lesson,
+      step,
+      kind,
+      title,
+    });
+    const playlistOf = (titles: string[]): ClassCrunchLabsPlaylist => ({
+      id: 'p',
+      title: 'Orbit Garden: Gravity',
+      items: titles.map((title, i) => ({
+        videoId: `vid${String(i).padStart(8, '0')}`,
+        title: `Orbit Garden: ${title}`,
+        position: i + 1,
+      })),
+    });
+    const pairsOf = (r: ReturnType<typeof matchClassCrunchLabsVideos>) =>
+      Object.fromEntries(
+        r.matched.map((m) => [
+          `${m.lesson}/${m.step} ${m.kind}`,
+          m.playlistItem.replace('Orbit Garden: ', ''),
+        ]),
+      );
+    const missesOf = (r: ReturnType<typeof matchClassCrunchLabsVideos>) =>
+      r.unmatched.map((m) => `${m.lesson}/${m.step} ${m.kind}:${m.reason}`);
+    const prepEx = ['MaterialsPrep', 'StudentHandsOnExploration'];
+    const both = (lesson: number, step: string, title: string) =>
+      prepEx.map((k) => v(lesson, step, k, title));
+    const download = [
+      v(1, '2', 'AnchorCheckIn'),
+      ...both(1, '4', 'Marble Runs'),
+      v(2, '1', 'Recap'),
+      v(2, '4', 'ForcesExplainer'),
+      ...both(2, '9', 'Sling Shot'),
+      v(2, '20', 'CheckIn'),
+      v(3, '1b', 'Recap'),
+      v(3, '3', 'MaterialsPrep', 'Tower Demo'),
+      ...both(3, '6', 'Play With Magnets'),
+      ...both(3, '7', 'Comet Rings'),
+      ...both(3, '9', 'Comet Rings 2'),
+      v(3, '15', 'CheckIn'),
+      v(4, '1', 'Recap'),
+      v(4, '2', 'LookCloser'),
+      v(4, '6', 'LinkUp'),
+      v(5, '1', 'Recap'),
+      v(5, '12', 'MaterialsPrep', 'Build Challenge'),
+      v(5, '12', 'MessageFromMark'),
+      v(6, '1', 'Recap'),
+      v(6, '5', 'CheckIn'),
+      v(6, '14', 'ZBonus'),
+      v(6, '14', 'WrapUp'),
+    ];
+    const items = [
+      'Welcome to the Orbit Garden',
+      'The Anchor',
+      'Marble Run Prep',
+      'Marble Run Exploration',
+      'Lesson 1 Recap',
+      'Forces Explained',
+      'Sling & Shot Prep',
+      'Sling & Shot Exploration',
+      'Rolling Pins',
+      'Lesson 2 Recap',
+      'Tower Demo',
+      'Magnet Playtime Prep',
+      'Magnet Playtime',
+      'Comet Rings Part 1 Prep',
+      'Comet Rings Exploration Part 1',
+      'Comet Rings Part 2 Prep',
+      'Comet Rings Exploration Part 2',
+      'Lesson 3 Recap',
+      'More Marbles',
+      'Starry Night',
+      'Lesson 4 Recap',
+      'Build Challenge Prep',
+      'Embrace Mistakes',
+      'Lesson 5 Recap',
+      'Garden Feedback',
+      'Garden Wrap Up',
+      'Melon Drop',
+    ];
+
+    it('pairs a unit by recap anchors, titles, kinds and order', () => {
+      const r = matchClassCrunchLabsVideos(download, playlistOf(items));
+      expect(pairsOf(r)).toEqual({
+        '1/2 AnchorCheckIn': 'The Anchor',
+        '1/4 MaterialsPrep': 'Marble Run Prep',
+        '1/4 StudentHandsOnExploration': 'Marble Run Exploration',
+        '2/1 Recap': 'Lesson 1 Recap',
+        '2/4 ForcesExplainer': 'Forces Explained',
+        '2/9 MaterialsPrep': 'Sling & Shot Prep',
+        '2/9 StudentHandsOnExploration': 'Sling & Shot Exploration',
+        '2/20 CheckIn': 'Rolling Pins',
+        '3/1b Recap': 'Lesson 2 Recap',
+        '3/3 MaterialsPrep': 'Tower Demo',
+        '3/6 MaterialsPrep': 'Magnet Playtime Prep',
+        '3/6 StudentHandsOnExploration': 'Magnet Playtime',
+        '3/7 MaterialsPrep': 'Comet Rings Part 1 Prep',
+        '3/7 StudentHandsOnExploration': 'Comet Rings Exploration Part 1',
+        '3/9 MaterialsPrep': 'Comet Rings Part 2 Prep',
+        '3/9 StudentHandsOnExploration': 'Comet Rings Exploration Part 2',
+        '4/1 Recap': 'Lesson 3 Recap',
+        '4/2 LookCloser': 'More Marbles',
+        '4/6 LinkUp': 'Starry Night',
+        '5/1 Recap': 'Lesson 4 Recap',
+        '5/12 MaterialsPrep': 'Build Challenge Prep',
+        '5/12 MessageFromMark': 'Embrace Mistakes',
+        '6/1 Recap': 'Lesson 5 Recap',
+        '6/5 CheckIn': 'Garden Feedback',
+        '6/14 ZBonus': 'Melon Drop',
+        '6/14 WrapUp': 'Garden Wrap Up',
+      });
+      // the intro item and a lesson's extra video stay unmatched
+      expect(missesOf(r)).toEqual(['3/15 CheckIn:no_item']);
+      expect(r.unusedItems).toBe(0);
+      expect(r.matched.find((m) => m.kind === 'WrapUp')?.videoId).toMatch(
+        /^vid\d{8}$/,
+      );
+    });
+
+    it('never pairs across segments', () => {
+      // lesson 1's "Marble Run Prep" is not offered to lesson 2's videos
+      const r = matchClassCrunchLabsVideos(
+        [v(1, '2', 'AnchorCheckIn'), ...both(2, '4', 'Marble Runs')],
+        playlistOf([
+          'The Anchor',
+          'Marble Run Prep',
+          'Lesson 1 Recap',
+          'Sling',
+          'Boing',
+          'Lesson 2 Recap',
+        ]),
+      );
+      expect(pairsOf(r)).toEqual({ '1/2 AnchorCheckIn': 'The Anchor' });
+      expect(missesOf(r)).toEqual([
+        '2/4 MaterialsPrep:ambiguous',
+        '2/4 StudentHandsOnExploration:ambiguous',
+      ]);
+    });
+
+    it('leaves a segment whose leftovers do not pair one to one', () => {
+      const r = matchClassCrunchLabsVideos(
+        [
+          v(1, '2', 'CheckIn'),
+          v(1, '3', 'LinkUp'),
+          v(1, '4', 'LookCloser'),
+          v(2, '4', 'MaterialsPrep', 'Zed'),
+          v(2, '4', 'MessageFromMark'),
+        ],
+        playlistOf(['Apple', 'Pear', 'Lesson 1 Recap', 'Plum', 'Fig']),
+      );
+      // three videos, two items: nothing is guessed
+      // two videos on one step: order cannot tell them apart
+      expect(r.matched).toEqual([]);
+      expect(missesOf(r)).toEqual([
+        '1/2 CheckIn:ambiguous',
+        '1/3 LinkUp:ambiguous',
+        '1/4 LookCloser:ambiguous',
+        '2/4 MaterialsPrep:ambiguous',
+        '2/4 MessageFromMark:ambiguous',
+      ]);
+    });
+
+    it('leaves lessons without a bounding recap unanchored', () => {
+      const r = matchClassCrunchLabsVideos(
+        [v(1, '2', 'CheckIn'), v(2, '2', 'CheckIn'), v(3, '2', 'CheckIn')],
+        playlistOf(['Apple', 'Lesson 1 Recap', 'Pear', 'Plum']),
+      );
+      // lesson 1 sits before the first recap; lesson 2 has no closing recap
+      // and is not the last lesson, lesson 3 follows no recap.
+      expect(pairsOf(r)).toEqual({ '1/2 CheckIn': 'Apple' });
+      expect(missesOf(r)).toEqual([
+        '2/2 CheckIn:unanchored',
+        '3/2 CheckIn:unanchored',
+      ]);
+    });
+
+    it('uses only title evidence when the playlist has no recap anchors', () => {
+      const r = matchClassCrunchLabsVideos(
+        [...both(1, '4', 'Marble Runs'), v(2, '5', 'CheckIn')],
+        playlistOf([
+          'Marble Run Prep',
+          'Marble Run Exploration',
+          'Rolling Pins',
+        ]),
+      );
+      expect(pairsOf(r)).toEqual({
+        '1/4 MaterialsPrep': 'Marble Run Prep',
+        '1/4 StudentHandsOnExploration': 'Marble Run Exploration',
+      });
+      // no order fill across a whole unit
+      expect(missesOf(r)).toEqual(['2/5 CheckIn:no_item']);
+    });
+
+    it('keeps numbered items first and leaves their videos alone', () => {
+      const r = matchClassCrunchLabsVideos(
+        [
+          v(1, '4', 'MaterialsPrep', 'Marble Runs'),
+          v(2, '4', 'MaterialsPrep', 'Marble Runs'),
+        ],
+        playlistOf(['L01.4 Marble Run Prep', 'Marble Run Prep']),
+      );
+      expect(pairsOf(r)).toEqual({
+        '1/4 MaterialsPrep': 'L01.4 Marble Run Prep',
+        '2/4 MaterialsPrep': 'Marble Run Prep',
+      });
+    });
+  });
+
   it('reports every video unmatched without a playlist source or a playlist for the unit', async () => {
     const none = await build(unitFiles(), { playlists: undefined });
     expect(none.report.videos.matched).toEqual([]);
