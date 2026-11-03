@@ -408,6 +408,36 @@ describe('readable titles (#4642)', () => {
     ).flatMap((x) => x.lessons.map((l) => l.title));
     expect(lessons).toEqual(['Lesson 1: Racers', 'Lesson 3']);
   });
+  it('strips only a real version from the unit part', async () => {
+    const lessonsOf = async (names: string[]) => {
+      const b = await buildClassCrunchLabsBundle({
+        files: memoryClassCrunchLabsSource([
+          ...files.filter((x) => !/\.mp4$/.test(x.path)),
+          ...names.map((path) => ({ path, bytes: Buffer.from('v') })),
+        ]),
+        pageCounter: async () => 2,
+      });
+      return (
+        b.manifest.sections as Array<{ lessons: Array<{ title: string }> }>
+      ).flatMap((x) => x.lessons.map((l) => l.title))[0];
+    };
+    const v = (tail: string) =>
+      `L01.4_Video_StudentHandsOnExploration_Racers_${tail}.mp4`;
+    expect(await lessonsOf([v('Zoom Boom Vacation')])).toBe('Lesson 1');
+    expect(await lessonsOf([v('ZoomBoomV2')])).toBe('Lesson 1: Racers');
+    expect(await lessonsOf([v('Zoom Boom v1.1')])).toBe('Lesson 1: Racers');
+    // a unit-like word is kept in a material title
+    const b = await buildClassCrunchLabsBundle({
+      files: memoryClassCrunchLabsSource([
+        f(`${Z1}/A. L01_Teacher Mission Manual_ZoomBoomVacation_v1.0.pdf`, 'z'),
+      ]),
+      pageCounter: async () => 2,
+    });
+    const titles = (
+      b.manifest.sections as Array<{ lessons: Array<{ members: Decl[] }> }>
+    ).flatMap((x) => x.lessons.flatMap((l) => l.members.map((m) => m.title)));
+    expect(titles).toEqual(['Teacher Mission Manual - ZoomBoomVacation']);
+  });
   it('terminates when long equal-prefix titles collide', async () => {
     const long = 'Very Long Material Name '.repeat(12);
     const b = await buildClassCrunchLabsBundle({

@@ -175,11 +175,15 @@ const VERSION = /^v\.?\s*\d+(\.\d+)*[._\s]*(copy)?$/i;
 const LESSON_CODE = /^L0*\d{1,2}(\.\d+)?[\s_.-]+/i;
 /** A part that is the unit name, allowing a version suffix or a one-letter typo of the end. */
 function isUnitPart(part: string, unitKey: string): boolean {
-  const key = compact(part);
+  // Only a syntactically valid version suffix (`v1`, `v2.0`, `v.1.1`, `copy`) is set aside.
+  const key = compact(
+    part
+      .replace(/\s*\bv\.?\s*\d+(\.\d+)*[.\s]*(copy)?$/i, '')
+      .replace(/(?<=[a-z])V\d+(\.\d+)*$/, ''),
+  );
   if (!unitKey || !key) return false;
   return (
     key === unitKey ||
-    key.startsWith(`${unitKey}v`) ||
     (key.length >= 8 &&
       key.length >= unitKey.length - 2 &&
       unitKey.startsWith(key))
@@ -316,11 +320,7 @@ export function parseClassCrunchLabsVideoName(
   if (!kind) return null;
   const unitKey = compact(unit);
   // Drive adds `-003` style suffixes to repeated exports; drop that and the unit.
-  const rest = parts.filter(
-    (p) =>
-      !(unitKey && compact(p.replace(/-\d{3}$/, '')) === unitKey) &&
-      !VERSION.test(p),
-  );
+  const rest = parts.filter((p) => !isUnitPart(p, unitKey) && !VERSION.test(p));
   return {
     lesson: Number(m[1]),
     step: (m[2] as string).toLowerCase(),
