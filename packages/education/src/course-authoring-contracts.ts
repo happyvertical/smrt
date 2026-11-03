@@ -332,6 +332,8 @@ export type CourseReleaseView = Readonly<{
   actorUserId: string;
   delegatingGuardianUserId: string | null;
   delegationId: string | null;
+  /** The host setting the release relied on (for example an auto-approve); null if none. */
+  policyBasis: string | null;
   recordedAt: string;
   lessons: ReadonlyArray<{
     lessonKey: string;

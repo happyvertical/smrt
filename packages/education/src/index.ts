@@ -188,9 +188,11 @@ export {
   validateCourseGenerationOutput,
 } from './course-generation-output.js';
 export {
+  COURSE_LESSON_PROPOSAL_ARGS_SCHEMA,
   COURSE_PROPOSAL_ARGS_SCHEMA,
   COURSE_PROPOSAL_HANDLER,
   createProposalCourseGenerator,
+  describeGenerationBrief,
 } from './course-generation-proposal-generator.js';
 export type { CourseGenerationReviewServiceOptions } from './course-generation-review-service.js';
 export { CourseGenerationReviewService } from './course-generation-review-service.js';

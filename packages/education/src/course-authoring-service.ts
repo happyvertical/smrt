@@ -260,6 +260,15 @@ function resolvePolicyBasis(decided: unknown, supplied: unknown): string {
   return basis;
 }
 
+/** Like `resolvePolicyBasis`, but a release may carry no basis at all (`''`). */
+function resolveOptionalPolicyBasis(decided: unknown, supplied: unknown) {
+  const fromHost = basisValue(decided);
+  const fromCaller = basisValue(supplied);
+  if (fromHost !== null && fromCaller !== null && fromHost !== fromCaller)
+    throw new CoursePolicyBasisMismatchError();
+  return fromHost ?? fromCaller ?? '';
+}
+
 function pageLimit(value: unknown): number {
   if (value === undefined) return DEFAULT_PAGE_SIZE;
   if (!Number.isSafeInteger(value) || (value as number) < 1)
@@ -1919,20 +1928,32 @@ export class CourseAuthoringService {
   /**
    * Freezes one revision for assignment. Requires a current review of that exact
    * revision from the injected gate; materializes immutable Course, section and
-   * Lesson rows for this release only.
+   * Lesson rows for this release only. An optional `policyBasis` (or one in the
+   * authorizer's decision, which must then agree) records the host setting the
+   * release relied on, for example a per-learner auto-approve; it grants nothing
+   * and never bypasses the gate, the authorizer or the delegation check.
    */
   async release(
     request: CourseAuthoringActor & {
       courseId: string;
       revisionId: string;
       requestKey: string;
+      policyBasis?: string;
     },
   ): Promise<CourseReleaseView> {
     const requestKey = requireKey(request.requestKey);
     return this.run(async (tx) => {
-      await this.authorize(tx, request, 'education.course.release', 'release', {
-        courseId: request.courseId,
-      });
+      const decision = await this.authorize(
+        tx,
+        request,
+        'education.course.release',
+        'release',
+        { courseId: request.courseId },
+      );
+      const policyBasis = resolveOptionalPolicyBasis(
+        decision.policyBasis,
+        request.policyBasis,
+      );
       await this.writableDraft(tx, request.tenantId, request.courseId);
       const releases = await CourseReleaseCollection.create({ db: tx });
       const replay = await releases.get(
@@ -1946,7 +1967,8 @@ export class CourseAuthoringService {
       if (replay) {
         if (
           replay.revisionId !== request.revisionId ||
-          replay.delegationId !== (request.delegationId ?? '')
+          replay.delegationId !== (request.delegationId ?? '') ||
+          (replay.policyBasis ?? '') !== policyBasis
         )
           throw new CourseRequestKeyConflictError();
         return this.releaseView(tx, request.tenantId, replay);
@@ -2009,6 +2031,7 @@ export class CourseAuthoringService {
         releaseCourseId,
         reviewId: review.reviewId ?? '',
         requestKey,
+        policyBasis,
       });
       await this.autoUpgrade(tx, request.tenantId, request.courseId, release);
       return this.releaseView(tx, request.tenantId, release);
@@ -2024,6 +2047,7 @@ export class CourseAuthoringService {
       releaseCourseId: string;
       reviewId: string;
       requestKey: string;
+      policyBasis: string;
     },
   ): Promise<CourseRelease> {
     const { view } = input;
@@ -2070,6 +2094,7 @@ export class CourseAuthoringService {
       reviewId: input.reviewId,
       actorUserId: actor.actorUserId,
       ...delegationRecordFields(actor),
+      policyBasis: input.policyBasis,
       requestKey: input.requestKey,
       recordedAt: new Date(),
     });
@@ -2197,6 +2222,7 @@ export class CourseAuthoringService {
       actorUserId: release.actorUserId,
       delegatingGuardianUserId: optional(release.delegatingGuardianUserId),
       delegationId: optional(release.delegationId),
+      policyBasis: optional(release.policyBasis),
       recordedAt: iso(release.recordedAt),
       lessons: lessons.sort((a, b) => a.lessonKey.localeCompare(b.lessonKey)),
     };

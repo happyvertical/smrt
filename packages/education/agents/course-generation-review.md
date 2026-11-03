@@ -40,6 +40,55 @@ a revision on `expectedHeadRevisionId` and records the decision; supplied conten
 is replaced only that way. Never write generated content to a released revision or
 assign it to a learner.
 
+## Structured requests and one-lesson generation
+
+`requestGeneration` also takes an optional `brief` (`CourseGenerationBriefInput`)
+next to the free `instruction`: `target` (`'course'`, the default and today's
+behaviour, or `'lesson'`), `subject`, `category`, `area`, `grade` (whole 0-12),
+`objective`, `learningObjectiveId`, `learnerId` and a per-request `theme`
+(`{ label, key? }`). Text is bounded and sent to the provider as data. A request
+without `brief` behaves exactly as before and `brief` reads back `null`.
+
+- **Objective.** A `lesson` target needs an objective (`objective`, else `area`);
+  without one `CourseGenerationBriefError` is thrown before anything is written.
+  The objective is stored on the job's `CourseGenerationBriefRecord`, sent in the
+  generation brief as fixed, and copied verbatim onto the proposed lesson. The
+  theme changes story and examples only: output that states a different
+  objective fails the job (`CourseGenerationOutputError`).
+- **Theme.** The per-request `theme` is an override that wins for that request
+  only. Without one the learner's saved `interestTheme` (read-only, from
+  `brief.learnerId`) applies; with neither there is no theme. The brief records
+  `theme` and `themeSource` (`'override' | 'saved' | 'none'`) at request time, and
+  `CourseGenerationView.brief` / `CourseProposalView.brief` show it to the
+  guardian reviewing. Nothing in generation writes to the learner, so the saved
+  preference is never changed, on success or failure.
+- **Authority.** The host authorizer is asked for `education.course.generate`
+  with `learnerId` in the context so it can enforce its own "may this learner ask
+  for a lesson" policy; an unknown or foreign-tenant learner is `CourseNotFoundError`.
+  Replaying a request key with the same brief returns the same job; a changed
+  brief is `CourseRequestKeyConflictError`.
+- **Output.** For `lesson` the generator is given `request.brief` and
+  `COURSE_LESSON_PROPOSAL_ARGS_SCHEMA` (via `createProposalCourseGenerator`):
+  exactly one new lesson with `title`, `body` (the themed explanation) and
+  `questions` (worksheet; every question needs an `answerKey`), and no course-level
+  fields. The worksheet becomes immutable question records, linked to
+  `learningObjectiveId`, in the same transaction as the draft revision; answer keys
+  stay out of learner views. Review, `decideProposal` and release are unchanged.
+- **Approving requested lessons.** The package has no per-learner setting. To honour
+  the host's own "approve requested lessons" setting without bypassing authority,
+  the host calls `recordReview` then `release` under the guardian delegation as for
+  any course, passing `policyBasis` (for example `'auto-approve-requested-lessons'`)
+  to `release`, or returning `policyBasis` from its authorizer decision (the two
+  must agree). The basis is recorded on `CourseRelease.policyBasis` and
+  `CourseReleaseView.policyBasis`; it grants nothing and the review gate, the
+  `education.course.release` grant and the delegation check still apply. The
+  explicit alternative, a guardian approving each lesson, is the existing
+  `recordReview` plus `release` by the guardian.
+
+Additive schema: table `course_generation_briefs` and column
+`course_releases.policy_basis`. On a host without the table, plain requests still
+work and structured ones fail closed with `schema-unavailable`.
+
 ## Review
 
 `recordReview` (action `education.course.review`) binds to an exact revision and a

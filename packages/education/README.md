@@ -128,6 +128,13 @@ or file set under hard size, ratio, path and entry bounds, keeps unsupported and
 duplicate members as append-only evidence, hands accepted members to ingestion and
 proposes sections and lessons through `CourseGenerationReviewService`; see
 [bundle import](agents/course-bundle-import.md).
+`requestGeneration` also accepts a structured `brief` (subject, category, area,
+grade, objective, a `course` or one-`lesson` target and a per-request interest
+theme that beats the learner's saved theme for that request only); the theme used
+and whether it was an override show on the guardian's review, and `release`
+accepts a `policyBasis` so a host can honour its own approve-requested-lessons
+setting without bypassing the review gate; see
+[generation and review](agents/course-generation-review.md).
 Repeated starts preserve the existing progress, including attempts and scores.
 A new curriculum/year creates a distinct enrollment and fresh progress history.
 An unscored lesson has `bestScore: null`, distinct from zero. The service does

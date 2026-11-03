@@ -298,6 +298,8 @@ export class CourseRelease extends SmrtObject {
   actorUserId = '';
   delegatingGuardianUserId = '';
   delegationId = '';
+  /** Host setting relied on for this release (`''` = none); see `release`. */
+  policyBasis = '';
   requestKey = '';
   recordedAt = new Date();
   constructor(options: Record<string, unknown> = {}) {
@@ -311,6 +313,7 @@ export class CourseRelease extends SmrtObject {
     await requireInsert(this);
     await requireOwned(this, 'courses', this.courseId);
     await requireOwned(this, 'courses', this.releaseCourseId);
+    if (this.policyBasis) requireText(this.policyBasis, 'Invalid policy basis');
     await requireOwned(this, 'course_revisions', this.revisionId, {
       course_id: this.courseId,
     });
