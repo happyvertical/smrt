@@ -24,6 +24,11 @@ import {
   readZipArchive,
   sha256Hex,
 } from './course-bundle-zip.js';
+import {
+  OFFICE_MEDIA_TYPES,
+  type OfficeDocumentKind,
+  type OfficeText,
+} from './document-converter.js';
 
 const KEY = /^[A-Za-z0-9._:-]{1,120}$/;
 // biome-ignore lint/suspicious/noControlCharactersInRegex: refusing control characters in text
@@ -43,6 +48,10 @@ export interface ClassifiedBundleMember {
   bytes: Uint8Array | null;
   /** Decoded body of a readable text member. */
   text: string | null;
+  /** Word/PowerPoint only: the PDF the converter rendered (set before the evidence is written). */
+  rendered: { bytes: Uint8Array; sha256: string } | null;
+  /** Word/PowerPoint only: text read by the injected `OfficeTextReader`, when available. */
+  officeText: OfficeText | null;
 }
 
 export interface BundleStructureLesson {
@@ -142,6 +151,45 @@ function sniff(
   return null;
 }
 const TEXT_NAME = /\.(txt|md|markdown)$/i;
+const OFFICE_NAME = /\.(docx|pptx)$/i;
+const OFFICE_MAIN_PART: Record<OfficeDocumentKind, string> = {
+  docx: 'word/document.xml',
+  pptx: 'ppt/presentation.xml',
+};
+/**
+ * Bounds for the OOXML package inside a Word/PowerPoint member. These are the
+ * bundle's own zip checks (bomb ratio, overlap, paths, CRC) applied once more
+ * before the bytes go anywhere near a reader or converter; they are not host
+ * lowerable and a nested archive in the bundle is still never expanded.
+ */
+const OFFICE_PACKAGE_LIMITS: CourseBundleLimits = {
+  ...COURSE_BUNDLE_LIMITS,
+  maxEntries: 2_000,
+  maxEntryBytes: 50 * 1024 * 1024,
+  maxTotalBytes: 100 * 1024 * 1024,
+  maxPathDepth: 12,
+};
+
+/** `docx`/`pptx` when the member is a sound OOXML package; `'unsafe'` when it fails the zip bounds. */
+function officeKind(
+  path: string,
+  bytes: Uint8Array,
+): OfficeDocumentKind | 'unsafe' | null {
+  const ext = OFFICE_NAME.exec(path)?.[1]?.toLowerCase() as
+    | OfficeDocumentKind
+    | undefined;
+  if (!ext || !startsWith(bytes, [0x50, 0x4b, 0x03, 0x04])) return null;
+  try {
+    const parts = readZipArchive(bytes, OFFICE_PACKAGE_LIMITS);
+    const names = new Set(parts.map((p) => p.path));
+    return names.has('[Content_Types].xml') && names.has(OFFICE_MAIN_PART[ext])
+      ? ext
+      : null;
+  } catch (error) {
+    if (error instanceof CourseBundleRefusedError) return 'unsafe';
+    throw error;
+  }
+}
 
 export function classifyBundleMember(
   raw: RawBundleMember,
@@ -154,6 +202,8 @@ export function classifyBundleMember(
     duplicateOf: null,
     bytes: null,
     text: null,
+    rendered: null,
+    officeText: null,
   };
   const out = (
     kind: CourseBundleMemberKind,
@@ -180,6 +230,15 @@ export function classifyBundleMember(
     return out('unsupported', 'refused', 'entry_too_large');
   const bytes = raw.bytes;
   const found = sniff(bytes);
+  if (found === 'archive') {
+    const office = officeKind(raw.path, bytes);
+    if (office === 'unsafe')
+      return out('unsupported', 'refused', 'unsafe_office');
+    if (office)
+      return out(office, 'accepted', null, OFFICE_MEDIA_TYPES[office], {
+        bytes,
+      });
+  }
   if (found === 'archive')
     return out('unsupported', 'unsupported', 'nested_archive');
   if (found?.kind === 'pdf') {
@@ -436,7 +495,11 @@ export const plainBundleReader: BundleReader = {
             .filter(
               (m) =>
                 m.status === 'accepted' &&
-                (m.kind === 'pdf' || m.kind === 'image' || m.kind === 'text'),
+                (m.kind === 'pdf' ||
+                  m.kind === 'image' ||
+                  m.kind === 'text' ||
+                  m.kind === 'docx' ||
+                  m.kind === 'pptx'),
             )
             .map((m) => m.path),
         );
@@ -519,6 +582,32 @@ export function courseBundleIdentity(
   return `cbi1-${sha256Hex(JSON.stringify(pairs)).slice(0, 40)}`;
 }
 
+/** Classify every raw member (sync, no network). */
+export function classifyBundle(
+  raw: readonly RawBundleMember[],
+  limits: CourseBundleLimits = COURSE_BUNDLE_LIMITS,
+  onProgress?: (completed: number, total: number) => void,
+): ClassifiedBundleMember[] {
+  if (raw.length === 0) return refuse('empty_bundle');
+  onProgress?.(0, raw.length);
+  const classified = raw.map((m) => classifyBundleMember(m, limits));
+  onProgress?.(raw.length, raw.length);
+  return classified;
+}
+
+/**
+ * What became of one Office member's rendering (keyed by content sha256).
+ * `rendered`/`officeText` are present on a fresh render, absent when the outcome
+ * is only recalled from recorded evidence.
+ */
+export type OfficeOutcome =
+  | {
+      ok: true;
+      rendered?: { bytes: Uint8Array; sha256: string };
+      officeText?: OfficeText | null;
+    }
+  | { ok: false; reason: CourseBundleMemberReason };
+
 /** Classify, order, mark duplicate content and lay out the proposed structure. */
 export function planCourseBundle(
   raw: readonly RawBundleMember[],
@@ -526,10 +615,45 @@ export function planCourseBundle(
   limits: CourseBundleLimits = COURSE_BUNDLE_LIMITS,
   onProgress?: (completed: number, total: number) => void,
 ): CourseBundlePlan {
+  return planClassifiedBundle(
+    raw,
+    classifyBundle(raw, limits, onProgress),
+    registry,
+    limits,
+  );
+}
+
+/**
+ * Plan already-classified members. `officeOutcomes` (by sha256) settles
+ * Word/PowerPoint members before duplicates and the structure are decided, so
+ * a member that could not be rendered never becomes a lesson.
+ */
+export function planClassifiedBundle(
+  raw: readonly RawBundleMember[],
+  classified: ClassifiedBundleMember[],
+  registry: BundleReaderRegistry = createBundleReaderRegistry(),
+  limits: CourseBundleLimits = COURSE_BUNDLE_LIMITS,
+  officeOutcomes?: ReadonlyMap<string, OfficeOutcome>,
+): CourseBundlePlan {
   if (raw.length === 0) return refuse('empty_bundle');
-  onProgress?.(0, raw.length);
-  const classified = raw.map((m) => classifyBundleMember(m, limits));
-  onProgress?.(raw.length, raw.length);
+  for (const member of classified) {
+    if (
+      member.status !== 'accepted' ||
+      (member.kind !== 'docx' && member.kind !== 'pptx') ||
+      !member.sha256
+    )
+      continue;
+    const outcome = officeOutcomes?.get(member.sha256);
+    if (!outcome) continue;
+    if (!outcome.ok) {
+      member.status = 'unsupported';
+      member.reason = outcome.reason;
+      member.bytes = null;
+    } else {
+      member.rendered = outcome.rendered ?? null;
+      member.officeText = outcome.officeText ?? null;
+    }
+  }
   const prepared = registry.resolve(classified).prepare(classified, limits);
   const byName = new Map(classified.map((m) => [m.path, m]));
   const ordered = prepared.order.map(
@@ -544,6 +668,8 @@ export function planCourseBundle(
       member.reason = 'duplicate_content';
       member.duplicateOf = earlier;
       member.bytes = null;
+      member.rendered = null;
+      member.officeText = null;
     } else firstSeen.set(member.sha256, member.path);
   }
   const structure = prepared.structure(ordered);

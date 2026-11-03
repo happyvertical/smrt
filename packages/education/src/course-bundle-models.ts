@@ -9,7 +9,15 @@ import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 
 const closed = { api: false, mcp: false, cli: false } as const;
 const IMMUTABLE = 'Course bundle evidence is immutable';
-const KINDS = ['pdf', 'image', 'text', 'manifest', 'unsupported'];
+const KINDS = [
+  'pdf',
+  'image',
+  'text',
+  'docx',
+  'pptx',
+  'manifest',
+  'unsupported',
+];
 const STATUSES = [
   'accepted',
   'duplicate',
@@ -157,6 +165,9 @@ export class CourseBundleMember extends SmrtObject {
   role = '';
   sectionKey = '';
   lessonKey = '';
+  /** sha256 of the PDF rendered from a Word/PowerPoint member; empty otherwise. */
+  renderedSha256 = '';
+  renderedSizeBytes = 0;
   recordedAt = new Date();
   constructor(options: Record<string, unknown> = {}) {
     super(options);
@@ -167,6 +178,7 @@ export class CourseBundleMember extends SmrtObject {
   }
   override async save(options?: SmrtSaveOptions): Promise<this> {
     await requireInsert(this);
+    requireCount(this.renderedSizeBytes, 'Invalid rendered size');
     if (
       !(await this.db.get('course_bundle_imports', {
         id: this.importId,

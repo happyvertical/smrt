@@ -9,8 +9,13 @@ import {
   bundleProposalOutput,
   type ClassifiedBundleMember,
   type CourseBundlePlan,
+  classifyBundle,
+  courseBundleIdentity,
   createBundleReaderRegistry,
-  planCourseBundle,
+  naturalCompare,
+  type OfficeOutcome,
+  pdfIsEncrypted,
+  planClassifiedBundle,
   unpackBundle,
 } from './course-bundle.js';
 import {
@@ -28,6 +33,7 @@ import {
   CourseBundleImportCollection,
   CourseBundleMemberCollection,
 } from './course-bundle-models.js';
+import { sha256Hex } from './course-bundle-zip.js';
 import type {
   CourseGenerationView,
   CourseMaterialGenerator,
@@ -36,6 +42,14 @@ import {
   CourseGenerationReviewService,
   type CourseGenerationReviewServiceOptions,
 } from './course-generation-review-service.js';
+import {
+  DocumentConversionError,
+  type DocumentConverter,
+  looksLikePdf,
+  type OfficeDocumentKind,
+  type OfficeText,
+  type OfficeTextReader,
+} from './document-converter.js';
 
 type Row = Record<string, unknown>;
 
@@ -53,6 +67,9 @@ export interface CourseBundleMemberView {
   role: string | null;
   sectionKey: string | null;
   lessonKey: string | null;
+  /** sha256 of the PDF rendered from a Word/PowerPoint member, null otherwise. */
+  renderedSha256: string | null;
+  renderedSizeBytes: number;
 }
 export interface CourseBundleImportView {
   importId: string;
@@ -75,12 +92,29 @@ export interface AcceptedCourseBundleMember {
   path: string;
   sha256: string;
   mediaType: string;
-  kind: 'pdf' | 'image' | 'text';
+  kind: 'pdf' | 'image' | 'text' | 'docx' | 'pptx';
   /** Declared page role (`exercise`, `answer_key`, ...), or null. */
   role: string | null;
   sectionKey: string | null;
   lessonKey: string | null;
+  /** The original bytes. For Word/PowerPoint, keep these as the private original asset. */
   bytes: Uint8Array;
+  /**
+   * Word/PowerPoint only: the PDF the converter rendered. Store it as a private
+   * asset beside the original (pages for reading or "Present"); null for other kinds.
+   */
+  rendered: {
+    bytes: Uint8Array;
+    sha256: string;
+    mediaType: 'application/pdf';
+    converterId: string;
+  } | null;
+  /**
+   * Word/PowerPoint only: text read by the injected `OfficeTextReader` (slide text
+   * and speaker notes per slide for PPTX), or null. It is never copied into a
+   * proposed lesson body: audience belongs to the manifest v2 roles.
+   */
+  officeText: OfficeText | null;
 }
 export interface CourseBundleImportResult {
   import: CourseBundleImportView;
@@ -119,6 +153,13 @@ export interface CourseBundleImportServiceOptions
   extends Omit<CourseGenerationReviewServiceOptions, 'generator'> {
   readers?: BundleReaderRegistry;
   limits?: Partial<CourseBundleLimits>;
+  /**
+   * Renders Word/PowerPoint members to PDF in an isolated service. Without one,
+   * every Office member is recorded `unsupported / converter_unavailable`.
+   */
+  converter?: DocumentConverter;
+  /** Reads Office text (see `OfficeTextReader`); optional and best effort. */
+  officeTextReader?: OfficeTextReader;
 }
 
 function isUniqueViolation(error: unknown): boolean {
@@ -158,8 +199,64 @@ function memberView(row: Row): CourseBundleMemberView {
     role: orNull(row.role),
     sectionKey: orNull(row.section_key),
     lessonKey: orNull(row.lesson_key),
+    renderedSha256: orNull(row.rendered_sha256),
+    renderedSizeBytes: Number(row.rendered_size_bytes ?? 0),
   };
 }
+
+const REASON_BY_FAILURE: Record<
+  DocumentConversionError['code'],
+  CourseBundleMemberReason
+> = {
+  unavailable: 'converter_failed',
+  timeout: 'converter_timeout',
+  too_large: 'converter_too_large',
+  rejected: 'converter_rejected',
+  invalid_output: 'converter_rejected',
+};
+/** Reject after `ms`, aborting `controller`, even if the work ignores the signal. */
+async function withTimeout<T>(
+  ms: number,
+  controller: AbortController,
+  work: () => Promise<T>,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expired = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      reject(new DocumentConversionError('timeout'));
+    }, ms);
+  });
+  try {
+    return await Promise.race([work(), expired]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function recalledOutcomes(
+  office: ClassifiedBundleMember[],
+  recorded: Map<string, { status: string; reason: string }> | null,
+): Map<string, OfficeOutcome> {
+  const out = new Map<string, OfficeOutcome>();
+  for (const m of office) {
+    const prior = recorded?.get(m.sha256 as string);
+    if (!prior) continue;
+    out.set(
+      m.sha256 as string,
+      prior.status === 'accepted'
+        ? { ok: true }
+        : { ok: false, reason: prior.reason as CourseBundleMemberReason },
+    );
+  }
+  return out;
+}
+
+const isOffice = (m: ClassifiedBundleMember) =>
+  m.status === 'accepted' &&
+  (m.kind === 'docx' || m.kind === 'pptx') &&
+  Boolean(m.sha256) &&
+  m.bytes !== null;
 
 /**
  * Import a course bundle (zip with an optional closed manifest, or a plain file
@@ -204,15 +301,168 @@ export class CourseBundleImportService extends CourseAuthoringService {
     });
   }
 
-  private plan(
+  /**
+   * Unpack and classify (sync), settle Word/PowerPoint members, then plan.
+   * `render` runs the converter (import); otherwise only the recorded outcome
+   * is recalled (proposals), so both see the same structure.
+   */
+  private async plan(
     bundle: CourseBundleInput,
     limits: CourseBundleLimits,
-    listener?: CourseBundleProgressListener,
-  ): CourseBundlePlan {
-    const unpack = emit(listener, 'unpack');
-    const raw = unpackBundle(bundle, limits, unpack);
-    const classify = emit(listener, 'classify');
-    return planCourseBundle(raw, this.readers, limits, classify);
+    listener: CourseBundleProgressListener | undefined,
+    mode: { tenantId: string; render: boolean },
+  ): Promise<CourseBundlePlan> {
+    const raw = unpackBundle(bundle, limits, emit(listener, 'unpack'));
+    const classified = classifyBundle(raw, limits, emit(listener, 'classify'));
+    const office = classified.filter(isOffice);
+    let outcomes: Map<string, OfficeOutcome> | undefined;
+    if (office.length > 0) {
+      const recorded = await this.recordedOffice(
+        mode.tenantId,
+        courseBundleIdentity(raw),
+      );
+      outcomes = mode.render
+        ? await this.renderOffice(office, limits, listener, recorded)
+        : recalledOutcomes(office, recorded);
+    }
+    return planClassifiedBundle(
+      raw,
+      classified,
+      this.readers,
+      limits,
+      outcomes,
+    );
+  }
+
+  /** Recorded Word/PowerPoint outcomes of an earlier import of the same bundle, by sha256. */
+  private async recordedOffice(
+    tenantId: string,
+    identity: string,
+  ): Promise<Map<string, { status: string; reason: string }> | null> {
+    return this.run(async (tx) => {
+      const existing = (await tx.get('course_bundle_imports', {
+        tenant_id: tenantId,
+        bundle_identity: identity,
+      })) as Row | null;
+      if (!existing) return null;
+      const rows = (
+        (await tx.list('course_bundle_members', {
+          tenant_id: tenantId,
+          import_id: String(existing.id),
+        })) as Row[]
+      ).filter((r) => r.kind === 'docx' || r.kind === 'pptx');
+      const out = new Map<string, { status: string; reason: string }>();
+      for (const row of rows) {
+        if (row.status === 'duplicate' || !row.sha256) continue;
+        out.set(String(row.sha256), {
+          status: String(row.status),
+          reason: String(row.reason ?? ''),
+        });
+      }
+      return out;
+    });
+  }
+
+  /**
+   * Render each distinct Word/PowerPoint document once, in natural path order.
+   * Every failure fails closed for that member (recorded unsupported with a
+   * reason). A first import records the outcome; a replay of a recorded-accepted
+   * member that can no longer be rendered throws, because its evidence says it
+   * was accepted and the host still needs the bytes.
+   */
+  private async renderOffice(
+    office: ClassifiedBundleMember[],
+    limits: CourseBundleLimits,
+    listener: CourseBundleProgressListener | undefined,
+    recorded: Map<string, { status: string; reason: string }> | null,
+  ): Promise<Map<string, OfficeOutcome>> {
+    const bySha = new Map<string, ClassifiedBundleMember>();
+    for (const m of [...office].sort((a, b) => naturalCompare(a.path, b.path)))
+      if (!bySha.has(m.sha256 as string)) bySha.set(m.sha256 as string, m);
+    const outcomes = new Map<string, OfficeOutcome>();
+    const progress = emit(listener, 'render');
+    progress(0, bySha.size);
+    let position = 0;
+    for (const [sha, member] of bySha) {
+      position++;
+      const prior = recorded?.get(sha);
+      if (prior && prior.status !== 'accepted') {
+        outcomes.set(sha, {
+          ok: false,
+          reason: prior.reason as CourseBundleMemberReason,
+        });
+      } else if (!prior && position > limits.maxOfficeMembers) {
+        outcomes.set(sha, { ok: false, reason: 'office_limit' });
+      } else if (!this.serviceOptions.converter) {
+        if (prior) throw new DocumentConversionError('unavailable');
+        outcomes.set(sha, { ok: false, reason: 'converter_unavailable' });
+      } else {
+        try {
+          outcomes.set(sha, await this.convert(member, limits));
+        } catch (error) {
+          if (prior) throw error;
+          const code =
+            error instanceof DocumentConversionError
+              ? error.code
+              : 'unavailable';
+          outcomes.set(sha, { ok: false, reason: REASON_BY_FAILURE[code] });
+        }
+      }
+      progress(position, bySha.size);
+    }
+    return outcomes;
+  }
+
+  private async convert(
+    member: ClassifiedBundleMember,
+    limits: CourseBundleLimits,
+  ): Promise<OfficeOutcome> {
+    const converter = this.serviceOptions.converter as DocumentConverter;
+    const kind = member.kind as OfficeDocumentKind;
+    const bytes = member.bytes as Uint8Array;
+    const controller = new AbortController();
+    const result = await withTimeout(
+      limits.conversionTimeoutMs,
+      controller,
+      () =>
+        converter.convertToPdf({
+          bytes,
+          kind,
+          fileName: `document.${kind}`,
+          limits: {
+            maxInputBytes: limits.maxEntryBytes,
+            maxOutputBytes: limits.maxRenderedBytes,
+            timeoutMs: limits.conversionTimeoutMs,
+          },
+          signal: controller.signal,
+        }),
+    );
+    const pdf = result?.pdf;
+    if (!(pdf instanceof Uint8Array))
+      throw new DocumentConversionError('invalid_output');
+    if (pdf.byteLength > limits.maxRenderedBytes)
+      throw new DocumentConversionError('too_large');
+    if (!looksLikePdf(pdf) || pdfIsEncrypted(pdf))
+      throw new DocumentConversionError('invalid_output');
+    let officeText: OfficeText | null = null;
+    const reader = this.serviceOptions.officeTextReader;
+    if (reader) {
+      try {
+        officeText = await withTimeout(
+          limits.conversionTimeoutMs,
+          new AbortController(),
+          () => reader.read({ bytes, kind }),
+        );
+      } catch {
+        // text is best effort: a reader failure never costs the member its pages
+        officeText = null;
+      }
+    }
+    return {
+      ok: true,
+      rendered: { bytes: pdf, sha256: sha256Hex(pdf) },
+      officeText,
+    };
   }
 
   /**
@@ -232,7 +482,10 @@ export class CourseBundleImportService extends CourseAuthoringService {
       ),
     );
     const limits = this.limits(request);
-    const plan = this.plan(request.bundle, limits, request.onProgress);
+    const plan = await this.plan(request.bundle, limits, request.onProgress, {
+      tenantId: request.tenantId,
+      render: true,
+    });
     const format = 'archive' in request.bundle ? 'zip' : 'files';
     const write = () =>
       this.run(async (tx) => {
@@ -288,6 +541,8 @@ export class CourseBundleImportService extends CourseAuthoringService {
             role: placed?.role ?? '',
             sectionKey: placed?.sectionKey ?? '',
             lessonKey: placed?.lessonKey ?? '',
+            renderedSha256: member.rendered?.sha256 ?? '',
+            renderedSizeBytes: member.rendered?.bytes.byteLength ?? 0,
             recordedAt: now,
           });
         }
@@ -315,7 +570,11 @@ export class CourseBundleImportService extends CourseAuthoringService {
         (m): m is ClassifiedBundleMember & { bytes: Uint8Array } =>
           m.status === 'accepted' &&
           m.bytes !== null &&
-          (m.kind === 'pdf' || m.kind === 'image' || m.kind === 'text'),
+          (m.kind === 'pdf' ||
+            m.kind === 'image' ||
+            m.kind === 'text' ||
+            m.kind === 'docx' ||
+            m.kind === 'pptx'),
       )
       .map((m): AcceptedCourseBundleMember => {
         const placed = plan.placements.get(m.path);
@@ -323,11 +582,19 @@ export class CourseBundleImportService extends CourseAuthoringService {
           path: m.path,
           sha256: m.sha256 as string,
           mediaType: m.mediaType,
-          kind: m.kind as 'pdf' | 'image' | 'text',
+          kind: m.kind as AcceptedCourseBundleMember['kind'],
           role: placed?.role || null,
           sectionKey: placed?.sectionKey ?? null,
           lessonKey: placed?.lessonKey ?? null,
           bytes: m.bytes,
+          rendered: m.rendered
+            ? {
+                ...m.rendered,
+                mediaType: 'application/pdf',
+                converterId: this.serviceOptions.converter?.id ?? '',
+              }
+            : null,
+          officeText: m.officeText,
         };
       });
     const receipts: Record<string, unknown> = {};
@@ -382,7 +649,10 @@ export class CourseBundleImportService extends CourseAuthoringService {
     });
     const limits = this.limits(request);
     const progress = emit(request.onProgress, 'propose');
-    const plan = this.plan(request.bundle, limits, request.onProgress);
+    const plan = await this.plan(request.bundle, limits, request.onProgress, {
+      tenantId: request.tenantId,
+      render: false,
+    });
     if (plan.bundleIdentity !== String(imported.bundle_identity))
       throw new CourseBundleNotFoundError();
     progress(0, 1);
