@@ -680,6 +680,53 @@ export async function assertWorkbookMigration(
       }),
     );
     expect(p9.id).not.toBe(p10.id);
+    // New hand-ins insert beside the retired columns, which stay null: an
+    // ordinary lesson through the generic path and a book page capture.
+    const ordinary = await f.as(f.own, () =>
+      service.captureSubmission({
+        ...f.own,
+        enrollmentId: String(f.enrollment.id),
+        lessonId: String(f.lesson.id),
+        requestKey: 'after-migration',
+        pages: [
+          { name: 'n.png', mimeType: 'image/png', data: Buffer.from('new') },
+        ],
+      }),
+    );
+    const bookPage = await f.as(f.parent, () =>
+      service.captureLessonWork({
+        ...f.parent,
+        activityId: p9.id,
+        requestKey: 'p9-capture',
+        pages: [
+          { name: 'p9.png', mimeType: 'image/png', data: Buffer.from('p9') },
+        ],
+      }),
+    );
+    for (const [activity, submission] of [
+      [
+        (
+          await db.list('workbook_activities', {
+            tenant_id: tenantId,
+            lesson_id: String(f.lesson.id),
+          })
+        )[0],
+        ordinary.id,
+      ],
+      [
+        await db.get('workbook_activities', { id: p9.id }),
+        bookPage.submissionId,
+      ],
+    ] as const) {
+      expect(activity).toMatchObject({
+        workbook_id: null,
+        page_key: null,
+        page_label: null,
+      });
+      expect(
+        await db.get('workbook_attempts', { submission_id: submission }),
+      ).toBeTruthy();
+    }
   } finally {
     await rm(storage, { recursive: true, force: true });
   }

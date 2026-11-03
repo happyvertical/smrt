@@ -313,7 +313,8 @@ key for this work/request, never a title match.
 A filing appends a `LessonWorkFiling` naming the course, enrollment, lesson and
 page; the head is the work's placement. Lists by course include it, `filing:
 'unfiled'` no longer does, and the target lesson's progress becomes Doing (Done once
-the work's current attempt is complete). Activity, attempt, submission, assessment,
+the work's current attempt is complete). Completion decisions, new captures and
+reopening corrections keep it in step in the same transaction. Activity, attempt, submission, assessment,
 release and correction-episode IDs never move, and captured policy snapshots never
 change. Stable request-key retries replay; changed retries and stale heads conflict;
 book creation and filing share one transaction. Re-filing names the current head.

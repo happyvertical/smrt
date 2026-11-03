@@ -366,6 +366,15 @@ it('places work on an existing book page exactly once and moves it out of unfile
         requestKey: 'complete',
       }),
     );
+    // Read straight away: the destination follows the completion itself.
+    const statusAt = async (lessonId: string | undefined) =>
+      (
+        await f.db.list('lesson_progress', {
+          enrollment_id: canonical.enrollmentId,
+          lesson_id: lessonId,
+        })
+      ).map((p) => p.status);
+    expect(await statusAt(canonical.lessonId)).toEqual(['complete']);
     const refiled = await f.as(f.parent, () =>
       f.service.fileLessonWork({
         ...filing,
@@ -398,6 +407,10 @@ it('places work on an existing book page exactly once and moves it out of unfile
         pages: [{ ...f.capture.pages[0], data: Buffer.from('corrected') }],
       }),
     );
+    // The correction reopens the work, and its destination with it.
+    expect(await statusAt(refiled.filing.placement?.lessonId)).toEqual([
+      'submitted',
+    ]);
     expect(correction).toMatchObject({
       activityId: f.work.id,
       episodeId: attempt.episodeId,
@@ -574,6 +587,39 @@ it('places work only in enrolled courses and on lessons of that course', async (
     expect(placed.pages.map((p) => [p.pageKey, p.label])).toEqual([
       ['p2', 'Second page'],
     ]);
+    // A plain course lesson follows completion and a reopening correction.
+    const progressOf = async () =>
+      (
+        await f.db.list('lesson_progress', {
+          enrollment_id: String(f.enrollment.id),
+          lesson_id: String(f.secondLesson.id),
+        })
+      ).map((p) => p.status);
+    const attempt = await f.as(f.parent, () =>
+      f.service.captureLessonWork(f.capture),
+    );
+    expect(await progressOf()).toEqual(['submitted']);
+    await f.as(f.parent, () =>
+      f.service.completeLessonActivity({
+        ...f.parent,
+        activityId: f.work.id,
+        submissionId: attempt.submissionId,
+        expectedAttemptId: attempt.id,
+        expectedHeadId: null,
+        requestKey: 'plain-complete',
+      }),
+    );
+    expect(await progressOf()).toEqual(['complete']);
+    await f.as(f.parent, () =>
+      f.service.captureLessonWork({
+        ...f.capture,
+        requestKey: 'plain-correction',
+        intakeItemId: 'plain-correction',
+        previousSubmissionId: attempt.submissionId,
+        pages: [{ ...f.capture.pages[0], data: Buffer.from('fixed') }],
+      }),
+    );
+    expect(await progressOf()).toEqual(['submitted']);
     // A shared catalog lesson never gains family-written pages.
     const global = await f.db.get('lessons', { id: String(f.lesson.id) });
     for (const [table, column] of [

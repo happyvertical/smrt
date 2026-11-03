@@ -881,6 +881,25 @@ export class LessonWorkService extends SubmissionService {
         existing.status = 'submitted';
         existing.startedAt ??= new Date();
         await existing.save();
+      } else if (!complete && existing.status === 'complete') {
+        // A correction reopened the placed work. The lesson stays Done only
+        // when the learner's own work on it is complete.
+        const own = await this.findLessonActivity(request, target);
+        const ownComplete =
+          own &&
+          String(own.id) !== String(row.id) &&
+          (
+            await readWorkCompletion(this.db, {
+              tenantId: request.tenantId,
+              learnerId: request.learnerId,
+              activityId: String(own.id),
+            })
+          ).completion.status === 'complete';
+        if (!ownComplete) {
+          existing.status = 'submitted';
+          existing.completedAt = null;
+          await existing.save();
+        }
       }
       return;
     }
@@ -894,6 +913,21 @@ export class LessonWorkService extends SubmissionService {
       completedAt: complete ? state.completion.completedAt : null,
       attempts: state.attempts.length,
     });
+  }
+  /**
+   * Keep a filed activity's placement progress in step after its completion
+   * changes (a decision, a new capture or a correction). Same transaction.
+   */
+  protected async syncPlacement(
+    request: LearnerRequest,
+    row: LessonActivity,
+  ): Promise<void> {
+    const head = await this.filingHead(row);
+    if (head)
+      await this.syncPlacedProgress(request, row, {
+        enrollmentId: head.enrollmentId,
+        lessonId: head.lessonId,
+      });
   }
   /** Explicit keys distinguish editions, repeated printed labels and page sides. */
   async resolveBookPageActivity(
@@ -1272,6 +1306,7 @@ export class LessonWorkService extends SubmissionService {
         attempt.assistance !== assistance
       )
         throw new Error('Lesson work capture retry changed');
+      await service.syncPlacement(request, row);
       return service.attemptView(request, row, attempt);
     });
   }
@@ -1968,6 +2003,7 @@ export class LessonWorkService extends SubmissionService {
       progress.status = 'complete';
       progress.completedAt = new Date(decision.recordedAt);
       await progress.save();
+      await service.syncPlacement(request, row);
       return completionDecisionView(decision);
     });
   }
