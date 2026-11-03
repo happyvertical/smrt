@@ -64,8 +64,10 @@ export const COURSE_BUNDLE_LIMITS: Readonly<CourseBundleLimits> = Object.freeze(
 
 /** Nested archives are never expanded: depth is one, and a zip member is unsupported evidence. */
 export const COURSE_BUNDLE_MAX_ARCHIVE_DEPTH = 1;
-/** The only manifest schema version. */
+/** The original manifest schema version (page roles, no materials). */
 export const COURSE_BUNDLE_MANIFEST_VERSION = 1;
+/** Manifest version 2: material roles and audience, lesson pages, course members, videos. */
+export const COURSE_BUNDLE_MANIFEST_VERSION_2 = 2;
 /** Manifest location: the archive (or file set) root. */
 export const COURSE_BUNDLE_MANIFEST_PATH = 'manifest.json';
 
@@ -116,6 +118,14 @@ export type CourseBundleRefusalReason =
   | 'manifest_invalid'
   | 'manifest_version'
   | 'manifest_unknown_key'
+  /** v2: a member role that is not a material role. */
+  | 'manifest_role'
+  /** v2: a learner audience on a guardian-only role, or an unknown audience. */
+  | 'manifest_audience'
+  /** v2: a page range that is malformed or names a member that cannot be paged. */
+  | 'manifest_pages'
+  /** v2: a video reference that is not an allowlisted YouTube id or URL. */
+  | 'manifest_video'
   | 'manifest_missing_member'
   | 'manifest_duplicate_member'
   | 'duplicate_key'
@@ -150,6 +160,8 @@ export type CourseBundleMemberKind =
   | 'docx'
   /** PowerPoint (`.pptx`): the deck is kept as the original and as rendered pages. */
   | 'pptx'
+  /** Excel (`.xlsx`): rendered to PDF by the converter; no text reader. */
+  | 'xlsx'
   | 'manifest'
   | 'unsupported';
 export type CourseBundleMemberStatus =
@@ -182,6 +194,14 @@ export type CourseBundleMemberReason =
   | 'converter_too_large'
   /** The converter refused the file, or returned something that is not a PDF. */
   | 'converter_rejected';
+
+/**
+ * Converter outcomes that a deliberate retry may repair. A bundle that was
+ * never rendered or whose converter was unreachable can be rendered later;
+ * a file the converter rejected, or a limit, cannot be fixed by asking again.
+ */
+export const COURSE_BUNDLE_RETRYABLE_REASONS: ReadonlySet<CourseBundleMemberReason> =
+  new Set(['converter_unavailable', 'converter_failed', 'converter_timeout']);
 
 export const COURSE_BUNDLE_PAGE_ROLES = [
   'exercise',

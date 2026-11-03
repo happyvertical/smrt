@@ -22,6 +22,10 @@
     "./ingestion": {
       "types": "./dist/ingestion.d.ts",
       "import": "./dist/ingestion.js"
+    },
+    "./node": {
+      "types": "./dist/node.d.ts",
+      "import": "./dist/node.js"
     }
   },
   "scripts": {

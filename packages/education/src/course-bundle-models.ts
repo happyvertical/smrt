@@ -15,6 +15,7 @@ const KINDS = [
   'text',
   'docx',
   'pptx',
+  'xlsx',
   'manifest',
   'unsupported',
 ];
@@ -161,8 +162,13 @@ export class CourseBundleMember extends SmrtObject {
   reason = '';
   /** Path of the earlier member with identical bytes. */
   duplicateOfPath = '';
-  /** Declared page role (manifest), empty when none. */
+  /**
+   * Declared role (manifest): a page role under version 1, a material role
+   * under version 2. Empty when none.
+   */
   role = '';
+  /** Version 2: the effective audience (`learner` or `guardian`); empty when none. */
+  audience = '';
   sectionKey = '';
   lessonKey = '';
   /** sha256 of the PDF rendered from a Word/PowerPoint member; empty otherwise. */
@@ -197,10 +203,69 @@ export class CourseBundleMember extends SmrtObject {
       throw new Error('A non-accepted bundle member requires a reason');
     if ((this.status === 'duplicate') !== Boolean(this.duplicateOfPath))
       throw new Error('Only duplicates name an original');
+    if (!['', 'learner', 'guardian'].includes(this.audience))
+      throw new Error('Invalid bundle member audience');
     this.requireInsertOnSave();
     return super.save(options);
   }
 }
 export class CourseBundleMemberCollection extends SmrtCollection<CourseBundleMember> {
   static readonly _itemClass = CourseBundleMember;
+}
+
+/**
+ * Append-only record that a Word/PowerPoint member whose first rendering failed
+ * was rendered later by a deliberate retry (SMRT #4615). The import's member
+ * rows stay as first recorded; readers overlay this record. One row per
+ * (import, content hash): a second retry of a repaired member is a replay.
+ */
+@TenantScoped({ mode: 'required' })
+@smrt({
+  tableName: 'course_bundle_renderings',
+  conflictColumns: ['tenant_id', 'import_id', 'sha256'],
+  indexes: [
+    {
+      name: 'course_bundle_renderings_unique',
+      columns: ['tenantId', 'importId', 'sha256'],
+      unique: true,
+    },
+  ],
+  ...closed,
+})
+export class CourseBundleRendering extends SmrtObject {
+  @tenantId() tenantId = '';
+  @foreignKey('CourseBundleImport', { required: true }) importId = '';
+  /** Content hash of the Word/PowerPoint member that was rendered. */
+  sha256 = '';
+  renderedSha256 = '';
+  renderedSizeBytes = 0;
+  converterId = '';
+  retriedByUserId = '';
+  recordedAt = new Date();
+  constructor(options: Record<string, unknown> = {}) {
+    super(options);
+    adopt(this, options);
+  }
+  override async delete(): Promise<void> {
+    noDelete();
+  }
+  override async save(options?: SmrtSaveOptions): Promise<this> {
+    await requireInsert(this);
+    requireText(this.sha256, 'Rendering requires a member hash', 64);
+    requireText(this.renderedSha256, 'Rendering requires a rendered hash', 64);
+    requireText(this.retriedByUserId, 'Rendering requires an actor');
+    requireCount(this.renderedSizeBytes, 'Invalid rendered size');
+    if (
+      !(await this.db.get('course_bundle_imports', {
+        id: this.importId,
+        tenant_id: this.tenantId,
+      }))
+    )
+      throw new Error('Course bundle parent ownership mismatch');
+    this.requireInsertOnSave();
+    return super.save(options);
+  }
+}
+export class CourseBundleRenderingCollection extends SmrtCollection<CourseBundleRendering> {
+  static readonly _itemClass = CourseBundleRendering;
 }

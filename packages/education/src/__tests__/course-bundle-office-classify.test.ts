@@ -8,7 +8,7 @@ import {
   resolveCourseBundleLimits,
 } from '../index.js';
 import { buildZip, tinyPdf } from './bundle-zip-writer.js';
-import { officeDocx, officePptx } from './office-fixtures.js';
+import { officeDocx, officePptx, officeXlsx } from './office-fixtures.js';
 
 const classify = (files: Array<{ path: string; bytes: Uint8Array }>) =>
   classifyBundle(
@@ -30,6 +30,33 @@ describe('Office member classification', () => {
     expect(pptx).toMatchObject({ kind: 'pptx', status: 'accepted' });
     expect(docx?.rendered).toBeNull();
     expect(docx?.officeText).toBeNull();
+  });
+
+  it('recognises an Excel workbook by its main part and refuses a mismatch', () => {
+    const members = classify([
+      { path: 'supplies.xlsx', bytes: officeXlsx('supplies') },
+      { path: 'fake.xlsx', bytes: officeDocx('a') },
+      { path: 'sheet.docx', bytes: officeXlsx('a') },
+    ]);
+    const [xlsx, wrong, asDocx] = [
+      'supplies.xlsx',
+      'fake.xlsx',
+      'sheet.docx',
+    ].map((path) => members.find((m) => m.path === path));
+    expect(xlsx).toMatchObject({
+      kind: 'xlsx',
+      status: 'accepted',
+      mediaType:
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+    expect(wrong).toMatchObject({
+      status: 'unsupported',
+      reason: 'nested_archive',
+    });
+    expect(asDocx).toMatchObject({
+      status: 'unsupported',
+      reason: 'nested_archive',
+    });
   });
 
   it('does not treat a zip as Word by extension alone, or by content alone', () => {

@@ -1,10 +1,14 @@
+import { withPrivateAssetAccess } from '@happyvertical/smrt-assets';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import type {
-  CourseAuthoringActor,
-  CourseAuthoringAuthorizer,
+import { LessonAssetCollection } from './collections.js';
+import {
+  type CourseAuthoringActor,
+  type CourseAuthoringAuthorizer,
+  CourseAuthoringError,
 } from './course-authoring-contracts.js';
 import { CourseAuthoringService } from './course-authoring-service.js';
 import {
+  type BundleMaterialsPlan,
   type BundleReaderRegistry,
   bundleProposalOutput,
   type ClassifiedBundleMember,
@@ -19,6 +23,7 @@ import {
   unpackBundle,
 } from './course-bundle.js';
 import {
+  COURSE_BUNDLE_RETRYABLE_REASONS,
   type CourseBundleInput,
   type CourseBundleLimits,
   type CourseBundleMemberKind,
@@ -32,6 +37,7 @@ import {
 import {
   CourseBundleImportCollection,
   CourseBundleMemberCollection,
+  CourseBundleRenderingCollection,
 } from './course-bundle-models.js';
 import { sha256Hex } from './course-bundle-zip.js';
 import type {
@@ -45,11 +51,18 @@ import {
 import {
   DocumentConversionError,
   type DocumentConverter,
+  isOfficeDocumentKind,
   looksLikePdf,
   type OfficeDocumentKind,
   type OfficeText,
   type OfficeTextReader,
 } from './document-converter.js';
+import {
+  CourseAssetCollection,
+  LessonExternalVideoCollection,
+  type MaterialAudience,
+} from './lesson-assets.js';
+import { LessonPageCollection } from './lesson-pages.js';
 
 type Row = Record<string, unknown>;
 
@@ -64,7 +77,10 @@ export interface CourseBundleMemberView {
   status: CourseBundleMemberStatus;
   reason: CourseBundleMemberReason | null;
   duplicateOfPath: string | null;
+  /** The declared role: a page role (manifest v1) or a material role (v2). */
   role: string | null;
+  /** Manifest v2: the effective audience. */
+  audience: MaterialAudience | null;
   sectionKey: string | null;
   lessonKey: string | null;
   /** sha256 of the PDF rendered from a Word/PowerPoint member, null otherwise. */
@@ -92,9 +108,13 @@ export interface AcceptedCourseBundleMember {
   path: string;
   sha256: string;
   mediaType: string;
-  kind: 'pdf' | 'image' | 'text' | 'docx' | 'pptx';
-  /** Declared page role (`exercise`, `answer_key`, ...), or null. */
+  kind: 'pdf' | 'image' | 'text' | OfficeDocumentKind;
+  /** Declared role: a page role (`exercise`, ...) under v1, a material role (`slides`, ...) under v2. */
   role: string | null;
+  /** Manifest v2: who the material is for; null otherwise. */
+  audience: MaterialAudience | null;
+  /** Manifest v2: true for a course-level member (no lesson). */
+  courseLevel: boolean;
   sectionKey: string | null;
   lessonKey: string | null;
   /** The original bytes. For Word/PowerPoint, keep these as the private original asset. */
@@ -122,6 +142,8 @@ export interface CourseBundleImportResult {
   accepted: AcceptedCourseBundleMember[];
   /** What `receiveMember` returned per path. */
   receipts: Record<string, unknown>;
+  /** Manifest v2: the lesson pages, course members and videos the bundle asks for. */
+  materials: BundleMaterialsPlan;
 }
 export interface ImportCourseBundleRequest extends CourseAuthoringActor {
   bundle: CourseBundleInput;
@@ -149,6 +171,82 @@ export interface ProposeBundleStructureRequest extends CourseAuthoringActor {
   limits?: Partial<CourseBundleLimits>;
   onProgress?: CourseBundleProgressListener;
 }
+export interface RetryBundleRenderingRequest extends CourseAuthoringActor {
+  importId: string;
+  /** The same bundle again: bytes are never retained by this service. */
+  bundle: CourseBundleInput;
+  /** Limit the retry to these member paths; omitted retries every retryable failure. */
+  paths?: string[];
+  limits?: Partial<CourseBundleLimits>;
+  onProgress?: CourseBundleProgressListener;
+  /** Called for each member that rendered on this retry, as on a replayed import. */
+  receiveMember?: ImportCourseBundleRequest['receiveMember'];
+}
+export interface RetryBundleRenderingResult {
+  import: CourseBundleImportView;
+  /**
+   * Per requested member: `rendered` (recorded now), `failed` (still failing,
+   * nothing recorded; `reason` names why), or `unchanged` (not a retryable
+   * failure, for example already rendered or rejected by the converter).
+   */
+  retried: Array<{
+    path: string;
+    outcome: 'rendered' | 'failed' | 'unchanged';
+    reason: CourseBundleMemberReason | null;
+  }>;
+  /** Members that rendered on this retry, as handed to `receiveMember`. */
+  accepted: AcceptedCourseBundleMember[];
+  receipts: Record<string, unknown>;
+  materials: BundleMaterialsPlan;
+}
+
+export interface ApplyBundleMaterialsRequest extends CourseAuthoringActor {
+  importId: string;
+  /** The same bundle again: bytes are never retained by this service. */
+  bundle: CourseBundleInput;
+  /** A family-owned course (not an authored one; authored material goes through authoring). */
+  courseId: string;
+  /** Manifest lesson key to the `Lesson` id in `courseId` that the host created for it. */
+  lessons: Record<string, string>;
+  /**
+   * Member path to the private assets the host stored from `receiveMember`:
+   * the original, and the rendered PDF for Word/PowerPoint members. Slides
+   * join both; every other Office member joins only its rendered PDF, so a
+   * learner is never handed an editable original.
+   */
+  assets: Record<string, { original?: string; rendered?: string }>;
+  limits?: Partial<CourseBundleLimits>;
+  onProgress?: CourseBundleProgressListener;
+}
+export interface ApplyBundleMaterialsResult {
+  courseAssets: number;
+  lessonAssets: number;
+  lessonPages: number;
+  lessonVideos: number;
+  /** Rows that already existed with the same details (a replay). */
+  unchanged: number;
+  /** Original-deck joins whose audience was corrected to guardian-only. */
+  repaired: number;
+  skipped: BundleMaterialsPlan['skipped'];
+}
+/** The materials could not be applied; nothing was written. */
+export class CourseBundleMaterialsError extends CourseAuthoringError {
+  constructor(
+    readonly reason:
+      | 'authored-course'
+      | 'course-not-found'
+      | 'lesson-missing'
+      | 'asset-missing'
+      | 'conflict',
+    readonly entry?: string,
+  ) {
+    super(
+      'course-bundle-materials',
+      `Course bundle materials were not applied: ${reason}.`,
+    );
+  }
+}
+
 export interface CourseBundleImportServiceOptions
   extends Omit<CourseGenerationReviewServiceOptions, 'generator'> {
   readers?: BundleReaderRegistry;
@@ -197,11 +295,58 @@ function memberView(row: Row): CourseBundleMemberView {
     reason: orNull(row.reason) as CourseBundleMemberReason | null,
     duplicateOfPath: orNull(row.duplicate_of_path),
     role: orNull(row.role),
+    audience: orNull(row.audience) as MaterialAudience | null,
     sectionKey: orNull(row.section_key),
     lessonKey: orNull(row.lesson_key),
     renderedSha256: orNull(row.rendered_sha256),
     renderedSizeBytes: Number(row.rendered_size_bytes ?? 0),
   };
+}
+
+/**
+ * Overlay deliberate rendering retries (`course_bundle_renderings`) on the
+ * first-import member evidence: a Word/PowerPoint member whose rendering failed
+ * for a retryable reason and was later rendered reads as accepted (identical
+ * copies as duplicates). The recorded rows themselves are never rewritten.
+ */
+function overlayRenderings(
+  members: CourseBundleMemberView[],
+  renderings: ReadonlyMap<string, Row>,
+) {
+  const first = new Map<string, string>();
+  const moved = { accepted: 0, duplicate: 0, unsupported: 0 };
+  const out = members.map((m): CourseBundleMemberView => {
+    const rendering = m.sha256 ? renderings.get(m.sha256) : undefined;
+    if (
+      !rendering ||
+      !isOfficeDocumentKind(m.kind) ||
+      m.status !== 'unsupported' ||
+      !m.reason ||
+      !COURSE_BUNDLE_RETRYABLE_REASONS.has(m.reason)
+    )
+      return m;
+    moved.unsupported++;
+    const original = first.get(m.sha256 as string);
+    if (original) {
+      moved.duplicate++;
+      return {
+        ...m,
+        status: 'duplicate',
+        reason: 'duplicate_content',
+        duplicateOfPath: original,
+      };
+    }
+    first.set(m.sha256 as string, m.path);
+    moved.accepted++;
+    return {
+      ...m,
+      status: 'accepted',
+      reason: null,
+      renderedSha256: String(rendering.rendered_sha256),
+      renderedSizeBytes: Number(rendering.rendered_size_bytes),
+    };
+  });
+  return { members: out, moved };
 }
 
 const REASON_BY_FAILURE: Record<
@@ -267,11 +412,7 @@ function reconcileWithRecorded(
   const allowed = new Set<string>();
   for (const member of plan.members) {
     const row = recorded.get(member.path);
-    if (
-      !view.replayed ||
-      !row ||
-      (member.kind !== 'docx' && member.kind !== 'pptx')
-    ) {
+    if (!view.replayed || !row || !isOfficeDocumentKind(member.kind)) {
       allowed.add(member.path);
       continue;
     }
@@ -288,7 +429,7 @@ function reconcileWithRecorded(
 
 const isOffice = (m: ClassifiedBundleMember) =>
   m.status === 'accepted' &&
-  (m.kind === 'docx' || m.kind === 'pptx') &&
+  isOfficeDocumentKind(m.kind) &&
   Boolean(m.sha256) &&
   m.bytes !== null;
 
@@ -379,19 +520,15 @@ export class CourseBundleImportService extends CourseAuthoringService {
         bundle_identity: identity,
       })) as Row | null;
       if (!existing) return null;
-      const rows = (
-        (await tx.list('course_bundle_members', {
-          tenant_id: tenantId,
-          import_id: String(existing.id),
-        })) as Row[]
-      ).filter((r) => r.kind === 'docx' || r.kind === 'pptx');
       const out = new Map<string, { status: string; reason: string }>();
-      for (const row of rows) {
-        if (row.status === 'duplicate' || !row.sha256) continue;
-        out.set(String(row.sha256), {
-          status: String(row.status),
-          reason: String(row.reason ?? ''),
-        });
+      for (const m of (await this.view(tx, existing)).members) {
+        if (
+          !isOfficeDocumentKind(m.kind) ||
+          m.status === 'duplicate' ||
+          !m.sha256
+        )
+          continue;
+        out.set(m.sha256, { status: m.status, reason: m.reason ?? '' });
       }
       return out;
     });
@@ -480,7 +617,7 @@ export class CourseBundleImportService extends CourseAuthoringService {
       throw new DocumentConversionError('invalid_output');
     let officeText: OfficeText | null = null;
     const reader = this.serviceOptions.officeTextReader;
-    if (reader) {
+    if (reader && kind !== 'xlsx') {
       try {
         officeText = await withTimeout(
           limits.conversionTimeoutMs,
@@ -573,6 +710,7 @@ export class CourseBundleImportService extends CourseAuthoringService {
             reason: member.reason ?? '',
             duplicateOfPath: member.duplicateOf ?? '',
             role: placed?.role ?? '',
+            audience: placed?.audience ?? '',
             sectionKey: placed?.sectionKey ?? '',
             lessonKey: placed?.lessonKey ?? '',
             renderedSha256: member.rendered?.sha256 ?? '',
@@ -608,8 +746,7 @@ export class CourseBundleImportService extends CourseAuthoringService {
           (m.kind === 'pdf' ||
             m.kind === 'image' ||
             m.kind === 'text' ||
-            m.kind === 'docx' ||
-            m.kind === 'pptx'),
+            isOfficeDocumentKind(m.kind)),
       )
       .map((m): AcceptedCourseBundleMember => {
         const placed = plan.placements.get(m.path);
@@ -619,6 +756,8 @@ export class CourseBundleImportService extends CourseAuthoringService {
           mediaType: m.mediaType,
           kind: m.kind as AcceptedCourseBundleMember['kind'],
           role: placed?.role || null,
+          audience: placed?.audience || null,
+          courseLevel: Boolean(placed?.role) && !placed?.lessonKey,
           sectionKey: placed?.sectionKey ?? null,
           lessonKey: placed?.lessonKey ?? null,
           bytes: m.bytes,
@@ -644,7 +783,445 @@ export class CourseBundleImportService extends CourseAuthoringService {
         progress(Object.keys(receipts).length, accepted.length);
       }
     }
-    return { import: view, accepted, receipts };
+    return { import: view, accepted, receipts, materials: plan.materials };
+  }
+
+  /**
+   * Deliberately retry the rendering of Word/PowerPoint members whose first
+   * import recorded a retryable converter failure (`converter_unavailable`,
+   * `converter_failed`, `converter_timeout`). Safe and idempotent: the first
+   * import's evidence is append-only and is never rewritten; a success is one
+   * extra `course_bundle_renderings` row per (import, content hash), after which
+   * readers (and a replayed import or proposal) see the member as accepted. A
+   * failure records nothing, so asking again is always allowed. Rejections,
+   * size limits and the Office member cap are not retryable: change the bundle.
+   * Needs `education.course.author` and a configured converter.
+   */
+  async retryRendering(
+    request: RetryBundleRenderingRequest,
+  ): Promise<RetryBundleRenderingResult> {
+    const authorize = (tx: DatabaseInterface) =>
+      this.authorize(
+        tx,
+        request,
+        'education.course.author',
+        'retry-course-bundle-rendering',
+      );
+    const imported = await this.run(async (tx) => {
+      await authorize(tx);
+      return this.record(tx, request);
+    });
+    if (!this.serviceOptions.converter)
+      throw new DocumentConversionError('unavailable');
+    const limits = this.limits(request);
+    const raw = unpackBundle(
+      request.bundle,
+      limits,
+      emit(request.onProgress, 'unpack'),
+    );
+    if (courseBundleIdentity(raw) !== String(imported.bundle_identity))
+      throw new CourseBundleNotFoundError();
+    const classified = classifyBundle(
+      raw,
+      limits,
+      emit(request.onProgress, 'classify'),
+    );
+    const before = await this.run(async (tx) => this.view(tx, imported));
+    const wanted = request.paths ? new Set(request.paths) : null;
+    const byPath = new Map(classified.map((m) => [m.path, m]));
+    const retried: RetryBundleRenderingResult['retried'] = [];
+    const attempts = new Map<string, ClassifiedBundleMember>();
+    for (const recorded of before.members) {
+      if (wanted && !wanted.has(recorded.path)) continue;
+      const retryable =
+        isOfficeDocumentKind(recorded.kind) &&
+        recorded.status === 'unsupported' &&
+        recorded.reason !== null &&
+        COURSE_BUNDLE_RETRYABLE_REASONS.has(recorded.reason);
+      const member = byPath.get(recorded.path);
+      if (
+        !retryable ||
+        !member ||
+        !isOffice(member) ||
+        member.sha256 !== recorded.sha256
+      ) {
+        retried.push({
+          path: recorded.path,
+          outcome: 'unchanged',
+          reason: recorded.reason,
+        });
+        continue;
+      }
+      if (!attempts.has(recorded.sha256 as string))
+        attempts.set(recorded.sha256 as string, member);
+      retried.push({
+        path: recorded.path,
+        outcome: 'failed',
+        reason: recorded.reason,
+      });
+    }
+    const progress = emit(request.onProgress, 'render');
+    progress(0, attempts.size);
+    const fresh = new Map<string, OfficeOutcome & { ok: true }>();
+    const failures = new Map<string, CourseBundleMemberReason>();
+    let done = 0;
+    for (const [sha, member] of attempts) {
+      try {
+        const outcome = await this.convert(member, limits);
+        if (outcome.ok) fresh.set(sha, outcome);
+      } catch (error) {
+        const code =
+          error instanceof DocumentConversionError ? error.code : 'unavailable';
+        failures.set(sha, REASON_BY_FAILURE[code]);
+      }
+      progress(++done, attempts.size);
+    }
+    if (fresh.size > 0)
+      await this.run(async (tx) => {
+        await authorize(tx);
+        const renderings = await CourseBundleRenderingCollection.create({
+          db: tx,
+        });
+        for (const [sha, outcome] of fresh) {
+          const existing = await tx.get('course_bundle_renderings', {
+            tenant_id: request.tenantId,
+            import_id: String(imported.id),
+            sha256: sha,
+          });
+          if (existing) continue;
+          await renderings.create({
+            _insertOnly: true,
+            tenantId: request.tenantId,
+            importId: String(imported.id),
+            sha256: sha,
+            renderedSha256: outcome.rendered?.sha256 ?? '',
+            renderedSizeBytes: outcome.rendered?.bytes.byteLength ?? 0,
+            converterId: this.serviceOptions.converter?.id ?? '',
+            retriedByUserId: request.actorUserId,
+            recordedAt: new Date(),
+          });
+        }
+      });
+    for (const entry of retried) {
+      if (entry.outcome !== 'failed') continue;
+      const sha = byPath.get(entry.path)?.sha256 as string;
+      if (fresh.has(sha)) {
+        entry.outcome = 'rendered';
+        entry.reason = null;
+      } else entry.reason = failures.get(sha) ?? entry.reason;
+    }
+    const view = {
+      ...(await this.run(async (tx) => this.view(tx, imported))),
+      replayed: false,
+    };
+    const plan = await this.plan(request.bundle, limits, undefined, {
+      tenantId: request.tenantId,
+      render: false,
+    });
+    const handed = new Set(
+      retried.filter((r) => r.outcome === 'rendered').map((r) => r.path),
+    );
+    const accepted = plan.members
+      .filter(
+        (m): m is ClassifiedBundleMember & { bytes: Uint8Array } =>
+          m.status === 'accepted' &&
+          m.bytes !== null &&
+          isOfficeDocumentKind(m.kind) &&
+          Boolean(m.sha256 && fresh.has(m.sha256)),
+      )
+      .filter((m) => handed.has(m.path))
+      .map((m): AcceptedCourseBundleMember => {
+        const placed = plan.placements.get(m.path);
+        const outcome = fresh.get(m.sha256 as string);
+        return {
+          path: m.path,
+          sha256: m.sha256 as string,
+          mediaType: m.mediaType,
+          kind: m.kind as OfficeDocumentKind,
+          role: placed?.role || null,
+          audience: placed?.audience || null,
+          courseLevel: Boolean(placed?.role) && !placed?.lessonKey,
+          sectionKey: placed?.sectionKey ?? null,
+          lessonKey: placed?.lessonKey ?? null,
+          bytes: m.bytes,
+          rendered: outcome?.rendered
+            ? {
+                ...outcome.rendered,
+                mediaType: 'application/pdf',
+                converterId: this.serviceOptions.converter?.id ?? '',
+              }
+            : null,
+          officeText: outcome?.officeText ?? null,
+        };
+      });
+    const receipts: Record<string, unknown> = {};
+    if (request.receiveMember)
+      for (const member of accepted)
+        receipts[member.path] = await request.receiveMember(member, {
+          replayed: true,
+        });
+    return {
+      import: view,
+      retried,
+      accepted,
+      receipts,
+      materials: plan.materials,
+    };
+  }
+
+  /**
+   * Turn a bundle's version 2 materials into rows of a family-owned course:
+   * `CourseAsset` (course members), `LessonAsset` (lesson members, slides as
+   * original plus rendered pages), `LessonPage` (page ranges, sourced from the
+   * paged member's PDF) and `LessonExternalVideo` (allowlisted YouTube
+   * references; never downloaded). The host has already stored each accepted
+   * member as a private asset and created the course's lessons. All or nothing,
+   * idempotent: a row that exists with the same details is left alone, one that
+   * exists with other details is a conflict. Needs `education.course.author`.
+   */
+  async applyMaterials(
+    request: ApplyBundleMaterialsRequest,
+  ): Promise<ApplyBundleMaterialsResult> {
+    const authorize = (tx: DatabaseInterface) =>
+      this.authorize(
+        tx,
+        request,
+        'education.course.author',
+        'apply-course-bundle-materials',
+      );
+    const imported = await this.run(async (tx) => {
+      await authorize(tx);
+      return this.record(tx, request);
+    });
+    const limits = this.limits(request);
+    const plan = await this.plan(request.bundle, limits, request.onProgress, {
+      tenantId: request.tenantId,
+      render: false,
+    });
+    if (plan.bundleIdentity !== String(imported.bundle_identity))
+      throw new CourseBundleNotFoundError();
+    const { materials } = plan;
+    const result: ApplyBundleMaterialsResult = {
+      courseAssets: 0,
+      lessonAssets: 0,
+      lessonPages: 0,
+      lessonVideos: 0,
+      unchanged: 0,
+      repaired: 0,
+      skipped: materials.skipped,
+    };
+    return this.run(async (tx) => {
+      await authorize(tx);
+      const course = (await tx.get('courses', {
+        id: request.courseId,
+        tenant_id: request.tenantId,
+      })) as Row | null;
+      if (!course) throw new CourseBundleMaterialsError('course-not-found');
+      if (['authored', 'authored-release'].includes(String(course.source_key)))
+        throw new CourseBundleMaterialsError('authored-course');
+      const lessonId = async (key: string) => {
+        const id = request.lessons[key];
+        const lesson = id
+          ? ((await tx.get('lessons', {
+              id,
+              tenant_id: request.tenantId,
+            })) as Row | null)
+          : null;
+        const section = lesson
+          ? await tx.get('course_sections', {
+              id: lesson.section_id,
+              tenant_id: request.tenantId,
+              course_id: request.courseId,
+            })
+          : null;
+        if (!lesson || !section)
+          throw new CourseBundleMaterialsError('lesson-missing', key);
+        return String(id);
+      };
+      const withAccess = async <T>(assetId: string, work: () => Promise<T>) => {
+        const asset = (await tx.get('assets', {
+          id: assetId,
+          tenant_id: request.tenantId,
+        })) as Row | null;
+        if (!asset)
+          throw new CourseBundleMaterialsError('asset-missing', assetId);
+        return asset.owner_profile_id
+          ? withPrivateAssetAccess(
+              {
+                tenantId: request.tenantId,
+                actorUserId: request.actorUserId,
+                ownerProfileId: String(asset.owner_profile_id),
+                assetIds: [assetId],
+              },
+              work,
+            )
+          : work();
+      };
+      const lessonAssets = await LessonAssetCollection.create({ db: tx });
+      const courseAssets = await CourseAssetCollection.create({ db: tx });
+      const pages = await LessonPageCollection.create({ db: tx });
+      const videos = await LessonExternalVideoCollection.create({ db: tx });
+
+      for (const material of materials.materials) {
+        const supplied = request.assets[material.assetPath];
+        const office = isOfficeDocumentKind(material.kind);
+        const joins: Array<{
+          assetId: string;
+          audience: MaterialAudience;
+          original: boolean;
+        }> = [];
+        if (office) {
+          if (!supplied?.rendered)
+            throw new CourseBundleMaterialsError(
+              'asset-missing',
+              material.path,
+            );
+          if (material.kind === 'pptx' && material.role === 'slides') {
+            if (!supplied.original)
+              throw new CourseBundleMaterialsError(
+                'asset-missing',
+                material.path,
+              );
+            // The editable original is for the adult whatever the deck's declared audience.
+            joins.push({
+              assetId: supplied.original,
+              audience: 'guardian',
+              original: true,
+            });
+          }
+          joins.push({
+            assetId: supplied.rendered,
+            audience: material.audience,
+            original: false,
+          });
+        } else if (supplied?.original)
+          joins.push({
+            assetId: supplied.original,
+            audience: material.audience,
+            original: false,
+          });
+        else if (material.kind === 'text') continue;
+        else
+          throw new CourseBundleMaterialsError('asset-missing', material.path);
+        for (const { assetId, audience, original } of joins) {
+          const where =
+            material.scope === 'course'
+              ? {
+                  tenantId: request.tenantId,
+                  courseId: request.courseId,
+                  assetId,
+                  relationship: material.role,
+                }
+              : {
+                  tenantId: request.tenantId,
+                  lessonId: await lessonId(material.lessonKey as string),
+                  assetId,
+                  relationship: material.role,
+                };
+          const collection =
+            material.scope === 'course' ? courseAssets : lessonAssets;
+          const existing = await (collection as typeof courseAssets).get(
+            where,
+            { cache: false },
+          );
+          if (existing) {
+            // Metadata must match; only a wrong audience on an original is repairable.
+            if (
+              existing.sortOrder !== material.sortOrder ||
+              (material.scope === 'course' &&
+                (existing as { title?: string }).title !== material.title) ||
+              (existing.audience !== audience && !original)
+            )
+              throw new CourseBundleMaterialsError('conflict', material.path);
+            if (existing.audience !== audience) {
+              // Repair a join written before originals were always guardian-only.
+              existing.audience = audience;
+              await withAccess(assetId, () => existing.save());
+              result.repaired++;
+            } else result.unchanged++;
+            continue;
+          }
+          await withAccess(assetId, () =>
+            (collection as typeof courseAssets).create({
+              _insertOnly: true,
+              ...where,
+              audience,
+              sortOrder: material.sortOrder,
+              ...(material.scope === 'course' ? { title: material.title } : {}),
+            }),
+          );
+          if (material.scope === 'course') result.courseAssets++;
+          else result.lessonAssets++;
+        }
+      }
+      for (const page of materials.pages) {
+        const supplied = request.assets[page.assetPath];
+        const sourceAssetId = supplied?.rendered ?? supplied?.original;
+        if (!sourceAssetId)
+          throw new CourseBundleMaterialsError('asset-missing', page.path);
+        const where = {
+          tenantId: request.tenantId,
+          lessonId: await lessonId(page.lessonKey),
+          pageKey: page.pageKey,
+        };
+        const existing = await pages.get(where, { cache: false });
+        if (existing) {
+          if (
+            existing.label !== page.label ||
+            existing.sortOrder !== page.sortOrder ||
+            existing.sourceAssetId !== sourceAssetId ||
+            existing.sourcePageNumber !== page.sourcePageNumber
+          )
+            throw new CourseBundleMaterialsError(
+              'conflict',
+              `${page.lessonKey}:${page.pageKey}`,
+            );
+          result.unchanged++;
+          continue;
+        }
+        await pages.create({
+          _insertOnly: true,
+          ...where,
+          courseId: request.courseId,
+          label: page.label,
+          sortOrder: page.sortOrder,
+          sourceAssetId,
+          sourcePageNumber: page.sourcePageNumber,
+        });
+        result.lessonPages++;
+      }
+      for (const video of materials.videos) {
+        const where = {
+          tenantId: request.tenantId,
+          lessonId: await lessonId(video.lessonKey),
+          provider: video.provider,
+          videoId: video.videoId,
+        };
+        const existing = await videos.get(where, { cache: false });
+        if (existing) {
+          if (
+            existing.title !== video.title ||
+            existing.stepOrder !== video.stepOrder ||
+            existing.audience !== video.audience
+          )
+            throw new CourseBundleMaterialsError(
+              'conflict',
+              `${video.lessonKey}:${video.videoId}`,
+            );
+          result.unchanged++;
+          continue;
+        }
+        await videos.create({
+          _insertOnly: true,
+          ...where,
+          title: video.title,
+          stepOrder: video.stepOrder,
+          audience: video.audience,
+        });
+        result.lessonVideos++;
+      }
+      return result;
+    });
   }
 
   /** The recorded evidence of one import; needs `education.course.read-draft`. */
@@ -742,7 +1319,7 @@ export class CourseBundleImportService extends CourseAuthoringService {
     tx: DatabaseInterface,
     row: Row,
   ): Promise<Omit<CourseBundleImportView, 'replayed'>> {
-    const members = (
+    const rows = (
       (await tx.list('course_bundle_members', {
         tenant_id: String(row.tenant_id),
         import_id: String(row.id),
@@ -750,6 +1327,17 @@ export class CourseBundleImportService extends CourseAuthoringService {
     )
       .map(memberView)
       .sort((a, b) => a.ordinal - b.ordinal);
+    const renderings = new Map(
+      (
+        ((await tx.tableExists('course_bundle_renderings'))
+          ? await tx.list('course_bundle_renderings', {
+              tenant_id: String(row.tenant_id),
+              import_id: String(row.id),
+            })
+          : []) as Row[]
+      ).map((r) => [String(r.sha256), r]),
+    );
+    const { members, moved } = overlayRenderings(rows, renderings);
     return {
       importId: String(row.id),
       bundleIdentity: String(row.bundle_identity),
@@ -757,9 +1345,9 @@ export class CourseBundleImportService extends CourseAuthoringService {
       readerId: String(row.reader_id),
       manifestVersion: Number(row.manifest_version),
       entryCount: Number(row.entry_count),
-      acceptedCount: Number(row.accepted_count),
-      duplicateCount: Number(row.duplicate_count),
-      unsupportedCount: Number(row.unsupported_count),
+      acceptedCount: Number(row.accepted_count) + moved.accepted,
+      duplicateCount: Number(row.duplicate_count) + moved.duplicate,
+      unsupportedCount: Number(row.unsupported_count) - moved.unsupported,
       refusedCount: Number(row.refused_count),
       totalBytes: Number(row.total_bytes),
       members,

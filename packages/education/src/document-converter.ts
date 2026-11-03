@@ -8,12 +8,22 @@
  */
 
 /** Office kinds the importer can render. */
-export type OfficeDocumentKind = 'docx' | 'pptx';
+export type OfficeDocumentKind = 'docx' | 'pptx' | 'xlsx';
+export const OFFICE_DOCUMENT_KINDS: readonly OfficeDocumentKind[] = [
+  'docx',
+  'pptx',
+  'xlsx',
+];
+export const isOfficeDocumentKind = (
+  value: unknown,
+): value is OfficeDocumentKind =>
+  (OFFICE_DOCUMENT_KINDS as readonly unknown[]).includes(value);
 
 export const OFFICE_MEDIA_TYPES: Readonly<Record<OfficeDocumentKind, string>> =
   Object.freeze({
     docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   });
 
 export const DEFAULT_DOCUMENT_CONVERSION_TIMEOUT_MS = 60_000;
@@ -82,29 +92,76 @@ export interface OfficeText {
 
 /**
  * Injectable text reader for Office members. Return `null` when the engine is
- * unavailable. Wire the SDK processor once `@happyvertical/documents` with
- * `extractOffice` is released:
- *
- * ```ts
- * import { extractOffice } from '@happyvertical/documents';
- * const officeTextReader: OfficeTextReader = {
- *   async read({ bytes, kind }) {
- *     const r = await extractOffice(bytes, kind, { extractImages: false });
- *     if (r.status !== 'ok') return null;
- *     const slides = kind === 'pptx'
- *       ? r.parts.map((p, i) => ({ index: Number(p.metadata?.slide ?? i + 1), text: p.content, notes: p.notes }))
- *       : undefined;
- *     const text = r.parts.flatMap(function flat(p): string[] { return [p.content, ...(p.parts ?? []).flatMap(flat)]; }).filter(Boolean).join('\n\n');
- *     return { text, slides };
- *   },
- * };
- * ```
+ * unavailable. `createOfficeTextReader(extractOffice)` adapts the SDK processor
+ * (`@happyvertical/documents` >= 0.111.4, sdk#1486) without this package
+ * depending on it: the host imports `extractOffice` and passes it in.
  */
 export interface OfficeTextReader {
   read(input: {
     bytes: Uint8Array;
     kind: OfficeDocumentKind;
   }): Promise<OfficeText | null>;
+}
+
+/** The shape of an SDK document part that the reader below reads (`DocumentPart`). */
+export interface OfficeExtractPart {
+  content?: string;
+  notes?: string;
+  metadata?: Record<string, unknown>;
+  parts?: OfficeExtractPart[];
+}
+/** `extractOffice` of `@happyvertical/documents` (structural, so no dependency is declared). */
+export type OfficeExtractFunction = (
+  source: Uint8Array,
+  format: 'docx' | 'pptx',
+  options?: { extractImages?: boolean },
+) => Promise<
+  | { status: 'ok'; parts: OfficeExtractPart[] }
+  | { status: 'unsupported'; [key: string]: unknown }
+>;
+
+const flatText = (part: OfficeExtractPart): string[] => [
+  part.content ?? '',
+  ...(part.parts ?? []).flatMap(flatText),
+];
+
+/**
+ * Adapt the SDK Office extractor to an `OfficeTextReader`: whole-document text
+ * for Word, text and speaker notes per slide for PowerPoint. Images are never
+ * requested. An unsupported engine (Kreuzberg not installed) reads as `null`;
+ * a corrupt file rejects, and the importer treats that as "no text".
+ */
+export function createOfficeTextReader(
+  extractOffice: OfficeExtractFunction,
+): OfficeTextReader {
+  return {
+    async read({ bytes, kind }) {
+      // The SDK reads Word and PowerPoint; a workbook has no text reader.
+      if (kind === 'xlsx') return null;
+      const result = await extractOffice(bytes, kind, { extractImages: false });
+      if (result.status !== 'ok') return null;
+      const text = result.parts
+        .flatMap(flatText)
+        .map((t) => t.trim())
+        .filter(Boolean)
+        .join('\n\n');
+      if (kind !== 'pptx') return { text };
+      return {
+        text,
+        slides: result.parts.map((part, i) => {
+          const slide = Number(part.metadata?.slide);
+          return {
+            index: Number.isSafeInteger(slide) && slide > 0 ? slide : i + 1,
+            text: flatText(part)
+              .map((t) => t.trim())
+              .filter(Boolean)
+              .join('\n'),
+            ...(part.notes?.trim() ? { notes: part.notes.trim() } : {}),
+          };
+        }),
+      };
+    },
+  };
 }
 
 // -- Gotenberg ----------------------------------------------------------------

@@ -141,11 +141,15 @@ export * from './course-authoring-models.js';
 export type { CourseAuthoringServiceOptions } from './course-authoring-service.js';
 export { CourseAuthoringService } from './course-authoring-service.js';
 export {
+  type BundleMaterial,
+  type BundleMaterialsPlan,
+  type BundlePage,
   type BundleReader,
   BundleReaderRegistry,
   type BundleStructure,
   type BundleStructureLesson,
   type BundleStructureSection,
+  type BundleVideo,
   bundleProposalOutput,
   type ClassifiedBundleMember,
   type CourseBundlePlan,
@@ -154,27 +158,35 @@ export {
   courseBundleIdentity,
   createBundleReaderRegistry,
   manifestBundleReader,
+  manifestV2BundleReader,
   naturalCompare,
   type OfficeOutcome,
   type PreparedBundle,
   parseBundleManifest,
   pdfIsEncrypted,
   plainBundleReader,
+  planBundleMaterials,
   planClassifiedBundle,
   planCourseBundle,
   unpackBundle,
 } from './course-bundle.js';
 export * from './course-bundle-contracts.js';
+export * from './course-bundle-manifest-v2.js';
 export * from './course-bundle-models.js';
 export {
   type AcceptedCourseBundleMember,
+  type ApplyBundleMaterialsRequest,
+  type ApplyBundleMaterialsResult,
   type CourseBundleImportResult,
   CourseBundleImportService,
   type CourseBundleImportServiceOptions,
   type CourseBundleImportView,
+  CourseBundleMaterialsError,
   type CourseBundleMemberView,
   type ImportCourseBundleRequest,
   type ProposeBundleStructureRequest,
+  type RetryBundleRenderingRequest,
+  type RetryBundleRenderingResult,
 } from './course-bundle-service.js';
 export {
   normalizeBundlePath,
@@ -276,6 +288,7 @@ export {
   createPublicIllustrativeMathematicsK5Adapter,
   providerFeedRequirements,
 } from './hearth-catalog-providers.js';
+export * from './hearth-class-crunchlabs.js';
 export type {
   EasyPeasyGrade4Course,
   EasyPeasyGrade4Theme,
@@ -421,6 +434,7 @@ export type {
   SourceImportResult,
 } from './source-import-service.js';
 export { SourceImportService } from './source-import-service.js';
+export * from './sources/class-crunchlabs.js';
 export type {
   ParsedSourceCourse,
   ParsedSourceLesson,

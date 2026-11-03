@@ -1,7 +1,11 @@
 import type { CatalogPreview } from './catalog-preview.js';
 
-/** Metadata-only resource visibility. Teacher material is never learner-visible. */
-export type CatalogVisibility = 'catalog' | 'teacher';
+/**
+ * Metadata-only resource visibility. Teacher material is never learner-visible.
+ * `operator` records (a provider whose permission is pending) are visible only
+ * to the tenants the host designated as operator families; see `CatalogPolicy`.
+ */
+export type CatalogVisibility = 'catalog' | 'teacher' | 'operator';
 export type CatalogLicenseState =
   | 'verified'
   | 'unknown'

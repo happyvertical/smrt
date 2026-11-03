@@ -6,6 +6,7 @@ import {
   COURSE_BUNDLE_LIMITS,
   COURSE_BUNDLE_MANIFEST_PATH,
   COURSE_BUNDLE_MANIFEST_VERSION,
+  COURSE_BUNDLE_MANIFEST_VERSION_2,
   COURSE_BUNDLE_PAGE_ROLES,
   type CourseBundleInput,
   type CourseBundleLimits,
@@ -13,9 +14,19 @@ import {
   type CourseBundleMemberReason,
   type CourseBundleMemberStatus,
   type CourseBundlePageRole,
-  type CourseBundleRefusalReason,
   CourseBundleRefusedError,
 } from './course-bundle-contracts.js';
+import {
+  closedObject as closed,
+  manifestKey as key,
+  manifestVersionOf,
+  refuse,
+  manifestText as text,
+} from './course-bundle-manifest-util.js';
+import {
+  type ManifestV2,
+  parseBundleManifestV2,
+} from './course-bundle-manifest-v2.js';
 import {
   isWellFormedString,
   normalizeBundlePath,
@@ -25,12 +36,16 @@ import {
   sha256Hex,
 } from './course-bundle-zip.js';
 import {
+  isOfficeDocumentKind,
   OFFICE_MEDIA_TYPES,
   type OfficeDocumentKind,
   type OfficeText,
 } from './document-converter.js';
+import type {
+  LessonAssetRelationship,
+  MaterialAudience,
+} from './lesson-assets.js';
 
-const KEY = /^[A-Za-z0-9._:-]{1,120}$/;
 // biome-ignore lint/suspicious/noControlCharactersInRegex: refusing control characters in text
 const CONTROL = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/;
 
@@ -59,8 +74,18 @@ export interface BundleStructureLesson {
   title: string;
   /** Member paths in declared order. */
   paths: string[];
-  /** Page role per path, `''` when none was declared. */
-  roles: Array<CourseBundlePageRole | ''>;
+  /**
+   * Role per path, `''` when none was declared: a page role under manifest
+   * version 1, a material role under version 2.
+   */
+  roles: Array<CourseBundlePageRole | LessonAssetRelationship | ''>;
+  /** Version 2: the effective audience per path (parallel to `paths`). */
+  audiences?: Array<MaterialAudience | ''>;
+  /** Version 2: member titles per path (`''` when none). */
+  titles?: string[];
+  /** Version 2: page ranges and external videos. */
+  pages?: ManifestV2['sections'][number]['lessons'][number]['pages'];
+  videos?: ManifestV2['sections'][number]['lessons'][number]['videos'];
 }
 export interface BundleStructureSection {
   key: string;
@@ -70,6 +95,8 @@ export interface BundleStructureSection {
 export interface BundleStructure {
   subject?: string;
   sections: BundleStructureSection[];
+  /** Version 2: members that belong to the course rather than a lesson. */
+  courseMembers?: ManifestV2['courseMembers'];
 }
 export interface PreparedBundle {
   readerId: string;
@@ -151,10 +178,11 @@ function sniff(
   return null;
 }
 const TEXT_NAME = /\.(txt|md|markdown)$/i;
-const OFFICE_NAME = /\.(docx|pptx)$/i;
+const OFFICE_NAME = /\.(docx|pptx|xlsx)$/i;
 const OFFICE_MAIN_PART: Record<OfficeDocumentKind, string> = {
   docx: 'word/document.xml',
   pptx: 'ppt/presentation.xml',
+  xlsx: 'xl/workbook.xml',
 };
 /**
  * Bounds for the OOXML package inside a Word/PowerPoint member. These are the
@@ -170,7 +198,7 @@ const OFFICE_PACKAGE_LIMITS: CourseBundleLimits = {
   maxPathDepth: 12,
 };
 
-/** `docx`/`pptx` when the member is a sound OOXML package; `'unsafe'` when it fails the zip bounds. */
+/** `docx`/`pptx`/`xlsx` when the member is a sound OOXML package; `'unsafe'` when it fails the zip bounds. */
 function officeKind(
   path: string,
   bytes: Uint8Array,
@@ -294,34 +322,6 @@ const byPath = (a: string, b: string) => naturalCompare(a, b);
 
 // -- manifest -----------------------------------------------------------------
 
-const refuse = (reason: CourseBundleRefusalReason, entry?: string): never => {
-  throw new CourseBundleRefusedError(reason, entry);
-};
-function closed(value: unknown, allowed: readonly string[], path: string) {
-  if (!value || typeof value !== 'object' || Array.isArray(value))
-    return refuse('manifest_invalid', path);
-  for (const key of Object.keys(value))
-    if (!allowed.includes(key))
-      return refuse('manifest_unknown_key', `${path}.${key}`);
-  return value as Record<string, unknown>;
-}
-function text(value: unknown, path: string, max: number): string {
-  if (
-    typeof value !== 'string' ||
-    !value.trim() ||
-    value.length > max ||
-    !isWellFormedString(value) ||
-    CONTROL.test(value)
-  )
-    return refuse('manifest_invalid', path);
-  return value;
-}
-function key(value: unknown, path: string): string {
-  if (typeof value !== 'string' || !KEY.test(value))
-    return refuse('manifest_invalid', path);
-  return value;
-}
-
 interface Manifest {
   subject?: string;
   sections: Array<{
@@ -430,8 +430,67 @@ export function parseBundleManifest(
 
 // -- built-in readers ---------------------------------------------------------
 
+const manifestOf = (members: readonly ClassifiedBundleMember[]) =>
+  members.find((m) => m.kind === 'manifest');
 const hasManifest = (members: readonly ClassifiedBundleMember[]) =>
   members.some((m) => m.kind === 'manifest');
+const isManifestV2 = (members: readonly ClassifiedBundleMember[]) => {
+  const bytes = manifestOf(members)?.bytes;
+  return (
+    bytes != null &&
+    manifestVersionOf(bytes) === COURSE_BUNDLE_MANIFEST_VERSION_2
+  );
+};
+
+/**
+ * Reader for a root `manifest.json` version 2: material roles and audience,
+ * lesson pages, course-level members and external video references.
+ */
+export const manifestV2BundleReader: BundleReader = {
+  formatId: 'manifest-v2',
+  detect: isManifestV2,
+  prepare(members, limits) {
+    const manifest = parseBundleManifestV2(
+      manifestOf(members)?.bytes as Uint8Array,
+      new Set(members.map((m) => m.path)),
+      limits,
+    );
+    const declared = [
+      ...manifest.sections.flatMap((s) =>
+        s.lessons.flatMap((l) => l.members.map((m) => m.path)),
+      ),
+      ...manifest.courseMembers.map((m) => m.path),
+    ];
+    const listed = new Set(declared);
+    const rest = members
+      .map((m) => m.path)
+      .filter((p) => p !== COURSE_BUNDLE_MANIFEST_PATH && !listed.has(p))
+      .sort(byPath);
+    return {
+      readerId: 'manifest-v2',
+      manifestVersion: COURSE_BUNDLE_MANIFEST_VERSION_2,
+      order: [COURSE_BUNDLE_MANIFEST_PATH, ...declared, ...rest],
+      structure: () => ({
+        ...(manifest.subject ? { subject: manifest.subject } : {}),
+        courseMembers: manifest.courseMembers,
+        sections: manifest.sections.map((s) => ({
+          key: s.key,
+          title: s.title,
+          lessons: s.lessons.map((l) => ({
+            key: l.key,
+            title: l.title,
+            paths: l.members.map((m) => m.path),
+            roles: l.members.map((m) => m.role),
+            audiences: l.members.map((m) => m.audience),
+            titles: l.members.map((m) => m.title),
+            pages: l.pages,
+            videos: l.videos,
+          })),
+        })),
+      }),
+    };
+  },
+};
 
 /** Reader for a root `manifest.json` (version 1): declared sections, lessons, roles. */
 export const manifestBundleReader: BundleReader = {
@@ -501,8 +560,7 @@ export const plainBundleReader: BundleReader = {
                 (m.kind === 'pdf' ||
                   m.kind === 'image' ||
                   m.kind === 'text' ||
-                  m.kind === 'docx' ||
-                  m.kind === 'pptx'),
+                  isOfficeDocumentKind(m.kind)),
             )
             .map((m) => m.path),
         );
@@ -542,6 +600,7 @@ export const plainBundleReader: BundleReader = {
 
 export function createBundleReaderRegistry(): BundleReaderRegistry {
   return new BundleReaderRegistry()
+    .register(manifestV2BundleReader)
     .register(manifestBundleReader)
     .register(plainBundleReader);
 }
@@ -571,8 +630,62 @@ export interface CourseBundlePlan {
   /** Where each member was placed. */
   placements: Map<
     string,
-    { sectionKey: string | null; lessonKey: string | null; role: string }
+    {
+      sectionKey: string | null;
+      lessonKey: string | null;
+      role: string;
+      /** Version 2: the effective audience, `''` when none was declared. */
+      audience: MaterialAudience | '';
+    }
   >;
+  /** Version 2: what the bundle contributes as lesson and course material. */
+  materials: BundleMaterialsPlan;
+}
+
+/** One file material: a member placed under a lesson or the course with a role and audience. */
+export interface BundleMaterial {
+  scope: 'course' | 'lesson';
+  sectionKey: string | null;
+  lessonKey: string | null;
+  /** The member as declared. */
+  path: string;
+  /** The member that holds the bytes: `path`, or the earlier identical member when `path` is a duplicate. */
+  assetPath: string;
+  kind: ClassifiedBundleMember['kind'];
+  sha256: string;
+  role: LessonAssetRelationship;
+  audience: MaterialAudience;
+  title: string;
+  sortOrder: number;
+}
+/** One lesson page: page `sourcePageNumber` of a paged member (the rendered PDF for Office). */
+export interface BundlePage {
+  sectionKey: string;
+  lessonKey: string;
+  pageKey: string;
+  label: string;
+  sortOrder: number;
+  /** The member as declared. */
+  path: string;
+  assetPath: string;
+  sourcePageNumber: number;
+}
+export interface BundleVideo {
+  sectionKey: string;
+  lessonKey: string;
+  provider: 'youtube';
+  videoId: string;
+  title: string;
+  stepOrder: number;
+  audience: MaterialAudience;
+}
+/** The materials a version 2 manifest asks for. Empty for version 1 and plain file sets. */
+export interface BundleMaterialsPlan {
+  materials: BundleMaterial[];
+  pages: BundlePage[];
+  videos: BundleVideo[];
+  /** Declared members that could not be used (unsupported, refused), with the member's reason. */
+  skipped: Array<{ path: string; reason: string }>;
 }
 
 /** Stable identity of the bundle's contents: sorted (path, hash) pairs. */
@@ -642,7 +755,7 @@ export function planClassifiedBundle(
   for (const member of classified) {
     if (
       member.status !== 'accepted' ||
-      (member.kind !== 'docx' && member.kind !== 'pptx') ||
+      !isOfficeDocumentKind(member.kind) ||
       !member.sha256
     )
       continue;
@@ -679,7 +792,7 @@ export function planClassifiedBundle(
   const placements: CourseBundlePlan['placements'] = new Map(
     ordered.map((m) => [
       m.path,
-      { sectionKey: null, lessonKey: null, role: '' },
+      { sectionKey: null, lessonKey: null, role: '', audience: '' },
     ]),
   );
   for (const section of structure.sections)
@@ -689,8 +802,16 @@ export function planClassifiedBundle(
           sectionKey: section.key,
           lessonKey: lesson.key,
           role: lesson.roles[i] ?? '',
+          audience: lesson.audiences?.[i] ?? '',
         });
       });
+  for (const member of structure.courseMembers ?? [])
+    placements.set(member.path, {
+      sectionKey: null,
+      lessonKey: null,
+      role: member.role,
+      audience: member.audience,
+    });
   const plan: CourseBundlePlan = {
     readerId: prepared.readerId,
     manifestVersion: prepared.manifestVersion,
@@ -698,9 +819,133 @@ export function planClassifiedBundle(
     members: ordered,
     structure,
     placements,
+    materials: planBundleMaterials(structure, ordered),
   };
   // Check lesson bodies at import time so an over-cap lesson writes nothing.
   bundleProposalOutput(plan, limits);
+  return plan;
+}
+
+const PAGEABLE = new Set<ClassifiedBundleMember['kind']>([
+  'pdf',
+  'docx',
+  'pptx',
+  'xlsx',
+]);
+
+/**
+ * Resolve a version 2 structure into material, page and video rows. A declared
+ * member that did not survive classification (unsupported, refused, failed
+ * rendering) is skipped, never half-applied; a duplicate member resolves to the
+ * earlier identical member's bytes. A page range over a member that cannot be
+ * paged (text, image) is a refusal of the bundle.
+ */
+export function planBundleMaterials(
+  structure: BundleStructure,
+  ordered: readonly ClassifiedBundleMember[],
+): BundleMaterialsPlan {
+  const plan: BundleMaterialsPlan = {
+    materials: [],
+    pages: [],
+    videos: [],
+    skipped: [],
+  };
+  const byName = new Map(ordered.map((m) => [m.path, m]));
+  const usable = (path: string): ClassifiedBundleMember | null => {
+    const member = byName.get(path);
+    if (!member) return null;
+    if (member.status === 'accepted') return member;
+    if (member.status === 'duplicate' && member.duplicateOf) {
+      const original = byName.get(member.duplicateOf);
+      return original?.status === 'accepted' ? original : null;
+    }
+    plan.skipped.push({ path, reason: member.reason ?? member.status });
+    return null;
+  };
+  const add = (
+    scope: BundleMaterial['scope'],
+    where: { sectionKey: string; lessonKey: string } | null,
+    decl: ManifestV2['courseMembers'][number],
+    sortOrder: number,
+  ) => {
+    const holder = usable(decl.path);
+    if (!holder?.sha256) return;
+    // The same bytes under the same role in the same place are one material.
+    if (
+      plan.materials.some(
+        (m) =>
+          m.scope === scope &&
+          m.lessonKey === (where?.lessonKey ?? null) &&
+          m.role === decl.role &&
+          m.sha256 === holder.sha256,
+      )
+    )
+      return;
+    plan.materials.push({
+      scope,
+      sectionKey: where?.sectionKey ?? null,
+      lessonKey: where?.lessonKey ?? null,
+      path: decl.path,
+      assetPath: holder.path,
+      kind: holder.kind,
+      sha256: holder.sha256,
+      role: decl.role,
+      audience: decl.audience,
+      title: decl.title,
+      sortOrder,
+    });
+  };
+  for (const [i, decl] of (structure.courseMembers ?? []).entries())
+    add('course', null, decl, i);
+  for (const section of structure.sections)
+    for (const lesson of section.lessons) {
+      const where = { sectionKey: section.key, lessonKey: lesson.key };
+      lesson.paths.forEach((path, i) => {
+        const role = lesson.roles[i];
+        if (!role || !lesson.audiences?.[i]) return;
+        add(
+          'lesson',
+          where,
+          {
+            path,
+            role: role as LessonAssetRelationship,
+            audience: lesson.audiences[i] as MaterialAudience,
+            title: lesson.titles?.[i] ?? '',
+          },
+          i,
+        );
+      });
+      const keys = new Set<string>();
+      let order = 0;
+      for (const range of lesson.pages ?? []) {
+        const member = byName.get(range.member);
+        if (
+          member &&
+          (member.status === 'accepted' || member.status === 'duplicate') &&
+          !PAGEABLE.has(member.kind)
+        )
+          refuse('manifest_pages', `${lesson.key}:${range.member}`);
+        const holder = usable(range.member);
+        for (let n = range.from; n <= range.to; n++) {
+          const pageKey = `p${n}`;
+          if (keys.has(pageKey))
+            refuse('manifest_pages', `${lesson.key}:${pageKey}`);
+          keys.add(pageKey);
+          if (!holder) continue;
+          plan.pages.push({
+            ...where,
+            pageKey,
+            label: range.label ? `${range.label} ${n}` : `Page ${n}`,
+            sortOrder: order++,
+            path: range.member,
+            assetPath: holder.path,
+            sourcePageNumber: n,
+          });
+        }
+      }
+      for (const video of lesson.videos ?? [])
+        plan.videos.push({ ...where, ...video });
+    }
   return plan;
 }
 
@@ -712,9 +957,12 @@ export function bundleProposalOutput(
   const byName = new Map(plan.members.map((m) => [m.path, m]));
   // Answer-key and mixed members stay recorded evidence but never become
   // learner-visible lesson text, whatever the manifest says about the lesson.
+  // Under manifest version 2 audience decides: only learner-audience text may
+  // reach a lesson body, so teacher guides and guidance never do.
   const withheldRole = (path: string) => {
-    const role = plan.placements.get(path)?.role;
-    return role === 'answer_key' || role === 'mixed';
+    const placed = plan.placements.get(path);
+    if (placed?.audience) return placed.audience !== 'learner';
+    return placed?.role === 'answer_key' || placed?.role === 'mixed';
   };
   let withheld = 0;
   const lessons = plan.structure.sections.flatMap((section) =>

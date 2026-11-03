@@ -84,7 +84,7 @@ too long or deep). An **honestly** oversize member (declared over
 
 ## Members and statuses
 
-By content (never by extension alone): `docx`/`pptx` (see below), `pdf` (`%PDF-` in the first 1 KiB),
+By content (never by extension alone): `docx`/`pptx`/`xlsx` (see below), `pdf` (`%PDF-` in the first 1 KiB),
 `image` (PNG, JPEG, WebP), `text` (`.txt`/`.md`, strict UTF-8, no control
 characters, body-sized), `manifest` (root `manifest.json`), else `unsupported`.
 Status: `accepted` (handed to extraction), `duplicate` (same sha256 as an earlier
@@ -97,9 +97,11 @@ on literal text inside an uncompressed stream is refused, never read.
 
 ## Word and PowerPoint members (SMRT #4615)
 
-A `.docx`/`.pptx` member is an OOXML package only when the name and the content
-agree: a zip whose entries include `[Content_Types].xml` and `word/document.xml`
-(docx) or `ppt/presentation.xml` (pptx). Before the bytes go anywhere, the
+A `.docx`/`.pptx`/`.xlsx` member is an OOXML package only when the name and the
+content agree: a zip whose entries include `[Content_Types].xml` and
+`word/document.xml` (docx), `ppt/presentation.xml` (pptx) or `xl/workbook.xml`
+(xlsx). A workbook (a supply list) is rendered and kept like the others but has
+no text reader. Before the bytes go anywhere, the
 package itself passes the same bounded zip reader (ratio, overlap, paths, CRC,
 100 MiB inflated); a failure is `refused / unsafe_office`, never a refusal of the
 whole bundle. Other zips stay `unsupported / nested_archive`.
@@ -158,10 +160,15 @@ network**, its own size/time limits and no shared volume with the app; this
 package assumes untrusted files never run next to the application. Tests use
 `FakeDocumentConverter` (records calls; `failWith`, `failWhen`, `delayMs`, `output`).
 
-`OfficeTextReader` is deliberately not wired to the SDK here, so this package
-does not depend on an unreleased `@happyvertical/documents`. Once the Office
-processors ship (sdk#1485, `extractOffice(bytes, 'docx' | 'pptx')`), implement
-`read` with it; the snippet is in the `OfficeTextReader` doc comment.
+`OfficeTextReader` reads Office text through the SDK without this package
+depending on `@happyvertical/documents`: the host imports `extractOffice`
+(released in `@happyvertical/documents` 0.111.4, sdk#1486, Kreuzberg) and passes
+it to `createOfficeTextReader(extractOffice)`, which returns whole-document
+text for Word and text plus speaker notes per slide for PowerPoint (images are
+never requested). An absent engine reads as `null`; a corrupt file rejects and
+the importer treats that as "no text". The repository's current `catalog:`
+pin is 0.111.3, which predates the Office processors, so the host bumps the SDK
+set (and its minimum release age) before it can import `extractOffice`.
 
 ## Manifest (`manifest.json`, version 1, closed)
 
@@ -186,10 +193,96 @@ are never inlined. Members whose declared role is `answer_key` or `mixed` never
 contribute text to a lesson body (they remain recorded evidence members); the
 proposal rationale only counts how many were withheld.
 
+## Manifest version 2 (SMRT #4615)
+
+A root `manifest.json` with `"version": 2` is laid out by the `manifest-v2`
+reader; version 1 keeps its own reader and page roles. The schema is closed in
+the same way: an unknown key anywhere is `manifest_unknown_key` (with its path in
+`entry`), another version is `manifest_version`.
+
+```json
+{ "version": 2, "course": { "subject": "Science" },
+  "courseMembers": [ { "path": "unit/supplies.pdf", "role": "attachment", "title": "Supply list" } ],
+  "sections": [ { "key": "unit", "title": "Unit", "lessons": [ {
+    "key": "l1", "title": "Lesson 1",
+    "members": [ { "path": "l1/log.docx", "role": "learner-pages" },
+                 { "path": "l1/deck.pptx", "role": "slides" },
+                 { "path": "l1/guidance.pdf", "role": "assessment-guidance" } ],
+    "pages":  [ { "member": "l1/log.docx", "from": 1, "to": 4, "label": "Mission log" } ],
+    "videos": [ { "reference": "dQw4w9WgXcQ", "title": "Recap", "step": 1 } ] } ] } ] }
+```
+
+- **Members** (lesson `members` and root `courseMembers`): `path` (must exist, listed
+  once), `role` (required) one of `teacher-guide`, `slides`, `learner-pages`,
+  `assessment`, `assessment-guidance`, `handout`, `printable`, `answer-key`,
+  `attachment` (`manifest_role` otherwise; a video is a reference, never a file),
+  optional `audience` and `title`. The audience is the role default
+  (`LESSON_ASSET_DEFAULT_AUDIENCE`) unless stated; `answer-key` and
+  `assessment-guidance` are always guardian (a learner audience is
+  `manifest_audience`). Members not listed stay recorded evidence with no role.
+- **Pages**: `{ member, from, to, label? }` ranges over a member of the same lesson
+  (PDF, Word or PowerPoint; the rendered PDF for Office). Each page becomes a
+  `LessonPage` keyed `p<n>`, labelled `<label> <n>` (default `Page <n>`), ordered by
+  declaration. Bad, overlapping or unpageable ranges are `manifest_pages`; at most
+  500 pages per lesson.
+- **Videos**: `{ reference, title, step, audience? }` where `reference` is a bare id
+  or an allowlisted https YouTube URL (`parseYouTubeReference`; anything else is
+  `manifest_video`), `step` an integer 0-9999. They become `LessonExternalVideo`
+  rows; nothing is downloaded.
+- **Course members** become `CourseAsset` rows, not tied to any lesson.
+
+Guardian-audience text (teacher guides, guidance, keys) never enters a proposed
+lesson body; only learner-audience text members do. Under v2 `role` on the member
+evidence row is the material role and `audience` the effective audience (NULL on
+rows recorded before v2). The plan carries `materials` (also on
+`CourseBundleImportResult.materials`): the resolved materials, pages and videos,
+plus `skipped` for declared members that were unsupported, refused or failed
+rendering. A duplicate member resolves to the earlier identical member's bytes
+(`assetPath`) and one material per (place, role, content).
+
+`receiveMember` also gets `audience` and `courseLevel`. **Slides** keep the original
+deck (hand `bytes` to the host as a private asset: "Open in PowerPoint") and its
+rendered pages (`rendered`: "Present").
+
+### Applying materials
+
+`applyMaterials({ ...actor, importId, bundle, courseId, lessons, assets })`
+(`education.course.author`, operation `apply-course-bundle-materials`) writes the
+rows in one transaction. The host has stored each accepted member as a private
+asset and created the course's lessons: `lessons` maps manifest lesson key to the
+`Lesson` id, `assets` maps member path to `{ original, rendered }` asset ids.
+Slides join both the original deck and the rendered PDF; the original join is always
+guardian-only whatever the deck's declared audience (the audience applies to the
+rendered PDF), and a join written earlier with a wider audience is repaired on
+re-apply (`repaired`); any other Word/PowerPoint
+member joins only its rendered PDF, so a learner is never handed an editable
+original. `LessonAsset`/`CourseAsset` saves keep their private-asset rule (guardian-
+only roles and personal-use-copy courses need private assets). It targets
+family-owned courses; an authored course is `authored-course` because authored
+material changes through course authoring. Idempotent: an identical row is
+`unchanged`, a row with other details is `CourseBundleMaterialsError('conflict')`,
+a missing asset or lesson is `asset-missing`/`lesson-missing`; any error writes
+nothing.
+
+### Retrying a failed rendering
+
+`retryRendering({ ...actor, importId, bundle, paths?, receiveMember? })`
+(`education.course.author`, operation `retry-course-bundle-rendering`, needs a
+converter) renders the Word/PowerPoint members whose first import recorded a
+*transient* failure (`converter_unavailable`, `converter_failed`,
+`converter_timeout`; `COURSE_BUNDLE_RETRYABLE_REASONS`). The first import's member
+rows are never rewritten. A success appends one `course_bundle_renderings` row
+per (import, content hash); every reader (`readImport`, replayed imports,
+proposals) overlays it, so the member reads `accepted` (identical copies as
+duplicates) with its rendered hash. A failure records nothing, so asking again is
+always allowed; a second retry of a repaired member is `unchanged` and renders
+nothing. Converter rejections, size limits and the Office member cap are not
+retryable: change the bundle. The bundle must be the imported one.
+
 ## Readers
 
 `BundleReader { formatId, detect, prepare }` in a `BundleReaderRegistry`;
-built-ins are `manifest-v1` and `plain-files`. SCORM and Common Cartridge are
+built-ins are `manifest-v2`, `manifest-v1` and `plain-files`. SCORM and Common Cartridge are
 **not implemented** (their manifests describe launch resources and activity
 trees that do not map to sections/lessons without design); a host can register
 a reader ahead of the built-ins (`register(reader, { first: true })`).
@@ -203,20 +296,17 @@ re-zipping, reordering and timestamps replay. One `CourseBundleImport` per
 ## Models (closed, required tenant, no REST/CLI/MCP/AI, append-only)
 
 `CourseBundleImport` (`course_bundle_imports`: identity, format, reader,
-manifest version, counts, actor) and `CourseBundleMember` (`course_bundle_members`:
+manifest version, counts, actor), `CourseBundleMember` (`course_bundle_members`:
 unique tenant/import/path; ordinal, sha256, size, media type, kind, status,
-reason, duplicate-of, role, section and lesson key). Hashes and placements only:
+reason, duplicate-of, role, audience, section and lesson key) and
+`CourseBundleRendering` (`course_bundle_renderings`: a deliberate retry's success). Hashes and placements only:
 bytes stay with the host's ingestion receipts. Rewrites and deletes throw.
-Normal manifest migrations create both tables.
+Normal manifest migrations create the tables and add `audience` (NULL on older rows).
 
 ## Not in this release
 
-- Manifest version 2 (material roles with audience, lesson pages, course-level
-  members, external video references) waits for the phase 1 role vocabulary
-  (smrt#4614). The page-role vocabulary and the closed v1 schema are unchanged;
-  see the hand-off note on smrt#4615.
-- Re-rendering a member whose first import recorded a converter failure (outcomes
-  are append-only per bundle identity).
+- Material rows for authored courses: a proposal still carries lesson text only;
+  authored course material goes through `CourseMaterialInput` and release.
 - Ingestion's receipt contract is unchanged: there is no `application/zip` part
   type or `parentEvidenceId` in ingestion. The education side unpacks and the
   host receives members one by one, so archive-to-member lineage lives in

@@ -707,7 +707,7 @@ describe('classification and planning', () => {
     });
 
     it('refuses a bad version, shape, role, key and member reference', () => {
-      bad((m) => ({ ...m, version: 2 }), 'manifest_version');
+      bad((m) => ({ ...m, version: 3 }), 'manifest_version');
       bad((m) => ({ ...m, version: undefined }), 'manifest_version');
       bad(() => [], 'manifest_invalid');
       bad((m) => {
@@ -764,6 +764,7 @@ describe('classification and planning', () => {
     );
     expect(registry.formats()).toEqual([
       'custom',
+      'manifest-v2',
       'manifest-v1',
       'plain-files',
     ]);
