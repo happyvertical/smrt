@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.60.1
+
+### Patch Changes
+
+- ### Features
+  
+  - readable Class CrunchLabs lesson and material titles (#4643) (education)
+- @happyvertical/smrt-config@0.60.1
+  - @happyvertical/smrt-scanner@0.60.1
+  - @happyvertical/smrt-types@0.60.1
+
 ## 0.60.0
 
 ### Minor Changes
