@@ -37,7 +37,7 @@ structure and `applyMaterials` per part as for any bundle. Courses are
 
 `buildClassCrunchLabsBundle({ files, playlists?, unit?, pageCounter?,
 includeUnitWideAggregates?, maxPartBytes? })` takes a `ClassCrunchLabsFileSource`:
-`folderClassCrunchLabsSource(dir)` (Node: a folder, the Drive zip parts, or both;
+`folderClassCrunchLabsSource(dir)` (Node only, from `@happyvertical/smrt-education/node`, never the root: a folder, the Drive zip parts, or both;
 zips are read lazily from their central directory, zip64/encrypted/symlinks are
 skipped) or `memoryClassCrunchLabsSource(files)`. It never reads video files.
 

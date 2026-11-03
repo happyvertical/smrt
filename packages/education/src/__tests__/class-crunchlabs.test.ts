@@ -27,7 +27,6 @@ import {
   createClassCrunchLabsCatalogAdapter,
   createClassCrunchLabsPageCounter,
   FakeDocumentConverter,
-  folderClassCrunchLabsSource,
   matchClassCrunchLabsVideos,
   memoryClassCrunchLabsSource,
   parseClassCrunchLabsVideoName,
@@ -36,6 +35,7 @@ import {
   planCourseBundle,
   readFileSet,
 } from '../index.js';
+import { folderClassCrunchLabsSource } from '../node.js';
 import { buildZip, tinyPdf } from './bundle-zip-writer.js';
 import { learnerClasses, learnerFixture } from './learner-workflows.js';
 import { officeDocx, officePptx, officeXlsx } from './office-fixtures.js';

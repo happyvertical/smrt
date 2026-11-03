@@ -435,7 +435,6 @@ export type {
 } from './source-import-service.js';
 export { SourceImportService } from './source-import-service.js';
 export * from './sources/class-crunchlabs.js';
-export { folderClassCrunchLabsSource } from './sources/class-crunchlabs-files.js';
 export type {
   ParsedSourceCourse,
   ParsedSourceLesson,
