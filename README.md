@@ -228,6 +228,7 @@ Status legend:
 
 | Package | Status | Purpose |
 | --- | --- | --- |
+| [`smrt-bookings`](./packages/bookings/README.md) | Preview | Operator-managed service reservations and provider capacity. |
 | [`smrt-commerce`](./packages/commerce/README.md) | Stable | Customers, vendors, contracts, invoices, and fulfillment. |
 | [`smrt-products`](./packages/products/README.md) | Stable | Product catalog and triple-consumption package template. |
 | [`smrt-sales`](./packages/sales/README.md) | Preview | Agreements, CRM, referrals, commissions, and sales surfaces. |

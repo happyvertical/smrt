@@ -120,3 +120,6 @@ public accounting SDK without changing statutory percentages or declared taxes.
 Missing/mismatched configuration fails explicitly. Hosts own tenant-scoped review
 and provenance of the existing realm code's applicability/order; a taxCodeRef
 string alone is insufficient evidence. Use the SDK release containing sdk#1412.
+
+The [QuickBooks invoice pilot](quickbooks-pilot.md) uses the same persisted
+reservation and request descriptor for accepted quote obligations.
