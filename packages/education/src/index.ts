@@ -351,8 +351,7 @@ export {
 } from './learner-service.js';
 export type { EnrollmentStatus, LessonProgressStatus } from './learners.js';
 export { Curriculum, Enrollment, Learner, LessonProgress } from './learners.js';
-export type { LessonAssetRelationship } from './lesson-assets.js';
-export { LessonAsset } from './lesson-assets.js';
+export * from './lesson-assets.js';
 export * from './lesson-pages.js';
 export {
   WorkCompletionDecision,
@@ -445,6 +444,7 @@ export { parseOerCommonsRssFeed } from './sources/oer-commons-rss-parser.js';
 export type { PublicIllustrativeMathematicsFirstEditionConfig } from './sources/public-illustrative-mathematics-adapter.js';
 export { createPublicIllustrativeMathematicsFirstEditionAdapter } from './sources/public-illustrative-mathematics-adapter.js';
 export type {
+  LessonMaterialView,
   SubmissionAssetClaim,
   SubmissionIntake,
   SubmissionPage,

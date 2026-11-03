@@ -29,6 +29,16 @@ import {
   LearnerValidationError,
   requirePolicyBasis,
 } from './learner-service.js';
+import {
+  CourseAssetCollection,
+  type ExternalVideoProvider,
+  externalVideoEmbedUrl,
+  type LessonAssetRelationship,
+  LessonExternalVideoCollection,
+  type MaterialAudience,
+  materialAudience,
+  parseYouTubeReference,
+} from './lesson-assets.js';
 import { validLessonPageKey } from './lesson-pages.js';
 import {
   readWorkCompletion,
@@ -151,6 +161,32 @@ export class LessonWorkWorkflowRequiredError extends Error {
     this.name = 'LessonWorkWorkflowRequiredError';
   }
 }
+
+/** An external video reference is not an allowlisted YouTube id or URL. */
+export class ExternalVideoReferenceError extends LearnerValidationError {
+  constructor() {
+    super('Videos must be a YouTube video id or youtube.com / youtu.be link');
+    this.name = 'ExternalVideoReferenceError';
+  }
+}
+
+/** One material as a learner or guardian may see it. */
+export type LessonMaterialView = Readonly<{
+  id: string;
+  kind: 'file' | 'external-video';
+  scope: 'lesson' | 'course';
+  relationship: LessonAssetRelationship;
+  audience: MaterialAudience;
+  title: string;
+  /** Sort order for files, step order for videos. */
+  order: number;
+  /** Files only; sign with `signLessonMaterial` / `signCourseMaterial`. */
+  assetId: string | null;
+  provider: ExternalVideoProvider | null;
+  videoId: string | null;
+  /** Privacy-enhanced embed URL for an external video. */
+  embedUrl: string | null;
+}>;
 
 /** The page key a file carries: its own, or `p<position>` for older rows. */
 export function submissionPageKey(pageKey: string, sortOrder: number): string {
@@ -1353,6 +1389,428 @@ export class SubmissionService extends LearnerService {
     return { url, expiresAt };
   }
   /** Sign only an exact authorized printable join; answer keys never qualify. */
+  /** Whether the actor is the learner themself (learner audience only). */
+  private async learnerAudienceOnly(request: LearnerRequest) {
+    const learner = await this.getLearner(request);
+    return learner.userId === request.actorUserId;
+  }
+  private visibleTo(
+    learnerOnly: boolean,
+    relationship: string,
+    audience: string,
+  ): boolean {
+    return (
+      !learnerOnly || materialAudience(relationship, audience) === 'learner'
+    );
+  }
+  private async materialName(assetId: string) {
+    const asset = await this.db.get('assets', { id: assetId });
+    return String(asset?.name ?? '');
+  }
+  /**
+   * A lesson's materials for this actor: files by role and audience, then
+   * external video references in step order. A learner sees only
+   * learner-audience material; keys and guidance never reach them.
+   */
+  async listLessonMaterials(
+    request: LessonRequest,
+  ): Promise<LessonMaterialView[]> {
+    const enrollment = await this.requireEnrollment(
+      request,
+      'education.learner.read',
+    );
+    if (!(await this.lessonInScope(request, enrollment, request.lessonId)))
+      throw new LearnerAuthorizationError();
+    const lesson = await this.db.get('lessons', { id: request.lessonId });
+    if (!lesson) throw new LearnerAuthorizationError();
+    const tenant = lesson.tenant_id ?? null;
+    const learnerOnly = await this.learnerAudienceOnly(request);
+    const files = (
+      await this.db.list('lesson_assets', { lesson_id: request.lessonId })
+    )
+      .filter(
+        (row) =>
+          (row.tenant_id ?? null) === tenant &&
+          this.visibleTo(
+            learnerOnly,
+            String(row.relationship),
+            String(row.audience ?? ''),
+          ),
+      )
+      .sort(
+        (a, b) =>
+          Number(a.sort_order) - Number(b.sort_order) ||
+          String(a.id).localeCompare(String(b.id)),
+      );
+    const videos = (await this.db.tableExists('lesson_external_videos'))
+      ? (
+          await this.db.list('lesson_external_videos', {
+            lesson_id: request.lessonId,
+          })
+        )
+          .filter(
+            (row) =>
+              (row.tenant_id ?? null) === tenant &&
+              this.visibleTo(learnerOnly, 'video', String(row.audience ?? '')),
+          )
+          .sort(
+            (a, b) =>
+              Number(a.step_order) - Number(b.step_order) ||
+              String(a.id).localeCompare(String(b.id)),
+          )
+      : [];
+    const result: LessonMaterialView[] = [];
+    for (const row of files)
+      result.push({
+        id: String(row.id),
+        kind: 'file',
+        scope: 'lesson',
+        relationship: row.relationship as LessonAssetRelationship,
+        audience: materialAudience(
+          String(row.relationship),
+          String(row.audience ?? ''),
+        ),
+        title: await this.materialName(String(row.asset_id)),
+        order: Number(row.sort_order) || 0,
+        assetId: String(row.asset_id),
+        provider: null,
+        videoId: null,
+        embedUrl: null,
+      });
+    for (const row of videos)
+      result.push({
+        id: String(row.id),
+        kind: 'external-video',
+        scope: 'lesson',
+        relationship: 'video',
+        audience: materialAudience('video', String(row.audience ?? '')),
+        title: String(row.title),
+        order: Number(row.step_order) || 0,
+        assetId: null,
+        provider: row.provider as ExternalVideoProvider,
+        videoId: String(row.video_id),
+        embedUrl: externalVideoEmbedUrl(
+          row.provider as ExternalVideoProvider,
+          String(row.video_id),
+        ),
+      });
+    return result;
+  }
+  /** Course-level materials (supply lists, posters) under the same audience rule. */
+  async listCourseMaterials(
+    request: LearnerRequest & { enrollmentId: string },
+  ): Promise<LessonMaterialView[]> {
+    const enrollment = await this.requireEnrollment(
+      request,
+      'education.learner.read',
+    );
+    if (!(await this.db.tableExists('course_assets'))) return [];
+    const course = await this.db.get('courses', { id: enrollment.courseId });
+    if (!course) throw new LearnerAuthorizationError();
+    const learnerOnly = await this.learnerAudienceOnly(request);
+    const rows = (
+      await this.db.list('course_assets', { course_id: enrollment.courseId })
+    )
+      .filter(
+        (row) =>
+          (row.tenant_id ?? null) === (course.tenant_id ?? null) &&
+          this.visibleTo(
+            learnerOnly,
+            String(row.relationship),
+            String(row.audience ?? ''),
+          ),
+      )
+      .sort(
+        (a, b) =>
+          Number(a.sort_order) - Number(b.sort_order) ||
+          String(a.id).localeCompare(String(b.id)),
+      );
+    const result: LessonMaterialView[] = [];
+    for (const row of rows)
+      result.push({
+        id: String(row.id),
+        kind: 'file',
+        scope: 'course',
+        relationship: row.relationship as LessonAssetRelationship,
+        audience: materialAudience(
+          String(row.relationship),
+          String(row.audience ?? ''),
+        ),
+        title:
+          String(row.title ?? '') ||
+          (await this.materialName(String(row.asset_id))),
+        order: Number(row.sort_order) || 0,
+        assetId: String(row.asset_id),
+        provider: null,
+        videoId: null,
+        embedUrl: null,
+      });
+    return result;
+  }
+  private async signMaterial(
+    request: LearnerRequest & { enrollmentId: string },
+    scope: string,
+    assetId: string,
+  ) {
+    if (!this.options.signAsset) throw new LearnerAuthorizationError();
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
+    const url = await this.options.signAsset(
+      Object.freeze({
+        enrollmentId: request.enrollmentId,
+        tenantId: request.tenantId,
+        actorUserId: request.actorUserId,
+        learnerId: request.learnerId,
+        submissionId: scope,
+        assetId,
+        expiresAt,
+      }),
+    );
+    return { url, expiresAt };
+  }
+  /** Sign one lesson file the actor may see (learners: learner audience only). */
+  async signLessonMaterial(
+    request: LessonRequest & { materialId: string },
+  ): Promise<{ url: string; expiresAt: Date }> {
+    const visible = await this.listLessonMaterials(request);
+    const material = visible.find(
+      (m) => m.kind === 'file' && m.id === request.materialId,
+    );
+    if (!material?.assetId) throw new LearnerAuthorizationError();
+    return this.signMaterial(
+      request,
+      `lesson:${request.lessonId}`,
+      material.assetId,
+    );
+  }
+  /** Sign one course-level file the actor may see. */
+  async signCourseMaterial(
+    request: LearnerRequest & { enrollmentId: string; materialId: string },
+  ): Promise<{ url: string; expiresAt: Date }> {
+    const enrollment = await this.requireEnrollment(
+      request,
+      'education.learner.read',
+    );
+    const visible = await this.listCourseMaterials(request);
+    const material = visible.find((m) => m.id === request.materialId);
+    if (!material?.assetId) throw new LearnerAuthorizationError();
+    return this.signMaterial(
+      request,
+      `course:${enrollment.courseId}`,
+      material.assetId,
+    );
+  }
+  /** Re-save a family material join under the exact private-asset capability. */
+  private async saveFamilyMaterial(
+    request: LearnerRequest,
+    assetId: string,
+    save: () => Promise<unknown>,
+  ) {
+    const asset = await this.db.get('assets', {
+      id: assetId,
+      tenant_id: request.tenantId,
+    });
+    if (!asset) throw new LearnerAuthorizationError();
+    if (!asset.owner_profile_id) return save();
+    return withPrivateAssetAccess(
+      {
+        tenantId: request.tenantId,
+        actorUserId: request.actorUserId,
+        ownerProfileId: String(asset.owner_profile_id),
+        assetIds: [assetId],
+      },
+      save,
+    );
+  }
+  /** Family-owned, non-authored course rows only; authored material changes through authoring. */
+  private async familyMaterialCourse(
+    request: LearnerRequest,
+    courseId: string,
+  ) {
+    const course = await this.db.get('courses', {
+      id: courseId,
+      tenant_id: request.tenantId,
+    });
+    if (!course) throw new LearnerAuthorizationError();
+    if (['authored', 'authored-release'].includes(String(course.source_key)))
+      throw new LearnerValidationError(
+        'Authored course material changes through course authoring',
+      );
+    return course;
+  }
+  /**
+   * Change who a family-owned material is for, within its role's bounds
+   * (keys and assessment guidance stay guardian-only). Guardian planning.
+   */
+  async setMaterialAudience(
+    request: LearnerRequest & {
+      enrollmentId: string;
+      scope: 'lesson' | 'course';
+      kind: 'file' | 'external-video';
+      materialId: string;
+      audience: MaterialAudience;
+    },
+  ): Promise<LessonMaterialView> {
+    return this.mutate(async (service) => {
+      const enrollment = await service.requireEnrollment(
+        request,
+        'education.learner.plan',
+      );
+      if (await service.learnerAudienceOnly(request))
+        throw new LearnerAuthorizationError();
+      if (request.scope === 'course') {
+        if (request.kind !== 'file') throw new LearnerAuthorizationError();
+        await service.familyMaterialCourse(request, enrollment.courseId);
+        const row = await (
+          await CourseAssetCollection.create({ db: service.db })
+        ).get(
+          {
+            id: request.materialId,
+            tenantId: request.tenantId,
+            courseId: enrollment.courseId,
+          },
+          { cache: false },
+        );
+        if (!row) throw new LearnerAuthorizationError();
+        if (
+          materialAudience(row.relationship, request.audience) !==
+          request.audience
+        )
+          throw new LearnerValidationError('Invalid material audience');
+        row.audience = request.audience;
+        await service.saveFamilyMaterial(request, row.assetId, () =>
+          row.save(),
+        );
+        const view = (await service.listCourseMaterials(request)).find(
+          (m) => m.id === request.materialId,
+        );
+        if (!view) throw new LearnerAuthorizationError();
+        return view;
+      }
+      const table =
+        request.kind === 'file' ? 'lesson_assets' : 'lesson_external_videos';
+      const raw = await service.db.get(table, {
+        id: request.materialId,
+        tenant_id: request.tenantId,
+      });
+      if (
+        !raw ||
+        !(await service.lessonInScope(
+          request,
+          enrollment,
+          String(raw.lesson_id),
+        ))
+      )
+        throw new LearnerAuthorizationError();
+      const lesson = await service.db.get('lessons', { id: raw.lesson_id });
+      const section =
+        lesson &&
+        (await service.db.get('course_sections', { id: lesson.section_id }));
+      await service.familyMaterialCourse(request, String(section?.course_id));
+      const row =
+        request.kind === 'file'
+          ? await (await LessonAssetCollection.create({ db: service.db })).get(
+              { id: request.materialId, tenantId: request.tenantId },
+              { cache: false },
+            )
+          : await (
+              await LessonExternalVideoCollection.create({ db: service.db })
+            ).get(
+              { id: request.materialId, tenantId: request.tenantId },
+              { cache: false },
+            );
+      if (!row) throw new LearnerAuthorizationError();
+      const role = 'relationship' in row ? row.relationship : 'video';
+      if (materialAudience(role, request.audience) !== request.audience)
+        throw new LearnerValidationError('Invalid material audience');
+      row.audience = request.audience;
+      if ('assetId' in row)
+        await service.saveFamilyMaterial(request, row.assetId, () =>
+          row.save(),
+        );
+      else await row.save();
+      const view = (
+        await service.listLessonMaterials({
+          ...request,
+          lessonId: String(raw.lesson_id),
+        })
+      ).find((m) => m.id === request.materialId);
+      if (!view) throw new LearnerAuthorizationError();
+      return view;
+    });
+  }
+  /**
+   * Add an allowlisted external video (a YouTube id or URL) to a family-owned
+   * lesson, with its title and step order. Nothing is downloaded. A replay of
+   * the same video, title, step and audience returns the same reference.
+   */
+  async addLessonVideo(
+    request: LessonRequest & {
+      reference: string;
+      title: string;
+      stepOrder: number;
+      audience?: MaterialAudience;
+    },
+  ): Promise<LessonMaterialView> {
+    return this.mutate(async (service) => {
+      const enrollment = await service.requireEnrollment(
+        request,
+        'education.learner.plan',
+      );
+      if (await service.learnerAudienceOnly(request))
+        throw new LearnerAuthorizationError();
+      if (!(await service.lessonInScope(request, enrollment, request.lessonId)))
+        throw new LearnerAuthorizationError();
+      const videoId = parseYouTubeReference(request.reference);
+      if (!videoId) throw new ExternalVideoReferenceError();
+      const lesson = await service.db.get('lessons', {
+        id: request.lessonId,
+        tenant_id: request.tenantId,
+      });
+      const section =
+        lesson &&
+        (await service.db.get('course_sections', { id: lesson.section_id }));
+      if (!section) throw new LearnerAuthorizationError();
+      await service.familyMaterialCourse(request, String(section.course_id));
+      const audience = materialAudience('video', request.audience);
+      const videos = await LessonExternalVideoCollection.create({
+        db: service.db,
+      });
+      const existing = await videos.get(
+        {
+          tenantId: request.tenantId,
+          lessonId: request.lessonId,
+          provider: 'youtube',
+          videoId,
+        },
+        { cache: false },
+      );
+      if (existing) {
+        if (
+          existing.title !== request.title ||
+          existing.stepOrder !== request.stepOrder ||
+          materialAudience('video', existing.audience) !== audience
+        )
+          throw new LearnerValidationError(
+            'The lesson already has this video with other details',
+          );
+      } else
+        await videos.create({
+          _insertOnly: true,
+          tenantId: request.tenantId,
+          lessonId: request.lessonId,
+          provider: 'youtube',
+          videoId,
+          title: request.title,
+          stepOrder: request.stepOrder,
+          audience,
+        });
+      const view = (await service.listLessonMaterials(request)).find(
+        (m) => m.kind === 'external-video' && m.videoId === videoId,
+      );
+      if (!view) throw new LearnerAuthorizationError();
+      return view;
+    });
+  }
   async signLessonPrintable(
     request: LessonRequest & { assetId: string },
   ): Promise<{ url: string; expiresAt: Date }> {
