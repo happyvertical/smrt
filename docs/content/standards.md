@@ -475,9 +475,9 @@ never disable the scan.
   `"undici@>=7.0.0 <7.24.0": "7.24.0"`). Scope the key
   to the vulnerable range so unrelated majors aren't force-bumped.
 - **Accept-with-justification.** Only when an advisory can't be remediated without
-  breaking a pinned API, or no patched release exists at all (e.g. `braces` and
-  `http-cache-semantics`, #3396), add its GHSA to `auditConfig.ignoreGhsas` in
-  `pnpm-workspace.yaml` with a `suppressed: true` record in `audit-policy.json`:
+  breaking a pinned API, or no patched release exists at all (e.g. `braces`,
+  #3396), add its GHSA to `auditConfig.ignoreGhsas` in `pnpm-workspace.yaml`
+  with a `suppressed: true` record in `audit-policy.json`:
   reachability evidence, the upstream blocker, and a `recheckBy` date.
   `pnpm audit:policy` enforces the records and fails once a record passes its
   `recheckBy` date. `pnpm audit:policy:drift` warns about every live
