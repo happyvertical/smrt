@@ -184,14 +184,48 @@ async function load(
         | Awaited<ReturnType<typeof authorizedCatalogCourses>>[number]
         | null = null;
       let lineagePrivate = false;
-      if (activity.captureKind !== 'unfiled') {
+      // Filed work is attributed to its current filing placement, under the
+      // same consent and ancestry rules as routed work. Unplaced loose work
+      // has no course metadata.
+      let placedLessonId: string | null =
+        activity.captureKind === 'unfiled' ? null : activity.lessonId;
+      let placedEnrollment = enrollment;
+      if (
+        activity.captureKind === 'unfiled' &&
+        (await db.tableExists('lesson_work_filings'))
+      ) {
+        const filings = await db.list('lesson_work_filings', {
+          tenant_id: request.familyTenantId,
+          learner_id: request.learnerId,
+          source_activity_id: String(activity.id),
+        });
+        const superseded = new Set(
+          filings
+            .map((f) => f.previous_revision_id)
+            .filter(Boolean)
+            .map(String),
+        );
+        const heads = filings.filter((f) => !superseded.has(String(f.id)));
+        if (heads.length > 1) throw denied();
+        if (heads[0]) {
+          const target = await (await EnrollmentCollection.create({ db })).get(
+            { ...where, id: String(heads[0].enrollment_id) },
+            { cache: false },
+          );
+          if (!target) throw denied();
+          placedEnrollment = target;
+          placedLessonId = String(heads[0].lesson_id);
+        }
+      }
+      if (placedLessonId) {
+        const enrollment = placedEnrollment;
         const visible = await authorizedCatalogCourses(
           db,
           request,
           proveMetadataAuthority,
         );
         const lesson = await db.get('lessons', {
-          id: activity.lessonId,
+          id: placedLessonId,
           tenant_id: request.familyTenantId,
         });
         const section = lesson

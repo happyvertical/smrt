@@ -296,3 +296,7 @@ label only; no reviewed cross-tenant read path exists for it, so it grants nothi
 Non-authored courses, answer keys and personal-use rules are untouched, and a
 database without the visibility column or release tables reads as never recorded.
 The gate is `authoredVisibilityPermitsGroups(db, tenantId, releaseCourseId)`.
+
+Filed loose work is attributed to its current filing placement (target lesson,
+enrollment and course, hence subject) under the same consent, offered-metadata and
+pin-lineage rules as routed work; unplaced loose work stays unknown metadata.

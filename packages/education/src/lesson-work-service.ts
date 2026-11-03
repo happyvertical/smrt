@@ -106,6 +106,19 @@ function deterministicId(parts: unknown[]): string {
     (Number.parseInt(hex[16], 16) & 3) | 8
   ).toString(16)}${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
 }
+/** Optional course subject: text up to 200 characters, like authored courses. */
+function courseSubject(value: unknown): string {
+  if (value === undefined || value === null || value === '') return '';
+  if (
+    typeof value !== 'string' ||
+    value.length > 200 ||
+    Array.from(value).some(
+      (c) => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127,
+    )
+  )
+    throw new Error('Invalid course subject');
+  return value.trim();
+}
 function nonempty(value: string, label: string) {
   if (typeof value !== 'string' || !value.trim() || value.length > 200)
     throw new Error(`Invalid ${label}`);
@@ -464,7 +477,12 @@ export class LessonWorkService extends SubmissionService {
   /** The family's course for a book key, created on first use. */
   protected async bookCourse(
     request: LearnerRequest,
-    book: { bookKey: string; title: string; edition?: string },
+    book: {
+      bookKey: string;
+      title: string;
+      edition?: string;
+      subject?: string;
+    },
     create = true,
   ): Promise<Course | null> {
     nonempty(book.bookKey, 'book key');
@@ -501,6 +519,8 @@ export class LessonWorkService extends SubmissionService {
       modality: 'printable',
       bookKey: book.bookKey,
       bookEdition: book.edition ?? '',
+      // Applies to a new book only; an existing book keeps its subject.
+      subject: courseSubject(book.subject),
     });
   }
   /** The learner's enrollment in a course; book courses enroll on first use. */
@@ -648,7 +668,12 @@ export class LessonWorkService extends SubmissionService {
   async fileLessonWork(
     request: ActivityRequest & {
       courseId?: string;
-      newBook?: { title: string; edition?: string; bookKey?: string };
+      newBook?: {
+        title: string;
+        edition?: string;
+        bookKey?: string;
+        subject?: string;
+      };
       lessonId?: string;
       pageKey?: string;
       pageLabel?: string;
@@ -668,8 +693,12 @@ export class LessonWorkService extends SubmissionService {
       const createsBook = request.newBook !== undefined;
       if ((request.courseId !== undefined) === createsBook)
         throw new Error('Choose exactly one existing course or new book');
-      let newBook: { bookKey: string; title: string; edition: string } | null =
-        null;
+      let newBook: {
+        bookKey: string;
+        title: string;
+        edition: string;
+        subject?: string;
+      } | null = null;
       if (createsBook) {
         const metadata = request.newBook;
         if (
@@ -695,6 +724,9 @@ export class LessonWorkService extends SubmissionService {
             `manual:${digest([request.tenantId, request.learnerId, request.activityId, request.requestKey])}`,
           title: metadata.title,
           edition: metadata.edition ?? '',
+          ...(metadata.subject !== undefined
+            ? { subject: courseSubject(metadata.subject) }
+            : {}),
         };
       } else nonempty(request.courseId as string, 'filing course');
       if (request.lessonId !== undefined)
@@ -1041,6 +1073,45 @@ export class LessonWorkService extends SubmissionService {
    * Family course work policy. A guardian needs plan authority over every
    * learner enrolled in the course; captures keep their snapshot.
    */
+  /**
+   * Set or clear (`null` or '') a family book course's subject. A guardian
+   * needs plan authority over the request learner and every learner enrolled
+   * in it; shared catalog
+   * courses and courses without book identity are refused.
+   */
+  async setBookCourseSubject(
+    request: LearnerRequest & { courseId: string; subject: string | null },
+  ): Promise<{ courseId: string; subject: string }> {
+    return this.composeMutation(async (service) => {
+      await service.requireActor(request, 'education.learner.plan');
+      await service.serialize(request);
+      const subject = courseSubject(request.subject);
+      const course = await (
+        await CourseCollection.create({ db: service.db })
+      ).get(
+        { id: request.courseId, tenantId: request.tenantId },
+        { cache: false },
+      );
+      if (!course || course.tenantId !== request.tenantId || !course.bookKey)
+        throw new LearnerAuthorizationError();
+      const enrollments = await service.db.list('enrollments', {
+        tenant_id: request.tenantId,
+        course_id: request.courseId,
+      });
+      // A book known only from a cover has no enrollments yet; the caller's
+      // plan authority over its learner is then the gate.
+      for (const learnerId of new Set(
+        enrollments.map((e) => String(e.learner_id)),
+      ))
+        await service.requireActor(
+          { ...request, learnerId },
+          'education.learner.plan',
+        );
+      course.subject = subject;
+      await course.save();
+      return { courseId: String(course.id), subject };
+    });
+  }
   async setCourseWorkPolicy(
     request: LearnerRequest & {
       courseId: string;

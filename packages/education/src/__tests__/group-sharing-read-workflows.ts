@@ -589,6 +589,52 @@ export function groupSharingReadContractTests(
           )
         ).data.toString(),
       ).toBe('synthetic unfiled completed work');
+      // Once filed, the work carries its placement's course and subject,
+      // under the same consent rules as routed work.
+      const target = await x.as(x.parent, async () =>
+        (await CourseCollection.create({ db: handle.db })).get(
+          { id: String(x.course.id) },
+          { cache: false },
+        ),
+      );
+      if (!target) throw new Error('Missing target course');
+      target.subject = 'Placed subject';
+      await x.as(x.parent, () => target.save());
+      await x.as(x.parent, () =>
+        photos.fileLessonWork({
+          ...x.parent,
+          activityId: activity.id,
+          courseId: String(x.course.id),
+          lessonId: String(x.lesson.id),
+          expectedRevisionId: null,
+          requestKey: 'file-shared',
+          reason: 'Guardian placed it',
+        }),
+      );
+      expect(
+        await x.asSupervisor(() => x.reader.getSharedWork(selector)),
+      ).toMatchObject({
+        courseId: String(x.course.id),
+        subject: 'Placed subject',
+      });
+      await x.setPolicy({
+        ...sharingPolicy(),
+        subjects: { mode: 'include' as const, values: ['Other subject'] },
+      });
+      expect(
+        (
+          await x.asSupervisor(() => x.reader.listSharedWork(x.scope))
+        ).works.map((w) => w.attemptId),
+      ).not.toContain(attempt.id);
+      await x.setPolicy({
+        ...sharingPolicy(),
+        subjects: { mode: 'include' as const, values: ['Placed subject'] },
+      });
+      expect(
+        (
+          await x.asSupervisor(() => x.reader.listSharedWork(x.scope))
+        ).works.map((w) => w.attemptId),
+      ).toContain(attempt.id);
     } finally {
       await f?.cleanup();
       await handle.cleanup();

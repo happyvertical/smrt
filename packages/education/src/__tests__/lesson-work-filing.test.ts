@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { getTestDatabase } from '@happyvertical/smrt-core';
 import { disableTenancy, enableTenancy } from '@happyvertical/smrt-tenancy';
 import { afterAll, beforeAll, expect, it, vi } from 'vitest';
+import { CourseCollection } from '../collections.js';
 import type { LearnerRequest } from '../learner-service.js';
 import {
   LessonWorkPlacementError,
@@ -473,8 +474,15 @@ it('creates a new book and its page lesson atomically, never merging by title', 
     const filed = await f.as(f.parent, () =>
       f.service.fileLessonWork({
         ...next,
-        newBook: { title: 'Manually named book', edition: '2026' },
+        newBook: {
+          title: 'Manually named book',
+          edition: '2026',
+          subject: 'Mathematics',
+        },
       }),
+    );
+    expect((await f.db.get('courses', { id: filed.courseId }))?.subject).toBe(
+      'Mathematics',
     );
     expect(filed).toMatchObject({
       courseTitle: 'Manually named book',
@@ -487,10 +495,59 @@ it('creates a new book and its page lesson atomically, never merging by title', 
       await f.as(f.parent, () =>
         f.service.fileLessonWork({
           ...next,
-          newBook: { title: 'Manually named book', edition: '2026' },
+          newBook: {
+            title: 'Manually named book',
+            edition: '2026',
+            subject: 'Mathematics',
+          },
         }),
       ),
     ).toEqual(filed);
+    await expect(
+      f.as(f.parent, () =>
+        f.service.fileLessonWork({
+          ...next,
+          requestKey: 'bad-subject',
+          newBook: { title: 'Bad', subject: 'x'.repeat(201) },
+        }),
+      ),
+    ).rejects.toThrow('subject');
+    // Set and clear a family book's subject; never a shared or plain course.
+    const setSubject = (
+      request: typeof f.parent,
+      courseId: string,
+      subject: string | null,
+    ) =>
+      f.as(request, () =>
+        f.service.setBookCourseSubject({ ...request, courseId, subject }),
+      );
+    expect(await setSubject(f.parent, filed.courseId, 'Arithmetic')).toEqual({
+      courseId: filed.courseId,
+      subject: 'Arithmetic',
+    });
+    expect((await setSubject(f.parent, filed.courseId, null)).subject).toBe('');
+    expect((await f.db.get('courses', { id: filed.courseId }))?.subject).toBe(
+      '',
+    );
+    await expect(setSubject(f.own, filed.courseId, 'Mine')).rejects.toThrow();
+    await expect(
+      setSubject(f.parent, String(f.course.id), 'Plain'),
+    ).rejects.toThrow();
+    await expect(
+      setSubject(
+        { ...f.parent, tenantId: String(f.foreign.tenantId) },
+        filed.courseId,
+        'Foreign',
+      ),
+    ).rejects.toThrow();
+    // A shared catalog course is never a family's to change.
+    const catalog = await (await CourseCollection.create({ db: f.db })).create({
+      title: 'Shared catalog course',
+      licenseKind: 'open-license',
+    });
+    await expect(
+      setSubject(f.parent, String(catalog.id), 'Shared'),
+    ).rejects.toThrow();
     const duplicateTitle = await f.as(f.parent, () =>
       f.service.fileLessonWork({
         ...next,

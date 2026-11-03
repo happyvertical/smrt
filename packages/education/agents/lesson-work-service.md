@@ -61,6 +61,11 @@ reuse the same Submission/attempt and reject changed bytes or help claims. A
 correction requires the same learner/activity/current predecessor and stays in the
 same practice episode. Analysis/reanalysis adds revisions, never practice attempts.
 
+`setBookCourseSubject({courseId, subject})` sets or clears (`null`) a family book
+course's subject (text up to 200 characters) with the same plan authority; shared
+catalog and plain courses are refused. `fileLessonWork({newBook:{subject?}})` sets it
+on a new book; the workbook migration leaves it unset.
+
 `setCourseWorkPolicy({courseId, expectedPolicyVersion, reviewRequired})` needs plan
 authority over every learner enrolled in the course; capture snapshots never change.
 Filed work snapshots the policy of the course it is placed in. Policy changes cannot
@@ -297,7 +302,8 @@ routing is technical rather than bibliographic. The same attempt, assessment,
 review, release and concept-evidence contracts apply.
 
 `fileLessonWork({activityId, courseId | newBook:{title, edition?, bookKey?},
-lessonId?, pageKey?, pageLabel?, expectedRevisionId, requestKey, reason})` is the
+lessonId?, pageKey?, pageLabel?, expectedRevisionId, requestKey, reason})` (`newBook`
+may carry `subject`) is the
 guardian's placement (plan authority). Exactly one of `courseId`/`newBook`. The
 target lesson is the given lesson (which must be in the learner's enrollment of that
 course; a page key matches or adds a `LessonPage` on it, adding only on a
