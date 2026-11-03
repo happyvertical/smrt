@@ -1494,6 +1494,7 @@ export class CourseBundleImportService extends CourseAuthoringService {
       );
       const imported = await this.record(tx, request);
       const importId = String(imported.id);
+      await this.lockImport(tx, request.tenantId, importId);
       if (
         (await tx.tableExists('course_bundle_attachments')) &&
         (await tx.get('course_bundle_attachments', {
@@ -1608,6 +1609,8 @@ export class CourseBundleImportService extends CourseAuthoringService {
     const write = () =>
       this.run(async (tx): Promise<AttachBundleCourseResult> => {
         await authorize(tx);
+        // Before any read: a concurrent review choice lands first or sees this attach.
+        await this.lockImport(tx, request.tenantId, importId);
         if (request.courseId && request.courseId !== courseId) {
           const asserted = await tx.get('courses', {
             id: request.courseId,
@@ -1698,6 +1701,14 @@ export class CourseBundleImportService extends CourseAuthoringService {
           })) as Row | null;
           if (existingSection && String(existingSection.course_id) !== courseId)
             throw new CourseBundleMaterialsError('unit-mismatch', section.key);
+          // Parts sharing a section must agree on it; first writer never wins silently.
+          if (
+            existingSection &&
+            (String(existingSection.title) !== section.title ||
+              (section.order !== undefined &&
+                Number(existingSection.sort_order) !== section.order))
+          )
+            throw new CourseBundleMaterialsError('part-conflict', section.key);
           if (!existingSection)
             await sectionRows.create({
               _insertOnly: true,
@@ -1720,6 +1731,13 @@ export class CourseBundleImportService extends CourseAuthoringService {
               String(existingLesson.section_id) !== sectionId
             )
               throw new CourseBundleMaterialsError('conflict', lesson.key);
+            if (
+              existingLesson &&
+              (String(existingLesson.title) !== lesson.title ||
+                (lesson.order !== undefined &&
+                  Number(existingLesson.sort_order) !== lesson.order))
+            )
+              throw new CourseBundleMaterialsError('part-conflict', lesson.key);
             if (!existingLesson)
               await lessonRows.create({
                 _insertOnly: true,
@@ -1789,6 +1807,23 @@ export class CourseBundleImportService extends CourseAuthoringService {
       if (!isUniqueViolation(error)) throw error;
       return write();
     }
+  }
+
+  /**
+   * Serialize writers of one import (attach and review choices) on its row, so
+   * a choice either lands before an attach reads it or sees the attachment.
+   * A no-op update takes the row lock on PostgreSQL; embedded databases
+   * already serialize write transactions.
+   */
+  private async lockImport(
+    tx: DatabaseInterface,
+    tenantId: string,
+    importId: string,
+  ) {
+    await tx.query(
+      'UPDATE course_bundle_imports SET id = id WHERE id = ? AND tenant_id = ?',
+      [importId, tenantId],
+    );
   }
 
   /** Review choices of one import, by target. */

@@ -72,8 +72,8 @@ export interface ManifestV2Video {
 export interface ManifestV2Lesson {
   key: string;
   title: string;
-  /** Unit-wide position (`order`), else the position in this manifest. */
-  order: number;
+  /** Declared unit-wide position; absent means the position in this manifest. */
+  order?: number;
   members: ManifestV2Member[];
   pages: ManifestV2PageRange[];
   videos: ManifestV2Video[];
@@ -97,8 +97,8 @@ export interface ManifestV2 {
   sections: Array<{
     key: string;
     title: string;
-    /** Unit-wide position (`order`), else the position in this manifest. */
-    order: number;
+    /** Declared unit-wide position; absent means the position in this manifest. */
+    order?: number;
     lessons: ManifestV2Lesson[];
   }>;
   courseMembers: ManifestV2Member[];
@@ -190,10 +190,11 @@ export function parseBundleManifestV2(
   }
   if (unitKey !== null)
     manifest.unit = { key: unitKey, title: unitTitle, part, parts };
-  const order = (value: unknown, path: string, fallback: number) =>
+  // Kept only when declared, so merged parts compare declared orders alone.
+  const order = (value: unknown, path: string) =>
     value === undefined
-      ? fallback
-      : integer(value, path, 0, COURSE_BUNDLE_MAX_ORDER);
+      ? {}
+      : { order: integer(value, path, 0, COURSE_BUNDLE_MAX_ORDER) };
   const listed = new Set<string>();
   const member = (raw: unknown, mp: string): ManifestV2Member => {
     const decl = closedObject(raw, ['path', 'role', 'audience', 'title'], mp);
@@ -353,7 +354,7 @@ export function parseBundleManifestV2(
       outLessons.push({
         key: lessonKey,
         title: manifestText(lesson.title, `${lp}.title`, 300),
-        order: order(lesson.order, `${lp}.order`, l),
+        ...order(lesson.order, `${lp}.order`),
         members: lessonMembers,
         pages,
         videos,
@@ -362,7 +363,7 @@ export function parseBundleManifestV2(
     manifest.sections.push({
       key: sectionKey,
       title: manifestText(section.title, `${sp}.title`, 300),
-      order: order(section.order, `${sp}.order`, s),
+      ...order(section.order, `${sp}.order`),
       lessons: outLessons,
     });
   }

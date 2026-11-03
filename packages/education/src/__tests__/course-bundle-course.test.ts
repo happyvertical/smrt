@@ -1,340 +1,33 @@
 import { randomUUID } from 'node:crypto';
-import {
-  AssetCollection,
-  withPrivateAssetAccess,
-} from '@happyvertical/smrt-assets';
-import { getTestDatabase } from '@happyvertical/smrt-core';
-import {
-  disableTenancy,
-  enableTenancy,
-  withTenant,
-} from '@happyvertical/smrt-tenancy';
-import type { DatabaseInterface } from '@happyvertical/sql';
+import { disableTenancy, enableTenancy } from '@happyvertical/smrt-tenancy';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import {
-  type AcceptedCourseBundleMember,
   BUNDLE_COURSE_SOURCE,
-  COURSE_AUTHORING_ACTIONS,
-  type CourseAuthoringActor,
   CourseAuthoringAuthorizationError,
-  CourseBundleImportService,
   CourseBundleRefusedError,
   FakeDocumentConverter,
   type LessonMaterialView,
   parseBundleManifestV2,
-  SubmissionService,
 } from '../index.js';
-import { tinyPdf } from './bundle-zip-writer.js';
-import { learnerFixture } from './learner-workflows.js';
-import { officeDocx, officePptx } from './office-fixtures.js';
-import { submissionClasses } from './submission-workflows.js';
-
-/*
- * SMRT #4632: a manifest v2 bundle (or the parts of a split unit) becomes one
- * family course with lessons, materials, pages and videos.
- *  one bundle -> course, replay ............................ 'attach'
- *  parts in any order, unit identity fails closed ........... 'parts'
- *  audience before attach (choices) and after ............... 'audience'
- *  learner never sees guardian material, view markers ....... 'views'
- *  no converter: nothing rendered, nothing faked ............ 'zero renderings'
- */
-const classes = [
-  ...new Set([
-    ...submissionClasses,
-    'AuthoredCourse',
-    'Reading',
-    'Video',
-    'Exercise',
-    'CourseRevision',
-    'LessonRevision',
-    'CourseDraftHead',
-    'CourseRelease',
-    'ReleasedLesson',
-    'CourseArchiveDecision',
-    'CourseDiscardTombstone',
-    'EnrollmentReleasePin',
-    'CourseUpgradeChoice',
-    'EnrollmentAutoUpgradeSkip',
-    'LearningObjective',
-    'LearningObjectiveRevision',
-    'Question',
-    'QuestionRevision',
-    'QuestionResponse',
-    'CourseGenerationJob',
-    'CourseGenerationEvent',
-    'CourseProposal',
-    'CourseProposalDecision',
-    'CourseReview',
-    'CourseReviewFinding',
-    'CourseReviewOutdatedMarker',
-    'CourseFindingResolution',
-    'CourseBundleImport',
-    'CourseBundleMember',
-    'CourseBundleRendering',
-    'CourseBundleAttachment',
-    'CourseBundleAudienceChoice',
-  ]),
-];
+import {
+  assertChooseDuringAttach,
+  bundleOf,
+  enroll,
+  lesson1,
+  lesson2,
+  MIME,
+  opened,
+  setup,
+  single,
+  VIDEO_A,
+  VIDEO_B,
+} from './course-bundle-course-workflows.js';
 
 beforeAll(() => enableTenancy());
 afterAll(() => disableTenancy());
-const opened: DatabaseInterface[] = [];
 afterEach(async () => {
   for (const db of opened.splice(0)) await db.close?.();
 });
-
-const PNG = Buffer.from([
-  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48,
-]);
-const VIDEO_A = 'dQw4w9WgXcQ';
-const VIDEO_B = 'aaaaaaaaaaa';
-
-type Lesson = {
-  key: string;
-  title: string;
-  order?: number;
-  members: Array<{ path: string; role: string; audience?: string }>;
-  pages?: Array<{ member: string; from: number; to: number; label?: string }>;
-  videos?: Array<{
-    reference: string;
-    title: string;
-    step: number;
-    audience?: string;
-  }>;
-};
-const lesson1: Lesson = {
-  key: 'lesson-1',
-  title: 'Lesson 1',
-  order: 1,
-  members: [
-    { path: 'l1/log.docx', role: 'learner-pages' },
-    { path: 'l1/deck.pptx', role: 'slides', audience: 'learner' },
-    { path: 'l1/guide.pdf', role: 'teacher-guide' },
-    { path: 'l1/key.pdf', role: 'assessment-guidance' },
-    { path: 'l1/handout.pdf', role: 'handout' },
-  ],
-  pages: [{ member: 'l1/log.docx', from: 1, to: 2, label: 'Log' }],
-  videos: [
-    { reference: VIDEO_B, title: 'Build', step: 2 },
-    { reference: VIDEO_A, title: 'Intro', step: 1 },
-  ],
-};
-const lesson2: Lesson = {
-  key: 'lesson-2',
-  title: 'Lesson 2',
-  order: 2,
-  members: [{ path: 'l2/handout.pdf', role: 'handout' }],
-};
-const files: Record<string, () => Uint8Array> = {
-  'l1/log.docx': () => officeDocx('mission log'),
-  'l1/deck.pptx': () => officePptx('launch deck'),
-  'l1/guide.pdf': () => tinyPdf('guide'),
-  'l1/key.pdf': () => tinyPdf('key'),
-  'l1/handout.pdf': () => tinyPdf('handout 1'),
-  'l2/handout.pdf': () => tinyPdf('handout 2'),
-  'unit/supplies.pdf': () => tinyPdf('supplies'),
-};
-
-function bundleOf(
-  lessons: Lesson[],
-  options: {
-    key?: string;
-    part?: { index: number; count: number };
-    courseMembers?: boolean;
-  } = {},
-) {
-  const manifest = {
-    version: 2,
-    course: {
-      subject: 'Science',
-      ...(options.key ? { key: options.key, title: 'Carnival' } : {}),
-    },
-    ...(options.part ? { part: options.part } : {}),
-    ...(options.courseMembers
-      ? {
-          courseMembers: [
-            {
-              path: 'unit/supplies.pdf',
-              role: 'attachment',
-              title: 'Supply list',
-            },
-          ],
-        }
-      : {}),
-    sections: [{ key: 'unit', title: 'Unit', order: 0, lessons }],
-  };
-  const paths = [
-    ...lessons.flatMap((l) => l.members.map((m) => m.path)),
-    ...(options.courseMembers ? ['unit/supplies.pdf'] : []),
-  ];
-  return {
-    files: [
-      { path: 'manifest.json', bytes: Buffer.from(JSON.stringify(manifest)) },
-      ...paths.map((path) => ({
-        path,
-        bytes: (files[path] as () => Uint8Array)(),
-      })),
-    ],
-  };
-}
-const single = () => bundleOf([lesson1, lesson2], { courseMembers: true });
-
-const MIME: Record<string, string> = {
-  pdf: 'application/pdf',
-  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-  png: 'image/png',
-};
-
-async function setup(
-  options: { converter?: FakeDocumentConverter | null } = {},
-) {
-  const db = await getTestDatabase({
-    type: 'sqlite',
-    url: ':memory:',
-    classes,
-  });
-  opened.push(db);
-  const f = await learnerFixture(db);
-  const guardian: CourseAuthoringActor = {
-    tenantId: f.own.tenantId,
-    actorUserId: f.parent.actorUserId,
-  };
-  const authorizer = (call: { actorUserId: string }) =>
-    call.actorUserId === guardian.actorUserId &&
-    COURSE_AUTHORING_ACTIONS.length > 0;
-  const converter =
-    options.converter === null
-      ? undefined
-      : (options.converter ?? new FakeDocumentConverter({ thumbnail: PNG }));
-  const service = new CourseBundleImportService(db, authorizer, {
-    ...(converter ? { converter } : {}),
-  });
-  const claims: string[] = [];
-  const submissions = new SubmissionService(
-    db,
-    ({ own, relationshipTypeId }) =>
-      own || relationshipTypeId === f.guardianType.id,
-    () => true,
-    {
-      storage: { type: 'local', basePath: '/tmp/unused' } as never,
-      signAsset: async (claim) => {
-        claims.push(claim.assetId);
-        return `https://school.test/${claim.assetId}`;
-      },
-    },
-  );
-  const as = <T>(actor: CourseAuthoringActor, fn: () => Promise<T>) =>
-    withTenant({ tenantId: actor.tenantId, userId: actor.actorUserId }, fn);
-  const profile = String(
-    (await db.get('users', { id: guardian.actorUserId }))?.profile_id,
-  );
-  const asset = async (name: string, mimeType: string) => {
-    const id = randomUUID();
-    await as(guardian, () =>
-      withPrivateAssetAccess(
-        {
-          tenantId: guardian.tenantId,
-          actorUserId: guardian.actorUserId,
-          ownerProfileId: profile,
-          assetIds: [id],
-        },
-        async () =>
-          (await AssetCollection.create({ db })).create({
-            id,
-            tenantId: guardian.tenantId,
-            name,
-            mimeType,
-            accessMode: 'private',
-            ownerProfileId: profile,
-            sourceUri: `file:///education/${id}`,
-          }),
-      ),
-    );
-    return id;
-  };
-  /** A host's `receiveMember` + storage: original, rendered PDF, thumbnail. */
-  const store = async (accepted: AcceptedCourseBundleMember[]) => {
-    const out: Record<
-      string,
-      { original?: string; rendered?: string; thumbnail?: string }
-    > = {};
-    for (const m of accepted)
-      out[m.path] = {
-        original: await asset(m.path, MIME[m.kind] ?? 'application/pdf'),
-        ...(m.rendered
-          ? { rendered: await asset(`${m.path}.pdf`, MIME.pdf as string) }
-          : {}),
-        ...(m.rendered?.thumbnail
-          ? { thumbnail: await asset(`${m.path}.png`, MIME.png as string) }
-          : {}),
-      };
-    return out;
-  };
-  const importAndStore = async (bundle: ReturnType<typeof bundleOf>) => {
-    const result = await as(guardian, () =>
-      service.importBundle({ ...guardian, bundle }),
-    );
-    return { result, assets: await store(result.accepted) };
-  };
-  const attach = (
-    bundle: ReturnType<typeof bundleOf>,
-    importId: string,
-    assets: Record<string, { original?: string; rendered?: string }>,
-    extra: Record<string, unknown> = {},
-  ) =>
-    as(guardian, () =>
-      service.attachCourse({
-        ...guardian,
-        importId,
-        bundle,
-        assets,
-        ...extra,
-      }),
-    );
-  const count = async (table: string) => (await db.list(table, {})).length;
-  const counts = async () =>
-    Object.fromEntries(
-      await Promise.all(
-        [
-          'courses',
-          'course_sections',
-          'lessons',
-          'lesson_assets',
-          'course_assets',
-          'lesson_pages',
-          'lesson_external_videos',
-          'course_bundle_attachments',
-        ].map(async (t) => [t, await count(t)] as const),
-      ),
-    );
-  return {
-    db,
-    f,
-    guardian,
-    service,
-    submissions,
-    claims,
-    as,
-    importAndStore,
-    attach,
-    count,
-    counts,
-  };
-}
-
-/** Enroll the fixture learner in `courseId`, as the guardian. */
-async function enroll(s: Awaited<ReturnType<typeof setup>>, courseId: string) {
-  const { f } = s;
-  const enrollment = await f.as(f.parent, () =>
-    f.service.enroll({
-      ...f.parent,
-      curriculumId: String(f.curriculum.id),
-      courseId,
-    }),
-  );
-  return String(enrollment.id);
-}
 
 describe('attach', () => {
   it('creates one family course with lessons, materials, pages and videos, and replays', async () => {
@@ -521,6 +214,66 @@ describe('parts', () => {
     expect(await s.counts()).toEqual(before);
   });
 
+  it.each([
+    ['part 1 first', false],
+    ['part 2 first', true],
+  ])('refuses parts that disagree on a shared section or lesson (%s)', async (_, reverse) => {
+    const lessonB = { ...lesson2 };
+    const variants = [
+      // shared section, another title
+      bundleOf([lessonB], {
+        key: KEY,
+        part: { index: 2, count: 2 },
+        sectionTitle: 'Another unit',
+      }),
+      // shared section, another declared order
+      bundleOf([lessonB], {
+        key: KEY,
+        part: { index: 2, count: 2 },
+        sectionOrder: 4,
+      }),
+      // shared lesson, another title
+      bundleOf(
+        [lessonB, { key: 'lesson-1', title: 'Renamed', order: 1, members: [] }],
+        {
+          key: KEY,
+          part: { index: 2, count: 2 },
+        },
+      ),
+      // shared lesson, another declared order
+      bundleOf(
+        [
+          lessonB,
+          { key: 'lesson-1', title: 'Lesson 1', order: 9, members: [] },
+        ],
+        {
+          key: KEY,
+          part: { index: 2, count: 2 },
+        },
+      ),
+    ];
+    for (const bad of variants) {
+      const s = await setup();
+      const p1 = await s.importAndStore(part1());
+      const p2 = await s.importAndStore(bad);
+      const empty = await s.counts();
+      const [first, second] = reverse
+        ? [[bad, p2] as const, [part1(), p1] as const]
+        : [[part1(), p1] as const, [bad, p2] as const];
+      await s.attach(
+        first[0],
+        first[1].result.import.importId,
+        first[1].assets,
+      );
+      const before = await s.counts();
+      expect(before).not.toEqual(empty);
+      await expect(
+        s.attach(second[0], second[1].result.import.importId, second[1].assets),
+      ).rejects.toMatchObject({ reason: 'part-conflict' });
+      expect(await s.counts()).toEqual(before);
+    }
+  });
+
   it('requires a unit key for a part and parses unit-wide order', () => {
     const paths = new Set(['a.pdf']);
     const doc = (body: Record<string, unknown>) =>
@@ -568,6 +321,10 @@ describe('parts', () => {
 });
 
 describe('audience', () => {
+  it('serializes a review choice made while an attach is in flight', async () => {
+    await assertChooseDuringAttach();
+  });
+
   it('applies review choices made before attach, within role bounds', async () => {
     const s = await setup();
     const bundle = single();

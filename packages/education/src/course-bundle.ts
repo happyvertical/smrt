@@ -500,11 +500,11 @@ export const manifestV2BundleReader: BundleReader = {
         sections: manifest.sections.map((s) => ({
           key: s.key,
           title: s.title,
-          order: s.order,
+          ...(s.order !== undefined ? { order: s.order } : {}),
           lessons: s.lessons.map((l) => ({
             key: l.key,
             title: l.title,
-            order: l.order,
+            ...(l.order !== undefined ? { order: l.order } : {}),
             paths: l.members.map((m) => m.path),
             roles: l.members.map((m) => m.role),
             audiences: l.members.map((m) => m.audience),
