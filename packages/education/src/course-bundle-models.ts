@@ -1,4 +1,5 @@
 import {
+  field,
   foreignKey,
   SmrtCollection,
   SmrtObject,
@@ -401,4 +402,79 @@ export class CourseBundleAudienceChoice extends SmrtObject {
 }
 export class CourseBundleAudienceChoiceCollection extends SmrtCollection<CourseBundleAudienceChoice> {
   static readonly _itemClass = CourseBundleAudienceChoice;
+}
+
+/**
+ * Where a unit's section or lesson sits, and whether its position was declared
+ * (SMRT #4632). Parts of a split unit that share a key must agree: declared
+ * orders must match, a declared and an implicit order conflict, and between
+ * implicit positions the part with the lowest index decides, whatever order
+ * the parts arrive in. One row per (course, kind, key).
+ */
+@TenantScoped({ mode: 'required' })
+@smrt({
+  tableName: 'course_bundle_placements',
+  conflictColumns: ['tenant_id', 'course_id', 'kind', 'key'],
+  indexes: [
+    {
+      name: 'course_bundle_placements_unique',
+      columns: ['tenantId', 'courseId', 'kind', 'key'],
+      unique: true,
+    },
+  ],
+  ...closed,
+})
+export class CourseBundlePlacement extends SmrtObject {
+  @tenantId() tenantId = '';
+  @foreignKey('Course', { required: true }) courseId = '';
+  /** `section` or `lesson`. */
+  kind = 'section';
+  key = '';
+  title = '';
+  /** The manifest's `order`, null when the part left it implicit. */
+  @field({ type: 'integer', nullable: true }) declaredOrder: number | null =
+    null;
+  /** The position in the deciding part, used when no order is declared. */
+  implicitOrder = 0;
+  /** The part that decided an implicit position (the lowest seen). */
+  partIndex = 1;
+  constructor(options: Record<string, unknown> = {}) {
+    super(options);
+    adopt(this, options);
+  }
+  override async save(options?: SmrtSaveOptions): Promise<this> {
+    if (!this.tenantId?.trim())
+      throw new Error('Course bundle evidence requires a tenant');
+    if (!['section', 'lesson'].includes(this.kind))
+      throw new Error('Invalid placement kind');
+    requireText(this.key, 'Placement requires a key', 120);
+    requireText(this.title, 'Placement requires a title', 300);
+    requireCount(this.implicitOrder, 'Invalid placement order');
+    if (this.declaredOrder !== null)
+      requireCount(this.declaredOrder, 'Invalid placement order');
+    if (!Number.isSafeInteger(this.partIndex) || this.partIndex < 1)
+      throw new Error('Invalid bundle part');
+    const prior = this.id
+      ? await this.db.get(this.tableName, { id: this.id })
+      : null;
+    if (
+      prior &&
+      (prior.tenant_id !== this.tenantId ||
+        prior.course_id !== this.courseId ||
+        prior.kind !== this.kind ||
+        prior.key !== this.key)
+    )
+      throw new Error('A placement cannot move');
+    if (
+      !(await this.db.get('courses', {
+        id: this.courseId,
+        tenant_id: this.tenantId,
+      }))
+    )
+      throw new Error('Course bundle parent ownership mismatch');
+    return super.save(options);
+  }
+}
+export class CourseBundlePlacementCollection extends SmrtCollection<CourseBundlePlacement> {
+  static readonly _itemClass = CourseBundlePlacement;
 }

@@ -71,6 +71,7 @@ export const classes = [
     'CourseBundleRendering',
     'CourseBundleAttachment',
     'CourseBundleAudienceChoice',
+    'CourseBundlePlacement',
   ]),
 ];
 
@@ -136,7 +137,8 @@ export function bundleOf(
     part?: { index: number; count: number };
     courseMembers?: boolean;
     sectionTitle?: string;
-    sectionOrder?: number;
+    /** null leaves the section's order implicit. */
+    sectionOrder?: number | null;
   } = {},
 ) {
   const manifest = {
@@ -161,7 +163,9 @@ export function bundleOf(
       {
         key: 'unit',
         title: options.sectionTitle ?? 'Unit',
-        order: options.sectionOrder ?? 0,
+        ...(options.sectionOrder === null
+          ? {}
+          : { order: options.sectionOrder ?? 0 }),
         lessons,
       },
     ],

@@ -239,8 +239,8 @@ the same way: an unknown key anywhere is `manifest_unknown_key` (with its path i
   and `course.title` its course title; `part: { index, count }` (1-50) marks one
   bundle of a unit split across several, and requires `course.key`
   (`manifest_invalid` otherwise). Sections and lessons may carry a unit-wide
-  `order` (0-9999; default: the position in this manifest) so parts merge in
-  order.
+  `order` (0-9999); without one the position in this manifest is used, and
+  the order counts as implicit when parts are merged.
 
 Guardian-audience text (teacher guides, guidance, keys) never enters a proposed
 lesson body; only learner-audience text members do. Under v2 `role` on the member
@@ -277,6 +277,13 @@ thumbnail? }` asset ids the host stored from `receiveMember`.
   `part.complete`. Fails closed and writes nothing: a `courseId` of another unit or
   another part count is `unit-mismatch`; a second import for an attached part is
   `part-conflict`. A replay is `replayed: true` and writes nothing new.
+- **Shared sections and lessons**: parts that share a key must agree, and the
+  result never depends on arrival order. `CourseBundlePlacement`
+  (`course_bundle_placements`) records each key's title and whether its order was
+  declared. Another title, two different declared orders, or a declared order
+  against an implicit one is `part-conflict` (nothing written). Between implicit
+  positions the part with the lowest index decides; a lower part arriving later
+  re-sorts the row.
 - **Zero renderings**: with no converter, Word/PowerPoint members are recorded
   `converter_unavailable` and listed in `skipped`; no rendered or original join,
   page or thumbnail is written for them, and nothing is faked. `retryRendering`
@@ -360,8 +367,8 @@ reason, duplicate-of, role, audience, section and lesson key) and
 `CourseBundleRendering` (`course_bundle_renderings`: a deliberate retry's success). Hashes and placements only:
 bytes stay with the host's ingestion receipts. Rewrites and deletes throw.
 `CourseBundleAttachment` (`course_bundle_attachments`) and the mutable
-`CourseBundleAudienceChoice` (`course_bundle_audience_choices`) belong to the
-attach path. Normal manifest migrations create the tables and add `audience` (NULL
+`CourseBundleAudienceChoice` (`course_bundle_audience_choices`) and
+`CourseBundlePlacement` (`course_bundle_placements`) belong to the attach path. Normal manifest migrations create the tables and add `audience` (NULL
 on older rows) and, on `lesson_assets`/`course_assets`, `rendition`,
 `rendition_of_asset_id` and `thumbnail_asset_id` (additive; older joins read as a
 file as supplied with no thumbnail).

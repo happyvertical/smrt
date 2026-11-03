@@ -13,6 +13,7 @@ import {
   assertChooseDuringAttach,
   bundleOf,
   enroll,
+  type Lesson,
   lesson1,
   lesson2,
   MIME,
@@ -214,64 +215,126 @@ describe('parts', () => {
     expect(await s.counts()).toEqual(before);
   });
 
-  it.each([
-    ['part 1 first', false],
-    ['part 2 first', true],
-  ])('refuses parts that disagree on a shared section or lesson (%s)', async (_, reverse) => {
-    const lessonB = { ...lesson2 };
-    const variants = [
-      // shared section, another title
-      bundleOf([lessonB], {
-        key: KEY,
-        part: { index: 2, count: 2 },
-        sectionTitle: 'Another unit',
-      }),
-      // shared section, another declared order
-      bundleOf([lessonB], {
-        key: KEY,
-        part: { index: 2, count: 2 },
-        sectionOrder: 4,
-      }),
-      // shared lesson, another title
-      bundleOf(
-        [lessonB, { key: 'lesson-1', title: 'Renamed', order: 1, members: [] }],
-        {
-          key: KEY,
-          part: { index: 2, count: 2 },
-        },
-      ),
-      // shared lesson, another declared order
-      bundleOf(
-        [
-          lessonB,
-          { key: 'lesson-1', title: 'Lesson 1', order: 9, members: [] },
-        ],
-        {
-          key: KEY,
-          part: { index: 2, count: 2 },
-        },
-      ),
-    ];
-    for (const bad of variants) {
-      const s = await setup();
-      const p1 = await s.importAndStore(part1());
-      const p2 = await s.importAndStore(bad);
-      const empty = await s.counts();
-      const [first, second] = reverse
-        ? [[bad, p2] as const, [part1(), p1] as const]
-        : [[part1(), p1] as const, [bad, p2] as const];
-      await s.attach(
-        first[0],
-        first[1].result.import.importId,
-        first[1].assets,
-      );
-      const before = await s.counts();
-      expect(before).not.toEqual(empty);
-      await expect(
-        s.attach(second[0], second[1].result.import.importId, second[1].assets),
-      ).rejects.toMatchObject({ reason: 'part-conflict' });
+  /** Part 1 holds the shared lesson first; part 2 holds it second. */
+  const shared = (order?: number, title = 'Shared'): Lesson => ({
+    key: 'shared',
+    title,
+    ...(order !== undefined ? { order } : {}),
+    members: [],
+  });
+  type Side = {
+    lesson?: Lesson;
+    sectionTitle?: string;
+    sectionOrder?: number | null;
+  };
+  const pair = (one: Side, two: Side) => [
+    bundleOf([one.lesson ?? shared(), lesson1], {
+      key: KEY,
+      part: { index: 1, count: 2 },
+      ...(one.sectionTitle ? { sectionTitle: one.sectionTitle } : {}),
+      ...(one.sectionOrder !== undefined
+        ? { sectionOrder: one.sectionOrder }
+        : {}),
+    }),
+    bundleOf([lesson2, two.lesson ?? shared()], {
+      key: KEY,
+      part: { index: 2, count: 2 },
+      ...(two.sectionTitle ? { sectionTitle: two.sectionTitle } : {}),
+      ...(two.sectionOrder !== undefined
+        ? { sectionOrder: two.sectionOrder }
+        : {}),
+    }),
+  ];
+  /** Attach the two parts in the given order; the second result settles. */
+  async function attachBoth(
+    bundles: ReturnType<typeof pair>,
+    reverse: boolean,
+  ) {
+    const s = await setup();
+    const parts = [];
+    for (const b of bundles) parts.push({ b, ...(await s.importAndStore(b)) });
+    const [first, second] = reverse
+      ? [parts[1], parts[0]]
+      : [parts[0], parts[1]];
+    if (!first || !second) throw new Error('two parts');
+    const one = await s.attach(
+      first.b,
+      first.result.import.importId,
+      first.assets,
+    );
+    const before = await s.counts();
+    const two = await s
+      .attach(second.b, second.result.import.importId, second.assets)
+      .catch((error: unknown) => error);
+    return { s, one, two, before };
+  }
+  const conflicts: Array<[string, Side, Side]> = [
+    [
+      'section title',
+      { sectionTitle: 'Unit' },
+      { sectionTitle: 'Another unit' },
+    ],
+    ['section explicit vs explicit', { sectionOrder: 0 }, { sectionOrder: 4 }],
+    [
+      'section implicit vs explicit',
+      { sectionOrder: null },
+      { sectionOrder: 4 },
+    ],
+    ['lesson title', { lesson: shared(5) }, { lesson: shared(5, 'Renamed') }],
+    [
+      'lesson explicit vs explicit',
+      { lesson: shared(5) },
+      { lesson: shared(9) },
+    ],
+    [
+      'lesson implicit vs explicit',
+      { lesson: shared() },
+      { lesson: shared(9) },
+    ],
+  ];
+  for (const reverse of [false, true])
+    it.each(
+      conflicts,
+    )(`refuses parts that disagree on the %s (${reverse ? 'part 2' : 'part 1'} first)`, async (_, one, two) => {
+      const {
+        s,
+        two: outcome,
+        before,
+      } = await attachBoth(pair(one, two), reverse);
+      expect(outcome).toMatchObject({ reason: 'part-conflict' });
       expect(await s.counts()).toEqual(before);
+    });
+
+  it('settles implicit positions by the lowest part and accepts equal declared orders, in either arrival order', async () => {
+    const settled = [];
+    for (const reverse of [false, true]) {
+      // implicit vs implicit: part 1 has the shared lesson at 0, part 2 at 1
+      const implicit = await attachBoth(
+        pair({ sectionOrder: null }, { sectionOrder: null }),
+        reverse,
+      );
+      expect(implicit.two).toMatchObject({ part: { complete: true } });
+      const row = await implicit.s.db.get('lessons', {
+        id: implicit.one.lessons.shared,
+      });
+      const section = await implicit.s.db.get('course_sections', {
+        id: implicit.one.sections.unit,
+      });
+      settled.push([row?.sort_order, section?.sort_order]);
+      // explicit vs explicit, equal
+      const equal = await attachBoth(
+        pair({ lesson: shared(7) }, { lesson: shared(7) }),
+        reverse,
+      );
+      expect(
+        (await equal.s.db.get('lessons', { id: equal.one.lessons.shared }))
+          ?.sort_order,
+      ).toBe(7);
     }
+    expect(settled).toEqual([
+      [0, 0],
+      [0, 0],
+    ]);
   });
 
   it('requires a unit key for a part and parses unit-wide order', () => {

@@ -49,6 +49,7 @@ import {
   CourseBundleAudienceChoiceCollection,
   CourseBundleImportCollection,
   CourseBundleMemberCollection,
+  CourseBundlePlacementCollection,
   CourseBundleRenderingCollection,
 } from './course-bundle-models.js';
 import { sha256Hex } from './course-bundle-zip.js';
@@ -1690,6 +1691,54 @@ export class CourseBundleImportService extends CourseAuthoringService {
         ).lessons;
         const sectionRows = await CourseSectionCollection.create({ db: tx });
         const lessonRows = await LessonCollection.create({ db: tx });
+        const placements = await CourseBundlePlacementCollection.create({
+          db: tx,
+        });
+        /**
+         * Settle a shared section or lesson against what earlier parts placed.
+         * Titles must match; declared orders must match; declared against
+         * implicit conflicts; between implicit positions the lowest part index
+         * decides. Returns the sort order to write, or null to keep the row's.
+         */
+        const place = async (
+          kind: 'section' | 'lesson',
+          key: string,
+          title: string,
+          declared: number | undefined,
+          position: number,
+          rowExists: boolean,
+        ): Promise<number | null> => {
+          const existing = await placements.get(
+            { tenantId: request.tenantId, courseId, kind, key },
+            { cache: false },
+          );
+          if (!existing) {
+            await placements.create({
+              tenantId: request.tenantId,
+              courseId,
+              kind,
+              key,
+              title,
+              declaredOrder: declared ?? null,
+              implicitOrder: position,
+              partIndex: unit.part,
+            });
+            return declared ?? position;
+          }
+          const was = existing.declaredOrder;
+          if (
+            existing.title !== title ||
+            (was === null) !== (declared === undefined) ||
+            (was !== null && was !== declared)
+          )
+            throw new CourseBundleMaterialsError('part-conflict', key);
+          if (was !== null || unit.part >= existing.partIndex)
+            return rowExists ? null : (was ?? existing.implicitOrder);
+          existing.implicitOrder = position;
+          existing.partIndex = unit.part;
+          await existing.save();
+          return position;
+        };
         const sections: Record<string, string> = {};
         const lessons: Record<string, string> = {};
         let flat = 0;
@@ -1701,14 +1750,14 @@ export class CourseBundleImportService extends CourseAuthoringService {
           })) as Row | null;
           if (existingSection && String(existingSection.course_id) !== courseId)
             throw new CourseBundleMaterialsError('unit-mismatch', section.key);
-          // Parts sharing a section must agree on it; first writer never wins silently.
-          if (
-            existingSection &&
-            (String(existingSection.title) !== section.title ||
-              (section.order !== undefined &&
-                Number(existingSection.sort_order) !== section.order))
-          )
-            throw new CourseBundleMaterialsError('part-conflict', section.key);
+          const sectionOrder = await place(
+            'section',
+            section.key,
+            section.title,
+            section.order,
+            s,
+            Boolean(existingSection),
+          );
           if (!existingSection)
             await sectionRows.create({
               _insertOnly: true,
@@ -1716,8 +1765,17 @@ export class CourseBundleImportService extends CourseAuthoringService {
               tenantId: request.tenantId,
               courseId,
               title: section.title,
-              sortOrder: section.order ?? s,
+              sortOrder: sectionOrder ?? s,
             });
+          else if (
+            sectionOrder !== null &&
+            Number(existingSection.sort_order) !== sectionOrder
+          ) {
+            const row = await sectionRows.get(sectionId, { cache: false });
+            if (!row) throw new CourseBundleMaterialsError('unit-mismatch');
+            row.sortOrder = sectionOrder;
+            await row.save();
+          }
           sections[section.key] = sectionId;
           for (const [l, lesson] of section.lessons.entries()) {
             const body = bodies[flat++]?.body ?? '';
@@ -1731,13 +1789,14 @@ export class CourseBundleImportService extends CourseAuthoringService {
               String(existingLesson.section_id) !== sectionId
             )
               throw new CourseBundleMaterialsError('conflict', lesson.key);
-            if (
-              existingLesson &&
-              (String(existingLesson.title) !== lesson.title ||
-                (lesson.order !== undefined &&
-                  Number(existingLesson.sort_order) !== lesson.order))
-            )
-              throw new CourseBundleMaterialsError('part-conflict', lesson.key);
+            const lessonOrder = await place(
+              'lesson',
+              lesson.key,
+              lesson.title,
+              lesson.order,
+              l,
+              Boolean(existingLesson),
+            );
             if (!existingLesson)
               await lessonRows.create({
                 _insertOnly: true,
@@ -1746,9 +1805,18 @@ export class CourseBundleImportService extends CourseAuthoringService {
                 sectionId,
                 title: lesson.title,
                 body,
-                sortOrder: lesson.order ?? l,
+                sortOrder: lessonOrder ?? l,
                 externalRef: lesson.key,
               });
+            else if (
+              lessonOrder !== null &&
+              Number(existingLesson.sort_order) !== lessonOrder
+            ) {
+              const row = await lessonRows.get(id, { cache: false });
+              if (!row) throw new CourseBundleMaterialsError('conflict');
+              row.sortOrder = lessonOrder;
+              await row.save();
+            }
             lessons[lesson.key] = id;
           }
         }
