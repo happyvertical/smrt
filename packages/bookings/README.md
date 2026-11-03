@@ -45,6 +45,19 @@ Intervals include their start and exclude their end. A supervision window
 starts and ends on one local date, or ends at midnight opening the next date;
 it need not cover the entire day and may span a daylight-saving transition.
 
+Use `listBookings` to find the same booking views returned by `get`. An
+optional project UUID narrows the results within the caller's existing scope.
+Operators see all bookings in their tenant. Other callers see only bookings
+for the contact the host maps to their actor. `listOfferings` exposes the
+offering ID, kind and enabled flag. Contacts only see enabled offerings.
+Operators can use `listAvailability` to inspect existing provider windows
+before replacing a declaration. All three methods use the `read` authority.
+
+Lists return up to 50 items by default and accept a limit from 1 to 100.
+Results are ordered by ascending UUID. Pass the returned `nextCursor` as
+`afterId` with the same filters to fetch another page. A null cursor means
+the page reached the end of the results.
+
 Use an authenticated tenant/actor context from the host, never from a request
 body. The host's `BookingAuthority` supplies current operator permission and
 the actor's named contact mapping, and must verify that external references

@@ -8,18 +8,23 @@ import type {
   BookingContext,
   BookingHistoryEvent,
   BookingKind,
+  BookingOffering,
   BookingOperation,
+  BookingPage,
+  BookingPageOptions,
   BookingProposal,
   BookingReceipt,
   BookingReferences,
   BookingStatus,
   BookingView,
+  DeclaredAvailabilityWindow,
+  ListBookingsOptions,
   ProposeBookingInput,
+  ProviderAvailability,
   RequestBookingInput,
   ResolvedBookingWindow,
 } from './types.js';
 import {
-  type DeclaredWindow,
   declareWindows,
   elapsedHour,
   fitsCapacity,
@@ -42,6 +47,13 @@ interface BookingRow {
   confirmed_proposal_id: string | null;
 }
 
+interface ProposalRow {
+  provider_id: string;
+  coverage: string;
+  terms: string;
+  approved_plan: string | null;
+}
+
 interface Allocation extends Reservation {
   window: ResolvedBookingWindow;
 }
@@ -53,6 +65,53 @@ function id(value: string): string {
     throw new BookingError('invalid', 'Expected a UUID reference');
   }
   return value.toLowerCase();
+}
+
+function pageBounds({ afterId, limit = 50 }: BookingPageOptions) {
+  if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+    throw new BookingError('invalid', 'Page limit must be between 1 and 100');
+  }
+  return { after: afterId === undefined ? null : id(afterId), limit };
+}
+
+function page<T>(
+  rows: T[],
+  limit: number,
+  cursor: (item: T) => string,
+): BookingPage<T> {
+  const items = rows.slice(0, limit);
+  return {
+    items,
+    nextCursor: rows.length > limit ? cursor(rows[limit - 1]) : null,
+  };
+}
+
+function bookingView(
+  row: BookingRow,
+  proposal: BookingProposal | null,
+): BookingView {
+  return {
+    id: row.id,
+    offeringId: row.offering_id,
+    contactId: row.contact_id,
+    projectId: row.project_id,
+    kind: row.kind,
+    status: row.status,
+    proposal,
+    assentedProposalId: row.assented_proposal_id,
+    confirmedProposalId: row.confirmed_proposal_id,
+  };
+}
+
+function proposalView(proposalId: string, row: ProposalRow): BookingProposal {
+  return {
+    id: proposalId,
+    providerId: row.provider_id,
+    window: JSON.parse(row.coverage),
+    terms: JSON.parse(row.terms),
+    approvedPlan:
+      row.approved_plan === null ? null : JSON.parse(row.approved_plan),
+  };
 }
 
 function required(value: string, max = 200): string {
@@ -110,7 +169,7 @@ function pending(row: BookingRow): void {
 function declared(
   kind: BookingKind,
   window: ResolvedBookingWindow,
-  availability: readonly DeclaredWindow[],
+  availability: readonly DeclaredAvailabilityWindow[],
 ): void {
   if (
     (kind === 'supervision-day' &&
@@ -500,18 +559,107 @@ export class BookingService {
     const access = await this.#access(ctx, 'read');
     const row = await this.#booking(this.#db, ctx, id(bookingId), false);
     visible(access, row);
-    return {
-      id: row.id,
-      offeringId: row.offering_id,
-      contactId: row.contact_id,
-      projectId: row.project_id,
-      kind: row.kind,
-      status: row.status,
-      proposal: row.proposal_id
+    return bookingView(
+      row,
+      row.proposal_id
         ? await this.#proposal(this.#db, ctx, row, row.proposal_id)
         : null,
-      assentedProposalId: row.assented_proposal_id,
-      confirmedProposalId: row.confirmed_proposal_id,
+    );
+  }
+
+  /** Lists the tenant's bookings, restricted to the current contact for nonoperators. */
+  async listBookings(
+    context: BookingContext,
+    options: ListBookingsOptions = {},
+  ): Promise<BookingPage<BookingView>> {
+    const ctx = identity(context);
+    const access = await this.#discover(ctx);
+    const { after, limit } = pageBounds(options);
+    const projectId =
+      options.projectId === undefined ? null : id(options.projectId);
+    const result = await this.#db.query(
+      `SELECT b.id, b.offering_id, b.contact_id, b.project_id, b.kind, b.status,
+              b.proposal_id, b.assented_proposal_id, b.confirmed_proposal_id,
+              p.provider_id, p.coverage::text, p.terms::text, p.approved_plan::text
+       FROM smrt_bookings b
+       LEFT JOIN smrt_booking_proposals p
+         ON p.tenant_id = b.tenant_id AND p.booking_id = b.id AND p.id = b.proposal_id
+       WHERE b.tenant_id = ? AND (?::boolean OR b.contact_id = ?)
+         AND (?::uuid IS NULL OR b.project_id = ?)
+         AND (?::uuid IS NULL OR b.id > ?)
+       ORDER BY b.id LIMIT ?`,
+      ctx.tenantId,
+      access.operator,
+      access.contactId ?? null,
+      projectId,
+      projectId,
+      after,
+      after,
+      limit + 1,
+    );
+    const rows = result.rows as Array<BookingRow & ProposalRow>;
+    const selected = page(rows, limit, (row) => row.id);
+    return {
+      items: selected.items.map((row) =>
+        bookingView(
+          row,
+          row.proposal_id ? proposalView(row.proposal_id, row) : null,
+        ),
+      ),
+      nextCursor: selected.nextCursor,
+    };
+  }
+
+  /** Lists configured offerings. Contacts only see enabled offerings. */
+  async listOfferings(
+    context: BookingContext,
+    options: BookingPageOptions = {},
+  ): Promise<BookingPage<BookingOffering>> {
+    const ctx = identity(context);
+    const access = await this.#discover(ctx);
+    const { after, limit } = pageBounds(options);
+    const { rows } = await this.#db.query(
+      `SELECT id, kind, enabled FROM smrt_booking_offerings
+       WHERE tenant_id = ? AND (?::boolean OR enabled)
+         AND (?::uuid IS NULL OR id > ?)
+       ORDER BY id LIMIT ?`,
+      ctx.tenantId,
+      access.operator,
+      after,
+      after,
+      limit + 1,
+    );
+    return page(rows as BookingOffering[], limit, (row) => row.id);
+  }
+
+  /** Lists provider schedules so operators can inspect or replace existing windows. */
+  async listAvailability(
+    context: BookingContext,
+    options: BookingPageOptions = {},
+  ): Promise<BookingPage<ProviderAvailability>> {
+    const ctx = identity(context);
+    operator(await this.#access(ctx, 'read'));
+    const { after, limit } = pageBounds(options);
+    const { rows } = await this.#db.query(
+      `SELECT id, windows::text FROM smrt_booking_resources
+       WHERE tenant_id = ? AND (?::uuid IS NULL OR id > ?)
+       ORDER BY id LIMIT ?`,
+      ctx.tenantId,
+      after,
+      after,
+      limit + 1,
+    );
+    const selected = page(
+      rows as Array<{ id: string; windows: string }>,
+      limit,
+      (row) => row.id,
+    );
+    return {
+      items: selected.items.map((row) => ({
+        providerId: row.id,
+        windows: JSON.parse(row.windows),
+      })),
+      nextCursor: selected.nextCursor,
     };
   }
 
@@ -620,6 +768,17 @@ export class BookingService {
     };
   }
 
+  async #discover(ctx: Readonly<BookingContext>): Promise<BookingAccess> {
+    const access = await this.#access(ctx, 'read');
+    if (!access.operator && !access.contactId) {
+      throw new BookingError(
+        'forbidden',
+        'A named customer contact is required',
+      );
+    }
+    return access;
+  }
+
   async #verify(
     ctx: Readonly<BookingContext>,
     refs: BookingReferences,
@@ -682,14 +841,7 @@ export class BookingService {
     );
     const row = rows[0];
     if (!row) throw new BookingError('not-found', 'Proposal does not exist');
-    return {
-      id: proposalId,
-      providerId: row.provider_id,
-      window: JSON.parse(row.coverage),
-      terms: JSON.parse(row.terms),
-      approvedPlan:
-        row.approved_plan === null ? null : JSON.parse(row.approved_plan),
-    };
+    return proposalView(proposalId, row as ProposalRow);
   }
 
   async #resource(
@@ -697,7 +849,7 @@ export class BookingService {
     ctx: Readonly<BookingContext>,
     providerId: string,
     lock: boolean,
-  ): Promise<DeclaredWindow[]> {
+  ): Promise<DeclaredAvailabilityWindow[]> {
     const { rows } = await tx.query(
       `SELECT windows::text FROM smrt_booking_resources WHERE tenant_id = ? AND id = ?${lock ? ' FOR UPDATE' : ''}`,
       ctx.tenantId,

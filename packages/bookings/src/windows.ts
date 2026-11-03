@@ -2,6 +2,7 @@ import { BookingError } from './errors.js';
 import type {
   AvailabilityWindow,
   BookingWindow,
+  DeclaredAvailabilityWindow,
   ResolvedBookingWindow,
 } from './types.js';
 
@@ -94,15 +95,10 @@ function oneLocalDay(window: ResolvedBookingWindow): boolean {
   return tomorrow.toISOString().slice(0, 10) === endDate;
 }
 
-export interface DeclaredWindow extends ResolvedBookingWindow {
-  capacity: number;
-  supervision: boolean;
-}
-
 export function declareWindows(
   zone: string,
   windows: readonly AvailabilityWindow[],
-): DeclaredWindow[] {
+): DeclaredAvailabilityWindow[] {
   formatter(zone);
   if (!Array.isArray(windows))
     throw new BookingError('invalid', 'Expected availability windows');
@@ -151,7 +147,7 @@ export interface Reservation {
 
 export function supervisionDeclared(
   candidate: ResolvedBookingWindow,
-  windows: readonly DeclaredWindow[],
+  windows: readonly DeclaredAvailabilityWindow[],
 ): boolean {
   return windows.some(
     (window) =>
@@ -165,7 +161,7 @@ export function supervisionDeclared(
 /** Check every segment; endpoints belonging to ending windows are excluded. */
 export function fitsCapacity(
   candidate: Reservation,
-  declared: readonly DeclaredWindow[],
+  declared: readonly DeclaredAvailabilityWindow[],
   occupied: readonly Reservation[],
 ): boolean {
   type Delta = { capacity: number; shared: number; exclusive: number };
@@ -180,7 +176,7 @@ export function fitsCapacity(
     boundaries.set(at, event);
   };
   const sweep = (
-    window: Reservation | DeclaredWindow,
+    window: Reservation | DeclaredAvailabilityWindow,
     key: keyof Delta,
     units: number,
   ) => {
