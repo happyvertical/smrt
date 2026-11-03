@@ -80,7 +80,9 @@ export type CourseAuthoringOperation =
   | 'read-question-extraction'
   | 'apply-question-extraction'
   | 'import-course-bundle'
-  | 'read-course-bundle';
+  | 'read-course-bundle'
+  | 'retry-course-bundle-rendering'
+  | 'apply-course-bundle-materials';
 
 /** Trusted identity supplied by the host session, never by a browser form. */
 export interface CourseAuthoringActor {
