@@ -94,10 +94,12 @@ describe.skipIf(!url)('Bookings on PostgreSQL', () => {
     const providerId = randomUUID();
     const otherProviderId = randomUUID();
     const customerId = randomUUID();
+    const otherCustomerId = randomUUID();
     const projects = new Set<string>();
     const operatorContext = { tenantId, actorId: 'operator' };
     const requester = { tenantId, actorId: 'requester' };
     const outsider = { tenantId, actorId: 'outsider' };
+    const otherRequester = { tenantId, actorId: 'other-requester' };
     const plan = { id: randomUUID(), version: 'approved-v1' };
     const rights = {
       operator: true,
@@ -109,14 +111,21 @@ describe.skipIf(!url)('Bookings on PostgreSQL', () => {
         if (ctx.actorId === 'operator') return { operator: rights.operator };
         return {
           operator: false,
-          contactId: ctx.actorId === 'requester' ? customerId : undefined,
+          contactId:
+            ctx.actorId === 'requester'
+              ? customerId
+              : ctx.actorId === otherRequester.actorId
+                ? otherCustomerId
+                : undefined,
         };
       },
       async verifyReferences(ctx, refs) {
         await rights.beforeVerify(refs);
         return (
           ctx.tenantId === tenantId &&
-          (!refs.contactId || refs.contactId === customerId) &&
+          (!refs.contactId ||
+            refs.contactId === customerId ||
+            refs.contactId === otherCustomerId) &&
           (!refs.projectId || projects.has(refs.projectId)) &&
           (!refs.providerId ||
             refs.providerId === providerId ||
@@ -224,6 +233,8 @@ describe.skipIf(!url)('Bookings on PostgreSQL', () => {
       providerId,
       otherProviderId,
       customerId,
+      otherCustomerId,
+      otherRequester,
       operatorContext,
       requester,
       outsider,
@@ -523,6 +534,119 @@ describe.skipIf(!url)('Bookings on PostgreSQL', () => {
     expect(await w.a.get(w.requester, declined)).toMatchObject({
       status: 'declined',
     });
+  });
+
+  it('discovers only authorized bookings with stable project-filtered pages', async () => {
+    const w = await world();
+    const foreign = await world();
+    const projectId = randomUUID();
+    const proposed = await w.prepare('supervision-day', { projectId });
+    const sameProject = await w.request('supervision-day', projectId);
+    const unrelated = await w.request('supervision-day');
+    const foreignBooking = await foreign.request('supervision-day', projectId);
+    const other = await w.a.request(w.otherRequester, randomUUID(), {
+      offeringId: w.offering['supervision-day'],
+      contactId: w.otherCustomerId,
+      projectId,
+    });
+
+    const first = await w.a.listBookings(w.requester, { projectId, limit: 1 });
+    const second = await w.b.listBookings(w.requester, {
+      projectId,
+      limit: 1,
+      afterId: first.nextCursor ?? undefined,
+    });
+    expect(first.nextCursor).toBe(first.items[0]?.id);
+    expect(second.nextCursor).toBeNull();
+    expect([...first.items, ...second.items]).toEqual(
+      await Promise.all(
+        [proposed.bookingId, sameProject]
+          .sort()
+          .map((id) => w.a.get(w.requester, id)),
+      ),
+    );
+    expect(
+      (await w.a.listBookings(w.otherRequester, { projectId })).items.map(
+        ({ id }) => id,
+      ),
+    ).toEqual([other.id]);
+    expect(
+      (await w.a.listBookings(w.operatorContext, { projectId })).items.map(
+        ({ id }) => id,
+      ),
+    ).toEqual([proposed.bookingId, sameProject, other.id].sort());
+    expect(
+      (await w.a.listBookings(w.operatorContext)).items.map(({ id }) => id),
+    ).toEqual([proposed.bookingId, sameProject, other.id, unrelated].sort());
+    expect(
+      (
+        await foreign.a.listBookings(foreign.operatorContext, { projectId })
+      ).items.map(({ id }) => id),
+    ).toEqual([foreignBooking]);
+    await expect(w.a.listBookings(w.outsider)).rejects.toMatchObject({
+      code: 'forbidden',
+    });
+    await expect(
+      w.a.listBookings(w.requester, { afterId: 'invalid' }),
+    ).rejects.toMatchObject({ code: 'invalid' });
+  });
+
+  it('lists only safe offering fields and restricts provider schedules to operators', async () => {
+    const w = await world();
+    await world();
+    await w.a.configureOffering(w.operatorContext, randomUUID(), {
+      offeringId: w.offering['developer-hour'],
+      kind: 'developer-hour',
+      enabled: false,
+    });
+    expect(await w.a.listOfferings(w.requester)).toEqual({
+      items: [
+        {
+          id: w.offering['supervision-day'],
+          kind: 'supervision-day',
+          enabled: true,
+        },
+      ],
+      nextCursor: null,
+    });
+    const one = await w.a.listOfferings(w.operatorContext, { limit: 1 });
+    const two = await w.a.listOfferings(w.operatorContext, {
+      limit: 1,
+      afterId: one.nextCursor ?? undefined,
+    });
+    expect([...one.items, ...two.items].map(({ id }) => id)).toEqual(
+      Object.values(w.offering).sort(),
+    );
+    expect(two.nextCursor).toBeNull();
+    await expect(w.a.listOfferings(w.outsider)).rejects.toMatchObject({
+      code: 'forbidden',
+    });
+    await expect(
+      w.a.listOfferings(w.requester, { limit: 101 }),
+    ).rejects.toMatchObject({ code: 'invalid' });
+    await expect(w.a.listAvailability(w.requester)).rejects.toMatchObject({
+      code: 'forbidden',
+    });
+
+    const schedules = await w.a.listAvailability(w.operatorContext, {
+      limit: 1,
+    });
+    const more = await w.a.listAvailability(w.operatorContext, {
+      afterId: schedules.nextCursor ?? undefined,
+    });
+    expect(
+      [...schedules.items, ...more.items].map(({ providerId }) => providerId),
+    ).toEqual([w.providerId, w.otherProviderId].sort());
+    expect(schedules.items[0]?.windows[0]).toMatchObject({
+      ...window,
+      capacity: 2,
+      supervision: true,
+    });
+    expect(more.nextCursor).toBeNull();
+    w.rights.operator = false;
+    await expect(w.a.listAvailability(w.operatorContext)).rejects.toMatchObject(
+      { code: 'forbidden' },
+    );
   });
 
   it('rolls back an allocation when its final audit write fails, leaving the same key retryable', async () => {

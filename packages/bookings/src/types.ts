@@ -50,6 +50,28 @@ export interface BookingAuthority {
 
 export type BookingKind = 'developer-hour' | 'supervision-day';
 
+export interface BookingOffering {
+  id: string;
+  kind: BookingKind;
+  enabled: boolean;
+}
+
+export interface BookingPageOptions {
+  /** The nextCursor returned by the previous page, with the same filters. */
+  afterId?: string;
+  /** Defaults to 50. Accepts 1 through 100. */
+  limit?: number;
+}
+
+export interface ListBookingsOptions extends BookingPageOptions {
+  projectId?: string;
+}
+
+export interface BookingPage<T> {
+  items: T[];
+  nextCursor: string | null;
+}
+
 /** A minute-precision local timestamp with explicit UTC offset, e.g. YYYY-MM-DDTHH:mm-06:00. */
 export interface WallWindow {
   start: string;
@@ -69,6 +91,15 @@ export interface AvailabilityWindow extends WallWindow {
   capacity: number;
   /** May this exact local coverage window be proposed as a supervision day? */
   supervision: boolean;
+}
+
+export interface DeclaredAvailabilityWindow
+  extends ResolvedBookingWindow,
+    AvailabilityWindow {}
+
+export interface ProviderAvailability {
+  providerId: string;
+  windows: DeclaredAvailabilityWindow[];
 }
 
 export interface AvailabilityInput {
