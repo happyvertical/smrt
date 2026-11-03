@@ -11,6 +11,7 @@ import {
 } from '../index.js';
 import {
   assertChooseDuringAttach,
+  assertConcurrentPartsSettlePlacement,
   bundleOf,
   enroll,
   type Lesson,
@@ -304,6 +305,28 @@ describe('parts', () => {
       expect(outcome).toMatchObject({ reason: 'part-conflict' });
       expect(await s.counts()).toEqual(before);
     });
+
+  it('settles a shared placement one part at a time when parts attach concurrently', async () => {
+    await assertConcurrentPartsSettlePlacement();
+  });
+
+  it('refuses a shared key whose row has no placement', async () => {
+    const [one, two] = pair({}, {});
+    if (!one || !two) throw new Error('two parts');
+    const s = await setup();
+    const p1 = await s.importAndStore(one);
+    const p2 = await s.importAndStore(two);
+    const first = await s.attach(one, p1.result.import.importId, p1.assets);
+    await s.db.query(
+      "DELETE FROM course_bundle_placements WHERE kind = 'lesson' AND key = 'shared'",
+    );
+    const before = await s.counts();
+    await expect(
+      s.attach(two, p2.result.import.importId, p2.assets),
+    ).rejects.toMatchObject({ reason: 'part-conflict', entry: 'shared' });
+    expect(await s.counts()).toEqual(before);
+    expect(first.created).toBe(true);
+  });
 
   it('settles implicit positions by the lowest part and accepts equal declared orders, in either arrival order', async () => {
     const settled = [];

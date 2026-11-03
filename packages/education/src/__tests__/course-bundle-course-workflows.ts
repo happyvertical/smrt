@@ -353,52 +353,45 @@ export async function enroll(
 }
 
 /**
- * A review choice made while an attach is between reading the choices and
- * committing must not be lost: it waits for the attach and is then refused
- * (`already-attached`), and the material keeps the audience it was attached
- * with. The attach is held right after it reads the choices; the choice is
- * started outside the attach's async context, as a second request would be.
+ * A service whose write transactions can be held once, right after a call that
+ * matches `trigger` (given the table or SQL it touched and what that
+ * transaction touched before). Everything goes through the same handle, so on
+ * SQLite the embedded write queue applies exactly as in production.
  */
-export async function assertChooseDuringAttach(db?: DatabaseInterface) {
-  const s = await setup(db ? { db } : {});
-  const bundle = single();
-  const { result, assets } = await s.importAndStore(bundle);
-  const importId = result.import.importId;
+function holdingService(
+  s: Awaited<ReturnType<typeof setup>>,
+  trigger: (touched: string, before: ReadonlySet<string>) => boolean,
+) {
   let reached: () => void = () => {};
-  const atChoices = new Promise<void>((resolve) => {
+  const atHold = new Promise<void>((resolve) => {
     reached = resolve;
   });
   let resume: () => void = () => {};
   const gate = new Promise<void>((resolve) => {
     resume = resolve;
   });
-  let armed = true;
+  let armed = false;
   const forward = <T extends object>(target: T, key: string | symbol) => {
     const value = Reflect.get(target, key, target);
     return typeof value === 'function' ? value.bind(target) : value;
   };
-  // Hold only the attach write: the transaction that lists the course's
-  // attachments and then the import's choices (an evidence read lists choices too).
-  const holdAfterChoices = (tx: DatabaseInterface) => {
-    let attachWrite = false;
+  const holdable = (tx: DatabaseInterface) => {
+    const before = new Set<string>();
     return new Proxy(tx, {
       get(target, key) {
-        if (key !== 'list') return forward(target, key);
-        return async (table: string, ...rest: unknown[]) => {
-          const rows = await (
-            target.list as (...args: unknown[]) => Promise<unknown>
-          ).call(target, table, ...rest);
-          if (table === 'course_bundle_attachments') attachWrite = true;
-          if (
-            armed &&
-            attachWrite &&
-            table === 'course_bundle_audience_choices'
-          ) {
+        const value = Reflect.get(target, key, target);
+        if (typeof value !== 'function' || key === 'transaction')
+          return forward(target, key);
+        return async (...args: unknown[]) => {
+          const out = await value.apply(target, args);
+          const touched = typeof args[0] === 'string' ? args[0] : '';
+          if (armed && touched && trigger(touched, before)) {
             armed = false;
             reached();
             await gate;
           }
-          return rows;
+          if (touched) before.add(touched);
+          return out;
         };
       },
     });
@@ -412,7 +405,7 @@ export async function assertChooseDuringAttach(db?: DatabaseInterface) {
       ) =>
         (target.transaction as (...args: unknown[]) => Promise<unknown>).call(
           target,
-          (tx: DatabaseInterface) => operation(holdAfterChoices(tx)),
+          (tx: DatabaseInterface) => operation(holdable(tx)),
           ...rest,
         );
     },
@@ -420,11 +413,55 @@ export async function assertChooseDuringAttach(db?: DatabaseInterface) {
   const service = new CourseBundleImportService(held, s.authorizer, {
     ...(s.converter ? { converter: s.converter } : {}),
   });
-  // Bound before the attach starts: the choice is a separate request, never
-  // inside the attach's async context (which would make it a nested write).
+  return {
+    service,
+    atHold,
+    resume,
+    arm: () => {
+      armed = true;
+    },
+  };
+}
+
+/** Run `second` (bound outside the held transaction) and report whether it waited. */
+async function raceWhileHeld<T>(
+  hold: ReturnType<typeof holdingService>,
+  second: () => Promise<T>,
+) {
+  const settled = second().then(
+    (value) => ({ ok: true as const, value }),
+    (error: unknown) => ({ ok: false as const, error }),
+  );
+  const early = await Promise.race([
+    settled,
+    new Promise((resolve) => setTimeout(() => resolve('waiting'), 300)),
+  ]);
+  hold.resume();
+  return { early, settled };
+}
+
+/**
+ * A review choice made while an attach is between reading the choices and
+ * committing must not be lost: it waits for the attach and is then refused
+ * (`already-attached`), and the material keeps the audience it was attached
+ * with. The choice is started outside the attach's async context, as a second
+ * request would be.
+ */
+export async function assertChooseDuringAttach(db?: DatabaseInterface) {
+  const s = await setup(db ? { db } : {});
+  const bundle = single();
+  const { result, assets } = await s.importAndStore(bundle);
+  const importId = result.import.importId;
+  // Only the attach write lists the course's attachments before the choices.
+  const hold = holdingService(
+    s,
+    (touched, before) =>
+      touched === 'course_bundle_audience_choices' &&
+      before.has('course_bundle_attachments'),
+  );
   const choose = AsyncResource.bind(() =>
     s.as(s.guardian, () =>
-      service.chooseMaterialAudience({
+      hold.service.chooseMaterialAudience({
         ...s.guardian,
         importId,
         path: 'l1/handout.pdf',
@@ -432,25 +469,20 @@ export async function assertChooseDuringAttach(db?: DatabaseInterface) {
       }),
     ),
   );
+  hold.arm();
   const attaching = s.as(s.guardian, () =>
-    service.attachCourse({ ...s.guardian, importId, bundle, assets }),
+    hold.service.attachCourse({ ...s.guardian, importId, bundle, assets }),
   );
-  await atChoices;
-  const choosing = choose().then(
-    () => 'chosen' as const,
-    (error: unknown) => error,
-  );
-  const early = await Promise.race([
-    choosing,
-    new Promise((resolve) => setTimeout(() => resolve('waiting'), 300)),
-  ]);
-  resume();
+  await hold.atHold;
+  const { early, settled } = await raceWhileHeld(hold, choose);
   const attached = await attaching;
-  const outcome = await choosing;
+  const outcome = await settled;
   // The choice could not commit while the attach held the import.
   expect(early).toBe('waiting');
-  expect(outcome).toBeInstanceOf(CourseBundleMaterialsError);
-  expect(outcome).toMatchObject({ reason: 'already-attached' });
+  expect(outcome.ok).toBe(false);
+  const error = outcome.ok ? null : outcome.error;
+  expect(error).toBeInstanceOf(CourseBundleMaterialsError);
+  expect(error).toMatchObject({ reason: 'already-attached' });
   const handout = (
     await s.db.list('lesson_assets', {
       lesson_id: attached.lessons['lesson-1'],
@@ -460,4 +492,65 @@ export async function assertChooseDuringAttach(db?: DatabaseInterface) {
   expect(
     await s.db.list('course_bundle_audience_choices', { import_id: importId }),
   ).toEqual([]);
+}
+
+/**
+ * Two parts settling the same implicit placement at once (part 3 already
+ * attached) must not let the last saver win: part 2 is held right after it
+ * reads the shared placement, part 1 must wait for it, and the lowest part
+ * (1) decides the position whatever the timing.
+ */
+export async function assertConcurrentPartsSettlePlacement(
+  db?: DatabaseInterface,
+) {
+  const s = await setup(db ? { db } : {});
+  const KEY = `race:${randomUUID()}`;
+  const shared: Lesson = { key: 'shared', title: 'Shared', members: [] };
+  const filler = (n: number): Lesson => ({
+    key: `filler-${n}`,
+    title: `Filler ${n}`,
+    members: [],
+  });
+  const part = (index: number, lessons: Lesson[]) =>
+    bundleOf(lessons, { key: KEY, part: { index, count: 3 } });
+  // The shared lesson sits at 0 in part 1, 1 in part 2 and 2 in part 3.
+  const bundles = [
+    part(1, [shared, lesson1]),
+    part(2, [lesson2, shared]),
+    part(3, [filler(1), filler(2), shared]),
+  ];
+  const stored = [];
+  for (const b of bundles) stored.push({ b, ...(await s.importAndStore(b)) });
+  const [p1, p2, p3] = stored;
+  if (!p1 || !p2 || !p3) throw new Error('three parts');
+  const hold = holdingService(s, (touched) =>
+    touched.includes('course_bundle_placements'),
+  );
+  const attach = (p: typeof p1) =>
+    s.as(s.guardian, () =>
+      hold.service.attachCourse({
+        ...s.guardian,
+        importId: p.result.import.importId,
+        bundle: p.b,
+        assets: p.assets,
+      }),
+    );
+  const third = await attach(p3);
+  const first = AsyncResource.bind(() => attach(p1));
+  hold.arm();
+  const second = attach(p2);
+  await hold.atHold;
+  const { early, settled } = await raceWhileHeld(hold, first);
+  await second;
+  const outcome = await settled;
+  expect(early).toBe('waiting');
+  expect(outcome.ok).toBe(true);
+  const row = await s.db.get('lessons', { id: third.lessons.shared });
+  expect(Number(row?.sort_order)).toBe(0);
+  const placement = await s.db.get('course_bundle_placements', {
+    course_id: third.courseId,
+    kind: 'lesson',
+    key: 'shared',
+  });
+  expect(Number(placement?.part_index)).toBe(1);
 }

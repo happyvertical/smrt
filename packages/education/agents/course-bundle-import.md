@@ -283,7 +283,12 @@ thumbnail? }` asset ids the host stored from `receiveMember`.
   declared. Another title, two different declared orders, or a declared order
   against an implicit one is `part-conflict` (nothing written). Between implicit
   positions the part with the lowest index decides; a lower part arriving later
-  re-sorts the row.
+  re-sorts the row. An existing row with no placement is `part-conflict`.
+- **Concurrency**: an attach locks the import row (shared with
+  `chooseMaterialAudience`) and then the course row, so parts settle one at a
+  time. Two first attaches of a unit meet on the course's derived primary key:
+  the loser fails once the winner commits and its single retry runs under the
+  course lock.
 - **Zero renderings**: with no converter, Word/PowerPoint members are recorded
   `converter_unavailable` and listed in `skipped`; no rendered or original join,
   page or thumbnail is written for them, and nothing is faked. `retryRendering`

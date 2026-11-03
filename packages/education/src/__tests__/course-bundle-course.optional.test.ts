@@ -6,6 +6,7 @@ import {
 import { afterAll, beforeAll, it } from 'vitest';
 import {
   assertChooseDuringAttach,
+  assertConcurrentPartsSettlePlacement,
   classes,
 } from './course-bundle-course-workflows.js';
 
@@ -19,6 +20,19 @@ afterAll(() => disableTenancy());
     });
     try {
       await assertChooseDuringAttach(isolated.baseDb);
+    } finally {
+      await isolated.cleanup();
+    }
+  },
+);
+(isPostgresAvailable() ? it : it.skip)(
+  'settles a shared placement one part at a time on PostgreSQL',
+  async () => {
+    const isolated = await createIsolatedTestDbFromManifest({
+      includeObjects: classes,
+    });
+    try {
+      await assertConcurrentPartsSettlePlacement(isolated.baseDb);
     } finally {
       await isolated.cleanup();
     }

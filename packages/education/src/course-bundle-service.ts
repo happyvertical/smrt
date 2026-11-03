@@ -1612,6 +1612,14 @@ export class CourseBundleImportService extends CourseAuthoringService {
         await authorize(tx);
         // Before any read: a concurrent review choice lands first or sees this attach.
         await this.lockImport(tx, request.tenantId, importId);
+        // Parts of one unit settle shared placements one at a time. When the
+        // course does not exist yet this locks nothing; two first attaches then
+        // meet on the course's derived primary key: the loser's insert fails
+        // once the winner commits, and the retry below runs under this lock.
+        await tx.query(
+          'UPDATE courses SET id = id WHERE id = ? AND tenant_id = ?',
+          [courseId, request.tenantId],
+        );
         if (request.courseId && request.courseId !== courseId) {
           const asserted = await tx.get('courses', {
             id: request.courseId,
@@ -1712,6 +1720,9 @@ export class CourseBundleImportService extends CourseAuthoringService {
             { tenantId: request.tenantId, courseId, kind, key },
             { cache: false },
           );
+          // A row this path did not place cannot be settled against: refuse.
+          if (!existing && rowExists)
+            throw new CourseBundleMaterialsError('part-conflict', key);
           if (!existing) {
             await placements.create({
               tenantId: request.tenantId,
