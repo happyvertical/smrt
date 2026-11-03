@@ -123,6 +123,10 @@ export interface GroupSharedWorkView {
   readonly capturedAt: string;
   readonly courseId: string | null;
   readonly subject: string | null;
+  /** Titles follow courseId's gates exactly; null wherever the course is withheld or unknown. */
+  readonly courseTitle: string | null;
+  readonly lessonTitle: string | null;
+  readonly pageLabel: string | null;
   readonly facets: GroupSharingDecision;
   readonly revisionId: string | null;
   readonly commentRevisionId: string | null;
