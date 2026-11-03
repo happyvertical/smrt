@@ -1,5 +1,20 @@
 # @happyvertical/smrt-core
 
+## 0.57.52
+
+### Patch Changes
+
+- ### Features
+  
+  - Word and PowerPoint bundle members via a DocumentConverter (#4617) (education)
+  
+  ### Bug Fixes
+  
+  - compare JSON values structurally in getOrUpsert diff guard (#4606) (core)
+- @happyvertical/smrt-config@0.57.52
+  - @happyvertical/smrt-scanner@0.57.52
+  - @happyvertical/smrt-types@0.57.52
+
 ## 0.57.51
 
 ### Patch Changes
