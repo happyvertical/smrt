@@ -5,6 +5,7 @@ import { hasRetentionAccountingAuthority } from './retention-accounting-internal
 import { createHash, randomUUID } from 'node:crypto';
 import type {
   AccountingProvider,
+  InvoiceInput,
   QuickBooksCreditMemoRequest,
   QuickBooksInvoiceRequest,
   SyncResult,
@@ -33,6 +34,15 @@ import {
 import type { Invoice } from './models/Invoice.js';
 import type { InvoiceLineItem } from './models/InvoiceLineItem.js';
 import { MoneyValidationError } from './money.js';
+import {
+  pilotDisagreement,
+  projectQuickBooksPilotEvidence,
+  type QuickBooksPilotAcceptance,
+  type QuickBooksPilotInvoiceEvidence,
+  type QuickBooksPilotProjection,
+  type QuickBooksPilotScope,
+  quickBooksPilotInvoiceId,
+} from './quickbooks-pilot-evidence.js';
 import { lockTenantMoneyRuntime } from './tenant-money-barrier.js';
 import { type AccountingInvoiceInput, InvoiceStatus } from './types/index.js';
 
@@ -85,6 +95,8 @@ interface FrozenSyncState {
   startedAt: string;
   externalId?: string;
   syncedAt?: string;
+  pilot?: QuickBooksPilotAcceptance;
+  pilotProjection?: QuickBooksPilotProjection;
 }
 
 export interface FrozenAccountingSyncResult {
@@ -133,10 +145,23 @@ export interface FrozenAccountingReconciliationReady {
   readonly requestId: string;
 }
 
+type FrozenInvoicePushInput = Omit<
+  SyncFrozenInvoiceToAccountingInput,
+  'provider'
+> & {
+  readonly provider: Omit<
+    SyncFrozenInvoiceToAccountingInput['provider'],
+    'invoices'
+  > & {
+    readonly invoices: Pick<AccountingProvider['invoices'], 'push'>;
+  };
+};
+
 interface PreparedSync {
   kind: 'push';
   documentKind: 'invoice' | 'creditMemo';
   accountingInput: AccountingSnapshotInput;
+  invoice: Invoice;
   identity: FrozenSyncIdentity;
   attemptId: string;
 }
@@ -586,7 +611,8 @@ function requestIdFor(
 }
 
 async function prepareSync(
-  input: SyncFrozenInvoiceToAccountingInput,
+  input: FrozenInvoicePushInput,
+  pilot?: QuickBooksPilotAcceptance,
 ): Promise<PreparedSync | UnchangedSync> {
   if (input.provider.type !== 'quickbooks')
     unsupported(
@@ -609,6 +635,8 @@ async function prepareSync(
     const snapshot = await loadSnapshot(tx, input.tenantId, invoice);
     const sdkInput = toSdkInput(snapshot, input.mapping);
     const prior = parseSyncState(invoice.accountingSyncStateJson);
+    checkPilotAcceptance(invoice, prior, pilot);
+    if (pilot) assertPilotInvoice(invoice);
     if (
       prior?.status === 'synced' &&
       sameSyncScope(prior.identity, snapshot, input.mapping)
@@ -655,20 +683,7 @@ async function prepareSync(
       input.mapping,
       sdkInput,
     );
-    const identity: FrozenSyncIdentity = {
-      provider: 'quickbooks',
-      documentKind: snapshot.document.kind,
-      realmId: request.realmId,
-      environment: request.environment,
-      invoiceId: snapshot.document.id,
-      moneySnapshotId: snapshot.moneySnapshotId,
-      requestId: request.requestId,
-      payloadHash: request.payloadHash,
-      creditedInvoiceExternalId:
-        'creditedInvoiceExternalId' in request
-          ? request.creditedInvoiceExternalId
-          : undefined,
-    };
+    const identity = frozenIdentity(snapshot, request);
     if (prior && !sameIdentity(prior.identity, identity))
       throw new MoneyValidationError(
         'ACCOUNTING_SYNC_RECONCILIATION_REQUIRED',
@@ -682,12 +697,14 @@ async function prepareSync(
       identity,
       attemptId,
       startedAt: new Date().toISOString(),
+      pilot,
     } satisfies FrozenSyncState);
     await invoice.saveDerived(DOCUMENT_MONEY_WRITE);
     return {
       kind: 'push',
       documentKind: snapshot.document.kind,
       accountingInput,
+      invoice,
       identity,
       attemptId,
     };
@@ -695,11 +712,13 @@ async function prepareSync(
 }
 
 async function recordFailure(
-  input: SyncFrozenInvoiceToAccountingInput,
+  input: FrozenInvoicePushInput,
   prepared: PreparedSync,
   error: unknown,
+  pushReturned: boolean,
 ): Promise<void> {
   const rejected =
+    !pushReturned &&
     !!error &&
     typeof error === 'object' &&
     (error as { code?: unknown }).code === 'QBO_WRITE_ERROR' &&
@@ -729,10 +748,35 @@ async function recordFailure(
   });
 }
 
+async function saveSyncedInvoice(
+  invoice: Invoice,
+  state: FrozenSyncState,
+  externalId: string,
+  syncedAt: Date,
+): Promise<FrozenAccountingSyncResult> {
+  invoice.externalId = externalId;
+  invoice.externalProvider = state.identity.provider;
+  invoice.syncedAt = syncedAt;
+  invoice.accountingSyncStateJson = JSON.stringify({
+    ...state,
+    status: 'synced',
+    externalId,
+    syncedAt: syncedAt.toISOString(),
+  } satisfies FrozenSyncState);
+  await invoice.saveDerived(DOCUMENT_MONEY_WRITE);
+  return {
+    status: 'synced',
+    externalId,
+    syncedAt,
+    moneySnapshotId: state.identity.moneySnapshotId,
+  };
+}
+
 async function recordSuccess(
-  input: SyncFrozenInvoiceToAccountingInput,
+  input: FrozenInvoicePushInput,
   prepared: PreparedSync,
   result: SyncResult,
+  pilotProjection?: QuickBooksPilotProjection,
 ): Promise<FrozenAccountingSyncResult> {
   requiredText(result.externalId, 'Accounting external ID');
   if (
@@ -755,29 +799,27 @@ async function recordSuccess(
       state?.status !== 'in_flight' ||
       state.attemptId !== prepared.attemptId ||
       !sameIdentity(state.identity, prepared.identity) ||
-      invoice.moneySnapshotId !== prepared.identity.moneySnapshotId
+      invoice.moneySnapshotId !== prepared.identity.moneySnapshotId ||
+      (state.pilot &&
+        invoice.customerExternalId !== prepared.invoice.customerExternalId)
     )
       throw new MoneyValidationError(
         'ACCOUNTING_SYNC_RECONCILIATION_REQUIRED',
         'Accounting sync ownership or frozen snapshot changed after provider write',
       );
-    const syncedAt = result.syncedAt.toISOString();
-    invoice.externalId = result.externalId;
-    invoice.externalProvider = prepared.identity.provider;
-    invoice.syncedAt = result.syncedAt;
-    invoice.accountingSyncStateJson = JSON.stringify({
-      ...state,
-      status: 'synced',
-      externalId: result.externalId,
-      syncedAt,
-    } satisfies FrozenSyncState);
-    await invoice.saveDerived(DOCUMENT_MONEY_WRITE);
-    return {
-      status: 'synced',
-      externalId: result.externalId,
-      syncedAt: result.syncedAt,
-      moneySnapshotId: prepared.identity.moneySnapshotId,
-    };
+    if (state.pilot)
+      await assertUnusedPilotExternalId(
+        tx,
+        invoice,
+        state.identity,
+        result.externalId,
+      );
+    return saveSyncedInvoice(
+      invoice,
+      { ...state, pilotProjection },
+      result.externalId,
+      result.syncedAt,
+    );
   });
 }
 
@@ -789,10 +831,25 @@ async function recordSuccess(
 export async function syncFrozenInvoiceToAccounting(
   input: SyncFrozenInvoiceToAccountingInput,
 ): Promise<FrozenAccountingSyncResult> {
+  return syncFrozenInvoice(input);
+}
+
+async function syncFrozenInvoice(
+  input: FrozenInvoicePushInput,
+  pilot?: {
+    acceptance: QuickBooksPilotAcceptance;
+    verify(
+      invoice: Invoice,
+      result: SyncResult,
+    ): Promise<QuickBooksPilotProjection>;
+  },
+): Promise<FrozenAccountingSyncResult> {
   assertPrincipalTenant(input.tenantId);
-  const prepared = await prepareSync(input);
+  const prepared = await prepareSync(input, pilot?.acceptance);
   if (prepared.kind === 'unchanged') return prepared.result;
   let result: SyncResult;
+  let pushReturned = false;
+  let projection: QuickBooksPilotProjection | undefined;
   try {
     if (prepared.documentKind === 'invoice') {
       if (!('invoiceNumber' in prepared.accountingInput))
@@ -811,11 +868,13 @@ export async function syncFrozenInvoiceToAccounting(
         prepared.accountingInput,
       );
     }
+    pushReturned = true;
+    projection = await pilot?.verify(prepared.invoice, result);
   } catch (error) {
-    await recordFailure(input, prepared, error);
+    await recordFailure(input, prepared, error, pushReturned);
     throw error;
   }
-  return recordSuccess(input, prepared, result);
+  return recordSuccess(input, prepared, result, projection);
 }
 
 /**
@@ -839,21 +898,9 @@ export async function reconcileFrozenInvoiceAccountingSync(
     const snapshot = await loadSnapshot(tx, input.tenantId, invoice);
     const sdkInput = toSdkInput(snapshot, input.mapping);
     const { request } = prepareRequest(snapshot, input.mapping, sdkInput);
-    const identity: FrozenSyncIdentity = {
-      provider: 'quickbooks',
-      documentKind: snapshot.document.kind,
-      realmId: request.realmId,
-      environment: request.environment,
-      invoiceId: snapshot.document.id,
-      moneySnapshotId: snapshot.moneySnapshotId,
-      requestId: request.requestId,
-      payloadHash: request.payloadHash,
-      creditedInvoiceExternalId:
-        'creditedInvoiceExternalId' in request
-          ? request.creditedInvoiceExternalId
-          : undefined,
-    };
+    const identity = frozenIdentity(snapshot, request);
     const state = parseSyncState(invoice.accountingSyncStateJson);
+    checkPilotAcceptance(invoice, state);
     if (
       !state ||
       (state.status !== 'unknown' && state.status !== 'in_flight') ||
@@ -899,23 +946,12 @@ export async function reconcileFrozenInvoiceAccountingSync(
         'INVALID_MONEY_INPUT',
         'Accounting reconciliation requires a valid sync timestamp',
       );
-    const syncedAt = input.outcome.syncedAt.toISOString();
-    invoice.externalId = externalId;
-    invoice.externalProvider = identity.provider;
-    invoice.syncedAt = input.outcome.syncedAt;
-    invoice.accountingSyncStateJson = JSON.stringify({
-      ...state,
-      status: 'synced',
+    return saveSyncedInvoice(
+      invoice,
+      state,
       externalId,
-      syncedAt,
-    } satisfies FrozenSyncState);
-    await invoice.saveDerived(DOCUMENT_MONEY_WRITE);
-    return {
-      status: 'synced',
-      externalId,
-      syncedAt: input.outcome.syncedAt,
-      moneySnapshotId: identity.moneySnapshotId,
-    };
+      input.outcome.syncedAt,
+    );
   });
 }
 
@@ -931,6 +967,7 @@ export function readFrozenAccountingSyncState(invoice: Invoice): Readonly<{
   startedAt: string;
   documentKind: 'invoice' | 'creditMemo';
   request: QuickBooksInvoiceRequest | QuickBooksCreditMemoRequest;
+  pilotProjection?: QuickBooksPilotProjection;
 }> | null {
   const state = parseSyncState(invoice.accountingSyncStateJson);
   if (!state) return null;
@@ -944,6 +981,9 @@ export function readFrozenAccountingSyncState(invoice: Invoice): Readonly<{
     requestId: state.identity.requestId,
     attemptId: state.attemptId,
     startedAt: state.startedAt,
+    ...(state.pilotProjection
+      ? { pilotProjection: state.pilotProjection }
+      : {}),
     request: {
       requestId: state.identity.requestId,
       realmId: state.identity.realmId,
@@ -959,4 +999,308 @@ export function readFrozenAccountingSyncState(invoice: Invoice): Readonly<{
         : {}),
     },
   };
+}
+
+function frozenIdentity(
+  snapshot: FrozenInvoiceAccountingSnapshot,
+  request: QuickBooksInvoiceRequest | QuickBooksCreditMemoRequest,
+): FrozenSyncIdentity {
+  return {
+    provider: 'quickbooks',
+    documentKind: snapshot.document.kind,
+    realmId: request.realmId,
+    environment: request.environment,
+    invoiceId: snapshot.document.id,
+    moneySnapshotId: snapshot.moneySnapshotId,
+    requestId: request.requestId,
+    payloadHash: request.payloadHash,
+    creditedInvoiceExternalId:
+      'creditedInvoiceExternalId' in request
+        ? request.creditedInvoiceExternalId
+        : undefined,
+  };
+}
+
+function checkPilotAcceptance(
+  invoice: Invoice,
+  state: FrozenSyncState | null,
+  acceptance?: QuickBooksPilotAcceptance,
+): void {
+  if (acceptance && acceptance.moneySnapshotId !== invoice.moneySnapshotId)
+    pilotDisagreement(
+      'QuickBooks pilot acceptance does not match the frozen invoice',
+    );
+  if (
+    state &&
+    (state.pilot?.obligationId !== acceptance?.obligationId ||
+      state.pilot?.quoteVersionId !== acceptance?.quoteVersionId ||
+      state.pilot?.moneySnapshotId !== acceptance?.moneySnapshotId)
+  )
+    pilotDisagreement(
+      'QuickBooks pilot acceptance differs from the existing reservation',
+    );
+}
+
+async function assertUnusedPilotExternalId(
+  db: DatabaseInterface,
+  invoice: Invoice,
+  identity: FrozenSyncIdentity,
+  externalId: string,
+): Promise<void> {
+  const invoices = await InvoiceCollection.create({ db });
+  const matches = await invoices.list({
+    where: { externalId, tenantId: invoice.tenantId },
+  });
+  for (const other of matches) {
+    if (other.id === invoice.id) continue;
+    const binding = parseSyncState(other.accountingSyncStateJson);
+    if (
+      !binding ||
+      (binding.identity.realmId === identity.realmId &&
+        binding.identity.environment === identity.environment)
+    )
+      pilotDisagreement(
+        'QuickBooks invoice is already bound to another local invoice',
+      );
+  }
+}
+
+/** The pilot has a fixture transport only. No credential or SDK factory is accepted. */
+export interface QuickBooksPilotFixture {
+  readonly mode: 'fixture';
+  readonly scope: QuickBooksPilotScope;
+  pushInvoice(input: InvoiceInput): Promise<SyncResult>;
+  readInvoice(externalId: string): Promise<QuickBooksPilotInvoiceEvidence>;
+  findInvoiceForRequest?(request: QuickBooksInvoiceRequest): Promise<{
+    readonly requestId: string;
+    readonly payloadHash: string;
+    readonly invoice: QuickBooksPilotInvoiceEvidence;
+  } | null>;
+}
+
+export type QuickBooksPilotCommand = FrozenInvoiceAccountingInput & {
+  readonly acceptance: QuickBooksPilotAcceptance;
+  readonly fixture: QuickBooksPilotFixture;
+} & (
+    | { readonly action: 'issue' | 'poll' }
+    | { readonly action: 'link'; readonly externalId: string }
+    | {
+        readonly action: 'recover';
+        readonly confirmInterruptedOwnerStopped?: true;
+      }
+  );
+
+function assertPilotInvoice(invoice: Invoice): void {
+  if (
+    invoice.kind !== 'invoice' ||
+    invoice.totalAmount <= 0 ||
+    !invoice.customerExternalId ||
+    invoice.ordinaryAccountingStateJson ||
+    invoice.retentionAccountingStateJson
+  )
+    unsupported(
+      'QuickBooks pilot requires an ordinary positive invoice and a mapped customer',
+    );
+}
+
+function checkPilotEvidence(
+  evidence: QuickBooksPilotInvoiceEvidence,
+  scope: QuickBooksPilotScope,
+  externalId: string,
+  invoice: Pick<
+    Invoice,
+    | 'customerExternalId'
+    | 'currency'
+    | 'subtotal'
+    | 'discountTotal'
+    | 'taxAmount'
+    | 'totalAmount'
+    | 'dueDate'
+  >,
+): QuickBooksPilotProjection {
+  if (
+    !evidence ||
+    evidence.tenantId !== scope.tenantId ||
+    evidence.realmId !== scope.realmId ||
+    evidence.environment !== scope.environment ||
+    evidence.externalId !== externalId ||
+    !invoice.customerExternalId ||
+    evidence.customerExternalId !== invoice.customerExternalId ||
+    evidence.currency !== invoice.currency ||
+    evidence.subtotalMinor !== invoice.subtotal ||
+    evidence.discountMinor !== invoice.discountTotal ||
+    evidence.taxMinor !== invoice.taxAmount ||
+    evidence.totalMinor !== invoice.totalAmount ||
+    evidence.dueDate !== (invoice.dueDate?.toISOString().slice(0, 10) ?? null)
+  )
+    pilotDisagreement('QuickBooks invoice identity or frozen money differs');
+  return projectQuickBooksPilotEvidence(evidence);
+}
+
+/**
+ * Issue, link, recover or poll one accepted invoice using deterministic fixture
+ * evidence. The trusted host authorizes the quote acceptance and manual link.
+ * Every invocation revalidates the active tenant and fixture scope.
+ */
+export async function runQuickBooksPilot(
+  input: QuickBooksPilotCommand,
+): Promise<QuickBooksPilotProjection> {
+  assertPrincipalTenant(input.tenantId);
+  const { acceptance, fixture, mapping } = input;
+  if (!['issue', 'poll', 'link', 'recover'].includes(input.action))
+    unsupported('Unsupported QuickBooks pilot action');
+  if (
+    fixture?.mode !== 'fixture' ||
+    fixture.scope?.environment !== 'sandbox' ||
+    mapping.environment !== 'sandbox' ||
+    fixture.scope.tenantId !== input.tenantId ||
+    fixture.scope.realmId !== mapping.realmId
+  )
+    unsupported(
+      'QuickBooks pilot requires an explicitly scoped sandbox fixture',
+    );
+  requiredText(mapping.realmId, 'QuickBooks realm');
+  requiredText(acceptance.quoteVersionId, 'Accepted quote version');
+  requiredText(acceptance.moneySnapshotId, 'Accepted money snapshot');
+  const obligationId = requiredText(
+    acceptance.obligationId,
+    'Accepted obligation',
+  );
+  if (
+    input.invoiceId !==
+    (await quickBooksPilotInvoiceId(input.tenantId, obligationId))
+  )
+    pilotDisagreement(
+      'QuickBooks pilot requires the canonical obligation invoice',
+    );
+  const scope = { ...fixture.scope };
+
+  if (input.action === 'issue') {
+    // The existing owner persists the descriptor before push and records any
+    // unverifiable readback after push as an unresolved create.
+    let projection: QuickBooksPilotProjection | undefined;
+    await syncFrozenInvoice(
+      {
+        ...input,
+        provider: {
+          type: 'quickbooks',
+          invoices: { push: (invoice) => fixture.pushInvoice(invoice) },
+        },
+      },
+      {
+        acceptance,
+        async verify(invoice, result) {
+          if (result.action !== 'created')
+            pilotDisagreement('QuickBooks pilot did not return a new invoice');
+          const id = requiredText(result.externalId, 'QuickBooks invoice ID');
+          projection = checkPilotEvidence(
+            await fixture.readInvoice(id),
+            scope,
+            id,
+            invoice,
+          );
+          return projection;
+        },
+      },
+    );
+    if (projection) return projection;
+  }
+
+  return withDocumentMoneyTransaction(input.db, async (tx) => {
+    await lockTenantMoneyRuntime(tx, input.tenantId);
+    const { invoice } = await lockAndReloadInvoice(
+      tx,
+      input.invoiceId,
+      input.tenantId,
+    );
+    const state = parseSyncState(invoice.accountingSyncStateJson);
+    checkPilotAcceptance(invoice, state, acceptance);
+    assertPilotInvoice(invoice);
+    const snapshot = await loadSnapshot(tx, input.tenantId, invoice);
+    // Validate the original create descriptor even after a binding exists.
+    const sdkInput = toSdkInput(
+      {
+        ...snapshot,
+        document: { ...snapshot.document, externalId: undefined },
+      },
+      mapping,
+    );
+    const { request } = prepareRequest(snapshot, mapping, sdkInput);
+    const identity = frozenIdentity(snapshot, request);
+    if (state && !sameIdentity(state.identity, identity))
+      pilotDisagreement('QuickBooks pilot binding or frozen request changed');
+
+    if (state?.status === 'synced') {
+      const id = requiredText(state.externalId ?? '', 'QuickBooks invoice ID');
+      if (
+        invoice.externalId !== id ||
+        invoice.externalProvider !== 'quickbooks'
+      )
+        pilotDisagreement('QuickBooks pilot provider binding changed');
+      if (input.action === 'link' && input.externalId !== id)
+        pilotDisagreement('QuickBooks invoice already has a different binding');
+      const projection = checkPilotEvidence(
+        await fixture.readInvoice(id),
+        scope,
+        id,
+        invoice,
+      );
+      invoice.accountingSyncStateJson = JSON.stringify({
+        ...state,
+        pilotProjection: projection,
+      } satisfies FrozenSyncState);
+      await invoice.saveDerived(DOCUMENT_MONEY_WRITE);
+      return projection;
+    }
+
+    let externalId: string;
+    let evidence: QuickBooksPilotInvoiceEvidence;
+    if (
+      input.action === 'link' &&
+      (!state || state.status === 'rejected') &&
+      !invoice.externalId
+    ) {
+      externalId = requiredText(input.externalId, 'QuickBooks invoice ID');
+      evidence = await fixture.readInvoice(externalId);
+    } else if (
+      input.action === 'recover' &&
+      (state?.status === 'unknown' ||
+        (state?.status === 'in_flight' &&
+          input.confirmInterruptedOwnerStopped === true))
+    ) {
+      const match = await fixture.findInvoiceForRequest?.(request);
+      if (
+        !match ||
+        match.requestId !== identity.requestId ||
+        match.payloadHash !== identity.payloadHash
+      )
+        pilotDisagreement(
+          'QuickBooks create remains unresolved without verified request identity',
+        );
+      evidence = match.invoice;
+      externalId = requiredText(evidence.externalId, 'QuickBooks invoice ID');
+    } else {
+      pilotDisagreement(
+        'QuickBooks pilot has no verified invoice binding for this action',
+      );
+    }
+
+    const projection = checkPilotEvidence(evidence, scope, externalId, invoice);
+    await assertUnusedPilotExternalId(tx, invoice, identity, externalId);
+    await saveSyncedInvoice(
+      invoice,
+      {
+        version: 1,
+        status: 'synced',
+        identity,
+        attemptId: state?.attemptId ?? randomUUID(),
+        startedAt: state?.startedAt ?? projection.observedAt,
+        pilot: acceptance,
+        pilotProjection: projection,
+      },
+      externalId,
+      new Date(projection.observedAt),
+    );
+    return projection;
+  });
 }

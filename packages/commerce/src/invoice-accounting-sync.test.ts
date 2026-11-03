@@ -22,10 +22,15 @@ import {
   type QuickBooksFrozenInvoiceMapping,
   readFrozenAccountingSyncState,
   reconcileFrozenInvoiceAccountingSync,
+  runQuickBooksPilot,
   syncFrozenInvoiceToAccounting,
   toFrozenInvoiceAccountingInput,
 } from './invoice-accounting-sync.js';
 import type { Invoice } from './models/Invoice.js';
+import {
+  type QuickBooksPilotInvoiceEvidence,
+  quickBooksPilotInvoiceId,
+} from './quickbooks-pilot-evidence.js';
 import { ensureTenantTaxCodes } from './tax/standard-codes.js';
 import { InvoiceStatus } from './types/index.js';
 
@@ -48,6 +53,7 @@ describe('frozen invoice accounting sync (#3937)', () => {
       lineAmountType?: 'exclusive' | 'inclusive';
       discount?: number;
       quantity?: number;
+      invoiceId?: string;
     } = {},
   ): Promise<{
     invoice: Invoice;
@@ -76,6 +82,7 @@ describe('frozen invoice accounting sync (#3937)', () => {
       });
       const invoices = await InvoiceCollection.create({ db });
       const invoice = await invoices.create({
+        id: options.invoiceId,
         customerId: customer.id,
         customerExternalId: 'qbo-customer',
         invoiceNumber: `INV-${tenantId}`,
@@ -722,6 +729,339 @@ describe('frozen invoice accounting sync (#3937)', () => {
           creditedInvoiceExternalId: 'qbo-source-invoice',
         },
       });
+    });
+  });
+  async function pilot(
+    tenantId = 'pilot-tenant',
+    obligationId = 'obligation-a',
+  ) {
+    const invoiceId = await quickBooksPilotInvoiceId(tenantId, obligationId);
+    const { invoice, lineId, componentId } = await issuedInvoice(tenantId, {
+      invoiceId,
+      discount: 10,
+    });
+    const scope = {
+      tenantId,
+      realmId: 'realm-a',
+      environment: 'sandbox',
+    } as const;
+    const evidence: QuickBooksPilotInvoiceEvidence = {
+      ...scope,
+      externalId: 'qbo-pilot-invoice',
+      customerExternalId: invoice.customerExternalId,
+      currency: invoice.currency,
+      subtotalMinor: invoice.subtotal,
+      discountMinor: invoice.discountTotal,
+      taxMinor: invoice.taxAmount,
+      totalMinor: invoice.totalAmount,
+      balanceMinor: invoice.totalAmount,
+      dueDate: invoice.dueDate?.toISOString().slice(0, 10) ?? null,
+      voided: false,
+      complete: true,
+      transactions: [],
+    };
+    const fixture = {
+      mode: 'fixture' as const,
+      scope,
+      pushInvoice: vi.fn(
+        async (_input: InvoiceInput): Promise<SyncResult> => ({
+          action: 'created',
+          externalId: evidence.externalId,
+          syncedAt: new Date('2026-10-14T12:00:00.000Z'),
+        }),
+      ),
+      readInvoice: vi.fn(async (_id: string) => evidence),
+      findInvoiceForRequest: vi.fn(
+        async (request: NonNullable<InvoiceInput['quickbooksRequest']>) => ({
+          requestId: request.requestId,
+          payloadHash: request.payloadHash,
+          invoice: evidence,
+        }),
+      ),
+    };
+    const args = {
+      db,
+      tenantId,
+      invoiceId,
+      fixture,
+      mapping: mapping(lineId, componentId),
+      acceptance: {
+        obligationId,
+        quoteVersionId: 'quote-v1',
+        moneySnapshotId: invoice.moneySnapshotId,
+      },
+    };
+    async function state() {
+      const invoices = await InvoiceCollection.create({ db });
+      const stored = await invoices.get({ id: invoiceId }, { cache: false });
+      if (!stored) throw new Error('Expected pilot invoice');
+      return readFrozenAccountingSyncState(stored);
+    }
+    return { args, fixture, evidence, state };
+  }
+
+  it('reserves one pilot create, blocks ambiguous replay and recovers the exact descriptor', async () => {
+    const { args, fixture, evidence, state } = await pilot();
+    await withTenant({ tenantId: args.tenantId }, async () => {
+      fixture.pushInvoice.mockRejectedValueOnce(new Error('lost response'));
+      await expect(
+        runQuickBooksPilot({ ...args, action: 'issue' }),
+      ).rejects.toThrow('lost response');
+      const unresolved = await state();
+      expect(unresolved?.status).toBe('unknown');
+      await expect(
+        runQuickBooksPilot({ ...args, action: 'issue' }),
+      ).rejects.toThrow('unknown');
+      await expect(
+        runQuickBooksPilot({
+          ...args,
+          action: 'link',
+          externalId: evidence.externalId,
+        }),
+      ).rejects.toThrow('no verified');
+      fixture.findInvoiceForRequest.mockImplementationOnce(async (request) => ({
+        requestId: request.requestId,
+        payloadHash: 'different-payload',
+        invoice: evidence,
+      }));
+      await expect(
+        runQuickBooksPilot({ ...args, action: 'recover' }),
+      ).rejects.toThrow('verified request identity');
+      await expect(
+        runQuickBooksPilot({ ...args, action: 'recover' }),
+      ).resolves.toMatchObject({ state: 'unpaid' });
+      expect(fixture.findInvoiceForRequest).toHaveBeenLastCalledWith(
+        unresolved?.request,
+      );
+      await expect(
+        runQuickBooksPilot({ ...args, action: 'issue' }),
+      ).resolves.toMatchObject({ state: 'unpaid' });
+      expect(fixture.pushInvoice).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('refuses a competing issue or manual link while the pilot create owns the invoice', async () => {
+    const { args, fixture, evidence } = await pilot();
+    await withTenant({ tenantId: args.tenantId }, async () => {
+      const started = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      const push = fixture.pushInvoice.getMockImplementation();
+      if (!push) throw new Error('Expected fixture push');
+      fixture.pushInvoice.mockImplementationOnce(async (input) => {
+        started.resolve();
+        await release.promise;
+        return push(input);
+      });
+      const issuance = runQuickBooksPilot({ ...args, action: 'issue' });
+      try {
+        await Promise.race([started.promise, issuance]);
+        await expect(
+          runQuickBooksPilot({ ...args, action: 'issue' }),
+        ).rejects.toThrow('owns this invoice');
+        await expect(
+          runQuickBooksPilot({
+            ...args,
+            action: 'link',
+            externalId: evidence.externalId,
+          }),
+        ).rejects.toThrow('no verified');
+        expect(fixture.readInvoice).not.toHaveBeenCalled();
+      } finally {
+        release.resolve();
+        await issuance;
+      }
+      expect(fixture.pushInvoice).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('links manually only after exact readback and blocks a second create', async () => {
+    const { args, fixture, evidence, state } = await pilot();
+    const link = {
+      ...args,
+      action: 'link' as const,
+      externalId: evidence.externalId,
+    };
+    await withTenant({ tenantId: args.tenantId }, async () => {
+      for (const wrong of [
+        { tenantId: 'another-tenant' },
+        { realmId: 'another-realm' },
+        { customerExternalId: 'another-customer' },
+        { currency: 'USD' },
+        { subtotalMinor: evidence.subtotalMinor + 1 },
+        { totalMinor: evidence.totalMinor + 1 },
+        { taxMinor: evidence.taxMinor + 1 },
+        { discountMinor: evidence.discountMinor + 1 },
+        { dueDate: '2099-01-01' },
+      ]) {
+        fixture.readInvoice.mockResolvedValueOnce({ ...evidence, ...wrong });
+        await expect(runQuickBooksPilot(link)).rejects.toThrow(
+          'frozen money differs',
+        );
+      }
+      expect(await state()).toBeNull();
+      await expect(runQuickBooksPilot(link)).resolves.toMatchObject({
+        state: 'unpaid',
+      });
+      await expect(
+        runQuickBooksPilot({
+          ...args,
+          action: 'issue',
+          acceptance: { ...args.acceptance, quoteVersionId: 'quote-v2' },
+        }),
+      ).rejects.toThrow('existing reservation');
+      await expect(
+        runQuickBooksPilot({ ...args, action: 'issue' }),
+      ).resolves.toMatchObject({ state: 'unpaid' });
+      expect(fixture.pushInvoice).not.toHaveBeenCalled();
+    });
+  });
+
+  it('refuses to bind one QuickBooks invoice to two local obligations', async () => {
+    const first = await pilot();
+    const second = await pilot(first.args.tenantId, 'obligation-b');
+    await withTenant({ tenantId: first.args.tenantId }, async () => {
+      await runQuickBooksPilot({
+        ...first.args,
+        action: 'link',
+        externalId: first.evidence.externalId,
+      });
+      await expect(
+        runQuickBooksPilot({
+          ...second.args,
+          action: 'link',
+          externalId: second.evidence.externalId,
+        }),
+      ).rejects.toThrow('already bound to another local invoice');
+      expect(await second.state()).toBeNull();
+    });
+  });
+
+  it('fails closed on live and mismatched scope before touching the fixture', async () => {
+    const { args, fixture } = await pilot();
+    await withTenant({ tenantId: 'another-tenant' }, async () => {
+      await expect(
+        runQuickBooksPilot({ ...args, action: 'issue' }),
+      ).rejects.toThrow('active principal tenant');
+    });
+    await withTenant({ tenantId: args.tenantId }, async () => {
+      await expect(
+        runQuickBooksPilot({
+          ...args,
+          action: 'issue',
+          mapping: { ...args.mapping, environment: 'production' },
+        }),
+      ).rejects.toThrow('scoped sandbox fixture');
+      await expect(
+        runQuickBooksPilot({
+          ...args,
+          action: 'issue',
+          mapping: { ...args.mapping, realmId: 'another-realm' },
+        }),
+      ).rejects.toThrow('scoped sandbox fixture');
+      await expect(
+        runQuickBooksPilot({
+          ...args,
+          action: 'issue',
+          acceptance: { ...args.acceptance, moneySnapshotId: 'wrong-snapshot' },
+        }),
+      ).rejects.toThrow('frozen invoice');
+    });
+    expect(fixture.pushInvoice).not.toHaveBeenCalled();
+    expect(fixture.readInvoice).not.toHaveBeenCalled();
+  });
+
+  it('polls current linked money, preserves combinations and refuses unsupported zero balances', async () => {
+    const { args, fixture, evidence, state } = await pilot();
+    await withTenant({ tenantId: args.tenantId }, async () => {
+      await expect(
+        runQuickBooksPilot({ ...args, action: 'issue' }),
+      ).resolves.toMatchObject({ state: 'unpaid' });
+      const poll = { ...args, action: 'poll' as const };
+      const { totalMinor } = evidence;
+      const payment = {
+        id: 'p',
+        kind: 'payment',
+        amountMinor: totalMinor,
+      } as const;
+      fixture.readInvoice.mockResolvedValueOnce({
+        ...evidence,
+        balanceMinor: 0,
+      });
+      await expect(runQuickBooksPilot(poll)).rejects.toThrow(
+        'disagrees with linked transaction',
+      );
+      expect((await state())?.pilotProjection?.state).toBe('unpaid');
+      const partial = {
+        ...evidence,
+        balanceMinor: totalMinor - 5,
+        transactions: [{ ...payment, amountMinor: 5 }],
+      };
+      fixture.readInvoice.mockResolvedValueOnce(partial);
+      await expect(runQuickBooksPilot(poll)).resolves.toMatchObject({
+        state: 'partial',
+        paidMinor: 5,
+      });
+      fixture.readInvoice.mockResolvedValue({
+        ...evidence,
+        balanceMinor: 0,
+        transactions: [payment],
+      });
+      for (let n = 0; n < 2; n++) {
+        await expect(runQuickBooksPilot(poll)).resolves.toMatchObject({
+          state: 'paid',
+          paidMinor: totalMinor,
+        });
+      }
+      fixture.readInvoice.mockResolvedValueOnce({
+        ...evidence,
+        balanceMinor: 0,
+        transactions: [
+          { ...payment, amountMinor: totalMinor - 5 },
+          { id: 'c', kind: 'credit', amountMinor: 5 },
+        ],
+      });
+      await expect(runQuickBooksPilot(poll)).resolves.toMatchObject({
+        state: 'credited',
+        creditedMinor: 5,
+      });
+      fixture.readInvoice.mockResolvedValueOnce({
+        ...evidence,
+        balanceMinor: 5,
+        transactions: [payment, { id: 'r', kind: 'refund', amountMinor: 5 }],
+      });
+      await expect(runQuickBooksPilot(poll)).resolves.toMatchObject({
+        state: 'refunded',
+        refundedMinor: 5,
+        paidMinor: totalMinor - 5,
+      });
+      fixture.readInvoice.mockResolvedValueOnce({
+        ...evidence,
+        balanceMinor: 0,
+        voided: true,
+      });
+      await expect(runQuickBooksPilot(poll)).resolves.toMatchObject({
+        state: 'voided',
+      });
+      expect((await state())?.pilotProjection?.state).toBe('voided');
+      expect(fixture.pushInvoice).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('keeps a create unresolved when post-create readback mismatches', async () => {
+    const { args, fixture, evidence, state } = await pilot();
+    await withTenant({ tenantId: args.tenantId }, async () => {
+      fixture.readInvoice.mockResolvedValueOnce({
+        ...evidence,
+        taxMinor: evidence.taxMinor + 1,
+      });
+      await expect(
+        runQuickBooksPilot({ ...args, action: 'issue' }),
+      ).rejects.toThrow('frozen money differs');
+      expect((await state())?.status).toBe('unknown');
+      await expect(
+        runQuickBooksPilot({ ...args, action: 'issue' }),
+      ).rejects.toThrow('unknown');
+      expect(fixture.pushInvoice).toHaveBeenCalledTimes(1);
     });
   });
 });

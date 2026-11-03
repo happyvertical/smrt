@@ -236,9 +236,12 @@ export {
   type FrozenInvoiceAccountingSnapshot,
   loadFrozenInvoiceAccountingSnapshot,
   type QuickBooksFrozenInvoiceMapping,
+  type QuickBooksPilotCommand,
+  type QuickBooksPilotFixture,
   type ReconcileFrozenInvoiceAccountingInput,
   readFrozenAccountingSyncState,
   reconcileFrozenInvoiceAccountingSync,
+  runQuickBooksPilot,
   type SyncFrozenInvoiceToAccountingInput,
   syncFrozenInvoiceToAccounting,
   toFrozenInvoiceAccountingInput,
@@ -417,6 +420,14 @@ export {
   savePartyContacts,
   validatePartyContactRows,
 } from './party-contacts.js';
+export {
+  type QuickBooksPilotAcceptance,
+  type QuickBooksPilotInvoiceEvidence,
+  type QuickBooksPilotProjection,
+  type QuickBooksPilotScope,
+  type QuickBooksPilotTransaction,
+  quickBooksPilotInvoiceId,
+} from './quickbooks-pilot-evidence.js';
 export {
   getReceivedPurchaseMoney,
   getReceivedSalesContractMoney,
