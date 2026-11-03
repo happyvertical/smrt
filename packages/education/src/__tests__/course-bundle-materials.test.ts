@@ -616,6 +616,48 @@ describe('learner-audience slides', () => {
   });
 });
 
+describe('repairing an original deck join', () => {
+  it.each([
+    [
+      'sortOrder',
+      "UPDATE lesson_assets SET sort_order = 99, audience = 'learner' WHERE asset_id = '%ORIG%'",
+    ],
+    [
+      'title',
+      "UPDATE course_assets SET title = 'Edited', audience = 'learner'",
+    ],
+  ])('conflicts, changing nothing (audience included), when a wrong audience comes with a conflicting %s', async (kind, sql) => {
+    const s = await setup();
+    const shown = structuredClone(manifest) as typeof manifest;
+    const { import: view, accepted } = await s.importBundle(bundle(shown));
+    const assets = await storeAll(s, accepted);
+    const apply = () =>
+      s.as(s.guardian, () =>
+        s.service.applyMaterials({
+          ...s.guardian,
+          importId: view.importId,
+          bundle: bundle(shown),
+          courseId: s.courseId,
+          lessons: s.lessons,
+          assets,
+        }),
+      );
+    await apply();
+    const original = assets['l1/deck.pptx']?.original as string;
+    if (kind === 'title') {
+      // a course-level join that is not an original must conflict on its title alone
+      await s.db.query(sql);
+    } else await s.db.query(sql.replace('%ORIG%', original));
+    const snapshot = async () => ({
+      lesson: await s.db.list('lesson_assets', {}),
+      course: await s.db.list('course_assets', {}),
+    });
+    const before = await snapshot();
+    await expect(apply()).rejects.toMatchObject({ reason: 'conflict' });
+    expect(await snapshot()).toEqual(before);
+  });
+});
+
 describe('retrying a failed rendering', () => {
   /** A converter that is down until `up.value` is true. */
   function flaky() {

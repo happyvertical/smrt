@@ -1124,22 +1124,21 @@ export class CourseBundleImportService extends CourseAuthoringService {
             where,
             { cache: false },
           );
-          if (existing && original && existing.audience !== audience) {
-            // Repair a join written before originals were always guardian-only.
-            existing.audience = audience;
-            await withAccess(assetId, () => existing.save());
-            result.repaired++;
-            continue;
-          }
           if (existing) {
+            // Metadata must match; only a wrong audience on an original is repairable.
             if (
-              existing.audience !== audience ||
               existing.sortOrder !== material.sortOrder ||
               (material.scope === 'course' &&
-                (existing as { title?: string }).title !== material.title)
+                (existing as { title?: string }).title !== material.title) ||
+              (existing.audience !== audience && !original)
             )
               throw new CourseBundleMaterialsError('conflict', material.path);
-            result.unchanged++;
+            if (existing.audience !== audience) {
+              // Repair a join written before originals were always guardian-only.
+              existing.audience = audience;
+              await withAccess(assetId, () => existing.save());
+              result.repaired++;
+            } else result.unchanged++;
             continue;
           }
           await withAccess(assetId, () =>
