@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeWorkbookAnswerRegions } from '../workbook-answer-regions.js';
-import type { WorkbookQuestion } from '../workbook-contracts.js';
+import type { WorkQuestion } from '../lesson-work-contracts.js';
+import { normalizeWorkAnswerRegions } from '../work-answer-regions.js';
 
 const sha256 = 'a'.repeat(64);
 const questions = [
   { id: 'q1', anchors: [{ assetId: 'asset1', sha256, page: null }] },
-] as WorkbookQuestion[];
+] as WorkQuestion[];
 const sources = [{ assetId: 'asset1', sha256, pageCount: 1 }];
 const valid = {
   version: 1,
@@ -22,13 +22,13 @@ const valid = {
 };
 describe('workbook answer region presentation', () => {
   it('preserves exact current source/question observed geometry', () =>
-    expect(normalizeWorkbookAnswerRegions(valid, questions, sources)).toEqual({
+    expect(normalizeWorkAnswerRegions(valid, questions, sources)).toEqual({
       answerRegions: valid,
     }));
   it('leaves old metadata-less assessments unchanged', () =>
-    expect(
-      normalizeWorkbookAnswerRegions(undefined, questions, sources),
-    ).toEqual({}));
+    expect(normalizeWorkAnswerRegions(undefined, questions, sources)).toEqual(
+      {},
+    ));
   it.each([
     null,
     [],
@@ -51,21 +51,21 @@ describe('workbook answer region presentation', () => {
     { ...valid, regions: [valid.regions[0], valid.regions[0]] },
   ])('drops invalid optional regions independently %#', (value) => {
     const before = JSON.stringify(questions);
-    expect(normalizeWorkbookAnswerRegions(value, questions, sources)).toEqual({
+    expect(normalizeWorkAnswerRegions(value, questions, sources)).toEqual({
       answerRegionsOmission: 'invalid',
     });
     expect(JSON.stringify(questions)).toBe(before);
   });
   it('rejects old source anchor/hash on a new correction', () =>
     expect(
-      normalizeWorkbookAnswerRegions(
+      normalizeWorkAnswerRegions(
         valid,
         [
           {
             ...questions[0],
             anchors: [{ assetId: 'new', sha256, page: null }],
           },
-        ] as WorkbookQuestion[],
+        ] as WorkQuestion[],
         sources,
       ),
     ).toEqual({ answerRegionsOmission: 'invalid' }));

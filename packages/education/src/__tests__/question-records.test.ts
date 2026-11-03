@@ -44,11 +44,11 @@ import {
   QuestionResponseCollection,
   worksheetVersionId,
 } from '../index.js';
-import { WORKBOOK_MATH_VOCABULARY } from '../workbook-contracts.js';
-import { WorkbookAssessmentRevisionCollection } from '../workbook-models.js';
-import { WorkbookService } from '../workbook-service.js';
+import { WORK_MATH_VOCABULARY } from '../lesson-work-contracts.js';
+import { WorkAssessmentRevisionCollection } from '../lesson-work-models.js';
+import { LessonWorkService } from '../lesson-work-service.js';
 import { learnerFixture } from './learner-workflows.js';
-import { workbookClasses } from './workbook-workflows.js';
+import { workbookClasses } from './lesson-work-workflows.js';
 
 const authoringExtra = [
   'AuthoredCourse',
@@ -1203,7 +1203,7 @@ describe('question and learning-objective records', () => {
     const q = await s.question();
     const storage = await mkdtemp(join(tmpdir(), 'question-records-'));
     const { f } = s;
-    const workbook = new WorkbookService(
+    const workbook = new LessonWorkService(
       s.db,
       ({ own, relationshipTypeId }) =>
         own || relationshipTypeId === f.guardianType.id,
@@ -1211,15 +1211,15 @@ describe('question and learning-objective records', () => {
       { storage },
     );
     await f.as(f.parent, async () => {
-      const activity = await workbook.resolveWorkbookActivity({
+      const activity = await workbook.resolveBookPageActivity({
         ...f.parent,
-        workbookKey: 'wb',
+        bookKey: 'wb',
         title: 'Workbook',
         edition: '',
         pageKey: 'p1',
         pageLabel: 'Page 1',
       });
-      const attempt = await workbook.captureWorkbookWork({
+      const attempt = await workbook.captureLessonWork({
         ...f.parent,
         activityId: activity.id,
         requestKey: 'cap',
@@ -1231,7 +1231,7 @@ describe('question and learning-objective records', () => {
           },
         ],
       });
-      const anchors = await workbook.getWorkbookSourceAnchors({
+      const anchors = await workbook.getWorkSourceAnchors({
         ...f.parent,
         activityId: activity.id,
         submissionId: attempt.submissionId,
@@ -1248,7 +1248,7 @@ describe('question and learning-objective records', () => {
             inputHash: anchors[0].sha256,
             analysisId: 'a',
           },
-          vocabulary: WORKBOOK_MATH_VOCABULARY,
+          vocabulary: WORK_MATH_VOCABULARY,
           questions: [
             {
               id: '1',
@@ -1265,7 +1265,7 @@ describe('question and learning-objective records', () => {
             },
           ],
         });
-      const revisions = await WorkbookAssessmentRevisionCollection.create({
+      const revisions = await WorkAssessmentRevisionCollection.create({
         db: s.db,
       });
       const create = (json: string) =>

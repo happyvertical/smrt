@@ -1,47 +1,90 @@
-# Physical workbook contract
+# Lesson work contract
 
-`WorkbookService` extends `SubmissionService` with the same actor-bound authorization,
-private asset runtime, transaction executor and guardian Grade boundary. Both
-LearnerAuthorizer and CatalogAuthorizer receive the active executor. Host session
-heartbeats and current permission checks must use that supplied executor, including
-nested guardian review; a captured outer pool can wait on its own transaction.
-CatalogService obtains the executor through the public collection.db getter and
-fails closed when its four catalog collections do not share the same handle. It is an
-additive API; existing Submission/Grade consumers retain their contracts. The six
-closed `Workbook*` models are package-manifest models. Apply normal application
-schema migrations before using them; the service never creates runtime schema.
+`LessonWorkService` (formerly `WorkbookService`) extends `SubmissionService` with
+the same actor-bound authorization, private asset runtime, transaction executor and
+guardian Grade boundary. Both LearnerAuthorizer and CatalogAuthorizer receive the
+active executor. Host session heartbeats and current permission checks must use that
+supplied executor, including nested guardian review; a captured outer pool can wait
+on its own transaction. CatalogService obtains the executor through the public
+collection.db getter and fails closed when its four catalog collections do not
+share the same handle. The closed models (`LessonActivity`, `WorkAttempt`,
+`WorkAssessmentRevision`, `WorkFeedbackRelease`, `WorkFeedbackDelivery`,
+`WorkCompletionDecision`, `LessonWorkFiling`, `LessonPage`) are package-manifest
+models; their storage tables keep the historical `workbook_*` names. Apply normal
+application schema migrations before using them; the service never creates runtime
+schema. The design record is [course work](course-work-design.md).
 
-A guardian calls `resolveWorkbookActivity` with an explicit learner, workbook key,
-title, edition (empty means unknown), page key and printed page label. Keys identify
-the physical copy/edition and page occurrence, including section/side where needed.
-Names and photo hashes do not establish identity. A conflicting reuse fails. One
-private personal-use-copy course/enrollment per learner/workbook supplies internal
-submission scaffolding. The public page API needs no course-building workflow.
+## One pipeline
 
-`captureWorkbookWork` owns original files through SubmissionAsset and creates an
+Every completed-work hand-in on every lesson is lesson work. `SubmissionService`
+capture and correction record the learner's `LessonActivity` (one per enrollment
+and lesson, created on first capture) and an immutable `WorkAttempt` bound to the
+submission in the same transaction; a correction continues its predecessor's
+episode. Blank references create no attempt. Timeline, analysis, guardian review,
+release, delivery, concept evidence and completion work for every lesson.
+
+Two completion rules apply. **Ordinary lessons** (a course without book identity):
+a guardian grade (`reviewSubmission`, `attestLesson`, or guardian review of the
+current capture) records the `WorkCompletionDecision` on the graded current attempt
+and the learner sees the grade. **Book and loose-page work** (a course with
+`bookKey`, or unfiled photo work): marks reach the learner only through an explicit
+release, grading does not complete, and only `completeLessonActivity` does.
+Generic `captureSubmission`/`resubmitSubmission` refuse such work with
+`LessonWorkWorkflowRequiredError`, judged by the enrollment's course (book key or
+unfiled routing) as well as an existing activity, so an untouched book page is
+refused too; hosts call `assertOrdinarySubmissionScope` (enrollment, lesson,
+predecessor) before creating a generic intake receipt.
+
+## Books and pages
+
+A physical book is a course: `Course.bookKey` (one course per family per key,
+immutable once set), `bookEdition`, and the course work policy
+`workReviewRequired`/`workPolicyVersion`. A guardian calls `resolveBookPageActivity`
+with an explicit learner, book key, title, edition (empty means unknown), page key
+and printed label. Keys identify the physical copy/edition and page occurrence,
+including section/side. The family's book course is found or created
+(deterministic id, so concurrent first use collides), the learner is enrolled on
+first use, and the page key matches a `LessonPage` in the course; a new page gets a
+one-page Worksheet lesson. A learner keeps the page lesson their earlier work used
+(merged books may hold two lessons for one key). A conflicting title/edition for a
+key, or a page key naming another label, fails. Names and photo hashes never
+establish identity.
+
+`captureLessonWork` owns original files through SubmissionAsset and creates an
 immutable attempt with source SHA-256 hashes, actual page bounds, actor, capture
 time, assistance, correction predecessor/episode, policy version and effective
-review-required flag. Assistance defaults to `unknown`. Capture retries reuse the
-same Submission/attempt and reject changed bytes or help claims. A correction
-requires the same learner/activity/current predecessor and stays in the same
-practice episode. Analysis/reanalysis adds revisions, never practice attempts.
-Existing LessonProgress.attempts remains a compatibility capture counter.
+review-required flag. Each page may carry a `pageKey`; a correction may carry only
+the pages it replaces, and `WorkAttemptView.pages` folds the versions over the
+correction chain (`current` plus every version oldest first, through the same
+submission privacy projection). Assistance defaults to `unknown`. Capture retries
+reuse the same Submission/attempt and reject changed bytes or help claims. A
+correction requires the same learner/activity/current predecessor and stays in the
+same practice episode. Analysis/reanalysis adds revisions, never practice attempts.
 
-The workbook review-required policy defaults on and is shared by its pages.
-`setWorkbookFeedbackPolicy` uses expected policy version; existing capture snapshots
-remain unchanged. Policy changes cannot erase prior disclosure. Guarded capture,
-policy and decision writes serialize on the learner within the active transaction.
-Ingestion target resolution acquires that learner lock before the enrollment lock,
-matching capture/review order. Guardian apply follows authorized timeline cursors
-when locating a preserved assessment on an older attempt.
-Composite mutations also use the education transaction's serialized composite
-queue, allowing inherited queued capture/review writes without queue recursion.
-Any swallowed mutation error still aborts the complete transaction and file rollback
-uses the inherited fresh-file compensation ledger.
+`setBookCourseSubject({courseId, subject})` sets or clears (`null`) a family book
+course's subject (text up to 200 characters) with the same plan authority; shared
+catalog and plain courses are refused. `fileLessonWork({newBook:{subject?}})` sets it
+on a new book; the workbook migration leaves it unset.
+
+`setCourseWorkPolicy({courseId, expectedPolicyVersion, reviewRequired})` needs plan
+authority over every learner enrolled in the course; capture snapshots never change.
+Filed work snapshots the policy of the course it is placed in. Policy changes cannot
+erase prior disclosure. Guarded capture, policy and decision writes serialize on the
+learner within the active transaction. Ingestion target resolution acquires that
+learner lock before the enrollment lock, matching capture/review order. Composite
+mutations use the education transaction's serialized composite queue; any swallowed
+mutation error still aborts the transaction and file rollback uses the inherited
+fresh-file compensation ledger.
+
+`getLessonActivity`/`listLessonActivities({courseId?, filing?})` return the routing
+(`enrollmentId`, `lessonId`: captures and submission reads use these and they never
+move) and the effective placement: `courseId`, `courseTitle`, `bookKey`,
+`bookEdition`, `lessonTitle`, `pageKey`/`pageLabel`, the lesson's `pages` and the
+course policy.
 
 ## Structured assessment and real ingestion
 
-`WorkbookAssessment` version 1 has stable question IDs, original/corrected prompt
+`WorkAssessment` version 1 has stable question IDs, original/corrected prompt
 and answer text, explicit result/reason, nullable points, feedback, retained source
 anchors and curated concept mappings. An anchor names an owned asset plus SHA-256,
 one-based verified page (or null for a whole-file PDF source) and normalized
@@ -58,14 +101,14 @@ is explicitly persisted as unknown. Reviewed overrides append new bodies and kee
 original AI text inspectable.
 
 The configurable vocabulary is trusted server configuration, not AI-created labels.
-The default `WORKBOOK_MATH_VOCABULARY` has addition, subtraction and place value.
-Other subjects may use an explicit curated `workbookVocabulary` on WorkbookService,
+The default `WORK_MATH_VOCABULARY` has addition, subtraction and place value.
+Other subjects may use an explicit curated `workVocabulary` on LessonWorkService,
 the ingestion handler factory and preservation helper. Unknown concept IDs fail;
 zero mapped concepts is valid. AI mappings are proposed, guardian mappings reviewed.
 Known question IDs are pinned across captures; exact prompts are pinned within a
 capture's reanalysis only. Correction transcriptions come from the new capture,
 so earlier answer-bearing prompts cannot override corrected work. Immutable
-historical prompts remain unchanged. The public `getWorkbookQuestionIdentity`
+historical prompts remain unchanged. The public `getWorkQuestionIdentity`
 returns IDs only: historical prompt text can itself include a learner response.
 Handlers use printed number/occurrence/subpart when present; unnumbered tasks use
 answer-free printed-task slugs with visible-task occurrence/subpart, never output
@@ -79,10 +122,10 @@ semantic equivalence of printed tasks; uncertain correspondence requires human
 review rather than an invented match.
 A different page/question requires explicit new activity identity, never AI retargeting.
 
-`captureEducationIntake` accepts optional `workbookActivityId`/`assistance` when its
-service is WorkbookService. It preserves the existing return SubmissionView and
-binds the workbook attempt/policy before the host queues processing.
-`educationIntakeHandlers({workbookActivityId,...})` advertises a bounded JSON question
+`captureEducationIntake` accepts optional `lessonActivityId`/`assistance` when its
+service is LessonWorkService. It preserves the existing return SubmissionView and
+binds the lesson work attempt/policy before the host queues processing.
+`educationIntakeHandlers({lessonActivityId,...})` advertises a bounded JSON question
 schema to real ingestion generation. Assessed results require reason none;
 unassessed reasons require null points. Per-question outcomes must agree with
 points. Correctness is independent of scoring: readable objectively solvable
@@ -94,8 +137,8 @@ Incorrect earns zero only when the possible-point allocation is known.
 Model aggregate scores/narratives are not requested or trusted: exact
 count summaries and points scores are computed from validated questions without
 rounding or invented partial credit. Default legacy handlers remain compatible.
-`preserveWorkbookIntakeAnalysis` reads the public immutable completed generation,
-checks its exact submission and offered workbook schema, maps cited original
+`preserveWorkIntakeAnalysis` reads the public immutable completed generation,
+checks its exact submission and offered marking schema, maps cited original
 ingestion evidence by hash/order to retained education-owned files and imports one
 validated proposal. Provider/model/version, configuration/rubric, source analysis
 pin and proposal digest are durable provenance. Pending/failed processing produces
@@ -112,8 +155,8 @@ configuration digest; question anchors always use honest source-only grounding.
 
 ## Authority, visibility and history
 
-`recordWorkbookAnalysis` accepts authorized submit context and writes provisional
-AI revisions only. `reviewWorkbookAssessment` requires guardian authority, exact
+`recordWorkAnalysis` accepts authorized submit context and writes provisional
+AI revisions only. `reviewWorkAssessment` requires guardian authority, exact
 source revision, expected current guardian head and stable request key. It appends
 an immutable guardian revision recording sourceRevisionId, superseded head, actor,
 time and decision reason. Changed retries conflict. Review of the current capture
@@ -122,22 +165,22 @@ its evidence authority only and cannot grade or reopen its successor. Reanalysis
 after a guardian decision remains provisional. A guardian can invalidate an outcome
 with an unassessed replacement and a stated reason; old AI does not regain authority.
 
-`releaseWorkbookFeedback` separately releases an exact revision using expected
+`releaseWorkFeedback` separately releases an exact revision using expected
 current guardian head. New stale releases fail; accepted retry requests replay their
 original result after later decisions. Release creates no Grade. With the gate off,
 AI feedback is visible as provisional while authoritative grading still requires a
 guardian. Gate-on learners receive no unreleased assessment payloads, scores or
-hints. WorkbookService's ordinary getSubmission also redacts Grade for own learners;
-hosts must route workbook reads through this service and prevent legacy routes from
-serving workbook grades. Guardian history is complete; learners see only their own
+hints. LessonWorkService's ordinary getSubmission also redacts Grade for own learners;
+hosts must route lesson work reads through this service and prevent legacy routes from
+serving gated grades. Guardian history is complete; learners see only their own
 work and visible revisions. Answer keys/source storage URIs never enter these DTOs.
 
-`acknowledgeWorkbookFeedbackDelivery` is an authenticated own-learner acknowledgment
+`acknowledgeWorkFeedbackDelivery` is an authenticated own-learner acknowledgment
 for an exact currently visible feedback revision. It deduplicates per actor/revision
 and rejects withheld, foreign, sibling and guardian acknowledgments. Immutable
 delivery events record actor/time and mean rendered/delivered, never read or understood.
 
-`getWorkbookTimeline` uses education rows/assets without reading ingestion. It lists
+`getWorkTimeline` uses education rows/assets without reading ingestion. It lists
 newest captures/revisions first, includes all releases/delivery events and provides
 cursor pagination (1–100, default 25). A guardian revisionId selector locates its
 containing capture for evidence links. Guardian source IDs/actors/reasons remain
@@ -154,13 +197,13 @@ percentage, generic score comparison, hidden threshold or predictive label is us
 
 ## Preserved processing status and retention
 
-`getWorkbookPreservationState` authorizes exact actor/learner/activity/submission
+`getWorkPreservationState` authorizes exact actor/learner/activity/submission
 and returns only the intake ID plus retained assessment/analysis IDs and the
 interpretation revision. It contains no questions, scores, feedback or hidden
 assessment payloads. New AI provenance records `analysisRevision` from the
 completed interpretation snapshot, separately from its extraction-source pin.
 
-`preserveWorkbookIntakeAnalysis` checks this education-owned state and the public
+`preserveWorkIntakeAnalysis` checks this education-owned state and the public
 content-free ingestion item revision before requesting raw completed analysis.
 An exact already-preserved revision returns `retained` immediately. Guardian
 review, release, corrections and receipt expiry therefore do not force a stale
@@ -184,19 +227,19 @@ the authorized education timeline independently of optional scratch processing.
 
 ## Compatibility API privacy boundary
 
-Workbook feedback is projected only from the revision/release workflow. The base
-`SubmissionService` recognizes authoritative `WorkbookActivity` lesson ownership,
-including calls through a plain service instance. Own-learner compatibility views
-withhold Grade and bestScore. Every workbook progress projection uses the explicit
+Book and loose-page feedback is projected only from the revision/release workflow.
+The base `SubmissionService` recognizes it from the authoritative activity and its
+course, including calls through a plain service instance. Own-learner compatibility
+views withhold Grade and bestScore. Their progress projection uses the explicit
 parent decision for status and completedAt; historical grade-derived completion
-alone is Doing with no completion date. Ordinary non-workbook projections retain
-their existing behavior.
+alone is Doing with no completion date. Ordinary lessons keep grade-visible,
+grade-completes behaviour, recorded as the completion decision.
 This applies in both feedback policy modes; direct feedback remains provisional
 and does not authorize compatibility Grade disclosure.
 
 ## Explicit parent completion
 
-`completeWorkbookActivity` requires the current verified guardian, exact activity,
+`completeLessonActivity` requires the current verified guardian, exact activity,
 submissionId, expectedAttemptId, explicit expectedHeadId (including null), and a
 bounded requestKey. The SDK independently denies own learners for
 `education.learner.complete`, even when a host callback grants it. The head token
@@ -204,12 +247,12 @@ is the latest guardian revision, otherwise latest AI revision, otherwise null;
 null permits a parent's judgment without any assessment. The decision and progress
 update share the authorized transaction and learner serialization lock. No grade,
 assessment, feedback release, or learner visibility is created by completion.
-Generic guardian grading of workbook submissions also cannot complete work.
+Generic guardian grading of book or loose-page submissions cannot complete work.
 
-`WorkbookCompletionDecision` retains immutable server actor/time, attempt,
+`WorkCompletionDecision` retains immutable server actor/time, attempt,
 submission, head provenance, and retry key. Exact retries return that historical
 decision even after a correction; changed retries and stale selectors reject with
-`WorkbookCompletionConflictError` (changed_retry, stale_attempt, stale_head, or
+`WorkCompletionConflictError` (changed_retry, stale_attempt, stale_head, or
 already_complete). Hosts should acknowledge recording and reread current state,
 never interpret a historical retry as completing a newer attempt.
 
@@ -229,36 +272,62 @@ The existing attempt headId continues to mean guardian review head.
 Deploy the ordinary additive manifest migration before recording decisions. Reads
 of an unmigrated decision table report Doing; runtime handlers never create it.
 
-Generic capture/resubmission rejects workbook enrollment or lesson scaffolding,
-including idempotent retries. Only the protected exact-activity owning workflow
-can capture workbook work. Hosts must call public
-`assertNonWorkbookSubmissionScope` before legacy intake receipt creation and when
-reading an old legacy binding, using authoritative enrollment, lesson and
-predecessor selectors. `WorkbookWorkflowRequiredError` is a controlled denial.
-The browser's optional workbook flag is never authority. Authenticated original
-asset delivery remains a separate read authorization path.
+Generic capture/resubmission rejects book and loose-page work, including
+idempotent retries; only the protected exact-activity workflow captures it. Hosts
+call `assertOrdinarySubmissionScope` before generic intake receipt creation and
+when reading an old binding, using authoritative enrollment, lesson and predecessor
+selectors. `LessonWorkWorkflowRequiredError` is a controlled denial. A browser flag
+is never authority. Authenticated original asset delivery remains a separate read
+authorization path.
 
 ## Validation and limits
 
-`src/__tests__/workbook-workflows.ts` is the shared SQLite/PostgreSQL contract suite;
-`workbook-service.test.ts` runs SQLite, and `workbook.optional.test.ts` runs against
-an available isolated PostgreSQL database. Workers never provision service stacks.
+`src/__tests__/lesson-work-workflows.ts` is the shared SQLite/PostgreSQL contract
+suite; `lesson-work-service.test.ts` runs SQLite, and `lesson-work.optional.test.ts`
+runs against an available isolated PostgreSQL database. `lesson-work-pipeline.test.ts`
+covers ordinary lessons and per-page corrections, `lesson-work-filing.test.ts`
+placement filing, and `course-work-migration.test.ts` (with its optional PostgreSQL
+twin) the workbook migration. Workers never provision service stacks.
 Run package test/typecheck/build; the integration owner runs test:postgres and the
 integrated review. Synthetic provider DTO tests establish transfer integrity, not
 real handwriting accuracy. Actual provider/sample and app restart/retention
 acceptance remain separate integration evidence. Family deletion/export/backup
 policy and automatic lesson generation are not implemented by this milestone.
 
-## Identity-independent work
+## Identity-independent work and filing
 
 [Photo intake](photo-intake.md#marking-before-filing) may own an explicit unfiled
-work unit. Its nullable workbook FK is constrained to an exact retained receipt;
-private enrollment/worksheet routing is technical rather than bibliographic.
-The same attempt/assessment/review/release and concept-evidence contracts apply.
-`filing` is optional on legacy-shaped DTOs and explicit on current projections.
-Append-only filing changes display association only; it never moves immutable
-learning evidence or changes captured review policy. Ordinary identified workbook
-identity and generated-surface restrictions remain unchanged.
+work unit bound to an exact retained receipt; its private enrollment/worksheet
+routing is technical rather than bibliographic. The same attempt, assessment,
+review, release and concept-evidence contracts apply.
+
+`fileLessonWork({activityId, courseId | newBook:{title, edition?, bookKey?},
+lessonId?, pageKey?, pageLabel?, expectedRevisionId, requestKey, reason})` (`newBook`
+may carry `subject`) is the
+guardian's placement (plan authority). Exactly one of `courseId`/`newBook`. The
+target lesson is the given lesson (which must be in the learner's enrollment of that
+course; a page key matches or adds a `LessonPage` on it, adding only on a
+family-owned lesson, else `shared-lesson-page`), else the course's page with
+`pageKey`, else a new one-page Worksheet lesson in a family book or plain course.
+An authored course needs the lesson first: append it with
+`CourseAuthoringService.appendLesson` and file with its `lessonId`
+(`LessonWorkPlacementError` `lesson-required`). A course the learner is not enrolled
+in fails `not-enrolled` unless it is the family's own book course (enrolled on first
+use); another family's course is denied. An omitted new-book key is an opaque manual
+key for this work/request, never a title match.
+
+A filing appends a `LessonWorkFiling` naming the course, enrollment, lesson and
+page; the head is the work's placement. Lists by course include it, `filing:
+'unfiled'` no longer does, and the target lesson's progress becomes Doing (Done once
+the work's current attempt is complete). Completion decisions, new captures and
+corrections keep it in step in the same transaction: a filing never lowers it, and
+a correction reopens only a completion this placed work produced (its completedAt
+is one of the work's own decisions); attested, legacy and other completions stay.
+A new destination row starts at the work's first capture. Progress reads
+(`listProgress`, plans) count completed work filed onto the lesson. Activity, attempt, submission, assessment,
+release and correction-episode IDs never move, and captured policy snapshots never
+change. Stable request-key retries replay; changed retries and stale heads conflict;
+book creation and filing share one transaction. Re-filing names the current head.
 
 ### Unnumbered visible questions
 
@@ -312,7 +381,7 @@ other clearly visible questions are assessed in the same valid proposal.
 
 ### Observed assessment layout
 
-Optional `WorkbookAssessment.layout` version 1 describes observed sections in source
+Optional `WorkAssessment.layout` version 1 describes observed sections in source
 order and zero-based row/column question placements. It is advisory, with fixed
 `provenance: 'observed'`; it never establishes identity or verified geometry.
 Sections reference a retained source asset and a physical one-based observed page,
@@ -324,7 +393,7 @@ original question array index for ties. If any placement in that cell omits
 `part`, the whole cell follows original question array order. Partial placement is valid. Missing `readingOrder` preserves original
 question order for a flattened display.
 
-The browser-safe `normalizeWorkbookObservedLayout` copies only bounded known
+The browser-safe `normalizeWorkObservedLayout` copies only bounded known
 fields: at most 32 sections and 200 placements, 1–8 columns, rows 0–199, parts
 0–31, section IDs up to 64 characters and labels up to 200. Duplicate section IDs
 or question placements, invalid source/page/placement references and malformed
@@ -337,10 +406,10 @@ inside existing revision privacy and exact release boundaries; no migration or
 additional learner visibility is introduced.
 
 Focused shared SQLite/PostgreSQL cases live in
-`src/__tests__/workbook-layout-workflows.ts`, with SQLite in
-`workbook-layout-service.test.ts` and isolated PostgreSQL in
-`workbook-layout.optional.test.ts`. Pure bounds/reference cases are in
-`workbook-layout.test.ts`. Integration runs the PostgreSQL wrapper under its
+`src/__tests__/lesson-work-layout-workflows.ts`, with SQLite in
+`lesson-work-layout-service.test.ts` and isolated PostgreSQL in
+`lesson-work-layout.optional.test.ts`. Pure bounds/reference cases are in
+`lesson-work-layout.test.ts`. Integration runs the PostgreSQL wrapper under its
 existing isolated database lifecycle.
 
 Generation carries optional `layout` as advisory JSON so malformed presentation
@@ -354,7 +423,7 @@ never establishes a question ID, a source authorization or a verified region.
 
 ### Same-capture reread context
 
-`getWorkbookQuestionContext` returns authorized canonical `{id,prompt}` only
+`getWorkQuestionContext` returns authorized canonical `{id,prompt}` only
 from the exact current attempt's identity revision. Generation preserves those
 strings verbatim for the existing strict same-capture prompt invariant, while
 rereading learner responses and any observed layout from current evidence. This
@@ -362,7 +431,7 @@ context is not an answer key or authority for answers. A correction without its
 own revision receives predecessor IDs only; predecessor prompts are never copied.
 Exact source/revision and full correction-ancestry visibility apply to both paths,
 including own-learner reads. No historical rows are rewritten and absent layout
-remains valid. `getWorkbookQuestionIdentity` remains the IDs-only public API.
+remains valid. `getWorkQuestionIdentity` remains the IDs-only public API.
 
 Canonical prompts follow ordinary assessment payload visibility, including
 captured review policy and exact guardian revision release even for learner-owned

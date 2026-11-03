@@ -1,6 +1,7 @@
 import { withPrivateAssetAccess } from '@happyvertical/smrt-assets';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import type { CatalogAuthorizer } from './catalog-service.js';
+import { CourseCollection } from './collections.js';
 import { familyAdoptionOwner } from './family-intake-models.js';
 import {
   LearnerAuthorizationError,
@@ -8,28 +9,27 @@ import {
   type LearnerRequest,
 } from './learner-service.js';
 import type {
+  WorkAssessment,
+  WorkAssistance,
+} from './lesson-work-contracts.js';
+import { LessonWorkService } from './lesson-work-service.js';
+import type {
   SubmissionPage,
   SubmissionServiceOptions,
 } from './submission-service.js';
-import type {
-  WorkbookAssessment,
-  WorkbookAssistance,
-} from './workbook-contracts.js';
-import { WorkbookCollection } from './workbook-models.js';
 import {
+  type PhotoBookCourseView,
   validateWorkbookPhotoIdentification,
   type WorkbookPhotoIdentification,
   type WorkbookPhotoIntakeView,
   type WorkbookPhotoProposal,
-  type WorkbookPhotoWorkbookView,
 } from './workbook-photo-contracts.js';
 import {
-  WorkbookContextRevisionCollection,
+  BookContextRevisionCollection,
   WorkbookPhotoAssetCollection,
   WorkbookPhotoDecisionCollection,
   WorkbookPhotoIntakeCollection,
 } from './workbook-photo-models.js';
-import { WorkbookService } from './workbook-service.js';
 
 /** Internal bridge capability, intentionally absent from package exports. */
 export const preservePhotoProposal = Symbol('preserveWorkbookPhotoProposal');
@@ -71,13 +71,13 @@ type Decision =
     }
   | { type: 'capture'; submissionId: string; requestDigest: string };
 /** Server-owned intake before assignment. All originals survive ingestion scratch expiry. */
-export class WorkbookPhotoService extends WorkbookService {
+export class WorkbookPhotoService extends LessonWorkService {
   constructor(
     db: DatabaseInterface,
     authorize: LearnerAuthorizer,
     authorizeCatalog: CatalogAuthorizer,
     private readonly photoOptions: SubmissionServiceOptions & {
-      workbookVocabulary?: WorkbookAssessment['vocabulary'];
+      workVocabulary?: WorkAssessment['vocabulary'];
     },
   ) {
     super(db, authorize, authorizeCatalog, photoOptions);
@@ -312,10 +312,10 @@ export class WorkbookPhotoService extends WorkbookService {
           { type: 'resolve' }
         >)
       : undefined;
-    let workbookId: string | null = null;
+    let bookCourseId: string | null = null;
     if (resolutionRow) {
       const context = await (
-        await WorkbookContextRevisionCollection.create({ db: this.db })
+        await BookContextRevisionCollection.create({ db: this.db })
       ).get(
         {
           tenantId: request.tenantId,
@@ -325,18 +325,14 @@ export class WorkbookPhotoService extends WorkbookService {
         { cache: false },
       );
       if (context) {
-        const book = await (
-          await WorkbookCollection.create({ db: this.db })
+        const course = await (
+          await CourseCollection.create({ db: this.db })
         ).get(
-          {
-            id: context.workbookId,
-            tenantId: request.tenantId,
-            learnerId: request.learnerId,
-          },
+          { id: context.courseId, tenantId: request.tenantId },
           { cache: false },
         );
-        if (!book) throw new LearnerAuthorizationError();
-        workbookId = String(book.id);
+        if (!course?.bookKey) throw new LearnerAuthorizationError();
+        bookCourseId = String(course.id);
       }
     }
     const proposal = decisions
@@ -361,7 +357,7 @@ export class WorkbookPhotoService extends WorkbookService {
     return {
       id: String(row.id),
       itemId: row.itemId,
-      workbookId,
+      bookCourseId,
       learnerId: row.learnerId,
       status: capture
         ? 'captured'
@@ -371,7 +367,7 @@ export class WorkbookPhotoService extends WorkbookService {
       identification: resolution?.identification ?? null,
       proposal: proposal?.proposal ?? null,
       activity: resolution?.activity
-        ? await this.getWorkbookActivity({
+        ? await this.getLessonActivity({
             ...request,
             activityId: resolution.activity.id,
           })
@@ -437,19 +433,24 @@ export class WorkbookPhotoService extends WorkbookService {
     }
     return visible;
   }
-  /** Authorized contextual catalog, including books identified from covers alone. */
-  async listWorkbookPhotoWorkbooks(
+  /**
+   * The family's book courses (including books known only from a cover), with
+   * publisher/ISBN context from this learner's own retained photo decisions.
+   */
+  async listPhotoBookCourses(
     request: LearnerRequest,
-  ): Promise<WorkbookPhotoWorkbookView[]> {
+  ): Promise<PhotoBookCourseView[]> {
     await this.requireActor(request, 'education.learner.read');
-    const books = await (await WorkbookCollection.create({ db: this.db })).list(
-      {
-        where: { tenantId: request.tenantId, learnerId: request.learnerId },
-        limit: 1000,
-      },
-    );
+    const books = (
+      await (
+        await CourseCollection.create({ db: this.db })
+      ).list({
+        where: { tenantId: request.tenantId },
+        limit: 10000,
+      })
+    ).filter((course) => course.bookKey && course.status !== 'archived');
     const contexts = await (
-      await WorkbookContextRevisionCollection.create({ db: this.db })
+      await BookContextRevisionCollection.create({ db: this.db })
     ).list({
       where: { tenantId: request.tenantId, learnerId: request.learnerId },
       limit: 10000,
@@ -459,14 +460,14 @@ export class WorkbookPhotoService extends WorkbookService {
       const metadata = Object.assign(
         {},
         ...contexts
-          .filter((c) => c.workbookId === String(book.id))
+          .filter((c) => c.courseId === String(book.id))
           .map((c) => JSON.parse(c.metadataJson).identification?.workbook),
       );
       return {
         id: String(book.id),
-        workbookKey: book.workbookKey,
+        bookKey: book.bookKey,
         title: book.title,
-        edition: book.edition,
+        edition: book.bookEdition,
         ...(metadata?.publisher ? { publisher: metadata.publisher } : {}),
         ...(metadata?.isbn ? { isbn: metadata.isbn } : {}),
       };
@@ -573,46 +574,28 @@ export class WorkbookPhotoService extends WorkbookService {
     if (current.submissionId)
       throw new Error('Captured photo identity is immutable');
     let activity: WorkbookPhotoIntakeView['activity'] = null;
-    let workbookId: string | null = null;
+    let bookCourseId: string | null = null;
     if (request.identification.kind === 'work')
-      activity = await this.resolveUnfiledWorkbookActivityInScope(
-        request,
-        action,
-      );
+      activity = await this.resolveUnfiledActivityInScope(request, action);
     const identity = request.identification.workbook;
     if (identity && request.identification.kind !== 'uncertain') {
-      const books = await WorkbookCollection.create({ db: this.db });
-      let book = await books.get(
-        {
-          tenantId: request.tenantId,
-          learnerId: request.learnerId,
-          workbookKey: identity.workbookKey,
-        },
-        { cache: false },
-      );
-      if (
-        book &&
-        (book.title !== identity.title ||
-          book.edition !== (identity.edition ?? ''))
-      )
-        throw new Error('Workbook key already names another title or edition');
-      book ??= await books.create({
-        _insertOnly: true,
-        tenantId: request.tenantId,
-        learnerId: request.learnerId,
-        workbookKey: identity.workbookKey,
+      const course = await this.bookCourse(request, {
+        bookKey: identity.workbookKey,
         title: identity.title,
-        edition: identity.edition ?? '',
+        edition: identity.edition,
       });
-      workbookId = String(book.id);
+      if (!course) throw new LearnerAuthorizationError();
+      bookCourseId = String(course.id);
       if (
         request.identification.kind === 'lesson' &&
         request.identification.activity
       ) {
-        activity = await this.resolveWorkbookActivityInScope(
+        activity = await this.resolveBookPageActivityInScope(
           {
             ...request,
-            ...identity,
+            bookKey: identity.workbookKey,
+            title: identity.title,
+            edition: identity.edition,
             ...request.identification.activity,
           },
           action,
@@ -624,14 +607,14 @@ export class WorkbookPhotoService extends WorkbookService {
       identification: request.identification,
       activity,
     });
-    if (workbookId)
+    if (bookCourseId)
       await (
-        await WorkbookContextRevisionCollection.create({ db: this.db })
+        await BookContextRevisionCollection.create({ db: this.db })
       ).create({
         _insertOnly: true,
         tenantId: request.tenantId,
         learnerId: request.learnerId,
-        workbookId,
+        courseId: bookCourseId,
         decisionId: String(decision.id),
         metadataJson: JSON.stringify({
           identification: request.identification,
@@ -711,7 +694,7 @@ export class WorkbookPhotoService extends WorkbookService {
         printed.includes(
           value.normalize('NFKC').toLowerCase().replace(/\s+/g, ' ').trim(),
         );
-      const candidates = await service.listWorkbookPhotoWorkbooks(request);
+      const candidates = await service.listPhotoBookCourses(request);
       const matches = candidates.filter(
         (candidate) =>
           candidate.title === book.title &&
@@ -741,7 +724,7 @@ export class WorkbookPhotoService extends WorkbookService {
         /^(?:[0-9]{13}|[0-9]{9}[0-9X])$/.test(normalizedIsbn) &&
         printed.replace(/[^0-9x]/g, '').includes(normalizedIsbn.toLowerCase());
       if (existingMatch) {
-        book.workbookKey = candidate.workbookKey;
+        book.workbookKey = candidate.bookKey;
         book.publisher ??= candidate.publisher;
         book.isbn ??= candidate.isbn;
       } else if (strongIsbn && !request.proposal.workbookId) {
@@ -801,7 +784,7 @@ export class WorkbookPhotoService extends WorkbookService {
     const intake = await this.getWorkbookPhotoIntake(request);
     if (!intake.activity || !intake.submissionId)
       throw new Error('Photo work has not been captured');
-    return this.getWorkbookTimeline({
+    return this.getWorkTimeline({
       ...request,
       activityId: intake.activity.id,
     });
@@ -809,7 +792,7 @@ export class WorkbookPhotoService extends WorkbookService {
   async captureWorkbookPhotoIntake(
     request: PhotoRequest & {
       requestKey: string;
-      assistance?: WorkbookAssistance;
+      assistance?: WorkAssistance;
       previousSubmissionId?: string;
       completedWork?: boolean;
     },
@@ -859,7 +842,7 @@ export class WorkbookPhotoService extends WorkbookService {
           data: Buffer.from(file.data),
         });
       }
-      const attempt = await service.captureWorkbookWork({
+      const attempt = await service.captureLessonWork({
         ...request,
         activityId: view.activity.id,
         intakeItemId: view.itemId,

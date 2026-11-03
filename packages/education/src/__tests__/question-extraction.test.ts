@@ -41,8 +41,8 @@ import {
   questionExtractionGrounding,
 } from '../ingestion.js';
 import { learnerFixture } from './learner-workflows.js';
+import { workbookClasses } from './lesson-work-workflows.js';
 import { submissionClasses } from './submission-workflows.js';
-import { workbookClasses } from './workbook-workflows.js';
 
 /*
  * Question extraction matrix (#4517), see docs/test-matrix/4517-question-extraction.md:

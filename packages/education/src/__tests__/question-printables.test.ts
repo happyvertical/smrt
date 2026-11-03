@@ -45,8 +45,8 @@ import {
   WorksheetVersionMismatchError,
 } from '../index.js';
 import { learnerFixture } from './learner-workflows.js';
+import { workbookClasses } from './lesson-work-workflows.js';
 import { submissionClasses } from './submission-workflows.js';
-import { workbookClasses } from './workbook-workflows.js';
 
 /*
  * attachGeneratedPrintable matrix (#4541):

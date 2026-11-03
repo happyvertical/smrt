@@ -60,7 +60,7 @@ export async function assertPlanProjection(f: Fixture) {
     'summary',
     'title',
   ]);
-  expect(plan[0].lessons[0].lesson).not.toHaveProperty('workbookActivityId');
+  expect(plan[0].lessons[0].lesson).not.toHaveProperty('lessonActivityId');
   const unavailable = new LearnerPlanService(
     f.db,
     () => true,
@@ -194,25 +194,18 @@ export async function assertPlanProgress(f: Fixture) {
 }
 
 export async function assertPlanWorkbookBinding(f: Fixture) {
-  const { WorkbookCollection, WorkbookActivityCollection } = await import(
-    '../workbook-models.js'
-  );
-  const workbook = await f.as(f.parent, async () =>
-    (await WorkbookCollection.create({ db: f.db })).create({
-      tenantId: f.parent.tenantId,
-      learnerId: f.parent.learnerId,
-      workbookKey: 'plan-binding',
-      title: 'Workbook',
-    }),
-  );
+  const { LessonActivityCollection } = await import('../lesson-work-models.js');
+  // A book course: its work completes only by an explicit parent decision.
+  await f.db.query('UPDATE courses SET book_key = ? WHERE id = ?', [
+    'plan-binding',
+    String(f.course.id),
+  ]);
   const activity = await f.as(f.parent, async () =>
-    (await WorkbookActivityCollection.create({ db: f.db })).create({
+    (await LessonActivityCollection.create({ db: f.db })).create({
       tenantId: f.parent.tenantId,
       learnerId: f.parent.learnerId,
-      workbookId: String(workbook.id),
       enrollmentId: f.enrollment.id,
       lessonId: String(f.lesson.id),
-      pageKey: 'p1',
     }),
   );
   const laterCurriculum = await f.as(f.parent, () =>
@@ -226,13 +219,11 @@ export async function assertPlanWorkbookBinding(f: Fixture) {
     }),
   );
   await f.as(f.parent, async () =>
-    (await WorkbookActivityCollection.create({ db: f.db })).create({
+    (await LessonActivityCollection.create({ db: f.db })).create({
       tenantId: f.parent.tenantId,
       learnerId: f.parent.learnerId,
-      workbookId: String(workbook.id),
       enrollmentId: laterEnrollment.id,
       lessonId: String(f.lesson.id),
-      pageKey: 'p2',
     }),
   );
   await f.as(f.parent, async () =>
@@ -250,8 +241,8 @@ export async function assertPlanWorkbookBinding(f: Fixture) {
   const own = await f.as(f.own, () =>
     f.service.withTransaction((service) => service.getEnrollmentPlan(request)),
   );
-  expect(own.lessons[0].lesson.workbookActivityId).toBe(activity.id);
-  expect(own.lessons[1].lesson.workbookActivityId).toBeUndefined();
+  expect(own.lessons[0].lesson.lessonActivityId).toBe(activity.id);
+  expect(own.lessons[1].lesson.lessonActivityId).toBeUndefined();
   expect(own.lessons[0].progress).toMatchObject({
     status: 'in_progress',
     bestScore: null,

@@ -21,12 +21,12 @@ import {
 import { FamilyIntakeService } from '../family-intake-service.js';
 import {
   educationIntakeHandlers,
-  preserveWorkbookIntakeAnalysis,
+  preserveWorkIntakeAnalysis,
 } from '../ingestion.js';
 import {
-  WORKBOOK_MATH_VOCABULARY,
-  type WorkbookAssessment,
-} from '../workbook-contracts.js';
+  WORK_MATH_VOCABULARY,
+  type WorkAssessment,
+} from '../lesson-work-contracts.js';
 import {
   preserveWorkbookPhotoIdentification,
   workbookPhotoIntakeHandlers,
@@ -367,9 +367,9 @@ export function familyIntakeTests(
         submissionId: attempt.submissionId,
       };
       const [source] = await f.as(f.parent, () =>
-        f.service.getWorkbookSourceAnchors(marking),
+        f.service.getWorkSourceAnchors(marking),
       );
-      const assessment: WorkbookAssessment = {
+      const assessment: WorkAssessment = {
         version: 1,
         feedback: 'Guardian-private visible work',
         questions: [
@@ -401,17 +401,17 @@ export function familyIntakeTests(
           inputHash: source.sha256,
           analysisId: 'private-unfiled-analysis',
         },
-        vocabulary: WORKBOOK_MATH_VOCABULARY,
+        vocabulary: WORK_MATH_VOCABULARY,
       };
       const ai = await f.as(f.parent, () =>
-        f.service.recordWorkbookAnalysis({
+        f.service.recordWorkAnalysis({
           ...marking,
           requestKey: 'assessment',
           assessment,
         }),
       );
       const reviewed = await f.as(f.parent, () =>
-        f.service.reviewWorkbookAssessment({
+        f.service.reviewWorkAssessment({
           ...marking,
           revisionId: ai.id,
           expectedHeadId: null,
@@ -420,7 +420,7 @@ export function familyIntakeTests(
         }),
       );
       await f.as(f.parent, () =>
-        f.service.releaseWorkbookFeedback({
+        f.service.releaseWorkFeedback({
           ...marking,
           revisionId: reviewed.id,
           expectedHeadId: reviewed.id,
@@ -930,7 +930,7 @@ export function familyIntakeTests(
                 enrollmentId: captured.activity.enrollmentId,
               },
               submissionId: attempt.submissionId,
-              workbookActivityId: captured.activity.id,
+              lessonActivityId: captured.activity.id,
             }).find((h) => h.id.endsWith('review-submission'));
             if (!reviewHandler) throw new Error('Missing review handler');
             const evidence = attachmentEvidence.find(
@@ -993,22 +993,21 @@ export function familyIntakeTests(
               activityId: captured.activity.id,
               submissionId: attempt.submissionId,
             };
-            const preserved =
-              await preserveWorkbookIntakeAnalysis(preservation);
+            const preserved = await preserveWorkIntakeAnalysis(preservation);
             expect(preserved.kind).toBe('preserved');
             if (preserved.kind !== 'preserved')
               throw new Error('Missing preserved analysis');
-            expect(await preserveWorkbookIntakeAnalysis(preservation)).toEqual({
+            expect(await preserveWorkIntakeAnalysis(preservation)).toEqual({
               kind: 'retained',
               revisionId: preserved.revisionId,
             });
-            const timeline = await f.service.getWorkbookTimeline({
+            const timeline = await f.service.getWorkTimeline({
               ...f.parent,
               activityId: captured.activity.id,
             });
             expect(timeline.attempts).toHaveLength(1);
             expect(timeline.attempts[0].revisions).toHaveLength(1);
-            const anchors = await f.service.getWorkbookSourceAnchors({
+            const anchors = await f.service.getWorkSourceAnchors({
               ...f.parent,
               activityId: captured.activity.id,
               submissionId: attempt.submissionId,

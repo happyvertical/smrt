@@ -109,6 +109,13 @@ import { resolveEnrollmentLessons } from './course-release-scope.js';
 import { effectiveCourseVisibility } from './course-visibility.js';
 import { groupSharingDigest } from './group-sharing-hash.js';
 import {
+  GUARDIAN_ONLY_RELATIONSHIPS,
+  LESSON_ASSET_RELATIONSHIPS,
+  type LessonAssetRelationship,
+  type MaterialAudience,
+  materialAudience,
+} from './lesson-assets.js';
+import {
   type LessonLayoutParams,
   type LessonQuestionRefInput,
   QuestionReferenceError,
@@ -362,6 +369,8 @@ interface PreparedLesson {
     licenseKind: CourseLicenseKind;
     /** True only when the author restated a licence; a default never loosens a reused asset. */
     licenseStated: boolean;
+    /** Stated audience; absent means the role default. */
+    audience?: MaterialAudience;
   }>;
   questions: LessonQuestionRefInput[];
   layoutParams: LessonLayoutParams;
@@ -550,11 +559,19 @@ function prepareDraft(
           if (
             !m ||
             (m.source === undefined) === (m.assetId === undefined) ||
-            !['printable', 'answer-key', 'video', 'attachment'].includes(
+            !(LESSON_ASSET_RELATIONSHIPS as readonly string[]).includes(
               m.relationship,
             )
           )
             throw new CourseAuthoringValidationError('Invalid material');
+          if (m.audience !== undefined)
+            try {
+              materialAudience(m.relationship, m.audience);
+            } catch {
+              throw new CourseAuthoringValidationError(
+                'Invalid material audience',
+              );
+            }
           if (m.source) {
             text(m.source.kind, 'material source kind', 100, true);
             text(m.source.ref, 'material source ref', 1000, true);
@@ -572,6 +589,7 @@ function prepareDraft(
               m.source ? 'personal-use-copy' : 'own-work',
             ),
             licenseStated: m.licenseKind !== undefined,
+            ...(m.audience !== undefined ? { audience: m.audience } : {}),
           };
         });
         return {
@@ -1323,6 +1341,7 @@ export class CourseAuthoringService {
         assetId: prior.assetId,
         relationship:
           material.relationship as CourseMaterialView['relationship'],
+        ...(material.audience ? { audience: material.audience } : {}),
         // A reused asset never gets looser: an omitted licence is not a statement.
         licenseKind: mostRestrictiveLicense([
           prior.licenseKind,
@@ -1352,6 +1371,7 @@ export class CourseAuthoringService {
     const view: CourseMaterialView = {
       assetId: copied.assetId,
       relationship: material.relationship as CourseMaterialView['relationship'],
+      ...(material.audience ? { audience: material.audience } : {}),
       licenseKind: material.licenseKind,
       provenance: {
         source: material.source,
@@ -2341,9 +2361,11 @@ export class CourseAuthoringService {
             lessonId,
             assetId: material.assetId,
             relationship: material.relationship,
+            audience: (material.audience ?? '') as MaterialAudience | '',
             sortOrder: index,
           };
-          const private_ = personal || material.relationship === 'answer-key';
+          const private_ =
+            personal || GUARDIAN_ONLY_RELATIONSHIPS.has(material.relationship);
           try {
             if (!private_) await links.create(link);
             else {
@@ -2621,7 +2643,12 @@ export class CourseAuthoringService {
       }>)
         if (m.assetId === assetId) {
           known = true;
-          if (m.relationship === 'answer-key') return 'answer-key';
+          if (
+            GUARDIAN_ONLY_RELATIONSHIPS.has(
+              m.relationship as LessonAssetRelationship,
+            )
+          )
+            return 'answer-key';
         }
     if (!known) return 'not-course-material';
     // A released answer-key link anywhere in the tenant keeps the asset private.

@@ -4,7 +4,10 @@ import type {
   CourseModality,
   CourseVisibility,
 } from './catalog.js';
-import type { LessonAssetRelationship } from './lesson-assets.js';
+import type {
+  LessonAssetRelationship,
+  MaterialAudience,
+} from './lesson-assets.js';
 import type {
   LessonLayoutParams,
   LessonQuestionRefInput,
@@ -217,10 +220,14 @@ export interface CourseMaterialInput {
   assetId?: string;
   relationship: LessonAssetRelationship;
   licenseKind?: CourseLicenseKind;
+  /** Who it is for; omitted means the role default (`LESSON_ASSET_DEFAULT_AUDIENCE`). */
+  audience?: MaterialAudience;
 }
 export interface CourseMaterialView {
   assetId: string;
   relationship: LessonAssetRelationship;
+  /** Stated audience; absent means the role default. */
+  audience?: MaterialAudience;
   licenseKind: CourseLicenseKind;
   provenance: {
     source: CourseMaterialSource | null;

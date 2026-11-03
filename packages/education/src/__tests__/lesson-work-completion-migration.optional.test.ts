@@ -4,8 +4,8 @@ import {
   isPostgresAvailable,
 } from '@happyvertical/smrt-vitest';
 import { afterAll, beforeAll, it } from 'vitest';
-import { assertWorkbookCompletionMigration } from './workbook-completion-migration.js';
-import { workbookClasses } from './workbook-workflows.js';
+import { assertWorkbookCompletionMigration } from './lesson-work-completion-migration.js';
+import { workbookClasses } from './lesson-work-workflows.js';
 
 beforeAll(() => enableTenancy());
 afterAll(() => disableTenancy());

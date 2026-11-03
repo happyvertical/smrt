@@ -52,8 +52,11 @@ import type {
   Learner,
   LessonProgress,
 } from './learners.js';
-import { readWorkbookCompletion } from './workbook-completion.js';
-import { WorkbookActivityCollection } from './workbook-models.js';
+import { readWorkCompletion } from './lesson-work-completion.js';
+import {
+  type LessonActivity,
+  LessonActivityCollection,
+} from './lesson-work-models.js';
 
 /** One lesson row an enrollment may work on, with the course row it belongs to. */
 export type EnrollmentLessonEntry = Readonly<{
@@ -232,13 +235,13 @@ export class LessonAlreadyCompleteError extends LearnerValidationError {
 }
 
 /**
- * `completeOwnLesson` on a lesson with a physical workbook activity, whose
- * completion is owned by the workbook completion decision.
+ * `completeOwnLesson` on book or loose-page work, whose completion is owned
+ * by the parent's lesson work completion decision.
  */
-export class WorkbookOwnedLessonError extends LearnerValidationError {
+export class LessonWorkOwnedError extends LearnerValidationError {
   constructor() {
-    super('A workbook lesson is completed through the workbook workflow');
-    this.name = 'WorkbookOwnedLessonError';
+    super('This lesson is completed through the lesson work workflow');
+    this.name = 'LessonWorkOwnedError';
   }
 }
 
@@ -1234,15 +1237,81 @@ export class LearnerService {
   }
 
   /** Existing non-workbook consumers need not migrate optional workbook tables. */
-  protected async findWorkbookActivity(
+  protected async findLessonActivity(
     request: LearnerRequest,
     selector: { enrollmentId?: string; lessonId?: string },
   ) {
     if (!(await this.db.tableExists('workbook_activities'))) return null;
-    return (await WorkbookActivityCollection.create({ db: this.db })).get(
+    return (await LessonActivityCollection.create({ db: this.db })).get(
       { tenantId: request.tenantId, learnerId: request.learnerId, ...selector },
       { cache: false },
     );
+  }
+
+  /**
+   * Book and loose-page work: learners see marks only through an explicit
+   * feedback release and the lesson completes only by a parent decision.
+   * Ordinary lessons complete on a guardian grade.
+   */
+  protected async isReleaseGatedWork(
+    activity: LessonActivity,
+  ): Promise<boolean> {
+    if (activity.captureKind === 'unfiled') return true;
+    return this.isReleaseGatedEnrollment(
+      activity.tenantId,
+      activity.enrollmentId,
+    );
+  }
+
+  /** An enrollment in a book course or in unfiled photo routing. */
+  protected async isReleaseGatedEnrollment(
+    tenantId: string,
+    enrollmentId: string,
+  ): Promise<boolean> {
+    const enrollment = await this.db.get('enrollments', {
+      id: enrollmentId,
+      tenant_id: tenantId,
+    });
+    const course =
+      enrollment &&
+      (await this.db.get('courses', { id: enrollment.course_id }));
+    return Boolean(course?.book_key) || course?.source_key === 'unfiled-work';
+  }
+
+  /**
+   * The latest completion of loose work currently filed onto this lesson
+   * (its filing head targets the enrollment and lesson), or null.
+   */
+  protected async placedWorkCompletion(
+    request: LearnerRequest,
+    enrollmentId: string,
+    lessonId: string,
+  ): Promise<Date | null> {
+    if (!(await this.db.tableExists('lesson_work_filings'))) return null;
+    const filings = await this.db.list('lesson_work_filings', {
+      tenant_id: request.tenantId,
+      learner_id: request.learnerId,
+      enrollment_id: enrollmentId,
+      lesson_id: lessonId,
+    });
+    let latest: Date | null = null;
+    for (const filing of filings) {
+      if (
+        await this.db.get('lesson_work_filings', {
+          tenant_id: request.tenantId,
+          previous_revision_id: filing.id,
+        })
+      )
+        continue; // superseded: the work has moved on
+      const state = await readWorkCompletion(this.db, {
+        tenantId: request.tenantId,
+        learnerId: request.learnerId,
+        activityId: String(filing.source_activity_id),
+      });
+      const at = state.completion.completedAt;
+      if (at && (!latest || at.getTime() > latest.getTime())) latest = at;
+    }
+    return latest;
   }
 
   /** Compatibility progress never transports a workbook learner's feedback. */
@@ -1251,12 +1320,22 @@ export class LearnerService {
     row: LessonProgress,
   ): Promise<LessonProgressView> {
     const view = progressView(row);
-    const activity = await this.findWorkbookActivity(request, {
+    const activity = await this.findLessonActivity(request, {
       enrollmentId: row.enrollmentId,
       lessonId: row.lessonId,
     });
-    if (!activity) return view;
-    const state = await readWorkbookCompletion(this.db, {
+    const placed = await this.placedWorkCompletion(
+      request,
+      row.enrollmentId,
+      row.lessonId,
+    );
+    if (!activity || !(await this.isReleaseGatedWork(activity))) {
+      // Work filed here and completed counts, as the guardian placed it.
+      return placed && view.status !== 'complete'
+        ? { ...view, status: 'complete', completedAt: placed }
+        : view;
+    }
+    const state = await readWorkCompletion(this.db, {
       tenantId: request.tenantId,
       learnerId: request.learnerId,
       activityId: String(activity.id),
@@ -1265,15 +1344,15 @@ export class LearnerService {
       id: request.learnerId,
       tenant_id: request.tenantId,
     });
+    const completedAt = state.completion.completedAt ?? placed;
     return {
       ...view,
-      status:
-        state.completion.status === 'complete'
-          ? 'complete'
-          : ['complete', 'skipped'].includes(view.status)
-            ? 'in_progress'
-            : view.status,
-      completedAt: state.completion.completedAt,
+      status: completedAt
+        ? 'complete'
+        : ['complete', 'skipped'].includes(view.status)
+          ? 'in_progress'
+          : view.status,
+      completedAt,
       ...(learner?.user_id === request.actorUserId ? { bestScore: null } : {}),
     };
   }
@@ -1742,13 +1821,12 @@ export class LearnerService {
         throw new LessonAlreadyCompleteError();
       }
       if (row?.status === 'skipped') throw new LessonSkippedError();
-      if (
-        await service.findWorkbookActivity(request, {
-          enrollmentId: String(enrollment.id),
-          lessonId: request.lessonId,
-        })
-      )
-        throw new WorkbookOwnedLessonError();
+      const activity = await service.findLessonActivity(request, {
+        enrollmentId: String(enrollment.id),
+        lessonId: request.lessonId,
+      });
+      if (activity && (await service.isReleaseGatedWork(activity)))
+        throw new LessonWorkOwnedError();
       if (!hasTables)
         throw new LearnerHistoryUnavailableError('lesson_completion_records');
       if (evidence) {

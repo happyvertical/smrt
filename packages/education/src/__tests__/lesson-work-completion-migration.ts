@@ -11,7 +11,7 @@ import {
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { expect } from 'vitest';
 import { LearnerPlanService } from '../learner-plan-service.js';
-import { workbookFixture } from './workbook-workflows.js';
+import { workbookFixture } from './lesson-work-workflows.js';
 
 export async function assertWorkbookCompletionMigration(
   db: DatabaseInterface,
@@ -46,12 +46,12 @@ export async function assertWorkbookCompletionMigration(
       'assets',
     ];
     const before = await Promise.all(names.map((name) => db.list(name, {})));
-    const schema = ObjectRegistry.getSchema('WorkbookCompletionDecision');
+    const schema = ObjectRegistry.getSchema('WorkCompletionDecision');
     if (!schema) throw new Error('Missing completion decision schema');
     await db.query(`DROP TABLE "${schema.tableName}"`);
     const request = { ...f.parent, activityId: f.activity.id };
     expect(
-      (await f.as(f.parent, () => f.service.getWorkbookTimeline(request)))
+      (await f.as(f.parent, () => f.service.getWorkTimeline(request)))
         .completion,
     ).toEqual({ status: 'doing', completedAt: null });
     const diff = await new SchemaComparer(db, { engineHint: engine }).compare({

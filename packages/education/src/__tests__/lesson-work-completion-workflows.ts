@@ -1,8 +1,8 @@
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { expect, it, vi } from 'vitest';
+import { LessonWorkService } from '../lesson-work-service.js';
 import { SubmissionService } from '../submission-service.js';
-import { WorkbookService } from '../workbook-service.js';
-import { workbookFixture } from './workbook-workflows.js';
+import { workbookFixture } from './lesson-work-workflows.js';
 
 type Fixture = Awaited<ReturnType<typeof workbookFixture>>;
 function confirmation(f: Fixture) {
@@ -28,7 +28,7 @@ export function workbookCompletionContractTests(
   it('requires a parent decision, keeps its historical retry and protects own-learner context', async () => {
     const f = await fixture();
     try {
-      const permissive = new WorkbookService(
+      const permissive = new LessonWorkService(
         f.db,
         () => true,
         () => true,
@@ -37,19 +37,19 @@ export function workbookCompletionContractTests(
       const request = confirmation(f);
       await expect(
         f.as(f.own, () =>
-          permissive.completeWorkbookActivity({ ...request, ...f.own }),
+          permissive.completeLessonActivity({ ...request, ...f.own }),
         ),
       ).rejects.toThrow();
       await expect(
         f.as(f.parent, () =>
-          f.service.completeWorkbookActivity({
+          f.service.completeLessonActivity({
             ...request,
             tenantId: String(f.foreign.tenantId),
           }),
         ),
       ).rejects.toThrow();
       const completed = await f.as(f.parent, () =>
-        f.service.completeWorkbookActivity(request),
+        f.service.completeLessonActivity(request),
       );
       expect(completed).toMatchObject({
         attemptId: f.attempt.id,
@@ -59,11 +59,11 @@ export function workbookCompletionContractTests(
       });
       expect(completed.completedAt).toBeInstanceOf(Date);
       expect(
-        await f.as(f.parent, () => f.service.completeWorkbookActivity(request)),
+        await f.as(f.parent, () => f.service.completeLessonActivity(request)),
       ).toEqual(completed);
       await expect(
         f.as(f.parent, () =>
-          f.service.completeWorkbookActivity({
+          f.service.completeLessonActivity({
             ...request,
             expectedHeadId: f.attempt.id,
           }),
@@ -71,14 +71,14 @@ export function workbookCompletionContractTests(
       ).rejects.toMatchObject({ code: 'changed_retry' });
       await expect(
         f.as(f.parent, () =>
-          f.service.completeWorkbookActivity({
+          f.service.completeLessonActivity({
             ...request,
             requestKey: 'another-completion',
           }),
         ),
       ).rejects.toMatchObject({ code: 'already_complete' });
       const own = await f.as(f.own, () =>
-        f.service.getWorkbookTimeline({ ...f.own, activityId: f.activity.id }),
+        f.service.getWorkTimeline({ ...f.own, activityId: f.activity.id }),
       );
       expect(own.completion).toEqual({
         status: 'complete',
@@ -89,7 +89,7 @@ export function workbookCompletionContractTests(
       expect(own.attempts[0].headId).toBeNull();
       expect(own.attempts[0].revisions).toEqual([]);
       const next = await f.as(f.own, () =>
-        f.service.captureWorkbookWork({
+        f.service.captureLessonWork({
           ...f.capture,
           requestKey: 'correction-2',
           intakeItemId: 'correction-intake',
@@ -97,7 +97,7 @@ export function workbookCompletionContractTests(
         }),
       );
       const current = await f.as(f.parent, () =>
-        f.service.getWorkbookTimeline({ ...f.request, limit: 1 }),
+        f.service.getWorkTimeline({ ...f.request, limit: 1 }),
       );
       expect(current.completion).toEqual({
         status: 'doing',
@@ -106,7 +106,7 @@ export function workbookCompletionContractTests(
       expect(current.currentAttemptId).toBe(next.id);
       expect(current.latestSubmissionId).toBe(next.submissionId);
       const historical = await f.as(f.parent, () =>
-        f.service.getWorkbookTimeline({
+        f.service.getWorkTimeline({
           ...f.request,
           limit: 1,
           cursor: next.id,
@@ -118,18 +118,18 @@ export function workbookCompletionContractTests(
       expect(historical.latestSubmissionId).toBe(next.submissionId);
       expect(historical.completion.status).toBe('doing');
       expect(
-        await f.as(f.parent, () => f.service.completeWorkbookActivity(request)),
+        await f.as(f.parent, () => f.service.completeLessonActivity(request)),
       ).toEqual(completed);
       await expect(
         f.as(f.parent, () =>
-          f.service.completeWorkbookActivity({
+          f.service.completeLessonActivity({
             ...request,
             requestKey: 'stale-first',
           }),
         ),
       ).rejects.toMatchObject({ code: 'stale_attempt' });
       expect(
-        (await f.as(f.parent, () => f.service.getWorkbookTimeline(f.request)))
+        (await f.as(f.parent, () => f.service.getWorkTimeline(f.request)))
           .completion.status,
       ).toBe('doing');
     } finally {
@@ -142,7 +142,7 @@ export function workbookCompletionContractTests(
     try {
       const request = confirmation(f);
       const ai = await f.as(f.own, () =>
-        f.service.recordWorkbookAnalysis({
+        f.service.recordWorkAnalysis({
           ...f.request,
           ...f.own,
           requestKey: 'ai-before-complete',
@@ -150,16 +150,16 @@ export function workbookCompletionContractTests(
         }),
       );
       await expect(
-        f.as(f.parent, () => f.service.completeWorkbookActivity(request)),
+        f.as(f.parent, () => f.service.completeLessonActivity(request)),
       ).rejects.toMatchObject({ code: 'stale_head' });
       const completed = await f.as(f.parent, () =>
-        f.service.completeWorkbookActivity({
+        f.service.completeLessonActivity({
           ...request,
           expectedHeadId: ai.id,
         }),
       );
       const guardian = await f.as(f.parent, () =>
-        f.service.reviewWorkbookAssessment({
+        f.service.reviewWorkAssessment({
           ...f.request,
           requestKey: 'guardian-after-complete',
           revisionId: ai.id,
@@ -171,7 +171,7 @@ export function workbookCompletionContractTests(
         }),
       );
       await f.as(f.own, () =>
-        f.service.recordWorkbookAnalysis({
+        f.service.recordWorkAnalysis({
           ...f.request,
           ...f.own,
           requestKey: 'ai-after-guardian',
@@ -185,7 +185,7 @@ export function workbookCompletionContractTests(
         }),
       );
       const parent = await f.as(f.parent, () =>
-        f.service.getWorkbookTimeline(f.request),
+        f.service.getWorkTimeline(f.request),
       );
       expect(parent.completionContext?.expectedHeadId).toBe(guardian.id);
       expect(parent.completion).toEqual({
@@ -194,7 +194,7 @@ export function workbookCompletionContractTests(
       });
       expect(parent.attempts[0].completionDecision).toEqual(completed);
       const own = await f.as(f.own, () =>
-        f.service.getWorkbookTimeline({ ...f.own, activityId: f.activity.id }),
+        f.service.getWorkTimeline({ ...f.own, activityId: f.activity.id }),
       );
       expect(own.completion).toEqual(parent.completion);
       expect(own.completionContext).toBeNull();
@@ -204,7 +204,7 @@ export function workbookCompletionContractTests(
       expect(own.attempts[0].submission.grade).toBeNull();
       expect(
         await f.as(f.parent, () =>
-          f.service.completeWorkbookActivity({
+          f.service.completeLessonActivity({
             ...request,
             expectedHeadId: ai.id,
           }),
@@ -235,7 +235,7 @@ export function workbookCompletionContractTests(
         }),
       );
       expect(
-        (await f.as(f.parent, () => f.service.getWorkbookTimeline(f.request)))
+        (await f.as(f.parent, () => f.service.getWorkTimeline(f.request)))
           .completion.status,
       ).toBe('doing');
       const progress = await f.as(f.parent, () =>
@@ -257,7 +257,7 @@ export function workbookCompletionContractTests(
       let next: Fixture['attempt'];
       try {
         next = await f.as(f.own, () =>
-          f.service.captureWorkbookWork({
+          f.service.captureLessonWork({
             ...f.capture,
             requestKey: 'independent-practice',
             intakeItemId: 'fresh-practice-intake',
@@ -275,7 +275,7 @@ export function workbookCompletionContractTests(
       expect(next.previousAttemptId).toBeNull();
       expect(next.episodeId).not.toBe(f.attempt.episodeId);
       const timeline = await f.as(f.parent, () =>
-        f.service.getWorkbookTimeline(f.request),
+        f.service.getWorkTimeline(f.request),
       );
       expect(timeline.currentAttemptId).toBe(next.id);
       expect(timeline.completion.status).toBe('doing');
@@ -284,7 +284,7 @@ export function workbookCompletionContractTests(
           ?.completionDecision,
       ).toBeNull();
       const completed = await f.as(f.parent, () =>
-        f.service.completeWorkbookActivity({
+        f.service.completeLessonActivity({
           ...confirmation(f),
           expectedAttemptId: next.id,
           submissionId: next.submissionId,
@@ -311,29 +311,29 @@ export function workbookCompletionContractTests(
     const f = await fixture();
     try {
       let allowed = true;
-      const service = new WorkbookService(
+      const service = new LessonWorkService(
         f.db,
         (input) => allowed && input.relationshipTypeId === f.guardianType.id,
         () => true,
         { storage: f.storage },
       );
       const request = confirmation(f);
-      await expect(service.completeWorkbookActivity(request)).rejects.toThrow();
+      await expect(service.completeLessonActivity(request)).rejects.toThrow();
       const completed = await f.as(f.parent, () =>
-        service.completeWorkbookActivity(request),
+        service.completeLessonActivity(request),
       );
       await expect(
-        f.as(f.own, () => service.completeWorkbookActivity(request)),
+        f.as(f.own, () => service.completeLessonActivity(request)),
       ).rejects.toThrow();
       for (const learnerId of [String(f.sibling.id), String(f.foreign.id)])
         await expect(
           f.as(f.parent, () =>
-            service.completeWorkbookActivity({ ...request, learnerId }),
+            service.completeLessonActivity({ ...request, learnerId }),
           ),
         ).rejects.toThrow();
       allowed = false;
       await expect(
-        f.as(f.parent, () => service.completeWorkbookActivity(request)),
+        f.as(f.parent, () => service.completeLessonActivity(request)),
       ).rejects.toThrow();
       allowed = true;
       for (const actorUserId of [f.parent.actorUserId, f.own.actorUserId]) {
@@ -343,7 +343,7 @@ export function workbookCompletionContractTests(
           { status: 'inactive' },
         );
         await expect(
-          f.as(f.parent, () => service.completeWorkbookActivity(request)),
+          f.as(f.parent, () => service.completeLessonActivity(request)),
         ).rejects.toThrow();
         await f.db.update(
           'memberships',
@@ -352,11 +352,11 @@ export function workbookCompletionContractTests(
         );
       }
       expect(
-        await f.as(f.parent, () => service.completeWorkbookActivity(request)),
+        await f.as(f.parent, () => service.completeLessonActivity(request)),
       ).toEqual(completed);
       await f.db.delete('profile_relationships', { id: f.relationship.id });
       await expect(
-        f.as(f.parent, () => service.completeWorkbookActivity(request)),
+        f.as(f.parent, () => service.completeLessonActivity(request)),
       ).rejects.toThrow();
     } finally {
       await f.close();
@@ -369,14 +369,14 @@ export function workbookCompletionContractTests(
       const request = confirmation(f);
       const [capture, completion] = await f.as(f.parent, () =>
         Promise.allSettled([
-          f.service.captureWorkbookWork({
+          f.service.captureLessonWork({
             ...f.capture,
             ...f.parent,
             requestKey: 'racing-correction',
             intakeItemId: 'racing-correction',
             previousSubmissionId: f.attempt.submissionId,
           }),
-          f.service.completeWorkbookActivity(request),
+          f.service.completeLessonActivity(request),
         ]),
       );
       expect(capture.status).toBe('fulfilled');
@@ -384,7 +384,7 @@ export function workbookCompletionContractTests(
       if (completion.status === 'rejected')
         expect(completion.reason).toMatchObject({ code: 'stale_attempt' });
       const after = await f.as(f.parent, () =>
-        f.service.getWorkbookTimeline(f.request),
+        f.service.getWorkTimeline(f.request),
       );
       expect(after.currentAttemptId).toBe(capture.value.id);
       expect(after.latestSubmissionId).toBe(capture.value.submissionId);
@@ -401,13 +401,13 @@ export function workbookCompletionContractTests(
       };
       const same = await f.as(f.parent, () =>
         Promise.all([
-          f.service.completeWorkbookActivity(current),
-          f.service.completeWorkbookActivity(current),
+          f.service.completeLessonActivity(current),
+          f.service.completeLessonActivity(current),
         ]),
       );
       expect(same[0]).toEqual(same[1]);
       const next = await f.as(f.parent, () =>
-        f.service.captureWorkbookWork({
+        f.service.captureLessonWork({
           ...f.capture,
           ...f.parent,
           requestKey: 'next-racing-correction',
@@ -417,13 +417,13 @@ export function workbookCompletionContractTests(
       );
       const competing = await f.as(f.parent, () =>
         Promise.allSettled([
-          f.service.completeWorkbookActivity({
+          f.service.completeLessonActivity({
             ...current,
             expectedAttemptId: next.id,
             submissionId: next.submissionId,
             requestKey: 'decision-a',
           }),
-          f.service.completeWorkbookActivity({
+          f.service.completeLessonActivity({
             ...current,
             expectedAttemptId: next.id,
             submissionId: next.submissionId,
@@ -439,7 +439,7 @@ export function workbookCompletionContractTests(
         code: 'already_complete',
       });
       expect(
-        (await f.as(f.parent, () => f.service.getWorkbookTimeline(f.request)))
+        (await f.as(f.parent, () => f.service.getWorkTimeline(f.request)))
           .completion.status,
       ).toBe('complete');
     } finally {
@@ -454,13 +454,13 @@ export function workbookCompletionContractTests(
       await expect(
         f.as(f.parent, () =>
           f.service.withTransaction(async (service) => {
-            await service.completeWorkbookActivity(request);
+            await service.completeLessonActivity(request);
             throw new Error('rollback-completion');
           }),
         ),
       ).rejects.toThrow('rollback-completion');
       const rolledBack = await f.as(f.parent, () =>
-        f.service.getWorkbookTimeline(f.request),
+        f.service.getWorkTimeline(f.request),
       );
       expect(rolledBack.completion.status).toBe('doing');
       expect(rolledBack.attempts[0].completionDecision).toBeNull();
@@ -468,8 +468,8 @@ export function workbookCompletionContractTests(
         f.as(f.parent, () =>
           f.service.withTransaction((service) =>
             Promise.allSettled([
-              service.completeWorkbookActivity(request),
-              service.completeWorkbookActivity({
+              service.completeLessonActivity(request),
+              service.completeLessonActivity({
                 ...request,
                 requestKey: 'competing-request',
               }),
@@ -478,16 +478,13 @@ export function workbookCompletionContractTests(
         ),
       ).rejects.toMatchObject({ code: 'already_complete' });
       const afterConflict = await f.as(f.parent, () =>
-        f.service.getWorkbookTimeline(f.request),
+        f.service.getWorkTimeline(f.request),
       );
       expect(afterConflict.completion.status).toBe('doing');
       expect(afterConflict.attempts[0].completionDecision).toBeNull();
       expect(
-        (
-          await f.as(f.parent, () =>
-            f.service.completeWorkbookActivity(request),
-          )
-        ).attemptId,
+        (await f.as(f.parent, () => f.service.completeLessonActivity(request)))
+          .attemptId,
       ).toBe(f.attempt.id);
     } finally {
       await f.close();

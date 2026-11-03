@@ -24,20 +24,19 @@ it('emits every concrete photo ownership and provenance column in the manifest s
       'actor_user_id',
       'body_json',
     ],
-    WorkbookContextRevision: ['workbook_id', 'decision_id', 'metadata_json'],
-    WorkbookActivity: [
-      'workbook_id',
+    BookContextRevision: ['course_id', 'decision_id', 'metadata_json'],
+    LessonActivity: [
       'capture_kind',
       'photo_intake_id',
       'enrollment_id',
       'lesson_id',
-      'page_key',
-      'page_label',
     ],
-    WorkbookWorkFiling: [
+    LessonWorkFiling: [
       'source_activity_id',
-      'workbook_id',
-      'canonical_activity_id',
+      'course_id',
+      'enrollment_id',
+      'lesson_id',
+      'lesson_page_id',
       'previous_revision_id',
       'actor_user_id',
       'request_key',
@@ -64,13 +63,11 @@ it('emits every concrete photo ownership and provenance column in the manifest s
     });
   }
   const activity =
-    manifest.objects['@happyvertical/smrt-education:WorkbookActivity'].schema
+    manifest.objects['@happyvertical/smrt-education:LessonActivity'].schema
       .columns;
-  expect(activity.workbook_id).toMatchObject({
-    type: 'UUID',
-    notNull: false,
-    foreignKey: { table: 'workbooks', column: 'id' },
-  });
+  // The retired book link is gone; book identity lives on the course.
+  expect(activity).not.toHaveProperty('workbook_id');
+  expect(activity).not.toHaveProperty('page_key');
   expect(activity.photo_intake_id).toMatchObject({
     type: 'UUID',
     notNull: false,
@@ -80,18 +77,21 @@ it('emits every concrete photo ownership and provenance column in the manifest s
     activity.capture_kind.defaultValue ?? activity.capture_kind.default,
   ).toBe('identified');
   const filing =
-    manifest.objects['@happyvertical/smrt-education:WorkbookWorkFiling'].schema
+    manifest.objects['@happyvertical/smrt-education:LessonWorkFiling'].schema
       .columns;
   expect(filing.source_activity_id).toMatchObject({
     type: 'UUID',
     notNull: true,
     foreignKey: { table: 'workbook_activities', column: 'id' },
   });
-  expect(filing.canonical_activity_id).toMatchObject({
+  expect(filing.lesson_page_id).toMatchObject({
     type: 'UUID',
     notNull: false,
-    foreignKey: { table: 'workbook_activities', column: 'id' },
+    foreignKey: { table: 'lesson_pages', column: 'id' },
   });
+  expect(manifest.objects).not.toHaveProperty(
+    '@happyvertical/smrt-education:Workbook',
+  );
   expect(manifest.objects).not.toHaveProperty(
     '@happyvertical/smrt-education:PhotoHistory',
   );

@@ -15,17 +15,17 @@ import {
   captureEducationIntake,
   educationIntakeHandlers,
   educationIntakeTargetResolver,
-  preserveWorkbookIntakeAnalysis,
+  preserveWorkIntakeAnalysis,
 } from '../ingestion.js';
 import { LearnerService } from '../learner-service.js';
-import { SubmissionService } from '../submission-service.js';
 import {
-  validateWorkbookAssessment,
-  WORKBOOK_MATH_VOCABULARY,
-  type WorkbookAssessment,
-} from '../workbook-contracts.js';
-import { WorkbookAssessmentRevisionCollection } from '../workbook-models.js';
-import { WorkbookService } from '../workbook-service.js';
+  validateWorkAssessment,
+  WORK_MATH_VOCABULARY,
+  type WorkAssessment,
+} from '../lesson-work-contracts.js';
+import { WorkAssessmentRevisionCollection } from '../lesson-work-models.js';
+import { LessonWorkService } from '../lesson-work-service.js';
+import { SubmissionService } from '../submission-service.js';
 import { ingestionClasses } from './ingestion-workflows.js';
 import { learnerFixture } from './learner-workflows.js';
 
@@ -35,19 +35,18 @@ export const workbookClasses = [
   'AssetTag',
   'ProfileAsset',
   'Tag',
-  'Workbook',
-  'WorkbookActivity',
-  'WorkbookWorkFiling',
+  'LessonActivity',
+  'LessonWorkFiling',
   'WorkbookPhotoIntake',
   'WorkbookPhotoAsset',
   'FamilyIntake',
   'FamilyIntakeAsset',
   'FamilyIntakeDecision',
-  'WorkbookAttempt',
-  'WorkbookCompletionDecision',
-  'WorkbookAssessmentRevision',
-  'WorkbookFeedbackRelease',
-  'WorkbookFeedbackDelivery',
+  'WorkAttempt',
+  'WorkCompletionDecision',
+  'WorkAssessmentRevision',
+  'WorkFeedbackRelease',
+  'WorkFeedbackDelivery',
 ];
 export async function workbookFixture(
   db: DatabaseInterface,
@@ -55,7 +54,7 @@ export async function workbookFixture(
 ) {
   const f = await learnerFixture(db);
   const storage = await mkdtemp(join(tmpdir(), 'workbook-'));
-  const service = new WorkbookService(
+  const service = new LessonWorkService(
     db,
     ({ own, relationshipTypeId }) =>
       own || relationshipTypeId === f.guardianType.id,
@@ -64,14 +63,14 @@ export async function workbookFixture(
   );
   const create = {
     ...f.parent,
-    workbookKey: 'synthetic-copy-v1',
+    bookKey: 'synthetic-copy-v1',
     title: 'Synthetic workbook',
     edition: 'v1',
     pageKey: 'section-a:p7',
     pageLabel: 'Page 7',
   };
   const activity = await f.as(f.parent, () =>
-    service.resolveWorkbookActivity(create),
+    service.resolveBookPageActivity(create),
   );
   const capture = {
     ...f.own,
@@ -87,16 +86,16 @@ export async function workbookFixture(
     ],
     assistance: 'independent' as const,
   };
-  const attempt = await f.as(f.own, () => service.captureWorkbookWork(capture));
+  const attempt = await f.as(f.own, () => service.captureLessonWork(capture));
   const request = {
     ...f.parent,
     activityId: activity.id,
     submissionId: attempt.submissionId,
   };
   const sources = await f.as(f.parent, () =>
-    service.getWorkbookSourceAnchors(request),
+    service.getWorkSourceAnchors(request),
   );
-  const assessment: WorkbookAssessment = {
+  const assessment: WorkAssessment = {
     version: 1,
     feedback: 'Try adding again',
     provenance: {
@@ -107,7 +106,7 @@ export async function workbookFixture(
       inputHash: sources[0].sha256,
       analysisId: 'test-analysis',
     },
-    vocabulary: structuredClone(WORKBOOK_MATH_VOCABULARY),
+    vocabulary: structuredClone(WORK_MATH_VOCABULARY),
     questions: [
       {
         id: 'p7:q1',
@@ -205,7 +204,7 @@ export function workbookContractTests(
     try {
       const args = { submissionId: f.attempt.submissionId };
       const revision = await f.as(f.own, () =>
-        f.service.recordWorkbookAnalysis({
+        f.service.recordWorkAnalysis({
           ...f.request,
           actorUserId: f.own.actorUserId,
           requestKey: 'historical-analysis',
@@ -224,7 +223,7 @@ export function workbookContractTests(
       let previousSubmissionId = f.attempt.submissionId;
       for (let index = 0; index < 26; index++) {
         const next = await f.as(f.parent, () =>
-          f.service.captureWorkbookWork({
+          f.service.captureLessonWork({
             ...f.capture,
             ...f.parent,
             previousSubmissionId,
@@ -236,14 +235,14 @@ export function workbookContractTests(
       }
       expect(
         (
-          await f.as(f.parent, () => f.service.getWorkbookTimeline(f.request))
+          await f.as(f.parent, () => f.service.getWorkTimeline(f.request))
         ).attempts.some((a) => a.submissionId === f.attempt.submissionId),
       ).toBe(false);
       const handler = educationIntakeHandlers({
         submissions: f.service,
         request: { ...f.parent, enrollmentId: f.activity.enrollmentId },
         submissionId: f.attempt.submissionId,
-        workbookActivityId: f.activity.id,
+        lessonActivityId: f.activity.id,
       }).find((h) => h.id.endsWith('review-submission'))!;
       if (handler.execution.kind !== 'database')
         throw new Error('Expected database');
@@ -259,7 +258,7 @@ export function workbookContractTests(
         f.as(f.parent, () => apply(args, context as never)),
       ).resolves.toEqual({ submissionId: f.attempt.submissionId });
       const historical = await f.as(f.parent, () =>
-        f.service.getWorkbookTimeline({
+        f.service.getWorkTimeline({
           ...f.request,
           revisionId: revision.id,
         }),
@@ -287,9 +286,9 @@ export function workbookContractTests(
       let capture = f.capture;
       if (!reviewRequired) {
         await f.as(f.parent, () =>
-          f.service.setWorkbookFeedbackPolicy({
+          f.service.setCourseWorkPolicy({
             ...f.parent,
-            activityId: f.activity.id,
+            courseId: f.activity.courseId,
             expectedPolicyVersion: 1,
             reviewRequired: false,
           }),
@@ -301,7 +300,7 @@ export function workbookContractTests(
           pages: [{ ...f.capture.pages[0], data: Buffer.from('direct-work') }],
         };
         target = await f.as(f.own, () =>
-          f.service.captureWorkbookWork({
+          f.service.captureLessonWork({
             ...capture,
             previousSubmissionId: f.attempt.submissionId,
           }),
@@ -309,7 +308,7 @@ export function workbookContractTests(
       }
       const req = { ...f.request, submissionId: target.submissionId };
       const [source] = await f.as(f.parent, () =>
-        f.service.getWorkbookSourceAnchors(req),
+        f.service.getWorkSourceAnchors(req),
       );
       const assessment = {
         ...f.assessment,
@@ -325,7 +324,7 @@ export function workbookContractTests(
         })),
       };
       const ai = await f.as(f.own, () =>
-        f.service.recordWorkbookAnalysis({
+        f.service.recordWorkAnalysis({
           ...req,
           ...f.own,
           requestKey: 'privacy-ai',
@@ -333,7 +332,7 @@ export function workbookContractTests(
         }),
       );
       const decision = await f.as(f.parent, () =>
-        f.service.reviewWorkbookAssessment({
+        f.service.reviewWorkAssessment({
           ...req,
           revisionId: ai.id,
           expectedHeadId: null,
@@ -406,7 +405,7 @@ export function workbookContractTests(
               },
             }),
           ),
-        ).rejects.toThrow('Workbook workflow required');
+        ).rejects.toThrow('Lesson work workflow required');
         await expect(
           f.as(f.own, () =>
             service.resubmitSubmission({
@@ -418,16 +417,16 @@ export function workbookContractTests(
               previousSubmissionId: target.submissionId,
             }),
           ),
-        ).rejects.toThrow('Workbook workflow required');
+        ).rejects.toThrow('Lesson work workflow required');
         await expect(
           f.as(f.own, () =>
-            service.assertNonWorkbookSubmissionScope({
+            service.assertOrdinarySubmissionScope({
               ...scope,
               lessonId: f.activity.lessonId,
               previousSubmissionId: target.submissionId,
             }),
           ),
-        ).rejects.toThrow('Workbook workflow required');
+        ).rejects.toThrow('Lesson work workflow required');
       }
       for (const service of [learnerOnly, plain, f.service]) {
         const progress = (
@@ -475,7 +474,7 @@ export function workbookContractTests(
         });
       }
       const retry = await f.as(f.own, () =>
-        f.service.captureWorkbookWork({
+        f.service.captureLessonWork({
           ...capture,
           ...(target.submission.previousSubmissionId
             ? { previousSubmissionId: target.submission.previousSubmissionId }
@@ -510,7 +509,7 @@ export function workbookContractTests(
       expect(
         (
           await f.as(f.own, () =>
-            f.service.getWorkbookTimeline({
+            f.service.getWorkTimeline({
               ...f.own,
               activityId: f.activity.id,
             }),
@@ -520,7 +519,7 @@ export function workbookContractTests(
           .revisions.some((revision) => revision.id === decision.id),
       ).toBe(false);
       const corrected = await f.as(f.own, () =>
-        f.service.captureWorkbookWork({
+        f.service.captureLessonWork({
           ...f.capture,
           requestKey: 'proper-correction',
           intakeItemId: 'proper-correction',
@@ -589,15 +588,15 @@ export function workbookContractTests(
       let target = f.attempt;
       if (!reviewRequired) {
         await f.as(f.parent, () =>
-          f.service.setWorkbookFeedbackPolicy({
+          f.service.setCourseWorkPolicy({
             ...f.parent,
-            activityId: f.activity.id,
+            courseId: f.activity.courseId,
             expectedPolicyVersion: 1,
             reviewRequired: false,
           }),
         );
         target = await f.as(f.own, () =>
-          f.service.captureWorkbookWork({
+          f.service.captureLessonWork({
             ...f.capture,
             requestKey: 'context-own-gate-off',
             intakeItemId: 'context-own-gate-off',
@@ -607,14 +606,14 @@ export function workbookContractTests(
       }
       const req = { ...f.request, submissionId: target.submissionId };
       const [source] = await f.as(f.parent, () =>
-        f.service.getWorkbookSourceAnchors(req),
+        f.service.getWorkSourceAnchors(req),
       );
       const assessment = structuredClone(f.assessment);
       assessment.questions[0].anchors = [
         { ...source, page: 1, rect: [0, 0, 1, 1] },
       ];
       const ai = await f.as(f.parent, () =>
-        f.service.recordWorkbookAnalysis({
+        f.service.recordWorkAnalysis({
           ...req,
           requestKey: 'context-ai',
           assessment,
@@ -622,7 +621,7 @@ export function workbookContractTests(
       );
       const ownContext = () =>
         f.as(f.own, () =>
-          f.service.getWorkbookQuestionContext({ ...req, ...f.own }),
+          f.service.getWorkQuestionContext({ ...req, ...f.own }),
         );
       if (reviewRequired) await expect(ownContext()).rejects.toThrow();
       else expect((await ownContext()).kind).toBe('same_capture');
@@ -630,7 +629,7 @@ export function workbookContractTests(
       corrected.questions[0].prompt =
         'Private guardian transcription with a hint';
       const guardian = await f.as(f.parent, () =>
-        f.service.reviewWorkbookAssessment({
+        f.service.reviewWorkAssessment({
           ...req,
           revisionId: ai.id,
           expectedHeadId: null,
@@ -643,7 +642,7 @@ export function workbookContractTests(
         submissions: f.service,
         request: { ...f.own, enrollmentId: f.activity.enrollmentId },
         submissionId: target.submissionId,
-        workbookActivityId: f.activity.id,
+        lessonActivityId: f.activity.id,
       }).find((h) => h.id.endsWith('review-submission'))!;
       const discover = () =>
         f.as(f.own, () =>
@@ -662,7 +661,7 @@ export function workbookContractTests(
       await expect(ownContext()).rejects.toThrow();
       await expect(discover()).rejects.toThrow();
       await f.as(f.parent, () =>
-        f.service.releaseWorkbookFeedback({
+        f.service.releaseWorkFeedback({
           ...req,
           revisionId: guardian.id,
           expectedHeadId: guardian.id,
@@ -679,7 +678,7 @@ export function workbookContractTests(
         corrected.questions[0].prompt,
       );
       const later = await f.as(f.parent, () =>
-        f.service.reviewWorkbookAssessment({
+        f.service.reviewWorkAssessment({
           ...req,
           revisionId: guardian.id,
           expectedHeadId: guardian.id,
@@ -691,7 +690,7 @@ export function workbookContractTests(
       await expect(ownContext()).rejects.toThrow();
       await expect(discover()).rejects.toThrow();
       const parentContext = await f.as(f.parent, () =>
-        f.service.getWorkbookQuestionContext(req),
+        f.service.getWorkQuestionContext(req),
       );
       if (parentContext.kind !== 'same_capture')
         throw new Error('Missing canonical capture');
@@ -708,26 +707,26 @@ export function workbookContractTests(
       expect(
         (
           await f.as(f.parent, () =>
-            f.service.resolveWorkbookActivity(f.create),
+            f.service.resolveBookPageActivity(f.create),
           )
         ).id,
       ).toBe(f.activity.id);
       await expect(
         f.as(f.parent, () =>
-          f.service.resolveWorkbookActivity({ ...f.create, edition: 'v2' }),
+          f.service.resolveBookPageActivity({ ...f.create, edition: 'v2' }),
         ),
       ).rejects.toThrow('edition');
       await expect(
         f.as(f.own, () =>
-          f.service.resolveWorkbookActivity({ ...f.create, ...f.own }),
+          f.service.resolveBookPageActivity({ ...f.create, ...f.own }),
         ),
       ).rejects.toThrow('authorized');
       expect(
-        (await f.as(f.own, () => f.service.captureWorkbookWork(f.capture))).id,
+        (await f.as(f.own, () => f.service.captureLessonWork(f.capture))).id,
       ).toBe(f.attempt.id);
       await expect(
         f.as(f.own, () =>
-          f.service.captureWorkbookWork({
+          f.service.captureLessonWork({
             ...f.capture,
             pages: [{ ...f.capture.pages[0], data: Buffer.from('changed') }],
           }),
@@ -735,7 +734,7 @@ export function workbookContractTests(
       ).rejects.toThrow('changed');
       await expect(
         f.as(f.own, () =>
-          f.service.getWorkbookTimeline({
+          f.service.getWorkTimeline({
             ...f.own,
             activityId: f.activity.id,
             learnerId: String(f.sibling.id),
@@ -744,7 +743,7 @@ export function workbookContractTests(
       ).rejects.toThrow('authorized');
       await expect(
         f.as(f.own, () =>
-          f.service.getWorkbookTimeline({
+          f.service.getWorkTimeline({
             ...f.own,
             activityId: f.activity.id,
             tenantId: String(f.foreign.tenantId),
@@ -754,7 +753,7 @@ export function workbookContractTests(
       await expect(
         f.as(f.parent, () =>
           f.service.withTransaction(async (s) => {
-            await s.resolveWorkbookActivity({
+            await s.resolveBookPageActivity({
               ...f.create,
               pageKey: 'rollback',
               pageLabel: 'Rollback',
@@ -764,10 +763,10 @@ export function workbookContractTests(
         ),
       ).rejects.toThrow('abort');
       expect(
-        await f.as(f.parent, () => f.service.listWorkbookActivities(f.parent)),
+        await f.as(f.parent, () => f.service.listLessonActivities(f.parent)),
       ).toHaveLength(1);
       const page2 = await f.as(f.parent, () =>
-        f.service.resolveWorkbookActivity({
+        f.service.resolveBookPageActivity({
           ...f.create,
           pageKey: 'section-b:p7',
         }),
@@ -775,9 +774,9 @@ export function workbookContractTests(
       expect(page2.id).not.toBe(f.activity.id);
       expect(page2.enrollmentId).toBe(f.activity.enrollmentId);
       const edition2 = await f.as(f.parent, () =>
-        f.service.resolveWorkbookActivity({
+        f.service.resolveBookPageActivity({
           ...f.create,
-          workbookKey: 'edition2-copy',
+          bookKey: 'edition2-copy',
           edition: 'v2',
         }),
       );
@@ -790,7 +789,7 @@ export function workbookContractTests(
     const f = await fixture();
     try {
       const proposal = await f.as(f.own, () =>
-        f.service.recordWorkbookAnalysis({
+        f.service.recordWorkAnalysis({
           ...f.request,
           ...f.own,
           requestKey: 'analysis-1',
@@ -800,7 +799,7 @@ export function workbookContractTests(
       expect(
         (
           await f.as(f.own, () =>
-            f.service.getWorkbookTimeline({
+            f.service.getWorkTimeline({
               ...f.own,
               activityId: f.activity.id,
             }),
@@ -809,7 +808,7 @@ export function workbookContractTests(
       ).toHaveLength(0);
       await expect(
         f.as(f.own, () =>
-          f.service.acknowledgeWorkbookFeedbackDelivery({
+          f.service.acknowledgeWorkFeedbackDelivery({
             ...f.request,
             ...f.own,
             revisionId: proposal.id,
@@ -824,15 +823,14 @@ export function workbookContractTests(
         requestKey: 'review-1',
       };
       const approved = await f.as(f.parent, () =>
-        f.service.reviewWorkbookAssessment(review),
+        f.service.reviewWorkAssessment(review),
       );
       expect(
-        (await f.as(f.parent, () => f.service.reviewWorkbookAssessment(review)))
-          .id,
+        (await f.as(f.parent, () => f.service.reviewWorkAssessment(review))).id,
       ).toBe(approved.id);
       await expect(
         f.as(f.parent, () =>
-          f.service.reviewWorkbookAssessment({
+          f.service.reviewWorkAssessment({
             ...review,
             requestKey: 'stale',
           }),
@@ -840,18 +838,18 @@ export function workbookContractTests(
       ).rejects.toThrow('head changed');
       await expect(
         f.as(f.own, () =>
-          f.service.reviewWorkbookAssessment({ ...review, ...f.own }),
+          f.service.reviewWorkAssessment({ ...review, ...f.own }),
         ),
       ).rejects.toThrow('authorized');
       const row = await f.as(f.parent, async () =>
-        (await WorkbookAssessmentRevisionCollection.create({ db: f.db })).get(
+        (await WorkAssessmentRevisionCollection.create({ db: f.db })).get(
           approved.id,
         ),
       );
       await expect(f.as(f.parent, () => row!.save())).rejects.toThrow(
         'immutable',
       );
-      const reload = new WorkbookService(
+      const reload = new LessonWorkService(
         f.db,
         ({ own, relationshipTypeId }) =>
           own || relationshipTypeId === f.guardianType.id,
@@ -859,7 +857,7 @@ export function workbookContractTests(
         { storage: 'unused' },
       );
       const history = await f.as(f.parent, () =>
-        reload.getWorkbookTimeline({ ...f.parent, activityId: f.activity.id }),
+        reload.getWorkTimeline({ ...f.parent, activityId: f.activity.id }),
       );
       expect(history.attempts[0].revisions).toHaveLength(2);
       expect(
@@ -874,7 +872,7 @@ export function workbookContractTests(
         ).grade,
       ).toBeNull();
       await f.as(f.parent, () =>
-        f.service.releaseWorkbookFeedback({
+        f.service.releaseWorkFeedback({
           ...f.request,
           revisionId: approved.id,
           expectedHeadId: approved.id,
@@ -888,12 +886,12 @@ export function workbookContractTests(
         requestKey: 'displayed',
       };
       const delivered = await f.as(f.own, () =>
-        f.service.acknowledgeWorkbookFeedbackDelivery(ack),
+        f.service.acknowledgeWorkFeedbackDelivery(ack),
       );
       expect(
         (
           await f.as(f.own, () =>
-            f.service.acknowledgeWorkbookFeedbackDelivery({
+            f.service.acknowledgeWorkFeedbackDelivery({
               ...ack,
               requestKey: 'rerender',
             }),
@@ -902,14 +900,14 @@ export function workbookContractTests(
       ).toBe(delivered.id);
       await expect(
         f.as(f.parent, () =>
-          f.service.acknowledgeWorkbookFeedbackDelivery({
+          f.service.acknowledgeWorkFeedbackDelivery({
             ...ack,
             ...f.parent,
           }),
         ),
       ).rejects.toThrow('authorized');
       const child = await f.as(f.own, () =>
-        f.service.getWorkbookTimeline({ ...f.own, activityId: f.activity.id }),
+        f.service.getWorkTimeline({ ...f.own, activityId: f.activity.id }),
       );
       expect(child.attempts[0].revisions.map((r) => r.id)).toEqual([
         approved.id,
@@ -924,15 +922,15 @@ export function workbookContractTests(
     const f = await fixture();
     try {
       await f.as(f.parent, () =>
-        f.service.setWorkbookFeedbackPolicy({
+        f.service.setCourseWorkPolicy({
           ...f.parent,
-          activityId: f.activity.id,
+          courseId: f.activity.courseId,
           expectedPolicyVersion: 1,
           reviewRequired: false,
         }),
       );
       const p1 = await f.as(f.own, () =>
-        f.service.recordWorkbookAnalysis({
+        f.service.recordWorkAnalysis({
           ...f.request,
           ...f.own,
           requestKey: 'a1',
@@ -942,7 +940,7 @@ export function workbookContractTests(
       expect(
         (
           await f.as(f.own, () =>
-            f.service.getWorkbookTimeline({
+            f.service.getWorkTimeline({
               ...f.own,
               activityId: f.activity.id,
             }),
@@ -950,7 +948,7 @@ export function workbookContractTests(
         ).attempts[0].revisions,
       ).toHaveLength(0);
       await f.as(f.parent, () =>
-        f.service.reviewWorkbookAssessment({
+        f.service.reviewWorkAssessment({
           ...f.request,
           revisionId: p1.id,
           expectedHeadId: null,
@@ -958,7 +956,7 @@ export function workbookContractTests(
         }),
       );
       const correction = await f.as(f.own, () =>
-        f.service.captureWorkbookWork({
+        f.service.captureLessonWork({
           ...f.capture,
           requestKey: 'capture-2',
           intakeItemId: 'synthetic-correction',
@@ -974,7 +972,7 @@ export function workbookContractTests(
       expect(f.attempt.policyVersion).toBe(1);
       const req = { ...f.request, submissionId: correction.submissionId };
       const anchors = await f.as(f.parent, () =>
-        f.service.getWorkbookSourceAnchors(req),
+        f.service.getWorkSourceAnchors(req),
       );
       const assessment = {
         ...f.assessment,
@@ -995,7 +993,7 @@ export function workbookContractTests(
         ],
       };
       const p2 = await f.as(f.own, () =>
-        f.service.recordWorkbookAnalysis({
+        f.service.recordWorkAnalysis({
           ...req,
           ...f.own,
           requestKey: 'a2',
@@ -1003,7 +1001,7 @@ export function workbookContractTests(
         }),
       );
       const timeline = await f.as(f.own, () =>
-        f.service.getWorkbookTimeline({ ...f.own, activityId: f.activity.id }),
+        f.service.getWorkTimeline({ ...f.own, activityId: f.activity.id }),
       );
       expect(
         timeline.attempts.find((a) => a.id === correction.id)!.revisions[0]
@@ -1021,7 +1019,7 @@ export function workbookContractTests(
         ).grade,
       ).toBeNull();
       await f.as(f.parent, () =>
-        f.service.reviewWorkbookAssessment({
+        f.service.reviewWorkAssessment({
           ...req,
           revisionId: p2.id,
           expectedHeadId: null,
@@ -1049,7 +1047,7 @@ export function workbookContractTests(
       ]);
       expect(summary.concepts[0].cues).toContain('improving on this item');
       const next = await f.as(f.parent, () =>
-        f.service.getWorkbookTimeline({
+        f.service.getWorkTimeline({
           ...f.parent,
           activityId: f.activity.id,
           limit: 1,
@@ -1061,7 +1059,7 @@ export function workbookContractTests(
       expect(
         (
           await f.as(f.parent, () =>
-            f.service.getWorkbookTimeline({
+            f.service.getWorkTimeline({
               ...f.parent,
               activityId: f.activity.id,
               revisionId: evidence.revisionId,
@@ -1074,7 +1072,7 @@ export function workbookContractTests(
       expect(
         (
           await f.as(f.parent, () =>
-            f.service.getWorkbookTimeline({
+            f.service.getWorkTimeline({
               ...f.parent,
               activityId: f.activity.id,
               limit: 1,
@@ -1090,7 +1088,7 @@ export function workbookContractTests(
   it('retains objective correctness without point weights and refuses the real mixed-null marking shape', async () => {
     const f = await fixture();
     try {
-      const assessment: WorkbookAssessment = {
+      const assessment: WorkAssessment = {
         ...f.assessment,
         questions: [
           { prompt: '2 + 3', answer: '5', result: 'correct' as const },
@@ -1111,7 +1109,7 @@ export function workbookContractTests(
       malformed.questions[2].points = 0;
       await expect(
         f.as(f.own, () =>
-          f.service.recordWorkbookAnalysis({
+          f.service.recordWorkAnalysis({
             ...f.request,
             ...f.own,
             requestKey: 'mixed-null-provider-shape',
@@ -1121,15 +1119,13 @@ export function workbookContractTests(
       ).rejects.toThrow('Invalid question points');
       expect(
         await f.as(f.own, async () =>
-          (
-            await WorkbookAssessmentRevisionCollection.create({ db: f.db })
-          ).list({
+          (await WorkAssessmentRevisionCollection.create({ db: f.db })).list({
             where: { tenantId: f.own.tenantId, learnerId: f.own.learnerId },
           }),
         ),
       ).toHaveLength(0);
       const revision = await f.as(f.own, () =>
-        f.service.recordWorkbookAnalysis({
+        f.service.recordWorkAnalysis({
           ...f.request,
           ...f.own,
           requestKey: 'unscored-correctness',
@@ -1164,7 +1160,7 @@ export function workbookContractTests(
       expect(
         (
           await f.as(f.own, () =>
-            f.service.getWorkbookSourceAnchors({ ...f.request, ...f.own }),
+            f.service.getWorkSourceAnchors({ ...f.request, ...f.own }),
           )
         ).map((source) => source.sha256),
       ).toEqual(assessment.questions[0].anchors.map((source) => source.sha256));
@@ -1213,21 +1209,21 @@ export function workbookContractTests(
       ]) {
         await expect(
           f.as(f.own, () =>
-            f.service.recordWorkbookAnalysis({
+            f.service.recordWorkAnalysis({
               ...f.request,
               ...f.own,
               requestKey: 'invalid',
               assessment: {
                 ...f.assessment,
                 questions: [q],
-              } as WorkbookAssessment,
+              } as WorkAssessment,
             }),
           ),
         ).rejects.toThrow();
       }
       await expect(
         f.as(f.own, () =>
-          f.service.recordWorkbookAnalysis({
+          f.service.recordWorkAnalysis({
             ...f.request,
             ...f.own,
             requestKey: 'overflow',
@@ -1257,7 +1253,7 @@ export function workbookContractTests(
         ],
       };
       const revision = await f.as(f.own, () =>
-        f.service.recordWorkbookAnalysis({
+        f.service.recordWorkAnalysis({
           ...f.request,
           ...f.own,
           requestKey: 'unreadable',
@@ -1265,7 +1261,7 @@ export function workbookContractTests(
         }),
       );
       await f.as(f.parent, () =>
-        f.service.reviewWorkbookAssessment({
+        f.service.reviewWorkAssessment({
           ...f.request,
           revisionId: revision.id,
           expectedHeadId: null,
@@ -1290,7 +1286,7 @@ export function workbookContractTests(
     const f = await fixture();
     try {
       const p = await f.as(f.own, () =>
-        f.service.recordWorkbookAnalysis({
+        f.service.recordWorkAnalysis({
           ...f.request,
           ...f.own,
           requestKey: 'a',
@@ -1307,8 +1303,8 @@ export function workbookContractTests(
         f.as(f.parent, () =>
           f.service.withTransaction(async (s) => {
             const settled = await Promise.allSettled([
-              s.reviewWorkbookAssessment(review),
-              s.reviewWorkbookAssessment({ ...review, requestKey: 'review-b' }),
+              s.reviewWorkAssessment(review),
+              s.reviewWorkAssessment({ ...review, requestKey: 'review-b' }),
             ]);
             expect(
               settled.filter((r) => r.status === 'fulfilled'),
@@ -1320,7 +1316,7 @@ export function workbookContractTests(
         ),
       ).rejects.toThrow('head changed');
       let timeline = await f.as(f.parent, () =>
-        f.service.getWorkbookTimeline({
+        f.service.getWorkTimeline({
           ...f.parent,
           activityId: f.activity.id,
         }),
@@ -1329,11 +1325,11 @@ export function workbookContractTests(
       await expect(
         f.as(f.parent, () =>
           f.service.withTransaction(async (s) => {
-            await s.reviewWorkbookAssessment(review);
+            await s.reviewWorkAssessment(review);
             try {
-              await s.setWorkbookFeedbackPolicy({
+              await s.setCourseWorkPolicy({
                 ...f.parent,
-                activityId: f.activity.id,
+                courseId: f.activity.courseId,
                 expectedPolicyVersion: 999,
                 reviewRequired: false,
               });
@@ -1344,7 +1340,7 @@ export function workbookContractTests(
         ),
       ).rejects.toThrow('policy changed');
       timeline = await f.as(f.parent, () =>
-        f.service.getWorkbookTimeline({
+        f.service.getWorkTimeline({
           ...f.parent,
           activityId: f.activity.id,
         }),
@@ -1362,13 +1358,13 @@ export function workbookContractTests(
         ).grade,
       ).toBeNull();
       const approved = await f.as(f.parent, () =>
-        f.service.reviewWorkbookAssessment(review),
+        f.service.reviewWorkAssessment(review),
       );
       expect(approved.sourceRevisionId).toBe(p.id);
       expect(approved.actorUserId).toBe(f.parent.actorUserId);
       await expect(
         f.as(f.parent, () =>
-          f.service.releaseWorkbookFeedback({
+          f.service.releaseWorkFeedback({
             ...f.request,
             revisionId: p.id,
             expectedHeadId: null,
@@ -1383,14 +1379,13 @@ export function workbookContractTests(
         requestKey: 'release',
       };
       const first = await f.as(f.parent, () =>
-        f.service.releaseWorkbookFeedback(release),
+        f.service.releaseWorkFeedback(release),
       );
       expect(
-        (await f.as(f.parent, () => f.service.releaseWorkbookFeedback(release)))
-          .id,
+        (await f.as(f.parent, () => f.service.releaseWorkFeedback(release))).id,
       ).toBe(first.id);
       const revisions = await f.as(f.parent, () =>
-        WorkbookAssessmentRevisionCollection.create({ db: f.db }),
+        WorkAssessmentRevisionCollection.create({ db: f.db }),
       );
       await expect(
         f.as(f.parent, () => revisions.delete(approved.id)),
@@ -1403,7 +1398,7 @@ export function workbookContractTests(
     const f = await fixture();
     try {
       const p = await f.as(f.own, () =>
-        f.service.recordWorkbookAnalysis({
+        f.service.recordWorkAnalysis({
           ...f.request,
           ...f.own,
           requestKey: 'initial',
@@ -1411,7 +1406,7 @@ export function workbookContractTests(
         }),
       );
       const correction = await f.as(f.own, () =>
-        f.service.captureWorkbookWork({
+        f.service.captureLessonWork({
           ...f.capture,
           intakeItemId: 'corrected',
           requestKey: 'correction',
@@ -1423,11 +1418,11 @@ export function workbookContractTests(
       const request = { ...f.request, submissionId: correction.submissionId };
       expect(
         await f.as(f.own, () =>
-          f.service.getWorkbookQuestionIdentity({ ...request, ...f.own }),
+          f.service.getWorkQuestionIdentity({ ...request, ...f.own }),
         ),
       ).toEqual([{ id: 'p7:q1' }]);
       const sources = await f.as(f.parent, () =>
-        f.service.getWorkbookSourceAnchors(request),
+        f.service.getWorkSourceAnchors(request),
       );
       const assessment = {
         ...f.assessment,
@@ -1447,7 +1442,7 @@ export function workbookContractTests(
       };
       await expect(
         f.as(f.own, () =>
-          f.service.recordWorkbookAnalysis({
+          f.service.recordWorkAnalysis({
             ...request,
             ...f.own,
             requestKey: 'wrong-page',
@@ -1456,7 +1451,7 @@ export function workbookContractTests(
         ),
       ).rejects.toThrow('question identity');
       await f.as(f.parent, () =>
-        f.service.reviewWorkbookAssessment({
+        f.service.reviewWorkAssessment({
           ...f.request,
           revisionId: p.id,
           expectedHeadId: null,
@@ -1486,7 +1481,7 @@ export function workbookContractTests(
           submissions: f.service,
           request: { ...f.own, enrollmentId: f.activity.enrollmentId },
           submissionId,
-          workbookActivityId: f.activity.id,
+          lessonActivityId: f.activity.id,
         }).find((h) => h.id.endsWith('review-submission'));
         if (!handler?.discovery?.candidates)
           throw new Error('No review discovery');
@@ -1511,7 +1506,7 @@ export function workbookContractTests(
       expect(initial.handler.description.toLowerCase()).toContain('unnumbered');
       expect(initial.handler.description).toContain('output-array position');
       const base = f.assessment.questions[0];
-      const assessment: WorkbookAssessment = {
+      const assessment: WorkAssessment = {
         ...structuredClone(f.assessment),
         provenance: {
           ...f.assessment.provenance,
@@ -1549,12 +1544,12 @@ export function workbookContractTests(
         ],
       };
       const record = (
-        body: WorkbookAssessment,
+        body: WorkAssessment,
         key: string,
         submissionId = f.attempt.submissionId,
       ) =>
         f.as(f.own, () =>
-          f.service.recordWorkbookAnalysis({
+          f.service.recordWorkAnalysis({
             ...f.request,
             ...f.own,
             submissionId,
@@ -1602,7 +1597,7 @@ export function workbookContractTests(
         reordered.questions.map((q) => q.id),
       );
       const correction = await f.as(f.own, () =>
-        f.service.captureWorkbookWork({
+        f.service.captureLessonWork({
           ...f.capture,
           requestKey: 'unnumbered-correction',
           intakeItemId: 'unnumbered-correction',
@@ -1622,13 +1617,13 @@ export function workbookContractTests(
       expect(known.label).not.toContain('Visible line reaches145c');
       expect(known.label).not.toContain('8+7');
       const [source] = await f.as(f.own, () =>
-        f.service.getWorkbookSourceAnchors({
+        f.service.getWorkSourceAnchors({
           ...f.request,
           ...f.own,
           submissionId: correction.submissionId,
         }),
       );
-      const corrected: WorkbookAssessment = {
+      const corrected: WorkAssessment = {
         ...assessment,
         provenance: {
           ...assessment.provenance,
@@ -1685,7 +1680,7 @@ export function workbookContractTests(
         ),
       ).rejects.toThrow('question identity');
       const timeline = await f.as(f.parent, () =>
-        f.service.getWorkbookTimeline({ ...f.request }),
+        f.service.getWorkTimeline({ ...f.request }),
       );
       expect(timeline.attempts).toHaveLength(2);
       expect(timeline.attempts[0].previousAttemptId).toBe(f.attempt.id);
@@ -1710,7 +1705,7 @@ export function workbookContractTests(
         answer: 'circle',
       });
       const first = await f.as(f.own, () =>
-        f.service.recordWorkbookAnalysis({
+        f.service.recordWorkAnalysis({
           ...f.request,
           ...f.own,
           requestKey: 'original-answers',
@@ -1718,7 +1713,7 @@ export function workbookContractTests(
         }),
       );
       const reread = await f.as(f.parent, () =>
-        f.service.getWorkbookQuestionContext({ ...f.request, ...f.parent }),
+        f.service.getWorkQuestionContext({ ...f.request, ...f.parent }),
       );
       expect(reread).toEqual({
         kind: 'same_capture',
@@ -1730,7 +1725,7 @@ export function workbookContractTests(
       ])
         await f.as(f.own, () =>
           expect(
-            f.service.getWorkbookQuestionContext({
+            f.service.getWorkQuestionContext({
               ...f.request,
               ...f.own,
               ...override,
@@ -1738,7 +1733,7 @@ export function workbookContractTests(
           ).rejects.toThrow(),
         );
       const correction = await f.as(f.own, () =>
-        f.service.captureWorkbookWork({
+        f.service.captureLessonWork({
           ...f.capture,
           intakeItemId: 'new-answers',
           requestKey: 'new-answers',
@@ -1750,19 +1745,19 @@ export function workbookContractTests(
       );
       const request = { ...f.request, submissionId: correction.submissionId };
       const ids = await f.as(f.own, () =>
-        f.service.getWorkbookQuestionIdentity({ ...request, ...f.own }),
+        f.service.getWorkQuestionIdentity({ ...request, ...f.own }),
       );
       expect(ids).toEqual([{ id: 'p7:q1' }, { id: 'p7:q2' }]);
       expect(
         await f.as(f.own, () =>
-          f.service.getWorkbookQuestionContext({ ...request, ...f.own }),
+          f.service.getWorkQuestionContext({ ...request, ...f.own }),
         ),
       ).toEqual({ kind: 'identity_only', questions: ids });
       const handler = educationIntakeHandlers({
         submissions: f.service,
         request: { ...f.own, enrollmentId: f.activity.enrollmentId },
         submissionId: correction.submissionId,
-        workbookActivityId: f.activity.id,
+        lessonActivityId: f.activity.id,
       }).find((h) => h.id.endsWith('review-submission'))!;
       const candidates = await f.as(f.own, () =>
         handler.discovery!.candidates!(
@@ -1786,7 +1781,7 @@ export function workbookContractTests(
         submissions: f.service,
         request: { ...f.parent, enrollmentId: f.activity.enrollmentId },
         submissionId: f.attempt.submissionId,
-        workbookActivityId: f.activity.id,
+        lessonActivityId: f.activity.id,
       }).find((h) => h.id.endsWith('review-submission'))!;
       const sameCaptureCandidates = await f.as(f.parent, () =>
         rereadHandler.discovery!.candidates!(
@@ -1814,7 +1809,7 @@ export function workbookContractTests(
         'never derive positions',
       );
       const sources = await f.as(f.parent, () =>
-        f.service.getWorkbookSourceAnchors(request),
+        f.service.getWorkSourceAnchors(request),
       );
       const corrected = structuredClone(original);
       corrected.provenance.analysisId = 'corrected-analysis';
@@ -1830,9 +1825,9 @@ export function workbookContractTests(
         feedback: 'Correct on the current capture.',
         anchors: [{ ...sources[0], page: 1, rect: [0, 0, 1, 1] }],
       }));
-      const record = (assessment: WorkbookAssessment, requestKey: string) =>
+      const record = (assessment: WorkAssessment, requestKey: string) =>
         f.as(f.own, () =>
-          f.service.recordWorkbookAnalysis({
+          f.service.recordWorkAnalysis({
             ...request,
             ...f.own,
             requestKey,
@@ -1871,7 +1866,7 @@ export function workbookContractTests(
       // materialization, never the predecessor's identity with that same number.
       expect(
         await f.as(f.parent, () =>
-          f.service.getWorkbookQuestionContext({
+          f.service.getWorkQuestionContext({
             ...request,
             ...f.parent,
             analysisRevision: 2,
@@ -1884,7 +1879,7 @@ export function workbookContractTests(
 
       expect(
         await f.as(f.parent, () =>
-          f.service.getWorkbookQuestionContext({ ...request, ...f.parent }),
+          f.service.getWorkQuestionContext({ ...request, ...f.parent }),
         ),
       ).toEqual({
         kind: 'same_capture',
@@ -1930,7 +1925,7 @@ export function workbookContractTests(
       );
       expect(ambiguous.assessment.aggregate?.score).toBeNull();
       const timeline = await f.as(f.parent, () =>
-        f.service.getWorkbookTimeline({
+        f.service.getWorkTimeline({
           ...f.parent,
           activityId: f.activity.id,
         }),
@@ -1956,12 +1951,12 @@ export function workbookContractTests(
         submissions: f.service,
         request: { ...f.own, enrollmentId: f.activity.enrollmentId },
         submissionId: f.attempt.submissionId,
-        workbookActivityId: f.activity.id,
+        lessonActivityId: f.activity.id,
       });
       const handler = handlers.find((h) => h.id.endsWith('review-submission'))!;
       expect(handler.argsSchema.required).toContain('questions');
       const sources = await f.as(f.parent, () =>
-        f.service.getWorkbookSourceAnchors(f.request),
+        f.service.getWorkSourceAnchors(f.request),
       );
       const args = {
         submissionId: f.attempt.submissionId,
@@ -2024,7 +2019,7 @@ export function workbookContractTests(
           return value;
         },
       } as unknown as Parameters<
-        typeof preserveWorkbookIntakeAnalysis
+        typeof preserveWorkIntakeAnalysis
       >[0]['ingestion'];
       const input = {
         ingestion,
@@ -2033,13 +2028,13 @@ export function workbookContractTests(
         activityId: f.activity.id,
         submissionId: f.attempt.submissionId,
       };
-      await f.as(f.own, () => preserveWorkbookIntakeAnalysis(input));
+      await f.as(f.own, () => preserveWorkIntakeAnalysis(input));
       state = 'failed';
-      await f.as(f.own, () => preserveWorkbookIntakeAnalysis(input));
+      await f.as(f.own, () => preserveWorkIntakeAnalysis(input));
       expect(
         (
           await f.as(f.parent, () =>
-            f.service.getWorkbookTimeline({
+            f.service.getWorkTimeline({
               ...f.parent,
               activityId: f.activity.id,
             }),
@@ -2050,12 +2045,12 @@ export function workbookContractTests(
       args.questions[0].result = 'unassessed';
       args.questions[0].reason = 'illegible';
       expect(
-        await f.as(f.own, () => preserveWorkbookIntakeAnalysis(input)),
+        await f.as(f.own, () => preserveWorkIntakeAnalysis(input)),
       ).toEqual({ kind: 'needs_review', reason: 'invalid_assessment' });
       expect(
         (
           await f.as(f.parent, () =>
-            f.service.getWorkbookTimeline({
+            f.service.getWorkTimeline({
               ...f.parent,
               activityId: f.activity.id,
             }),
@@ -2064,12 +2059,12 @@ export function workbookContractTests(
       ).toHaveLength(0);
       args.questions[0].result = 'incorrect';
       args.questions[0].reason = 'none';
-      await f.as(f.own, () => preserveWorkbookIntakeAnalysis(input));
-      await f.as(f.own, () => preserveWorkbookIntakeAnalysis(input));
+      await f.as(f.own, () => preserveWorkIntakeAnalysis(input));
+      await f.as(f.own, () => preserveWorkIntakeAnalysis(input));
       attemptId = 'generation-two';
-      await f.as(f.own, () => preserveWorkbookIntakeAnalysis(input));
+      await f.as(f.own, () => preserveWorkIntakeAnalysis(input));
       const timeline = await f.as(f.parent, () =>
-        f.service.getWorkbookTimeline({
+        f.service.getWorkTimeline({
           ...f.parent,
           activityId: f.activity.id,
         }),
@@ -2086,7 +2081,7 @@ export function workbookContractTests(
       args.questions[0].anchors[0].evidenceId = 'foreign-evidence';
       attemptId = 'generation-three';
       expect(
-        await f.as(f.own, () => preserveWorkbookIntakeAnalysis(input)),
+        await f.as(f.own, () => preserveWorkIntakeAnalysis(input)),
       ).toEqual({ kind: 'needs_review', reason: 'ungrounded_source' });
     } finally {
       await f.close();
@@ -2108,12 +2103,12 @@ export function workbookContractTests(
       for (const actor of [sibling, foreign]) {
         await expect(
           f.as(actor, () =>
-            f.service.getWorkbookPreservationState({ ...f.request, ...actor }),
+            f.service.getWorkPreservationState({ ...f.request, ...actor }),
           ),
         ).rejects.toThrow('authorized');
         await expect(
           f.as(actor, () =>
-            f.service.getWorkbookTimeline({
+            f.service.getWorkTimeline({
               ...actor,
               activityId: f.activity.id,
             }),
@@ -2121,7 +2116,7 @@ export function workbookContractTests(
         ).rejects.toThrow('authorized');
         await expect(
           f.as(actor, () =>
-            f.service.captureWorkbookWork({
+            f.service.captureLessonWork({
               ...f.capture,
               ...actor,
               requestKey: 'denied',
@@ -2130,7 +2125,7 @@ export function workbookContractTests(
         ).rejects.toThrow('authorized');
         await expect(
           f.as(actor, () =>
-            f.service.releaseWorkbookFeedback({
+            f.service.releaseWorkFeedback({
               ...f.request,
               ...actor,
               revisionId: 'foreign',
@@ -2149,7 +2144,7 @@ export function workbookContractTests(
         ).rejects.toThrow('authorized');
         await expect(
           f.as(actor, () =>
-            f.service.acknowledgeWorkbookFeedbackDelivery({
+            f.service.acknowledgeWorkFeedbackDelivery({
               ...f.request,
               ...actor,
               revisionId: 'foreign',
@@ -2159,7 +2154,7 @@ export function workbookContractTests(
         ).rejects.toThrow('authorized');
       }
       const executors = new Set<DatabaseInterface>();
-      const service = new WorkbookService(
+      const service = new LessonWorkService(
         f.db,
         ({ executor, own, relationshipTypeId }) => {
           executors.add(executor);
@@ -2170,7 +2165,7 @@ export function workbookContractTests(
       );
       await f.as(f.parent, () =>
         service.withExecutor(f.db, (s) =>
-          s.getWorkbookTimeline({ ...f.parent, activityId: f.activity.id }),
+          s.getWorkTimeline({ ...f.parent, activityId: f.activity.id }),
         ),
       );
       expect([...executors]).toEqual([f.db]);
@@ -2185,7 +2180,7 @@ export function workbookContractTests(
         submissions: f.service,
         request: { ...f.own, enrollmentId: f.activity.enrollmentId },
         submissionId: f.attempt.submissionId,
-        workbookActivityId: f.activity.id,
+        lessonActivityId: f.activity.id,
       }).find((h) => h.id.endsWith('review-submission'))!;
       const properties = handler.argsSchema.properties as Record<
         string,
@@ -2206,7 +2201,7 @@ export function workbookContractTests(
         questionSchema.items.properties.anchors.items.properties.rect,
       ).toBeUndefined();
       const sources = await f.as(f.parent, () =>
-        f.service.getWorkbookSourceAnchors(f.request),
+        f.service.getWorkSourceAnchors(f.request),
       );
       const rawQuestions = [
         {
@@ -2327,7 +2322,7 @@ export function workbookContractTests(
           },
         }),
       } as unknown as Parameters<
-        typeof preserveWorkbookIntakeAnalysis
+        typeof preserveWorkIntakeAnalysis
       >[0]['ingestion'];
       const input = {
         ingestion,
@@ -2337,12 +2332,12 @@ export function workbookContractTests(
         submissionId: f.attempt.submissionId,
       };
       expect(
-        await f.as(f.own, () => preserveWorkbookIntakeAnalysis(input)),
+        await f.as(f.own, () => preserveWorkIntakeAnalysis(input)),
       ).toEqual({ kind: 'needs_review', reason: 'invalid_assessment' });
       expect(
         (
           await f.as(f.parent, () =>
-            f.service.getWorkbookTimeline({
+            f.service.getWorkTimeline({
               ...f.parent,
               activityId: f.activity.id,
             }),
@@ -2352,12 +2347,10 @@ export function workbookContractTests(
       rawQuestions[1].reason = 'none';
       rawQuestions[3].reason = 'none';
       id = 'valid-generation';
-      const result = await f.as(f.own, () =>
-        preserveWorkbookIntakeAnalysis(input),
-      );
+      const result = await f.as(f.own, () => preserveWorkIntakeAnalysis(input));
       expect(result.kind).toBe('preserved');
       const timeline = await f.as(f.parent, () =>
-        f.service.getWorkbookTimeline({
+        f.service.getWorkTimeline({
           ...f.parent,
           activityId: f.activity.id,
         }),
@@ -2383,7 +2376,7 @@ export function workbookContractTests(
       }
       const parentFeedback = 'Please practise subtraction with me after lunch.';
       const reviewed = await f.as(f.parent, () =>
-        f.service.reviewWorkbookAssessment({
+        f.service.reviewWorkAssessment({
           ...f.request,
           revisionId: timeline.attempts[0].revisions[0].id,
           expectedHeadId: null,
@@ -2408,10 +2401,10 @@ export function workbookContractTests(
       mediaType = 'application/pdf';
       id = 'pdf-source-only';
       expect(
-        (await f.as(f.own, () => preserveWorkbookIntakeAnalysis(input))).kind,
+        (await f.as(f.own, () => preserveWorkIntakeAnalysis(input))).kind,
       ).toBe('preserved');
       const pdf = await f.as(f.parent, () =>
-        f.service.getWorkbookTimeline({
+        f.service.getWorkTimeline({
           ...f.parent,
           activityId: f.activity.id,
         }),
@@ -2435,7 +2428,7 @@ export function workbookContractTests(
         possiblePoints: 1,
         markingCertainty: 'uncertain',
       };
-      expect(() => validateWorkbookAssessment(uncertainAssessment)).toThrow(
+      expect(() => validateWorkAssessment(uncertainAssessment)).toThrow(
         'Uncertain marking must remain unassessed',
       );
       const honestUnassessed = structuredClone(uncertainAssessment);
@@ -2446,10 +2439,10 @@ export function workbookContractTests(
         points: null,
         possiblePoints: null,
       };
-      expect(() => validateWorkbookAssessment(honestUnassessed)).not.toThrow();
+      expect(() => validateWorkAssessment(honestUnassessed)).not.toThrow();
 
       await f.as(f.parent, async () => {
-        const activity = await f.service.resolveWorkbookActivity({
+        const activity = await f.service.resolveBookPageActivity({
           ...f.create,
           pageKey: 'wire:p1',
           pageLabel: 'Wire page',
@@ -2521,7 +2514,7 @@ export function workbookContractTests(
           submissions: f.service,
           request: {
             ...request,
-            workbookActivityId: activity.id,
+            lessonActivityId: activity.id,
             itemId: receipt.itemId,
             kind: 'completed_work',
           },
@@ -2541,7 +2534,7 @@ export function workbookContractTests(
           submissions: f.service,
           request,
           submissionId: submission.id,
-          workbookActivityId: activity.id,
+          lessonActivityId: activity.id,
         });
         const ingestion = new IngestionService({
           ...options,
@@ -2861,7 +2854,7 @@ export function workbookContractTests(
           activityId: activity.id,
           submissionId: submission.id,
         };
-        const imported = await preserveWorkbookIntakeAnalysis(preservation);
+        const imported = await preserveWorkIntakeAnalysis(preservation);
         expect(imported.kind).toBe('preserved');
         if (imported.kind !== 'preserved')
           throw new Error('Expected preserved analysis');
@@ -2887,7 +2880,7 @@ export function workbookContractTests(
               : result.reason?.constructor.name,
           ),
         ).toEqual(['fulfilled', 'fulfilled']);
-        const importedHistory = await f.service.getWorkbookTimeline({
+        const importedHistory = await f.service.getWorkTimeline({
           ...request,
           activityId: activity.id,
         });
@@ -2918,7 +2911,7 @@ export function workbookContractTests(
             },
           ],
         });
-        const saved = await f.service.getWorkbookPreservationState({
+        const saved = await f.service.getWorkPreservationState({
           ...request,
           activityId: activity.id,
           submissionId: submission.id,
@@ -2927,7 +2920,7 @@ export function workbookContractTests(
           analysisRevision: generation.revision,
           analysisAttemptId: generation.attemptId,
         });
-        const reviewed = await f.service.reviewWorkbookAssessment({
+        const reviewed = await f.service.reviewWorkAssessment({
           ...request,
           activityId: activity.id,
           submissionId: submission.id,
@@ -2938,14 +2931,14 @@ export function workbookContractTests(
         await expect(
           ingestion.getCompletedAnalysis(receipt.itemId),
         ).rejects.toBeInstanceOf(GenerationSnapshotStaleError);
-        expect((await preserveWorkbookIntakeAnalysis(preservation)).kind).toBe(
+        expect((await preserveWorkIntakeAnalysis(preservation)).kind).toBe(
           'retained',
         );
         const withheld = await f.as(f.own, () =>
-          f.service.getWorkbookTimeline({ ...f.own, activityId: activity.id }),
+          f.service.getWorkTimeline({ ...f.own, activityId: activity.id }),
         );
         expect(withheld.attempts[0].revisions).toHaveLength(0);
-        await f.service.releaseWorkbookFeedback({
+        await f.service.releaseWorkFeedback({
           ...request,
           activityId: activity.id,
           submissionId: submission.id,
@@ -2960,7 +2953,7 @@ export function workbookContractTests(
         // Legacy same-capture prompts are authoritative only for transcription;
         // a new interpretation appends without changing the old assessment.
         expect(
-          await f.service.getWorkbookQuestionContext({
+          await f.service.getWorkQuestionContext({
             ...request,
             activityId: activity.id,
             submissionId: submission.id,
@@ -2974,11 +2967,11 @@ export function workbookContractTests(
         Object.assign(args.answerRegions.regions[0], { rect: [0, 0, 1, 1] }); // Grader coordinates are forbidden even if plausible.
         await generate();
         const malformedLayoutImport =
-          await preserveWorkbookIntakeAnalysis(preservation);
+          await preserveWorkIntakeAnalysis(preservation);
         expect(malformedLayoutImport.kind).toBe('preserved');
         if (malformedLayoutImport.kind !== 'preserved')
           throw new Error('Answers were discarded for layout');
-        const layoutHistory = await f.service.getWorkbookTimeline({
+        const layoutHistory = await f.service.getWorkTimeline({
           ...request,
           activityId: activity.id,
         });
@@ -2995,7 +2988,7 @@ export function workbookContractTests(
           layoutHistory.attempts[0].revisions.find((r) => r.id === reviewed.id)
             ?.assessment.layout,
         ).toEqual(importedBody?.layout);
-        await f.service.captureWorkbookWork({
+        await f.service.captureLessonWork({
           ...request,
           activityId: activity.id,
           requestKey: 'retention-correction',
@@ -3008,20 +3001,20 @@ export function workbookContractTests(
             },
           ],
         });
-        expect((await preserveWorkbookIntakeAnalysis(preservation)).kind).toBe(
+        expect((await preserveWorkIntakeAnalysis(preservation)).kind).toBe(
           'retained',
         );
         await ingestion.expire(receipt.itemId);
-        expect((await preserveWorkbookIntakeAnalysis(preservation)).kind).toBe(
+        expect((await preserveWorkIntakeAnalysis(preservation)).kind).toBe(
           'retained',
         );
-        const durable = await f.service.getWorkbookTimeline({
+        const durable = await f.service.getWorkTimeline({
           ...request,
           activityId: activity.id,
         });
         expect(durable.attempts).toHaveLength(2);
         const child = await f.as(f.own, () =>
-          f.service.getWorkbookTimeline({ ...f.own, activityId: activity.id }),
+          f.service.getWorkTimeline({ ...f.own, activityId: activity.id }),
         );
         expect(
           child.attempts.flatMap((a) => a.revisions).map((r) => r.id),
@@ -3035,7 +3028,7 @@ export function workbookContractTests(
     const f = await fixture();
     try {
       const proposal = await f.as(f.own, () =>
-        f.service.recordWorkbookAnalysis({
+        f.service.recordWorkAnalysis({
           ...f.request,
           ...f.own,
           requestKey: 'executor-proposal',
@@ -3044,7 +3037,7 @@ export function workbookContractTests(
       );
       const learnerExecutors = new Set<DatabaseInterface>();
       const catalogExecutors = new Set<DatabaseInterface>();
-      const service = new WorkbookService(
+      const service = new LessonWorkService(
         f.db,
         ({ executor, own, relationshipTypeId }) => {
           learnerExecutors.add(executor);
@@ -3059,7 +3052,7 @@ export function workbookContractTests(
       );
       const reviewed = await f.as(f.parent, () =>
         service.withTransaction((scoped) =>
-          scoped.reviewWorkbookAssessment({
+          scoped.reviewWorkAssessment({
             ...f.request,
             revisionId: proposal.id,
             expectedHeadId: null,
@@ -3079,7 +3072,7 @@ export function workbookContractTests(
     const f = await fixture();
     try {
       const legacy = await f.as(f.own, () =>
-        f.service.recordWorkbookAnalysis({
+        f.service.recordWorkAnalysis({
           ...f.request,
           ...f.own,
           requestKey: 'legacy',
@@ -3097,7 +3090,7 @@ export function workbookContractTests(
           throw new Error('database offline');
         },
       } as unknown as Parameters<
-        typeof preserveWorkbookIntakeAnalysis
+        typeof preserveWorkIntakeAnalysis
       >[0]['ingestion'];
       const input = {
         ingestion,
@@ -3107,24 +3100,24 @@ export function workbookContractTests(
         submissionId: f.attempt.submissionId,
       };
       expect(
-        await f.as(f.own, () => preserveWorkbookIntakeAnalysis(input)),
+        await f.as(f.own, () => preserveWorkIntakeAnalysis(input)),
       ).toEqual({ kind: 'retained', revisionId: legacy.id });
       mode = 'unavailable';
       expect(
-        (await f.as(f.own, () => preserveWorkbookIntakeAnalysis(input))).kind,
+        (await f.as(f.own, () => preserveWorkIntakeAnalysis(input))).kind,
       ).toBe('retained');
       mode = 'config';
       expect(
-        (await f.as(f.own, () => preserveWorkbookIntakeAnalysis(input))).kind,
+        (await f.as(f.own, () => preserveWorkIntakeAnalysis(input))).kind,
       ).toBe('retained');
       mode = 'db';
       await expect(
-        f.as(f.own, () => preserveWorkbookIntakeAnalysis(input)),
+        f.as(f.own, () => preserveWorkIntakeAnalysis(input)),
       ).rejects.toThrow('database offline');
       mode = 'stale';
       currentRevision = 4;
       await f.as(f.own, () =>
-        f.service.recordWorkbookAnalysis({
+        f.service.recordWorkAnalysis({
           ...f.request,
           ...f.own,
           requestKey: 'modern',
@@ -3139,17 +3132,17 @@ export function workbookContractTests(
         }),
       );
       expect(
-        await f.as(f.own, () => preserveWorkbookIntakeAnalysis(input)),
+        await f.as(f.own, () => preserveWorkIntakeAnalysis(input)),
       ).toEqual({ kind: 'needs_review', reason: 'stale_analysis' });
       mode = 'config';
       expect(
-        (await f.as(f.own, () => preserveWorkbookIntakeAnalysis(input))).kind,
+        (await f.as(f.own, () => preserveWorkIntakeAnalysis(input))).kind,
       ).toBe('unavailable');
 
       expect(
         (
           await f.as(f.own, () =>
-            f.service.getWorkbookTimeline({
+            f.service.getWorkTimeline({
               ...f.own,
               activityId: f.activity.id,
             }),

@@ -4,10 +4,10 @@ import { join } from 'node:path';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { expect, it } from 'vitest';
 import {
-  WORKBOOK_MATH_VOCABULARY,
-  type WorkbookAssessment,
-  type WorkbookAttemptView,
-} from '../workbook-contracts.js';
+  WORK_MATH_VOCABULARY,
+  type WorkAssessment,
+  type WorkAttemptView,
+} from '../lesson-work-contracts.js';
 import { WorkbookPhotoService } from '../workbook-photo-service.js';
 import { learnerFixture } from './learner-workflows.js';
 
@@ -27,14 +27,14 @@ async function workbookFixture(
   );
   const create = {
     ...f.parent,
-    workbookKey: 'synthetic-copy-v1',
+    bookKey: 'synthetic-copy-v1',
     title: 'Synthetic workbook',
     edition: 'v1',
     pageKey: 'section-a:p7',
     pageLabel: 'Page 7',
   };
   let activity = await f.as(f.parent, () =>
-    service.resolveWorkbookActivity(create),
+    service.resolveBookPageActivity(create),
   );
   const captureActor = guardianCapture ? f.parent : f.own;
   const capture = {
@@ -51,7 +51,7 @@ async function workbookFixture(
     ],
     assistance: 'independent' as const,
   };
-  let attempt: WorkbookAttemptView;
+  let attempt: WorkAttemptView;
   if (guardianCapture) {
     const photo = await f.as(f.parent, () =>
       service.retainWorkbookPhotoIntake({
@@ -79,7 +79,7 @@ async function workbookFixture(
     );
   } else {
     attempt = await f.as(captureActor, () =>
-      service.captureWorkbookWork(capture),
+      service.captureLessonWork(capture),
     );
   }
   const request = {
@@ -88,9 +88,9 @@ async function workbookFixture(
     submissionId: attempt.submissionId,
   };
   const sources = await f.as(f.parent, () =>
-    service.getWorkbookSourceAnchors(request),
+    service.getWorkSourceAnchors(request),
   );
-  const assessment: WorkbookAssessment = {
+  const assessment: WorkAssessment = {
     version: 1,
     feedback: 'Try adding again',
     provenance: {
@@ -101,7 +101,7 @@ async function workbookFixture(
       inputHash: sources[0].sha256,
       analysisId: 'test-analysis',
     },
-    vocabulary: structuredClone(WORKBOOK_MATH_VOCABULARY),
+    vocabulary: structuredClone(WORK_MATH_VOCABULARY),
     questions: [
       {
         id: 'p7:q1',
@@ -184,16 +184,15 @@ export function workbookLayoutContractTests(
         assessment: f.assessment,
       };
       const ai = await f.as(f.parent, () =>
-        f.service.recordWorkbookAnalysis(write),
+        f.service.recordWorkAnalysis(write),
       );
       expect(
-        (await f.as(f.parent, () => f.service.recordWorkbookAnalysis(write)))
-          .id,
+        (await f.as(f.parent, () => f.service.recordWorkAnalysis(write))).id,
       ).toBe(ai.id);
       expect(ai.assessment.layout).toEqual(f.assessment.layout);
       expect(ai.assessment.answerRegions).toEqual(f.assessment.answerRegions);
       const review = await f.as(f.parent, () =>
-        f.service.reviewWorkbookAssessment({
+        f.service.reviewWorkAssessment({
           ...f.request,
           revisionId: ai.id,
           expectedHeadId: null,
@@ -205,12 +204,12 @@ export function workbookLayoutContractTests(
         f.assessment.answerRegions,
       );
       const hidden = await f.as(f.own, () =>
-        f.service.getWorkbookTimeline({ ...f.own, activityId: f.activity.id }),
+        f.service.getWorkTimeline({ ...f.own, activityId: f.activity.id }),
       );
       expect(JSON.stringify(hidden)).not.toContain('Private heading');
       expect(JSON.stringify(hidden)).not.toContain('visible-learner-region');
       await f.as(f.parent, () =>
-        f.service.releaseWorkbookFeedback({
+        f.service.releaseWorkFeedback({
           ...f.request,
           revisionId: review.id,
           expectedHeadId: review.id,
@@ -218,12 +217,12 @@ export function workbookLayoutContractTests(
         }),
       );
       const visible = await f.as(f.own, () =>
-        f.service.getWorkbookTimeline({ ...f.own, activityId: f.activity.id }),
+        f.service.getWorkTimeline({ ...f.own, activityId: f.activity.id }),
       );
       expect(JSON.stringify(visible)).toContain('Private heading');
       expect(JSON.stringify(visible)).toContain('visible-learner-region');
       const correction = await f.as(f.own, () =>
-        f.service.captureWorkbookWork({
+        f.service.captureLessonWork({
           ...f.capture,
           requestKey: 'layout-correction',
           intakeItemId: 'layout-correction-intake',
@@ -232,7 +231,7 @@ export function workbookLayoutContractTests(
         }),
       );
       const anchors = await f.as(f.parent, () =>
-        f.service.getWorkbookSourceAnchors({
+        f.service.getWorkSourceAnchors({
           ...f.request,
           submissionId: correction.submissionId,
         }),
@@ -242,7 +241,7 @@ export function workbookLayoutContractTests(
         { ...anchors[0], page: 1, rect: [0, 0, 1, 1] },
       ];
       const current = await f.as(f.parent, () =>
-        f.service.recordWorkbookAnalysis({
+        f.service.recordWorkAnalysis({
           ...f.request,
           submissionId: correction.submissionId,
           requestKey: 'new-layout',
@@ -296,7 +295,7 @@ export function workbookLayoutContractTests(
         ],
       };
       const ai = await f.as(f.parent, () =>
-        f.service.recordWorkbookAnalysis({
+        f.service.recordWorkAnalysis({
           ...f.request,
           requestKey: 'guardian-ai',
           assessment: f.assessment,
@@ -304,13 +303,13 @@ export function workbookLayoutContractTests(
       );
       const ownRequest = { ...f.request, ...f.own };
       const hidden = await f.as(f.own, () =>
-        f.service.getWorkbookTimeline({ ...f.own, activityId: f.activity.id }),
+        f.service.getWorkTimeline({ ...f.own, activityId: f.activity.id }),
       );
       expect(JSON.stringify(hidden)).not.toContain('Guardian-only heading');
       expect(JSON.stringify(hidden)).not.toContain('visible-learner-region');
       await expect(
         f.as(f.own, () =>
-          f.service.recordWorkbookAnalysis({
+          f.service.recordWorkAnalysis({
             ...ownRequest,
             requestKey: 'probe-layout',
             assessment: f.assessment,
@@ -318,7 +317,7 @@ export function workbookLayoutContractTests(
         ),
       ).rejects.toThrow();
       await expect(
-        f.as(f.own, () => f.service.getWorkbookQuestionIdentity(ownRequest)),
+        f.as(f.own, () => f.service.getWorkQuestionIdentity(ownRequest)),
       ).rejects.toThrow();
       const correction = {
         ...f.capture,
@@ -331,10 +330,10 @@ export function workbookLayoutContractTests(
         ],
       };
       await expect(
-        f.as(f.own, () => f.service.captureWorkbookWork(correction)),
+        f.as(f.own, () => f.service.captureLessonWork(correction)),
       ).rejects.toThrow();
       const reviewed = await f.as(f.parent, () =>
-        f.service.reviewWorkbookAssessment({
+        f.service.reviewWorkAssessment({
           ...f.request,
           revisionId: ai.id,
           expectedHeadId: null,
@@ -342,7 +341,7 @@ export function workbookLayoutContractTests(
         }),
       );
       await f.as(f.parent, () =>
-        f.service.releaseWorkbookFeedback({
+        f.service.releaseWorkFeedback({
           ...f.request,
           revisionId: reviewed.id,
           expectedHeadId: reviewed.id,
@@ -350,12 +349,10 @@ export function workbookLayoutContractTests(
         }),
       );
       expect(
-        await f.as(f.own, () =>
-          f.service.getWorkbookQuestionIdentity(ownRequest),
-        ),
+        await f.as(f.own, () => f.service.getWorkQuestionIdentity(ownRequest)),
       ).toEqual([{ id: 'p7:q1' }]);
       const visible = await f.as(f.own, () =>
-        f.service.getWorkbookTimeline({ ...f.own, activityId: f.activity.id }),
+        f.service.getWorkTimeline({ ...f.own, activityId: f.activity.id }),
       );
       expect(JSON.stringify(visible)).toContain('Guardian-only heading');
       expect(JSON.stringify(visible)).toContain('visible-learner-region');
@@ -371,7 +368,7 @@ export function workbookLayoutContractTests(
         layoutOmission: 'unsafe',
       });
       const ai = await f.as(f.parent, () =>
-        f.service.recordWorkbookAnalysis({
+        f.service.recordWorkAnalysis({
           ...f.request,
           requestKey: 'invalid-layout',
           assessment: f.assessment,
@@ -382,7 +379,7 @@ export function workbookLayoutContractTests(
       expect(ai.assessment.questions[0].answer).toBe('14');
       expect(JSON.stringify(ai)).not.toContain('must-not-persist');
       const review = await f.as(f.parent, () =>
-        f.service.reviewWorkbookAssessment({
+        f.service.reviewWorkAssessment({
           ...f.request,
           revisionId: ai.id,
           expectedHeadId: null,
@@ -392,7 +389,7 @@ export function workbookLayoutContractTests(
       expect(review.assessment.layoutOmission).toBe('invalid');
       expect(review.assessment.layout).toBeUndefined();
       const explicit = await f.as(f.parent, () =>
-        f.service.reviewWorkbookAssessment({
+        f.service.reviewWorkAssessment({
           ...f.request,
           revisionId: ai.id,
           expectedHeadId: review.id,

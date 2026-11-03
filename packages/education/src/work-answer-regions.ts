@@ -1,14 +1,14 @@
 import type {
-  WorkbookAnswerRegions,
-  WorkbookQuestion,
-} from './workbook-contracts.js';
+  WorkAnswerRegions,
+  WorkQuestion,
+} from './lesson-work-contracts.js';
 /** Normalize presentation only. Never change answers, layout or verified anchors. */
-export function normalizeWorkbookAnswerRegions(
+export function normalizeWorkAnswerRegions(
   value: unknown,
-  questions: readonly WorkbookQuestion[],
+  questions: readonly WorkQuestion[],
   sources: readonly { assetId: string; sha256?: string; pageCount: number }[],
 ): {
-  answerRegions?: WorkbookAnswerRegions;
+  answerRegions?: WorkAnswerRegions;
   answerRegionsOmission?: 'invalid';
 } {
   if (value === undefined) return {};
@@ -25,7 +25,7 @@ export function normalizeWorkbookAnswerRegions(
   )
     return invalid;
   const seen = new Set<string>();
-  const regions: WorkbookAnswerRegions['regions'] = [];
+  const regions: WorkAnswerRegions['regions'] = [];
   for (const entry of v.regions) {
     if (!entry || typeof entry !== 'object' || Array.isArray(entry))
       return invalid;

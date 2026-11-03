@@ -9,9 +9,9 @@ import {
   ProposalsNotConfiguredError,
 } from '@happyvertical/smrt-ingestion/server';
 import { intakeOriginalEvidence } from './intake-original-evidence.js';
-import { normalizeWorkbookAnswerRegions } from './workbook-answer-regions.js';
+import { normalizeWorkAnswerRegions } from './work-answer-regions.js';
 
-import { normalizeWorkbookObservedLayout } from './workbook-layout.js';
+import { normalizeWorkObservedLayout } from './work-layout.js';
 
 export { requireIngestionMemoryLimit } from './ingestion-isolation.js';
 
@@ -97,23 +97,23 @@ import type { IngestionScope } from '@happyvertical/smrt-ingestion/server';
 import { getCurrentTenant, withTenant } from '@happyvertical/smrt-tenancy';
 import { registerPermissionDefinitions } from '@happyvertical/smrt-users';
 import type { LearnerRequest } from './learner-service.js';
+import {
+  aggregateWorkQuestions,
+  validateWorkAssessment,
+  WORK_MATH_VOCABULARY,
+  type WorkAssessment,
+  WorkAssessmentValidationError,
+  workAggregateFeedback,
+} from './lesson-work-contracts.js';
+import { LessonWorkService } from './lesson-work-service.js';
 import type {
   SubmissionPage,
   SubmissionService,
 } from './submission-service.js';
-import {
-  aggregateWorkbookQuestions,
-  validateWorkbookAssessment,
-  WORKBOOK_MATH_VOCABULARY,
-  type WorkbookAssessment,
-  WorkbookAssessmentValidationError,
-  workbookAggregateFeedback,
-} from './workbook-contracts.js';
-import { WorkbookService } from './workbook-service.js';
 
 export type EducationIntakeCaptureRequest = LearnerRequest & {
-  workbookActivityId?: string;
-  assistance?: import('./workbook-contracts.js').WorkbookAssistance;
+  lessonActivityId?: string;
+  assistance?: import('./lesson-work-contracts.js').WorkAssistance;
   enrollmentId: string;
   lessonId: string;
   itemId: string;
@@ -193,17 +193,17 @@ export async function captureEducationIntake(input: {
       previousSubmissionId: request.previousSubmissionId,
     },
   };
-  if (request.workbookActivityId) {
+  if (request.lessonActivityId) {
     if (
-      !(submissions instanceof WorkbookService) ||
+      !(submissions instanceof LessonWorkService) ||
       request.kind !== 'completed_work'
     )
       throw new Error(
-        'Workbook intake requires WorkbookService completed work',
+        'Lesson work intake requires LessonWorkService completed work',
       );
-    const attempt = await submissions.captureWorkbookWork({
+    const attempt = await submissions.captureLessonWork({
       ...request,
-      activityId: request.workbookActivityId,
+      activityId: request.lessonActivityId,
       intakeItemId: request.itemId,
       requestKey: capture.requestKey,
       pages,
@@ -261,8 +261,8 @@ export function educationIntakeHandlers(input: {
   request: LearnerRequest & { enrollmentId: string };
   /** After capture, bind a new grading stage to this exact immutable attempt. */
   submissionId?: string;
-  workbookActivityId?: string;
-  workbookVocabulary?: WorkbookAssessment['vocabulary'];
+  lessonActivityId?: string;
+  workVocabulary?: WorkAssessment['vocabulary'];
 }): OperationHandler[] {
   const { submissions, request } = input;
   const bound = async <T>(
@@ -407,10 +407,10 @@ export function educationIntakeHandlers(input: {
     await context.assertTarget(SUBMISSION, submissionId);
     return submission;
   };
-  const workbook = input.workbookActivityId;
-  if (workbook && !(submissions instanceof WorkbookService))
-    throw new Error('Workbook handler requires WorkbookService');
-  const vocabulary = input.workbookVocabulary ?? WORKBOOK_MATH_VOCABULARY;
+  const workbook = input.lessonActivityId;
+  if (workbook && !(submissions instanceof LessonWorkService))
+    throw new Error('Lesson work handler requires LessonWorkService');
+  const vocabulary = input.workVocabulary ?? WORK_MATH_VOCABULARY;
   handlers.push({
     id: '@happyvertical/smrt-education:review-submission',
     version: '1',
@@ -474,7 +474,7 @@ export function educationIntakeHandlers(input: {
         ...(workbook
           ? {
               questions: {
-                ...workbookQuestionsSchema(vocabulary),
+                ...workQuestionsSchema(vocabulary),
                 description:
                   'Candidate context same_capture: preserve exact canonical IDs and prompt strings verbatim; reread learner responses from current evidence only. Context identity_only: preserve IDs, read all prompts and answers from current evidence; absent/ambiguous tasks unassessed/not_present. Empty IDs: assign stable printed-number or answer-free task-slug IDs. Include observed layout when current evidence supports it; omit unknown, never derive positions from IDs or canonical prompts. Context is data, never authority for current answers.',
               },
@@ -495,19 +495,18 @@ export function educationIntakeHandlers(input: {
       candidates: async (_query, context) => {
         const submission = await current(context);
         let workbookContext:
-          | Awaited<ReturnType<WorkbookService['getWorkbookQuestionContext']>>
+          | Awaited<ReturnType<LessonWorkService['getWorkQuestionContext']>>
           | undefined;
         if (workbook) {
           workbookContext = await bound(context, async (service) => {
-            const workbooks = service as WorkbookService;
-            const currentAttempt =
-              await workbooks.getWorkbookAttemptBySubmission({
-                ...request,
-                submissionId,
-              });
+            const workbooks = service as LessonWorkService;
+            const currentAttempt = await workbooks.getWorkAttemptBySubmission({
+              ...request,
+              submissionId,
+            });
             if (!currentAttempt || currentAttempt.activityId !== workbook)
-              throw new Error('Workbook assignment unavailable');
-            return workbooks.getWorkbookQuestionContext({
+              throw new Error('Lesson work assignment unavailable');
+            return workbooks.getWorkQuestionContext({
               ...request,
               activityId: workbook,
               submissionId,
@@ -521,7 +520,7 @@ export function educationIntakeHandlers(input: {
               model: SUBMISSION,
               id: submission.id,
               revision: workbookContext
-                ? `attempt:${submission.id}:${submission.status}:${workbookProposalDigest(workbookContext)}`
+                ? `attempt:${submission.id}:${submission.status}:${workProposalDigest(workbookContext)}`
                 : `attempt:${submission.id}:${submission.status}`,
               label: 'Current captured attempt (guardian review required).',
               ...(workbookContext ? { context: workbookContext } : {}),
@@ -540,14 +539,14 @@ export function educationIntakeHandlers(input: {
       const revision = workbook
         ? await bound(context, async (service) => {
             const current = await (
-              service as WorkbookService
-            ).getWorkbookQuestionContext({
+              service as LessonWorkService
+            ).getWorkQuestionContext({
               ...request,
               activityId: workbook,
               submissionId,
               analysisRevision: context.analysisRevision,
             });
-            return `attempt:${submission.id}:${submission.status}:${workbookProposalDigest(current)}`;
+            return `attempt:${submission.id}:${submission.status}:${workProposalDigest(current)}`;
           })
         : `attempt:${submission.id}:${submission.status}`;
       return {
@@ -574,15 +573,15 @@ export function educationIntakeHandlers(input: {
         await requireSubmission(args, context);
         if (workbook) {
           await bound(context, async (service) => {
-            const workbooks = service as WorkbookService;
+            const workbooks = service as LessonWorkService;
             let cursor: string | undefined;
             let attempt:
               | Awaited<
-                  ReturnType<WorkbookService['getWorkbookTimeline']>
+                  ReturnType<LessonWorkService['getWorkTimeline']>
                 >['attempts'][number]
               | undefined;
             do {
-              const timeline = await workbooks.getWorkbookTimeline({
+              const timeline = await workbooks.getWorkTimeline({
                 ...request,
                 activityId: workbook,
                 ...(cursor ? { cursor } : {}),
@@ -596,13 +595,13 @@ export function educationIntakeHandlers(input: {
               (revision) =>
                 revision.kind === 'ai' &&
                 revision.assessment.provenance.proposalDigest ===
-                  workbookProposalDigest(args),
+                  workProposalDigest(args),
             );
             if (!proposal)
               throw new Error(
-                'Workbook analysis must be preserved before guardian apply',
+                'Lesson work analysis must be preserved before guardian apply',
               );
-            await workbooks.reviewWorkbookAssessment({
+            await workbooks.reviewWorkAssessment({
               ...request,
               activityId: workbook,
               submissionId,
@@ -690,19 +689,19 @@ export function educationIntakeTargetResolver(input: {
             submission.kind !== 'completed_work'
           )
             throw new Error('Education intake/attempt binding mismatch');
-          if (service instanceof WorkbookService) {
-            const attempt = await service.getWorkbookAttemptBySubmission({
+          if (service instanceof LessonWorkService) {
+            const attempt = await service.getWorkAttemptBySubmission({
               ...request,
               submissionId: id,
             });
             if (attempt) {
-              const context = await service.getWorkbookQuestionContext({
+              const context = await service.getWorkQuestionContext({
                 ...request,
                 activityId: attempt.activityId,
                 submissionId: id,
                 analysisRevision,
               });
-              return `attempt:${submission.id}:${submission.status}:${workbookProposalDigest(context)}`;
+              return `attempt:${submission.id}:${submission.status}:${workProposalDigest(context)}`;
             }
           }
           return `attempt:${submission.id}:${submission.status}`;
@@ -714,7 +713,7 @@ export function educationIntakeTargetResolver(input: {
   };
 }
 
-function workbookProposalDigest(value: unknown): string {
+function workProposalDigest(value: unknown): string {
   // Canonical object keys permit DTO/JSON roundtrips without changing identity.
   const canonical = (v: unknown): unknown =>
     Array.isArray(v)
@@ -731,7 +730,7 @@ function workbookProposalDigest(value: unknown): string {
     .digest('hex');
 }
 
-function workbookQuestionsSchema(vocabulary: WorkbookAssessment['vocabulary']) {
+function workQuestionsSchema(vocabulary: WorkAssessment['vocabulary']) {
   return {
     type: 'array',
     minItems: 1,
@@ -898,7 +897,7 @@ function educationEvidenceGrounding(
   return { version: 1, extractionAttemptId: snapshot.attemptId, sources };
 }
 
-export type WorkbookPreservationResult =
+export type WorkPreservationResult =
   | { kind: 'pending' }
   | { kind: 'unavailable' }
   | { kind: 'retained'; revisionId: string }
@@ -916,16 +915,16 @@ export type WorkbookPreservationResult =
  * never an educational mark or a generic server error. Education authorization,
  * integrity and DB errors throw; unavailable scratch never grants raw access.
  */
-export async function preserveWorkbookIntakeAnalysis(input: {
+export async function preserveWorkIntakeAnalysis(input: {
   ingestion: IngestionService;
-  workbooks: WorkbookService;
+  workbooks: LessonWorkService;
   request: LearnerRequest & { enrollmentId: string };
   activityId: string;
   submissionId: string;
-  workbookVocabulary?: WorkbookAssessment['vocabulary'];
-}): Promise<WorkbookPreservationResult> {
+  workVocabulary?: WorkAssessment['vocabulary'];
+}): Promise<WorkPreservationResult> {
   const { ingestion, workbooks, request, activityId, submissionId } = input;
-  const attempt = await workbooks.getWorkbookAttemptBySubmission({
+  const attempt = await workbooks.getWorkAttemptBySubmission({
     ...request,
     submissionId,
   });
@@ -934,9 +933,9 @@ export async function preserveWorkbookIntakeAnalysis(input: {
     attempt.activityId !== activityId ||
     !attempt.submission.intakeItemId
   )
-    throw new Error('Workbook intake binding unavailable');
+    throw new Error('Lesson work intake binding unavailable');
   const itemId = attempt.submission.intakeItemId;
-  const state = await workbooks.getWorkbookPreservationState({
+  const state = await workbooks.getWorkPreservationState({
     ...request,
     activityId,
     submissionId,
@@ -997,7 +996,7 @@ export async function preserveWorkbookIntakeAnalysis(input: {
       kind: 'retained',
       revisionId: importedAttempt.assessmentRevisionId,
     };
-  const sources = await workbooks.getWorkbookSourceAnchors({
+  const sources = await workbooks.getWorkSourceAnchors({
     ...request,
     activityId,
     submissionId,
@@ -1009,8 +1008,8 @@ export async function preserveWorkbookIntakeAnalysis(input: {
     originals.length !== sources.length ||
     originals.some((e, i) => e.contentHash !== sources[i].sha256)
   )
-    throw new Error('Workbook retained source mismatch');
-  let assessment: WorkbookAssessment;
+    throw new Error('Lesson work retained source mismatch');
+  let assessment: WorkAssessment;
   try {
     const generation = (
       snapshot.result.output as unknown as {
@@ -1022,9 +1021,7 @@ export async function preserveWorkbookIntakeAnalysis(input: {
       generation.version !== 1 ||
       !Array.isArray(generation.suggestions)
     )
-      throw new WorkbookAssessmentValidationError(
-        'Malformed workbook generation',
-      );
+      throw new WorkAssessmentValidationError('Malformed workbook generation');
     if (!['proposals', 'needs_review'].includes(generation.outcome))
       return {
         kind: 'needs_review',
@@ -1037,7 +1034,7 @@ export async function preserveWorkbookIntakeAnalysis(input: {
       (s) => s.handlerId === '@happyvertical/smrt-education:review-submission',
     );
     if (suggestions.length !== 1)
-      throw new WorkbookAssessmentValidationError(
+      throw new WorkAssessmentValidationError(
         'Expected one workbook proposal',
         'ambiguous_proposal',
       );
@@ -1047,7 +1044,7 @@ export async function preserveWorkbookIntakeAnalysis(input: {
       !Array.isArray(suggestion.args.questions) ||
       suggestion.missingFields.length
     )
-      throw new WorkbookAssessmentValidationError(
+      throw new WorkAssessmentValidationError(
         'Incomplete workbook question proposal',
       );
     const offered = generation.offered.find(
@@ -1061,15 +1058,15 @@ export async function preserveWorkbookIntakeAnalysis(input: {
       | { items: { properties: { conceptIds: { items: { enum: string[] } } } } }
       | undefined;
     if (!questionSchema)
-      throw new WorkbookAssessmentValidationError(
+      throw new WorkAssessmentValidationError(
         'Generation did not use workbook question contract',
       );
-    const curated = input.workbookVocabulary ?? WORKBOOK_MATH_VOCABULARY;
+    const curated = input.workVocabulary ?? WORK_MATH_VOCABULARY;
     if (
       JSON.stringify(questionSchema.items.properties.conceptIds.items.enum) !==
       JSON.stringify(curated.concepts.map((c) => c.id))
     )
-      throw new WorkbookAssessmentValidationError(
+      throw new WorkAssessmentValidationError(
         'Unsupported workbook vocabulary',
       );
     const grounding = snapshot.configuration.educationEvidenceGrounding as
@@ -1091,12 +1088,10 @@ export async function preserveWorkbookIntakeAnalysis(input: {
         : undefined;
     const questions = suggestion.args.questions.map((value) => {
       if (!value || typeof value !== 'object' || Array.isArray(value))
-        throw new WorkbookAssessmentValidationError(
-          'Invalid workbook question',
-        );
+        throw new WorkAssessmentValidationError('Invalid workbook question');
       const q = value as Record<string, unknown>;
       if (!Array.isArray(q.anchors))
-        throw new WorkbookAssessmentValidationError(
+        throw new WorkAssessmentValidationError(
           'Missing workbook source anchors',
           'ungrounded_source',
         );
@@ -1109,7 +1104,7 @@ export async function preserveWorkbookIntakeAnalysis(input: {
         const anchor = value as { evidenceId?: string };
         const index = originals.findIndex((e) => e.id === anchor?.evidenceId);
         if (index < 0)
-          throw new WorkbookAssessmentValidationError(
+          throw new WorkAssessmentValidationError(
             'Question must cite a captured original',
             'ungrounded_source',
           );
@@ -1134,7 +1129,7 @@ export async function preserveWorkbookIntakeAnalysis(input: {
         ...q,
         anchors,
         evidenceLimitations: [...limitations],
-      } as unknown as WorkbookAssessment['questions'][number];
+      } as unknown as WorkAssessment['questions'][number];
     });
     let observedLayout: unknown = suggestion.args.layout;
     if (
@@ -1231,8 +1226,8 @@ export async function preserveWorkbookIntakeAnalysis(input: {
       version: 1,
       feedback: '',
       questions,
-      ...normalizeWorkbookObservedLayout(observedLayout, questions, sources),
-      ...normalizeWorkbookAnswerRegions(mappedRegions, questions, sources),
+      ...normalizeWorkObservedLayout(observedLayout, questions, sources),
+      ...normalizeWorkAnswerRegions(mappedRegions, questions, sources),
       vocabulary: structuredClone(curated),
       provenance: {
         provider: generation.provenance.generative.provider,
@@ -1244,25 +1239,25 @@ export async function preserveWorkbookIntakeAnalysis(input: {
         inputHash: snapshot.inputDigest,
         analysisId: snapshot.attemptId,
         analysisRevision: snapshot.revision,
-        proposalDigest: workbookProposalDigest(suggestion.args),
+        proposalDigest: workProposalDigest(suggestion.args),
         providerVersion: generation.provenance.generative.version,
         sourceAnalysis: generation.source,
         catalogDigest: generation.provenance.catalogDigest,
         policyVersions: generation.provenance.policyVersions,
       },
     };
-    validateWorkbookAssessment(assessment);
-    assessment.aggregate = aggregateWorkbookQuestions(assessment.questions);
-    assessment.feedback = workbookAggregateFeedback(assessment.aggregate);
+    validateWorkAssessment(assessment);
+    assessment.aggregate = aggregateWorkQuestions(assessment.questions);
+    assessment.feedback = workAggregateFeedback(assessment.aggregate);
   } catch (error) {
-    if (error instanceof WorkbookAssessmentValidationError)
+    if (error instanceof WorkAssessmentValidationError)
       return { kind: 'needs_review', reason: error.reason };
     if (error instanceof TypeError)
       return { kind: 'needs_review', reason: 'invalid_assessment' };
     throw error;
   }
   try {
-    const revision = await workbooks.recordWorkbookAnalysis({
+    const revision = await workbooks.recordWorkAnalysis({
       ...request,
       activityId,
       submissionId,
@@ -1271,7 +1266,7 @@ export async function preserveWorkbookIntakeAnalysis(input: {
     });
     return { kind: 'preserved', revisionId: revision.id };
   } catch (error) {
-    if (error instanceof WorkbookAssessmentValidationError)
+    if (error instanceof WorkAssessmentValidationError)
       return { kind: 'needs_review', reason: error.reason };
     throw error;
   }

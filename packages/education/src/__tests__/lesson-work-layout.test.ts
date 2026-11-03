@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { WorkbookQuestion } from '../workbook-contracts.js';
-import { normalizeWorkbookObservedLayout as normalize } from '../workbook-layout.js';
+import type { WorkQuestion } from '../lesson-work-contracts.js';
+import { normalizeWorkObservedLayout as normalize } from '../work-layout.js';
 
 const sources = [
   { assetId: 'image', sha256: 'hash', pageCount: 1 },
@@ -9,7 +9,7 @@ const sources = [
 const questions = ['a', 'b', 'unplaced'].map((id) => ({
   id,
   anchors: [{ assetId: 'image', sha256: 'hash', page: 1 }],
-})) as WorkbookQuestion[];
+})) as WorkQuestion[];
 function layout() {
   return {
     version: 1,
@@ -65,7 +65,7 @@ describe('bounded observed workbook layout', () => {
     const qs = value.placements.map((p) => ({
       id: p.questionId,
       anchors: [{ assetId: 'pdf', sha256: 'pdfhash', page: null }],
-    })) as WorkbookQuestion[];
+    })) as WorkQuestion[];
     expect(normalize(value, qs, sources)).toEqual({ layout: value });
     expect(qs[0].anchors[0].page).toBeNull();
   });
@@ -154,7 +154,7 @@ describe('bounded observed workbook layout', () => {
     const pdfQuestions = questions.map((q) => ({
       ...q,
       anchors: [{ assetId: 'pdf', sha256: 'pdfhash', page: null }],
-    })) as WorkbookQuestion[];
+    })) as WorkQuestion[];
     expect(normalize(value, pdfQuestions, sources)).toEqual({ layout: value });
     value.sections[0].source.page = 4;
     expect(normalize(value, pdfQuestions, sources)).toEqual({

@@ -7,7 +7,7 @@ import type {
   LessonAssetCollection,
   LessonCollection,
 } from './collections.js';
-import type { LessonAsset } from './lesson-assets.js';
+import { type LessonAsset, materialAudience } from './lesson-assets.js';
 
 /** The application-owned decision that permits a catalog view for one tenant. */
 export type TenantCatalogReadScope =
@@ -201,11 +201,17 @@ export class CatalogService {
                 .filter((lesson) => lesson.tenantId === course.tenantId)
                 .map(async (lesson) => ({
                   lesson: projectLesson(lesson, includeAnswerKeys),
+                  // Without the guardian projection, guardian-audience
+                  // material (keys, guidance, teacher guides) never appears.
                   assets: (await this.assets.byLeft(String(lesson.id))).filter(
                     (asset) =>
                       asset.tenantId === course.tenantId &&
                       (includeAnswerKeys ||
-                        asset.relationship !== 'answer-key'),
+                        (asset.relationship !== 'answer-key' &&
+                          materialAudience(
+                            asset.relationship,
+                            asset.audience,
+                          ) === 'learner')),
                   ),
                 })),
             ),

@@ -1,7 +1,7 @@
 import type {
-  WorkbookAssessment,
-  WorkbookConceptSummary,
-} from './workbook-contracts.js';
+  WorkAssessment,
+  WorkConceptSummary,
+} from './lesson-work-contracts.js';
 
 export type GroupSharingSelector =
   | { mode: 'all' }
@@ -139,7 +139,7 @@ export interface GroupSharedRevisionView {
   readonly revisionId: string;
   readonly createdAt: string;
   readonly kind: 'ai' | 'guardian';
-  readonly assessment: WorkbookAssessment;
+  readonly assessment: WorkAssessment;
 }
 export interface GroupSharingPreview {
   readonly policy: GroupSharingPolicyV1;
@@ -157,7 +157,7 @@ export interface GroupSharedProgressView {
     episodes: number;
     assistance: { independent: number; assisted: number; unknown: number };
   };
-  readonly concepts: ReadonlyArray<WorkbookConceptSummary>;
+  readonly concepts: ReadonlyArray<WorkConceptSummary>;
 }
 export interface GroupRevisionCommentView {
   readonly id: string;

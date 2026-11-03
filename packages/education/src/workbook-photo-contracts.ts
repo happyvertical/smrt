@@ -1,4 +1,4 @@
-import type { WorkbookActivityView } from './workbook-contracts.js';
+import type { LessonActivityView } from './lesson-work-contracts.js';
 /** Activity keys identify a printed lesson, potentially spanning multiple pages. */
 export interface WorkbookPhotoIdentification {
   kind: 'lesson' | 'work' | 'cover' | 'reference' | 'uncertain';
@@ -20,19 +20,19 @@ export interface WorkbookPhotoProposal {
   identityEvidence: string[];
   /** A printed lesson/exercise identifier, never the page number alone. */
   lessonEvidence: string;
-  /** Optional exact existing workbook candidate selected from authorized discovery. */
+  /** Optional exact existing book course candidate (course id) from authorized discovery. */
   workbookId?: string;
 }
 export interface WorkbookPhotoIntakeView {
   id: string;
   itemId: string;
-  /** Exact latest retained book-context resolution, independent of activity filing. */
-  workbookId?: string | null;
+  /** Book course of the exact latest retained book-context resolution, independent of filing. */
+  bookCourseId: string | null;
   learnerId: string;
   status: 'pending' | 'resolved' | 'captured';
   identification: WorkbookPhotoIdentification | null;
   proposal: WorkbookPhotoProposal | null;
-  activity: WorkbookActivityView | null;
+  activity: LessonActivityView | null;
   submissionId: string | null;
   originals: {
     assetId: string;
@@ -87,9 +87,11 @@ export function validateWorkbookPhotoIdentification(
     throw new Error('Context material cannot name an activity');
 }
 
-export interface WorkbookPhotoWorkbookView {
+/** A family book course offered to photo identification and the guardian picker. */
+export interface PhotoBookCourseView {
+  /** Course id; the provider wire field `workbookId` carries this value. */
   id: string;
-  workbookKey: string;
+  bookKey: string;
   title: string;
   edition: string;
   publisher?: string;

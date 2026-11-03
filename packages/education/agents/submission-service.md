@@ -16,6 +16,21 @@ PostgreSQL enrollment lock. No runtime schema creation occurs.
 
 ## Capture and grading
 
+Every completed-work capture and correction is lesson work: the same transaction
+records the learner's `LessonActivity` for the enrollment and lesson and one
+immutable `WorkAttempt` bound to the submission (a correction continues its
+predecessor's episode); see [lesson work](lesson-work-service.md#one-pipeline).
+The lesson work tables are therefore required; a host without them gets
+`LearnerHistoryUnavailableError`. Book and loose-page work is refused here with
+`LessonWorkWorkflowRequiredError`; call `assertOrdinarySubmissionScope` before
+creating a generic intake receipt.
+
+Each page may carry a `pageKey` (1-200 printable characters, distinct within the
+capture; default `p<position>`). Submission views list `pages` with their
+`pageKey`; older rows read as `p<sortOrder+1>`. A correction (`resubmitSubmission`)
+may carry only the pages it replaces; the attempt view folds the versions, while
+each grade stays bound to the submission it was given on (#4613).
+
 `captureSubmission` takes the learner request, `enrollmentId`, `lessonId`, a
 nonempty stable `requestKey`, and `pages` containing `name`, `mimeType` and Buffer
 `data`. Each upload becomes a fresh Asset owned by the learner's profile and
@@ -45,12 +60,13 @@ non-authoritative Grade until guardian review.
 `reviewSubmission` accepts an existing authorized submission and optional score
 and feedback. `attestLesson` creates/reuses an Attestation for a matching progress
 item without requiring uploads. Both require a verified guardian and create a
-new guardian Grade and set submission to `graded`. Ordinary non-workbook progress
-becomes `complete`. Workbook-backed progress instead uses its explicit parent
-completion decision; grading alone leaves it in progress, including through a
-plain SubmissionService instance. Existing explicit completion on the current
-attempt is retained. The owning workbook join determines this policy, never a
-caller flag.
+new guardian Grade and set submission to `graded`. On an ordinary lesson the
+progress becomes `complete` and the grade on the current attempt is recorded as
+that attempt's lesson work completion decision. Book and loose-page work (its
+course has a book key, or it is unfiled photo work) instead uses its explicit
+parent completion decision; grading alone leaves it in progress, including through
+a plain SubmissionService instance. The authoritative activity and course decide
+this, never a caller flag.
 `attestOwnLesson({ enrollmentId, lessonId, policyBasis, notes? })` is the
 learner's own "I read it" / "I watched it" for `SELF_ATTESTABLE_LESSON_KINDS`
 (Reading, Video) under `education.learner.attest-own`. Any other actor is

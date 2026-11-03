@@ -4,19 +4,21 @@ import {
   isPostgresAvailable,
 } from '@happyvertical/smrt-vitest';
 import { afterAll, beforeAll, describe } from 'vitest';
-import {
-  workbookClasses,
-  workbookContractTests,
-} from './workbook-workflows.js';
+import { workbookLayoutContractTests } from './lesson-work-layout-workflows.js';
+import { workbookClasses } from './lesson-work-workflows.js';
 
 beforeAll(() => enableTenancy());
 afterAll(() => disableTenancy());
 (isPostgresAvailable() ? describe : describe.skip)(
-  'WorkbookService durable workflow postgres',
+  'LessonWorkService observed layout postgres',
   () =>
-    workbookContractTests(async () => {
+    workbookLayoutContractTests(async () => {
       const isolated = await createIsolatedTestDbFromManifest({
-        includeObjects: workbookClasses,
+        includeObjects: [
+          ...workbookClasses,
+          'WorkbookPhotoDecision',
+          'BookContextRevision',
+        ],
       });
       return { db: isolated.baseDb, cleanup: isolated.cleanup };
     }),

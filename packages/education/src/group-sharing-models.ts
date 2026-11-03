@@ -311,11 +311,11 @@ export class GroupRevisionComment extends SmrtObject {
   membershipId = '';
   @foreignKey('Learner', { required: true, onDelete: 'RESTRICT' }) learnerId =
     '';
-  @foreignKey('WorkbookActivity', { required: true, onDelete: 'RESTRICT' })
+  @foreignKey('LessonActivity', { required: true, onDelete: 'RESTRICT' })
   activityId = '';
-  @foreignKey('WorkbookAttempt', { required: true, onDelete: 'RESTRICT' })
+  @foreignKey('WorkAttempt', { required: true, onDelete: 'RESTRICT' })
   attemptId = '';
-  @foreignKey('WorkbookAssessmentRevision', {
+  @foreignKey('WorkAssessmentRevision', {
     required: true,
     onDelete: 'RESTRICT',
   })

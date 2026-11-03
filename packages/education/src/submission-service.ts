@@ -29,14 +29,40 @@ import {
   LearnerValidationError,
   requirePolicyBasis,
 } from './learner-service.js';
+import {
+  CourseAssetCollection,
+  type ExternalVideoProvider,
+  externalVideoEmbedUrl,
+  type LessonAssetRelationship,
+  LessonExternalVideoCollection,
+  type MaterialAudience,
+  materialAudience,
+  parseYouTubeReference,
+} from './lesson-assets.js';
+import { validLessonPageKey } from './lesson-pages.js';
+import {
+  readWorkCompletion,
+  WorkCompletionDecisionCollection,
+} from './lesson-work-completion.js';
+import type { WorkAssistance } from './lesson-work-contracts.js';
+import {
+  type LessonActivity,
+  LessonActivityCollection,
+  WorkAttemptCollection,
+} from './lesson-work-models.js';
 import type { Grade, Submission, SubmissionKind } from './submissions.js';
-import { readWorkbookCompletion } from './workbook-completion.js';
 
 /** A single captured page. No model patches or pre-existing asset IDs are accepted. */
 export interface SubmissionPage {
   name: string;
   mimeType: 'image/jpeg' | 'image/png' | 'image/webp' | 'application/pdf';
   data: Buffer;
+  /**
+   * The lesson page this file is (`p1`, `p12-back`); default `p<position>`.
+   * A correction may carry only the pages it replaces: a page keeps its key
+   * across the correction chain, so a host can show "page 2: v1, v2".
+   */
+  pageKey?: string;
 }
 export interface SubmissionAssetClaim {
   enrollmentId: string;
@@ -71,7 +97,7 @@ export type SubmissionView = Readonly<{
   kind: SubmissionKind;
   previousSubmissionId: string | null;
   intakeItemId: string | null;
-  pages: ReadonlyArray<{ assetId: string; sortOrder: number }>;
+  pages: ReadonlyArray<{ assetId: string; sortOrder: number; pageKey: string }>;
   /** Guardian-origin photo work remains private until explicit feedback release. */
   awaitingParentRelease?: boolean;
   /** Effective source privacy: every derived revision needs explicit release. */
@@ -125,12 +151,46 @@ type CaptureRequest = LessonRequest & {
   intake?: SubmissionIntake;
 };
 
-/** Workbook scaffolding can only be mutated through its owning workflow. */
-export class WorkbookWorkflowRequiredError extends Error {
+/**
+ * Book and loose-page work is captured only through `LessonWorkService`, which
+ * owns its receipt, correction-identity and release checks.
+ */
+export class LessonWorkWorkflowRequiredError extends Error {
   constructor() {
-    super('Workbook workflow required');
-    this.name = 'WorkbookWorkflowRequiredError';
+    super('Lesson work workflow required');
+    this.name = 'LessonWorkWorkflowRequiredError';
   }
+}
+
+/** An external video reference is not an allowlisted YouTube id or URL. */
+export class ExternalVideoReferenceError extends LearnerValidationError {
+  constructor() {
+    super('Videos must be a YouTube video id or youtube.com / youtu.be link');
+    this.name = 'ExternalVideoReferenceError';
+  }
+}
+
+/** One material as a learner or guardian may see it. */
+export type LessonMaterialView = Readonly<{
+  id: string;
+  kind: 'file' | 'external-video';
+  scope: 'lesson' | 'course';
+  relationship: LessonAssetRelationship;
+  audience: MaterialAudience;
+  title: string;
+  /** Sort order for files, step order for videos. */
+  order: number;
+  /** Files only; sign with `signLessonMaterial` / `signCourseMaterial`. */
+  assetId: string | null;
+  provider: ExternalVideoProvider | null;
+  videoId: string | null;
+  /** Privacy-enhanced embed URL for an external video. */
+  embedUrl: string | null;
+}>;
+
+/** The page key a file carries: its own, or `p<position>` for older rows. */
+export function submissionPageKey(pageKey: string, sortOrder: number): string {
+  return pageKey || `p${sortOrder + 1}`;
 }
 
 /** Failure includes fresh asset identities only, for explicit storage reconciliation. */
@@ -261,14 +321,22 @@ export class SubmissionService extends LearnerService {
       )
         throw new Error('Invalid capture page');
     }
+    const keys = pages.map((page, i) =>
+      page.pageKey === undefined ? `p${i + 1}` : page.pageKey,
+    );
+    if (
+      keys.some((key) => !validLessonPageKey(key)) ||
+      new Set(keys).size !== keys.length
+    )
+      throw new Error('Capture page keys must be distinct page keys');
   }
   private async lockProgressOwner(
     request: LearnerRequest & { enrollmentId: string },
   ): Promise<void> {
-    // Match WorkbookService's lock order so generic guardian grading cannot race
+    // Match LessonWorkService's lock order so generic guardian grading cannot race
     // capture or an explicit completion decision on the same learner.
     if (
-      await this.findWorkbookActivity(request, {
+      await this.findLessonActivity(request, {
         enrollmentId: request.enrollmentId,
       })
     )
@@ -398,10 +466,23 @@ export class SubmissionService extends LearnerService {
     });
     return { guardianOrigin: true, released: !!release };
   }
-  private async view(
+  /**
+   * A submission's learner-owned page files and whether they are withheld
+   * from this actor (guardian-origin source awaiting release). The caller has
+   * already authorized the submission's learner and enrollment.
+   */
+  protected async submissionPages(
     row: Submission,
     actorUserId: string,
-  ): Promise<SubmissionView> {
+    // Pages only: skip the source-origin lookup when the actor is not the
+    // learner, since only the learner's own view is ever redacted.
+    pagesOnly = false,
+  ): Promise<{
+    pages: Array<{ assetId: string; sortOrder: number; pageKey: string }>;
+    awaitingParentRelease: boolean;
+    guardianOrigin: boolean;
+    learnerUserId: string;
+  }> {
     const links = await (
       await SubmissionAssetCollection.create({ db: this.db })
     ).list({
@@ -413,7 +494,11 @@ export class SubmissionService extends LearnerService {
       tenant_id: row.tenantId,
     });
     if (!learner) throw new LearnerAuthorizationError();
-    const pages: Array<{ assetId: string; sortOrder: number }> = [];
+    const pages: Array<{
+      assetId: string;
+      sortOrder: number;
+      pageKey: string;
+    }> = [];
     for (const link of links) {
       if (
         await this.db.get('assets', {
@@ -422,8 +507,37 @@ export class SubmissionService extends LearnerService {
           owner_profile_id: learner.profile_id,
         })
       )
-        pages.push({ assetId: link.assetId, sortOrder: link.sortOrder });
+        pages.push({
+          assetId: link.assetId,
+          sortOrder: link.sortOrder,
+          pageKey: submissionPageKey(link.pageKey, link.sortOrder),
+        });
     }
+    const photo =
+      pagesOnly && learner.user_id !== actorUserId
+        ? { guardianOrigin: false, released: false }
+        : await this.workbookPhotoSource(
+            { tenantId: row.tenantId, learnerId: row.learnerId },
+            { intakeItemId: row.intakeItemId, submissionId: String(row.id) },
+          );
+    const awaitingParentRelease =
+      learner.user_id === actorUserId &&
+      photo.guardianOrigin &&
+      !photo.released;
+    return {
+      pages: awaitingParentRelease ? [] : pages,
+      awaitingParentRelease,
+      guardianOrigin: photo.guardianOrigin,
+      learnerUserId: String(learner.user_id ?? ''),
+    };
+  }
+  private async view(
+    row: Submission,
+    actorUserId: string,
+  ): Promise<SubmissionView> {
+    const projected = await this.submissionPages(row, actorUserId);
+    const pages = projected.pages;
+    const learner = { user_id: projected.learnerUserId };
     const grades = await (await GradeCollection.create({ db: this.db })).list({
       where: { submissionId: String(row.id), tenantId: row.tenantId },
     });
@@ -436,22 +550,17 @@ export class SubmissionService extends LearnerService {
         String(b.id).localeCompare(String(a.id)),
     );
     const grade = grades[0];
-    const photo = await this.workbookPhotoSource(
-      { tenantId: row.tenantId, learnerId: row.learnerId },
-      { intakeItemId: row.intakeItemId, submissionId: String(row.id) },
+    const photo = { guardianOrigin: projected.guardianOrigin };
+    const awaitingParentRelease = projected.awaitingParentRelease;
+    // Book and loose-page work deliver feedback only through release;
+    // ordinary lesson grades remain the learner's feedback.
+    const activity = await this.findLessonActivity(
+      { tenantId: row.tenantId, learnerId: row.learnerId, actorUserId },
+      { lessonId: row.lessonId },
     );
-    const awaitingParentRelease =
-      learner.user_id === actorUserId &&
-      photo.guardianOrigin &&
-      !photo.released;
     const withheld =
       learner.user_id === actorUserId &&
-      Boolean(
-        await this.findWorkbookActivity(
-          { tenantId: row.tenantId, learnerId: row.learnerId, actorUserId },
-          { lessonId: row.lessonId },
-        ),
-      );
+      Boolean(activity && (await this.isReleaseGatedWork(activity)));
     const selfReported =
       (await this.db.tableExists('lesson_self_attestations')) &&
       Boolean(
@@ -501,8 +610,12 @@ export class SubmissionService extends LearnerService {
       throw new LearnerAuthorizationError();
   }
 
-  /** Reject legacy upload/review entry points using authoritative owned scope. */
-  async assertNonWorkbookSubmissionScope(
+  /**
+   * Refuse generic upload entry points for book and loose-page work, using
+   * the authoritative enrollment, lesson and predecessor. Hosts call this
+   * before creating a generic intake receipt.
+   */
+  async assertOrdinarySubmissionScope(
     request: LearnerRequest & {
       enrollmentId: string;
       lessonId?: string;
@@ -511,16 +624,13 @@ export class SubmissionService extends LearnerService {
   ): Promise<void> {
     await this.requireEnrollment(request, 'education.learner.read');
     if (
-      await this.findWorkbookActivity(request, {
-        enrollmentId: request.enrollmentId,
-      })
+      await this.isReleaseGatedEnrollment(
+        request.tenantId,
+        request.enrollmentId,
+      )
     )
-      throw new WorkbookWorkflowRequiredError();
-    if (
-      request.lessonId &&
-      (await this.findWorkbookActivity(request, { lessonId: request.lessonId }))
-    )
-      throw new WorkbookWorkflowRequiredError();
+      throw new LessonWorkWorkflowRequiredError();
+    let lessonId = request.lessonId;
     if (request.previousSubmissionId) {
       const previous = await (
         await SubmissionCollection.create({ db: this.db })
@@ -532,14 +642,15 @@ export class SubmissionService extends LearnerService {
         },
         { cache: false },
       );
-      if (
-        previous &&
-        (await this.findWorkbookActivity(request, {
-          lessonId: previous.lessonId,
-        }))
-      )
-        throw new WorkbookWorkflowRequiredError();
+      if (previous) lessonId = previous.lessonId;
     }
+    if (!lessonId) return;
+    const activity = await this.findLessonActivity(request, {
+      enrollmentId: request.enrollmentId,
+      lessonId,
+    });
+    if (activity && (await this.isReleaseGatedWork(activity)))
+      throw new LessonWorkWorkflowRequiredError();
   }
 
   async captureSubmission(request: CaptureRequest): Promise<SubmissionView> {
@@ -547,33 +658,37 @@ export class SubmissionService extends LearnerService {
   }
 
   /** Owning workflow extension; no browser input can grant this scoped path. */
-  protected async captureWorkbookSubmission(
+  protected async captureActivitySubmission(
     request: CaptureRequest,
-    activityId: string,
+    scope: { activityId: string; assistance: WorkAssistance },
   ): Promise<SubmissionView> {
-    return this.captureSubmissionInScope(request, activityId);
+    return this.captureSubmissionInScope(request, scope);
   }
 
   private async captureSubmissionInScope(
     request: CaptureRequest,
-    activityId?: string,
+    scope?: { activityId: string; assistance: WorkAssistance },
   ): Promise<SubmissionView> {
     return this.mutate(async (service) => {
       await service.requireEnrollment(request, 'education.learner.submit');
-      const workbookLesson = await service.findWorkbookActivity(request, {
+      // One pipeline: every hand-in belongs to the learner's activity on
+      // this lesson. Unfiled photo routing is reachable only by its receipt.
+      const activity = await service.findLessonActivity(request, {
+        enrollmentId: request.enrollmentId,
         lessonId: request.lessonId,
       });
-      const workbookEnrollment = await service.findWorkbookActivity(request, {
-        enrollmentId: request.enrollmentId,
-      });
-      if (
-        activityId
-          ? !workbookLesson ||
-            String(workbookLesson.id) !== activityId ||
-            workbookLesson.enrollmentId !== request.enrollmentId
-          : Boolean(workbookLesson || workbookEnrollment)
+      if (scope) {
+        if (!activity || String(activity.id) !== scope.activityId)
+          throw new LearnerAuthorizationError();
+      } else if (
+        (activity && (await service.isReleaseGatedWork(activity))) ||
+        // Gate on the course too: a book page with no activity yet is book work.
+        (await service.isReleaseGatedEnrollment(
+          request.tenantId,
+          request.enrollmentId,
+        ))
       )
-        throw new WorkbookWorkflowRequiredError();
+        throw new LessonWorkWorkflowRequiredError();
       service.validatePages(request.pages);
       if (request.notes !== undefined && typeof request.notes !== 'string')
         throw new Error('Notes must be text');
@@ -747,20 +862,27 @@ export class SubmissionService extends LearnerService {
         });
       }
       const links = await SubmissionAssetCollection.create({ db: service.db });
+      const assetIds: string[] = [];
       for (const [sortOrder, page] of request.pages.entries()) {
         const asset = await service.storePage(request, learner.profileId, page);
+        assetIds.push(String(asset.id));
         await links.create({
           tenantId: request.tenantId,
           submissionId: String(row.id),
           assetId: String(asset.id),
           relationship: 'page',
           sortOrder,
+          pageKey: page.pageKey ?? `p${sortOrder + 1}`,
         });
       }
       if (kind === 'completed_work') {
         progress.status = 'submitted';
         progress.attempts += 1;
         await progress.save();
+        await service.recordAttempt(request, row, request.pages, assetIds, {
+          activity,
+          assistance: scope?.assistance ?? 'unknown',
+        });
       }
       return service.view(row, request.actorUserId);
     });
@@ -844,6 +966,137 @@ export class SubmissionService extends LearnerService {
       ? this.getSubmission({ ...request, submissionId: String(row.id) })
       : null;
   }
+  /** The course work policy a new attempt snapshots (its enrollment's course). */
+  protected async workPolicy(
+    activity: LessonActivity,
+  ): Promise<{ reviewRequired: boolean; policyVersion: number }> {
+    const enrollment = await this.db.get('enrollments', {
+      id: activity.enrollmentId,
+      tenant_id: activity.tenantId,
+    });
+    const course =
+      enrollment &&
+      (await this.db.get('courses', { id: enrollment.course_id }));
+    return {
+      reviewRequired: ![false, 0, '0', 'f', 'false'].includes(
+        course?.work_review_required as never,
+      ),
+      policyVersion: Number(course?.work_policy_version ?? 1) || 1,
+    };
+  }
+  /**
+   * Record a completed-work hand-in in the lesson work pipeline: the learner's
+   * activity on this lesson (created on first capture) and one immutable
+   * attempt bound to the submission, continuing its predecessor's episode.
+   */
+  protected async recordAttempt(
+    request: LessonRequest,
+    row: Submission,
+    pages: readonly SubmissionPage[],
+    assetIds: readonly string[],
+    scope: { activity: LessonActivity | null; assistance: WorkAssistance },
+  ): Promise<void> {
+    if (!['independent', 'assisted', 'unknown'].includes(scope.assistance))
+      throw new Error('Invalid assistance');
+    for (const table of ['workbook_activities', 'workbook_attempts'])
+      if (!(await this.db.tableExists(table)))
+        throw new LearnerHistoryUnavailableError(table);
+    const activities = await LessonActivityCollection.create({ db: this.db });
+    const activity =
+      scope.activity ??
+      (await activities.create({
+        _insertOnly: true,
+        slug: `lesson-activity-${String(row.progressId)}`,
+        tenantId: request.tenantId,
+        learnerId: request.learnerId,
+        enrollmentId: request.enrollmentId,
+        lessonId: request.lessonId,
+      }));
+    const attempts = await WorkAttemptCollection.create({ db: this.db });
+    const previous = row.previousSubmissionId
+      ? await attempts.get(
+          {
+            tenantId: request.tenantId,
+            learnerId: request.learnerId,
+            submissionId: row.previousSubmissionId,
+          },
+          { cache: false },
+        )
+      : null;
+    if (previous && previous.activityId !== String(activity.id))
+      throw new Error('Lesson work correction identity mismatch');
+    const crypto = process.getBuiltinModule?.('node:crypto');
+    if (!crypto) throw new Error('Lesson work capture requires a Node server');
+    const sourceHashes = [];
+    for (const [i, page] of pages.entries())
+      sourceHashes.push({
+        assetId: assetIds[i],
+        sha256: crypto.createHash('sha256').update(page.data).digest('hex'),
+        pageCount:
+          page.mimeType === 'application/pdf'
+            ? (await PDFDocument.load(page.data)).getPageCount()
+            : 1,
+      });
+    const policy = await this.workPolicy(activity);
+    const id = globalThis.crypto.randomUUID();
+    const prior = await attempts.list({
+      where: {
+        tenantId: request.tenantId,
+        learnerId: request.learnerId,
+        activityId: String(activity.id),
+      },
+    });
+    await attempts.create({
+      _insertOnly: true,
+      id,
+      tenantId: request.tenantId,
+      learnerId: request.learnerId,
+      activityId: String(activity.id),
+      submissionId: String(row.id),
+      previousAttemptId: previous ? String(previous.id) : null,
+      episodeId: previous?.episodeId ?? id,
+      reviewRequired: policy.reviewRequired,
+      policyVersion: policy.policyVersion,
+      assistance: scope.assistance,
+      actorUserId: request.actorUserId,
+      // Independent practice episodes have no predecessor edge. Preserve their
+      // capture order even when the server clock ties or moves backwards.
+      capturedAt: new Date(
+        Math.max(
+          new Date(row.submittedAt).getTime(),
+          ...prior.map((p) => new Date(p.capturedAt).getTime() + 1),
+        ),
+      ),
+      sourceHashes: JSON.stringify(sourceHashes),
+    });
+  }
+  /** A guardian grade on an ordinary lesson's current attempt completes it. */
+  private async recordGradeCompletion(
+    request: LearnerRequest,
+    activity: LessonActivity,
+    row: Submission,
+  ): Promise<void> {
+    const state = await readWorkCompletion(this.db, {
+      tenantId: request.tenantId,
+      learnerId: request.learnerId,
+      activityId: String(activity.id),
+    });
+    if (state.currentAttempt?.submissionId !== String(row.id) || state.decision)
+      return;
+    await (
+      await WorkCompletionDecisionCollection.create({ db: this.db })
+    ).create({
+      _insertOnly: true,
+      tenantId: request.tenantId,
+      learnerId: request.learnerId,
+      activityId: String(activity.id),
+      attemptId: String(state.currentAttempt.id),
+      submissionId: String(row.id),
+      feedbackHeadId: state.feedbackHeadId,
+      actorUserId: request.actorUserId,
+      requestKey: `grade:${row.id}`,
+    });
+  }
   private async grade(
     request: LearnerRequest,
     row: Submission,
@@ -887,17 +1140,23 @@ export class SubmissionService extends LearnerService {
     });
     row.status = 'graded';
     await row.save();
-    const workbookActivity = await this.findWorkbookActivity(request, {
+    const activity = await this.findLessonActivity(request, {
       enrollmentId: progress.enrollmentId,
       lessonId: row.lessonId,
     });
-    const completion = workbookActivity
-      ? await readWorkbookCompletion(this.db, {
-          tenantId: request.tenantId,
-          learnerId: request.learnerId,
-          activityId: String(workbookActivity.id),
-        })
-      : null;
+    // Ordinary lessons: the guardian's grade decides completion, recorded as
+    // the pipeline's completion decision on the graded current attempt. Book
+    // and loose-page work keep their explicit parent completion decision.
+    if (activity && !(await this.isReleaseGatedWork(activity)))
+      await this.recordGradeCompletion(request, activity, row);
+    const completion =
+      activity && (await this.isReleaseGatedWork(activity))
+        ? await readWorkCompletion(this.db, {
+            tenantId: request.tenantId,
+            learnerId: request.learnerId,
+            activityId: String(activity.id),
+          })
+        : null;
     progress.status = completion
       ? completion.completion.status === 'complete'
         ? 'complete'
@@ -1176,6 +1435,428 @@ export class SubmissionService extends LearnerService {
     return { url, expiresAt };
   }
   /** Sign only an exact authorized printable join; answer keys never qualify. */
+  /** Whether the actor is the learner themself (learner audience only). */
+  private async learnerAudienceOnly(request: LearnerRequest) {
+    const learner = await this.getLearner(request);
+    return learner.userId === request.actorUserId;
+  }
+  private visibleTo(
+    learnerOnly: boolean,
+    relationship: string,
+    audience: string,
+  ): boolean {
+    return (
+      !learnerOnly || materialAudience(relationship, audience) === 'learner'
+    );
+  }
+  private async materialName(assetId: string) {
+    const asset = await this.db.get('assets', { id: assetId });
+    return String(asset?.name ?? '');
+  }
+  /**
+   * A lesson's materials for this actor: files by role and audience, then
+   * external video references in step order. A learner sees only
+   * learner-audience material; keys and guidance never reach them.
+   */
+  async listLessonMaterials(
+    request: LessonRequest,
+  ): Promise<LessonMaterialView[]> {
+    const enrollment = await this.requireEnrollment(
+      request,
+      'education.learner.read',
+    );
+    if (!(await this.lessonInScope(request, enrollment, request.lessonId)))
+      throw new LearnerAuthorizationError();
+    const lesson = await this.db.get('lessons', { id: request.lessonId });
+    if (!lesson) throw new LearnerAuthorizationError();
+    const tenant = lesson.tenant_id ?? null;
+    const learnerOnly = await this.learnerAudienceOnly(request);
+    const files = (
+      await this.db.list('lesson_assets', { lesson_id: request.lessonId })
+    )
+      .filter(
+        (row) =>
+          (row.tenant_id ?? null) === tenant &&
+          this.visibleTo(
+            learnerOnly,
+            String(row.relationship),
+            String(row.audience ?? ''),
+          ),
+      )
+      .sort(
+        (a, b) =>
+          Number(a.sort_order) - Number(b.sort_order) ||
+          String(a.id).localeCompare(String(b.id)),
+      );
+    const videos = (await this.db.tableExists('lesson_external_videos'))
+      ? (
+          await this.db.list('lesson_external_videos', {
+            lesson_id: request.lessonId,
+          })
+        )
+          .filter(
+            (row) =>
+              (row.tenant_id ?? null) === tenant &&
+              this.visibleTo(learnerOnly, 'video', String(row.audience ?? '')),
+          )
+          .sort(
+            (a, b) =>
+              Number(a.step_order) - Number(b.step_order) ||
+              String(a.id).localeCompare(String(b.id)),
+          )
+      : [];
+    const result: LessonMaterialView[] = [];
+    for (const row of files)
+      result.push({
+        id: String(row.id),
+        kind: 'file',
+        scope: 'lesson',
+        relationship: row.relationship as LessonAssetRelationship,
+        audience: materialAudience(
+          String(row.relationship),
+          String(row.audience ?? ''),
+        ),
+        title: await this.materialName(String(row.asset_id)),
+        order: Number(row.sort_order) || 0,
+        assetId: String(row.asset_id),
+        provider: null,
+        videoId: null,
+        embedUrl: null,
+      });
+    for (const row of videos)
+      result.push({
+        id: String(row.id),
+        kind: 'external-video',
+        scope: 'lesson',
+        relationship: 'video',
+        audience: materialAudience('video', String(row.audience ?? '')),
+        title: String(row.title),
+        order: Number(row.step_order) || 0,
+        assetId: null,
+        provider: row.provider as ExternalVideoProvider,
+        videoId: String(row.video_id),
+        embedUrl: externalVideoEmbedUrl(
+          row.provider as ExternalVideoProvider,
+          String(row.video_id),
+        ),
+      });
+    return result;
+  }
+  /** Course-level materials (supply lists, posters) under the same audience rule. */
+  async listCourseMaterials(
+    request: LearnerRequest & { enrollmentId: string },
+  ): Promise<LessonMaterialView[]> {
+    const enrollment = await this.requireEnrollment(
+      request,
+      'education.learner.read',
+    );
+    if (!(await this.db.tableExists('course_assets'))) return [];
+    const course = await this.db.get('courses', { id: enrollment.courseId });
+    if (!course) throw new LearnerAuthorizationError();
+    const learnerOnly = await this.learnerAudienceOnly(request);
+    const rows = (
+      await this.db.list('course_assets', { course_id: enrollment.courseId })
+    )
+      .filter(
+        (row) =>
+          (row.tenant_id ?? null) === (course.tenant_id ?? null) &&
+          this.visibleTo(
+            learnerOnly,
+            String(row.relationship),
+            String(row.audience ?? ''),
+          ),
+      )
+      .sort(
+        (a, b) =>
+          Number(a.sort_order) - Number(b.sort_order) ||
+          String(a.id).localeCompare(String(b.id)),
+      );
+    const result: LessonMaterialView[] = [];
+    for (const row of rows)
+      result.push({
+        id: String(row.id),
+        kind: 'file',
+        scope: 'course',
+        relationship: row.relationship as LessonAssetRelationship,
+        audience: materialAudience(
+          String(row.relationship),
+          String(row.audience ?? ''),
+        ),
+        title:
+          String(row.title ?? '') ||
+          (await this.materialName(String(row.asset_id))),
+        order: Number(row.sort_order) || 0,
+        assetId: String(row.asset_id),
+        provider: null,
+        videoId: null,
+        embedUrl: null,
+      });
+    return result;
+  }
+  private async signMaterial(
+    request: LearnerRequest & { enrollmentId: string },
+    scope: string,
+    assetId: string,
+  ) {
+    if (!this.options.signAsset) throw new LearnerAuthorizationError();
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
+    const url = await this.options.signAsset(
+      Object.freeze({
+        enrollmentId: request.enrollmentId,
+        tenantId: request.tenantId,
+        actorUserId: request.actorUserId,
+        learnerId: request.learnerId,
+        submissionId: scope,
+        assetId,
+        expiresAt,
+      }),
+    );
+    return { url, expiresAt };
+  }
+  /** Sign one lesson file the actor may see (learners: learner audience only). */
+  async signLessonMaterial(
+    request: LessonRequest & { materialId: string },
+  ): Promise<{ url: string; expiresAt: Date }> {
+    const visible = await this.listLessonMaterials(request);
+    const material = visible.find(
+      (m) => m.kind === 'file' && m.id === request.materialId,
+    );
+    if (!material?.assetId) throw new LearnerAuthorizationError();
+    return this.signMaterial(
+      request,
+      `lesson:${request.lessonId}`,
+      material.assetId,
+    );
+  }
+  /** Sign one course-level file the actor may see. */
+  async signCourseMaterial(
+    request: LearnerRequest & { enrollmentId: string; materialId: string },
+  ): Promise<{ url: string; expiresAt: Date }> {
+    const enrollment = await this.requireEnrollment(
+      request,
+      'education.learner.read',
+    );
+    const visible = await this.listCourseMaterials(request);
+    const material = visible.find((m) => m.id === request.materialId);
+    if (!material?.assetId) throw new LearnerAuthorizationError();
+    return this.signMaterial(
+      request,
+      `course:${enrollment.courseId}`,
+      material.assetId,
+    );
+  }
+  /** Re-save a family material join under the exact private-asset capability. */
+  private async saveFamilyMaterial(
+    request: LearnerRequest,
+    assetId: string,
+    save: () => Promise<unknown>,
+  ) {
+    const asset = await this.db.get('assets', {
+      id: assetId,
+      tenant_id: request.tenantId,
+    });
+    if (!asset) throw new LearnerAuthorizationError();
+    if (!asset.owner_profile_id) return save();
+    return withPrivateAssetAccess(
+      {
+        tenantId: request.tenantId,
+        actorUserId: request.actorUserId,
+        ownerProfileId: String(asset.owner_profile_id),
+        assetIds: [assetId],
+      },
+      save,
+    );
+  }
+  /** Family-owned, non-authored course rows only; authored material changes through authoring. */
+  private async familyMaterialCourse(
+    request: LearnerRequest,
+    courseId: string,
+  ) {
+    const course = await this.db.get('courses', {
+      id: courseId,
+      tenant_id: request.tenantId,
+    });
+    if (!course) throw new LearnerAuthorizationError();
+    if (['authored', 'authored-release'].includes(String(course.source_key)))
+      throw new LearnerValidationError(
+        'Authored course material changes through course authoring',
+      );
+    return course;
+  }
+  /**
+   * Change who a family-owned material is for, within its role's bounds
+   * (keys and assessment guidance stay guardian-only). Guardian planning.
+   */
+  async setMaterialAudience(
+    request: LearnerRequest & {
+      enrollmentId: string;
+      scope: 'lesson' | 'course';
+      kind: 'file' | 'external-video';
+      materialId: string;
+      audience: MaterialAudience;
+    },
+  ): Promise<LessonMaterialView> {
+    return this.mutate(async (service) => {
+      const enrollment = await service.requireEnrollment(
+        request,
+        'education.learner.plan',
+      );
+      if (await service.learnerAudienceOnly(request))
+        throw new LearnerAuthorizationError();
+      if (request.scope === 'course') {
+        if (request.kind !== 'file') throw new LearnerAuthorizationError();
+        await service.familyMaterialCourse(request, enrollment.courseId);
+        const row = await (
+          await CourseAssetCollection.create({ db: service.db })
+        ).get(
+          {
+            id: request.materialId,
+            tenantId: request.tenantId,
+            courseId: enrollment.courseId,
+          },
+          { cache: false },
+        );
+        if (!row) throw new LearnerAuthorizationError();
+        if (
+          materialAudience(row.relationship, request.audience) !==
+          request.audience
+        )
+          throw new LearnerValidationError('Invalid material audience');
+        row.audience = request.audience;
+        await service.saveFamilyMaterial(request, row.assetId, () =>
+          row.save(),
+        );
+        const view = (await service.listCourseMaterials(request)).find(
+          (m) => m.id === request.materialId,
+        );
+        if (!view) throw new LearnerAuthorizationError();
+        return view;
+      }
+      const table =
+        request.kind === 'file' ? 'lesson_assets' : 'lesson_external_videos';
+      const raw = await service.db.get(table, {
+        id: request.materialId,
+        tenant_id: request.tenantId,
+      });
+      if (
+        !raw ||
+        !(await service.lessonInScope(
+          request,
+          enrollment,
+          String(raw.lesson_id),
+        ))
+      )
+        throw new LearnerAuthorizationError();
+      const lesson = await service.db.get('lessons', { id: raw.lesson_id });
+      const section =
+        lesson &&
+        (await service.db.get('course_sections', { id: lesson.section_id }));
+      await service.familyMaterialCourse(request, String(section?.course_id));
+      const row =
+        request.kind === 'file'
+          ? await (await LessonAssetCollection.create({ db: service.db })).get(
+              { id: request.materialId, tenantId: request.tenantId },
+              { cache: false },
+            )
+          : await (
+              await LessonExternalVideoCollection.create({ db: service.db })
+            ).get(
+              { id: request.materialId, tenantId: request.tenantId },
+              { cache: false },
+            );
+      if (!row) throw new LearnerAuthorizationError();
+      const role = 'relationship' in row ? row.relationship : 'video';
+      if (materialAudience(role, request.audience) !== request.audience)
+        throw new LearnerValidationError('Invalid material audience');
+      row.audience = request.audience;
+      if ('assetId' in row)
+        await service.saveFamilyMaterial(request, row.assetId, () =>
+          row.save(),
+        );
+      else await row.save();
+      const view = (
+        await service.listLessonMaterials({
+          ...request,
+          lessonId: String(raw.lesson_id),
+        })
+      ).find((m) => m.id === request.materialId);
+      if (!view) throw new LearnerAuthorizationError();
+      return view;
+    });
+  }
+  /**
+   * Add an allowlisted external video (a YouTube id or URL) to a family-owned
+   * lesson, with its title and step order. Nothing is downloaded. A replay of
+   * the same video, title, step and audience returns the same reference.
+   */
+  async addLessonVideo(
+    request: LessonRequest & {
+      reference: string;
+      title: string;
+      stepOrder: number;
+      audience?: MaterialAudience;
+    },
+  ): Promise<LessonMaterialView> {
+    return this.mutate(async (service) => {
+      const enrollment = await service.requireEnrollment(
+        request,
+        'education.learner.plan',
+      );
+      if (await service.learnerAudienceOnly(request))
+        throw new LearnerAuthorizationError();
+      if (!(await service.lessonInScope(request, enrollment, request.lessonId)))
+        throw new LearnerAuthorizationError();
+      const videoId = parseYouTubeReference(request.reference);
+      if (!videoId) throw new ExternalVideoReferenceError();
+      const lesson = await service.db.get('lessons', {
+        id: request.lessonId,
+        tenant_id: request.tenantId,
+      });
+      const section =
+        lesson &&
+        (await service.db.get('course_sections', { id: lesson.section_id }));
+      if (!section) throw new LearnerAuthorizationError();
+      await service.familyMaterialCourse(request, String(section.course_id));
+      const audience = materialAudience('video', request.audience);
+      const videos = await LessonExternalVideoCollection.create({
+        db: service.db,
+      });
+      const existing = await videos.get(
+        {
+          tenantId: request.tenantId,
+          lessonId: request.lessonId,
+          provider: 'youtube',
+          videoId,
+        },
+        { cache: false },
+      );
+      if (existing) {
+        if (
+          existing.title !== request.title ||
+          existing.stepOrder !== request.stepOrder ||
+          materialAudience('video', existing.audience) !== audience
+        )
+          throw new LearnerValidationError(
+            'The lesson already has this video with other details',
+          );
+      } else
+        await videos.create({
+          _insertOnly: true,
+          tenantId: request.tenantId,
+          lessonId: request.lessonId,
+          provider: 'youtube',
+          videoId,
+          title: request.title,
+          stepOrder: request.stepOrder,
+          audience,
+        });
+      const view = (await service.listLessonMaterials(request)).find(
+        (m) => m.kind === 'external-video' && m.videoId === videoId,
+      );
+      if (!view) throw new LearnerAuthorizationError();
+      return view;
+    });
+  }
   async signLessonPrintable(
     request: LessonRequest & { assetId: string },
   ): Promise<{ url: string; expiresAt: Date }> {
@@ -1200,6 +1881,12 @@ export class SubmissionService extends LearnerService {
       { cache: false },
     );
     if (!link || !this.options.signAsset) throw new LearnerAuthorizationError();
+    // A printable the family made guardian-only is not the learner's to sign.
+    if (
+      (await this.learnerAudienceOnly(request)) &&
+      materialAudience(link.relationship, link.audience) !== 'learner'
+    )
+      throw new LearnerAuthorizationError();
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
     const url = await this.options.signAsset(
       Object.freeze({

@@ -43,20 +43,19 @@ import {
 import { groupSharingDigest } from './group-sharing-hash.js';
 import {
   evaluateGroupSharingPolicy,
-  summarizeWorkbookEvidence,
-  type WorkbookEvidenceInput,
+  summarizeWorkEvidence,
+  type WorkEvidenceInput,
 } from './group-sharing-policy.js';
+import {
+  validateWorkAssessment,
+  type WorkAssessment,
+} from './lesson-work-contracts.js';
+import {
+  LessonActivityCollection,
+  WorkAssessmentRevisionCollection,
+  WorkAttemptCollection,
+} from './lesson-work-models.js';
 import type { SubmissionServiceOptions } from './submission-service.js';
-import {
-  validateWorkbookAssessment,
-  type WorkbookAssessment,
-} from './workbook-contracts.js';
-import {
-  WorkbookActivityCollection,
-  WorkbookAssessmentRevisionCollection,
-  WorkbookAttemptCollection,
-  WorkbookCollection,
-} from './workbook-models.js';
 
 const denied = () => new GroupSharingAuthorizationError();
 const iso = (date: Date | string) => new Date(date).toISOString();
@@ -117,11 +116,9 @@ async function load(
         learnerId: request.learnerId,
       };
       const activity = await (
-        await WorkbookActivityCollection.create({ db })
+        await LessonActivityCollection.create({ db })
       ).get({ ...where, id: request.activityId }, { cache: false });
-      const attempt = await (
-        await WorkbookAttemptCollection.create({ db })
-      ).get(
+      const attempt = await (await WorkAttemptCollection.create({ db })).get(
         { ...where, id: request.attemptId, activityId: request.activityId },
         { cache: false },
       );
@@ -149,7 +146,6 @@ async function load(
       if (!progress) throw denied();
       if (activity.captureKind === 'unfiled') {
         if (
-          activity.workbookId !== null ||
           !activity.photoIntakeId ||
           !(await db.get('workbook_photo_intakes', {
             id: activity.photoIntakeId,
@@ -160,16 +156,13 @@ async function load(
           throw denied();
       } else if (
         activity.captureKind !== 'identified' ||
-        !activity.workbookId ||
-        !(await (
-          await WorkbookCollection.create({ db })
-        ).get({ ...where, id: activity.workbookId }, { cache: false }))
+        activity.photoIntakeId !== null
       )
         throw denied();
       if (
         attempt.previousAttemptId &&
         !(await (
-          await WorkbookAttemptCollection.create({ db })
+          await WorkAttemptCollection.create({ db })
         ).get(
           {
             ...where,
@@ -191,14 +184,48 @@ async function load(
         | Awaited<ReturnType<typeof authorizedCatalogCourses>>[number]
         | null = null;
       let lineagePrivate = false;
-      if (activity.captureKind !== 'unfiled') {
+      // Filed work is attributed to its current filing placement, under the
+      // same consent and ancestry rules as routed work. Unplaced loose work
+      // has no course metadata.
+      let placedLessonId: string | null =
+        activity.captureKind === 'unfiled' ? null : activity.lessonId;
+      let placedEnrollment = enrollment;
+      if (
+        activity.captureKind === 'unfiled' &&
+        (await db.tableExists('lesson_work_filings'))
+      ) {
+        const filings = await db.list('lesson_work_filings', {
+          tenant_id: request.familyTenantId,
+          learner_id: request.learnerId,
+          source_activity_id: String(activity.id),
+        });
+        const superseded = new Set(
+          filings
+            .map((f) => f.previous_revision_id)
+            .filter(Boolean)
+            .map(String),
+        );
+        const heads = filings.filter((f) => !superseded.has(String(f.id)));
+        if (heads.length > 1) throw denied();
+        if (heads[0]) {
+          const target = await (await EnrollmentCollection.create({ db })).get(
+            { ...where, id: String(heads[0].enrollment_id) },
+            { cache: false },
+          );
+          if (!target) throw denied();
+          placedEnrollment = target;
+          placedLessonId = String(heads[0].lesson_id);
+        }
+      }
+      if (placedLessonId) {
+        const enrollment = placedEnrollment;
         const visible = await authorizedCatalogCourses(
           db,
           request,
           proveMetadataAuthority,
         );
         const lesson = await db.get('lessons', {
-          id: activity.lessonId,
+          id: placedLessonId,
           tenant_id: request.familyTenantId,
         });
         const section = lesson
@@ -221,7 +248,7 @@ async function load(
         );
       }
       const revisions = await (
-        await WorkbookAssessmentRevisionCollection.create({ db })
+        await WorkAssessmentRevisionCollection.create({ db })
       ).list({ where: { ...where, attemptId: request.attemptId } });
       revisions.sort(
         (a, b) =>
@@ -351,9 +378,9 @@ async function enrollmentLineagePrivate(
 function assessmentFrom(
   row: Awaited<ReturnType<typeof load>>,
   json: string,
-): WorkbookAssessment {
-  const assessment: WorkbookAssessment = JSON.parse(json);
-  validateWorkbookAssessment(assessment);
+): WorkAssessment {
+  const assessment: WorkAssessment = JSON.parse(json);
+  validateWorkAssessment(assessment);
   for (const question of assessment.questions)
     for (const anchor of question.anchors) {
       if (
@@ -465,7 +492,7 @@ export class GroupSharingReader {
             },
           });
           const unfiled = await (
-            await WorkbookActivityCollection.create({ db })
+            await LessonActivityCollection.create({ db })
           ).list({
             where: {
               tenantId: request.familyTenantId,
@@ -547,7 +574,7 @@ export class GroupSharingReader {
     const attempts = await withTenant(
       { tenantId: request.familyTenantId, userId: request.actorUserId },
       async () =>
-        (await WorkbookAttemptCollection.create({ db: this.db })).list({
+        (await WorkAttemptCollection.create({ db: this.db })).list({
           where: {
             tenantId: request.familyTenantId,
             learnerId: request.learnerId,
@@ -684,7 +711,7 @@ export class GroupSharingReader {
       const rows = (await reader.enumerate(request, policy)).filter(
         (r) => r.decision.progress,
       );
-      const evidence: WorkbookEvidenceInput[] = [];
+      const evidence: WorkEvidenceInput[] = [];
       const counts = {
         attempts: rows.length,
         episodes: new Set(rows.map((r) => r.attempt.episodeId)).size,
@@ -715,7 +742,7 @@ export class GroupSharingReader {
       return {
         algorithmVersion: 'workbook-descriptive-v1',
         counts,
-        concepts: summarizeWorkbookEvidence(
+        concepts: summarizeWorkEvidence(
           evidence.sort(
             (a, b) =>
               Number(Boolean(a.attempt.previousAttemptId)) -

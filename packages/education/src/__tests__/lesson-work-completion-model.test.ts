@@ -6,14 +6,14 @@ import { getTestDatabase } from '@happyvertical/smrt-core';
 import { disableTenancy, enableTenancy } from '@happyvertical/smrt-tenancy';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import {
-  readWorkbookCompletion,
-  WorkbookCompletionDecisionCollection,
-} from '../workbook-completion.js';
-import { WORKBOOK_MATH_VOCABULARY } from '../workbook-contracts.js';
-import { WorkbookAssessmentRevisionCollection } from '../workbook-models.js';
-import { WorkbookService } from '../workbook-service.js';
+  readWorkCompletion,
+  WorkCompletionDecisionCollection,
+} from '../lesson-work-completion.js';
+import { WORK_MATH_VOCABULARY } from '../lesson-work-contracts.js';
+import { WorkAssessmentRevisionCollection } from '../lesson-work-models.js';
+import { LessonWorkService } from '../lesson-work-service.js';
 import { learnerFixture } from './learner-workflows.js';
-import { workbookClasses } from './workbook-workflows.js';
+import { workbookClasses } from './lesson-work-workflows.js';
 
 beforeAll(() => enableTenancy());
 afterAll(() => disableTenancy());
@@ -22,12 +22,12 @@ it('keeps immutable decisions on their exact current attempt and rejects identit
   const db = await getTestDatabase({
     type: 'sqlite',
     url: ':memory:',
-    classes: [...workbookClasses, 'WorkbookCompletionDecision'],
+    classes: [...workbookClasses, 'WorkCompletionDecision'],
   });
   const storage = await mkdtemp(join(tmpdir(), 'completion-model-'));
   try {
     const f = await learnerFixture(db);
-    const service = new WorkbookService(
+    const service = new LessonWorkService(
       db,
       ({ own, relationshipTypeId }) =>
         own || relationshipTypeId === f.guardianType.id,
@@ -35,9 +35,9 @@ it('keeps immutable decisions on their exact current attempt and rejects identit
       { storage },
     );
     await f.as(f.parent, async () => {
-      const activity = await service.resolveWorkbookActivity({
+      const activity = await service.resolveBookPageActivity({
         ...f.parent,
-        workbookKey: 'completion-model',
+        bookKey: 'completion-model',
         title: 'Synthetic workbook',
         edition: '',
         pageKey: 'p1',
@@ -48,7 +48,7 @@ it('keeps immutable decisions on their exact current attempt and rejects identit
         learnerId: f.parent.learnerId,
         activityId: activity.id,
       };
-      expect((await readWorkbookCompletion(db, scope)).completion).toEqual({
+      expect((await readWorkCompletion(db, scope)).completion).toEqual({
         status: 'doing',
         completedAt: null,
       });
@@ -64,8 +64,8 @@ it('keeps immutable decisions on their exact current attempt and rejects identit
           },
         ],
       };
-      const first = await service.captureWorkbookWork(capture);
-      const decisions = await WorkbookCompletionDecisionCollection.create({
+      const first = await service.captureLessonWork(capture);
+      const decisions = await WorkCompletionDecisionCollection.create({
         db,
       });
       const input = {
@@ -82,7 +82,7 @@ it('keeps immutable decisions on their exact current attempt and rejects identit
         recordedAt: new Date(0),
       });
       expect(decision.recordedAt.getTime()).toBeGreaterThanOrEqual(before);
-      expect((await readWorkbookCompletion(db, scope)).completion.status).toBe(
+      expect((await readWorkCompletion(db, scope)).completion.status).toBe(
         'complete',
       );
       await expect(decision.save()).rejects.toThrow('immutable');
@@ -91,13 +91,13 @@ it('keeps immutable decisions on their exact current attempt and rejects identit
       await expect(
         decisions.create({ ...input, requestKey: 'other' }),
       ).rejects.toThrow();
-      expect(
-        (await readWorkbookCompletion(db, scope)).decision?.requestKey,
-      ).toBe('done');
-      const revisions = await WorkbookAssessmentRevisionCollection.create({
+      expect((await readWorkCompletion(db, scope)).decision?.requestKey).toBe(
+        'done',
+      );
+      const revisions = await WorkAssessmentRevisionCollection.create({
         db,
       });
-      const anchors = await service.getWorkbookSourceAnchors({
+      const anchors = await service.getWorkSourceAnchors({
         ...f.parent,
         activityId: activity.id,
         submissionId: first.submissionId,
@@ -113,7 +113,7 @@ it('keeps immutable decisions on their exact current attempt and rejects identit
           inputHash: anchors[0].sha256,
           analysisId: 'test',
         },
-        vocabulary: WORKBOOK_MATH_VOCABULARY,
+        vocabulary: WORK_MATH_VOCABULARY,
         questions: [
           {
             id: '1',
@@ -147,7 +147,7 @@ it('keeps immutable decisions on their exact current attempt and rejects identit
           recordedAt: new Date(recordedAt),
           assessmentJson,
         });
-        const snapshot = await readWorkbookCompletion(db, scope);
+        const snapshot = await readWorkCompletion(db, scope);
         expect(snapshot.feedbackHeadId).toBe(
           kind === 'guardian' || id === laterAiId ? guardianId : aiId,
         );
@@ -155,12 +155,12 @@ it('keeps immutable decisions on their exact current attempt and rejects identit
         expect(snapshot.completion.completedAt).toEqual(decision.recordedAt);
       }
 
-      const second = await service.captureWorkbookWork({
+      const second = await service.captureLessonWork({
         ...capture,
         requestKey: 'correction',
         previousSubmissionId: first.submissionId,
       });
-      const current = await readWorkbookCompletion(db, scope);
+      const current = await readWorkCompletion(db, scope);
       expect(current.currentAttempt?.id).toBe(second.id);
       expect(current.decision).toBeNull();
       expect(current.decisions.map((row) => row.id)).toEqual([decision.id]);
@@ -194,15 +194,13 @@ it('keeps immutable decisions on their exact current attempt and rejects identit
         'UPDATE workbook_attempts SET previous_attempt_id = NULL WHERE id = ?',
         [second.id],
       );
-      await expect(readWorkbookCompletion(db, scope)).rejects.toThrow(
-        'ambiguous',
-      );
+      await expect(readWorkCompletion(db, scope)).rejects.toThrow('ambiguous');
       const firstRow = await db.get('workbook_attempts', { id: first.id });
       await db.query(
         'UPDATE workbook_attempts SET episode_id = ?, captured_at = ? WHERE id = ?',
         [randomUUID(), '2030-01-01T00:00:00.000Z', second.id],
       );
-      expect((await readWorkbookCompletion(db, scope)).currentAttempt?.id).toBe(
+      expect((await readWorkCompletion(db, scope)).currentAttempt?.id).toBe(
         second.id,
       );
       await db.query(
@@ -215,7 +213,7 @@ it('keeps immutable decisions on their exact current attempt and rejects identit
         [first.id, second.id],
       );
       await db.query('DROP TABLE workbook_completion_decisions');
-      expect((await readWorkbookCompletion(db, scope)).completion).toEqual({
+      expect((await readWorkCompletion(db, scope)).completion).toEqual({
         status: 'doing',
         completedAt: null,
       });
