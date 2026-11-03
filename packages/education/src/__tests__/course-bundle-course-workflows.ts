@@ -72,6 +72,7 @@ export const classes = [
     'CourseBundleAttachment',
     'CourseBundleAudienceChoice',
     'CourseBundlePlacement',
+    'CourseBundleUnit',
   ]),
 ];
 
@@ -553,4 +554,70 @@ export async function assertConcurrentPartsSettlePlacement(
     key: 'shared',
   });
   expect(Number(placement?.part_index)).toBe(1);
+}
+
+/**
+ * Two first attaches of one unit that disagree (another part count, or the
+ * same part from another import) never both commit. Part B is paused either
+ * at the earliest point of its attach transaction (right after the import
+ * lock, before the unit lock) or right after its decision reads (under the
+ * unit lock); part A runs meanwhile. Exactly one attach wins and the other
+ * fails with `reason`; when B holds the unit lock, A must wait for it.
+ */
+export async function assertFirstAttachRace(
+  reason: 'unit-mismatch' | 'part-conflict',
+  pause: 'before-lock' | 'after-reads',
+  db?: DatabaseInterface,
+) {
+  const s = await setup(db ? { db } : {});
+  const KEY = `first:${randomUUID()}`;
+  const b = bundleOf([lesson1], { key: KEY, part: { index: 1, count: 2 } });
+  const a =
+    reason === 'unit-mismatch'
+      ? bundleOf([lesson2], { key: KEY, part: { index: 2, count: 3 } })
+      : bundleOf([lesson2], { key: KEY, part: { index: 1, count: 2 } });
+  const pb = await s.importAndStore(b);
+  const pa = await s.importAndStore(a);
+  const hold = holdingService(s, (touched, before) =>
+    pause === 'before-lock'
+      ? touched.startsWith('UPDATE course_bundle_imports')
+      : touched === 'course_bundle_attachments' &&
+        [...before].some((t) => t.startsWith('UPDATE course_bundle_units')),
+  );
+  const attach = (
+    bundle: typeof b,
+    stored: Awaited<ReturnType<typeof s.importAndStore>>,
+  ) =>
+    s.as(s.guardian, () =>
+      hold.service.attachCourse({
+        ...s.guardian,
+        importId: stored.result.import.importId,
+        bundle,
+        assets: stored.assets,
+      }),
+    );
+  const runA = AsyncResource.bind(() => attach(a, pa));
+  hold.arm();
+  const runB = attach(b, pb).then(
+    (value) => ({ ok: true as const, value }),
+    (error: unknown) => ({ ok: false as const, error }),
+  );
+  await hold.atHold;
+  const { early, settled } = await raceWhileHeld(hold, runA);
+  const [outB, outA] = [await runB, await settled];
+  if (pause === 'after-reads') {
+    // B decided under the unit lock: A could not run until B committed.
+    expect(early).toBe('waiting');
+    expect(outB.ok).toBe(true);
+  }
+  const outcomes = [outA, outB];
+  expect(outcomes.filter((o) => o.ok)).toHaveLength(1);
+  const loser = outcomes.find((o) => !o.ok);
+  expect(loser && !loser.ok ? loser.error : null).toMatchObject({ reason });
+  const winner = outcomes.find((o) => o.ok);
+  const courseId = winner?.ok ? winner.value.courseId : '';
+  const attached = await s.db.list('course_bundle_attachments', {
+    course_id: courseId,
+  });
+  expect(attached).toHaveLength(1);
 }

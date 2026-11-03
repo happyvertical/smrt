@@ -478,3 +478,48 @@ export class CourseBundlePlacement extends SmrtObject {
 export class CourseBundlePlacementCollection extends SmrtCollection<CourseBundlePlacement> {
   static readonly _itemClass = CourseBundlePlacement;
 }
+
+/**
+ * The one row every attach of a unit serializes on (SMRT #4632): one per
+ * (family, unit key), created if absent and then locked at the start of the
+ * attach transaction, before anything that decides the outcome is read. On
+ * PostgreSQL a concurrent first create of the same key waits for the other
+ * transaction and then adopts its row. Never deleted; nothing else is stored.
+ */
+@TenantScoped({ mode: 'required' })
+@smrt({
+  tableName: 'course_bundle_units',
+  conflictColumns: ['tenant_id', 'unit_key'],
+  indexes: [
+    {
+      name: 'course_bundle_units_unique',
+      columns: ['tenantId', 'unitKey'],
+      unique: true,
+    },
+  ],
+  ...closed,
+})
+export class CourseBundleUnit extends SmrtObject {
+  @tenantId() tenantId = '';
+  /** `course.key`, or `bundle:<identity>` for an unnamed bundle. */
+  unitKey = '';
+  /** The family course the unit's parts attach to (derived, may not exist yet). */
+  courseId = '';
+  constructor(options: Record<string, unknown> = {}) {
+    super(options);
+    adopt(this, options);
+  }
+  override async delete(): Promise<void> {
+    noDelete();
+  }
+  override async save(options?: SmrtSaveOptions): Promise<this> {
+    if (!this.tenantId?.trim())
+      throw new Error('Course bundle evidence requires a tenant');
+    requireText(this.unitKey, 'Unit requires a key', 200);
+    requireText(this.courseId, 'Unit requires a course id', 64);
+    return super.save(options);
+  }
+}
+export class CourseBundleUnitCollection extends SmrtCollection<CourseBundleUnit> {
+  static readonly _itemClass = CourseBundleUnit;
+}

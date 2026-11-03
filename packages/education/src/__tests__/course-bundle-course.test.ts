@@ -12,6 +12,7 @@ import {
 import {
   assertChooseDuringAttach,
   assertConcurrentPartsSettlePlacement,
+  assertFirstAttachRace,
   bundleOf,
   enroll,
   type Lesson,
@@ -305,6 +306,15 @@ describe('parts', () => {
       expect(outcome).toMatchObject({ reason: 'part-conflict' });
       expect(await s.counts()).toEqual(before);
     });
+
+  it.each([
+    ['unit-mismatch', 'before-lock'],
+    ['unit-mismatch', 'after-reads'],
+    ['part-conflict', 'before-lock'],
+    ['part-conflict', 'after-reads'],
+  ] as const)('lets only one of two disagreeing first attaches commit (%s, paused %s)', async (reason, pause) => {
+    await assertFirstAttachRace(reason, pause);
+  });
 
   it('settles a shared placement one part at a time when parts attach concurrently', async () => {
     await assertConcurrentPartsSettlePlacement();

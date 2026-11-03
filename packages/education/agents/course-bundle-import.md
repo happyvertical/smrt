@@ -284,11 +284,13 @@ thumbnail? }` asset ids the host stored from `receiveMember`.
   against an implicit one is `part-conflict` (nothing written). Between implicit
   positions the part with the lowest index decides; a lower part arriving later
   re-sorts the row. An existing row with no placement is `part-conflict`.
-- **Concurrency**: an attach locks the import row (shared with
-  `chooseMaterialAudience`) and then the course row, so parts settle one at a
-  time. Two first attaches of a unit meet on the course's derived primary key:
-  the loser fails once the winner commits and its single retry runs under the
-  course lock.
+- **Concurrency**: every attach transaction takes, in order, the import row lock
+  (shared with `chooseMaterialAudience` and `applyMaterials`) and the unit lock: a
+  `CourseBundleUnit` row (`course_bundle_units`, one per family and unit key)
+  created if absent and then locked before anything that decides the outcome
+  (attachments, the course, placements, choices) is read. On PostgreSQL a
+  concurrent first create of the same unit waits and adopts the winner's row,
+  so two first attaches can never both pass the checks.
 - **Zero renderings**: with no converter, Word/PowerPoint members are recorded
   `converter_unavailable` and listed in `skipped`; no rendered or original join,
   page or thumbnail is written for them, and nothing is faked. `retryRendering`
@@ -373,7 +375,8 @@ reason, duplicate-of, role, audience, section and lesson key) and
 bytes stay with the host's ingestion receipts. Rewrites and deletes throw.
 `CourseBundleAttachment` (`course_bundle_attachments`) and the mutable
 `CourseBundleAudienceChoice` (`course_bundle_audience_choices`) and
-`CourseBundlePlacement` (`course_bundle_placements`) belong to the attach path. Normal manifest migrations create the tables and add `audience` (NULL
+`CourseBundlePlacement` (`course_bundle_placements`) and `CourseBundleUnit`
+(`course_bundle_units`) belong to the attach path. Normal manifest migrations create the tables and add `audience` (NULL
 on older rows) and, on `lesson_assets`/`course_assets`, `rendition`,
 `rendition_of_asset_id` and `thumbnail_asset_id` (additive; older joins read as a
 file as supplied with no thumbnail).

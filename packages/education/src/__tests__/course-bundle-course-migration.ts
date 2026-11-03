@@ -24,6 +24,7 @@ export const bundleCourseMigrationClasses = [
   'CourseBundleAttachment',
   'CourseBundleAudienceChoice',
   'CourseBundlePlacement',
+  'CourseBundleUnit',
 ];
 
 const NEW_COLUMNS = [
@@ -34,7 +35,7 @@ const NEW_COLUMNS = [
 
 /**
  * SMRT #4632: a populated pre-attach deployment gains the attachment,
- * audience-choice and placement tables and the rendition/thumbnail columns on lesson and
+ * audience-choice, placement and unit tables and the rendition/thumbnail columns on lesson and
  * course material through the canonical additive manifest diff. Existing joins
  * keep every row and read as files as supplied, with no thumbnail.
  */
@@ -67,6 +68,7 @@ export async function assertBundleCourseMigration(
       'CourseBundleAttachment',
       'CourseBundleAudienceChoice',
       'CourseBundlePlacement',
+      'CourseBundleUnit',
     ].map((name) => {
       const schema = ObjectRegistry.getSchema(name);
       if (!schema) throw new Error(`Missing ${name} schema`);
@@ -77,6 +79,7 @@ export async function assertBundleCourseMigration(
   await db.query('DROP TABLE "course_bundle_audience_choices"');
   await db.query('DROP TABLE "course_bundle_attachments"');
   await db.query('DROP TABLE "course_bundle_placements"');
+  await db.query('DROP TABLE "course_bundle_units"');
   for (const table of ['lesson_assets', 'course_assets'])
     for (const column of NEW_COLUMNS) {
       // Reference columns carry an index; drop it with the column.
@@ -93,6 +96,7 @@ export async function assertBundleCourseMigration(
     'course_bundle_attachments',
     'course_bundle_audience_choices',
     'course_bundle_placements',
+    'course_bundle_units',
   ]);
   expect(
     diff.changes

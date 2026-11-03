@@ -51,6 +51,7 @@ import {
   CourseBundleMemberCollection,
   CourseBundlePlacementCollection,
   CourseBundleRenderingCollection,
+  CourseBundleUnitCollection,
 } from './course-bundle-models.js';
 import { sha256Hex } from './course-bundle-zip.js';
 import type {
@@ -1186,6 +1187,8 @@ export class CourseBundleImportService extends CourseAuthoringService {
       throw new CourseBundleNotFoundError();
     return this.run(async (tx) => {
       await authorize(tx);
+      // Choices are read under the import lock, like attach and choose.
+      await this.lockImport(tx, request.tenantId, String(imported.id));
       const course = (await tx.get('courses', {
         id: request.courseId,
         tenant_id: request.tenantId,
@@ -1493,9 +1496,14 @@ export class CourseBundleImportService extends CourseAuthoringService {
         'education.course.author',
         'choose-course-bundle-audience',
       );
+      // Lock first: nothing that decides the choice is read before it.
+      await this.lockImport(
+        tx,
+        request.tenantId,
+        String(request.importId ?? ''),
+      );
       const imported = await this.record(tx, request);
       const importId = String(imported.id);
-      await this.lockImport(tx, request.tenantId, importId);
       if (
         (await tx.tableExists('course_bundle_attachments')) &&
         (await tx.get('course_bundle_attachments', {
@@ -1612,14 +1620,9 @@ export class CourseBundleImportService extends CourseAuthoringService {
         await authorize(tx);
         // Before any read: a concurrent review choice lands first or sees this attach.
         await this.lockImport(tx, request.tenantId, importId);
-        // Parts of one unit settle shared placements one at a time. When the
-        // course does not exist yet this locks nothing; two first attaches then
-        // meet on the course's derived primary key: the loser's insert fails
-        // once the winner commits, and the retry below runs under this lock.
-        await tx.query(
-          'UPDATE courses SET id = id WHERE id = ? AND tenant_id = ?',
-          [courseId, request.tenantId],
-        );
+        // Then every attach of this unit serializes on its unit row, created if
+        // absent and locked before anything that decides the outcome is read.
+        await this.lockUnit(tx, request.tenantId, unit.key, courseId);
         if (request.courseId && request.courseId !== courseId) {
           const asserted = await tx.get('courses', {
             id: request.courseId,
@@ -1886,6 +1889,26 @@ export class CourseBundleImportService extends CourseAuthoringService {
       if (!isUniqueViolation(error)) throw error;
       return write();
     }
+  }
+
+  /**
+   * Create-if-absent, then lock, the unit row all attaches of a unit serialize
+   * on. Exists before any decision read, so a first attach cannot slip past
+   * an uncommitted one (on PostgreSQL the second create waits for the first).
+   */
+  private async lockUnit(
+    tx: DatabaseInterface,
+    tenantId: string,
+    unitKey: string,
+    courseId: string,
+  ) {
+    const units = await CourseBundleUnitCollection.create({ db: tx });
+    if (!(await units.get({ tenantId, unitKey }, { cache: false })))
+      await units.create({ tenantId, unitKey, courseId });
+    await tx.query(
+      'UPDATE course_bundle_units SET id = id WHERE tenant_id = ? AND unit_key = ?',
+      [tenantId, unitKey],
+    );
   }
 
   /**

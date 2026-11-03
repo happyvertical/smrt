@@ -7,6 +7,7 @@ import { afterAll, beforeAll, it } from 'vitest';
 import {
   assertChooseDuringAttach,
   assertConcurrentPartsSettlePlacement,
+  assertFirstAttachRace,
   classes,
 } from './course-bundle-course-workflows.js';
 
@@ -38,3 +39,18 @@ afterAll(() => disableTenancy());
     }
   },
 );
+for (const reason of ['unit-mismatch', 'part-conflict'] as const)
+  for (const pause of ['before-lock', 'after-reads'] as const)
+    (isPostgresAvailable() ? it : it.skip)(
+      `lets only one of two disagreeing first attaches commit on PostgreSQL (${reason}, paused ${pause})`,
+      async () => {
+        const isolated = await createIsolatedTestDbFromManifest({
+          includeObjects: classes,
+        });
+        try {
+          await assertFirstAttachRace(reason, pause, isolated.baseDb);
+        } finally {
+          await isolated.cleanup();
+        }
+      },
+    );
