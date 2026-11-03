@@ -80,7 +80,8 @@ export async function assertBundleCourseMigration(
       await db.query(`DROP INDEX IF EXISTS "${table}_${column}_idx"`);
       await db.query(`ALTER TABLE "${table}" DROP COLUMN "${column}"`);
     }
-  const before = await db.list('lesson_assets', {});
+  // Scoped to this fixture's family: a shared PostgreSQL database holds other suites' rows.
+  const before = await db.list('lesson_assets', { tenant_id: tenantId });
   expect(before).toHaveLength(1);
   const compare = () =>
     new SchemaComparer(db, { engineHint: engine }).compare(schemas);
@@ -126,8 +127,9 @@ export async function assertBundleCourseMigration(
   expect(
     getSQLFromDiff(await compare()).filter((v) => !v.startsWith('--')),
   ).toEqual([]);
-  const after = await db.list('lesson_assets', {});
+  const after = await db.list('lesson_assets', { tenant_id: tenantId });
   expect(after.map((r) => r.id)).toEqual(before.map((r) => r.id));
+  expect(after[0]?.asset_id).toBe(assetId);
   // Older joins read as a file as supplied, with no rendition pair or thumbnail.
   expect([
     after[0]?.rendition ?? '',
