@@ -1942,8 +1942,9 @@ export class CourseAuthoringService {
    * `lessonKey` already in the course (`duplicate-lesson`), and a head that moved
    * since `expectedHeadRevisionId` (`CourseStaleHeadError`). Idempotent by
    * `requestKey`: the same request replays the original result; a changed
-   * lesson, section or delegation under the same key is
-   * `CourseRequestKeyConflictError`.
+   * lesson, section or release intent (`release` true versus false) under the
+   * same key is `CourseRequestKeyConflictError`; release a `release: false`
+   * append later with `release` and its own key.
    *
    * Authority is unchanged: `education.course.author` (operation
    * `append-lesson`, plus `generate` for generated provenance) and, when
@@ -2054,6 +2055,16 @@ export class CourseAuthoringService {
         requestKey,
         draft,
       });
+      // Release intent is part of the request: a replay may not flip it.
+      if (stored) {
+        const released = await tx.get('course_releases', {
+          tenant_id: request.tenantId,
+          course_id: request.courseId,
+          request_key: requestKey,
+        });
+        if ((request.release === false) !== !released)
+          throw new CourseRequestKeyConflictError();
+      }
       const release =
         request.release === false
           ? null

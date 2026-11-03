@@ -108,8 +108,9 @@ rules. Hosts that grant `author` but not `release` use `release: false`.
   current rolls the append back entirely.
 - **Idempotent.** The same `requestKey` and request replays the original result, also
   after the head moved (a no-op: no revision, release or lesson rows); a changed lesson
-  or section under the same key is `CourseRequestKeyConflictError`. A replay that adds
-  `release: true` to an earlier `release: false` call completes the release.
+  or section or release intent (`release` true versus false) under the same key is
+  `CourseRequestKeyConflictError`; publish a `release: false` append later with
+  `release` and its own key.
 - **Enrollment pins.** Existing enrollments keep their pinned release and so never see
   the new lesson implicitly. The host advances them with `upgradeEnrollment` on the new
   release (explicit, recorded), or an enrollment/course that opted in with

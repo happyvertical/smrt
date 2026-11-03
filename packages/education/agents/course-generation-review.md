@@ -65,6 +65,10 @@ without `brief` behaves exactly as before and `brief` reads back `null`.
 - **Authority.** The host authorizer is asked for `education.course.generate`
   with `learnerId` in the context so it can enforce its own "may this learner ask
   for a lesson" policy; an unknown or foreign-tenant learner is `CourseNotFoundError`.
+  The package does not check the requester's relationship to `brief.learnerId` (the
+  brief echoes that learner's saved theme): the host authorizer MUST deny `generate`
+  when the actor is not that learner or a guardian with an effective relationship, as
+  it does for `assign`.
   Replaying a request key with the same brief returns the same job; a changed
   brief is `CourseRequestKeyConflictError`.
 - **Output.** For `lesson` the generator is given `request.brief` and

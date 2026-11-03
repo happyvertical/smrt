@@ -129,11 +129,13 @@ async function setup() {
     [agent.actorUserId, [...COURSE_AUTHORING_ACTIONS]],
   ]);
   const denied = new Set<CourseAuthoringAction>();
+  const deniedLearners = new Set<string>();
   const hostBasis = { value: undefined as string | undefined };
   const authorizer: CourseAuthoringAuthorizer = (call) => {
     calls.push(call);
     const allowed =
       !denied.has(call.action) &&
+      !(call.learnerId && deniedLearners.has(call.learnerId)) &&
       (grants.get(call.actorUserId) ?? []).includes(call.action);
     return allowed && hostBasis.value && call.action.endsWith('.release')
       ? { allowed, policyBasis: hostBasis.value }
@@ -248,6 +250,7 @@ async function setup() {
     agent,
     calls,
     denied,
+    deniedLearners,
     delegation,
     hostBasis,
     gen,
@@ -578,6 +581,18 @@ describe('one-lesson generation target', () => {
     const ok = await s.run(plain.jobId);
     expect(ok.status).toBe('succeeded');
     expect(s.gen.calls.at(-1)?.brief).toBeUndefined();
+  });
+
+  it('lets the host refuse a learner the requester has no relationship with, writing nothing', async () => {
+    const s = await setup();
+    const c = await s.course();
+    const before = await s.db.list('course_generation_briefs', {});
+    s.deniedLearners.add(String(s.f.sibling.id));
+    await expect(
+      s.request(c, lessonBrief({ learnerId: String(s.f.sibling.id) })),
+    ).rejects.toBeInstanceOf(CourseAuthoringAuthorizationError);
+    expect(await s.db.list('course_generation_briefs', {})).toEqual(before);
+    expect(await s.db.list('course_generation_jobs', {})).toEqual([]);
   });
 
   it('requires the generate grant and asks the host about the learner', async () => {

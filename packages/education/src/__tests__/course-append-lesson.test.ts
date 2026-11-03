@@ -371,6 +371,36 @@ describe('CourseAuthoringService.appendLesson', () => {
     expect(await s.count('course_revisions')).toBe(revisions);
   });
 
+  it('treats release intent as part of the request', async () => {
+    const s = await setup();
+    const { courseId, head } = await s.released();
+    const lesson = { lessonKey: 'req-1', title: 'One' };
+    const first = await s.append(courseId, head, lesson, { release: false });
+    await expect(
+      s.append(courseId, head, lesson, { release: true }),
+    ).rejects.toBeInstanceOf(CourseRequestKeyConflictError);
+    expect(await s.count('course_releases')).toBe(1);
+    expect(await s.append(courseId, head, lesson, { release: false })).toEqual(
+      first,
+    );
+    const other = await s
+      .append(
+        courseId,
+        first.revisionId,
+        { lessonKey: 'req-2', title: 'Two' },
+        { requestKey: 'append-2', release: false },
+      )
+      .catch((e) => e);
+    // The unreleased head blocks it; release intent is irrelevant to that refusal.
+    expect(other).toBeInstanceOf(CourseAppendRefusedError);
+    const { courseId: c2, head: h2 } = await s.released();
+    const done = await s.append(c2, h2, lesson, { requestKey: 'a-3' });
+    await expect(
+      s.append(c2, h2, lesson, { requestKey: 'a-3', release: false }),
+    ).rejects.toBeInstanceOf(CourseRequestKeyConflictError);
+    expect(await s.append(c2, h2, lesson, { requestKey: 'a-3' })).toEqual(done);
+  });
+
   it('refuses archived, draft-only, unreleased-head, foreign, discarded and duplicate cases', async () => {
     const s = await setup();
     const { courseId, head } = await s.released();
