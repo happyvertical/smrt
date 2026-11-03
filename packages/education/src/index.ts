@@ -149,15 +149,18 @@ export {
   bundleProposalOutput,
   type ClassifiedBundleMember,
   type CourseBundlePlan,
+  classifyBundle,
   classifyBundleMember,
   courseBundleIdentity,
   createBundleReaderRegistry,
   manifestBundleReader,
   naturalCompare,
+  type OfficeOutcome,
   type PreparedBundle,
   parseBundleManifest,
   pdfIsEncrypted,
   plainBundleReader,
+  planClassifiedBundle,
   planCourseBundle,
   unpackBundle,
 } from './course-bundle.js';
@@ -225,6 +228,7 @@ export {
 } from './course-visibility.js';
 export type { WorkbookMigrationReport } from './course-work-migration.js';
 export { migrateWorkbooksToCourses } from './course-work-migration.js';
+export * from './document-converter.js';
 export type { EnrollmentParentNoteView } from './enrollment-note-service.js';
 export {
   ENROLLMENT_NOTE_MAX_LENGTH,

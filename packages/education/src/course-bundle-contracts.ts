@@ -34,6 +34,12 @@ export interface CourseBundleLimits {
   maxLessons: number;
   /** Longest text member used as a lesson body, in characters. */
   maxLessonBodyChars: number;
+  /** Most Word/PowerPoint members rendered per bundle; later ones are recorded unsupported. */
+  maxOfficeMembers: number;
+  /** Largest rendered PDF accepted back from the converter, in bytes. */
+  maxRenderedBytes: number;
+  /** Wall-clock budget for rendering one Office member, in milliseconds. */
+  conversionTimeoutMs: number;
 }
 
 export const COURSE_BUNDLE_LIMITS: Readonly<CourseBundleLimits> = Object.freeze(
@@ -50,6 +56,9 @@ export const COURSE_BUNDLE_LIMITS: Readonly<CourseBundleLimits> = Object.freeze(
     maxManifestBytes: 256 * KiB,
     maxLessons: 50,
     maxLessonBodyChars: 100_000,
+    maxOfficeMembers: 50,
+    maxRenderedBytes: 50 * MiB,
+    conversionTimeoutMs: 60_000,
   },
 );
 
@@ -137,6 +146,10 @@ export type CourseBundleMemberKind =
   | 'pdf'
   | 'image'
   | 'text'
+  /** Word (`.docx`): rendered to PDF by the converter, text read by the SDK processor. */
+  | 'docx'
+  /** PowerPoint (`.pptx`): the deck is kept as the original and as rendered pages. */
+  | 'pptx'
   | 'manifest'
   | 'unsupported';
 export type CourseBundleMemberStatus =
@@ -156,7 +169,19 @@ export type CourseBundleMemberReason =
   | 'unreadable_text'
   | 'encrypted_pdf'
   | 'entry_too_large'
-  | 'duplicate_content';
+  | 'duplicate_content'
+  /** The OOXML package failed the bounded zip checks (bomb, bad paths, damaged). */
+  | 'unsafe_office'
+  /** More Office members than `maxOfficeMembers`. */
+  | 'office_limit'
+  /** No `DocumentConverter` is configured: the member cannot be rendered. */
+  | 'converter_unavailable'
+  /** The converter could not be reached or failed (server side). */
+  | 'converter_failed'
+  | 'converter_timeout'
+  | 'converter_too_large'
+  /** The converter refused the file, or returned something that is not a PDF. */
+  | 'converter_rejected';
 
 export const COURSE_BUNDLE_PAGE_ROLES = [
   'exercise',
@@ -173,6 +198,7 @@ export type CourseBundlePageRole = (typeof COURSE_BUNDLE_PAGE_ROLES)[number];
 export const COURSE_BUNDLE_STAGES = [
   'unpack',
   'classify',
+  'render',
   'extract',
   'propose',
 ] as const;

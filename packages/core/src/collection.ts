@@ -64,6 +64,7 @@ import {
   toSnakeCase,
 } from './utils';
 import { chunkArray, IN_LIST_CHUNK_SIZE } from './utils/chunk';
+import { jsonValuesEqual, parseJsonContainerText } from './utils/json-equal';
 
 const logger = createLogger({ level: 'info' });
 
@@ -4006,7 +4007,11 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       (acc, key) => {
         if (
           validKeys.has(key) &&
-          !this.areEquivalentValues(existingRecord[key], data[key])
+          !this.areEquivalentValues(
+            existingRecord[key],
+            data[key],
+            fields[key]?.type === 'json',
+          )
         ) {
           acc[key] = data[key];
         }
@@ -4093,11 +4098,17 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
   }
 
   /**
-   * Treat date-equivalent values as unchanged even if their runtime types differ.
+   * Whether `nextValue` would leave the stored `existingValue` unchanged.
+   *
+   * Dates compare by instant even across runtime types. Objects and arrays
+   * compare structurally in their JSON form (key-order-insensitive), and a
+   * JSON field held as text on one side is parsed before comparing, so an
+   * unchanged JSON field never forces a re-save (#4604).
    */
   private areEquivalentValues(
     existingValue: unknown,
     nextValue: unknown,
+    isJsonField = false,
   ): boolean {
     if (existingValue instanceof Date || nextValue instanceof Date) {
       const existingTime = this.toComparableTime(existingValue);
@@ -4108,7 +4119,21 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       }
     }
 
-    return existingValue === nextValue;
+    if (existingValue === nextValue) return true;
+    const isObject = (value: unknown) =>
+      value !== null && typeof value === 'object';
+    // Parse JSON text only against an object on the other side: two strings
+    // are two JSON string values and already compared with `===` above.
+    if (isJsonField && isObject(existingValue) !== isObject(nextValue)) {
+      return jsonValuesEqual(
+        parseJsonContainerText(existingValue),
+        parseJsonContainerText(nextValue),
+      );
+    }
+    if (isObject(existingValue) && isObject(nextValue)) {
+      return jsonValuesEqual(existingValue, nextValue);
+    }
+    return false;
   }
 
   /**

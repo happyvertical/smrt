@@ -57,7 +57,7 @@ Structured questions from scans and imported course files use
 ingestion handler. Anchors come from provider region catalogs only; match by worksheet
 id and layout, never text; ambiguous matches stay unattached; source-keyed replays.
 
-Course bundles (zip with a closed manifest, or a file set) use
+Course bundles (zip with a closed manifest, or a file set; Word/PowerPoint members render through an injected `DocumentConverter`, fail closed) use
 [CourseBundleImportService](agents/course-bundle-import.md). Parse only with the
 bounded reader; refuse, never trim, hostile input; unsupported members stay
 visible; proposals only, nothing auto-published.

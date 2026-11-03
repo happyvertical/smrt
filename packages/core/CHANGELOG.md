@@ -1,5 +1,20 @@
 # @happyvertical/smrt-core
 
+## 0.57.51
+
+### Patch Changes
+
+- ### Features
+  
+  - learner lesson requests, interest theme and lesson append (#4612) (education)
+  
+  ### Other Changes
+  
+  - ci: drop withdrawn GHSA-ch52-4w7c-c8xp record and suppression (#4608) (audit)
+- @happyvertical/smrt-config@0.57.51
+  - @happyvertical/smrt-scanner@0.57.51
+  - @happyvertical/smrt-types@0.57.51
+
 ## 0.57.50
 
 ### Patch Changes
