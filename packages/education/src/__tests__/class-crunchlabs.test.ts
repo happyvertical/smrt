@@ -300,6 +300,74 @@ describe('readable titles (#4642)', () => {
       'SQUIRL Poster (Letter by Letter)',
     ]);
   });
+  it('reads loose root videos, both name forms and download suffixes; the lowest step wins', async () => {
+    const loose = [
+      ...files.filter((x) => !/\.mp4$/.test(x.path)),
+      {
+        path: `L01.4_Video_StudentHandsOnExploration_CarnivalGames_Zoom  Boom-006.mp4`,
+        bytes: Buffer.from('v'),
+      },
+      {
+        path: `L01.4 Video_MaterialsPrep_CarnivalGames_Zoom  Boom-018.mp4`,
+        bytes: Buffer.from('v'),
+      },
+      {
+        path: `L03.7_Video_StudentHandsOnExploration_SumoSpheres_Zoom Boom.mp4`,
+        bytes: Buffer.from('v'),
+      },
+      {
+        path: `${W}/G. Videos/L03.6_Video_StudentHandsOnExploration_PlayWithPlungers_Zoom Boom-002.mp4`,
+        bytes: Buffer.from('v'),
+      },
+      // another unit's loose video is not this unit's
+      {
+        path: `L01.4_Video_StudentHandsOnExploration_Other_Solar Oven.mp4`,
+        bytes: Buffer.from('v'),
+      },
+    ];
+    const b = await buildClassCrunchLabsBundle({
+      files: memoryClassCrunchLabsSource(loose),
+      pageCounter: async () => 2,
+    });
+    const lessons = (
+      b.manifest.sections as Array<{ lessons: Array<{ title: string }> }>
+    ).flatMap((x) => x.lessons.map((l) => l.title));
+    expect(lessons).toEqual([
+      'Lesson 1: Carnival Games',
+      'Lesson 3: Play with Plungers',
+    ]);
+  });
+  it('names a lesson from the cover headline the host reads, in title case', async () => {
+    const seen: number[] = [];
+    const b = await buildClassCrunchLabsBundle({
+      files: memoryClassCrunchLabsSource(files),
+      pageCounter: async () => 2,
+      readFirstPageHeadline: async ({ bytes }) => {
+        seen.push(bytes.byteLength);
+        // lesson 1's manual is 'a', lesson 3's is 'i'; the host reads the page
+        return seen.length === 1 ? 'WEIGHT & MOTION' : null;
+      },
+    });
+    const lessons = (
+      b.manifest.sections as Array<{ lessons: Array<{ title: string }> }>
+    ).flatMap((x) => x.lessons.map((l) => l.title));
+    expect(lessons).toEqual([
+      'Lesson 1: Weight & Motion',
+      'Lesson 3: Play with Plungers',
+    ]);
+    const thrown = await buildClassCrunchLabsBundle({
+      files: memoryClassCrunchLabsSource(files),
+      pageCounter: async () => 2,
+      readFirstPageHeadline: async () => {
+        throw new Error('no reader');
+      },
+    });
+    expect(
+      (
+        thrown.manifest.sections as Array<{ lessons: Array<{ title: string }> }>
+      ).flatMap((x) => x.lessons.map((l) => l.title)),
+    ).toEqual(['Lesson 1: Carnival Games', 'Lesson 3: Play with Plungers']);
+  });
   it('falls back to Lesson N when no video names an activity', async () => {
     const b = await buildClassCrunchLabsBundle({
       files: memoryClassCrunchLabsSource(

@@ -263,6 +263,20 @@ function activityTitle(value: string): string {
     .join(' ');
 }
 
+/** A cover headline as a title: all capitals fold to title case; blank or absurd text is none. */
+function headlineTitle(text: string): string {
+  const t = squash(text);
+  if (t.length < 2 || t.length > 80 || !/[A-Za-z]{2}/.test(t)) return '';
+  if (t !== t.toUpperCase()) return t;
+  return t
+    .toLowerCase()
+    .split(' ')
+    .map((w, i) =>
+      i > 0 && SMALL_WORDS.has(w) ? w : w.charAt(0).toUpperCase() + w.slice(1),
+    )
+    .join(' ');
+}
+
 // -- videos -------------------------------------------------------------------
 
 export interface ClassCrunchLabsVideoName {
@@ -283,7 +297,10 @@ export function parseClassCrunchLabsVideoName(
   const stem = fileName.replace(/\.[A-Za-z0-9]{1,8}$/, '');
   const m = VIDEO_NAME.exec(squash(stem));
   if (!m) return null;
-  const parts = (m[3] as string).split('_').map(squash).filter(Boolean);
+  const parts = (m[3] as string)
+    .split('_')
+    .map((p) => squash(p).replace(/-\d{3}$/, ''))
+    .filter(Boolean);
   const kind = parts.shift();
   if (!kind) return null;
   const unitKey = compact(unit);
@@ -550,6 +567,17 @@ export interface ClassCrunchLabsBuildOptions {
    * are always course members.
    */
   includeUnitWideAggregates?: boolean;
+  /**
+   * The most prominent text (largest type, its lines joined by a space) on the
+   * first page of a PDF, for a lesson's teacher mission manual, whose cover
+   * names the lesson. The host supplies it (the package carries no PDF text
+   * reader). When it returns text, that names the lesson; else the lesson's
+   * hands-on activity video does, else `Lesson N`. A throw or null is ignored.
+   */
+  readFirstPageHeadline?: (input: {
+    bytes: Uint8Array;
+    kind: 'pdf';
+  }) => Promise<string | null>;
   /** Largest bundle part in bytes; default 90 MiB, never above the bundle archive limit. */
   maxPartBytes?: number;
 }
@@ -662,6 +690,29 @@ export async function buildClassCrunchLabsBundle(
       [...units.values()].sort(),
     );
   const unitKey = classCrunchLabsKey(unitName);
+  // Loose lesson videos at the download's root (outside the folders) belong to
+  // the unit their name ends with.
+  for (const [i, l] of located.entries()) {
+    if (l) continue;
+    const file = listed[i] as ClassCrunchLabsFile;
+    const fileName = squash(
+      file.path.replace(/\\/g, '/').split('/').at(-1) ?? '',
+    );
+    if (
+      !VIDEO_EXT.has(extOf(fileName)) ||
+      !VIDEO_NAME.test(fileName.replace(/\.[A-Za-z0-9]{1,8}$/, '')) ||
+      !compact(fileName).includes(compact(unitName))
+    )
+      continue;
+    located[i] = {
+      file,
+      unit: unitName,
+      lesson: null,
+      dirs: [],
+      fileName,
+      ext: extOf(fileName),
+    };
+  }
 
   const report: ClassCrunchLabsReport = {
     unit: unitName,
@@ -852,6 +903,7 @@ export async function buildClassCrunchLabsBundle(
         kind: 'pdf' | OfficeDocumentKind;
         bytes: Uint8Array;
       }>;
+      manual?: Uint8Array;
     }
   >();
   const lessonOf = (n: number) => {
@@ -869,6 +921,8 @@ export async function buildClassCrunchLabsBundle(
     else {
       const entry = lessonOf(m.lesson);
       entry.members.push(decl(m, path));
+      if (m.role === 'teacher-guide' && m.ext === 'pdf' && !entry.manual)
+        entry.manual = m.bytes;
       if (m.role === 'learner-pages')
         entry.logs.push({
           path,
@@ -931,17 +985,27 @@ export async function buildClassCrunchLabsBundle(
     report.pages.push({ lesson: n, path: log.path, pages: to });
   }
 
-  // `Lesson N`, with the activity the lesson's hands-on video names when there is one.
+  // `Lesson N: Name`. The name is the headline on the cover of the lesson's
+  // teacher manual when the host can read it, else the lesson's first
+  // hands-on activity video (lowest step), else there is none.
+  const headlines = new Map<number, string>();
+  if (options.readFirstPageHeadline)
+    for (const [n, entry] of lessons) {
+      if (!entry.manual) continue;
+      const text = await options
+        .readFirstPageHeadline({ bytes: entry.manual, kind: 'pdf' })
+        .catch(() => null);
+      const name = text ? headlineTitle(text) : '';
+      if (name) headlines.set(n, name);
+    }
   const lessonTitle = (n: number) => {
     const named = videoNames
       .filter((v) => v.lesson === n && v.title)
       .sort((a, b) => stepOrder(a.step, b.step));
-    const source =
-      named.find((v) => v.kind === 'StudentHandsOnExploration') ??
-      named.find((v) => v.kind === 'DesignChallenge');
-    return source
-      ? `Lesson ${n}: ${activityTitle(source.title)}`.slice(0, 200)
-      : `Lesson ${n}`;
+    const source = named.find((v) => v.kind === 'StudentHandsOnExploration');
+    const name =
+      headlines.get(n) ?? (source ? activityTitle(source.title) : '');
+    return name ? `Lesson ${n}: ${name}`.slice(0, 200) : `Lesson ${n}`;
   };
 
   const manifestLessons = [...lessons.keys()]
