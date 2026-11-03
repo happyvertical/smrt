@@ -895,7 +895,9 @@ export function planBundleMaterials(
       const original = byName.get(member.duplicateOf);
       return original?.status === 'accepted' ? original : null;
     }
-    plan.skipped.push({ path, reason: member.reason ?? member.status });
+    // A member named twice (a material and its page range) is skipped once.
+    if (!plan.skipped.some((x) => x.path === path))
+      plan.skipped.push({ path, reason: member.reason ?? member.status });
     return null;
   };
   const add = (
