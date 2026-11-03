@@ -426,6 +426,20 @@ describe('readable titles (#4642)', () => {
     expect(await lessonsOf([v('Zoom Boom Vacation')])).toBe('Lesson 1');
     expect(await lessonsOf([v('ZoomBoomV2')])).toBe('Lesson 1: Racers');
     expect(await lessonsOf([v('Zoom Boom v1.1')])).toBe('Lesson 1: Racers');
+    expect(await lessonsOf([v('ZoomBoomv1.0')])).toBe('Lesson 1: Racers');
+    expect(await lessonsOf([v('Zoom Boom v.1.1')])).toBe('Lesson 1: Racers');
+    expect(
+      parseClassCrunchLabsVideoName(
+        'L01.4_Video_StudentHandsOnExploration_Racers_ZoomBoomv1.0.mp4',
+        'Zoom Boom',
+      )?.title,
+    ).toBe('Racers');
+    expect(
+      parseClassCrunchLabsVideoName(
+        'L01.4_Video_StudentHandsOnExploration_Racers_ZoomBoomV2.mp4',
+        'Zoom Boom',
+      )?.title,
+    ).toBe('Racers');
     // a unit-like word is kept in a material title
     const b = await buildClassCrunchLabsBundle({
       files: memoryClassCrunchLabsSource([
@@ -437,6 +451,18 @@ describe('readable titles (#4642)', () => {
       b.manifest.sections as Array<{ lessons: Array<{ members: Decl[] }> }>
     ).flatMap((x) => x.lessons.flatMap((l) => l.members.map((m) => m.title)));
     expect(titles).toEqual(['Teacher Mission Manual - ZoomBoomVacation']);
+    const t2 = await buildClassCrunchLabsBundle({
+      files: memoryClassCrunchLabsSource([
+        f(`${Z1}/A. L01_Teacher Mission Manual_ZoomBoomv1.0.pdf`, 'y'),
+        f(`${Z1}/B. L01_Mission Launch Deck Slides_ZoomBoomV2.pdf`, 'w'),
+      ]),
+      pageCounter: async () => 2,
+    });
+    expect(
+      (t2.manifest.sections as Array<{ lessons: Array<{ members: Decl[] }> }>)
+        .flatMap((x) => x.lessons.flatMap((l) => l.members.map((m) => m.title)))
+        .sort(),
+    ).toEqual(['Mission Launch Deck Slides', 'Teacher Mission Manual']);
   });
   it('terminates when long equal-prefix titles collide', async () => {
     const long = 'Very Long Material Name '.repeat(12);

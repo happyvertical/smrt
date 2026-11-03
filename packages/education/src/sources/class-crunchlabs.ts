@@ -176,11 +176,7 @@ const LESSON_CODE = /^L0*\d{1,2}(\.\d+)?[\s_.-]+/i;
 /** A part that is the unit name, allowing a version suffix or a one-letter typo of the end. */
 function isUnitPart(part: string, unitKey: string): boolean {
   // Only a syntactically valid version suffix (`v1`, `v2.0`, `v.1.1`, `copy`) is set aside.
-  const key = compact(
-    part
-      .replace(/\s*\bv\.?\s*\d+(\.\d+)*[.\s]*(copy)?$/i, '')
-      .replace(/(?<=[a-z])V\d+(\.\d+)*$/, ''),
-  );
+  const key = compact(part.replace(/\s*v\.?\s*\d+(\.\d+)*[.\s]*(copy)?$/i, ''));
   if (!unitKey || !key) return false;
   return (
     key === unitKey ||
