@@ -376,6 +376,21 @@ it('places work on an existing book page exactly once and moves it out of unfile
         })
       ).map((p) => p.status);
     expect(await statusAt(canonical.lessonId)).toEqual(['complete']);
+    // The public projection agrees: the page's own activity is not complete,
+    // but the work filed onto it is.
+    const projected = async (lessonId: string | undefined) =>
+      (
+        await f.as(f.parent, () =>
+          f.service.listProgress({
+            ...f.parent,
+            enrollmentId: canonical.enrollmentId,
+          }),
+        )
+      ).find((p) => p.lessonId === lessonId);
+    expect(await projected(canonical.lessonId)).toMatchObject({
+      status: 'complete',
+      completedAt: expect.any(Date),
+    });
     const refiled = await f.as(f.parent, () =>
       f.service.fileLessonWork({
         ...filing,
@@ -412,6 +427,12 @@ it('places work on an existing book page exactly once and moves it out of unfile
     expect(await statusAt(refiled.filing.placement?.lessonId)).toEqual([
       'submitted',
     ]);
+    expect(await projected(refiled.filing.placement?.lessonId)).toMatchObject({
+      completedAt: null,
+    });
+    expect(
+      (await projected(refiled.filing.placement?.lessonId))?.status,
+    ).not.toBe('complete');
     expect(correction).toMatchObject({
       activityId: f.work.id,
       episodeId: attempt.episodeId,
@@ -778,6 +799,144 @@ it('defaults raw legacy inserts to identified work on a known lesson', async () 
       filing: { state: 'identified' },
     });
     expect(canonical.bookKey).toBe('legacy-book');
+  } finally {
+    await f.close();
+  }
+});
+
+it('never lowers a completion the placed work did not produce', async () => {
+  const f = await fixture();
+  try {
+    const target = {
+      enrollmentId: String(f.enrollment.id),
+      lessonId: String(f.lesson.id),
+    };
+    // A guardian attests the lesson before any loose work is filed onto it.
+    await f.as(f.parent, () =>
+      f.service.attestLesson({ ...f.parent, ...target, score: 1 }),
+    );
+    const row = async (lessonId: string) =>
+      f.db.get('lesson_progress', {
+        enrollment_id: target.enrollmentId,
+        lesson_id: lessonId,
+      });
+    const attested = await row(target.lessonId);
+    expect(attested?.status).toBe('complete');
+    // A legacy completion with no activity at all on the second lesson.
+    const legacyDone = new Date('2026-09-01T12:00:00Z');
+    await f.as(f.parent, async () =>
+      (
+        await (
+          await import('../collections.js')
+        ).LessonProgressCollection.create({ db: f.db })
+      ).create({
+        tenantId: f.parent.tenantId,
+        learnerId: f.parent.learnerId,
+        enrollmentId: target.enrollmentId,
+        lessonId: String(f.secondLesson.id),
+        status: 'complete',
+        startedAt: legacyDone,
+        completedAt: legacyDone,
+      }),
+    );
+    const attempt = await f.as(f.parent, () =>
+      f.service.captureLessonWork(f.capture),
+    );
+    const base = {
+      ...f.parent,
+      activityId: f.work.id,
+      courseId: String(f.course.id),
+      reason: 'Extra practice',
+    };
+    const first = await f.as(f.parent, () =>
+      f.service.fileLessonWork({
+        ...base,
+        lessonId: target.lessonId,
+        expectedRevisionId: null,
+        requestKey: 'onto-attested',
+      }),
+    );
+    const unchanged = async (lessonId: string, completedAt: unknown) => {
+      expect(await row(lessonId)).toMatchObject({ status: 'complete' });
+      expect(
+        new Date((await row(lessonId))?.completed_at as string).getTime(),
+      ).toBe(new Date(completedAt as string).getTime());
+    };
+    await unchanged(target.lessonId, attested?.completed_at);
+    // A correction of the placed work does not undo the attestation.
+    const correction = await f.as(f.parent, () =>
+      f.service.captureLessonWork({
+        ...f.capture,
+        requestKey: 'practice-fix',
+        intakeItemId: 'practice-fix',
+        previousSubmissionId: attempt.submissionId,
+        pages: [{ ...f.capture.pages[0], data: Buffer.from('fix 1') }],
+      }),
+    );
+    await unchanged(target.lessonId, attested?.completed_at);
+    await f.as(f.parent, () =>
+      f.service.fileLessonWork({
+        ...base,
+        lessonId: String(f.secondLesson.id),
+        expectedRevisionId: first.filing.revisionId,
+        requestKey: 'onto-legacy',
+      }),
+    );
+    await unchanged(String(f.secondLesson.id), legacyDone);
+    await f.as(f.parent, () =>
+      f.service.captureLessonWork({
+        ...f.capture,
+        requestKey: 'practice-fix-2',
+        intakeItemId: 'practice-fix-2',
+        previousSubmissionId: correction.submissionId,
+        pages: [{ ...f.capture.pages[0], data: Buffer.from('fix 2') }],
+      }),
+    );
+    await unchanged(String(f.secondLesson.id), legacyDone);
+    expect(
+      (
+        await f.as(f.parent, () =>
+          f.service.listProgress({
+            ...f.parent,
+            enrollmentId: target.enrollmentId,
+          }),
+        )
+      )
+        .filter((p) =>
+          [target.lessonId, String(f.secondLesson.id)].includes(p.lessonId),
+        )
+        .map((p) => p.status),
+    ).toEqual(['complete', 'complete']);
+  } finally {
+    await f.close();
+  }
+});
+
+it("starts a new destination at the work's first capture, not at filing", async () => {
+  const f = await fixture();
+  try {
+    const attempt = await f.as(f.parent, () =>
+      f.service.captureLessonWork(f.capture),
+    );
+    const placed = await f.as(f.parent, () =>
+      f.service.fileLessonWork({
+        ...f.parent,
+        activityId: f.work.id,
+        courseId: String(f.course.id),
+        lessonId: String(f.secondLesson.id),
+        expectedRevisionId: null,
+        requestKey: 'start-date',
+        reason: 'Placed later',
+      }),
+    );
+    const attemptRow = await f.db.get('workbook_attempts', { id: attempt.id });
+    const progress = await f.db.get('lesson_progress', {
+      enrollment_id: placed.filing.placement?.enrollmentId,
+      lesson_id: placed.filing.placement?.lessonId,
+    });
+    expect(new Date(progress?.started_at as string).getTime()).toBe(
+      new Date(attemptRow?.captured_at as string).getTime(),
+    );
   } finally {
     await f.close();
   }

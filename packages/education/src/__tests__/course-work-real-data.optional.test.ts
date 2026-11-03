@@ -115,6 +115,22 @@ afterAll(() => disableTenancy());
       );
       expect(await db.list('submissions', {})).toEqual(before.submissions);
       expect(await db.list('workbook_attempts', {})).toEqual(before.attempts);
+      // Filed destinations start at the work's first capture, not today.
+      for (const filing of await db.list('lesson_work_filings', {})) {
+        const attempts = await db.list('workbook_attempts', {
+          activity_id: filing.source_activity_id,
+        });
+        if (!attempts.length) continue;
+        const progress = await db.get('lesson_progress', {
+          enrollment_id: filing.enrollment_id,
+          lesson_id: filing.lesson_id,
+        });
+        expect(new Date(progress?.started_at as string).getTime()).toBe(
+          Math.min(
+            ...attempts.map((a) => new Date(a.captured_at as string).getTime()),
+          ),
+        );
+      }
       expect((await db.list('lesson_work_filings', {})).length).toBe(
         (await db.list('workbook_work_filings', {})).length,
       );

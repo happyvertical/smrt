@@ -320,7 +320,11 @@ A filing appends a `LessonWorkFiling` naming the course, enrollment, lesson and
 page; the head is the work's placement. Lists by course include it, `filing:
 'unfiled'` no longer does, and the target lesson's progress becomes Doing (Done once
 the work's current attempt is complete). Completion decisions, new captures and
-reopening corrections keep it in step in the same transaction. Activity, attempt, submission, assessment,
+corrections keep it in step in the same transaction: a filing never lowers it, and
+a correction reopens only a completion this placed work produced (its completedAt
+is one of the work's own decisions); attested, legacy and other completions stay.
+A new destination row starts at the work's first capture. Progress reads
+(`listProgress`, plans) count completed work filed onto the lesson. Activity, attempt, submission, assessment,
 release and correction-episode IDs never move, and captured policy snapshots never
 change. Stable request-key retries replay; changed retries and stale heads conflict;
 book creation and filing share one transaction. Re-filing names the current head.

@@ -1278,6 +1278,42 @@ export class LearnerService {
     return Boolean(course?.book_key) || course?.source_key === 'unfiled-work';
   }
 
+  /**
+   * The latest completion of loose work currently filed onto this lesson
+   * (its filing head targets the enrollment and lesson), or null.
+   */
+  protected async placedWorkCompletion(
+    request: LearnerRequest,
+    enrollmentId: string,
+    lessonId: string,
+  ): Promise<Date | null> {
+    if (!(await this.db.tableExists('lesson_work_filings'))) return null;
+    const filings = await this.db.list('lesson_work_filings', {
+      tenant_id: request.tenantId,
+      learner_id: request.learnerId,
+      enrollment_id: enrollmentId,
+      lesson_id: lessonId,
+    });
+    let latest: Date | null = null;
+    for (const filing of filings) {
+      if (
+        await this.db.get('lesson_work_filings', {
+          tenant_id: request.tenantId,
+          previous_revision_id: filing.id,
+        })
+      )
+        continue; // superseded: the work has moved on
+      const state = await readWorkCompletion(this.db, {
+        tenantId: request.tenantId,
+        learnerId: request.learnerId,
+        activityId: String(filing.source_activity_id),
+      });
+      const at = state.completion.completedAt;
+      if (at && (!latest || at.getTime() > latest.getTime())) latest = at;
+    }
+    return latest;
+  }
+
   /** Compatibility progress never transports a workbook learner's feedback. */
   protected async projectProgress(
     request: LearnerRequest,
@@ -1288,7 +1324,17 @@ export class LearnerService {
       enrollmentId: row.enrollmentId,
       lessonId: row.lessonId,
     });
-    if (!activity || !(await this.isReleaseGatedWork(activity))) return view;
+    const placed = await this.placedWorkCompletion(
+      request,
+      row.enrollmentId,
+      row.lessonId,
+    );
+    if (!activity || !(await this.isReleaseGatedWork(activity))) {
+      // Work filed here and completed counts, as the guardian placed it.
+      return placed && view.status !== 'complete'
+        ? { ...view, status: 'complete', completedAt: placed }
+        : view;
+    }
     const state = await readWorkCompletion(this.db, {
       tenantId: request.tenantId,
       learnerId: request.learnerId,
@@ -1298,15 +1344,15 @@ export class LearnerService {
       id: request.learnerId,
       tenant_id: request.tenantId,
     });
+    const completedAt = state.completion.completedAt ?? placed;
     return {
       ...view,
-      status:
-        state.completion.status === 'complete'
-          ? 'complete'
-          : ['complete', 'skipped'].includes(view.status)
-            ? 'in_progress'
-            : view.status,
-      completedAt: state.completion.completedAt,
+      status: completedAt
+        ? 'complete'
+        : ['complete', 'skipped'].includes(view.status)
+          ? 'in_progress'
+          : view.status,
+      completedAt,
       ...(learner?.user_id === request.actorUserId ? { bestScore: null } : {}),
     };
   }

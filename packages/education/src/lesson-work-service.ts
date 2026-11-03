@@ -872,10 +872,12 @@ export class LessonWorkService extends SubmissionService {
         reason: request.reason,
         digest: hash,
       });
-      await service.syncPlacedProgress(request, row, {
-        enrollmentId,
-        lessonId,
-      });
+      await service.syncPlacedProgress(
+        request,
+        row,
+        { enrollmentId, lessonId },
+        'filing',
+      );
       return service.activityView(row, filing);
     });
   }
@@ -887,12 +889,21 @@ export class LessonWorkService extends SubmissionService {
     request: LearnerRequest,
     row: LessonActivity,
     target: { enrollmentId: string; lessonId: string },
+    mode: 'filing' | 'change' = 'change',
   ): Promise<void> {
     const state = await readWorkCompletion(this.db, {
       tenantId: request.tenantId,
       learnerId: request.learnerId,
       activityId: String(row.id),
     });
+    // The work's first capture, not the moment it was filed.
+    const firstCapture = state.attempts.length
+      ? new Date(
+          Math.min(
+            ...state.attempts.map((a) => new Date(a.capturedAt).getTime()),
+          ),
+        )
+      : new Date();
     const progress = await LessonProgressCollection.create({ db: this.db });
     const existing = await progress.get(
       {
@@ -908,30 +919,30 @@ export class LessonWorkService extends SubmissionService {
       if (complete && existing.status !== 'complete') {
         existing.status = 'complete';
         existing.completedAt = state.completion.completedAt;
+        existing.startedAt ??= firstCapture;
         await existing.save();
       } else if (!complete && existing.status === 'not_started') {
         existing.status = 'submitted';
-        existing.startedAt ??= new Date();
+        existing.startedAt ??= firstCapture;
         await existing.save();
-      } else if (!complete && existing.status === 'complete') {
-        // A correction reopened the placed work. The lesson stays Done only
-        // when the learner's own work on it is complete.
-        const own = await this.findLessonActivity(request, target);
-        const ownComplete =
-          own &&
-          String(own.id) !== String(row.id) &&
-          (
-            await readWorkCompletion(this.db, {
-              tenantId: request.tenantId,
-              learnerId: request.learnerId,
-              activityId: String(own.id),
-            })
-          ).completion.status === 'complete';
-        if (!ownComplete) {
-          existing.status = 'submitted';
-          existing.completedAt = null;
-          await existing.save();
-        }
+      } else if (
+        mode === 'change' &&
+        !complete &&
+        existing.status === 'complete' &&
+        existing.completedAt &&
+        // Provenance: reopen only a completion this placed work produced,
+        // i.e. one stamped with one of its own completion decisions. Filing
+        // never lowers progress, and attestation, legacy or other sources'
+        // completions are never undone here.
+        state.decisions.some(
+          (decision) =>
+            new Date(decision.recordedAt).getTime() ===
+            new Date(existing.completedAt as Date).getTime(),
+        )
+      ) {
+        existing.status = 'submitted';
+        existing.completedAt = null;
+        await existing.save();
       }
       return;
     }
@@ -941,7 +952,7 @@ export class LessonWorkService extends SubmissionService {
       enrollmentId: target.enrollmentId,
       lessonId: target.lessonId,
       status: complete ? 'complete' : 'submitted',
-      startedAt: new Date(),
+      startedAt: firstCapture,
       completedAt: complete ? state.completion.completedAt : null,
       attempts: state.attempts.length,
     });

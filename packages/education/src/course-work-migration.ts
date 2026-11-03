@@ -439,7 +439,14 @@ async function placedProgress(
     enrollmentId,
     lessonId,
     status: complete ? 'complete' : 'submitted',
-    startedAt: new Date(),
+    // The work's first capture, not the migration date.
+    startedAt: state.attempts.length
+      ? new Date(
+          Math.min(
+            ...state.attempts.map((a) => new Date(a.capturedAt).getTime()),
+          ),
+        )
+      : new Date(),
     completedAt: complete ? state.completion.completedAt : null,
     attempts: state.attempts.length,
   });
