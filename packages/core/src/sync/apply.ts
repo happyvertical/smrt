@@ -49,6 +49,7 @@
  */
 
 import { isUniqueViolationError } from '../db-errors.js';
+import { jsonValuesEqual } from '../utils/json-equal.js';
 
 /**
  * URL segments of the generated batch apply endpoint, relative to the API
@@ -406,11 +407,6 @@ export function isStaleWrite(
   return base < server;
 }
 
-function normalizeForComparison(value: unknown): unknown {
-  if (value instanceof Date) return value.toISOString();
-  return value;
-}
-
 function valuesEquivalent(rowValue: unknown, payloadValue: unknown): boolean {
   // Datetime fields hydrate as Date; clients send ISO strings (or epoch ms).
   if (rowValue instanceof Date) {
@@ -431,14 +427,8 @@ function valuesEquivalent(rowValue: unknown, payloadValue: unknown): boolean {
     return rowValue === payloadValue;
   }
 
-  try {
-    return (
-      JSON.stringify(normalizeForComparison(rowValue)) ===
-      JSON.stringify(normalizeForComparison(payloadValue))
-    );
-  } catch {
-    return false;
-  }
+  // JSON-form structural equality, key-order-insensitive (#4604).
+  return jsonValuesEqual(rowValue, payloadValue);
 }
 
 /**
