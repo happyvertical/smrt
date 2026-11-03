@@ -297,6 +297,49 @@ thumbnail? }` asset ids the host stored from `receiveMember`.
   later, then attach again: the replay adds the newly accepted materials.
 - `readImport` reports `attachment` (course, unit key, part) once attached.
 
+### Bringing a unit up to a newer build (SMRT #4645)
+
+`attachCourse({ ..., supersede: true })` is the explicit, opt-in way to replace
+the build attached for a part. Without it nothing changes: another import for an
+attached part is `part-conflict`, and a placement whose title differs is
+`part-conflict`. It uses the same authorization (`education.course.author`),
+tenant rules and lock order (import row, then unit row) as any attach.
+
+- **Which build is newer**: manifests carry no build stamp, so "newer" is the
+  import record: the importing bundle's `recordedAt` must be strictly later
+  than the attached import's. Otherwise `stale-build` (an older or
+  same-instant build never overwrites a newer one; re-attaching a superseded
+  import is the same). `supersede` with no other build attached for the part is
+  an ordinary attach.
+- **Identity**: sections and lessons keep their ids (derived from course id +
+  key), so enrolments, progress and submissions stay attached. Titles and order
+  follow the newer build (`renamed` counts changed titles); a key that a lower
+  part decided still must agree (`part-conflict`). Lesson `body` is not
+  rewritten. Sections and lessons the newer build no longer lists stay.
+- **Part count change** stays `unit-mismatch`, supersede or not.
+- **Materials**: the newer build's materials are attached; an existing row
+  (same lesson, asset, role) is restated in place (order, title, current again),
+  not a `conflict`; its audience stays the family's. Pages are restated and
+  never retired (learner work points at page keys).
+- **Retirement**: file materials and external videos the replaced build wrote
+  that the newer build does not carry get `retiredAt`. Rows are never deleted,
+  so work that references them still resolves; learner and catalog material
+  lists skip retired rows. `retired` counts them. Which rows belong to the
+  replaced build: `sourceImportId` (new on `lesson_assets`, `course_assets`,
+  `lesson_external_videos`, written by every attach/apply); rows from before it
+  existed (null) are adopted when their lesson is one of the replaced import's
+  lessons, and course materials when that import had course members. Rows
+  from another part or source are never touched. A material that returns in a
+  later build is current again.
+- **Audit**: the part's `CourseBundleAttachment` moves to the newer import (the
+  one sanctioned attachment change, `supersedeWith`) and an append-only
+  `CourseBundleSupersession` row (`course_bundle_supersessions`: course, unit
+  key, part, new import, replaced import, actor, time) records which replaced
+  which. The replaced import no longer reads as attached.
+- **Replay** of the same supersede is `replayed: true` and changes nothing.
+- Schema (additive): `retired_at` and `source_import_id` on `lesson_assets`,
+  `course_assets`, `lesson_external_videos`; table `course_bundle_supersessions`.
+
 ### Audience before and after attach
 
 `chooseMaterialAudience({ ...actor, importId, path | video: { lessonKey, videoId },
@@ -375,6 +418,8 @@ reason, duplicate-of, role, audience, section and lesson key) and
 bytes stay with the host's ingestion receipts. Rewrites and deletes throw.
 `CourseBundleAttachment` (`course_bundle_attachments`) and the mutable
 `CourseBundleAudienceChoice` (`course_bundle_audience_choices`) and
+`CourseBundleSupersession` (`course_bundle_supersessions`, append-only audit of a
+newer build taking a part) and
 `CourseBundlePlacement` (`course_bundle_placements`) and `CourseBundleUnit`
 (`course_bundle_units`) belong to the attach path. Normal manifest migrations create the tables and add `audience` (NULL
 on older rows) and, on `lesson_assets`/`course_assets`, `rendition`,

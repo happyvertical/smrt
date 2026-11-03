@@ -47,6 +47,8 @@ async function requireInsert(row: SmrtObject & { tenantId: string }) {
   if (row.id && (await row.db.get(row.tableName, { id: row.id })))
     throw new Error(IMMUTABLE);
 }
+/** Attachments being handed to a newer import by `supersedeWith`. */
+const swapping = new WeakSet<object>();
 function noDelete(): never {
   throw new Error(IMMUTABLE);
 }
@@ -272,9 +274,11 @@ export class CourseBundleRenderingCollection extends SmrtCollection<CourseBundle
 }
 
 /**
- * Append-only record that one imported bundle (a part of a unit) was attached
- * to a family course (SMRT #4632). Unique per import, and per (course, part):
- * a unit's parts merge into one course, each part once.
+ * Record that one imported bundle (a part of a unit) was attached to a family
+ * course (SMRT #4632). Unique per import, and per (course, part): a unit's
+ * parts merge into one course, each part once. Never rewritten or deleted
+ * except that a newer build may take over its part (`supersedeWith`, #4645),
+ * which is recorded in `course_bundle_supersessions`.
  */
 @TenantScoped({ mode: 'required' })
 @smrt({
@@ -311,8 +315,40 @@ export class CourseBundleAttachment extends SmrtObject {
   override async delete(): Promise<void> {
     noDelete();
   }
+  /**
+   * Hand this part to a newer import of the same unit (SMRT #4645). The only
+   * sanctioned change to an attachment: course, unit and part never move, and
+   * the caller records the change in a `CourseBundleSupersession`.
+   */
+  async supersedeWith(importId: string, actorUserId: string): Promise<this> {
+    swapping.add(this);
+    try {
+      this.importId = importId;
+      this.attachedByUserId = actorUserId;
+      this.recordedAt = new Date();
+      return await this.save();
+    } finally {
+      swapping.delete(this);
+    }
+  }
   override async save(options?: SmrtSaveOptions): Promise<this> {
-    await requireInsert(this);
+    const swap = swapping.has(this);
+    if (swap) {
+      if (!this.tenantId?.trim())
+        throw new Error('Course bundle evidence requires a tenant');
+      const prior = this.id
+        ? await this.db.get(this.tableName, { id: this.id })
+        : null;
+      if (
+        !prior ||
+        prior.tenant_id !== this.tenantId ||
+        prior.course_id !== this.courseId ||
+        prior.unit_key !== this.unitKey ||
+        Number(prior.part_index) !== this.partIndex ||
+        Number(prior.part_count) !== this.partCount
+      )
+        throw new Error(IMMUTABLE);
+    } else await requireInsert(this);
     requireText(this.unitKey, 'Attachment requires a unit key', 200);
     requireText(this.attachedByUserId, 'Attachment requires an actor');
     if (
@@ -334,7 +370,7 @@ export class CourseBundleAttachment extends SmrtObject {
       }))
     )
       throw new Error('Course bundle parent ownership mismatch');
-    this.requireInsertOnSave();
+    if (!swap) this.requireInsertOnSave();
     return super.save(options);
   }
 }
@@ -522,4 +558,68 @@ export class CourseBundleUnit extends SmrtObject {
 }
 export class CourseBundleUnitCollection extends SmrtCollection<CourseBundleUnit> {
   static readonly _itemClass = CourseBundleUnit;
+}
+
+/**
+ * Append-only audit of a newer build taking over a part of an attached unit
+ * (SMRT #4645): which import replaced which, for which course and part, by
+ * whom and when. One row per (course, part, superseded import).
+ */
+@TenantScoped({ mode: 'required' })
+@smrt({
+  tableName: 'course_bundle_supersessions',
+  conflictColumns: ['tenant_id', 'superseded_import_id'],
+  indexes: [
+    {
+      name: 'course_bundle_supersessions_old_unique',
+      columns: ['tenantId', 'supersededImportId'],
+      unique: true,
+    },
+    {
+      name: 'course_bundle_supersessions_new',
+      columns: ['tenantId', 'importId'],
+    },
+  ],
+  ...closed,
+})
+export class CourseBundleSupersession extends SmrtObject {
+  @tenantId() tenantId = '';
+  @foreignKey('Course', { required: true }) courseId = '';
+  unitKey = '';
+  partIndex = 1;
+  /** The newer import that now holds the part. */
+  @foreignKey('CourseBundleImport', { required: true }) importId = '';
+  /** The import it replaced. */
+  @foreignKey('CourseBundleImport', { required: true }) supersededImportId = '';
+  supersededByUserId = '';
+  recordedAt = new Date();
+  constructor(options: Record<string, unknown> = {}) {
+    super(options);
+    adopt(this, options);
+  }
+  override async delete(): Promise<void> {
+    noDelete();
+  }
+  override async save(options?: SmrtSaveOptions): Promise<this> {
+    await requireInsert(this);
+    requireText(this.unitKey, 'Supersession requires a unit key', 200);
+    requireText(this.supersededByUserId, 'Supersession requires an actor');
+    if (!Number.isSafeInteger(this.partIndex) || this.partIndex < 1)
+      throw new Error('Invalid bundle part');
+    if (this.importId === this.supersededImportId)
+      throw new Error('An import cannot supersede itself');
+    for (const id of [this.importId, this.supersededImportId])
+      if (
+        !(await this.db.get('course_bundle_imports', {
+          id,
+          tenant_id: this.tenantId,
+        }))
+      )
+        throw new Error('Course bundle parent ownership mismatch');
+    this.requireInsertOnSave();
+    return super.save(options);
+  }
+}
+export class CourseBundleSupersessionCollection extends SmrtCollection<CourseBundleSupersession> {
+  static readonly _itemClass = CourseBundleSupersession;
 }

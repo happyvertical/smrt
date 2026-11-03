@@ -61,7 +61,8 @@ Course bundles (zip with a closed manifest v1 or v2, or a file set; Word/PowerPo
 [CourseBundleImportService](agents/course-bundle-import.md). Parse only with the
 bounded reader; refuse, never trim, hostile input; unsupported members stay
 visible; nothing auto-published. `attachCourse` makes one family draft course per
-unit key (parts merge in any order, mismatches fail closed); review choices never
+unit key (parts merge in any order, mismatches fail closed); `supersede: true`
+is the only way to take a newer build of an attached part (retires, never deletes); review choices never
 open keys, guidance or an editable original to a learner.
 
 Class CrunchLabs (a download read into a manifest v2 bundle; an operator-only
