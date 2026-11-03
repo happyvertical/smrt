@@ -23,7 +23,7 @@ progress, including private workbook feedback rules. Optional lessonActivityId
 is resolved for the exact tenant/learner/enrollment/lesson; consumers route that
 work to their workbook interface, not generic scan capture.
 
-Workbook progress uses the same explicit parent completion projection as Work.
+Book and loose-page progress uses the same explicit parent completion projection as Work.
 Old grade-derived complete/skipped rows without a current decision project in
 progress with completedAt null; they cannot contribute a completion timestamp to
 progressEvidence. Later analysis of the same attempt retains a parent's decision;

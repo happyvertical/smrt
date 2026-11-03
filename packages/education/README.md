@@ -36,13 +36,17 @@ Runtime catalog operations do not create application schema.
 | Model | Purpose |
 | --- | --- |
 | `CourseSource` | Host-managed adapter policy and sharing ceiling |
-| `Course` | Course metadata, license, status, and optional owning tenant |
+| `Course` | Course metadata, license, status, optional owning tenant, optional book identity (`bookKey`, `bookEdition`) and work policy |
 | `ExternalCourse` | External course subtype sharing the Course table |
 | `AuthoredCourse` | Authored course subtype sharing the Course table |
 | `CourseSection` | Ordered section belonging to a course |
 | `Lesson` | Ordered lesson belonging to a section |
 | `Reading`, `Video`, `Worksheet`, `Exercise` | Lesson subtypes |
-| `LessonAsset` | Lesson-owned file join with a relationship such as printable or answer-key |
+| `LessonAsset` | Lesson-owned file join with a role (teacher-guide, slides, learner-pages, assessment, assessment-guidance, handout, printable, answer-key, video, attachment) and an audience |
+| `CourseAsset` | Course-level material (supply list, posters) with the same roles and audience |
+| `LessonExternalVideo` | Allowlisted YouTube reference with title and step order; never downloaded |
+| `LessonPage` | A lesson's printed page: key, label, order, optional source file and page |
+| `LessonActivity`, `WorkAttempt`, `WorkAssessmentRevision`, `WorkFeedbackRelease`, `WorkFeedbackDelivery`, `WorkCompletionDecision`, `LessonWorkFiling` | The one lesson work pipeline (see below) |
 | `Learner` | A required User/Person identity and guarded settings in one family tenant |
 | `Curriculum` | A learner plan for a distinct period |
 | `Enrollment` | One course in a curriculum |
@@ -161,6 +165,36 @@ Reading or Video lesson done as a self-reported, ungraded attestation that a
 guardian then confirms. It reuses learner ownership and transaction checks.
 See the [submission integration contract](agents/submission-service.md) for
 inputs, retry rules, signing requirements and external-storage compensation.
+
+## Lesson work, books and materials
+
+Every hand-in on every lesson is lesson work: `SubmissionService` capture and
+correction record the learner's `LessonActivity` and an immutable
+`WorkAttempt`, and `LessonWorkService` (formerly `WorkbookService`) owns the
+timeline, revisioned AI and guardian marking, feedback release, delivery and
+the parent completion decision. A guardian grade on an ordinary lesson
+records its completion decision; book and loose-page work complete only by
+`completeLessonActivity`. Submission pages carry a `pageKey`, so a correction
+may replace individual pages (`WorkAttemptView.pages` folds the versions).
+
+A physical book is a course: `Course.bookKey`/`bookEdition` (one course per
+family per key) with the course work policy (`setCourseWorkPolicy`).
+`Workbook` is retired; run `migrateWorkbooksToCourses(db)` once after the
+schema migration. `resolveBookPageActivity` matches book key and page key to a
+`LessonPage`; `fileLessonWork` places loose photographed work in a course.
+
+Materials carry an audience defaulted by role; learners see only learner
+material (`listLessonMaterials`, `listCourseMaterials`, `signLessonMaterial`,
+`signCourseMaterial`, `setMaterialAudience`, `addLessonVideo`).
+
+Renames: `WorkbookService` → `LessonWorkService`, `WorkbookActivity` →
+`LessonActivity`, `Workbook{Attempt,AssessmentRevision,FeedbackRelease,FeedbackDelivery,CompletionDecision}`
+→ `Work…`, `Workbook…` contracts → `Work…` (`WORK_MATH_VOCABULARY`), and the
+methods listed in the [design record](agents/course-work-design.md#renames-public-api).
+Removed: `Workbook`, `WorkbookWorkFiling`, `WorkbookWorkflowRequiredError`
+(now `LessonWorkWorkflowRequiredError`) and `assertNonWorkbookSubmissionScope`
+(now `assertOrdinarySubmissionScope`). See [lesson work](agents/lesson-work-service.md)
+and [lesson materials](agents/lesson-materials.md).
 
 ## Source imports
 

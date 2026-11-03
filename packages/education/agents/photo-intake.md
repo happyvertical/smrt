@@ -1,10 +1,13 @@
-# Photo-first workbook intake
+# Photo-first book page intake
 
 `WorkbookPhotoService` extends `LessonWorkService` with the same constructor,
 transaction executor, actor/tenant checks, private storage and rollback ledger.
 Import server integration from `@happyvertical/smrt-education/ingestion`.
 Apply manifest migrations for `WorkbookPhotoIntake`, `WorkbookPhotoAsset`,
-`WorkbookPhotoDecision` and `WorkbookContextRevision` before deploying. There is
+`WorkbookPhotoDecision` and `BookContextRevision` before deploying. The photo
+models keep their `Workbook*` names: they derive the persisted ingestion operation
+IDs and grants captured in receipt ceilings. The book they identify is a course
+with book identity ([course work](course-work-design.md)). There is
 no runtime schema creation and these models expose no generated operations. Each
 concrete table declares its own tenant/learner fields; a custom abstract model
 base does not supply persisted columns to independent manifest tables.
@@ -71,17 +74,19 @@ authorized contextual record with retained publisher provenance; that publisher
 is context, never a fabricated current quotation. Conflicting or ambiguous
 matches stay pending. Provider
 candidates contain book metadata only, never reference text or answer keys.
-`listWorkbookPhotoWorkbooks(request)` includes cover-only books for the provider
-and guardian picker. A printed lesson identity supplies one stable activity key;
+`listPhotoBookCourses(request)` returns the family's book courses (including
+cover-only books) for the provider and guardian picker, with publisher/ISBN context
+from this learner's own decisions. Provider candidates are `Course` targets; the
+wire candidate id (`workbookId`) is the course id and its `workbookKey` the book key. A printed lesson identity supplies one stable activity key;
 multiple page files may belong to that same lesson. Page number alone cannot
 automatically establish lesson identity.
 
 A guardian may call `resolveWorkbookPhotoIntake({...request,intakeId,requestKey,
 identification})` after upload. It requires planning authority and appends a new
 decision. Stable request-key retries replay; changed retries conflict. Covers and
-references create/reuse the Workbook and append contextual metadata only: no
-Course, Lesson, progress, attempt, Grade or concept observations. Existing
-Workbook title/edition identity never changes; context versions retain original
+references create/reuse the family's book course and append contextual metadata
+(`BookContextRevision`) only: no Lesson, enrollment, progress, attempt, Grade or
+concept observations. Existing book title/edition identity never changes; context versions retain original
 metadata and source receipt identity. A captured intake cannot be retargeted.
 
 ## Existing marking pipeline
@@ -152,7 +157,7 @@ tables.
 
 ## Existing candidate identification
 
-`workbookId` selects an exact authorized candidate; it does not replace the
+The provider's `workbookId` selects an exact authorized candidate (a book course id); it does not replace the
 required `identification.workbook` contract. Copy that candidate's `workbookKey`,
 `title` and `edition` into the required object. Those are catalog identity fields,
 not invented IDs or claims about what is printed on the new photograph.
@@ -194,56 +199,38 @@ printed examples separate from learner marks and reports matching endpoints only
 when observed. Adopt it with a new extraction configuration revision.
 
 The internal private Course/Enrollment/Worksheet are routing records, not a claim
-about a canonical book or lesson. `LessonActivity.workbookId` is null only for
-explicit `captureKind:'unfiled'` with an exact owned `photoIntakeId`; all ordinary
-identified activity invariants remain. No Workbook is invented. Activity DTO
-`filing.state` is `unfiled`, `filed` or `identified`; empty workbook title/key/edition
-on unfiled work are intentional. Use the work label as the primary display.
+about a canonical book or lesson. Only `captureKind:'unfiled'` carries an exact owned
+`photoIntakeId`; all identified activity invariants remain. No book is invented.
+Activity DTO `filing.state` is `unfiled`, `filed` or `identified`; unfiled work has
+`filing.placement: null`, empty course/book fields and the `Captured work` label.
 `listLessonActivities` includes these work units. Exact
 `getWorkbookPhotoTimeline({...request,intakeId,limit?,cursor?,revisionId?})`
 returns existing authorized feedback/history; the normal activity timeline also
 works. `getLessonActivity` refreshes exact filing presentation without loading
 history. The receipt view refreshes filing rather than replaying its old label.
 
-Optional guardian `fileWorkbookWork({...request,activityId,workbookId,
-canonicalActivityId?,expectedRevisionId,requestKey,reason})` appends an association
-to a real authorized workbook and optionally a real identified activity. Initial
-expected revision is null. Stable retries replay their original accepted result;
-changed retries/stale heads conflict. Filing does not move or recreate activity,
-submission, attempt, assessment, release, source or correction episode IDs. It
-cannot change captured review policy, create a Grade, duplicate concept evidence,
-or release guardian-origin material. Future corrections continue against the
-original work-unit ID and explicit current predecessor. Existing identified
-captures cannot be retargeted through filing.
-
-Apply normal manifest migrations before using this contract. Existing activities
-receive `capture_kind='identified'` through the declared database default; the
-workbook FK becomes nullable and photo-intake FK plus filing table are added.
-Old populated SQLite requires the explicit supported nullability-relaxation
-migration described by #4413; no runtime DDL or manual SQL workaround is allowed.
-
-When no book record exists, the same optional filing operation accepts
-`newWorkbook:{title,edition?,workbookKey?}` instead of `workbookId`. Exactly one is
-required. Parents need only title/edition; an omitted key becomes an opaque stable
-manual identity for this work/request, never an automatic title-based match.
-An explicit existing key must retain its exact title/edition. New metadata cannot
-also claim `canonicalActivityId`. Book creation and filing share the guardian's
-serialized transaction: stale/unauthorized/conflicting requests create nothing,
-and a later failure rolls both back. No cover re-upload, canonical lesson,
-submission replacement or second assessment is needed. New books keep the default
-review policy; filing never changes the source attempt's captured policy.
+Guardian `fileLessonWork` places unfiled work in a course (an existing book course,
+a new book, or another enrolled course), matching or appending the lesson page; see
+[lesson work filing](lesson-work-service.md#identity-independent-work-and-filing).
+The work leaves the unfiled list at once and its target lesson follows its
+completion. Filing does not move or recreate activity, submission, attempt,
+assessment, release, source or correction episode IDs, cannot change captured
+review policy, create a Grade, duplicate concept evidence, or release
+guardian-origin material. Future corrections continue against the original
+work-unit ID and explicit current predecessor and snapshot the placed course's
+policy. Identified captures cannot be refiled.
 
 ## Exact cover context for header selection
 
-`getWorkbookPhotoIntake` adds optional nullable `workbookId`, loaded from the latest
-retained resolution's exact WorkbookContextRevision under the same tenant/learner
+`getWorkbookPhotoIntake` adds nullable `bookCourseId`, loaded from the latest
+retained resolution's exact BookContextRevision under the same tenant/learner
 and decision ID. Pending/uncertain or unfiled-work resolution returns null; this is
 independent of a later activity filing. It never guesses from title or an inbox
 list. Existing guardian-origin receipt privacy still applies before lookup.
 
 Header cover camera/upload uses the normal receive/process photo flow. A confident
 cover resolves book/context only, with no attempt, lesson or Grade. Read that exact
-intake, then let the guardian explicitly choose `fileWorkbookWork({workbookId,...})`.
+intake, then let the guardian explicitly choose `fileLessonWork({courseId: bookCourseId,...})`.
 An uncertain cover can use the existing guardian `resolveWorkbookPhotoIntake` with
 manual cover metadata, followed by the same exact getter and explicit filing.
 Neither cover identification nor context alone publishes learner source/feedback.

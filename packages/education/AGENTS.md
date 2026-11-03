@@ -8,10 +8,12 @@ executor; live session/permission checks must use that executor. That read scope
 collection's `list` to self, ancestors, and globals; it never authorizes a get,
 write, raw query, sibling, or descendant read.
 
-`personal-use-copy` courses and all `answer-key` lesson assets are private
-family material. Do not publish them, promote them, or expose them through a
-learner-facing result. `LessonAsset` is the sole owner join for lesson files;
-do not add asset-id fields to lesson subclasses.
+`personal-use-copy` courses and all `answer-key`/`assessment-guidance` material
+are private family material. Do not publish them, promote them, or expose them
+through a learner-facing result. `LessonAsset` (lesson) and `CourseAsset` (course)
+are the sole owner joins for material files; do not add asset-id fields to lesson
+subclasses. Material audience rules and external videos: [lesson materials](agents/lesson-materials.md);
+a learner never sees guardian-audience material.
 
 Learner objects require exact tenant ownership and close generated surfaces.
 `LearnerService` owns actor/resource authorization and transactional planning and
@@ -28,9 +30,12 @@ files after rollback; never expose source URIs or accept learner grade patches.
 Validation: `pnpm --filter @happyvertical/smrt-education test`,
 `test:postgres`, `typecheck`, and `build`.
 
-Physical workbook capture, immutable assessment/feedback history and descriptive
-evidence use [LessonWorkService](agents/lesson-work-service.md). Keep provisional
-sharing separate from guardian Grade authority. Photo-first receipt/context
+Every lesson hand-in is lesson work (activity, attempt, revisions, release,
+completion decision); books are courses with `bookKey`, pages are `LessonPage`s,
+and loose work is placed by filing. Use [LessonWorkService](agents/lesson-work-service.md)
+and the [design record](agents/course-work-design.md); `migrateWorkbooksToCourses`
+is the one-time host migration. Keep provisional sharing separate from guardian
+Grade authority; never move filed work's IDs. Photo-first receipt/context
 capture uses [WorkbookPhotoService](agents/photo-intake.md); covers/references
 never create learning evidence, and blank exercises need explicit work intent.
 

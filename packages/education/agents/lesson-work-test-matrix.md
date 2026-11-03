@@ -1,4 +1,4 @@
-# Workbook behavior/test matrix
+# Lesson work behavior/test matrix
 
 Design derived from the approved Hearth workbook plan (2026-10-22), learning-record
 contract and WB-001–WB-019 preparation packet (2026-10-23). Feature-class additive
