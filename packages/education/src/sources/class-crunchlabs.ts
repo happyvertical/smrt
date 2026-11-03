@@ -263,6 +263,17 @@ function activityTitle(value: string): string {
     .join(' ');
 }
 
+/** Whether a video file name's terminal part (ignoring `-NNN` and a version) is the unit. */
+function endsWithUnit(fileName: string, unit: string): boolean {
+  const parts = fileName
+    .replace(/\.[A-Za-z0-9]{1,8}$/, '')
+    .split('_')
+    .map((p) => squash(p).replace(/-\d{3}$/, ''))
+    .filter((p) => p && !VERSION.test(p));
+  const last = parts.at(-1);
+  return !!last && isUnitPart(last, compact(unit));
+}
+
 /** A cover headline as a title: all capitals fold to title case; blank or absurd text is none. */
 function headlineTitle(text: string): string {
   const t = squash(text);
@@ -701,7 +712,7 @@ export async function buildClassCrunchLabsBundle(
     if (
       !VIDEO_EXT.has(extOf(fileName)) ||
       !VIDEO_NAME.test(fileName.replace(/\.[A-Za-z0-9]{1,8}$/, '')) ||
-      !compact(fileName).includes(compact(unitName))
+      !endsWithUnit(fileName, unitName)
     )
       continue;
     located[i] = {
@@ -880,8 +891,11 @@ export async function buildClassCrunchLabsBundle(
   const uniqueTitle = (m: Material) => {
     const place = m.lesson === null ? 'unit' : lessonKey(m.lesson);
     let title = m.title;
-    for (let n = 2; usedTitles.has(`${place}|${title.toLowerCase()}`); n++)
-      title = `${m.title} (${n})`.slice(0, 200);
+    for (let n = 2; usedTitles.has(`${place}|${title.toLowerCase()}`); n++) {
+      const suffix = ` (${n})`;
+      // Truncate the base, never the counter, so each attempt is distinct.
+      title = `${m.title.slice(0, 200 - suffix.length)}${suffix}`;
+    }
     usedTitles.add(`${place}|${title.toLowerCase()}`);
     return title;
   };
@@ -992,10 +1006,16 @@ export async function buildClassCrunchLabsBundle(
   if (options.readFirstPageHeadline)
     for (const [n, entry] of lessons) {
       if (!entry.manual) continue;
-      const text = await options
-        .readFirstPageHeadline({ bytes: entry.manual, kind: 'pdf' })
-        .catch(() => null);
-      const name = text ? headlineTitle(text) : '';
+      let text: unknown = null;
+      try {
+        text = await options.readFirstPageHeadline({
+          bytes: entry.manual,
+          kind: 'pdf',
+        });
+      } catch {
+        text = null;
+      }
+      const name = typeof text === 'string' ? headlineTitle(text) : '';
       if (name) headlines.set(n, name);
     }
   const lessonTitle = (n: number) => {

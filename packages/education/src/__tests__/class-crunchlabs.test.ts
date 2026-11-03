@@ -368,6 +368,66 @@ describe('readable titles (#4642)', () => {
       ).flatMap((x) => x.lessons.map((l) => l.title)),
     ).toEqual(['Lesson 1: Carnival Games', 'Lesson 3: Play with Plungers']);
   });
+  it('ignores a hook that throws synchronously or returns a non-string', async () => {
+    for (const hook of [
+      () => {
+        throw new Error('sync');
+      },
+      async () => 42,
+      async () => ({ text: 'x' }),
+    ]) {
+      const b = await buildClassCrunchLabsBundle({
+        files: memoryClassCrunchLabsSource(files),
+        pageCounter: async () => 2,
+        readFirstPageHeadline: hook as never,
+      });
+      expect(
+        (
+          b.manifest.sections as Array<{ lessons: Array<{ title: string }> }>
+        ).flatMap((x) => x.lessons.map((l) => l.title)),
+      ).toEqual(['Lesson 1: Carnival Games', 'Lesson 3: Play with Plungers']);
+    }
+  });
+  it('admits a loose video only when its terminal name part is the unit', async () => {
+    const b = await buildClassCrunchLabsBundle({
+      files: memoryClassCrunchLabsSource([
+        ...files.filter((x) => !/\.mp4$/.test(x.path)),
+        {
+          path: 'L01.4_Video_StudentHandsOnExploration_ZoomBoomChallenge_Solar Oven.mp4',
+          bytes: Buffer.from('v'),
+        },
+        {
+          path: 'L01.4_Video_StudentHandsOnExploration_Racers_Zoom Boom-004.mp4',
+          bytes: Buffer.from('v'),
+        },
+      ]),
+      pageCounter: async () => 2,
+    });
+    const lessons = (
+      b.manifest.sections as Array<{ lessons: Array<{ title: string }> }>
+    ).flatMap((x) => x.lessons.map((l) => l.title));
+    expect(lessons).toEqual(['Lesson 1: Racers', 'Lesson 3']);
+  });
+  it('terminates when long equal-prefix titles collide', async () => {
+    const long = 'Very Long Material Name '.repeat(12);
+    const b = await buildClassCrunchLabsBundle({
+      files: memoryClassCrunchLabsSource([
+        f(`${Z1}/A. L01_${long}x1_${U}_v1.0.pdf`, 'p'),
+        f(`${Z1}/A. L01_${long}x2_${U}_v1.0.pdf`, 'q'),
+        f(`${Z1}/A. L01_${long}x3_${U}_v1.0.pdf`, 'r'),
+      ]),
+      pageCounter: async () => 2,
+    });
+    const titles = (
+      b.manifest.sections as Array<{
+        lessons: Array<{ members: Decl[] }>;
+      }>
+    )
+      .flatMap((x) => x.lessons.flatMap((l) => l.members))
+      .map((m) => m.title);
+    expect(new Set(titles).size).toBe(3);
+    expect(titles.every((t) => t.length <= 200)).toBe(true);
+  });
   it('falls back to Lesson N when no video names an activity', async () => {
     const b = await buildClassCrunchLabsBundle({
       files: memoryClassCrunchLabsSource(
