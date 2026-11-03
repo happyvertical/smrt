@@ -21,6 +21,35 @@ import { WorkbookPhotoService } from '../workbook-photo-service.js';
 import { learnerFixture } from './learner-workflows.js';
 
 type Engine = 'sqlite' | 'postgres';
+/** `workbook_activities` as deployed before #4614 (captured from a real SQLite install). */
+const LEGACY_SQLITE_ACTIVITIES = `CREATE TABLE "workbook_activities" (
+  "id" TEXT PRIMARY KEY NOT NULL,
+  "slug" TEXT NOT NULL,
+  "context" TEXT NOT NULL DEFAULT '',
+  "created_at" DATETIME NOT NULL DEFAULT current_timestamp,
+  "updated_at" DATETIME NOT NULL DEFAULT current_timestamp,
+  "tenant_id" TEXT NOT NULL,
+  "learner_id" TEXT NOT NULL,
+  "workbook_id" TEXT ,
+  "enrollment_id" TEXT NOT NULL,
+  "lesson_id" TEXT NOT NULL,
+  "page_key" TEXT,
+  "page_label" TEXT, "capture_kind" TEXT NOT NULL DEFAULT 'identified', "photo_intake_id" TEXT REFERENCES "workbook_photo_intakes" ("id") ON DELETE NO ACTION ON UPDATE CASCADE,
+  CONSTRAINT "workbook_activities_learner_id_learners_id_fkey" FOREIGN KEY ("learner_id") REFERENCES "learners" ("id") ON DELETE NO ACTION ON UPDATE CASCADE,
+  CONSTRAINT "workbook_activities_workbook_id_workbooks_id_fkey" FOREIGN KEY ("workbook_id") REFERENCES "workbooks" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT "workbook_activities_enrollment_id_enrollments_id_fkey" FOREIGN KEY ("enrollment_id") REFERENCES "enrollments" ("id") ON DELETE NO ACTION ON UPDATE CASCADE,
+  CONSTRAINT "workbook_activities_lesson_id_lessons_id_fkey" FOREIGN KEY ("lesson_id") REFERENCES "lessons" ("id") ON DELETE NO ACTION ON UPDATE CASCADE
+)`;
+const LEGACY_SQLITE_ACTIVITY_INDEXES = [
+  'CREATE UNIQUE INDEX "workbook_activities_tenant_id_workbook_id_idx" ON "workbook_activities" ("tenant_id", "workbook_id", "page_key")',
+  'CREATE INDEX "workbook_activities_slug_context_idx" ON "workbook_activities" ("slug", "context")',
+  'CREATE INDEX "workbook_activities_tenant_id_created_at_idx" ON "workbook_activities" ("tenant_id", "created_at")',
+  'CREATE INDEX "workbook_activities_learner_id_idx" ON "workbook_activities" ("learner_id")',
+  'CREATE INDEX "workbook_activities_workbook_id_idx" ON "workbook_activities" ("workbook_id")',
+  'CREATE INDEX "workbook_activities_enrollment_id_idx" ON "workbook_activities" ("enrollment_id")',
+  'CREATE INDEX "workbook_activities_lesson_id_idx" ON "workbook_activities" ("lesson_id")',
+  'CREATE INDEX "workbook_activities_photo_intake_id_idx" ON "workbook_activities" ("photo_intake_id")',
+];
 const HISTORY = [
   'workbook_activities',
   'workbook_attempts',
@@ -91,15 +120,23 @@ export async function assertWorkbookMigration(
     await db.query(
       `CREATE TABLE workbook_context_revisions (id ${uuid} PRIMARY KEY, slug TEXT NOT NULL, context TEXT NOT NULL DEFAULT '', created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, tenant_id ${uuid} NOT NULL, learner_id ${uuid} NOT NULL, workbook_id ${uuid} NOT NULL, decision_id ${uuid} NOT NULL, metadata_json TEXT)`,
     );
-    for (const column of ['workbook_id', 'page_key', 'page_label'])
+    if (engine === 'sqlite') {
+      // The exact deployed pre-#4614 table (real SQLite DDL, with its foreign
+      // keys and the retired natural key), not the new schema plus columns.
+      await db.query('DROP TABLE workbook_activities');
+      await db.query(LEGACY_SQLITE_ACTIVITIES);
+      for (const index of LEGACY_SQLITE_ACTIVITY_INDEXES) await db.query(index);
+    } else {
+      // A shared PostgreSQL test database already holds other suites' rows,
+      // so add the legacy columns and a plain unique legacy key instead.
+      for (const column of ['workbook_id', 'page_key', 'page_label'])
+        await db.query(
+          `ALTER TABLE workbook_activities ADD COLUMN ${column} ${column === 'workbook_id' ? uuid : 'TEXT'}`,
+        );
       await db.query(
-        `ALTER TABLE workbook_activities ADD COLUMN ${column} ${column === 'workbook_id' ? uuid : 'TEXT'}`,
+        'CREATE UNIQUE INDEX workbook_activities_tenant_id_workbook_id_idx ON workbook_activities (tenant_id, workbook_id, page_key)',
       );
-    // The retired natural key, which the data migration drops. (Plain unique:
-    // a shared PostgreSQL test database already holds other suites' rows.)
-    await db.query(
-      'CREATE UNIQUE INDEX workbook_activities_tenant_id_workbook_id_idx ON workbook_activities (tenant_id, workbook_id, page_key)',
-    );
+    }
 
     const tenantId = f.parent.tenantId;
     const alice = f.parent.learnerId;
@@ -410,8 +447,18 @@ export async function assertWorkbookMigration(
         'LessonPage',
         'LessonWorkFiling',
         'BookContextRevision',
+        // Foreign-key targets, so their deployed actions are compared too.
+        'Enrollment',
+        'Lesson',
+        'Learner',
+        'WorkbookPhotoIntake',
       ].map((name) => {
-        const schema = ObjectRegistry.getSchema(name);
+        // The host migrates from the runtime registry definitions; use the
+        // same source so default foreign-key actions are the deployed ones.
+        const table = ObjectRegistry.getSchema(name)?.tableName;
+        const schema = Object.values(
+          ObjectRegistry.getAllSchemasAsDefinitions(),
+        ).find((definition) => definition.tableName === table);
         if (!schema) throw new Error(`Missing schema ${name}`);
         return [schema.tableName, schema];
       }),
@@ -439,6 +486,35 @@ export async function assertWorkbookMigration(
     const diff = await new SchemaComparer(db, { engineHint: engine }).compare(
       schemas,
     );
+    if (engine === 'sqlite') {
+      // The deployed foreign keys must match the manifest exactly: SQLite
+      // cannot alter a foreign key, so any drift would demand a rebuild.
+      const activitySchema = schemas.workbook_activities;
+      const live = (
+        await db.query(
+          "SELECT * FROM pragma_foreign_key_list('workbook_activities')",
+        )
+      ).rows as Array<Record<string, unknown>>;
+      for (const column of ['learner_id', 'enrollment_id', 'lesson_id']) {
+        const declared = activitySchema?.columns[column]?.foreignKey;
+        const actual = live.find((row) => row.from === column);
+        expect([actual?.table, actual?.on_delete, actual?.on_update]).toEqual([
+          declared?.table,
+          declared?.onDelete,
+          declared?.onUpdate,
+        ]);
+      }
+    }
+    // The normal schema step applies: nothing needs a manual rebuild.
+    expect(
+      diff.changes
+        .filter(
+          (c) =>
+            c.advisory?.severity === 'warning' ||
+            /foreign_key|rebuild/.test(String(c.type)),
+        )
+        .map((c) => `${c.type} ${c.table}.${c.name}`),
+    ).toEqual([]);
     expect(diff.added_tables.map((t) => t.tableName).sort()).toEqual([
       'book_context_revisions',
       'lesson_pages',

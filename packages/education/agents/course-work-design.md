@@ -113,6 +113,14 @@ and is a no-op otherwise. It first drops the retired unique index
 activities carry no book link and PostgreSQL's NULLS NOT DISTINCT would make them
 collide. The schema diff leaves the retired `workbook_id`/`page_key`/`page_label`
 columns as reported orphans; drop them later with `--drop-columns`.
+The comparer's "rename data pending" note for `workbook_activities.context`
+(it guesses the orphan `page_key`/`page_label` data was renamed) is report-only
+and must not be acted on. `LessonActivity` declares `onDelete: 'NO ACTION'` on
+`enrollmentId`/`lessonId`: as its new natural key they would otherwise default to
+CASCADE and differ from the deployed foreign keys, which SQLite can only change
+by a table rebuild (`lesson-work-schema-contract.test.ts`). The opt-in
+`course-work-real-data.optional.test.ts` (`HEARTH_LEGACY_DB=<copy>`) runs the
+schema step, the data step and new hand-ins on a copy of a real database.
 
 1. Group workbooks by (tenant, workbook key). The canonical course is the
    earliest (created_at, id) learner's `physical-workbook` scaffold course; it

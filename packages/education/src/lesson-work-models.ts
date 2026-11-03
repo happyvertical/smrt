@@ -34,8 +34,13 @@ export class LessonActivity extends SmrtObject {
   @foreignKey('WorkbookPhotoIntake', { nullable: true }) photoIntakeId:
     | string
     | null = null;
-  @foreignKey('Enrollment', { required: true }) enrollmentId = '';
-  @foreignKey('Lesson', { required: true }) lessonId = '';
+  // Explicit NO ACTION: these are now the natural key, which would otherwise
+  // default to CASCADE and differ from the deployed foreign keys. Learning
+  // history is never removed by deleting its enrollment or lesson.
+  @foreignKey('Enrollment', { required: true, onDelete: 'NO ACTION' })
+  enrollmentId = '';
+  @foreignKey('Lesson', { required: true, onDelete: 'NO ACTION' })
+  lessonId = '';
   constructor(options: Record<string, unknown> = {}) {
     super(options);
     optionsFor(this, options);
