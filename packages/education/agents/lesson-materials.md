@@ -20,20 +20,37 @@ actor/owner/asset capability.
 `CourseAsset` holds course-level material (supply list, posters) with the same
 roles, audience and private-asset rule, plus an optional title.
 
+## Rendition and thumbnail (SMRT #4632)
+
+`LessonAsset` and `CourseAsset` carry `rendition` (`''` a file as supplied,
+`original` an editable Word/PowerPoint file, `rendered` the PDF rendered from
+one), `renditionOfAssetId` (a rendering's original) and `thumbnailAssetId` (an
+optional first-page image, null when no converter drew one). The model refuses
+an `original` with a learner audience: the learner gets the rendering, never the
+editable file. A new thumbnail must be an asset of the same family, and private
+under the host's capability (same owner as the material) whenever the material
+must be private.
+
 ## Learner never sees guardian material
 
 `listLessonMaterials({enrollmentId, lessonId})` and `listCourseMaterials({enrollmentId})`
 return `LessonMaterialView`s (`id`, `kind` file or external-video, `scope`, role,
-audience, title, order, `assetId` or provider/videoId/`embedUrl`). The learner
+audience, title, order, `assetId` or provider/videoId/`embedUrl`, and for files
+`mimeType` from the stored asset, `rendition`, `pairedMaterialId` (the other half
+of an original/rendered pair, only when this actor sees both) and
+`thumbnailAssetId`). Hosts read these instead of guessing by file extension. The learner
 themself sees only learner-audience rows; an authorized guardian sees all. The
 catalog projection without answer keys (every learner-facing catalog read) applies
 the same rule. `signLessonMaterial`/`signCourseMaterial` sign only a file in the
 actor's own list (claim scope `lesson:<id>` / `course:<id>`); a guessed id of
-guardian material is denied. `signLessonPrintable` applies the same audience
-rule to the learner. Storage URIs never appear.
+guardian material is denied; `thumbnail: true` signs the thumbnail of a visible
+material instead. `signLessonPrintable` applies the same audience rule to the learner. Storage URIs never appear.
 
 `setMaterialAudience({enrollmentId, scope, kind, materialId, audience})` lets a
-guardian with plan authority change a family-owned row within the role's bounds.
+guardian with plan authority change a family-owned row within the role's bounds
+(an `original` stays guardian). Bundle courses (`sourceKey` `course-bundle`) are
+family-owned, so this is the after-attach path; before attach use
+`CourseBundleImportService.chooseMaterialAudience`.
 Authored courses change audience through course authoring (`CourseMaterialInput.audience`,
 carried to the released join); shared or other families' rows are denied.
 

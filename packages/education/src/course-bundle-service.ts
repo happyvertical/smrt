@@ -1,6 +1,12 @@
 import { withPrivateAssetAccess } from '@happyvertical/smrt-assets';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { LessonAssetCollection } from './collections.js';
+import type { CourseLicenseKind } from './catalog.js';
+import {
+  CourseCollection,
+  CourseSectionCollection,
+  LessonAssetCollection,
+  LessonCollection,
+} from './collections.js';
 import {
   type CourseAuthoringActor,
   type CourseAuthoringAuthorizer,
@@ -20,6 +26,8 @@ import {
   type OfficeOutcome,
   pdfIsEncrypted,
   planClassifiedBundle,
+  type RenderedThumbnail,
+  sniffImageMediaType,
   unpackBundle,
 } from './course-bundle.js';
 import {
@@ -34,7 +42,11 @@ import {
   type CourseBundleStage,
   resolveCourseBundleLimits,
 } from './course-bundle-contracts.js';
+import { MANIFEST_KEY } from './course-bundle-manifest-util.js';
+import { COURSE_BUNDLE_MATERIAL_ROLES } from './course-bundle-manifest-v2.js';
 import {
+  CourseBundleAttachmentCollection,
+  CourseBundleAudienceChoiceCollection,
   CourseBundleImportCollection,
   CourseBundleMemberCollection,
   CourseBundleRenderingCollection,
@@ -61,6 +73,8 @@ import {
   CourseAssetCollection,
   LessonExternalVideoCollection,
   type MaterialAudience,
+  type MaterialRendition,
+  materialAudience,
 } from './lesson-assets.js';
 import { LessonPageCollection } from './lesson-pages.js';
 
@@ -102,6 +116,24 @@ export interface CourseBundleImportView {
   refusedCount: number;
   totalBytes: number;
   members: CourseBundleMemberView[];
+  /** Audience choices made in review before attach (`chooseMaterialAudience`). */
+  audienceChoices: CourseBundleAudienceChoiceView[];
+  /** The family course this import was attached to, or null before attach. */
+  attachment: {
+    courseId: string;
+    unitKey: string;
+    partIndex: number;
+    partCount: number;
+  } | null;
+}
+/** A review choice: who one material of an import is for once it is attached. */
+export interface CourseBundleAudienceChoiceView {
+  /** `file:<member path>` or `video:<lesson key>:<video id>`. */
+  target: string;
+  path: string | null;
+  lessonKey: string | null;
+  videoId: string | null;
+  audience: MaterialAudience;
 }
 /** An accepted member handed to the host, in memory only, for ingestion. */
 export interface AcceptedCourseBundleMember {
@@ -128,6 +160,12 @@ export interface AcceptedCourseBundleMember {
     sha256: string;
     mediaType: 'application/pdf';
     converterId: string;
+    /**
+     * First-page image when the converter drew one (validated PNG/JPEG/WebP,
+     * within `maxThumbnailBytes`); null otherwise. Store it as an asset and pass
+     * it as `assets[path].thumbnail`.
+     */
+    thumbnail: RenderedThumbnail | null;
   } | null;
   /**
    * Word/PowerPoint only: text read by the injected `OfficeTextReader` (slide text
@@ -214,9 +252,64 @@ export interface ApplyBundleMaterialsRequest extends CourseAuthoringActor {
    * join both; every other Office member joins only its rendered PDF, so a
    * learner is never handed an editable original.
    */
-  assets: Record<string, { original?: string; rendered?: string }>;
+  assets: Record<string, BundleMemberAssets>;
   limits?: Partial<CourseBundleLimits>;
   onProgress?: CourseBundleProgressListener;
+}
+/** The assets a host stored for one accepted member. */
+export interface BundleMemberAssets {
+  /** The member's own bytes (for Word/PowerPoint: the editable original). */
+  original?: string;
+  /** Word/PowerPoint: the rendered PDF. */
+  rendered?: string;
+  /**
+   * Optional first-page image (for example `rendered.thumbnail` from the
+   * import). Recorded on the rendered join (Office) or the file's own join.
+   */
+  thumbnail?: string;
+}
+export interface AttachBundleCourseRequest extends CourseAuthoringActor {
+  importId: string;
+  /** The same bundle again: bytes are never retained by this service. */
+  bundle: CourseBundleInput;
+  assets: Record<string, BundleMemberAssets>;
+  /**
+   * The course an earlier part created, when the host wants to assert it. A
+   * course of another unit is `unit-mismatch`; nothing is written.
+   */
+  courseId?: string;
+  /** Title of a course this call creates (default: manifest `course.title`, subject, first section). */
+  title?: string;
+  /** Licence of a course this call creates; default `personal-use-copy`. */
+  licenseKind?: CourseLicenseKind;
+  limits?: Partial<CourseBundleLimits>;
+  onProgress?: CourseBundleProgressListener;
+}
+export interface AttachBundleCourseResult extends ApplyBundleMaterialsResult {
+  courseId: string;
+  /** True when this call created the course (the first part attached). */
+  created: boolean;
+  /** True when this import was already attached (a replay). */
+  replayed: boolean;
+  unitKey: string;
+  /** Section key and lesson key to the rows of the course. */
+  sections: Record<string, string>;
+  lessons: Record<string, string>;
+  part: {
+    index: number;
+    count: number;
+    /** Part numbers attached so far, ascending. */
+    attached: number[];
+    complete: boolean;
+  };
+}
+export interface ChooseMaterialAudienceRequest extends CourseAuthoringActor {
+  importId: string;
+  /** A file material: the member path as declared in the manifest. */
+  path?: string;
+  /** An external video: its lesson key and video id. */
+  video?: { lessonKey: string; videoId: string };
+  audience: MaterialAudience;
 }
 export interface ApplyBundleMaterialsResult {
   courseAssets: number;
@@ -227,6 +320,8 @@ export interface ApplyBundleMaterialsResult {
   unchanged: number;
   /** Original-deck joins whose audience was corrected to guardian-only. */
   repaired: number;
+  /** Existing joins whose rendition marker or thumbnail was filled in. */
+  updated: number;
   skipped: BundleMaterialsPlan['skipped'];
 }
 /** The materials could not be applied; nothing was written. */
@@ -237,7 +332,17 @@ export class CourseBundleMaterialsError extends CourseAuthoringError {
       | 'course-not-found'
       | 'lesson-missing'
       | 'asset-missing'
-      | 'conflict',
+      /** A thumbnail stored under another owner than its material. */
+      | 'asset-owner'
+      | 'conflict'
+      /** The part names another unit, or another part count, than the course it would join. */
+      | 'unit-mismatch'
+      /** Another import is already attached as this part of the unit. */
+      | 'part-conflict'
+      /** An audience choice outside the material's role bounds, or for no material. */
+      | 'invalid-audience'
+      /** The import is attached: change audience with `setMaterialAudience`. */
+      | 'already-attached',
     readonly entry?: string,
   ) {
     super(
@@ -267,6 +372,68 @@ function isUniqueViolation(error: unknown): boolean {
     /unique|duplicate key|constraint failed/i.test(String(e?.message ?? ''))
   );
 }
+/** `Course.sourceKey` of a family course built from course bundles. */
+export const BUNDLE_COURSE_SOURCE = 'course-bundle';
+
+/** Deterministic UUID of a bundle course row: parts of one unit find the same rows. */
+function bundleUuid(...parts: string[]): string {
+  const hex = sha256Hex(
+    new TextEncoder().encode(
+      JSON.stringify(['smrt.education.course-bundle.v1', ...parts]),
+    ),
+  );
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-5${hex.slice(13, 16)}-a${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+}
+
+function choiceView(
+  target: string,
+  audience: MaterialAudience,
+): CourseBundleAudienceChoiceView {
+  if (target.startsWith('file:'))
+    return {
+      target,
+      path: target.slice('file:'.length),
+      lessonKey: null,
+      videoId: null,
+      audience,
+    };
+  // A lesson key may itself contain ':'; a video id is always 11 characters.
+  return {
+    target,
+    path: null,
+    lessonKey: target.slice('video:'.length, -12),
+    videoId: target.slice(-11),
+    audience,
+  };
+}
+
+/** Apply review choices to the planned audiences (within each role's bounds). */
+function withChoices(
+  plan: BundleMaterialsPlan,
+  choices: ReadonlyMap<string, MaterialAudience>,
+): BundleMaterialsPlan {
+  const pick = (role: string, declared: MaterialAudience, target: string) => {
+    const chosen = choices.get(target);
+    if (!chosen) return declared;
+    try {
+      return materialAudience(role, chosen);
+    } catch {
+      return declared;
+    }
+  };
+  return {
+    ...plan,
+    materials: plan.materials.map((m) => ({
+      ...m,
+      audience: pick(m.role, m.audience, `file:${m.path}`),
+    })),
+    videos: plan.videos.map((v) => ({
+      ...v,
+      audience: pick('video', v.audience, `video:${v.lessonKey}:${v.videoId}`),
+    })),
+  };
+}
+
 const orNull = (value: unknown) =>
   value === null || value === undefined || value === '' ? null : String(value);
 
@@ -629,9 +796,21 @@ export class CourseBundleImportService extends CourseAuthoringService {
         officeText = null;
       }
     }
+    // A thumbnail is optional: anything unusable reads as none, never a failure.
+    let thumbnail: RenderedThumbnail | null = null;
+    const image = result?.thumbnail;
+    if (
+      image instanceof Uint8Array &&
+      image.byteLength > 0 &&
+      image.byteLength <= limits.maxThumbnailBytes
+    ) {
+      const mediaType = sniffImageMediaType(image);
+      if (mediaType)
+        thumbnail = { bytes: image, sha256: sha256Hex(image), mediaType };
+    }
     return {
       ok: true,
-      rendered: { bytes: pdf, sha256: sha256Hex(pdf) },
+      rendered: { bytes: pdf, sha256: sha256Hex(pdf), thumbnail },
       officeText,
     };
   }
@@ -763,9 +942,11 @@ export class CourseBundleImportService extends CourseAuthoringService {
           bytes: m.bytes,
           rendered: m.rendered
             ? {
-                ...m.rendered,
+                bytes: m.rendered.bytes,
+                sha256: m.rendered.sha256,
                 mediaType: 'application/pdf',
                 converterId: this.serviceOptions.converter?.id ?? '',
+                thumbnail: m.rendered.thumbnail ?? null,
               }
             : null,
           officeText: m.officeText,
@@ -946,9 +1127,11 @@ export class CourseBundleImportService extends CourseAuthoringService {
           bytes: m.bytes,
           rendered: outcome?.rendered
             ? {
-                ...outcome.rendered,
+                bytes: outcome.rendered.bytes,
+                sha256: outcome.rendered.sha256,
                 mediaType: 'application/pdf',
                 converterId: this.serviceOptions.converter?.id ?? '',
+                thumbnail: outcome.rendered.thumbnail ?? null,
               }
             : null,
           officeText: outcome?.officeText ?? null,
@@ -1000,16 +1183,6 @@ export class CourseBundleImportService extends CourseAuthoringService {
     });
     if (plan.bundleIdentity !== String(imported.bundle_identity))
       throw new CourseBundleNotFoundError();
-    const { materials } = plan;
-    const result: ApplyBundleMaterialsResult = {
-      courseAssets: 0,
-      lessonAssets: 0,
-      lessonPages: 0,
-      lessonVideos: 0,
-      unchanged: 0,
-      repaired: 0,
-      skipped: materials.skipped,
-    };
     return this.run(async (tx) => {
       await authorize(tx);
       const course = (await tx.get('courses', {
@@ -1019,6 +1192,11 @@ export class CourseBundleImportService extends CourseAuthoringService {
       if (!course) throw new CourseBundleMaterialsError('course-not-found');
       if (['authored', 'authored-release'].includes(String(course.source_key)))
         throw new CourseBundleMaterialsError('authored-course');
+      const choices = await this.choiceMap(
+        tx,
+        request.tenantId,
+        String(imported.id),
+      );
       const lessonId = async (key: string) => {
         const id = request.lessons[key];
         const lesson = id
@@ -1038,190 +1216,597 @@ export class CourseBundleImportService extends CourseAuthoringService {
           throw new CourseBundleMaterialsError('lesson-missing', key);
         return String(id);
       };
-      const withAccess = async <T>(assetId: string, work: () => Promise<T>) => {
+      return this.writeMaterials(
+        tx,
+        request,
+        request.courseId,
+        withChoices(plan.materials, choices),
+        lessonId,
+      );
+    });
+  }
+
+  /**
+   * Write material rows for a course: course members, lesson materials (an
+   * Office member as its rendering, slides also as the guardian-only original),
+   * pages and videos. Idempotent; an existing row keeps its audience (the
+   * family's own later choice) except an original, which is always repaired to
+   * guardian. Other differing details are a conflict.
+   */
+  private async writeMaterials(
+    tx: DatabaseInterface,
+    request: CourseAuthoringActor & {
+      assets: Record<string, BundleMemberAssets>;
+    },
+    courseId: string,
+    materials: BundleMaterialsPlan,
+    lessonId: (key: string) => Promise<string>,
+  ): Promise<ApplyBundleMaterialsResult> {
+    const result: ApplyBundleMaterialsResult = {
+      courseAssets: 0,
+      lessonAssets: 0,
+      lessonPages: 0,
+      lessonVideos: 0,
+      unchanged: 0,
+      repaired: 0,
+      updated: 0,
+      skipped: materials.skipped,
+    };
+    /** Run `work` under the exact capability for the private assets it saves. */
+    const withAccess = async <T>(
+      assetIds: string[],
+      work: () => Promise<T>,
+    ): Promise<T> => {
+      let owner: string | null = null;
+      const owned: string[] = [];
+      for (const assetId of assetIds) {
         const asset = (await tx.get('assets', {
           id: assetId,
           tenant_id: request.tenantId,
         })) as Row | null;
         if (!asset)
           throw new CourseBundleMaterialsError('asset-missing', assetId);
-        return asset.owner_profile_id
-          ? withPrivateAssetAccess(
-              {
-                tenantId: request.tenantId,
-                actorUserId: request.actorUserId,
-                ownerProfileId: String(asset.owner_profile_id),
-                assetIds: [assetId],
-              },
-              work,
-            )
-          : work();
-      };
-      const lessonAssets = await LessonAssetCollection.create({ db: tx });
-      const courseAssets = await CourseAssetCollection.create({ db: tx });
-      const pages = await LessonPageCollection.create({ db: tx });
-      const videos = await LessonExternalVideoCollection.create({ db: tx });
+        if (!asset.owner_profile_id) continue;
+        if (owner && owner !== String(asset.owner_profile_id))
+          throw new CourseBundleMaterialsError('asset-owner', assetId);
+        owner = String(asset.owner_profile_id);
+        owned.push(assetId);
+      }
+      return owner
+        ? withPrivateAssetAccess(
+            {
+              tenantId: request.tenantId,
+              actorUserId: request.actorUserId,
+              ownerProfileId: owner,
+              assetIds: owned,
+            },
+            work,
+          )
+        : work();
+    };
+    const lessonAssets = await LessonAssetCollection.create({ db: tx });
+    const courseAssets = await CourseAssetCollection.create({ db: tx });
+    const pages = await LessonPageCollection.create({ db: tx });
+    const videos = await LessonExternalVideoCollection.create({ db: tx });
 
-      for (const material of materials.materials) {
-        const supplied = request.assets[material.assetPath];
-        const office = isOfficeDocumentKind(material.kind);
-        const joins: Array<{
-          assetId: string;
-          audience: MaterialAudience;
-          original: boolean;
-        }> = [];
-        if (office) {
-          if (!supplied?.rendered)
+    for (const material of materials.materials) {
+      const supplied = request.assets[material.assetPath];
+      const office = isOfficeDocumentKind(material.kind);
+      const joins: Array<{
+        assetId: string;
+        audience: MaterialAudience;
+        rendition: MaterialRendition | '';
+        renditionOf: string | null;
+        thumbnail: string | null;
+      }> = [];
+      const thumbnail = supplied?.thumbnail || null;
+      if (office) {
+        if (!supplied?.rendered)
+          throw new CourseBundleMaterialsError('asset-missing', material.path);
+        if (material.kind === 'pptx' && material.role === 'slides') {
+          if (!supplied.original)
             throw new CourseBundleMaterialsError(
               'asset-missing',
               material.path,
             );
-          if (material.kind === 'pptx' && material.role === 'slides') {
-            if (!supplied.original)
-              throw new CourseBundleMaterialsError(
-                'asset-missing',
-                material.path,
-              );
-            // The editable original is for the adult whatever the deck's declared audience.
-            joins.push({
-              assetId: supplied.original,
-              audience: 'guardian',
-              original: true,
-            });
-          }
-          joins.push({
-            assetId: supplied.rendered,
-            audience: material.audience,
-            original: false,
-          });
-        } else if (supplied?.original)
+          // The editable original is for the adult whatever the deck's declared audience.
           joins.push({
             assetId: supplied.original,
-            audience: material.audience,
-            original: false,
+            audience: 'guardian',
+            rendition: 'original',
+            renditionOf: null,
+            thumbnail: null,
           });
-        else if (material.kind === 'text') continue;
-        else
-          throw new CourseBundleMaterialsError('asset-missing', material.path);
-        for (const { assetId, audience, original } of joins) {
-          const where =
-            material.scope === 'course'
-              ? {
-                  tenantId: request.tenantId,
-                  courseId: request.courseId,
-                  assetId,
-                  relationship: material.role,
-                }
-              : {
-                  tenantId: request.tenantId,
-                  lessonId: await lessonId(material.lessonKey as string),
-                  assetId,
-                  relationship: material.role,
-                };
-          const collection =
-            material.scope === 'course' ? courseAssets : lessonAssets;
-          const existing = await (collection as typeof courseAssets).get(
-            where,
-            { cache: false },
-          );
-          if (existing) {
-            // Metadata must match; only a wrong audience on an original is repairable.
-            if (
-              existing.sortOrder !== material.sortOrder ||
-              (material.scope === 'course' &&
-                (existing as { title?: string }).title !== material.title) ||
-              (existing.audience !== audience && !original)
-            )
-              throw new CourseBundleMaterialsError('conflict', material.path);
-            if (existing.audience !== audience) {
-              // Repair a join written before originals were always guardian-only.
-              existing.audience = audience;
-              await withAccess(assetId, () => existing.save());
-              result.repaired++;
-            } else result.unchanged++;
-            continue;
+        }
+        joins.push({
+          assetId: supplied.rendered,
+          audience: material.audience,
+          rendition: 'rendered',
+          renditionOf: supplied.original || null,
+          thumbnail,
+        });
+      } else if (supplied?.original)
+        joins.push({
+          assetId: supplied.original,
+          audience: material.audience,
+          rendition: '',
+          renditionOf: null,
+          thumbnail,
+        });
+      else if (material.kind === 'text') continue;
+      else throw new CourseBundleMaterialsError('asset-missing', material.path);
+      for (const join of joins) {
+        const { assetId, audience, rendition } = join;
+        const where =
+          material.scope === 'course'
+            ? {
+                tenantId: request.tenantId,
+                courseId,
+                assetId,
+                relationship: material.role,
+              }
+            : {
+                tenantId: request.tenantId,
+                lessonId: await lessonId(material.lessonKey as string),
+                assetId,
+                relationship: material.role,
+              };
+        const collection =
+          material.scope === 'course' ? courseAssets : lessonAssets;
+        const access = [assetId, ...(join.thumbnail ? [join.thumbnail] : [])];
+        const existing = await (collection as typeof courseAssets).get(where, {
+          cache: false,
+        });
+        if (existing) {
+          if (
+            existing.sortOrder !== material.sortOrder ||
+            (material.scope === 'course' &&
+              (existing as { title?: string }).title !== material.title) ||
+            (existing.rendition && existing.rendition !== rendition) ||
+            (existing.renditionOfAssetId &&
+              join.renditionOf &&
+              existing.renditionOfAssetId !== join.renditionOf)
+          )
+            throw new CourseBundleMaterialsError('conflict', material.path);
+          // Audience after attach is the family's (`setMaterialAudience`);
+          // only an original with a wider audience is repaired.
+          const repair =
+            rendition === 'original' && existing.audience !== 'guardian';
+          const fill =
+            existing.rendition !== rendition ||
+            (Boolean(join.renditionOf) && !existing.renditionOfAssetId) ||
+            (Boolean(join.thumbnail) &&
+              existing.thumbnailAssetId !== join.thumbnail);
+          if (repair) existing.audience = 'guardian';
+          if (fill) {
+            existing.rendition = rendition;
+            existing.renditionOfAssetId =
+              existing.renditionOfAssetId || join.renditionOf;
+            if (join.thumbnail) existing.thumbnailAssetId = join.thumbnail;
           }
-          await withAccess(assetId, () =>
-            (collection as typeof courseAssets).create({
-              _insertOnly: true,
-              ...where,
-              audience,
-              sortOrder: material.sortOrder,
-              ...(material.scope === 'course' ? { title: material.title } : {}),
-            }),
+          if (repair || fill) await withAccess(access, () => existing.save());
+          if (repair) result.repaired++;
+          else if (fill) result.updated++;
+          else result.unchanged++;
+          continue;
+        }
+        await withAccess(access, () =>
+          (collection as typeof courseAssets).create({
+            _insertOnly: true,
+            ...where,
+            audience,
+            sortOrder: material.sortOrder,
+            rendition,
+            renditionOfAssetId: join.renditionOf,
+            thumbnailAssetId: join.thumbnail,
+            ...(material.scope === 'course' ? { title: material.title } : {}),
+          }),
+        );
+        if (material.scope === 'course') result.courseAssets++;
+        else result.lessonAssets++;
+      }
+    }
+    for (const page of materials.pages) {
+      const supplied = request.assets[page.assetPath];
+      const sourceAssetId = supplied?.rendered ?? supplied?.original;
+      if (!sourceAssetId)
+        throw new CourseBundleMaterialsError('asset-missing', page.path);
+      const where = {
+        tenantId: request.tenantId,
+        lessonId: await lessonId(page.lessonKey),
+        pageKey: page.pageKey,
+      };
+      const existing = await pages.get(where, { cache: false });
+      if (existing) {
+        if (
+          existing.label !== page.label ||
+          existing.sortOrder !== page.sortOrder ||
+          existing.sourceAssetId !== sourceAssetId ||
+          existing.sourcePageNumber !== page.sourcePageNumber
+        )
+          throw new CourseBundleMaterialsError(
+            'conflict',
+            `${page.lessonKey}:${page.pageKey}`,
           );
-          if (material.scope === 'course') result.courseAssets++;
-          else result.lessonAssets++;
-        }
+        result.unchanged++;
+        continue;
       }
-      for (const page of materials.pages) {
-        const supplied = request.assets[page.assetPath];
-        const sourceAssetId = supplied?.rendered ?? supplied?.original;
-        if (!sourceAssetId)
-          throw new CourseBundleMaterialsError('asset-missing', page.path);
-        const where = {
+      await pages.create({
+        _insertOnly: true,
+        ...where,
+        courseId,
+        label: page.label,
+        sortOrder: page.sortOrder,
+        sourceAssetId,
+        sourcePageNumber: page.sourcePageNumber,
+      });
+      result.lessonPages++;
+    }
+    for (const video of materials.videos) {
+      const where = {
+        tenantId: request.tenantId,
+        lessonId: await lessonId(video.lessonKey),
+        provider: video.provider,
+        videoId: video.videoId,
+      };
+      const existing = await videos.get(where, { cache: false });
+      if (existing) {
+        // Step order and title come from the bundle; audience is the family's after attach.
+        if (
+          existing.title !== video.title ||
+          existing.stepOrder !== video.stepOrder
+        )
+          throw new CourseBundleMaterialsError(
+            'conflict',
+            `${video.lessonKey}:${video.videoId}`,
+          );
+        result.unchanged++;
+        continue;
+      }
+      await videos.create({
+        _insertOnly: true,
+        ...where,
+        title: video.title,
+        stepOrder: video.stepOrder,
+        audience: video.audience,
+      });
+      result.lessonVideos++;
+    }
+    return result;
+  }
+
+  /**
+   * Record who one material of an import is for, in review before it is
+   * attached. Within the role's bounds (keys and assessment guidance stay
+   * guardian). A later choice replaces the earlier one. Once the import is
+   * attached this is `already-attached`: change the material itself with
+   * `SubmissionService.setMaterialAudience`. Needs `education.course.author`.
+   */
+  async chooseMaterialAudience(
+    request: ChooseMaterialAudienceRequest,
+  ): Promise<CourseBundleAudienceChoiceView> {
+    return this.run(async (tx) => {
+      await this.authorize(
+        tx,
+        request,
+        'education.course.author',
+        'choose-course-bundle-audience',
+      );
+      const imported = await this.record(tx, request);
+      const importId = String(imported.id);
+      if (
+        (await tx.tableExists('course_bundle_attachments')) &&
+        (await tx.get('course_bundle_attachments', {
+          tenant_id: request.tenantId,
+          import_id: importId,
+        }))
+      )
+        throw new CourseBundleMaterialsError('already-attached');
+      const invalid = (entry?: string): never => {
+        throw new CourseBundleMaterialsError('invalid-audience', entry);
+      };
+      const audienceFor = (role: string) => {
+        try {
+          return materialAudience(role, request.audience) === request.audience;
+        } catch {
+          return false;
+        }
+      };
+      let target: string;
+      if (request.path !== undefined && request.video === undefined) {
+        const member = (await tx.get('course_bundle_members', {
+          tenant_id: request.tenantId,
+          import_id: importId,
+          path: request.path,
+        })) as Row | null;
+        const role = String(member?.role ?? '');
+        if (
+          Number(imported.manifest_version) < 2 ||
+          !(COURSE_BUNDLE_MATERIAL_ROLES as readonly string[]).includes(role)
+        )
+          invalid(request.path);
+        if (!audienceFor(role)) invalid(request.path);
+        target = `file:${request.path}`;
+      } else if (request.video && request.path === undefined) {
+        const { lessonKey, videoId } = request.video;
+        if (
+          typeof lessonKey !== 'string' ||
+          !MANIFEST_KEY.test(lessonKey) ||
+          typeof videoId !== 'string' ||
+          !/^[A-Za-z0-9_-]{11}$/.test(videoId) ||
+          Number(imported.manifest_version) < 2
+        )
+          invalid();
+        if (!audienceFor('video')) invalid(`${lessonKey}:${videoId}`);
+        target = `video:${lessonKey}:${videoId}`;
+      } else return invalid();
+      const choices = await CourseBundleAudienceChoiceCollection.create({
+        db: tx,
+      });
+      const existing = await choices.get(
+        { tenantId: request.tenantId, importId, target },
+        { cache: false },
+      );
+      if (existing) {
+        existing.audience = request.audience;
+        existing.chosenByUserId = request.actorUserId;
+        existing.chosenAt = new Date();
+        await existing.save();
+      } else
+        await choices.create({
           tenantId: request.tenantId,
-          lessonId: await lessonId(page.lessonKey),
-          pageKey: page.pageKey,
-        };
-        const existing = await pages.get(where, { cache: false });
-        if (existing) {
-          if (
-            existing.label !== page.label ||
-            existing.sortOrder !== page.sortOrder ||
-            existing.sourceAssetId !== sourceAssetId ||
-            existing.sourcePageNumber !== page.sourcePageNumber
-          )
-            throw new CourseBundleMaterialsError(
-              'conflict',
-              `${page.lessonKey}:${page.pageKey}`,
-            );
-          result.unchanged++;
-          continue;
-        }
-        await pages.create({
-          _insertOnly: true,
-          ...where,
-          courseId: request.courseId,
-          label: page.label,
-          sortOrder: page.sortOrder,
-          sourceAssetId,
-          sourcePageNumber: page.sourcePageNumber,
+          importId,
+          target,
+          audience: request.audience,
+          chosenByUserId: request.actorUserId,
+          chosenAt: new Date(),
         });
-        result.lessonPages++;
-      }
-      for (const video of materials.videos) {
-        const where = {
-          tenantId: request.tenantId,
-          lessonId: await lessonId(video.lessonKey),
-          provider: video.provider,
-          videoId: video.videoId,
-        };
-        const existing = await videos.get(where, { cache: false });
-        if (existing) {
-          if (
-            existing.title !== video.title ||
-            existing.stepOrder !== video.stepOrder ||
-            existing.audience !== video.audience
-          )
-            throw new CourseBundleMaterialsError(
-              'conflict',
-              `${video.lessonKey}:${video.videoId}`,
-            );
-          result.unchanged++;
-          continue;
-        }
-        await videos.create({
-          _insertOnly: true,
-          ...where,
-          title: video.title,
-          stepOrder: video.stepOrder,
-          audience: video.audience,
-        });
-        result.lessonVideos++;
-      }
-      return result;
+      return choiceView(target, request.audience);
     });
+  }
+
+  /**
+   * Turn an imported bundle (or one part of a unit split across bundles) into a
+   * family course: the course, its sections and lessons, and the bundle's
+   * materials, pages and videos with role, audience (review choices applied)
+   * and rendition. Every part of a unit (manifest `course.key`, `part`) lands in
+   * the same course: ids derive from (family, unit key), so parts attach in any
+   * order and a retry replays. A part of another unit, another part count, or a
+   * second import for the same part fails closed and writes nothing. Nothing is
+   * published: the course is a family draft. Needs `education.course.author`.
+   */
+  async attachCourse(
+    request: AttachBundleCourseRequest,
+  ): Promise<AttachBundleCourseResult> {
+    const authorize = (tx: DatabaseInterface) =>
+      this.authorize(
+        tx,
+        request,
+        'education.course.author',
+        'attach-course-bundle',
+      );
+    const imported = await this.run(async (tx) => {
+      await authorize(tx);
+      return this.record(tx, request);
+    });
+    const importId = String(imported.id);
+    const limits = this.limits(request);
+    const plan = await this.plan(request.bundle, limits, request.onProgress, {
+      tenantId: request.tenantId,
+      render: false,
+    });
+    if (plan.bundleIdentity !== String(imported.bundle_identity))
+      throw new CourseBundleNotFoundError();
+    const { structure } = plan;
+    const unit = structure.unit ?? {
+      key: `bundle:${plan.bundleIdentity}`,
+      title: '',
+      part: 1,
+      parts: 1,
+    };
+    const courseId = bundleUuid('course', request.tenantId, unit.key);
+    const write = () =>
+      this.run(async (tx): Promise<AttachBundleCourseResult> => {
+        await authorize(tx);
+        if (request.courseId && request.courseId !== courseId) {
+          const asserted = await tx.get('courses', {
+            id: request.courseId,
+            tenant_id: request.tenantId,
+          });
+          throw new CourseBundleMaterialsError(
+            asserted ? 'unit-mismatch' : 'course-not-found',
+          );
+        }
+        const attached = (await tx.list('course_bundle_attachments', {
+          tenant_id: request.tenantId,
+          course_id: courseId,
+        })) as Row[];
+        const mine = (await tx.get('course_bundle_attachments', {
+          tenant_id: request.tenantId,
+          import_id: importId,
+        })) as Row | null;
+        if (mine && String(mine.course_id) !== courseId)
+          throw new CourseBundleMaterialsError('unit-mismatch');
+        for (const row of attached) {
+          if (
+            String(row.unit_key) !== unit.key ||
+            Number(row.part_count) !== unit.parts
+          )
+            throw new CourseBundleMaterialsError('unit-mismatch');
+          if (
+            Number(row.part_index) === unit.part &&
+            String(row.import_id) !== importId
+          )
+            throw new CourseBundleMaterialsError(
+              'part-conflict',
+              String(unit.part),
+            );
+        }
+        let created = false;
+        const course = (await tx.get('courses', {
+          id: courseId,
+          tenant_id: request.tenantId,
+        })) as Row | null;
+        if (course) {
+          if (
+            String(course.source_key) !== BUNDLE_COURSE_SOURCE ||
+            String(course.source_ref) !== unit.key
+          )
+            throw new CourseBundleMaterialsError('unit-mismatch');
+        } else {
+          await (await CourseCollection.create({ db: tx })).create({
+            _insertOnly: true,
+            id: courseId,
+            tenantId: request.tenantId,
+            title: (
+              request.title?.trim() ||
+              unit.title ||
+              structure.subject ||
+              structure.sections[0]?.title ||
+              'Imported course'
+            ).slice(0, 300),
+            subject: structure.subject ?? '',
+            sourceKey: BUNDLE_COURSE_SOURCE,
+            sourceRef: unit.key,
+            licenseKind: request.licenseKind ?? 'personal-use-copy',
+            status: 'draft',
+          });
+          created = true;
+        }
+        const choices = await this.choiceMap(tx, request.tenantId, importId);
+        // Lesson text honours the review choices: only learner text is inlined.
+        const chosen = new Map(plan.placements);
+        for (const [path, placed] of chosen) {
+          const audience = choices.get(`file:${path}`);
+          if (audience && placed.audience)
+            chosen.set(path, { ...placed, audience });
+        }
+        const bodies = bundleProposalOutput(
+          { ...plan, placements: chosen },
+          limits,
+        ).lessons;
+        const sectionRows = await CourseSectionCollection.create({ db: tx });
+        const lessonRows = await LessonCollection.create({ db: tx });
+        const sections: Record<string, string> = {};
+        const lessons: Record<string, string> = {};
+        let flat = 0;
+        for (const [s, section] of structure.sections.entries()) {
+          const sectionId = bundleUuid('section', courseId, section.key);
+          const existingSection = (await tx.get('course_sections', {
+            id: sectionId,
+            tenant_id: request.tenantId,
+          })) as Row | null;
+          if (existingSection && String(existingSection.course_id) !== courseId)
+            throw new CourseBundleMaterialsError('unit-mismatch', section.key);
+          if (!existingSection)
+            await sectionRows.create({
+              _insertOnly: true,
+              id: sectionId,
+              tenantId: request.tenantId,
+              courseId,
+              title: section.title,
+              sortOrder: section.order ?? s,
+            });
+          sections[section.key] = sectionId;
+          for (const [l, lesson] of section.lessons.entries()) {
+            const body = bodies[flat++]?.body ?? '';
+            const id = bundleUuid('lesson', courseId, lesson.key);
+            const existingLesson = (await tx.get('lessons', {
+              id,
+              tenant_id: request.tenantId,
+            })) as Row | null;
+            if (
+              existingLesson &&
+              String(existingLesson.section_id) !== sectionId
+            )
+              throw new CourseBundleMaterialsError('conflict', lesson.key);
+            if (!existingLesson)
+              await lessonRows.create({
+                _insertOnly: true,
+                id,
+                tenantId: request.tenantId,
+                sectionId,
+                title: lesson.title,
+                body,
+                sortOrder: lesson.order ?? l,
+                externalRef: lesson.key,
+              });
+            lessons[lesson.key] = id;
+          }
+        }
+        const materials = await this.writeMaterials(
+          tx,
+          request,
+          courseId,
+          withChoices(plan.materials, choices),
+          async (key) => {
+            const id = lessons[key];
+            if (!id)
+              throw new CourseBundleMaterialsError('lesson-missing', key);
+            return id;
+          },
+        );
+        if (!mine)
+          await (
+            await CourseBundleAttachmentCollection.create({ db: tx })
+          ).create({
+            _insertOnly: true,
+            tenantId: request.tenantId,
+            importId,
+            courseId,
+            unitKey: unit.key,
+            partIndex: unit.part,
+            partCount: unit.parts,
+            attachedByUserId: request.actorUserId,
+            recordedAt: new Date(),
+          });
+        const parts = [
+          ...new Set([
+            ...attached.map((row) => Number(row.part_index)),
+            unit.part,
+          ]),
+        ].sort((a, b) => a - b);
+        return {
+          ...materials,
+          courseId,
+          created,
+          replayed: Boolean(mine),
+          unitKey: unit.key,
+          sections,
+          lessons,
+          part: {
+            index: unit.part,
+            count: unit.parts,
+            attached: parts,
+            complete: parts.length === unit.parts,
+          },
+        };
+      });
+    try {
+      return await write();
+    } catch (error) {
+      // Two parts attached at once both created the course: replay once.
+      if (!isUniqueViolation(error)) throw error;
+      return write();
+    }
+  }
+
+  /** Review choices of one import, by target. */
+  private async choiceMap(
+    tx: DatabaseInterface,
+    tenantId: string,
+    importId: string,
+  ): Promise<Map<string, MaterialAudience>> {
+    if (!(await tx.tableExists('course_bundle_audience_choices')))
+      return new Map();
+    return new Map(
+      (
+        (await tx.list('course_bundle_audience_choices', {
+          tenant_id: tenantId,
+          import_id: importId,
+        })) as Row[]
+      ).map((r) => [String(r.target), String(r.audience) as MaterialAudience]),
+    );
   }
 
   /** The recorded evidence of one import; needs `education.course.read-draft`. */
@@ -1338,6 +1923,19 @@ export class CourseBundleImportService extends CourseAuthoringService {
       ).map((r) => [String(r.sha256), r]),
     );
     const { members, moved } = overlayRenderings(rows, renderings);
+    const tenant = String(row.tenant_id);
+    const choices = (await tx.tableExists('course_bundle_audience_choices'))
+      ? ((await tx.list('course_bundle_audience_choices', {
+          tenant_id: tenant,
+          import_id: String(row.id),
+        })) as Row[])
+      : [];
+    const attachment = (await tx.tableExists('course_bundle_attachments'))
+      ? ((await tx.get('course_bundle_attachments', {
+          tenant_id: tenant,
+          import_id: String(row.id),
+        })) as Row | null)
+      : null;
     return {
       importId: String(row.id),
       bundleIdentity: String(row.bundle_identity),
@@ -1351,6 +1949,21 @@ export class CourseBundleImportService extends CourseAuthoringService {
       refusedCount: Number(row.refused_count),
       totalBytes: Number(row.total_bytes),
       members,
+      audienceChoices: choices
+        .map((c) =>
+          choiceView(String(c.target), String(c.audience) as MaterialAudience),
+        )
+        .sort((a, b) =>
+          a.target < b.target ? -1 : a.target > b.target ? 1 : 0,
+        ),
+      attachment: attachment
+        ? {
+            courseId: String(attachment.course_id),
+            unitKey: String(attachment.unit_key),
+            partIndex: Number(attachment.part_index),
+            partCount: Number(attachment.part_count),
+          }
+        : null,
     };
   }
 }

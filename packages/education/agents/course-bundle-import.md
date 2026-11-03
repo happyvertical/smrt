@@ -59,6 +59,7 @@ listener never affects the import.
 | `maxOfficeMembers` (Word/PowerPoint members rendered per bundle) | 50 |
 | `maxRenderedBytes` (PDF accepted back from the converter) | 50 MiB |
 | `conversionTimeoutMs` (one Office member) | 60 000 |
+| `maxThumbnailBytes` (first-page image accepted back from the converter) | 5 MiB |
 | archive nesting | 1: a zip inside a zip is never expanded |
 
 A lesson whose combined text members exceed `maxLessonBodyChars` refuses the
@@ -126,7 +127,11 @@ authorization and before the evidence is written:
 asset: "Open in PowerPoint" for decks) and `rendered` (`{ bytes, sha256, mediaType:
 'application/pdf', converterId }`, store as a private asset beside the original:
 the pages for "Present"/reading). The member row records `renderedSha256` and
-`renderedSizeBytes`; bytes are still not retained here.
+`renderedSizeBytes`; bytes are still not retained here. A converter may also
+return a first-page image (`DocumentConversionResult.thumbnail`); the importer
+keeps it only when it is a PNG/JPEG/WebP within `maxThumbnailBytes` and hands it
+over as `rendered.thumbnail` (`{ bytes, sha256, mediaType }`), else null. An
+unusable thumbnail never fails the member. Gotenberg draws none, so it is null.
 
 **Fail closed.** Any converter problem records that member `unsupported` with a
 reason and writes the rest of the bundle normally: `converter_unavailable` (none
@@ -230,6 +235,12 @@ the same way: an unknown key anywhere is `manifest_unknown_key` (with its path i
   `manifest_video`), `step` an integer 0-9999. They become `LessonExternalVideo`
   rows; nothing is downloaded.
 - **Course members** become `CourseAsset` rows, not tied to any lesson.
+- **Unit and parts** (SMRT #4632): `course.key` (a manifest key) names the unit
+  and `course.title` its course title; `part: { index, count }` (1-50) marks one
+  bundle of a unit split across several, and requires `course.key`
+  (`manifest_invalid` otherwise). Sections and lessons may carry a unit-wide
+  `order` (0-9999; default: the position in this manifest) so parts merge in
+  order.
 
 Guardian-audience text (teacher guides, guidance, keys) never enters a proposed
 lesson body; only learner-audience text members do. Under v2 `role` on the member
@@ -244,6 +255,48 @@ rendering. A duplicate member resolves to the earlier identical member's bytes
 deck (hand `bytes` to the host as a private asset: "Open in PowerPoint") and its
 rendered pages (`rendered`: "Present").
 
+### Attaching a family course (SMRT #4632)
+
+`attachCourse({ ...actor, importId, bundle, assets, courseId?, title?,
+licenseKind? })` (`education.course.author`, operation `attach-course-bundle`) is
+the published path from an import to a course: in one transaction it creates (or
+finds) the family course, its sections and lessons, and writes the materials as
+`applyMaterials` does. `assets` maps member path to `{ original, rendered?,
+thumbnail? }` asset ids the host stored from `receiveMember`.
+
+- **Course**: a non-authored family draft (`sourceKey` `course-bundle`,
+  `sourceRef` the unit key, `licenseKind` default `personal-use-copy`, title from
+  the request, `course.title`, subject or first section). Ids derive from (family,
+  unit key), sections and lessons from (course, key), so every part of a unit and
+  every retry find the same rows. Lessons keep the manifest key in `externalRef`,
+  `order` as `sortOrder` and, on creation, learner-audience text as `body` (after
+  review choices). Nothing is released or published.
+- **Unit key**: `course.key`, else `bundle:<bundleIdentity>` (a one-part unit).
+- **Parts**: one `CourseBundleAttachment` per import (unique per import and per
+  (course, part)). Attach parts in any order; the result says `part.attached` and
+  `part.complete`. Fails closed and writes nothing: a `courseId` of another unit or
+  another part count is `unit-mismatch`; a second import for an attached part is
+  `part-conflict`. A replay is `replayed: true` and writes nothing new.
+- **Zero renderings**: with no converter, Word/PowerPoint members are recorded
+  `converter_unavailable` and listed in `skipped`; no rendered or original join,
+  page or thumbnail is written for them, and nothing is faked. `retryRendering`
+  later, then attach again: the replay adds the newly accepted materials.
+- `readImport` reports `attachment` (course, unit key, part) once attached.
+
+### Audience before and after attach
+
+`chooseMaterialAudience({ ...actor, importId, path | video: { lessonKey, videoId },
+audience })` (`education.course.author`, operation `choose-course-bundle-audience`)
+records a review choice (`course_bundle_audience_choices`, one per import and
+target; a later choice replaces it) within the role's bounds: keys and assessment
+guidance never become learner material (`invalid-audience`), and a path must be a
+declared v2 material of the import. `readImport` lists `audienceChoices`.
+`attachCourse` and `applyMaterials` apply them (a slides choice applies to the
+rendered pages; the original deck stays guardian). After attach a choice is
+`already-attached`: change the row with `SubmissionService.setMaterialAudience`.
+On a re-attach an existing row keeps its audience (the family's choice), except an
+original, which is repaired to guardian.
+
 ### Applying materials
 
 `applyMaterials({ ...actor, importId, bundle, courseId, lessons, assets })`
@@ -251,18 +304,23 @@ rendered pages (`rendered`: "Present").
 rows in one transaction. The host has stored each accepted member as a private
 asset and created the course's lessons: `lessons` maps manifest lesson key to the
 `Lesson` id, `assets` maps member path to `{ original, rendered }` asset ids.
-Slides join both the original deck and the rendered PDF; the original join is always
+Slides join both the original deck (`rendition: 'original'`) and the rendered PDF
+(`rendition: 'rendered'`, `renditionOfAssetId` the original); the original join is always
 guardian-only whatever the deck's declared audience (the audience applies to the
-rendered PDF), and a join written earlier with a wider audience is repaired on
-re-apply (`repaired`); any other Word/PowerPoint
+rendered PDF; the model refuses a learner original), and a join written earlier with a
+wider audience is repaired on re-apply (`repaired`); any other Word/PowerPoint
 member joins only its rendered PDF, so a learner is never handed an editable
-original. `LessonAsset`/`CourseAsset` saves keep their private-asset rule (guardian-
+original. `assets[path].thumbnail` is recorded on the rendered join (or a plain
+file's own join); rows written before this release get their rendition and
+thumbnail filled in on re-apply (`updated`). `LessonAsset`/`CourseAsset` saves keep their private-asset rule (guardian-
 only roles and personal-use-copy courses need private assets). It targets
 family-owned courses; an authored course is `authored-course` because authored
 material changes through course authoring. Idempotent: an identical row is
-`unchanged`, a row with other details is `CourseBundleMaterialsError('conflict')`,
-a missing asset or lesson is `asset-missing`/`lesson-missing`; any error writes
-nothing.
+`unchanged`, a row with other details (order, title, rendition, a video's title or
+step) is `CourseBundleMaterialsError('conflict')`; audience is not compared (see
+above). A missing asset or lesson is `asset-missing`/`lesson-missing`, a thumbnail
+under another owner than its material `asset-owner`; any error writes nothing. A
+member named twice (material and page range) is listed once in `skipped`.
 
 ### Retrying a failed rendering
 
@@ -301,12 +359,18 @@ unique tenant/import/path; ordinal, sha256, size, media type, kind, status,
 reason, duplicate-of, role, audience, section and lesson key) and
 `CourseBundleRendering` (`course_bundle_renderings`: a deliberate retry's success). Hashes and placements only:
 bytes stay with the host's ingestion receipts. Rewrites and deletes throw.
-Normal manifest migrations create the tables and add `audience` (NULL on older rows).
+`CourseBundleAttachment` (`course_bundle_attachments`) and the mutable
+`CourseBundleAudienceChoice` (`course_bundle_audience_choices`) belong to the
+attach path. Normal manifest migrations create the tables and add `audience` (NULL
+on older rows) and, on `lesson_assets`/`course_assets`, `rendition`,
+`rendition_of_asset_id` and `thumbnail_asset_id` (additive; older joins read as a
+file as supplied with no thumbnail).
 
 ## Not in this release
 
 - Material rows for authored courses: a proposal still carries lesson text only;
-  authored course material goes through `CourseMaterialInput` and release.
+  authored course material goes through `CourseMaterialInput` and release. The
+  family path is `attachCourse`; `proposeStructure` stays the authored-draft path.
 - Ingestion's receipt contract is unchanged: there is no `application/zip` part
   type or `parentEvidenceId` in ingestion. The education side unpacks and the
   host receives members one by one, so archive-to-member lineage lives in

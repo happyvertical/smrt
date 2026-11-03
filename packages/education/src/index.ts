@@ -168,6 +168,8 @@ export {
   planBundleMaterials,
   planClassifiedBundle,
   planCourseBundle,
+  type RenderedThumbnail,
+  sniffImageMediaType,
   unpackBundle,
 } from './course-bundle.js';
 export * from './course-bundle-contracts.js';
@@ -177,6 +179,12 @@ export {
   type AcceptedCourseBundleMember,
   type ApplyBundleMaterialsRequest,
   type ApplyBundleMaterialsResult,
+  type AttachBundleCourseRequest,
+  type AttachBundleCourseResult,
+  BUNDLE_COURSE_SOURCE,
+  type BundleMemberAssets,
+  type ChooseMaterialAudienceRequest,
+  type CourseBundleAudienceChoiceView,
   type CourseBundleImportResult,
   CourseBundleImportService,
   type CourseBundleImportServiceOptions,

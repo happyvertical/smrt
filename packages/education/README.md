@@ -130,7 +130,10 @@ call happens in the package; see [tutor contract](agents/tutor-context.md).
 `CourseBundleImportService` imports a course zip (optional closed `manifest.json`)
 or file set under hard size, ratio, path and entry bounds, keeps unsupported and
 duplicate members as append-only evidence, hands accepted members to ingestion and
-proposes sections and lessons through `CourseGenerationReviewService`; see
+proposes sections and lessons through `CourseGenerationReviewService`.
+`attachCourse` turns an import (or each part of a unit split across bundles, in
+any order) into one family course with lessons, materials, pages and videos;
+`chooseMaterialAudience` records review choices before attach; see
 [bundle import](agents/course-bundle-import.md).
 `requestGeneration` also accepts a structured `brief` (subject, category, area,
 grade, objective, a `course` or one-`lesson` target and a per-request interest
@@ -185,7 +188,9 @@ schema migration. `resolveBookPageActivity` matches book key and page key to a
 
 Materials carry an audience defaulted by role; learners see only learner
 material (`listLessonMaterials`, `listCourseMaterials`, `signLessonMaterial`,
-`signCourseMaterial`, `setMaterialAudience`, `addLessonVideo`).
+`signCourseMaterial`, `setMaterialAudience`, `addLessonVideo`). A material view
+carries its MIME type, `rendition` (`original` / `rendered`), the paired
+material and an optional thumbnail (sign it with `thumbnail: true`).
 
 Renames: `WorkbookService` → `LessonWorkService`, `WorkbookActivity` →
 `LessonActivity`, `Workbook{Attempt,AssessmentRevision,FeedbackRelease,FeedbackDelivery,CompletionDecision}`

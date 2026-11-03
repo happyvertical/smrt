@@ -269,3 +269,136 @@ export class CourseBundleRendering extends SmrtObject {
 export class CourseBundleRenderingCollection extends SmrtCollection<CourseBundleRendering> {
   static readonly _itemClass = CourseBundleRendering;
 }
+
+/**
+ * Append-only record that one imported bundle (a part of a unit) was attached
+ * to a family course (SMRT #4632). Unique per import, and per (course, part):
+ * a unit's parts merge into one course, each part once.
+ */
+@TenantScoped({ mode: 'required' })
+@smrt({
+  tableName: 'course_bundle_attachments',
+  conflictColumns: ['tenant_id', 'import_id'],
+  indexes: [
+    {
+      name: 'course_bundle_attachments_import_unique',
+      columns: ['tenantId', 'importId'],
+      unique: true,
+    },
+    {
+      name: 'course_bundle_attachments_part_unique',
+      columns: ['tenantId', 'courseId', 'partIndex'],
+      unique: true,
+    },
+  ],
+  ...closed,
+})
+export class CourseBundleAttachment extends SmrtObject {
+  @tenantId() tenantId = '';
+  @foreignKey('CourseBundleImport', { required: true }) importId = '';
+  @foreignKey('Course', { required: true }) courseId = '';
+  /** The unit key (`course.key`), or `bundle:<identity>` for an unnamed bundle. */
+  unitKey = '';
+  partIndex = 1;
+  partCount = 1;
+  attachedByUserId = '';
+  recordedAt = new Date();
+  constructor(options: Record<string, unknown> = {}) {
+    super(options);
+    adopt(this, options);
+  }
+  override async delete(): Promise<void> {
+    noDelete();
+  }
+  override async save(options?: SmrtSaveOptions): Promise<this> {
+    await requireInsert(this);
+    requireText(this.unitKey, 'Attachment requires a unit key', 200);
+    requireText(this.attachedByUserId, 'Attachment requires an actor');
+    if (
+      !Number.isSafeInteger(this.partCount) ||
+      !Number.isSafeInteger(this.partIndex) ||
+      this.partCount < 1 ||
+      this.partIndex < 1 ||
+      this.partIndex > this.partCount
+    )
+      throw new Error('Invalid bundle part');
+    if (
+      !(await this.db.get('course_bundle_imports', {
+        id: this.importId,
+        tenant_id: this.tenantId,
+      })) ||
+      !(await this.db.get('courses', {
+        id: this.courseId,
+        tenant_id: this.tenantId,
+      }))
+    )
+      throw new Error('Course bundle parent ownership mismatch');
+    this.requireInsertOnSave();
+    return super.save(options);
+  }
+}
+export class CourseBundleAttachmentCollection extends SmrtCollection<CourseBundleAttachment> {
+  static readonly _itemClass = CourseBundleAttachment;
+}
+
+/**
+ * A guardian's audience choice for one material of an import, made in review
+ * before the bundle is attached (SMRT #4632). One row per (import, target);
+ * a later choice replaces the earlier one. `target` is `file:<member path>` or
+ * `video:<lesson key>:<video id>`. Attaching applies it; after attach the
+ * material's own audience is changed with `setMaterialAudience`.
+ */
+@TenantScoped({ mode: 'required' })
+@smrt({
+  tableName: 'course_bundle_audience_choices',
+  conflictColumns: ['tenant_id', 'import_id', 'target'],
+  indexes: [
+    {
+      name: 'course_bundle_audience_choices_unique',
+      columns: ['tenantId', 'importId', 'target'],
+      unique: true,
+    },
+  ],
+  ...closed,
+})
+export class CourseBundleAudienceChoice extends SmrtObject {
+  @tenantId() tenantId = '';
+  @foreignKey('CourseBundleImport', { required: true }) importId = '';
+  target = '';
+  audience = '';
+  chosenByUserId = '';
+  chosenAt = new Date();
+  constructor(options: Record<string, unknown> = {}) {
+    super(options);
+    adopt(this, options);
+  }
+  override async save(options?: SmrtSaveOptions): Promise<this> {
+    if (!this.tenantId?.trim())
+      throw new Error('Course bundle evidence requires a tenant');
+    requireText(this.target, 'Audience choice requires a target', 700);
+    requireText(this.chosenByUserId, 'Audience choice requires an actor');
+    if (!['learner', 'guardian'].includes(this.audience))
+      throw new Error('Invalid audience choice');
+    const prior = this.id
+      ? await this.db.get(this.tableName, { id: this.id })
+      : null;
+    if (
+      prior &&
+      (prior.tenant_id !== this.tenantId ||
+        prior.import_id !== this.importId ||
+        prior.target !== this.target)
+    )
+      throw new Error('An audience choice cannot move');
+    if (
+      !(await this.db.get('course_bundle_imports', {
+        id: this.importId,
+        tenant_id: this.tenantId,
+      }))
+    )
+      throw new Error('Course bundle parent ownership mismatch');
+    return super.save(options);
+  }
+}
+export class CourseBundleAudienceChoiceCollection extends SmrtCollection<CourseBundleAudienceChoice> {
+  static readonly _itemClass = CourseBundleAudienceChoice;
+}

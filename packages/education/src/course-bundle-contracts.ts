@@ -40,6 +40,8 @@ export interface CourseBundleLimits {
   maxRenderedBytes: number;
   /** Wall-clock budget for rendering one Office member, in milliseconds. */
   conversionTimeoutMs: number;
+  /** Largest first-page thumbnail accepted back from the converter, in bytes. */
+  maxThumbnailBytes: number;
 }
 
 export const COURSE_BUNDLE_LIMITS: Readonly<CourseBundleLimits> = Object.freeze(
@@ -59,6 +61,7 @@ export const COURSE_BUNDLE_LIMITS: Readonly<CourseBundleLimits> = Object.freeze(
     maxOfficeMembers: 50,
     maxRenderedBytes: 50 * MiB,
     conversionTimeoutMs: 60_000,
+    maxThumbnailBytes: 5 * MiB,
   },
 );
 
