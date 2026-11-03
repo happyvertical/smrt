@@ -38,6 +38,12 @@ export const submissionClasses = [
   'Grade',
   'Worksheet',
   'AssetAssociation',
+  // Every hand-in is recorded in the lesson work pipeline.
+  'WorkbookPhotoIntake',
+  'LessonActivity',
+  'WorkAttempt',
+  'WorkAssessmentRevision',
+  'WorkCompletionDecision',
 ];
 type Fixture = Awaited<ReturnType<typeof learnerFixture>>;
 const page = {

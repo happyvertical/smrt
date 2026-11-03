@@ -327,6 +327,8 @@ export class SubmissionAsset extends SmrtObject {
   assetId = '';
   @field({ required: true }) relationship: SubmissionAssetRelationship = 'page';
   sortOrder = 0;
+  /** Lesson page this file is; '' on older rows reads as `p<sortOrder+1>`. */
+  pageKey = '';
 
   constructor(options: Record<string, unknown> = {}) {
     super(options);

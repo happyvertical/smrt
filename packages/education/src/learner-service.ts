@@ -53,7 +53,10 @@ import type {
   LessonProgress,
 } from './learners.js';
 import { readWorkCompletion } from './lesson-work-completion.js';
-import { LessonActivityCollection } from './lesson-work-models.js';
+import {
+  type LessonActivity,
+  LessonActivityCollection,
+} from './lesson-work-models.js';
 
 /** One lesson row an enrollment may work on, with the course row it belongs to. */
 export type EnrollmentLessonEntry = Readonly<{
@@ -232,12 +235,12 @@ export class LessonAlreadyCompleteError extends LearnerValidationError {
 }
 
 /**
- * `completeOwnLesson` on a lesson with a physical workbook activity, whose
- * completion is owned by the workbook completion decision.
+ * `completeOwnLesson` on book or loose-page work, whose completion is owned
+ * by the parent's lesson work completion decision.
  */
 export class LessonWorkOwnedError extends LearnerValidationError {
   constructor() {
-    super('A workbook lesson is completed through the workbook workflow');
+    super('This lesson is completed through the lesson work workflow');
     this.name = 'LessonWorkOwnedError';
   }
 }
@@ -1245,6 +1248,25 @@ export class LearnerService {
     );
   }
 
+  /**
+   * Book and loose-page work: learners see marks only through an explicit
+   * feedback release and the lesson completes only by a parent decision.
+   * Ordinary lessons complete on a guardian grade.
+   */
+  protected async isReleaseGatedWork(
+    activity: LessonActivity,
+  ): Promise<boolean> {
+    if (activity.captureKind === 'unfiled') return true;
+    const enrollment = await this.db.get('enrollments', {
+      id: activity.enrollmentId,
+      tenant_id: activity.tenantId,
+    });
+    const course =
+      enrollment &&
+      (await this.db.get('courses', { id: enrollment.course_id }));
+    return Boolean(course?.book_key);
+  }
+
   /** Compatibility progress never transports a workbook learner's feedback. */
   protected async projectProgress(
     request: LearnerRequest,
@@ -1255,7 +1277,7 @@ export class LearnerService {
       enrollmentId: row.enrollmentId,
       lessonId: row.lessonId,
     });
-    if (!activity) return view;
+    if (!activity || !(await this.isReleaseGatedWork(activity))) return view;
     const state = await readWorkCompletion(this.db, {
       tenantId: request.tenantId,
       learnerId: request.learnerId,
@@ -1742,12 +1764,11 @@ export class LearnerService {
         throw new LessonAlreadyCompleteError();
       }
       if (row?.status === 'skipped') throw new LessonSkippedError();
-      if (
-        await service.findLessonActivity(request, {
-          enrollmentId: String(enrollment.id),
-          lessonId: request.lessonId,
-        })
-      )
+      const activity = await service.findLessonActivity(request, {
+        enrollmentId: String(enrollment.id),
+        lessonId: request.lessonId,
+      });
+      if (activity && (await service.isReleaseGatedWork(activity)))
         throw new LessonWorkOwnedError();
       if (!hasTables)
         throw new LearnerHistoryUnavailableError('lesson_completion_records');

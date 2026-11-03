@@ -452,12 +452,13 @@ export type {
   SubmissionView,
 } from './submission-service.js';
 export {
+  LessonWorkWorkflowRequiredError,
   OwnAttestationConflictError,
   OwnAttestationLessonKindError,
   SELF_ATTESTABLE_LESSON_KINDS,
   SubmissionService,
   SubmissionStorageCleanupError,
-  WorkbookWorkflowRequiredError,
+  submissionPageKey,
 } from './submission-service.js';
 export type {
   ExternalCompletionReporter,

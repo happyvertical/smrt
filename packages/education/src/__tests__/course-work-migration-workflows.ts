@@ -111,6 +111,9 @@ export async function assertWorkbookMigration(
         license_kind: 'personal-use-copy',
         source_key: 'physical-workbook',
         source_ref: book,
+        // Legacy workbook pages were release-gated; until the book columns are
+        // dropped below this stands in for that legacy behaviour.
+        book_key: `legacy:${book}:${learnerId}`,
         modality: 'printable',
         status: 'draft',
         _meta_type: '@happyvertical/smrt-education:Course',

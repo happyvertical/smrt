@@ -40,6 +40,7 @@ import {
   type WorkAssessment,
   WorkAssessmentValidationError,
   type WorkAssistance,
+  type WorkAttemptPage,
   type WorkAttemptView,
   WorkCompletionConflictError,
   type WorkCompletionDecisionView,
@@ -65,6 +66,7 @@ import {
   type SubmissionPage,
   SubmissionService,
   type SubmissionServiceOptions,
+  type SubmissionView,
 } from './submission-service.js';
 import { normalizeWorkAnswerRegions } from './work-answer-regions.js';
 import { normalizeWorkObservedLayout } from './work-layout.js';
@@ -154,6 +156,16 @@ export class LessonWorkService extends SubmissionService {
       this.authorizeCatalog,
       this.workOptions,
     ) as this;
+  }
+  /** Filed work snapshots the policy of the course it was placed in. */
+  protected override async workPolicy(
+    activity: LessonActivity,
+  ): Promise<{ reviewRequired: boolean; policyVersion: number }> {
+    const view = await this.activityView(activity);
+    return {
+      reviewRequired: view.reviewRequired,
+      policyVersion: view.policyVersion,
+    };
   }
   private async serialize(request: LearnerRequest) {
     // One lock order for book identities, policies, captures and decisions.
@@ -1069,6 +1081,62 @@ export class LessonWorkService extends SubmissionService {
       enrollmentId: row.enrollmentId,
       submissionId: attempt.submissionId,
     });
+    // Fold page versions over the correction chain, oldest first. Each
+    // ancestor's pages pass through the same submission privacy projection.
+    const chain: Array<{
+      attempt: WorkAttempt;
+      pages: SubmissionView['pages'];
+    }> = [{ attempt, pages: submission.pages }];
+    const attempts = await WorkAttemptCollection.create({ db: this.db });
+    const seen = new Set([String(attempt.id)]);
+    for (
+      let previousId = attempt.previousAttemptId;
+      previousId;
+      previousId = chain[0].attempt.previousAttemptId
+    ) {
+      if (seen.has(previousId))
+        throw new Error('Lesson work attempt ancestry is cyclic');
+      seen.add(previousId);
+      const previous = await attempts.get(
+        {
+          id: previousId,
+          tenantId: request.tenantId,
+          learnerId: request.learnerId,
+          activityId: attempt.activityId,
+          episodeId: attempt.episodeId,
+        },
+        { cache: false },
+      );
+      if (!previous)
+        throw new Error('Lesson work attempt ancestry is incomplete');
+      const view = await super.getSubmission({
+        ...request,
+        enrollmentId: row.enrollmentId,
+        submissionId: previous.submissionId,
+      });
+      chain.unshift({ attempt: previous, pages: view.pages });
+    }
+    const pages = new Map<string, WorkAttemptPage>();
+    for (const link of chain)
+      for (const page of [...link.pages].sort(
+        (a, b) => a.sortOrder - b.sortOrder,
+      )) {
+        const version = {
+          attemptId: String(link.attempt.id),
+          submissionId: link.attempt.submissionId,
+          assetId: page.assetId,
+        };
+        const entry = pages.get(page.pageKey);
+        if (entry) {
+          entry.versions.push(version);
+          entry.current = version;
+        } else
+          pages.set(page.pageKey, {
+            pageKey: page.pageKey,
+            current: version,
+            versions: [version],
+          });
+      }
     // Lesson work feedback always travels through the revision policy, never Grade.
     return {
       id: String(attempt.id),
@@ -1080,6 +1148,7 @@ export class LessonWorkService extends SubmissionService {
       policyVersion: attempt.policyVersion,
       assistance: attempt.assistance as WorkAssistance,
       submission: { ...submission, grade: null },
+      pages: [...pages.values()],
     };
   }
   async captureLessonWork(
@@ -1099,7 +1168,6 @@ export class LessonWorkService extends SubmissionService {
         request,
         'education.learner.submit',
       );
-      const policy = await service.activityView(row);
       if (row.captureKind === 'unfiled' && !request.previousSubmissionId) {
         const receipt = await service.db.get('workbook_photo_intakes', {
           id: row.photoIntakeId,
@@ -1186,62 +1254,20 @@ export class LessonWorkService extends SubmissionService {
               }
             : undefined,
         },
-        request.activityId,
+        { activityId: request.activityId, assistance },
       );
-      const prior = await attempts.get(
+      // The base capture recorded the attempt with the submission; a retry
+      // returns that same attempt and must not change its help claim.
+      const attempt = await attempts.get(
         { tenantId: request.tenantId, submissionId: submission.id },
         { cache: false },
       );
-      if (prior) {
-        if (
-          prior.activityId !== request.activityId ||
-          prior.assistance !== assistance
-        )
-          throw new Error('Lesson work capture retry changed');
-        return service.attemptView(request, row, prior);
-      }
-      const id = globalThis.crypto.randomUUID();
-      const sourceHashes = [];
-      for (const [i, page] of request.pages.entries())
-        sourceHashes.push({
-          assetId: submission.pages[i].assetId,
-          sha256: createHash('sha256').update(page.data).digest('hex'),
-          pageCount:
-            page.mimeType === 'application/pdf'
-              ? (await PDFDocument.load(page.data)).getPageCount()
-              : 1,
-        });
-      const attempt = await attempts.create({
-        _insertOnly: true,
-        id,
-        tenantId: request.tenantId,
-        learnerId: request.learnerId,
-        activityId: request.activityId,
-        submissionId: submission.id,
-        previousAttemptId: previous ? String(previous.id) : null,
-        episodeId: previous?.episodeId ?? id,
-        reviewRequired: policy.reviewRequired,
-        policyVersion: policy.policyVersion,
-        assistance,
-        actorUserId: request.actorUserId,
-        // Independent practice episodes have no predecessor edge. Preserve their
-        // capture order even when the server clock ties or moves backwards.
-        capturedAt: new Date(
-          Math.max(
-            new Date(submission.submittedAt).getTime(),
-            ...(
-              await attempts.list({
-                where: {
-                  tenantId: request.tenantId,
-                  learnerId: request.learnerId,
-                  activityId: request.activityId,
-                },
-              })
-            ).map((prior) => new Date(prior.capturedAt).getTime() + 1),
-          ),
-        ),
-        sourceHashes: JSON.stringify(sourceHashes),
-      });
+      if (
+        !attempt ||
+        attempt.activityId !== request.activityId ||
+        attempt.assistance !== assistance
+      )
+        throw new Error('Lesson work capture retry changed');
       return service.attemptView(request, row, attempt);
     });
   }

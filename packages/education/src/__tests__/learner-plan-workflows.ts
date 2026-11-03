@@ -195,6 +195,11 @@ export async function assertPlanProgress(f: Fixture) {
 
 export async function assertPlanWorkbookBinding(f: Fixture) {
   const { LessonActivityCollection } = await import('../lesson-work-models.js');
+  // A book course: its work completes only by an explicit parent decision.
+  await f.db.query('UPDATE courses SET book_key = ? WHERE id = ?', [
+    'plan-binding',
+    String(f.course.id),
+  ]);
   const activity = await f.as(f.parent, async () =>
     (await LessonActivityCollection.create({ db: f.db })).create({
       tenantId: f.parent.tenantId,

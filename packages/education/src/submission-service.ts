@@ -29,7 +29,17 @@ import {
   LearnerValidationError,
   requirePolicyBasis,
 } from './learner-service.js';
-import { readWorkCompletion } from './lesson-work-completion.js';
+import { validLessonPageKey } from './lesson-pages.js';
+import {
+  readWorkCompletion,
+  WorkCompletionDecisionCollection,
+} from './lesson-work-completion.js';
+import type { WorkAssistance } from './lesson-work-contracts.js';
+import {
+  type LessonActivity,
+  LessonActivityCollection,
+  WorkAttemptCollection,
+} from './lesson-work-models.js';
 import type { Grade, Submission, SubmissionKind } from './submissions.js';
 
 /** A single captured page. No model patches or pre-existing asset IDs are accepted. */
@@ -37,6 +47,12 @@ export interface SubmissionPage {
   name: string;
   mimeType: 'image/jpeg' | 'image/png' | 'image/webp' | 'application/pdf';
   data: Buffer;
+  /**
+   * The lesson page this file is (`p1`, `p12-back`); default `p<position>`.
+   * A correction may carry only the pages it replaces: a page keeps its key
+   * across the correction chain, so a host can show "page 2: v1, v2".
+   */
+  pageKey?: string;
 }
 export interface SubmissionAssetClaim {
   enrollmentId: string;
@@ -71,7 +87,7 @@ export type SubmissionView = Readonly<{
   kind: SubmissionKind;
   previousSubmissionId: string | null;
   intakeItemId: string | null;
-  pages: ReadonlyArray<{ assetId: string; sortOrder: number }>;
+  pages: ReadonlyArray<{ assetId: string; sortOrder: number; pageKey: string }>;
   /** Guardian-origin photo work remains private until explicit feedback release. */
   awaitingParentRelease?: boolean;
   /** Effective source privacy: every derived revision needs explicit release. */
@@ -125,12 +141,20 @@ type CaptureRequest = LessonRequest & {
   intake?: SubmissionIntake;
 };
 
-/** Workbook scaffolding can only be mutated through its owning workflow. */
-export class WorkbookWorkflowRequiredError extends Error {
+/**
+ * Book and loose-page work is captured only through `LessonWorkService`, which
+ * owns its receipt, correction-identity and release checks.
+ */
+export class LessonWorkWorkflowRequiredError extends Error {
   constructor() {
-    super('Workbook workflow required');
-    this.name = 'WorkbookWorkflowRequiredError';
+    super('Lesson work workflow required');
+    this.name = 'LessonWorkWorkflowRequiredError';
   }
+}
+
+/** The page key a file carries: its own, or `p<position>` for older rows. */
+export function submissionPageKey(pageKey: string, sortOrder: number): string {
+  return pageKey || `p${sortOrder + 1}`;
 }
 
 /** Failure includes fresh asset identities only, for explicit storage reconciliation. */
@@ -261,6 +285,14 @@ export class SubmissionService extends LearnerService {
       )
         throw new Error('Invalid capture page');
     }
+    const keys = pages.map((page, i) =>
+      page.pageKey === undefined ? `p${i + 1}` : page.pageKey,
+    );
+    if (
+      keys.some((key) => !validLessonPageKey(key)) ||
+      new Set(keys).size !== keys.length
+    )
+      throw new Error('Capture page keys must be distinct page keys');
   }
   private async lockProgressOwner(
     request: LearnerRequest & { enrollmentId: string },
@@ -413,7 +445,11 @@ export class SubmissionService extends LearnerService {
       tenant_id: row.tenantId,
     });
     if (!learner) throw new LearnerAuthorizationError();
-    const pages: Array<{ assetId: string; sortOrder: number }> = [];
+    const pages: Array<{
+      assetId: string;
+      sortOrder: number;
+      pageKey: string;
+    }> = [];
     for (const link of links) {
       if (
         await this.db.get('assets', {
@@ -422,7 +458,11 @@ export class SubmissionService extends LearnerService {
           owner_profile_id: learner.profile_id,
         })
       )
-        pages.push({ assetId: link.assetId, sortOrder: link.sortOrder });
+        pages.push({
+          assetId: link.assetId,
+          sortOrder: link.sortOrder,
+          pageKey: submissionPageKey(link.pageKey, link.sortOrder),
+        });
     }
     const grades = await (await GradeCollection.create({ db: this.db })).list({
       where: { submissionId: String(row.id), tenantId: row.tenantId },
@@ -444,14 +484,15 @@ export class SubmissionService extends LearnerService {
       learner.user_id === actorUserId &&
       photo.guardianOrigin &&
       !photo.released;
+    // Book and loose-page work deliver feedback only through release;
+    // ordinary lesson grades remain the learner's feedback.
+    const activity = await this.findLessonActivity(
+      { tenantId: row.tenantId, learnerId: row.learnerId, actorUserId },
+      { lessonId: row.lessonId },
+    );
     const withheld =
       learner.user_id === actorUserId &&
-      Boolean(
-        await this.findLessonActivity(
-          { tenantId: row.tenantId, learnerId: row.learnerId, actorUserId },
-          { lessonId: row.lessonId },
-        ),
-      );
+      Boolean(activity && (await this.isReleaseGatedWork(activity)));
     const selfReported =
       (await this.db.tableExists('lesson_self_attestations')) &&
       Boolean(
@@ -501,8 +542,12 @@ export class SubmissionService extends LearnerService {
       throw new LearnerAuthorizationError();
   }
 
-  /** Reject legacy upload/review entry points using authoritative owned scope. */
-  async assertNonWorkbookSubmissionScope(
+  /**
+   * Refuse generic upload entry points for book and loose-page work, using
+   * the authoritative enrollment, lesson and predecessor. Hosts call this
+   * before creating a generic intake receipt.
+   */
+  async assertOrdinarySubmissionScope(
     request: LearnerRequest & {
       enrollmentId: string;
       lessonId?: string;
@@ -510,17 +555,7 @@ export class SubmissionService extends LearnerService {
     },
   ): Promise<void> {
     await this.requireEnrollment(request, 'education.learner.read');
-    if (
-      await this.findLessonActivity(request, {
-        enrollmentId: request.enrollmentId,
-      })
-    )
-      throw new WorkbookWorkflowRequiredError();
-    if (
-      request.lessonId &&
-      (await this.findLessonActivity(request, { lessonId: request.lessonId }))
-    )
-      throw new WorkbookWorkflowRequiredError();
+    let lessonId = request.lessonId;
     if (request.previousSubmissionId) {
       const previous = await (
         await SubmissionCollection.create({ db: this.db })
@@ -532,14 +567,15 @@ export class SubmissionService extends LearnerService {
         },
         { cache: false },
       );
-      if (
-        previous &&
-        (await this.findLessonActivity(request, {
-          lessonId: previous.lessonId,
-        }))
-      )
-        throw new WorkbookWorkflowRequiredError();
+      if (previous) lessonId = previous.lessonId;
     }
+    if (!lessonId) return;
+    const activity = await this.findLessonActivity(request, {
+      enrollmentId: request.enrollmentId,
+      lessonId,
+    });
+    if (activity && (await this.isReleaseGatedWork(activity)))
+      throw new LessonWorkWorkflowRequiredError();
   }
 
   async captureSubmission(request: CaptureRequest): Promise<SubmissionView> {
@@ -549,31 +585,28 @@ export class SubmissionService extends LearnerService {
   /** Owning workflow extension; no browser input can grant this scoped path. */
   protected async captureActivitySubmission(
     request: CaptureRequest,
-    activityId: string,
+    scope: { activityId: string; assistance: WorkAssistance },
   ): Promise<SubmissionView> {
-    return this.captureSubmissionInScope(request, activityId);
+    return this.captureSubmissionInScope(request, scope);
   }
 
   private async captureSubmissionInScope(
     request: CaptureRequest,
-    activityId?: string,
+    scope?: { activityId: string; assistance: WorkAssistance },
   ): Promise<SubmissionView> {
     return this.mutate(async (service) => {
       await service.requireEnrollment(request, 'education.learner.submit');
-      const workbookLesson = await service.findLessonActivity(request, {
+      // One pipeline: every hand-in belongs to the learner's activity on
+      // this lesson. Unfiled photo routing is reachable only by its receipt.
+      const activity = await service.findLessonActivity(request, {
+        enrollmentId: request.enrollmentId,
         lessonId: request.lessonId,
       });
-      const workbookEnrollment = await service.findLessonActivity(request, {
-        enrollmentId: request.enrollmentId,
-      });
-      if (
-        activityId
-          ? !workbookLesson ||
-            String(workbookLesson.id) !== activityId ||
-            workbookLesson.enrollmentId !== request.enrollmentId
-          : Boolean(workbookLesson || workbookEnrollment)
-      )
-        throw new WorkbookWorkflowRequiredError();
+      if (scope) {
+        if (!activity || String(activity.id) !== scope.activityId)
+          throw new LearnerAuthorizationError();
+      } else if (activity && (await service.isReleaseGatedWork(activity)))
+        throw new LessonWorkWorkflowRequiredError();
       service.validatePages(request.pages);
       if (request.notes !== undefined && typeof request.notes !== 'string')
         throw new Error('Notes must be text');
@@ -747,20 +780,27 @@ export class SubmissionService extends LearnerService {
         });
       }
       const links = await SubmissionAssetCollection.create({ db: service.db });
+      const assetIds: string[] = [];
       for (const [sortOrder, page] of request.pages.entries()) {
         const asset = await service.storePage(request, learner.profileId, page);
+        assetIds.push(String(asset.id));
         await links.create({
           tenantId: request.tenantId,
           submissionId: String(row.id),
           assetId: String(asset.id),
           relationship: 'page',
           sortOrder,
+          pageKey: page.pageKey ?? `p${sortOrder + 1}`,
         });
       }
       if (kind === 'completed_work') {
         progress.status = 'submitted';
         progress.attempts += 1;
         await progress.save();
+        await service.recordAttempt(request, row, request.pages, assetIds, {
+          activity,
+          assistance: scope?.assistance ?? 'unknown',
+        });
       }
       return service.view(row, request.actorUserId);
     });
@@ -844,6 +884,137 @@ export class SubmissionService extends LearnerService {
       ? this.getSubmission({ ...request, submissionId: String(row.id) })
       : null;
   }
+  /** The course work policy a new attempt snapshots (its enrollment's course). */
+  protected async workPolicy(
+    activity: LessonActivity,
+  ): Promise<{ reviewRequired: boolean; policyVersion: number }> {
+    const enrollment = await this.db.get('enrollments', {
+      id: activity.enrollmentId,
+      tenant_id: activity.tenantId,
+    });
+    const course =
+      enrollment &&
+      (await this.db.get('courses', { id: enrollment.course_id }));
+    return {
+      reviewRequired: ![false, 0, '0', 'f', 'false'].includes(
+        course?.work_review_required as never,
+      ),
+      policyVersion: Number(course?.work_policy_version ?? 1) || 1,
+    };
+  }
+  /**
+   * Record a completed-work hand-in in the lesson work pipeline: the learner's
+   * activity on this lesson (created on first capture) and one immutable
+   * attempt bound to the submission, continuing its predecessor's episode.
+   */
+  protected async recordAttempt(
+    request: LessonRequest,
+    row: Submission,
+    pages: readonly SubmissionPage[],
+    assetIds: readonly string[],
+    scope: { activity: LessonActivity | null; assistance: WorkAssistance },
+  ): Promise<void> {
+    if (!['independent', 'assisted', 'unknown'].includes(scope.assistance))
+      throw new Error('Invalid assistance');
+    for (const table of ['workbook_activities', 'workbook_attempts'])
+      if (!(await this.db.tableExists(table)))
+        throw new LearnerHistoryUnavailableError(table);
+    const activities = await LessonActivityCollection.create({ db: this.db });
+    const activity =
+      scope.activity ??
+      (await activities.create({
+        _insertOnly: true,
+        slug: `lesson-activity-${String(row.progressId)}`,
+        tenantId: request.tenantId,
+        learnerId: request.learnerId,
+        enrollmentId: request.enrollmentId,
+        lessonId: request.lessonId,
+      }));
+    const attempts = await WorkAttemptCollection.create({ db: this.db });
+    const previous = row.previousSubmissionId
+      ? await attempts.get(
+          {
+            tenantId: request.tenantId,
+            learnerId: request.learnerId,
+            submissionId: row.previousSubmissionId,
+          },
+          { cache: false },
+        )
+      : null;
+    if (previous && previous.activityId !== String(activity.id))
+      throw new Error('Lesson work correction identity mismatch');
+    const crypto = process.getBuiltinModule?.('node:crypto');
+    if (!crypto) throw new Error('Lesson work capture requires a Node server');
+    const sourceHashes = [];
+    for (const [i, page] of pages.entries())
+      sourceHashes.push({
+        assetId: assetIds[i],
+        sha256: crypto.createHash('sha256').update(page.data).digest('hex'),
+        pageCount:
+          page.mimeType === 'application/pdf'
+            ? (await PDFDocument.load(page.data)).getPageCount()
+            : 1,
+      });
+    const policy = await this.workPolicy(activity);
+    const id = globalThis.crypto.randomUUID();
+    const prior = await attempts.list({
+      where: {
+        tenantId: request.tenantId,
+        learnerId: request.learnerId,
+        activityId: String(activity.id),
+      },
+    });
+    await attempts.create({
+      _insertOnly: true,
+      id,
+      tenantId: request.tenantId,
+      learnerId: request.learnerId,
+      activityId: String(activity.id),
+      submissionId: String(row.id),
+      previousAttemptId: previous ? String(previous.id) : null,
+      episodeId: previous?.episodeId ?? id,
+      reviewRequired: policy.reviewRequired,
+      policyVersion: policy.policyVersion,
+      assistance: scope.assistance,
+      actorUserId: request.actorUserId,
+      // Independent practice episodes have no predecessor edge. Preserve their
+      // capture order even when the server clock ties or moves backwards.
+      capturedAt: new Date(
+        Math.max(
+          new Date(row.submittedAt).getTime(),
+          ...prior.map((p) => new Date(p.capturedAt).getTime() + 1),
+        ),
+      ),
+      sourceHashes: JSON.stringify(sourceHashes),
+    });
+  }
+  /** A guardian grade on an ordinary lesson's current attempt completes it. */
+  private async recordGradeCompletion(
+    request: LearnerRequest,
+    activity: LessonActivity,
+    row: Submission,
+  ): Promise<void> {
+    const state = await readWorkCompletion(this.db, {
+      tenantId: request.tenantId,
+      learnerId: request.learnerId,
+      activityId: String(activity.id),
+    });
+    if (state.currentAttempt?.submissionId !== String(row.id) || state.decision)
+      return;
+    await (
+      await WorkCompletionDecisionCollection.create({ db: this.db })
+    ).create({
+      _insertOnly: true,
+      tenantId: request.tenantId,
+      learnerId: request.learnerId,
+      activityId: String(activity.id),
+      attemptId: String(state.currentAttempt.id),
+      submissionId: String(row.id),
+      feedbackHeadId: state.feedbackHeadId,
+      actorUserId: request.actorUserId,
+      requestKey: `grade:${row.id}`,
+    });
+  }
   private async grade(
     request: LearnerRequest,
     row: Submission,
@@ -887,17 +1058,23 @@ export class SubmissionService extends LearnerService {
     });
     row.status = 'graded';
     await row.save();
-    const workbookActivity = await this.findLessonActivity(request, {
+    const activity = await this.findLessonActivity(request, {
       enrollmentId: progress.enrollmentId,
       lessonId: row.lessonId,
     });
-    const completion = workbookActivity
-      ? await readWorkCompletion(this.db, {
-          tenantId: request.tenantId,
-          learnerId: request.learnerId,
-          activityId: String(workbookActivity.id),
-        })
-      : null;
+    // Ordinary lessons: the guardian's grade decides completion, recorded as
+    // the pipeline's completion decision on the graded current attempt. Book
+    // and loose-page work keep their explicit parent completion decision.
+    if (activity && !(await this.isReleaseGatedWork(activity)))
+      await this.recordGradeCompletion(request, activity, row);
+    const completion =
+      activity && (await this.isReleaseGatedWork(activity))
+        ? await readWorkCompletion(this.db, {
+            tenantId: request.tenantId,
+            learnerId: request.learnerId,
+            activityId: String(activity.id),
+          })
+        : null;
     progress.status = completion
       ? completion.completion.status === 'complete'
         ? 'complete'

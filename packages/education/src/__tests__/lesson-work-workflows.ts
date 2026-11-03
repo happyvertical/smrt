@@ -406,7 +406,7 @@ export function workbookContractTests(
               },
             }),
           ),
-        ).rejects.toThrow('Workbook workflow required');
+        ).rejects.toThrow('Lesson work workflow required');
         await expect(
           f.as(f.own, () =>
             service.resubmitSubmission({
@@ -418,16 +418,16 @@ export function workbookContractTests(
               previousSubmissionId: target.submissionId,
             }),
           ),
-        ).rejects.toThrow('Workbook workflow required');
+        ).rejects.toThrow('Lesson work workflow required');
         await expect(
           f.as(f.own, () =>
-            service.assertNonWorkbookSubmissionScope({
+            service.assertOrdinarySubmissionScope({
               ...scope,
               lessonId: f.activity.lessonId,
               previousSubmissionId: target.submissionId,
             }),
           ),
-        ).rejects.toThrow('Workbook workflow required');
+        ).rejects.toThrow('Lesson work workflow required');
       }
       for (const service of [learnerOnly, plain, f.service]) {
         const progress = (

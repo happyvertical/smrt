@@ -290,6 +290,22 @@ export interface WorkReleaseView {
   createdAt: Date;
   actorUserId: string;
 }
+/** One stored version of a lesson page within a correction chain. */
+export interface WorkPageVersion {
+  attemptId: string;
+  submissionId: string;
+  assetId: string;
+}
+/**
+ * A page as of this attempt: its newest version in the correction chain
+ * (`current`) and every version oldest first. A correction that re-sends
+ * only page 2 leaves the other pages at their earlier version.
+ */
+export interface WorkAttemptPage {
+  pageKey: string;
+  current: WorkPageVersion;
+  versions: WorkPageVersion[];
+}
 export interface WorkAttemptView {
   id: string;
   submissionId: string;
@@ -300,6 +316,8 @@ export interface WorkAttemptView {
   policyVersion: number;
   assistance: WorkAssistance;
   submission: import('./submission-service.js').SubmissionView;
+  /** Pages folded over the correction chain up to this attempt (#4613). */
+  pages: WorkAttemptPage[];
 }
 export interface WorkTimeline {
   currentAttemptId: string | null;
