@@ -135,6 +135,11 @@ and whether it was an override show on the guardian's review, and `release`
 accepts a `policyBasis` so a host can honour its own approve-requested-lessons
 setting without bypassing the review gate; see
 [generation and review](agents/course-generation-review.md).
+`CourseAuthoringService.appendLesson` adds one lesson (materials and question
+records included) to a released course as a new, optionally released revision:
+append-only, idempotent by request key, refused on archived, unreleased or
+foreign courses; enrollments stay on their pinned release until the host
+upgrades them; see [course authoring](agents/course-authoring-service.md).
 Repeated starts preserve the existing progress, including attempts and scores.
 A new curriculum/year creates a distinct enrollment and fresh progress history.
 An unscored lesson has `bestScore: null`, distinct from zero. The service does

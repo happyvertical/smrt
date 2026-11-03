@@ -78,6 +78,44 @@ lesson identity; `Lesson.externalRef` and `ReleasedLesson` carry the stable
 lesson identity for progress/reporting. Learners on different releases never
 share mutable rows. Personal-use releases stay `draft` status (the existing rule).
 
+## Append a lesson to a released course
+
+`appendLesson({ courseId, expectedHeadRevisionId, requestKey, sectionKey,
+sectionTitle?, lesson, release?, policyBasis? })` adds exactly one lesson (a
+`CourseLessonInput` with a required `lessonKey`, its `materials` and `questions`
+exactly as `saveDraft` takes them) to a course that already has a release, as one
+new revision, and releases that revision in the same transaction (`release:
+false` only appends). Returns `CourseAppendLessonView` (`revisionId`, `version`,
+`lessonKey`, `release | null`). Host mapping: action `education.course.author`,
+operation `append-lesson` (also `generate` for generated provenance), and, when
+releasing, `education.course.release` with the usual `policyBasis` and delegation
+rules. Hosts that grant `author` but not `release` use `release: false`.
+
+- **Append-only.** The new revision is the head plus the lesson at the end of
+  `sectionKey` (a new section needs `sectionTitle`). No lesson, revision or release
+  is changed; the release is a new Course row with the next release number.
+- **Refused.** Unknown or foreign-tenant course (`CourseNotFoundError`), discarded,
+  archived (`CourseArchivedError`), no release yet (`CourseAppendRefusedError`
+  `not-released`), head with changes that were never released (`unreleased-changes`:
+  nothing unreviewed rides along; release or discard it first), `lessonKey` already
+  in the course (`duplicate-lesson`), stale `expectedHeadRevisionId`
+  (`CourseStaleHeadError`).
+- **Review gate.** Releasing goes through the injected `releaseReviewGate` unchanged.
+  The default review-backed gate needs a current review of the new revision, which
+  cannot exist before it does, so with that gate use `release: false`, `recordReview`,
+  then `release`. A host whose gate honours its own approval (the guardian already
+  approved the requested lesson) can release in the one call. A gate that is not
+  current rolls the append back entirely.
+- **Idempotent.** The same `requestKey` and request replays the original result, also
+  after the head moved (a no-op: no revision, release or lesson rows); a changed lesson
+  or section under the same key is `CourseRequestKeyConflictError`. A replay that adds
+  `release: true` to an earlier `release: false` call completes the release.
+- **Enrollment pins.** Existing enrollments keep their pinned release and so never see
+  the new lesson implicitly. The host advances them with `upgradeEnrollment` on the new
+  release (explicit, recorded), or an enrollment/course that opted in with
+  `setAutoUpgrade` is moved by the release exactly as for any release (unstarted
+  lessons follow, started lessons stay on their row). Nothing else moves a pin.
+
 ## Enrollment pin and upgrades
 
 `Enrollment` is untouched (its `courseId` stays immutable): enroll through

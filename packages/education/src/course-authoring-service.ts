@@ -26,6 +26,8 @@ import {
 import {
   type AutoUpgradeSkipView,
   COURSE_PROVENANCES,
+  type CourseAppendLessonView,
+  CourseAppendRefusedError,
   type CourseArchiveDecisionView,
   CourseArchivedError,
   type CourseAuthoringAction,
@@ -102,6 +104,7 @@ import {
   ReleasedLessonCollection,
 } from './course-authoring-models.js';
 import { delegationRecordFields, readDelegation } from './course-delegation.js';
+import { draftFromRevision } from './course-generation-output.js';
 import { resolveEnrollmentLessons } from './course-release-scope.js';
 import { effectiveCourseVisibility } from './course-visibility.js';
 import { groupSharingDigest } from './group-sharing-hash.js';
@@ -1926,6 +1929,169 @@ export class CourseAuthoringService {
   // -- release --------------------------------------------------------------
 
   /**
+   * Appends exactly one lesson (with its materials and question records) to an
+   * existing released course as a new revision and, unless `release: false`,
+   * releases that revision in the same transaction. Append-only: no existing
+   * lesson, section order or revision is changed; the new revision is the old
+   * head plus the lesson.
+   *
+   * Refused: a foreign or unknown course (`CourseNotFoundError`), a discarded
+   * one, an archived one (`CourseArchivedError`), a course with no release yet
+   * (`CourseAppendRefusedError` `not-released`), a head holding unreleased
+   * changes (`unreleased-changes`, so nothing unreviewed rides along), a
+   * `lessonKey` already in the course (`duplicate-lesson`), and a head that moved
+   * since `expectedHeadRevisionId` (`CourseStaleHeadError`). Idempotent by
+   * `requestKey`: the same request replays the original result; a changed
+   * lesson, section or delegation under the same key is
+   * `CourseRequestKeyConflictError`.
+   *
+   * Authority is unchanged: `education.course.author` (operation
+   * `append-lesson`, plus `generate` for generated provenance) and, when
+   * releasing, `education.course.release` through the same review gate,
+   * `policyBasis` and delegation rules as `release`; a gate that is not current
+   * rolls the whole append back. Enrollments keep their pinned release: the new
+   * release is a new Course row, so an enrollment sees the lesson only when the
+   * host moves it with `upgradeEnrollment`, or it opted in with `setAutoUpgrade`
+   * (then `release` moves it, unstarted lessons only, as for any release).
+   */
+  async appendLesson(
+    request: CourseAuthoringActor & {
+      courseId: string;
+      expectedHeadRevisionId: string;
+      requestKey: string;
+      sectionKey: string;
+      /** Required when the section does not exist yet. */
+      sectionTitle?: string;
+      lesson: CourseLessonInput & { lessonKey: string };
+      /** Release the new revision too (default true). */
+      release?: boolean;
+      policyBasis?: string;
+    },
+  ): Promise<CourseAppendLessonView> {
+    const requestKey = requireKey(request.requestKey);
+    const expected = requireKey(
+      request.expectedHeadRevisionId,
+      'expected head',
+    );
+    const sectionKey = requireKey(request.sectionKey, 'section key');
+    const lessonKey = requireKey(request.lesson?.lessonKey, 'lesson key');
+    return this.run(async (tx) => {
+      await this.authorize(
+        tx,
+        request,
+        'education.course.author',
+        'append-lesson',
+        { courseId: request.courseId },
+      );
+      await this.writableDraft(tx, request.tenantId, request.courseId);
+      const revisions = await CourseRevisionCollection.create({ db: tx });
+      const stored = await revisions.get(
+        {
+          tenantId: request.tenantId,
+          courseId: request.courseId,
+          requestKey,
+        },
+        { cache: false },
+      );
+      // A replay is rebuilt from the revision the original append started from,
+      // so the same inputs reproduce the same payload digest after the head
+      // has moved on.
+      const baseId = stored ? String(stored.parentRevisionId ?? '') : expected;
+      if (stored && !baseId) throw new CourseRequestKeyConflictError();
+      const base = stored
+        ? await revisions.get(
+            {
+              id: baseId,
+              tenantId: request.tenantId,
+              courseId: request.courseId,
+            },
+            { cache: false },
+          )
+        : await this.headRevision(tx, request, expected);
+      if (!base) throw new CourseNotFoundError();
+      if (!stored) {
+        if (
+          (await this.state(tx, request.tenantId, request.courseId)) ===
+          'archived'
+        )
+          throw new CourseArchivedError();
+        const releases = await tx.list('course_releases', {
+          tenant_id: request.tenantId,
+          course_id: request.courseId,
+        });
+        if (!releases.length)
+          throw new CourseAppendRefusedError('not-released');
+        if (!releases.some((r) => String(r.revision_id) === String(base.id)))
+          throw new CourseAppendRefusedError('unreleased-changes');
+      }
+      const view = await this.revisionView(tx, request.tenantId, base);
+      if (
+        view.sections.some((sec) =>
+          sec.lessons.some((l) => l.lessonKey === lessonKey),
+        )
+      )
+        throw stored
+          ? new CourseRequestKeyConflictError()
+          : new CourseAppendRefusedError('duplicate-lesson');
+      const draft = draftFromRevision(view);
+      let section = draft.sections.find((sec) => sec.sectionKey === sectionKey);
+      if (!section) {
+        if (!request.sectionTitle)
+          throw new CourseAuthoringValidationError(
+            'A new section needs a sectionTitle',
+          );
+        section = {
+          sectionKey,
+          title: request.sectionTitle,
+          lessons: [],
+        };
+        draft.sections.push(section);
+      }
+      section.lessons.push({ ...request.lesson, lessonKey });
+      const saved = await this.saveDraftIn(tx, {
+        ...request,
+        expectedHeadRevisionId: String(base.id),
+        requestKey,
+        draft,
+      });
+      const release =
+        request.release === false
+          ? null
+          : await this.releaseIn(tx, {
+              ...request,
+              revisionId: saved.revisionId,
+              requestKey,
+            });
+      return {
+        courseId: request.courseId,
+        revisionId: saved.revisionId,
+        version: saved.version,
+        lessonKey,
+        release,
+      };
+    });
+  }
+
+  /** The head revision row, requiring it to be the revision the caller saw. */
+  private async headRevision(
+    tx: Tx,
+    request: CourseAuthoringActor & { courseId: string },
+    expected: string,
+  ): Promise<CourseRevision | null> {
+    const head = await this.headView(tx, request.tenantId, request.courseId);
+    if (head.headRevisionId !== expected)
+      throw new CourseStaleHeadError(head.headRevisionId);
+    return (await CourseRevisionCollection.create({ db: tx })).get(
+      {
+        id: expected,
+        tenantId: request.tenantId,
+        courseId: request.courseId,
+      },
+      { cache: false },
+    );
+  }
+
+  /**
    * Freezes one revision for assignment. Requires a current review of that exact
    * revision from the injected gate; materializes immutable Course, section and
    * Lesson rows for this release only. An optional `policyBasis` (or one in the
@@ -1941,8 +2107,22 @@ export class CourseAuthoringService {
       policyBasis?: string;
     },
   ): Promise<CourseReleaseView> {
+    requireKey(request.requestKey);
+    return this.run((tx) => this.releaseIn(tx, request));
+  }
+
+  /** The release path on a caller-supplied transaction (see `appendLesson`). */
+  protected async releaseIn(
+    tx: Tx,
+    request: CourseAuthoringActor & {
+      courseId: string;
+      revisionId: string;
+      requestKey: string;
+      policyBasis?: string;
+    },
+  ): Promise<CourseReleaseView> {
     const requestKey = requireKey(request.requestKey);
-    return this.run(async (tx) => {
+    {
       const decision = await this.authorize(
         tx,
         request,
@@ -2035,7 +2215,7 @@ export class CourseAuthoringService {
       });
       await this.autoUpgrade(tx, request.tenantId, request.courseId, release);
       return this.releaseView(tx, request.tenantId, release);
-    });
+    }
   }
 
   private async materialize(
