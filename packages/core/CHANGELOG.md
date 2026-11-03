@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.59.1
+
+### Patch Changes
+
+- ### Features
+  
+  - group-shared work carries course, lesson and page titles (#4627) (education)
+- @happyvertical/smrt-config@0.59.1
+  - @happyvertical/smrt-scanner@0.59.1
+  - @happyvertical/smrt-types@0.59.1
+
 ## 0.59.0
 
 ### Patch Changes
