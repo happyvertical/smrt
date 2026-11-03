@@ -251,6 +251,8 @@ export class CatalogPreviewService {
   constructor(
     private readonly store: CatalogPreviewStore,
     private readonly loader: CatalogPreviewLoader,
+    /** Host policy carrying the operator families; the default shows operator records to nobody. */
+    private readonly policy: CatalogPolicy = new CatalogPolicy(),
   ) {}
 
   async serve(input: {
@@ -272,7 +274,7 @@ export class CatalogPreviewService {
       record.id !== input.resourceId ||
       record.withdrawnAt ||
       record.revision !== input.revision ||
-      !new CatalogPolicy().canView(record, actor) ||
+      !this.policy.canView(record, actor) ||
       (await this.store.authorize(actor, record)) !== true
     )
       return unavailable();

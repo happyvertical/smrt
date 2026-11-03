@@ -38,9 +38,20 @@ async function readAt(
 ): Promise<Buffer> {
   const handle = await open(path, 'r');
   try {
-    const buffer = Buffer.alloc(length);
-    const { bytesRead } = await handle.read(buffer, 0, length, position);
-    return bytesRead === length ? buffer : buffer.subarray(0, bytesRead);
+    // Never allocate more than the file can supply, whatever a header claims.
+    const available = Math.max(0, (await handle.stat()).size - position);
+    const buffer = Buffer.alloc(Math.min(length, available));
+    const { bytesRead } = await handle.read(buffer, 0, buffer.length, position);
+    return buffer.subarray(0, bytesRead);
+  } finally {
+    await handle.close();
+  }
+}
+
+async function sizeOf(path: string): Promise<number> {
+  const handle = await open(path, 'r');
+  try {
+    return (await handle.stat()).size;
   } finally {
     await handle.close();
   }
@@ -120,6 +131,13 @@ async function readZipEntry(
 ): Promise<Uint8Array> {
   if (entry.size > COURSE_BUNDLE_LIMITS.maxEntryBytes)
     throw new Error(`${entry.name} is larger than a bundle member may be.`);
+  // A hostile header may claim a payload far beyond the member limit or the file.
+  const fileSize = await sizeOf(path);
+  if (
+    entry.compressed > COURSE_BUNDLE_LIMITS.maxEntryBytes ||
+    entry.offset + 30 + entry.compressed > fileSize
+  )
+    throw new Error(`${entry.name} has an implausible compressed size.`);
   const local = await readAt(path, entry.offset, 30);
   if (local.length < 30 || local.readUInt32LE(0) !== LOCAL)
     throw new Error(`${entry.name} has a damaged local header.`);

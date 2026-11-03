@@ -26,10 +26,12 @@ record's revision, so the next sync rewrites the rows when it is flipped.
 embed for a listed unit (null for anything else). The playlist data is an
 injected `ClassCrunchLabsPlaylistSource`; the adapter never touches the network.
 
-`addClassCrunchLabsUnit({ service, actor, catalogActor, record, policy, files,
-playlists, pageCounter?, receiveMember? })` re-checks `canAddClassCrunchLabsUnit`
-(an operator-only listing is refused to every other family, and the course actor
-must be the catalog actor), builds the bundle and imports each part. Then propose
+`addClassCrunchLabsUnit({ service, actor, catalogActor, record, listing, policy,
+files, playlists, pageCounter?, receiveMember? })` re-checks
+`canAddClassCrunchLabsUnit(actor, policy, listing)`: visibility is derived from the
+host's own `listing.publicListing` (operator unless the literal `true`), never from
+the record or any caller-supplied visibility or licence; an operator-only listing
+is refused to every other family, and the course actor must be the catalog actor, builds the bundle and imports each part. Then propose
 structure and `applyMaterials` per part as for any bundle. Courses are
 `personal-use-copy` (`build.licenseKind`).
 
@@ -69,7 +71,9 @@ skipped) or `memoryClassCrunchLabsSource(files)`. It never reads video files.
   bytes under another name or place keep one copy (the lesson-named file in its
   lesson, posters unit wide, never a `copy`).
 - A unit larger than one archive (bundle cap 100 MiB) is split by lesson into
-  `build.parts` (default 90 MiB each; course members go first); `build.bundle`
+  `build.parts` (default 90 MiB each; the first part carries the course members and
+  any lesson that fits beside them, others go to the first part with room; if no
+  lesson fits beside the course members the build refuses with `too_large`); `build.bundle`
   and `build.manifest` are the first part.
 
 The `report` lists lessons, members, parts, pages, matched and unmatched videos,

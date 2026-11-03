@@ -574,6 +574,48 @@ describe('applying materials', () => {
   });
 });
 
+describe('learner-audience slides', () => {
+  it('give the learner only the rendered pages: the editable original join is always guardian-only, and old joins are repaired', async () => {
+    const s = await setup();
+    const shown = structuredClone(manifest) as typeof manifest;
+    const deck = shown.sections[0]?.lessons[0]?.members.find(
+      (m) => m.role === 'slides',
+    ) as { audience?: string } | undefined;
+    if (deck) deck.audience = 'learner';
+    const input = () => bundle(shown);
+    const { import: view, accepted } = await s.importBundle(input());
+    const assets = await storeAll(s, accepted);
+    const apply = () =>
+      s.as(s.guardian, () =>
+        s.service.applyMaterials({
+          ...s.guardian,
+          importId: view.importId,
+          bundle: input(),
+          courseId: s.courseId,
+          lessons: s.lessons,
+          assets,
+        }),
+      );
+    await apply();
+    const slides = async () =>
+      (await s.db.list('lesson_assets', {})).filter(
+        (r) => r.relationship === 'slides',
+      );
+    const audienceOf = async (id?: string) =>
+      (await slides()).find((r) => r.asset_id === id)?.audience;
+    expect(await audienceOf(assets['l1/deck.pptx']?.original)).toBe('guardian');
+    expect(await audienceOf(assets['l1/deck.pptx']?.rendered)).toBe('learner');
+    // a join written before this rule is repaired on re-apply, not left learner-visible
+    await s.db.query(
+      `UPDATE lesson_assets SET audience = 'learner' WHERE asset_id = '${assets['l1/deck.pptx']?.original}'`,
+    );
+    const again = await apply();
+    expect(again.repaired).toBe(1);
+    expect(await audienceOf(assets['l1/deck.pptx']?.original)).toBe('guardian');
+    expect((await apply()).repaired).toBe(0);
+  });
+});
+
 describe('retrying a failed rendering', () => {
   /** A converter that is down until `up.value` is true. */
   function flaky() {

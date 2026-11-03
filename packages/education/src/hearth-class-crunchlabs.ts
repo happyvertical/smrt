@@ -221,15 +221,25 @@ export function createClassCrunchLabsCatalogAdapter(
   };
 }
 
-/** True when the actor may see (and so add) this Class CrunchLabs listing. */
+/**
+ * The visibility the listing has right now, derived from the host's own
+ * configuration (the same `publicListing` the adapter was built with), never
+ * from a record or flag a caller supplies.
+ */
+export const classCrunchLabsListingVisibility = (
+  config: Pick<ClassCrunchLabsCatalogConfig, 'publicListing'>,
+): 'catalog' | 'operator' =>
+  config.publicListing === true ? 'catalog' : 'operator';
+
+/** True when the actor may see (and so add) the Class CrunchLabs listing. */
 export function canAddClassCrunchLabsUnit(
-  record: Pick<CatalogSourceRecord, 'providerId' | 'visibility'>,
   actor: CatalogActor,
   policy: CatalogPolicy,
+  config: Pick<ClassCrunchLabsCatalogConfig, 'publicListing'>,
 ): boolean {
-  return (
-    record.providerId === CLASS_CRUNCHLABS_PROVIDER_ID &&
-    policy.canView(record, actor)
+  return policy.canView(
+    { visibility: classCrunchLabsListingVisibility(config) },
+    actor,
   );
 }
 
@@ -239,8 +249,10 @@ export interface AddClassCrunchLabsUnitRequest {
   actor: CourseAuthoringActor;
   /** The same identity as the catalog actor the listing was read with. */
   catalogActor: CatalogActor;
-  /** The listing being added, as read by this actor (its current visibility counts). */
-  record: Pick<CatalogSourceRecord, 'providerId' | 'visibility' | 'title'>;
+  /** The unit being added. Only its provider and title are used; visibility and licence are never taken from the caller. */
+  record: Pick<CatalogSourceRecord, 'providerId' | 'title'>;
+  /** The host's listing configuration (the switch the adapter was built with). */
+  listing: Pick<ClassCrunchLabsCatalogConfig, 'publicListing'>;
   /** Host policy carrying the operator families. */
   policy: CatalogPolicy;
   /** The family's own download of the unit (folder or zip parts). */
@@ -272,10 +284,11 @@ export async function addClassCrunchLabsUnit(
   if (
     request.actor.tenantId !== request.catalogActor.tenantId ||
     request.actor.actorUserId !== request.catalogActor.actorUserId ||
+    request.record.providerId !== CLASS_CRUNCHLABS_PROVIDER_ID ||
     !canAddClassCrunchLabsUnit(
-      request.record,
       request.catalogActor,
       request.policy,
+      request.listing,
     )
   )
     throw new ClassCrunchLabsError(

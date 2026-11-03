@@ -909,16 +909,19 @@ export async function buildClassCrunchLabsBundle(
       (n, m) => n + (byPath.get(m.path)?.bytes.byteLength ?? 0),
       0,
     );
-  const groups: Array<{
-    lessons: typeof manifestLessons;
-    course: Decl[];
-    bytes: number;
-  }> = [{ lessons: [], course: courseMembers, bytes: weigh(courseMembers) }];
-  if (groups[0] && groups[0].bytes > maxPartBytes)
+  // The first part carries the course-level members; lessons go into the first
+  // part with room (so a small lesson can share it), else start a new part.
+  const courseBytes = weigh(courseMembers);
+  if (courseBytes > maxPartBytes)
     throw new ClassCrunchLabsError(
       'too_large',
       'The unit-wide materials alone exceed the bundle size limit.',
     );
+  const groups: Array<{
+    lessons: typeof manifestLessons;
+    course: Decl[];
+    bytes: number;
+  }> = [{ lessons: [], course: courseMembers, bytes: courseBytes }];
   for (const lesson of manifestLessons) {
     const bytes = weigh(lesson.members);
     if (bytes > maxPartBytes)
@@ -926,14 +929,20 @@ export async function buildClassCrunchLabsBundle(
         'too_large',
         `${lesson.title} alone exceeds the bundle size limit.`,
       );
-    let group = groups.at(-1) as (typeof groups)[number];
-    if (group.bytes + bytes > maxPartBytes && group.lessons.length > 0) {
+    let group = groups.find((g) => g.bytes + bytes <= maxPartBytes);
+    if (!group) {
       group = { lessons: [], course: [], bytes: 0 };
       groups.push(group);
     }
     group.lessons.push(lesson);
     group.bytes += bytes;
   }
+  // A manifest needs a lesson, so the course-level members cannot be a part alone.
+  if (groups[0]?.lessons.length === 0)
+    throw new ClassCrunchLabsError(
+      'too_large',
+      'The unit-wide materials leave no room for any lesson in the same bundle part.',
+    );
   const parts: ClassCrunchLabsBundlePart[] = groups.map((group) => {
     const manifest = {
       version: COURSE_BUNDLE_MANIFEST_VERSION_2,
@@ -955,6 +964,12 @@ export async function buildClassCrunchLabsBundle(
       },
       ...files.filter((f) => used.has(f.path)),
     ];
+    const actual = partFiles.reduce((n, f) => n + f.bytes.byteLength, 0);
+    if (actual > COURSE_BUNDLE_LIMITS.maxArchiveBytes)
+      throw new ClassCrunchLabsError(
+        'too_large',
+        'A part of the unit exceeds the bundle size limit.',
+      );
     if (partFiles.length > COURSE_BUNDLE_LIMITS.maxEntries)
       throw new ClassCrunchLabsError(
         'too_large',

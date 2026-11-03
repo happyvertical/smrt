@@ -225,6 +225,8 @@ export interface ApplyBundleMaterialsResult {
   lessonVideos: number;
   /** Rows that already existed with the same details (a replay). */
   unchanged: number;
+  /** Original-deck joins whose audience was corrected to guardian-only. */
+  repaired: number;
   skipped: BundleMaterialsPlan['skipped'];
 }
 /** The materials could not be applied; nothing was written. */
@@ -1005,6 +1007,7 @@ export class CourseBundleImportService extends CourseAuthoringService {
       lessonPages: 0,
       lessonVideos: 0,
       unchanged: 0,
+      repaired: 0,
       skipped: materials.skipped,
     };
     return this.run(async (tx) => {
@@ -1062,7 +1065,11 @@ export class CourseBundleImportService extends CourseAuthoringService {
       for (const material of materials.materials) {
         const supplied = request.assets[material.assetPath];
         const office = isOfficeDocumentKind(material.kind);
-        const joins: string[] = [];
+        const joins: Array<{
+          assetId: string;
+          audience: MaterialAudience;
+          original: boolean;
+        }> = [];
         if (office) {
           if (!supplied?.rendered)
             throw new CourseBundleMaterialsError(
@@ -1075,14 +1082,28 @@ export class CourseBundleImportService extends CourseAuthoringService {
                 'asset-missing',
                 material.path,
               );
-            joins.push(supplied.original);
+            // The editable original is for the adult whatever the deck's declared audience.
+            joins.push({
+              assetId: supplied.original,
+              audience: 'guardian',
+              original: true,
+            });
           }
-          joins.push(supplied.rendered);
-        } else if (supplied?.original) joins.push(supplied.original);
+          joins.push({
+            assetId: supplied.rendered,
+            audience: material.audience,
+            original: false,
+          });
+        } else if (supplied?.original)
+          joins.push({
+            assetId: supplied.original,
+            audience: material.audience,
+            original: false,
+          });
         else if (material.kind === 'text') continue;
         else
           throw new CourseBundleMaterialsError('asset-missing', material.path);
-        for (const assetId of joins) {
+        for (const { assetId, audience, original } of joins) {
           const where =
             material.scope === 'course'
               ? {
@@ -1103,9 +1124,16 @@ export class CourseBundleImportService extends CourseAuthoringService {
             where,
             { cache: false },
           );
+          if (existing && original && existing.audience !== audience) {
+            // Repair a join written before originals were always guardian-only.
+            existing.audience = audience;
+            await withAccess(assetId, () => existing.save());
+            result.repaired++;
+            continue;
+          }
           if (existing) {
             if (
-              existing.audience !== material.audience ||
+              existing.audience !== audience ||
               existing.sortOrder !== material.sortOrder ||
               (material.scope === 'course' &&
                 (existing as { title?: string }).title !== material.title)
@@ -1118,7 +1146,7 @@ export class CourseBundleImportService extends CourseAuthoringService {
             (collection as typeof courseAssets).create({
               _insertOnly: true,
               ...where,
-              audience: material.audience,
+              audience,
               sortOrder: material.sortOrder,
               ...(material.scope === 'course' ? { title: material.title } : {}),
             }),

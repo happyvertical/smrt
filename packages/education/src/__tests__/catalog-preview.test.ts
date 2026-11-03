@@ -111,6 +111,32 @@ describe('catalog publisher previews', () => {
     ).toEqual([]);
   });
 
+  it("serves operator-visibility previews only to the policy's operator families", async () => {
+    const operatorRecord = { ...record, visibility: 'operator' as const };
+    const store = {
+      getResource: async () => operatorRecord,
+      authorize: async () => true,
+    };
+    const loader = { loadPreview: async () => png };
+    const open = new CatalogPreviewService(
+      store,
+      loader,
+      new CatalogPolicy({ operatorTenantIds: [actor.tenantId] }),
+    );
+    expect((await open.serve(request)).status).toBe(200);
+    expect(
+      (
+        await open.serve({
+          ...request,
+          actor: { ...actor, tenantId: 'family-b' },
+        })
+      ).status,
+    ).toBe(404);
+    expect(
+      (await new CatalogPreviewService(store, loader).serve(request)).status,
+    ).toBe(404);
+  });
+
   it('reauthorizes actor, tenant, visibility, revision and withdrawal on cache hits', async () => {
     let current = { ...record };
     let allowed = true;

@@ -392,9 +392,7 @@ describe('large units', () => {
     expect(split.report.parts).toBe(split.parts.length);
     expect(split.parts.flatMap((p) => p.lessons)).toEqual([1, 2]);
     // course members only in the first part, every part a valid manifest v2 bundle
-    expect(split.parts[0]?.manifest.courseMembers).toBeDefined();
-    for (const part of split.parts.slice(1))
-      expect(part.manifest.courseMembers).toBeUndefined();
+    expect(split.parts.filter((p) => p.manifest.courseMembers)).toHaveLength(1);
     for (const part of split.parts) {
       const plan = planCourseBundle(readFileSet(part.bundle.files));
       expect(plan.readerId).toBe('manifest-v2');
@@ -411,6 +409,56 @@ describe('large units', () => {
     await expect(build(files, { maxPartBytes: 2_000 })).rejects.toMatchObject({
       code: 'too_large',
     });
+  });
+});
+
+describe('part packing at the archive cap', () => {
+  // Scaled down 10x (a "MB" is 100 KiB) so the test stays light; the ratios are the real ones.
+  const MB = 100 * 1024;
+  const big = (n: number, label = 'x') =>
+    Buffer.concat([tinyPdf(label), Buffer.alloc(n * MB)]);
+  const sized = (course: number, lesson1: number, lesson2: number) =>
+    unitFiles()
+      .filter((f) => !/Lesson [3-9]/.test(f.path))
+      .map((f) =>
+        /Poster_18x24/.test(f.path) && /All Unit/.test(f.path)
+          ? { ...f, bytes: big(course) }
+          : /Lesson 1\/D\. L01_Status Check Lesson Assessment_/.test(f.path)
+            ? { ...f, bytes: big(lesson1, 'one') }
+            : /Lesson 2\/A\./.test(f.path)
+              ? { ...f, bytes: big(lesson2, 'two') }
+              : f,
+      );
+
+  it('puts a small lesson beside the course members and the big one in its own part, every part under the cap', async () => {
+    const b = await build(sized(60, 45, 20), { maxPartBytes: 90 * MB });
+    expect(b.parts.map((p) => p.lessons)).toEqual([[2], [1]]);
+    for (const part of b.parts) {
+      const total = part.bundle.files.reduce(
+        (n, f) => n + f.bytes.byteLength,
+        0,
+      );
+      expect(total).toBeLessThanOrEqual(100 * MB);
+      expect(() =>
+        planCourseBundle(readFileSet(part.bundle.files)),
+      ).not.toThrow();
+    }
+    expect(b.parts.filter((p) => p.manifest.courseMembers)).toHaveLength(1);
+  }, 60_000);
+
+  it('refuses explicitly when the course members and every lesson cannot share a part (60 + 45)', async () => {
+    await expect(
+      build(sized(60, 45, 45), { maxPartBytes: 90 * MB }),
+    ).rejects.toMatchObject({
+      code: 'too_large',
+      message: expect.stringContaining('leave no room for any lesson'),
+    });
+  }, 60_000);
+
+  it('refuses unit-wide materials over the budget', async () => {
+    await expect(
+      build(sized(8, 1, 1), { maxPartBytes: 6 * MB }),
+    ).rejects.toMatchObject({ code: 'too_large' });
   });
 });
 
@@ -832,6 +880,7 @@ describe('through the import service', () => {
           },
           catalogActor: guardian,
           record: await record(),
+          listing: {},
           policy,
           files: memoryClassCrunchLabsSource(unitFiles()),
           playlists: playlists(PLAYLIST, OTHER_PLAYLIST),
@@ -1039,19 +1088,25 @@ describe('the catalog provider', () => {
   it('refuses "Add to a course" to families that cannot see the listing, whatever the client sends', async () => {
     const policy = new CatalogPolicy({ operatorTenantIds: ['t-operator'] });
     const [record] = (await sync()).records as [CatalogSourceRecord];
+    // visibility comes from the host's listing configuration, not the record
+    const closed = {};
     expect(
-      canAddClassCrunchLabsUnit(record, guardianOf('t-operator'), policy),
+      canAddClassCrunchLabsUnit(guardianOf('t-operator'), policy, closed),
     ).toBe(true);
     expect(
-      canAddClassCrunchLabsUnit(record, guardianOf('t-other'), policy),
+      canAddClassCrunchLabsUnit(guardianOf('t-other'), policy, closed),
     ).toBe(false);
+    for (const publicListing of [false, undefined, 'true', 1] as never[])
+      expect(
+        canAddClassCrunchLabsUnit(guardianOf('t-other'), policy, {
+          publicListing,
+        }),
+      ).toBe(false);
     expect(
-      canAddClassCrunchLabsUnit(
-        { ...record, providerId: 'ck12' },
-        guardianOf('t-operator'),
-        policy,
-      ),
-    ).toBe(false);
+      canAddClassCrunchLabsUnit(guardianOf('t-other'), policy, {
+        publicListing: true,
+      }),
+    ).toBe(true);
     const db = await getTestDatabase({
       type: 'sqlite',
       url: ':memory:',
@@ -1077,6 +1132,7 @@ describe('the catalog provider', () => {
           actor: { tenantId: other.tenantId, actorUserId: other.actorUserId },
           catalogActor: other,
           record,
+          listing: closed,
           policy,
           files,
           playlists: playlists(PLAYLIST),
@@ -1090,14 +1146,65 @@ describe('the catalog provider', () => {
           actor: { tenantId: 't-other', actorUserId: operator.actorUserId },
           catalogActor: operator,
           record,
+          listing: closed,
           policy,
           files,
           playlists: playlists(PLAYLIST),
         }),
       ).rejects.toMatchObject({ code: 'access_denied' });
-      expect(read).toBe(0);
+      // a record the caller swapped to {visibility:'catalog'} changes nothing
+      await expect(
+        addClassCrunchLabsUnit({
+          service: svc,
+          actor: { tenantId: other.tenantId, actorUserId: other.actorUserId },
+          catalogActor: other,
+          record: { ...record, visibility: 'catalog' } as never,
+          listing: closed,
+          policy,
+          files,
+          playlists: playlists(PLAYLIST),
+        }),
+      ).rejects.toMatchObject({ code: 'access_denied' });
+      // only the host's own switch opens it to everyone
+      await expect(
+        addClassCrunchLabsUnit({
+          service: svc,
+          actor: { tenantId: other.tenantId, actorUserId: other.actorUserId },
+          catalogActor: other,
+          record,
+          listing: { publicListing: true },
+          policy,
+          files,
+          playlists: playlists(PLAYLIST),
+        }),
+      ).rejects.toMatchObject({ code: 'no_unit' });
+      expect(read).toBe(1);
     } finally {
       await db.close?.();
+    }
+  });
+});
+
+describe('reading a download from disk: hostile headers', () => {
+  let dir = '';
+  afterEach(async () => {
+    if (dir) await rm(dir, { recursive: true, force: true });
+    dir = '';
+  });
+  it('refuses an entry that claims a huge or out-of-file compressed payload without allocating it', async () => {
+    dir = await mkdtemp(join(tmpdir(), 'crunchlabs-'));
+    const zip = Buffer.from(
+      buildZip([
+        { name: `${L1}/A. L01_Manual_v1.0.pdf`, data: tinyPdf('m'), method: 0 },
+      ]),
+    );
+    const cd = zip.indexOf(Buffer.from([0x50, 0x4b, 0x01, 0x02]));
+    for (const claimed of [0xfffffffe, 5 * 1024 * 1024, zip.length]) {
+      const bad = Buffer.from(zip);
+      bad.writeUInt32LE(claimed, cd + 20);
+      await writeFile(join(dir, 'bad.zip'), bad);
+      const [file] = await folderClassCrunchLabsSource(dir).files();
+      await expect(file?.read()).rejects.toThrow(/implausible|truncated|size/);
     }
   });
 });

@@ -251,7 +251,10 @@ rendered pages (`rendered`: "Present").
 rows in one transaction. The host has stored each accepted member as a private
 asset and created the course's lessons: `lessons` maps manifest lesson key to the
 `Lesson` id, `assets` maps member path to `{ original, rendered }` asset ids.
-Slides join both the original deck and the rendered PDF; any other Word/PowerPoint
+Slides join both the original deck and the rendered PDF; the original join is always
+guardian-only whatever the deck's declared audience (the audience applies to the
+rendered PDF), and a join written earlier with a wider audience is repaired on
+re-apply (`repaired`); any other Word/PowerPoint
 member joins only its rendered PDF, so a learner is never handed an editable
 original. `LessonAsset`/`CourseAsset` saves keep their private-asset rule (guardian-
 only roles and personal-use-copy courses need private assets). It targets
