@@ -1,5 +1,19 @@
 # @happyvertical/smrt-core
 
+## 0.58.0
+
+### Minor Changes
+
+- ### Breaking Changes
+  
+  - course work absorbs workbooks with book courses and lesson pages (#4623) (education)
+
+### Patch Changes
+
+- @happyvertical/smrt-config@0.58.0
+  - @happyvertical/smrt-scanner@0.58.0
+  - @happyvertical/smrt-types@0.58.0
+
 ## 0.57.52
 
 ### Patch Changes

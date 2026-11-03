@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-content",
-  "version": "0.57.52",
+  "version": "0.58.0",
   "smrtJsdoc": "strict",
   "description": "Content processing module for SMRT framework - handles documents, web content, and media",
   "type": "module",
