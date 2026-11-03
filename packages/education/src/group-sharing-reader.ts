@@ -184,11 +184,17 @@ async function load(
         | Awaited<ReturnType<typeof authorizedCatalogCourses>>[number]
         | null = null;
       let lineagePrivate = false;
+      // Titles ride on the same attribution as courseId/subject: they are
+      // read only for the course already resolved through the authorized
+      // catalog scope, never from a lesson of a course that did not resolve.
+      let lessonTitle: string | null = null;
+      let pageLabel: string | null = null;
       // Filed work is attributed to its current filing placement, under the
       // same consent and ancestry rules as routed work. Unplaced loose work
       // has no course metadata.
       let placedLessonId: string | null =
         activity.captureKind === 'unfiled' ? null : activity.lessonId;
+      let placedPageId: string | null = null;
       let placedEnrollment = enrollment;
       if (
         activity.captureKind === 'unfiled' &&
@@ -215,6 +221,9 @@ async function load(
           if (!target) throw denied();
           placedEnrollment = target;
           placedLessonId = String(heads[0].lesson_id);
+          placedPageId = heads[0].lesson_page_id
+            ? String(heads[0].lesson_page_id)
+            : null;
         }
       }
       if (placedLessonId) {
@@ -241,6 +250,53 @@ async function load(
             : undefined) ??
           visible.find((row) => String(row.id) === enrollment.courseId) ??
           null;
+        // A catalog lesson is owned by the same tenant (family, ancestor or
+        // global) as its already-authorized course.
+        const ownedByScope = (row: { tenant_id?: unknown } | null) =>
+          Boolean(row) &&
+          (row?.tenant_id ?? null) === (course?.tenantId ?? null);
+        const titled = course
+          ? await db.get('lessons', { id: placedLessonId })
+          : null;
+        const titledSection =
+          titled && ownedByScope(titled)
+            ? await db.get('course_sections', { id: titled.section_id })
+            : null;
+        if (
+          course &&
+          titled &&
+          titledSection &&
+          ownedByScope(titledSection) &&
+          String(titledSection.course_id) === String(course.id)
+        ) {
+          lessonTitle = String(titled.title ?? '').trim() || null;
+          if (await db.tableExists('lesson_pages')) {
+            const pages = (
+              await db.list('lesson_pages', {
+                lesson_id: placedLessonId,
+              })
+            )
+              .filter(
+                (p) =>
+                  p.tenant_id === null ||
+                  String(p.tenant_id) === request.familyTenantId,
+              )
+              .sort(
+                (a, b) =>
+                  Number(a.sort_order) - Number(b.sort_order) ||
+                  String(a.page_key).localeCompare(String(b.page_key)) ||
+                  String(a.id).localeCompare(String(b.id)),
+              );
+            // Mirrors the placement: filed work names its page; routed work
+            // reads the lesson's first page.
+            const page = placedPageId
+              ? pages.find((p) => String(p.id) === placedPageId)
+              : activity.captureKind === 'unfiled'
+                ? undefined
+                : pages[0];
+            pageLabel = page ? String(page.label ?? '').trim() || null : null;
+          }
+        }
         lineagePrivate = await enrollmentLineagePrivate(
           db,
           request.familyTenantId,
@@ -336,6 +392,8 @@ async function load(
         decision,
         sources,
         course,
+        lessonTitle,
+        pageLabel,
       };
     },
   );
@@ -637,6 +695,9 @@ export class GroupSharingReader {
       capturedAt: iso(row.attempt.capturedAt),
       courseId: row.course ? String(row.course.id) : null,
       subject: row.course?.subject?.trim() || null,
+      courseTitle: row.course?.title?.trim() || null,
+      lessonTitle: row.course ? row.lessonTitle : null,
+      pageLabel: row.course ? row.pageLabel : null,
       facets: row.decision,
       revisionId:
         row.decision.feedback && row.revision ? String(row.revision.id) : null,

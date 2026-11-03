@@ -372,6 +372,8 @@ export function groupSharingReadContractTests(
           expect(listed.works[0]).toMatchObject({
             courseId: String(course.id),
             subject: course.subject,
+            courseTitle: course.title,
+            lessonTitle: `${tag} lesson`,
           });
           const preview = await x.as(x.parent, () =>
             x.reader.previewSharing({ ...x.scope, policy }),
@@ -574,7 +576,13 @@ export function groupSharingReadContractTests(
       await x.setPolicy(sharingPolicy());
       expect(
         await x.asSupervisor(() => x.reader.getSharedWork(selector)),
-      ).toMatchObject({ courseId: null, subject: null });
+      ).toMatchObject({
+        courseId: null,
+        subject: null,
+        courseTitle: null,
+        lessonTitle: null,
+        pageLabel: null,
+      });
       expect(
         (await x.asSupervisor(() => x.reader.getSharedProgress(x.scope))).counts
           .attempts,
@@ -606,6 +614,8 @@ export function groupSharingReadContractTests(
           activityId: activity.id,
           courseId: String(x.course.id),
           lessonId: String(x.lesson.id),
+          pageKey: 'p7',
+          pageLabel: 'Page seven',
           expectedRevisionId: null,
           requestKey: 'file-shared',
           reason: 'Guardian placed it',
@@ -616,11 +626,19 @@ export function groupSharingReadContractTests(
       ).toMatchObject({
         courseId: String(x.course.id),
         subject: 'Placed subject',
+        courseTitle: target.title,
+        lessonTitle: x.lesson.title,
+        pageLabel: 'Page seven',
       });
       await x.setPolicy({
         ...sharingPolicy(),
         subjects: { mode: 'include' as const, values: ['Other subject'] },
       });
+      // Where the policy withholds the subject, the work and its titles are
+      // withheld together.
+      await expect(
+        x.asSupervisor(() => x.reader.getSharedWork(selector)),
+      ).rejects.toThrow();
       expect(
         (
           await x.asSupervisor(() => x.reader.listSharedWork(x.scope))

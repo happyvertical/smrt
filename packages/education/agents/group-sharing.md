@@ -300,3 +300,10 @@ The gate is `authoredVisibilityPermitsGroups(db, tenantId, releaseCourseId)`.
 Filed loose work is attributed to its current filing placement (target lesson,
 enrollment and course, hence subject) under the same consent, offered-metadata and
 pin-lineage rules as routed work; unplaced loose work stays unknown metadata.
+
+Shared work also carries `courseTitle`, `lessonTitle` and `pageLabel` (#4619) so a
+supervisor can relate samples to the family's program without reading family
+courses. They are read from the same resolved course, placement and gates as
+`courseId`/`subject`: only for items the policy shares, null where the course is
+unknown, and the lesson title only when the lesson belongs to that course. Filed
+work names its placement's page; routed work reads the lesson's first page.
