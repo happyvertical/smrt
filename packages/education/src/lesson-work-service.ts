@@ -174,10 +174,17 @@ export class LessonWorkService extends SubmissionService {
   protected override async workPolicy(
     activity: LessonActivity,
   ): Promise<{ reviewRequired: boolean; policyVersion: number }> {
-    const view = await this.activityView(activity);
+    // Placement and course only: a capture must not re-read the whole
+    // completion history (that made long correction chains quadratic).
+    const { placement } = await this.placement(activity);
+    const course = placement
+      ? await this.db.get('courses', { id: placement.courseId })
+      : null;
     return {
-      reviewRequired: view.reviewRequired,
-      policyVersion: view.policyVersion,
+      reviewRequired: ![false, 0, '0', 'f', 'false'].includes(
+        (course?.work_review_required ?? true) as never,
+      ),
+      policyVersion: Number(course?.work_policy_version ?? 1) || 1,
     };
   }
   private async serialize(request: LearnerRequest) {
@@ -1195,46 +1202,68 @@ export class LessonWorkService extends SubmissionService {
     request: LearnerRequest,
     row: LessonActivity,
     attempt: WorkAttempt,
+    // Per-call memo of each submission's projected pages (timeline reuse).
+    pagesCache: Map<string, SubmissionView['pages']> = new Map(),
   ): Promise<WorkAttemptView> {
     const submission = await super.getSubmission({
       ...request,
       enrollmentId: row.enrollmentId,
       submissionId: attempt.submissionId,
     });
-    // Fold page versions over the correction chain, oldest first. Each
-    // ancestor's pages pass through the same submission privacy projection.
+    pagesCache.set(attempt.submissionId, submission.pages);
+    // Fold page versions over the correction chain, oldest first. Ancestors
+    // belong to the same authorized learner and activity; their pages pass
+    // through the same submission page privacy projection, read once each.
     const chain: Array<{
       attempt: WorkAttempt;
       pages: SubmissionView['pages'];
     }> = [{ attempt, pages: submission.pages }];
-    const attempts = await WorkAttemptCollection.create({ db: this.db });
-    const seen = new Set([String(attempt.id)]);
-    for (
-      let previousId = attempt.previousAttemptId;
-      previousId;
-      previousId = chain[0].attempt.previousAttemptId
-    ) {
-      if (seen.has(previousId))
-        throw new Error('Lesson work attempt ancestry is cyclic');
-      seen.add(previousId);
-      const previous = await attempts.get(
-        {
-          id: previousId,
-          tenantId: request.tenantId,
-          learnerId: request.learnerId,
-          activityId: attempt.activityId,
-          episodeId: attempt.episodeId,
-        },
-        { cache: false },
+    if (attempt.previousAttemptId) {
+      const episode = new Map(
+        (
+          await (
+            await WorkAttemptCollection.create({ db: this.db })
+          ).list({
+            where: {
+              tenantId: request.tenantId,
+              learnerId: request.learnerId,
+              activityId: attempt.activityId,
+              episodeId: attempt.episodeId,
+            },
+          })
+        ).map((a) => [String(a.id), a]),
       );
-      if (!previous)
-        throw new Error('Lesson work attempt ancestry is incomplete');
-      const view = await super.getSubmission({
-        ...request,
-        enrollmentId: row.enrollmentId,
-        submissionId: previous.submissionId,
-      });
-      chain.unshift({ attempt: previous, pages: view.pages });
+      const submissions = await SubmissionCollection.create({ db: this.db });
+      const seen = new Set([String(attempt.id)]);
+      for (
+        let previousId: string | null = attempt.previousAttemptId;
+        previousId;
+        previousId = chain[0].attempt.previousAttemptId
+      ) {
+        if (seen.has(previousId))
+          throw new Error('Lesson work attempt ancestry is cyclic');
+        seen.add(previousId);
+        const previous = episode.get(previousId);
+        if (!previous)
+          throw new Error('Lesson work attempt ancestry is incomplete');
+        let pages = pagesCache.get(previous.submissionId);
+        if (!pages) {
+          const submissionRow = await submissions.get(
+            {
+              id: previous.submissionId,
+              tenantId: request.tenantId,
+              learnerId: request.learnerId,
+            },
+            { cache: false },
+          );
+          if (!submissionRow) throw new LearnerAuthorizationError();
+          pages = (
+            await this.submissionPages(submissionRow, request.actorUserId, true)
+          ).pages;
+          pagesCache.set(previous.submissionId, pages);
+        }
+        chain.unshift({ attempt: previous, pages });
+      }
     }
     const pages = new Map<string, WorkAttemptPage>();
     for (const link of chain)
@@ -2236,6 +2265,7 @@ export class LessonWorkService extends SubmissionService {
   ): Promise<WorkTimeline> {
     const { row, learner } = await this.activity(request);
     const own = learner.userId === request.actorUserId;
+    const pagesCache = new Map<string, SubmissionView['pages']>();
     const completion = await readWorkCompletion(this.db, {
       tenantId: request.tenantId,
       learnerId: request.learnerId,
@@ -2321,7 +2351,7 @@ export class LessonWorkService extends SubmissionService {
       const headId =
         revisions.filter((r) => r.kind === 'guardian').at(-1)?.id ?? null;
       attempts.push({
-        ...(await this.attemptView(request, row, attempt)),
+        ...(await this.attemptView(request, row, attempt, pagesCache)),
         revisions: [...visible].reverse().map(revisionView),
         releases: releases
           .filter((r) => !own || visible.some((v) => v.id === r.revisionId))

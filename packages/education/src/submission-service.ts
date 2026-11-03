@@ -466,10 +466,23 @@ export class SubmissionService extends LearnerService {
     });
     return { guardianOrigin: true, released: !!release };
   }
-  private async view(
+  /**
+   * A submission's learner-owned page files and whether they are withheld
+   * from this actor (guardian-origin source awaiting release). The caller has
+   * already authorized the submission's learner and enrollment.
+   */
+  protected async submissionPages(
     row: Submission,
     actorUserId: string,
-  ): Promise<SubmissionView> {
+    // Pages only: skip the source-origin lookup when the actor is not the
+    // learner, since only the learner's own view is ever redacted.
+    pagesOnly = false,
+  ): Promise<{
+    pages: Array<{ assetId: string; sortOrder: number; pageKey: string }>;
+    awaitingParentRelease: boolean;
+    guardianOrigin: boolean;
+    learnerUserId: string;
+  }> {
     const links = await (
       await SubmissionAssetCollection.create({ db: this.db })
     ).list({
@@ -500,6 +513,31 @@ export class SubmissionService extends LearnerService {
           pageKey: submissionPageKey(link.pageKey, link.sortOrder),
         });
     }
+    const photo =
+      pagesOnly && learner.user_id !== actorUserId
+        ? { guardianOrigin: false, released: false }
+        : await this.workbookPhotoSource(
+            { tenantId: row.tenantId, learnerId: row.learnerId },
+            { intakeItemId: row.intakeItemId, submissionId: String(row.id) },
+          );
+    const awaitingParentRelease =
+      learner.user_id === actorUserId &&
+      photo.guardianOrigin &&
+      !photo.released;
+    return {
+      pages: awaitingParentRelease ? [] : pages,
+      awaitingParentRelease,
+      guardianOrigin: photo.guardianOrigin,
+      learnerUserId: String(learner.user_id ?? ''),
+    };
+  }
+  private async view(
+    row: Submission,
+    actorUserId: string,
+  ): Promise<SubmissionView> {
+    const projected = await this.submissionPages(row, actorUserId);
+    const pages = projected.pages;
+    const learner = { user_id: projected.learnerUserId };
     const grades = await (await GradeCollection.create({ db: this.db })).list({
       where: { submissionId: String(row.id), tenantId: row.tenantId },
     });
@@ -512,14 +550,8 @@ export class SubmissionService extends LearnerService {
         String(b.id).localeCompare(String(a.id)),
     );
     const grade = grades[0];
-    const photo = await this.workbookPhotoSource(
-      { tenantId: row.tenantId, learnerId: row.learnerId },
-      { intakeItemId: row.intakeItemId, submissionId: String(row.id) },
-    );
-    const awaitingParentRelease =
-      learner.user_id === actorUserId &&
-      photo.guardianOrigin &&
-      !photo.released;
+    const photo = { guardianOrigin: projected.guardianOrigin };
+    const awaitingParentRelease = projected.awaitingParentRelease;
     // Book and loose-page work deliver feedback only through release;
     // ordinary lesson grades remain the learner's feedback.
     const activity = await this.findLessonActivity(
