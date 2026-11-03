@@ -38,7 +38,8 @@ authorizer: `importBundle` needs `education.course.author`, `readImport`
 4. `readImport({ ...actor, importId })` returns the recorded evidence.
 
 Progress is an observer callback (`onProgress({ stage, completed, total })`,
-stages `unpack`, `classify`, `extract`, `propose`; each starts at `completed: 0`).
+stages `unpack`, `classify`, `render`, `extract`, `propose`; each starts at `completed: 0`;
+`render` is emitted only when the bundle has Word/PowerPoint members).
 Ingestion has no public job-progress seam, so none is invented. A throwing
 listener never affects the import.
 
@@ -55,6 +56,9 @@ listener never affects the import.
 | `maxManifestBytes` | 256 KiB |
 | `maxLessons` (the proposal schema's cap) | 50 |
 | `maxLessonBodyChars` | 100 000 |
+| `maxOfficeMembers` (Word/PowerPoint members rendered per bundle) | 50 |
+| `maxRenderedBytes` (PDF accepted back from the converter) | 50 MiB |
+| `conversionTimeoutMs` (one Office member) | 60 000 |
 | archive nesting | 1: a zip inside a zip is never expanded |
 
 A lesson whose combined text members exceed `maxLessonBodyChars` refuses the
@@ -80,7 +84,7 @@ too long or deep). An **honestly** oversize member (declared over
 
 ## Members and statuses
 
-By content (never by extension alone): `pdf` (`%PDF-` in the first 1 KiB),
+By content (never by extension alone): `docx`/`pptx` (see below), `pdf` (`%PDF-` in the first 1 KiB),
 `image` (PNG, JPEG, WebP), `text` (`.txt`/`.md`, strict UTF-8, no control
 characters, body-sized), `manifest` (root `manifest.json`), else `unsupported`.
 Status: `accepted` (handed to extraction), `duplicate` (same sha256 as an earlier
@@ -90,6 +94,74 @@ extracted again), `unsupported` (`unsupported_type`, `nested_archive`,
 (the manifest). Nothing is dropped. An encrypted PDF is any PDF with an
 `/Encrypt` token anywhere in its bytes (trailer, xref stream): a false positive
 on literal text inside an uncompressed stream is refused, never read.
+
+## Word and PowerPoint members (SMRT #4615)
+
+A `.docx`/`.pptx` member is an OOXML package only when the name and the content
+agree: a zip whose entries include `[Content_Types].xml` and `word/document.xml`
+(docx) or `ppt/presentation.xml` (pptx). Before the bytes go anywhere, the
+package itself passes the same bounded zip reader (ratio, overlap, paths, CRC,
+100 MiB inflated); a failure is `refused / unsafe_office`, never a refusal of the
+whole bundle. Other zips stay `unsupported / nested_archive`.
+
+Two separate things happen to an accepted Office member, both after
+authorization and before the evidence is written:
+
+- **Pages**: a `DocumentConverter` (`document-converter.ts`) renders the original
+  to PDF. The importer enforces the byte and time limits itself (input
+  `maxEntryBytes`, output `maxRenderedBytes`, `conversionTimeoutMs` with an abort
+  signal and a hard race, so an adapter that ignores the signal still times out),
+  and rejects output that is not a PDF or is encrypted. The converter is told a
+  neutral file name (`document.docx`), never the bundle path. Identical documents
+  are rendered once.
+- **Text**: an injectable `OfficeTextReader` (best effort; a failure or a `null`
+  costs the member nothing) returns whole-document text and, for decks, text and
+  speaker notes per slide. Office text is handed to the host on the accepted
+  member (`officeText`) and is **never** inlined into a proposed lesson body:
+  teacher guides and notes carry answers, and audience belongs to manifest v2.
+
+`receiveMember` gets the original `bytes` (store them as the private original
+asset: "Open in PowerPoint" for decks) and `rendered` (`{ bytes, sha256, mediaType:
+'application/pdf', converterId }`, store as a private asset beside the original:
+the pages for "Present"/reading). The member row records `renderedSha256` and
+`renderedSizeBytes`; bytes are still not retained here.
+
+**Fail closed.** Any converter problem records that member `unsupported` with a
+reason and writes the rest of the bundle normally: `converter_unavailable` (none
+configured), `converter_failed` (unreachable or 5xx), `converter_timeout`,
+`converter_too_large`, `converter_rejected` (HTTP 4xx, not a PDF, encrypted),
+`office_limit` (beyond `maxOfficeMembers`, in natural path order). A member that
+failed is not a lesson in the proposal, and identical copies of a failed document
+fail the same way rather than becoming duplicates of nothing. Outcomes are part
+of the append-only evidence, so a replay does not retry a recorded failure (to
+retry, change the bundle). A replay does re-render recorded-accepted members so the
+host receives the bytes again; if it can no longer render one it throws
+`DocumentConversionError` rather than silently dropping an accepted member.
+
+### Host configuration
+
+```ts
+const service = new CourseBundleImportService(db, authorizer, {
+  converter: new GotenbergDocumentConverter({
+    baseUrl: process.env.GOTENBERG_URL, // for example http://gotenberg:3000
+    timeoutMs: 60_000,
+    maxBytes: 50 * 1024 * 1024,
+  }),
+  officeTextReader, // optional, see below
+});
+```
+
+`GotenbergDocumentConverter` posts to `<baseUrl>/forms/libreoffice/convert`, talks
+to nothing else, refuses redirects and URLs with credentials, and caps the response
+as it streams. Run Gotenberg as an internal-only service with **no outbound
+network**, its own size/time limits and no shared volume with the app; this
+package assumes untrusted files never run next to the application. Tests use
+`FakeDocumentConverter` (records calls; `failWith`, `failWhen`, `delayMs`, `output`).
+
+`OfficeTextReader` is deliberately not wired to the SDK here, so this package
+does not depend on an unreleased `@happyvertical/documents`. Once the Office
+processors ship (sdk#1485, `extractOffice(bytes, 'docx' | 'pptx')`), implement
+`read` with it; the snippet is in the `OfficeTextReader` doc comment.
 
 ## Manifest (`manifest.json`, version 1, closed)
 
@@ -139,6 +211,12 @@ Normal manifest migrations create both tables.
 
 ## Not in this release
 
+- Manifest version 2 (material roles with audience, lesson pages, course-level
+  members, external video references) waits for the phase 1 role vocabulary
+  (smrt#4614). The page-role vocabulary and the closed v1 schema are unchanged;
+  see the hand-off note on smrt#4615.
+- Re-rendering a member whose first import recorded a converter failure (outcomes
+  are append-only per bundle identity).
 - Ingestion's receipt contract is unchanged: there is no `application/zip` part
   type or `parentEvidenceId` in ingestion. The education side unpacks and the
   host receives members one by one, so archive-to-member lineage lives in
