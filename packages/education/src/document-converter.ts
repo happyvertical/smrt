@@ -8,12 +8,22 @@
  */
 
 /** Office kinds the importer can render. */
-export type OfficeDocumentKind = 'docx' | 'pptx';
+export type OfficeDocumentKind = 'docx' | 'pptx' | 'xlsx';
+export const OFFICE_DOCUMENT_KINDS: readonly OfficeDocumentKind[] = [
+  'docx',
+  'pptx',
+  'xlsx',
+];
+export const isOfficeDocumentKind = (
+  value: unknown,
+): value is OfficeDocumentKind =>
+  (OFFICE_DOCUMENT_KINDS as readonly unknown[]).includes(value);
 
 export const OFFICE_MEDIA_TYPES: Readonly<Record<OfficeDocumentKind, string>> =
   Object.freeze({
     docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   });
 
 export const DEFAULT_DOCUMENT_CONVERSION_TIMEOUT_MS = 60_000;
@@ -103,7 +113,7 @@ export interface OfficeExtractPart {
 /** `extractOffice` of `@happyvertical/documents` (structural, so no dependency is declared). */
 export type OfficeExtractFunction = (
   source: Uint8Array,
-  format: OfficeDocumentKind,
+  format: 'docx' | 'pptx',
   options?: { extractImages?: boolean },
 ) => Promise<
   | { status: 'ok'; parts: OfficeExtractPart[] }
@@ -126,6 +136,8 @@ export function createOfficeTextReader(
 ): OfficeTextReader {
   return {
     async read({ bytes, kind }) {
+      // The SDK reads Word and PowerPoint; a workbook has no text reader.
+      if (kind === 'xlsx') return null;
       const result = await extractOffice(bytes, kind, { extractImages: false });
       if (result.status !== 'ok') return null;
       const text = result.parts

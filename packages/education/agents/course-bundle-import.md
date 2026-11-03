@@ -84,7 +84,7 @@ too long or deep). An **honestly** oversize member (declared over
 
 ## Members and statuses
 
-By content (never by extension alone): `docx`/`pptx` (see below), `pdf` (`%PDF-` in the first 1 KiB),
+By content (never by extension alone): `docx`/`pptx`/`xlsx` (see below), `pdf` (`%PDF-` in the first 1 KiB),
 `image` (PNG, JPEG, WebP), `text` (`.txt`/`.md`, strict UTF-8, no control
 characters, body-sized), `manifest` (root `manifest.json`), else `unsupported`.
 Status: `accepted` (handed to extraction), `duplicate` (same sha256 as an earlier
@@ -97,9 +97,11 @@ on literal text inside an uncompressed stream is refused, never read.
 
 ## Word and PowerPoint members (SMRT #4615)
 
-A `.docx`/`.pptx` member is an OOXML package only when the name and the content
-agree: a zip whose entries include `[Content_Types].xml` and `word/document.xml`
-(docx) or `ppt/presentation.xml` (pptx). Before the bytes go anywhere, the
+A `.docx`/`.pptx`/`.xlsx` member is an OOXML package only when the name and the
+content agree: a zip whose entries include `[Content_Types].xml` and
+`word/document.xml` (docx), `ppt/presentation.xml` (pptx) or `xl/workbook.xml`
+(xlsx). A workbook (a supply list) is rendered and kept like the others but has
+no text reader. Before the bytes go anywhere, the
 package itself passes the same bounded zip reader (ratio, overlap, paths, CRC,
 100 MiB inflated); a failure is `refused / unsafe_office`, never a refusal of the
 whole bundle. Other zips stay `unsupported / nested_archive`.

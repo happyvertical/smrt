@@ -27,7 +27,7 @@ import {
 } from '../index.js';
 import { tinyPdf } from './bundle-zip-writer.js';
 import { learnerClasses, learnerFixture } from './learner-workflows.js';
-import { officeDocx, officePptx } from './office-fixtures.js';
+import { officeDocx, officePptx, officeXlsx } from './office-fixtures.js';
 
 /*
  * Manifest v2 through the service (#4615), see docs/test-matrix/4615-manifest-v2.md:
@@ -275,6 +275,58 @@ describe('manifest v2 hand-off', () => {
     const s = await setup();
     const { import: view } = await s.importBundle();
     expect(view.members.every((m) => m.audience !== undefined)).toBe(true);
+  });
+});
+
+describe('Excel course members', () => {
+  it('renders a workbook as a course member and never offers it to the text reader', async () => {
+    const s = await setup();
+    const read: string[] = [];
+    const service = new CourseBundleImportService(s.db, () => true, {
+      converter: s.converter,
+      officeTextReader: {
+        read: async ({ kind }) => {
+          read.push(kind);
+          return null;
+        },
+      },
+    });
+    const withSheet = bundle({
+      ...manifest,
+      courseMembers: [
+        {
+          path: 'unit/supplies.xlsx',
+          role: 'attachment',
+          title: 'Supply list',
+        },
+      ],
+    });
+    withSheet.files.push({
+      path: 'unit/supplies.xlsx',
+      bytes: officeXlsx('supplies'),
+    });
+    const { accepted, import: view } = await s.importBundle(
+      withSheet,
+      {},
+      s.guardian,
+      service,
+    );
+    const sheet = accepted.find((m) => m.kind === 'xlsx');
+    expect(sheet).toMatchObject({
+      courseLevel: true,
+      role: 'attachment',
+      audience: 'learner',
+    });
+    expect(Buffer.from(sheet?.rendered?.bytes ?? []).toString()).toContain(
+      '%PDF-',
+    );
+    expect(view.members.find((m) => m.kind === 'xlsx')?.renderedSha256).toMatch(
+      /^[0-9a-f]{64}$/,
+    );
+    expect(read.sort()).toEqual(['docx', 'pptx']);
+    expect(s.converter.calls.some((c) => c.fileName === 'document.xlsx')).toBe(
+      true,
+    );
   });
 });
 

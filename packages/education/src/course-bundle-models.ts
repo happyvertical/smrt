@@ -15,6 +15,7 @@ const KINDS = [
   'text',
   'docx',
   'pptx',
+  'xlsx',
   'manifest',
   'unsupported',
 ];

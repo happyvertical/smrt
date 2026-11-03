@@ -51,6 +51,7 @@ import {
 import {
   DocumentConversionError,
   type DocumentConverter,
+  isOfficeDocumentKind,
   looksLikePdf,
   type OfficeDocumentKind,
   type OfficeText,
@@ -107,7 +108,7 @@ export interface AcceptedCourseBundleMember {
   path: string;
   sha256: string;
   mediaType: string;
-  kind: 'pdf' | 'image' | 'text' | 'docx' | 'pptx';
+  kind: 'pdf' | 'image' | 'text' | OfficeDocumentKind;
   /** Declared role: a page role (`exercise`, ...) under v1, a material role (`slides`, ...) under v2. */
   role: string | null;
   /** Manifest v2: who the material is for; null otherwise. */
@@ -316,7 +317,7 @@ function overlayRenderings(
     const rendering = m.sha256 ? renderings.get(m.sha256) : undefined;
     if (
       !rendering ||
-      (m.kind !== 'docx' && m.kind !== 'pptx') ||
+      !isOfficeDocumentKind(m.kind) ||
       m.status !== 'unsupported' ||
       !m.reason ||
       !COURSE_BUNDLE_RETRYABLE_REASONS.has(m.reason)
@@ -409,11 +410,7 @@ function reconcileWithRecorded(
   const allowed = new Set<string>();
   for (const member of plan.members) {
     const row = recorded.get(member.path);
-    if (
-      !view.replayed ||
-      !row ||
-      (member.kind !== 'docx' && member.kind !== 'pptx')
-    ) {
+    if (!view.replayed || !row || !isOfficeDocumentKind(member.kind)) {
       allowed.add(member.path);
       continue;
     }
@@ -430,7 +427,7 @@ function reconcileWithRecorded(
 
 const isOffice = (m: ClassifiedBundleMember) =>
   m.status === 'accepted' &&
-  (m.kind === 'docx' || m.kind === 'pptx') &&
+  isOfficeDocumentKind(m.kind) &&
   Boolean(m.sha256) &&
   m.bytes !== null;
 
@@ -524,7 +521,7 @@ export class CourseBundleImportService extends CourseAuthoringService {
       const out = new Map<string, { status: string; reason: string }>();
       for (const m of (await this.view(tx, existing)).members) {
         if (
-          (m.kind !== 'docx' && m.kind !== 'pptx') ||
+          !isOfficeDocumentKind(m.kind) ||
           m.status === 'duplicate' ||
           !m.sha256
         )
@@ -618,7 +615,7 @@ export class CourseBundleImportService extends CourseAuthoringService {
       throw new DocumentConversionError('invalid_output');
     let officeText: OfficeText | null = null;
     const reader = this.serviceOptions.officeTextReader;
-    if (reader) {
+    if (reader && kind !== 'xlsx') {
       try {
         officeText = await withTimeout(
           limits.conversionTimeoutMs,
@@ -747,8 +744,7 @@ export class CourseBundleImportService extends CourseAuthoringService {
           (m.kind === 'pdf' ||
             m.kind === 'image' ||
             m.kind === 'text' ||
-            m.kind === 'docx' ||
-            m.kind === 'pptx'),
+            isOfficeDocumentKind(m.kind)),
       )
       .map((m): AcceptedCourseBundleMember => {
         const placed = plan.placements.get(m.path);
@@ -836,7 +832,7 @@ export class CourseBundleImportService extends CourseAuthoringService {
     for (const recorded of before.members) {
       if (wanted && !wanted.has(recorded.path)) continue;
       const retryable =
-        (recorded.kind === 'docx' || recorded.kind === 'pptx') &&
+        isOfficeDocumentKind(recorded.kind) &&
         recorded.status === 'unsupported' &&
         recorded.reason !== null &&
         COURSE_BUNDLE_RETRYABLE_REASONS.has(recorded.reason);
@@ -928,7 +924,7 @@ export class CourseBundleImportService extends CourseAuthoringService {
         (m): m is ClassifiedBundleMember & { bytes: Uint8Array } =>
           m.status === 'accepted' &&
           m.bytes !== null &&
-          (m.kind === 'docx' || m.kind === 'pptx') &&
+          isOfficeDocumentKind(m.kind) &&
           Boolean(m.sha256 && fresh.has(m.sha256)),
       )
       .filter((m) => handed.has(m.path))
@@ -939,7 +935,7 @@ export class CourseBundleImportService extends CourseAuthoringService {
           path: m.path,
           sha256: m.sha256 as string,
           mediaType: m.mediaType,
-          kind: m.kind as 'docx' | 'pptx',
+          kind: m.kind as OfficeDocumentKind,
           role: placed?.role || null,
           audience: placed?.audience || null,
           courseLevel: Boolean(placed?.role) && !placed?.lessonKey,
@@ -1065,7 +1061,7 @@ export class CourseBundleImportService extends CourseAuthoringService {
 
       for (const material of materials.materials) {
         const supplied = request.assets[material.assetPath];
-        const office = material.kind === 'docx' || material.kind === 'pptx';
+        const office = isOfficeDocumentKind(material.kind);
         const joins: string[] = [];
         if (office) {
           if (!supplied?.rendered)

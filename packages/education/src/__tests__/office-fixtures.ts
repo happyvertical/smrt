@@ -29,3 +29,16 @@ export function officePptx(label: string) {
     ]),
   );
 }
+
+export function officeXlsx(label: string) {
+  return Buffer.from(
+    buildZip([
+      { name: '[Content_Types].xml', data: CONTENT_TYPES },
+      { name: 'xl/workbook.xml', data: `<workbook>${label}</workbook>` },
+      {
+        name: 'xl/worksheets/sheet1.xml',
+        data: `<worksheet>${label}</worksheet>`,
+      },
+    ]),
+  );
+}

@@ -36,6 +36,7 @@ import {
   sha256Hex,
 } from './course-bundle-zip.js';
 import {
+  isOfficeDocumentKind,
   OFFICE_MEDIA_TYPES,
   type OfficeDocumentKind,
   type OfficeText,
@@ -177,10 +178,11 @@ function sniff(
   return null;
 }
 const TEXT_NAME = /\.(txt|md|markdown)$/i;
-const OFFICE_NAME = /\.(docx|pptx)$/i;
+const OFFICE_NAME = /\.(docx|pptx|xlsx)$/i;
 const OFFICE_MAIN_PART: Record<OfficeDocumentKind, string> = {
   docx: 'word/document.xml',
   pptx: 'ppt/presentation.xml',
+  xlsx: 'xl/workbook.xml',
 };
 /**
  * Bounds for the OOXML package inside a Word/PowerPoint member. These are the
@@ -196,7 +198,7 @@ const OFFICE_PACKAGE_LIMITS: CourseBundleLimits = {
   maxPathDepth: 12,
 };
 
-/** `docx`/`pptx` when the member is a sound OOXML package; `'unsafe'` when it fails the zip bounds. */
+/** `docx`/`pptx`/`xlsx` when the member is a sound OOXML package; `'unsafe'` when it fails the zip bounds. */
 function officeKind(
   path: string,
   bytes: Uint8Array,
@@ -558,8 +560,7 @@ export const plainBundleReader: BundleReader = {
                 (m.kind === 'pdf' ||
                   m.kind === 'image' ||
                   m.kind === 'text' ||
-                  m.kind === 'docx' ||
-                  m.kind === 'pptx'),
+                  isOfficeDocumentKind(m.kind)),
             )
             .map((m) => m.path),
         );
@@ -754,7 +755,7 @@ export function planClassifiedBundle(
   for (const member of classified) {
     if (
       member.status !== 'accepted' ||
-      (member.kind !== 'docx' && member.kind !== 'pptx') ||
+      !isOfficeDocumentKind(member.kind) ||
       !member.sha256
     )
       continue;
@@ -829,6 +830,7 @@ const PAGEABLE = new Set<ClassifiedBundleMember['kind']>([
   'pdf',
   'docx',
   'pptx',
+  'xlsx',
 ]);
 
 /**

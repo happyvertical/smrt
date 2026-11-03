@@ -160,6 +160,8 @@ export type CourseBundleMemberKind =
   | 'docx'
   /** PowerPoint (`.pptx`): the deck is kept as the original and as rendered pages. */
   | 'pptx'
+  /** Excel (`.xlsx`): rendered to PDF by the converter; no text reader. */
+  | 'xlsx'
   | 'manifest'
   | 'unsupported';
 export type CourseBundleMemberStatus =
