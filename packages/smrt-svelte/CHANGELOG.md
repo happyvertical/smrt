@@ -1,5 +1,15 @@
 # @happyvertical/smrt-svelte
 
+## 0.60.2
+
+### Patch Changes
+
+- @happyvertical/smrt-languages@0.60.2
+  - @happyvertical/smrt-mcp-apps@0.60.2
+  - @happyvertical/smrt-web@0.60.2
+  - @happyvertical/smrt-ui@0.60.2
+  - @happyvertical/smrt-types@0.60.2
+
 ## 0.60.1
 
 ### Patch Changes
