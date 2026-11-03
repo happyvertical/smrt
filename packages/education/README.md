@@ -109,7 +109,12 @@ host setting and optional evidence submission; guardian `attestLesson` is
 unchanged. `setEnrollmentPace` sets or clears an enrollment's planned lessons
 per week (1 to 14) under the host's `education.enrollment.set-pace` decision with
 an immutable change row, and `nextLessons({ count })` returns a week's set of
-unfinished lessons (default one).
+unfinished lessons (default one). `setInterestTheme` stores a learner's interest
+theme (a short plain label and an optional stable key such as `minecraft`; the
+host owns its starter list) under `education.learner.set-interest-theme`: a
+guardian may set any of their learners' themes, a learner only their own
+(the host decides), nobody another learner's. Each change appends an immutable
+row; `getLearner` and the tutor context read it back.
 `TutorContextService.compose` builds a bounded, learner-safe `TutorContext`
 (lesson text, learner-visible questions, own progress, released feedback; for the
 learner audience only `answerKeyAvailable`, never keys, rubrics, notes or storage

@@ -35,10 +35,17 @@ import {
 import {
   EnrollmentPaceChangeCollection,
   EnrollmentStatusChangeCollection,
+  LearnerInterestThemeChangeCollection,
   LessonCompletionRecordCollection,
   LessonProgressTransitionCollection,
   type LessonProgressTransitionKind,
 } from './learner-history.js';
+import {
+  type InterestTheme,
+  type InterestThemeInput,
+  interestThemeFromColumns,
+  parseInterestTheme,
+} from './learner-interest-theme.js';
 import type {
   Curriculum,
   Enrollment,
@@ -134,6 +141,7 @@ export type LearnerAuthorizer = (
       | 'education.learner.attest-own'
       | 'education.progress.complete-own'
       | 'education.enrollment.set-pace'
+      | 'education.learner.set-interest-theme'
       | 'education.tutor.read'
       | 'education.tutor.exchange';
     own: boolean;
@@ -284,6 +292,23 @@ export class EnrollmentPaceError extends LearnerValidationError {
   }
 }
 
+/** Result of `setInterestTheme`; `changed` is false when the theme is unchanged. */
+export type SetInterestThemeResult = Readonly<{
+  changed: boolean;
+  /** The stored theme afterwards, or null when none is set. */
+  interestTheme: InterestTheme | null;
+}>;
+
+/** `setInterestTheme` was given a theme that is not a short, plain label and key. */
+export class InterestThemeError extends LearnerValidationError {
+  constructor() {
+    super(
+      'Interest theme must be null or a short plain label (1-60 characters) with an optional lowercase key',
+    );
+    this.name = 'InterestThemeError';
+  }
+}
+
 /** Result of `setEnrollmentStatus`; `changed` is false when already in that status. */
 export type SetEnrollmentStatusResult = Readonly<{
   changed: boolean;
@@ -313,6 +338,8 @@ export type LearnerView = Readonly<{
   displayName: string;
   level: number;
   settings: Record<string, unknown>;
+  /** The learner's interest theme, or null when none is set. */
+  interestTheme: InterestTheme | null;
 }>;
 export type CurriculumView = Readonly<{
   id: string;
@@ -342,6 +369,21 @@ export type LessonProgressView = Readonly<{
   startedAt: Date | null;
   completedAt: Date | null;
 }>;
+function learnerView(row: Learner): LearnerView {
+  return {
+    id: String(row.id),
+    tenantId: row.tenantId,
+    userId: row.userId,
+    profileId: row.profileId,
+    displayName: row.displayName,
+    level: row.level,
+    settings: row.getSettings(),
+    interestTheme: interestThemeFromColumns(
+      row.interestThemeLabel,
+      row.interestThemeKey,
+    ),
+  };
+}
 function curriculumView(row: Curriculum): CurriculumView {
   return {
     id: String(row.id),
@@ -745,15 +787,7 @@ export class LearnerService {
 
   async getLearner(request: LearnerRequest): Promise<LearnerView> {
     const row = await this.requireActor(request, 'education.learner.read');
-    return {
-      id: String(row.id),
-      tenantId: row.tenantId,
-      userId: row.userId,
-      profileId: row.profileId,
-      displayName: row.displayName,
-      level: row.level,
-      settings: row.getSettings(),
-    };
+    return learnerView(row);
   }
 
   /**
@@ -922,15 +956,7 @@ export class LearnerService {
       if (row) {
         if (row.profileId !== request.learnerProfileId)
           throw new LearnerAuthorizationError();
-        return {
-          id: String(row.id),
-          tenantId: row.tenantId,
-          userId: row.userId,
-          profileId: row.profileId,
-          displayName: row.displayName,
-          level: row.level,
-          settings: row.getSettings(),
-        };
+        return learnerView(row);
       }
       row = await learners.create({
         tenantId: request.tenantId,
@@ -940,15 +966,7 @@ export class LearnerService {
         level: request.level ?? 0,
         _insertOnly: true,
       });
-      return {
-        id: String(row.id),
-        tenantId: row.tenantId,
-        userId: row.userId,
-        profileId: row.profileId,
-        displayName: row.displayName,
-        level: row.level,
-        settings: row.getSettings(),
-      };
+      return learnerView(row);
     });
   }
 
@@ -1101,7 +1119,7 @@ export class LearnerService {
   }
 
   protected async lock(
-    table: 'curricula' | 'enrollments',
+    table: 'curricula' | 'enrollments' | 'learners',
     id: string,
     tenant: string,
   ): Promise<void> {
@@ -1857,6 +1875,76 @@ export class LearnerService {
         recordedAt: new Date(),
       });
       return { changed: true, enrollment: enrollmentView(enrollment) };
+    });
+  }
+  /**
+   * Sets or clears (`theme: null`) the learner's interest theme under
+   * `education.learner.set-interest-theme`. The theme is a short plain label
+   * with an optional stable key (the host owns its starter list) that colours
+   * stories and examples only, never an objective. The host authorizer decides
+   * who may set it: a guardian with an effective relationship, and the learner
+   * themself only when the host allows. Another learner's theme needs the
+   * actor's guardian relationship, so a sibling or unrelated actor is refused.
+   * Appends an immutable `LearnerInterestThemeChange` (actor, `policyBasis`,
+   * previous and new theme). An unchanged theme is an idempotent
+   * `{ changed: false }`; an invalid theme throws `InterestThemeError`.
+   */
+  async setInterestTheme(
+    request: LearnerRequest & {
+      theme: InterestThemeInput | null;
+      policyBasis: string;
+    },
+  ): Promise<SetInterestThemeResult> {
+    const policyBasis = requirePolicyBasis(request.policyBasis);
+    let next: InterestTheme | null = null;
+    if (request.theme !== null) {
+      next = parseInterestTheme(request.theme);
+      if (!next) throw new InterestThemeError();
+    }
+    return this.mutate(async (service) => {
+      await service.requireActor(
+        request,
+        'education.learner.set-interest-theme',
+      );
+      await service.lock('learners', request.learnerId, request.tenantId);
+      const learner = await (
+        await LearnerCollection.create({ db: service.db })
+      ).get(
+        { id: request.learnerId, tenantId: request.tenantId },
+        { cache: false },
+      );
+      if (!learner) throw new LearnerAuthorizationError();
+      const previous = interestThemeFromColumns(
+        learner.interestThemeLabel,
+        learner.interestThemeKey,
+      );
+      if (
+        (previous?.label ?? '') === (next?.label ?? '') &&
+        (previous?.key ?? '') === (next?.key ?? '')
+      )
+        return { changed: false, interestTheme: previous };
+      if (!(await service.db.tableExists('learner_interest_theme_changes')))
+        throw new LearnerHistoryUnavailableError(
+          'learner_interest_theme_changes',
+        );
+      learner.interestThemeLabel = next?.label ?? '';
+      learner.interestThemeKey = next?.key ?? '';
+      await learner.save();
+      await (
+        await LearnerInterestThemeChangeCollection.create({ db: service.db })
+      ).create({
+        _insertOnly: true,
+        tenantId: request.tenantId,
+        learnerId: String(learner.id),
+        previousLabel: previous?.label ?? '',
+        previousKey: previous?.key ?? '',
+        newLabel: next?.label ?? '',
+        newKey: next?.key ?? '',
+        actorUserId: request.actorUserId,
+        policyBasis,
+        recordedAt: new Date(),
+      });
+      return { changed: true, interestTheme: next };
     });
   }
 }

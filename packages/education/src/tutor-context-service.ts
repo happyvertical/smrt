@@ -1,6 +1,7 @@
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { LessonProgressCollection } from './collections.js';
 import { groupSharingDigest } from './group-sharing-hash.js';
+import { interestThemeFromColumns } from './learner-interest-theme.js';
 import {
   LearnerAuthorizationError,
   type LearnerRequest,
@@ -89,6 +90,8 @@ export class TutorContextService extends QuestionResponseService {
             display_name: row.displayName,
             level: row.level,
             user_id: row.userId,
+            interest_theme_label: row.interestThemeLabel,
+            interest_theme_key: row.interestThemeKey,
           }),
         );
     if (!learner) throw new LearnerAuthorizationError();
@@ -284,6 +287,11 @@ export class TutorContextService extends QuestionResponseService {
         id: String(learner.id),
         displayName: cut(learner.display_name, MAX_TUTOR_TITLE_CHARS),
         level: Number(learner.level ?? 0),
+        // Allowlisted: only the learner-safe label and key, never settings.
+        interestTheme: interestThemeFromColumns(
+          learner.interest_theme_label,
+          learner.interest_theme_key,
+        ),
       },
       enrollment: enrollment
         ? {

@@ -288,11 +288,23 @@ export {
   EnrollmentPaceChangeCollection,
   EnrollmentStatusChange,
   EnrollmentStatusChangeCollection,
+  LearnerInterestThemeChange,
+  LearnerInterestThemeChangeCollection,
   LessonCompletionRecord,
   LessonCompletionRecordCollection,
   LessonProgressTransition,
   LessonProgressTransitionCollection,
 } from './learner-history.js';
+export type {
+  InterestTheme,
+  InterestThemeInput,
+} from './learner-interest-theme.js';
+export {
+  interestThemeFromColumns,
+  MAX_INTEREST_THEME_KEY_CHARS,
+  MAX_INTEREST_THEME_LABEL_CHARS,
+  parseInterestTheme,
+} from './learner-interest-theme.js';
 export type {
   EnrollmentPlanView,
   PlanLessonView,
@@ -312,12 +324,14 @@ export type {
   PutBackLessonResult,
   SetEnrollmentPaceResult,
   SetEnrollmentStatusResult,
+  SetInterestThemeResult,
 } from './learner-service.js';
 export {
   ENROLLMENT_STATUS_TRANSITIONS,
   EnrollmentNotActiveError,
   EnrollmentPaceError,
   EnrollmentStatusTransitionError,
+  InterestThemeError,
   LearnerAuthorizationError,
   LearnerHistoryUnavailableError,
   LearnerService,

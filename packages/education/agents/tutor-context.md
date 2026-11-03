@@ -15,7 +15,8 @@ enrollment's effective set; a focus question must belong to that lesson
 (otherwise `LearnerAuthorizationError`). The guardian audience is refused for
 the learner's own actor whatever the host answers.
 
-Result: learner (name, level), enrollment (status, pace; no notes), course,
+Result: learner (name, level, `interestTheme`: the learner-safe label and key or
+null, read-only; never the free `settings`), enrollment (status, pace; no notes), course,
 section and lesson titles, learner-facing lesson body (withheld for
 personal-use-copy), objectives, own progress status, the learner-visible
 question rendering (prompt, response type, choices, subpart prompts, points; no

@@ -65,7 +65,16 @@ export type TutorQuestionItem = Readonly<{
 export type TutorContext = Readonly<{
   version: 1;
   audience: TutorAudience;
-  learner: Readonly<{ id: string; displayName: string; level: number }>;
+  learner: Readonly<{
+    id: string;
+    displayName: string;
+    level: number;
+    /**
+     * The learner's interest theme (short label, optional key), or null. It
+     * colours stories and examples only and never changes an objective.
+     */
+    interestTheme: Readonly<{ label: string; key: string }> | null;
+  }>;
   enrollment: Readonly<{
     id: string;
     courseId: string;
