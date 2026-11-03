@@ -19,7 +19,7 @@ Technical unfiled capture scaffolding has sourceKey exactly `unfiled-work`;
 consumers exclude it by identity, never by title. The DTO does not invent a cover
 or claim any source/asset preview binding. It returns no teacher or answer-key
 assets. Lessons preserve catalog section/lesson order and existing role-filtered
-progress, including private workbook feedback rules. Optional workbookActivityId
+progress, including private workbook feedback rules. Optional lessonActivityId
 is resolved for the exact tenant/learner/enrollment/lesson; consumers route that
 work to their workbook interface, not generic scan capture.
 
@@ -28,7 +28,7 @@ Old grade-derived complete/skipped rows without a current decision project in
 progress with completedAt null; they cannot contribute a completion timestamp to
 progressEvidence. Later analysis of the same attempt retains a parent's decision;
 a new correction or practice attempt reopens it. Ordinary lesson progress is
-unchanged. See [the workbook contract](workbook-service.md).
+unchanged. See [the workbook contract](lesson-work-service.md).
 
 For required-online lessons, optional sourceUrl comes only from the same
 catalog-authorized Lesson.externalUrl and must be HTTPS without credentials.

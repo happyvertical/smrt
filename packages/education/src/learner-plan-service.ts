@@ -22,7 +22,7 @@ export type PlanLessonView = Readonly<{
     kind: string;
     requiresOnlineResource: boolean;
     sourceUrl?: string;
-    workbookActivityId?: string;
+    lessonActivityId?: string;
   }>;
   progress: LessonProgressView | null;
 }>;
@@ -123,7 +123,7 @@ export class LearnerPlanService extends EnrollmentNoteService {
     const lessons = await Promise.all(
       scope.entries.map(async ({ lesson, course }): Promise<PlanLessonView> => {
         const lessonId = String(lesson.id);
-        const activity = await this.findWorkbookActivity(request, {
+        const activity = await this.findLessonActivity(request, {
           enrollmentId: String(row.id),
           lessonId,
         });
@@ -140,9 +140,7 @@ export class LearnerPlanService extends EnrollmentNoteService {
             kind: lesson.constructor.name,
             requiresOnlineResource,
             ...(sourceUrl ? { sourceUrl } : {}),
-            ...(activity?.id
-              ? { workbookActivityId: String(activity.id) }
-              : {}),
+            ...(activity?.id ? { lessonActivityId: String(activity.id) } : {}),
           },
           progress: current
             ? await this.projectProgress(request, current)

@@ -9,7 +9,7 @@ import {
   assertPlanWorkbookBinding,
   planFixture,
 } from './learner-plan-workflows.js';
-import { workbookClasses } from './workbook-workflows.js';
+import { workbookClasses } from './lesson-work-workflows.js';
 
 beforeAll(() => enableTenancy());
 afterAll(() => disableTenancy());

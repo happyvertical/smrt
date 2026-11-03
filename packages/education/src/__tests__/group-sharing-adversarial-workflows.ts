@@ -389,7 +389,7 @@ export function groupSharingAdversarialContractTests(
         withTenant(
           { tenantId: x.scope.familyTenantId, userId: selector.actorUserId },
           () =>
-            x.workbook.reviewWorkbookAssessment({
+            x.workbook.reviewWorkAssessment({
               ...x.parent,
               actorUserId: selector.actorUserId,
               guardianRelationshipId: undefined,

@@ -1,8 +1,8 @@
 import { getTestDatabase } from '@happyvertical/smrt-core';
 import { disableTenancy, enableTenancy } from '@happyvertical/smrt-tenancy';
 import { afterAll, beforeAll, it } from 'vitest';
-import { assertWorkbookCompletionMigration } from './workbook-completion-migration.js';
-import { workbookClasses } from './workbook-workflows.js';
+import { assertWorkbookCompletionMigration } from './lesson-work-completion-migration.js';
+import { workbookClasses } from './lesson-work-workflows.js';
 
 beforeAll(() => enableTenancy());
 afterAll(() => disableTenancy());

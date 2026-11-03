@@ -8,14 +8,15 @@ import {
   type LearnerRequest,
 } from './learner-service.js';
 import type {
+  WorkAssessment,
+  WorkAssistance,
+} from './lesson-work-contracts.js';
+import { WorkbookCollection } from './lesson-work-models.js';
+import { LessonWorkService } from './lesson-work-service.js';
+import type {
   SubmissionPage,
   SubmissionServiceOptions,
 } from './submission-service.js';
-import type {
-  WorkbookAssessment,
-  WorkbookAssistance,
-} from './workbook-contracts.js';
-import { WorkbookCollection } from './workbook-models.js';
 import {
   validateWorkbookPhotoIdentification,
   type WorkbookPhotoIdentification,
@@ -29,7 +30,6 @@ import {
   WorkbookPhotoDecisionCollection,
   WorkbookPhotoIntakeCollection,
 } from './workbook-photo-models.js';
-import { WorkbookService } from './workbook-service.js';
 
 /** Internal bridge capability, intentionally absent from package exports. */
 export const preservePhotoProposal = Symbol('preserveWorkbookPhotoProposal');
@@ -71,13 +71,13 @@ type Decision =
     }
   | { type: 'capture'; submissionId: string; requestDigest: string };
 /** Server-owned intake before assignment. All originals survive ingestion scratch expiry. */
-export class WorkbookPhotoService extends WorkbookService {
+export class WorkbookPhotoService extends LessonWorkService {
   constructor(
     db: DatabaseInterface,
     authorize: LearnerAuthorizer,
     authorizeCatalog: CatalogAuthorizer,
     private readonly photoOptions: SubmissionServiceOptions & {
-      workbookVocabulary?: WorkbookAssessment['vocabulary'];
+      workVocabulary?: WorkAssessment['vocabulary'];
     },
   ) {
     super(db, authorize, authorizeCatalog, photoOptions);
@@ -371,7 +371,7 @@ export class WorkbookPhotoService extends WorkbookService {
       identification: resolution?.identification ?? null,
       proposal: proposal?.proposal ?? null,
       activity: resolution?.activity
-        ? await this.getWorkbookActivity({
+        ? await this.getLessonActivity({
             ...request,
             activityId: resolution.activity.id,
           })
@@ -575,10 +575,7 @@ export class WorkbookPhotoService extends WorkbookService {
     let activity: WorkbookPhotoIntakeView['activity'] = null;
     let workbookId: string | null = null;
     if (request.identification.kind === 'work')
-      activity = await this.resolveUnfiledWorkbookActivityInScope(
-        request,
-        action,
-      );
+      activity = await this.resolveUnfiledActivityInScope(request, action);
     const identity = request.identification.workbook;
     if (identity && request.identification.kind !== 'uncertain') {
       const books = await WorkbookCollection.create({ db: this.db });
@@ -609,7 +606,7 @@ export class WorkbookPhotoService extends WorkbookService {
         request.identification.kind === 'lesson' &&
         request.identification.activity
       ) {
-        activity = await this.resolveWorkbookActivityInScope(
+        activity = await this.resolveBookPageActivityInScope(
           {
             ...request,
             ...identity,
@@ -801,7 +798,7 @@ export class WorkbookPhotoService extends WorkbookService {
     const intake = await this.getWorkbookPhotoIntake(request);
     if (!intake.activity || !intake.submissionId)
       throw new Error('Photo work has not been captured');
-    return this.getWorkbookTimeline({
+    return this.getWorkTimeline({
       ...request,
       activityId: intake.activity.id,
     });
@@ -809,7 +806,7 @@ export class WorkbookPhotoService extends WorkbookService {
   async captureWorkbookPhotoIntake(
     request: PhotoRequest & {
       requestKey: string;
-      assistance?: WorkbookAssistance;
+      assistance?: WorkAssistance;
       previousSubmissionId?: string;
       completedWork?: boolean;
     },
@@ -859,7 +856,7 @@ export class WorkbookPhotoService extends WorkbookService {
           data: Buffer.from(file.data),
         });
       }
-      const attempt = await service.captureWorkbookWork({
+      const attempt = await service.captureLessonWork({
         ...request,
         activityId: view.activity.id,
         intakeItemId: view.itemId,

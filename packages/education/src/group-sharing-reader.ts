@@ -43,20 +43,20 @@ import {
 import { groupSharingDigest } from './group-sharing-hash.js';
 import {
   evaluateGroupSharingPolicy,
-  summarizeWorkbookEvidence,
-  type WorkbookEvidenceInput,
+  summarizeWorkEvidence,
+  type WorkEvidenceInput,
 } from './group-sharing-policy.js';
-import type { SubmissionServiceOptions } from './submission-service.js';
 import {
-  validateWorkbookAssessment,
-  type WorkbookAssessment,
-} from './workbook-contracts.js';
+  validateWorkAssessment,
+  type WorkAssessment,
+} from './lesson-work-contracts.js';
 import {
-  WorkbookActivityCollection,
-  WorkbookAssessmentRevisionCollection,
-  WorkbookAttemptCollection,
+  LessonActivityCollection,
+  WorkAssessmentRevisionCollection,
+  WorkAttemptCollection,
   WorkbookCollection,
-} from './workbook-models.js';
+} from './lesson-work-models.js';
+import type { SubmissionServiceOptions } from './submission-service.js';
 
 const denied = () => new GroupSharingAuthorizationError();
 const iso = (date: Date | string) => new Date(date).toISOString();
@@ -117,11 +117,9 @@ async function load(
         learnerId: request.learnerId,
       };
       const activity = await (
-        await WorkbookActivityCollection.create({ db })
+        await LessonActivityCollection.create({ db })
       ).get({ ...where, id: request.activityId }, { cache: false });
-      const attempt = await (
-        await WorkbookAttemptCollection.create({ db })
-      ).get(
+      const attempt = await (await WorkAttemptCollection.create({ db })).get(
         { ...where, id: request.attemptId, activityId: request.activityId },
         { cache: false },
       );
@@ -169,7 +167,7 @@ async function load(
       if (
         attempt.previousAttemptId &&
         !(await (
-          await WorkbookAttemptCollection.create({ db })
+          await WorkAttemptCollection.create({ db })
         ).get(
           {
             ...where,
@@ -221,7 +219,7 @@ async function load(
         );
       }
       const revisions = await (
-        await WorkbookAssessmentRevisionCollection.create({ db })
+        await WorkAssessmentRevisionCollection.create({ db })
       ).list({ where: { ...where, attemptId: request.attemptId } });
       revisions.sort(
         (a, b) =>
@@ -351,9 +349,9 @@ async function enrollmentLineagePrivate(
 function assessmentFrom(
   row: Awaited<ReturnType<typeof load>>,
   json: string,
-): WorkbookAssessment {
-  const assessment: WorkbookAssessment = JSON.parse(json);
-  validateWorkbookAssessment(assessment);
+): WorkAssessment {
+  const assessment: WorkAssessment = JSON.parse(json);
+  validateWorkAssessment(assessment);
   for (const question of assessment.questions)
     for (const anchor of question.anchors) {
       if (
@@ -465,7 +463,7 @@ export class GroupSharingReader {
             },
           });
           const unfiled = await (
-            await WorkbookActivityCollection.create({ db })
+            await LessonActivityCollection.create({ db })
           ).list({
             where: {
               tenantId: request.familyTenantId,
@@ -547,7 +545,7 @@ export class GroupSharingReader {
     const attempts = await withTenant(
       { tenantId: request.familyTenantId, userId: request.actorUserId },
       async () =>
-        (await WorkbookAttemptCollection.create({ db: this.db })).list({
+        (await WorkAttemptCollection.create({ db: this.db })).list({
           where: {
             tenantId: request.familyTenantId,
             learnerId: request.learnerId,
@@ -684,7 +682,7 @@ export class GroupSharingReader {
       const rows = (await reader.enumerate(request, policy)).filter(
         (r) => r.decision.progress,
       );
-      const evidence: WorkbookEvidenceInput[] = [];
+      const evidence: WorkEvidenceInput[] = [];
       const counts = {
         attempts: rows.length,
         episodes: new Set(rows.map((r) => r.attempt.episodeId)).size,
@@ -715,7 +713,7 @@ export class GroupSharingReader {
       return {
         algorithmVersion: 'workbook-descriptive-v1',
         counts,
-        concepts: summarizeWorkbookEvidence(
+        concepts: summarizeWorkEvidence(
           evidence.sort(
             (a, b) =>
               Number(Boolean(a.attempt.previousAttemptId)) -

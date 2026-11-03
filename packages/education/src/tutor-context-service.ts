@@ -483,7 +483,7 @@ export class TutorContextService extends QuestionResponseService {
       'workbook_feedback_releases',
     ])
       if (!(await this.db.tableExists(table))) return null;
-    const activity = await this.findWorkbookActivity(request, {
+    const activity = await this.findLessonActivity(request, {
       enrollmentId: String(enrollment.id),
       lessonId: request.lessonId,
     });

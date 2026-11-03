@@ -1,17 +1,21 @@
 import { getTestDatabase } from '@happyvertical/smrt-core';
 import { disableTenancy, enableTenancy } from '@happyvertical/smrt-tenancy';
 import { afterAll, beforeAll, describe } from 'vitest';
-import { workbookCompletionContractTests } from './workbook-completion-workflows.js';
-import { workbookClasses } from './workbook-workflows.js';
+import { workbookLayoutContractTests } from './lesson-work-layout-workflows.js';
+import { workbookClasses } from './lesson-work-workflows.js';
 
 beforeAll(() => enableTenancy());
 afterAll(() => disableTenancy());
-describe('Workbook explicit completion sqlite', () =>
-  workbookCompletionContractTests(async () => {
+describe('LessonWorkService observed layout sqlite', () =>
+  workbookLayoutContractTests(async () => {
     const db = await getTestDatabase({
       type: 'sqlite',
       url: ':memory:',
-      classes: workbookClasses,
+      classes: [
+        ...workbookClasses,
+        'WorkbookPhotoDecision',
+        'WorkbookContextRevision',
+      ],
     });
     return {
       db,

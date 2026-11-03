@@ -11,8 +11,8 @@ import {
   WorksheetCollection,
 } from './collections.js';
 import {
-  summarizeWorkbookEvidence,
-  type WorkbookEvidenceInput,
+  summarizeWorkEvidence,
+  type WorkEvidenceInput,
 } from './group-sharing-policy.js';
 import {
   LearnerAuthorizationError,
@@ -20,48 +20,48 @@ import {
   type LearnerRequest,
 } from './learner-service.js';
 import {
+  readWorkCompletion,
+  type WorkCompletionDecision,
+  WorkCompletionDecisionCollection,
+} from './lesson-work-completion.js';
+import {
+  aggregateWorkQuestions,
+  type LessonActivityView,
+  validateWorkAssessment,
+  WORK_MATH_VOCABULARY,
+  type WorkAssessment,
+  WorkAssessmentValidationError,
+  type WorkAssistance,
+  type WorkAttemptView,
+  WorkCompletionConflictError,
+  type WorkCompletionDecisionView,
+  type WorkConceptSummary,
+  type WorkPreservationState,
+  type WorkRevisionView,
+  type WorkTimeline,
+  workAggregateFeedback,
+} from './lesson-work-contracts.js';
+import {
+  type LessonActivity,
+  LessonActivityCollection,
+  type WorkAssessmentRevision,
+  WorkAssessmentRevisionCollection,
+  type WorkAttempt,
+  WorkAttemptCollection,
+  type Workbook,
+  WorkbookCollection,
+  type WorkbookWorkFiling,
+  WorkbookWorkFilingCollection,
+  WorkFeedbackDeliveryCollection,
+  WorkFeedbackReleaseCollection,
+} from './lesson-work-models.js';
+import {
   type SubmissionPage,
   SubmissionService,
   type SubmissionServiceOptions,
 } from './submission-service.js';
-import { normalizeWorkbookAnswerRegions } from './workbook-answer-regions.js';
-import {
-  readWorkbookCompletion,
-  type WorkbookCompletionDecision,
-  WorkbookCompletionDecisionCollection,
-} from './workbook-completion.js';
-import {
-  aggregateWorkbookQuestions,
-  validateWorkbookAssessment,
-  WORKBOOK_MATH_VOCABULARY,
-  type WorkbookActivityView,
-  type WorkbookAssessment,
-  WorkbookAssessmentValidationError,
-  type WorkbookAssistance,
-  type WorkbookAttemptView,
-  WorkbookCompletionConflictError,
-  type WorkbookCompletionDecisionView,
-  type WorkbookConceptSummary,
-  type WorkbookPreservationState,
-  type WorkbookRevisionView,
-  type WorkbookTimeline,
-  workbookAggregateFeedback,
-} from './workbook-contracts.js';
-import { normalizeWorkbookObservedLayout } from './workbook-layout.js';
-import {
-  type Workbook,
-  type WorkbookActivity,
-  WorkbookActivityCollection,
-  type WorkbookAssessmentRevision,
-  WorkbookAssessmentRevisionCollection,
-  type WorkbookAttempt,
-  WorkbookAttemptCollection,
-  WorkbookCollection,
-  WorkbookFeedbackDeliveryCollection,
-  WorkbookFeedbackReleaseCollection,
-  type WorkbookWorkFiling,
-  WorkbookWorkFilingCollection,
-} from './workbook-models.js';
+import { normalizeWorkAnswerRegions } from './work-answer-regions.js';
+import { normalizeWorkObservedLayout } from './work-layout.js';
 
 type ActivityRequest = LearnerRequest & { activityId: string };
 type AttemptRequest = ActivityRequest & { submissionId: string };
@@ -69,7 +69,7 @@ function createHash(algorithm: 'sha256') {
   const crypto =
     typeof process !== 'undefined' && process.getBuiltinModule?.('node:crypto');
   if (!crypto)
-    throw new Error('Workbook capture and revisions require a Node server');
+    throw new Error('Lesson work capture and revisions require a Node server');
   return crypto.createHash(algorithm);
 }
 function digest(value: unknown) {
@@ -91,7 +91,7 @@ function nonempty(value: string, label: string) {
   if (typeof value !== 'string' || !value.trim() || value.length > 200)
     throw new Error(`Invalid ${label}`);
 }
-function revisionView(row: WorkbookAssessmentRevision): WorkbookRevisionView {
+function revisionView(row: WorkAssessmentRevision): WorkRevisionView {
   return {
     id: String(row.id),
     kind: row.kind as 'ai' | 'guardian',
@@ -105,8 +105,8 @@ function revisionView(row: WorkbookAssessmentRevision): WorkbookRevisionView {
 }
 
 function completionDecisionView(
-  row: WorkbookCompletionDecision,
-): WorkbookCompletionDecisionView {
+  row: WorkCompletionDecision,
+): WorkCompletionDecisionView {
   return {
     id: String(row.id),
     activityId: row.activityId,
@@ -119,23 +119,23 @@ function completionDecisionView(
 }
 
 /** Actor-bound durable physical workbook workflow. No generated write surface. */
-export class WorkbookService extends SubmissionService {
+export class LessonWorkService extends SubmissionService {
   constructor(
     db: DatabaseInterface,
     authorize: LearnerAuthorizer,
     authorizeCatalog: CatalogAuthorizer,
-    private readonly workbookOptions: SubmissionServiceOptions & {
-      workbookVocabulary?: WorkbookAssessment['vocabulary'];
+    private readonly workOptions: SubmissionServiceOptions & {
+      workVocabulary?: WorkAssessment['vocabulary'];
     },
   ) {
-    super(db, authorize, authorizeCatalog, workbookOptions);
+    super(db, authorize, authorizeCatalog, workOptions);
   }
   protected override createTransactionService(db: DatabaseInterface): this {
-    return new WorkbookService(
+    return new LessonWorkService(
       db,
       this.authorize,
       this.authorizeCatalog,
-      this.workbookOptions,
+      this.workOptions,
     ) as this;
   }
   private async serialize(request: LearnerRequest) {
@@ -151,7 +151,7 @@ export class WorkbookService extends SubmissionService {
   ) {
     const learner = await this.requireActor(request, action);
     const row = await (
-      await WorkbookActivityCollection.create({ db: this.db })
+      await LessonActivityCollection.create({ db: this.db })
     ).get(
       {
         id: request.activityId,
@@ -190,7 +190,7 @@ export class WorkbookService extends SubmissionService {
     return { row, workbook, learner };
   }
   private async filingHead(
-    row: WorkbookActivity,
+    row: LessonActivity,
   ): Promise<WorkbookWorkFiling | null> {
     if (row.captureKind !== 'unfiled') return null;
     const rows = await (
@@ -209,10 +209,10 @@ export class WorkbookService extends SubmissionService {
     return heads[0] ?? null;
   }
   private async activityView(
-    row: WorkbookActivity,
+    row: LessonActivity,
     book: Workbook | null,
     replay?: WorkbookWorkFiling,
-  ): Promise<WorkbookActivityView> {
+  ): Promise<LessonActivityView> {
     const head = replay ?? (await this.filingHead(row));
     const projectedBook = head
       ? await (await WorkbookCollection.create({ db: this.db })).get(
@@ -225,7 +225,7 @@ export class WorkbookService extends SubmissionService {
         )
       : book;
     const target = head?.canonicalActivityId
-      ? await (await WorkbookActivityCollection.create({ db: this.db })).get(
+      ? await (await LessonActivityCollection.create({ db: this.db })).get(
           {
             id: head.canonicalActivityId,
             tenantId: row.tenantId,
@@ -237,7 +237,7 @@ export class WorkbookService extends SubmissionService {
       : null;
     if (head && (!projectedBook || (head.canonicalActivityId && !target)))
       throw new LearnerAuthorizationError();
-    const completion = await readWorkbookCompletion(this.db, {
+    const completion = await readWorkCompletion(this.db, {
       tenantId: row.tenantId,
       learnerId: row.learnerId,
       activityId: String(row.id),
@@ -272,19 +272,19 @@ export class WorkbookService extends SubmissionService {
       },
     };
   }
-  async getWorkbookActivity(
+  async getLessonActivity(
     request: ActivityRequest,
-  ): Promise<WorkbookActivityView> {
+  ): Promise<LessonActivityView> {
     const { row, workbook } = await this.activity(request);
     return this.activityView(row, workbook);
   }
   /** Receipt-bound technical routing only; the caller already owns the surrounding mutation. */
-  protected async resolveUnfiledWorkbookActivityInScope(
+  protected async resolveUnfiledActivityInScope(
     request: LearnerRequest & { intakeId: string },
     action:
       | 'education.learner.submit'
       | 'education.learner.plan' = 'education.learner.submit',
-  ): Promise<WorkbookActivityView> {
+  ): Promise<LessonActivityView> {
     const learner = await this.requireActor(request, action);
     await this.serialize(request);
     const receipt = await this.db.get('workbook_photo_intakes', {
@@ -298,7 +298,7 @@ export class WorkbookService extends SubmissionService {
         receipt.actor_user_id !== request.actorUserId)
     )
       throw new LearnerAuthorizationError();
-    const activities = await WorkbookActivityCollection.create({ db: this.db });
+    const activities = await LessonActivityCollection.create({ db: this.db });
     const existing = await activities.get(
       {
         tenantId: request.tenantId,
@@ -395,7 +395,7 @@ export class WorkbookService extends SubmissionService {
       requestKey: string;
       reason: string;
     },
-  ): Promise<WorkbookActivityView> {
+  ): Promise<LessonActivityView> {
     return this.composeMutation(async (service) => {
       await service.requireActor(request, 'education.learner.plan');
       await service.serialize(request);
@@ -547,7 +547,7 @@ export class WorkbookService extends SubmissionService {
     });
   }
   /** Explicit keys distinguish editions, repeated printed labels and page sides. */
-  async resolveWorkbookActivity(
+  async resolveBookPageActivity(
     request: LearnerRequest & {
       workbookKey: string;
       title: string;
@@ -555,13 +555,13 @@ export class WorkbookService extends SubmissionService {
       pageKey: string;
       pageLabel: string;
     },
-  ): Promise<WorkbookActivityView> {
+  ): Promise<LessonActivityView> {
     return this.composeMutation((service) =>
-      service.resolveWorkbookActivityInScope(request, 'education.learner.plan'),
+      service.resolveBookPageActivityInScope(request, 'education.learner.plan'),
     );
   }
   /** Owning intake extension: caller validates evidence before upload-authorized creation. */
-  protected async resolveWorkbookActivityInScope(
+  protected async resolveBookPageActivityInScope(
     request: LearnerRequest & {
       workbookKey: string;
       title: string;
@@ -570,7 +570,7 @@ export class WorkbookService extends SubmissionService {
       pageLabel: string;
     },
     action: 'education.learner.plan' | 'education.learner.submit',
-  ): Promise<WorkbookActivityView> {
+  ): Promise<LessonActivityView> {
     const service = this;
     await service.requireActor(request, action);
     await service.serialize(request);
@@ -609,7 +609,7 @@ export class WorkbookService extends SubmissionService {
       title: request.title,
       edition: request.edition ?? '',
     });
-    const activities = await WorkbookActivityCollection.create({
+    const activities = await LessonActivityCollection.create({
       db: service.db,
     });
     const existing = await activities.get(
@@ -718,16 +718,16 @@ export class WorkbookService extends SubmissionService {
     });
     return service.activityView(row, book);
   }
-  async listWorkbookActivities(
+  async listLessonActivities(
     request: LearnerRequest,
-  ): Promise<WorkbookActivityView[]> {
+  ): Promise<LessonActivityView[]> {
     await this.requireActor(request, 'education.learner.read');
     const rows = await (
-      await WorkbookActivityCollection.create({ db: this.db })
+      await LessonActivityCollection.create({ db: this.db })
     ).list({
       where: { tenantId: request.tenantId, learnerId: request.learnerId },
     });
-    const result: WorkbookActivityView[] = [];
+    const result: LessonActivityView[] = [];
     for (const row of rows) {
       const found = await this.activity({
         ...request,
@@ -742,7 +742,7 @@ export class WorkbookService extends SubmissionService {
       expectedPolicyVersion: number;
       reviewRequired: boolean;
     },
-  ): Promise<WorkbookActivityView> {
+  ): Promise<LessonActivityView> {
     return this.composeMutation(async (service) => {
       await service.requireActor(request, 'education.learner.plan');
       await service.serialize(request);
@@ -769,7 +769,7 @@ export class WorkbookService extends SubmissionService {
   ) {
     const found = await this.activity(request, action);
     const attempt = await (
-      await WorkbookAttemptCollection.create({ db: this.db })
+      await WorkAttemptCollection.create({ db: this.db })
     ).get(
       {
         tenantId: request.tenantId,
@@ -784,9 +784,9 @@ export class WorkbookService extends SubmissionService {
   }
   private async attemptView(
     request: LearnerRequest,
-    row: WorkbookActivity,
-    attempt: WorkbookAttempt,
-  ): Promise<WorkbookAttemptView> {
+    row: LessonActivity,
+    attempt: WorkAttempt,
+  ): Promise<WorkAttemptView> {
     const submission = await super.getSubmission({
       ...request,
       enrollmentId: row.enrollmentId,
@@ -801,20 +801,20 @@ export class WorkbookService extends SubmissionService {
       episodeId: attempt.episodeId,
       reviewRequired: attempt.reviewRequired,
       policyVersion: attempt.policyVersion,
-      assistance: attempt.assistance as WorkbookAssistance,
+      assistance: attempt.assistance as WorkAssistance,
       submission: { ...submission, grade: null },
     };
   }
-  async captureWorkbookWork(
+  async captureLessonWork(
     request: ActivityRequest & {
       requestKey: string;
       pages: readonly SubmissionPage[];
       notes?: string;
       previousSubmissionId?: string;
-      assistance?: WorkbookAssistance;
+      assistance?: WorkAssistance;
       intakeItemId?: string;
     },
-  ): Promise<WorkbookAttemptView> {
+  ): Promise<WorkAttemptView> {
     return this.composeMutation(async (service) => {
       await service.requireActor(request, 'education.learner.submit');
       await service.serialize(request);
@@ -836,10 +836,10 @@ export class WorkbookService extends SubmissionService {
       const assistance = request.assistance ?? 'unknown';
       if (!['independent', 'assisted', 'unknown'].includes(assistance))
         throw new Error('Invalid assistance');
-      const attempts = await WorkbookAttemptCollection.create({
+      const attempts = await WorkAttemptCollection.create({
         db: service.db,
       });
-      let previous: WorkbookAttempt | null = null;
+      let previous: WorkAttempt | null = null;
       if (request.previousSubmissionId) {
         const predecessor = await service.attempt(
           { ...request, submissionId: request.previousSubmissionId },
@@ -857,7 +857,7 @@ export class WorkbookService extends SubmissionService {
           throw new LearnerAuthorizationError();
       }
       if (request.previousSubmissionId) {
-        const current = await readWorkbookCompletion(service.db, {
+        const current = await readWorkCompletion(service.db, {
           tenantId: request.tenantId,
           learnerId: request.learnerId,
           activityId: request.activityId,
@@ -882,7 +882,7 @@ export class WorkbookService extends SubmissionService {
               ),
             )
           )
-            throw new WorkbookCompletionConflictError('stale_attempt');
+            throw new WorkCompletionConflictError('stale_attempt');
         }
       }
       const capture = {
@@ -895,7 +895,7 @@ export class WorkbookService extends SubmissionService {
         (request.previousSubmissionId
           ? `workbook:${digest([request.activityId, request.requestKey])}`
           : undefined);
-      const submission = await service.captureWorkbookSubmission(
+      const submission = await service.captureActivitySubmission(
         {
           ...capture,
           intake: intakeItemId
@@ -919,7 +919,7 @@ export class WorkbookService extends SubmissionService {
           prior.activityId !== request.activityId ||
           prior.assistance !== assistance
         )
-          throw new Error('Workbook capture retry changed');
+          throw new Error('Lesson work capture retry changed');
         return service.attemptView(request, row, prior);
       }
       const id = globalThis.crypto.randomUUID();
@@ -968,12 +968,12 @@ export class WorkbookService extends SubmissionService {
     });
   }
   /** Trusted host lookup, preserving exact enrollment and actor authorization. */
-  async getWorkbookAttemptBySubmission(
+  async getWorkAttemptBySubmission(
     request: LearnerRequest & { enrollmentId: string; submissionId: string },
-  ): Promise<WorkbookAttemptView | null> {
+  ): Promise<WorkAttemptView | null> {
     await this.requireEnrollment(request, 'education.learner.read');
     const attempt = await (
-      await WorkbookAttemptCollection.create({ db: this.db })
+      await WorkAttemptCollection.create({ db: this.db })
     ).get(
       {
         tenantId: request.tenantId,
@@ -992,9 +992,9 @@ export class WorkbookService extends SubmissionService {
     return this.attemptView(request, row, attempt);
   }
   /** Authorized content-free preservation status; never exposes withheld marks. */
-  async getWorkbookPreservationState(
+  async getWorkPreservationState(
     request: AttemptRequest,
-  ): Promise<WorkbookPreservationState> {
+  ): Promise<WorkPreservationState> {
     const { attempt, row } = await this.attempt(request);
     const submission = await super.getSubmission({
       ...request,
@@ -1018,14 +1018,14 @@ export class WorkbookService extends SubmissionService {
     };
   }
   /** Public data-only digest map used to preserve ingestion source anchors. */
-  async getWorkbookSourceAnchors(
+  async getWorkSourceAnchors(
     request: AttemptRequest,
   ): Promise<{ assetId: string; sha256: string; pageCount: number }[]> {
     const { attempt } = await this.attempt(request);
     return JSON.parse(attempt.sourceHashes);
   }
   /** Stable IDs only: historical prompts may themselves contain learner answers. */
-  async getWorkbookQuestionIdentity(
+  async getWorkQuestionIdentity(
     request: AttemptRequest,
   ): Promise<{ id: string }[]> {
     const { attempt, learner } = await this.attempt(
@@ -1034,7 +1034,7 @@ export class WorkbookService extends SubmissionService {
     );
     const sourceId = attempt.previousAttemptId ?? String(attempt.id);
     const source = await (
-      await WorkbookAttemptCollection.create({ db: this.db })
+      await WorkAttemptCollection.create({ db: this.db })
     ).get(
       {
         id: sourceId,
@@ -1062,7 +1062,7 @@ export class WorkbookService extends SubmissionService {
   /** Canonical transcriptions only for this exact capture, never its predecessor.
    * A correction without its own revision receives IDs only. Both paths retain
    * the same source/revision and full ancestry visibility checks as identity. */
-  async getWorkbookQuestionContext(
+  async getWorkQuestionContext(
     request: AttemptRequest & { analysisRevision?: number },
   ): Promise<
     | { kind: 'same_capture'; questions: { id: string; prompt: string }[] }
@@ -1095,19 +1095,19 @@ export class WorkbookService extends SubmissionService {
     }
     if (!attempt.previousAttemptId)
       return { kind: 'identity_only', questions: [] };
-    const questions = await this.getWorkbookQuestionIdentity(request);
+    const questions = await this.getWorkQuestionIdentity(request);
     return { kind: 'identity_only', questions };
   }
   private async revisionPayloadVisible(
     request: LearnerRequest,
-    attempt: WorkbookAttempt,
-    revision: WorkbookAssessmentRevision,
+    attempt: WorkAttempt,
+    revision: WorkAssessmentRevision,
   ): Promise<boolean> {
     const photo = await this.workbookPhotoSource(request, {
       submissionId: attempt.submissionId,
     });
     const release = await (
-      await WorkbookFeedbackReleaseCollection.create({ db: this.db })
+      await WorkFeedbackReleaseCollection.create({ db: this.db })
     ).get(
       {
         tenantId: request.tenantId,
@@ -1128,7 +1128,7 @@ export class WorkbookService extends SubmissionService {
   }
   private async revisions(request: LearnerRequest, attemptId: string) {
     return (
-      await WorkbookAssessmentRevisionCollection.create({ db: this.db })
+      await WorkAssessmentRevisionCollection.create({ db: this.db })
     ).list({
       where: {
         tenantId: request.tenantId,
@@ -1140,9 +1140,9 @@ export class WorkbookService extends SubmissionService {
   }
   private async identityRevision(
     request: LearnerRequest,
-    attempt: WorkbookAttempt,
+    attempt: WorkAttempt,
     excludeAnalysisRevision?: number,
-  ): Promise<WorkbookAssessmentRevision | undefined> {
+  ): Promise<WorkAssessmentRevision | undefined> {
     const rows = (await this.revisions(request, String(attempt.id))).filter(
       (row) =>
         row.kind !== 'ai' ||
@@ -1160,12 +1160,12 @@ export class WorkbookService extends SubmissionService {
    * hidden ancestor; exact published ID sets keep old public snapshots usable. */
   private async questionIdentityVisible(
     request: LearnerRequest,
-    attempt: WorkbookAttempt,
-    revision: WorkbookAssessmentRevision | undefined,
+    attempt: WorkAttempt,
+    revision: WorkAssessmentRevision | undefined,
     proposedIds?: readonly string[],
   ): Promise<boolean> {
     if (revision && revision.attemptId !== String(attempt.id)) return false;
-    const identity = (row: WorkbookAssessmentRevision) =>
+    const identity = (row: WorkAssessmentRevision) =>
       JSON.stringify(
         revisionView(row)
           .assessment.questions.map((q) => q.id)
@@ -1176,12 +1176,9 @@ export class WorkbookService extends SubmissionService {
       : proposedIds
         ? JSON.stringify([...proposedIds].sort())
         : null;
-    const released = async (
-      source: WorkbookAttempt,
-      row: WorkbookAssessmentRevision,
-    ) =>
+    const released = async (source: WorkAttempt, row: WorkAssessmentRevision) =>
       !!(await (
-        await WorkbookFeedbackReleaseCollection.create({ db: this.db })
+        await WorkFeedbackReleaseCollection.create({ db: this.db })
       ).get(
         {
           tenantId: request.tenantId,
@@ -1191,9 +1188,9 @@ export class WorkbookService extends SubmissionService {
         },
         { cache: false },
       ));
-    const attempts = await WorkbookAttemptCollection.create({ db: this.db });
+    const attempts = await WorkAttemptCollection.create({ db: this.db });
     const seen = new Set<string>();
-    let current: WorkbookAttempt | null = attempt;
+    let current: WorkAttempt | null = attempt;
     while (current) {
       if (
         seen.has(String(current.id)) ||
@@ -1244,17 +1241,15 @@ export class WorkbookService extends SubmissionService {
   }
   private async validateAssessment(
     request: AttemptRequest,
-    attempt: WorkbookAttempt,
-    assessment: WorkbookAssessment,
+    attempt: WorkAttempt,
+    assessment: WorkAssessment,
   ) {
-    validateWorkbookAssessment(assessment);
+    validateWorkAssessment(assessment);
     if (
       JSON.stringify(assessment.vocabulary) !==
-      JSON.stringify(
-        this.workbookOptions.workbookVocabulary ?? WORKBOOK_MATH_VOCABULARY,
-      )
+      JSON.stringify(this.workOptions.workVocabulary ?? WORK_MATH_VOCABULARY)
     )
-      throw new WorkbookAssessmentValidationError(
+      throw new WorkAssessmentValidationError(
         'Assessment must use configured curated vocabulary',
       );
     const sources: { assetId: string; sha256: string; pageCount: number }[] =
@@ -1269,7 +1264,7 @@ export class WorkbookService extends SubmissionService {
               (anchor.page === null || anchor.page <= s.pageCount),
           )
         )
-          throw new WorkbookAssessmentValidationError(
+          throw new WorkAssessmentValidationError(
             'Assessment source does not belong to capture',
             'ungrounded_source',
           );
@@ -1278,7 +1273,7 @@ export class WorkbookService extends SubmissionService {
     // learner answers and must never force those answers onto a correction.
     // Reviewed vocabulary still cannot be replaced by free-text labels.
     const activities = await (
-      await WorkbookAttemptCollection.create({ db: this.db })
+      await WorkAttemptCollection.create({ db: this.db })
     ).list({
       where: {
         tenantId: request.tenantId,
@@ -1298,7 +1293,7 @@ export class WorkbookService extends SubmissionService {
         JSON.stringify(previous.vocabulary) !==
           JSON.stringify(assessment.vocabulary)
       )
-        throw new WorkbookAssessmentValidationError(
+        throw new WorkAssessmentValidationError(
           'Reviewed concept vocabulary requires explicit guardian remapping',
           'ambiguous_proposal',
         );
@@ -1313,7 +1308,7 @@ export class WorkbookService extends SubmissionService {
                 q.prompt),
         )
       )
-        throw new WorkbookAssessmentValidationError(
+        throw new WorkAssessmentValidationError(
           'Unconfirmed question identity or changed prompt',
           'ambiguous_proposal',
         );
@@ -1321,15 +1316,15 @@ export class WorkbookService extends SubmissionService {
   }
   private async appendRevision(
     request: AttemptRequest & { requestKey: string },
-    attempt: WorkbookAttempt,
+    attempt: WorkAttempt,
     kind: 'ai' | 'guardian',
-    assessment: WorkbookAssessment,
+    assessment: WorkAssessment,
     supersedesId: string | null,
     sourceRevisionId: string | null = null,
     decisionReason = '',
   ) {
     nonempty(request.requestKey, 'revision request key');
-    const rows = await WorkbookAssessmentRevisionCollection.create({
+    const rows = await WorkAssessmentRevisionCollection.create({
       db: this.db,
     });
     const requestDigest = digest({
@@ -1378,12 +1373,12 @@ export class WorkbookService extends SubmissionService {
       fresh: true,
     };
   }
-  async recordWorkbookAnalysis(
+  async recordWorkAnalysis(
     request: AttemptRequest & {
       requestKey: string;
-      assessment: WorkbookAssessment;
+      assessment: WorkAssessment;
     },
-  ): Promise<WorkbookRevisionView> {
+  ): Promise<WorkRevisionView> {
     return this.composeMutation(async (service) => {
       await service.requireActor(request, 'education.learner.submit');
       await service.serialize(request);
@@ -1391,7 +1386,7 @@ export class WorkbookService extends SubmissionService {
         request,
         'education.learner.submit',
       );
-      const assessment: WorkbookAssessment = {
+      const assessment: WorkAssessment = {
         ...request.assessment,
         aggregate: undefined,
         questions: request.assessment.questions?.map((q) => ({
@@ -1402,8 +1397,8 @@ export class WorkbookService extends SubmissionService {
           evidenceLimitations: q.evidenceLimitations ?? [],
         })),
       };
-      validateWorkbookAssessment(assessment);
-      const normalizedLayout = normalizeWorkbookObservedLayout(
+      validateWorkAssessment(assessment);
+      const normalizedLayout = normalizeWorkObservedLayout(
         assessment.layout,
         assessment.questions,
         JSON.parse(attempt.sourceHashes),
@@ -1415,7 +1410,7 @@ export class WorkbookService extends SubmissionService {
       Object.assign(assessment, normalizedLayout);
       if (!assessment.layout && omitted) assessment.layoutOmission = 'invalid';
       const regionOmitted = assessment.answerRegionsOmission === 'invalid';
-      const normalizedRegions = normalizeWorkbookAnswerRegions(
+      const normalizedRegions = normalizeWorkAnswerRegions(
         assessment.answerRegions,
         assessment.questions,
         JSON.parse(attempt.sourceHashes),
@@ -1437,9 +1432,9 @@ export class WorkbookService extends SubmissionService {
         ))
       )
         throw new LearnerAuthorizationError();
-      const aggregate = aggregateWorkbookQuestions(assessment.questions);
+      const aggregate = aggregateWorkQuestions(assessment.questions);
       assessment.aggregate = aggregate;
-      assessment.feedback = workbookAggregateFeedback(aggregate);
+      assessment.feedback = workAggregateFeedback(aggregate);
       const prior = (await service.revisions(request, String(attempt.id))).find(
         (r) => r.requestKey === request.requestKey,
       );
@@ -1462,15 +1457,15 @@ export class WorkbookService extends SubmissionService {
       );
     });
   }
-  async reviewWorkbookAssessment(
+  async reviewWorkAssessment(
     request: AttemptRequest & {
       revisionId: string;
       expectedHeadId: string | null;
       requestKey: string;
-      assessment?: WorkbookAssessment;
+      assessment?: WorkAssessment;
       decisionReason?: string;
     },
-  ): Promise<WorkbookRevisionView> {
+  ): Promise<WorkRevisionView> {
     return this.composeMutation(async (service) => {
       await service.requireActor(request, 'education.learner.grade');
       await service.serialize(request);
@@ -1483,7 +1478,7 @@ export class WorkbookService extends SubmissionService {
       if (!source) throw new Error('Assessment revision unavailable');
       const originalAssessment =
         request.assessment ?? revisionView(source).assessment;
-      const assessment: WorkbookAssessment = {
+      const assessment: WorkAssessment = {
         ...originalAssessment,
         aggregate: undefined,
         questions: originalAssessment.questions.map((q) => ({
@@ -1501,8 +1496,8 @@ export class WorkbookService extends SubmissionService {
           : 'Guardian confirmed proposal');
       nonempty(decisionReason, 'guardian decision reason');
       // Guardian may explicitly correct transcription, result or mapping.
-      validateWorkbookAssessment(assessment);
-      const normalizedLayout = normalizeWorkbookObservedLayout(
+      validateWorkAssessment(assessment);
+      const normalizedLayout = normalizeWorkObservedLayout(
         assessment.layout,
         assessment.questions,
         JSON.parse(attempt.sourceHashes),
@@ -1514,7 +1509,7 @@ export class WorkbookService extends SubmissionService {
       Object.assign(assessment, normalizedLayout);
       if (!assessment.layout && omitted) assessment.layoutOmission = 'invalid';
       const regionOmitted = assessment.answerRegionsOmission === 'invalid';
-      const normalizedRegions = normalizeWorkbookAnswerRegions(
+      const normalizedRegions = normalizeWorkAnswerRegions(
         assessment.answerRegions,
         assessment.questions,
         JSON.parse(attempt.sourceHashes),
@@ -1524,12 +1519,11 @@ export class WorkbookService extends SubmissionService {
       Object.assign(assessment, normalizedRegions);
       if (!assessment.answerRegions && regionOmitted)
         assessment.answerRegionsOmission = 'invalid';
-      assessment.aggregate = aggregateWorkbookQuestions(assessment.questions);
+      assessment.aggregate = aggregateWorkQuestions(assessment.questions);
       if (
         JSON.stringify(assessment.vocabulary) !==
         JSON.stringify(
-          service.workbookOptions.workbookVocabulary ??
-            WORKBOOK_MATH_VOCABULARY,
+          service.workOptions.workVocabulary ?? WORK_MATH_VOCABULARY,
         )
       )
         throw new Error('Review must use configured curated vocabulary');
@@ -1564,7 +1558,7 @@ export class WorkbookService extends SubmissionService {
       );
       if (result.fresh) {
         const successors = await (
-          await WorkbookAttemptCollection.create({ db: service.db })
+          await WorkAttemptCollection.create({ db: service.db })
         ).list({
           where: {
             tenantId: request.tenantId,
@@ -1572,7 +1566,7 @@ export class WorkbookService extends SubmissionService {
           },
         });
         if (!successors.length) {
-          const score = aggregateWorkbookQuestions(assessment.questions).score;
+          const score = aggregateWorkQuestions(assessment.questions).score;
           await service.reviewSubmission({
             ...request,
             enrollmentId: row.enrollmentId,
@@ -1584,13 +1578,13 @@ export class WorkbookService extends SubmissionService {
       return revisionView(result.row);
     });
   }
-  async completeWorkbookActivity(
+  async completeLessonActivity(
     request: AttemptRequest & {
       expectedAttemptId: string;
       expectedHeadId: string | null;
       requestKey: string;
     },
-  ): Promise<WorkbookCompletionDecisionView> {
+  ): Promise<WorkCompletionDecisionView> {
     return this.composeMutation(async (service) => {
       await service.requireActor(request, 'education.learner.complete');
       await service.serialize(request);
@@ -1603,7 +1597,7 @@ export class WorkbookService extends SubmissionService {
       nonempty(request.submissionId, 'completion submission');
       if (request.expectedHeadId !== null)
         nonempty(request.expectedHeadId, 'completion feedback head');
-      const decisions = await WorkbookCompletionDecisionCollection.create({
+      const decisions = await WorkCompletionDecisionCollection.create({
         db: service.db,
       });
       const prior = await decisions.get(
@@ -1622,10 +1616,10 @@ export class WorkbookService extends SubmissionService {
           prior.submissionId !== request.submissionId ||
           prior.feedbackHeadId !== request.expectedHeadId
         )
-          throw new WorkbookCompletionConflictError('changed_retry');
+          throw new WorkCompletionConflictError('changed_retry');
         return completionDecisionView(prior);
       }
-      const current = await readWorkbookCompletion(service.db, {
+      const current = await readWorkCompletion(service.db, {
         tenantId: request.tenantId,
         learnerId: request.learnerId,
         activityId: request.activityId,
@@ -1635,11 +1629,11 @@ export class WorkbookService extends SubmissionService {
         current.currentAttempt.id !== request.expectedAttemptId ||
         current.currentAttempt.submissionId !== request.submissionId
       )
-        throw new WorkbookCompletionConflictError('stale_attempt');
+        throw new WorkCompletionConflictError('stale_attempt');
       if (current.feedbackHeadId !== request.expectedHeadId)
-        throw new WorkbookCompletionConflictError('stale_head');
+        throw new WorkCompletionConflictError('stale_head');
       if (current.decision)
-        throw new WorkbookCompletionConflictError('already_complete');
+        throw new WorkCompletionConflictError('already_complete');
       const decision = await decisions.create({
         tenantId: request.tenantId,
         learnerId: request.learnerId,
@@ -1669,7 +1663,7 @@ export class WorkbookService extends SubmissionService {
       return completionDecisionView(decision);
     });
   }
-  async releaseWorkbookFeedback(
+  async releaseWorkFeedback(
     request: AttemptRequest & {
       revisionId: string;
       requestKey: string;
@@ -1687,7 +1681,7 @@ export class WorkbookService extends SubmissionService {
       const revisions = await service.revisions(request, String(attempt.id));
       if (!revisions.some((r) => r.id === request.revisionId))
         throw new Error('Feedback revision unavailable');
-      const releases = await WorkbookFeedbackReleaseCollection.create({
+      const releases = await WorkFeedbackReleaseCollection.create({
         db: service.db,
       });
       let release = await releases.get(
@@ -1731,7 +1725,7 @@ export class WorkbookService extends SubmissionService {
     });
   }
   /** Record an authenticated own-learner render acknowledgment, never 'read'. */
-  async acknowledgeWorkbookFeedbackDelivery(
+  async acknowledgeWorkFeedbackDelivery(
     request: AttemptRequest & { revisionId: string; requestKey: string },
   ) {
     return this.composeMutation(async (service) => {
@@ -1747,7 +1741,7 @@ export class WorkbookService extends SubmissionService {
       const revisions = await service.revisions(request, String(attempt.id));
       const revision = revisions.find((r) => r.id === request.revisionId);
       const releases = await (
-        await WorkbookFeedbackReleaseCollection.create({ db: service.db })
+        await WorkFeedbackReleaseCollection.create({ db: service.db })
       ).list({
         where: {
           tenantId: request.tenantId,
@@ -1766,7 +1760,7 @@ export class WorkbookService extends SubmissionService {
         !(await service.questionIdentityVisible(request, attempt, revision))
       )
         throw new LearnerAuthorizationError();
-      const deliveries = await WorkbookFeedbackDeliveryCollection.create({
+      const deliveries = await WorkFeedbackDeliveryCollection.create({
         db: service.db,
       });
       const byKey = await deliveries.get(
@@ -1807,16 +1801,16 @@ export class WorkbookService extends SubmissionService {
       };
     });
   }
-  async getWorkbookTimeline(
+  async getWorkTimeline(
     request: ActivityRequest & {
       cursor?: string;
       limit?: number;
       revisionId?: string;
     },
-  ): Promise<WorkbookTimeline> {
+  ): Promise<WorkTimeline> {
     const { row, workbook, learner } = await this.activity(request);
     const own = learner.userId === request.actorUserId;
-    const completion = await readWorkbookCompletion(this.db, {
+    const completion = await readWorkCompletion(this.db, {
       tenantId: request.tenantId,
       learnerId: request.learnerId,
       activityId: request.activityId,
@@ -1825,7 +1819,7 @@ export class WorkbookService extends SubmissionService {
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100)
       throw new Error('Invalid timeline limit');
     const all = await (
-      await WorkbookAttemptCollection.create({ db: this.db })
+      await WorkAttemptCollection.create({ db: this.db })
     ).list({
       where: {
         tenantId: request.tenantId,
@@ -1845,7 +1839,7 @@ export class WorkbookService extends SubmissionService {
     if (request.revisionId) {
       if (own || request.cursor) throw new LearnerAuthorizationError();
       const revision = await (
-        await WorkbookAssessmentRevisionCollection.create({ db: this.db })
+        await WorkAssessmentRevisionCollection.create({ db: this.db })
       ).get(
         {
           id: request.revisionId,
@@ -1862,11 +1856,11 @@ export class WorkbookService extends SubmissionService {
     }
     if (request.cursor && start === 0)
       throw new Error('Invalid timeline cursor');
-    const attempts: WorkbookTimeline['attempts'] = [];
+    const attempts: WorkTimeline['attempts'] = [];
     for (const attempt of all.slice(start, start + limit)) {
       const revisions = await this.revisions(request, String(attempt.id));
       const releases = await (
-        await WorkbookFeedbackReleaseCollection.create({ db: this.db })
+        await WorkFeedbackReleaseCollection.create({ db: this.db })
       ).list({
         where: {
           tenantId: request.tenantId,
@@ -1877,7 +1871,7 @@ export class WorkbookService extends SubmissionService {
       const photo = await this.workbookPhotoSource(request, {
         submissionId: attempt.submissionId,
       });
-      const visible: WorkbookAssessmentRevision[] = [];
+      const visible: WorkAssessmentRevision[] = [];
       for (const revision of revisions) {
         if (
           !own ||
@@ -1890,7 +1884,7 @@ export class WorkbookService extends SubmissionService {
           visible.push(revision);
       }
       const deliveries = await (
-        await WorkbookFeedbackDeliveryCollection.create({ db: this.db })
+        await WorkFeedbackDeliveryCollection.create({ db: this.db })
       ).list({
         where: {
           tenantId: request.tenantId,
@@ -1953,11 +1947,11 @@ export class WorkbookService extends SubmissionService {
   /** Descriptive guardian projection; corrections stay within one practice episode. */
   async getConceptEvidenceSummary(request: ActivityRequest): Promise<{
     algorithmVersion: 'workbook-descriptive-v1';
-    concepts: WorkbookConceptSummary[];
+    concepts: WorkConceptSummary[];
   }> {
     await this.activity(request, 'education.learner.grade');
     const attempts = await (
-      await WorkbookAttemptCollection.create({ db: this.db })
+      await WorkAttemptCollection.create({ db: this.db })
     ).list({
       where: {
         tenantId: request.tenantId,
@@ -1965,7 +1959,7 @@ export class WorkbookService extends SubmissionService {
         activityId: request.activityId,
       },
     });
-    const evidence: WorkbookEvidenceInput[] = [];
+    const evidence: WorkEvidenceInput[] = [];
     // Parent captures always precede corrections regardless of random UUID order.
     const ordered = [...attempts].sort(
       (a, b) =>
@@ -1989,7 +1983,7 @@ export class WorkbookService extends SubmissionService {
     }
     return {
       algorithmVersion: 'workbook-descriptive-v1',
-      concepts: summarizeWorkbookEvidence(evidence),
+      concepts: summarizeWorkEvidence(evidence),
     };
   }
 }

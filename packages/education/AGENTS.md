@@ -29,7 +29,7 @@ Validation: `pnpm --filter @happyvertical/smrt-education test`,
 `test:postgres`, `typecheck`, and `build`.
 
 Physical workbook capture, immutable assessment/feedback history and descriptive
-evidence use [WorkbookService](agents/workbook-service.md). Keep provisional
+evidence use [LessonWorkService](agents/lesson-work-service.md). Keep provisional
 sharing separate from guardian Grade authority. Photo-first receipt/context
 capture uses [WorkbookPhotoService](agents/photo-intake.md); covers/references
 never create learning evidence, and blank exercises need explicit work intent.

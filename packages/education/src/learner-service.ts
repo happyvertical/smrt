@@ -52,8 +52,8 @@ import type {
   Learner,
   LessonProgress,
 } from './learners.js';
-import { readWorkbookCompletion } from './workbook-completion.js';
-import { WorkbookActivityCollection } from './workbook-models.js';
+import { readWorkCompletion } from './lesson-work-completion.js';
+import { LessonActivityCollection } from './lesson-work-models.js';
 
 /** One lesson row an enrollment may work on, with the course row it belongs to. */
 export type EnrollmentLessonEntry = Readonly<{
@@ -235,10 +235,10 @@ export class LessonAlreadyCompleteError extends LearnerValidationError {
  * `completeOwnLesson` on a lesson with a physical workbook activity, whose
  * completion is owned by the workbook completion decision.
  */
-export class WorkbookOwnedLessonError extends LearnerValidationError {
+export class LessonWorkOwnedError extends LearnerValidationError {
   constructor() {
     super('A workbook lesson is completed through the workbook workflow');
-    this.name = 'WorkbookOwnedLessonError';
+    this.name = 'LessonWorkOwnedError';
   }
 }
 
@@ -1234,12 +1234,12 @@ export class LearnerService {
   }
 
   /** Existing non-workbook consumers need not migrate optional workbook tables. */
-  protected async findWorkbookActivity(
+  protected async findLessonActivity(
     request: LearnerRequest,
     selector: { enrollmentId?: string; lessonId?: string },
   ) {
     if (!(await this.db.tableExists('workbook_activities'))) return null;
-    return (await WorkbookActivityCollection.create({ db: this.db })).get(
+    return (await LessonActivityCollection.create({ db: this.db })).get(
       { tenantId: request.tenantId, learnerId: request.learnerId, ...selector },
       { cache: false },
     );
@@ -1251,12 +1251,12 @@ export class LearnerService {
     row: LessonProgress,
   ): Promise<LessonProgressView> {
     const view = progressView(row);
-    const activity = await this.findWorkbookActivity(request, {
+    const activity = await this.findLessonActivity(request, {
       enrollmentId: row.enrollmentId,
       lessonId: row.lessonId,
     });
     if (!activity) return view;
-    const state = await readWorkbookCompletion(this.db, {
+    const state = await readWorkCompletion(this.db, {
       tenantId: request.tenantId,
       learnerId: request.learnerId,
       activityId: String(activity.id),
@@ -1743,12 +1743,12 @@ export class LearnerService {
       }
       if (row?.status === 'skipped') throw new LessonSkippedError();
       if (
-        await service.findWorkbookActivity(request, {
+        await service.findLessonActivity(request, {
           enrollmentId: String(enrollment.id),
           lessonId: request.lessonId,
         })
       )
-        throw new WorkbookOwnedLessonError();
+        throw new LessonWorkOwnedError();
       if (!hasTables)
         throw new LearnerHistoryUnavailableError('lesson_completion_records');
       if (evidence) {

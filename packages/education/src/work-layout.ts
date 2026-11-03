@@ -1,7 +1,7 @@
 import type {
-  WorkbookObservedLayout,
-  WorkbookQuestion,
-} from './workbook-contracts.js';
+  WorkObservedLayout,
+  WorkQuestion,
+} from './lesson-work-contracts.js';
 
 const record = (v: unknown): v is Record<string, unknown> =>
   v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -13,11 +13,11 @@ const integer = (v: unknown, min: number, max: number): v is number =>
 /** Copy only bounded observed metadata, dropping the entire layout on any error.
  * This browser-safe helper never changes questions or grants source geometry.
  */
-export function normalizeWorkbookObservedLayout(
+export function normalizeWorkObservedLayout(
   value: unknown,
-  questions: readonly WorkbookQuestion[],
+  questions: readonly WorkQuestion[],
   sources: readonly { assetId: string; sha256?: string; pageCount: number }[],
-): { layout?: WorkbookObservedLayout; layoutOmission?: 'invalid' } {
+): { layout?: WorkObservedLayout; layoutOmission?: 'invalid' } {
   if (value === undefined) return {};
   const invalid = { layoutOmission: 'invalid' as const };
   if (
@@ -30,7 +30,7 @@ export function normalizeWorkbookObservedLayout(
     value.placements.length > 200
   )
     return invalid;
-  const sections: WorkbookObservedLayout['sections'] = [];
+  const sections: WorkObservedLayout['sections'] = [];
   const sectionIds = new Set<string>();
   for (const section of value.sections) {
     if (
@@ -69,7 +69,7 @@ export function normalizeWorkbookObservedLayout(
       },
     });
   }
-  const placements: WorkbookObservedLayout['placements'] = [];
+  const placements: WorkObservedLayout['placements'] = [];
   const placed = new Set<string>();
   for (const placement of value.placements) {
     if (

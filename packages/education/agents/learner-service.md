@@ -115,7 +115,7 @@ Same-tenant membership alone never grants sibling access.
   returns `{ changed: false }`; one complete any other way (guardian
   `attestLesson`/grade, workbook completion) throws `LessonAlreadyCompleteError`.
   Also `EnrollmentNotActiveError` (`.status`; only `active` enrollments),
-  `LessonSkippedError`, `WorkbookOwnedLessonError` (a workbook lesson completes
+  `LessonSkippedError`, `LessonWorkOwnedError` (a workbook lesson completes
   through its workbook decision), and `LearnerHistoryUnavailableError` without
   `lesson_completion_records`. Guardian `attestLesson` is unchanged.
 - `setEnrollmentPace({ enrollmentId, pace: { lessonsPerWeek } | null, policyBasis })`

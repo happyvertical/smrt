@@ -5,22 +5,22 @@ import { getTestDatabase } from '@happyvertical/smrt-core';
 import { disableTenancy, enableTenancy } from '@happyvertical/smrt-tenancy';
 import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import type { LearnerRequest } from '../learner-service.js';
-import { WORKBOOK_MATH_VOCABULARY } from '../workbook-contracts.js';
+import { WORK_MATH_VOCABULARY } from '../lesson-work-contracts.js';
 import {
-  WorkbookActivityCollection,
+  LessonActivityCollection,
   WorkbookCollection,
   WorkbookWorkFiling,
   WorkbookWorkFilingCollection,
-} from '../workbook-models.js';
+} from '../lesson-work-models.js';
+import { LessonWorkService } from '../lesson-work-service.js';
 import { WorkbookPhotoIntakeCollection } from '../workbook-photo-models.js';
-import { WorkbookService } from '../workbook-service.js';
 import { learnerFixture } from './learner-workflows.js';
-import { workbookClasses } from './workbook-workflows.js';
+import { workbookClasses } from './lesson-work-workflows.js';
 
-class UnfiledTestService extends WorkbookService {
+class UnfiledTestService extends LessonWorkService {
   resolveUnfiled(request: LearnerRequest & { intakeId: string }) {
     return this.withTransaction((service) =>
-      service.resolveUnfiledWorkbookActivityInScope(request),
+      service.resolveUnfiledActivityInScope(request),
     );
   }
 }
@@ -113,7 +113,7 @@ it('binds one identity-free work unit to an exact receipt and guards ordinary id
       ),
     ).rejects.toThrow('no workbook policy');
     await f.as(f.parent, async () => {
-      const activities = await WorkbookActivityCollection.create({ db: f.db });
+      const activities = await LessonActivityCollection.create({ db: f.db });
       const row = await activities.get({ id: work.id }, { cache: false });
       if (!row) throw new Error('Missing work unit');
       await expect(row.save()).rejects.toThrow('immutable');
@@ -130,7 +130,7 @@ it('binds one identity-free work unit to an exact receipt and guards ordinary id
     });
     expect(
       (
-        await f.as(f.parent, () => f.service.listWorkbookActivities(f.parent))
+        await f.as(f.parent, () => f.service.listLessonActivities(f.parent))
       ).map((a) => a.id),
     ).toContain(work.id);
   } finally {
@@ -144,7 +144,7 @@ it('appends guardian filing with exact CAS and preserves source routing, policy 
       f.service.resolveUnfiled(f.request),
     );
     const canonical = await f.as(f.parent, () =>
-      f.service.resolveWorkbookActivity({
+      f.service.resolveBookPageActivity({
         ...f.parent,
         workbookKey: 'real-copy',
         title: 'Real workbook',
@@ -175,14 +175,14 @@ it('appends guardian filing with exact CAS and preserves source routing, policy 
     };
     await expect(
       f.as(f.parent, () =>
-        f.service.captureWorkbookWork({
+        f.service.captureLessonWork({
           ...capture,
           intakeItemId: 'other-photo',
         }),
       ),
     ).rejects.toThrow('original photo receipt');
     const attempt = await f.as(f.parent, () =>
-      f.service.captureWorkbookWork(capture),
+      f.service.captureLessonWork(capture),
     );
     const evidenceRequest = {
       ...f.parent,
@@ -190,16 +190,16 @@ it('appends guardian filing with exact CAS and preserves source routing, policy 
       submissionId: attempt.submissionId,
     };
     const anchors = await f.as(f.parent, () =>
-      f.service.getWorkbookSourceAnchors(evidenceRequest),
+      f.service.getWorkSourceAnchors(evidenceRequest),
     );
     const ai = await f.as(f.parent, () =>
-      f.service.recordWorkbookAnalysis({
+      f.service.recordWorkAnalysis({
         ...evidenceRequest,
         requestKey: 'analysis',
         assessment: {
           version: 1,
           feedback: 'Correct',
-          vocabulary: structuredClone(WORKBOOK_MATH_VOCABULARY),
+          vocabulary: structuredClone(WORK_MATH_VOCABULARY),
           provenance: {
             provider: 'synthetic',
             model: 'test',
@@ -226,7 +226,7 @@ it('appends guardian filing with exact CAS and preserves source routing, policy 
       }),
     );
     const approved = await f.as(f.parent, () =>
-      f.service.reviewWorkbookAssessment({
+      f.service.reviewWorkAssessment({
         ...evidenceRequest,
         revisionId: ai.id,
         expectedHeadId: null,
@@ -234,7 +234,7 @@ it('appends guardian filing with exact CAS and preserves source routing, policy 
       }),
     );
     await f.as(f.parent, () =>
-      f.service.releaseWorkbookFeedback({
+      f.service.releaseWorkFeedback({
         ...evidenceRequest,
         revisionId: approved.id,
         expectedHeadId: approved.id,
@@ -242,7 +242,7 @@ it('appends guardian filing with exact CAS and preserves source routing, policy 
       }),
     );
     const originalTimeline = await f.as(f.parent, () =>
-      f.service.getWorkbookTimeline({ ...f.parent, activityId: work.id }),
+      f.service.getWorkTimeline({ ...f.parent, activityId: work.id }),
     );
     const originalSummary = await f.as(f.parent, () =>
       f.service.getConceptEvidenceSummary({ ...f.parent, activityId: work.id }),
@@ -330,7 +330,7 @@ it('appends guardian filing with exact CAS and preserves source routing, policy 
       original,
     );
     expect(
-      await f.as(f.parent, () => f.service.captureWorkbookWork(capture)),
+      await f.as(f.parent, () => f.service.captureLessonWork(capture)),
     ).toMatchObject({
       id: attempt.id,
       activityId: attempt.activityId,
@@ -338,7 +338,7 @@ it('appends guardian filing with exact CAS and preserves source routing, policy 
       episodeId: attempt.episodeId,
     });
     const timeline = await f.as(f.parent, () =>
-      f.service.getWorkbookTimeline({ ...f.parent, activityId: work.id }),
+      f.service.getWorkTimeline({ ...f.parent, activityId: work.id }),
     );
     expect(timeline.attempts[0]).toMatchObject({
       id: attempt.id,
@@ -378,7 +378,7 @@ it('appends guardian filing with exact CAS and preserves source routing, policy 
     ).rejects.toThrow('rollback');
     expect(
       await f.as(f.parent, () =>
-        f.service.getWorkbookActivity({ ...f.parent, activityId: work.id }),
+        f.service.getLessonActivity({ ...f.parent, activityId: work.id }),
       ),
     ).toEqual(bookOnly);
     await expect(
@@ -391,7 +391,7 @@ it('appends guardian filing with exact CAS and preserves source routing, policy 
       ),
     ).rejects.toThrow('Only unfiled');
     const correction = await f.as(f.parent, () =>
-      f.service.captureWorkbookWork({
+      f.service.captureLessonWork({
         ...capture,
         requestKey: 'correction',
         intakeItemId: 'correction-intake',
@@ -442,7 +442,7 @@ it('defaults legacy inserts to identified work while retaining the ordinary work
   const f = await fixture();
   try {
     const canonical = await f.as(f.parent, () =>
-      f.service.resolveWorkbookActivity({
+      f.service.resolveBookPageActivity({
         ...f.parent,
         workbookKey: 'legacy-book',
         title: 'Legacy workbook',
@@ -473,7 +473,7 @@ it('defaults legacy inserts to identified work while retaining the ordinary work
     });
     expect(
       await f.as(f.parent, () =>
-        f.service.getWorkbookActivity({ ...f.parent, activityId: id }),
+        f.service.getLessonActivity({ ...f.parent, activityId: id }),
       ),
     ).toMatchObject({
       title: 'Legacy workbook',
@@ -505,10 +505,10 @@ it('creates optional manual book metadata atomically without a canonical lesson 
       ],
     };
     const attempt = await f.as(f.parent, () =>
-      f.service.captureWorkbookWork(capture),
+      f.service.captureLessonWork(capture),
     );
     const before = await f.as(f.parent, () =>
-      f.service.getWorkbookTimeline({ ...f.parent, activityId: work.id }),
+      f.service.getWorkTimeline({ ...f.parent, activityId: work.id }),
     );
     const activityBefore = await f.db.get('workbook_activities', {
       id: work.id,
@@ -558,7 +558,7 @@ it('creates optional manual book metadata atomically without a canonical lesson 
     expect(
       (
         await f.as(f.parent, () =>
-          f.service.getWorkbookTimeline({ ...f.parent, activityId: work.id }),
+          f.service.getWorkTimeline({ ...f.parent, activityId: work.id }),
         )
       ).attempts,
     ).toEqual(before.attempts);
@@ -567,13 +567,13 @@ it('creates optional manual book metadata atomically without a canonical lesson 
     );
     expect(
       (
-        await f.as(f.parent, () => f.service.listWorkbookActivities(f.parent))
+        await f.as(f.parent, () => f.service.listLessonActivities(f.parent))
       ).map((a) => a.id),
     ).toEqual([work.id]);
     expect(
       (
         await f.as(f.parent, () =>
-          f.service.getWorkbookTimeline({ ...f.parent, activityId: work.id }),
+          f.service.getWorkTimeline({ ...f.parent, activityId: work.id }),
         )
       ).attempts[0].id,
     ).toBe(attempt.id);
@@ -648,7 +648,7 @@ it('creates optional manual book metadata atomically without a canonical lesson 
     expect(
       (
         await f.as(f.parent, () =>
-          f.service.getWorkbookActivity({ ...f.parent, activityId: work.id }),
+          f.service.getLessonActivity({ ...f.parent, activityId: work.id }),
         )
       ).filing?.revisionId,
     ).toBe(filed.filing?.revisionId);
@@ -665,13 +665,13 @@ it('creates optional manual book metadata atomically without a canonical lesson 
     expect(duplicateTitle.workbookKey).toMatch(/^manual:/);
     expect(
       (
-        await f.as(f.parent, () => f.service.listWorkbookActivities(f.parent))
+        await f.as(f.parent, () => f.service.listLessonActivities(f.parent))
       ).map((a) => a.id),
     ).toEqual([work.id]);
     expect(
       (
         await f.as(f.parent, () =>
-          f.service.getWorkbookTimeline({ ...f.parent, activityId: work.id }),
+          f.service.getWorkTimeline({ ...f.parent, activityId: work.id }),
         )
       ).attempts,
     ).toEqual(before.attempts);

@@ -4,11 +4,11 @@ import { afterAll, beforeAll, describe } from 'vitest';
 import {
   workbookClasses,
   workbookContractTests,
-} from './workbook-workflows.js';
+} from './lesson-work-workflows.js';
 
 beforeAll(() => enableTenancy());
 afterAll(() => disableTenancy());
-describe('WorkbookService durable workflow sqlite', () =>
+describe('LessonWorkService durable workflow sqlite', () =>
   workbookContractTests(async () => {
     const db = await getTestDatabase({
       type: 'sqlite',

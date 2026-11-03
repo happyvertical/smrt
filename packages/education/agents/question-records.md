@@ -49,7 +49,7 @@ page/rect anchor) and flat `layoutParams`; they are part of the lesson revision
 digest, and saving requires each id to be an existing question revision of the
 tenant (`QuestionReferenceError`). Newer question revisions never move a pin.
 
-`WorkbookQuestion.questionRevisionId`/`lessonRevisionId` and the nullable
+`WorkQuestion.questionRevisionId`/`lessonRevisionId` and the nullable
 `Grade.questionRevisionId` are additive. A referenced revision must exist in the
 tenant; `Grade.rubricResults` must then fit its rubric (criterion id, number or
 `{points}` up to `maxPoints`; empty stays unscored; results need a rubric).

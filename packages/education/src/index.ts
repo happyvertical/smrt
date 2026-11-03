@@ -341,16 +341,23 @@ export {
   LessonAlreadyCompleteError,
   LessonPutBackError,
   LessonSkippedError,
+  LessonWorkOwnedError,
   MAX_LESSONS_PER_WEEK,
   MAX_NEXT_LESSONS_COUNT,
   MIN_LESSONS_PER_WEEK,
   requirePolicyBasis,
-  WorkbookOwnedLessonError,
 } from './learner-service.js';
 export type { EnrollmentStatus, LessonProgressStatus } from './learners.js';
 export { Curriculum, Enrollment, Learner, LessonProgress } from './learners.js';
 export type { LessonAssetRelationship } from './lesson-assets.js';
 export { LessonAsset } from './lesson-assets.js';
+export {
+  WorkCompletionDecision,
+  WorkCompletionDecisionCollection,
+} from './lesson-work-completion.js';
+export * from './lesson-work-contracts.js';
+export * from './lesson-work-models.js';
+export { LessonWorkService } from './lesson-work-service.js';
 export type { QuestionAuthoringServiceOptions } from './question-authoring-service.js';
 export { QuestionAuthoringService } from './question-authoring-service.js';
 export {
@@ -486,15 +493,8 @@ export type {
   TutorSessionWithExchanges,
 } from './tutor-session-service.js';
 export { TutorSessionService } from './tutor-session-service.js';
-export { normalizeWorkbookAnswerRegions } from './workbook-answer-regions.js';
-export {
-  WorkbookCompletionDecision,
-  WorkbookCompletionDecisionCollection,
-} from './workbook-completion.js';
-export * from './workbook-contracts.js';
-export * from './workbook-layout.js';
-export * from './workbook-models.js';
+export { normalizeWorkAnswerRegions } from './work-answer-regions.js';
+export * from './work-layout.js';
 export * from './workbook-photo-contracts.js';
 export * from './workbook-photo-models.js';
 export { WorkbookPhotoService } from './workbook-photo-service.js';
-export { WorkbookService } from './workbook-service.js';

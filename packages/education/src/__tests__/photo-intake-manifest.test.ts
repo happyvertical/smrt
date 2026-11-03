@@ -25,7 +25,7 @@ it('emits every concrete photo ownership and provenance column in the manifest s
       'body_json',
     ],
     WorkbookContextRevision: ['workbook_id', 'decision_id', 'metadata_json'],
-    WorkbookActivity: [
+    LessonActivity: [
       'workbook_id',
       'capture_kind',
       'photo_intake_id',
@@ -64,7 +64,7 @@ it('emits every concrete photo ownership and provenance column in the manifest s
     });
   }
   const activity =
-    manifest.objects['@happyvertical/smrt-education:WorkbookActivity'].schema
+    manifest.objects['@happyvertical/smrt-education:LessonActivity'].schema
       .columns;
   expect(activity.workbook_id).toMatchObject({
     type: 'UUID',

@@ -29,8 +29,8 @@ import {
   LearnerValidationError,
   requirePolicyBasis,
 } from './learner-service.js';
+import { readWorkCompletion } from './lesson-work-completion.js';
 import type { Grade, Submission, SubmissionKind } from './submissions.js';
-import { readWorkbookCompletion } from './workbook-completion.js';
 
 /** A single captured page. No model patches or pre-existing asset IDs are accepted. */
 export interface SubmissionPage {
@@ -265,10 +265,10 @@ export class SubmissionService extends LearnerService {
   private async lockProgressOwner(
     request: LearnerRequest & { enrollmentId: string },
   ): Promise<void> {
-    // Match WorkbookService's lock order so generic guardian grading cannot race
+    // Match LessonWorkService's lock order so generic guardian grading cannot race
     // capture or an explicit completion decision on the same learner.
     if (
-      await this.findWorkbookActivity(request, {
+      await this.findLessonActivity(request, {
         enrollmentId: request.enrollmentId,
       })
     )
@@ -447,7 +447,7 @@ export class SubmissionService extends LearnerService {
     const withheld =
       learner.user_id === actorUserId &&
       Boolean(
-        await this.findWorkbookActivity(
+        await this.findLessonActivity(
           { tenantId: row.tenantId, learnerId: row.learnerId, actorUserId },
           { lessonId: row.lessonId },
         ),
@@ -511,14 +511,14 @@ export class SubmissionService extends LearnerService {
   ): Promise<void> {
     await this.requireEnrollment(request, 'education.learner.read');
     if (
-      await this.findWorkbookActivity(request, {
+      await this.findLessonActivity(request, {
         enrollmentId: request.enrollmentId,
       })
     )
       throw new WorkbookWorkflowRequiredError();
     if (
       request.lessonId &&
-      (await this.findWorkbookActivity(request, { lessonId: request.lessonId }))
+      (await this.findLessonActivity(request, { lessonId: request.lessonId }))
     )
       throw new WorkbookWorkflowRequiredError();
     if (request.previousSubmissionId) {
@@ -534,7 +534,7 @@ export class SubmissionService extends LearnerService {
       );
       if (
         previous &&
-        (await this.findWorkbookActivity(request, {
+        (await this.findLessonActivity(request, {
           lessonId: previous.lessonId,
         }))
       )
@@ -547,7 +547,7 @@ export class SubmissionService extends LearnerService {
   }
 
   /** Owning workflow extension; no browser input can grant this scoped path. */
-  protected async captureWorkbookSubmission(
+  protected async captureActivitySubmission(
     request: CaptureRequest,
     activityId: string,
   ): Promise<SubmissionView> {
@@ -560,10 +560,10 @@ export class SubmissionService extends LearnerService {
   ): Promise<SubmissionView> {
     return this.mutate(async (service) => {
       await service.requireEnrollment(request, 'education.learner.submit');
-      const workbookLesson = await service.findWorkbookActivity(request, {
+      const workbookLesson = await service.findLessonActivity(request, {
         lessonId: request.lessonId,
       });
-      const workbookEnrollment = await service.findWorkbookActivity(request, {
+      const workbookEnrollment = await service.findLessonActivity(request, {
         enrollmentId: request.enrollmentId,
       });
       if (
@@ -887,12 +887,12 @@ export class SubmissionService extends LearnerService {
     });
     row.status = 'graded';
     await row.save();
-    const workbookActivity = await this.findWorkbookActivity(request, {
+    const workbookActivity = await this.findLessonActivity(request, {
       enrollmentId: progress.enrollmentId,
       lessonId: row.lessonId,
     });
     const completion = workbookActivity
-      ? await readWorkbookCompletion(this.db, {
+      ? await readWorkCompletion(this.db, {
           tenantId: request.tenantId,
           learnerId: request.learnerId,
           activityId: String(workbookActivity.id),

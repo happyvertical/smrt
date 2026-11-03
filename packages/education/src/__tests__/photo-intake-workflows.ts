@@ -7,11 +7,11 @@ import { IngestionService } from '@happyvertical/smrt-ingestion/server';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { expect, it, vi } from 'vitest';
 import { educationIntakeHandlers } from '../ingestion.js';
-import { SubmissionService } from '../submission-service.js';
 import {
-  WORKBOOK_MATH_VOCABULARY,
-  type WorkbookAssessment,
-} from '../workbook-contracts.js';
+  WORK_MATH_VOCABULARY,
+  type WorkAssessment,
+} from '../lesson-work-contracts.js';
+import { SubmissionService } from '../submission-service.js';
 import type {
   WorkbookPhotoIdentification,
   WorkbookPhotoProposal,
@@ -33,7 +33,7 @@ import {
   WorkbookPhotoService,
 } from '../workbook-photo-service.js';
 import { learnerFixture } from './learner-workflows.js';
-import { workbookClasses } from './workbook-workflows.js';
+import { workbookClasses } from './lesson-work-workflows.js';
 export const photoClasses = [
   ...workbookClasses,
   'WorkbookPhotoIntake',
@@ -151,9 +151,9 @@ export function photoIntakeTests(
         submissionId: attempt.submissionId,
       };
       const anchors = await f.as(f.parent, () =>
-        f.service.getWorkbookSourceAnchors(marking),
+        f.service.getWorkSourceAnchors(marking),
       );
-      const assessment: WorkbookAssessment = {
+      const assessment: WorkAssessment = {
         version: 1,
         feedback: 'Visible work only',
         questions: [
@@ -205,17 +205,17 @@ export function photoIntakeTests(
           inputHash: anchors[0].sha256,
           analysisId: 'unfiled-visible-analysis',
         },
-        vocabulary: WORKBOOK_MATH_VOCABULARY,
+        vocabulary: WORK_MATH_VOCABULARY,
       };
       const ai = await f.as(f.parent, () =>
-        f.service.recordWorkbookAnalysis({
+        f.service.recordWorkAnalysis({
           ...marking,
           requestKey: 'unfiled-ai',
           assessment,
         }),
       );
       const before = await f.as(f.parent, () =>
-        f.service.getWorkbookTimeline({ ...marking, limit: 1 }),
+        f.service.getWorkTimeline({ ...marking, limit: 1 }),
       );
       expect(before.attempts[0].revisions[0].id).toBe(ai.id);
       expect(before.attempts[0].reviewRequired).toBe(true);
@@ -231,7 +231,7 @@ export function photoIntakeTests(
         ).grade,
       ).toBeNull();
       const reviewed = await f.as(f.parent, () =>
-        f.service.reviewWorkbookAssessment({
+        f.service.reviewWorkAssessment({
           ...marking,
           revisionId: ai.id,
           expectedHeadId: null,
@@ -262,7 +262,7 @@ export function photoIntakeTests(
         ),
       ).toEqual(conceptsBefore);
       const after = await f.as(f.parent, () =>
-        f.service.getWorkbookTimeline({ ...marking, limit: 1 }),
+        f.service.getWorkTimeline({ ...marking, limit: 1 }),
       );
       expect(after.attempts[0].id).toBe(attempt.id);
       expect(after.attempts[0].submissionId).toBe(attempt.submissionId);
@@ -321,9 +321,9 @@ export function photoIntakeTests(
         submissionId: attempt.submissionId,
       };
       const [source] = await f.as(f.parent, () =>
-        f.service.getWorkbookSourceAnchors(marking),
+        f.service.getWorkSourceAnchors(marking),
       );
-      const assessment: WorkbookAssessment = {
+      const assessment: WorkAssessment = {
         version: 1,
         feedback: 'Guardian-private visible work',
         questions: [
@@ -355,10 +355,10 @@ export function photoIntakeTests(
           inputHash: source.sha256,
           analysisId: 'private-unfiled-analysis',
         },
-        vocabulary: WORKBOOK_MATH_VOCABULARY,
+        vocabulary: WORK_MATH_VOCABULARY,
       };
       const ai = await f.as(f.parent, () =>
-        f.service.recordWorkbookAnalysis({
+        f.service.recordWorkAnalysis({
           ...marking,
           requestKey: 'assessment',
           assessment,
@@ -383,7 +383,7 @@ export function photoIntakeTests(
       expect(
         (
           await f.as(f.own, () =>
-            f.service.getWorkbookTimeline({
+            f.service.getWorkTimeline({
               ...f.own,
               activityId: activity.id,
             }),
@@ -405,7 +405,7 @@ export function photoIntakeTests(
         ).rejects.toThrow(),
       );
       const reviewed = await f.as(f.parent, () =>
-        f.service.reviewWorkbookAssessment({
+        f.service.reviewWorkAssessment({
           ...marking,
           revisionId: ai.id,
           expectedHeadId: null,
@@ -414,7 +414,7 @@ export function photoIntakeTests(
         }),
       );
       await f.as(f.parent, () =>
-        f.service.releaseWorkbookFeedback({
+        f.service.releaseWorkFeedback({
           ...marking,
           revisionId: reviewed.id,
           expectedHeadId: reviewed.id,
@@ -449,7 +449,7 @@ export function photoIntakeTests(
         ),
       ).toEqual(f.pages[0].data);
       const later = await f.as(f.parent, () =>
-        f.service.recordWorkbookAnalysis({
+        f.service.recordWorkAnalysis({
           ...marking,
           requestKey: 'later-unreleased',
           assessment: {
@@ -515,9 +515,9 @@ export function photoIntakeTests(
       const assessmentFor = async (
         submissionId: string,
         analysisId: string,
-      ): Promise<WorkbookAssessment> => {
+      ): Promise<WorkAssessment> => {
         const [source] = await f.as(f.parent, () =>
-          f.service.getWorkbookSourceAnchors(request(f.parent, submissionId)),
+          f.service.getWorkSourceAnchors(request(f.parent, submissionId)),
         );
         return {
           version: 1,
@@ -551,7 +551,7 @@ export function photoIntakeTests(
             inputHash: source.sha256,
             analysisId,
           },
-          vocabulary: WORKBOOK_MATH_VOCABULARY,
+          vocabulary: WORK_MATH_VOCABULARY,
         };
       };
       const originalAssessment = await assessmentFor(
@@ -559,7 +559,7 @@ export function photoIntakeTests(
         'private-source-ai',
       );
       const ai = await f.as(f.parent, () =>
-        f.service.recordWorkbookAnalysis({
+        f.service.recordWorkAnalysis({
           ...request(f.parent, original.submissionId),
           requestKey: 'private-ai',
           assessment: originalAssessment,
@@ -567,19 +567,19 @@ export function photoIntakeTests(
       );
       expect(
         await f.as(f.parent, () =>
-          f.service.getWorkbookQuestionIdentity(
+          f.service.getWorkQuestionIdentity(
             request(f.parent, original.submissionId),
           ),
         ),
       ).toEqual([{ id: semanticId }]);
       const redacted = await f.as(f.own, () =>
-        f.service.getWorkbookTimeline({ ...f.own, activityId: activity.id }),
+        f.service.getWorkTimeline({ ...f.own, activityId: activity.id }),
       );
       expect(redacted.attempts[0].submissionId).toBe(original.submissionId);
       expect(redacted.attempts[0].revisions).toEqual([]);
       await f.as(f.own, () =>
         expect(
-          f.service.recordWorkbookAnalysis({
+          f.service.recordWorkAnalysis({
             ...request(f.own, original.submissionId),
             requestKey: 'private-ai',
             assessment: originalAssessment,
@@ -588,14 +588,14 @@ export function photoIntakeTests(
       );
       await f.as(f.own, () =>
         expect(
-          f.service.getWorkbookQuestionIdentity(
+          f.service.getWorkQuestionIdentity(
             request(f.own, original.submissionId),
           ),
         ).rejects.toThrow(),
       );
       await f.as(f.own, () =>
         expect(
-          f.service.getWorkbookQuestionContext(
+          f.service.getWorkQuestionContext(
             request(f.own, original.submissionId),
           ),
         ).rejects.toThrow(),
@@ -603,7 +603,7 @@ export function photoIntakeTests(
       expect(
         (
           await f.as(f.parent, () =>
-            f.service.getWorkbookQuestionContext(
+            f.service.getWorkQuestionContext(
               request(f.parent, original.submissionId),
             ),
           )
@@ -614,7 +614,7 @@ export function photoIntakeTests(
           submissions: f.service,
           request: { ...f.own, enrollmentId: activity.enrollmentId },
           submissionId,
-          workbookActivityId: activity.id,
+          lessonActivityId: activity.id,
         }).find((h) => h.id.endsWith('review-submission'));
         if (!handler?.discovery?.candidates)
           throw new Error('Missing discovery');
@@ -638,7 +638,7 @@ export function photoIntakeTests(
         key: string,
       ) =>
         f.as(actor, () =>
-          f.service.captureWorkbookWork({
+          f.service.captureLessonWork({
             ...actor,
             activityId: activity.id,
             requestKey: key,
@@ -666,14 +666,14 @@ export function photoIntakeTests(
         'first-correction-ai',
       );
       const firstAI = await f.as(f.parent, () =>
-        f.service.recordWorkbookAnalysis({
+        f.service.recordWorkAnalysis({
           ...request(f.parent, first.submissionId),
           requestKey: 'first-ai',
           assessment: firstAssessment,
         }),
       );
       await f.as(f.parent, () =>
-        f.service.releaseWorkbookFeedback({
+        f.service.releaseWorkFeedback({
           ...request(f.parent, first.submissionId),
           revisionId: firstAI.id,
           expectedHeadId: null,
@@ -690,14 +690,14 @@ export function photoIntakeTests(
         'second-correction-ai',
       );
       const secondAI = await f.as(f.parent, () =>
-        f.service.recordWorkbookAnalysis({
+        f.service.recordWorkAnalysis({
           ...request(f.parent, second.submissionId),
           requestKey: 'second-ai',
           assessment: secondAssessment,
         }),
       );
       await f.as(f.parent, () =>
-        f.service.releaseWorkbookFeedback({
+        f.service.releaseWorkFeedback({
           ...request(f.parent, second.submissionId),
           revisionId: secondAI.id,
           expectedHeadId: null,
@@ -707,7 +707,7 @@ export function photoIntakeTests(
       expect(second.episodeId).toBe(original.episodeId);
       await f.as(f.own, () =>
         expect(
-          f.service.getWorkbookQuestionIdentity(
+          f.service.getWorkQuestionIdentity(
             request(f.own, second.submissionId),
           ),
         ).rejects.toThrow(),
@@ -717,12 +717,12 @@ export function photoIntakeTests(
         correction(f.own, second.submissionId, 'blocked-grandchild-correction'),
       ).rejects.toThrow();
       const hidden = await f.as(f.own, () =>
-        f.service.getWorkbookTimeline({ ...f.own, activityId: activity.id }),
+        f.service.getWorkTimeline({ ...f.own, activityId: activity.id }),
       );
       expect(hidden.attempts.flatMap((a) => a.revisions)).toEqual([]);
       await f.as(f.own, () =>
         expect(
-          f.service.recordWorkbookAnalysis({
+          f.service.recordWorkAnalysis({
             ...request(f.own, second.submissionId),
             requestKey: 'second-ai',
             assessment: secondAssessment,
@@ -731,7 +731,7 @@ export function photoIntakeTests(
       );
       await f.as(f.own, () =>
         expect(
-          f.service.acknowledgeWorkbookFeedbackDelivery({
+          f.service.acknowledgeWorkFeedbackDelivery({
             ...request(f.own, second.submissionId),
             revisionId: secondAI.id,
             requestKey: 'hidden-delivery',
@@ -740,15 +740,13 @@ export function photoIntakeTests(
       );
       await f.as(f.own, () =>
         expect(
-          f.service.getWorkbookQuestionContext(
-            request(f.own, second.submissionId),
-          ),
+          f.service.getWorkQuestionContext(request(f.own, second.submissionId)),
         ).rejects.toThrow(),
       );
       // A matching release on the exact original revision publishes its identity;
       // already released descendant snapshots then become legitimately readable.
       await f.as(f.parent, () =>
-        f.service.releaseWorkbookFeedback({
+        f.service.releaseWorkFeedback({
           ...request(f.parent, original.submissionId),
           revisionId: ai.id,
           expectedHeadId: null,
@@ -757,14 +755,14 @@ export function photoIntakeTests(
       );
       expect(
         await f.as(f.own, () =>
-          f.service.getWorkbookQuestionIdentity(
+          f.service.getWorkQuestionIdentity(
             request(f.own, original.submissionId),
           ),
         ),
       ).toEqual([{ id: semanticId }]);
       expect(
         await f.as(f.own, () =>
-          f.service.getWorkbookQuestionIdentity(
+          f.service.getWorkQuestionIdentity(
             request(f.own, second.submissionId),
           ),
         ),
@@ -772,7 +770,7 @@ export function photoIntakeTests(
       expect(
         (
           await f.as(f.own, () =>
-            f.service.getWorkbookQuestionContext(
+            f.service.getWorkQuestionContext(
               request(f.own, original.submissionId),
             ),
           )
@@ -784,7 +782,7 @@ export function photoIntakeTests(
       expect(
         (
           await f.as(f.own, () =>
-            f.service.getWorkbookTimeline({
+            f.service.getWorkTimeline({
               ...f.own,
               activityId: activity.id,
             }),
@@ -794,7 +792,7 @@ export function photoIntakeTests(
           ?.revisions.map((r) => r.id),
       ).toContain(secondAI.id);
       await f.as(f.own, () =>
-        f.service.acknowledgeWorkbookFeedbackDelivery({
+        f.service.acknowledgeWorkFeedbackDelivery({
           ...request(f.own, second.submissionId),
           revisionId: secondAI.id,
           requestKey: 'visible-delivery',
@@ -812,7 +810,7 @@ export function photoIntakeTests(
       });
       expect(
         await f.as(f.own, () =>
-          f.service.getWorkbookQuestionIdentity(
+          f.service.getWorkQuestionIdentity(
             request(f.own, ownCorrection.submissionId),
           ),
         ),
@@ -822,7 +820,7 @@ export function photoIntakeTests(
         'own-current-analysis',
       );
       const ownAI = await f.as(f.own, () =>
-        f.service.recordWorkbookAnalysis({
+        f.service.recordWorkAnalysis({
           ...request(f.own, ownCorrection.submissionId),
           requestKey: 'own-current-analysis',
           assessment: ownAssessment,
@@ -831,7 +829,7 @@ export function photoIntakeTests(
       expect(ownAI.assessment.questions[0].id).toBe(semanticId);
       // Any old release is insufficient for a newly selected private head.
       const privateHead = await f.as(f.parent, () =>
-        f.service.reviewWorkbookAssessment({
+        f.service.reviewWorkAssessment({
           ...request(f.parent, original.submissionId),
           revisionId: ai.id,
           expectedHeadId: null,
@@ -840,7 +838,7 @@ export function photoIntakeTests(
         }),
       );
       const later = await f.as(f.parent, () =>
-        f.service.recordWorkbookAnalysis({
+        f.service.recordWorkAnalysis({
           ...request(f.parent, original.submissionId),
           requestKey: 'private-later-ai',
           assessment: {
@@ -854,21 +852,21 @@ export function photoIntakeTests(
       );
       await f.as(f.own, () =>
         expect(
-          f.service.getWorkbookQuestionIdentity(
+          f.service.getWorkQuestionIdentity(
             request(f.own, original.submissionId),
           ),
         ).rejects.toThrow(),
       );
       await f.as(f.own, () =>
         expect(
-          f.service.getWorkbookQuestionContext(
+          f.service.getWorkQuestionContext(
             request(f.own, original.submissionId),
           ),
         ).rejects.toThrow(),
       );
       await expect(discover(original.submissionId)).rejects.toThrow();
       const after = await f.as(f.own, () =>
-        f.service.getWorkbookTimeline({ ...f.own, activityId: activity.id }),
+        f.service.getWorkTimeline({ ...f.own, activityId: activity.id }),
       );
       expect(
         after.attempts
@@ -884,7 +882,7 @@ export function photoIntakeTests(
         after.attempts.flatMap((a) => a.revisions).map((r) => r.id),
       ).not.toContain(later.id);
       await f.as(f.parent, () =>
-        f.service.releaseWorkbookFeedback({
+        f.service.releaseWorkFeedback({
           ...request(f.parent, original.submissionId),
           revisionId: privateHead.id,
           expectedHeadId: privateHead.id,
@@ -893,7 +891,7 @@ export function photoIntakeTests(
       );
       expect(
         await f.as(f.own, () =>
-          f.service.getWorkbookQuestionIdentity(
+          f.service.getWorkQuestionIdentity(
             request(f.own, original.submissionId),
           ),
         ),
@@ -905,7 +903,7 @@ export function photoIntakeTests(
       );
       await f.as(f.own, () =>
         expect(
-          f.service.getWorkbookQuestionIdentity(
+          f.service.getWorkQuestionIdentity(
             request(f.own, second.submissionId),
           ),
         ).rejects.toThrow(),
@@ -914,12 +912,12 @@ export function photoIntakeTests(
       // closed for the timeline as well as question context; no partial head is used.
       await expect(
         f.as(f.own, () =>
-          f.service.getWorkbookTimeline({
+          f.service.getWorkTimeline({
             ...f.own,
             activityId: activity.id,
           }),
         ),
-      ).rejects.toThrow('Workbook current attempt is ambiguous');
+      ).rejects.toThrow('Lesson work current attempt is ambiguous');
     } finally {
       await f.finish();
     }
@@ -980,7 +978,7 @@ export function photoIntakeTests(
         );
       }
       expect(
-        await f.as(f.own, () => f.service.listWorkbookActivities(f.own)),
+        await f.as(f.own, () => f.service.listLessonActivities(f.own)),
       ).toEqual([]);
     } finally {
       await f.finish();
@@ -1228,7 +1226,7 @@ export function photoIntakeTests(
         ).rejects.toThrow(),
       );
       expect(
-        await f.as(f.parent, () => f.service.listWorkbookActivities(f.parent)),
+        await f.as(f.parent, () => f.service.listLessonActivities(f.parent)),
       ).toEqual([]);
       expect(
         Number(
@@ -1859,7 +1857,7 @@ export function photoIntakeTests(
         if (!lesson.activity) throw new Error('Missing lesson activity');
         expect(
           (
-            await f.service.getWorkbookAttemptBySubmission({
+            await f.service.getWorkAttemptBySubmission({
               ...f.own,
               enrollmentId: lesson.activity.enrollmentId,
               submissionId: attempt.submissionId,
@@ -2064,9 +2062,9 @@ export function photoIntakeTests(
         submissionId: attempt.submissionId,
       };
       const sources = await f.as(f.parent, () =>
-        f.service.getWorkbookSourceAnchors(request),
+        f.service.getWorkSourceAnchors(request),
       );
-      const assessment: WorkbookAssessment = {
+      const assessment: WorkAssessment = {
         version: 1,
         feedback: 'PRIVATE answer key feedback',
         questions: [
@@ -2098,17 +2096,17 @@ export function photoIntakeTests(
           inputHash: sources[0].sha256,
           analysisId: 'private-analysis',
         },
-        vocabulary: WORKBOOK_MATH_VOCABULARY,
+        vocabulary: WORK_MATH_VOCABULARY,
       };
       const ai = await f.as(f.parent, () =>
-        f.service.recordWorkbookAnalysis({
+        f.service.recordWorkAnalysis({
           ...request,
           requestKey: 'private-ai',
           assessment,
         }),
       );
       const guardian = await f.as(f.parent, () =>
-        f.service.reviewWorkbookAssessment({
+        f.service.reviewWorkAssessment({
           ...request,
           revisionId: ai.id,
           expectedHeadId: null,
@@ -2142,7 +2140,7 @@ export function photoIntakeTests(
           base.signSubmissionAsset({ ...child, assetId }),
         ).rejects.toThrow();
         expect(sign).not.toHaveBeenCalled();
-        const timeline = await f.service.getWorkbookTimeline({
+        const timeline = await f.service.getWorkTimeline({
           ...f.own,
           activityId: activity.id,
         });
@@ -2150,7 +2148,7 @@ export function photoIntakeTests(
         expect(timeline.attempts[0].revisions).toEqual([]);
         expect(timeline.attempts[0].submission.grade).toBeNull();
         await expect(
-          f.service.acknowledgeWorkbookFeedbackDelivery({
+          f.service.acknowledgeWorkFeedbackDelivery({
             ...request,
             ...f.own,
             revisionId: ai.id,
@@ -2179,13 +2177,13 @@ export function photoIntakeTests(
         ).toBe('https://private.example/signed');
         expect(
           (
-            await f.service.getWorkbookTimeline({
+            await f.service.getWorkTimeline({
               ...f.parent,
               activityId: activity.id,
             })
           ).attempts[0].revisions,
         ).toHaveLength(2);
-        await f.service.releaseWorkbookFeedback({
+        await f.service.releaseWorkFeedback({
           ...request,
           revisionId: guardian.id,
           expectedHeadId: guardian.id,
@@ -2200,7 +2198,7 @@ export function photoIntakeTests(
         expect(
           (await base.signSubmissionAsset({ ...child, assetId })).url,
         ).toBe('https://private.example/signed');
-        const timeline = await f.service.getWorkbookTimeline({
+        const timeline = await f.service.getWorkTimeline({
           ...f.own,
           activityId: activity.id,
         });
@@ -2226,7 +2224,7 @@ export function photoIntakeTests(
         ).toBeGreaterThan(0);
       });
       const nextAI = await f.as(f.parent, () =>
-        f.service.recordWorkbookAnalysis({
+        f.service.recordWorkAnalysis({
           ...request,
           requestKey: 'new-unreleased-ai',
           assessment: {
@@ -2242,7 +2240,7 @@ export function photoIntakeTests(
       expect(
         (
           await f.as(f.own, () =>
-            f.service.getWorkbookTimeline({
+            f.service.getWorkTimeline({
               ...f.own,
               activityId: activity.id,
             }),
@@ -2318,10 +2316,10 @@ export function photoIntakeTests(
         submissionId: ownAttempt.submissionId,
       };
       const ownSources = await f.as(f.own, () =>
-        f.service.getWorkbookSourceAnchors(ownRequest),
+        f.service.getWorkSourceAnchors(ownRequest),
       );
       const ownAI = await f.as(f.own, () =>
-        f.service.recordWorkbookAnalysis({
+        f.service.recordWorkAnalysis({
           ...ownRequest,
           requestKey: 'own-ai',
           assessment: {
@@ -2355,7 +2353,7 @@ export function photoIntakeTests(
         expect(ordinary.sourceRequiresParentRelease).toBeUndefined();
         expect(
           (
-            await f.service.getWorkbookTimeline({
+            await f.service.getWorkTimeline({
               ...f.own,
               activityId: ownActivity.id,
             })

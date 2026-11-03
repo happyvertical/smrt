@@ -5,10 +5,10 @@ import {
   validateGroupSharingPolicy,
 } from './group-sharing-contracts.js';
 import type {
-  WorkbookAssessment,
-  WorkbookAssistance,
-  WorkbookConceptSummary,
-} from './workbook-contracts.js';
+  WorkAssessment,
+  WorkAssistance,
+  WorkConceptSummary,
+} from './lesson-work-contracts.js';
 
 /** All facets use the same fail-closed eligibility gates. Facts come from owned records. */
 export function evaluateGroupSharingPolicy(
@@ -47,7 +47,7 @@ export function evaluateGroupSharingPolicy(
     reasons,
   };
 }
-export interface WorkbookEvidenceInput {
+export interface WorkEvidenceInput {
   attempt: {
     submissionId: string;
     episodeId: string;
@@ -56,14 +56,14 @@ export interface WorkbookEvidenceInput {
     capturedAt: Date;
   };
   revisionId: string;
-  assessment: WorkbookAssessment;
+  assessment: WorkAssessment;
   confirmed: boolean;
 }
 /** Owning workbook aggregation shared by family and filtered group projections. */
-export function summarizeWorkbookEvidence(
-  evidence: WorkbookEvidenceInput[],
-): WorkbookConceptSummary[] {
-  const summaries = new Map<string, WorkbookConceptSummary>();
+export function summarizeWorkEvidence(
+  evidence: WorkEvidenceInput[],
+): WorkConceptSummary[] {
+  const summaries = new Map<string, WorkConceptSummary>();
   const independentSeen = new Set<string>();
   for (const { attempt, revisionId, assessment, confirmed } of evidence) {
     for (const q of assessment.questions)
@@ -103,7 +103,7 @@ export function summarizeWorkbookEvidence(
         const assistance =
           attempt.previousAttemptId && attempt.assistance === 'independent'
             ? 'unknown'
-            : (attempt.assistance as WorkbookAssistance);
+            : (attempt.assistance as WorkAssistance);
         summary.observations.push({
           submissionId: attempt.submissionId,
           revisionId,

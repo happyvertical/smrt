@@ -1,6 +1,6 @@
 # Photo-first workbook intake
 
-`WorkbookPhotoService` extends `WorkbookService` with the same constructor,
+`WorkbookPhotoService` extends `LessonWorkService` with the same constructor,
 transaction executor, actor/tenant checks, private storage and rollback ledger.
 Import server integration from `@happyvertical/smrt-education/ingestion`.
 Apply manifest migrations for `WorkbookPhotoIntake`, `WorkbookPhotoAsset`,
@@ -88,7 +88,7 @@ metadata and source receipt identity. A captured intake cannot be retargeted.
 
 `captureWorkbookPhotoIntake({...request,intakeId,requestKey,assistance?,
 previousSubmissionId?,completedWork?})` copies the retained originals through
-`captureWorkbookWork` and returns its immutable attempt. Blank or unknown work
+`captureLessonWork` and returns its immutable attempt. Blank or unknown work
 requires explicit `completedWork:true`; no blank exercise is automatically marked
 as unanswered learner work. Corrections require the explicit current predecessor
 and preserve the existing practice episode. Existing attempts reject automatic
@@ -99,7 +99,7 @@ After capture, configure the existing `educationIntakeHandlers` with the returne
 submission ID, `view.activity.id`, and authoritative activity enrollment ID.
 Queue `queueEducationExtraction(ingestion,view.itemId,configuration,submissionId)`
 on the **same learner-scoped receipt**, process normally, then use
-`preserveWorkbookIntakeAnalysis`. That bridge already verifies exact education
+`preserveWorkIntakeAnalysis`. That bridge already verifies exact education
 ownership and source binding independently of the receipt's confidential scope.
 Guardian Grade/release policy and immutable assessment history are unchanged.
 
@@ -126,7 +126,7 @@ work; a base regression run is N/A because no pre-activity capture API existed.
 The immutable photo receipt actor, compared with the persisted learner user,
 determines source origin. Classification as a lesson does not grant learner
 access. `Submission.intakeItemId` joins the exact tenant/learner receipt; only a
-`WorkbookFeedbackRelease` on that submission's exact `WorkbookAttempt` releases
+`WorkFeedbackRelease` on that submission's exact `WorkAttempt` releases
 its source. Another attempt or context-only page cannot borrow that release.
 
 The base `SubmissionService` applies this policy too: own learners receive no
@@ -135,7 +135,7 @@ a guessed source asset is denied. The DTO exposes `awaitingParentRelease:true`
 for an own learner awaiting release, and `sourceRequiresParentRelease:true` to
 all authorized actors for guardian-origin material. The latter remains true
 after release: every new derived revision still needs its own explicit release.
-`WorkbookAttemptView.reviewRequired` and persisted capture policy snapshots
+`WorkAttemptView.reviewRequired` and persisted capture policy snapshots
 retain their historical workbook setting; combine that setting with
 `submission.sourceRequiresParentRelease` when describing effective visibility. Workbook timeline and
 feedback delivery acknowledgment require exact revision release for this source,
@@ -194,15 +194,15 @@ printed examples separate from learner marks and reports matching endpoints only
 when observed. Adopt it with a new extraction configuration revision.
 
 The internal private Course/Enrollment/Worksheet are routing records, not a claim
-about a canonical book or lesson. `WorkbookActivity.workbookId` is null only for
+about a canonical book or lesson. `LessonActivity.workbookId` is null only for
 explicit `captureKind:'unfiled'` with an exact owned `photoIntakeId`; all ordinary
 identified activity invariants remain. No Workbook is invented. Activity DTO
 `filing.state` is `unfiled`, `filed` or `identified`; empty workbook title/key/edition
 on unfiled work are intentional. Use the work label as the primary display.
-`listWorkbookActivities` includes these work units. Exact
+`listLessonActivities` includes these work units. Exact
 `getWorkbookPhotoTimeline({...request,intakeId,limit?,cursor?,revisionId?})`
 returns existing authorized feedback/history; the normal activity timeline also
-works. `getWorkbookActivity` refreshes exact filing presentation without loading
+works. `getLessonActivity` refreshes exact filing presentation without loading
 history. The receipt view refreshes filing rather than replaying its old label.
 
 Optional guardian `fileWorkbookWork({...request,activityId,workbookId,

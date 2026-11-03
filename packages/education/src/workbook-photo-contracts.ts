@@ -1,4 +1,4 @@
-import type { WorkbookActivityView } from './workbook-contracts.js';
+import type { LessonActivityView } from './lesson-work-contracts.js';
 /** Activity keys identify a printed lesson, potentially spanning multiple pages. */
 export interface WorkbookPhotoIdentification {
   kind: 'lesson' | 'work' | 'cover' | 'reference' | 'uncertain';
@@ -32,7 +32,7 @@ export interface WorkbookPhotoIntakeView {
   status: 'pending' | 'resolved' | 'captured';
   identification: WorkbookPhotoIdentification | null;
   proposal: WorkbookPhotoProposal | null;
-  activity: WorkbookActivityView | null;
+  activity: LessonActivityView | null;
   submissionId: string | null;
   originals: {
     assetId: string;

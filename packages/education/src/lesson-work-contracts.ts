@@ -1,10 +1,10 @@
 /** Explicit help observations; absence never attests independence. */
-export type WorkbookAssistance = 'independent' | 'assisted' | 'unknown';
-export interface WorkbookConcept {
+export type WorkAssistance = 'independent' | 'assisted' | 'unknown';
+export interface WorkConcept {
   id: string;
   label: string;
 }
-export interface WorkbookAnchor {
+export interface WorkAnchor {
   assetId: string;
   sha256: string;
   page: number | null;
@@ -14,7 +14,7 @@ export interface WorkbookAnchor {
   /** Normalized x, y, width, height on the retained page. */
   rect: [number, number, number, number];
 }
-export interface WorkbookQuestion {
+export interface WorkQuestion {
   /** Stable within this activity, including occurrence/subpart (e.g. page7:q1:a). */
   id: string;
   prompt: string;
@@ -30,7 +30,7 @@ export interface WorkbookQuestion {
   feedback: string;
   points: number | null;
   possiblePoints: number | null;
-  anchors: WorkbookAnchor[];
+  anchors: WorkAnchor[];
   conceptIds: string[];
   markingCertainty?: 'clear' | 'uncertain' | 'unknown';
   mappingCertainty?: 'clear' | 'uncertain' | 'unknown';
@@ -43,7 +43,7 @@ export interface WorkbookQuestion {
   questionRevisionId?: string;
   lessonRevisionId?: string;
 }
-export interface WorkbookPreservationState {
+export interface WorkPreservationState {
   activityId: string;
   submissionId: string;
   intakeItemId: string | null;
@@ -53,7 +53,7 @@ export interface WorkbookPreservationState {
     analysisRevision: number | null;
   }[];
 }
-export interface WorkbookAggregate {
+export interface WorkAggregate {
   correct: number;
   incorrect: number;
   partiallyCorrect: number;
@@ -62,7 +62,7 @@ export interface WorkbookAggregate {
   possiblePoints: number | null;
   score: number | null;
 }
-export class WorkbookAssessmentValidationError extends Error {
+export class WorkAssessmentValidationError extends Error {
   constructor(
     message: string,
     public readonly reason:
@@ -71,14 +71,14 @@ export class WorkbookAssessmentValidationError extends Error {
       | 'ambiguous_proposal' = 'invalid_assessment',
   ) {
     super(message);
-    this.name = 'WorkbookAssessmentValidationError';
+    this.name = 'WorkAssessmentValidationError';
   }
 }
 /** Exact arithmetic over validated questions, never a provider's rounded score. */
-export function aggregateWorkbookQuestions(
-  questions: readonly WorkbookQuestion[],
-): WorkbookAggregate {
-  const aggregate: WorkbookAggregate = {
+export function aggregateWorkQuestions(
+  questions: readonly WorkQuestion[],
+): WorkAggregate {
+  const aggregate: WorkAggregate = {
     correct: 0,
     incorrect: 0,
     partiallyCorrect: 0,
@@ -107,7 +107,7 @@ export function aggregateWorkbookQuestions(
       !Number.isFinite(aggregate.points) ||
       !Number.isFinite(aggregate.possiblePoints)
     )
-      throw new WorkbookAssessmentValidationError(
+      throw new WorkAssessmentValidationError(
         'Aggregate points exceed finite range',
       );
     aggregate.score =
@@ -117,13 +117,11 @@ export function aggregateWorkbookQuestions(
   }
   return aggregate;
 }
-export function workbookAggregateFeedback(
-  aggregate: WorkbookAggregate,
-): string {
+export function workAggregateFeedback(aggregate: WorkAggregate): string {
   return `${aggregate.correct} correct; ${aggregate.incorrect} incorrect; ${aggregate.partiallyCorrect} partially correct; ${aggregate.unassessed} unassessed.`;
 }
 /** Advisory observed structure; never verified source geometry or identity. */
-export interface WorkbookObservedLayout {
+export interface WorkObservedLayout {
   version: 1;
   provenance: 'observed';
   sections: {
@@ -143,7 +141,7 @@ export interface WorkbookObservedLayout {
   }[];
 }
 /** Approximate image observations, not verified OCR boxes or answer identity. */
-export interface WorkbookAnswerRegions {
+export interface WorkAnswerRegions {
   version: 1;
   provenance: 'observed';
   coordinateSpace: 'display-oriented';
@@ -154,15 +152,15 @@ export interface WorkbookAnswerRegions {
     observationId: string;
   }[];
 }
-export interface WorkbookAssessment {
+export interface WorkAssessment {
   version: 1;
-  aggregate?: WorkbookAggregate;
+  aggregate?: WorkAggregate;
   feedback: string;
-  layout?: WorkbookObservedLayout;
+  layout?: WorkObservedLayout;
   layoutOmission?: 'invalid';
-  answerRegions?: WorkbookAnswerRegions;
+  answerRegions?: WorkAnswerRegions;
   answerRegionsOmission?: 'invalid';
-  questions: WorkbookQuestion[];
+  questions: WorkQuestion[];
   provenance: {
     provider: string;
     model: string;
@@ -188,22 +186,22 @@ export interface WorkbookAssessment {
   vocabulary: {
     namespace: string;
     version: string;
-    concepts: WorkbookConcept[];
+    concepts: WorkConcept[];
   };
 }
 /** Explicit parent completion is independent of score and feedback visibility. */
-export interface WorkbookCompletionState {
+export interface WorkCompletionState {
   status: 'doing' | 'complete';
   completedAt: Date | null;
 }
 /** Guardian-only compare-and-set selector for the currently displayed work. */
-export interface WorkbookCompletionContext {
+export interface WorkCompletionContext {
   attemptId: string;
   submissionId: string;
   expectedHeadId: string | null;
 }
 /** Immutable parent decision; a replay may describe an older, no-longer-current attempt. */
-export interface WorkbookCompletionDecisionView {
+export interface WorkCompletionDecisionView {
   id: string;
   activityId: string;
   attemptId: string;
@@ -212,7 +210,7 @@ export interface WorkbookCompletionDecisionView {
   actorUserId: string;
   completedAt: Date;
 }
-export class WorkbookCompletionConflictError extends Error {
+export class WorkCompletionConflictError extends Error {
   constructor(
     public readonly code:
       | 'stale_attempt'
@@ -220,15 +218,15 @@ export class WorkbookCompletionConflictError extends Error {
       | 'changed_retry'
       | 'already_complete',
   ) {
-    super(`Workbook completion conflict: ${code}`);
-    this.name = 'WorkbookCompletionConflictError';
+    super(`Lesson work completion conflict: ${code}`);
+    this.name = 'WorkCompletionConflictError';
   }
 }
 
-export interface WorkbookActivityView {
+export interface LessonActivityView {
   currentAttemptId: string | null;
   latestSubmissionId: string | null;
-  completion: WorkbookCompletionState;
+  completion: WorkCompletionState;
   filing?: {
     state: 'unfiled' | 'filed' | 'identified';
     workbookId: string | null;
@@ -247,7 +245,7 @@ export interface WorkbookActivityView {
   reviewRequired: boolean;
   policyVersion: number;
 }
-export interface WorkbookRevisionView {
+export interface WorkRevisionView {
   id: string;
   kind: 'ai' | 'guardian';
   supersedesId: string | null;
@@ -255,15 +253,15 @@ export interface WorkbookRevisionView {
   actorUserId: string;
   sourceRevisionId: string | null;
   decisionReason: string;
-  assessment: WorkbookAssessment;
+  assessment: WorkAssessment;
 }
-export interface WorkbookReleaseView {
+export interface WorkReleaseView {
   id: string;
   revisionId: string;
   createdAt: Date;
   actorUserId: string;
 }
-export interface WorkbookAttemptView {
+export interface WorkAttemptView {
   id: string;
   submissionId: string;
   activityId: string;
@@ -271,25 +269,25 @@ export interface WorkbookAttemptView {
   episodeId: string;
   reviewRequired: boolean;
   policyVersion: number;
-  assistance: WorkbookAssistance;
+  assistance: WorkAssistance;
   submission: import('./submission-service.js').SubmissionView;
 }
-export interface WorkbookTimeline {
+export interface WorkTimeline {
   currentAttemptId: string | null;
   latestSubmissionId: string | null;
-  completion: WorkbookCompletionState;
-  completionContext: WorkbookCompletionContext | null;
-  activity: WorkbookActivityView;
-  attempts: (WorkbookAttemptView & {
-    revisions: WorkbookRevisionView[];
-    releases: WorkbookReleaseView[];
-    deliveries: WorkbookReleaseView[];
+  completion: WorkCompletionState;
+  completionContext: WorkCompletionContext | null;
+  activity: LessonActivityView;
+  attempts: (WorkAttemptView & {
+    revisions: WorkRevisionView[];
+    releases: WorkReleaseView[];
+    deliveries: WorkReleaseView[];
     headId: string | null;
-    completionDecision: WorkbookCompletionDecisionView | null;
+    completionDecision: WorkCompletionDecisionView | null;
   })[];
   nextCursor: string | null;
 }
-export interface WorkbookConceptSummary {
+export interface WorkConceptSummary {
   namespace: string;
   version: string;
   conceptId: string;
@@ -311,8 +309,8 @@ export interface WorkbookConceptSummary {
     revisionId: string;
     questionId: string;
     episodeId: string;
-    result: WorkbookQuestion['result'];
-    assistance: WorkbookAssistance;
+    result: WorkQuestion['result'];
+    assistance: WorkAssistance;
     isCorrection: boolean;
     capturedAt: Date;
     confirmed: boolean;
@@ -325,10 +323,10 @@ function text(
   max = 10000,
 ): asserts value is string {
   if (typeof value !== 'string' || value.length > max)
-    throw new WorkbookAssessmentValidationError(`Invalid ${label}`);
+    throw new WorkAssessmentValidationError(`Invalid ${label}`);
 }
 /** Validate at every external/persistence boundary; unknown enum values fail closed. */
-export function validateWorkbookAssessment(value: WorkbookAssessment): void {
+export function validateWorkAssessment(value: WorkAssessment): void {
   if (
     !value ||
     value.version !== 1 ||
@@ -336,12 +334,10 @@ export function validateWorkbookAssessment(value: WorkbookAssessment): void {
     !value.questions.length ||
     value.questions.length > 200
   )
-    throw new WorkbookAssessmentValidationError('Invalid workbook assessment');
+    throw new WorkAssessmentValidationError('Invalid workbook assessment');
   text(value.feedback, 'feedback');
   if (!value.provenance || !value.vocabulary)
-    throw new WorkbookAssessmentValidationError(
-      'Missing assessment provenance',
-    );
+    throw new WorkAssessmentValidationError('Missing assessment provenance');
   for (const key of [
     'provider',
     'model',
@@ -352,18 +348,16 @@ export function validateWorkbookAssessment(value: WorkbookAssessment): void {
   ] as const) {
     text(value.provenance[key], key, 500);
     if (!value.provenance[key].trim())
-      throw new WorkbookAssessmentValidationError(`Missing ${key}`);
+      throw new WorkAssessmentValidationError(`Missing ${key}`);
   }
   if (
     value.provenance.analysisRevision !== undefined &&
     (!Number.isSafeInteger(value.provenance.analysisRevision) ||
       value.provenance.analysisRevision < 1)
   )
-    throw new WorkbookAssessmentValidationError(
-      'Invalid interpretation revision',
-    );
+    throw new WorkAssessmentValidationError('Invalid interpretation revision');
   if (!/^[a-f0-9]{64}$/.test(value.provenance.inputHash))
-    throw new WorkbookAssessmentValidationError('Invalid input hash');
+    throw new WorkAssessmentValidationError('Invalid input hash');
   text(value.vocabulary.namespace, 'concept namespace', 200);
   text(value.vocabulary.version, 'concept version', 200);
   if (
@@ -372,13 +366,13 @@ export function validateWorkbookAssessment(value: WorkbookAssessment): void {
     !Array.isArray(value.vocabulary.concepts) ||
     value.vocabulary.concepts.length > 100
   )
-    throw new WorkbookAssessmentValidationError('Invalid concept vocabulary');
+    throw new WorkAssessmentValidationError('Invalid concept vocabulary');
   const concepts = new Set<string>();
   for (const concept of value.vocabulary.concepts) {
     text(concept.id, 'concept id', 200);
     text(concept.label, 'concept label', 500);
     if (!concept.id.trim() || !concept.label.trim() || concepts.has(concept.id))
-      throw new WorkbookAssessmentValidationError('Duplicate or empty concept');
+      throw new WorkAssessmentValidationError('Duplicate or empty concept');
     concepts.add(concept.id);
   }
   const ids = new Set<string>();
@@ -387,19 +381,19 @@ export function validateWorkbookAssessment(value: WorkbookAssessment): void {
       q.markingCertainty !== undefined &&
       !['clear', 'uncertain', 'unknown'].includes(q.markingCertainty)
     )
-      throw new WorkbookAssessmentValidationError('Invalid marking certainty');
+      throw new WorkAssessmentValidationError('Invalid marking certainty');
     if (
       q.mappingCertainty !== undefined &&
       !['clear', 'uncertain', 'unknown'].includes(q.mappingCertainty)
     )
-      throw new WorkbookAssessmentValidationError('Invalid mapping certainty');
+      throw new WorkAssessmentValidationError('Invalid mapping certainty');
     if (
       q.mappingProvenance !== undefined &&
       !['proposed', 'guardian-reviewed', 'unknown'].includes(
         q.mappingProvenance,
       )
     )
-      throw new WorkbookAssessmentValidationError('Invalid mapping provenance');
+      throw new WorkAssessmentValidationError('Invalid mapping provenance');
     if (
       q.evidenceLimitations !== undefined &&
       (!Array.isArray(q.evidenceLimitations) ||
@@ -408,9 +402,7 @@ export function validateWorkbookAssessment(value: WorkbookAssessment): void {
           (v) => typeof v !== 'string' || v.length > 500,
         ))
     )
-      throw new WorkbookAssessmentValidationError(
-        'Invalid evidence limitations',
-      );
+      throw new WorkAssessmentValidationError('Invalid evidence limitations');
     for (const [value, label] of [
       [q.questionRevisionId, 'question revision id'],
       [q.lessonRevisionId, 'lesson revision id'],
@@ -419,15 +411,13 @@ export function validateWorkbookAssessment(value: WorkbookAssessment): void {
         value !== undefined &&
         (typeof value !== 'string' || !value.trim() || value.length > 200)
       )
-        throw new WorkbookAssessmentValidationError(`Invalid ${label}`);
+        throw new WorkAssessmentValidationError(`Invalid ${label}`);
     text(q.id, 'question id', 200);
     text(q.prompt, 'prompt');
     text(q.answer, 'answer');
     text(q.feedback, 'question feedback');
     if (!q.id.trim() || ids.has(q.id))
-      throw new WorkbookAssessmentValidationError(
-        'Duplicate or empty question id',
-      );
+      throw new WorkAssessmentValidationError('Duplicate or empty question id');
     ids.add(q.id);
     if (
       !['correct', 'incorrect', 'partially_correct', 'unassessed'].includes(
@@ -442,9 +432,9 @@ export function validateWorkbookAssessment(value: WorkbookAssessment): void {
         'not_present',
       ].includes(q.reason)
     )
-      throw new WorkbookAssessmentValidationError('Invalid question result');
+      throw new WorkAssessmentValidationError('Invalid question result');
     if (q.markingCertainty === 'uncertain' && q.result !== 'unassessed')
-      throw new WorkbookAssessmentValidationError(
+      throw new WorkAssessmentValidationError(
         'Uncertain marking must remain unassessed',
       );
     if (
@@ -458,14 +448,14 @@ export function validateWorkbookAssessment(value: WorkbookAssessment): void {
       ].includes(q.reason) &&
         q.result !== 'unassessed')
     )
-      throw new WorkbookAssessmentValidationError(
+      throw new WorkAssessmentValidationError(
         'Uncertain evidence must remain unassessed',
       );
     if (
       q.result === 'unassessed' &&
       (q.points !== null || q.possiblePoints !== null)
     )
-      throw new WorkbookAssessmentValidationError('Unassessed is not zero');
+      throw new WorkAssessmentValidationError('Unassessed is not zero');
     if (
       (q.points === null) !== (q.possiblePoints === null) ||
       (q.points !== null &&
@@ -475,7 +465,7 @@ export function validateWorkbookAssessment(value: WorkbookAssessment): void {
           q.possiblePoints! <= 0 ||
           q.points > q.possiblePoints!))
     )
-      throw new WorkbookAssessmentValidationError('Invalid question points');
+      throw new WorkAssessmentValidationError('Invalid question points');
     if (
       q.points !== null &&
       q.possiblePoints !== null &&
@@ -484,7 +474,7 @@ export function validateWorkbookAssessment(value: WorkbookAssessment): void {
         (q.result === 'partially_correct' &&
           (q.points <= 0 || q.points >= q.possiblePoints)))
     )
-      throw new WorkbookAssessmentValidationError(
+      throw new WorkAssessmentValidationError(
         'Question result contradicts points',
       );
     if (
@@ -492,15 +482,15 @@ export function validateWorkbookAssessment(value: WorkbookAssessment): void {
       q.conceptIds.some((id) => !concepts.has(id)) ||
       new Set(q.conceptIds).size !== q.conceptIds.length
     )
-      throw new WorkbookAssessmentValidationError('Unknown concept mapping');
+      throw new WorkAssessmentValidationError('Unknown concept mapping');
     if (!Array.isArray(q.anchors) || !q.anchors.length || q.anchors.length > 20)
-      throw new WorkbookAssessmentValidationError(
+      throw new WorkAssessmentValidationError(
         'Question requires retained source anchors',
       );
     for (const a of q.anchors) {
       text(a.assetId, 'source asset', 64);
       if (a.grounding && JSON.stringify(a.rect) !== '[0,0,1,1]')
-        throw new WorkbookAssessmentValidationError(
+        throw new WorkAssessmentValidationError(
           'Source/page grounding cannot claim an unverified question region',
           'ungrounded_source',
         );
@@ -520,27 +510,25 @@ export function validateWorkbookAssessment(value: WorkbookAssessment): void {
         a.rect[0] + a.rect[2] > 1 ||
         a.rect[1] + a.rect[3] > 1
       )
-        throw new WorkbookAssessmentValidationError('Invalid source anchor');
+        throw new WorkAssessmentValidationError('Invalid source anchor');
     }
   }
   if (value.aggregate) {
-    const expected = aggregateWorkbookQuestions(value.questions);
+    const expected = aggregateWorkQuestions(value.questions);
     if (
-      (Object.keys(expected) as (keyof WorkbookAggregate)[]).some(
+      (Object.keys(expected) as (keyof WorkAggregate)[]).some(
         (key) => value.aggregate?.[key] !== expected[key],
       )
     )
-      throw new WorkbookAssessmentValidationError(
+      throw new WorkAssessmentValidationError(
         'Assessment aggregate contradicts questions',
       );
   }
   if (JSON.stringify(value).length > 1024 * 1024)
-    throw new WorkbookAssessmentValidationError(
-      'Assessment exceeds size limit',
-    );
+    throw new WorkAssessmentValidationError('Assessment exceeds size limit');
 }
 /** A deliberately small curated vocabulary; hosts may supply a different one. */
-export const WORKBOOK_MATH_VOCABULARY: WorkbookAssessment['vocabulary'] = {
+export const WORK_MATH_VOCABULARY: WorkAssessment['vocabulary'] = {
   namespace: 'education.workbook.math',
   version: '1',
   concepts: [

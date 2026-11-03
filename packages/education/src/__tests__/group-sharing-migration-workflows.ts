@@ -14,10 +14,10 @@ import {
   GroupLearnerMembershipCollection,
   GroupSharingPolicyCollection,
 } from '../group-sharing-models.js';
-import { WorkbookService } from '../workbook-service.js';
+import { LessonWorkService } from '../lesson-work-service.js';
 import { sharingPolicy } from './group-sharing-read-workflows.js';
 import { learnerFixture } from './learner-workflows.js';
-import { workbookClasses } from './workbook-workflows.js';
+import { workbookClasses } from './lesson-work-workflows.js';
 
 /** Factories must initialize this old schema, excluding every sharing table. */
 export const groupSharingMigrationBaseClasses = workbookClasses;
@@ -51,7 +51,7 @@ export function groupSharingMigrationContractTests(
       for (const schema of schemas)
         expect(await db.tableExists(schema.tableName)).toBe(false);
       const f = await learnerFixture(db);
-      const workbook = new WorkbookService(
+      const workbook = new LessonWorkService(
         db,
         ({ own, relationshipTypeId }) =>
           own || relationshipTypeId === f.guardianType.id,
@@ -59,7 +59,7 @@ export function groupSharingMigrationContractTests(
         { storage },
       );
       const activity = await f.as(f.parent, () =>
-        workbook.resolveWorkbookActivity({
+        workbook.resolveBookPageActivity({
           ...f.parent,
           workbookKey: 'pre-sharing-history',
           title: 'Existing family workbook',
@@ -68,7 +68,7 @@ export function groupSharingMigrationContractTests(
         }),
       );
       const attempt = await f.as(f.own, () =>
-        workbook.captureWorkbookWork({
+        workbook.captureLessonWork({
           ...f.own,
           activityId: activity.id,
           requestKey: 'before-migration',

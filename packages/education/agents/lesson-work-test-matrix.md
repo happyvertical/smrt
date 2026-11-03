@@ -54,7 +54,7 @@ SessionService heartbeat regression belongs to the host integration lane; synthe
 SQLite affinity alone is not proof that a pooled session lock can never deadlock.
 
 Preservation regression uses actual public IngestionService generation with an
-injected synthetic generator and actual WorkbookService persistence. It proves
+injected synthetic generator and actual LessonWorkService persistence. It proves
 the raw stale-snapshot guard still rejects after grading while preservation skips
 the imported revision, allows a genuinely new provisional reanalysis, and keeps
 review/release/correction history and child feedback gates intact after public
@@ -63,7 +63,7 @@ is not imported; unexpected database errors propagate. This is service-integrity
 evidence, not live-provider accuracy evidence.
 
 Independent-review privacy regression (WB-PRIVACY-1/2): the shared suite exercises
-plain LearnerService/SubmissionService and WorkbookService after guardian review
+plain LearnerService/SubmissionService and LessonWorkService after guardian review
 before release, in both policy modes. getSubmission, capture retry, listProgress,
 assignmentLessons, startLesson and nextLessons do not disclose Grade, score or
 grade-derived completion to the own learner. Generic capture/resubmission and
