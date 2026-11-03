@@ -111,9 +111,13 @@ export function jsonValuesEqual(a: unknown, b: unknown, depth = 0): boolean {
     const keysA = definedKeys(a);
     const keysB = definedKeys(b);
     if (keysA.length !== keysB.length) return false;
+    // Own properties only: `b[key]` alone would resolve `__proto__` (an own
+    // key of parsed JSON) through the prototype chain.
     return keysA.every(
       (key) =>
-        b[key] !== undefined && jsonValuesEqual(a[key], b[key], depth + 1),
+        Object.hasOwn(b, key) &&
+        b[key] !== undefined &&
+        jsonValuesEqual(a[key], b[key], depth + 1),
     );
   }
 

@@ -31,6 +31,13 @@ describe('jsonValuesEqual (#4604)', () => {
     expect(jsonValuesEqual(null, undefined)).toBe(false);
   });
 
+  it('matches object keys as own properties only (__proto__)', () => {
+    const parsed = JSON.parse('{"__proto__":{}}');
+    expect(jsonValuesEqual(parsed, { other: {} })).toBe(false);
+    expect(jsonValuesEqual({ other: {} }, parsed)).toBe(false);
+    expect(jsonValuesEqual(parsed, JSON.parse('{"__proto__":{}}'))).toBe(true);
+  });
+
   it('does not coerce between numbers, strings, and booleans', () => {
     expect(jsonValuesEqual({ a: 1 }, { a: '1' })).toBe(false);
     expect(jsonValuesEqual([0], [false])).toBe(false);
