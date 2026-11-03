@@ -181,6 +181,9 @@ function officeKind(
   if (!ext || !startsWith(bytes, [0x50, 0x4b, 0x03, 0x04])) return null;
   try {
     const parts = readZipArchive(bytes, OFFICE_PACKAGE_LIMITS);
+    // An inner part skipped as oversize was never inflated, CRC-checked or
+    // counted: the package is not sound, so it never reaches a reader.
+    if (parts.some((p) => p.refusal || !p.bytes)) return 'unsafe';
     const names = new Set(parts.map((p) => p.path));
     return names.has('[Content_Types].xml') && names.has(OFFICE_MAIN_PART[ext])
       ? ext

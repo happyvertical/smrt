@@ -252,6 +252,40 @@ function recalledOutcomes(
   return out;
 }
 
+/**
+ * When the write found an existing import (a replay, or a concurrent first
+ * import that won the unique index), the recorded Word/PowerPoint outcomes are
+ * authoritative: a member recorded unsupported is never handed to the host, and
+ * one recorded accepted that this call could not render fails the call rather
+ * than silently disappearing. Returns the paths that may be handed over.
+ */
+function reconcileWithRecorded(
+  plan: CourseBundlePlan,
+  view: CourseBundleImportView,
+): Set<string> {
+  const recorded = new Map(view.members.map((m) => [m.path, m]));
+  const allowed = new Set<string>();
+  for (const member of plan.members) {
+    const row = recorded.get(member.path);
+    if (
+      !view.replayed ||
+      !row ||
+      (member.kind !== 'docx' && member.kind !== 'pptx')
+    ) {
+      allowed.add(member.path);
+      continue;
+    }
+    if (row.status !== 'accepted') continue;
+    if (member.status !== 'accepted' || !member.rendered)
+      throw new DocumentConversionError(
+        'unavailable',
+        'A recorded-accepted Office member could not be rendered again.',
+      );
+    allowed.add(member.path);
+  }
+  return allowed;
+}
+
 const isOffice = (m: ClassifiedBundleMember) =>
   m.status === 'accepted' &&
   (m.kind === 'docx' || m.kind === 'pptx') &&
@@ -565,6 +599,7 @@ export class CourseBundleImportService extends CourseAuthoringService {
       if (!isUniqueViolation(error)) throw error;
       view = await write();
     }
+    const settled = reconcileWithRecorded(plan, view);
     const accepted = plan.members
       .filter(
         (m): m is ClassifiedBundleMember & { bytes: Uint8Array } =>
@@ -596,7 +631,8 @@ export class CourseBundleImportService extends CourseAuthoringService {
             : null,
           officeText: m.officeText,
         };
-      });
+      })
+      .filter((m) => settled.has(m.path));
     const receipts: Record<string, unknown> = {};
     if (request.receiveMember) {
       const progress = emit(request.onProgress, 'extract');

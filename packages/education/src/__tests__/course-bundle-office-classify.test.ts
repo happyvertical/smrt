@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import {
   COURSE_BUNDLE_LIMITS,
@@ -68,6 +69,21 @@ describe('Office member classification', () => {
     ]);
     expect(a).toMatchObject({ status: 'refused', reason: 'unsafe_office' });
     expect(b).toMatchObject({ status: 'refused', reason: 'unsafe_office' });
+  });
+
+  it('refuses a package with an inner part too large to be inflated and checked', () => {
+    // Half random, half zeros: 51 MiB inflated, about 26 MiB compressed, ratio ~2.
+    const inner = Buffer.concat([
+      randomBytes(26 * 1024 * 1024),
+      Buffer.alloc(25 * 1024 * 1024),
+    ]);
+    const big = officeDocx('x', [{ name: 'word/media/big.bin', data: inner }]);
+    expect(big.byteLength).toBeLessThan(COURSE_BUNDLE_LIMITS.maxEntryBytes);
+    const [member] = classify([{ path: 'big.docx', bytes: big }]);
+    expect(member).toMatchObject({
+      status: 'refused',
+      reason: 'unsafe_office',
+    });
   });
 
   it('settles outcomes before duplicates and structure, so a failed member is no lesson', () => {

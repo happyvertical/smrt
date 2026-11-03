@@ -577,6 +577,63 @@ describe('Word and PowerPoint bundle members', () => {
       expect(await s.count('course_bundle_members')).toBe(3);
     });
 
+    it('reconciles two concurrent first imports whose conversions disagreed', async () => {
+      const s = await withConverter(new FakeDocumentConverter());
+      const authorize = (call: { actorUserId: string }) =>
+        call.actorUserId === s.guardian.actorUserId;
+      const make = (converter: DocumentConverter) =>
+        new CourseBundleImportService(s.db, authorize, { converter });
+      const run = (service: CourseBundleImportService) =>
+        s.as(s.guardian, () =>
+          service.importBundle({ ...s.guardian, bundle: files() }),
+        );
+      // The healthy import wins the write; the slower failing one must not hand
+      // a recorded-accepted member's absence over silently.
+      const winner = run(make(new FakeDocumentConverter()));
+      const loser = run(
+        make(new FakeDocumentConverter({ delayMs: 40, failWith: 'rejected' })),
+      );
+      expect((await winner).accepted.map((m) => m.kind).sort()).toEqual([
+        'docx',
+        'pdf',
+        'pptx',
+      ]);
+      await expect(loser).rejects.toBeInstanceOf(DocumentConversionError);
+      expect(await s.count('course_bundle_members')).toBe(3);
+    });
+
+    it('does not hand a member to the host that the winning concurrent import recorded unsupported', async () => {
+      const s = await withConverter(new FakeDocumentConverter());
+      const authorize = (call: { actorUserId: string }) =>
+        call.actorUserId === s.guardian.actorUserId;
+      const make = (converter: DocumentConverter) =>
+        new CourseBundleImportService(s.db, authorize, { converter });
+      const run = (service: CourseBundleImportService, received: string[]) =>
+        s.as(s.guardian, () =>
+          service.importBundle({
+            ...s.guardian,
+            bundle: files(),
+            receiveMember: (m: AcceptedCourseBundleMember) =>
+              void received.push(m.path),
+          }),
+        );
+      const winnerSeen: string[] = [];
+      const loserSeen: string[] = [];
+      const winner = run(
+        make(new FakeDocumentConverter({ failWith: 'rejected' })),
+        winnerSeen,
+      );
+      const loser = run(
+        make(new FakeDocumentConverter({ delayMs: 40 })),
+        loserSeen,
+      );
+      await winner;
+      const result = await loser;
+      expect(result.import.replayed).toBe(true);
+      expect(result.accepted.map((m) => m.path)).toEqual(['sheets/sums.pdf']);
+      expect(loserSeen).toEqual(['sheets/sums.pdf']);
+    });
+
     it('a replay that can no longer render a recorded-accepted member fails instead of dropping it', async () => {
       const s = await withConverter(new FakeDocumentConverter());
       await s.run(files());
