@@ -1,5 +1,15 @@
 # @happyvertical/smrt-playbooks
 
+## 0.60.7
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.60.7
+  - @happyvertical/smrt-tenancy@0.60.7
+  - @happyvertical/smrt-config@0.60.7
+  - @happyvertical/smrt-types@0.60.7
+
 ## 0.60.6
 
 ### Patch Changes

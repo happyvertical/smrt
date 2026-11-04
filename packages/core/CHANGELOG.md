@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.60.7
+
+### Patch Changes
+
+- ### Features
+  
+  - host-configurable lesson kinds a learner may self-report (#4661) (education)
+- @happyvertical/smrt-config@0.60.7
+  - @happyvertical/smrt-scanner@0.60.7
+  - @happyvertical/smrt-types@0.60.7
+
 ## 0.60.6
 
 ### Patch Changes
