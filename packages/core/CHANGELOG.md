@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.60.4
+
+### Patch Changes
+
+- ### Features
+  
+  - show the bundle's material titles instead of stored file names (#4654) (education)
+- @happyvertical/smrt-config@0.60.4
+  - @happyvertical/smrt-scanner@0.60.4
+  - @happyvertical/smrt-types@0.60.4
+
 ## 0.60.3
 
 ### Patch Changes
