@@ -86,6 +86,12 @@ export interface SubmissionServiceOptions {
   storeOptions?: AssetRuntimeOptions['storeOptions'];
   /** Sign a short-lived route claim. Its serving endpoint must verify every claim. */
   signAsset?: (claim: Readonly<SubmissionAssetClaim>) => Promise<string>;
+  /**
+   * Lesson kinds a learner may self-report with `attestOwnLesson`: a list of
+   * kind names, or `'*'` for every kind. Defaults to
+   * `SELF_ATTESTABLE_LESSON_KINDS` (Reading, Video).
+   */
+  selfAttestableKinds?: '*' | ReadonlyArray<string>;
 }
 export type SubmissionView = Readonly<{
   id: string;
@@ -120,7 +126,7 @@ export type SubmissionView = Readonly<{
 export const SELF_ATTESTABLE_LESSON_KINDS: ReadonlyArray<string> =
   Object.freeze(['Reading', 'Video']);
 
-/** `attestOwnLesson` was asked for a lesson that is not Reading or Video. */
+/** `attestOwnLesson` was asked for a lesson kind the host does not allow (default Reading or Video). */
 export class OwnAttestationLessonKindError extends LearnerValidationError {
   constructor(readonly kind: string) {
     super(`A ${kind} lesson cannot be self-attested`);
@@ -1390,7 +1396,9 @@ export class SubmissionService extends LearnerService {
         await LessonCollection.create({ db: service.db })
       ).get({ id: request.lessonId }, { cache: false });
       const kind = lesson?.constructor.name ?? 'unknown';
-      if (!SELF_ATTESTABLE_LESSON_KINDS.includes(kind))
+      const allowed =
+        this.options.selfAttestableKinds ?? SELF_ATTESTABLE_LESSON_KINDS;
+      if (allowed !== '*' && !allowed.includes(kind))
         throw new OwnAttestationLessonKindError(kind);
       if (!(await service.db.tableExists('lesson_self_attestations')))
         throw new LearnerHistoryUnavailableError('lesson_self_attestations');

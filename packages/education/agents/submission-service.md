@@ -69,13 +69,15 @@ a plain SubmissionService instance. The authoritative activity and course decide
 this, never a caller flag.
 `attestOwnLesson({ enrollmentId, lessonId, policyBasis, notes? })` is the
 learner's own "I read it" / "I watched it" for `SELF_ATTESTABLE_LESSON_KINDS`
-(Reading, Video) under `education.learner.attest-own`. Any other actor is
+(Reading, Video by default) under `education.learner.attest-own`. Any other actor is
 refused before the host authorizer; the host decides from its own setting
 (passed as `policyBasis`, 1-200 characters) whether the learner may. It writes
 an ungraded `Attestation` and an insert-only `LessonSelfAttestation` (learner
 actor, basis), moves progress to `submitted` with one attempt, and creates no
 Grade: it is not a grade and never completes the lesson. A repeat returns the
-same attestation. Other kinds throw `OwnAttestationLessonKindError`;
+same attestation. Other kinds throw `OwnAttestationLessonKindError`. A host widens the set with the server-owned
+`selfAttestableKinds: '*' | readonly string[]` constructor option (never from request data), e.g. when a learner's "I'm done" sends any
+lesson to a guardian for review; every other check is unchanged;
 submitted, review, complete, skipped or already-attested progress throws
 `OwnAttestationConflictError`. Submission views carry `selfReported: true` for
 it; a guardian confirms with `attestLesson` (which grades that attestation) or
