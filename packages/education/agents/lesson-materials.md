@@ -35,7 +35,7 @@ must be private.
 
 `listLessonMaterials({enrollmentId, lessonId})` and `listCourseMaterials({enrollmentId})`
 return `LessonMaterialView`s (`id`, `kind` file or external-video, `scope`, role,
-audience, title, order, `assetId` or provider/videoId/`embedUrl`, and for files
+audience, title (the bundle's material title, else the stored asset's name), order, `assetId` or provider/videoId/`embedUrl`, and for files
 `mimeType` from the stored asset, `rendition`, `pairedMaterialId` (the other half
 of an original/rendered pair, only when this actor sees both) and
 `thumbnailAssetId`). Hosts read these instead of guessing by file extension. The learner

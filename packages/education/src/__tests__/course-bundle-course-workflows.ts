@@ -90,7 +90,12 @@ export type Lesson = {
   key: string;
   title: string;
   order?: number;
-  members: Array<{ path: string; role: string; audience?: string }>;
+  members: Array<{
+    path: string;
+    role: string;
+    audience?: string;
+    title?: string;
+  }>;
   pages?: Array<{ member: string; from: number; to: number; label?: string }>;
   videos?: Array<{
     reference: string;
@@ -332,6 +337,7 @@ export async function setup(
     submissions,
     claims,
     as,
+    store,
     importAndStore,
     attach,
     count,

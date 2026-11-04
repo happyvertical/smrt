@@ -251,7 +251,16 @@ plus `skipped` for declared members that were unsupported, refused or failed
 rendering. A duplicate member resolves to the earlier identical member's bytes
 (`assetPath`) and one material per (place, role, content).
 
-`receiveMember` also gets `audience` and `courseLevel`. **Slides** keep the original
+`receiveMember` also gets `audience` and `courseLevel`, and an optional `title`
+(SMRT #4653): the manifest title of the one material the member holds ("Teacher
+Mission Manual"), so a host can name the assets it stores. It is absent when the
+manifest gave none or the member backs several materials with different titles.
+**Material titles**: `attachCourse` records that title on the `lesson_assets` /
+`course_assets` row (`title`; null on a lesson row without one, `''` on a course
+row), the same for the original and rendered halves of a pair. Lesson and course
+material views show the row title and fall back to the stored asset's name when
+there is none. A re-attach fills a missing title; a different one is a
+`conflict` unless `supersede` restates it. **Slides** keep the original
 deck (hand `bytes` to the host as a private asset: "Open in PowerPoint") and its
 rendered pages (`rendered`: "Present").
 
@@ -318,7 +327,8 @@ tenant rules and lock order (import row, then unit row) as any attach.
   rewritten. Sections and lessons the newer build no longer lists stay.
 - **Part count change** stays `unit-mismatch`, supersede or not.
 - **Materials**: the newer build's materials are attached; an existing row
-  (same lesson, asset, role) is restated in place (order, title, current again),
+  (same lesson, asset, role) is restated in place (order, title, current again; a
+  renamed material shows its new title though it keeps its earlier asset),
   not a `conflict`; its audience stays the family's. Pages are restated and
   never retired (learner work points at page keys).
 - **Retirement**: file materials and external videos the replaced build wrote
