@@ -158,6 +158,11 @@
       "import": "./dist/utils/database-url.js",
       "default": "./dist/utils/database-url.js"
     },
+    "./byo-inference": {
+      "types": "./dist/byo-inference.d.ts",
+      "import": "./dist/byo-inference.js",
+      "default": "./dist/byo-inference.js"
+    },
     "./smrt-error": {
       "types": "./dist/smrt-error.d.ts",
       "import": "./dist/smrt-error.js",
