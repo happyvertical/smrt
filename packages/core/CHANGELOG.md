@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.60.6
+
+### Patch Changes
+
+- ### Bug Fixes
+  
+  - feedback reads take no exclusive item lock and re-run deadlocks (#4651) (#4655) (ingestion)
+- @happyvertical/smrt-config@0.60.6
+  - @happyvertical/smrt-scanner@0.60.6
+  - @happyvertical/smrt-types@0.60.6
+
 ## 0.60.5
 
 ### Patch Changes

@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-education",
-  "version": "0.60.5",
+  "version": "0.60.6",
   "smrtJsdoc": "strict",
   "description": "Tenant-aware learning catalog models and authorized catalog access for SMRT",
   "type": "module",
