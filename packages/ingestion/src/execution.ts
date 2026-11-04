@@ -137,6 +137,10 @@ interface Binding {
     display: IntakeValues;
   };
 }
+/** One global order for per-item retention writes, so they cannot deadlock (#4651). */
+function byItem([a]: [string, number], [b]: [string, number]): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
 interface Bound {
   item: Row;
   action: Row;
@@ -204,7 +208,7 @@ export class IntakeExecutionService {
           this.db,
           isEmbeddedDatabase(this.db),
           async (db) => {
-            for (const [itemId, deadline] of intents) {
+            for (const [itemId, deadline] of [...intents].sort(byItem)) {
               await this.restoreRetention(db, itemId, deadline);
             }
           },
@@ -220,15 +224,27 @@ export class IntakeExecutionService {
     // This intent was already authorized. Do not acquire another content-read
     // grant after rollback: a revoked actor must not undo a privacy maximum.
     const expiry = new Date(deadline).toISOString();
-    const result = await db.query(
-      'UPDATE intake_items SET expires_at=CASE WHEN expires_at>? THEN ? ELSE expires_at END WHERE id=? AND tenant_id=? AND confidential_scope_id=? RETURNING id,expires_at,visibility',
-      expiry,
+    // Write only a row that is actually wider than the intent: a restore that
+    // changes nothing takes no row lock, so a read that visited feedback
+    // source items does not lock each of them at its end (#4651).
+    const narrowed = await db.query(
+      'UPDATE intake_items SET expires_at=? WHERE id=? AND tenant_id=? AND confidential_scope_id=? AND expires_at>? RETURNING id,expires_at,visibility',
       expiry,
       itemId,
       this.scope.tenantId,
       this.scope.confidentialScopeId,
+      expiry,
     );
-    const item = result.rows[0];
+    const item =
+      narrowed.rows[0] ??
+      (
+        await db.query(
+          'SELECT id,expires_at,visibility FROM intake_items WHERE id=? AND tenant_id=? AND confidential_scope_id=?',
+          itemId,
+          this.scope.tenantId,
+          this.scope.confidentialScopeId,
+        )
+      ).rows[0];
     if (!item) throw new IntakeAccessDeniedError();
     if (!this.retained(item)) await this.redactExecution(db, item);
     return item;
@@ -257,21 +273,35 @@ export class IntakeExecutionService {
     db: DatabaseInterface,
     item: Row,
     deadline: number,
+    /**
+     * False on a shared feedback read (#4651): the row is read without the
+     * item lock, and only a write that actually narrows touches it, guarded
+     * so it can never widen a deadline a concurrent writer narrowed further.
+     */
+    exclusive = true,
   ): Promise<void> {
-    const current = await this.item(db, String(item.id), true, true);
+    const current = await this.item(db, String(item.id), exclusive, true);
     const effective = Math.min(time(current.expires_at), deadline);
     if (!Number.isFinite(effective))
       throw new Error('Invalid retention deadline');
-    if (effective < time(current.expires_at))
+    let stored = current;
+    if (effective < time(current.expires_at)) {
+      const expiry = new Date(effective).toISOString();
       await db.query(
-        'UPDATE intake_items SET expires_at=? WHERE id=? AND tenant_id=? AND confidential_scope_id=?',
-        new Date(effective).toISOString(),
+        `UPDATE intake_items SET expires_at=? WHERE id=? AND tenant_id=? AND confidential_scope_id=?${exclusive ? '' : ' AND expires_at>?'}`,
+        expiry,
         item.id,
         this.scope.tenantId,
         this.scope.confidentialScopeId,
+        ...(exclusive ? [] : [expiry]),
       );
-    item.expires_at = new Date(effective).toISOString();
-    item.visibility = current.visibility;
+      if (!exclusive)
+        stored = await this.item(db, String(item.id), false, true);
+    }
+    item.expires_at = new Date(
+      Math.min(effective, time(stored.expires_at)),
+    ).toISOString();
+    item.visibility = stored.visibility;
     if (!this.retained(item)) await this.redactExecution(db, item);
   }
 
@@ -495,6 +525,8 @@ export class IntakeExecutionService {
     item: Row,
     handler: IntakeHandler,
     operation: ExecutionAccessInput['operation'],
+    /** False on a shared feedback read: see `narrowRetention` (#4651). */
+    exclusive = true,
   ) {
     const { current, ceiling, policy, deadline } = await this.authority(
       db,
@@ -506,7 +538,7 @@ export class IntakeExecutionService {
       const intents = this.retentionIntents.getStore();
       const itemId = String(item.id);
       intents?.set(itemId, Math.min(intents.get(itemId) ?? Infinity, deadline));
-      await this.narrowRetention(executor, item, deadline);
+      await this.narrowRetention(executor, item, deadline, exclusive);
     };
     if (db === this.db) await this.tx(enforce);
     else await enforce(db);
@@ -548,8 +580,9 @@ export class IntakeExecutionService {
     handler: OperationHandler,
     operation: 'execute' | 'reconcile' | 'preview',
     work: (context: HandlerContext) => Promise<T>,
+    exclusive = true,
   ): Promise<T> {
-    const access = await this.access(db, item, handler, operation);
+    const access = await this.access(db, item, handler, operation, exclusive);
     const registered = ObjectRegistry.getClassByQualifiedName(
       handler.operation.model,
     )!;
@@ -626,10 +659,9 @@ export class IntakeExecutionService {
           );
         const result = await work(db, authorize);
         // A foundation retry must retain the narrowest authorized privacy ceiling.
-        for (const [
-          retainedItemId,
-          deadline,
-        ] of this.retentionIntents.getStore() ?? []) {
+        for (const [retainedItemId, deadline] of [
+          ...(this.retentionIntents.getStore() ?? []),
+        ].sort(byItem)) {
           const item = await this.restoreRetention(
             db,
             retainedItemId,
@@ -650,20 +682,27 @@ export class IntakeExecutionService {
     work: (context: HandlerContext) => Promise<T>,
     requireReview = false,
     revalidate?: (context: HandlerContext) => Promise<void>,
+    /**
+     * False on a shared feedback read (#4651): the item is read without its
+     * exclusive lock, so reads that visit many feedback source items cannot
+     * deadlock one another; the gate is still evaluated before and after.
+     */
+    exclusive = true,
   ): Promise<T> {
     const review = async () => {
-      const item = await this.item(db, itemId, true);
+      const item = await this.item(db, itemId, exclusive);
       await this.access(
         db,
         item,
         this.handler(handlerId, handlerVersion),
         'review',
+        exclusive,
       );
     };
     const authorize = async <R>(
       callback: (context: HandlerContext) => Promise<R>,
     ) => {
-      const item = await this.item(db, itemId, true);
+      const item = await this.item(db, itemId, exclusive);
       const handler = this.handler(handlerId, handlerVersion);
       if ('execution' in handler)
         return this.principal(
@@ -672,8 +711,15 @@ export class IntakeExecutionService {
           this.operation(handler),
           'preview',
           callback,
+          exclusive,
         );
-      const { context } = await this.access(db, item, handler, 'preview');
+      const { context } = await this.access(
+        db,
+        item,
+        handler,
+        'preview',
+        exclusive,
+      );
       const resolved = await resolvePlaybook(handler.operation.playbookKey, {
         db,
         tenantId: this.scope.tenantId,
@@ -715,6 +761,7 @@ export class IntakeExecutionService {
           this.operation(found),
           'preview',
           async () => {},
+          exclusive,
         );
       }
       return callback(context);
@@ -830,6 +877,8 @@ export class IntakeExecutionService {
     handlerVersion: string,
     work: (context: HandlerContext) => Promise<T>,
     revalidate?: (context: HandlerContext) => Promise<void>,
+    /** False for a feedback read: no exclusive item lock (#4651). */
+    exclusive = true,
   ): Promise<T> {
     const run = (executor: DatabaseInterface) =>
       this.discoveryContext(
@@ -840,6 +889,7 @@ export class IntakeExecutionService {
         work,
         false,
         revalidate,
+        exclusive,
       );
     return db ? run(db) : this.tx(run);
   }
@@ -856,15 +906,31 @@ export class IntakeExecutionService {
      * writes to the target only need the target to remain accessible.
      */
     targetRevisions = true,
+    /**
+     * False when the work only reads an example (#4651). A read must not take
+     * the exclusive lock on the source item: retrieval visits many source
+     * items, in an order that differs per read, and held them to the end of
+     * the reading transaction, so parallel reads deadlocked on PostgreSQL.
+     * Unlocked, the binding is loaded before and after the work and both
+     * loads must agree, including the source item's analysis revision.
+     */
+    exclusive = true,
   ): Promise<T> {
     const operation = async (db: DatabaseInterface) => {
       const load = async () => {
-        const bound = await this.bound(db, actionId, true, false, proposalId);
+        const bound = await this.bound(
+          db,
+          actionId,
+          exclusive,
+          false,
+          proposalId,
+        );
         const { context, permissions } = await this.access(
           db,
           bound.item,
           bound.handler,
           reviewer ? 'review' : 'read',
+          exclusive,
         );
         if (
           requiredProviders?.some(
@@ -911,6 +977,8 @@ export class IntakeExecutionService {
                 );
             },
             reviewer,
+            undefined,
+            exclusive,
           );
         }
         const [analysis] = await this.rows(db, 'intake_analyses', 'id=?', [
@@ -976,7 +1044,10 @@ export class IntakeExecutionService {
       const result = await work(before);
       const after = await load();
       if (
-        intakeBindingDigest(before.review) !== intakeBindingDigest(after.review)
+        intakeBindingDigest(before.review) !==
+          intakeBindingDigest(after.review) ||
+        (!exclusive &&
+          before.context.analysisRevision !== after.context.analysisRevision)
       )
         throw new Error('Feedback binding changed');
       if (

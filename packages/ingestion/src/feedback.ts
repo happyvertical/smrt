@@ -8,6 +8,7 @@ export class FeedbackRetrievalDeniedError extends Error {
 
 import { randomUUID } from 'node:crypto';
 import type { DatabaseInterface } from '@happyvertical/sql';
+import { rethrowDatabaseFailure } from './database-conflicts.js';
 import {
   intakeBindingDigest as digest,
   IntakeExecutionService,
@@ -804,8 +805,14 @@ export class IntakeFeedbackService {
         },
         executor,
         input.providers ?? [input.model.provider],
+        undefined,
+        true,
+        false,
       );
-    } catch {
+    } catch (error) {
+      // A refusal excludes this example; a driver error has aborted the
+      // shared PostgreSQL transaction and must not be swallowed (#4651).
+      rethrowDatabaseFailure(error);
       return undefined;
     }
   }
@@ -941,6 +948,7 @@ export class IntakeFeedbackService {
           providers,
           undefined,
           !lineage,
+          false,
         );
       // No handler was chosen: the source item must still be readable under a
       // currently offered handler, with the generation recipients allowed.
@@ -970,13 +978,16 @@ export class IntakeFeedbackService {
                 throw new Error('Feedback source provider unavailable');
               await current(context.db);
             },
+            false,
           );
-        } catch {
+        } catch (error) {
+          rethrowDatabaseFailure(error);
           /* try the next currently offered handler; none means excluded */
         }
       }
       return undefined;
-    } catch {
+    } catch (error) {
+      rethrowDatabaseFailure(error);
       return undefined;
     }
   }
@@ -1023,6 +1034,9 @@ export class IntakeFeedbackService {
           return selection;
         },
         validate,
+        // Reading feedback never takes the receiving item's exclusive lock
+        // either: a lineage re-check reaches here for a source item (#4651).
+        false,
       );
     };
     return visit(0, executor);

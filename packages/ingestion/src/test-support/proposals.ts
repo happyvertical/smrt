@@ -2591,6 +2591,158 @@ export function proposalSuite(
         0,
       );
     });
+    it('feedback reads take no exclusive lock on example source items (#4651)', async () => {
+      enableFeedback();
+      const training = await feedbackCase();
+      await service.recordFeedback({
+        ...training.binding,
+        judgment: 'correct',
+        requestId: 'lock-free-training',
+      });
+      const later = await generation(
+        await source(
+          100000,
+          false,
+          'Draft minutes from meeting evidence please',
+        ),
+      );
+      if (dialect !== 'postgres') {
+        await service.generateProposals(later.lease);
+        expect(
+          (await output(later.lease)).provenance.feedback?.selection.examples,
+        ).toHaveLength(1);
+        return;
+      }
+      // Another session holds the example source item the way a writer (or,
+      // before #4651, another feedback read) does, until released.
+      const { db: holder, close } = await peerService();
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let locked!: () => void;
+      const held = new Promise<void>((resolve) => {
+        locked = resolve;
+      });
+      const holding = holder.transaction!(async (tx) => {
+        await tx.query(
+          'UPDATE intake_items SET analysis_revision=analysis_revision WHERE id=?',
+          training.generated.itemId,
+        );
+        locked();
+        await gate;
+      });
+      try {
+        await held;
+        const reading = service.generateProposals(later.lease);
+        expect(await settledWithin(reading, 5000)).toBe(true);
+        await reading;
+        // Reading the analysis back re-verifies the example lineage, and
+        // restores retention, without waiting for the source item either.
+        const read = service.getCompletedAnalysis(later.itemId);
+        expect(await settledWithin(read, 5000)).toBe(true);
+        await read;
+        expect(
+          (await output(later.lease)).provenance.feedback?.selection.examples,
+        ).toHaveLength(1);
+      } finally {
+        release();
+        await holding;
+        // The peer shares the suite's pool; close it only after the reads.
+        await close();
+      }
+    });
+    it('parallel generations with feedback on all read their examples (#4651)', async () => {
+      enableFeedback();
+      for (const [index, text] of [
+        'Please draft meeting minutes with retained evidence',
+        'Meeting minutes draft from the retained evidence please',
+      ].entries()) {
+        const training = await feedbackCase(text);
+        await service.recordFeedback({
+          ...training.binding,
+          judgment: index ? 'incorrect' : 'correct',
+          requestId: `parallel-training-${index}`,
+        });
+      }
+      const pending = [];
+      for (const text of [
+        'Draft minutes from meeting evidence please',
+        'Please draft the meeting minutes from evidence',
+        'Minutes of the meeting, draft from retained evidence',
+        'Retained evidence: please draft meeting minutes',
+      ])
+        pending.push(await generation(await source(100000, false, text)));
+      const peers = await Promise.all(pending.map(() => peerService()));
+      try {
+        await Promise.all(
+          pending.map((entry, index) =>
+            peers[index].peer.generateProposals(entry.lease),
+          ),
+        );
+        for (const entry of pending) {
+          const result = await output(entry.lease);
+          expect(result.outcome).toBe('proposals');
+          expect(result.warnings).not.toContain('malformed_output');
+          expect(result.provenance.feedback?.selection.examples).toHaveLength(
+            2,
+          );
+        }
+      } finally {
+        await Promise.all(peers.map((entry) => entry.close()));
+      }
+    });
+    it('re-runs a feedback read after a deadlock and never publishes one as a failed attempt (#4651)', async () => {
+      enableFeedback();
+      const training = await feedbackCase();
+      await service.recordFeedback({
+        ...training.binding,
+        judgment: 'correct',
+        requestId: 'conflict-training',
+      });
+      const authorize = options.feedback!.authorize;
+      const deadlock = () =>
+        Object.assign(new Error('deadlock detected'), { code: '40P01' });
+      let conflicts = 1;
+      // The example source's check fails inside the shared read transaction.
+      options.feedback!.authorize = async (input) => {
+        if (
+          input.operation === 'retrieve' &&
+          input.itemId === training.generated.itemId &&
+          conflicts > 0
+        ) {
+          conflicts--;
+          throw deadlock();
+        }
+        return authorize(input);
+      };
+      const retried = await generate(
+        await source(
+          100000,
+          false,
+          'Draft minutes from meeting evidence please',
+        ),
+      );
+      expect(conflicts).toBe(0);
+      expect(retried.output.outcome).toBe('proposals');
+      expect(
+        retried.output.provenance.feedback?.selection.examples,
+      ).toHaveLength(1);
+      // A conflict that outlasts the bounded retries leaves the attempt
+      // unpublished and the generator uncalled, so a later claim can read it.
+      conflicts = Infinity;
+      const pending = await generation(
+        await source(100000, false, 'Please draft the meeting minutes'),
+      );
+      calls.mockClear();
+      await expect(service.generateProposals(pending.lease)).rejects.toThrow(
+        'deadlock detected',
+      );
+      expect(calls).not.toHaveBeenCalled();
+      await expect(
+        service.getCompletedAnalysis(pending.itemId, pending.lease.attemptId),
+      ).rejects.toThrow();
+    });
     it.each([
       'revoked',
       'deleted',
@@ -6137,7 +6289,11 @@ export function proposalSuite(
     /** A second service on its own PostgreSQL connection (shared queue on SQLite). */
     async function peerService() {
       if (dialect !== 'postgres')
-        return { peer: new IngestionService(options), close: async () => {} };
+        return {
+          peer: new IngestionService(options),
+          db,
+          close: async () => {},
+        };
       const url = new URL(process.env.DATABASE_URL!);
       url.pathname = `/${database}`;
       const connection = await getTestDatabase({
@@ -6147,6 +6303,7 @@ export function proposalSuite(
       });
       return {
         peer: new IngestionService({ ...options, db: connection }),
+        db: connection,
         close: async () => {
           await connection.close?.();
         },
