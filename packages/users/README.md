@@ -1783,6 +1783,19 @@ for authentication, deduplication, and status semantics.
 | `TenantHierarchyError` | Thrown on a missing parent, a cycle, or exceeding the hierarchy depth limit (`code`) |
 | `TenantHierarchyMaterializationError` | Thrown by `materializeTenantHierarchy` when any tenant's parent chain is broken; lists `problems` |
 
+`RoleCollection.seedSystemRoles()` seeds these global system identities:
+
+| Role | UUID |
+| --- | --- |
+| Owner | `566aef94-1328-4876-b291-b7cf18d4df01` |
+| Administrator | `566aef94-1328-4876-b291-b7cf18d4df02` |
+| Member | `566aef94-1328-4876-b291-b7cf18d4df03` |
+| Viewer | `566aef94-1328-4876-b291-b7cf18d4df04` |
+
+The seed checks the global slug, UUID, and system flag on repeat. Tenant roles
+can share these slugs under their own identities. Occupied reserved identities
+fail seeding without rewriting role ownership or existing memberships.
+
 ## Dependencies
 
 - `@happyvertical/smrt-core` -- ORM, `@smrt()` decorator, SmrtObject/SmrtCollection

@@ -18,6 +18,30 @@ Adapter-agnostic change-observation spine (`src/change-feed.ts`) — the server 
 - Retention: `pruneChangeFeed(db, { maxAgeMs?, maxRows?, dryRun? })` — scheduled since #2375 by `runRetentionSweep()` (30-day default), so nothing needs to call it directly; `dryRun` counts the same predicate instead of deleting. Pruning deletes oldest-first and always retains the newest entry (a non-empty feed is never emptied), which is what makes pruned-cursor detection provable. The age bound is a **prefix** bound — everything below the oldest entry still inside the window — because `created_at` and `seq` are not co-monotonic (writer clocks skew, and a staged entry carries its stage-time stamp into a later-assigned sequence); deleting by timestamp alone could punch a hole in the middle of the retained run, where `since < floor - 1` cannot see it and keeps caught-up consumers polling normally. Raw-SQL writes are invisible to the feed (same documented gap as the #1499 cache); `bumpChangeFeed(db, { table, rowId? })` is the manual escape hatch.
 
 
+## Durable row sync metadata (#4673)
+
+An ordinary row has `syncMetadata === null` until a trusted caller opts in via
+`object.save({ sync: { originDeviceId } })`. This starts its counter at 1.
+Subsequent saves on the loaded object advance the per-row counter by one and
+retain the device unless the caller supplies the current writer's device.
+Tracked creates require a supplied ID and strict insert. Load existing tracked
+rows by ID to update them.
+
+A trusted replay supplies `originDeviceId` and a positive, safe-integer
+`revision` in the same save. Core stores that revision exactly. The caller
+chooses whether the incoming version should win and supplies the authenticated
+actor and tenant context. The local `updated_at` still advances independently
+and remains the compare-and-swap token. The metadata and the application fields
+commit together. This API is separate from the generated `sync/apply` protocol.
+
+Set `tombstone: true` in that save to persist a sync deletion marker.
+Subsequent ordinary saves retain it. Sync readers must interpret it as a
+deletion, including when reading a full snapshot after feed pruning. General
+ORM reads still return the row, and the change feed observes the save as an
+update. Existing `delete()` remains a physical delete with its configured
+cascades and a retained-for-a-window feed delete. Use a tombstone save when the
+deletion needs to survive that window.
+
 ## Credential-bearing tables are never disclosed (#2937)
 
 `src/change-feed-sensitivity.ts` is a leaf module (it imports nothing, so

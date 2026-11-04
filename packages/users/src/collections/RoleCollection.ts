@@ -4,6 +4,7 @@
  */
 
 import {
+  isEmbeddedDatabase,
   isPostgresDatabase,
   SmrtCollection,
   withEmbeddedWriteTransaction,
@@ -126,6 +127,11 @@ export class RoleCollection extends SmrtCollection<Role> {
         // Check if role already exists
         const existing = await writer.findBySlug(roleDef.slug);
         if (existing) {
+          if (existing.id !== roleDef.id || !existing.isSystem) {
+            throw new Error(
+              `System role identity collision for '${roleDef.slug}'`,
+            );
+          }
           // Additive-only convergence: flag a listed slug, never unset one.
           if (inheritable && !existing.inheritsToDescendants) {
             existing.inheritsToDescendants = true;
@@ -139,6 +145,8 @@ export class RoleCollection extends SmrtCollection<Role> {
         // `save()` this used to make was a redundant UPDATE plus an extra
         // change-feed append (#3022).
         const role = await writer.create({
+          id: roleDef.id,
+          _insertOnly: true,
           slug: roleDef.slug,
           name: roleDef.name,
           description: roleDef.description,
@@ -149,15 +157,15 @@ export class RoleCollection extends SmrtCollection<Role> {
         roles.push(role);
       }
     };
-    if (isPostgresDatabase(this.db)) {
-      // NULL-tenant keys use the SDK's null-aware upsert. Its lock begins
-      // after core's identity pre-read; lock the whole seeding read/write
-      // sequence so concurrent bootstraps never return an overwritten ID.
+    const postgres = isPostgresDatabase(this.db);
+    const embedded = isEmbeddedDatabase(this.db);
+    if (postgres || embedded) {
       await withEmbeddedWriteTransaction(
         this.db as DatabaseInterface,
-        false,
+        embedded,
         async (db) => {
-          await db.query('SELECT pg_advisory_xact_lock(3329, 1)');
+          // Serialize global identity checks with other PostgreSQL seeders.
+          if (postgres) await db.query('SELECT pg_advisory_xact_lock(3329, 1)');
           await seed(await RoleCollection.create({ ...this.options, db }));
         },
         true,
@@ -165,7 +173,7 @@ export class RoleCollection extends SmrtCollection<Role> {
       // Return objects bound to the caller, not the completed batch handle.
       roles.length = 0;
       for (const roleDef of DEFAULT_ROLES) {
-        const role = await this.findBySlug(roleDef.slug);
+        const role = await this.findSystemRoleBySlug(roleDef.slug);
         if (role) roles.push(role);
       }
     } else {

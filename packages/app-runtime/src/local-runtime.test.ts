@@ -17,6 +17,8 @@ import { homedir, platform, tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { JobHandle, SmrtJobCollection } from '@happyvertical/smrt-jobs';
+import { Person, ProfileTypeCollection } from '@happyvertical/smrt-profiles';
+import { withSystemContext } from '@happyvertical/smrt-tenancy';
 import {
   MembershipCollection,
   MembershipStatus,
@@ -30,6 +32,8 @@ import * as sql from '@happyvertical/sql';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as localRuntimeApi from './index.js';
 import {
+  DEFAULT_LOCAL_OWNER_ID,
+  DEFAULT_LOCAL_TENANT_ID,
   encodeApplicationId,
   initializeLocalApplicationRuntime,
   LocalRuntimeError,
@@ -356,8 +360,8 @@ describe('local application runtime', () => {
     });
 
     expect(claim.profileId).toMatch(/^[0-9a-f-]{36}$/);
-    expect(claim.userId).toMatch(/^[0-9a-f-]{36}$/);
-    expect(claim.tenantId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(claim.userId).toBe(DEFAULT_LOCAL_OWNER_ID);
+    expect(claim.tenantId).toBe(DEFAULT_LOCAL_TENANT_ID);
     expect(claim.membershipId).toMatch(/^[0-9a-f-]{36}$/);
     expect(claim.sessionId).toMatch(/^[0-9a-f-]{36}$/);
 
@@ -459,6 +463,52 @@ describe('local application runtime', () => {
     ).toBe('password');
   });
 
+  it('leaves an unrelated account at the reserved owner UUID untouched', async () => {
+    const initialized = await initializeLocalApplicationRuntime({
+      appId: 'user-reserved-id',
+      ...(await localDirectories('user-reserved-id')),
+    });
+    const { db } = initialized.runtime;
+    const types = await ProfileTypeCollection.create({ db });
+    const type = await withSystemContext(() =>
+      types.getOrCreateGlobalBySlug('person', { name: 'Person' }),
+    );
+    const profile = new Person({
+      db,
+      typeId: type.id as string,
+      tenantId: null,
+      name: 'Unrelated',
+      email: 'unrelated@example.com',
+    });
+    await profile.initialize();
+    await profile.save();
+    const users = await UserCollection.create({ db });
+    const occupied = await users.create({
+      id: DEFAULT_LOCAL_OWNER_ID,
+      profileId: profile.id as string,
+      email: 'unrelated@example.com',
+      status: UserStatus.ACTIVE,
+    });
+    const input = {
+      token: initialized.bootstrap?.token as string,
+      name: 'Owner',
+      email: 'owner@example.com',
+    };
+    await expect(initialized.runtime.claimOwner(input)).rejects.toMatchObject({
+      code: 'owner_identity_conflict',
+    });
+    expect((await users.get(DEFAULT_LOCAL_OWNER_ID))?.email).toBe(
+      occupied.email,
+    );
+    expect(await countRows(db, 'memberships')).toBe(0);
+    expect(await countRows(db, 'sessions')).toBe(0);
+    await occupied.delete();
+    await expect(initialized.runtime.claimOwner(input)).resolves.toMatchObject({
+      userId: DEFAULT_LOCAL_OWNER_ID,
+      tenantId: DEFAULT_LOCAL_TENANT_ID,
+    });
+  });
+
   describe('owner tenant (#3032)', () => {
     async function seedTenant(
       db: Parameters<typeof TenantCollection.create>[0]['db'],
@@ -514,6 +564,41 @@ describe('local application runtime', () => {
       );
       expect(created.rows[0]).toEqual({ slug: 'workspace', name: 'Workspace' });
       expect(await countRows(reopened.runtime.db, 'tenants')).toBe(2);
+    });
+
+    it('rejects a different tenant using the reserved UUID and permits retry', async () => {
+      const initialized = await initializeLocalApplicationRuntime({
+        appId: 'tenant-reserved-id',
+        ...(await localDirectories('tenant-reserved-id')),
+      });
+      const { db } = initialized.runtime;
+      const tenants = await TenantCollection.create({ db });
+      const occupied = await tenants.create({
+        id: DEFAULT_LOCAL_TENANT_ID,
+        slug: 'unrelated',
+        name: 'Unrelated',
+      });
+      const input = {
+        token: initialized.bootstrap?.token as string,
+        name: 'Owner',
+        email: 'owner@example.com',
+      };
+      await expect(initialized.runtime.claimOwner(input)).rejects.toMatchObject(
+        {
+          code: 'owner_tenant_conflict',
+        },
+      );
+      expect(await countRows(db, 'memberships')).toBe(0);
+      expect((await tenants.get(DEFAULT_LOCAL_TENANT_ID))?.slug).toBe(
+        'unrelated',
+      );
+      await occupied.delete();
+      await expect(
+        initialized.runtime.claimOwner(input),
+      ).resolves.toMatchObject({
+        tenantId: DEFAULT_LOCAL_TENANT_ID,
+        userId: DEFAULT_LOCAL_OWNER_ID,
+      });
     });
 
     it('adopts an application-seeded member-less tenant and keeps its id', async () => {

@@ -47,7 +47,6 @@ import {
   SessionService,
   type Tenant,
   TenantCollection,
-  TenantService,
   TenantStatus,
   UserCollection,
   UserStatus,
@@ -87,6 +86,8 @@ const DEFAULT_BOOTSTRAP_TTL_SECONDS = 10 * 60;
 const MAX_BOOTSTRAP_TTL_SECONDS = 15 * 60;
 const DEFAULT_SESSION_TTL_SECONDS = 7 * 24 * 60 * 60;
 const DEFAULT_OWNER_TENANT_SLUG = 'default';
+export const DEFAULT_LOCAL_TENANT_ID = '566aef94-1328-4876-b291-b7cf18d4df05';
+export const DEFAULT_LOCAL_OWNER_ID = '566aef94-1328-4876-b291-b7cf18d4df06';
 const DEFAULT_OWNER_TENANT_NAME = 'My Workspace';
 const OWNER_TENANT_SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
 const BOOTSTRAP_TABLE = '_smrt_local_owner_bootstrap';
@@ -473,6 +474,7 @@ export type LocalRuntimeErrorCode =
   | 'invalid_scope'
   | 'migration_failed'
   | 'owner_tenant_conflict'
+  | 'owner_identity_conflict'
   | 'owner_unavailable'
   | 'unsafe_public_exposure';
 
@@ -980,6 +982,26 @@ async function createLocalOwnerRecords(
   // and orphan every row that points at it (#3032).
   const tenants = await TenantCollection.create({ db });
   const existingTenant = await tenants.findBySlug(ownerTenant.slug);
+  const defaultTenant = ownerTenant.slug === DEFAULT_OWNER_TENANT_SLUG;
+  const reservedTenant = defaultTenant
+    ? await tenants.get(DEFAULT_LOCAL_TENANT_ID)
+    : null;
+  if (reservedTenant && reservedTenant.id !== existingTenant?.id) {
+    throw new LocalRuntimeError(
+      'owner_tenant_conflict',
+      'The reserved local tenant identity is already in use.',
+    );
+  }
+  const users = await UserCollection.create({ db });
+  if (
+    (await users.get(DEFAULT_LOCAL_OWNER_ID)) ||
+    (await users.findByEmail(input.email.trim()))
+  ) {
+    throw new LocalRuntimeError(
+      'owner_identity_conflict',
+      'The local owner identity is already in use.',
+    );
+  }
   const memberships = await MembershipCollection.create({ db });
   if (existingTenant) {
     await assertAdoptableOwnerTenant(existingTenant, ownerTenant, memberships);
@@ -1002,45 +1024,33 @@ async function createLocalOwnerRecords(
   await person.initialize();
   await person.save();
 
-  const users = await UserCollection.create({ db });
   const user = await users.create({
+    id: DEFAULT_LOCAL_OWNER_ID,
+    _insertOnly: true,
     profileId: requireId(person.id, 'Person'),
     email: input.email.trim(),
     status: UserStatus.ACTIVE,
     lastLoginAt: new Date(),
   });
-  await user.save();
   const userId = requireId(user.id, 'User');
 
-  let tenant: Tenant;
-  let membership: { id?: string | null };
-  if (existingTenant) {
-    const roles = await RoleCollection.create({ db });
-    const ownerRole = await roles.findSystemRoleBySlug(
-      DEFAULT_ROLE_SLUGS.OWNER,
-    );
-    const created = await memberships.create({
-      userId,
-      tenantId: requireId(existingTenant.id, 'Tenant'),
-      roleId: requireId(ownerRole?.id, 'Owner role'),
-      status: MembershipStatus.ACTIVE,
-    });
-    await created.save();
-    tenant = existingTenant;
-    membership = created;
-  } else {
-    const tenantName = input.tenantName?.trim() || ownerTenant.name;
-    const tenantService = new TenantService(
-      { db },
-      { mode: 'required', maxTenants: 1, defaultName: tenantName },
-    );
-    await tenantService.initialize();
-    ({ tenant, membership } = await tenantService.createTenantWithOwnership(
-      userId,
-      tenantName,
-      { slug: ownerTenant.slug },
-    ));
-  }
+  const tenant =
+    existingTenant ??
+    (await tenants.create({
+      id: defaultTenant ? DEFAULT_LOCAL_TENANT_ID : undefined,
+      _insertOnly: true,
+      slug: ownerTenant.slug,
+      name: input.tenantName?.trim() || ownerTenant.name,
+    }));
+  const roles = await RoleCollection.create({ db });
+  const ownerRole = await roles.findSystemRoleBySlug(DEFAULT_ROLE_SLUGS.OWNER);
+  const membership = await memberships.create({
+    _insertOnly: true,
+    userId,
+    tenantId: requireId(tenant.id, 'Tenant'),
+    roleId: requireId(ownerRole?.id, 'Owner role'),
+    status: MembershipStatus.ACTIVE,
+  });
 
   // Bind the owner's profile to the actual created or adopted tenant before
   // committing the claim; the shared Person profile type remains global.

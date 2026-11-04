@@ -311,10 +311,11 @@ describe('issue #3022: cold seeding must not read per catalog slug', () => {
       );
       expect(counts.autocommitSeedWrites).toBe(0);
 
-      // One commit per batch: the sync and the grants each batch separately.
+      // One commit for atomic system-role seeding plus one per catalog/grant batch.
       expect(counts.rootTransactions).toBeGreaterThan(0);
       expect(counts.rootTransactions).toBeLessThanOrEqual(
-        Math.ceil(outcome.permissionsCreated / SEEDING_BATCH_SIZE) +
+        1 +
+          Math.ceil(outcome.permissionsCreated / SEEDING_BATCH_SIZE) +
           Math.ceil(outcome.grantsAdded / SEEDING_BATCH_SIZE),
       );
     }

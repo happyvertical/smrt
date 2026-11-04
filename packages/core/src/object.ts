@@ -269,6 +269,22 @@ function toPlainJSONValue(
  */
 const AI_PROMPT_DATA_MAX_LENGTH = 100_000;
 
+/** Per-row metadata for an explicitly tracked object. */
+export interface SmrtSyncMetadata {
+  readonly originDeviceId: string;
+  readonly revision: number;
+  readonly tombstone: boolean;
+}
+
+/** A trusted save can supply a local device or apply a resolved remote write. */
+export interface SmrtSyncWrite {
+  originDeviceId: string;
+  /** When omitted, increment the loaded revision (or start at 1). */
+  revision?: number;
+  /** When omitted, retain the loaded tombstone state. */
+  tombstone?: boolean;
+}
+
 /** Optional optimistic-concurrency guard for persisted-object saves. */
 export interface SmrtSaveOptions {
   /**
@@ -276,6 +292,7 @@ export interface SmrtSaveOptions {
    * `RUNTIME_REVISION_CONFLICT` without writing the row.
    */
   expectedUpdatedAt?: Date | string;
+  sync?: SmrtSyncWrite;
 }
 
 /** Optional optimistic-concurrency guard for irreversible deletes. */
@@ -632,6 +649,59 @@ export class SmrtObject extends SmrtClass {
    * Last update timestamp
    */
   public updated_at: Date | null | undefined = null;
+  private _syncMetadata: SmrtSyncMetadata | null = null;
+
+  /** Sync state read from or committed to the backing row. */
+  get syncMetadata(): SmrtSyncMetadata | null {
+    return this._syncMetadata;
+  }
+
+  /** @internal Read only from a physical row, never from model input or STI JSON. */
+  hydrateSyncMetadata(row: Record<string, unknown>): void {
+    const origin = row._sync_origin_device_id;
+    const revision = Number(row._sync_revision);
+    this._syncMetadata =
+      typeof origin === 'string' &&
+      Number.isSafeInteger(revision) &&
+      revision > 0
+        ? Object.freeze({
+            originDeviceId: origin,
+            revision,
+            tombstone: [true, 1, 1n, '1'].includes(
+              row._sync_tombstone as boolean | number | bigint | string,
+            ),
+          })
+        : null;
+  }
+
+  private nextSyncMetadata(write?: SmrtSyncWrite): SmrtSyncMetadata | null {
+    const previous = this._syncMetadata;
+    if (write === undefined && !previous) return null;
+    const originDeviceId =
+      write === undefined ? previous?.originDeviceId : write?.originDeviceId;
+    const revision =
+      write?.revision === undefined
+        ? (previous?.revision ?? 0) + 1
+        : write.revision;
+    const tombstone =
+      write?.tombstone === undefined
+        ? (previous?.tombstone ?? false)
+        : write.tombstone;
+    if (
+      typeof originDeviceId !== 'string' ||
+      !originDeviceId.trim() ||
+      originDeviceId.length > 255 ||
+      !Number.isSafeInteger(revision) ||
+      revision < 1 ||
+      typeof tombstone !== 'boolean'
+    ) {
+      throw new ValidationError(
+        'Invalid sync metadata',
+        'VALIDATION_SYNC_METADATA',
+      );
+    }
+    return Object.freeze({ originDeviceId, revision, tombstone });
+  }
 
   /**
    * Creates a new SmrtObject instance
@@ -891,6 +961,7 @@ export class SmrtObject extends SmrtClass {
           ? new Date(this.updated_at)
           : this.updated_at,
       persisted: this._persisted,
+      syncMetadata: this._syncMetadata,
     };
     try {
       return await withEmbeddedWriteTransaction(
@@ -905,6 +976,7 @@ export class SmrtObject extends SmrtClass {
       this.created_at = persistence.createdAt;
       this.updated_at = persistence.updatedAt;
       this._persisted = persistence.persisted;
+      this._syncMetadata = persistence.syncMetadata;
       throw error;
     }
   }
@@ -1308,6 +1380,8 @@ export class SmrtObject extends SmrtClass {
         totalFields: Object.keys(fields).length,
       });
     }
+
+    this.hydrateSyncMetadata(data);
 
     // The data came from an existing row, so subsequent saves must update
     // that row by primary key even if natural-key fields change (issue #1472).
@@ -2630,7 +2704,10 @@ export class SmrtObject extends SmrtClass {
   }
 
   /** Shared preparation for ordinary saves and compatible bulk creates. */
-  private async prepareSave(revisionGuard: Date | string | undefined) {
+  private async prepareSave(
+    revisionGuard: Date | string | undefined,
+    syncMetadata: SmrtSyncMetadata | null = null,
+  ) {
     const className = this.getResolvedClassName();
     if (ObjectRegistry.getConfig(this.getResolvedQualifiedName()).abstract) {
       throw new ValidationError(
@@ -2769,6 +2846,15 @@ export class SmrtObject extends SmrtClass {
     // named `updatedAt` also snake-cases to this column, so assert the
     // freshly issued framework value after serializing model fields.
     data.updated_at = this.updated_at;
+    // These physical columns cannot be supplied through model serialization.
+    delete data._sync_origin_device_id;
+    delete data._sync_revision;
+    delete data._sync_tombstone;
+    if (syncMetadata) {
+      data._sync_origin_device_id = syncMetadata.originDeviceId;
+      data._sync_revision = syncMetadata.revision;
+      data._sync_tombstone = syncMetadata.tombstone;
+    }
 
     // Coerce empty-string values to NULL for native UUID columns (declared
     // FKs / cross-package refs). The TypeScript default for an unset
@@ -2815,6 +2901,9 @@ export class SmrtObject extends SmrtClass {
       'updated_at',
       '_meta_type',
       '_meta_data',
+      '_sync_origin_device_id',
+      '_sync_revision',
+      '_sync_tombstone',
       ...conflictColumns.map(toSnakeCase),
     ]);
     for (const [name, field] of registeredFields) {
@@ -2987,8 +3076,20 @@ export class SmrtObject extends SmrtClass {
           { className },
         );
       }
+      const syncMetadata = this.nextSyncMetadata(options.sync);
+      if (syncMetadata && !this._persisted) {
+        if (!this.id) {
+          throw RuntimeError.invalidState(
+            'A tracked create requires an explicit id',
+            {
+              className,
+            },
+          );
+        }
+        this.requireInsertOnSave();
+      }
       const { interceptorContext, data, writePlan, conflictColumns } =
-        await this.prepareSave(revisionGuard);
+        await this.prepareSave(revisionGuard, syncMetadata);
 
       // Issue #1472: objects backed by an existing row must conflict on the
       // primary key. With natural-key conflict columns, editing a natural-key
@@ -3166,6 +3267,7 @@ export class SmrtObject extends SmrtClass {
         );
       }
       revisionPersisted = true;
+      this._syncMetadata = syncMetadata;
       if (adopted.id) {
         this.id = adopted.id;
         if (adopted.createdAt != null) {
@@ -3798,6 +3900,12 @@ export class SmrtObject extends SmrtClass {
         conflictColumns,
         conflictFilter,
       );
+      if (existing._sync_origin_device_id != null) {
+        throw RuntimeError.invalidState(
+          'A tracked row must be loaded by identity before saving',
+          { className: this.getResolvedClassName(), id: existing.id },
+        );
+      }
       const existingId = existing.id;
       if (
         typeof existingId === 'string' &&

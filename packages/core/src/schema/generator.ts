@@ -47,6 +47,14 @@ import type {
   SQLDataType,
 } from './types.js';
 
+// Framework-owned physical columns, shared across both schema sources and
+// both table strategies. NULL origin/revision means the row is untracked.
+const syncColumns = {
+  _sync_origin_device_id: { type: 'TEXT' },
+  _sync_revision: { type: 'INTEGER' },
+  _sync_tombstone: { type: 'BOOLEAN' },
+} as const;
+
 /**
  * Structural shape of a field as read from either the build-time manifest
  * (`FieldDefinition`) or the runtime ObjectRegistry (`getAllFields()` returns
@@ -1220,7 +1228,7 @@ export class SchemaGenerator {
     fields: Map<string, RegistryField>,
     config?: SchemaGeneratorConfig,
   ): SchemaDefinition {
-    const columns: Record<string, ColumnDefinition> = {};
+    const columns: Record<string, ColumnDefinition> = { ...syncColumns };
 
     // Check for custom primary key
     let hasCustomPK = false;
@@ -1541,7 +1549,7 @@ export class SchemaGenerator {
   ): Promise<SchemaDefinition> {
     const ObjectRegistry =
       config?.registry ?? (await import('../registry.js')).ObjectRegistry;
-    const columns: Record<string, ColumnDefinition> = {};
+    const columns: Record<string, ColumnDefinition> = { ...syncColumns };
 
     // Add default SMRT fields
     columns.id = {
@@ -1899,7 +1907,9 @@ export class SchemaGenerator {
     manifest: SmartObjectManifest,
     config?: SchemaGeneratorConfig,
   ): ManifestSchema {
-    const columns: Record<string, ManifestColumnDefinition> = {};
+    const columns: Record<string, ManifestColumnDefinition> = {
+      ...syncColumns,
+    };
 
     // Add default SMRT fields
     columns.id = {
@@ -2193,7 +2203,9 @@ export class SchemaGenerator {
     fields: Record<string, FieldDefinition>,
     config?: SchemaGeneratorConfig,
   ): ManifestSchema {
-    const columns: Record<string, ManifestColumnDefinition> = {};
+    const columns: Record<string, ManifestColumnDefinition> = {
+      ...syncColumns,
+    };
 
     // Track regular columns opted into a plain index via `@field({ indexed: true })`.
     // Mirrors the STI path (generateSTISchemaFromManifest) so CTI tables honor
