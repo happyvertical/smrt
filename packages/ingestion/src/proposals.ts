@@ -8,6 +8,10 @@ import {
 import type { DatabaseInterface } from '@happyvertical/sql';
 import Ajv from 'ajv';
 import { describeArgumentRefusal } from './argument-issues.js';
+import {
+  isTransactionConflict,
+  retryTransactionConflicts,
+} from './database-conflicts.js';
 import type {
   AnalysisOutput,
   IntakeEvidenceDTO,
@@ -647,11 +651,25 @@ export class IngestionProposalService {
     }
     return results as ExtractionResult[];
   }
-  private async live(
+  /**
+   * The provider-boundary authority re-check. Each part is its own read
+   * transaction, so a deadlock or serialization failure re-runs it (#4651).
+   */
+  private live(
     lease: AnalysisLease,
     catalogDigest: string,
     offered: GenerationOutput['offered'] = [],
     feedback?: GenerationOutput['provenance']['feedback'],
+  ) {
+    return retryTransactionConflicts(() =>
+      this.liveOnce(lease, catalogDigest, offered, feedback),
+    );
+  }
+  private async liveOnce(
+    lease: AnalysisLease,
+    catalogDigest: string,
+    offered: GenerationOutput['offered'],
+    feedback: GenerationOutput['provenance']['feedback'],
   ) {
     await this.service.getGenerationInput(lease);
     const catalog = await this.catalog(lease.itemId);
@@ -833,12 +851,14 @@ export class IngestionProposalService {
         .slice(0, this.config.limits.maxQueryLength);
       for (const { handler } of catalog) {
         await this.live(lease, expected.catalogDigest);
-        const candidates = await this.findCandidates({
-          itemId: lease.itemId,
-          handlerId: handler.id,
-          handlerVersion: handler.version,
-          query,
-        });
+        const candidates = await retryTransactionConflicts(() =>
+          this.findCandidates({
+            itemId: lease.itemId,
+            handlerId: handler.id,
+            handlerVersion: handler.version,
+            query,
+          }),
+        );
         if (candidates.truncated)
           output.warnings.push('candidate_set_truncated');
         output.offered.push({ handler, candidates: candidates.items });
@@ -854,23 +874,22 @@ export class IngestionProposalService {
       ) {
         const feedbackQuery = query.slice(0, 4096);
         try {
-          feedbackSelection = await new IntakeFeedbackService(
-            this.options,
-            this.execution,
-          ).retrieve({
-            itemId: lease.itemId,
-            query: feedbackQuery,
-            offered: output.offered,
-            promptVersion: this.config.promptVersion,
-            configurationVersion: this.config.version,
-            model: this.identity,
-            providers: [
-              this.identity.provider,
-              ...(this.decisionIdentity
-                ? [this.decisionIdentity.provider]
-                : []),
-            ],
-          });
+          feedbackSelection = await retryTransactionConflicts(() =>
+            new IntakeFeedbackService(this.options, this.execution).retrieve({
+              itemId: lease.itemId,
+              query: feedbackQuery,
+              offered: output.offered,
+              promptVersion: this.config.promptVersion,
+              configurationVersion: this.config.version,
+              model: this.identity,
+              providers: [
+                this.identity.provider,
+                ...(this.decisionIdentity
+                  ? [this.decisionIdentity.provider]
+                  : []),
+              ],
+            }),
+          );
         } catch (error) {
           if (!(error instanceof FeedbackRetrievalDeniedError)) throw error;
         }
@@ -1107,6 +1126,10 @@ export class IngestionProposalService {
         }
       }
     } catch (error) {
+      // A deadlock or serialization failure that outlasted its retries is a
+      // database condition, not this attempt's result: never publish it as a
+      // failure (#4651). The lease stays unpublished for the next claim.
+      if (isTransactionConflict(error)) throw error;
       const candidate = captureCandidate;
       captureCandidate = undefined;
       // Recheck authority before recording an error; revoked workers cannot publish.

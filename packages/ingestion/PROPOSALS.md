@@ -497,6 +497,13 @@ like `reviewSuggestion`, never enter frozen configuration, digests or
 `proposalReadConfiguration`. A reviewer can still re-run a finally failed item
 with "Try again" (REVIEW.md, `retryInterpretation`).
 
+Independently of `retry`, a PostgreSQL deadlock (`40P01`) or serialization
+failure (`40001`) in the database reads around the provider call (candidate
+discovery, feedback retrieval and the provider-boundary re-checks) re-runs that
+read up to five times with a short jittered pause (#4651). It is never
+published as a failed attempt: one that outlasts those runs is thrown from
+`generate`, leaving the attempt unpublished for the next lease claim.
+
 ### Failed-attempt capture (opt-in, #4285)
 
 The value-free reason cannot show what the model actually sent. A host that

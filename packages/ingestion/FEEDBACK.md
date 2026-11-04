@@ -220,6 +220,13 @@ pending actions; regenerate their proposals and obtain fresh approval to recover
 A preview replay checks the exact persisted proposal it returns, including its
 analysis attempt; a newer action revision cannot supply replacement lineage.
 Plan replay and final sealed plan-step publication use the same gate.
+Reading examples (retrieval and every selection re-check) takes no exclusive
+lock on a source item (#4651): each source is loaded before and after its
+checks, both loads must agree (review binding and analysis revision), and a
+retention narrowing writes the row only when it actually narrows. Parallel
+reads therefore cannot deadlock on PostgreSQL by visiting source items in
+different orders. A database error inside an example check is never treated as
+an excluded example: it propagates and ends the read.
 For already successful actions, current-authorized durable outcomes remain
 readable/replayable, but invalid learned lineage suppresses saved proposal
 display, arguments and plan payload. An empty selection carries no learned source
