@@ -44,6 +44,8 @@ import {
   validateLocalDatabaseStorage,
 } from './index.js';
 
+// Concurrent test processes must never clean up each other's synthetic UID root.
+const outsideUid = 4_000_000 + process.pid;
 const temporaryRoots: string[] = [];
 const initializationLockPaths = new Set<string>();
 const execFileAsync = promisify(execFile);
@@ -1598,7 +1600,6 @@ describe('local application runtime', () => {
   it('names the legacy lease after the uid outside a remapping user namespace (#3877)', async () => {
     const directories = await localDirectories('lease-uid-map');
     const currentUid = process.getuid?.() as number;
-    const outsideUid = 4_000_000 + (currentUid % 1000);
     filesystemInterleave.uidMap = `${currentUid} ${outsideUid} 1\n`;
     const lockKey = createHash('sha256')
       .update(
@@ -1663,7 +1664,6 @@ describe('local application runtime', () => {
   it('also waits for an older release in the same remapped namespace (#3877)', async () => {
     const directories = await localDirectories('lease-uid-map-inner');
     const currentUid = process.getuid?.() as number;
-    const outsideUid = 4_000_000 + (currentUid % 1000);
     filesystemInterleave.uidMap = `${currentUid} ${outsideUid} 1\n`;
     const outsideLockRoot = join(await realpath('/tmp'), `.smrt-${outsideUid}`);
     // An older release in this namespace locks the in-namespace uid's lease.
@@ -1738,7 +1738,6 @@ describe('local application runtime', () => {
   it('skips a foreign-owned in-namespace legacy root and takes the mapped lease (#3877)', async () => {
     const directories = await localDirectories('lease-uid-map-foreign');
     const currentUid = process.getuid?.() as number;
-    const outsideUid = 4_000_000 + (currentUid % 1000);
     filesystemInterleave.uidMap = `${currentUid} ${outsideUid} 1\n`;
     const canonicalTemporaryRoot = await realpath('/tmp');
     const innerLockRoot = join(canonicalTemporaryRoot, `.smrt-${currentUid}`);
@@ -1774,7 +1773,6 @@ describe('local application runtime', () => {
   it('still fails closed on a symlinked in-namespace legacy root (#3877)', async () => {
     const directories = await localDirectories('lease-uid-map-symlink');
     const currentUid = process.getuid?.() as number;
-    const outsideUid = 4_000_000 + (currentUid % 1000);
     filesystemInterleave.uidMap = `${currentUid} ${outsideUid} 1\n`;
     const canonicalTemporaryRoot = await realpath('/tmp');
     const innerLockRoot = join(canonicalTemporaryRoot, `.smrt-${currentUid}`);
