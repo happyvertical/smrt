@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.60.5
+
+### Patch Changes
+
+- ### Features
+  
+  - lesson steps from course bundles, and printing their setup sheets (#4658) (education)
+- @happyvertical/smrt-config@0.60.5
+  - @happyvertical/smrt-scanner@0.60.5
+  - @happyvertical/smrt-types@0.60.5
+
 ## 0.60.4
 
 ### Patch Changes
