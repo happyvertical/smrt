@@ -221,10 +221,17 @@ the same way: an unknown key anywhere is `manifest_unknown_key` (with its path i
   once), `role` (required) one of `teacher-guide`, `slides`, `learner-pages`,
   `assessment`, `assessment-guidance`, `handout`, `printable`, `answer-key`,
   `attachment` (`manifest_role` otherwise; a video is a reference, never a file),
-  optional `audience` and `title`. The audience is the role default
+  optional `audience`, `title` and (lesson members only) `step`. The audience is the role default
   (`LESSON_ASSET_DEFAULT_AUDIENCE`) unless stated; `answer-key` and
   `assessment-guidance` are always guardian (a learner audience is
   `manifest_audience`). Members not listed stay recorded evidence with no role.
+- **Lesson steps** (SMRT #4656): a lesson member or video may declare
+  `step: { key, order, label? }` (a closed object; `manifest_invalid` for a key over
+  32 characters or outside `A-Za-z0-9._:-`, a non-finite or non-number `order`
+  (|order| up to 1,000,000), or an empty label; `manifest_unknown_key` for anything
+  else, and a course member cannot carry one). Materials that share a `key` are
+  one step; fractions order `1b` after `1`. A video's `step` is still accepted as a
+  whole number (its rank); the object form also ranks it by `floor(order)`.
 - **Pages**: `{ member, from, to, label? }` ranges over a member of the same lesson
   (PDF, Word or PowerPoint; the rendered PDF for Office). Each page becomes a
   `LessonPage` keyed `p<n>`, labelled `<label> <n>` (default `Page <n>`), ordered by
@@ -232,7 +239,7 @@ the same way: an unknown key anywhere is `manifest_unknown_key` (with its path i
   500 pages per lesson.
 - **Videos**: `{ reference, title, step, audience? }` where `reference` is a bare id
   or an allowlisted https YouTube URL (`parseYouTubeReference`; anything else is
-  `manifest_video`), `step` an integer 0-9999. They become `LessonExternalVideo`
+  `manifest_video`), `step` an integer 0-9999 or a lesson step object (see above). They become `LessonExternalVideo`
   rows; nothing is downloaded.
 - **Course members** become `CourseAsset` rows, not tied to any lesson.
 - **Unit and parts** (SMRT #4632): `course.key` (a manifest key) names the unit
@@ -260,7 +267,15 @@ manifest gave none or the member backs several materials with different titles.
 row), the same for the original and rendered halves of a pair. Lesson and course
 material views show the row title and fall back to the stored asset's name when
 there is none. A re-attach fills a missing title; a different one is a
-`conflict` unless `supersede` restates it. **Slides** keep the original
+`conflict` unless `supersede` restates it. **Lesson steps** (#4656): the declared
+step is recorded on the `lesson_assets` row (`step_key`, `step_order`, `step_label`;
+both halves of an original/rendered pair share it) and on `lesson_external_videos`
+(`step_key`, `step_position`, `step_label`; its existing integer `step_order` stays
+the rank, `floor(order)` for an object step). All are additive nullable columns.
+A re-attach fills a row's missing step without a conflict; a different step is a
+`conflict` unless `supersede` restates it (replays are unchanged). Hosts read it
+with `SubmissionService.listLessonSteps` ([lesson materials](lesson-materials.md)).
+**Slides** keep the original
 deck (hand `bytes` to the host as a private asset: "Open in PowerPoint") and its
 rendered pages (`rendered`: "Present").
 

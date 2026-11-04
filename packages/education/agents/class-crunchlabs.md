@@ -125,6 +125,15 @@ skipped) or `memoryClassCrunchLabsSource(files)`. It never reads video files.
   number), so `attachCourse` merges the parts in lesson order whatever order they
   arrive in.
 
+- Lesson steps (#4656): the slides are step `launch` (order 0, "Launch"); each
+  matched video is a step keyed by its real step code (`6`, `1b`) with the
+  video's title as label, ordered numerically (`classCrunchLabsStepOrder`: `1` <
+  `1a` < `1b` < `2`; videos sharing a code share the step, offset by 0.001 each);
+  the status check assessment (printable PDF and the editable master) is step
+  `check` (order 9999, "Status check"). The mission log, handouts, printables, the
+  teacher manual and the assessment guidance carry no step: the first three are the
+  learner's setup, the others stay guardian material.
+
 The `report` lists lessons, members, parts, pages, matched and unmatched videos,
 duplicates, ignored files and warnings. Fixtures in tests are synthetic files
 with the same naming; no real download is ever copied into the repository.

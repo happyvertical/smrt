@@ -25,6 +25,7 @@ import {
 } from './course-bundle-manifest-util.js';
 import {
   type ManifestV2,
+  type ManifestV2Step,
   parseBundleManifestV2,
 } from './course-bundle-manifest-v2.js';
 import {
@@ -90,6 +91,8 @@ export interface BundleStructureLesson {
   audiences?: Array<MaterialAudience | ''>;
   /** Version 2: member titles per path (`''` when none). */
   titles?: string[];
+  /** Version 2: the lesson step per path (`null` when none; SMRT #4656). */
+  steps?: Array<ManifestV2Step | null>;
   /** Version 2: page ranges and external videos. */
   pages?: ManifestV2['sections'][number]['lessons'][number]['pages'];
   videos?: ManifestV2['sections'][number]['lessons'][number]['videos'];
@@ -509,6 +512,7 @@ export const manifestV2BundleReader: BundleReader = {
             roles: l.members.map((m) => m.role),
             audiences: l.members.map((m) => m.audience),
             titles: l.members.map((m) => m.title),
+            steps: l.members.map((m) => m.step ?? null),
             pages: l.pages,
             videos: l.videos,
           })),
@@ -683,6 +687,8 @@ export interface BundleMaterial {
   audience: MaterialAudience;
   title: string;
   sortOrder: number;
+  /** The lesson step this material belongs to, null when it is not part of one. */
+  step: ManifestV2Step | null;
 }
 /** One lesson page: page `sourcePageNumber` of a paged member (the rendered PDF for Office). */
 export interface BundlePage {
@@ -703,6 +709,8 @@ export interface BundleVideo {
   videoId: string;
   title: string;
   stepOrder: number;
+  /** The lesson step this video belongs to, null when it is not part of one. */
+  step: ManifestV2Step | null;
   audience: MaterialAudience;
 }
 /** The materials a version 2 manifest asks for. Empty for version 1 and plain file sets. */
@@ -905,6 +913,7 @@ export function planBundleMaterials(
     where: { sectionKey: string; lessonKey: string } | null,
     decl: ManifestV2['courseMembers'][number],
     sortOrder: number,
+    step: ManifestV2Step | null = null,
   ) => {
     const holder = usable(decl.path);
     if (!holder?.sha256) return;
@@ -931,6 +940,7 @@ export function planBundleMaterials(
       audience: decl.audience,
       title: decl.title,
       sortOrder,
+      step: scope === 'lesson' ? step : null,
     });
   };
   for (const [i, decl] of (structure.courseMembers ?? []).entries())
@@ -951,6 +961,7 @@ export function planBundleMaterials(
             title: lesson.titles?.[i] ?? '',
           },
           i,
+          lesson.steps?.[i] ?? null,
         );
       });
       const keys = new Set<string>();
@@ -982,7 +993,7 @@ export function planBundleMaterials(
         }
       }
       for (const video of lesson.videos ?? [])
-        plan.videos.push({ ...where, ...video });
+        plan.videos.push({ ...where, ...video, step: video.step ?? null });
     }
   return plan;
 }

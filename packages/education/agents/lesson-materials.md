@@ -54,6 +54,29 @@ family-owned, so this is the after-attach path; before attach use
 Authored courses change audience through course authoring (`CourseMaterialInput.audience`,
 carried to the released join); shared or other families' rows are denied.
 
+## Lesson steps (SMRT #4656)
+
+`listLessonSteps({enrollmentId, lessonId})` walks a multi-step lesson in order,
+filtered like `listLessonMaterials` (same actor and enrollment checks, learner
+audience only for a learner, retired rows left out, same `LessonMaterialView`s):
+
+```ts
+{ setup: LessonMaterialView[];            // stepless printable / handout / learner-pages files
+  steps: Array<{ key: string; label: string;   // label falls back to the key
+                 kind: 'present' | 'watch' | 'do' | 'check';
+                 order: number;                 // 1b sorts after 1
+                 materials: LessonMaterialView[] }> }
+```
+
+Steps come from the `step_key`/`step_order`/`step_label` recorded on lesson files and
+(`step_position`) external videos by a course bundle ([manifest steps](course-bundle-import.md)).
+Materials sharing a key are one step (the original and rendered halves of a deck stay
+together); steps sort by order then key; `kind` is `present` if any material is
+`slides`, else `watch` if any is an external video, else `check` if any is an
+`assessment`, else `do`. A lesson with no declared steps returns `steps: []`.
+Course-level materials (supply lists) are not part of a lesson listing and stay with
+`listCourseMaterials`.
+
 ## External videos
 
 `LessonExternalVideo` references a video at an allowlisted provider (YouTube only):

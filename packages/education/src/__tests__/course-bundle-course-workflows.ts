@@ -95,12 +95,13 @@ export type Lesson = {
     role: string;
     audience?: string;
     title?: string;
+    step?: { key: string; order: number; label?: string };
   }>;
   pages?: Array<{ member: string; from: number; to: number; label?: string }>;
   videos?: Array<{
     reference: string;
     title: string;
-    step: number;
+    step: number | { key: string; order: number; label?: string };
     audience?: string;
   }>;
 };

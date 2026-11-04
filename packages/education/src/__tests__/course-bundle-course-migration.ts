@@ -37,9 +37,17 @@ const NEW_COLUMNS = [
   'source_import_id',
 ];
 // SMRT #4653: course_assets already carried a title.
+// SMRT #4656: lesson steps on lesson files and external videos.
 const COLUMNS_BY_TABLE: Record<string, string[]> = {
-  lesson_assets: [...NEW_COLUMNS, 'title'],
+  lesson_assets: [
+    ...NEW_COLUMNS,
+    'title',
+    'step_key',
+    'step_order',
+    'step_label',
+  ],
   course_assets: NEW_COLUMNS,
+  lesson_external_videos: ['step_key', 'step_position', 'step_label'],
 };
 
 /**
@@ -74,6 +82,7 @@ export async function assertBundleCourseMigration(
     [
       'LessonAsset',
       'CourseAsset',
+      'LessonExternalVideo',
       'CourseBundleAttachment',
       'CourseBundleAudienceChoice',
       'CourseBundlePlacement',
