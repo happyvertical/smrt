@@ -1550,6 +1550,7 @@ export class SubmissionService extends LearnerService {
       .filter(
         (row) =>
           (row.tenant_id ?? null) === tenant &&
+          !row.retired_at &&
           this.visibleTo(
             learnerOnly,
             String(row.relationship),
@@ -1570,6 +1571,7 @@ export class SubmissionService extends LearnerService {
           .filter(
             (row) =>
               (row.tenant_id ?? null) === tenant &&
+              !row.retired_at &&
               this.visibleTo(learnerOnly, 'video', String(row.audience ?? '')),
           )
           .sort(
@@ -1622,6 +1624,7 @@ export class SubmissionService extends LearnerService {
       .filter(
         (row) =>
           (row.tenant_id ?? null) === (course.tenant_id ?? null) &&
+          !row.retired_at &&
           this.visibleTo(
             learnerOnly,
             String(row.relationship),

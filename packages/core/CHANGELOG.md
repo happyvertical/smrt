@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.60.2
+
+### Patch Changes
+
+- ### Features
+  
+  - expose authorized discovery lists (#4631) (bookings)
+- @happyvertical/smrt-config@0.60.2
+  - @happyvertical/smrt-scanner@0.60.2
+  - @happyvertical/smrt-types@0.60.2
+
 ## 0.60.1
 
 ### Patch Changes

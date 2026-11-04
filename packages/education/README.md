@@ -133,7 +133,8 @@ duplicate members as append-only evidence, hands accepted members to ingestion a
 proposes sections and lessons through `CourseGenerationReviewService`.
 `attachCourse` turns an import (or each part of a unit split across bundles, in
 any order) into one family course with lessons, materials, pages and videos;
-`chooseMaterialAudience` records review choices before attach; see
+`attachCourse({ supersede: true })` brings an attached unit up to a newer build
+keeping learner progress; `chooseMaterialAudience` records review choices before attach; see
 [bundle import](agents/course-bundle-import.md).
 `requestGeneration` also accepts a structured `brief` (subject, category, area,
 grade, objective, a `course` or one-`lesson` target and a per-request interest

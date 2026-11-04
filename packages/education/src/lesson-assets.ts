@@ -184,6 +184,14 @@ export class LessonAsset extends SmrtObject {
   /** Optional first-page image of this material, recorded by the rendering step. */
   @crossPackageRef('@happyvertical/smrt-assets:Asset', { nullable: true })
   thumbnailAssetId: string | null = null;
+  /**
+   * Set when a newer build of the course bundle no longer carries this
+   * material (SMRT #4645). A retired row stays (learner work may reference it)
+   * but is not part of the current material set. Null when current.
+   */
+  @field({ type: 'datetime', nullable: true }) retiredAt: Date | null = null;
+  /** The course bundle import that wrote this row, null for any other source. */
+  @field({ type: 'text', nullable: true }) sourceImportId: string | null = null;
   constructor(options: Record<string, unknown> = {}) {
     super(options);
     for (const [key, value] of Object.entries(options)) {
@@ -251,6 +259,14 @@ export class CourseAsset extends SmrtObject {
   /** Optional first-page image of this material, recorded by the rendering step. */
   @crossPackageRef('@happyvertical/smrt-assets:Asset', { nullable: true })
   thumbnailAssetId: string | null = null;
+  /**
+   * Set when a newer build of the course bundle no longer carries this
+   * material (SMRT #4645). A retired row stays (learner work may reference it)
+   * but is not part of the current material set. Null when current.
+   */
+  @field({ type: 'datetime', nullable: true }) retiredAt: Date | null = null;
+  /** The course bundle import that wrote this row, null for any other source. */
+  @field({ type: 'text', nullable: true }) sourceImportId: string | null = null;
   constructor(options: Record<string, unknown> = {}) {
     super(options);
     for (const [key, value] of Object.entries(options))
@@ -349,6 +365,14 @@ export class LessonExternalVideo extends SmrtObject {
   title = '';
   stepOrder = 0;
   audience: MaterialAudience | '' = '';
+  /**
+   * Set when a newer build of the course bundle no longer carries this
+   * material (SMRT #4645). A retired row stays (learner work may reference it)
+   * but is not part of the current material set. Null when current.
+   */
+  @field({ type: 'datetime', nullable: true }) retiredAt: Date | null = null;
+  /** The course bundle import that wrote this row, null for any other source. */
+  @field({ type: 'text', nullable: true }) sourceImportId: string | null = null;
   constructor(options: Record<string, unknown> = {}) {
     super(options);
     for (const [key, value] of Object.entries(options))

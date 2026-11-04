@@ -25,12 +25,16 @@ export const bundleCourseMigrationClasses = [
   'CourseBundleAudienceChoice',
   'CourseBundlePlacement',
   'CourseBundleUnit',
+  'CourseBundleSupersession',
 ];
 
 const NEW_COLUMNS = [
   'rendition',
   'rendition_of_asset_id',
   'thumbnail_asset_id',
+  // SMRT #4645
+  'retired_at',
+  'source_import_id',
 ];
 
 /**
@@ -69,6 +73,7 @@ export async function assertBundleCourseMigration(
       'CourseBundleAudienceChoice',
       'CourseBundlePlacement',
       'CourseBundleUnit',
+      'CourseBundleSupersession',
     ].map((name) => {
       const schema = ObjectRegistry.getSchema(name);
       if (!schema) throw new Error(`Missing ${name} schema`);
@@ -80,6 +85,7 @@ export async function assertBundleCourseMigration(
   await db.query('DROP TABLE "course_bundle_attachments"');
   await db.query('DROP TABLE "course_bundle_placements"');
   await db.query('DROP TABLE "course_bundle_units"');
+  await db.query('DROP TABLE "course_bundle_supersessions"');
   for (const table of ['lesson_assets', 'course_assets'])
     for (const column of NEW_COLUMNS) {
       // Reference columns carry an index; drop it with the column.
@@ -96,6 +102,7 @@ export async function assertBundleCourseMigration(
     'course_bundle_attachments',
     'course_bundle_audience_choices',
     'course_bundle_placements',
+    'course_bundle_supersessions',
     'course_bundle_units',
   ]);
   expect(
