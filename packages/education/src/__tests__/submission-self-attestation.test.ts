@@ -32,6 +32,7 @@ async function setup(
   run: (context: {
     f: Awaited<ReturnType<typeof learnerFixture>>;
     service: SubmissionService;
+    withKinds: (kinds: '*' | readonly string[]) => SubmissionService;
     actions: Array<{ action: string; own: boolean }>;
     reading: string;
     video: string;
@@ -54,10 +55,16 @@ async function setup(
       actions.push({ action, own });
       return own || relationshipTypeId === f.guardianType.id;
     };
-    const service = new SubmissionService(db, authorize, () => true, {
+    const options = {
       storage,
       signAsset: async () => 'https://school.test/signed',
-    });
+    };
+    const service = new SubmissionService(db, authorize, () => true, options);
+    const withKinds = (selfAttestableKinds: '*' | readonly string[]) =>
+      new SubmissionService(db, authorize, () => true, {
+        ...options,
+        selfAttestableKinds,
+      });
     const sectionId = f.lesson.sectionId;
     const reading = await f.as(f.parent, async () =>
       (await ReadingCollection.create({ db })).create({
@@ -77,6 +84,7 @@ async function setup(
     await run({
       f,
       service,
+      withKinds,
       actions,
       reading: String(reading.id),
       video: String(video.id),
@@ -248,6 +256,58 @@ describe('SubmissionService.attestOwnLesson', () => {
       expect(finished).toBeInstanceOf(OwnAttestationConflictError);
       expect(finished).toMatchObject({ status: 'complete' });
       expect(await f.db.list('lesson_self_attestations', {})).toHaveLength(0);
+    });
+  });
+
+  it('lets the host choose self-attestable kinds', async () => {
+    await setup(async ({ f, service, withKinds }) => {
+      const base = {
+        ...f.own,
+        enrollmentId: String(f.enrollment.id),
+        policyBasis: 'learner-can-mark-done',
+      };
+      const worksheet = String(f.lesson.id);
+      const kindOf = (e: unknown) => e as OwnAttestationLessonKindError;
+      // Default: a worksheet-kind lesson is refused.
+      const refused = await f.as(f.own, () =>
+        service
+          .attestOwnLesson({ ...base, lessonId: worksheet })
+          .catch((e: unknown) => e),
+      );
+      expect(refused).toBeInstanceOf(OwnAttestationLessonKindError);
+      // A list allows only the listed kinds.
+      const listed = withKinds(['Video']);
+      const stillRefused = await f.as(f.own, () =>
+        listed
+          .attestOwnLesson({ ...base, lessonId: worksheet })
+          .catch((e: unknown) => e),
+      );
+      expect(stillRefused).toBeInstanceOf(OwnAttestationLessonKindError);
+      expect(kindOf(stillRefused).kind).toBe(kindOf(refused).kind);
+      const readingRefused = await f.as(f.own, () =>
+        listed
+          .attestOwnLesson({ ...base, lessonId: String(f.lesson.id) })
+          .catch((e: unknown) => e),
+      );
+      expect(readingRefused).toBeInstanceOf(OwnAttestationLessonKindError);
+      const kind = kindOf(refused).kind;
+      const named = withKinds([kind]);
+      const allowed = await f.as(f.own, () =>
+        named.attestOwnLesson({ ...base, lessonId: worksheet }),
+      );
+      expect(allowed.selfReported).toBe(true);
+      // '*' allows it too, idempotently.
+      const all = withKinds('*');
+      const again = await f.as(f.own, () =>
+        all.attestOwnLesson({ ...base, lessonId: worksheet }),
+      );
+      expect(again.id).toBe(allowed.id);
+      // The guardian is still refused.
+      await expect(
+        f.as(f.parent, () =>
+          all.attestOwnLesson({ ...base, ...f.parent, lessonId: worksheet }),
+        ),
+      ).rejects.toBeInstanceOf(LearnerAuthorizationError);
     });
   });
 });
