@@ -116,7 +116,11 @@ async function fixture() {
   const guardianProfile = String(
     (await db.get('users', { id: f.parent.actorUserId }))?.profile_id,
   );
-  const asset = async (name: string, access: 'private' | 'public') => {
+  const asset = async (
+    name: string,
+    access: 'private' | 'public',
+    mimeType = '',
+  ) => {
     const id = randomUUID();
     const create = async () =>
       (await AssetCollection.create({ db })).create({
@@ -125,6 +129,7 @@ async function fixture() {
         name,
         accessMode: access,
         ownerProfileId: guardianProfile,
+        ...(mimeType ? { mimeType } : {}),
         sourceUri: `file:///education/${id}.pdf`,
       });
     await withTenant({ tenantId, userId: f.parent.actorUserId }, () =>
@@ -147,8 +152,9 @@ async function fixture() {
     access: 'private' | 'public',
     sortOrder: number,
     audience = '',
+    extra: { mimeType?: string; rendition?: string } = {},
   ) => {
-    const assetId = await asset(relationship, access);
+    const assetId = await asset(relationship, access, extra.mimeType);
     return withTenant({ tenantId, userId: f.parent.actorUserId }, () =>
       withPrivateAssetAccess(
         {
@@ -165,6 +171,7 @@ async function fixture() {
             relationship: relationship as never,
             audience: audience as never,
             sortOrder,
+            ...(extra.rendition ? { rendition: extra.rendition as never } : {}),
           }),
       ),
     );
@@ -175,6 +182,141 @@ async function fixture() {
   };
   return { ...f, db, service, claims, asset, link, scope, guardianProfile };
 }
+
+describe('signLessonPrintable roles (SMRT #4657)', () => {
+  const pdf = { mimeType: 'application/pdf' };
+  it('signs a printable, handout and learner-pages PDF for a learner and a guardian', async () => {
+    const f = await fixture();
+    try {
+      for (const [i, role] of (
+        ['printable', 'handout', 'learner-pages'] as const
+      ).entries()) {
+        const row = await f.link(role, 'public', i, '', pdf);
+        for (const actor of [f.own, f.parent]) {
+          const signed = await f.as(actor, () =>
+            f.service.signLessonPrintable({
+              ...actor,
+              ...f.scope,
+              assetId: row.assetId,
+            }),
+          );
+          expect(signed.url).toContain(row.assetId);
+        }
+      }
+    } finally {
+      await f.db.close?.();
+    }
+  });
+  it('refuses a guardian-audience row for a learner, an original, a non-PDF and an unrelated role', async () => {
+    const f = await fixture();
+    try {
+      const sign = (actor: typeof f.own, assetId: string) =>
+        f.as(actor, () =>
+          f.service.signLessonPrintable({ ...actor, ...f.scope, assetId }),
+        );
+      const hidden = await f.link('handout', 'public', 0, 'guardian', pdf);
+      await expect(sign(f.own, hidden.assetId)).rejects.toThrow();
+      await sign(f.parent, hidden.assetId);
+      const original = await f.link('learner-pages', 'public', 1, 'guardian', {
+        ...pdf,
+        rendition: 'original',
+      });
+      await expect(sign(f.own, original.assetId)).rejects.toThrow();
+      await expect(sign(f.parent, original.assetId)).rejects.toThrow();
+      const notPdf = await f.link('handout', 'public', 2);
+      await expect(sign(f.own, notPdf.assetId)).rejects.toThrow();
+      const guide = await f.link('teacher-guide', 'public', 3, '', pdf);
+      await expect(sign(f.parent, guide.assetId)).rejects.toThrow();
+      expect(f.claims.length).toBe(1);
+    } finally {
+      await f.db.close?.();
+    }
+  });
+});
+
+describe('signLessonPrintable retired rows (SMRT #4657)', () => {
+  const pdf = { mimeType: 'application/pdf' };
+  const retire = (f: Awaited<ReturnType<typeof fixture>>, id: unknown) =>
+    f.db.query(
+      `UPDATE lesson_assets SET retired_at = '2026-01-01T00:00:00.000Z' WHERE id = '${String(id)}'`,
+    );
+  it('refuses a retired printable, handout and learner-pages PDF to everyone', async () => {
+    const f = await fixture();
+    try {
+      for (const [i, role] of (
+        ['printable', 'handout', 'learner-pages'] as const
+      ).entries()) {
+        const row = await f.link(role, 'public', i, '', pdf);
+        const sign = (actor: typeof f.own) =>
+          f.as(actor, () =>
+            f.service.signLessonPrintable({
+              ...actor,
+              ...f.scope,
+              assetId: row.assetId,
+            }),
+          );
+        await sign(f.own);
+        await retire(f, row.id);
+        await expect(sign(f.own)).rejects.toThrow();
+        await expect(sign(f.parent)).rejects.toThrow();
+      }
+      expect(f.claims.length).toBe(3);
+    } finally {
+      await f.db.close?.();
+    }
+  });
+  it('refuses a handout superseded into an answer key, whose new row is never signed here', async () => {
+    const f = await fixture();
+    try {
+      const handout = await f.link('handout', 'private', 0, '', pdf);
+      await withTenant(
+        { tenantId: f.parent.tenantId, userId: f.parent.actorUserId },
+        () =>
+          withPrivateAssetAccess(
+            {
+              tenantId: f.parent.tenantId,
+              actorUserId: f.parent.actorUserId,
+              ownerProfileId: f.guardianProfile,
+              assetIds: [handout.assetId],
+            },
+            async () =>
+              (await LessonAssetCollection.create({ db: f.db })).create({
+                tenantId: f.parent.tenantId,
+                lessonId: String(f.lesson.id),
+                assetId: handout.assetId,
+                relationship: 'answer-key',
+                sortOrder: 1,
+              }),
+          ),
+      );
+      await retire(f, handout.id);
+      const sign = (actor: typeof f.own) =>
+        f.as(actor, () =>
+          f.service.signLessonPrintable({
+            ...actor,
+            ...f.scope,
+            assetId: handout.assetId,
+          }),
+        );
+      await expect(sign(f.own)).rejects.toThrow();
+      await expect(sign(f.parent)).rejects.toThrow();
+      // The learner's list shows nothing for it; the guardian sees only the key.
+      const learner = await f.as(f.own, () =>
+        f.service.listLessonMaterials({ ...f.own, ...f.scope }),
+      );
+      expect(learner).toEqual([]);
+      const guardian = await f.as(f.parent, () =>
+        f.service.listLessonMaterials({ ...f.parent, ...f.scope }),
+      );
+      expect(guardian.map((m) => [m.relationship, m.audience])).toEqual([
+        ['answer-key', 'guardian'],
+      ]);
+      expect(f.claims.length).toBe(0);
+    } finally {
+      await f.db.close?.();
+    }
+  });
+});
 
 describe('lesson materials by audience', () => {
   it('shows guardians every material and learners only learner material', async () => {

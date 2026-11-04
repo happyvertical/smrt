@@ -171,6 +171,13 @@ export class ExternalVideoReferenceError extends LearnerValidationError {
   }
 }
 
+/** Lesson file roles `signLessonPrintable` signs for printing. */
+const PRINTABLE_RELATIONSHIPS = [
+  'printable',
+  'handout',
+  'learner-pages',
+] as const satisfies readonly LessonAssetRelationship[];
+
 /** One material as a learner or guardian may see it. */
 export type LessonMaterialView = Readonly<{
   id: string;
@@ -203,7 +210,47 @@ export type LessonMaterialView = Readonly<{
   thumbnailAssetId: string | null;
 }>;
 
+/** What a lesson step asks of the learner (SMRT #4656). */
+export type LessonStepKind = 'present' | 'watch' | 'do' | 'check';
+
+/** One step of a lesson, in order, with the materials it carries. */
+export type LessonStepView = Readonly<{
+  /** The bundle's step key (a step code such as `6` or `1b`, or `launch`). */
+  key: string;
+  /** The step's readable label; the key when the bundle gave none. */
+  label: string;
+  /** `present` slides, `watch` an external video, `check` an assessment, else `do`. */
+  kind: LessonStepKind;
+  /** Position in the lesson; fractions order `1b` after `1`. */
+  order: number;
+  /** Every visible material of the step, files then videos, original and rendered halves together. */
+  materials: LessonMaterialView[];
+}>;
+
+/** A lesson walked in order: what to prepare, then the steps. */
+export type LessonStepsView = Readonly<{
+  /** Printed or prepared before the lesson: stepless handouts, learner pages and printables. */
+  setup: LessonMaterialView[];
+  /** Ordered by step order then key; empty when the lesson declares no steps. */
+  steps: LessonStepView[];
+}>;
+
 type FileRow = Record<string, unknown>;
+type StepInfo = { key: string; order: number; label: string };
+const stepOfRow = (row: FileRow, orderField: string): StepInfo | null =>
+  row.step_key
+    ? {
+        key: String(row.step_key),
+        order: Number(row[orderField]) || 0,
+        label: row.step_label ? String(row.step_label) : '',
+      }
+    : null;
+/** Relationships prepared or printed before a lesson when they belong to no step. */
+const SETUP_RELATIONSHIPS: ReadonlySet<LessonAssetRelationship> = new Set([
+  'printable',
+  'handout',
+  'learner-pages',
+]);
 /** Pair visible originals with their renderings (same role, `rendition_of_asset_id`). */
 function pairRenditions(rows: FileRow[], views: LessonMaterialView[]) {
   const out = views.map((v) => ({ ...v })) as Array<{
@@ -1535,6 +1582,11 @@ export class SubmissionService extends LearnerService {
   async listLessonMaterials(
     request: LessonRequest,
   ): Promise<LessonMaterialView[]> {
+    return (await this.collectLessonMaterials(request)).map((m) => m.view);
+  }
+  private async collectLessonMaterials(
+    request: LessonRequest,
+  ): Promise<Array<{ view: LessonMaterialView; step: StepInfo | null }>> {
     const enrollment = await this.requireEnrollment(
       request,
       'education.learner.read',
@@ -1578,13 +1630,19 @@ export class SubmissionService extends LearnerService {
           .sort(
             (a, b) =>
               Number(a.step_order) - Number(b.step_order) ||
+              (Number(a.step_position ?? 0) || 0) -
+                (Number(b.step_position ?? 0) || 0) ||
               String(a.id).localeCompare(String(b.id)),
           )
       : [];
     const fileViews: LessonMaterialView[] = [];
     for (const row of files) fileViews.push(await this.fileView(row, 'lesson'));
     const result = pairRenditions(files, fileViews);
-    for (const row of videos)
+    const steps: Array<StepInfo | null> = files.map((row) =>
+      stepOfRow(row, 'step_order'),
+    );
+    for (const row of videos) {
+      steps.push(stepOfRow(row, 'step_position'));
       result.push({
         id: String(row.id),
         kind: 'external-video',
@@ -1605,7 +1663,72 @@ export class SubmissionService extends LearnerService {
         pairedMaterialId: null,
         thumbnailAssetId: null,
       });
-    return result;
+    }
+    return result.map((view, i) => ({ view, step: steps[i] ?? null }));
+  }
+  /**
+   * A lesson walked in order (SMRT #4656), audience-filtered exactly like
+   * `listLessonMaterials`: stepless handouts, learner pages and printables as
+   * `setup`, then the declared steps. A step groups every material sharing its
+   * key (the original and rendered halves of a deck stay together). A lesson
+   * with no declared steps returns `steps: []`. Course-level supply lists are
+   * not part of a lesson's listing and stay with `listCourseMaterials`.
+   */
+  async listLessonSteps(request: LessonRequest): Promise<LessonStepsView> {
+    const collected = await this.collectLessonMaterials(request);
+    const setup = collected
+      .filter(
+        (m) =>
+          !m.step &&
+          m.view.kind === 'file' &&
+          SETUP_RELATIONSHIPS.has(m.view.relationship),
+      )
+      .map((m) => m.view);
+    const groups = new Map<
+      string,
+      {
+        key: string;
+        order: number;
+        label: string;
+        materials: LessonMaterialView[];
+      }
+    >();
+    for (const { view, step } of collected) {
+      if (!step) continue;
+      const group = groups.get(step.key) ?? {
+        key: step.key,
+        order: step.order,
+        label: '',
+        materials: [],
+      };
+      group.order = Math.min(group.order, step.order);
+      group.label = group.label || step.label;
+      group.materials.push(view);
+      groups.set(step.key, group);
+    }
+    const kindOf = (materials: LessonMaterialView[]): LessonStepKind =>
+      materials.some((m) => m.relationship === 'slides')
+        ? 'present'
+        : materials.some((m) => m.kind === 'external-video')
+          ? 'watch'
+          : materials.some((m) => m.relationship === 'assessment')
+            ? 'check'
+            : 'do';
+    const steps = [...groups.values()]
+      .sort(
+        (a, b) =>
+          a.order - b.order || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0),
+      )
+      .map(
+        (g): LessonStepView => ({
+          key: g.key,
+          label: g.label || g.key,
+          kind: kindOf(g.materials),
+          order: g.order,
+          materials: g.materials,
+        }),
+      );
+    return { setup, steps };
   }
   /** Course-level materials (supply lists, posters) under the same audience rule. */
   async listCourseMaterials(
@@ -1917,6 +2040,11 @@ export class SubmissionService extends LearnerService {
       return view;
     });
   }
+  /**
+   * Sign a lesson file for printing: a `printable`, `handout` or `learner-pages`
+   * PDF the actor may see (learner-audience, or any for a guardian). Never an
+   * editable `original` rendition and never an answer key.
+   */
   async signLessonPrintable(
     request: LessonRequest & { assetId: string },
   ): Promise<{ url: string; expiresAt: Date }> {
@@ -1926,22 +2054,37 @@ export class SubmissionService extends LearnerService {
     );
     if (!(await this.lessonInScope(request, enrollment, request.lessonId)))
       throw new LearnerAuthorizationError();
-    const link = await (
-      await LessonAssetCollection.create({ db: this.db })
-    ).get(
-      {
-        tenantId: request.tenantId,
-        lessonId: request.lessonId,
-        assetId: request.assetId,
-        // Explicit and load-bearing: only the `printable` relationship is ever
-        // signed. The guardian-only `answer-key` copy of a generated worksheet
-        // (QuestionAuthoringService.attachGeneratedPrintable) must never match.
-        relationship: 'printable',
-      },
-      { cache: false },
-    );
-    if (!link || !this.options.signAsset) throw new LearnerAuthorizationError();
-    // A printable the family made guardian-only is not the learner's to sign.
+    if (!this.options.signAsset) throw new LearnerAuthorizationError();
+    const links = await LessonAssetCollection.create({ db: this.db });
+    // Explicit and load-bearing: only these relationships are ever signed.
+    // The guardian-only `answer-key` copy of a generated worksheet
+    // (QuestionAuthoringService.attachGeneratedPrintable) must never match.
+    let link: Awaited<ReturnType<typeof links.get>> | null = null;
+    for (const relationship of PRINTABLE_RELATIONSHIPS) {
+      link = await links.get(
+        {
+          tenantId: request.tenantId,
+          lessonId: request.lessonId,
+          assetId: request.assetId,
+          relationship,
+        },
+        { cache: false },
+      );
+      // A row a newer build retired is no longer part of the lesson's materials.
+      if (link?.retiredAt) link = null;
+      if (link) break;
+    }
+    if (!link) throw new LearnerAuthorizationError();
+    // The editable original of a Word/PowerPoint pair is never printed or
+    // signed here: the rendered PDF half is.
+    if (link.rendition === 'original') throw new LearnerAuthorizationError();
+    // Handouts and learner pages are printed only as a PDF.
+    if (
+      link.relationship !== 'printable' &&
+      (await this.materialAsset(request.assetId)).mimeType !== 'application/pdf'
+    )
+      throw new LearnerAuthorizationError();
+    // A row the family made guardian-only is not the learner's to sign.
     if (
       (await this.learnerAudienceOnly(request)) &&
       materialAudience(link.relationship, link.audience) !== 'learner'

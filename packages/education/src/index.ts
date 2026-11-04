@@ -471,6 +471,9 @@ export type { PublicIllustrativeMathematicsFirstEditionConfig } from './sources/
 export { createPublicIllustrativeMathematicsFirstEditionAdapter } from './sources/public-illustrative-mathematics-adapter.js';
 export type {
   LessonMaterialView,
+  LessonStepKind,
+  LessonStepsView,
+  LessonStepView,
   SubmissionAssetClaim,
   SubmissionIntake,
   SubmissionPage,

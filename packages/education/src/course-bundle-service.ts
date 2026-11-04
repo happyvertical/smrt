@@ -193,6 +193,46 @@ function setMaterialTitle(
   (row as { title: string | null }).title =
     scope === 'course' ? title : title || null;
 }
+/** A row's recorded lesson step (`orderField` is `stepOrder` on files, `stepPosition` on videos). */
+type StepRow = {
+  stepKey?: string | null;
+  stepLabel?: string | null;
+} & Record<string, unknown>;
+type StepValue = { key: string; order: number; label: string };
+function rowStep(row: object, orderField: string): StepValue | null {
+  const r = row as StepRow;
+  if (!r.stepKey) return null;
+  return {
+    key: r.stepKey,
+    order: Number(r[orderField]),
+    label: r.stepLabel ?? '',
+  };
+}
+function setRowStep(row: object, orderField: string, step: StepValue | null) {
+  const r = row as StepRow;
+  r.stepKey = step?.key ?? null;
+  r[orderField] = step ? step.order : null;
+  r.stepLabel = step?.label ? step.label : null;
+}
+const sameStep = (a: StepValue | null, b: StepValue | null) =>
+  (a?.key ?? null) === (b?.key ?? null) &&
+  (a?.order ?? null) === (b?.order ?? null) &&
+  (a?.label ?? '') === (b?.label ?? '');
+/**
+ * How a row's recorded step compares with the bundle's: `fill` when the row has
+ * none yet (gained without a conflict), `moved` when it differs (a change of the
+ * newer build), else unchanged.
+ */
+function stepChange(
+  row: object,
+  orderField: string,
+  declared: StepValue | null,
+): { fill: boolean; moved: boolean } {
+  const current = rowStep(row, orderField);
+  if (sameStep(current, declared)) return { fill: false, moved: false };
+  if (!current && declared) return { fill: true, moved: false };
+  return { fill: false, moved: true };
+}
 /** The one non-empty material title per member path (by holder or declared path); none when ambiguous. */
 function memberTitles(plan: BundleMaterialsPlan): Map<string, string> {
   const seen = new Map<string, Set<string>>();
@@ -1442,8 +1482,14 @@ export class CourseBundleImportService extends CourseAuthoringService {
           // the manifest's; a different title is a change of the newer build.
           const currentTitle = (existing as { title?: string | null }).title;
           const titleFill = !currentTitle && Boolean(material.title);
+          // Course rows carry no step (SMRT #4656).
+          const stepDiff =
+            material.scope === 'lesson'
+              ? stepChange(existing, 'stepOrder', material.step)
+              : { fill: false, moved: false };
           const moved =
             existing.sortOrder !== material.sortOrder ||
+            stepDiff.moved ||
             (!titleFill && (currentTitle || '') !== material.title);
           if (
             (moved && !prov.supersede) ||
@@ -1466,6 +1512,8 @@ export class CourseBundleImportService extends CourseAuthoringService {
           if (restate) {
             existing.sortOrder = material.sortOrder;
             setMaterialTitle(existing, material.scope, material.title);
+            if (material.scope === 'lesson')
+              setRowStep(existing, 'stepOrder', material.step);
             existing.retiredAt = null;
             if (
               !existing.sourceImportId ||
@@ -1479,8 +1527,10 @@ export class CourseBundleImportService extends CourseAuthoringService {
             rendition === 'original' && existing.audience !== 'guardian';
           if (titleFill)
             setMaterialTitle(existing, material.scope, material.title);
+          if (stepDiff.fill) setRowStep(existing, 'stepOrder', material.step);
           const fill =
             titleFill ||
+            stepDiff.fill ||
             existing.rendition !== rendition ||
             (Boolean(join.renditionOf) && !existing.renditionOfAssetId) ||
             (Boolean(join.thumbnail) &&
@@ -1511,6 +1561,15 @@ export class CourseBundleImportService extends CourseAuthoringService {
             thumbnailAssetId: join.thumbnail,
             ...(material.scope === 'course' || material.title
               ? { title: material.title }
+              : {}),
+            ...(material.scope === 'lesson' && material.step
+              ? {
+                  stepKey: material.step.key,
+                  stepOrder: material.step.order,
+                  ...(material.step.label
+                    ? { stepLabel: material.step.label }
+                    : {}),
+                }
               : {}),
           }),
         );
@@ -1575,9 +1634,11 @@ export class CourseBundleImportService extends CourseAuthoringService {
       const existing = await videos.get(where, { cache: false });
       if (existing) {
         // Step order and title come from the bundle; audience is the family's after attach.
+        const stepDiff = stepChange(existing, 'stepPosition', video.step);
         const moved =
           existing.title !== video.title ||
-          existing.stepOrder !== video.stepOrder;
+          existing.stepOrder !== video.stepOrder ||
+          stepDiff.moved;
         if (moved && !prov.supersede)
           throw new CourseBundleMaterialsError(
             'conflict',
@@ -1594,12 +1655,20 @@ export class CourseBundleImportService extends CourseAuthoringService {
         ) {
           existing.title = video.title;
           existing.stepOrder = video.stepOrder;
+          setRowStep(existing, 'stepPosition', video.step);
           existing.retiredAt = null;
           if (
             !existing.sourceImportId ||
             prov.lineage.has(existing.sourceImportId)
           )
             existing.sourceImportId = prov.importId;
+          await existing.save();
+          result.updated++;
+          continue;
+        }
+        // A row without a step simply gains the bundle's.
+        if (stepDiff.fill) {
+          setRowStep(existing, 'stepPosition', video.step);
           await existing.save();
           result.updated++;
           continue;
@@ -1613,6 +1682,13 @@ export class CourseBundleImportService extends CourseAuthoringService {
         ...where,
         title: video.title,
         stepOrder: video.stepOrder,
+        ...(video.step
+          ? {
+              stepKey: video.step.key,
+              stepPosition: video.step.order,
+              ...(video.step.label ? { stepLabel: video.step.label } : {}),
+            }
+          : {}),
         audience: video.audience,
       });
       prov.touched.add(String(madeVideo.id));

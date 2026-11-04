@@ -372,6 +372,65 @@ describe('manifest version 2', () => {
     });
   });
 
+  describe('lesson steps (SMRT #4656)', () => {
+    const withStep = (step: unknown) => (m: ReturnType<typeof valid>) => {
+      (lesson(m).members[2] as Record<string, unknown>).step = step;
+    };
+    it('carries a member step and a video step object into the plan', () => {
+      const manifest = valid();
+      withStep({ key: '1b', order: 1.02, label: 'Status check' })(manifest);
+      (lesson(manifest).videos[0] as Record<string, unknown>).step = {
+        key: '6',
+        order: 6.5,
+      };
+      const p = plan(manifest).materials;
+      expect(p.materials.find((m) => m.path === 'l1/check.pdf')?.step).toEqual({
+        key: '1b',
+        order: 1.02,
+        label: 'Status check',
+      });
+      expect(p.materials.find((m) => m.path === 'l1/log.pdf')?.step).toBeNull();
+      const video = p.videos.find((v) => v.title === 'Recap');
+      expect(video?.step).toEqual({ key: '6', order: 6.5, label: '' });
+      expect(video?.stepOrder).toBe(6);
+    });
+    it.each([
+      [{ key: '', order: 1 }],
+      [{ key: 'k'.repeat(33), order: 1 }],
+      [{ key: 'bad key', order: 1 }],
+      [{ key: 'a', order: Number.NaN }],
+      [{ key: 'a', order: '1' }],
+      [{ key: 'a' }],
+      [{ key: 'a', order: 1, label: '' }],
+      ['launch'],
+    ])('refuses the step %j', (step) => {
+      refused(withStep(step), 'manifest_invalid');
+    });
+    it('refuses an unknown step key', () => {
+      refused(
+        withStep({ key: 'a', order: 1, extra: true }),
+        'manifest_unknown_key',
+      );
+    });
+    it('accepts a key of 32 characters and refuses a step on a course member', () => {
+      expect(() =>
+        plan(
+          (() => {
+            const m = valid();
+            withStep({ key: 'k'.repeat(32), order: 0 })(m);
+            return m;
+          })(),
+        ),
+      ).not.toThrow();
+      refused((m) => {
+        (m.courseMembers[0] as Record<string, unknown>).step = {
+          key: 'a',
+          order: 1,
+        };
+      }, 'manifest_unknown_key');
+    });
+  });
+
   describe('materials', () => {
     it('places lesson members in declared order and course members apart', () => {
       const p = plan(valid());
@@ -455,6 +514,7 @@ describe('manifest version 2', () => {
           videoId: VIDEO,
           title: 'Recap',
           stepOrder: 1,
+          step: null,
           audience: 'learner',
         },
         {
@@ -464,6 +524,7 @@ describe('manifest version 2', () => {
           videoId: 'AAAAAAAAAAA',
           title: 'Materials',
           stepOrder: 2,
+          step: null,
           audience: 'guardian',
         },
       ]);

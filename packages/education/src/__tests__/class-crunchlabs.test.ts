@@ -23,6 +23,7 @@ import {
   CourseBundleImportService,
   canAddClassCrunchLabsUnit,
   classCrunchLabsPreviewEmbedUrl,
+  classCrunchLabsStepOrder,
   classCrunchLabsUnitOfPlaylist,
   createClassCrunchLabsCatalogAdapter,
   createClassCrunchLabsPageCounter,
@@ -974,21 +975,29 @@ describe('video names and YouTube playlist matching', () => {
     ]);
     expect(b.report.videos.unusedPlaylistItems).toBe(0);
     expect(lessonOf(b, 'lesson-01')?.videos).toEqual([
-      { reference: 'AAAAAAAAAA1', title: 'Anchor check-in', step: 1 },
+      {
+        reference: 'AAAAAAAAAA1',
+        title: 'Anchor check-in',
+        step: { key: '2', order: 2, label: 'Anchor check-in' },
+      },
       {
         reference: 'AAAAAAAAAA2',
         title: 'Materials prep: Ramps',
-        step: 2,
+        step: { key: '4', order: 4, label: 'Materials prep: Ramps' },
         audience: 'guardian',
       },
       {
         reference: 'AAAAAAAAAA3',
         title: 'Hands-on exploration: Ramps',
-        step: 3,
+        step: { key: '4', order: 4.001, label: 'Hands-on exploration: Ramps' },
       },
     ]);
     expect(lessonOf(b, 'lesson-02')?.videos).toEqual([
-      { reference: 'AAAAAAAAAA4', title: 'Recap', step: 1 },
+      {
+        reference: 'AAAAAAAAAA4',
+        title: 'Recap',
+        step: { key: '1', order: 1, label: 'Recap' },
+      },
     ]);
     const plan = planCourseBundle(readFileSet(b.bundle.files));
     expect(
@@ -999,9 +1008,9 @@ describe('video names and YouTube playlist matching', () => {
         v.audience,
       ]),
     ).toEqual([
-      ['lesson-01', 'AAAAAAAAAA1', 1, 'learner'],
-      ['lesson-01', 'AAAAAAAAAA2', 2, 'guardian'],
-      ['lesson-01', 'AAAAAAAAAA3', 3, 'learner'],
+      ['lesson-01', 'AAAAAAAAAA1', 2, 'learner'],
+      ['lesson-01', 'AAAAAAAAAA2', 4, 'guardian'],
+      ['lesson-01', 'AAAAAAAAAA3', 4, 'learner'],
       ['lesson-02', 'AAAAAAAAAA4', 1, 'learner'],
     ]);
   });
@@ -1782,5 +1791,97 @@ describe('reading a download from disk', () => {
     await expect(folderClassCrunchLabsSource(dir).files()).rejects.toThrow(
       /not a readable zip/,
     );
+  });
+});
+
+describe('lesson steps (SMRT #4656)', () => {
+  const U = 'Zoom Boom';
+  const R = 'Zoom Boom Unit Material (Motion)_Class CrunchLabs';
+  const Z1 = `${R}/${U}_Lesson 1`;
+  const W = `${R}/${U}_All Unit Wide Materials`;
+  const f = (path: string, label: string) => ({ path, bytes: tinyPdf(label) });
+  const files = [
+    f(`${Z1}/A. L01_Teacher Mission Manual_${U}_v1.0.pdf`, 'manual'),
+    f(`${Z1}/B. L01_Mission Launch Deck Slides_${U}_v1.1_.pdf`, 'deck'),
+    f(`${Z1}/C. L01_Student Mission Log_${U} v.1.1.pdf`, 'log'),
+    f(
+      `${Z1}/D. L01_Status Check Lesson Assessment Guidance_${U}_v1.0..pdf`,
+      'g',
+    ),
+    f(`${Z1}/D. L01_Status Check Lesson Assessment_${U}_v1.0.pdf`, 'check'),
+    {
+      path: `${Z1}/D. L01_Status Check Lesson Assessment (Editable)_${U}_v1.0.docx`,
+      bytes: officeDocx('check editable'),
+    },
+    f(`${Z1}/E. L01_Handouts_${U}_v1.0.pdf`, 'handout'),
+    f(`${Z1}/F. L01_Trading Cards_${U}_v1.0.pdf`, 'cards'),
+    f(`${W}/Supply List_${U}_v1.0.pdf`, 'supplies'),
+    // Out of order on purpose: 2, 1b, 1.
+    ...['2_Video_Recap', '1b_Video_Build', '1_Video_Intro'].map((n) => ({
+      path: `${W}/G. ${U}_Videos (all lessons)/L01.${n}_${U}.mp4`,
+      bytes: Buffer.from('v'),
+    })),
+  ];
+  const playlist: ClassCrunchLabsPlaylist = {
+    id: 'PLzoomboom01',
+    title: `${U} | Class CrunchLabs`,
+    items: [
+      { videoId: 'ZZZZZZZZZZ2', title: `${U} | L01.2 | Recap`, position: 1 },
+      { videoId: 'ZZZZZZZZZZ3', title: `${U} | L01.1b | Build`, position: 2 },
+      { videoId: 'ZZZZZZZZZZ1', title: `${U} | L01.1 | Intro`, position: 3 },
+    ],
+  };
+
+  it('puts slides first, each video at its real step code in numeric order, the check last, and the log in setup', async () => {
+    const b = await buildClassCrunchLabsBundle({
+      files: memoryClassCrunchLabsSource(files),
+      playlists: { playlists: async () => [playlist] },
+      pageCounter: async () => 3,
+    });
+    const plan = planCourseBundle(readFileSet(b.bundle.files)).materials;
+    const lesson = plan.materials.filter((m) => m.lessonKey === 'lesson-01');
+    const stepOf = (role: string) =>
+      lesson.filter((m) => m.role === role).map((m) => m.step);
+    expect(stepOf('slides')).toEqual([
+      { key: 'launch', order: 0, label: 'Launch' },
+    ]);
+    // The printable PDF and the editable master are both the status check.
+    expect(stepOf('assessment')).toEqual([
+      { key: 'check', order: 9999, label: 'Status check' },
+      { key: 'check', order: 9999, label: 'Status check' },
+    ]);
+    for (const role of [
+      'learner-pages',
+      'handout',
+      'printable',
+      'teacher-guide',
+      'assessment-guidance',
+    ])
+      expect(stepOf(role)).toEqual([null]);
+    // Course-level material has no step.
+    expect(
+      plan.materials.filter((m) => m.scope === 'course').map((m) => m.step),
+    ).toEqual([null]);
+    const videos = plan.videos.map((v) => [v.videoId, v.step]);
+    expect(videos).toEqual(
+      expect.arrayContaining([
+        ['ZZZZZZZZZZ1', { key: '1', order: 1, label: 'Intro' }],
+        ['ZZZZZZZZZZ3', { key: '1b', order: 1.02, label: 'Build' }],
+        ['ZZZZZZZZZZ2', { key: '2', order: 2, label: 'Recap' }],
+      ]),
+    );
+    expect(videos).toHaveLength(3);
+    const order = (id: string) =>
+      plan.videos.find((v) => v.videoId === id)?.step?.order as number;
+    expect(order('ZZZZZZZZZZ1')).toBeLessThan(order('ZZZZZZZZZZ3'));
+    expect(order('ZZZZZZZZZZ3')).toBeLessThan(order('ZZZZZZZZZZ2'));
+  });
+
+  it('orders step codes numerically, a suffix after its number and before the next', () => {
+    expect(
+      ['10', '2', '1b', '1', '1a'].sort(
+        (a, b) => classCrunchLabsStepOrder(a) - classCrunchLabsStepOrder(b),
+      ),
+    ).toEqual(['1', '1a', '1b', '2', '10']);
   });
 });

@@ -44,7 +44,7 @@ catalog projection without answer keys (every learner-facing catalog read) appli
 the same rule. `signLessonMaterial`/`signCourseMaterial` sign only a file in the
 actor's own list (claim scope `lesson:<id>` / `course:<id>`); a guessed id of
 guardian material is denied; `thumbnail: true` signs the thumbnail of a visible
-material instead. `signLessonPrintable` applies the same audience rule to the learner. Storage URIs never appear.
+material instead. `signLessonPrintable` signs a lesson file for printing: a `printable`, `handout` or `learner-pages` row (handout and learner pages only when the stored asset is `application/pdf`), learner-audience for a learner and any audience for a guardian. A retired row, an `original` rendition (the editable file) and any other role, answer keys included, are refused (SMRT #4657). Storage URIs never appear.
 
 `setMaterialAudience({enrollmentId, scope, kind, materialId, audience})` lets a
 guardian with plan authority change a family-owned row within the role's bounds
@@ -53,6 +53,29 @@ family-owned, so this is the after-attach path; before attach use
 `CourseBundleImportService.chooseMaterialAudience`.
 Authored courses change audience through course authoring (`CourseMaterialInput.audience`,
 carried to the released join); shared or other families' rows are denied.
+
+## Lesson steps (SMRT #4656)
+
+`listLessonSteps({enrollmentId, lessonId})` walks a multi-step lesson in order,
+filtered like `listLessonMaterials` (same actor and enrollment checks, learner
+audience only for a learner, retired rows left out, same `LessonMaterialView`s):
+
+```ts
+{ setup: LessonMaterialView[];            // stepless printable / handout / learner-pages files
+  steps: Array<{ key: string; label: string;   // label falls back to the key
+                 kind: 'present' | 'watch' | 'do' | 'check';
+                 order: number;                 // 1b sorts after 1
+                 materials: LessonMaterialView[] }> }
+```
+
+Steps come from the `step_key`/`step_order`/`step_label` recorded on lesson files and
+(`step_position`) external videos by a course bundle ([manifest steps](course-bundle-import.md)).
+Materials sharing a key are one step (the original and rendered halves of a deck stay
+together); steps sort by order then key; `kind` is `present` if any material is
+`slides`, else `watch` if any is an external video, else `check` if any is an
+`assessment`, else `do`. A lesson with no declared steps returns `steps: []`.
+Course-level materials (supply lists) are not part of a lesson listing and stay with
+`listCourseMaterials`.
 
 ## External videos
 

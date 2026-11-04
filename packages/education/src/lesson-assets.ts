@@ -77,6 +77,46 @@ export function materialAudience(
 export const MATERIAL_RENDITIONS = ['original', 'rendered'] as const;
 export type MaterialRendition = (typeof MATERIAL_RENDITIONS)[number];
 
+/** Most characters of a lesson step key. */
+export const LESSON_STEP_KEY_MAX = 32;
+/** Most characters of a lesson step label. */
+export const LESSON_STEP_LABEL_MAX = 200;
+/** Largest absolute step order a bundle may declare. */
+export const LESSON_STEP_ORDER_MAX = 1_000_000;
+
+/**
+ * The step of a lesson a material belongs to (SMRT #4656): a short key shared by
+ * every material of the step, a finite order (fractions allow `1b` after `1`) and
+ * an optional readable label.
+ */
+export interface LessonStepDeclaration {
+  key: string;
+  order: number;
+  label?: string;
+}
+
+/** Throws unless the key, order and label of a stored step are valid together. */
+function checkStep(
+  key: string | null,
+  rawOrder: number | string | null,
+  label: string | null,
+) {
+  if (key === null && rawOrder === null && label === null) return;
+  // A decimal column may load as a string on some engines.
+  const order = rawOrder === null ? null : Number(rawOrder);
+  if (
+    typeof key !== 'string' ||
+    !key.trim() ||
+    key.length > LESSON_STEP_KEY_MAX ||
+    typeof order !== 'number' ||
+    !Number.isFinite(order) ||
+    Math.abs(order) > LESSON_STEP_ORDER_MAX ||
+    (label !== null &&
+      (typeof label !== 'string' || label.length > LESSON_STEP_LABEL_MAX))
+  )
+    throw new Error('Invalid lesson step');
+}
+
 /** Guarded private-asset check: the host must hold the exact capability. */
 async function requirePrivateAsset(
   row: SmrtObject & { tenantId: string | null; assetId: string },
@@ -198,6 +238,11 @@ export class LessonAsset extends SmrtObject {
   @field({ type: 'datetime', nullable: true }) retiredAt: Date | null = null;
   /** The course bundle import that wrote this row, null for any other source. */
   @field({ type: 'text', nullable: true }) sourceImportId: string | null = null;
+  /** The lesson step this material belongs to (SMRT #4656); null when it is not part of one. */
+  @field({ type: 'text', nullable: true }) stepKey: string | null = null;
+  /** Position of the step in the lesson; fractions order `1b` after `1`. */
+  @field({ type: 'decimal', nullable: true }) stepOrder: number | null = null;
+  @field({ type: 'text', nullable: true }) stepLabel: string | null = null;
   constructor(options: Record<string, unknown> = {}) {
     super(options);
     for (const [key, value] of Object.entries(options)) {
@@ -213,6 +258,7 @@ export class LessonAsset extends SmrtObject {
       (typeof this.title !== 'string' || this.title.length > 200)
     )
       throw new Error('Invalid lesson material title');
+    checkStep(this.stepKey, this.stepOrder, this.stepLabel);
     const lesson = await this.db.get('lessons', { id: this.lessonId });
     if (!lesson)
       throw new Error(`education lesson ${this.lessonId} does not exist`);
@@ -384,6 +430,15 @@ export class LessonExternalVideo extends SmrtObject {
   @field({ type: 'datetime', nullable: true }) retiredAt: Date | null = null;
   /** The course bundle import that wrote this row, null for any other source. */
   @field({ type: 'text', nullable: true }) sourceImportId: string | null = null;
+  /** The lesson step this video belongs to (SMRT #4656); null when it is not part of one. */
+  @field({ type: 'text', nullable: true }) stepKey: string | null = null;
+  /**
+   * Position of the step in the lesson; fractions order `1b` after `1`.
+   * (`stepOrder` stays the whole-number rank videos have always carried.)
+   */
+  @field({ type: 'decimal', nullable: true }) stepPosition: number | null =
+    null;
+  @field({ type: 'text', nullable: true }) stepLabel: string | null = null;
   constructor(options: Record<string, unknown> = {}) {
     super(options);
     for (const [key, value] of Object.entries(options))
@@ -404,6 +459,7 @@ export class LessonExternalVideo extends SmrtObject {
       this.stepOrder < 0
     )
       throw new Error('Invalid external video reference');
+    checkStep(this.stepKey, this.stepPosition, this.stepLabel);
     if (
       !(await this.db.get('lessons', {
         id: this.lessonId,

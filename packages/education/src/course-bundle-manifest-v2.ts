@@ -15,6 +15,12 @@
  *     "pages": [ { "member": "l1/log.pdf", "from": 1, "to": 4, "label": "Mission log" } ],
  *     "videos": [ { "reference": "dQw4w9WgXcQ", "title": "Recap", "step": 1 } ] } ] } ] }
  * ```
+ *
+ * A lesson member or video may also name the lesson step it belongs to
+ * (SMRT #4656): `"step": { "key": "launch", "order": 0, "label": "Launch" }`.
+ * A video's `step` stays a whole number, or takes this object form too.
+ * ```
+ * ```
  */
 import {
   COURSE_BUNDLE_LIMITS,
@@ -33,7 +39,11 @@ import {
   GUARDIAN_ONLY_RELATIONSHIPS,
   LESSON_ASSET_DEFAULT_AUDIENCE,
   LESSON_ASSET_RELATIONSHIPS,
+  LESSON_STEP_KEY_MAX,
+  LESSON_STEP_LABEL_MAX,
+  LESSON_STEP_ORDER_MAX,
   type LessonAssetRelationship,
+  type LessonStepDeclaration,
   type MaterialAudience,
   parseYouTubeReference,
 } from './lesson-assets.js';
@@ -47,8 +57,12 @@ export const COURSE_BUNDLE_MAX_LESSON_PAGES = 500;
 export const COURSE_BUNDLE_MAX_PAGE_NUMBER = 5_000;
 export const COURSE_BUNDLE_MAX_STEP = 9_999;
 
+/** A declared lesson step: key, order and the label ('' when none). */
+export type ManifestV2Step = Required<LessonStepDeclaration>;
 export interface ManifestV2Member {
   path: string;
+  /** The lesson step this material belongs to (lesson members only). */
+  step?: ManifestV2Step;
   role: LessonAssetRelationship;
   /** Effective audience: stated, else the role default. */
   audience: MaterialAudience;
@@ -67,6 +81,8 @@ export interface ManifestV2Video {
   videoId: string;
   title: string;
   stepOrder: number;
+  /** The lesson step this video belongs to, when declared as an object. */
+  step?: ManifestV2Step;
   audience: MaterialAudience;
 }
 export interface ManifestV2Lesson {
@@ -133,6 +149,31 @@ function integer(value: unknown, path: string, min: number, max: number) {
   return value;
 }
 
+const STEP_KEY = /^[A-Za-z0-9._:-]+$/;
+function stepOf(raw: unknown, path: string): ManifestV2Step {
+  const decl = closedObject(raw, ['key', 'order', 'label'], path);
+  if (
+    typeof decl.key !== 'string' ||
+    decl.key.length > LESSON_STEP_KEY_MAX ||
+    !STEP_KEY.test(decl.key)
+  )
+    return refuse('manifest_invalid', `${path}.key`);
+  if (
+    typeof decl.order !== 'number' ||
+    !Number.isFinite(decl.order) ||
+    Math.abs(decl.order) > LESSON_STEP_ORDER_MAX
+  )
+    return refuse('manifest_invalid', `${path}.order`);
+  return {
+    key: decl.key,
+    order: decl.order,
+    label:
+      decl.label === undefined
+        ? ''
+        : manifestText(decl.label, `${path}.label`, LESSON_STEP_LABEL_MAX),
+  };
+}
+
 /** Closed, versioned manifest schema: any unknown key is refused. */
 export function parseBundleManifestV2(
   bytes: Uint8Array,
@@ -196,8 +237,18 @@ export function parseBundleManifestV2(
       ? {}
       : { order: integer(value, path, 0, COURSE_BUNDLE_MAX_ORDER) };
   const listed = new Set<string>();
-  const member = (raw: unknown, mp: string): ManifestV2Member => {
-    const decl = closedObject(raw, ['path', 'role', 'audience', 'title'], mp);
+  const member = (
+    raw: unknown,
+    mp: string,
+    lessonLevel: boolean,
+  ): ManifestV2Member => {
+    const decl = closedObject(
+      raw,
+      lessonLevel
+        ? ['path', 'role', 'audience', 'title', 'step']
+        : ['path', 'role', 'audience', 'title'],
+      mp,
+    );
     if (typeof decl.path !== 'string')
       return refuse('manifest_invalid', `${mp}.path`);
     let normal: string;
@@ -220,6 +271,9 @@ export function parseBundleManifestV2(
     return {
       path: normal,
       role,
+      ...(decl.step === undefined
+        ? {}
+        : { step: stepOf(decl.step, `${mp}.step`) }),
       audience: audienceOf(role, decl.audience, `${mp}.audience`),
       title:
         decl.title === undefined
@@ -227,10 +281,14 @@ export function parseBundleManifestV2(
           : manifestText(decl.title, `${mp}.title`, 200),
     };
   };
-  const members = (raw: unknown, path: string): ManifestV2Member[] => {
+  const members = (
+    raw: unknown,
+    path: string,
+    lessonLevel: boolean,
+  ): ManifestV2Member[] => {
     if (raw === undefined) return [];
     if (!Array.isArray(raw)) return refuse('manifest_invalid', path);
-    return raw.map((m, i) => member(m, `${path}.${i}`));
+    return raw.map((m, i) => member(m, `${path}.${i}`, lessonLevel));
   };
 
   if (!Array.isArray(root.sections) || root.sections.length === 0)
@@ -264,7 +322,7 @@ export function parseBundleManifestV2(
       if (lessonKeys.has(lessonKey)) refuse('duplicate_key', `${lp}.key`);
       lessonKeys.add(lessonKey);
       if (++lessons > limits.maxLessons) refuse('too_many_lessons');
-      const lessonMembers = members(lesson.members, `${lp}.members`);
+      const lessonMembers = members(lesson.members, `${lp}.members`, true);
       const memberPaths = new Set(lessonMembers.map((m) => m.path));
 
       const pages: ManifestV2PageRange[] = [];
@@ -337,16 +395,23 @@ export function parseBundleManifestV2(
           if (seen.has(videoId))
             return refuse('duplicate_key', `${vp}.reference`);
           seen.add(videoId);
+          // A whole number is the long-standing video rank; an object also
+          // names the lesson step (SMRT #4656), ranking the video by its floor.
+          const step =
+            video.step !== null && typeof video.step === 'object'
+              ? stepOf(video.step, `${vp}.step`)
+              : undefined;
           videos.push({
             provider: 'youtube',
             videoId,
             title: manifestText(video.title, `${vp}.title`, 200),
-            stepOrder: integer(
-              video.step,
-              `${vp}.step`,
-              0,
-              COURSE_BUNDLE_MAX_STEP,
-            ),
+            stepOrder: step
+              ? Math.min(
+                  COURSE_BUNDLE_MAX_STEP,
+                  Math.max(0, Math.floor(step.order)),
+                )
+              : integer(video.step, `${vp}.step`, 0, COURSE_BUNDLE_MAX_STEP),
+            ...(step ? { step } : {}),
             audience: audienceOf('video', video.audience, `${vp}.audience`),
           });
         }
@@ -370,6 +435,7 @@ export function parseBundleManifestV2(
   manifest.courseMembers = members(
     root.courseMembers,
     'manifest.courseMembers',
+    false,
   );
   return manifest;
 }

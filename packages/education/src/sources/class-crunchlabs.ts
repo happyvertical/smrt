@@ -960,6 +960,24 @@ function stepOrder(a: string, b: string) {
   return naturalCompare(a, b);
 }
 
+/**
+ * The numeric order of a step code (SMRT #4656): its number, plus a small
+ * fraction for a letter suffix so `1` < `1b` < `2` (`1a` is 1.01, `1b` 1.02).
+ */
+export function classCrunchLabsStepOrder(code: string): number {
+  const m = /^0*(\d+)([a-z]?)$/i.exec(code.trim());
+  if (!m) return 0;
+  const letter = m[2] ? (m[2].toLowerCase().charCodeAt(0) - 96) / 100 : 0;
+  return Number(m[1]) + letter;
+}
+/** The launch slides open the lesson; the status check closes it. */
+const LAUNCH_STEP = { key: 'launch', order: 0, label: 'Launch' } as const;
+const CHECK_STEP = {
+  key: 'check',
+  order: 9999,
+  label: 'Status check',
+} as const;
+
 /** Read a Class CrunchLabs unit download and build a manifest version 2 bundle. */
 export async function buildClassCrunchLabsBundle(
   options: ClassCrunchLabsBuildOptions,
@@ -1177,6 +1195,7 @@ export async function buildClassCrunchLabsBundle(
     role: LessonAssetRelationship;
     audience?: MaterialAudience;
     title: string;
+    step?: { key: string; order: number; label: string };
   };
   // Two different files that tidy to one title in a place are told apart, not shown twice.
   const usedTitles = new Set<string>();
@@ -1198,6 +1217,13 @@ export async function buildClassCrunchLabsBundle(
       ? { audience: m.audience }
       : {}),
     title: uniqueTitle(m),
+    // Slides open the lesson and the status check closes it; handouts, the
+    // mission log and printables are prepared beforehand, guides are the adult's.
+    ...(m.lesson !== null && m.role === 'slides'
+      ? { step: LAUNCH_STEP }
+      : m.lesson !== null && m.role === 'assessment'
+        ? { step: CHECK_STEP }
+        : {}),
   });
   const courseMembers: Decl[] = [];
   const lessons = new Map<
@@ -1326,16 +1352,29 @@ export async function buildClassCrunchLabsBundle(
       const entry = lessons.get(n) as NonNullable<
         ReturnType<typeof lessons.get>
       >;
+      const seenCodes = new Map<string, number>();
       const videos = (videosByLesson.get(n) ?? [])
         .sort(
           (a, b) => stepOrder(a.step, b.step) || a.kind.localeCompare(b.kind),
         )
-        .map((v, i) => {
+        .map((v) => {
           const label = KIND_LABELS[v.kind] ?? humanize(v.kind);
+          // Videos sharing a code keep their order within the step by a tiny offset.
+          const nth = seenCodes.get(v.step) ?? 0;
+          seenCodes.set(v.step, nth + 1);
           return {
             reference: v.videoId,
             title: (v.title ? `${label}: ${v.title}` : label).slice(0, 200),
-            step: i + 1,
+            // The video's real step code names its lesson step; videos sharing a
+            // code (materials prep and hands-on) share the step.
+            step: {
+              key: v.step,
+              order:
+                Math.round(
+                  (classCrunchLabsStepOrder(v.step) + nth / 1000) * 1000,
+                ) / 1000,
+              label: (v.title ? `${label}: ${v.title}` : label).slice(0, 200),
+            },
             ...(VIDEO_AUDIENCE_GUARDIAN.has(v.kind)
               ? { audience: 'guardian' }
               : {}),
