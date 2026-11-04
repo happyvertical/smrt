@@ -14,6 +14,7 @@ import {
   type LearnerRequest,
   type LessonProgressView,
 } from './learner-service.js';
+import { LessonActivityCollection } from './lesson-work-models.js';
 
 export type PlanLessonView = Readonly<{
   lesson: Readonly<{
@@ -22,6 +23,11 @@ export type PlanLessonView = Readonly<{
     kind: string;
     requiresOnlineResource: boolean;
     sourceUrl?: string;
+    /**
+     * Set only on a lesson whose work runs the release-gated workflow (book
+     * and loose-page work), by the work's effective placement: filed work
+     * belongs to the lesson it was filed into, not the one it was captured on.
+     */
     lessonActivityId?: string;
   }>;
   progress: LessonProgressView | null;
@@ -85,6 +91,66 @@ export class LearnerPlanService extends EnrollmentNoteService {
     );
   }
 
+  /**
+   * The learner's release-gated activities by the lesson of this enrollment
+   * they are effectively placed in: the filing head for filed work, else the
+   * activity's own routing. Reads stay on the request's tenant and learner and
+   * on the already-authorized enrollment, so no other enrollment's work leaks.
+   */
+  private async placedReleaseGatedWork(
+    request: LearnerRequest,
+    enrollmentId: string,
+  ): Promise<ReadonlyMap<string, string>> {
+    const placed = new Map<string, string>();
+    if (!(await this.db.tableExists('workbook_activities'))) return placed;
+    const heads = new Map<
+      string,
+      { enrollmentId: string; lessonId: string }[]
+    >();
+    if (await this.db.tableExists('lesson_work_filings')) {
+      const filings = await this.db.list('lesson_work_filings', {
+        tenant_id: request.tenantId,
+        learner_id: request.learnerId,
+      });
+      const superseded = new Set(
+        filings.map((filing) => String(filing.previous_revision_id ?? '')),
+      );
+      for (const filing of filings) {
+        if (superseded.has(String(filing.id))) continue;
+        const key = String(filing.source_activity_id);
+        heads.set(key, [
+          ...(heads.get(key) ?? []),
+          {
+            enrollmentId: String(filing.enrollment_id),
+            lessonId: String(filing.lesson_id),
+          },
+        ]);
+      }
+    }
+    const activities = await (
+      await LessonActivityCollection.create({ db: this.db })
+    ).list({
+      where: { tenantId: request.tenantId, learnerId: request.learnerId },
+    });
+    for (const activity of activities.sort((a, b) =>
+      String(a.id).localeCompare(String(b.id)),
+    )) {
+      const filed = heads.get(String(activity.id)) ?? [];
+      // Conflicting filing heads place the work nowhere rather than guessing.
+      if (filed.length > 1) continue;
+      const at = filed[0] ?? {
+        enrollmentId: activity.enrollmentId,
+        lessonId: activity.lessonId,
+      };
+      if (at.enrollmentId !== enrollmentId || placed.has(at.lessonId)) continue;
+      if (activity.captureKind === 'unfiled' && !activity.photoIntakeId)
+        continue;
+      if (await this.isReleaseGatedWork(activity))
+        placed.set(at.lessonId, String(activity.id));
+    }
+    return placed;
+  }
+
   async getEnrollmentPlan(
     request: LearnerRequest & { enrollmentId: string },
   ): Promise<EnrollmentPlanView> {
@@ -120,13 +186,14 @@ export class LearnerPlanService extends EnrollmentNoteService {
       },
     });
     const byLesson = new Map(progress.map((value) => [value.lessonId, value]));
+    const placedWork = await this.placedReleaseGatedWork(
+      request,
+      String(row.id),
+    );
     const lessons = await Promise.all(
       scope.entries.map(async ({ lesson, course }): Promise<PlanLessonView> => {
         const lessonId = String(lesson.id);
-        const activity = await this.findLessonActivity(request, {
-          enrollmentId: String(row.id),
-          lessonId,
-        });
+        const activityId = placedWork.get(lessonId);
         const current = byLesson.get(lessonId);
         const requiresOnlineResource =
           course.modality === 'online' || lesson.constructor.name === 'Video';
@@ -140,7 +207,7 @@ export class LearnerPlanService extends EnrollmentNoteService {
             kind: lesson.constructor.name,
             requiresOnlineResource,
             ...(sourceUrl ? { sourceUrl } : {}),
-            ...(activity?.id ? { lessonActivityId: String(activity.id) } : {}),
+            ...(activityId ? { lessonActivityId: activityId } : {}),
           },
           progress: current
             ? await this.projectProgress(request, current)
