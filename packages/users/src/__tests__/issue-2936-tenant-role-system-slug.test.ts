@@ -124,3 +124,64 @@ describe('tenant Role sharing a system slug (#2936)', () => {
     expect((await roles.get(DEFAULT_ROLES[1].id))?.isSystem).toBe(false);
   });
 });
+
+describe('system role seeding in a caller-owned DuckDB transaction', () => {
+  let db: DatabaseInterface;
+
+  beforeEach(async () => {
+    db = await getTestDatabase({
+      type: 'duckdb',
+      url: ':memory:',
+      classes: ['Role'],
+      // DuckDB cannot create users' ON UPDATE CASCADE relationships.
+      omitForeignKeyConstraints: true,
+    });
+  });
+
+  afterEach(async () => {
+    await db?.close?.();
+  });
+
+  it.each([
+    'global slug',
+    'tenant primary key',
+  ] as const)('leaves no partial roles when the caller catches a %s collision', async (collision) => {
+    const roles = await RoleCollection.create({ db });
+    const impostor = await roles.create({
+      ...(collision === 'global slug'
+        ? { slug: 'admin', tenantId: null }
+        : {
+            id: DEFAULT_ROLES[1].id,
+            slug: 'tenant-admin',
+            tenantId: crypto.randomUUID(),
+          }),
+      name: 'Impostor',
+      isSystem: false,
+      _insertOnly: true,
+    });
+    if (!db.transaction) throw new Error('DuckDB transaction is required');
+    await db.transaction(async (tx) => {
+      const bound = await RoleCollection.create({ db: tx });
+      await expect(bound.seedSystemRoles()).rejects.toThrow();
+    });
+    expect((await roles.list()).map(({ id }) => id)).toEqual([impostor.id]);
+  });
+
+  it('commits a successful seed through the joined transaction', async () => {
+    if (!db.transaction) throw new Error('DuckDB transaction is required');
+    await db.transaction(async (tx) => {
+      const roles = await RoleCollection.create({ db: tx });
+      const seeded = await roles.seedSystemRoles();
+      expect(seeded.map(({ id }) => id)).toEqual(
+        DEFAULT_ROLES.map(({ id }) => id),
+      );
+      seeded[0].name = 'Caller-owned owner';
+      await seeded[0].save();
+    });
+    const roles = await RoleCollection.create({ db });
+    expect(await roles.findSystemRoleBySlug('owner')).toMatchObject({
+      id: DEFAULT_ROLES[0].id,
+      name: 'Caller-owned owner',
+    });
+  });
+});

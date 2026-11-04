@@ -121,23 +121,30 @@ export class RoleCollection extends SmrtCollection<Role> {
     }
 
     const seed = async (writer: RoleCollection) => {
+      // A joined DuckDB transaction has no savepoint. Check all application
+      // identity refusals before any writes so callers can catch them safely.
+      const existingRoles = new Map<string, Role>();
+      for (const roleDef of DEFAULT_ROLES) {
+        const existing = await writer.findBySlug(roleDef.slug);
+        if (!existing) continue;
+        if (
+          !existing.isSystem ||
+          existing.tenantId != null ||
+          (existing.id !== roleDef.id &&
+            (DEFAULT_ROLES.some(({ id }) => id === existing.id) ||
+              (await writer.count({ where: { id: roleDef.id } })) > 0))
+        ) {
+          throw new Error(
+            `System role identity collision for '${roleDef.slug}'`,
+          );
+        }
+        existingRoles.set(roleDef.slug, existing);
+      }
+
       for (const roleDef of DEFAULT_ROLES) {
         const inheritable = inheritableSlugs.has(roleDef.slug);
-
-        // Check if role already exists
-        const existing = await writer.findBySlug(roleDef.slug);
+        const existing = existingRoles.get(roleDef.slug);
         if (existing) {
-          if (
-            !existing.isSystem ||
-            existing.tenantId != null ||
-            (existing.id !== roleDef.id &&
-              (DEFAULT_ROLES.some(({ id }) => id === existing.id) ||
-                (await writer.get({ id: roleDef.id }))))
-          ) {
-            throw new Error(
-              `System role identity collision for '${roleDef.slug}'`,
-            );
-          }
           // Additive-only convergence: flag a listed slug, never unset one.
           if (inheritable && !existing.inheritsToDescendants) {
             existing.inheritsToDescendants = true;
@@ -148,8 +155,9 @@ export class RoleCollection extends SmrtCollection<Role> {
         }
 
         // Create new system role. `create()` already persists, so the second
-        // `save()` this used to make was a redundant UPDATE plus an extra
-        // change-feed append (#3022).
+        // `save()` was a redundant UPDATE plus an extra change-feed append
+        // (#3022). An occupied reserved ID fails the strict INSERT at the
+        // database, which also aborts a joined DuckDB transaction.
         const role = await writer.create({
           id: roleDef.id,
           _insertOnly: true,
