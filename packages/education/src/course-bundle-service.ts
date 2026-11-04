@@ -51,6 +51,7 @@ import {
   CourseBundleMemberCollection,
   CourseBundlePlacementCollection,
   CourseBundleRenderingCollection,
+  CourseBundleSupersessionCollection,
   CourseBundleUnitCollection,
 } from './course-bundle-models.js';
 import { sha256Hex } from './course-bundle-zip.js';
@@ -284,6 +285,16 @@ export interface AttachBundleCourseRequest extends CourseAuthoringActor {
   title?: string;
   /** Licence of a course this call creates; default `personal-use-copy`. */
   licenseKind?: CourseLicenseKind;
+  /**
+   * Explicit opt-in (SMRT #4645): when another import is already attached as
+   * this part, bring the part up to this import instead of refusing with
+   * `part-conflict`. Only a later-recorded import of the same unit and part
+   * count may do so (`stale-build` otherwise). Lessons and sections keep their
+   * identity by key; titles and order follow this build; its materials are
+   * attached and the previous build's materials it dropped are retired, never
+   * deleted. Without it, nothing about attach changes.
+   */
+  supersede?: boolean;
   limits?: Partial<CourseBundleLimits>;
   onProgress?: CourseBundleProgressListener;
 }
@@ -294,6 +305,12 @@ export interface AttachBundleCourseResult extends ApplyBundleMaterialsResult {
   /** True when this import was already attached (a replay). */
   replayed: boolean;
   unitKey: string;
+  /** The import this call replaced as the part's build (`supersede`), else null. */
+  superseded: { importId: string; partIndex: number } | null;
+  /** Materials of the replaced build that this build dropped, now retired. */
+  retired: { lessonAssets: number; courseAssets: number; lessonVideos: number };
+  /** Sections and lessons whose title this call changed. */
+  renamed: number;
   /** Section key and lesson key to the rows of the course. */
   sections: Record<string, string>;
   lessons: Record<string, string>;
@@ -341,6 +358,8 @@ export class CourseBundleMaterialsError extends CourseAuthoringError {
       | 'unit-mismatch'
       /** Another import is already attached as this part of the unit. */
       | 'part-conflict'
+      /** `supersede` with an import recorded no later than the build it would replace. */
+      | 'stale-build'
       /** An audience choice outside the material's role bounds, or for no material. */
       | 'invalid-audience'
       /** The import is attached: change audience with `setMaterialAudience`. */
@@ -373,6 +392,18 @@ function isUniqueViolation(error: unknown): boolean {
     e?.code === '23505' ||
     /unique|duplicate key|constraint failed/i.test(String(e?.message ?? ''))
   );
+}
+/** Which import wrote material rows, and what a replaced build had (SMRT #4645). */
+interface MaterialProvenance {
+  importId: string;
+  /** True while a newer build replaces the part: rows are restated, not conflicts. */
+  supersede: boolean;
+  /** The import being replaced, or null. */
+  replacing: string | null;
+  /** Imports this part's chain has replaced, plus `replacing`: rows they own are this part's. */
+  lineage: Set<string>;
+  /** Ids of the material rows the current build wrote or confirmed. */
+  touched: Set<string>;
 }
 /** `Course.sourceKey` of a family course built from course bundles. */
 export const BUNDLE_COURSE_SOURCE = 'course-bundle';
@@ -1226,6 +1257,13 @@ export class CourseBundleImportService extends CourseAuthoringService {
         request.courseId,
         withChoices(plan.materials, choices),
         lessonId,
+        {
+          importId: String(imported.id),
+          supersede: false,
+          replacing: null,
+          lineage: new Set(),
+          touched: new Set(),
+        },
       );
     });
   }
@@ -1245,6 +1283,7 @@ export class CourseBundleImportService extends CourseAuthoringService {
     courseId: string,
     materials: BundleMaterialsPlan,
     lessonId: (key: string) => Promise<string>,
+    prov: MaterialProvenance,
   ): Promise<ApplyBundleMaterialsResult> {
     const result: ApplyBundleMaterialsResult = {
       courseAssets: 0,
@@ -1362,16 +1401,39 @@ export class CourseBundleImportService extends CourseAuthoringService {
           cache: false,
         });
         if (existing) {
-          if (
+          const moved =
             existing.sortOrder !== material.sortOrder ||
             (material.scope === 'course' &&
-              (existing as { title?: string }).title !== material.title) ||
+              (existing as { title?: string }).title !== material.title);
+          if (
+            (moved && !prov.supersede) ||
             (existing.rendition && existing.rendition !== rendition) ||
             (existing.renditionOfAssetId &&
               join.renditionOf &&
               existing.renditionOfAssetId !== join.renditionOf)
           )
             throw new CourseBundleMaterialsError('conflict', material.path);
+          prov.touched.add(String(existing.id));
+          // A newer build re-states the row: order, title, current again, and
+          // its provenance (unless another part's build wrote it).
+          const restate =
+            prov.supersede &&
+            (moved ||
+              Boolean(existing.retiredAt) ||
+              (existing.sourceImportId !== prov.importId &&
+                (!existing.sourceImportId ||
+                  prov.lineage.has(existing.sourceImportId))));
+          if (restate) {
+            existing.sortOrder = material.sortOrder;
+            if (material.scope === 'course')
+              (existing as { title?: string }).title = material.title;
+            existing.retiredAt = null;
+            if (
+              !existing.sourceImportId ||
+              prov.lineage.has(existing.sourceImportId)
+            )
+              existing.sourceImportId = prov.importId;
+          }
           // Audience after attach is the family's (`setMaterialAudience`);
           // only an original with a wider audience is repaired.
           const repair =
@@ -1388,15 +1450,17 @@ export class CourseBundleImportService extends CourseAuthoringService {
               existing.renditionOfAssetId || join.renditionOf;
             if (join.thumbnail) existing.thumbnailAssetId = join.thumbnail;
           }
-          if (repair || fill) await withAccess(access, () => existing.save());
+          if (repair || fill || restate)
+            await withAccess(access, () => existing.save());
           if (repair) result.repaired++;
-          else if (fill) result.updated++;
+          else if (fill || restate) result.updated++;
           else result.unchanged++;
           continue;
         }
-        await withAccess(access, () =>
+        const written = await withAccess(access, () =>
           (collection as typeof courseAssets).create({
             _insertOnly: true,
+            sourceImportId: prov.importId,
             ...where,
             audience,
             sortOrder: material.sortOrder,
@@ -1406,6 +1470,7 @@ export class CourseBundleImportService extends CourseAuthoringService {
             ...(material.scope === 'course' ? { title: material.title } : {}),
           }),
         );
+        prov.touched.add(String(written.id));
         if (material.scope === 'course') result.courseAssets++;
         else result.lessonAssets++;
       }
@@ -1427,11 +1492,21 @@ export class CourseBundleImportService extends CourseAuthoringService {
           existing.sortOrder !== page.sortOrder ||
           existing.sourceAssetId !== sourceAssetId ||
           existing.sourcePageNumber !== page.sourcePageNumber
-        )
-          throw new CourseBundleMaterialsError(
-            'conflict',
-            `${page.lessonKey}:${page.pageKey}`,
-          );
+        ) {
+          if (!prov.supersede)
+            throw new CourseBundleMaterialsError(
+              'conflict',
+              `${page.lessonKey}:${page.pageKey}`,
+            );
+          // Pages are lesson structure learner work points at: restated, never retired.
+          existing.label = page.label;
+          existing.sortOrder = page.sortOrder;
+          existing.sourceAssetId = sourceAssetId;
+          existing.sourcePageNumber = page.sourcePageNumber;
+          await existing.save();
+          result.updated++;
+          continue;
+        }
         result.unchanged++;
         continue;
       }
@@ -1456,27 +1531,165 @@ export class CourseBundleImportService extends CourseAuthoringService {
       const existing = await videos.get(where, { cache: false });
       if (existing) {
         // Step order and title come from the bundle; audience is the family's after attach.
-        if (
+        const moved =
           existing.title !== video.title ||
-          existing.stepOrder !== video.stepOrder
-        )
+          existing.stepOrder !== video.stepOrder;
+        if (moved && !prov.supersede)
           throw new CourseBundleMaterialsError(
             'conflict',
             `${video.lessonKey}:${video.videoId}`,
           );
+        prov.touched.add(String(existing.id));
+        if (
+          prov.supersede &&
+          (moved ||
+            Boolean(existing.retiredAt) ||
+            (existing.sourceImportId !== prov.importId &&
+              (!existing.sourceImportId ||
+                prov.lineage.has(existing.sourceImportId))))
+        ) {
+          existing.title = video.title;
+          existing.stepOrder = video.stepOrder;
+          existing.retiredAt = null;
+          if (
+            !existing.sourceImportId ||
+            prov.lineage.has(existing.sourceImportId)
+          )
+            existing.sourceImportId = prov.importId;
+          await existing.save();
+          result.updated++;
+          continue;
+        }
         result.unchanged++;
         continue;
       }
-      await videos.create({
+      const madeVideo = await videos.create({
         _insertOnly: true,
+        sourceImportId: prov.importId,
         ...where,
         title: video.title,
         stepOrder: video.stepOrder,
         audience: video.audience,
       });
+      prov.touched.add(String(madeVideo.id));
       result.lessonVideos++;
     }
     return result;
+  }
+
+  /**
+   * Retire what a replaced build attached and the newer build no longer has:
+   * file materials and external videos get `retiredAt`; rows stay, so learner
+   * work that points at them still resolves. Rows from before provenance was
+   * recorded (no `sourceImportId`) belong to the replaced build when their
+   * lesson is one of its lessons, and, for course materials, when it had
+   * course members. Rows another source or part wrote are never touched.
+   */
+  private async retireDropped(
+    tx: DatabaseInterface,
+    request: CourseAuthoringActor,
+    courseId: string,
+    prov: MaterialProvenance,
+  ): Promise<AttachBundleCourseResult['retired']> {
+    const retired = { lessonAssets: 0, courseAssets: 0, lessonVideos: 0 };
+    const old = prov.replacing as string;
+    const members = (
+      (await tx.list('course_bundle_members', {
+        tenant_id: request.tenantId,
+        import_id: old,
+      })) as Row[]
+    ).filter((m) => m.status === 'accepted' || m.status === 'duplicate');
+    const oldLessonKeys = new Set(
+      members.map((m) => String(m.lesson_key ?? '')).filter(Boolean),
+    );
+    const oldHadCourseMaterial = members.some(
+      (m) => m.role && !String(m.lesson_key ?? ''),
+    );
+    const sections = (await tx.list('course_sections', {
+      tenant_id: request.tenantId,
+      course_id: courseId,
+    })) as Row[];
+    const lessonIds = new Map<string, string>();
+    for (const section of sections)
+      for (const lesson of (await tx.list('lessons', {
+        tenant_id: request.tenantId,
+        section_id: String(section.id),
+      })) as Row[])
+        lessonIds.set(String(lesson.id), String(lesson.external_ref ?? ''));
+    const belongs = (row: Row, inScope: boolean) =>
+      !row.retired_at &&
+      !prov.touched.has(String(row.id)) &&
+      (row.source_import_id ? String(row.source_import_id) === old : inScope);
+    const access = async <T>(ids: Array<unknown>, work: () => Promise<T>) => {
+      let owner: string | null = null;
+      const owned: string[] = [];
+      for (const raw of ids) {
+        if (!raw) continue;
+        const asset = (await tx.get('assets', {
+          id: String(raw),
+          tenant_id: request.tenantId,
+        })) as Row | null;
+        if (!asset?.owner_profile_id) continue;
+        owner = String(asset.owner_profile_id);
+        owned.push(String(raw));
+      }
+      return owner
+        ? withPrivateAssetAccess(
+            {
+              tenantId: request.tenantId,
+              actorUserId: request.actorUserId,
+              ownerProfileId: owner,
+              assetIds: owned,
+            },
+            work,
+          )
+        : work();
+    };
+    const lessonAssets = await LessonAssetCollection.create({ db: tx });
+    const courseAssets = await CourseAssetCollection.create({ db: tx });
+    const videos = await LessonExternalVideoCollection.create({ db: tx });
+    const now = new Date();
+    for (const lessonId of lessonIds.keys()) {
+      const inScope = oldLessonKeys.has(lessonIds.get(lessonId) as string);
+      for (const row of (await tx.list('lesson_assets', {
+        tenant_id: request.tenantId,
+        lesson_id: lessonId,
+      })) as Row[])
+        if (belongs(row, inScope)) {
+          const item = await lessonAssets.get(String(row.id), {
+            cache: false,
+          });
+          if (!item) continue;
+          item.retiredAt = now;
+          await access([item.assetId, item.thumbnailAssetId], () =>
+            item.save(),
+          );
+          retired.lessonAssets++;
+        }
+      for (const row of (await tx.list('lesson_external_videos', {
+        tenant_id: request.tenantId,
+        lesson_id: lessonId,
+      })) as Row[])
+        if (belongs(row, inScope)) {
+          const item = await videos.get(String(row.id), { cache: false });
+          if (!item) continue;
+          item.retiredAt = now;
+          await item.save();
+          retired.lessonVideos++;
+        }
+    }
+    for (const row of (await tx.list('course_assets', {
+      tenant_id: request.tenantId,
+      course_id: courseId,
+    })) as Row[])
+      if (belongs(row, oldHadCourseMaterial)) {
+        const item = await courseAssets.get(String(row.id), { cache: false });
+        if (!item) continue;
+        item.retiredAt = now;
+        await access([item.assetId, item.thumbnailAssetId], () => item.save());
+        retired.courseAssets++;
+      }
+    return retired;
   }
 
   /**
@@ -1642,6 +1855,7 @@ export class CourseBundleImportService extends CourseAuthoringService {
         })) as Row | null;
         if (mine && String(mine.course_id) !== courseId)
           throw new CourseBundleMaterialsError('unit-mismatch');
+        let replacing: Row | null = null;
         for (const row of attached) {
           if (
             String(row.unit_key) !== unit.key ||
@@ -1651,9 +1865,27 @@ export class CourseBundleImportService extends CourseAuthoringService {
           if (
             Number(row.part_index) === unit.part &&
             String(row.import_id) !== importId
-          )
+          ) {
+            if (!request.supersede)
+              throw new CourseBundleMaterialsError(
+                'part-conflict',
+                String(unit.part),
+              );
+            replacing = row;
+          }
+        }
+        if (replacing) {
+          // "Newer" is the import record: this build was recorded strictly
+          // after the one it replaces (manifests carry no build stamp).
+          const older = (await tx.get('course_bundle_imports', {
+            id: String(replacing.import_id),
+            tenant_id: request.tenantId,
+          })) as Row | null;
+          const at = (row: Row | null) =>
+            new Date(row?.recorded_at as string | number | Date).getTime();
+          if (!older || !(at(imported) > at(older)))
             throw new CourseBundleMaterialsError(
-              'part-conflict',
+              'stale-build',
               String(unit.part),
             );
         }
@@ -1744,8 +1976,28 @@ export class CourseBundleImportService extends CourseAuthoringService {
             existing.title !== title ||
             (was === null) !== (declared === undefined) ||
             (was !== null && was !== declared)
-          )
-            throw new CourseBundleMaterialsError('part-conflict', key);
+          ) {
+            // A newer build of this part may retitle and reorder what it
+            // placed; a key a lower part decided must still agree.
+            if (!replacing || existing.partIndex < unit.part)
+              throw new CourseBundleMaterialsError('part-conflict', key);
+            existing.title = title;
+            existing.declaredOrder = declared ?? null;
+            existing.implicitOrder = position;
+            existing.partIndex = unit.part;
+            await existing.save();
+            return declared ?? position;
+          }
+          if (
+            replacing &&
+            was === null &&
+            unit.part === existing.partIndex &&
+            existing.implicitOrder !== position
+          ) {
+            existing.implicitOrder = position;
+            await existing.save();
+            return position;
+          }
           if (was !== null || unit.part >= existing.partIndex)
             return rowExists ? null : (was ?? existing.implicitOrder);
           existing.implicitOrder = position;
@@ -1755,6 +2007,7 @@ export class CourseBundleImportService extends CourseAuthoringService {
         };
         const sections: Record<string, string> = {};
         const lessons: Record<string, string> = {};
+        let renamed = 0;
         let flat = 0;
         for (const [s, section] of structure.sections.entries()) {
           const sectionId = bundleUuid('section', courseId, section.key);
@@ -1782,12 +2035,17 @@ export class CourseBundleImportService extends CourseAuthoringService {
               sortOrder: sectionOrder ?? s,
             });
           else if (
-            sectionOrder !== null &&
-            Number(existingSection.sort_order) !== sectionOrder
+            (sectionOrder !== null &&
+              Number(existingSection.sort_order) !== sectionOrder) ||
+            (replacing && String(existingSection.title) !== section.title)
           ) {
             const row = await sectionRows.get(sectionId, { cache: false });
             if (!row) throw new CourseBundleMaterialsError('unit-mismatch');
-            row.sortOrder = sectionOrder;
+            if (sectionOrder !== null) row.sortOrder = sectionOrder;
+            if (replacing && row.title !== section.title) {
+              row.title = section.title;
+              renamed++;
+            }
             await row.save();
           }
           sections[section.key] = sectionId;
@@ -1823,17 +2081,43 @@ export class CourseBundleImportService extends CourseAuthoringService {
                 externalRef: lesson.key,
               });
             else if (
-              lessonOrder !== null &&
-              Number(existingLesson.sort_order) !== lessonOrder
+              (lessonOrder !== null &&
+                Number(existingLesson.sort_order) !== lessonOrder) ||
+              (replacing && String(existingLesson.title) !== lesson.title)
             ) {
               const row = await lessonRows.get(id, { cache: false });
               if (!row) throw new CourseBundleMaterialsError('conflict');
-              row.sortOrder = lessonOrder;
+              if (lessonOrder !== null) row.sortOrder = lessonOrder;
+              if (replacing && row.title !== lesson.title) {
+                row.title = lesson.title;
+                renamed++;
+              }
               await row.save();
             }
             lessons[lesson.key] = id;
           }
         }
+        const provenance: MaterialProvenance = {
+          importId,
+          supersede: Boolean(replacing),
+          replacing: replacing ? String(replacing.import_id) : null,
+          lineage: new Set(
+            replacing
+              ? [
+                  String(replacing.import_id),
+                  ...(
+                    (await tx.list('course_bundle_supersessions', {
+                      tenant_id: request.tenantId,
+                      course_id: courseId,
+                      unit_key: unit.key,
+                      part_index: unit.part,
+                    })) as Row[]
+                  ).map((r) => String(r.superseded_import_id)),
+                ]
+              : [],
+          ),
+          touched: new Set(),
+        };
         const materials = await this.writeMaterials(
           tx,
           request,
@@ -1845,8 +2129,38 @@ export class CourseBundleImportService extends CourseAuthoringService {
               throw new CourseBundleMaterialsError('lesson-missing', key);
             return id;
           },
+          provenance,
         );
-        if (!mine)
+        const retired = replacing
+          ? await this.retireDropped(tx, request, courseId, provenance)
+          : { lessonAssets: 0, courseAssets: 0, lessonVideos: 0 };
+        if (replacing) {
+          // The newer build takes over the part; the audit row says from whom.
+          const row = await (
+            await CourseBundleAttachmentCollection.create({ db: tx })
+          ).get(
+            {
+              tenantId: request.tenantId,
+              importId: String(replacing.import_id),
+            },
+            { cache: false },
+          );
+          if (!row) throw new CourseBundleMaterialsError('part-conflict');
+          await row.supersedeWith(importId, request.actorUserId);
+          await (
+            await CourseBundleSupersessionCollection.create({ db: tx })
+          ).create({
+            _insertOnly: true,
+            tenantId: request.tenantId,
+            courseId,
+            unitKey: unit.key,
+            partIndex: unit.part,
+            importId,
+            supersededImportId: String(replacing.import_id),
+            supersededByUserId: request.actorUserId,
+            recordedAt: new Date(),
+          });
+        } else if (!mine)
           await (
             await CourseBundleAttachmentCollection.create({ db: tx })
           ).create({
@@ -1872,6 +2186,11 @@ export class CourseBundleImportService extends CourseAuthoringService {
           created,
           replayed: Boolean(mine),
           unitKey: unit.key,
+          superseded: replacing
+            ? { importId: String(replacing.import_id), partIndex: unit.part }
+            : null,
+          retired,
+          renamed,
           sections,
           lessons,
           part: {

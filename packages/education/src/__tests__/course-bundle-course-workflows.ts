@@ -73,6 +73,7 @@ export const classes = [
     'CourseBundleAudienceChoice',
     'CourseBundlePlacement',
     'CourseBundleUnit',
+    'CourseBundleSupersession',
   ]),
 ];
 
@@ -128,6 +129,7 @@ const files: Record<string, () => Uint8Array> = {
   'l1/key.pdf': () => tinyPdf('key'),
   'l1/handout.pdf': () => tinyPdf('handout 1'),
   'l2/handout.pdf': () => tinyPdf('handout 2'),
+  'l1/worksheet.pdf': () => tinyPdf('worksheet'),
   'unit/supplies.pdf': () => tinyPdf('supplies'),
 };
 

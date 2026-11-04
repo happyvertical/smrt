@@ -206,6 +206,7 @@ export class CatalogService {
                   assets: (await this.assets.byLeft(String(lesson.id))).filter(
                     (asset) =>
                       asset.tenantId === course.tenantId &&
+                      !asset.retiredAt &&
                       (includeAnswerKeys ||
                         (asset.relationship !== 'answer-key' &&
                           materialAudience(

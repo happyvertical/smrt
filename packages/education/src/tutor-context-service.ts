@@ -245,7 +245,7 @@ export class TutorContextService extends QuestionResponseService {
             lesson_id: request.lessonId,
             relationship: 'answer-key',
           })) as Row[]
-        ).length > 0
+        ).filter((row) => !row.retired_at).length > 0
       )
         answerKeyAvailable = true;
       if (!answerKeyAvailable && String(lessonRow?.answer_url ?? '').trim())
