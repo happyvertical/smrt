@@ -171,6 +171,13 @@ export class ExternalVideoReferenceError extends LearnerValidationError {
   }
 }
 
+/** Lesson file roles `signLessonPrintable` signs for printing. */
+const PRINTABLE_RELATIONSHIPS = [
+  'printable',
+  'handout',
+  'learner-pages',
+] as const satisfies readonly LessonAssetRelationship[];
+
 /** One material as a learner or guardian may see it. */
 export type LessonMaterialView = Readonly<{
   id: string;
@@ -1917,6 +1924,11 @@ export class SubmissionService extends LearnerService {
       return view;
     });
   }
+  /**
+   * Sign a lesson file for printing: a `printable`, `handout` or `learner-pages`
+   * PDF the actor may see (learner-audience, or any for a guardian). Never an
+   * editable `original` rendition and never an answer key.
+   */
   async signLessonPrintable(
     request: LessonRequest & { assetId: string },
   ): Promise<{ url: string; expiresAt: Date }> {
@@ -1926,22 +1938,37 @@ export class SubmissionService extends LearnerService {
     );
     if (!(await this.lessonInScope(request, enrollment, request.lessonId)))
       throw new LearnerAuthorizationError();
-    const link = await (
-      await LessonAssetCollection.create({ db: this.db })
-    ).get(
-      {
-        tenantId: request.tenantId,
-        lessonId: request.lessonId,
-        assetId: request.assetId,
-        // Explicit and load-bearing: only the `printable` relationship is ever
-        // signed. The guardian-only `answer-key` copy of a generated worksheet
-        // (QuestionAuthoringService.attachGeneratedPrintable) must never match.
-        relationship: 'printable',
-      },
-      { cache: false },
-    );
-    if (!link || !this.options.signAsset) throw new LearnerAuthorizationError();
-    // A printable the family made guardian-only is not the learner's to sign.
+    if (!this.options.signAsset) throw new LearnerAuthorizationError();
+    const links = await LessonAssetCollection.create({ db: this.db });
+    // Explicit and load-bearing: only these relationships are ever signed.
+    // The guardian-only `answer-key` copy of a generated worksheet
+    // (QuestionAuthoringService.attachGeneratedPrintable) must never match.
+    let link: Awaited<ReturnType<typeof links.get>> | null = null;
+    for (const relationship of PRINTABLE_RELATIONSHIPS) {
+      link = await links.get(
+        {
+          tenantId: request.tenantId,
+          lessonId: request.lessonId,
+          assetId: request.assetId,
+          relationship,
+        },
+        { cache: false },
+      );
+      // A row a newer build retired is no longer part of the lesson's materials.
+      if (link?.retiredAt) link = null;
+      if (link) break;
+    }
+    if (!link) throw new LearnerAuthorizationError();
+    // The editable original of a Word/PowerPoint pair is never printed or
+    // signed here: the rendered PDF half is.
+    if (link.rendition === 'original') throw new LearnerAuthorizationError();
+    // Handouts and learner pages are printed only as a PDF.
+    if (
+      link.relationship !== 'printable' &&
+      (await this.materialAsset(request.assetId)).mimeType !== 'application/pdf'
+    )
+      throw new LearnerAuthorizationError();
+    // A row the family made guardian-only is not the learner's to sign.
     if (
       (await this.learnerAudienceOnly(request)) &&
       materialAudience(link.relationship, link.audience) !== 'learner'

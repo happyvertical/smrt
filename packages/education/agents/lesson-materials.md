@@ -44,7 +44,7 @@ catalog projection without answer keys (every learner-facing catalog read) appli
 the same rule. `signLessonMaterial`/`signCourseMaterial` sign only a file in the
 actor's own list (claim scope `lesson:<id>` / `course:<id>`); a guessed id of
 guardian material is denied; `thumbnail: true` signs the thumbnail of a visible
-material instead. `signLessonPrintable` applies the same audience rule to the learner. Storage URIs never appear.
+material instead. `signLessonPrintable` signs a lesson file for printing: a `printable`, `handout` or `learner-pages` row (handout and learner pages only when the stored asset is `application/pdf`), learner-audience for a learner and any audience for a guardian. A retired row, an `original` rendition (the editable file) and any other role, answer keys included, are refused (SMRT #4657). Storage URIs never appear.
 
 `setMaterialAudience({enrollmentId, scope, kind, materialId, audience})` lets a
 guardian with plan authority change a family-owned row within the role's bounds
