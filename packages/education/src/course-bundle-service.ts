@@ -150,6 +150,13 @@ export interface AcceptedCourseBundleMember {
   audience: MaterialAudience | null;
   /** Manifest v2: true for a course-level member (no lesson). */
   courseLevel: boolean;
+  /**
+   * Manifest v2: the readable title of the one material this member holds (for
+   * example "Teacher Mission Manual"), so a host can name the assets it stores.
+   * Omitted when the manifest gave none, or when the member backs several
+   * materials with different titles.
+   */
+  title?: string;
   sectionKey: string | null;
   lessonKey: string | null;
   /** The original bytes. For Word/PowerPoint, keep these as the private original asset. */
@@ -176,6 +183,32 @@ export interface AcceptedCourseBundleMember {
    * proposed lesson body: audience belongs to the manifest v2 roles.
    */
   officeText: OfficeText | null;
+}
+/** Lesson rows keep no title as null; course rows (a non-null column) as ''. */
+function setMaterialTitle(
+  row: object,
+  scope: 'course' | 'lesson',
+  title: string,
+) {
+  (row as { title: string | null }).title =
+    scope === 'course' ? title : title || null;
+}
+/** The one non-empty material title per member path (by holder or declared path); none when ambiguous. */
+function memberTitles(plan: BundleMaterialsPlan): Map<string, string> {
+  const seen = new Map<string, Set<string>>();
+  for (const m of plan.materials)
+    for (const path of new Set([m.path, m.assetPath])) {
+      const titles = seen.get(path) ?? new Set<string>();
+      titles.add(m.title);
+      seen.set(path, titles);
+    }
+  const out = new Map<string, string>();
+  for (const [path, titles] of seen)
+    if (titles.size === 1) {
+      const [only] = titles;
+      if (only) out.set(path, only);
+    }
+  return out;
 }
 export interface CourseBundleImportResult {
   import: CourseBundleImportView;
@@ -950,6 +983,7 @@ export class CourseBundleImportService extends CourseAuthoringService {
       view = await write();
     }
     const settled = reconcileWithRecorded(plan, view);
+    const titles = memberTitles(plan.materials);
     const accepted = plan.members
       .filter(
         (m): m is ClassifiedBundleMember & { bytes: Uint8Array } =>
@@ -970,6 +1004,7 @@ export class CourseBundleImportService extends CourseAuthoringService {
           role: placed?.role || null,
           audience: placed?.audience || null,
           courseLevel: Boolean(placed?.role) && !placed?.lessonKey,
+          ...(titles.get(m.path) ? { title: titles.get(m.path) } : {}),
           sectionKey: placed?.sectionKey ?? null,
           lessonKey: placed?.lessonKey ?? null,
           bytes: m.bytes,
@@ -1135,6 +1170,7 @@ export class CourseBundleImportService extends CourseAuthoringService {
     const handed = new Set(
       retried.filter((r) => r.outcome === 'rendered').map((r) => r.path),
     );
+    const titles = memberTitles(plan.materials);
     const accepted = plan.members
       .filter(
         (m): m is ClassifiedBundleMember & { bytes: Uint8Array } =>
@@ -1155,6 +1191,7 @@ export class CourseBundleImportService extends CourseAuthoringService {
           role: placed?.role || null,
           audience: placed?.audience || null,
           courseLevel: Boolean(placed?.role) && !placed?.lessonKey,
+          ...(titles.get(m.path) ? { title: titles.get(m.path) } : {}),
           sectionKey: placed?.sectionKey ?? null,
           lessonKey: placed?.lessonKey ?? null,
           bytes: m.bytes,
@@ -1401,10 +1438,13 @@ export class CourseBundleImportService extends CourseAuthoringService {
           cache: false,
         });
         if (existing) {
+          // A row without a title (older build, or none given) simply gains
+          // the manifest's; a different title is a change of the newer build.
+          const currentTitle = (existing as { title?: string | null }).title;
+          const titleFill = !currentTitle && Boolean(material.title);
           const moved =
             existing.sortOrder !== material.sortOrder ||
-            (material.scope === 'course' &&
-              (existing as { title?: string }).title !== material.title);
+            (!titleFill && (currentTitle || '') !== material.title);
           if (
             (moved && !prov.supersede) ||
             (existing.rendition && existing.rendition !== rendition) ||
@@ -1425,8 +1465,7 @@ export class CourseBundleImportService extends CourseAuthoringService {
                   prov.lineage.has(existing.sourceImportId))));
           if (restate) {
             existing.sortOrder = material.sortOrder;
-            if (material.scope === 'course')
-              (existing as { title?: string }).title = material.title;
+            setMaterialTitle(existing, material.scope, material.title);
             existing.retiredAt = null;
             if (
               !existing.sourceImportId ||
@@ -1438,7 +1477,10 @@ export class CourseBundleImportService extends CourseAuthoringService {
           // only an original with a wider audience is repaired.
           const repair =
             rendition === 'original' && existing.audience !== 'guardian';
+          if (titleFill)
+            setMaterialTitle(existing, material.scope, material.title);
           const fill =
+            titleFill ||
             existing.rendition !== rendition ||
             (Boolean(join.renditionOf) && !existing.renditionOfAssetId) ||
             (Boolean(join.thumbnail) &&
@@ -1467,7 +1509,9 @@ export class CourseBundleImportService extends CourseAuthoringService {
             rendition,
             renditionOfAssetId: join.renditionOf,
             thumbnailAssetId: join.thumbnail,
-            ...(material.scope === 'course' ? { title: material.title } : {}),
+            ...(material.scope === 'course' || material.title
+              ? { title: material.title }
+              : {}),
           }),
         );
         prov.touched.add(String(written.id));

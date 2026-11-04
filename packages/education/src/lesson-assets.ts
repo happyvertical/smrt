@@ -185,6 +185,12 @@ export class LessonAsset extends SmrtObject {
   @crossPackageRef('@happyvertical/smrt-assets:Asset', { nullable: true })
   thumbnailAssetId: string | null = null;
   /**
+   * The readable material title the course bundle manifest gave this file
+   * (SMRT #4653). Both halves of an original/rendered pair carry it. Null for
+   * rows without one: readers fall back to the stored asset's name.
+   */
+  @field({ type: 'text', nullable: true }) title: string | null = null;
+  /**
    * Set when a newer build of the course bundle no longer carries this
    * material (SMRT #4645). A retired row stays (learner work may reference it)
    * but is not part of the current material set. Null when current.
@@ -202,6 +208,11 @@ export class LessonAsset extends SmrtObject {
   }
   override async save(options?: SmrtSaveOptions): Promise<this> {
     materialAudience(this.relationship, this.audience);
+    if (
+      this.title !== null &&
+      (typeof this.title !== 'string' || this.title.length > 200)
+    )
+      throw new Error('Invalid lesson material title');
     const lesson = await this.db.get('lessons', { id: this.lessonId });
     if (!lesson)
       throw new Error(`education lesson ${this.lessonId} does not exist`);

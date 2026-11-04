@@ -1509,7 +1509,8 @@ export class SubmissionService extends LearnerService {
         String(row.relationship),
         String(row.audience ?? ''),
       ),
-      title: (scope === 'course' && String(row.title ?? '')) || asset.name,
+      // The bundle's material title (SMRT #4653); older rows fall back to the stored name.
+      title: String(row.title ?? '') || asset.name,
       order: Number(row.sort_order) || 0,
       assetId: String(row.asset_id),
       provider: null,

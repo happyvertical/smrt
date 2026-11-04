@@ -36,6 +36,11 @@ const NEW_COLUMNS = [
   'retired_at',
   'source_import_id',
 ];
+// SMRT #4653: course_assets already carried a title.
+const COLUMNS_BY_TABLE: Record<string, string[]> = {
+  lesson_assets: [...NEW_COLUMNS, 'title'],
+  course_assets: NEW_COLUMNS,
+};
 
 /**
  * SMRT #4632: a populated pre-attach deployment gains the attachment,
@@ -86,8 +91,8 @@ export async function assertBundleCourseMigration(
   await db.query('DROP TABLE "course_bundle_placements"');
   await db.query('DROP TABLE "course_bundle_units"');
   await db.query('DROP TABLE "course_bundle_supersessions"');
-  for (const table of ['lesson_assets', 'course_assets'])
-    for (const column of NEW_COLUMNS) {
+  for (const [table, columns] of Object.entries(COLUMNS_BY_TABLE))
+    for (const column of columns) {
       // Reference columns carry an index; drop it with the column.
       await db.query(`DROP INDEX IF EXISTS "${table}_${column}_idx"`);
       await db.query(`ALTER TABLE "${table}" DROP COLUMN "${column}"`);
@@ -111,8 +116,8 @@ export async function assertBundleCourseMigration(
       .map((c) => [c.table, c.name])
       .sort(),
   ).toEqual(
-    ['course_assets', 'lesson_assets']
-      .flatMap((table) => NEW_COLUMNS.map((column) => [table, column]))
+    Object.entries(COLUMNS_BY_TABLE)
+      .flatMap(([table, columns]) => columns.map((column) => [table, column]))
       .sort(),
   );
   // Additive only: new columns and their indexes, nothing dropped or altered.
