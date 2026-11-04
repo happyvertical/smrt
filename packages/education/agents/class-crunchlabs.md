@@ -90,6 +90,27 @@ skipped) or `memoryClassCrunchLabsSource(files)`. It never reads video files.
   Matches become `videos` references with a title and a step order (materials
   prep videos are guardian audience); unit-level videos (a teaser) and unmatched
   ones are only reported.
+- Playlists without step numbers (#4647): the live course playlists title items
+  `<Unit>: <name>` in teaching order. Videos that no numbered item names fall back to
+  title and kind evidence, never over a numbered match. Playlist items titled
+  `Lesson N Recap` are anchors: each pairs with lesson N+1's single `Recap` video
+  and they cut the playlist into one segment per lesson (lesson 1 runs from the
+  start; the last download lesson runs to the end). Inside a segment a video and
+  an item pair when each is the other's single best match (ties pair nothing).
+  Evidence is normalized tokens (case, `&` is `and`, simple plurals, the unit
+  prefix and `Part N` dropped, `N` kept) for the title, and kind words:
+  `Prep`/`MaterialsPrep`, `Exploration`/`StudentHandsOnExploration`,
+  `Anchor`/`AnchorCheckIn`, `Explained`/`ForcesExplainer`, `Wrap Up`/`WrapUp`,
+  `Recap`, `Check-in`, `Link up`, `Look closer`. Differing numbers (`Part 1` against
+  `Sumo Spheres 2`) or an item naming another kind contradict. What is left in a
+  segment pairs by order only when the leftover videos and items are equally many,
+  the videos sit on distinct steps and nothing contradicts; otherwise they stay
+  unmatched. No pair crosses a segment. A playlist with no anchor is not segmented:
+  only pairs with title evidence count and nothing is filled by order. Reasons:
+  `no_item` (no unnumbered item is left for it, also a whole unit without anchors),
+  `ambiguous` (items remain but evidence ties or the leftovers do not pair one to
+  one), `unanchored` (its lesson is not bounded by recap anchors in the playlist),
+  plus the existing `no_playlist` and `item_taken`.
 - De-duplication: repeated exports of one logical path collapse (CRC and size
   when known; the newer export wins, a changed file is `superseded`); the same
   bytes under another name or place keep one copy (the lesson-named file in its

@@ -338,7 +338,7 @@ export interface ClassCrunchLabsVideoMiss {
   step: string;
   kind: string;
   title: string;
-  reason: 'no_playlist' | 'no_item' | 'ambiguous' | 'item_taken';
+  reason: 'no_playlist' | 'no_item' | 'ambiguous' | 'item_taken' | 'unanchored';
 }
 
 const ITEM_CODE = /\bL0*(\d{1,2})[.\-\s]0*(\d{1,3}[a-z]?)\b/i;
@@ -423,6 +423,7 @@ export function matchClassCrunchLabsVideos(
       } => x.code !== null && /^[A-Za-z0-9_-]{11}$/.test(x.item.videoId),
     );
   const used = new Set<ClassCrunchLabsPlaylistItem>();
+  const pending: VideoCandidate[] = [];
   const groups = new Map<string, VideoCandidate[]>();
   videos.forEach((v, index) => {
     const key = `${v.lesson}:${v.step}`;
@@ -431,7 +432,7 @@ export function matchClassCrunchLabsVideos(
   for (const [key, group] of groups) {
     const pool = items.filter((x) => `${x.code.lesson}:${x.code.step}` === key);
     if (pool.length === 0) {
-      for (const v of group) unmatched.push({ ...miss(v), reason: 'no_item' });
+      pending.push(...group);
       continue;
     }
     const score = (v: VideoCandidate, itemTitle: string) => {
@@ -475,13 +476,308 @@ export function matchClassCrunchLabsVideos(
       });
     }
   }
+  // Only numbered items count as unused; unnumbered ones are not in `items`.
+  const unusedItems = items.length - used.size;
+  if (pending.length > 0) {
+    // Videos no numbered item names: try titles and kinds, anchored by recaps.
+    const pool = playlist.items
+      .filter(
+        (item) =>
+          /^[A-Za-z0-9_-]{11}$/.test(item.videoId) &&
+          parsePlaylistItemTitle(item.title) === null,
+      )
+      .sort((a, b) => a.position - b.position);
+    const fallback = matchWithoutStepNumbers(
+      pending,
+      pool,
+      playlist,
+      Math.max(...videos.map((v) => v.lesson)),
+    );
+    for (const m of fallback.matched) {
+      matched.push(m.match);
+    }
+    unmatched.push(...fallback.unmatched);
+  }
   const order = (
     a: { lesson: number; step: string },
     b: { lesson: number; step: string },
   ) => a.lesson - b.lesson || naturalCompare(a.step, b.step);
   matched.sort(order);
   unmatched.sort(order);
-  return { matched, unmatched, unusedItems: items.length - used.size };
+  return { matched, unmatched, unusedItems };
+}
+
+// -- matching without step numbers --------------------------------------------
+
+const KIND_WORDS = new Set([
+  'prep',
+  'exploration',
+  'anchor',
+  'explained',
+  'wrapup',
+  'recap',
+  'checkin',
+  'linkup',
+  'lookcloser',
+]);
+const VIDEO_KIND_WORD: Readonly<Record<string, string>> = {
+  MaterialsPrep: 'prep',
+  StudentHandsOnExploration: 'exploration',
+  AnchorCheckIn: 'anchor',
+  ForcesExplainer: 'explained',
+  WrapUp: 'wrapup',
+  Recap: 'recap',
+  CheckIn: 'checkin',
+  LinkUp: 'linkup',
+  LookCloser: 'lookcloser',
+};
+const TITLE_STOP = new Set([
+  'a',
+  'an',
+  'the',
+  'and',
+  'of',
+  'to',
+  'with',
+  'in',
+  'on',
+  'for',
+  'part',
+  'lesson',
+]);
+const JOINED_WORDS: Readonly<Record<string, string>> = {
+  'wrap up': 'wrapup',
+  'check in': 'checkin',
+  'link up': 'linkup',
+  'look closer': 'lookcloser',
+};
+
+interface TitleTokens {
+  words: Set<string>;
+  numbers: Set<string>;
+  kinds: Set<string>;
+}
+/** Normalized evidence of a title: `&` is `and`, simple plurals are singular, `Part 2` is `2`. */
+function titleTokens(title: string): TitleTokens {
+  const joined = classCrunchLabsKey(title.replace(/&/g, ' and ')).replace(
+    /wrap up|check in|link up|look closer/g,
+    (m) => JOINED_WORDS[m] as string,
+  );
+  const out: TitleTokens = {
+    words: new Set(),
+    numbers: new Set(),
+    kinds: new Set(),
+  };
+  for (let w of joined.split(' ').filter(Boolean)) {
+    if (w === 'explainer') w = 'explained';
+    if (KIND_WORDS.has(w)) out.kinds.add(w);
+    else if (/^\d+$/.test(w)) out.numbers.add(String(Number(w)));
+    else if (TITLE_STOP.has(w)) continue;
+    else
+      out.words.add(
+        w.length > 3 && w.endsWith('s') && !w.endsWith('ss')
+          ? w.slice(0, -1)
+          : w,
+      );
+  }
+  return out;
+}
+/** The unit prefix of `<Unit>: <name>` items is not evidence. */
+function stripUnitPrefix(title: string, playlist: ClassCrunchLabsPlaylist) {
+  const at = title.indexOf(':');
+  if (at < 0) return title;
+  const head = classCrunchLabsKey(title.slice(0, at));
+  const names = [playlist.unit ?? '', playlist.title].map(classCrunchLabsKey);
+  return head && names.some((n) => n === head || n.startsWith(`${head} `))
+    ? title.slice(at + 1)
+    : title;
+}
+const RECAP_ITEM = /\bLesson\s*0*(\d{1,2})\s+Recap\b/i;
+
+interface FallbackItem {
+  item: ClassCrunchLabsPlaylistItem;
+  tokens: TitleTokens;
+}
+/** Score of a video against an item; null when they contradict each other. */
+function evidence(
+  v: { tokens: TitleTokens; kind: string | null },
+  i: FallbackItem,
+): { score: number; title: number } | null {
+  if (v.tokens.numbers.size > 0 && i.tokens.numbers.size > 0) {
+    if (![...v.tokens.numbers].some((n) => i.tokens.numbers.has(n)))
+      return null;
+  }
+  const kindMatch = v.kind !== null && i.tokens.kinds.has(v.kind);
+  if (i.tokens.kinds.size > 0 && !kindMatch) return null;
+  const title = [...v.tokens.words].filter((w) => i.tokens.words.has(w)).length;
+  const numberMatch =
+    v.tokens.numbers.size > 0 &&
+    [...v.tokens.numbers].some((n) => i.tokens.numbers.has(n));
+  return {
+    title,
+    score: title * 2 + (kindMatch ? 3 : 0) + (numberMatch && title > 0 ? 2 : 0),
+  };
+}
+
+/**
+ * Fallback for playlists without step numbers. "Lesson N Recap" items are
+ * anchors: lesson N's recap video (the download's `Recap` at the start of lesson
+ * N+1) pairs with it, and the anchors cut the playlist into one segment per
+ * lesson. Inside a segment a video and an item pair when each is the other's
+ * single best title/kind match; what is left pairs by order only when videos and
+ * items are equally many, the videos sit on distinct steps and nothing
+ * contradicts. Anything else stays unmatched; no pair crosses a segment. A
+ * playlist without any anchor is not segmented: only title evidence pairs, and
+ * nothing is filled by order.
+ */
+function matchWithoutStepNumbers(
+  pending: readonly VideoCandidate[],
+  pool: readonly ClassCrunchLabsPlaylistItem[],
+  playlist: ClassCrunchLabsPlaylist,
+  lastLesson: number,
+): {
+  matched: Array<{
+    item: ClassCrunchLabsPlaylistItem;
+    match: ClassCrunchLabsVideoMatch;
+  }>;
+  unmatched: ClassCrunchLabsVideoMiss[];
+} {
+  const matched: Array<{
+    item: ClassCrunchLabsPlaylistItem;
+    match: ClassCrunchLabsVideoMatch;
+  }> = [];
+  const unmatched: ClassCrunchLabsVideoMiss[] = [];
+  const taken = new Set<ClassCrunchLabsPlaylistItem>();
+  const entries = pool.map((item) => ({
+    item,
+    tokens: titleTokens(stripUnitPrefix(item.title, playlist)),
+  }));
+  const pair = (v: VideoCandidate, i: FallbackItem) => {
+    taken.add(i.item);
+    matched.push({
+      item: i.item,
+      match: {
+        lesson: v.lesson,
+        step: v.step,
+        kind: v.kind,
+        title: v.title,
+        videoId: i.item.videoId,
+        playlistItem: i.item.title,
+      },
+    });
+  };
+  const byStep = (a: VideoCandidate, b: VideoCandidate) =>
+    a.lesson - b.lesson || naturalCompare(a.step, b.step) || a.index - b.index;
+
+  // Anchors: unique "Lesson N Recap" items.
+  const anchors = new Map<number, number>();
+  const duplicate = new Set<number>();
+  entries.forEach((e, at) => {
+    const m = RECAP_ITEM.exec(stripUnitPrefix(e.item.title, playlist));
+    if (!m) return;
+    const n = Number(m[1]);
+    if (anchors.has(n)) duplicate.add(n);
+    anchors.set(n, at);
+  });
+  for (const n of duplicate) anchors.delete(n);
+  const isAnchor = new Set(anchors.values());
+
+  const run = (
+    videos: VideoCandidate[],
+    items: FallbackItem[],
+    options: { orderFill: boolean; reason: ClassCrunchLabsVideoMiss['reason'] },
+  ) => {
+    const vs = videos.sort(byStep).map((v) => ({
+      v,
+      tokens: titleTokens(v.title),
+      kind: VIDEO_KIND_WORD[v.kind] ?? null,
+    }));
+    let free = items.filter((i) => !taken.has(i.item));
+    let left = vs;
+    const cell = (x: (typeof vs)[number], i: FallbackItem) => {
+      const e = evidence(x, i);
+      // Without segments a kind alone is far too weak to pair across a unit.
+      return e && e.score > 0 && (options.orderFill || e.title > 0)
+        ? e.score
+        : null;
+    };
+    const best = <T>(rows: Array<[T, number | null]>): T | null => {
+      const scored = rows
+        .filter((r): r is [T, number] => r[1] !== null)
+        .sort((a, b) => b[1] - a[1]);
+      return scored[0] && (!scored[1] || scored[0][1] > scored[1][1])
+        ? scored[0][0]
+        : null;
+    };
+    for (let changed = true; changed && left.length > 0 && free.length > 0; ) {
+      changed = false;
+      const found: Array<[(typeof vs)[number], FallbackItem]> = [];
+      for (const x of left) {
+        const i = best(free.map((f) => [f, cell(x, f)]));
+        if (i && best(left.map((l) => [l, cell(l, i)])) === x)
+          found.push([x, i]);
+      }
+      for (const [x, i] of found) {
+        pair(x.v, i);
+        changed = true;
+      }
+      left = left.filter((x) => !found.some(([f]) => f === x));
+      free = free.filter((i) => !taken.has(i.item));
+    }
+    if (left.length === 0) return;
+    const steps = new Set(left.map((x) => `${x.v.lesson}:${x.v.step}`));
+    if (
+      options.orderFill &&
+      left.length === free.length &&
+      steps.size === left.length &&
+      left.every((x, at) => evidence(x, free[at] as FallbackItem) !== null)
+    ) {
+      left.forEach((x, at) => {
+        pair(x.v, free[at] as FallbackItem);
+      });
+      return;
+    }
+    for (const x of left)
+      unmatched.push({
+        ...miss(x.v),
+        reason: free.length === 0 ? 'no_item' : options.reason,
+      });
+  };
+
+  if (anchors.size === 0) {
+    run([...pending], entries, { orderFill: false, reason: 'no_item' });
+  } else {
+    const lessons = [...new Set(pending.map((v) => v.lesson))].sort(
+      (a, b) => a - b,
+    );
+    for (const lesson of lessons) {
+      const mine = pending.filter((v) => v.lesson === lesson);
+      const lower = lesson === 1 ? -1 : anchors.get(lesson - 1);
+      const upper =
+        anchors.get(lesson) ??
+        (lesson >= lastLesson ? entries.length : undefined);
+      if (lower === undefined || upper === undefined || lower >= upper) {
+        for (const v of [...mine].sort(byStep))
+          unmatched.push({ ...miss(v), reason: 'unanchored' });
+        continue;
+      }
+      // The recap that opens this lesson is the previous lesson's anchor item.
+      let videos = mine;
+      const recaps = mine.filter((v) => v.kind === 'Recap');
+      if (lesson > 1 && recaps.length === 1) {
+        const anchor = entries[lower] as FallbackItem;
+        if (!taken.has(anchor.item)) {
+          pair(recaps[0] as VideoCandidate, anchor);
+          videos = mine.filter((v) => v !== recaps[0]);
+        }
+      }
+      const segment = entries.filter(
+        (_, at) => at > lower && at < upper && !isAnchor.has(at),
+      );
+      run(videos, segment, { orderFill: true, reason: 'ambiguous' });
+    }
+  }
+  return { matched, unmatched };
 }
 
 // -- materials ----------------------------------------------------------------
