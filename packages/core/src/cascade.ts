@@ -1008,13 +1008,12 @@ export async function runInOwningCascadeTransaction<T>(
  * ends, and ending it discards its writes. The statement is expected to throw;
  * its error is not the one the caller needs, so it is dropped.
  */
-async function abortJoinedDuckDbTransaction(
+export async function abortJoinedDuckDbTransaction(
   db: DatabaseInterface,
+  message = CASCADE_ABORTED_CALLER_TRANSACTION,
 ): Promise<void> {
   try {
-    await db.query(
-      `SELECT error('${CASCADE_ABORTED_CALLER_TRANSACTION.replaceAll("'", "''")}')`,
-    );
+    await db.query(`SELECT error('${message.replaceAll("'", "''")}')`);
   } catch {
     // Expected: this statement exists to fail.
   }

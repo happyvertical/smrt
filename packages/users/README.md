@@ -1792,9 +1792,11 @@ for authentication, deduplication, and status semantics.
 | Member | `566aef94-1328-4876-b291-b7cf18d4df03` |
 | Viewer | `566aef94-1328-4876-b291-b7cf18d4df04` |
 
-The seed checks the global slug, UUID, and system flag on repeat. Tenant roles
-can share these slugs under their own identities. Occupied reserved identities
-fail seeding without rewriting role ownership or existing memberships.
+Fresh roles use the UUIDs above. Repeat seeding keeps existing global system
+roles and their IDs, including roles created by earlier releases. Tenant roles
+can share these slugs under their own identities. A reserved UUID occupied by a
+different role causes seeding to fail without rewriting role ownership or
+memberships.
 
 ## Dependencies
 

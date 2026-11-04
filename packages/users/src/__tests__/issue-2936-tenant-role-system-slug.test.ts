@@ -55,6 +55,57 @@ describe('tenant Role sharing a system slug (#2936)', () => {
     expect(shopOwner.id).not.toBe(system?.id);
     expect((await roles.findBySlug('owner', tenantId))?.id).toBe(shopOwner.id);
   });
+  it('preserves a legitimate system role seeded by an earlier release', async () => {
+    const roles = await RoleCollection.create({ db });
+    const oldId = crypto.randomUUID();
+    await roles.create({
+      id: oldId,
+      slug: 'owner',
+      name: 'Legacy owner',
+      tenantId: null,
+      isSystem: true,
+    });
+
+    const seeded = await roles.seedSystemRoles({
+      inheritsToDescendants: ['owner'],
+    });
+    expect(seeded.map(({ id }) => id)).toEqual([
+      oldId,
+      ...DEFAULT_ROLES.slice(1).map(({ id }) => id),
+    ]);
+    expect(await roles.findSystemRoleBySlug('owner')).toMatchObject({
+      id: oldId,
+      name: 'Legacy owner',
+      inheritsToDescendants: true,
+    });
+  });
+
+  it('refuses a reserved UUID impostor even when the legitimate role has an older ID', async () => {
+    const roles = await RoleCollection.create({ db });
+    const legacy = await roles.create({
+      slug: 'owner',
+      name: 'Legacy owner',
+      tenantId: null,
+      isSystem: true,
+    });
+    await roles.create({
+      id: DEFAULT_ROLES[0].id,
+      slug: 'impostor',
+      name: 'Impostor',
+      tenantId: null,
+      isSystem: false,
+    });
+
+    await expect(roles.seedSystemRoles()).rejects.toThrow(
+      "System role identity collision for 'owner'",
+    );
+    expect((await roles.findSystemRoleBySlug('owner'))?.id).toBe(legacy.id);
+    expect(await roles.get(DEFAULT_ROLES[0].id)).toMatchObject({
+      slug: 'impostor',
+      isSystem: false,
+    });
+  });
+
   it('rolls back seeding when a reserved UUID belongs to a tenant role', async () => {
     const roles = await RoleCollection.create({ db });
     const tenant = await (await TenantCollection.create({ db })).create({

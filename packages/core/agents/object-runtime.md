@@ -40,6 +40,10 @@ See [audit contract](../../../docs/content/audit-trail.md).
   use `transformJSON()` for that existing contract. Ordinary saves and eligible
   junction batches share this preparation. A custom normalization override makes
   a junction ineligible for batching, preserving its virtual per-row save path.
+  Junction batches write new rows in one statement. Known collisions take
+  the per-row path. A late untracked collision updates the existing row in
+  place, while a tracked collision rolls back all additions. Callers still
+  own the transaction for an atomic remove-and-add replacement.
 - `save()` error contract (#2366): unique/PK violation → `ValidationError` `VALIDATION_UNIQUE_CONSTRAINT`, NOT NULL → `VALIDATION_REQUIRED_FIELD`, both on the first attempt on every adapter; any other database failure → `DatabaseError` with the driver error on `cause`
 - `getSlug()`: auto-generates from name → title → label → id
 - `loadRelated(fieldName)`: lazy-loads relationships (cached in `_loadedRelationships` Map)

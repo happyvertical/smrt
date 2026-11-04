@@ -1,6 +1,7 @@
 import type { AITextCompletionOptions, AITool } from '@happyvertical/ai';
 import { createLogger } from '@happyvertical/logger';
 import {
+  abortJoinedDuckDbTransaction,
   buildCascadePlan,
   cascadeReferencesTo,
   runCascadeDelete,
@@ -2537,10 +2538,9 @@ export class SmrtObject extends SmrtClass {
               ? Number(value)
               : value;
     // A new item whose natural key already names a row (other than one this
-    // batch removes first) takes the per-item path: its guard adopts the
-    // existing id instead of letting `DO UPDATE` rewrite the primary key, and
-    // `ON UPDATE CASCADE` re-point the row's children. Conflict values are
-    // never NULL here (checked above), so plain equality matches the index.
+    // batch removes first) takes the per-item path, which can safely adopt
+    // an untracked row. Conflict values are never NULL here (checked above),
+    // so plain equality matches the index.
     if (added.length > 0 && conflict.length > 0) {
       const probeValues: unknown[] = [];
       const placeholder = () =>
@@ -2636,9 +2636,9 @@ export class SmrtObject extends SmrtClass {
             })
             .join(', ')})`,
       );
-      // Defense in depth for a row inserted between the probe above and this
-      // statement: `DO UPDATE` never rewrites the primary key, the row's
-      // ownership, or its creation time.
+      // Keep untracked late collisions in place. RETURNING the physical
+      // rows works on legacy schemas too; tracked collisions roll back all
+      // additions before their hooks or change-feed entries can run.
       const updates = columns
         .filter(
           (column) =>
@@ -2648,38 +2648,40 @@ export class SmrtObject extends SmrtClass {
         )
         .map((column) => `${quote(column)} = excluded.${quote(column)}`)
         .join(', ');
-      const sql = `INSERT INTO ${quote(first.tableName)} (${columns.map(quote).join(', ')}) VALUES ${tuples.join(', ')} ON CONFLICT (${conflict.map(quote).join(', ')}) DO UPDATE SET ${updates}`;
-      await withEmbeddedWriteQueue(first.db, isEmbeddedDatabase(first.db), () =>
-        ErrorUtils.withRetry(
-          async () => {
-            try {
-              await first.db.query(sql, ...values);
-            } catch (error) {
-              if (!(error instanceof Error)) throw error;
-              const classification = classifyDatabaseError(error);
-              const field = first.extractConstraintFieldFromChain(
-                error,
-                classification,
-              );
-              if (classification.kind === 'unique_violation')
-                throw ValidationError.uniqueConstraint(
-                  field,
-                  first.getFieldValue(field),
+      const sql = `INSERT INTO ${quote(first.tableName)} (${columns.map(quote).join(', ')}) VALUES ${tuples.join(', ')} ON CONFLICT (${conflict.map(quote).join(', ')}) DO UPDATE SET ${updates} RETURNING *`;
+      await ErrorUtils.withRetry(
+        async () => {
+          try {
+            await withEmbeddedWriteTransaction(
+              first.db,
+              isEmbeddedDatabase(first.db),
+              async (db) => {
+                const { rows } = await db.query(sql, ...values);
+                const tracked = rows.find(
+                  (row) => row._sync_origin_device_id != null,
                 );
-              if (classification.kind === 'not_null_violation')
-                throw ValidationError.requiredField(
-                  field,
-                  first.getResolvedClassName(),
+                if (!tracked) return;
+                if (duck && db === first.db) {
+                  await abortJoinedDuckDbTransaction(
+                    db,
+                    'smrt: tracked junction conflict aborted the caller transaction',
+                  );
+                }
+                throw first.trackedIdentityWriteError(
+                  typeof tracked.id === 'string' ? tracked.id : undefined,
                 );
-              throw DatabaseError.queryFailed(
-                `UPSERT INTO ${first.tableName}`,
-                error,
-              );
-            }
-          },
-          3,
-          500,
-        ),
+              },
+              duck,
+            );
+          } catch (error) {
+            throw first.toTypedWriteError(
+              error,
+              `UPSERT INTO ${first.tableName}`,
+            );
+          }
+        },
+        3,
+        500,
       );
       const completions: BulkMutationEntry[] = [];
       for (let i = 0; i < added.length; i++) {
@@ -3566,7 +3568,13 @@ export class SmrtObject extends SmrtClass {
     existing: Record<string, unknown> | null,
     writeGuard?: Record<string, unknown>,
   ) {
-    if (writeGuard) {
+    const postgres = isPostgresDatabase(this.db);
+    const crossProcess = !usesEmbeddedRevisionFallback(this.db);
+    const guardAdoptedSync =
+      crossProcess &&
+      existing !== null &&
+      Object.hasOwn(existing, '_sync_origin_device_id');
+    if (writeGuard || guardAdoptedSync) {
       // A late collision must never enter an unconditional SDK UPSERT. A fresh
       // insert either succeeds or reports a collision; existing rows are changed
       // only by an UPDATE whose mandatory predicate is checked by the database.
@@ -3583,7 +3591,13 @@ export class SmrtObject extends SmrtClass {
             !conflictColumns.includes(column),
         ),
       );
-      const filter = this.guardedWriteFilter({ id: stored.id }, writeGuard);
+      const filter = this.guardedWriteFilter(
+        {
+          id: stored.id,
+          ...(guardAdoptedSync ? { _sync_origin_device_id: null } : {}),
+        },
+        writeGuard,
+      );
       let result: { affected: number };
       if (this.isPositivelyNativeDuckDb()) {
         // Native DuckDB is serialized by the same embedded write queue. Its
@@ -3594,10 +3608,57 @@ export class SmrtObject extends SmrtClass {
       } else {
         result = await this.db.update(this.tableName, filter, assignments);
       }
-      if (result.affected !== 1)
+      if (result.affected !== 1) {
+        if (guardAdoptedSync && !writeGuard)
+          throw this.trackedIdentityWriteError(stored.id);
         throw new Error('Mandatory write predicate denied mutation');
+      }
       return result;
     }
+
+    const idConflict =
+      conflictColumns.length === 1 && conflictColumns[0] === 'id';
+    if (!this._persisted && idConflict && postgres) {
+      if (!(await this.insertIfAbsent(data, conflictColumns, true))) {
+        throw this.trackedIdentityWriteError(data.id);
+      }
+      return;
+    }
+    if (
+      !this._persisted &&
+      ((!crossProcess && idConflict) ||
+        !conflictColumns.every((column) => data[column] !== undefined))
+    ) {
+      const current = await this.readNaturalKeyRow({ id: data.id });
+      if (current?._sync_origin_device_id != null) {
+        throw this.trackedIdentityWriteError(data.id);
+      }
+    }
+
+    if (
+      !this._persisted &&
+      crossProcess &&
+      conflictColumns.every((column) => data[column] !== undefined) &&
+      (!postgres ||
+        (!existing && conflictColumns.some((column) => data[column] === null)))
+    ) {
+      // Another writer can claim a key after the preflight. Keep the SDK's
+      // key matching (including nullable keys) and check the rows it could
+      // have updated before releasing the transaction/savepoint.
+      const filter = Object.fromEntries(
+        conflictColumns.map((column) => [column, data[column]]),
+      );
+      return withEmbeddedWriteTransaction(this.db, false, async (tx) => {
+        const result = await tx.upsert(this.tableName, conflictColumns, data);
+        const matching = await tx.list(this.tableName, filter);
+        const tracked = matching.find(
+          (row) => row._sync_origin_device_id != null,
+        );
+        if (tracked) throw this.trackedIdentityWriteError(tracked.id);
+        return result;
+      });
+    }
+
     const unchanged = await this.unchangedIndexedColumnsOf(data, existing);
     if (!existing || unchanged.size === 0 || existing.id == null) {
       return this.db.upsert(this.tableName, conflictColumns, data);
@@ -3901,10 +3962,7 @@ export class SmrtObject extends SmrtClass {
         conflictFilter,
       );
       if (existing._sync_origin_device_id != null) {
-        throw RuntimeError.invalidState(
-          'A tracked row must be loaded by identity before saving',
-          { className: this.getResolvedClassName(), id: existing.id },
-        );
+        throw this.trackedIdentityWriteError(existing.id);
       }
       const existingId = existing.id;
       if (
@@ -3976,6 +4034,13 @@ export class SmrtObject extends SmrtClass {
     });
   }
 
+  private trackedIdentityWriteError(id: unknown): RuntimeError {
+    return RuntimeError.invalidState(
+      'A tracked row must be loaded by identity before saving',
+      { className: this.getResolvedClassName(), id },
+    );
+  }
+
   /**
    * PostgreSQL: `INSERT … ON CONFLICT (conflict) DO NOTHING RETURNING id`.
    * Values are serialized exactly as the SDK's insert does (undefined
@@ -3986,6 +4051,7 @@ export class SmrtObject extends SmrtClass {
   private async insertIfAbsent(
     data: Record<string, unknown>,
     conflictColumns: string[],
+    updateUntrackedId = false,
   ): Promise<boolean> {
     const quote = (identifier: string) =>
       `"${identifier.replaceAll('"', '""')}"`;
@@ -4007,12 +4073,24 @@ export class SmrtObject extends SmrtClass {
       );
     }
     const placeholders = values.map((_, index) => `$${index + 1}`).join(', ');
-    const predicate = ObjectRegistry.getConflictPredicate(
-      this.getResolvedQualifiedName(),
-    );
+    const table = quote(this.tableName);
+    const predicate = updateUntrackedId
+      ? undefined
+      : ObjectRegistry.getConflictPredicate(this.getResolvedQualifiedName());
     const conflictWhere = predicate ? ` WHERE ${predicate}` : '';
+    // Read through the target row so older schemas without the optional
+    // metadata column still accept ordinary ID upserts. PostgreSQL evaluates
+    // this predicate on the locked conflict row, after any concurrent update.
+    const action = updateUntrackedId
+      ? `DO UPDATE SET ${columns
+          .filter((column) => column !== quote('id'))
+          .map((column) => `${column} = excluded.${column}`)
+          .join(
+            ', ',
+          )} WHERE to_jsonb(${table}.*)->>'_sync_origin_device_id' IS NULL`
+      : 'DO NOTHING';
     const result = await this.db.query(
-      `INSERT INTO ${quote(this.tableName)} (${columns.join(', ')}) VALUES (${placeholders}) ON CONFLICT (${conflictColumns.map(quote).join(', ')})${conflictWhere} DO NOTHING RETURNING ${quote('id')}`,
+      `INSERT INTO ${table} (${columns.join(', ')}) VALUES (${placeholders}) ON CONFLICT (${conflictColumns.map(quote).join(', ')})${conflictWhere} ${action} RETURNING ${quote('id')}`,
       ...values,
     );
     return (result?.rows?.length ?? 0) > 0;

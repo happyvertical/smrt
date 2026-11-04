@@ -127,7 +127,13 @@ export class RoleCollection extends SmrtCollection<Role> {
         // Check if role already exists
         const existing = await writer.findBySlug(roleDef.slug);
         if (existing) {
-          if (existing.id !== roleDef.id || !existing.isSystem) {
+          if (
+            !existing.isSystem ||
+            existing.tenantId != null ||
+            (existing.id !== roleDef.id &&
+              (DEFAULT_ROLES.some(({ id }) => id === existing.id) ||
+                (await writer.get({ id: roleDef.id }))))
+          ) {
             throw new Error(
               `System role identity collision for '${roleDef.slug}'`,
             );
