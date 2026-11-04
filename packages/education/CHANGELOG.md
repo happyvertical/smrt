@@ -1,5 +1,17 @@
 # @happyvertical/smrt-education
 
+## 0.60.3
+
+### Patch Changes
+
+- 74a1370: Match Class CrunchLabs videos to course playlists whose items carry no lesson or step numbers, using "Lesson N Recap" anchors, title and kind evidence and conservative order filling (#4647).
+- @happyvertical/smrt-assets@0.60.3
+  - @happyvertical/smrt-core@0.60.3
+  - @happyvertical/smrt-ingestion@0.60.3
+  - @happyvertical/smrt-profiles@0.60.3
+  - @happyvertical/smrt-tenancy@0.60.3
+  - @happyvertical/smrt-users@0.60.3
+
 ## 0.60.2
 
 ### Patch Changes
