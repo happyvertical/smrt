@@ -11,6 +11,7 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -229,6 +230,30 @@ describe('docs:agents knowledge bundle (#4689)', () => {
     expect(isValidPackageName('@happyvertical/smrt-x/../../y')).toBe(false);
     expect(isValidPackageName('@happyvertical/smrt-jobs')).toBe(true);
     expect(isValidPackageName('plain-name')).toBe(true);
+  });
+
+  it('refuses a bundle directory that is a symlink and leaves its target intact', async () => {
+    installCliWithIntents();
+    install('smrt-jobs', '1.2.3', { shipsPage: true });
+    // A checkout can carry this link; writing through it would replace
+    // `components/` wherever it points.
+    const target = join(tempDir, 'elsewhere');
+    mkdirSync(join(target, 'components'), { recursive: true });
+    const sentinel = join(target, 'components', 'keep.md');
+    writeFileSync(sentinel, 'keep');
+    mkdirSync(join(tempDir, '.agents'), { recursive: true });
+    symlinkSync(target, join(tempDir, '.agents', 'smrt-knowledge'));
+
+    // The command reports the failure and exits non-zero (vitest turns the
+    // exit into a rejection).
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await expect(run()).rejects.toThrow(/process\.exit/);
+    expect(error.mock.calls.flat().join('\n')).toMatch(/symlink/);
+    error.mockRestore();
+
+    expect(readFileSync(sentinel, 'utf-8')).toBe('keep');
+    expect(existsSync(join(target, 'components', 'smrt-jobs.md'))).toBe(false);
+    expect(existsSync(join(target, 'bundle.json'))).toBe(false);
   });
 
   it('keeps exportedAt while content is unchanged and drops uninstalled pages on rerun', async () => {

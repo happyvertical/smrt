@@ -18,6 +18,7 @@
 import { createHash } from 'node:crypto';
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
   readdirSync,
   readFileSync,
@@ -85,6 +86,21 @@ export function containedPath(root: string, target: string): string {
     throw new Error(`Refusing to write outside ${base}: ${target}`);
   }
   return full;
+}
+
+/**
+ * Throws when `path` exists as a symlink. `containedPath` is lexical, so a
+ * checkout that ships `.agents/smrt-knowledge` as a link would otherwise have
+ * the bundle's wholesale directory replacement land wherever the link points.
+ */
+export function assertNotSymlink(path: string): void {
+  let link = false;
+  try {
+    link = lstatSync(path).isSymbolicLink();
+  } catch {
+    return;
+  }
+  if (link) throw new Error(`Refusing to write through a symlink: ${path}`);
 }
 
 /**
@@ -372,6 +388,9 @@ export function exportKnowledgeBundle(options: {
   const pageDirs = ['components', 'intents'].map((dir) =>
     containedPath(options.bundleDir, dir),
   );
+  for (const path of [resolve(options.bundleDir), ...pageDirs, manifestPath]) {
+    assertNotSymlink(path);
+  }
   for (const dir of pageDirs) rmSync(dir, { recursive: true, force: true });
   for (const [target, text] of writes) {
     mkdirSync(dirname(target), { recursive: true });
