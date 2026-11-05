@@ -1,5 +1,20 @@
 # @happyvertical/smrt-core
 
+## 0.60.8
+
+### Patch Changes
+
+- ### Features
+  
+  - plan lessonActivityId follows effective work placement (#4679) (education)
+  
+  ### Other Changes
+  
+  - test: close oauth suite connections before dropping its database (#4677) (users)
+- @happyvertical/smrt-config@0.60.8
+  - @happyvertical/smrt-scanner@0.60.8
+  - @happyvertical/smrt-types@0.60.8
+
 ## 0.60.7
 
 ### Patch Changes
