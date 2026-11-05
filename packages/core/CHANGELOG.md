@@ -1,5 +1,23 @@
 # @happyvertical/smrt-core
 
+## 0.60.10
+
+### Patch Changes
+
+- ### Features
+  
+  - OKF knowledge base, intent index, docs:agents export, duplicate detection (#4706) (knowledge)
+  - source-keyed notification email outbox with leased dispatch (#4707) (messages)
+  - add guided ProjectInterview component (#4699) (projects)
+  - establish local identities and sync metadata (#4680) (core, app-runtime, users)
+  
+  ### Other Changes
+  
+  - ci: keep build and dependency output out of the release commit (#4712) (release)
+- @happyvertical/smrt-config@0.60.10
+  - @happyvertical/smrt-scanner@0.60.10
+  - @happyvertical/smrt-types@0.60.10
+
 ## 0.60.9
 
 ### Patch Changes
