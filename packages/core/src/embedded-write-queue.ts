@@ -81,10 +81,11 @@ export function isKnownDatabaseTransaction(db: DatabaseInterface): boolean {
 
 interface QueueableDatabase {
   url?: string;
+  client?: unknown;
 }
 
 /**
- * Whether `db` is an embedded engine (SQLite/DuckDB/JSON — anything that is
+ * Whether `db` is an embedded engine (SQLite/DuckDB/JSON/PGlite — anything that is
  * not PostgreSQL). Handles without a URL are treated as embedded: serializing
  * them is at worst a throughput cost, while not serializing an embedded
  * handle reintroduces the livelock.
@@ -93,15 +94,25 @@ export function isEmbeddedDatabase(db: QueueableDatabase): boolean {
   return !isPostgresDatabase(db);
 }
 
-/**
- * Whether `db` is a PostgreSQL handle.
- *
- * The revision compare-and-swap predicate is dialect-specific (#2620): only
- * PostgreSQL needs the millisecond-truncating, timezone-tolerant guard, and
- * only PostgreSQL can evaluate `date_trunc`.
- */
+/** Whether `db` connects to a PostgreSQL server. */
 export function isPostgresDatabase(db: QueueableDatabase): boolean {
   return /^postgres(?:ql)?:/iu.test(db?.url ?? '');
+}
+
+/**
+ * Whether raw SQL should use PostgreSQL syntax. The SDK's PGlite root
+ * exposes the PGlite client, while its bound handles expose a wrapper with
+ * same `query` and `exec` pair, which the SQLite, DuckDB and JSON adapters
+ * do not expose together. The URL is just a data directory on both
+ * PGlite handles. PGlite remains embedded for concurrency and revision
+ * fallback decisions.
+ */
+export function usesPostgresDialect(db: QueueableDatabase): boolean {
+  if (isPostgresDatabase(db)) return true;
+  const client = db?.client as { query?: unknown; exec?: unknown } | undefined;
+  return (
+    typeof client?.query === 'function' && typeof client.exec === 'function'
+  );
 }
 
 /**

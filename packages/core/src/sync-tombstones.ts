@@ -1,5 +1,8 @@
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { isPostgresDatabase } from './embedded-write-queue.js';
+import {
+  isPostgresDatabase,
+  usesPostgresDialect,
+} from './embedded-write-queue.js';
 import { RuntimeError, ValidationError } from './errors.js';
 import { buildWhere } from './host.js';
 import {
@@ -23,7 +26,7 @@ export interface SyncRowIdentity {
 }
 
 function dialect(db: DatabaseInterface) {
-  return isPostgresDatabase(db)
+  return usesPostgresDialect(db)
     ? 'postgres'
     : isKnownNativeDuckDbHandle(db)
       ? 'duckdb'

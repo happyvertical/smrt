@@ -1,0 +1,9 @@
+{
+  "name": "smrt-pglite-browser-peer",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@electric-sql/pglite": "0.5.15"
+  }
+}

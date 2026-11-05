@@ -71,7 +71,7 @@ import { classifyDatabaseError } from './db-errors.js';
 import {
   isEmbeddedDatabase,
   isFrameworkTransactionHandle,
-  isPostgresDatabase,
+  usesPostgresDialect,
   withEmbeddedWriteTransaction,
 } from './embedded-write-queue.js';
 import { ConfigurationError, DatabaseError } from './errors.js';
@@ -562,7 +562,7 @@ async function selectIds(
 ): Promise<string[]> {
   const found: string[] = [];
   for (const batch of chunkArray(ids, IN_LIST_CHUNK_SIZE)) {
-    const dialect = isPostgresDatabase(db) ? 'postgres' : 'sqlite';
+    const dialect = usesPostgresDialect(db) ? 'postgres' : 'sqlite';
     const where = buildWhere(idPredicate(column, batch), 1, dialect);
     const table = `"${tableName.replaceAll('"', '""')}"`;
     const sql = `SELECT CAST("id" AS VARCHAR) AS "id" FROM ${table} ${where.sql}`;

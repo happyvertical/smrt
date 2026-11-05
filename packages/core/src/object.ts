@@ -36,6 +36,7 @@ import {
   isKnownDatabaseTransaction,
   isPostgresDatabase,
   usesEmbeddedRevisionFallback,
+  usesPostgresDialect,
   withEmbeddedWriteQueue,
   withEmbeddedWriteTransaction,
 } from './embedded-write-queue';
@@ -696,7 +697,7 @@ export class SmrtObject extends SmrtClass {
     if (
       ObjectRegistry.getConfig(this.getResolvedQualifiedName()).idType ===
         'text' ||
-      (!isPostgresDatabase(this.db) && !this.isPositivelyNativeDuckDb())
+      (!usesPostgresDialect(this.db) && !this.isPositivelyNativeDuckDb())
     )
       return id;
     const hex = id.replace(/[-{}]/g, '').toLowerCase();
@@ -2505,7 +2506,7 @@ export class SmrtObject extends SmrtClass {
     if (first.getDatabaseEngineHint() === 'json') return false;
     const duck = first.isNativeDuckDb();
     if (duck && !first.isPositivelyNativeDuckDb()) return false;
-    const engine = isPostgresDatabase(first.db)
+    const engine = usesPostgresDialect(first.db)
       ? 'postgres'
       : duck
         ? 'duckdb'
@@ -3868,7 +3869,7 @@ export class SmrtObject extends SmrtClass {
    * compare/upsert fallback in {@link usesEmbeddedRevisionFallback}.
    */
   private revisionPredicate(revision: Date | string): Record<string, unknown> {
-    if (isPostgresDatabase(this.db)) {
+    if (usesPostgresDialect(this.db)) {
       return postgresRevisionCondition(revision);
     }
     return { updated_at: this.revisionPredicateValue(revision) };
