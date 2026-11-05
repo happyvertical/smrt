@@ -1,6 +1,9 @@
 /** Policy-free, caller-transaction Lead conversion receipts. @packageDocumentation */
 import { createHash } from 'node:crypto';
-import type { SmrtClassOptions } from '@happyvertical/smrt-core';
+import {
+  type SmrtClassOptions,
+  withCallerOwnedDatabaseTransaction,
+} from '@happyvertical/smrt-core';
 import { requireTenantId } from '@happyvertical/smrt-tenancy';
 import { LeadCollection } from '../collections/LeadCollection.js';
 import { SalesActivityCollection } from '../collections/SalesActivityCollection.js';
@@ -145,20 +148,22 @@ export class LeadConversionService {
     }
     const scope = await this.scope(input);
     const id = receiptId(scope);
-    await this.activities.create({
-      id,
-      tenantId: scope.tenantId,
-      subjectKind: 'lead',
-      subjectId: scope.leadId,
-      activityKind: 'lead_conversion',
-      summary: `Lead converted to ${scope.targetKind}`,
-      actorProfileId,
-      metadata: JSON.stringify({
-        targetKind: scope.targetKind,
-        targetId,
-        metadata,
+    await withCallerOwnedDatabaseTransaction(this.activities.db, () =>
+      this.activities.create({
+        id,
+        tenantId: scope.tenantId,
+        subjectKind: 'lead',
+        subjectId: scope.leadId,
+        activityKind: 'lead_conversion',
+        summary: `Lead converted to ${scope.targetKind}`,
+        actorProfileId,
+        metadata: JSON.stringify({
+          targetKind: scope.targetKind,
+          targetId,
+          metadata,
+        }),
       }),
-    });
+    );
     return { ...scope, id, targetId, actorProfileId, metadata };
   }
 

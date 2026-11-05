@@ -52,6 +52,29 @@ export function isFrameworkTransactionHandle(db: DatabaseInterface): boolean {
   return frameworkTransactions.getStore()?.has(db) === true;
 }
 
+const callerTransactions = createAsyncContext<ReadonlySet<DatabaseInterface>>();
+
+/**
+ * Declare a transaction that the caller already opened. Embedded guarded
+ * writes can reuse it. The caller owns commit and rollback.
+ */
+export function withCallerOwnedDatabaseTransaction<T>(
+  db: DatabaseInterface,
+  operation: () => Promise<T>,
+): Promise<T> {
+  return callerTransactions.run(
+    new Set([...(callerTransactions.getStore() ?? []), db]),
+    operation,
+  );
+}
+
+export function isKnownDatabaseTransaction(db: DatabaseInterface): boolean {
+  return (
+    isFrameworkTransactionHandle(db) ||
+    callerTransactions.getStore()?.has(db) === true
+  );
+}
+
 interface QueueableDatabase {
   url?: string;
 }

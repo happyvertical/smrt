@@ -1,5 +1,6 @@
 import type { AITextCompletionOptions, AITool } from '@happyvertical/ai';
 import { createLogger } from '@happyvertical/logger';
+import type { DatabaseInterface } from '@happyvertical/sql';
 import {
   abortJoinedDuckDbTransaction,
   buildCascadePlan,
@@ -32,6 +33,7 @@ import {
 } from './decisions';
 import {
   isEmbeddedDatabase,
+  isKnownDatabaseTransaction,
   isPostgresDatabase,
   usesEmbeddedRevisionFallback,
   withEmbeddedWriteQueue,
@@ -3320,30 +3322,36 @@ export class SmrtObject extends SmrtClass {
         this.getDatabaseEngineHint() !== 'json' &&
         !isJsonAdapterHandle(this.db)
       ) {
-        await withEmbeddedWriteTransaction(
-          this.db,
-          serializeEmbeddedWrite,
-          async (tx) => {
-            const rowId = this.normalizeSyncRowId(explicitNewId);
-            const filter = { table_name: this.tableName, row_id: rowId };
-            await lockSyncRowIdentity(tx, this.tableName, rowId);
-            if (await tx.get(SYNC_TOMBSTONES_TABLE, filter))
-              throw syncRevisionConflict(rowId);
-            await this.withDatabase(tx, write);
-            // A concurrent ordinary delete may finish while an INSERT is
-            // blocked on the live row's primary-key index.
-            if (
-              isPostgresDatabase(tx) &&
-              (await tx.get(SYNC_TOMBSTONES_TABLE, filter))
-            ) {
-              throw syncRevisionConflict(rowId);
-            }
-          },
-          // On a no-savepoint adapter the ledger check precedes the write
-          // under the same queue. The typed nesting refusal can safely join
-          // even when Core first sees DuckDB through a caller-owned handle.
-          usesEmbeddedRevisionFallback(this.db),
-        );
+        const guardedWrite = async (tx: DatabaseInterface) => {
+          const rowId = this.normalizeSyncRowId(explicitNewId);
+          const filter = { table_name: this.tableName, row_id: rowId };
+          await lockSyncRowIdentity(tx, this.tableName, rowId);
+          if (await tx.get(SYNC_TOMBSTONES_TABLE, filter))
+            throw syncRevisionConflict(rowId);
+          await this.withDatabase(tx, write);
+          // A concurrent ordinary delete may finish while an INSERT is
+          // blocked on the live row's primary-key index.
+          if (
+            isPostgresDatabase(tx) &&
+            (await tx.get(SYNC_TOMBSTONES_TABLE, filter))
+          ) {
+            throw syncRevisionConflict(rowId);
+          }
+        };
+        const embedded = usesEmbeddedRevisionFallback(this.db);
+        if (embedded && isKnownDatabaseTransaction(this.db)) {
+          await withEmbeddedWriteQueue(this.db, true, () =>
+            guardedWrite(this.db),
+          );
+        } else {
+          // An unmarked no-savepoint handle may still join on typed refusal.
+          await withEmbeddedWriteTransaction(
+            this.db,
+            serializeEmbeddedWrite,
+            guardedWrite,
+            embedded,
+          );
+        }
       } else {
         await write();
       }

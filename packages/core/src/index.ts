@@ -227,6 +227,7 @@ export {
   isEmbeddedDatabase,
   isPostgresDatabase,
   usesEmbeddedRevisionFallback,
+  withCallerOwnedDatabaseTransaction,
   withEmbeddedWriteQueue,
   withEmbeddedWriteTransaction,
 } from './embedded-write-queue';
