@@ -56,6 +56,8 @@ The rule is in the field default: `price = 0` is an integer column holding minor
 - `regex:\.toFixed\(2\)`
 - `regex:price\w*\s*=\s*0\.0`
 - `regex:DECIMAL\(\d+,\s*2\)`
+- `decimal-field:*_cents`
+- `decimal-field:*_amount`
 
 [^s1]: `packages/core/src/ui-metadata.ts` at `478ae36900`: FIELD_UI_FORMAT_TYPES.
 [^s2]: `packages/core/src/scanner/manifest-generator.ts` at `478ae36900`: ui.format validation against field type.

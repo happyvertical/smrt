@@ -33,7 +33,8 @@
  *
  * Because the object, MCP and agent-surface slices come from the built
  * `smrt-knowledge.json` artifacts, the generator runs after `turbo build`
- * (it is wired after `knowledge:graph`), exactly like the freshness gate that
+ * (it is deliberately NOT part of `pnpm build`, which would refresh a stale page
+ * before the gate could see it), exactly like the freshness gate that
  * already requires built artifacts.
  *
  * ## `generated.at`

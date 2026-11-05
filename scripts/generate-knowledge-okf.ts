@@ -8,8 +8,8 @@
  * generated `components/index.md` and root `index.md`. Hand-authored concept
  * pages (`intents/`, `solutions/`, ...) are never touched.
  *
- * Run it after `turbo build` (it is wired after `knowledge:graph` in
- * `pnpm build`): the model, MCP-tool and agent-surface slices come from the
+ * Run it after `pnpm build` (it is deliberately not part of the build, or the
+ * freshness gate could never see a stale page): the model, MCP-tool and agent-surface slices come from the
  * built knowledge artifacts. `pnpm knowledge:check --strict` fails when a page
  * no longer matches its inputs, so CI catches a stale or hand-edited page.
  * The page format, the `source_revision` definition and the `generated.at`
