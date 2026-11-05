@@ -192,7 +192,9 @@ describe('natural-key ownership on the batch and strict-insert paths', () => {
           sql.startsWith('SELECT "id" FROM "nkb_links"') &&
           !tracked.isPersisted
         ) {
-          await tracked.save({ sync: { originDeviceId: 'another-device' } });
+          await tracked.save({
+            sync: { originDeviceId: 'another-device', revision: 1 },
+          });
         }
         return result;
       });

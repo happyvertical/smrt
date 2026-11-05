@@ -1,6 +1,7 @@
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { NestedTransactionError } from './host.js';
 import { noteNativeDuckDbHandle } from './native-duckdb.js';
+import { inheritDatabaseSyncDeviceId } from './sync-device.js';
 import { createAsyncContext } from './utils/async-context.js';
 
 /**
@@ -41,6 +42,7 @@ import { createAsyncContext } from './utils/async-context.js';
 /** Queue tail per database identity (URL string, or the handle itself). */
 const urlQueues = new Map<string, Promise<unknown>>();
 const handleQueues = new WeakMap<object, Promise<unknown>>();
+const remoteLibSqlHandles = new WeakSet<object>();
 const activeQueueKeys = createAsyncContext<ReadonlySet<string | object>>();
 const frameworkTransactions =
   createAsyncContext<ReadonlySet<DatabaseInterface>>();
@@ -85,7 +87,11 @@ export function isPostgresDatabase(db: QueueableDatabase): boolean {
  */
 export function usesEmbeddedRevisionFallback(db: QueueableDatabase): boolean {
   const url = db?.url ?? '';
-  return isEmbeddedDatabase(db) && !/^(?:https?|libsql):\/\//iu.test(url);
+  return (
+    isEmbeddedDatabase(db) &&
+    !remoteLibSqlHandles.has(db) &&
+    !/^(?:https?|libsql):\/\//iu.test(url)
+  );
 }
 
 /**
@@ -174,6 +180,10 @@ export async function withEmbeddedWriteTransaction<T>(
     try {
       return await transaction((bound) => {
         entered = true;
+        inheritDatabaseSyncDeviceId(db, bound);
+        if (isEmbeddedDatabase(db) && !usesEmbeddedRevisionFallback(db)) {
+          remoteLibSqlHandles.add(bound);
+        }
         return frameworkTransactions.run(
           new Set([...(frameworkTransactions.getStore() ?? []), bound]),
           () => {

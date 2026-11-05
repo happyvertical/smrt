@@ -20,27 +20,36 @@ Adapter-agnostic change-observation spine (`src/change-feed.ts`) — the server 
 
 ## Durable row sync metadata (#4673)
 
-An ordinary row has `syncMetadata === null` until a trusted caller opts in via
-`object.save({ sync: { originDeviceId } })`. This starts its counter at 1.
-Subsequent saves on the loaded object advance the per-row counter by one and
-retain the device unless the caller supplies the current writer's device.
-Tracked creates require a supplied ID and strict insert. Load existing tracked
-rows by ID to update them.
+Configure the current local writer with `setDatabaseSyncDeviceId(db, uuid)`.
+An ordinary row stays untracked until a trusted caller opts in with
+`object.save({ trackSync: true })` or applies an incoming revision. Subsequent
+local saves and timestamp claims advance the counter and stamp the configured
+device. Tracked creates require a supplied ID and strict insert. Load an
+existing tracked row by ID to update it.
 
-A trusted replay supplies `originDeviceId` and a positive, safe-integer
-`revision` in the same save. Core stores that revision exactly. The caller
-chooses whether the incoming version should win and supplies the authenticated
-actor and tenant context. The local `updated_at` still advances independently
-and remains the compare-and-swap token. The metadata and the application fields
-commit together. This API is separate from the generated `sync/apply` protocol.
+A trusted replay supplies `save({ sync: { originDeviceId, revision } })` with
+a positive safe-integer revision. A replay advances the row only when its
+revision is higher, or when the revision is equal and its device ID sorts
+after the stored ID. Core still uses the local `updated_at` compare-and-swap
+predicate. The caller supplies the authenticated actor and tenant context.
+This API is separate from the generated `sync/apply` protocol.
 
-Set `tombstone: true` in that save to persist a sync deletion marker.
-Subsequent ordinary saves retain it. Sync readers must interpret it as a
-deletion, including when reading a full snapshot after feed pruning. General
-ORM reads still return the row, and the change feed observes the save as an
-update. Existing `delete()` remains a physical delete with its configured
-cascades and a retained-for-a-window feed delete. Use a tombstone save when the
-deletion needs to survive that window.
+`delete()` physically removes a tracked row and records its next sync revision
+in `_smrt_sync_tombstones` in the same transaction. Tracked cascade deletes do
+the same. A tracked SET NULL reference stays live and advances its writer,
+revision and timestamp. A trusted incoming `delete({ sync: { originDeviceId,
+revision } })` can record a deletion for an ID that has never been present
+locally. The ledger stores the physical table, row ID, qualified model and
+tenant, and remains available after change-feed retention. Its entries
+represent tombstones. Ordinary model reads only see live rows. A new identity
+can reuse a deleted natural key, and a replay using the deleted ID conflicts.
+
+Remote LibSQL coverage currently depends on an SDK fix for its transaction
+and parameter-binding support. A rollback probe against sqld with
+`@happyvertical/sql@0.111.3` persisted changes even when the callback threw.
+The in-process LibSQL test branch exercises Core’s remote-path selection and
+write predicates. Set `SMRT_TEST_LIBSQL_URL` to exercise the real adapter on
+a disposable sqld database.
 
 ## Credential-bearing tables are never disclosed (#2937)
 

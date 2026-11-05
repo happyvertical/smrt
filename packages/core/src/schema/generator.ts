@@ -52,7 +52,6 @@ import type {
 const syncColumns = {
   _sync_origin_device_id: { type: 'TEXT' },
   _sync_revision: { type: 'INTEGER' },
-  _sync_tombstone: { type: 'BOOLEAN' },
 } as const;
 
 /**

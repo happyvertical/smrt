@@ -245,7 +245,6 @@ describe('service time entries moved to smrt-timesheets (#3288)', () => {
     const syncColumns = {
       _sync_origin_device_id: 'TEXT',
       _sync_revision: 'INTEGER',
-      _sync_tombstone: 'INTEGER',
     };
     const plan = async () => {
       const pending = await getPendingSchemaStatements(db, {

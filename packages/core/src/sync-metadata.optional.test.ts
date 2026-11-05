@@ -2,8 +2,11 @@ import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { pruneChangeFeed } from './change-feed';
 import { SmrtCollection } from './collection';
+import { crossPackageRef } from './decorators';
+import { generateSchemaDiff, getSQLFromDiff } from './migrations/differ';
 import { SmrtObject } from './object';
 import { smrt } from './registry';
+import { setDatabaseSyncDeviceId } from './sync-device';
 import { getTestDatabase } from './testing/database';
 
 @smrt()
@@ -35,8 +38,23 @@ class SyncOptionalKey extends SmrtObject {
   }
 }
 
+@smrt()
+class SyncCascadeChild extends SmrtObject {
+  @crossPackageRef('@happyvertical/smrt-core:SyncNote', { onDelete: 'CASCADE' })
+  noteId?: string;
+}
+
+@smrt()
+class SyncNullableChild extends SmrtObject {
+  @crossPackageRef('@happyvertical/smrt-core:SyncNote', {
+    onDelete: 'SET NULL',
+  })
+  noteId?: string;
+}
+
 @smrt({ tableStrategy: 'sti' })
 class SyncEntry extends SmrtObject {
+  tenantId?: string;
   title = '';
 }
 
@@ -49,6 +67,8 @@ class SyncEntries extends SmrtCollection<SyncEntry> {
   static readonly _itemClass = SyncEntry;
 }
 
+const localDeviceId = '58bcae20-95bc-4e4f-8349-8779ed18dce4';
+const libsqlUrl = process.env.SMRT_TEST_LIBSQL_URL;
 const postgresUrl = process.env.SMRT_TEST_POSTGRES_URL;
 const dialects: ('sqlite' | 'libsql' | 'duckdb' | 'postgres')[] = [
   'sqlite',
@@ -71,25 +91,42 @@ describe.each(dialects)('%s base-object sync metadata', (type) => {
               dbid: crypto.randomUUID(),
             }),
           }
-        : { type: type === 'libsql' ? 'sqlite' : type }),
+        : type === 'libsql' && libsqlUrl
+          ? { db: await getDatabase({ type: 'sqlite', url: libsqlUrl }) }
+          : { type: type === 'libsql' ? 'sqlite' : type }),
       classes: [
         'SyncNote',
         'SyncEntry',
         'SyncDraft',
         'SyncIdRecord',
         'SyncOptionalKey',
+        'SyncCascadeChild',
+        'SyncNullableChild',
       ],
     });
     // Exercise the remote selection against a real SQLite executor without
     // requiring a Turso service.
-    if (type === 'libsql') db.url = 'libsql://sync-test.invalid';
+    if (type === 'libsql' && !libsqlUrl) db.url = 'libsql://sync-test.invalid';
+    setDatabaseSyncDeviceId(db, localDeviceId);
     notes = await SyncNotes.create({ db });
   });
 
   afterEach(async () => {
+    if (type === 'libsql' && libsqlUrl) {
+      for (const table of [
+        'sync_cascade_children',
+        'sync_nullable_children',
+        'sync_notes',
+        'sync_entries',
+        'sync_id_records',
+        'sync_optional_keys',
+      ]) {
+        await db?.query(`DROP TABLE IF EXISTS ${table}`);
+      }
+    }
     if (type === 'postgres') {
       await db?.query(
-        'DROP TABLE IF EXISTS sync_notes, sync_entries, sync_id_records, sync_optional_keys',
+        'DROP TABLE IF EXISTS sync_cascade_children, sync_nullable_children, sync_notes, sync_entries, sync_id_records, sync_optional_keys, sync_wide_migration',
       );
     }
     await db?.close?.();
@@ -98,44 +135,195 @@ describe.each(dialects)('%s base-object sync metadata', (type) => {
   it('advances local revisions, preserves incoming revisions and guards stale writers', async () => {
     const note = await notes.create({ title: 'note' });
     expect(note.syncMetadata).toBeNull();
-    await note.save({ sync: { originDeviceId: 'device-a' } });
+    await note.save({ trackSync: true });
     expect(note.syncMetadata?.revision).toBe(1);
 
     const loaded = await notes.get({ id: note.id });
     const stale = await notes.get({ id: note.id });
     if (!loaded || !stale) throw new Error('Expected persisted note');
     expect(loaded.syncMetadata).toEqual({
-      originDeviceId: 'device-a',
+      originDeviceId: localDeviceId,
       revision: 1,
       tombstone: false,
     });
     await loaded.save();
-    expect(loaded.syncMetadata?.revision).toBe(2);
+    expect(loaded.syncMetadata).toMatchObject({
+      originDeviceId: localDeviceId,
+      revision: 2,
+    });
     await loaded.save({
-      sync: { originDeviceId: 'device-b', revision: 712, tombstone: true },
+      sync: { originDeviceId: 'device-b', revision: 712 },
     });
     await expect(stale.save()).rejects.toMatchObject({
       code: 'RUNTIME_REVISION_CONFLICT',
     });
     expect(stale.syncMetadata?.revision).toBe(1);
-    const tombstone = await notes.get({ id: note.id });
-    if (!tombstone) throw new Error('Expected persisted tombstone');
-    expect(tombstone.syncMetadata).toEqual({
-      originDeviceId: 'device-b',
-      revision: 712,
-      tombstone: true,
+    await expect(
+      loaded.save({ sync: { originDeviceId: 'device-a', revision: 712 } }),
+    ).rejects.toMatchObject({
+      code: 'RUNTIME_SYNC_REVISION_CONFLICT',
     });
-    if (type !== 'postgres') await pruneChangeFeed(db, { maxRows: 1 });
-    expect((await notes.get({ id: note.id }))?.syncMetadata?.tombstone).toBe(
-      true,
-    );
-    await tombstone.save();
-    expect(tombstone.syncMetadata).toMatchObject({
+    if (!loaded.updated_at) throw new Error('Expected row timestamp');
+    await loaded.claimRevision(loaded.updated_at);
+    expect(loaded.syncMetadata).toMatchObject({
       revision: 713,
-      tombstone: true,
+      originDeviceId: localDeviceId,
     });
-    await tombstone.delete();
+    await loaded.delete();
     expect(await notes.get({ id: note.id })).toBeNull();
+    if (type !== 'postgres') await pruneChangeFeed(db, { maxRows: 1 });
+    const tombstone = await db.get('_smrt_sync_tombstones', {
+      table_name: 'sync_notes',
+      row_id: note.id,
+    });
+    expect(Number(tombstone?.revision)).toBe(714);
+    expect(tombstone?.origin_device_id).toBe(localDeviceId);
+    const replacement = await notes.create({
+      title: 'replacement',
+      slug: note.slug,
+    });
+    expect(replacement.id).not.toBe(note.id);
+  });
+
+  it('records tracked cascades and advances tracked SET NULL references', async () => {
+    const note = await notes.create({ title: 'parent' });
+    const cascade = new SyncCascadeChild({
+      db,
+      id: crypto.randomUUID(),
+      _skipLoad: true,
+    });
+    const nullable = new SyncNullableChild({
+      db,
+      id: crypto.randomUUID(),
+      _skipLoad: true,
+    });
+    await cascade.initialize();
+    await nullable.initialize();
+    cascade.noteId = note.id as string;
+    nullable.noteId = note.id as string;
+    await cascade.save({ sync: { originDeviceId: 'remote', revision: 12 } });
+    await nullable.save({ sync: { originDeviceId: 'remote', revision: 21 } });
+    await note.delete();
+    expect(await db.get(cascade.tableName, { id: cascade.id })).toBeNull();
+    expect(
+      await db.get('_smrt_sync_tombstones', {
+        table_name: cascade.tableName,
+        row_id: cascade.id,
+      }),
+    ).toMatchObject({ origin_device_id: localDeviceId });
+    const updated = await db.get(nullable.tableName, { id: nullable.id });
+    expect(updated).toMatchObject({
+      note_id: null,
+      _sync_origin_device_id: localDeviceId,
+    });
+    expect(Number(updated?._sync_revision)).toBe(22);
+    await expect(nullable.save()).rejects.toMatchObject({
+      code: 'RUNTIME_REVISION_CONFLICT',
+    });
+  });
+
+  if (type === 'duckdb' || type === 'postgres') {
+    it('creates and adds wide revision columns on the native backend', async () => {
+      const revision = 2 ** 32 + 19;
+      const note = await notes.create({ title: 'wide revision' });
+      await note.save({ sync: { originDeviceId: 'remote', revision } });
+      expect((await notes.get({ id: note.id }))?.syncMetadata?.revision).toBe(
+        revision,
+      );
+      const table = 'sync_wide_migration';
+      await db.query('CREATE TABLE sync_wide_migration (id TEXT PRIMARY KEY)');
+      const diff = await generateSchemaDiff(db, {
+        [table]: {
+          tableName: table,
+          indexes: [],
+          triggers: [],
+          foreignKeys: [],
+          version: 'test',
+          dependencies: [],
+          columns: {
+            id: { type: 'TEXT', primaryKey: true },
+            _sync_revision: { type: 'INTEGER' },
+          },
+        },
+      });
+      for (const statement of getSQLFromDiff(diff)) await db.query(statement);
+      await db.insert(table, {
+        id: 'wide',
+        _sync_revision: type === 'duckdb' ? BigInt(revision) : revision,
+      });
+      expect(
+        Number((await db.get(table, { id: 'wide' }))?._sync_revision),
+      ).toBe(revision);
+      const { rows } = await db.query(
+        "SELECT table_name, data_type FROM information_schema.columns WHERE table_name IN ('sync_notes', 'sync_wide_migration') AND column_name = '_sync_revision' ORDER BY table_name",
+      );
+      expect(rows.map((row) => String(row.data_type).toUpperCase())).toEqual([
+        'BIGINT',
+        'BIGINT',
+      ]);
+    });
+  }
+
+  it('records an absent incoming tombstone and rejects same-id snapshots', async () => {
+    const id = crypto.randomUUID();
+    const make = async () => {
+      const note = new SyncNote({ db, _skipLoad: true, id, title: 'snapshot' });
+      await note.initialize();
+      return note;
+    };
+    await (await make()).delete({
+      sync: { originDeviceId: 'remote', revision: 12 },
+    });
+    for (const revision of [11, 13]) {
+      await expect(
+        (await make()).save({ sync: { originDeviceId: 'remote', revision } }),
+      ).rejects.toMatchObject({
+        code: 'RUNTIME_SYNC_REVISION_CONFLICT',
+      });
+    }
+    await expect((await make()).save()).rejects.toMatchObject({
+      code: 'RUNTIME_SYNC_REVISION_CONFLICT',
+    });
+    expect(await notes.get({ id })).toBeNull();
+    const local = await notes.create({ title: 'local' });
+    await local.save({ trackSync: true });
+    await local.save();
+    expect(local.syncMetadata).toMatchObject({
+      originDeviceId: localDeviceId,
+      revision: 2,
+    });
+  });
+
+  it('retains the tenant and qualified model of an incoming tombstone', async () => {
+    const id = crypto.randomUUID();
+    const owner = crypto.randomUUID();
+    const incoming = new SyncDraft({ db, id, _skipLoad: true });
+    await incoming.initialize();
+    incoming.tenantId = owner;
+    await incoming.delete({ sync: { originDeviceId: 'remote', revision: 11 } });
+
+    const wrongTenant = new SyncDraft({ db, id, _skipLoad: true });
+    await wrongTenant.initialize();
+    wrongTenant.tenantId = crypto.randomUUID();
+    await expect(
+      wrongTenant.delete({ sync: { originDeviceId: 'remote', revision: 12 } }),
+    ).rejects.toMatchObject({ code: 'RUNTIME_SYNC_REVISION_CONFLICT' });
+
+    const wrongModel = new SyncEntry({ db, id, _skipLoad: true });
+    await wrongModel.initialize();
+    wrongModel.tenantId = owner;
+    await expect(
+      wrongModel.delete({ sync: { originDeviceId: 'remote', revision: 12 } }),
+    ).rejects.toMatchObject({ code: 'RUNTIME_SYNC_REVISION_CONFLICT' });
+    const tombstone = await db.get('_smrt_sync_tombstones', {
+      table_name: 'sync_entries',
+      row_id: id,
+    });
+    expect(tombstone).toMatchObject({
+      model: '@happyvertical/smrt-core:SyncDraft',
+      tenant_id: owner,
+    });
+    expect(Number(tombstone?.revision)).toBe(11);
   });
 
   it('strictly inserts tracked identities and restores metadata on rollback', async () => {
@@ -223,7 +411,7 @@ describe.each(dialects)('%s base-object sync metadata', (type) => {
       externalKey: 'key',
     });
     await tracked.initialize();
-    await tracked.save({ sync: { originDeviceId: 'device-a' } });
+    await tracked.save({ sync: { originDeviceId: 'device-a', revision: 1 } });
     const unloaded = new SyncOptionalKey({
       db,
       id,
@@ -242,24 +430,8 @@ describe.each(dialects)('%s base-object sync metadata', (type) => {
     });
   });
 
-  it('keeps ID upserts working on tables without sync metadata columns', async () => {
-    const records = await SyncIdRecords.create({ db });
-    await db.query('DROP TABLE sync_id_records');
-    await db.query(`CREATE TABLE sync_id_records (
-      id ${type === 'sqlite' || type === 'libsql' ? 'TEXT' : 'UUID'} PRIMARY KEY,
-      slug TEXT, context TEXT, created_at TIMESTAMP, updated_at TIMESTAMP, title TEXT
-    )`);
-    const id = crypto.randomUUID();
-    await records.create({ id, title: 'original' });
-    await records.create({ id, title: 'ordinary update' });
-    expect(await records.get({ id })).toMatchObject({
-      title: 'ordinary update',
-      syncMetadata: null,
-    });
-  });
-
   if (type === 'postgres' || type === 'libsql') {
-    it('rolls back a nullable-key upsert when a tracked row appears after its probe', async () => {
+    it('refuses a nullable-key write when a tracked row appears after its probe', async () => {
       const writer =
         type === 'postgres'
           ? await getDatabase({
@@ -280,7 +452,6 @@ describe.each(dialects)('%s base-object sync metadata', (type) => {
       await tracked.initialize();
       const attacker = new SyncOptionalKey({
         db,
-        id: crypto.randomUUID(),
         _skipLoad: true,
         title: 'overwrite',
         externalKey: null,
@@ -300,7 +471,9 @@ describe.each(dialects)('%s base-object sync metadata', (type) => {
               !interleaved
             ) {
               interleaved = true;
-              await tracked.save({ sync: { originDeviceId: 'other-device' } });
+              await tracked.save({
+                sync: { originDeviceId: 'other-device', revision: 1 },
+              });
             }
             return result;
           });
@@ -308,7 +481,7 @@ describe.each(dialects)('%s base-object sync metadata', (type) => {
       const transaction = db.transaction?.bind(db);
       if (!transaction) throw new Error('Transaction support is required');
       // PostgreSQL rechecks under the advisory lock. Inject after that
-      // bound probe so the test still reaches the post-upsert rollback.
+      // bound probe so the insert must decline the racing tracked row.
       const spy =
         type === 'postgres'
           ? vi.spyOn(db, 'transaction').mockImplementation((work) =>
@@ -424,23 +597,38 @@ describe.each(dialects)('%s base-object sync metadata', (type) => {
         url: postgresUrl,
         dbid: crypto.randomUUID(),
       });
-      const query = db.query.bind(db);
-      const spy = vi.spyOn(db, 'query');
+      const transaction = db.transaction?.bind(db);
+      if (!transaction) throw new Error('Transaction support is required');
       let interleaved = false;
-      spy.mockImplementation(async (sql, ...params) => {
-        if (
-          sql.startsWith('INSERT INTO "sync_id_records"') &&
-          sql.includes('DO UPDATE SET')
-        ) {
-          const otherRecords = await SyncIdRecords.create({ db: writer });
-          const row = await otherRecords.get({ id });
-          if (!row) throw new Error('Expected persisted record');
-          row.title = 'tracked update';
-          await row.save({ sync: { originDeviceId: 'other-device' } });
-          interleaved = true;
-        }
-        return query(sql, ...params);
-      });
+      const spy = vi.spyOn(db, 'transaction').mockImplementation((work) =>
+        transaction(async (tx) => {
+          const query = tx.query.bind(tx);
+          const probe = vi
+            .spyOn(tx, 'query')
+            .mockImplementation(async (sql, ...params) => {
+              if (
+                sql.startsWith('INSERT INTO "sync_id_records"') &&
+                sql.includes('DO UPDATE SET') &&
+                !interleaved
+              ) {
+                const otherRecords = await SyncIdRecords.create({ db: writer });
+                const row = await otherRecords.get({ id });
+                if (!row) throw new Error('Expected persisted record');
+                row.title = 'tracked update';
+                await row.save({
+                  sync: { originDeviceId: 'other-device', revision: 1 },
+                });
+                interleaved = true;
+              }
+              return query(sql, ...params);
+            });
+          try {
+            return await work(tx);
+          } finally {
+            probe.mockRestore();
+          }
+        }),
+      );
       try {
         await expect(
           records.create({ id, title: 'unloaded overwrite' }),

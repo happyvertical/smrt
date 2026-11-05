@@ -278,7 +278,7 @@ for (const type of ['sqlite', 'duckdb', 'postgres'] as const) {
                   ) {
                     interleaved = true;
                     await tracked.save({
-                      sync: { originDeviceId: 'other-device' },
+                      sync: { originDeviceId: 'other-device', revision: 1 },
                     });
                   }
                   return result;

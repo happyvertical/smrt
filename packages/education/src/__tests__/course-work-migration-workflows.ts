@@ -490,7 +490,6 @@ export async function assertWorkbookMigration(
         ? {
             _sync_origin_device_id: null,
             _sync_revision: null,
-            _sync_tombstone: null,
           }
         : {};
     const diff = await new SchemaComparer(db, { engineHint: engine }).compare(

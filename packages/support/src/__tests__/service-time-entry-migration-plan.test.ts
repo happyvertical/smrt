@@ -107,7 +107,6 @@ describe('service_time_entries migration plan after #3288', () => {
       expect(statements).toEqual([
         `ALTER TABLE "${TABLE}" ADD COLUMN "_sync_origin_device_id" TEXT`,
         `ALTER TABLE "${TABLE}" ADD COLUMN "_sync_revision" INTEGER`,
-        `ALTER TABLE "${TABLE}" ADD COLUMN "_sync_tombstone" INTEGER`,
       ]);
       for (const statement of statements) await db.query(statement);
       expect(await plan()).toEqual([]);
