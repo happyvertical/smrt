@@ -96,6 +96,18 @@ const position = $derived.by(() => {
 });
 const current = $derived<Step | null>(steps[position] ?? null);
 
+// Keep the fallback index aligned with the record's latest position so a later
+// withdrawal resumes from where that record actually was.
+$effect(() => {
+  if (
+    cursor.key &&
+    steps[position]?.key === cursor.key &&
+    cursor.index !== position
+  ) {
+    cursor = { key: cursor.key, index: position };
+  }
+});
+
 let pendingKey = $state<string | null>(null);
 let selections = $state<Record<string, string>>({});
 let heading = $state<HTMLElement | null>(null);
@@ -152,16 +164,20 @@ $effect(() => {
 function sortedOptions<T extends { id: string; recommended?: boolean }>(
   options: T[] | undefined,
   recommendedId: string | undefined,
+  reserveOther: boolean,
 ): Array<T & { isRecommended: boolean }> {
-  return (options ?? [])
-    .filter((option) => option.id !== 'other')
-    .map((option) => ({
-      ...option,
-      isRecommended: recommendedId
-        ? option.id === recommendedId
-        : Boolean(option.recommended),
-    }))
-    .sort((a, b) => Number(b.isRecommended) - Number(a.isRecommended));
+  return (
+    (options ?? [])
+      // `other` is reserved for the question form's free-text choice only.
+      .filter((option) => !reserveOther || option.id !== 'other')
+      .map((option) => ({
+        ...option,
+        isRecommended: recommendedId
+          ? option.id === recommendedId
+          : Boolean(option.recommended),
+      }))
+      .sort((a, b) => Number(b.isRecommended) - Number(a.isRecommended))
+  );
 }
 
 function submitAnswer(event: SubmitEvent, question: ProjectQuestionView) {
@@ -260,7 +276,7 @@ function submitDecision(event: SubmitEvent, decision: ProjectDecisionView) {
             <p class="empty">{t(M['projects.interview.not_yours'])}</p>
           {:else if current.kind === 'question'}
             {@const question = current.record}
-            {@const options = sortedOptions(question.options, frame.recommendedOptionId)}
+            {@const options = sortedOptions(question.options, frame.recommendedOptionId, true)}
             <Form onsubmit={(event) => submitAnswer(event, question)}>
               {#if options.length}
                 <fieldset disabled={busy}>
@@ -288,7 +304,7 @@ function submitDecision(event: SubmitEvent, decision: ProjectDecisionView) {
             </Form>
           {:else}
             {@const decision = current.record}
-            {@const options = sortedOptions(decision.options, frame.recommendedOptionId)}
+            {@const options = sortedOptions(decision.options, frame.recommendedOptionId, false)}
             <Form onsubmit={(event) => submitDecision(event, decision)}>
               {#if options.length}
                 <fieldset disabled={busy}>

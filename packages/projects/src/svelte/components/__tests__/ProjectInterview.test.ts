@@ -276,6 +276,56 @@ describe('ProjectInterview', () => {
     expect(screen.getByRole('button', { name: 'Skip for now' })).toBeDisabled();
   });
 
+  it('keeps a decision option whose id is other selectable', async () => {
+    const ondecide = vi.fn();
+    render(ProjectInterview, {
+      props: {
+        decisions: [
+          decision('d1', 'Which hosting?', {
+            options: [
+              { id: 'cloud', label: 'Cloud' },
+              { id: 'other', label: 'Something else' },
+            ],
+          }),
+        ],
+        ondecide,
+      },
+    });
+    await userEvent.click(
+      screen.getByRole('radio', { name: 'Something else' }),
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Save and continue' }),
+    );
+    expect(ondecide).toHaveBeenCalledWith({
+      id: 'd1',
+      outcome: 'other',
+      rationale: '',
+      expectedRevision: 4,
+    });
+  });
+
+  it('resumes from the latest position when the host removes earlier and then submitted records', async () => {
+    const onanswer = vi.fn();
+    const q1 = question('q1', 'One?');
+    const q2 = question('q2', 'Two?');
+    const q3 = question('q3', 'Three?');
+    const view = render(ProjectInterview, {
+      props: { questions: [q1, q2, q3], startIndex: 1, onanswer },
+    });
+    expect(screen.getByRole('heading', { name: 'Two?' })).toBeVisible();
+    await view.rerender({ questions: [q2, q3] });
+    await userEvent.type(screen.getByLabelText('Your answer'), 'Yes');
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Save and continue' }),
+    );
+    expect(onanswer).toHaveBeenCalledTimes(1);
+    await view.rerender({ questions: [q3] });
+    expect(
+      await screen.findByRole('heading', { name: 'Three?' }),
+    ).toBeVisible();
+  });
+
   it('shows an empty state with no records', () => {
     render(ProjectInterview, { props: {} });
     expect(
