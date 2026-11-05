@@ -2853,9 +2853,9 @@ importers:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
         version: link:../vitest
-      '@originjs/vite-plugin-federation':
-        specifier: ^1.4.1
-        version: 1.4.1
+      '@module-federation/vite':
+        specifier: ^1.23.10
+        version: 1.23.10(typescript@6.0.3)(vite@8.1.6(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1))
       '@sveltejs/package':
         specifier: ^2.5.8
         version: 2.5.8(svelte@5.57.1)(typescript@6.0.3)
@@ -6149,6 +6149,39 @@ packages:
     resolution: {integrity: sha512-rgR9yxSaAJ+bcsi/XroT/S2AfPiIWloXAnrdfYSCms9ivVju0ishu/wW0J21Ho6+ZOR1r7RyeRbjiRuF87ix5Q==}
     engines: {node: '>=20'}
 
+  '@module-federation/dts-plugin@2.9.3':
+    resolution: {integrity: sha512-U5H8D36rLuCTS7ZPEAfvqIp6b5OZms3PComHPzFQcg12xlUr31PPi1gd3FbjKVFFvlqyDpEiDZ355fKi9ba5zA==}
+    peerDependencies:
+      typescript: ^4.9.0 || ^5.0.0 || ^6.0.0 || ^7.0.0
+      vue-tsc: '>=1.0.24'
+    peerDependenciesMeta:
+      vue-tsc:
+        optional: true
+
+  '@module-federation/error-codes@2.9.3':
+    resolution: {integrity: sha512-sXWo6XHOFKC1Dcu9DcSA1okZjtIz2y3uM+NJrAoSpeZ9QSPXielkMWT5PtG7MqGE3OQ+/HDawiLK53IOi3NHcQ==}
+
+  '@module-federation/managers@2.9.3':
+    resolution: {integrity: sha512-C9yyp/edzCYs7+yvvQv2cBRd9A5/n9RPkGhn6KMBbchMuKWyn5qbC6pbl70TAkFh3wHRqcyUCIHrMf+Fek0u4A==}
+
+  '@module-federation/runtime-core@2.9.3':
+    resolution: {integrity: sha512-E6AjfIWFgZOEATxf+GzBIg54Ejp7QFNTxtVzwnnhEEu01dErBo7qLjJvEPXGiN5sJTNf2a4HIW/wZTM23skouQ==}
+
+  '@module-federation/runtime@2.9.3':
+    resolution: {integrity: sha512-VCJV1VzKk+jvt+1CcTrslbl3LAKScHFpPxKSviafpMIqeHDWIDEY7ZEbVVJl/GuUjA36R7j0QhOPEjihPcz9/A==}
+
+  '@module-federation/sdk@2.9.3':
+    resolution: {integrity: sha512-cT5ko/JDzGrKe8N+MFPgwb07G8fzmpnZbKZjGjXvT9phagQpiOfV6WQZhu1j+HtO152Frv1vjv/1Hhg2wMUL8g==}
+
+  '@module-federation/third-party-dts-extractor@2.9.3':
+    resolution: {integrity: sha512-jUWFWa5l7j2jb3JU9bfGHZ5luv6XAogMsvJ/yG59AZmhpliPozkyxYRjnbtik85IipZF4Cb06PW9qv5qRRf6OQ==}
+
+  '@module-federation/vite@1.23.10':
+    resolution: {integrity: sha512-GW3ZICvfoCRdmobcGBECVO9RXG1xmexfMa90EmAUV9GeXv59XB2ORgsfgHP9KR92s5onzc6rhwuSXtAkLj9YRg==}
+    engines: {node: ^20.19.0 || >=22.12.0}
+    peerDependencies:
+      vite: 8.1.6
+
   '@msgpackr-extract/msgpackr-extract-darwin-arm64@3.0.4':
     resolution: {integrity: sha512-LCkGo6JDfaBhgST7UpPWgNgLINpcpabaHfyz5OBx75nUYxBsaEPxjnyNjWpeb/xBup/682QnBfRBy2/LvPutZQ==}
     cpu: [arm64]
@@ -6473,10 +6506,6 @@ packages:
   '@opentelemetry/semantic-conventions@1.40.0':
     resolution: {integrity: sha512-cifvXDhcqMwwTlTK04GBNeIe7yyo28Mfby85QXFe1Yk8nmi36Ab/5UQwptOx84SsoGNRg+EVSjwzfSZMy6pmlw==}
     engines: {node: '>=14'}
-
-  '@originjs/vite-plugin-federation@1.4.1':
-    resolution: {integrity: sha512-Uo08jW5pj1t58OUKuZNkmzcfTN2pqeVuAWCCiKf/75/oll4Efq4cHOqSE1FXMlvwZNGDziNdDyBbQ5IANem3CQ==}
-    engines: {node: '>=14.0.0', pnpm: '>=7.0.1'}
 
   '@oxc-parser/binding-android-arm-eabi@0.150.0':
     resolution: {integrity: sha512-oQef2Zu4Prz1KLKznz3HqZzU9uVoA5PMoDZuuLmqms7hKmKSAPzlaMnLllJq3t+rgKmfJJ2siPrpZfFrW06btw==}
@@ -9615,6 +9644,11 @@ packages:
     resolution: {integrity: sha512-FFUtZMpoZ8RqHS3XeXEmHWLA4thH+ZxCv2lOiPIn1Xc7CxrqhWzNSDzD+/chS/zbYezmiwWLdQC09JdQKmthOw==}
     engines: {node: '>=20'}
 
+  isomorphic-ws@5.0.0:
+    resolution: {integrity: sha512-muId7Zzn9ywDsyXgTIafTry2sV3nySZeUDe6YedVd1Hvuuep5AsIlqK+XefWpYTyJG5e503F2xIuT2lcU6rCSw==}
+    peerDependencies:
+      ws: 8.21.0
+
   istanbul-lib-coverage@3.2.2:
     resolution: {integrity: sha512-O8dpsF+r0WV/8MNRKfnmrtCWhuKjxrq2w+jpzBL5UZKTi2LeVWnWOmWRxFlesJONmc+wLAGvKQZEOanko0LFTg==}
     engines: {node: '>=8'}
@@ -9995,10 +10029,6 @@ packages:
   lz-string@1.5.0:
     resolution: {integrity: sha512-h5bgJWpxJNswbU7qCrV0tIKQCaS3blPDrqKWx+QxzuzL1zGUzij9XCWLrSLsJPu5t+eWA/ycetzYAO5IOMcWAQ==}
     hasBin: true
-
-  magic-string@0.27.0:
-    resolution: {integrity: sha512-8UnnX2PeRAPZuN12svgR9j7M1uWMovg/CEnIwIG0LFkXSJJe4PdfUGiTGl8V9bsBHFUtfVINcSyYxd7q+kx9fA==}
-    engines: {node: '>=12'}
 
   magic-string@0.30.21:
     resolution: {integrity: sha512-vd2F4YUyEXKGcLHoq+TEyCjxueSeHnFxyyjNp80yg0XV4vUhnDer/lvvlqM/arB5bXQN5K2/3oinyCRyx8T2CQ==}
@@ -11626,6 +11656,18 @@ packages:
 
   ws@8.21.0:
     resolution: {integrity: sha512-Vsp28b7DRcimFQvrqu2Wek3z1iYxDCWqHYB8Qsnk/S4RfaCQzPGPyBNuVjJV3cd6UiKtUtp6sNM77gWvzcCH+g==}
+    engines: {node: '>=10.0.0'}
+    peerDependencies:
+      bufferutil: ^4.0.1
+      utf-8-validate: '>=5.0.2'
+    peerDependenciesMeta:
+      bufferutil:
+        optional: true
+      utf-8-validate:
+        optional: true
+
+  ws@8.21.3:
+    resolution: {integrity: sha512-201TZ/kPWxoPr/OKWjquZR1SWKXcvxdH+e1xrx89b3YbmzLMFCLfnaG1HFIgWzJOEWZ7MvpK++odZufgYR50Rw==}
     engines: {node: '>=10.0.0'}
     peerDependencies:
       bufferutil: ^4.0.1
@@ -13941,6 +13983,54 @@ snapshots:
       '@modelcontextprotocol/core': 2.4.0
       zod: 4.6.7
 
+  '@module-federation/dts-plugin@2.9.3(typescript@6.0.3)':
+    dependencies:
+      '@module-federation/error-codes': 2.9.3
+      '@module-federation/managers': 2.9.3
+      '@module-federation/sdk': 2.9.3
+      '@module-federation/third-party-dts-extractor': 2.9.3
+      adm-zip: 0.6.1
+      isomorphic-ws: 5.0.0(ws@8.21.3)
+      typescript: 6.0.3
+      undici: 7.30.1
+      ws: 8.21.3
+    transitivePeerDependencies:
+      - bufferutil
+      - utf-8-validate
+
+  '@module-federation/error-codes@2.9.3': {}
+
+  '@module-federation/managers@2.9.3':
+    dependencies:
+      '@module-federation/sdk': 2.9.3
+
+  '@module-federation/runtime-core@2.9.3':
+    dependencies:
+      '@module-federation/error-codes': 2.9.3
+      '@module-federation/sdk': 2.9.3
+
+  '@module-federation/runtime@2.9.3':
+    dependencies:
+      '@module-federation/error-codes': 2.9.3
+      '@module-federation/runtime-core': 2.9.3
+      '@module-federation/sdk': 2.9.3
+
+  '@module-federation/sdk@2.9.3': {}
+
+  '@module-federation/third-party-dts-extractor@2.9.3': {}
+
+  '@module-federation/vite@1.23.10(typescript@6.0.3)(vite@8.1.6(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1))':
+    dependencies:
+      '@module-federation/dts-plugin': 2.9.3(typescript@6.0.3)
+      '@module-federation/runtime': 2.9.3
+      '@module-federation/sdk': 2.9.3
+      vite: 8.1.6(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1)
+    transitivePeerDependencies:
+      - bufferutil
+      - typescript
+      - utf-8-validate
+      - vue-tsc
+
   '@msgpackr-extract/msgpackr-extract-darwin-arm64@3.0.4':
     optional: true
 
@@ -14202,11 +14292,6 @@ snapshots:
       '@opentelemetry/semantic-conventions': 1.40.0
 
   '@opentelemetry/semantic-conventions@1.40.0': {}
-
-  '@originjs/vite-plugin-federation@1.4.1':
-    dependencies:
-      estree-walker: 3.0.3
-      magic-string: 0.27.0
 
   '@oxc-parser/binding-android-arm-eabi@0.150.0':
     optional: true
@@ -17376,6 +17461,10 @@ snapshots:
   isexe@4.0.0:
     optional: true
 
+  isomorphic-ws@5.0.0(ws@8.21.3):
+    dependencies:
+      ws: 8.21.3
+
   istanbul-lib-coverage@3.2.2: {}
 
   istanbul-lib-report@3.0.1:
@@ -17785,10 +17874,6 @@ snapshots:
     optional: true
 
   lz-string@1.5.0: {}
-
-  magic-string@0.27.0:
-    dependencies:
-      '@jridgewell/sourcemap-codec': 1.6.0
 
   magic-string@0.30.21:
     dependencies:
@@ -19572,6 +19657,8 @@ snapshots:
   wrappy@1.0.2: {}
 
   ws@8.21.0: {}
+
+  ws@8.21.3: {}
 
   ws@8.22.0: {}
 

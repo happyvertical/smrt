@@ -82,7 +82,7 @@
     }
   },
   "devDependencies": {
-    "@originjs/vite-plugin-federation": "^1.4.1",
+    "@module-federation/vite": "^1.23.10",
     "@sveltejs/package": "^2.5.8",
     "@sveltejs/vite-plugin-svelte": "^7.3.0",
     "@types/cors": "2.8.19",
