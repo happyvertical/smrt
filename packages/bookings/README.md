@@ -112,6 +112,22 @@ Results are ordered by ascending UUID. Pass the returned `nextCursor` as
 `afterId` with the same filters to fetch another page. A null cursor means
 the page reached the end of the results.
 
+## Lead-bound requests
+
+A dedicated booking may exist before the contact has a project. When the host's
+authority implements the optional `verifyContact(context, contactId)`, a request
+with no project calls it to confirm that the contact exists in the tenant and the
+actor may act for it, and `verifyReferences` never receives that contact. The
+same applies to propose, assent and confirm for such a booking, where
+`verifyReferences` still checks the provider. Without `verifyContact` the contact
+is passed to `verifyReferences` as before. Supervision always requires a project.
+An operator later binds the project with
+`attachProject(context, key, { bookingId, projectId })`: it needs an active
+booking, verifies the contact and project together, is idempotent for the same
+project, refuses a different one with `conflict`, and is recorded in history as
+`attach-project`. Dedicated allocations never carry a project, so attaching does
+not touch reserved capacity.
+
 Use an authenticated tenant/actor context from the host, never from a request
 body. The host's `BookingAuthority` supplies current operator permission and
 the actor's named contact mapping, and must verify that external references

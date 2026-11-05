@@ -13,6 +13,7 @@ export type BookingOperation =
   | 'confirm'
   | 'decline'
   | 'cancel'
+  | 'attach-project'
   | 'read'
   | 'history';
 
@@ -45,6 +46,16 @@ export interface BookingAuthority {
   verifyReferences(
     context: Readonly<BookingContext>,
     references: Readonly<BookingReferences>,
+  ): Promise<boolean>;
+  /**
+   * Optional. Used instead of verifyReferences for the contact when a booking has
+   * no project (a lead-bound request). Must confirm the contact exists in this
+   * tenant and that the actor may act for it. When absent, the contact is passed
+   * to verifyReferences as before.
+   */
+  verifyContact?(
+    context: Readonly<BookingContext>,
+    contactId: string,
   ): Promise<boolean>;
 }
 

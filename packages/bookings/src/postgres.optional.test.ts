@@ -998,6 +998,169 @@ describe.skipIf(!url)('Bookings on PostgreSQL', () => {
     });
   });
 
+  describe('lead-bound requests', () => {
+    async function lead() {
+      const w = await world();
+      const projects = new Set<string>();
+      const seen: BookingReferences[] = [];
+      const contacts: string[] = [];
+      const authority: BookingAuthority = {
+        async access(ctx) {
+          if (ctx.actorId === 'operator') return { operator: true };
+          return ctx.actorId === 'requester'
+            ? { operator: false, contactId: w.customerId }
+            : { operator: false };
+        },
+        async verifyContact(ctx, contactId) {
+          contacts.push(contactId);
+          return ctx.tenantId === w.tenantId && contactId === w.customerId;
+        },
+        async verifyReferences(_ctx, refs) {
+          seen.push(refs);
+          return (
+            (!refs.contactId || refs.contactId === w.customerId) &&
+            (!refs.projectId || projects.has(refs.projectId)) &&
+            (!refs.providerId || refs.providerId === w.providerId)
+          );
+        },
+      };
+      const service = new BookingService(dbA, authority);
+      const request = () =>
+        service.request(w.requester, randomUUID(), {
+          offeringId: w.offering['developer-hour'],
+          contactId: w.customerId,
+        });
+      return { w, service, projects, seen, contacts, request };
+    }
+
+    it('runs a dedicated booking without a project through verifyContact only', async () => {
+      const { w, service, seen, contacts, request } = await lead();
+      const booking = await request();
+      expect(contacts).toEqual([w.customerId]);
+      const proposed = await service.propose(w.operatorContext, randomUUID(), {
+        bookingId: booking.id,
+        providerId: w.providerId,
+        window,
+        terms,
+      });
+      const ref = {
+        bookingId: booking.id,
+        proposalId: proposed.proposalId as string,
+      };
+      await service.assent(w.requester, randomUUID(), ref);
+      await service.confirm(w.operatorContext, randomUUID(), ref);
+      expect(await service.get(w.requester, booking.id)).toMatchObject({
+        status: 'confirmed',
+        projectId: null,
+      });
+      await service.cancel(w.operatorContext, randomUUID(), {
+        bookingId: booking.id,
+        reason: 'Lead went cold',
+      });
+      expect(contacts.length).toBeGreaterThanOrEqual(4);
+      expect(seen.length).toBeGreaterThan(0);
+      expect(seen.every((refs) => refs.contactId === undefined)).toBe(true);
+      // An unmapped actor and an unknown contact are refused by the callback.
+      await expect(
+        service.request(w.operatorContext, randomUUID(), {
+          offeringId: w.offering['developer-hour'],
+          contactId: randomUUID(),
+        }),
+      ).rejects.toMatchObject({ code: 'forbidden' });
+      await expect(
+        service.request(w.requester, randomUUID(), {
+          offeringId: w.offering['supervision-day'],
+          contactId: w.customerId,
+        }),
+      ).rejects.toMatchObject({ code: 'invalid' });
+    });
+
+    it('attaches a project once, idempotently, as an audited operator command', async () => {
+      const { w, service, projects, seen, request } = await lead();
+      const booking = await request();
+      const projectId = randomUUID();
+      const otherProject = randomUUID();
+      projects.add(projectId);
+      projects.add(otherProject);
+      const key = randomUUID();
+      const input = { bookingId: booking.id, projectId };
+      await expect(
+        service.attachProject(w.requester, randomUUID(), input),
+      ).rejects.toMatchObject({ code: 'forbidden' });
+      const receipt = await service.attachProject(
+        w.operatorContext,
+        key,
+        input,
+      );
+      expect(receipt).toEqual({ id: booking.id });
+      expect(seen).toContainEqual({ contactId: w.customerId, projectId });
+      expect(
+        await service.attachProject(w.operatorContext, key, input),
+      ).toEqual(receipt);
+      expect(
+        await service.attachProject(w.operatorContext, randomUUID(), input),
+      ).toEqual(receipt);
+      const operations = (
+        await service.history(w.operatorContext, booking.id)
+      ).map((event) => event.operation);
+      expect(
+        operations.filter((operation) => operation === 'attach-project'),
+      ).toHaveLength(2);
+      await expect(
+        service.attachProject(w.operatorContext, randomUUID(), {
+          bookingId: booking.id,
+          projectId: otherProject,
+        }),
+      ).rejects.toMatchObject({ code: 'conflict' });
+      expect(
+        (
+          await service.listBookings(w.operatorContext, { projectId })
+        ).items.map((item) => item.id),
+      ).toEqual([booking.id]);
+      expect(await service.get(w.requester, booking.id)).toMatchObject({
+        projectId,
+      });
+
+      const closed = await request();
+      await service.cancel(w.operatorContext, randomUUID(), {
+        bookingId: closed.id,
+        reason: 'No longer needed',
+      });
+      await expect(
+        service.attachProject(w.operatorContext, randomUUID(), {
+          bookingId: closed.id,
+          projectId,
+        }),
+      ).rejects.toMatchObject({ code: 'conflict' });
+      const unverified = await request();
+      await expect(
+        service.attachProject(w.operatorContext, randomUUID(), {
+          bookingId: unverified.id,
+          projectId: randomUUID(),
+        }),
+      ).rejects.toMatchObject({ code: 'forbidden' });
+    });
+  });
+
+  it('narrows bookings by contact for operators and only by the caller for others', async () => {
+    const w = await world();
+    const mine = await w.request('developer-hour');
+    const theirs = await w.a.request(w.otherRequester, randomUUID(), {
+      offeringId: w.offering['developer-hour'],
+      contactId: w.otherCustomerId,
+    });
+    const ids = async (ctx: BookingContext, contactId?: string) =>
+      (await w.a.listBookings(ctx, { contactId })).items.map((item) => item.id);
+    expect(await ids(w.operatorContext, w.customerId)).toEqual([mine]);
+    expect(await ids(w.operatorContext, w.otherCustomerId)).toEqual([
+      theirs.id,
+    ]);
+    expect(await ids(w.requester, w.customerId)).toEqual([mine]);
+    await expect(ids(w.requester, w.otherCustomerId)).rejects.toMatchObject({
+      code: 'forbidden',
+    });
+  });
+
   it('serializes cap plus one, retries after release, and rejects capacity reductions', async () => {
     const w = await world();
     const first = await w.prepare();

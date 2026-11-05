@@ -721,6 +721,45 @@ export class BookingService {
     );
   }
 
+  /** Operator command: bind a lead-bound booking to a project once one exists. */
+  async attachProject(
+    context: BookingContext,
+    key: string,
+    input: { bookingId: string; projectId: string },
+  ): Promise<BookingReceipt> {
+    const bookingId = id(input.bookingId);
+    const projectId = id(input.projectId);
+    return this.#write(
+      context,
+      'attach-project',
+      key,
+      { bookingId, projectId },
+      operator,
+      async (tx, ctx) => {
+        const row = await this.#booking(tx, ctx, bookingId, true);
+        if (row.status === 'declined' || row.status === 'cancelled') {
+          throw new BookingError('conflict', 'Booking is no longer active');
+        }
+        if (row.project_id === projectId) return { id: bookingId };
+        if (row.project_id !== null) {
+          throw new BookingError(
+            'conflict',
+            'Booking is already bound to a different project',
+          );
+        }
+        await this.#verify(ctx, { contactId: row.contact_id, projectId });
+        await tx.query(
+          'UPDATE smrt_bookings SET project_id = ? WHERE tenant_id = ? AND id = ?',
+          projectId,
+          ctx.tenantId,
+          bookingId,
+        );
+        return { id: bookingId };
+      },
+      { bookingId },
+    );
+  }
+
   decline(
     context: BookingContext,
     key: string,
@@ -1167,6 +1206,25 @@ export class BookingService {
     ctx: Readonly<BookingContext>,
     refs: BookingReferences,
   ): Promise<void> {
+    if (
+      refs.projectId === undefined &&
+      refs.contactId !== undefined &&
+      this.#authority.verifyContact
+    ) {
+      // A lead-bound booking has no project: the host vouches for the contact alone.
+      if ((await this.#authority.verifyContact(ctx, refs.contactId)) !== true) {
+        throw new BookingError(
+          'forbidden',
+          'Booking references or approval could not be verified',
+        );
+      }
+      const { contactId: _contact, ...others } = refs;
+      const rest = Object.fromEntries(
+        Object.entries(others).filter(([, value]) => value !== undefined),
+      ) as BookingReferences;
+      if (Object.keys(rest).length === 0) return;
+      refs = rest;
+    }
     // Use a detached copy so a host callback cannot change the version being verified and saved.
     if (
       (await this.#authority.verifyReferences(ctx, structuredClone(refs))) !==
