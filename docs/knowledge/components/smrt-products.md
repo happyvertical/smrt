@@ -5,11 +5,11 @@ description: "SMRT products module: triple-purpose microservice template for sta
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T14:39:02Z"
+  at: "2026-11-05T14:56:13Z"
 audience: "internal"
 evidence_level: "source-inspected"
 package_version: "0.60.8"
-source_revision: "sha256:9bda36de8d0c6882e77b106a710aa82f3c87bea6243f032e01b80636e7c6917d"
+source_revision: "sha256:c278cfe9cbd484188adcf53f4742f80562054b518890593e76cfd2b54789b03c"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/products/package.json"
@@ -71,24 +71,8 @@ sources:
 
 ## Models
 
-- `Asset` (collection `assets`, extends `SmrtObject`, STI table)
-- `AssetAssociation` (collection `assetassociations`, extends `SmrtPolymorphicAssociation`)
-- `AssetAssociationCollection` (collection `assetassociations`, extends `SmrtJunctionBase`)
-- `AssetCollection` (collection `assets`, extends `SmrtCollection`)
-- `AssetMetafield` (collection `assetmetafields`, extends `SmrtObject`, STI table)
-- `AssetMetafieldCollection` (collection `assetmetafields`, extends `SmrtCollection`)
-- `AssetStatus` (collection `assetstatuses`, extends `SmrtObject`, STI table)
-- `AssetStatusCollection` (collection `assetstatuses`, extends `SmrtCollection`)
-- `AssetTag` (collection `assettags`, extends `SmrtObject`)
-- `AssetTagCollection` (collection `assettags`, extends `SmrtJunction`)
-- `AssetType` (collection `assettypes`, extends `SmrtObject`, STI table)
-- `AssetTypeCollection` (collection `assettypes`, extends `SmrtCollection`)
-- `BillingRelationship` (collection `billingrelationships`, extends `SmrtObject`)
-- `BillingRelationshipCollection` (collection `billingrelationships`, extends `SmrtCollection`)
 - `Category` (collection `categories`, extends `SmrtObject`, STI table)
 - `CategoryCollection` (collection `categories`, extends `SmrtCollection`)
-- `Folder` (collection `folders`, extends `SmrtHierarchical`)
-- `FolderCollection` (collection `folders`, extends `SmrtCollection`)
 - `Material` (collection `products`, extends `Product`, STI table)
 - `MaterialCollection` (collection `products`, extends `ProductCollection`)
 - `Product` (collection `products`, extends `SmrtObject`, STI table)
@@ -99,38 +83,11 @@ sources:
 - `ProductVariantCollection` (collection `productvariants`, extends `SmrtCollection`)
 - `Sku` (collection `skus`, extends `SmrtObject`)
 - `SkuCollection` (collection `skus`, extends `SmrtCollection`)
-- `SmrtClass` (collection `smrtclasses`)
-- `SmrtCollection` (collection `smrtcollections`, extends `SmrtClass`)
-- `SmrtHierarchical` (collection `smrthierarchicals`, extends `SmrtObject`)
-- `SmrtJunction` (collection `smrtjunctions`, extends `SmrtJunctionBase`)
-- `SmrtJunctionBase` (collection `smrtjunctionbases`, extends `SmrtCollection`)
-- `SmrtObject` (collection `smrtobjects`, extends `SmrtClass`)
-- `SmrtPolymorphicAssociation` (collection `smrtpolymorphicassociations`, extends `SmrtObject`)
 
 ## MCP tools
 
-- `asset_create`: create on `@happyvertical/smrt-assets:Asset`
-- `asset_get`: get on `@happyvertical/smrt-assets:Asset`
-- `asset_list`: list on `@happyvertical/smrt-assets:Asset`
-- `asset_update`: update on `@happyvertical/smrt-assets:Asset`
-- `assetassociation_create`: create on `@happyvertical/smrt-assets:AssetAssociation`
-- `assetassociation_get`: get on `@happyvertical/smrt-assets:AssetAssociation`
-- `assetassociation_list`: list on `@happyvertical/smrt-assets:AssetAssociation`
-- `assetmetafield_create`: create on `@happyvertical/smrt-assets:AssetMetafield`
-- `assetmetafield_get`: get on `@happyvertical/smrt-assets:AssetMetafield`
-- `assetmetafield_list`: list on `@happyvertical/smrt-assets:AssetMetafield`
-- `assetstatus_create`: create on `@happyvertical/smrt-assets:AssetStatus`
-- `assetstatus_get`: get on `@happyvertical/smrt-assets:AssetStatus`
-- `assetstatus_list`: list on `@happyvertical/smrt-assets:AssetStatus`
-- `assettype_create`: create on `@happyvertical/smrt-assets:AssetType`
-- `assettype_get`: get on `@happyvertical/smrt-assets:AssetType`
-- `assettype_list`: list on `@happyvertical/smrt-assets:AssetType`
 - `category_get`: get on `@happyvertical/smrt-products:Category`
 - `category_list`: list on `@happyvertical/smrt-products:Category`
-- `folder_create`: create on `@happyvertical/smrt-assets:Folder`
-- `folder_get`: get on `@happyvertical/smrt-assets:Folder`
-- `folder_list`: list on `@happyvertical/smrt-assets:Folder`
-- `folder_update`: update on `@happyvertical/smrt-assets:Folder`
 - `material_get`: get on `@happyvertical/smrt-products:Material`
 - `material_list`: list on `@happyvertical/smrt-products:Material`
 - `product_get`: get on `@happyvertical/smrt-products:Product`
