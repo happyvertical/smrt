@@ -30,7 +30,7 @@ import { familyClasses } from './family-intake-workflows.js';
 
 export function familyMigrationTests(
   engine: 'sqlite' | 'postgres',
-  factory: (schema: string) => Promise<{
+  factory: (statements: string[]) => Promise<{
     db: DatabaseInterface;
     cleanup: () => Promise<void>;
     restart: () => Promise<DatabaseInterface>;
@@ -69,14 +69,13 @@ export function familyMigrationTests(
       );
     const strategy = getDDLStrategy(engine);
     const plan = planForeignKeyCreation(Object.values(old), engine);
-    const schema = plan.schemas
+    const statements = plan.schemas
       .flatMap((table) => [
         strategy.generateCreateTable(table),
         ...strategy.generateIndexes(table),
       ])
-      .concat(plan.deferredStatements)
-      .join(';\n');
-    const isolated = await factory(schema);
+      .concat(plan.deferredStatements);
+    const isolated = await factory(statements);
     const db = isolated.db;
     const storage = await mkdtemp(join(tmpdir(), 'family-migration-'));
     let restartedDb: DatabaseInterface | undefined;
