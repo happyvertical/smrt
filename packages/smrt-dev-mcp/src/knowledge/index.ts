@@ -54,6 +54,9 @@ import type {
 } from '@happyvertical/smrt-types';
 import { TOOLS } from '../tool-catalog.js';
 import { checkMcpToolDocumentation } from './mcp-docs.js';
+import { checkOkfBundleFreshness } from './okf-bundle.js';
+
+export * from './okf-bundle.js';
 
 export type KnowledgePackageKind = 'smrt' | 'sdk' | 'workspace';
 export type KnowledgeIssueSeverity = 'info' | 'error' | 'warning';
@@ -924,6 +927,8 @@ export async function checkKnowledgeFreshnessFromIndex(
 
   issues.push(...findAgentSurfaceDriftIssues(authoredPackages));
   issues.push(...findKnowledgeGraphIssues(index.rootDir));
+  // Exported consumer bundle (#4689): age plus drift against node_modules.
+  issues.push(...checkOkfBundleFreshness(index.rootDir));
   issues.push(...findStalePatternIssues(index.rootDir, changedFiles));
   issues.push(
     ...findNumericPrecisionIssues(index, authoredPackages, changedFiles),

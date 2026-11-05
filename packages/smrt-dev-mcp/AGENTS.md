@@ -112,6 +112,10 @@ inputs (manifest slice, package AGENTS/module-doc hashes, models, MCP tools, `ag
 `knowledge:check --strict` fails on stale, edited, missing or extra pages and on dangling `/…md` links in
 hand-authored pages. Details: header of `scripts/knowledge-okf.ts`.
 
+Consumer bundle (#4689): `okf-bundle.ts` defines the `.agents/smrt-knowledge/` contract `smrt docs:agents` writes;
+`check-knowledge-freshness` reports its age (`okf-bundle-age` info, `okf-bundle-aged` past 90 days) and flags
+`stale-okf-bundle` when a page's `package_version` no longer matches `node_modules` until `docs:agents` reruns.
+
 ## Agent Skills
 
 Bundled skills live under `skills/`, the Agent Plugins fixed discovery
