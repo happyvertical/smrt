@@ -41,6 +41,8 @@ postgresDescribe('PostgreSQL isolated system-table bootstrap (#2429)', () => {
         context TEXT NOT NULL DEFAULT '',
         created_at TIMESTAMPTZ NOT NULL DEFAULT current_timestamp,
         updated_at TIMESTAMPTZ NOT NULL DEFAULT current_timestamp,
+        _sync_origin_device_id TEXT,
+        _sync_revision BIGINT,
         name TEXT,
         UNIQUE (slug, context)
       )`,
