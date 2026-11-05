@@ -4,9 +4,9 @@ import {
 } from '@happyvertical/smrt-core';
 import { withSystemContext, withTenant } from '@happyvertical/smrt-tenancy';
 import { AccountCollection } from '../collections/AccountCollection.js';
+import { EmailCollection } from '../collections/EmailCollection.js';
 import { MessageCollection } from '../collections/MessageCollection.js';
 import { NotificationDeliveryCollection } from '../collections/NotificationDeliveryCollection.js';
-import { Email } from '../models/Email.js';
 import { EmailAccount } from '../models/EmailAccount.js';
 import type { Message } from '../models/Message.js';
 import type {
@@ -288,6 +288,34 @@ function requireText(value: string | undefined, name: string): string {
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * The id of a delivery's one outbound message: a name-based uuid derived from
+ * the delivery id, so every dispatcher computes the same identity.
+ */
+export async function notificationDeliveryMessageId(
+  deliveryId: string,
+): Promise<string> {
+  const digest = await crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(
+      `smrt-messages:notification-delivery:${deliveryId}`,
+    ),
+  );
+  const bytes = new Uint8Array(digest).slice(0, 16);
+  bytes[6] = ((bytes[6] ?? 0) & 0x0f) | 0x50; // version 5 (name-based)
+  bytes[8] = ((bytes[8] ?? 0) & 0x3f) | 0x80; // RFC 4122 variant
+  const hex = [...bytes].map((byte) => byte.toString(16).padStart(2, '0'));
+  return [
+    hex.slice(0, 4),
+    hex.slice(4, 6),
+    hex.slice(6, 8),
+    hex.slice(8, 10),
+    hex.slice(10, 16),
+  ]
+    .map((group) => group.join(''))
+    .join('-');
 }
 
 /** The correlation id that ties a delivery to its one outbound message. */
@@ -899,9 +927,10 @@ export class NotificationOutboxService {
   }
 
   /**
-   * The delivery's single outbound `Email`, created under the lease. A
-   * message left behind by a crash before its id was recorded is found again
-   * by its correlation id instead of being created twice.
+   * The delivery's single outbound `Email`, created under the lease. Its id
+   * is derived from the delivery id and inserted insert-only, so a stale
+   * dispatcher that resumes after its lease was taken over hits the stored
+   * row (a unique violation) instead of creating a second email.
    */
   private async ensureMessage(
     delivery: NotificationDelivery,
@@ -911,40 +940,43 @@ export class NotificationOutboxService {
       const message = await this.loadMessage(delivery.messageId);
       if (message) return message;
     }
-    const correlationId = notificationDeliveryCorrelationId(
+    const messageId = await notificationDeliveryMessageId(
       delivery.id as string,
     );
-    const messages = await MessageCollection.create({ db: this.options.db });
-    let message: Message | undefined = (
-      await messages.list({
-        where: { tenantId: delivery.tenantId, correlationId },
-        limit: 1,
-      })
-    )[0];
+    let message = await this.loadMessage(messageId);
     if (!message) {
       const body = `${delivery.textBody}\n\n${delivery.href}\n`;
-      const email = new Email({
-        db: this.options.db,
-        tenantId: delivery.tenantId,
-        accountId: delivery.accountId,
-        correlationId,
-        subject: delivery.subject,
-        body,
-        textBody: body,
-        sendStatus: 'pending',
-        // Delivery is owned by the outbox's attempt budget, not the message's.
-        maxRetries: 0,
-      });
-      email.setToAddresses([
-        {
-          address: delivery.recipientAddress,
-          ...(delivery.recipientName ? { name: delivery.recipientName } : {}),
-        },
-      ]);
-      await email.initialize();
-      await email.save();
+      const emails = await EmailCollection.create({ db: this.options.db });
+      try {
+        await emails.create({
+          _insertOnly: true,
+          id: messageId,
+          tenantId: delivery.tenantId,
+          accountId: delivery.accountId,
+          correlationId: notificationDeliveryCorrelationId(
+            delivery.id as string,
+          ),
+          subject: delivery.subject,
+          body,
+          textBody: body,
+          toAddresses: JSON.stringify([
+            {
+              address: delivery.recipientAddress,
+              ...(delivery.recipientName
+                ? { name: delivery.recipientName }
+                : {}),
+            },
+          ]),
+          sendStatus: 'pending',
+          // Delivery is owned by the outbox's attempt budget, not the message's.
+          maxRetries: 0,
+        });
+      } catch (error) {
+        if (!isUniqueViolationError(error)) throw error;
+      }
       // Reload so send()'s compare-and-set sees the stored revision.
-      message = (await this.loadMessage(email.id as string)) ?? email;
+      message = await this.loadMessage(messageId);
+      if (!message) throw new Error('The outbound email could not be stored.');
     }
     if (delivery.messageId !== message.id) {
       if (

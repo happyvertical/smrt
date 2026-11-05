@@ -59,9 +59,11 @@ Per row:
 
 1. Acquire: `status = sending`, new `leaseToken`, `leaseExpiresAt = now + leaseMs`
    (default 5 min; must exceed the slowest provider call), `attempts + 1`.
-2. Create the single outbound `Email` (correlation id
-   `notification-delivery:<deliveryId>`, found again by that id after a crash)
-   and record `messageId`.
+2. Create the single outbound `Email` and record `messageId`. Its id is
+   `notificationDeliveryMessageId(deliveryId)` (a name-based uuid) and it is
+   inserted insert-only, so a crashed or stale dispatcher finds or collides
+   with the stored row instead of creating a second email; its correlation id
+   is `notification-delivery:<deliveryId>`.
 3. Record `handedOffAt`, then call `transport.send({ delivery, message, idempotencyKey })`.
 4. Settle with the lease token: `accepted` → `sent`; `rejected` + `retryable`
    → `pending` after `retryDelayMs(attempts)` (default 1 min · 2ⁿ⁻¹, capped at

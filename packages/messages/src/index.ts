@@ -141,6 +141,7 @@ export {
   type NotificationTransportReconciliation,
   type NotificationTransportRequest,
   notificationDeliveryCorrelationId,
+  notificationDeliveryMessageId,
 } from './services/NotificationOutboxService.js';
 export {
   type PersonaMessageSendResult,

@@ -25,6 +25,7 @@ import {
   type NotificationTransportOutcome,
   type NotificationTransportRequest,
   notificationDeliveryCorrelationId,
+  notificationDeliveryMessageId,
 } from '../services/NotificationOutboxService.js';
 
 const BASE_URL = 'https://work.example.com';
@@ -370,6 +371,49 @@ describe('NotificationOutboxService', () => {
         leased: 0,
         outcomes: [],
       });
+      expect(transport.calls).toHaveLength(1);
+    });
+
+    it('a stale dispatcher resuming after takeover creates no second email', async () => {
+      // Dispatcher 1 stalls in its suppression check (after leasing, before
+      // creating the email); its lease lapses and dispatcher 2 delivers.
+      let stall: () => void = () => {};
+      const stalled = new Promise<void>((resolve) => {
+        stall = resolve;
+      });
+      let checks = 0;
+      const transport = fakeTransport();
+      const slow = service({
+        transport,
+        isSuppressed: async () => {
+          checks += 1;
+          if (checks === 2) await stalled; // the dispatch-time check
+          return false;
+        },
+      });
+      const { delivery } = await slow.enqueueEmail(input());
+      const first = slow.dispatchDue();
+      await vi.waitFor(() => expect(checks).toBe(2));
+
+      clock = new Date(clock.getTime() + 10 * 60_000);
+      expect(
+        (await service({ transport }).dispatchDue()).outcomes[0]?.outcome,
+      ).toBe('sent');
+      // Make the stale dispatcher miss the stored email in its lookup, as if
+      // it had looked before dispatcher 2 inserted: its insert must collide.
+      const lookup = vi
+        .spyOn(MessageCollection.prototype, 'get')
+        .mockResolvedValueOnce(null);
+      stall();
+      expect((await first).outcomes[0]?.outcome).toBe('lease-lost');
+      expect(lookup).toHaveBeenCalled();
+      lookup.mockRestore();
+
+      const messages = await messagesFor(delivery);
+      expect(messages).toHaveLength(1);
+      expect(messages[0]?.id).toBe(
+        await notificationDeliveryMessageId(delivery.id as string),
+      );
       expect(transport.calls).toHaveLength(1);
     });
 
