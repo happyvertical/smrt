@@ -184,6 +184,7 @@ Layer 3 lives under `src/rollup/` and the `./rollup` subpath. See
 confirmation, attributed adjustments, isolation, and transaction contracts.
 Timecards and adjustments have closed generated surfaces and service-only
 model writes; never bypass the instance capability with generic persistence.
+Payroll and jurisdiction policy are not built in: a consumer supplies a `PeriodRulesResolver`, and this package records time evidence and snapshots, not payroll.
 
 Replay hashes the tap AS SENT (action, device `at`, paid, work, and `source`/`device`/`kind` only when present, so older receipts still match) so retries match;
 `replay(taps, { resolveAt, now, refusal })` only changes the stored time, reason and the

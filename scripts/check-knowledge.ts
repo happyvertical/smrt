@@ -1,8 +1,15 @@
 #!/usr/bin/env tsx
 import {
-  checkKnowledgeFreshness,
+  buildKnowledgeIndex,
+  checkKnowledgeFreshnessFromIndex,
+  type KnowledgeIssue,
   renderFreshnessResult,
 } from '../packages/smrt-dev-mcp/src/knowledge/index.js';
+import {
+  buildComponentModels,
+  bundleDirFor,
+  checkBundle,
+} from './knowledge-okf.ts';
 
 type OutputFormat = 'json' | 'markdown';
 
@@ -42,10 +49,34 @@ async function main(): Promise<void> {
     process.exit(2);
   }
 
-  const result = await checkKnowledgeFreshness({
+  const options = {
     changed: hasFlag('--changed'),
     strict: hasFlag('--strict'),
-  });
+  };
+  const index = await buildKnowledgeIndex(options);
+  const result = await checkKnowledgeFreshnessFromIndex(index, options);
+
+  // OKF bundle (#4686): generated component pages must match their current
+  // inputs and every hand-authored absolute link must resolve. Like the other
+  // stale-* findings these are errors under --strict, warnings otherwise.
+  const okfIssues: KnowledgeIssue[] = checkBundle(
+    buildComponentModels(index),
+    bundleDirFor(index.rootDir),
+  ).map((issue) => ({
+    severity: options.strict ? 'error' : 'warning',
+    code: issue.code,
+    message: issue.message,
+    file: issue.file,
+  }));
+  result.issues.push(...okfIssues);
+  result.issueCount = result.issues.length;
+  result.errorCount = result.issues.filter(
+    (i) => i.severity === 'error',
+  ).length;
+  result.warningCount = result.issues.filter(
+    (i) => i.severity === 'warning',
+  ).length;
+  result.ok = result.errorCount === 0;
 
   // The merged root graph (#2863) is checked inside checkKnowledgeFreshness
   // itself (#3070), so the MCP tools and `smrt dev:knowledge-check` report it

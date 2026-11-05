@@ -15,7 +15,8 @@
     "dist/lib",
     "AGENTS.md",
     "agents",
-    "scripts/prepare.mjs"
+    "scripts/prepare.mjs",
+    "dist/smrt-knowledge.okf.md"
   ],
   "exports": {
     ".": {

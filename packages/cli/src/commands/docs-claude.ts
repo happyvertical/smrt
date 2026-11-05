@@ -23,6 +23,15 @@ import {
 } from '@happyvertical/smrt-core/knowledge';
 import type { DomainKnowledgeModuleDoc } from '@happyvertical/smrt-types';
 import type { CLICommand } from '../cli-generator.js';
+import {
+  type BundleExportResult,
+  exportKnowledgeBundle,
+  isBundleSafePackage,
+  loadIntentRows,
+  renderIntentSection,
+  resolveIntentSource,
+  unscopedName,
+} from './docs-knowledge-bundle.js';
 
 export interface PackageInfo {
   name: string;
@@ -127,12 +136,34 @@ function createDocsCommand(config: DocsCommandOptions): CLICommand {
           process.exit(1);
         }
 
+        // Knowledge bundle (#4689): the intent section lists only intents
+        // whose home package is installed in this project.
+        const bundlePackages = packages.filter(isBundleSafePackage);
+        const installedVersions = new Map(
+          bundlePackages.map((pkg) => [unscopedName(pkg.name), pkg.version]),
+        );
+        const intentSource = resolveIntentSource({
+          monorepoRoot,
+          installedCliDirectory: installedDirectories.find(
+            (entry) => entry.name === 'smrt-cli',
+          )?.realDirectory,
+        });
+        const intentRows = intentSource ? loadIntentRows(intentSource) : [];
+        const bundleDirName = 'smrt-knowledge';
+
         const content = generateMarkdown(
           packages,
           rootDocs.length > 0 ? rootDocs : undefined,
           sdkPackages.length > 0 ? sdkPackages : undefined,
           config.generatedBy,
-          { complete: options.complete },
+          {
+            complete: options.complete,
+            intentSection: renderIntentSection(
+              intentRows,
+              installedVersions,
+              bundleDirName,
+            ),
+          },
         );
 
         if (dryRun) {
@@ -146,6 +177,15 @@ function createDocsCommand(config: DocsCommandOptions): CLICommand {
         }
 
         writeFileSync(outputPath, content, 'utf-8');
+
+        const bundle: BundleExportResult | null = exportKnowledgeBundle({
+          bundleDir: join(outputDir, bundleDirName),
+          packages: bundlePackages,
+          monorepoRoot,
+          intentSource,
+          intentRows,
+          exportedBy: config.generatedBy,
+        });
 
         // Export the merged cross-package knowledge graph (#2863) alongside
         // the per-package snapshot, when this run is inside the monorepo
@@ -220,6 +260,16 @@ function createDocsCommand(config: DocsCommandOptions): CLICommand {
         }
         if (graphExported) {
           console.log('   cross-package knowledge graph exported');
+        }
+        if (bundle) {
+          console.log(
+            `   knowledge bundle exported to ${bundle.bundleDir} (${bundle.components} component pages, ${bundle.intents} intent pages)`,
+          );
+          if (bundle.withoutPages.length > 0) {
+            console.log(
+              `   ${bundle.withoutPages.length} installed packages ship no knowledge page`,
+            );
+          }
         }
         console.log('');
       } catch (error) {
@@ -526,7 +576,7 @@ export function generateMarkdown(
   rootDocs?: RootDocInfo[],
   sdkPackages?: PackageInfo[],
   generatedBy = 'smrt docs:agents',
-  options: { complete?: boolean } = {},
+  options: { complete?: boolean; intentSection?: string[] } = {},
 ): string {
   const lines: string[] = [];
 
@@ -536,6 +586,10 @@ export function generateMarkdown(
     'This project uses the SMRT framework. Below are the conventions and patterns for the installed packages.',
   );
   lines.push('');
+
+  if (options.intentSection && options.intentSection.length > 0) {
+    lines.push(...options.intentSection);
+  }
 
   if (rootDocs && rootDocs.length > 0) {
     lines.push('## Framework Documentation');

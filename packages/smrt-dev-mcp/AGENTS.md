@@ -9,7 +9,7 @@ deterministic SMRT ecosystem knowledge, and portable agent workflows.
 |------|---------|
 | `generate-smrt-class` | Generates `@smrt()` class with fields, decorator config, imports |
 | `introspect-project` | Scans project directory for SMRT objects; compact summary by default, `detail: 'full'` for field/schema/method detail |
-| `review-smrt-project` | Advisory downstream ecosystem alignment review for dependencies, storage, app shell, auth/tenancy, and manifest generation |
+| `review-smrt-project` | Advisory downstream ecosystem alignment review for dependencies, storage, app shell, auth/tenancy, manifest generation, and intent-driven hand-rolled-equivalent detection (#4690) |
 | `reflect-knowledge` | Reports deterministic SMRT + HappyVertical SDK knowledge coverage and freshness |
 | `reflect-domain-knowledge` | Reports downstream/domain artifact coverage and freshness |
 | `check-knowledge-freshness` | Runs deterministic agent-doc and stale-reference checks |
@@ -32,6 +32,14 @@ deterministic SMRT ecosystem knowledge, and portable agent workflows.
 `pnpm knowledge:check --strict --format markdown` compares this catalog and the
 README parameter tables to the exported `TOOLS` definitions. Add or change a
 tool schema and its authored documentation in the same commit.
+
+## Intent-driven duplicate detection (#4690)
+
+`review-smrt-project` / `smrt-dev-mcp review` flag hand-rolled equivalents of
+smrt packages from the intent index. The rules (`regex:` tokens become `RegExp`)
+come from the full index packaged in this release, never from the reviewed tree;
+`intentIndexPath` / `--intent-index` is caller-trusted. Details, token kinds and
+the CLI/workflow contract: [agents/intent-duplicates.md](agents/intent-duplicates.md).
 
 ## Knowledge Discovery (#2143)
 
@@ -104,6 +112,18 @@ otherwise emitted docs read `/AGENTS.md` and changed-file matching compares
 against a leading `/` and selects nothing. The root owns any changed path no
 member package owns, mirroring the member-excluded scan.
 
+### OKF component pages (#4686)
+
+`pnpm knowledge:okf` (after `pnpm build`) writes `docs/knowledge/components/<unscoped-name>.md` per
+workspace package from this index; never hand-edit them. `source_revision` is a `sha256` of the page's
+inputs (manifest slice, package AGENTS/module-doc hashes, models, MCP tools, `agentSurface`), not a commit.
+`knowledge:check --strict` fails on stale, edited, missing or extra pages and on dangling `/…md` links in
+hand-authored pages. Details: header of `scripts/knowledge-okf.ts`.
+
+Consumer bundle (#4689): `okf-bundle.ts` defines the `.agents/smrt-knowledge/` contract `smrt docs:agents` writes;
+`check-knowledge-freshness` reports its age (`okf-bundle-age` info, `okf-bundle-aged` past 90 days) and flags
+`stale-okf-bundle` when a page's `package_version` no longer matches `node_modules` until `docs:agents` reruns.
+
 ## Agent Skills
 
 Bundled skills live under `skills/`, the Agent Plugins fixed discovery
@@ -156,6 +176,12 @@ For global MCP client config, do not use `pnpm exec smrt-dev-mcp` unless the MCP
 server is always launched from a repo that installs the package. Prefer an
 absolute `node /path/to/node_modules/@happyvertical/smrt-dev-mcp/dist/index.js`
 launcher or a small wrapper script with an absolute Node path.
+
+This monorepo's `.mcp.json` runs `node scripts/mcp-servers/smrt-dev-mcp.mjs`:
+stdout is protocol-only, the launcher never installs or uses `pnpm exec`/`npx`
+(their stdout banner breaks stdio, #4685), and it falls back to `tsx` on `src/`
+when `dist` is missing or older, so rebuild `dist` after server edits. Guarded by
+`src/launcher-stdio.test.ts`; see [scripts/mcp-servers/README.md](../../scripts/mcp-servers/README.md).
 
 ## MCP Tier Context
 

@@ -825,6 +825,63 @@ describe('SMRT knowledge index', () => {
     );
   });
 
+  it('reads the domain knowledge artifact beside an exported nested manifest (#2923 layout)', async () => {
+    // A triple-purpose package builds its library into dist/lib and declares
+    // that through its export map; nothing sits at the conventional paths.
+    const pkgPath = join(rootDir, 'packages', 'demo', 'package.json');
+    const pkg = JSON.parse(await readFile(pkgPath, 'utf8'));
+    pkg.exports['./manifest.json'] = './dist/lib/manifest.json';
+    await writeFile(pkgPath, JSON.stringify(pkg, null, 2));
+    await mkdir(join(rootDir, 'packages', 'demo', 'dist', 'lib'), {
+      recursive: true,
+    });
+    await writeFile(
+      join(rootDir, 'packages', 'demo', 'dist', 'lib', 'smrt-knowledge.json'),
+      JSON.stringify({
+        schemaVersion: 1,
+        sensitiveFieldsExcluded: true,
+        generatedAt: new Date().toISOString(),
+        packageName: '@happyvertical/smrt-demo',
+        packageVersion: '1.0.0',
+        sourceHashes: {},
+        exports: ['.', './manifest.json'],
+        dependencies: {},
+        smrtDependencies: [],
+        sdkDependencies: [],
+        tags: [],
+        risks: [],
+        prompts: [],
+        objects: [
+          {
+            name: 'NestedArtifact',
+            qualifiedName: '@happyvertical/smrt-demo:NestedArtifact',
+            collection: 'nested_artifacts',
+            fields: [{ name: 'title', type: 'text' }],
+            relationships: [],
+            methods: [],
+            methodSignatures: [],
+            surfaces: [],
+          },
+        ],
+        surfaces: [],
+        agentDoc: '# Nested artifact guidance',
+      }),
+    );
+
+    const index = await buildKnowledgeIndex({ rootDir });
+    const demo = index.packages.find(
+      (pkg) => pkg.name === '@happyvertical/smrt-demo',
+    );
+
+    expect(demo?.objectSource).toBe('domain-artifact');
+    expect(demo?.domainKnowledgePath).toBe(
+      'packages/demo/dist/lib/smrt-knowledge.json',
+    );
+    expect(demo?.objects.map((object) => object.className)).toEqual([
+      'NestedArtifact',
+    ]);
+  });
+
   it('fails freshness when exported domain knowledge is missing', async () => {
     const pkgPath = join(rootDir, 'packages', 'demo', 'package.json');
     const pkg = JSON.parse(await readFile(pkgPath, 'utf8'));

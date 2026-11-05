@@ -95,14 +95,8 @@ it in the same migration also run outside the transaction, in order.
   resumes at the index build — their `error_message` carries a
   `[smrt: concurrent-index phase 1 committed]` marker, so the non-index
   statements that already committed are not re-run.
-- INVALID indexes — the stump a cancelled or timed-out
-  `CREATE INDEX CONCURRENTLY` leaves, which `pg_indexes` still reports as
-  present — are detected via `pg_index.indisvalid` and dropped before the
-  rebuild.
-- `migrations.postgres.useConcurrently: false` vetoes the flag; index DDL then
-  runs inside the atomic transaction (still bounded by the timeouts).
-- Without the flag, a batch containing explicit `CONCURRENTLY` DDL is rejected
-  before the transaction opens — PostgreSQL cannot run it there.
+- INVALID-index cleanup, the `useConcurrently: false` veto, and the explicit-`CONCURRENTLY` rejection:
+  agents/db-migrate-concurrency.md.
 
 ## `doctor`'s agent-surface section (#2591)
 
@@ -283,51 +277,8 @@ exactly those five hardcoded names and nothing else — **never** derived from
 drop `includeDroppedTables` (default `false`, both call sites explicit —
 `differ.ts:450`, `db-diff.ts:210`) deliberately refuses to be.
 
-- Execute-or-refuse, like `db:rollback`: it refuses (non-zero exit, nothing
-  dropped) if any target table has rows, has anything but that table's own
-  expected columns and types, or is referenced by a foreign key anywhere in
-  the live database. A consumer's own unrelated table sharing one of these
-  five names is exactly what the shape check protects.
-- The expected shape is **per table, not one universal baseline**:
-  `smrt_objects`/`smrt_classes`/`smrt_collections` are exactly `id`/`slug`/
-  `context`/`created_at`/`updated_at`, but `smrt_hierarchicals` also
-  requires `parent_id` and `smrt_polymorphic_associations` also requires
-  `meta_type`/`meta_id`/`role`/`sort_order` — `SmrtHierarchical`'s and
-  `SmrtPolymorphicAssociation`'s own real fields, confirmed against a
-  genuine pre-#2644 `db:migrate` run. A table under either of those two
-  names with *only* the plain five columns is refused as unexpected shape,
-  not treated as safe.
-- Companion indexes are enumerated from each table's live schema (never
-  guessed). `smrt_hierarchicals`/`smrt_polymorphic_associations` do not
-  carry the `created_at` list-ordering index the other three do (also
-  empirically confirmed, not assumed).
-- Bounded PostgreSQL execution reuses the same `SET LOCAL lock_timeout` /
-  `statement_timeout` pattern as every other DDL path (#2362). Every target
-  is locked `IN ACCESS EXCLUSIVE MODE` before re-checking it — a plain
-  `SELECT COUNT(*)` alone would not block a concurrent writer — and shape,
-  type, and emptiness are all re-verified inside that transaction
-  immediately before dropping anything, via raw `information_schema.columns`
-  / `PRAGMA table_info` (`getTableSchema()` is not available on the
-  transaction-scoped connection). Only `DROP TABLE` is ever executed —
-  never a `DROP INDEX` by name — so `DROP TABLE`'s own cascade removes the
-  table's indexes identity-safely instead of trusting a possibly-stale
-  planned index name.
-- `--dry-run` prints the exact plan (which tables exist, their companion
-  indexes, and the DROP statements) without executing.
-- Skipping it is safe: a table left behind is inert and permanently orphaned,
-  never written to or read from again. Documented, narrow residual risk, all
-  schema-integrity (never data loss — the target is always verified empty
-  first): DuckDB's adapter does not report foreign keys through
-  `getTableSchema()` at all; this module's reverse-FK scan (like every other
-  PostgreSQL schema tool in this package) only looks at the `public` schema;
-  and foreign keys are checked at planning time only, not re-scanned inside
-  the execution transaction. On PostgreSQL a foreign key that appeared after
-  planning is still caught there — `DROP TABLE` refuses when a real
-  dependent exists, dependency-based, empty parent or not. **This does not
-  hold on SQLite**: its FK enforcement on `DROP TABLE` is row-based, so an
-  empty parent (this command's precondition) drops cleanly past a real
-  foreign key, verified directly. The plan-time scan is the only gate on
-  SQLite/DuckDB, narrower than PostgreSQL's.
+Execute-or-refuse, per-table shape checks, lock/timeout behavior, `--dry-run`, and the residual risks of
+skipping it: agents/db-drop-framework-base-tables.md.
 
 ## Architecture
 
@@ -344,6 +295,19 @@ drop `includeDroppedTables` (default `false`, both call sites explicit —
 - `src/loaders/` — class-loader, local-loader, npm-loader, git-loader, template-loader
 - `src/discovery/manifest-discovery.ts` — manifest auto-discovery
 - `src/commands/docs-claude.ts` — downstream AGENTS.md generation + Claude alias; no object scanning
+- `src/commands/docs-knowledge-bundle.ts` — knowledge-bundle half of `docs:agents`
+
+## docs:agents knowledge bundle (consumer contract)
+
+Beside the output file, `docs:agents` writes `smrt-knowledge/` (`.agents/smrt-knowledge/`; `docs:claude` → `.claude/`):
+`bundle.json` (`smrt-okf-bundle/1`: `exportedAt` kept while content is unchanged, `packages[{name,version,concept}]`,
+`intents`), `components/<unscoped>.md` per installed package shipping `dist/smrt-knowledge.okf.md` with
+`package_version` re-stamped from the installed `package.json`, and `intents/*` limited to intents with ≥1 installed
+home. `smrt-framework.md` leads with `## Find it by intent` over those same intents. Pages come from the published
+artifacts — `scripts/ship-knowledge-pages.mjs` (root `pnpm build`, `prepack-package.js`) copies the committed
+`docs/knowledge` pages into `dist/`; intents ship in smrt-cli `dist/knowledge/intents/` — never from a checkout (monorepo
+runs fall back to `docs/knowledge`). Links to uninstalled packages' pages dangle by design. The shape lives in
+`@happyvertical/smrt-dev-mcp/knowledge` (`okf-bundle.ts`); `dev:knowledge-check` reads it (`stale-okf-bundle`).
 
 ## Gotchas
 
