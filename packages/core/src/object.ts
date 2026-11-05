@@ -900,8 +900,8 @@ export class SmrtObject extends SmrtClass {
    * @internal
    */
   protected setId(id: string): void {
+    if (id !== this._id) this._explicitId = true;
     this._id = id;
-    this._explicitId = true;
   }
 
   /**
@@ -1132,8 +1132,9 @@ export class SmrtObject extends SmrtClass {
     if (!value || value === 'undefined' || value === 'null') {
       throw new Error(`id is required, ${value} given`);
     }
+    // Model normalization may reassign a framework-generated ID unchanged.
+    if (value !== this._id) this._explicitId = true;
     this._id = value;
-    this._explicitId = true;
   }
 
   /**

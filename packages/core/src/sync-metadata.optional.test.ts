@@ -284,6 +284,13 @@ describe.each(dialects)('%s base-object sync metadata', (type) => {
     await expect((await make()).save()).rejects.toMatchObject({
       code: 'RUNTIME_SYNC_REVISION_CONFLICT',
     });
+    const reassigned = new SyncNote({ db, _skipLoad: true });
+    await reassigned.initialize();
+    reassigned.id = id;
+    reassigned.id = id;
+    await expect(reassigned.save()).rejects.toMatchObject({
+      code: 'RUNTIME_SYNC_REVISION_CONFLICT',
+    });
     expect(await notes.get({ id })).toBeNull();
     const local = await notes.create({ title: 'local' });
     await local.save({ trackSync: true });
