@@ -759,7 +759,9 @@ jobs:
         run: |
           echo "🚀 Publishing validated release $RELEASE_VERSION"
 
-          mapfile -t release_files < <(find packages \( -name 'package.json' -o -name 'package.dependencies.json' -o -name 'CHANGELOG.md' -o -name 'template.config.js' -o -name 'smrt-register.ts' \) -print | sort)
+          # Build (dist/) and dependency (node_modules/) output is gitignored;
+          # staging it makes git add refuse the path and abort the release (#4711).
+          mapfile -t release_files < <(find packages -type d \( -name dist -o -name node_modules \) -prune -o \( -name 'package.json' -o -name 'package.dependencies.json' -o -name 'CHANGELOG.md' -o -name 'template.config.js' -o -name 'smrt-register.ts' \) -print | sort)
           git add package.json
           git add -A .changeset
           if [ "${#release_files[@]}" -gt 0 ]; then
@@ -1097,7 +1099,9 @@ jobs:
         run: |
           echo "🚀 Publishing validated release $RELEASE_VERSION"
 
-          mapfile -t release_files < <(find packages \( -name 'package.json' -o -name 'package.dependencies.json' -o -name 'CHANGELOG.md' -o -name 'template.config.js' -o -name 'smrt-register.ts' \) -print | sort)
+          # Build (dist/) and dependency (node_modules/) output is gitignored;
+          # staging it makes git add refuse the path and abort the release (#4711).
+          mapfile -t release_files < <(find packages -type d \( -name dist -o -name node_modules \) -prune -o \( -name 'package.json' -o -name 'package.dependencies.json' -o -name 'CHANGELOG.md' -o -name 'template.config.js' -o -name 'smrt-register.ts' \) -print | sort)
           git add package.json
           git add -A .changeset
           if [ "${#release_files[@]}" -gt 0 ]; then
