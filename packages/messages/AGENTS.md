@@ -54,6 +54,19 @@ The in-app channel: one stored row per person, with read state.
 - Hosts decide who is told (e.g. `SocialPost.createdByUserId` for a failed
   post). New table: consumers run `db:migrate`.
 
+## Notification email outbox (`NotificationDelivery`)
+
+`NotificationOutboxService` is the external-channel counterpart of
+`UserNotificationService`: `enqueueEmail()` stores one delivery per
+`(tenant, recipient, channel, sourceRef)` after the host resolves the
+recipient address and same-tenant sender account (callers never choose an
+address); `dispatchDue()` leases due rows by compare-and-set
+(`NotificationDelivery.transition()`), creates the single outbound `Email`
+under the lease, and settles sent/retry/failed/uncertain. Never resend an
+`uncertain` row automatically. Contract, retry, and reconciliation policy:
+[agents/notification-outbox.md](agents/notification-outbox.md). New table:
+consumers run `db:migrate`.
+
 ## Credential Security
 
 Account credentials stored via tenant-bound `credentialSecretId` →
@@ -63,6 +76,10 @@ directly. Credential descriptor schemas contain field definitions, never values.
 ## Send Lifecycle
 
 `message.send()`: resolves account → creates provider sender → updates sendStatus. Retry support with `maxRetries` budget.
+A failure the provider may still have accepted carries
+`MessageSendResult.outcomeUnknown` (set by `EmailSender` unless
+`isDefiniteSendRejection()` proves a refusal, and when a sender throws) and is
+persisted as `metadata.sendOutcomeUnknown`; never auto-resend it.
 `EmailSender` attaches the message's stored `Attachment` rows (read through
 `Attachment.readContent()`, under the message's tenant context) plus
 `SendEmailOptions.attachments` bytes; an unreadable or file-less row fails the

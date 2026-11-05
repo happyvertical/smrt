@@ -85,6 +85,7 @@ export class EmailSender implements MessageSenderInterface {
       return {
         success: false,
         error: error instanceof Error ? error.message : String(error),
+        ...(isDefiniteSendRejection(error) ? {} : { outcomeUnknown: true }),
         sentAt: new Date(),
       };
     }
@@ -172,4 +173,49 @@ export class EmailSender implements MessageSenderInterface {
 
     return resolved;
   }
+}
+
+/** Error codes the SDK email clients use for a send that was refused. */
+const DEFINITE_EMAIL_ERROR_CODES = new Set([
+  'AUTHENTICATION_ERROR',
+  'AUTHORIZATION_ERROR',
+  'INVALID_MESSAGE',
+  'ATTACHMENT_ERROR',
+]);
+
+/** Socket errors raised before any connection to the server existed. */
+const NEVER_CONNECTED_CODES = new Set([
+  'ECONNREFUSED',
+  'ENOTFOUND',
+  'EHOSTUNREACH',
+  'EAI_AGAIN',
+]);
+
+/**
+ * Whether a provider send error proves the message was not accepted: the
+ * server answered with an SMTP reply code, the SDK classified it as an
+ * authentication/validation failure, a send error accepted no recipient, or
+ * the connection was never made. Anything else (a timeout, a reset
+ * connection, an unclassified error) may have happened after the server took
+ * the message, so its outcome is unknown.
+ */
+export function isDefiniteSendRejection(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const candidates = [error, (error as { cause?: unknown }).cause].filter(
+    (value): value is Record<string, unknown> =>
+      !!value && typeof value === 'object',
+  );
+  for (const candidate of candidates) {
+    if (typeof candidate.responseCode === 'number') return true;
+    if (typeof candidate.code === 'string') {
+      if (DEFINITE_EMAIL_ERROR_CODES.has(candidate.code)) return true;
+      if (NEVER_CONNECTED_CODES.has(candidate.code)) return true;
+    }
+  }
+  const sendError = error as { code?: unknown; accepted?: unknown };
+  return (
+    sendError.code === 'SEND_ERROR' &&
+    Array.isArray(sendError.accepted) &&
+    sendError.accepted.length === 0
+  );
 }
