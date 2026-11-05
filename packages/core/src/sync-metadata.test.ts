@@ -286,23 +286,42 @@ describe.each(dialects)('%s base-object sync metadata', (type) => {
         externalKey: null,
       });
       await attacker.initialize();
-      const get = db.get.bind(db);
-      const spy = vi
-        .spyOn(db, 'get')
-        .mockImplementation(async (table, filter) => {
-          const result = await get(table, filter);
-          if (
-            table === 'sync_optional_keys' &&
-            !Array.isArray(filter) &&
-            filter.external_key === null &&
-            !result &&
-            !interleaved
-          ) {
-            interleaved = true;
-            await tracked.save({ sync: { originDeviceId: 'other-device' } });
-          }
-          return result;
-        });
+      const observeProbe = (reader: DatabaseInterface) => {
+        const get = reader.get.bind(reader);
+        return vi
+          .spyOn(reader, 'get')
+          .mockImplementation(async (table, filter) => {
+            const result = await get(table, filter);
+            if (
+              table === 'sync_optional_keys' &&
+              !Array.isArray(filter) &&
+              filter.external_key === null &&
+              !result &&
+              !interleaved
+            ) {
+              interleaved = true;
+              await tracked.save({ sync: { originDeviceId: 'other-device' } });
+            }
+            return result;
+          });
+      };
+      const transaction = db.transaction?.bind(db);
+      if (!transaction) throw new Error('Transaction support is required');
+      // PostgreSQL rechecks under the advisory lock. Inject after that
+      // bound probe so the test still reaches the post-upsert rollback.
+      const spy =
+        type === 'postgres'
+          ? vi.spyOn(db, 'transaction').mockImplementation((work) =>
+              transaction(async (tx) => {
+                const probe = observeProbe(tx);
+                try {
+                  return await work(tx);
+                } finally {
+                  probe.mockRestore();
+                }
+              }),
+            )
+          : observeProbe(db);
       try {
         await expect(attacker.save()).rejects.toMatchObject({
           code: 'RUNTIME_INVALID_STATE',
@@ -370,6 +389,33 @@ describe.each(dialects)('%s base-object sync metadata', (type) => {
   }
 
   if (type === 'postgres') {
+    it('returns one canonical identity for parallel nullable-key saves', async () => {
+      const inputs = await Promise.all(
+        Array.from({ length: 8 }, (_, index) =>
+          new SyncOptionalKey({
+            db,
+            id: crypto.randomUUID(),
+            _skipLoad: true,
+            externalKey: null,
+            title: `writer ${index}`,
+            created_at: new Date(Date.UTC(2026, 0, index + 1)),
+          }).initialize(),
+        ),
+      );
+      await Promise.all(inputs.map((row) => row.save()));
+      const stored = await db.list('sync_optional_keys', {
+        external_key: null,
+      });
+      expect(stored).toHaveLength(1);
+      expect(new Set(inputs.map((row) => row.id))).toEqual(
+        new Set([stored[0].id]),
+      );
+      const createdAt = new Date(stored[0].created_at).toISOString();
+      expect(
+        new Set(inputs.map((row) => row.created_at?.toISOString())),
+      ).toEqual(new Set([createdAt]));
+    });
+
     it('guards the conflicting row if another connection begins tracking it before the write', async () => {
       const records = await SyncIdRecords.create({ db });
       const { id } = await records.create({ title: 'original' });

@@ -44,6 +44,10 @@ See [audit contract](../../../docs/content/audit-trail.md).
   the per-row path. A late untracked collision updates the existing row in
   place, while a tracked collision rolls back all additions. Callers still
   own the transaction for an atomic remove-and-add replacement.
+- PostgreSQL nullable natural-key upserts recheck an initial miss on the
+  bound transaction under a per-key advisory lock. A late same-owner match
+  keeps its original ID and creation time. An unloaded write to a tracked
+  match fails without committing.
 - `save()` error contract (#2366): unique/PK violation → `ValidationError` `VALIDATION_UNIQUE_CONSTRAINT`, NOT NULL → `VALIDATION_REQUIRED_FIELD`, both on the first attempt on every adapter; any other database failure → `DatabaseError` with the driver error on `cause`
 - `getSlug()`: auto-generates from name → title → label → id
 - `loadRelated(fieldName)`: lazy-loads relationships (cached in `_loadedRelationships` Map)

@@ -3239,7 +3239,7 @@ export class SmrtObject extends SmrtClass {
                   await this.writeNaturalKeyUpsert(
                     data,
                     naturalKeyConflictColumns,
-                    adopted.existing ?? null,
+                    adopted,
                     writeGuard,
                   );
                 }
@@ -3565,9 +3565,10 @@ export class SmrtObject extends SmrtClass {
   private async writeNaturalKeyUpsert(
     data: Record<string, unknown>,
     conflictColumns: string[],
-    existing: Record<string, unknown> | null,
+    adopted: AdoptedNaturalKeyRow,
     writeGuard?: Record<string, unknown>,
-  ) {
+  ): Promise<{ affected: number } | undefined> {
+    const existing = adopted.existing ?? null;
     const postgres = isPostgresDatabase(this.db);
     const crossProcess = !usesEmbeddedRevisionFallback(this.db);
     const guardAdoptedSync =
@@ -3649,6 +3650,37 @@ export class SmrtObject extends SmrtClass {
         conflictColumns.map((column) => [column, data[column]]),
       );
       return withEmbeddedWriteTransaction(this.db, false, async (tx) => {
+        if (postgres) {
+          // The SDK's nullable-key lock begins inside upsert, after our
+          // original identity probe. Serialize the re-read and write so a
+          // late match keeps its original primary key and creation time.
+          await tx.query(
+            'SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))',
+            `smrt.nullable-natural-key:${this.tableName}`,
+            JSON.stringify(
+              Object.keys(filter)
+                .sort()
+                .map((column) => [column, filter[column]]),
+              (_, value) =>
+                typeof value === 'bigint' || typeof value === 'number'
+                  ? String(value)
+                  : value,
+            ),
+          );
+          const current = await tx.get(this.tableName, filter);
+          if (current) {
+            this.adoptNaturalKeyRow(
+              data,
+              current,
+              conflictColumns,
+              filter,
+              adopted,
+            );
+            return this.withDatabase(tx, () =>
+              this.writeNaturalKeyUpsert(data, conflictColumns, adopted),
+            );
+          }
+        }
         const result = await tx.upsert(this.tableName, conflictColumns, data);
         const matching = await tx.list(this.tableName, filter);
         const tracked = matching.find(
@@ -3675,7 +3707,7 @@ export class SmrtObject extends SmrtClass {
       assignments[column] = value;
     }
     return Object.keys(assignments).length === 0
-      ? { operation: 'upsert', affected: 1 }
+      ? { affected: 1 }
       : this.updateDuckDbRowById(existing.id, assignments);
   }
 
@@ -3955,29 +3987,13 @@ export class SmrtObject extends SmrtClass {
         if (atomic) continue;
         return 'insert';
       }
-      this.assertSameNaturalKeyOwner(
+      this.adoptNaturalKeyRow(
         data,
         existing,
         conflictColumns,
         conflictFilter,
+        adopted,
       );
-      if (existing._sync_origin_device_id != null) {
-        throw this.trackedIdentityWriteError(existing.id);
-      }
-      const existingId = existing.id;
-      if (
-        typeof existingId === 'string' &&
-        existingId !== '' &&
-        existingId !== data.id
-      ) {
-        data.id = existingId;
-        adopted.id = existingId;
-        if (existing.created_at != null && existing.created_at !== '') {
-          data.created_at = existing.created_at;
-          adopted.createdAt = existing.created_at;
-        }
-      }
-      adopted.existing = existing;
       return 'upsert';
     }
     throw DatabaseError.queryFailed(
@@ -3986,6 +4002,34 @@ export class SmrtObject extends SmrtClass {
         'The natural key kept colliding with concurrent writes; retry the save.',
       ),
     );
+  }
+
+  private adoptNaturalKeyRow(
+    data: Record<string, unknown>,
+    existing: Record<string, unknown>,
+    conflictColumns: string[],
+    conflictFilter: Record<string, unknown>,
+    adopted: AdoptedNaturalKeyRow,
+  ): void {
+    this.assertSameNaturalKeyOwner(
+      data,
+      existing,
+      conflictColumns,
+      conflictFilter,
+    );
+    if (existing._sync_origin_device_id != null) {
+      throw this.trackedIdentityWriteError(existing.id);
+    }
+    const existingId = existing.id;
+    if (typeof existingId === 'string' && existingId !== '') {
+      data.id = existingId;
+      adopted.id = existingId;
+      if (existing.created_at != null && existing.created_at !== '') {
+        data.created_at = existing.created_at;
+        adopted.createdAt = existing.created_at;
+      }
+    }
+    adopted.existing = existing;
   }
 
   private scopePartialConflictFilter(
