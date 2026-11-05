@@ -239,6 +239,7 @@ export {
   isEmbeddedDatabase,
   isPostgresDatabase,
   usesEmbeddedRevisionFallback,
+  withCallerOwnedDatabaseTransaction,
   withEmbeddedWriteQueue,
   withEmbeddedWriteTransaction,
 } from './embedded-write-queue';
@@ -517,6 +518,7 @@ export * from './signals/index';
 // Idempotent sync-apply batch write contract (#1759) — shared by the runtime
 // REST generator and the generated SvelteKit sync route
 export * from './sync/apply';
+export { setDatabaseSyncDeviceId } from './sync-device.js';
 // System tables and types (note-taking, migrations, registry, signals)
 export * from './system/browser';
 export type {

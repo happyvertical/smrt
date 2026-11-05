@@ -283,13 +283,13 @@ describe('caller-owned native DuckDB transaction delete (#2824)', () => {
     const outcome = await callerTransaction(async (tx) => {
       // The cascade removes the tags and the memory row first; the object's
       // own DELETE then fails, after part of the cascade already ran.
-      const original = tx.delete.bind(tx);
-      vi.spyOn(tx, 'delete').mockImplementation(async (table, where) => {
-        if (table === 'issue_2824_docs') {
+      const original = tx.query.bind(tx);
+      vi.spyOn(tx, 'query').mockImplementation(async (sql, ...params) => {
+        if (sql.startsWith('DELETE FROM "issue_2824_docs" ')) {
           ownDeletes += 1;
           throw new Error('own delete failed');
         }
-        return original(table, where);
+        return original(sql, ...params);
       });
       const error = await doc
         .withDatabase(tx, () => doc.delete())
@@ -320,10 +320,12 @@ describe('caller-owned native DuckDB transaction delete (#2824)', () => {
     const doc = await docWithTagsAndMemory('framework');
     await doc.withTransaction(async (bound) => {
       const tx = bound.db;
-      const original = tx.delete.bind(tx);
-      vi.spyOn(tx, 'delete').mockImplementation(async (table, where) => {
-        if (table === 'issue_2824_docs') throw new Error('own delete failed');
-        return original(table, where);
+      const original = tx.query.bind(tx);
+      vi.spyOn(tx, 'query').mockImplementation(async (sql, ...params) => {
+        if (sql.startsWith('DELETE FROM "issue_2824_docs" ')) {
+          throw new Error('own delete failed');
+        }
+        return original(sql, ...params);
       });
       await expect(bound.delete()).rejects.toThrow('own delete failed');
     });

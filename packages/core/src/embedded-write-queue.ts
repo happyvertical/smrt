@@ -52,27 +52,31 @@ export function isFrameworkTransactionHandle(db: DatabaseInterface): boolean {
   return frameworkTransactions.getStore()?.has(db) === true;
 }
 
-const callerTransactions = createAsyncContext<ReadonlySet<DatabaseInterface>>();
+const callerTransactions = new WeakMap<DatabaseInterface, number>();
 
 /**
- * Declare a transaction that the caller already opened. Embedded guarded
- * writes can reuse it. The caller owns commit and rollback.
+ * Pass the exact bound handle of a transaction the caller already opened.
+ * Never pass a root executor. Embedded guarded writes can reuse this scope.
+ * The caller owns commit and rollback.
  */
-export function withCallerOwnedDatabaseTransaction<T>(
+export async function withCallerOwnedDatabaseTransaction<T>(
   db: DatabaseInterface,
   operation: () => Promise<T>,
 ): Promise<T> {
-  return callerTransactions.run(
-    new Set([...(callerTransactions.getStore() ?? []), db]),
-    operation,
-  );
+  // The exact handle is bound to the caller's transaction, independent of
+  // which promise uses it. Count overlapping scopes and release on rejection.
+  callerTransactions.set(db, (callerTransactions.get(db) ?? 0) + 1);
+  try {
+    return await operation();
+  } finally {
+    const remaining = (callerTransactions.get(db) ?? 1) - 1;
+    if (remaining) callerTransactions.set(db, remaining);
+    else callerTransactions.delete(db);
+  }
 }
 
 export function isKnownDatabaseTransaction(db: DatabaseInterface): boolean {
-  return (
-    isFrameworkTransactionHandle(db) ||
-    callerTransactions.getStore()?.has(db) === true
-  );
+  return isFrameworkTransactionHandle(db) || callerTransactions.has(db);
 }
 
 interface QueueableDatabase {
