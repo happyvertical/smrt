@@ -465,6 +465,42 @@ const isExpensive = await product.is('costs more than the average product');
 const description = await product.do('Write a short marketing description');
 ```
 
+### BYO inference presets and local discovery
+
+From Node application code, import `resolveInferencePreset` and
+`discoverLocalInferenceModels` from `@happyvertical/smrt-core/byo-inference`.
+Pass the options from `resolveInferencePreset(id, { model, apiKey })` to
+`getAI` from `@happyvertical/ai` after checking for `null`. Each preset uses
+the OpenAI-compatible SDK provider and requires an explicit model ID.
+
+| Preset ID | Default API base URL | API key |
+| --- | --- | --- |
+| `openrouter` | `https://openrouter.ai/api/v1` | Required |
+| `lemonade` | `http://127.0.0.1:13305/v1` | Supply if server authentication is enabled |
+| `llama.cpp` | `http://127.0.0.1:9931/v1` | Supply if server authentication is enabled |
+| `lm-studio` | `http://127.0.0.1:1234/v1` | Supply if server authentication is enabled |
+
+The resolver returns `null` for unknown preset IDs, blank model IDs, and
+missing OpenRouter keys. The SDK requires a nonempty key, so keyless local
+options use a fixed synthetic credential.
+
+Call `discoverLocalInferenceModels()` explicitly when the application needs
+to suggest models. It makes parallel, credential-free GET requests to Ollama
+(`127.0.0.1:11434/api/tags`) and Lemonade
+(`127.0.0.1:13305/v1/models`). Each probe has a one-second deadline and
+a 1 MiB response limit. A reachable service with an empty model list returns
+`available: true` and `models: []`. An unreachable service, a service that
+requires authentication, or a failed probe returns `available: false`.
+Discovery excludes Ollama models with upstream model or host metadata.
+Ollama's `baseUrl` is suitable for the SDK's `ollama` provider. Lemonade
+model IDs can be used with the `lemonade` preset.
+
+Provider references are available for [OpenRouter](https://openrouter.ai/developers),
+[Lemonade](https://lemonade-server.ai/docs/api/openai/#get-v1models),
+[llama.cpp](https://github.com/ggml-org/llama.cpp/tree/master/tools/server#quick-start),
+[LM Studio](https://lmstudio.ai/docs/developer/openai-compat), and
+[Ollama](https://github.com/ollama/ollama/blob/main/docs/openapi.yaml).
+
 ### Opt-In Read Cache
 
 SSR apps that re-query read-heavy / write-rare collections on every request
