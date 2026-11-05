@@ -15,6 +15,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { getAgentSkill } from '@happyvertical/smrt-dev-mcp/agent-skills';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { requireCommandHandler } from '../../__tests__/command-handler.js';
 import { docsCommands } from '../docs-claude.js';
@@ -106,6 +107,33 @@ describe('docs:agents skill installation (#4708)', () => {
     expect(readFileSync(join(tempDir, AGENTS_COPY), 'utf-8')).toContain(
       SKILL_MARKER_PREFIX,
     );
+  });
+
+  it('also installs smrt-contribute in a smrt checkout and leaves its identical checked-in copy alone', async () => {
+    writeFileSync(
+      join(tempDir, 'pnpm-workspace.yaml'),
+      'packages:\n  - packages/*\n',
+    );
+    writeFileSync(join(tempDir, 'AGENTS.md'), '# smrt\n');
+    mkdirSync(join(tempDir, 'packages'), { recursive: true });
+    const shipped = getAgentSkill({ name: 'smrt-contribute' }).skillMarkdown;
+    const checkedIn = join(tempDir, '.agents/skills/smrt-contribute/SKILL.md');
+    mkdirSync(join(tempDir, '.agents/skills/smrt-contribute'), {
+      recursive: true,
+    });
+    writeFileSync(checkedIn, shipped);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    await run();
+
+    expect(readFileSync(checkedIn, 'utf-8')).toBe(shipped);
+    expect(warn.mock.calls.flat().join('\n')).not.toContain('smrt-contribute');
+    expect(
+      readFileSync(
+        join(tempDir, '.claude/skills/smrt-contribute/SKILL.md'),
+        'utf-8',
+      ),
+    ).toContain(SKILL_MARKER_PREFIX);
   });
 
   it('writes nothing with --no-install-skills', async () => {

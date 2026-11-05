@@ -5,10 +5,10 @@ description: "Development MCP server for SMRT framework knowledge, review contex
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T16:59:45Z"
+  at: "2026-11-05T17:01:46Z"
 audience: "internal"
 evidence_level: "manifest-described"
-source_revision: "sha256:f47a6a611b18610789a173dc20dc342aab4ea3569d3a16b8662b412623c0f81a"
+source_revision: "sha256:e42997e04807e19683b44eaf325313f6d30e10ef5bb7320bc42e85d1d46b6462"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/smrt-dev-mcp/package.json"
@@ -17,9 +17,12 @@ sources:
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/smrt-dev-mcp/AGENTS.md"
     title: "@happyvertical/smrt-dev-mcp packages/smrt-dev-mcp/AGENTS.md"
   - id: "agents-2"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/smrt-dev-mcp/agents/agent-skills.md"
+    title: "@happyvertical/smrt-dev-mcp packages/smrt-dev-mcp/agents/agent-skills.md"
+  - id: "agents-3"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/smrt-dev-mcp/agents/intent-duplicates.md"
     title: "@happyvertical/smrt-dev-mcp packages/smrt-dev-mcp/agents/intent-duplicates.md"
-  - id: "agents-3"
+  - id: "agents-4"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/smrt-dev-mcp/agents/protocol-conformance.md"
     title: "@happyvertical/smrt-dev-mcp packages/smrt-dev-mcp/agents/protocol-conformance.md"
 ---
@@ -36,6 +39,7 @@ sources:
 ## Documentation
 
 - `packages/smrt-dev-mcp/AGENTS.md`
+- `packages/smrt-dev-mcp/agents/agent-skills.md`
 - `packages/smrt-dev-mcp/agents/intent-duplicates.md`
 - `packages/smrt-dev-mcp/agents/protocol-conformance.md`
 

@@ -99,3 +99,73 @@ describe('smrt-catalog trigger evals', () => {
     expect(description).toContain('stay silent');
   });
 });
+
+describe('smrt-contribute (#4709)', () => {
+  const evals = readEvals('smrt-contribute') as unknown as {
+    positive: Array<{ prompt: string; context: string }>;
+    negative: Array<{ prompt: string; context: string }>;
+  };
+  const skill = getAgentSkill({ name: 'smrt-contribute' });
+  const description = (
+    skill.skillMarkdown.match(/^description: (.+)$/m)?.[1] ?? ''
+  ).toLowerCase();
+
+  it('is registered and covers the contributor traps', () => {
+    expect(listAgentSkills().map((item) => item.name)).toContain(
+      'smrt-contribute',
+    );
+    const body = skill.skillMarkdown;
+    for (const trap of [
+      '--filter @happyvertical/smrt-',
+      'pnpm format',
+      'pnpm lint',
+      'knowledge:check',
+      'knowledge:okf',
+      '92',
+      '.changeset',
+      'README',
+      '--no-verify',
+      'ci: fork-approved',
+      '.github/',
+      'check:agents-chain',
+    ]) {
+      expect(body, `missing ${trap}`).toContain(trap);
+    }
+  });
+
+  it('does not publish the maintainer lifecycle as instructions', () => {
+    // Mentioned only to say it does not apply.
+    expect(skill.skillMarkdown).toContain('does not apply to you');
+    expect(skill.skillMarkdown).not.toMatch(/add `agent: implementation`/);
+  });
+
+  it('names fork and clone contexts and excludes consumers and maintainers', () => {
+    expect(description).toContain('fork or clone');
+    expect(description).toContain('happyvertical/smrt');
+    expect(description).toContain('merely depends on smrt packages');
+    expect(description).toContain('maintainer session');
+    expect(evals.positive.length).toBeGreaterThanOrEqual(5);
+    expect(evals.negative.length).toBeGreaterThanOrEqual(5);
+    for (const item of evals.positive) {
+      expect(['fork', 'clone']).toContain(item.context);
+    }
+    const negativeContexts = evals.negative
+      .map((item) => item.context)
+      .join('|');
+    expect(negativeContexts).toContain('consumer project');
+    expect(negativeContexts).toContain('maintainer session');
+  });
+
+  it('keeps the repository copy identical to the packaged skill', () => {
+    const repoCopy = join(
+      packageRoot,
+      '..',
+      '..',
+      '.agents',
+      'skills',
+      'smrt-contribute',
+      'SKILL.md',
+    );
+    expect(readFileSync(repoCopy, 'utf8')).toBe(skill.skillMarkdown);
+  });
+});

@@ -38,6 +38,14 @@ const AGENT_SKILLS: AgentSkillDefinition[] = [
     skillFile: 'skills/smrt-catalog/SKILL.md',
     references: [],
   },
+  {
+    name: 'smrt-contribute',
+    description:
+      'Contributor skill: the fork pull-request procedure for happyvertical/smrt (CONTRIBUTING.md as steps) for agents working in a fork or clone that is not a maintainer session.',
+    path: 'skills/smrt-contribute/SKILL.md',
+    skillFile: 'skills/smrt-contribute/SKILL.md',
+    references: [],
+  },
 ];
 
 /** Version of the smrt-dev-mcp package that ships these skills. */

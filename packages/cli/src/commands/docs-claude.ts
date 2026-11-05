@@ -242,11 +242,15 @@ function createDocsCommand(config: DocsCommandOptions): CLICommand {
         }
 
         // Skills (#4708): installed under the directory the command runs in.
+        // A smrt checkout is where contributors work, so it also gets
+        // smrt-contribute (#4709); a consumer project does not.
         const skillResults = options['no-install-skills']
           ? []
           : installAgentSkills({
               projectRoot: process.cwd(),
-              skills: ['smrt-catalog'],
+              skills: monorepoRoot
+                ? ['smrt-catalog', 'smrt-contribute']
+                : ['smrt-catalog'],
               generatedBy: config.generatedBy,
             });
 

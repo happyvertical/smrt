@@ -1,0 +1,18 @@
+{
+  "skill": "smrt-contribute",
+  "note": "Trigger eval set. Positive: an outside contributor in a fork or clone of happyvertical/smrt. Negative: a consumer project, or a maintainer session with the control-plane skills. src/agent-skills.test.ts asserts the description covers the positive and negative contexts.",
+  "positive": [
+    { "prompt": "fix a bug in smrt-jobs and open a PR", "context": "fork" },
+    { "prompt": "I cloned happyvertical/smrt; add docs for smrt-core to the README", "context": "clone" },
+    { "prompt": "contribute this change upstream to smrt", "context": "fork" },
+    { "prompt": "open a pull request against happyvertical/smrt from my fork", "context": "fork" },
+    { "prompt": "what do I need to run before sending a PR to smrt?", "context": "clone" }
+  ],
+  "negative": [
+    { "prompt": "add a nightly cleanup job", "context": "consumer project that depends on smrt packages" },
+    { "prompt": "make the Invoice model tenant-aware", "context": "consumer project that depends on smrt packages" },
+    { "prompt": "implement issue #4123", "context": "maintainer session with implement and claim-issue skills" },
+    { "prompt": "run review-cycle and ship the PR", "context": "maintainer session with control-plane skills" },
+    { "prompt": "fix the failing test in my app", "context": "unrelated repository" }
+  ]
+}

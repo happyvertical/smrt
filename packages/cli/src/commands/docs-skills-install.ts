@@ -88,8 +88,12 @@ export function installAgentSkills(options: {
 
   // Resolve and contain every destination before anything is written.
   const plan = options.skills.flatMap((skill) => {
+    const source = getAgentSkill({
+      name: skill,
+      includeReferences: false,
+    }).skillMarkdown;
     const body = withGeneratedMarker(
-      getAgentSkill({ name: skill, includeReferences: false }).skillMarkdown,
+      source,
       skill,
       version,
       options.generatedBy,
@@ -100,16 +104,18 @@ export function installAgentSkills(options: {
         join(dir, skill, 'SKILL.md'),
       );
       assertNoSymlinkOnPath(options.projectRoot, target);
-      return { skill, target, body };
+      return { skill, target, body, source };
     });
   });
 
-  for (const { skill, target, body } of plan) {
+  for (const { skill, target, body, source } of plan) {
     const shown = relative(resolve(options.projectRoot), target);
     let status: SkillInstallStatus = 'installed';
     if (existsSync(target)) {
       const existing = readFileSync(target, 'utf8');
-      if (existing === body) {
+      // A checked-in copy identical to the shipped skill (this repository's
+      // own .agents/skills/smrt-contribute) is already current, not hand-edited.
+      if (existing === body || existing === source) {
         results.push({ skill, path: shown, status: 'unchanged' });
         continue;
       }

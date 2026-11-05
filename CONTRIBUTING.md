@@ -57,13 +57,16 @@ The package's `AGENTS.md` lists its non-obvious invariants and any extra checks.
 ## Using an AI coding agent
 
 You are welcome to use one. This repository is built to be read by agents:
-point yours at [AGENTS.md](AGENTS.md) and the affected package's `AGENTS.md`.
+point yours at the [`smrt-contribute`](.agents/skills/smrt-contribute/SKILL.md)
+skill (the same steps as this guide, with the traps agents hit from a fork),
+[AGENTS.md](AGENTS.md) and the affected package's `AGENTS.md`.
 Two rules apply:
 
 - You submit the PR, so you need to have read and understood every line of it.
 - AGENTS.md and [WORKFLOW.md](WORKFLOW.md) also describe the maintainers'
   internal agent lifecycle: claim labels, dispatch labels, patch trains and
-  review cycles. Contributors don't need any of that; skip it.
+  review cycles. Contributors don't need any of that; skip it, and do not try
+  to load the `implement` or `claim-issue` skills they name.
 
 ## What happens to your pull request
 
