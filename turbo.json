@@ -101,6 +101,7 @@
       ],
       "outputs": [
         "dist/**",
+        ".smrt/smrt-knowledge.json",
         ".next/**",
         "docs/**",
         "tsconfig.*.tsbuildinfo",
