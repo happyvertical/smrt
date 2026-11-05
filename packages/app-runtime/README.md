@@ -138,12 +138,20 @@ runtime) selects the bootstrap tenant; the default is a new tenant with slug
 have separate UUIDv8 identifiers derived with domain-separated HMAC-SHA256
 from the installation's private `secrets/application.secret`. Independent
 installs of the same app get distinct identities and share the global built-in
-role IDs. Restarts reuse the same installation identities. A backup restored
-as the same installation must preserve the secret alongside the database and
-keep it in protected storage. The invitation and active owner membership
-authorize the owner. The same seed derives a separate writer UUID. The local
-runtime binds it to the database so local edits to tracked rows identify this
-installation, including after a restart.
+role IDs. Restarts reuse the same installation identities. Treat
+`secrets/application.secret` as installation identity material. Preserve it
+with the database in protected backups and during a restore or move of the
+same installation. Deleting, replacing, or rotating the file changes the
+derived identities and invalidates existing bootstrap and local MCP tokens.
+Keep only one active installation for a given secret. A copied data root
+retains the same owner, tenant, and writer IDs, and the runtime currently has
+no way to detect that copy. Start independent installations with a fresh data
+root.
+
+The invitation and active owner membership authorize the owner. The same
+seed derives a separate writer UUID. The local runtime binds it to the
+database so local edits to tracked rows identify this installation, including
+after a restart.
 
 A tenant with the selected slug causes `owner_tenant_conflict`, unless
 `adoptExisting: true` explicitly allows adopting an active root tenant with
