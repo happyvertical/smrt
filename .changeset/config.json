@@ -24,6 +24,7 @@
       "@happyvertical/smrt-config",
       "@happyvertical/smrt-content",
       "@happyvertical/smrt-core",
+      "@happyvertical/smrt-desktop",
       "@happyvertical/smrt-dev-mcp",
       "@happyvertical/smrt-education",
       "@happyvertical/smrt-events",
