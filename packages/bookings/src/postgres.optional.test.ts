@@ -8,6 +8,8 @@ import {
   type BookingReferences,
   BookingService,
   migrateBookingsV1,
+  migrateBookingsV2,
+  resolveBookingWindow,
 } from './index.js';
 
 const url = process.env.SMRT_TEST_POSTGRES_URL;
@@ -34,6 +36,7 @@ describe.skipIf(!url)('Bookings on PostgreSQL', () => {
   let dbA: DatabaseInterface;
   let dbB: DatabaseInterface;
   let databaseName: string | undefined;
+  let baseUrl: URL;
 
   beforeAll(async () => {
     const dbUrl = new URL(String(url));
@@ -44,6 +47,7 @@ describe.skipIf(!url)('Bookings on PostgreSQL', () => {
       await admin.query(`CREATE DATABASE ${databaseName}`);
       dbUrl.pathname = `/${databaseName}`;
     }
+    baseUrl = new URL(dbUrl);
     const second = new URL(dbUrl);
     dbUrl.searchParams.set('application_name', 'smrt-bookings-a');
     second.searchParams.set('application_name', 'smrt-bookings-b');
@@ -63,6 +67,7 @@ describe.skipIf(!url)('Bookings on PostgreSQL', () => {
       .pid;
     expect(first).not.toBe(next);
     await migrateBookingsV1(dbA);
+    await migrateBookingsV2(dbA);
   });
 
   afterAll(async () => {
@@ -74,6 +79,36 @@ describe.skipIf(!url)('Bookings on PostgreSQL', () => {
       await admin?.close?.();
     }
   });
+
+  const toronto = (date: string, from = '09:00', to = '17:00') => ({
+    zone: 'America/Toronto',
+    start: `${date}T${from}-05:00`,
+    end: `${date}T${to}-05:00`,
+  });
+
+  async function torontoWorld(dates = ['2027-03-01', '2027-03-02']) {
+    const w = await world();
+    await w.a.declareAvailability(w.operatorContext, randomUUID(), {
+      providerId: w.otherProviderId,
+      zone: 'America/Toronto',
+      windows: dates.map((date) => ({
+        start: `${date}T09:00-05:00`,
+        end: `${date}T17:00-05:00`,
+        capacity: 1,
+        supervision: false,
+      })),
+    });
+    const dayOffering = randomUUID();
+    await w.a.configureOffering(w.operatorContext, randomUUID(), {
+      offeringId: dayOffering,
+      kind: 'developer-hour',
+      unit: 'day',
+      priceCents: 150000,
+      currency: 'CAD',
+      enabled: true,
+    });
+    return { ...w, dayOffering };
+  }
 
   async function waitOnLock(fragment: string) {
     await expect
@@ -108,6 +143,7 @@ describe.skipIf(!url)('Bookings on PostgreSQL', () => {
     };
     const authority: BookingAuthority = {
       async access(ctx, _operation) {
+        if (ctx.actorId === 'denied') return null;
         if (ctx.actorId === 'operator') return { operator: rights.operator };
         return {
           operator: false,
@@ -247,6 +283,386 @@ describe.skipIf(!url)('Bookings on PostgreSQL', () => {
       prepare,
     };
   }
+
+  it('upgrades v1 rows additively and keeps their reservations working', async () => {
+    const name = `smrt_bookings_${randomUUID().replaceAll('-', '')}`;
+    await dbA.query(`CREATE DATABASE ${name}`);
+    const target = new URL(baseUrl);
+    target.pathname = `/${name}`;
+    const old = await getDatabase({
+      type: 'postgres',
+      url: String(target),
+      cache: false,
+    });
+    try {
+      await migrateBookingsV1(old);
+      const tenantId = randomUUID();
+      const hourOffering = randomUUID();
+      const supervisionOffering = randomUUID();
+      const providerId = randomUUID();
+      const customerId = randomUUID();
+      const projectId = randomUUID();
+      const planId = randomUUID();
+      const slot = resolveBookingWindow(window);
+      const declaredWindow = {
+        ...resolveBookingWindow({
+          zone: 'UTC',
+          start: '2027-01-01T09:00+00:00',
+          end: '2027-01-01T12:00+00:00',
+        }),
+        capacity: 1,
+        supervision: false,
+      };
+      const q = (sql: string, ...params: unknown[]) =>
+        old.query(sql, ...params);
+      await q(
+        `INSERT INTO smrt_booking_offerings (tenant_id, id, kind, enabled) VALUES (?, ?, 'developer-hour', true), (?, ?, 'supervision-day', true)`,
+        tenantId,
+        hourOffering,
+        tenantId,
+        supervisionOffering,
+      );
+      await q(
+        `INSERT INTO smrt_booking_resources (tenant_id, id, windows) VALUES (?, ?, ?)`,
+        tenantId,
+        providerId,
+        JSON.stringify([declaredWindow]),
+      );
+      const hourBooking = randomUUID();
+      const proposalId = randomUUID();
+      await q(
+        `INSERT INTO smrt_bookings (tenant_id, id, offering_id, contact_id, kind, status) VALUES (?, ?, ?, ?, 'developer-hour', 'requested')`,
+        tenantId,
+        hourBooking,
+        hourOffering,
+        customerId,
+      );
+      await q(
+        `INSERT INTO smrt_booking_proposals (tenant_id, booking_id, id, provider_id, coverage, terms, approved_plan) VALUES (?, ?, ?, ?, ?, ?, NULL)`,
+        tenantId,
+        hourBooking,
+        proposalId,
+        providerId,
+        JSON.stringify(slot),
+        JSON.stringify(terms),
+      );
+      await q(
+        `UPDATE smrt_bookings SET status = 'confirmed', proposal_id = ?, assented_proposal_id = ?, confirmed_proposal_id = ? WHERE tenant_id = ? AND id = ?`,
+        proposalId,
+        proposalId,
+        proposalId,
+        tenantId,
+        hourBooking,
+      );
+      await q(
+        `INSERT INTO smrt_booking_allocations (tenant_id, booking_id, proposal_id, provider_id, project_id, exclusive, start_at, end_at) VALUES (?, ?, ?, ?, NULL, true, ?, ?)`,
+        tenantId,
+        hourBooking,
+        proposalId,
+        providerId,
+        slot.startUtc,
+        slot.endUtc,
+      );
+      const supervisionBooking = randomUUID();
+      await q(
+        `INSERT INTO smrt_bookings (tenant_id, id, offering_id, contact_id, project_id, kind, status) VALUES (?, ?, ?, ?, ?, 'supervision-day', 'requested')`,
+        tenantId,
+        supervisionBooking,
+        supervisionOffering,
+        customerId,
+        projectId,
+      );
+      void planId;
+
+      await migrateBookingsV2(old);
+
+      const authority: BookingAuthority = {
+        async access(ctx) {
+          return ctx.actorId === 'operator'
+            ? { operator: true }
+            : { operator: false, contactId: customerId };
+        },
+        verifyReferences: async () => true,
+      };
+      const service = new BookingService(old, authority);
+      const operatorContext = { tenantId, actorId: 'operator' };
+      const requester = { tenantId, actorId: 'requester' };
+      const offerings = (await service.listOfferings(operatorContext)).items;
+      expect(offerings).toEqual(
+        expect.arrayContaining([
+          {
+            id: hourOffering,
+            kind: 'developer-hour',
+            unit: 'hour',
+            priceCents: null,
+            currency: null,
+            title: '',
+            description: '',
+            public: false,
+            enabled: true,
+          },
+          {
+            id: supervisionOffering,
+            kind: 'supervision-day',
+            unit: 'day',
+            priceCents: null,
+            currency: null,
+            title: '',
+            description: '',
+            public: false,
+            enabled: true,
+          },
+        ]),
+      );
+      const upgraded = await service.get(requester, hourBooking);
+      expect(upgraded).toMatchObject({
+        unit: 'hour',
+        quantity: 1,
+        status: 'confirmed',
+      });
+      expect(upgraded.proposal).toMatchObject({
+        unit: 'hour',
+        quantity: 1,
+        unitPriceCents: null,
+        currency: null,
+        totalCents: null,
+        window: slot,
+        windows: [slot],
+      });
+      expect(await service.get(requester, supervisionBooking)).toMatchObject({
+        unit: 'day',
+        quantity: 1,
+      });
+
+      // The v1 allocation still blocks, and cancelling it frees the window.
+      const next = await service.request(requester, randomUUID(), {
+        offeringId: hourOffering,
+        contactId: customerId,
+      });
+      const proposed = await service.propose(operatorContext, randomUUID(), {
+        bookingId: next.id,
+        providerId,
+        window,
+        terms,
+      });
+      const nextRef = {
+        bookingId: next.id,
+        proposalId: proposed.proposalId as string,
+      };
+      await service.assent(requester, randomUUID(), nextRef);
+      await expect(
+        service.confirm(operatorContext, randomUUID(), nextRef),
+      ).rejects.toMatchObject({ code: 'unavailable' });
+      await service.cancel(operatorContext, randomUUID(), {
+        bookingId: hourBooking,
+        reason: 'Upgrade check',
+      });
+      await expect(
+        service.confirm(operatorContext, randomUUID(), nextRef),
+      ).resolves.toMatchObject({ id: next.id });
+    } finally {
+      await old.close?.();
+      await dbA.query(`DROP DATABASE IF EXISTS ${name}`);
+    }
+  });
+
+  it('freezes a priced multi-window proposal and reserves every segment', async () => {
+    const w = await torontoWorld();
+    const booking = await w.a.request(w.requester, randomUUID(), {
+      offeringId: w.dayOffering,
+      contactId: w.customerId,
+      quantity: 2,
+    });
+    const windows = [toronto('2027-03-02'), toronto('2027-03-01')];
+    const proposed = await w.a.propose(w.operatorContext, randomUUID(), {
+      bookingId: booking.id,
+      providerId: w.otherProviderId,
+      windows,
+      terms,
+    });
+    const ref = {
+      bookingId: booking.id,
+      proposalId: proposed.proposalId as string,
+    };
+    const expected = {
+      unit: 'day',
+      quantity: 2,
+      unitPriceCents: 150000,
+      currency: 'CAD',
+      totalCents: 300000,
+      window: {
+        start: '2027-03-01T09:00-05:00',
+        end: '2027-03-02T17:00-05:00',
+      },
+    };
+    const proposal = await w.a.getProposal(
+      w.requester,
+      booking.id,
+      ref.proposalId,
+    );
+    expect(proposal).toMatchObject(expected);
+    expect(proposal.windows.map((entry) => entry.start)).toEqual([
+      '2027-03-01T09:00-05:00',
+      '2027-03-02T09:00-05:00',
+    ]);
+    expect(await w.a.get(w.requester, booking.id)).toMatchObject({
+      unit: 'day',
+      quantity: 2,
+    });
+    await w.a.configureOffering(w.operatorContext, randomUUID(), {
+      offeringId: w.dayOffering,
+      kind: 'developer-hour',
+      unit: 'day',
+      priceCents: 999,
+      currency: 'CAD',
+      enabled: true,
+    });
+    expect(
+      await w.a.getProposal(w.requester, booking.id, ref.proposalId),
+    ).toMatchObject(expected);
+    expect(
+      (await w.a.listOfferings(w.operatorContext)).items.find(
+        (o) => o.id === w.dayOffering,
+      ),
+    ).toMatchObject({ unit: 'day', priceCents: 999, currency: 'CAD' });
+    await w.a.assent(w.requester, randomUUID(), ref);
+    await w.a.confirm(w.operatorContext, randomUUID(), ref);
+
+    const overlapping = async (date: string) => {
+      const hour = await w.a.request(w.requester, randomUUID(), {
+        offeringId: w.offering['developer-hour'],
+        contactId: w.customerId,
+      });
+      const proposal = await w.a.propose(w.operatorContext, randomUUID(), {
+        bookingId: hour.id,
+        providerId: w.otherProviderId,
+        window: toronto(date, '10:00', '11:00'),
+        terms,
+      });
+      const hourRef = {
+        bookingId: hour.id,
+        proposalId: proposal.proposalId as string,
+      };
+      await w.a.assent(w.requester, randomUUID(), hourRef);
+      return hourRef;
+    };
+    const first = await overlapping('2027-03-01');
+    const second = await overlapping('2027-03-02');
+    for (const ref of [first, second]) {
+      await expect(
+        w.a.confirm(w.operatorContext, randomUUID(), ref),
+      ).rejects.toMatchObject({ code: 'unavailable' });
+    }
+    await w.a.cancel(w.operatorContext, randomUUID(), {
+      bookingId: booking.id,
+      reason: 'Release both',
+    });
+    for (const ref of [first, second]) {
+      await expect(
+        w.a.confirm(w.operatorContext, randomUUID(), ref),
+      ).resolves.toMatchObject({ id: ref.bookingId });
+    }
+  });
+
+  it('rejects windows that do not measure the quantity and offering identity changes', async () => {
+    const w = await torontoWorld();
+    const day = await w.a.request(w.requester, randomUUID(), {
+      offeringId: w.dayOffering,
+      contactId: w.customerId,
+      quantity: 2,
+    });
+    const propose = (bookingId: string, input: object) =>
+      w.a.propose(w.operatorContext, randomUUID(), {
+        bookingId,
+        providerId: w.otherProviderId,
+        terms,
+        ...input,
+      } as never);
+    await expect(
+      propose(day.id, { window: toronto('2027-03-01') }),
+    ).rejects.toMatchObject({ code: 'invalid' });
+    await expect(
+      propose(day.id, {
+        window: toronto('2027-03-01'),
+        windows: [toronto('2027-03-01')],
+      }),
+    ).rejects.toMatchObject({ code: 'invalid' });
+    await expect(propose(day.id, {})).rejects.toMatchObject({
+      code: 'invalid',
+    });
+    const hour = await w.a.request(w.requester, randomUUID(), {
+      offeringId: w.offering['developer-hour'],
+      contactId: w.customerId,
+    });
+    await expect(
+      propose(hour.id, { window: toronto('2027-03-01', '09:00', '10:30') }),
+    ).rejects.toMatchObject({ code: 'invalid' });
+    await expect(
+      propose(hour.id, {
+        window: toronto('2027-03-01', '09:00', '10:00'),
+        quantity: 2,
+      }),
+    ).rejects.toMatchObject({ code: 'invalid' });
+    await expect(
+      propose(hour.id, { window: toronto('2027-03-01', '09:00', '10:00') }),
+    ).resolves.toMatchObject({ id: hour.id });
+    await expect(
+      w.a.configureOffering(w.operatorContext, randomUUID(), {
+        offeringId: w.dayOffering,
+        kind: 'developer-hour',
+        unit: 'week',
+        enabled: true,
+      }),
+    ).rejects.toMatchObject({ code: 'conflict' });
+    await expect(
+      w.a.configureOffering(w.operatorContext, randomUUID(), {
+        offeringId: w.dayOffering,
+        kind: 'supervision-day',
+        enabled: true,
+      }),
+    ).rejects.toMatchObject({ code: 'conflict' });
+    for (const bad of [
+      { kind: 'supervision-day' as const, unit: 'hour' as const },
+      { kind: 'developer-hour' as const, priceCents: 5 },
+      { kind: 'developer-hour' as const, priceCents: -1, currency: 'CAD' },
+      { kind: 'developer-hour' as const, priceCents: 1.5, currency: 'CAD' },
+      { kind: 'developer-hour' as const, priceCents: 5, currency: 'cad' },
+    ]) {
+      await expect(
+        w.a.configureOffering(w.operatorContext, randomUUID(), {
+          offeringId: randomUUID(),
+          enabled: true,
+          ...bad,
+        }),
+      ).rejects.toMatchObject({ code: 'invalid' });
+    }
+    await expect(
+      w.a.request(w.requester, randomUUID(), {
+        offeringId: w.offering['supervision-day'],
+        contactId: w.customerId,
+        projectId: randomUUID(),
+        quantity: 2,
+      }),
+    ).rejects.toMatchObject({ code: 'invalid' });
+    await expect(
+      w.a.request(w.requester, randomUUID(), {
+        offeringId: w.dayOffering,
+        contactId: w.customerId,
+        quantity: 1001,
+      }),
+    ).rejects.toMatchObject({ code: 'invalid' });
+    const supervision = await w.request('supervision-day');
+    await expect(
+      w.a.propose(w.operatorContext, randomUUID(), {
+        bookingId: supervision,
+        providerId: w.providerId,
+        window,
+        quantity: 2,
+        terms,
+        approvedPlan: w.plan,
+      }),
+    ).rejects.toMatchObject({ code: 'invalid' });
+  });
 
   it('serializes cap plus one, retries after release, and rejects capacity reductions', async () => {
     const w = await world();
@@ -604,6 +1020,12 @@ describe.skipIf(!url)('Bookings on PostgreSQL', () => {
         {
           id: w.offering['supervision-day'],
           kind: 'supervision-day',
+          unit: 'day',
+          priceCents: null,
+          currency: null,
+          title: '',
+          description: '',
+          public: false,
           enabled: true,
         },
       ],
@@ -618,9 +1040,41 @@ describe.skipIf(!url)('Bookings on PostgreSQL', () => {
       Object.values(w.offering).sort(),
     );
     expect(two.nextCursor).toBeNull();
-    await expect(w.a.listOfferings(w.outsider)).rejects.toMatchObject({
-      code: 'forbidden',
+    // A reader with no contact mapping sees only enabled public offerings.
+    expect((await w.a.listOfferings(w.outsider)).items).toEqual([]);
+    await w.a.configureOffering(w.operatorContext, randomUUID(), {
+      offeringId: w.offering['supervision-day'],
+      kind: 'supervision-day',
+      title: 'Supervision day',
+      description: 'Shared supervision capacity.',
+      public: true,
+      enabled: true,
     });
+    expect((await w.a.listOfferings(w.outsider)).items).toEqual([
+      expect.objectContaining({
+        id: w.offering['supervision-day'],
+        title: 'Supervision day',
+        description: 'Shared supervision capacity.',
+        public: true,
+      }),
+    ]);
+    await expect(
+      w.a.listOfferings({ ...w.outsider, actorId: 'denied' }),
+    ).rejects.toMatchObject({ code: 'forbidden' });
+    for (const bad of [
+      { title: 'x'.repeat(121) },
+      { description: 'x'.repeat(2001) },
+      { title: 'a\0b' },
+    ]) {
+      await expect(
+        w.a.configureOffering(w.operatorContext, randomUUID(), {
+          offeringId: randomUUID(),
+          kind: 'developer-hour',
+          enabled: true,
+          ...bad,
+        }),
+      ).rejects.toMatchObject({ code: 'invalid' });
+    }
     await expect(
       w.a.listOfferings(w.requester, { limit: 101 }),
     ).rejects.toMatchObject({ code: 'invalid' });

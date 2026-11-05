@@ -48,11 +48,48 @@ export interface BookingAuthority {
   ): Promise<boolean>;
 }
 
+/**
+ * `developer-hour` is dedicated, exclusive attention for any unit (the name is
+ * kept for schema compatibility); `supervision-day` is shared supervision
+ * capacity and is always one day.
+ */
 export type BookingKind = 'developer-hour' | 'supervision-day';
+
+/** Sales granularity of an offering. */
+export type BookingUnit = 'hour' | 'day' | 'week' | 'month';
 
 export interface BookingOffering {
   id: string;
   kind: BookingKind;
+  unit: BookingUnit;
+  /** Integer minor units, or null when the offering is unpriced. */
+  priceCents: number | null;
+  /** ISO 4217 uppercase code, null iff priceCents is null. */
+  currency: string | null;
+  /** Short display name, at most 120 characters. */
+  title: string;
+  /** Plain-text description, at most 2000 characters. */
+  description: string;
+  /** Discoverable by a reader with no contact mapping. Only affects discovery. */
+  public: boolean;
+  enabled: boolean;
+}
+
+export interface ConfigureOfferingInput {
+  offeringId: string;
+  kind: BookingKind;
+  /** Defaults from kind: developer-hour is hour, supervision-day is day. Frozen after creation. */
+  unit?: BookingUnit;
+  /** Integer minor units; default null (unpriced). */
+  priceCents?: number | null;
+  /** ISO 4217 uppercase code; set together with priceCents. */
+  currency?: string | null;
+  /** Default ''. */
+  title?: string;
+  /** Default ''. */
+  description?: string;
+  /** Default false. */
+  public?: boolean;
   enabled: boolean;
 }
 
@@ -65,6 +102,8 @@ export interface BookingPageOptions {
 
 export interface ListBookingsOptions extends BookingPageOptions {
   projectId?: string;
+  /** Operators may narrow to one contact; other callers may only name their own. */
+  contactId?: string;
 }
 
 export interface BookingPage<T> {
@@ -117,7 +156,17 @@ export interface ProposalTerms {
 export interface BookingProposal {
   id: string;
   providerId: string;
+  /** Overall span: first window start to last window end. */
   window: ResolvedBookingWindow;
+  /** Reserved segments, sorted, non-overlapping and in one zone. */
+  windows: ResolvedBookingWindow[];
+  unit: BookingUnit;
+  quantity: number;
+  /** Frozen from the offering at proposal time; null when unpriced. */
+  unitPriceCents: number | null;
+  currency: string | null;
+  /** unitPriceCents * quantity; null when unpriced. */
+  totalCents: number | null;
   terms: ProposalTerms;
   approvedPlan: ApprovedPlanRef | null;
 }
@@ -125,7 +174,11 @@ export interface BookingProposal {
 export interface ProposeBookingInput {
   bookingId: string;
   providerId: string;
-  window: BookingWindow;
+  /** Exactly one of `window` (single segment) or `windows`. */
+  window?: BookingWindow;
+  windows?: readonly BookingWindow[];
+  /** Defaults to the request's quantity. */
+  quantity?: number;
   terms: ProposalTerms;
   approvedPlan?: ApprovedPlanRef;
 }
@@ -134,6 +187,8 @@ export interface RequestBookingInput {
   offeringId: string;
   contactId: string;
   projectId?: string;
+  /** Positive integer, default 1, at most 1000; supervision must be 1. */
+  quantity?: number;
 }
 
 export type BookingStatus =
@@ -149,6 +204,8 @@ export interface BookingView {
   contactId: string;
   projectId: string | null;
   kind: BookingKind;
+  unit: BookingUnit;
+  quantity: number;
   status: BookingStatus;
   proposal: BookingProposal | null;
   assentedProposalId: string | null;

@@ -1,11 +1,14 @@
 # s-m-r-t Bookings
 
-`@happyvertical/smrt-bookings` reserves one elapsed developer hour or one
-operator-declared local supervision window. It does not start agents, collect
-payment, send notifications, or write Commerce records.
+`@happyvertical/smrt-bookings` reserves dedicated developer time (an hour, day,
+week or month) or one operator-declared local supervision window. It does not
+start agents, collect payment, send notifications, or write Commerce records.
 
-Apply `migrateBookingsV1` once through the host's deployment migration ledger
-using a PostgreSQL database handle. Use an ordinary PostgreSQL connection or
+Apply `migrateBookingsV1` and then `migrateBookingsV2` once each through the
+host's deployment migration ledger using a PostgreSQL database handle. V2 is
+additive: it adds offering units, prices and display fields, booking quantity,
+and per-proposal windows and frozen prices, backfilling existing rows without
+dropping data. Like V1 it is not idempotent. Use an ordinary PostgreSQL connection or
 pool for `BookingService`; the service owns its transaction and explicitly uses
 READ COMMITTED. It does not create schema on demand. No ORM collection, CRUD
 route, or generated CLI or MCP write is registered.
@@ -37,6 +40,38 @@ route, or generated CLI or MCP write is registered.
    Booking and historical proposal reads are scoped to the named contact or
    an operator. Booking audit history is operator-only.
 
+## Offerings, units and prices
+
+An offering has a `kind` and a `unit` (`hour`, `day`, `week` or `month`). The
+kind is the reservation semantics and the unit is the sales granularity; both
+are frozen once the offering exists. `developer-hour` keeps its name for schema
+compatibility but means dedicated, exclusive attention for any unit: it blocks
+every overlapping reservation and needs no project or approved plan.
+`supervision-day` is shared supervision capacity, always a one-day unit with
+quantity one.
+
+An offering may carry `priceCents` (integer minor units) and an ISO 4217
+`currency`, set together or both null for an unpriced offering. Prices, `title`
+(120 characters), `description` (2000 characters) and `public` may be changed
+later. A request has a `quantity` (default 1, at most 1000). A proposal freezes
+the offering's `unitPriceCents` and `currency` and the `totalCents`
+(`unitPriceCents * quantity`) at proposal time, so later price changes do not
+alter an offered or confirmed booking. Payment and invoicing remain host-owned.
+
+A dedicated proposal gives either `window` (the v1 single window) or `windows`,
+sorted, non-overlapping segments in one zone. The proposal `window` is the span
+from the first start to the last end and `windows` are the reserved segments;
+confirmation checks and the allocation reserves every segment. The segments must
+measure exactly the quantity of the unit:
+
+- `hour`: the segments' elapsed UTC time sums to `quantity` hours, so a split
+  hour is fine and a DST fold counts as elapsed time.
+- `day`: every segment lies in the local span of `quantity` days from the first
+  segment's date and the segments touch exactly `quantity` distinct days.
+- `week` and `month`: every segment lies in the half-open local span
+  `[D0, D0 + quantity weeks or months)`, with month ends constrained to the
+  target month's length. A segment may end at `T00:00` of the day after the span.
+
 Windows use an IANA zone and local timestamps of the form
 `2027-11-07T01:30-04:00`. For example, use that offset with America/New_York. The offset must be valid for that instant in the zone.
 During a DST fold the offsets identify different instants; a nonexistent wall
@@ -49,7 +84,13 @@ Use `listBookings` to find the same booking views returned by `get`. An
 optional project UUID narrows the results within the caller's existing scope.
 Operators see all bookings in their tenant. Other callers see only bookings
 for the contact the host maps to their actor. `listOfferings` exposes the
-offering ID, kind and enabled flag. Contacts only see enabled offerings.
+offering ID, kind, unit, price, title, description, `public` and enabled flag.
+There are three reader classes: operators see every offering, readers mapped to a
+contact see enabled offerings, and a reader with no contact mapping (an anonymous
+or prospect actor the host vouches for) sees only enabled public offerings.
+`public` only affects discovery; `request` still needs a contact mapping.
+`listBookings` also accepts a `contactId` filter: operators may narrow to any
+contact and other callers may only name their own.
 Operators can use `listAvailability` to inspect existing provider windows
 before replacing a declaration. All three methods use the `read` authority.
 
