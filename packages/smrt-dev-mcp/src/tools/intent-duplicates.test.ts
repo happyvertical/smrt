@@ -2,11 +2,14 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { detectHandRolled } from './intent-detector.js';
 import { parseIntentIndex } from './intent-index.js';
-import { renderReviewSummary } from './review-cli.js';
-import { reviewSmrtProject } from './review-smrt-project.js';
+import { renderReviewSummary, runReviewCli } from './review-cli.js';
+import {
+  defaultIntentIndexCandidates,
+  reviewSmrtProject,
+} from './review-smrt-project.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixtures = resolve(here, '..', '..', 'test-fixtures');
@@ -55,6 +58,12 @@ async function tempProject(files: Record<string, string>): Promise<string> {
   }
   return dir;
 }
+
+const HOSTILE_INDEX = [
+  '| Intent | Page | Home package(s) | Entry point | Hand-rolled signals |',
+  '| --- | --- | --- | --- | --- |',
+  '| Hostile | [hostile](/intents/hostile.md) | [smrt-jobs](/components/smrt-jobs.md) | `X` | `regex:(a+)+$`; `call:setInterval` |',
+].join('\n');
 
 const SMRT_PACKAGE_JSON = JSON.stringify({
   name: '@test/consumer',
@@ -190,19 +199,56 @@ describe('table-driven behaviour', () => {
     });
   });
 
-  it('resolves the exported bundle index when the monorepo path is absent', async () => {
+  it('ignores an intent index in the reviewed tree by default', async () => {
     const dir = await tempProject({
       'package.json': SMRT_PACKAGE_JSON,
       'src/a.ts': 'setInterval(() => undefined, 1000);\n',
-      '.agents/smrt-knowledge/intents/index.md': [
+      'docs/knowledge/intents/index.md': HOSTILE_INDEX,
+      '.agents/smrt-knowledge/intents/index.md': HOSTILE_INDEX,
+    });
+    const result = await review({ directory: dir });
+    expect(result.duplicateDetection.indexPath).not.toBeNull();
+    expect(result.duplicateDetection.indexPath).not.toContain(dir);
+    // The consumer's catastrophic-regex row never ran.
+    expect(result.findings.map((finding) => finding.code)).not.toContain(
+      'hand-rolled-hostile',
+    );
+  });
+
+  it('prefers the packaged index over the monorepo one', async () => {
+    const root = await tempProject({
+      'pnpm-workspace.yaml': 'packages: []\n',
+      'docs/knowledge/intents/index.md': 'monorepo',
+      'packages/pkg/dist/knowledge/intents/index.md': 'packaged',
+    });
+    const packageRoot = join(root, 'packages', 'pkg');
+    expect(defaultIntentIndexCandidates(packageRoot)).toEqual([
+      join(packageRoot, 'dist', 'knowledge', 'intents', 'index.md'),
+      join(root, 'docs', 'knowledge', 'intents', 'index.md'),
+    ]);
+    // An installed package (not under <repo>/packages) has only the packaged index.
+    expect(
+      defaultIntentIndexCandidates(
+        join(root, 'node_modules', '@happyvertical', 'smrt-dev-mcp'),
+      ),
+    ).toHaveLength(1);
+  });
+
+  it('uses the packaged index when present, ahead of an explicit-free default', async () => {
+    const pkg = await tempProject({
+      'dist/knowledge/intents/index.md': [
         '| Intent | Page | Home package(s) | Entry point | Hand-rolled signals |',
         '| --- | --- | --- | --- | --- |',
         '| Schedules | [scheduled-runs](/intents/scheduled-runs.md) | [smrt-jobs](/components/smrt-jobs.md) | `ScheduleRunner` | `call:setInterval` |',
       ].join('\n'),
     });
-    const result = await review({ directory: dir });
+    const dir = await tempProject({
+      'package.json': SMRT_PACKAGE_JSON,
+      'src/a.ts': 'setInterval(() => undefined, 1000);\n',
+    });
+    const result = await review({ directory: dir, packageRoot: pkg });
     expect(result.duplicateDetection.indexPath).toBe(
-      join(dir, '.agents', 'smrt-knowledge', 'intents', 'index.md'),
+      join(pkg, 'dist', 'knowledge', 'intents', 'index.md'),
     );
     expect(result.findings.map((finding) => finding.file)).toEqual([
       'src/a.ts:1',
@@ -214,10 +260,33 @@ describe('table-driven behaviour', () => {
       'package.json': SMRT_PACKAGE_JSON,
       'src/a.ts': 'setInterval(() => undefined, 1000);\n',
     });
-    const result = await review({ directory: dir });
+    const result = await review({
+      directory: dir,
+      packageRoot: await tempProject({}),
+    });
     expect(result.findings).toEqual([]);
     expect(result.duplicateDetection.indexPath).toBeNull();
     expect(result.duplicateDetection.notes[0]).toMatch(/No intent index/);
+  });
+
+  it('review CLI exits non-zero with a stderr message when no index exists', async () => {
+    const dir = await tempProject({
+      'package.json': SMRT_PACKAGE_JSON,
+      'src/a.ts': 'setInterval(() => undefined, 1000);\n',
+    });
+    const stdout = vi.spyOn(process.stdout, 'write').mockReturnValue(true);
+    const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+    try {
+      const code = await runReviewCli(
+        ['--directory', dir, '--format', 'summary'],
+        { packageRoot: await tempProject({}) },
+      );
+      expect(code).toBe(2);
+      expect(String(stderr.mock.calls[0][0])).toMatch(/no intent index found/);
+    } finally {
+      stdout.mockRestore();
+      stderr.mockRestore();
+    }
   });
 
   it('is silent when the home package is imported', () => {

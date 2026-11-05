@@ -64,6 +64,23 @@ test('ships the intent pages with smrt-cli only, replacing stale ones', (t) => {
   );
 });
 
+test('ships the full intent set with smrt-dev-mcp too, and with no other package', (t) => {
+  const root = workspace(t);
+  writeFileSync(join(root, 'docs/knowledge/components/smrt-dev-mcp.md'), 'mcp');
+  writeFileSync(join(root, 'docs/knowledge/components/smrt-jobs.md'), 'jobs');
+  const mcp = pkg(root, 'smrt-dev-mcp', { name: '@happyvertical/smrt-dev-mcp' });
+  const jobs = pkg(root, 'jobs', { name: '@happyvertical/smrt-jobs' });
+
+  shipPackageKnowledge(mcp, root);
+  shipPackageKnowledge(jobs, root);
+
+  assert.equal(
+    readFileSync(join(mcp, 'dist/knowledge/intents/index.md'), 'utf8'),
+    'index',
+  );
+  assert.equal(existsSync(join(jobs, 'dist/knowledge/intents')), false);
+});
+
 test('skips private and dist-less packages but fails on a public package without a page', (t) => {
   const root = workspace(t);
   const priv = pkg(root, 'priv', { name: '@happyvertical/smrt-priv', private: true });

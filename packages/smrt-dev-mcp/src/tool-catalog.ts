@@ -260,7 +260,7 @@ const TOOL_DEFINITIONS: Array<
         intentIndexPath: {
           type: 'string',
           description:
-            'Intent index driving duplicate detection (default: docs/knowledge/intents/index.md or .agents/smrt-knowledge/intents/index.md under directory)',
+            'Caller-trusted intent index driving duplicate detection (regex tokens become RegExp). Default: the full index packaged in this release, never read from the reviewed directory',
         },
         detectDuplicates: {
           type: 'boolean',

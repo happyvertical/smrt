@@ -5,7 +5,7 @@
  * monorepo checkout.
  *
  *   docs/knowledge/components/<unscoped-name>.md -> packages/<dir>/dist/smrt-knowledge.okf.md
- *   docs/knowledge/intents/*.md                 -> packages/cli/dist/knowledge/intents/
+ *   docs/knowledge/intents/*.md                 -> packages/{cli,smrt-dev-mcp}/dist/knowledge/intents/
  *
  * The page sits next to `dist/smrt-knowledge.json` and rides the `dist` entry
  * every package already lists in `files`, so no package.json changes. This is a
@@ -34,7 +34,12 @@ import { fileURLToPath } from 'node:url';
 
 export const SHIPPED_COMPONENT_PAGE = 'smrt-knowledge.okf.md';
 export const SHIPPED_INTENTS_DIR = join('knowledge', 'intents');
-const INTENT_HOME_PACKAGE = '@happyvertical/smrt-cli';
+// The full, unfiltered intent set ships with the CLI (docs:agents export source)
+// and with smrt-dev-mcp (the trusted duplicate-detection index, #4690).
+const INTENT_HOME_PACKAGES = [
+  '@happyvertical/smrt-cli',
+  '@happyvertical/smrt-dev-mcp',
+];
 
 const defaultRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -66,7 +71,7 @@ export function shipPackageKnowledge(packageDir, rootDir = defaultRoot) {
   copyFileSync(source, join(packageDir, 'dist', SHIPPED_COMPONENT_PAGE));
   written.push(join('dist', SHIPPED_COMPONENT_PAGE));
 
-  if (pkg.name === INTENT_HOME_PACKAGE) {
+  if (INTENT_HOME_PACKAGES.includes(pkg.name)) {
     const intentsSource = join(rootDir, 'docs', 'knowledge', 'intents');
     const intentsTarget = join(packageDir, 'dist', SHIPPED_INTENTS_DIR);
     // Replace, never merge: a retired intent page must not linger in dist.

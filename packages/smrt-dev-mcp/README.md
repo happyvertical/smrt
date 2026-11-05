@@ -344,7 +344,7 @@ and suggested follow-up issue titles; it does not modify files.
 | `rootDir` | `string` | No | Compatibility alias for `directory` |
 | `includeSourceEvidence` | `boolean` | No | Include file/line evidence (default: true) |
 | `maxFindings` | `number` | No | Limit findings returned |
-| `intentIndexPath` | `string` | No | Intent index driving duplicate detection (default: `docs/knowledge/intents/index.md` or `.agents/smrt-knowledge/intents/index.md` under `directory`) |
+| `intentIndexPath` | `string` | No | Caller-trusted intent index driving duplicate detection (`regex:` tokens become `RegExp`). Default: the full index packaged in this release (`dist/knowledge/intents/index.md`), else the monorepo's `docs/knowledge/intents/index.md` in a source checkout; never read from `directory` |
 | `detectDuplicates` | `boolean` | No | Run the intent-driven hand-rolled-equivalent pass (default: true) |
 
 Duplicate detection is table-driven: each row of the intent index names home
@@ -352,9 +352,13 @@ packages and `import:`, `call:`, `regex:` and `decimal-field:` signals. When a
 package shows a signal and imports none of the row's home packages, the tool
 emits an advisory `duplicate-detection` finding anchored at `path:line` that
 names the intent page and component pages. Unknown signal kinds are skipped
-with a stderr note. The same pass runs from a shell with
+with a stderr note. The rules are never taken from the reviewed project, so a
+pull request cannot delete them or inject a pattern; when no index can be
+found the tool reports `skipped` with a note. The same pass runs from a shell with
 `npx @happyvertical/smrt-dev-mcp review --directory . [--intent-index PATH] [--format summary]`
-and from the reusable `consumer-knowledge-review.yml` workflow.
+(exit 2 and a stderr message when no index is found, never a silent pass) and
+from the reusable `consumer-knowledge-review.yml` workflow, which always uses
+the packaged index.
 
 ### `reflect-knowledge`
 

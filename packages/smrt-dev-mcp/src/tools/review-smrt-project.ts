@@ -3,9 +3,18 @@
  * Advisory only: scans manifests and source files, then reports alignment risks.
  */
 
-import { type Dirent, existsSync } from 'node:fs';
+import { type Dirent, existsSync, readFileSync } from 'node:fs';
 import { access, readdir, readFile } from 'node:fs/promises';
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import {
+  basename,
+  dirname,
+  isAbsolute,
+  join,
+  relative,
+  resolve,
+  sep,
+} from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   type DetectorPackage,
   detectHandRolled,
@@ -19,21 +28,72 @@ interface ReviewSmrtProjectArgs {
   includeSourceEvidence?: boolean;
   maxFindings?: number;
   /**
-   * Intent index to drive duplicate detection. Default: the first of
-   * `docs/knowledge/intents/index.md` (monorepo) or
-   * `.agents/smrt-knowledge/intents/index.md` (exported bundle) that exists
-   * under the project directory. Relative paths resolve against it.
+   * Intent index to drive duplicate detection. Its `regex:` tokens become
+   * `RegExp`s, so this is trusted by the caller and never read from the
+   * reviewed tree by default. Default: the full index shipped inside the
+   * pinned `@happyvertical/smrt-dev-mcp` package (`dist/knowledge/intents`),
+   * else `docs/knowledge/intents/index.md` when running from the smrt
+   * monorepo checkout. Relative paths resolve against `directory`.
    */
   intentIndexPath?: string;
   /** Set false to skip the intent-driven duplicate-detection pass. */
   detectDuplicates?: boolean;
+  /**
+   * Test seam: package root used to locate the packaged index instead of this
+   * module's own. Not part of the tool schema.
+   */
+  packageRoot?: string;
 }
 
-/** Locations of the intent index, in resolution order (#4690). */
-export const INTENT_INDEX_CANDIDATES = [
-  join('docs', 'knowledge', 'intents', 'index.md'),
-  join('.agents', 'smrt-knowledge', 'intents', 'index.md'),
-];
+/** Relative location of the intent index inside this package's `dist/`. */
+export const PACKAGED_INTENT_INDEX = join(
+  'dist',
+  'knowledge',
+  'intents',
+  'index.md',
+);
+
+function findOwnPackageRoot(): string | null {
+  let current = dirname(fileURLToPath(import.meta.url));
+  for (;;) {
+    const manifest = join(current, 'package.json');
+    if (existsSync(manifest)) {
+      try {
+        const json = JSON.parse(readFileSync(manifest, 'utf-8')) as {
+          name?: string;
+        };
+        if (json.name === '@happyvertical/smrt-dev-mcp') return current;
+      } catch {
+        // Keep walking.
+      }
+    }
+    const parent = dirname(current);
+    if (parent === current) return null;
+    current = parent;
+  }
+}
+
+/**
+ * Locations of the trusted default intent index, in resolution order (#4690):
+ * the packaged full index, then the monorepo's committed index when this
+ * package sits in `<repo>/packages/` of the smrt checkout. The reviewed
+ * project's own tree is never consulted.
+ */
+export function defaultIntentIndexCandidates(packageRoot?: string): string[] {
+  const root = packageRoot ?? findOwnPackageRoot();
+  if (!root) return [];
+  const candidates = [join(root, PACKAGED_INTENT_INDEX)];
+  const packagesDir = dirname(root);
+  if (basename(packagesDir) === 'packages') {
+    const repoRoot = dirname(packagesDir);
+    if (existsSync(join(repoRoot, 'pnpm-workspace.yaml'))) {
+      candidates.push(
+        join(repoRoot, 'docs', 'knowledge', 'intents', 'index.md'),
+      );
+    }
+  }
+  return candidates;
+}
 
 type Severity = 'high' | 'medium' | 'low';
 
@@ -778,11 +838,11 @@ async function runDuplicateDetection(
     : undefined;
   const candidates = explicit
     ? [explicit]
-    : INTENT_INDEX_CANDIDATES.map((candidate) => join(projectPath, candidate));
+    : defaultIntentIndexCandidates(args.packageRoot);
   const indexPath = candidates.find((candidate) => existsSync(candidate));
   if (!indexPath) {
     status.notes.push(
-      `No intent index found (tried ${candidates.join(', ')}); duplicate detection skipped.`,
+      `No intent index found (tried ${candidates.join(', ') || 'none'}); duplicate detection skipped. Reinstall @happyvertical/smrt-dev-mcp or pass intentIndexPath.`,
     );
     return { findings: [], status };
   }

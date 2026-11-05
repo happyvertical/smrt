@@ -35,24 +35,11 @@ tool schema and its authored documentation in the same commit.
 
 ## Intent-driven duplicate detection (#4690)
 
-`review-smrt-project` parses the intent index at runtime
-(`intent-index.ts`, pure) and `intent-detector.ts` evaluates each row's signals;
-no intent is named in code, so a new row with signals needs no change here.
-Index lookup: `intentIndexPath`, else `docs/knowledge/intents/index.md`, else
-the exported bundle `.agents/smrt-knowledge/intents/index.md`. Tokens:
-`import:<module>`, `call:<ident>`, `regex:<pattern>`, and
-`decimal-field:<glob>` (a property matching the glob declared with a decimal
-literal or `type: 'decimal'`). Unknown kinds are skipped with a stderr note. A
-finding needs a signal and no import of any row home package in the same
-package; it is advisory (`area: duplicate-detection`, `file: path:line`,
-`intentPage`, `componentPages`). Fixtures live in `test-fixtures/` (outside
-`src/`, so tsc, Biome, and vitest globs never see them).
-
-`smrt-dev-mcp review --directory . [--intent-index P] [--format summary]
-[--fail-on-findings]` runs the pass from a shell. The reusable
-`.github/workflows/consumer-knowledge-review.yml` calls it through the pinned
-published package (public on npmjs, so private consumers need no token) and
-writes the summary to `$GITHUB_STEP_SUMMARY`.
+`review-smrt-project` / `smrt-dev-mcp review` flag hand-rolled equivalents of
+smrt packages from the intent index. The rules (`regex:` tokens become `RegExp`)
+come from the full index packaged in this release, never from the reviewed tree;
+`intentIndexPath` / `--intent-index` is caller-trusted. Details, token kinds and
+the CLI/workflow contract: [agents/intent-duplicates.md](agents/intent-duplicates.md).
 
 ## Knowledge Discovery (#2143)
 

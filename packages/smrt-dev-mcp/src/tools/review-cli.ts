@@ -2,7 +2,8 @@
  * `smrt-dev-mcp review` — runs `review-smrt-project` from a shell so a CI job
  * (the reusable consumer-knowledge-review workflow, #4690) can call it without
  * speaking MCP. Advisory: the exit code is 0 unless `--fail-on-findings` is set
- * and a duplicate-detection finding exists.
+ * and a duplicate-detection finding exists. It exits 2, never 0, when no
+ * intent index can be found.
  */
 
 import { reviewSmrtProject } from './review-smrt-project.js';
@@ -103,16 +104,27 @@ export function renderReviewSummary(result: ReviewResult): string {
   return `${lines.join('\n')}\n`;
 }
 
-export async function runReviewCli(argv: readonly string[]): Promise<number> {
+export async function runReviewCli(
+  argv: readonly string[],
+  options: { packageRoot?: string } = {},
+): Promise<number> {
   const args = parseReviewCliArgs(argv);
   const raw = await reviewSmrtProject({
     directory: args.directory,
     intentIndexPath: args.intentIndexPath,
+    packageRoot: options.packageRoot,
   });
   const result = JSON.parse(raw) as ReviewResult;
   process.stdout.write(
     args.format === 'summary' ? renderReviewSummary(result) : `${raw}\n`,
   );
+  // Never a green no-op: a run that could not load its index did not review.
+  if (!result.duplicateDetection?.indexPath) {
+    process.stderr.write(
+      `smrt-dev-mcp review: no intent index found; duplicate detection did not run. ${(result.duplicateDetection?.notes ?? []).join(' ')}\n`,
+    );
+    return 2;
+  }
   const hasFindings = result.findings.some(
     (finding) => finding.area === 'duplicate-detection',
   );

@@ -31,8 +31,17 @@ export const OKF_BUNDLE_MANIFEST = 'bundle.json';
 export const OKF_BUNDLE_PARENT_DIRS = ['.agents', '.claude'] as const;
 /** File a published package ships its component page as, next to `smrt-knowledge.json`. */
 export const OKF_SHIPPED_COMPONENT_PAGE = 'smrt-knowledge.okf.md';
-/** Directory under `smrt-cli`'s `dist/` that ships the intent pages. */
+/** Directory under a home package's `dist/` that ships the full intent pages. */
 export const OKF_SHIPPED_INTENTS_DIR = 'knowledge/intents';
+/**
+ * Packages that ship the full intent set: `smrt-cli` (the `docs:agents` export
+ * source) and this package (the trusted duplicate-detection index, #4690).
+ * Mirrored by `INTENT_HOME_PACKAGES` in `scripts/ship-knowledge-pages.mjs`.
+ */
+export const OKF_INTENT_HOME_PACKAGES = [
+  '@happyvertical/smrt-cli',
+  '@happyvertical/smrt-dev-mcp',
+] as const;
 /** Bundles older than this draw a warning even when every version matches. */
 export const OKF_BUNDLE_MAX_AGE_DAYS = 90;
 
