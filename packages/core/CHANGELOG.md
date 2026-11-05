@@ -1,5 +1,18 @@
 # @happyvertical/smrt-core
 
+## 0.60.9
+
+### Patch Changes
+
+- ### Features
+  
+  - priced offerings, open-slot discovery and lead-bound requests (#4700) (bookings)
+  - define the Node sidecar manifest contract (#4676) (desktop)
+  - add BYO inference presets and local discovery (#4675) (core)
+- @happyvertical/smrt-config@0.60.9
+  - @happyvertical/smrt-scanner@0.60.9
+  - @happyvertical/smrt-types@0.60.9
+
 ## 0.60.8
 
 ### Patch Changes
