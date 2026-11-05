@@ -5,10 +5,10 @@ description: "Unified multi-channel messaging with STI-based hierarchies"
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T15:48:19Z"
+  at: "2026-11-05T21:47:30Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:a4fc9d868e91be6362fac3d04d887790f5ae93b704aaba45f26be130506806f1"
+source_revision: "sha256:dd716664cbc58d30c87b791c0f570ef3a00c53dfdbaa8a5854baee9e0d7ac701"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/messages/package.json"
@@ -16,6 +16,9 @@ sources:
   - id: "agents"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/messages/AGENTS.md"
     title: "@happyvertical/smrt-messages packages/messages/AGENTS.md"
+  - id: "agents-2"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/messages/agents/notification-outbox.md"
+    title: "@happyvertical/smrt-messages packages/messages/agents/notification-outbox.md"
 ---
 
 # @happyvertical/smrt-messages
@@ -30,6 +33,7 @@ sources:
 ## Documentation
 
 - `packages/messages/AGENTS.md`
+- `packages/messages/agents/notification-outbox.md`
 
 ## Framework dependencies
 
@@ -85,6 +89,8 @@ sources:
 - `MessageCollection` (collection `messages`, extends `SmrtCollection`)
 - `MessagingEndpoint` (collection `messagingendpoints`, extends `SmrtObject`)
 - `MessagingEndpointCollection` (collection `messagingendpoints`, extends `SmrtCollection`)
+- `NotificationDelivery` (collection `notificationdeliveries`, extends `SmrtObject`)
+- `NotificationDeliveryCollection` (collection `notificationdeliveries`, extends `SmrtCollection`)
 - `PersonaMessageRoute` (collection `personamessageroutes`, extends `SmrtObject`)
 - `PersonaMessageRouteCollection` (collection `personamessageroutes`, extends `SmrtCollection`)
 - `SlackAccount` (collection `accounts`, extends `Account`, STI table)
