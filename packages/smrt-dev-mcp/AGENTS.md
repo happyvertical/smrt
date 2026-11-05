@@ -104,6 +104,14 @@ otherwise emitted docs read `/AGENTS.md` and changed-file matching compares
 against a leading `/` and selects nothing. The root owns any changed path no
 member package owns, mirroring the member-excluded scan.
 
+### OKF component pages (#4686)
+
+`pnpm knowledge:okf` (after `pnpm build`) writes `docs/knowledge/components/<unscoped-name>.md` per
+workspace package from this index; never hand-edit them. `source_revision` is a `sha256` of the page's
+inputs (manifest slice, package AGENTS/module-doc hashes, models, MCP tools, `agentSurface`), not a commit.
+`knowledge:check --strict` fails on stale, edited, missing or extra pages and on dangling `/…md` links in
+hand-authored pages. Details: header of `scripts/knowledge-okf.ts`.
+
 ## Agent Skills
 
 Bundled skills live under `skills/`, the Agent Plugins fixed discovery
