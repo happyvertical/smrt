@@ -664,6 +664,340 @@ describe.skipIf(!url)('Bookings on PostgreSQL', () => {
     ).rejects.toMatchObject({ code: 'invalid' });
   });
 
+  describe('listOpenSlots', () => {
+    const day = '2027-01-01';
+    const range = { from: `${day}T00:00:00Z`, to: '2027-01-02T00:00:00Z' };
+    const starts = (page: {
+      items: Array<{ windows: Array<{ start: string }> }>;
+    }) => page.items.map((slot) => slot.windows[0].start.slice(11, 16));
+
+    it('steps hourly, honours range and quantity, and excludes occupied segments', async () => {
+      const w = await world();
+      // otherProviderId gets one long window so quantity 2 has room.
+      await w.a.declareAvailability(w.operatorContext, randomUUID(), {
+        providerId: w.otherProviderId,
+        zone: 'UTC',
+        windows: [
+          {
+            start: `${day}T09:00+00:00`,
+            end: `${day}T12:00+00:00`,
+            capacity: 1,
+            supervision: false,
+          },
+        ],
+      });
+      const query = (extra: object = {}) =>
+        w.a.listOpenSlots(w.requester, {
+          offeringId: w.offering['developer-hour'],
+          providerId: w.otherProviderId,
+          ...range,
+          ...extra,
+        });
+      expect(starts(await query())).toEqual(['09:00', '10:00', '11:00']);
+      expect(starts(await query({ from: `${day}T09:30:00Z` }))).toEqual([
+        '10:00',
+        '11:00',
+      ]);
+      expect(starts(await query({ to: `${day}T11:00:00Z` }))).toEqual([
+        '09:00',
+        '10:00',
+      ]);
+      expect(starts(await query({ quantity: 2 }))).toEqual(['09:00', '10:00']);
+      const hour = {
+        zone: 'UTC',
+        start: `${day}T11:00+00:00`,
+        end: `${day}T12:00+00:00`,
+      };
+      await w.a.confirm(
+        w.operatorContext,
+        randomUUID(),
+        await w.prepare('developer-hour', {
+          provider: w.otherProviderId,
+          window: hour,
+        }),
+      );
+      expect(starts(await query())).toEqual(['09:00', '10:00']);
+      expect(starts(await query({ quantity: 2 }))).toEqual(['09:00']);
+      const slot = (await query({ limit: 1 })).items[0];
+      expect(slot).toMatchObject({
+        providerId: w.otherProviderId,
+        offeringId: w.offering['developer-hour'],
+        unit: 'hour',
+        quantity: 1,
+        remainingCapacity: 1,
+      });
+      expect(slot.windows[0]).toMatchObject({
+        zone: 'UTC',
+        start: `${day}T09:00+00:00`,
+        end: `${day}T10:00+00:00`,
+        startUtc: `${day}T09:00:00.000Z`,
+        endUtc: `${day}T10:00:00.000Z`,
+      });
+      // A listed slot can be proposed as-is.
+      const request = await w.a.request(w.requester, randomUUID(), {
+        offeringId: w.offering['developer-hour'],
+        contactId: w.customerId,
+      });
+      await expect(
+        w.a.propose(w.operatorContext, randomUUID(), {
+          bookingId: request.id,
+          providerId: w.otherProviderId,
+          windows: slot.windows,
+          terms,
+        }),
+      ).resolves.toMatchObject({ id: request.id });
+    });
+
+    it('pages stably with an opaque cursor and rejects malformed ones', async () => {
+      const w = await world();
+      await w.a.declareAvailability(w.operatorContext, randomUUID(), {
+        providerId: w.otherProviderId,
+        zone: 'UTC',
+        windows: [
+          {
+            start: `${day}T09:00+00:00`,
+            end: `${day}T12:00+00:00`,
+            capacity: 1,
+            supervision: false,
+          },
+        ],
+      });
+      const base = { offeringId: w.offering['developer-hour'], ...range };
+      const everything = await w.a.listOpenSlots(w.requester, base);
+      expect(everything.items).toHaveLength(5);
+      const seen: string[] = [];
+      let cursor: string | undefined;
+      let pages = 0;
+      do {
+        const next = await w.b.listOpenSlots(w.requester, {
+          ...base,
+          limit: 1,
+          after: cursor,
+        });
+        seen.push(
+          ...next.items.map(
+            (slot) => `${slot.windows[0].startUtc}|${slot.providerId}`,
+          ),
+        );
+        cursor = next.nextCursor ?? undefined;
+        pages++;
+      } while (cursor);
+      expect(pages).toBe(5);
+      expect(seen).toEqual(
+        everything.items.map(
+          (slot) => `${slot.windows[0].startUtc}|${slot.providerId}`,
+        ),
+      );
+      expect([...seen].sort()).toEqual(seen);
+      for (const after of [
+        'nope',
+        `${day}T09:00:00.000Z`,
+        `${day}T09:00:00Z|${w.providerId}`,
+      ]) {
+        await expect(
+          w.a.listOpenSlots(w.requester, { ...base, after }),
+        ).rejects.toMatchObject({ code: 'invalid' });
+      }
+    });
+
+    it('reports supervision capacity and drops it when an exclusive hour lands inside', async () => {
+      const w = await world();
+      const query = (extra: object = {}) =>
+        w.a.listOpenSlots(w.requester, {
+          offeringId: w.offering['supervision-day'],
+          ...range,
+          ...extra,
+        });
+      const initial = await query();
+      expect(
+        initial.items.map((slot) => [slot.providerId, slot.remainingCapacity]),
+      ).toEqual(
+        [w.providerId, w.otherProviderId]
+          .sort()
+          .map((provider) => [provider, 2]),
+      );
+      await w.a.confirm(
+        w.operatorContext,
+        randomUUID(),
+        await w.prepare('supervision-day'),
+      );
+      const shared = await query({ providerId: w.providerId });
+      expect(shared.items.map((slot) => slot.remainingCapacity)).toEqual([1]);
+      await w.a.confirm(
+        w.operatorContext,
+        randomUUID(),
+        await w.prepare('developer-hour', { provider: w.otherProviderId }),
+      );
+      expect((await query({ providerId: w.otherProviderId })).items).toEqual(
+        [],
+      );
+      // The shared supervision also hides that provider's dedicated hour.
+      const hours = await w.a.listOpenSlots(w.requester, {
+        offeringId: w.offering['developer-hour'],
+        providerId: w.providerId,
+        ...range,
+      });
+      expect(starts(hours)).toEqual(['10:00']);
+      await expect(query({ quantity: 2 })).rejects.toMatchObject({
+        code: 'invalid',
+      });
+    });
+
+    it('bundles day windows, requires the full quantity of days and lists a DST fold once', async () => {
+      const w = await torontoWorld();
+      await w.a.declareAvailability(w.operatorContext, randomUUID(), {
+        providerId: w.otherProviderId,
+        zone: 'America/Toronto',
+        windows: [
+          {
+            start: '2027-03-01T09:00-05:00',
+            end: '2027-03-01T12:00-05:00',
+            capacity: 1,
+            supervision: false,
+          },
+          {
+            start: '2027-03-01T13:00-05:00',
+            end: '2027-03-01T17:00-05:00',
+            capacity: 1,
+            supervision: false,
+          },
+          {
+            start: '2027-03-02T09:00-05:00',
+            end: '2027-03-02T17:00-05:00',
+            capacity: 1,
+            supervision: false,
+          },
+        ],
+      });
+      const query = (quantity: number) =>
+        w.a.listOpenSlots(w.requester, {
+          offeringId: w.dayOffering,
+          providerId: w.otherProviderId,
+          from: '2027-02-28T00:00:00Z',
+          to: '2027-03-10T00:00:00Z',
+          quantity,
+        });
+      const one = await query(1);
+      expect(one.items.map((slot) => slot.windows.map((s) => s.start))).toEqual(
+        [
+          ['2027-03-01T09:00-05:00', '2027-03-01T13:00-05:00'],
+          ['2027-03-02T09:00-05:00'],
+        ],
+      );
+      expect(one.items[0]).toMatchObject({
+        unit: 'day',
+        quantity: 1,
+        remainingCapacity: 1,
+      });
+      const two = await query(2);
+      expect(two.items.map((slot) => slot.windows.length)).toEqual([3]);
+      // The bundle can be proposed and priced as listed.
+      const booking = await w.a.request(w.requester, randomUUID(), {
+        offeringId: w.dayOffering,
+        contactId: w.customerId,
+        quantity: 2,
+      });
+      await expect(
+        w.a.propose(w.operatorContext, randomUUID(), {
+          bookingId: booking.id,
+          providerId: w.otherProviderId,
+          windows: two.items[0].windows,
+          terms,
+        }),
+      ).resolves.toMatchObject({ id: booking.id });
+
+      await w.a.declareAvailability(w.operatorContext, randomUUID(), {
+        providerId: w.providerId,
+        zone: 'America/New_York',
+        windows: [
+          {
+            start: '2027-11-07T00:30-04:00',
+            end: '2027-11-07T03:00-05:00',
+            capacity: 1,
+            supervision: false,
+          },
+        ],
+      });
+      const fold = await w.a.listOpenSlots(w.requester, {
+        offeringId: w.offering['developer-hour'],
+        providerId: w.providerId,
+        from: '2027-11-07T00:00:00Z',
+        to: '2027-11-08T00:00:00Z',
+      });
+      expect(
+        fold.items.map((slot) => [slot.windows[0].start, slot.windows[0].end]),
+      ).toEqual([
+        ['2027-11-07T00:30-04:00', '2027-11-07T01:30-04:00'],
+        ['2027-11-07T01:30-04:00', '2027-11-07T01:30-05:00'],
+        ['2027-11-07T01:30-05:00', '2027-11-07T02:30-05:00'],
+      ]);
+    });
+
+    it('applies the three reader classes and validates the range', async () => {
+      const w = await world();
+      const base = { offeringId: w.offering['developer-hour'], ...range };
+      // outsider has access with no contact mapping; the offering is not public.
+      await expect(w.a.listOpenSlots(w.outsider, base)).rejects.toMatchObject({
+        code: 'not-found',
+      });
+      await expect(
+        w.a.listOpenSlots({ ...w.outsider, actorId: 'denied' }, base),
+      ).rejects.toMatchObject({ code: 'forbidden' });
+      await w.a.configureOffering(w.operatorContext, randomUUID(), {
+        offeringId: w.offering['developer-hour'],
+        kind: 'developer-hour',
+        public: true,
+        enabled: true,
+      });
+      expect(
+        (await w.a.listOpenSlots(w.outsider, base)).items.length,
+      ).toBeGreaterThan(0);
+      await w.a.configureOffering(w.operatorContext, randomUUID(), {
+        offeringId: w.offering['developer-hour'],
+        kind: 'developer-hour',
+        public: true,
+        enabled: false,
+      });
+      await expect(w.a.listOpenSlots(w.requester, base)).rejects.toMatchObject({
+        code: 'not-found',
+      });
+      await expect(w.a.listOpenSlots(w.outsider, base)).rejects.toMatchObject({
+        code: 'not-found',
+      });
+      expect(
+        (await w.a.listOpenSlots(w.operatorContext, base)).items.length,
+      ).toBeGreaterThan(0);
+      await expect(
+        w.a.listOpenSlots(w.operatorContext, {
+          ...base,
+          to: '2028-03-01T00:00:00Z',
+        }),
+      ).rejects.toMatchObject({ code: 'invalid' });
+      await expect(
+        w.a.listOpenSlots(w.operatorContext, {
+          ...base,
+          from: range.to,
+          to: range.from,
+        }),
+      ).rejects.toMatchObject({ code: 'invalid' });
+      await expect(
+        w.a.listOpenSlots(w.operatorContext, {
+          ...base,
+          offeringId: randomUUID(),
+        }),
+      ).rejects.toMatchObject({ code: 'not-found' });
+      // Discovery is a pure read: nothing was written.
+      expect(
+        (
+          await dbA.query(
+            'SELECT 1 FROM smrt_bookings WHERE tenant_id = ?',
+            w.tenantId,
+          )
+        ).rows,
+      ).toHaveLength(0);
+    });
+  });
+
   it('serializes cap plus one, retries after release, and rejects capacity reductions', async () => {
     const w = await world();
     const first = await w.prepare();

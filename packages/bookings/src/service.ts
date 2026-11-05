@@ -22,6 +22,8 @@ import type {
   ConfigureOfferingInput,
   DeclaredAvailabilityWindow,
   ListBookingsOptions,
+  ListOpenSlotsOptions,
+  OpenSlot,
   ProposeBookingInput,
   ProviderAvailability,
   RequestBookingInput,
@@ -30,10 +32,13 @@ import type {
 import {
   declareWindows,
   fitsCapacity,
+  localEnd,
   measures,
   type Reservation,
+  remainingCapacity,
   resolveCoverage,
   supervisionDeclared,
+  windowFromInstants,
 } from './windows.js';
 
 type WriteOperation = Exclude<BookingOperation, 'read' | 'history'>;
@@ -67,11 +72,21 @@ interface ProposalRow {
 
 interface Allocation extends Reservation {
   window: ResolvedBookingWindow;
+  providerId: string;
 }
 
 const CURRENCY = /^[A-Z]{3}$/;
 const UNITS: readonly BookingUnit[] = ['hour', 'day', 'week', 'month'];
 const MAX_QUANTITY = 1000;
+const MAX_SLOT_RANGE_MS = 400 * 86_400_000;
+const HOUR_MS = 3_600_000;
+const SLOT_CURSOR =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z\|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function project(window: ResolvedBookingWindow): ResolvedBookingWindow {
+  const { zone, start, end, startUtc, endUtc } = window;
+  return { zone, start, end, startUtc, endUtc };
+}
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -829,6 +844,178 @@ export class BookingService {
     return page(offerings, limit, (row) => row.id);
   }
 
+  /**
+   * Lists candidate open slots for an offering: a pure read that reserves nothing
+   * and takes no retry key. Confirmation re-checks capacity under the provider lock.
+   * Offerings are discoverable by operators (all), contact-mapped readers (enabled)
+   * and contact-less readers (enabled and public); the host decides who may read.
+   */
+  async listOpenSlots(
+    context: BookingContext,
+    options: ListOpenSlotsOptions,
+  ): Promise<BookingPage<OpenSlot>> {
+    const ctx = identity(context);
+    const access = await this.#access(ctx, 'read');
+    const offeringId = id(options.offeringId);
+    const fromMs = Date.parse(options.from);
+    const toMs = Date.parse(options.to);
+    if (
+      !Number.isFinite(fromMs) ||
+      !Number.isFinite(toMs) ||
+      toMs <= fromMs ||
+      toMs - fromMs > MAX_SLOT_RANGE_MS
+    ) {
+      throw new BookingError(
+        'invalid',
+        'Expected from before to, at most 400 days apart',
+      );
+    }
+    const from = new Date(fromMs).toISOString();
+    const to = new Date(toMs).toISOString();
+    const quantity = quantityOf(options.quantity);
+    const providerId =
+      options.providerId === undefined ? null : id(options.providerId);
+    const { limit } = pageBounds({ limit: options.limit });
+    if (options.after !== undefined && !SLOT_CURSOR.test(options.after)) {
+      throw new BookingError('invalid', 'Invalid slot cursor');
+    }
+    const after = options.after?.replace(/\|.*$/, (provider) =>
+      provider.toLowerCase(),
+    );
+    const found = await this.#db.query(
+      'SELECT kind, unit, enabled, public FROM smrt_booking_offerings WHERE tenant_id = ? AND id = ?',
+      ctx.tenantId,
+      offeringId,
+    );
+    const offering = found.rows[0];
+    const discoverable =
+      offering &&
+      (access.operator ||
+        (offering.enabled &&
+          (access.contactId !== undefined || offering.public)));
+    if (!discoverable) {
+      throw new BookingError('not-found', 'Offering is not available');
+    }
+    const kind = offering.kind as BookingKind;
+    const unit = offering.unit as BookingUnit;
+    if (kind === 'supervision-day' && quantity !== 1) {
+      throw new BookingError(
+        'invalid',
+        'Supervision slots have a quantity of one',
+      );
+    }
+    const resources = await this.#db.query(
+      `SELECT id, windows::text FROM smrt_booking_resources
+       WHERE tenant_id = ? AND (?::uuid IS NULL OR id = ?)`,
+      ctx.tenantId,
+      providerId,
+      providerId,
+    );
+    const occupied = await this.#allocations(this.#db, ctx, providerId, {
+      startUtc: from,
+      endUtc: to,
+    });
+    const slots: OpenSlot[] = [];
+    for (const resource of resources.rows) {
+      const declaredWindows = (
+        JSON.parse(resource.windows) as DeclaredAvailabilityWindow[]
+      ).sort((a, b) => a.startUtc.localeCompare(b.startUtc));
+      const taken = occupied.filter((item) => item.providerId === resource.id);
+      const inRange = (w: ResolvedBookingWindow) =>
+        w.startUtc >= from && w.endUtc <= to;
+      const push = (windows: ResolvedBookingWindow[], remaining: number) => {
+        if (remaining >= 1) {
+          slots.push({
+            providerId: resource.id,
+            offeringId,
+            unit,
+            quantity,
+            windows,
+            remainingCapacity: remaining,
+          });
+        }
+      };
+      if (kind === 'supervision-day') {
+        for (const w of declaredWindows) {
+          if (w.supervision && inRange(w)) {
+            push(
+              [project(w)],
+              remainingCapacity(
+                { ...w, exclusive: false },
+                declaredWindows,
+                taken,
+              ),
+            );
+          }
+        }
+      } else if (unit === 'hour') {
+        const length = quantity * HOUR_MS;
+        for (const w of declaredWindows) {
+          const start = Date.parse(w.startUtc);
+          const end = Date.parse(w.endUtc);
+          if (w.endUtc <= from || w.startUtc >= to) continue;
+          const first = Math.max(0, Math.ceil((fromMs - start) / HOUR_MS));
+          for (let k = first; start + k * HOUR_MS + length <= end; k++) {
+            const candidate = windowFromInstants(
+              w.zone,
+              start + k * HOUR_MS,
+              start + k * HOUR_MS + length,
+            );
+            if (candidate.startUtc >= to) break;
+            if (!inRange(candidate)) continue;
+            push(
+              [candidate],
+              remainingCapacity(
+                { ...candidate, exclusive: true },
+                declaredWindows,
+                taken,
+              ),
+            );
+          }
+        }
+      } else {
+        const starts = [
+          ...new Set(declaredWindows.map((w) => w.start.slice(0, 10))),
+        ];
+        for (const d0 of starts) {
+          const d1 = localEnd(unit, quantity, d0);
+          const bundle = declaredWindows.filter(
+            (w) =>
+              w.start.slice(0, 10) >= d0 &&
+              w.start.slice(0, 10) < d1 &&
+              (w.end.slice(0, 10) < d1 || w.end.slice(0, 16) === `${d1}T00:00`),
+          );
+          const segments = bundle.map(project);
+          if (
+            segments.length === 0 ||
+            segments[0].start.slice(0, 10) !== d0 ||
+            !segments.every(inRange) ||
+            !measures(unit, quantity, segments) ||
+            !bundle.every(
+              (w) =>
+                remainingCapacity(
+                  { ...w, exclusive: true },
+                  declaredWindows,
+                  taken,
+                ) >= 1,
+            )
+          ) {
+            continue;
+          }
+          push(segments, 1);
+        }
+      }
+    }
+    const key = (slot: OpenSlot) =>
+      `${slot.windows[0].startUtc}|${slot.providerId}`;
+    const seen = new Set<string>();
+    const ordered = slots
+      .sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0))
+      .filter((slot) => !seen.has(key(slot)) && seen.add(key(slot)))
+      .filter((slot) => after === undefined || key(slot) > after);
+    return page(ordered.slice(0, limit + 1), limit, key);
+  }
+
   /** Lists provider schedules so operators can inspect or replace existing windows. */
   async listAvailability(
     context: BookingContext,
@@ -1064,14 +1251,15 @@ export class BookingService {
   async #allocations(
     tx: DatabaseInterface,
     ctx: Readonly<BookingContext>,
-    providerId: string,
-    window?: ResolvedBookingWindow,
+    providerId: string | null,
+    window?: Pick<ResolvedBookingWindow, 'startUtc' | 'endUtc'>,
   ): Promise<Allocation[]> {
     const { rows } = await tx.query(
-      `SELECT a.exclusive, p.windows::text FROM smrt_booking_allocations a
+      `SELECT a.provider_id, a.exclusive, p.windows::text FROM smrt_booking_allocations a
        JOIN smrt_booking_proposals p ON p.tenant_id = a.tenant_id AND p.booking_id = a.booking_id AND p.id = a.proposal_id
-       WHERE a.tenant_id = ? AND a.provider_id = ? AND a.released_at IS NULL${window ? ' AND a.start_at < ? AND a.end_at > ?' : ''}`,
+       WHERE a.tenant_id = ? AND (?::uuid IS NULL OR a.provider_id = ?) AND a.released_at IS NULL${window ? ' AND a.start_at < ? AND a.end_at > ?' : ''}`,
       ctx.tenantId,
+      providerId,
       providerId,
       ...(window ? [window.endUtc, window.startUtc] : []),
     );
@@ -1087,6 +1275,7 @@ export class BookingService {
         .map((segment) => ({
           ...segment,
           window: segment,
+          providerId: row.provider_id as string,
           exclusive: row.exclusive as boolean,
         })),
     );

@@ -106,6 +106,32 @@ export interface ListBookingsOptions extends BookingPageOptions {
   contactId?: string;
 }
 
+export interface ListOpenSlotsOptions {
+  offeringId: string;
+  /** ISO 8601 instants. to - from must be positive and at most 400 days. */
+  from: string;
+  to: string;
+  /** Default 1. Supervision offerings accept only 1. */
+  quantity?: number;
+  /** Narrow to one provider. */
+  providerId?: string;
+  /** Opaque nextCursor from the previous page. */
+  after?: string;
+  /** Defaults to 50. Accepts 1 through 100. */
+  limit?: number;
+}
+
+export interface OpenSlot {
+  providerId: string;
+  offeringId: string;
+  unit: BookingUnit;
+  quantity: number;
+  /** Candidate segments to pass as `windows` to propose(). */
+  windows: ResolvedBookingWindow[];
+  /** 1 for dedicated slots; the minimum remaining shared units for supervision. */
+  remainingCapacity: number;
+}
+
 export interface BookingPage<T> {
   items: T[];
   nextCursor: string | null;

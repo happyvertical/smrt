@@ -94,6 +94,19 @@ contact and other callers may only name their own.
 Operators can use `listAvailability` to inspect existing provider windows
 before replacing a declaration. All three methods use the `read` authority.
 
+`listOpenSlots` returns candidate slots for one offering between `from` and `to`
+(at most 400 days apart), optionally for one provider and a `quantity`. It is a
+pure read: it reserves nothing and takes no retry key, and confirmation still
+re-checks capacity under the provider lock. Each slot carries the `windows` to
+pass to `propose`. Hourly offerings step by the hour inside each declared
+window; day, week and month offerings bundle the declared windows that measure
+the quantity from each start date; supervision offerings list each declared
+supervision window with its remaining shared units. Occupied segments are
+excluded. Results are ordered by first start then provider and paged with the
+opaque `nextCursor`, passed back as `after`. The host decides who may read via
+`access(..., 'read')`; offerings follow the same three reader classes as
+`listOfferings`, and an offering the reader cannot discover is `not-found`.
+
 Lists return up to 50 items by default and accept a limit from 1 to 100.
 Results are ordered by ascending UUID. Pass the returned `nextCursor` as
 `afterId` with the same filters to fetch another page. A null cursor means
