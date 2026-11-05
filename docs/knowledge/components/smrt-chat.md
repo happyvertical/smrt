@@ -5,11 +5,10 @@ description: "Chat rooms, DMs, threads, and agent conversations for the SMRT fra
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T14:34:22Z"
+  at: "2026-11-05T15:48:19Z"
 audience: "internal"
 evidence_level: "source-inspected"
-package_version: "0.60.8"
-source_revision: "sha256:b79307cec0021c3b088a8df28bdb18c0d66d1ce1acb348a78890ddaffc25ce64"
+source_revision: "sha256:6d305ee403a1fc43b71f10a8be7764a9a48be5d3617ddd315b2c0c0ea14d73ac"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/chat/package.json"
@@ -41,7 +40,6 @@ sources:
 
 ## Package
 
-- Version: `0.60.8`
 - Directory: `packages/chat`
 - Private: no
 - Object source: `domain-artifact`

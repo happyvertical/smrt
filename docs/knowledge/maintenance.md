@@ -30,7 +30,7 @@ sources:
 
 This bundle targets Open Knowledge Format v0.2: Markdown concepts with YAML frontmatter, path-based concept IDs, indexes for discovery, and sources for provenance.[^okf]
 
-The bundle root is `docs/knowledge/`. A concept ID is the path from the root with a leading slash, such as `/components/smrt-jobs.md`, and cross-page links use that absolute ID. Only `type` is universally required by OKF. This bundle additionally records titles, descriptions, lifecycle, generation, freshness and internal audience as a local authoring convention. `audience`, `evidence_level`, `package_version`, `source_revision`, `stale_after` and `previous_ids` are local extensions, not standardized OKF fields.
+The bundle root is `docs/knowledge/`. A concept ID is the path from the root with a leading slash, such as `/components/smrt-jobs.md`, and cross-page links use that absolute ID. Only `type` is universally required by OKF. This bundle additionally records titles, descriptions, lifecycle, generation, freshness and internal audience as a local authoring convention. `audience`, `evidence_level`, `package_version` (stamped on hand-authored pages and, at export time, on exported component pages; never on in-repo generated pages, because a version changes on every release), `source_revision`, `stale_after` and `previous_ids` are local extensions, not standardized OKF fields.
 
 # Page kinds
 

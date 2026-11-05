@@ -5,11 +5,10 @@ description: "Expense records for the SMRT framework - reviewed costs against a 
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T14:34:22Z"
+  at: "2026-11-05T15:48:19Z"
 audience: "internal"
 evidence_level: "source-inspected"
-package_version: "0.60.8"
-source_revision: "sha256:912eb520687d2672fe4efa0c97b0d205e8fc6795fbbd1d4aeb5be8c0b8402f0d"
+source_revision: "sha256:9095edc13cec5089ffaba796c3b70c145f155381183dd2c5729521f77914abf0"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/expenses/package.json"
@@ -29,7 +28,6 @@ sources:
 
 ## Package
 
-- Version: `0.60.8`
 - Directory: `packages/expenses`
 - Private: no
 - Object source: `domain-artifact`

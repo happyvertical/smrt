@@ -5,11 +5,10 @@ description: "Shared SMRT package and project workbench"
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T14:34:22Z"
+  at: "2026-11-05T15:48:19Z"
 audience: "internal"
 evidence_level: "manifest-described"
-package_version: "0.60.8"
-source_revision: "sha256:a28b6cd10cc9e83b3119ecac98714b13743f9f5722f972506dd17ab86853fffe"
+source_revision: "sha256:e200a7f73682bf9e4cdcde88c9ba2965f4d5cd64babd579691e5aa18f9b91085"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/smrt-workbench/package.json"
@@ -23,7 +22,6 @@ sources:
 
 ## Package
 
-- Version: `0.60.8`
 - Directory: `packages/smrt-workbench`
 - Private: no
 - Object source: `none`

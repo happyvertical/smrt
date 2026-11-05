@@ -5,11 +5,10 @@ description: "SMRT federation library for building federated local knowledge bas
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T14:34:22Z"
+  at: "2026-11-05T15:48:19Z"
 audience: "internal"
 evidence_level: "manifest-described"
-package_version: "0.60.8"
-source_revision: "sha256:37a249d22f018ab789b42bfe5ad204b7f33308b175f115bc9908f191fb742200"
+source_revision: "sha256:df790290167b01c659b39c20ece54ec2659e6aeae4c2f35d1bbf0fb2f0e144d9"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/gnode/package.json"
@@ -23,7 +22,6 @@ sources:
 
 ## Package
 
-- Version: `0.60.8`
 - Directory: `packages/gnode`
 - Private: no
 - Object source: `domain-artifact`

@@ -5,11 +5,10 @@ description: "Record comments and mention hooks for SMRT applications"
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T14:34:22Z"
+  at: "2026-11-05T15:48:19Z"
 audience: "internal"
 evidence_level: "source-inspected"
-package_version: "0.60.8"
-source_revision: "sha256:bea41d337ef8aa84728deadfcf540568271a46707837c983bca22624443c0d5b"
+source_revision: "sha256:3518712c923918258b48c6a0018d568afbafd6a9470c7d93c2c0ad88743bf3b3"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/comments/package.json"
@@ -29,7 +28,6 @@ sources:
 
 ## Package
 
-- Version: `0.60.8`
 - Directory: `packages/comments`
 - Private: no
 - Object source: `domain-artifact`

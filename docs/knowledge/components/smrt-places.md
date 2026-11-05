@@ -5,11 +5,10 @@ description: "Hierarchical place management with geo integration and SMRT framew
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T14:34:22Z"
+  at: "2026-11-05T15:48:19Z"
 audience: "internal"
 evidence_level: "source-inspected"
-package_version: "0.60.8"
-source_revision: "sha256:c829cb046b2716b731e549b2484e55b84cae7aa2c510e36961f0915418ccde4f"
+source_revision: "sha256:9cc7840fa53f0ce4b3b0f729dc20865e02daa7f896a3625f12ba0292216bdbf4"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/places/package.json"
@@ -23,7 +22,6 @@ sources:
 
 ## Package
 
-- Version: `0.60.8`
 - Directory: `packages/places`
 - Private: no
 - Object source: `domain-artifact`

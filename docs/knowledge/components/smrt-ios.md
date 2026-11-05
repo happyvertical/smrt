@@ -5,11 +5,10 @@ description: "SwiftUI foundation for SMRT mobile apps: MobileTheme design tokens
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T14:34:22Z"
+  at: "2026-11-05T15:48:19Z"
 audience: "internal"
 evidence_level: "manifest-described"
-package_version: "0.51.13"
-source_revision: "sha256:dc11fb0947cdc4922a39237cee975884c30ab9c6f80bb965bdc0ca1363889529"
+source_revision: "sha256:e7d7e730b5c6c4bd0b05d884549508cce020e6cf6062c831fe54b2c6af089f6c"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/smrt-ios/package.json"
@@ -23,7 +22,6 @@ sources:
 
 ## Package
 
-- Version: `0.51.13`
 - Directory: `packages/smrt-ios`
 - Private: yes
 - Object source: `none`

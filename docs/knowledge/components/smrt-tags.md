@@ -5,11 +5,10 @@ description: "Reusable tagging system with hierarchies, contexts, and multi-lang
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T14:34:22Z"
+  at: "2026-11-05T15:48:19Z"
 audience: "internal"
 evidence_level: "source-inspected"
-package_version: "0.60.8"
-source_revision: "sha256:db40935b81a315285b12a52bfcd93f61fce6bf0d00e1556226ecd5b500900c21"
+source_revision: "sha256:8aafbd784cd5ca464be069107247892c21241df81cdfb8c02441538f10ce403c"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/tags/package.json"
@@ -23,7 +22,6 @@ sources:
 
 ## Package
 
-- Version: `0.60.8`
 - Directory: `packages/tags`
 - Private: no
 - Object source: `domain-artifact`

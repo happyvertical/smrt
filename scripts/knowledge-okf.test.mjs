@@ -123,7 +123,7 @@ test('component pages carry the issue frontmatter and only generator evidence le
   const fm = page.frontmatter;
   assert.equal(fm.type, 'Component');
   assert.equal(fm.audience, 'internal');
-  assert.equal(fm.package_version, '1.2.3');
+  assert.equal(fm.package_version, undefined);
   assert.match(fm.source_revision, /^sha256:[0-9a-f]{64}$/);
   assert.equal(fm.generated.at, '2026-11-05T12:00:00Z');
   assert.ok(fm.sources.length >= 2);
@@ -186,11 +186,10 @@ test('adding one intent changes only that package page and moves its pin', (t) =
   );
 });
 
-test('a version, AGENTS hash or dependency change turns the pin stale', (t) => {
+test('an AGENTS hash or dependency change turns the pin stale', (t) => {
   const { bundleDir, jobs, core } = setup(t);
   writeBundle(buildComponentModels(indexOf(jobs, core)), bundleDir, NOW);
   for (const override of [
-    { version: '9.9.9' },
     { agentDocSha256: 'b'.repeat(64) },
     { smrtDependencies: [] },
   ]) {
@@ -208,6 +207,23 @@ test('a version, AGENTS hash or dependency change turns the pin stale', (t) => {
   // how much later it runs or which commit the tree is on.
   assert.deepEqual(
     checkBundle(buildComponentModels(indexOf(jobs, core)), bundleDir),
+    [],
+  );
+});
+
+test('a version-only change keeps the same source_revision', (t) => {
+  const { bundleDir, jobs, core } = setup(t);
+  const [before] = buildComponentModels(indexOf(jobs, core));
+  const [after] = buildComponentModels(
+    indexOf({ ...jobs, version: '9.9.9' }, core),
+  );
+  assert.equal(after.sourceRevision, before.sourceRevision);
+  writeBundle(buildComponentModels(indexOf(jobs, core)), bundleDir, NOW);
+  assert.deepEqual(
+    checkBundle(
+      buildComponentModels(indexOf({ ...jobs, version: '9.9.9' }, core)),
+      bundleDir,
+    ),
     [],
   );
 });

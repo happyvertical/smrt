@@ -5,11 +5,10 @@ description: "Kotlin Multiplatform shared mobile foundation for SMRT apps: durab
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T14:34:22Z"
+  at: "2026-11-05T15:48:19Z"
 audience: "internal"
 evidence_level: "manifest-described"
-package_version: "0.51.13"
-source_revision: "sha256:9ffaa6982167a73548b597616ecbf4f86eafdb6954f56dbe1bec0162cf335a0b"
+source_revision: "sha256:c8d8c08e430abfdb63aba861a27163978cf069d2e4f0f40e6c3f42e23e715dbe"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/smrt-mobile/package.json"
@@ -23,7 +22,6 @@ sources:
 
 ## Package
 
-- Version: `0.51.13`
 - Directory: `packages/smrt-mobile`
 - Private: yes
 - Object source: `none`

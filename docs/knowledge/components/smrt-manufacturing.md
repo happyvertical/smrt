@@ -5,11 +5,10 @@ description: "Bills of materials, cost rollup, and production-order operations f
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T14:34:22Z"
+  at: "2026-11-05T15:48:19Z"
 audience: "internal"
 evidence_level: "source-inspected"
-package_version: "0.60.8"
-source_revision: "sha256:a91e8069fb20f9bcebfcb7a0a37109c369e6474322574ea2d46dc368d30efc03"
+source_revision: "sha256:009a2c3092f06d4543853b3774161c934d436463b81dcfa0cb708abecf74b643"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/manufacturing/package.json"
@@ -26,7 +25,6 @@ sources:
 
 ## Package
 
-- Version: `0.60.8`
 - Directory: `packages/manufacturing`
 - Private: no
 - Object source: `domain-artifact`

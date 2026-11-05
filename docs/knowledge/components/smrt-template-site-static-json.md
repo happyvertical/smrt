@@ -5,11 +5,10 @@ description: "Static community site template with JSON data storage and SMRT fra
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T14:34:22Z"
+  at: "2026-11-05T15:48:19Z"
 audience: "internal"
 evidence_level: "manifest-described"
-package_version: "0.60.8"
-source_revision: "sha256:7f63c5c8d6b33a0d3a18d9bbc3f016e417472f79394d9efaba68b6bbd58e237a"
+source_revision: "sha256:49e8c7a724612c2c2a1a8305acd1351e56aacb2c5e4917485aef0e7b1142953d"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/template-site-static-json/package.json"
@@ -23,7 +22,6 @@ sources:
 
 ## Package
 
-- Version: `0.60.8`
 - Directory: `packages/template-site-static-json`
 - Private: no
 - Object source: `none`

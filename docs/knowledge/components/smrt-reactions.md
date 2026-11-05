@@ -5,11 +5,10 @@ description: "Tenant-scoped reactions and lightweight polls with shared particip
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T14:34:22Z"
+  at: "2026-11-05T15:48:19Z"
 audience: "internal"
 evidence_level: "source-inspected"
-package_version: "0.60.8"
-source_revision: "sha256:a4048cfe59c9f1faf353be8f7d4bfd8c073225a4b13e091f1cb8c4ae1abf3935"
+source_revision: "sha256:6a2cfcba071d8e3d9b95655edac1b6190122f94d55f24b87df53680ffa7e783b"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/reactions/package.json"
@@ -23,7 +22,6 @@ sources:
 
 ## Package
 
-- Version: `0.60.8`
 - Directory: `packages/reactions`
 - Private: no
 - Object source: `domain-artifact`

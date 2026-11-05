@@ -5,11 +5,10 @@ description: "Shared type definitions for the HAVE SDK"
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T14:34:22Z"
+  at: "2026-11-05T15:48:19Z"
 audience: "internal"
 evidence_level: "manifest-described"
-package_version: "0.60.8"
-source_revision: "sha256:696e8d5809959dab820c1517c4417b0ba01a551daa1c667d0bd0291852a781a1"
+source_revision: "sha256:3edb2b4a0d6244065bafe31b5abc13e678786de6fc8b54338742b868a0aa941e"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/types/package.json"
@@ -23,7 +22,6 @@ sources:
 
 ## Package
 
-- Version: `0.60.8`
 - Directory: `packages/types`
 - Private: no
 - Object source: `none`

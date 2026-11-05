@@ -5,11 +5,10 @@ description: "Hierarchical event management with participant tracking and SMRT f
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T14:34:22Z"
+  at: "2026-11-05T15:48:19Z"
 audience: "internal"
 evidence_level: "source-inspected"
-package_version: "0.60.8"
-source_revision: "sha256:dc16285ad58faade67478df80071acf26c83ae75d3cc6fd6892339bab9cf4896"
+source_revision: "sha256:3ac486232565189b74b20ad6b402df1482d37304c78d84a8f8d9f8c307d5d5f0"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/events/package.json"
@@ -23,7 +22,6 @@ sources:
 
 ## Package
 
-- Version: `0.60.8`
 - Directory: `packages/events`
 - Private: no
 - Object source: `domain-artifact`

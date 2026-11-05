@@ -5,11 +5,10 @@ description: "Asset management system with versioning, metadata, and AI-powered 
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T14:34:22Z"
+  at: "2026-11-05T15:48:19Z"
 audience: "internal"
 evidence_level: "source-inspected"
-package_version: "0.60.8"
-source_revision: "sha256:fad3e8b8421f445289637e46e4ef4f5bea45d401562d20a14560b38386a3dd8b"
+source_revision: "sha256:8d3ea47126764ba304fced5c78c4f301892c094158ba79d2625184e77857c9a2"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/assets/package.json"
@@ -26,7 +25,6 @@ sources:
 
 ## Package
 
-- Version: `0.60.8`
 - Directory: `packages/assets`
 - Private: no
 - Object source: `domain-artifact`

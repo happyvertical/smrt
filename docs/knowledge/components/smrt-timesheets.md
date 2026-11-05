@@ -5,11 +5,10 @@ description: "Shared time entries for the SMRT framework: who worked how long on
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T14:48:43Z"
+  at: "2026-11-05T15:48:19Z"
 audience: "internal"
 evidence_level: "source-inspected"
-package_version: "0.60.8"
-source_revision: "sha256:bdb84815ec692c3f85030a2f5debe50290438a63902ced108aef1ea8dc8159bc"
+source_revision: "sha256:33b3f89bd3d41c7ae0d84d09b08b8d3566ab274ea8138882f952ac2ae402ef8e"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/timesheets/package.json"
@@ -26,7 +25,6 @@ sources:
 
 ## Package
 
-- Version: `0.60.8`
 - Directory: `packages/timesheets`
 - Private: no
 - Object source: `domain-artifact`

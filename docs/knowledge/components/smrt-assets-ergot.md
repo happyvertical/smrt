@@ -5,11 +5,10 @@ description: "Ergot-backed processing, search, and workflow adapter for SMRT ass
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T14:34:22Z"
+  at: "2026-11-05T15:48:19Z"
 audience: "internal"
 evidence_level: "manifest-described"
-package_version: "0.60.8"
-source_revision: "sha256:7627d830c79ccdf961492d3672cb2f11029a9e7cf82d79288050e876fb04da01"
+source_revision: "sha256:6d613b14471c71e62d1b2801bb4f58bd00c2156bad993a3faa77baa2dd5e362e"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/assets-ergot/package.json"
@@ -23,7 +22,6 @@ sources:
 
 ## Package
 
-- Version: `0.60.8`
 - Directory: `packages/assets-ergot`
 - Private: no
 - Object source: `none`

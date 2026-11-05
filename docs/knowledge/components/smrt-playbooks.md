@@ -5,11 +5,10 @@ description: "Layered playbook registry, app/tenant overrides, and plan resoluti
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T14:34:22Z"
+  at: "2026-11-05T15:48:19Z"
 audience: "internal"
 evidence_level: "source-inspected"
-package_version: "0.60.8"
-source_revision: "sha256:ecd6c9d404e336249b86df22f248a3a345a7aacebe1335511c8461438860d6f8"
+source_revision: "sha256:b774deb60a56b08fdae353257d9ca920cc04773ca9b53f580199cd0e6a8f184d"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/playbooks/package.json"
@@ -23,7 +22,6 @@ sources:
 
 ## Package
 
-- Version: `0.60.8`
 - Directory: `packages/playbooks`
 - Private: no
 - Object source: `domain-artifact`

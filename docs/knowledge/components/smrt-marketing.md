@@ -5,11 +5,10 @@ description: "Cross-channel campaign coordination, immutable performance evidenc
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T14:34:22Z"
+  at: "2026-11-05T15:48:19Z"
 audience: "internal"
 evidence_level: "source-inspected"
-package_version: "0.60.8"
-source_revision: "sha256:7d5c3fb774a2b5ece7c5ed5e70cce61e9b4f8053ae323a6ac59f6722eefa55ae"
+source_revision: "sha256:e128fbefd0504a038ef657ab4b8fd8bcfef2f4ab56fe72d1e36237b35c769fc9"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/marketing/package.json"
@@ -23,7 +22,6 @@ sources:
 
 ## Package
 
-- Version: `0.60.8`
 - Directory: `packages/marketing`
 - Private: no
 - Object source: `domain-artifact`

@@ -5,11 +5,10 @@ description: "Optional OpenAI navigation and settings for authorized SMRT MCP Ap
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T14:34:22Z"
+  at: "2026-11-05T15:48:19Z"
 audience: "internal"
 evidence_level: "manifest-described"
-package_version: "0.60.8"
-source_revision: "sha256:e039c29b4efcb0fe8ed481be5808ede2edf1e32db0ac7ae387ae7e9da871692d"
+source_revision: "sha256:b3ab960c6593048872a888727eedb692256778e36c0708a59bbce57e336f0c62"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/mcp-openai/package.json"
@@ -23,7 +22,6 @@ sources:
 
 ## Package
 
-- Version: `0.60.8`
 - Directory: `packages/mcp-openai`
 - Private: no
 - Object source: `none`

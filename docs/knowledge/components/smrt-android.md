@@ -5,11 +5,10 @@ description: "Android Compose foundation for SMRT mobile apps: MobileTheme desig
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T14:34:22Z"
+  at: "2026-11-05T15:48:19Z"
 audience: "internal"
 evidence_level: "manifest-described"
-package_version: "0.51.13"
-source_revision: "sha256:a29e149d22f01284262f9e384aa2f615a12ee782a670962d98515f0370cf5fbc"
+source_revision: "sha256:407da1638d4e109e71dfec920b7123ec74562a2a98338bee15043cf83fbbf078"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/smrt-android/package.json"
@@ -23,7 +22,6 @@ sources:
 
 ## Package
 
-- Version: `0.51.13`
 - Directory: `packages/smrt-android`
 - Private: yes
 - Object source: `none`

@@ -5,11 +5,10 @@ description: "Voice profile management for AI-powered voice synthesis and clonin
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T14:34:22Z"
+  at: "2026-11-05T15:48:19Z"
 audience: "internal"
 evidence_level: "source-inspected"
-package_version: "0.60.8"
-source_revision: "sha256:b3a2be45e1008706a29a11045accff2eec0111e4b99da7ebbc4e00490383d19f"
+source_revision: "sha256:50a2138d84b47f59684a28b2911f9b55b0ed43732836b60395268bb0d7f28662"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/voice/package.json"
@@ -23,7 +22,6 @@ sources:
 
 ## Package
 
-- Version: `0.60.8`
 - Directory: `packages/voice`
 - Private: no
 - Object source: `domain-artifact`

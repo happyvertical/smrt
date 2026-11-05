@@ -5,11 +5,10 @@ description: "Outbound webhook subscriptions, signed delivery, and durable retri
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T14:34:22Z"
+  at: "2026-11-05T15:48:19Z"
 audience: "internal"
 evidence_level: "source-inspected"
-package_version: "0.60.8"
-source_revision: "sha256:090dd0ba5f83c0e6f2ed8f4fbecfa45dc22fd790ac4c971925e8737962fbff6e"
+source_revision: "sha256:f5282701ffdaa4f354a923d02010316c5c5d7ec8f1d65ec3b2cca1cfdd187690"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/webhooks/package.json"
@@ -23,7 +22,6 @@ sources:
 
 ## Package
 
-- Version: `0.60.8`
 - Directory: `packages/webhooks`
 - Private: no
 - Object source: `domain-artifact`

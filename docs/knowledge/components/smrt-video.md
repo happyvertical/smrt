@@ -5,11 +5,10 @@ description: "Video content management for AI-powered video production in the SM
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T14:34:22Z"
+  at: "2026-11-05T15:48:19Z"
 audience: "internal"
 evidence_level: "source-inspected"
-package_version: "0.60.8"
-source_revision: "sha256:4b6108d42296a14bf560bb11c243bb3223ec0e09e37e5a6af9c564c3c0dd8cd9"
+source_revision: "sha256:865f423b1f0ae219631164f7a8bb5924f24ee24f8132b4873a75611d60d5ce47"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/video/package.json"
@@ -23,7 +22,6 @@ sources:
 
 ## Package
 
-- Version: `0.60.8`
 - Directory: `packages/video`
 - Private: no
 - Object source: `domain-artifact`

@@ -5,11 +5,10 @@ description: "SMRT products module: triple-purpose microservice template for sta
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T15:00:55Z"
+  at: "2026-11-05T15:48:19Z"
 audience: "internal"
 evidence_level: "source-inspected"
-package_version: "0.60.8"
-source_revision: "sha256:c278cfe9cbd484188adcf53f4742f80562054b518890593e76cfd2b54789b03c"
+source_revision: "sha256:9b43bb99d225c8b957b59a12fc67e8d9d7bc307ea1b26d3d5506d1895eb3c423"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/products/package.json"
@@ -26,7 +25,6 @@ sources:
 
 ## Package
 
-- Version: `0.60.8`
 - Directory: `packages/products`
 - Private: no
 - Object source: `domain-artifact`

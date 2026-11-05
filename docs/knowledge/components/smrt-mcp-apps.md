@@ -5,11 +5,10 @@ description: "Framework-neutral browser bridge for portable MCP Apps"
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T14:34:22Z"
+  at: "2026-11-05T15:48:19Z"
 audience: "internal"
 evidence_level: "manifest-described"
-package_version: "0.60.8"
-source_revision: "sha256:261f8a6ab353873227b99bcb1992f173c45c94c72d67c021983862961309a0d5"
+source_revision: "sha256:5920a981c7a626074a16f9bd4c2531f075fd2c25200c3cd664918e31547211c8"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/mcp-apps/package.json"
@@ -26,7 +25,6 @@ sources:
 
 ## Package
 
-- Version: `0.60.8`
 - Directory: `packages/mcp-apps`
 - Private: no
 - Object source: `none`

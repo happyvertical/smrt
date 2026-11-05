@@ -20,11 +20,14 @@
  * ## `source_revision`
  *
  * `source_revision` is `sha256:<hex>` over the canonical JSON of the page's
- * *input model*: package manifest facts (name, version, description, private,
+ * *input model*: package manifest facts (name, description, private,
  * exports, framework/SDK dependencies), the SHA-256 of the package's own
  * `AGENTS.md` and linked `agents/*.md` module docs, the object, MCP-tool and
  * `agentSurface` (intents and playbooks) slices of the knowledge index, and the
- * generator `FORMAT_VERSION`. It is a content pin, not a commit id: it moves
+ * generator `FORMAT_VERSION`. The package version is deliberately not an input and
+ * is not rendered: it changes on every release commit, which would stale all
+ * pages; `smrt docs:agents` stamps `package_version` from the installed version
+ * at export time. It is a content pin, not a commit id: it moves
  * when, and only when, something the page renders (or the AGENTS chain it
  * summarises) changes, so `knowledge:check --strict` goes red on a stale page
  * and stays green when HEAD merely moves. The workspace-root `AGENTS.md` is
@@ -87,7 +90,6 @@ export interface ComponentModel {
   /** Concept ID with leading slash: `/components/<name>.md`. */
   id: string;
   packageName: string;
-  version: string;
   description: string;
   isPrivate: boolean;
   directory: string;
@@ -235,7 +237,6 @@ export function buildComponentModel(pkg: KnowledgePackage): ComponentModel {
     name,
     id: componentId(name),
     packageName: pkg.name,
-    version: pkg.version,
     description: readDescription(pkg),
     isPrivate: pkg.isPrivate,
     directory,
@@ -390,8 +391,6 @@ export function renderComponentPage(
     // biome-ignore lint/style/useNamingConvention: OKF frontmatter key names
     evidence_level: model.evidenceLevel,
     // biome-ignore lint/style/useNamingConvention: OKF frontmatter key names
-    package_version: model.version,
-    // biome-ignore lint/style/useNamingConvention: OKF frontmatter key names
     source_revision: model.sourceRevision,
     sources: [
       {
@@ -411,7 +410,6 @@ export function renderComponentPage(
   out.push(
     '## Package',
     '',
-    `- Version: ${code(model.version)}`,
     `- Directory: ${code(dir)}`,
     `- Private: ${model.isPrivate ? 'yes' : 'no'}`,
     `- Object source: ${code(model.objectSource)}`,

@@ -5,11 +5,10 @@ description: "Tenant-aware learning catalog models and authorized catalog access
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T14:34:22Z"
+  at: "2026-11-05T15:48:19Z"
 audience: "internal"
 evidence_level: "source-inspected"
-package_version: "0.60.8"
-source_revision: "sha256:fd65cf356da3d3d4baedee44c43a0a1952bf561734c75b825e6eb2db14b77646"
+source_revision: "sha256:309ee472ab383aa7654b78d18f8694bf3c80aacf0a93e982017307b024164013"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/education/package.json"
@@ -77,7 +76,6 @@ sources:
 
 ## Package
 
-- Version: `0.60.8`
 - Directory: `packages/education`
 - Private: no
 - Object source: `domain-artifact`

@@ -5,11 +5,10 @@ description: "Modular sales for the SMRT framework: agreement execution, CRM, re
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T14:34:22Z"
+  at: "2026-11-05T15:48:19Z"
 audience: "internal"
 evidence_level: "source-inspected"
-package_version: "0.60.8"
-source_revision: "sha256:22dce2e403de8b98a8e6578aba93b372d6d234b756e97323cb994f2e619defcf"
+source_revision: "sha256:0629891e27cc57a6a5419797a7b005dcf71629583bdba36ad5e4b65ad595cc3a"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/sales/package.json"
@@ -38,7 +37,6 @@ sources:
 
 ## Package
 
-- Version: `0.60.8`
 - Directory: `packages/sales`
 - Private: no
 - Object source: `domain-artifact`

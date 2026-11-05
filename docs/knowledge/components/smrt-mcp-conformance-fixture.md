@@ -5,11 +5,10 @@ description: "Workspace package @happyvertical/smrt-mcp-conformance-fixture"
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T14:34:22Z"
+  at: "2026-11-05T15:48:19Z"
 audience: "internal"
 evidence_level: "source-inspected"
-package_version: "0.0.69"
-source_revision: "sha256:7598be8bc8a59f7d10d14fd391b38c41388f95b553da0b24f899da8cdb66d6d9"
+source_revision: "sha256:0e6380b447adf0a4317de25e92ce09e1c787dd2de2cf3f0e471988c824b1e68e"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/mcp-conformance-fixture/package.json"
@@ -23,7 +22,6 @@ sources:
 
 ## Package
 
-- Version: `0.0.69`
 - Directory: `packages/mcp-conformance-fixture`
 - Private: yes
 - Object source: `scanner`

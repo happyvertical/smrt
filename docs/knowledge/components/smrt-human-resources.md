@@ -5,11 +5,10 @@ description: "HR records for the SMRT framework: who works for an organization, 
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T14:34:22Z"
+  at: "2026-11-05T15:48:19Z"
 audience: "internal"
 evidence_level: "source-inspected"
-package_version: "0.60.8"
-source_revision: "sha256:d1e6c0431a1154c6da7a3c52a91d66fb170e0dd322f39b2cc90ef98aa5e614e5"
+source_revision: "sha256:695d78a348ba46d4a35f9daf8cf93216252e6f8b12946b539a60b0e5e7bba1f6"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/human-resources/package.json"
@@ -23,7 +22,6 @@ sources:
 
 ## Package
 
-- Version: `0.60.8`
 - Directory: `packages/human-resources`
 - Private: no
 - Object source: `domain-artifact`

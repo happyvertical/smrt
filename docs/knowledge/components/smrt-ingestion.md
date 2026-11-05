@@ -5,11 +5,10 @@ description: "Durable tenant-scoped intake and evidence foundations"
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T14:34:22Z"
+  at: "2026-11-05T15:48:19Z"
 audience: "internal"
 evidence_level: "source-inspected"
-package_version: "0.60.8"
-source_revision: "sha256:6492157a2f4028d9d558885996999d958fd3825adbb3af6254e040799b227c45"
+source_revision: "sha256:ec8f69f2bf9aa0295dd582ba5e0f7920249b21e3b8661b8148358bcb41509cba"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/ingestion/package.json"
@@ -41,7 +40,6 @@ sources:
 
 ## Package
 
-- Version: `0.60.8`
 - Directory: `packages/ingestion`
 - Private: no
 - Object source: `domain-artifact`
