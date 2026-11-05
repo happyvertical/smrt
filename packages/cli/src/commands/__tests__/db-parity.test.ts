@@ -339,10 +339,14 @@ describe('live parity against a real SQLite database', () => {
   async function createSystemTables(): Promise<void> {
     await withDatabase(async (db) => {
       for (const shape of getSystemTableShapes('sqlite').values()) {
+        const primaryKey = shape.columns
+          .filter((column) => column.primaryKey)
+          .map((column) => column.name);
+        const compositeKey = primaryKey.length > 1;
         const columns = shape.columns
           .map(
             (column) =>
-              `${column.name} ${column.type}${column.primaryKey ? ' PRIMARY KEY' : ''}${
+              `${column.name} ${column.type}${column.primaryKey && !compositeKey ? ' PRIMARY KEY' : ''}${
                 column.notNull ? ' NOT NULL' : ''
               }${column.unique ? ' UNIQUE' : ''}`,
           )
@@ -350,9 +354,12 @@ describe('live parity against a real SQLite database', () => {
             shape.uniqueConstraints.map(
               (columnSet) => `UNIQUE(${columnSet.join(', ')})`,
             ),
-          )
-          .join(', ');
-        await db.query(`CREATE TABLE ${shape.tableName} (${columns})`);
+          );
+        if (compositeKey)
+          columns.push(`PRIMARY KEY (${primaryKey.join(', ')})`);
+        await db.query(
+          `CREATE TABLE ${shape.tableName} (${columns.join(', ')})`,
+        );
         for (const index of shape.indexes) {
           await db.query(
             `CREATE ${index.unique ? 'UNIQUE ' : ''}INDEX ${index.name} ON ${shape.tableName}(${index.columns.join(', ')})${

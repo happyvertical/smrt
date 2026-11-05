@@ -3821,7 +3821,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
   private async createPolymorphic(
     className: string | null | undefined,
     options: Record<string, unknown>,
-    hydrationOptions: { hydrateOnly?: boolean } = {},
+    hydrationRow?: Record<string, unknown>,
   ): Promise<ModelType> {
     // Schema already initialized in Collection.create() static factory
 
@@ -3862,7 +3862,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       decisions: this.options.decisions,
       db: this.db,
       _skipLoad: true,
-      ...(hydrationOptions.hydrateOnly
+      ...(hydrationRow
         ? {
             _reuseInitializedDb: true,
             _deferRuntimeInitialization: true,
@@ -3873,7 +3873,8 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
 
     // Instantiate the correct subclass
     const instance = new registeredClass.constructor(params);
-    if (hydrationOptions.hydrateOnly) {
+    if (hydrationRow) {
+      instance.hydrateSyncMetadata(hydrationRow);
       // Models need to distinguish authoritative DB hydration from a fresh
       // `_skipLoad` instance while initialize() captures immutable state.
       instance.markAsPersisted();
@@ -4732,7 +4733,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       const polymorphicInstance = await this.createPolymorphic(
         typeof metaType === 'string' ? metaType : String(metaType),
         formattedData,
-        { hydrateOnly: true },
+        row,
       );
       return polymorphicInstance;
     }
@@ -4748,6 +4749,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     };
 
     const instance = new this._itemClass(instanceParams);
+    instance.hydrateSyncMetadata(row);
     // Mark before initialize() so model lifecycle guards can safely snapshot
     // authoritative hydrated values without probing the database. A fresh
     // caller-created `_skipLoad` instance remains unpersisted.

@@ -7,8 +7,10 @@ import { familyMigrationTests } from './family-intake-migration-workflows.js';
 beforeAll(() => enableTenancy());
 afterAll(() => disableTenancy());
 describe('family intake schema upgrade SQLite', () =>
-  familyMigrationTests('sqlite', async (schema) => {
-    const isolated = await createIsolatedTestDb({ schema });
+  familyMigrationTests('sqlite', async (statements) => {
+    const isolated = await createIsolatedTestDb({
+      schema: statements.join(';\n'),
+    });
     await isolated.db.rollback();
     return {
       db: isolated.baseDb,

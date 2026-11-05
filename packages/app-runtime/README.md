@@ -134,11 +134,31 @@ remains global. Startup and setup are idempotent; replayed, expired, or
 concurrent claims fail closed.
 `ownerTenant: { slug, name, adoptExisting }` (also accepted by the SvelteKit
 runtime) selects the bootstrap tenant; the default is a new tenant with slug
-`default`. Because `Tenant` upserts on its slug, the claim checks first and
-never replaces an existing tenant: it fails with `owner_tenant_conflict`, or,
-with `adoptExisting: true`, adds the owner membership to an application-seeded
-tenant only when that tenant is active, has no parent, and has no memberships of
-any status. An adopted tenant keeps its id and name. A failed claim rolls back
+`default`. The default tenant, owner User, owner Person, and owner Membership
+have separate UUIDv8 identifiers derived with domain-separated HMAC-SHA256
+from the installation's private `secrets/application.secret`. Independent
+installs of the same app get distinct identities and share the global built-in
+role IDs. Restarts reuse the same installation identities. Treat
+`secrets/application.secret` as installation identity material. Preserve it
+with the database in protected backups and during a restore or move of the
+same installation. Deleting, replacing, or rotating the file changes the
+derived identities and invalidates existing bootstrap and local MCP tokens.
+Keep only one active installation for a given secret. A copied data root
+retains the same owner, tenant, and writer IDs, and the runtime currently has
+no way to detect that copy. Start independent installations with a fresh data
+root.
+
+The invitation and active owner membership authorize the owner. The same
+seed derives a separate writer UUID. The local runtime binds it to the
+database so local edits to tracked rows identify this installation, including
+after a restart.
+
+A tenant with the selected slug causes `owner_tenant_conflict`, unless
+`adoptExisting: true` explicitly allows adopting an active root tenant with
+zero memberships of any status. An adopted tenant keeps its id and name.
+The claim rejects an unrelated row using the reserved tenant UUID and an
+account using the owner UUID or the claimed email. The owner Person and
+Membership also use strict inserts. A failed claim rolls back
 and leaves the invitation claimable.
 Authenticated session TTLs are configured in whole seconds with a minimum of
 one second, and invalid values are rejected before filesystem mutation.

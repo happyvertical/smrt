@@ -1152,6 +1152,20 @@ CREATE INDEX IF NOT EXISTS idx_smrt_run_once_claims_status_completed
   ON _smrt_run_once_claims(status, completed_at);
 `;
 
+/** Durable sync deletion revisions, separate from live natural keys. */
+export const CREATE_SMRT_SYNC_TOMBSTONES_TABLE = `
+CREATE TABLE IF NOT EXISTS _smrt_sync_tombstones (
+  table_name TEXT NOT NULL,
+  row_id TEXT NOT NULL,
+  model TEXT NOT NULL,
+  tenant_id TEXT,
+  origin_device_id TEXT NOT NULL,
+  revision INTEGER NOT NULL,
+  deleted_at TIMESTAMP NOT NULL,
+  PRIMARY KEY (table_name, row_id)
+);
+`;
+
 /**
  * All system table creation statements
  */
@@ -1166,6 +1180,7 @@ export const ALL_SYSTEM_TABLES = [
   CREATE_SMRT_DISPATCH_SUBSCRIPTIONS_TABLE,
   CREATE_SMRT_AI_USAGE_TABLE,
   CREATE_SMRT_CHANGES_TABLE,
+  CREATE_SMRT_SYNC_TOMBSTONES_TABLE,
 ];
 
 /**
@@ -1331,8 +1346,10 @@ function toPostgresTenantUuid(ddl: string): string {
  * 1.11.1 adds `idx_smrt_run_once_claims_status_completed` (#3080), the
  * `(status, completed_at)` index backing `pruneRunOnceClaims()`'s retention
  * predicate (`system/retention.ts`).
+ *
+ * 1.12.0 adds the durable tracked-deletion ledger.
  */
-export const SMRT_SCHEMA_VERSION = '1.11.1';
+export const SMRT_SCHEMA_VERSION = '1.12.0';
 
 /**
  * Canonical form of the system DDL that {@link SMRT_SCHEMA_DDL_CHECKSUMS} covers.
@@ -1377,4 +1394,6 @@ export const SMRT_SCHEMA_DDL_CHECKSUMS: Readonly<Record<string, string>> =
       'c51351a76c96beb64fa7e5922f78d776367af882ed1ff37229f9e9ffacee8372',
     '1.11.1':
       '98112937a3bbb3883c3db1fd5e836751f91a479c1c5da64d4410263a6581ef1f',
+    '1.12.0':
+      '6aa42e368e7d57191de9b0c040c289edf38a1ffa7ae0097f57188ecd5a5b8f9c',
   });

@@ -19,6 +19,16 @@ package build. Bundling it under `dist/node_modules` leaves dangling imports
 when npm excludes that directory from tarballs. The packed MCP consumer tests
 the installed relative-import closure and real SHA-256 execution with normal and CI prepack paths (#4008).
 
+The browser test also runs a separate Chromium fixture against the SDK's real
+PGlite adapter, checking that a model delete clears both tracked and untracked
+`SET NULL` references, and advances only the tracked revision. It exercises
+both the `memory://` and `idb://` data directories. Its pinned PGlite peer is
+installed from an isolated lockfile so the workspace's browser graph guards
+keep their original dependency graph. The fixture serves the peer's published
+ESM and WASM through an import map, so its Node-only runtime branches are never
+executed in Chromium. The regular browser entry bundle check still runs
+separately.
+
 CommonJS runtime dependencies are bundled, not external (#4054). Consumers
 that exclude smrt-core from Vite dependency pre-bundling (#3843) receive
 `dist/*.js` as native browser ESM, where a bare import of a CommonJS package

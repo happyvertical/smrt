@@ -18,6 +18,39 @@ Adapter-agnostic change-observation spine (`src/change-feed.ts`) — the server 
 - Retention: `pruneChangeFeed(db, { maxAgeMs?, maxRows?, dryRun? })` — scheduled since #2375 by `runRetentionSweep()` (30-day default), so nothing needs to call it directly; `dryRun` counts the same predicate instead of deleting. Pruning deletes oldest-first and always retains the newest entry (a non-empty feed is never emptied), which is what makes pruned-cursor detection provable. The age bound is a **prefix** bound — everything below the oldest entry still inside the window — because `created_at` and `seq` are not co-monotonic (writer clocks skew, and a staged entry carries its stage-time stamp into a later-assigned sequence); deleting by timestamp alone could punch a hole in the middle of the retained run, where `since < floor - 1` cannot see it and keeps caught-up consumers polling normally. Raw-SQL writes are invisible to the feed (same documented gap as the #1499 cache); `bumpChangeFeed(db, { table, rowId? })` is the manual escape hatch.
 
 
+## Durable row sync metadata (#4673)
+
+Configure the current local writer with `setDatabaseSyncDeviceId(db, uuid)`.
+An ordinary row stays untracked until a trusted caller opts in with
+`object.save({ trackSync: true })` or applies an incoming revision. Subsequent
+local saves and timestamp claims advance the counter and stamp the configured
+device. Tracked creates require a supplied ID and strict insert. Load an
+existing tracked row by ID to update it.
+
+A trusted replay supplies `save({ sync: { originDeviceId, revision } })` with
+a positive safe-integer revision. A replay advances the row only when its
+revision is higher, or when the revision is equal and its device ID sorts
+after the stored ID. Core still uses the local `updated_at` compare-and-swap
+predicate. The caller supplies the authenticated actor and tenant context.
+This API is separate from the generated `sync/apply` protocol.
+
+`delete()` physically removes a tracked row and records its next sync revision
+in `_smrt_sync_tombstones` in the same transaction. Tracked cascade deletes do
+the same. A tracked SET NULL reference stays live and advances its writer,
+revision and timestamp. A trusted incoming `delete({ sync: { originDeviceId,
+revision } })` can record a deletion for an ID that has never been present
+locally. The ledger stores the physical table, row ID, qualified model and
+tenant, and remains available after change-feed retention. Its entries
+represent tombstones. Ordinary model reads only see live rows. A new identity
+can reuse a deleted natural key, and a replay using the deleted ID conflicts.
+
+Remote LibSQL coverage currently depends on an SDK fix for its transaction
+and parameter-binding support. A rollback probe against sqld with
+`@happyvertical/sql@0.111.3` persisted changes even when the callback threw.
+The in-process LibSQL test branch exercises Core’s remote-path selection and
+write predicates. Set `SMRT_TEST_LIBSQL_URL` to exercise the real adapter on
+a disposable sqld database.
+
 ## Credential-bearing tables are never disclosed (#2937)
 
 `src/change-feed-sensitivity.ts` is a leaf module (it imports nothing, so

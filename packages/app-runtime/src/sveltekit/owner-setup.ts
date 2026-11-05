@@ -223,7 +223,8 @@ export function createOwnerSetupPage(
     } catch (error) {
       if (
         error instanceof LocalRuntimeError &&
-        error.code === 'owner_tenant_conflict'
+        (error.code === 'owner_tenant_conflict' ||
+          error.code === 'owner_identity_conflict')
       ) {
         return failure(409, 'setup_conflict');
       }
