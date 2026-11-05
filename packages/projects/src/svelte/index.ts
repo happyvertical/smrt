@@ -30,6 +30,7 @@ import DevelopmentBoard from './DevelopmentBoard.svelte';
 import DevelopmentRequestDetail from './DevelopmentRequestDetail.svelte';
 import PreviewApprovalPanel from './PreviewApprovalPanel.svelte';
 import ProjectBoard from './ProjectBoard.svelte';
+import ProjectInterview from './ProjectInterview.svelte';
 import ProjectQuestionsAndDecisions from './ProjectQuestionsAndDecisions.svelte';
 import ServiceEvidenceList from './ServiceEvidenceList.svelte';
 
@@ -46,6 +47,7 @@ export {
   DurationDisplay,
   PreviewApprovalPanel,
   ProjectBoard,
+  ProjectInterview,
   ProjectQuestionsAndDecisions,
   RejectDialog,
   ServiceEvidenceList,
@@ -74,6 +76,7 @@ export type PreviewApprovalPanelProps = ComponentProps<
   typeof PreviewApprovalPanel
 >;
 export type ProjectBoardProps = ComponentProps<typeof ProjectBoard>;
+export type ProjectInterviewProps = ComponentProps<typeof ProjectInterview>;
 export type ProjectQuestionsAndDecisionsProps = ComponentProps<
   typeof ProjectQuestionsAndDecisions
 >;
@@ -92,6 +95,9 @@ export type { ProjectBoardMoveIntent } from './project-board-types.js';
 export type {
   ProjectDecisionResolveInput,
   ProjectDecisionView,
+  ProjectInterviewAdvanceDetail,
+  ProjectInterviewFraming,
+  ProjectInterviewRecordKind,
   ProjectQuestionAnswerInput,
   ProjectQuestionView,
 } from './project-governance-types.js';
@@ -124,6 +130,11 @@ ModuleUIRegistry.register(
   '@happyvertical/smrt-projects',
   'project-questions-and-decisions',
   ProjectQuestionsAndDecisions,
+);
+ModuleUIRegistry.register(
+  '@happyvertical/smrt-projects',
+  'project-interview',
+  ProjectInterview,
 );
 ModuleUIRegistry.register(
   '@happyvertical/smrt-projects',
