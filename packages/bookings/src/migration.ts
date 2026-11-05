@@ -92,3 +92,62 @@ export async function migrateBookingsV1(db: DatabaseInterface): Promise<void> {
     for (const statement of statements) await tx.query(statement);
   });
 }
+
+const v2 = [
+  `ALTER TABLE smrt_booking_offerings ADD COLUMN unit text`,
+  `UPDATE smrt_booking_offerings SET unit = CASE kind WHEN 'supervision-day' THEN 'day' ELSE 'hour' END`,
+  `ALTER TABLE smrt_booking_offerings ALTER COLUMN unit SET NOT NULL`,
+  `ALTER TABLE smrt_booking_offerings ADD COLUMN price_cents bigint`,
+  `ALTER TABLE smrt_booking_offerings ADD COLUMN currency text`,
+  `ALTER TABLE smrt_booking_offerings
+    ADD CONSTRAINT smrt_booking_offerings_unit CHECK (unit IN ('hour','day','week','month')),
+    ADD CONSTRAINT smrt_booking_offerings_supervision_unit CHECK (kind <> 'supervision-day' OR unit = 'day'),
+    ADD CONSTRAINT smrt_booking_offerings_price CHECK (price_cents IS NULL OR price_cents >= 0),
+    ADD CONSTRAINT smrt_booking_offerings_currency CHECK (currency IS NULL OR currency ~ '^[A-Z]{3}$'),
+    ADD CONSTRAINT smrt_booking_offerings_priced CHECK ((price_cents IS NULL) = (currency IS NULL))`,
+  `ALTER TABLE smrt_booking_offerings ADD COLUMN title text NOT NULL DEFAULT ''`,
+  `ALTER TABLE smrt_booking_offerings ADD COLUMN description text NOT NULL DEFAULT ''`,
+  `ALTER TABLE smrt_booking_offerings ADD COLUMN public boolean NOT NULL DEFAULT false`,
+  `ALTER TABLE smrt_booking_offerings ADD CONSTRAINT smrt_booking_offerings_title CHECK (char_length(title) <= 120)`,
+  `ALTER TABLE smrt_booking_offerings ADD CONSTRAINT smrt_booking_offerings_description CHECK (char_length(description) <= 2000)`,
+  `ALTER TABLE smrt_bookings ADD COLUMN unit text`,
+  `UPDATE smrt_bookings b SET unit = o.unit FROM smrt_booking_offerings o
+    WHERE o.tenant_id = b.tenant_id AND o.id = b.offering_id`,
+  `ALTER TABLE smrt_bookings ALTER COLUMN unit SET NOT NULL`,
+  `ALTER TABLE smrt_bookings ADD COLUMN quantity integer NOT NULL DEFAULT 1`,
+  `ALTER TABLE smrt_bookings
+    ADD CONSTRAINT smrt_bookings_unit CHECK (unit IN ('hour','day','week','month')),
+    ADD CONSTRAINT smrt_bookings_quantity CHECK (quantity >= 1 AND quantity <= 1000),
+    ADD CONSTRAINT smrt_bookings_supervision_quantity CHECK (kind <> 'supervision-day' OR (unit = 'day' AND quantity = 1))`,
+  `ALTER TABLE smrt_booking_proposals ADD COLUMN windows jsonb`,
+  `UPDATE smrt_booking_proposals SET windows = jsonb_build_array(coverage)`,
+  `ALTER TABLE smrt_booking_proposals ALTER COLUMN windows SET NOT NULL`,
+  `ALTER TABLE smrt_booking_proposals ADD COLUMN unit text`,
+  `UPDATE smrt_booking_proposals p SET unit = b.unit FROM smrt_bookings b
+    WHERE b.tenant_id = p.tenant_id AND b.id = p.booking_id`,
+  `ALTER TABLE smrt_booking_proposals ALTER COLUMN unit SET NOT NULL`,
+  `ALTER TABLE smrt_booking_proposals ADD COLUMN quantity integer NOT NULL DEFAULT 1`,
+  `ALTER TABLE smrt_booking_proposals ADD COLUMN unit_price_cents bigint`,
+  `ALTER TABLE smrt_booking_proposals ADD COLUMN currency text`,
+  `ALTER TABLE smrt_booking_proposals ADD COLUMN total_cents bigint`,
+  `ALTER TABLE smrt_booking_proposals
+    ADD CONSTRAINT smrt_booking_proposals_unit CHECK (unit IN ('hour','day','week','month')),
+    ADD CONSTRAINT smrt_booking_proposals_quantity CHECK (quantity >= 1 AND quantity <= 1000),
+    ADD CONSTRAINT smrt_booking_proposals_priced
+      CHECK ((unit_price_cents IS NULL) = (currency IS NULL) AND (unit_price_cents IS NULL) = (total_cents IS NULL)),
+    ADD CONSTRAINT smrt_booking_proposals_total CHECK (total_cents IS NULL OR total_cents = unit_price_cents * quantity),
+    ADD CONSTRAINT smrt_booking_proposals_windows CHECK (jsonb_typeof(windows) = 'array' AND jsonb_array_length(windows) >= 1)`,
+];
+
+/**
+ * Additive priced-offering, quantity and multi-window schema. Register once in
+ * the host deployment's migration ledger after `migrateBookingsV1`. Like V1 it
+ * is not idempotent, and it never drops data.
+ */
+export async function migrateBookingsV2(db: DatabaseInterface): Promise<void> {
+  if (!db.transaction)
+    throw new TypeError('Bookings requires a PostgreSQL transaction');
+  await db.transaction(async (tx) => {
+    for (const statement of v2) await tx.query(statement);
+  });
+}

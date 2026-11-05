@@ -16,9 +16,14 @@ import type {
   BookingReceipt,
   BookingReferences,
   BookingStatus,
+  BookingUnit,
   BookingView,
+  BookingWindow,
+  ConfigureOfferingInput,
   DeclaredAvailabilityWindow,
   ListBookingsOptions,
+  ListOpenSlotsOptions,
+  OpenSlot,
   ProposeBookingInput,
   ProviderAvailability,
   RequestBookingInput,
@@ -26,11 +31,15 @@ import type {
 } from './types.js';
 import {
   declareWindows,
-  elapsedHour,
   fitsCapacity,
+  localEnd,
+  MAX_SEGMENTS,
+  measures,
   type Reservation,
-  resolveBookingWindow,
+  remainingCapacity,
+  resolveCoverage,
   supervisionDeclared,
+  windowFromInstants,
 } from './windows.js';
 
 type WriteOperation = Exclude<BookingOperation, 'read' | 'history'>;
@@ -41,6 +50,8 @@ interface BookingRow {
   contact_id: string;
   project_id: string | null;
   kind: BookingKind;
+  unit: BookingUnit;
+  quantity: number;
   status: BookingStatus;
   proposal_id: string | null;
   assented_proposal_id: string | null;
@@ -50,12 +61,32 @@ interface BookingRow {
 interface ProposalRow {
   provider_id: string;
   coverage: string;
+  windows: string;
+  proposal_unit: BookingUnit;
+  proposal_quantity: number;
+  unit_price_cents: string | number | null;
+  currency: string | null;
+  total_cents: string | number | null;
   terms: string;
   approved_plan: string | null;
 }
 
 interface Allocation extends Reservation {
   window: ResolvedBookingWindow;
+  providerId: string;
+}
+
+const CURRENCY = /^[A-Z]{3}$/;
+const UNITS: readonly BookingUnit[] = ['hour', 'day', 'week', 'month'];
+const MAX_QUANTITY = 1000;
+const MAX_SLOT_RANGE_MS = 400 * 86_400_000;
+const HOUR_MS = 3_600_000;
+const SLOT_CURSOR =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z\|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function project(window: ResolvedBookingWindow): ResolvedBookingWindow {
+  const { zone, start, end, startUtc, endUtc } = window;
+  return { zone, start, end, startUtc, endUtc };
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -65,6 +96,31 @@ function id(value: string): string {
     throw new BookingError('invalid', 'Expected a UUID reference');
   }
   return value.toLowerCase();
+}
+
+function quantityOf(value: number | undefined, fallback = 1): number {
+  const quantity = value === undefined ? fallback : value;
+  if (
+    !Number.isSafeInteger(quantity) ||
+    quantity < 1 ||
+    quantity > MAX_QUANTITY
+  ) {
+    throw new BookingError(
+      'invalid',
+      `Quantity must be an integer between 1 and ${MAX_QUANTITY}`,
+    );
+  }
+  return quantity;
+}
+
+/** Convert a bigint money column to a JavaScript-safe integer. */
+function money(value: string | number | bigint | null): number | null {
+  if (value === null) return null;
+  const amount = Number(value);
+  if (!Number.isSafeInteger(amount)) {
+    throw new BookingError('invalid', 'Amount is not a safe integer');
+  }
+  return amount;
 }
 
 function pageBounds({ afterId, limit = 50 }: BookingPageOptions) {
@@ -96,6 +152,8 @@ function bookingView(
     contactId: row.contact_id,
     projectId: row.project_id,
     kind: row.kind,
+    unit: row.unit,
+    quantity: row.quantity,
     status: row.status,
     proposal,
     assentedProposalId: row.assented_proposal_id,
@@ -108,6 +166,12 @@ function proposalView(proposalId: string, row: ProposalRow): BookingProposal {
     id: proposalId,
     providerId: row.provider_id,
     window: JSON.parse(row.coverage),
+    windows: JSON.parse(row.windows),
+    unit: row.proposal_unit,
+    quantity: row.proposal_quantity,
+    unitPriceCents: money(row.unit_price_cents),
+    currency: row.currency,
+    totalCents: money(row.total_cents),
     terms: JSON.parse(row.terms),
     approvedPlan:
       row.approved_plan === null ? null : JSON.parse(row.approved_plan),
@@ -202,7 +266,7 @@ export class BookingService {
   async configureOffering(
     context: BookingContext,
     key: string,
-    input: { offeringId: string; kind: BookingKind; enabled: boolean },
+    input: ConfigureOfferingInput,
   ): Promise<BookingReceipt> {
     const offeringId = id(input.offeringId);
     const { kind, enabled } = input;
@@ -215,24 +279,91 @@ export class BookingService {
         'Invalid offering kind or enabled flag',
       );
     }
+    const unit =
+      input.unit ?? (kind === 'supervision-day' ? 'day' : ('hour' as const));
+    if (
+      !UNITS.includes(unit) ||
+      (kind === 'supervision-day' && unit !== 'day')
+    ) {
+      throw new BookingError(
+        'invalid',
+        'Invalid offering unit; supervision is sold by the day',
+      );
+    }
+    const priceCents = input.priceCents ?? null;
+    const currency = input.currency ?? null;
+    if (
+      (priceCents !== null &&
+        (!Number.isSafeInteger(priceCents) || priceCents < 0)) ||
+      (currency !== null &&
+        (typeof currency !== 'string' || !CURRENCY.test(currency))) ||
+      (priceCents === null) !== (currency === null)
+    ) {
+      throw new BookingError(
+        'invalid',
+        'A price needs a nonnegative integer amount in minor units and an uppercase ISO 4217 currency',
+      );
+    }
+    const title = input.title ?? '';
+    const description = input.description ?? '';
+    const isPublic = input.public ?? false;
+    if (
+      typeof title !== 'string' ||
+      typeof description !== 'string' ||
+      title.length > 120 ||
+      description.length > 2000 ||
+      title.includes('\0') ||
+      description.includes('\0') ||
+      typeof isPublic !== 'boolean'
+    ) {
+      throw new BookingError(
+        'invalid',
+        'Offering title (120), description (2000) and public flag are invalid',
+      );
+    }
     return this.#write(
       context,
       'configure-offering',
       key,
-      { offeringId, kind, enabled },
+      // Fields at their defaults are omitted so a v1 retry key still replays its receipt.
+      {
+        offeringId,
+        kind,
+        enabled,
+        ...(unit !== (kind === 'supervision-day' ? 'day' : 'hour')
+          ? { unit }
+          : {}),
+        ...(priceCents !== null ? { priceCents, currency } : {}),
+        ...(title !== '' ? { title } : {}),
+        ...(description !== '' ? { description } : {}),
+        ...(isPublic ? { public: true } : {}),
+      },
       operator,
       async (tx, ctx) => {
         const saved = await tx.query(
-          `INSERT INTO smrt_booking_offerings (tenant_id, id, kind, enabled) VALUES (?, ?, ?, ?)
-         ON CONFLICT (tenant_id, id) DO UPDATE SET enabled = EXCLUDED.enabled
-         WHERE smrt_booking_offerings.kind = EXCLUDED.kind RETURNING id`,
+          `INSERT INTO smrt_booking_offerings (tenant_id, id, kind, unit, price_cents, currency, title, description, public, enabled)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (tenant_id, id) DO UPDATE
+           SET enabled = EXCLUDED.enabled, price_cents = EXCLUDED.price_cents, currency = EXCLUDED.currency,
+               title = EXCLUDED.title, description = EXCLUDED.description, public = EXCLUDED.public
+         WHERE smrt_booking_offerings.kind = EXCLUDED.kind AND smrt_booking_offerings.unit = EXCLUDED.unit
+         RETURNING id`,
           ctx.tenantId,
           offeringId,
           kind,
+          unit,
+          priceCents,
+          currency,
+          title,
+          description,
+          isPublic,
           enabled,
         );
         if (!saved.rows.length)
-          throw new BookingError('conflict', 'An offering kind cannot change');
+          throw new BookingError(
+            'conflict',
+            'An offering kind or unit cannot change',
+          );
         return { id: offeringId };
       },
     );
@@ -298,27 +429,34 @@ export class BookingService {
     const contactId = id(input.contactId);
     const projectId =
       input.projectId === undefined ? null : id(input.projectId);
+    const quantity = quantityOf(input.quantity);
     return this.#write(
       context,
       'request',
       key,
-      { offeringId, contactId, projectId },
+      {
+        offeringId,
+        contactId,
+        projectId,
+        ...(quantity !== 1 ? { quantity } : {}),
+      },
       (access) => {
         if (!access.operator) contact(access, contactId);
       },
       async (tx, ctx) => {
         const { rows } = await tx.query(
-          'SELECT kind, enabled FROM smrt_booking_offerings WHERE tenant_id = ? AND id = ? FOR SHARE',
+          'SELECT kind, unit, enabled FROM smrt_booking_offerings WHERE tenant_id = ? AND id = ? FOR SHARE',
           ctx.tenantId,
           offeringId,
         );
         if (!rows[0]?.enabled)
           throw new BookingError('not-found', 'Offering is not available');
         const kind = rows[0].kind as BookingKind;
-        if (kind === 'supervision-day' && !projectId) {
+        const unit = rows[0].unit as BookingUnit;
+        if (kind === 'supervision-day' && (!projectId || quantity !== 1)) {
           throw new BookingError(
             'invalid',
-            'A supervision request requires a project',
+            'A supervision request requires a project and a quantity of one',
           );
         }
         await this.#verify(ctx, {
@@ -327,14 +465,16 @@ export class BookingService {
         });
         const bookingId = randomUUID();
         await tx.query(
-          `INSERT INTO smrt_bookings (tenant_id, id, offering_id, contact_id, project_id, kind, status)
-         VALUES (?, ?, ?, ?, ?, ?, 'requested')`,
+          `INSERT INTO smrt_bookings (tenant_id, id, offering_id, contact_id, project_id, kind, unit, quantity, status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'requested')`,
           ctx.tenantId,
           bookingId,
           offeringId,
           contactId,
           projectId,
           kind,
+          unit,
+          quantity,
         );
         return { id: bookingId };
       },
@@ -349,7 +489,17 @@ export class BookingService {
   ): Promise<BookingReceipt> {
     const bookingId = id(input.bookingId);
     const providerId = id(input.providerId);
-    const window = resolveBookingWindow(input.window);
+    if ((input.window === undefined) === (input.windows === undefined)) {
+      throw new BookingError(
+        'invalid',
+        'Provide exactly one of window or windows',
+      );
+    }
+    const { windows, span } = resolveCoverage(
+      input.windows ?? [input.window as BookingWindow],
+    );
+    const requestedQuantity =
+      input.quantity === undefined ? null : quantityOf(input.quantity);
     const terms = {
       revision: required(input.terms.revision),
       text: required(input.terms.text, 65_536),
@@ -363,40 +513,78 @@ export class BookingService {
       context,
       'propose',
       key,
-      { bookingId, providerId, window, terms, approvedPlan },
+      // The v1 single-window shape (and hash) is kept for a single segment at the default quantity.
+      {
+        bookingId,
+        providerId,
+        ...(windows.length === 1 ? { window: windows[0] } : { windows }),
+        ...(requestedQuantity !== null ? { quantity: requestedQuantity } : {}),
+        terms,
+        approvedPlan,
+      },
       operator,
       async (tx, ctx) => {
         const row = await this.#booking(tx, ctx, bookingId, true);
         pending(row);
-        if (
-          row.kind === 'supervision-day'
-            ? !approvedPlan
-            : approvedPlan || !elapsedHour(window)
-        ) {
-          throw new BookingError(
-            'invalid',
-            'Supervision requires a plan version; dedicated time requires one elapsed hour',
-          );
+        const quantity = requestedQuantity ?? row.quantity;
+        if (row.kind === 'supervision-day') {
+          if (!approvedPlan || quantity !== 1 || windows.length !== 1) {
+            throw new BookingError(
+              'invalid',
+              'Supervision requires a plan version, one window and a quantity of one',
+            );
+          }
+        } else {
+          if (approvedPlan) {
+            throw new BookingError(
+              'invalid',
+              'Dedicated time does not take an approved plan',
+            );
+          }
+          if (!measures(row.unit, quantity, windows)) {
+            throw new BookingError(
+              'invalid',
+              'Proposed windows do not measure the requested quantity',
+            );
+          }
         }
         await this.#verify(ctx, {
           ...this.#refs(row),
           providerId,
           approvedPlan: approvedPlan ?? undefined,
         });
-        declared(
-          row.kind,
-          window,
-          await this.#resource(tx, ctx, providerId, false),
+        const availability = await this.#resource(tx, ctx, providerId, false);
+        for (const window of windows) declared(row.kind, window, availability);
+        const offering = await tx.query(
+          `SELECT price_cents, currency FROM smrt_booking_offerings
+           WHERE tenant_id = ? AND id = ? FOR SHARE`,
+          ctx.tenantId,
+          row.offering_id,
         );
+        const unitPriceCents = money(offering.rows[0]?.price_cents ?? null);
+        const currency: string | null = offering.rows[0]?.currency ?? null;
+        const totalCents =
+          unitPriceCents === null ? null : unitPriceCents * quantity;
+        if (totalCents !== null && !Number.isSafeInteger(totalCents)) {
+          throw new BookingError('invalid', 'Total price is too large');
+        }
         const proposalId = randomUUID();
         await tx.query(
-          `INSERT INTO smrt_booking_proposals (tenant_id, booking_id, id, provider_id, coverage, terms, approved_plan)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO smrt_booking_proposals
+             (tenant_id, booking_id, id, provider_id, coverage, windows, unit, quantity,
+              unit_price_cents, currency, total_cents, terms, approved_plan)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           ctx.tenantId,
           bookingId,
           proposalId,
           providerId,
-          JSON.stringify(window),
+          JSON.stringify(span),
+          JSON.stringify(windows),
+          row.unit,
+          quantity,
+          unitPriceCents,
+          currency,
+          totalCents,
           JSON.stringify(terms),
           approvedPlan && JSON.stringify(approvedPlan),
         );
@@ -491,18 +679,22 @@ export class BookingService {
         });
         const exclusive = row.kind === 'developer-hour';
         const window = proposal.window;
-        declared(row.kind, window, availability);
-        if (
-          !fitsCapacity(
-            { ...window, exclusive },
-            availability,
-            await this.#allocations(tx, ctx, proposal.providerId, window),
-          )
-        ) {
-          throw new BookingError(
-            'unavailable',
-            'The proposed window has insufficient capacity',
-          );
+        const occupied = await this.#allocations(
+          tx,
+          ctx,
+          proposal.providerId,
+          window,
+        );
+        for (const segment of proposal.windows) {
+          declared(row.kind, segment, availability);
+          if (
+            !fitsCapacity({ ...segment, exclusive }, availability, occupied)
+          ) {
+            throw new BookingError(
+              'unavailable',
+              'The proposed window has insufficient capacity',
+            );
+          }
         }
         const inserted = await tx.query(
           `INSERT INTO smrt_booking_allocations
@@ -533,6 +725,45 @@ export class BookingService {
           bookingId,
         );
         return { id: bookingId, proposalId };
+      },
+      { bookingId },
+    );
+  }
+
+  /** Operator command: bind a lead-bound booking to a project once one exists. */
+  async attachProject(
+    context: BookingContext,
+    key: string,
+    input: { bookingId: string; projectId: string },
+  ): Promise<BookingReceipt> {
+    const bookingId = id(input.bookingId);
+    const projectId = id(input.projectId);
+    return this.#write(
+      context,
+      'attach-project',
+      key,
+      { bookingId, projectId },
+      operator,
+      async (tx, ctx) => {
+        const row = await this.#booking(tx, ctx, bookingId, true);
+        if (row.status === 'declined' || row.status === 'cancelled') {
+          throw new BookingError('conflict', 'Booking is no longer active');
+        }
+        if (row.project_id === projectId) return { id: bookingId };
+        if (row.project_id !== null) {
+          throw new BookingError(
+            'conflict',
+            'Booking is already bound to a different project',
+          );
+        }
+        await this.#verify(ctx, { contactId: row.contact_id, projectId });
+        await tx.query(
+          'UPDATE smrt_bookings SET project_id = ? WHERE tenant_id = ? AND id = ?',
+          projectId,
+          ctx.tenantId,
+          bookingId,
+        );
+        return { id: bookingId };
       },
       { bookingId },
     );
@@ -577,15 +808,26 @@ export class BookingService {
     const { after, limit } = pageBounds(options);
     const projectId =
       options.projectId === undefined ? null : id(options.projectId);
+    const contactId =
+      options.contactId === undefined ? null : id(options.contactId);
+    if (!access.operator && contactId && contactId !== access.contactId) {
+      throw new BookingError(
+        'forbidden',
+        'Only the named customer contact may be listed',
+      );
+    }
     const result = await this.#db.query(
-      `SELECT b.id, b.offering_id, b.contact_id, b.project_id, b.kind, b.status,
+      `SELECT b.id, b.offering_id, b.contact_id, b.project_id, b.kind, b.unit, b.quantity, b.status,
               b.proposal_id, b.assented_proposal_id, b.confirmed_proposal_id,
-              p.provider_id, p.coverage::text, p.terms::text, p.approved_plan::text
+              p.provider_id, p.coverage::text, p.windows::text, p.unit AS proposal_unit,
+              p.quantity AS proposal_quantity, p.unit_price_cents, p.currency, p.total_cents,
+              p.terms::text, p.approved_plan::text
        FROM smrt_bookings b
        LEFT JOIN smrt_booking_proposals p
          ON p.tenant_id = b.tenant_id AND p.booking_id = b.id AND p.id = b.proposal_id
        WHERE b.tenant_id = ? AND (?::boolean OR b.contact_id = ?)
          AND (?::uuid IS NULL OR b.project_id = ?)
+         AND (?::uuid IS NULL OR b.contact_id = ?)
          AND (?::uuid IS NULL OR b.id > ?)
        ORDER BY b.id LIMIT ?`,
       ctx.tenantId,
@@ -593,6 +835,8 @@ export class BookingService {
       access.contactId ?? null,
       projectId,
       projectId,
+      contactId,
+      contactId,
       after,
       after,
       limit + 1,
@@ -610,26 +854,215 @@ export class BookingService {
     };
   }
 
-  /** Lists configured offerings. Contacts only see enabled offerings. */
+  /**
+   * Lists configured offerings. Operators see all, contacts see enabled
+   * offerings, and a reader with no contact mapping sees enabled public ones.
+   */
   async listOfferings(
     context: BookingContext,
     options: BookingPageOptions = {},
   ): Promise<BookingPage<BookingOffering>> {
     const ctx = identity(context);
-    const access = await this.#discover(ctx);
+    const access = await this.#access(ctx, 'read');
     const { after, limit } = pageBounds(options);
     const { rows } = await this.#db.query(
-      `SELECT id, kind, enabled FROM smrt_booking_offerings
-       WHERE tenant_id = ? AND (?::boolean OR enabled)
+      `SELECT id, kind, unit, price_cents, currency, title, description, public, enabled
+       FROM smrt_booking_offerings
+       WHERE tenant_id = ? AND (?::boolean OR (enabled AND (?::boolean OR public)))
          AND (?::uuid IS NULL OR id > ?)
        ORDER BY id LIMIT ?`,
       ctx.tenantId,
       access.operator,
+      access.operator || access.contactId !== undefined,
       after,
       after,
       limit + 1,
     );
-    return page(rows as BookingOffering[], limit, (row) => row.id);
+    const offerings: BookingOffering[] = rows.map((row) => ({
+      id: row.id,
+      kind: row.kind,
+      unit: row.unit,
+      priceCents: money(row.price_cents),
+      currency: row.currency,
+      title: row.title,
+      description: row.description,
+      public: row.public,
+      enabled: row.enabled,
+    }));
+    return page(offerings, limit, (row) => row.id);
+  }
+
+  /**
+   * Lists candidate open slots for an offering: a pure read that reserves nothing
+   * and takes no retry key. Confirmation re-checks capacity under the provider lock.
+   * Offerings are discoverable by operators (all), contact-mapped readers (enabled)
+   * and contact-less readers (enabled and public); the host decides who may read.
+   */
+  async listOpenSlots(
+    context: BookingContext,
+    options: ListOpenSlotsOptions,
+  ): Promise<BookingPage<OpenSlot>> {
+    const ctx = identity(context);
+    const access = await this.#access(ctx, 'read');
+    const offeringId = id(options.offeringId);
+    const fromMs = Date.parse(options.from);
+    const toMs = Date.parse(options.to);
+    if (
+      !Number.isFinite(fromMs) ||
+      !Number.isFinite(toMs) ||
+      toMs <= fromMs ||
+      toMs - fromMs > MAX_SLOT_RANGE_MS
+    ) {
+      throw new BookingError(
+        'invalid',
+        'Expected from before to, at most 400 days apart',
+      );
+    }
+    const from = new Date(fromMs).toISOString();
+    const to = new Date(toMs).toISOString();
+    const quantity = quantityOf(options.quantity);
+    const providerId =
+      options.providerId === undefined ? null : id(options.providerId);
+    const { limit } = pageBounds({ limit: options.limit });
+    if (options.after !== undefined && !SLOT_CURSOR.test(options.after)) {
+      throw new BookingError('invalid', 'Invalid slot cursor');
+    }
+    const after = options.after?.replace(/\|.*$/, (provider) =>
+      provider.toLowerCase(),
+    );
+    const found = await this.#db.query(
+      'SELECT kind, unit, enabled, public FROM smrt_booking_offerings WHERE tenant_id = ? AND id = ?',
+      ctx.tenantId,
+      offeringId,
+    );
+    const offering = found.rows[0];
+    const discoverable =
+      offering &&
+      (access.operator ||
+        (offering.enabled &&
+          (access.contactId !== undefined || offering.public)));
+    if (!discoverable) {
+      throw new BookingError('not-found', 'Offering is not available');
+    }
+    const kind = offering.kind as BookingKind;
+    const unit = offering.unit as BookingUnit;
+    if (kind === 'supervision-day' && quantity !== 1) {
+      throw new BookingError(
+        'invalid',
+        'Supervision slots have a quantity of one',
+      );
+    }
+    const resources = await this.#db.query(
+      `SELECT id, windows::text FROM smrt_booking_resources
+       WHERE tenant_id = ? AND (?::uuid IS NULL OR id = ?)`,
+      ctx.tenantId,
+      providerId,
+      providerId,
+    );
+    const occupied = await this.#allocations(this.#db, ctx, providerId, {
+      startUtc: from,
+      endUtc: to,
+    });
+    const slots: OpenSlot[] = [];
+    for (const resource of resources.rows) {
+      const declaredWindows = (
+        JSON.parse(resource.windows) as DeclaredAvailabilityWindow[]
+      ).sort((a, b) => a.startUtc.localeCompare(b.startUtc));
+      const taken = occupied.filter((item) => item.providerId === resource.id);
+      const inRange = (w: ResolvedBookingWindow) =>
+        w.startUtc >= from && w.endUtc <= to;
+      const push = (windows: ResolvedBookingWindow[], remaining: number) => {
+        if (remaining >= 1) {
+          slots.push({
+            providerId: resource.id,
+            offeringId,
+            unit,
+            quantity,
+            windows,
+            remainingCapacity: remaining,
+          });
+        }
+      };
+      if (kind === 'supervision-day') {
+        for (const w of declaredWindows) {
+          if (w.supervision && inRange(w)) {
+            push(
+              [project(w)],
+              remainingCapacity(
+                { ...w, exclusive: false },
+                declaredWindows,
+                taken,
+              ),
+            );
+          }
+        }
+      } else if (unit === 'hour') {
+        const length = quantity * HOUR_MS;
+        for (const w of declaredWindows) {
+          const start = Date.parse(w.startUtc);
+          const end = Date.parse(w.endUtc);
+          if (w.endUtc <= from || w.startUtc >= to) continue;
+          const first = Math.max(0, Math.ceil((fromMs - start) / HOUR_MS));
+          for (let k = first; start + k * HOUR_MS + length <= end; k++) {
+            const candidate = windowFromInstants(
+              w.zone,
+              start + k * HOUR_MS,
+              start + k * HOUR_MS + length,
+            );
+            if (candidate.startUtc >= to) break;
+            if (!inRange(candidate)) continue;
+            push(
+              [candidate],
+              remainingCapacity(
+                { ...candidate, exclusive: true },
+                declaredWindows,
+                taken,
+              ),
+            );
+          }
+        }
+      } else {
+        const starts = [
+          ...new Set(declaredWindows.map((w) => w.start.slice(0, 10))),
+        ];
+        for (const d0 of starts) {
+          const d1 = localEnd(unit, quantity, d0);
+          const bundle = declaredWindows.filter(
+            (w) =>
+              w.start.slice(0, 10) >= d0 &&
+              w.start.slice(0, 10) < d1 &&
+              (w.end.slice(0, 10) < d1 || w.end.slice(0, 16) === `${d1}T00:00`),
+          );
+          const segments = bundle.map(project);
+          if (
+            segments.length === 0 ||
+            segments.length > MAX_SEGMENTS ||
+            segments[0].start.slice(0, 10) !== d0 ||
+            !segments.every(inRange) ||
+            !measures(unit, quantity, segments) ||
+            !bundle.every(
+              (w) =>
+                remainingCapacity(
+                  { ...w, exclusive: true },
+                  declaredWindows,
+                  taken,
+                ) >= 1,
+            )
+          ) {
+            continue;
+          }
+          push(segments, 1);
+        }
+      }
+    }
+    const key = (slot: OpenSlot) =>
+      `${slot.windows[0].startUtc}|${slot.providerId}`;
+    const seen = new Set<string>();
+    const ordered = slots
+      .sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0))
+      .filter((slot) => !seen.has(key(slot)) && seen.add(key(slot)))
+      .filter((slot) => after === undefined || key(slot) > after);
+    return page(ordered.slice(0, limit + 1), limit, key);
   }
 
   /** Lists provider schedules so operators can inspect or replace existing windows. */
@@ -783,6 +1216,25 @@ export class BookingService {
     ctx: Readonly<BookingContext>,
     refs: BookingReferences,
   ): Promise<void> {
+    if (
+      refs.projectId === undefined &&
+      refs.contactId !== undefined &&
+      this.#authority.verifyContact
+    ) {
+      // A lead-bound booking has no project: the host vouches for the contact alone.
+      if ((await this.#authority.verifyContact(ctx, refs.contactId)) !== true) {
+        throw new BookingError(
+          'forbidden',
+          'Booking references or approval could not be verified',
+        );
+      }
+      const { contactId: _contact, ...others } = refs;
+      const rest = Object.fromEntries(
+        Object.entries(others).filter(([, value]) => value !== undefined),
+      ) as BookingReferences;
+      if (Object.keys(rest).length === 0) return;
+      refs = rest;
+    }
     // Use a detached copy so a host callback cannot change the version being verified and saved.
     if (
       (await this.#authority.verifyReferences(ctx, structuredClone(refs))) !==
@@ -833,7 +1285,8 @@ export class BookingService {
     proposalId: string,
   ): Promise<BookingProposal> {
     const { rows } = await tx.query(
-      `SELECT provider_id, coverage::text, terms::text, approved_plan::text FROM smrt_booking_proposals
+      `SELECT provider_id, coverage::text, windows::text, unit AS proposal_unit, quantity AS proposal_quantity,
+              unit_price_cents, currency, total_cents, terms::text, approved_plan::text FROM smrt_booking_proposals
        WHERE tenant_id = ? AND booking_id = ? AND id = ?`,
       ctx.tenantId,
       booking.id,
@@ -866,21 +1319,34 @@ export class BookingService {
   async #allocations(
     tx: DatabaseInterface,
     ctx: Readonly<BookingContext>,
-    providerId: string,
-    window?: ResolvedBookingWindow,
+    providerId: string | null,
+    window?: Pick<ResolvedBookingWindow, 'startUtc' | 'endUtc'>,
   ): Promise<Allocation[]> {
     const { rows } = await tx.query(
-      `SELECT a.exclusive, p.coverage::text FROM smrt_booking_allocations a
+      `SELECT a.provider_id, a.exclusive, p.windows::text FROM smrt_booking_allocations a
        JOIN smrt_booking_proposals p ON p.tenant_id = a.tenant_id AND p.booking_id = a.booking_id AND p.id = a.proposal_id
-       WHERE a.tenant_id = ? AND a.provider_id = ? AND a.released_at IS NULL${window ? ' AND a.start_at < ? AND a.end_at > ?' : ''}`,
+       WHERE a.tenant_id = ? AND (?::uuid IS NULL OR a.provider_id = ?) AND a.released_at IS NULL${window ? ' AND a.start_at < ? AND a.end_at > ?' : ''}`,
       ctx.tenantId,
+      providerId,
       providerId,
       ...(window ? [window.endUtc, window.startUtc] : []),
     );
-    return rows.map((row) => {
-      const snapshot = JSON.parse(row.coverage) as ResolvedBookingWindow;
-      return { ...snapshot, window: snapshot, exclusive: row.exclusive };
-    });
+    // One allocation row spans its proposal; its reserved segments are what block capacity.
+    return rows.flatMap((row) =>
+      (JSON.parse(row.windows) as ResolvedBookingWindow[])
+        .filter(
+          (segment) =>
+            !window ||
+            (segment.startUtc < window.endUtc &&
+              segment.endUtc > window.startUtc),
+        )
+        .map((segment) => ({
+          ...segment,
+          window: segment,
+          providerId: row.provider_id as string,
+          exclusive: row.exclusive as boolean,
+        })),
+    );
   }
 
   async #write(
