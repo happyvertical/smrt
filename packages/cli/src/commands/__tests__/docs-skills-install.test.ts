@@ -115,6 +115,10 @@ describe('docs:agents skill installation (#4708)', () => {
       'packages:\n  - packages/*\n',
     );
     writeFileSync(join(tempDir, 'AGENTS.md'), '# smrt\n');
+    writeFileSync(
+      join(tempDir, 'package.json'),
+      JSON.stringify({ name: '@happyvertical/smrt' }),
+    );
     mkdirSync(join(tempDir, 'packages'), { recursive: true });
     const shipped = getAgentSkill({ name: 'smrt-contribute' }).skillMarkdown;
     const checkedIn = join(tempDir, '.agents/skills/smrt-contribute/SKILL.md');
@@ -134,6 +138,41 @@ describe('docs:agents skill installation (#4708)', () => {
         'utf-8',
       ),
     ).toContain(SKILL_MARKER_PREFIX);
+  });
+
+  it('installs only the catalog in a downstream pnpm monorepo', async () => {
+    writeFileSync(
+      join(tempDir, 'pnpm-workspace.yaml'),
+      'packages:\n  - packages/*\n',
+    );
+    writeFileSync(join(tempDir, 'AGENTS.md'), '# app\n');
+    writeFileSync(
+      join(tempDir, 'package.json'),
+      JSON.stringify({ name: 'my-app-monorepo' }),
+    );
+    mkdirSync(join(tempDir, 'packages'), { recursive: true });
+
+    await run();
+
+    expect(existsSync(join(tempDir, CLAUDE_COPY))).toBe(true);
+    expect(existsSync(join(tempDir, '.claude/skills/smrt-contribute'))).toBe(
+      false,
+    );
+    expect(existsSync(join(tempDir, '.agents/skills/smrt-contribute'))).toBe(
+      false,
+    );
+  });
+
+  it('points the installed catalog at the real bundle directory', async () => {
+    await run();
+    expect(readFileSync(join(tempDir, AGENTS_COPY), 'utf-8')).toContain(
+      '.agents/smrt-knowledge/intents/index.md',
+    );
+
+    await requireCommandHandler(docsCommands['docs:claude'])([], {});
+    const claude = readFileSync(join(tempDir, CLAUDE_COPY), 'utf-8');
+    expect(claude).toContain('.claude/smrt-knowledge/intents/index.md');
+    expect(claude).not.toContain('.agents/smrt-knowledge');
   });
 
   it('writes nothing with --no-install-skills', async () => {

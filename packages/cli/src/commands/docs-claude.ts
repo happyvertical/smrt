@@ -13,7 +13,7 @@ import {
   realpathSync,
   writeFileSync,
 } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, relative as relativePath } from 'node:path';
 import {
   checkKnowledgeGraphFreshness,
   discoverScopedPackageDirectories,
@@ -242,13 +242,17 @@ function createDocsCommand(config: DocsCommandOptions): CLICommand {
         }
 
         // Skills (#4708): installed under the directory the command runs in.
-        // A smrt checkout is where contributors work, so it also gets
-        // smrt-contribute (#4709); a consumer project does not.
+        // The smrt repository itself (root package @happyvertical/smrt, not any
+        // pnpm monorepo) also gets smrt-contribute (#4709).
         const skillResults = options['no-install-skills']
           ? []
           : installAgentSkills({
               projectRoot: process.cwd(),
-              skills: monorepoRoot
+              bundleDir: relativePath(
+                process.cwd(),
+                join(outputDir, bundleDirName),
+              ),
+              skills: isSmrtRepository(monorepoRoot)
                 ? ['smrt-catalog', 'smrt-contribute']
                 : ['smrt-catalog'],
               generatedBy: config.generatedBy,
@@ -446,6 +450,22 @@ function loadPackageInfo(
   } catch {
     console.warn(`   ⚠️  Could not read package.json for ${dirName}`);
     return null;
+  }
+}
+
+/**
+ * Whether `root` is the smrt repository itself (not just any pnpm monorepo):
+ * only its root package is named `@happyvertical/smrt`.
+ */
+function isSmrtRepository(root: string | null): boolean {
+  if (!root) return false;
+  try {
+    return (
+      JSON.parse(readFileSync(join(root, 'package.json'), 'utf-8')).name ===
+      '@happyvertical/smrt'
+    );
+  } catch {
+    return false;
   }
 }
 

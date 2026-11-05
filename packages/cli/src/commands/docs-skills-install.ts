@@ -13,7 +13,7 @@
  * a symlink.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join, relative, resolve } from 'node:path';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import {
   getAgentSkill,
   getAgentSkillsPackageVersion,
@@ -24,6 +24,9 @@ import { assertNotSymlink, containedPath } from './docs-knowledge-bundle.js';
 export const SKILL_INSTALL_DIRS = ['.claude/skills', '.agents/skills'] as const;
 
 /** Prefix of the marker line; the rest carries the producer and version. */
+/** Where the shipped skill text says the knowledge bundle lives. */
+const DEFAULT_BUNDLE_DIR = '.agents/smrt-knowledge';
+
 export const SKILL_MARKER_PREFIX = '<!-- smrt-generated:';
 
 export type SkillInstallStatus =
@@ -79,19 +82,35 @@ function assertNoSymlinkOnPath(root: string, target: string): void {
 export function installAgentSkills(options: {
   projectRoot: string;
   skills: string[];
+  /**
+   * Bundle directory relative to `projectRoot` (default `.agents/smrt-knowledge`).
+   * The shipped skill text names the default; other locations are substituted.
+   */
+  bundleDir?: string;
   generatedBy: string;
   warn?: (message: string) => void;
 }): SkillInstallResult[] {
   const warn = options.warn ?? console.warn;
   const version = getAgentSkillsPackageVersion();
+  const normalizedBundle = options.bundleDir
+    ?.split(sep)
+    .join('/')
+    .replace(/\/+$/, '');
+  const bundleRef =
+    normalizedBundle && normalizedBundle !== DEFAULT_BUNDLE_DIR
+      ? normalizedBundle
+      : undefined;
   const results: SkillInstallResult[] = [];
 
   // Resolve and contain every destination before anything is written.
   const plan = options.skills.flatMap((skill) => {
-    const source = getAgentSkill({
+    const shipped = getAgentSkill({
       name: skill,
       includeReferences: false,
     }).skillMarkdown;
+    const source = bundleRef
+      ? shipped.split(DEFAULT_BUNDLE_DIR).join(bundleRef)
+      : shipped;
     const body = withGeneratedMarker(
       source,
       skill,
