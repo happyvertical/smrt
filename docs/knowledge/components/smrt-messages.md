@@ -5,10 +5,10 @@ description: "Unified multi-channel messaging with STI-based hierarchies"
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T21:47:30Z"
+  at: "2026-11-05T23:45:30Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:dd716664cbc58d30c87b791c0f570ef3a00c53dfdbaa8a5854baee9e0d7ac701"
+source_revision: "sha256:109ca0bf1a857b7388e1f29d623976a5135867c27bcc56b19d0c93fd69982871"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/messages/package.json"
@@ -91,6 +91,8 @@ sources:
 - `MessagingEndpointCollection` (collection `messagingendpoints`, extends `SmrtCollection`)
 - `NotificationDelivery` (collection `notificationdeliveries`, extends `SmrtObject`)
 - `NotificationDeliveryCollection` (collection `notificationdeliveries`, extends `SmrtCollection`)
+- `NotificationOptOut` (collection `notificationoptouts`, extends `SmrtObject`)
+- `NotificationOptOutCollection` (collection `notificationoptouts`, extends `SmrtCollection`)
 - `PersonaMessageRoute` (collection `personamessageroutes`, extends `SmrtObject`)
 - `PersonaMessageRouteCollection` (collection `personamessageroutes`, extends `SmrtCollection`)
 - `SlackAccount` (collection `accounts`, extends `Account`, STI table)

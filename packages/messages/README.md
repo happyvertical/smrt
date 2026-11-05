@@ -246,6 +246,37 @@ and wait for `reconcile()`. See
 [agents/notification-outbox.md](agents/notification-outbox.md) for the lease,
 retry, and reconciliation policy. The table is new: run `db:migrate`.
 
+#### Per-recipient opt-out
+
+`NotificationOptOutService` is the opt-out ledger (`notification_opt_outs`)
+for the outbox's `isSuppressed` hook. A scope is `*` or a host key such as
+`project:<uuid>`.
+
+```typescript
+import {
+  NotificationOptOutService,
+  optOutSuppression,
+} from '@happyvertical/smrt-messages';
+
+const optOuts = new NotificationOptOutService({ db });
+// Idempotent; with a principal only the recipient may change their own row.
+await optOuts.optOut({
+  tenantId,
+  recipientUserId,
+  channel: 'email',
+  scope: `project:${projectId}`,
+  principal: { userId: session.userId },
+});
+
+// Pass to the outbox: enqueue and dispatch both honour opt-outs.
+const isSuppressed = optOutSuppression(optOuts, (request) => {
+  const id = /^project-question:([^:]+):/.exec(request.sourceRef)?.[1];
+  return id ? `project:${id}` : null; // null = not opt-out-able
+});
+```
+
+The table is new: run `db:migrate`.
+
 ### Credential Security
 
 Account credentials are stored via `credentialSecretId` pointing to smrt-secrets envelope encryption. Use `account.setCredentials()` and `account.getCredentials()` -- never store passwords as plain fields.

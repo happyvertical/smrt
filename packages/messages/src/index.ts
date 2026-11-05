@@ -24,6 +24,7 @@ export { AttachmentCollection } from './collections/AttachmentCollection';
 export { MessageCollection } from './collections/MessageCollection';
 export { MessagingEndpointCollection } from './collections/MessagingEndpointCollection.js';
 export { NotificationDeliveryCollection } from './collections/NotificationDeliveryCollection.js';
+export { NotificationOptOutCollection } from './collections/NotificationOptOutCollection.js';
 export { PersonaMessageRouteCollection } from './collections/PersonaMessageRouteCollection.js';
 export { UserNotificationCollection } from './collections/UserNotificationCollection.js';
 export { Account } from './models/Account';
@@ -39,6 +40,13 @@ export {
   type NotificationDeliveryStatus,
   type NotificationDeliveryTransition,
 } from './models/NotificationDelivery.js';
+export {
+  isValidNotificationOptOutScope,
+  NOTIFICATION_OPT_OUT_ALL_SCOPE,
+  NOTIFICATION_OPT_OUT_SCOPE_PATTERN,
+  NotificationOptOut,
+  type NotificationOptOutOptions,
+} from './models/NotificationOptOut.js';
 export { PersonaMessageRoute } from './models/PersonaMessageRoute.js';
 export {
   USER_NOTIFICATION_SEVERITIES,
@@ -120,6 +128,16 @@ export {
   MessagingSettingsService,
   type PersonaMessageRouteInput,
 } from './services/MessagingSettingsService.js';
+export {
+  type NotificationOptOutChange,
+  type NotificationOptOutDenialReason,
+  NotificationOptOutDeniedError,
+  type NotificationOptOutKey,
+  type NotificationOptOutListRequest,
+  type NotificationOptOutPrincipal,
+  NotificationOptOutService,
+  optOutSuppression,
+} from './services/NotificationOptOutService.js';
 export {
   buildNotificationLink,
   messageSendTransport,
