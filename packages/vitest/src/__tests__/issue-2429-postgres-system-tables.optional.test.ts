@@ -24,13 +24,13 @@ function rowsOf(result: unknown): Record<string, unknown>[] {
   return [];
 }
 
-const tableSuffix = randomUUID().replaceAll('-', '').slice(0, 12);
-const tableName = `issue_2429_widget_${tableSuffix}`;
+// Use the default table name that both the CLI scanner and runtime derive.
+const tableName = 'issue2429widgets';
 
 class Issue2429Widget extends SmrtObject {
   name: string = '';
 }
-smrt({ tableName })(Issue2429Widget);
+smrt()(Issue2429Widget);
 
 postgresDescribe('PostgreSQL isolated system-table bootstrap (#2429)', () => {
   it('keeps context and embedding cascade cleanup transaction-safe', async () => {
