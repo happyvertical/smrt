@@ -3339,7 +3339,10 @@ export class SmrtObject extends SmrtClass {
               throw syncRevisionConflict(rowId);
             }
           },
-          this.isPositivelyNativeDuckDb(),
+          // On a no-savepoint adapter the ledger check precedes the write
+          // under the same queue. The typed nesting refusal can safely join
+          // even when Core first sees DuckDB through a caller-owned handle.
+          usesEmbeddedRevisionFallback(this.db),
         );
       } else {
         await write();
