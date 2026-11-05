@@ -5404,6 +5404,16 @@ export class SmrtObject extends SmrtClass {
                 (count) => recordCascadeWrite(db, { affected: count }),
                 incomingDeletion,
               );
+              if (
+                (expectedUpdatedAt !== undefined || writeGuard !== undefined) &&
+                affected !== 1
+              ) {
+                throw new RuntimeError(
+                  `Revision conflict while deleting ${className}`,
+                  'RUNTIME_REVISION_CONFLICT',
+                  { className, id: this.id },
+                );
+              }
               if (incomingDeletion && affected === 0) {
                 if (await db.get(this.tableName, { id: this.id })) {
                   throw syncRevisionConflict(this.id);
@@ -5415,17 +5425,6 @@ export class SmrtObject extends SmrtClass {
                   identity.model,
                   incomingDeletion.tenantId,
                   incomingDeletion.revision,
-                );
-                return;
-              }
-              if (
-                (expectedUpdatedAt !== undefined || writeGuard !== undefined) &&
-                affected !== 1
-              ) {
-                throw new RuntimeError(
-                  `Revision conflict while deleting ${className}`,
-                  'RUNTIME_REVISION_CONFLICT',
-                  { className, id: this.id },
                 );
               }
             },

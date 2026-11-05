@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { pruneChangeFeed } from './change-feed';
 import { SmrtCollection } from './collection';
 import { crossPackageRef } from './decorators';
+import { GlobalInterceptors } from './interceptors';
 import { generateSchemaDiff, getSQLFromDiff } from './migrations/differ';
 import { SmrtObject } from './object';
 import { smrt } from './registry';
@@ -299,6 +300,36 @@ describe.each(dialects)('%s base-object sync metadata', (type) => {
       originDeviceId: localDeviceId,
       revision: 2,
     });
+  });
+
+  it('denies a guarded absent incoming delete without reserving the identity', async () => {
+    const id = crypto.randomUUID();
+    const note = new SyncNote({ db, id, _skipLoad: true, title: 'allowed' });
+    await note.initialize();
+    const interceptor = {
+      name: 'sync-note-title-guard',
+      writeGuard: (instance: SmrtObject) =>
+        instance instanceof SyncNote ? { title: 'allowed' } : undefined,
+    };
+    GlobalInterceptors.register(interceptor);
+    try {
+      await expect(
+        note.delete({ sync: { originDeviceId: 'remote', revision: 12 } }),
+      ).rejects.toMatchObject({ code: 'RUNTIME_REVISION_CONFLICT' });
+      expect(
+        await db.get('_smrt_sync_tombstones', {
+          table_name: note.tableName,
+          row_id: id,
+        }),
+      ).toBeNull();
+      await note.save({ sync: { originDeviceId: 'remote', revision: 11 } });
+      expect(await notes.get({ id })).toMatchObject({
+        title: 'allowed',
+        syncMetadata: { revision: 11 },
+      });
+    } finally {
+      GlobalInterceptors.unregister(interceptor);
+    }
   });
 
   it('retains the tenant and qualified model of an incoming tombstone', async () => {
