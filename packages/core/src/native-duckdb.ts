@@ -17,6 +17,7 @@
  */
 
 const nativeClients = new WeakSet<object>();
+const jsonClients = new WeakSet<object>();
 
 interface AdapterHandle {
   client?: unknown;
@@ -37,10 +38,12 @@ function duckDbClientOf(db: unknown): object | undefined {
 /** Whether `db` carries a capability only the JSON adapter has. */
 export function isJsonAdapterHandle(db: unknown): boolean {
   const handle = db as AdapterHandle | null | undefined;
-  return (
+  const client = duckDbClientOf(db);
+  const isJson =
     typeof handle?.inferSchemaFromJSON === 'function' ||
-    typeof handle?.getTableLoadErrors === 'function'
-  );
+    typeof handle?.getTableLoadErrors === 'function';
+  if (isJson && client) jsonClients.add(client);
+  return isJson || (client !== undefined && jsonClients.has(client));
 }
 
 /**

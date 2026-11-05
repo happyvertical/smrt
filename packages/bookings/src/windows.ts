@@ -1,6 +1,7 @@
 import { BookingError } from './errors.js';
 import type {
   AvailabilityWindow,
+  BookingUnit,
   BookingWindow,
   DeclaredAvailabilityWindow,
   ResolvedBookingWindow,
@@ -158,12 +159,17 @@ export function supervisionDeclared(
   );
 }
 
-/** Check every segment; endpoints belonging to ending windows are excluded. */
-export function fitsCapacity(
+/**
+ * Remaining units for the candidate: 0 when it does not fit, 1 for an exclusive
+ * candidate that fits, and for a shared candidate the minimum of
+ * (capacity - shared) across every half-open segment. Endpoints belonging to
+ * ending windows are excluded.
+ */
+export function remainingCapacity(
   candidate: Reservation,
   declared: readonly DeclaredAvailabilityWindow[],
   occupied: readonly Reservation[],
-): boolean {
+): number {
   type Delta = { capacity: number; shared: number; exclusive: number };
   const boundaries = new Map<string, Delta>();
   const add = (at: string, key: keyof Delta, delta: number) => {
@@ -204,6 +210,7 @@ export function fitsCapacity(
   let capacity = 0;
   let shared = 0;
   let exclusive = 0;
+  let remaining = Number.POSITIVE_INFINITY;
   for (const at of [...boundaries.keys()].sort()) {
     const delta = boundaries.get(at);
     if (!delta) continue;
@@ -216,7 +223,194 @@ export function fitsCapacity(
       exclusive > 0 ||
       (candidate.exclusive ? shared > 0 : shared >= capacity)
     )
-      return false;
+      return 0;
+    remaining = Math.min(
+      remaining,
+      candidate.exclusive ? 1 : capacity - shared,
+    );
+  }
+  return Number.isFinite(remaining) ? remaining : 0;
+}
+
+export function fitsCapacity(
+  candidate: Reservation,
+  declared: readonly DeclaredAvailabilityWindow[],
+  occupied: readonly Reservation[],
+): boolean {
+  return remainingCapacity(candidate, declared, occupied) >= 1;
+}
+
+/** Most segments one proposal may reserve; discovery never lists a larger bundle. */
+export const MAX_SEGMENTS = 400;
+
+/** Resolve one or more same-zone segments into sorted, non-overlapping windows and their span. */
+export function resolveCoverage(windows: readonly BookingWindow[]): {
+  windows: ResolvedBookingWindow[];
+  span: ResolvedBookingWindow;
+} {
+  if (
+    !Array.isArray(windows) ||
+    windows.length < 1 ||
+    windows.length > MAX_SEGMENTS
+  ) {
+    throw new BookingError(
+      'invalid',
+      `Expected between 1 and ${MAX_SEGMENTS} booking windows`,
+    );
+  }
+  const resolved = windows
+    .map((window) => resolveBookingWindow(window))
+    .sort((a, b) => a.startUtc.localeCompare(b.startUtc));
+  for (const [i, window] of resolved.entries()) {
+    if (window.zone !== resolved[0].zone) {
+      throw new BookingError('invalid', 'Booking windows must share one zone');
+    }
+    if (i > 0 && resolved[i - 1].endUtc > window.startUtc) {
+      throw new BookingError('invalid', 'Booking windows must not overlap');
+    }
+  }
+  const first = resolved[0];
+  const last = resolved[resolved.length - 1];
+  return {
+    windows: resolved,
+    span: {
+      zone: first.zone,
+      start: first.start,
+      end: last.end,
+      startUtc: first.startUtc,
+      endUtc: last.endUtc,
+    },
+  };
+}
+
+function pad(value: number, width = 2): string {
+  return String(value).padStart(width, '0');
+}
+
+/** Add n local days to YYYY-MM-DD with date-only arithmetic. */
+export function addLocalDays(date: string, days: number): string {
+  const moved = new Date(`${date}T00:00:00Z`);
+  moved.setUTCDate(moved.getUTCDate() + days);
+  return moved.toISOString().slice(0, 10);
+}
+
+/** Add n calendar months, constraining the day to the target month's length. */
+export function addLocalMonths(date: string, months: number): string {
+  const [year, month, day] = date.split('-').map(Number);
+  const index = year * 12 + (month - 1) + months;
+  const targetYear = Math.floor(index / 12);
+  const targetMonth = index % 12;
+  const length = new Date(
+    Date.UTC(targetYear, targetMonth + 1, 0),
+  ).getUTCDate();
+  return `${pad(targetYear, 4)}-${pad(targetMonth + 1)}-${pad(Math.min(day, length))}`;
+}
+
+/** Exclusive local end date of a quantity of the unit starting on a local date. */
+export function localEnd(
+  unit: BookingUnit,
+  quantity: number,
+  start: string,
+): string {
+  if (unit === 'day') return addLocalDays(start, quantity);
+  if (unit === 'week') return addLocalDays(start, 7 * quantity);
+  return addLocalMonths(start, quantity);
+}
+
+function within(window: ResolvedBookingWindow, from: string, to: string) {
+  return (
+    window.start.slice(0, 10) >= from &&
+    (window.end.slice(0, 10) < to || window.end.slice(0, 16) === `${to}T00:00`)
+  );
+}
+
+/** True iff the segments measure exactly `quantity` of `unit`. */
+export function measures(
+  unit: BookingUnit,
+  quantity: number,
+  windows: readonly ResolvedBookingWindow[],
+): boolean {
+  if (!Number.isSafeInteger(quantity) || quantity < 1 || windows.length < 1) {
+    return false;
+  }
+  if (unit === 'hour') {
+    const total = windows.reduce(
+      (sum, w) => sum + (Date.parse(w.endUtc) - Date.parse(w.startUtc)),
+      0,
+    );
+    return total === quantity * 60 * MINUTE_MS;
+  }
+  if (unit !== 'day' && unit !== 'week' && unit !== 'month') return false;
+  const from = windows[0].start.slice(0, 10);
+  const to = localEnd(unit, quantity, from);
+  if (!windows.every((window) => within(window, from, to))) return false;
+  // A day offering is sold per local calendar day: the segments must touch
+  // exactly `quantity` distinct days, so one day of coverage cannot bill for two.
+  if (unit === 'day') {
+    const days = new Set<string>();
+    for (const window of windows) {
+      const last =
+        window.end.slice(0, 16) === `${window.end.slice(0, 10)}T00:00` &&
+        window.end.slice(0, 10) > window.start.slice(0, 10)
+          ? addLocalDays(window.end.slice(0, 10), -1)
+          : window.end.slice(0, 10);
+      for (
+        let day = window.start.slice(0, 10);
+        day <= last;
+        day = addLocalDays(day, 1)
+      ) {
+        days.add(day);
+      }
+    }
+    return days.size === quantity;
   }
   return true;
+}
+
+/** Do these segments fall in the half-open local span of a quantity of unit from a date? */
+export function withinLocalSpan(
+  window: ResolvedBookingWindow,
+  unit: Exclude<BookingUnit, 'hour'>,
+  quantity: number,
+  from: string,
+): boolean {
+  return within(window, from, localEnd(unit, quantity, from));
+}
+
+/** Render a UTC instant as a minute-precision local timestamp with its zone offset. */
+export function formatWall(instantIso: string, zone: string): string {
+  const time = Date.parse(instantIso);
+  if (!Number.isFinite(time)) {
+    throw new BookingError('invalid', 'Invalid instant');
+  }
+  const parts = Object.fromEntries(
+    formatter(zone)
+      .formatToParts(time)
+      .map(({ type, value }) => [type, value]),
+  );
+  const local = Date.UTC(
+    Number(parts.year),
+    Number(parts.month) - 1,
+    Number(parts.day),
+    Number(parts.hour),
+    Number(parts.minute),
+    Number(parts.second),
+  );
+  const offset = Math.round((local - time) / MINUTE_MS);
+  const sign = offset < 0 ? '-' : '+';
+  const abs = Math.abs(offset);
+  return `${pad(Number(parts.year), 4)}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`;
+}
+
+/** Build a resolved window from two UTC instants, rendered in the zone. */
+export function windowFromInstants(
+  zone: string,
+  startMs: number,
+  endMs: number,
+): ResolvedBookingWindow {
+  return resolveBookingWindow({
+    zone,
+    start: formatWall(new Date(startMs).toISOString(), zone),
+    end: formatWall(new Date(endMs).toISOString(), zone),
+  });
 }

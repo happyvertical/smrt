@@ -1,6 +1,7 @@
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { NestedTransactionError } from './host.js';
 import { noteNativeDuckDbHandle } from './native-duckdb.js';
+import { inheritDatabaseSyncDeviceId } from './sync-device.js';
 import { createAsyncContext } from './utils/async-context.js';
 
 /**
@@ -41,6 +42,7 @@ import { createAsyncContext } from './utils/async-context.js';
 /** Queue tail per database identity (URL string, or the handle itself). */
 const urlQueues = new Map<string, Promise<unknown>>();
 const handleQueues = new WeakMap<object, Promise<unknown>>();
+const remoteLibSqlHandles = new WeakSet<object>();
 const activeQueueKeys = createAsyncContext<ReadonlySet<string | object>>();
 const frameworkTransactions =
   createAsyncContext<ReadonlySet<DatabaseInterface>>();
@@ -50,12 +52,40 @@ export function isFrameworkTransactionHandle(db: DatabaseInterface): boolean {
   return frameworkTransactions.getStore()?.has(db) === true;
 }
 
+const callerTransactions = new WeakMap<DatabaseInterface, number>();
+
+/**
+ * Pass the exact bound handle of a transaction the caller already opened.
+ * Never pass a root executor. Embedded guarded writes can reuse this scope.
+ * The caller owns commit and rollback.
+ */
+export async function withCallerOwnedDatabaseTransaction<T>(
+  db: DatabaseInterface,
+  operation: () => Promise<T>,
+): Promise<T> {
+  // The exact handle is bound to the caller's transaction, independent of
+  // which promise uses it. Count overlapping scopes and release on rejection.
+  callerTransactions.set(db, (callerTransactions.get(db) ?? 0) + 1);
+  try {
+    return await operation();
+  } finally {
+    const remaining = (callerTransactions.get(db) ?? 1) - 1;
+    if (remaining) callerTransactions.set(db, remaining);
+    else callerTransactions.delete(db);
+  }
+}
+
+export function isKnownDatabaseTransaction(db: DatabaseInterface): boolean {
+  return isFrameworkTransactionHandle(db) || callerTransactions.has(db);
+}
+
 interface QueueableDatabase {
   url?: string;
+  client?: unknown;
 }
 
 /**
- * Whether `db` is an embedded engine (SQLite/DuckDB/JSON — anything that is
+ * Whether `db` is an embedded engine (SQLite/DuckDB/JSON/PGlite — anything that is
  * not PostgreSQL). Handles without a URL are treated as embedded: serializing
  * them is at worst a throughput cost, while not serializing an embedded
  * handle reintroduces the livelock.
@@ -64,15 +94,25 @@ export function isEmbeddedDatabase(db: QueueableDatabase): boolean {
   return !isPostgresDatabase(db);
 }
 
-/**
- * Whether `db` is a PostgreSQL handle.
- *
- * The revision compare-and-swap predicate is dialect-specific (#2620): only
- * PostgreSQL needs the millisecond-truncating, timezone-tolerant guard, and
- * only PostgreSQL can evaluate `date_trunc`.
- */
+/** Whether `db` connects to a PostgreSQL server. */
 export function isPostgresDatabase(db: QueueableDatabase): boolean {
   return /^postgres(?:ql)?:/iu.test(db?.url ?? '');
+}
+
+/**
+ * Whether raw SQL should use PostgreSQL syntax. The SDK's PGlite root
+ * exposes the PGlite client, while its bound handles expose a wrapper with
+ * same `query` and `exec` pair, which the SQLite, DuckDB and JSON adapters
+ * do not expose together. The URL is just a data directory on both
+ * PGlite handles. PGlite remains embedded for concurrency and revision
+ * fallback decisions.
+ */
+export function usesPostgresDialect(db: QueueableDatabase): boolean {
+  if (isPostgresDatabase(db)) return true;
+  const client = db?.client as { query?: unknown; exec?: unknown } | undefined;
+  return (
+    typeof client?.query === 'function' && typeof client.exec === 'function'
+  );
 }
 
 /**
@@ -85,7 +125,11 @@ export function isPostgresDatabase(db: QueueableDatabase): boolean {
  */
 export function usesEmbeddedRevisionFallback(db: QueueableDatabase): boolean {
   const url = db?.url ?? '';
-  return isEmbeddedDatabase(db) && !/^(?:https?|libsql):\/\//iu.test(url);
+  return (
+    isEmbeddedDatabase(db) &&
+    !remoteLibSqlHandles.has(db) &&
+    !/^(?:https?|libsql):\/\//iu.test(url)
+  );
 }
 
 /**
@@ -174,6 +218,10 @@ export async function withEmbeddedWriteTransaction<T>(
     try {
       return await transaction((bound) => {
         entered = true;
+        inheritDatabaseSyncDeviceId(db, bound);
+        if (isEmbeddedDatabase(db) && !usesEmbeddedRevisionFallback(db)) {
+          remoteLibSqlHandles.add(bound);
+        }
         return frameworkTransactions.run(
           new Set([...(frameworkTransactions.getStore() ?? []), bound]),
           () => {

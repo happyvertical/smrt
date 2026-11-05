@@ -7,6 +7,10 @@
 
 import { createLogger } from '@happyvertical/logger';
 import {
+  isJsonAdapterHandle,
+  isKnownNativeDuckDbHandle,
+} from '../native-duckdb.js';
+import {
   mapWithConcurrency,
   POSTGRES_INTROSPECTION_CONCURRENCY,
 } from '../schema/bounded-concurrency.js';
@@ -21,7 +25,7 @@ import {
   conflictIndexName,
   isLegacyNaturalKeyIndex,
 } from '../schema/conflict-target.js';
-import { detectEngine, getDDLStrategy } from '../schema/ddl/index.js';
+import { getDDLStrategy } from '../schema/ddl/index.js';
 import { renderNullEqualConflictIndex } from '../schema/ddl/null-equal-index.js';
 import type { DatabaseEngine } from '../schema/ddl/types.js';
 import {
@@ -73,6 +77,7 @@ import {
   type UuidConvergenceLiveForeignKey,
   type UuidConvergencePlan,
 } from '../schema/uuid-convergence.js';
+import { getDatabaseEngine } from '../system/compatibility.js';
 import {
   planSqliteTableRebuilds,
   sqliteBackfillPlaceholderSql,
@@ -339,11 +344,23 @@ export function isManualOrAdvisoryChange(change: SchemaChange): boolean {
   );
 }
 
-function resolveDatabaseUrl(db: DatabaseInterface): string {
-  const dbWithConfig = db as DatabaseInterface & {
-    config?: { url?: string };
-  };
-  return db.url || dbWithConfig.config?.url || '';
+/** @internal Resolve the same engine for diffing and migration DDL. */
+export function resolveMigrationEngine(
+  db: DatabaseInterface,
+  engineHint?: string,
+): DatabaseEngine {
+  if (engineHint === 'json') return 'json';
+  if (engineHint) return getDatabaseEngine(db, engineHint);
+  if (isKnownNativeDuckDbHandle(db)) return 'duckdb';
+  // Older JSON adapter wrappers expose only exportTable; native handles do
+  // too, so check for native DuckDB before using the legacy capability.
+  if (
+    isJsonAdapterHandle(db) ||
+    typeof (db as { exportTable?: unknown }).exportTable === 'function'
+  ) {
+    return 'json';
+  }
+  return getDatabaseEngine(db);
 }
 
 /**
@@ -661,16 +678,7 @@ export class SchemaComparer {
       ignoreTypeMismatches: false,
       ...options,
     };
-    // Use the shared detectEngine utility for consistent detection.
-    // Handles :memory:, .json, and other edge cases. The JSON adapter is
-    // detected structurally (it exposes `exportTable`) because its url can be
-    // empty; otherwise fall back to URL-based detection, where `engineHint`
-    // lets callers override when `db.url` is empty or points at an adapter
-    // whose engine isn't obvious from the URL alone (some in-memory wrappers).
-    this.engine =
-      typeof (this.db as { exportTable?: unknown }).exportTable === 'function'
-        ? 'json'
-        : detectEngine(resolveDatabaseUrl(this.db), this.options.engineHint);
+    this.engine = resolveMigrationEngine(this.db, this.options.engineHint);
     this.ddlStrategy = getDDLStrategy(this.engine);
   }
 
@@ -925,12 +933,22 @@ export class SchemaComparer {
     // adds/drops/changes of the predicate (issue #1692).
     const dbIndexPredicates = await this.getDbIndexPredicates(tableName);
 
-    // Compare indexes
+    // Native DuckDB CREATE TABLE emits inline UNIQUE constraints, which
+    // getTableSchema() omits from its list of standalone indexes.
+    const inlineUniqueSignatures =
+      this.engine === 'duckdb' &&
+      isKnownNativeDuckDbHandle(this.db) &&
+      manifest.indexes.some(
+        (index) => index.unique && !index.where && !index.jsonPath,
+      )
+        ? await this.getDuckDbInlineUniqueSignatures(tableName)
+        : undefined;
     const indexChanges = this.compareIndexes(
       tableName,
       manifest,
       dbSchema,
       dbIndexPredicates,
+      inlineUniqueSignatures,
     );
     const foreignKeyChanges = await this.compareForeignKeys(
       tableName,
@@ -997,6 +1015,23 @@ export class SchemaComparer {
     }
 
     return changes;
+  }
+
+  private async getDuckDbInlineUniqueSignatures(
+    tableName: string,
+  ): Promise<Set<string>> {
+    const { rows } = await this.db.query(
+      `SELECT to_json(constraint_column_names)::VARCHAR AS columns
+       FROM duckdb_constraints()
+       WHERE database_name = current_database() AND schema_name = current_schema()
+         AND table_name = ? AND constraint_type = 'UNIQUE'`,
+      tableName,
+    );
+    return new Set(
+      rows.map(({ columns }) =>
+        this.getIndexSignature(JSON.parse(String(columns)) as string[], true),
+      ),
+    );
   }
 
   /**
@@ -3988,6 +4023,7 @@ export class SchemaComparer {
     manifest: SchemaDefinition,
     dbSchema: SqlTableSchemaInfo,
     dbIndexPredicates: Map<string, string> | null = null,
+    inlineUniqueSignatures?: ReadonlySet<string>,
   ): SchemaChange[] {
     const changes: SchemaChange[] = [];
 
@@ -4064,6 +4100,14 @@ export class SchemaComparer {
         manifestPredicateFor(idx),
       );
 
+      // Inline constraints can satisfy full unique declarations but never
+      // participate in name-based DDL for standalone indexes.
+      const hasInlineEquivalent =
+        idx.unique &&
+        !idx.where &&
+        !idx.jsonPath &&
+        inlineUniqueSignatures?.has(manifestSignature);
+
       // (a) Same name in DB — verify shape matches.
       const dbByName = dbIndexesByName.get(idx.name);
       if (dbByName) {
@@ -4107,13 +4151,15 @@ export class SchemaComparer {
           name: idx.name,
           sql: this.generateDropIndexSQL(idx.name),
         });
-        changes.push({
-          type: 'add_index',
-          table: tableName,
-          name: idx.name,
-          index: idx,
-          sql: this.generateAddIndexSQL(tableName, idx),
-        });
+        if (!hasInlineEquivalent) {
+          changes.push({
+            type: 'add_index',
+            table: tableName,
+            name: idx.name,
+            index: idx,
+            sql: this.generateAddIndexSQL(tableName, idx),
+          });
+        }
         continue;
       }
 
@@ -4154,6 +4200,8 @@ export class SchemaComparer {
         }
         continue;
       }
+
+      if (hasInlineEquivalent) continue;
 
       // (c) Genuinely missing — add it.
       changes.push({

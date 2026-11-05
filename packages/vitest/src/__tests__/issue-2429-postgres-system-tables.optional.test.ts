@@ -24,30 +24,33 @@ function rowsOf(result: unknown): Record<string, unknown>[] {
   return [];
 }
 
-const tableSuffix = randomUUID().replaceAll('-', '').slice(0, 12);
-const tableName = `issue_2429_widget_${tableSuffix}`;
+// Use the default table name that both the CLI scanner and runtime derive.
+const tableName = 'issue2429widgets';
 
 class Issue2429Widget extends SmrtObject {
   name: string = '';
 }
-smrt({ tableName })(Issue2429Widget);
+smrt()(Issue2429Widget);
 
 postgresDescribe('PostgreSQL isolated system-table bootstrap (#2429)', () => {
   it('keeps context and embedding cascade cleanup transaction-safe', async () => {
     const result = await createIsolatedTestDb({
-      schema: `CREATE TABLE "${tableName}" (
+      prefix: 'issue-2429-cascade',
+    });
+
+    try {
+      // Keep the fixed manifest table local to this rolled-back transaction.
+      await result.db.query(`CREATE TABLE "${tableName}" (
         id UUID PRIMARY KEY NOT NULL,
         slug TEXT NOT NULL,
         context TEXT NOT NULL DEFAULT '',
         created_at TIMESTAMPTZ NOT NULL DEFAULT current_timestamp,
         updated_at TIMESTAMPTZ NOT NULL DEFAULT current_timestamp,
+        _sync_origin_device_id TEXT,
+        _sync_revision BIGINT,
         name TEXT,
         UNIQUE (slug, context)
-      )`,
-      prefix: 'issue-2429-cascade',
-    });
-
-    try {
+      )`);
       const tableResult = await result.db.query(
         `SELECT to_regclass('_smrt_contexts') AS contexts,
                 to_regclass('_smrt_embeddings') AS embeddings`,
@@ -101,12 +104,7 @@ postgresDescribe('PostgreSQL isolated system-table bootstrap (#2429)', () => {
         result.db.query('SELECT 1 AS transaction_ok'),
       ).resolves.toBeDefined();
     } finally {
-      try {
-        if (result.db.isActive()) await result.db.rollback();
-        await result.baseDb.query(`DROP TABLE IF EXISTS "${tableName}"`);
-      } finally {
-        await result.cleanup();
-      }
+      await result.cleanup();
     }
   });
 

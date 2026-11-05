@@ -2347,14 +2347,57 @@ function readKnowledgePackage(
   };
 }
 
+/**
+ * Artifact locations a package declares through its own export map: a direct
+ * `./smrt-knowledge.json` target, and the directory of its `./manifest.json`
+ * target (the Vite plugin writes both artifacts beside each other in the
+ * library `outDir`). A package that builds its library into `dist/lib` and
+ * maps `"./manifest.json": "./dist/lib/manifest.json"` (#2923) is otherwise
+ * invisible to the conventional probes below, and the index silently falls
+ * back to the scanner view — which a turbo cache replay (`dist/**` restored,
+ * `.smrt/` not) turns into a gate that depends on cache state.
+ */
+function exportedArtifactCandidates(directory: string): {
+  knowledge: string[];
+  manifest: string[];
+} {
+  const exportsMap = objectRecord(
+    objectRecord(readJson(join(directory, 'package.json'))).exports,
+  );
+  const target = (subpath: string): string | undefined => {
+    const entry = exportsMap[subpath];
+    const value =
+      typeof entry === 'string'
+        ? entry
+        : ['smrt', 'node', 'import', 'default']
+            .map((condition) => objectRecord(entry)[condition])
+            .find((candidate) => typeof candidate === 'string');
+    return typeof value === 'string' && value.startsWith('./')
+      ? join(directory, value)
+      : undefined;
+  };
+  const knowledge = target('./smrt-knowledge.json');
+  const manifest = target('./manifest.json') ?? target('./manifest');
+  return {
+    knowledge: [
+      ...(knowledge ? [knowledge] : []),
+      ...(manifest ? [join(dirname(manifest), 'smrt-knowledge.json')] : []),
+    ],
+    manifest: manifest ? [manifest] : [],
+  };
+}
+
 /** Artifact paths consulted for a package's objects, in precedence order. */
 function objectArtifactCandidates(directory: string): string[] {
+  const exported = exportedArtifactCandidates(directory);
   return [
     join(directory, '.smrt', 'smrt-knowledge.json'),
+    ...exported.knowledge,
     join(directory, 'dist', 'smrt-knowledge.json'),
     join(directory, 'src', 'manifest', 'smrt-knowledge.json'),
     join(directory, 'src', 'manifest', 'manifest.json'),
     join(directory, '.smrt', 'manifest.json'),
+    ...exported.manifest,
     join(directory, 'dist', 'manifest.json'),
   ];
 }
@@ -2556,6 +2599,7 @@ function readDomainKnowledge(
 ): { path: string; content: DomainKnowledgeManifest } | null {
   for (const path of [
     join(directory, '.smrt', 'smrt-knowledge.json'),
+    ...exportedArtifactCandidates(directory).knowledge,
     join(directory, 'dist', 'smrt-knowledge.json'),
     join(directory, 'src', 'manifest', 'smrt-knowledge.json'),
   ]) {
@@ -2583,6 +2627,7 @@ function readManifest(
   for (const path of [
     join(directory, 'src', 'manifest', 'manifest.json'),
     join(directory, '.smrt', 'manifest.json'),
+    ...exportedArtifactCandidates(directory).manifest,
     join(directory, 'dist', 'manifest.json'),
   ]) {
     const content = readJson(path);

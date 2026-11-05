@@ -74,18 +74,24 @@ function countWrites(db: DatabaseInterface): {
 } {
   const counts: Record<string, number> = {};
   const counted = new Set(['upsert', 'insert', 'update', 'get']);
-  const proxy = new Proxy(db, {
-    get(target, property, receiver) {
-      const value = Reflect.get(target, property, receiver);
-      if (typeof property !== 'string' || !counted.has(property)) return value;
-      if (typeof value !== 'function') return value;
-      return (...args: unknown[]) => {
-        counts[property] = (counts[property] ?? 0) + 1;
-        return (value as (...a: unknown[]) => unknown).apply(target, args);
-      };
-    },
-  });
-  return { db: proxy as DatabaseInterface, counts };
+  const observe = (database: DatabaseInterface): DatabaseInterface =>
+    new Proxy(database, {
+      get(target, property, receiver) {
+        if (property === 'transaction' && target.transaction) {
+          return <T>(operation: (tx: DatabaseInterface) => Promise<T>) =>
+            target.transaction?.((tx) => operation(observe(tx)));
+        }
+        const value = Reflect.get(target, property, receiver);
+        if (typeof property !== 'string' || !counted.has(property))
+          return value;
+        if (typeof value !== 'function') return value;
+        return (...args: unknown[]) => {
+          counts[property] = (counts[property] ?? 0) + 1;
+          return (value as (...a: unknown[]) => unknown).apply(target, args);
+        };
+      },
+    });
+  return { db: observe(db), counts };
 }
 
 describe('save() preserves tenant error contract (#1378)', () => {

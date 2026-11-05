@@ -32,6 +32,7 @@ import {
   type RuntimeProviderOverrides,
   resolveApplicationRuntime,
 } from '@happyvertical/smrt-config';
+import { setDatabaseSyncDeviceId } from '@happyvertical/smrt-core';
 import { TaskRunner, type TaskRunnerConfig } from '@happyvertical/smrt-jobs';
 import { Person, ProfileTypeCollection } from '@happyvertical/smrt-profiles';
 import { withSystemContext } from '@happyvertical/smrt-tenancy';
@@ -49,10 +50,15 @@ import {
   TenantCollection,
   TenantService,
   TenantStatus,
+  type TenantWithOwnershipResult,
   UserCollection,
   UserStatus,
 } from '@happyvertical/smrt-users';
 import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
+import {
+  deriveLocalInstallationIdentity,
+  type LocalInstallationIdentity,
+} from './local-installation-identity.js';
 import {
   createLocalMcpTokenStore,
   ensureLocalMcpTokenTable,
@@ -473,6 +479,7 @@ export type LocalRuntimeErrorCode =
   | 'invalid_scope'
   | 'migration_failed'
   | 'owner_tenant_conflict'
+  | 'owner_identity_conflict'
   | 'owner_unavailable'
   | 'unsafe_public_exposure';
 
@@ -583,7 +590,8 @@ export async function initializeLocalApplicationRuntime(
     const acquired = await acquireLocalDatabase(paths, sourceRoot, appId);
     db = acquired.db;
     const { canonicalSourceRoot } = acquired;
-    await prepareLocalFilesystem(paths, canonicalSourceRoot);
+    const identity = await prepareLocalFilesystem(paths, canonicalSourceRoot);
+    setDatabaseSyncDeviceId(db, identity.deviceId);
     await tuneLocalSqlite(db);
     try {
       await options.prepareDatabase?.(db);
@@ -604,6 +612,7 @@ export async function initializeLocalApplicationRuntime(
       paidCapabilities: options.paidCapabilities === true,
       ownerTenant,
       passwordPolicy: options.passwordPolicy,
+      identity,
       now: options.now ?? (() => new Date()),
       canonicalSourceRoot,
     });
@@ -649,6 +658,7 @@ export async function initializeLocalApplicationRuntime(
 }
 
 interface LocalApplicationRuntimeState {
+  identity: LocalInstallationIdentity;
   db: DatabaseInterface;
   paths: LocalRuntimePaths;
   bindHost: string;
@@ -702,6 +712,7 @@ class InitializedLocalApplicationRuntime implements LocalApplicationRuntime {
   private readonly passwordPolicy?: PasswordPolicyOptions;
   private readonly now: () => Date;
   private readonly canonicalSourceRoot: string;
+  private readonly identity: LocalInstallationIdentity;
 
   constructor(state: LocalApplicationRuntimeState) {
     this.db = state.db;
@@ -716,6 +727,7 @@ class InitializedLocalApplicationRuntime implements LocalApplicationRuntime {
     this.paidCapabilitiesEnabled = state.paidCapabilities;
     this.now = state.now;
     this.canonicalSourceRoot = state.canonicalSourceRoot;
+    this.identity = state.identity;
     this.mcpTokens = localMcpTokenStore(
       state.db,
       state.paths,
@@ -844,6 +856,7 @@ class InitializedLocalApplicationRuntime implements LocalApplicationRuntime {
         input,
         this.sessionTtlSeconds,
         this.ownerTenant,
+        this.identity,
         this.passwordPolicy,
       );
     });
@@ -973,6 +986,7 @@ async function createLocalOwnerRecords(
   input: ClaimLocalOwnerInput,
   sessionTtlSeconds: number,
   ownerTenant: ResolvedOwnerTenant,
+  identity: LocalInstallationIdentity,
   passwordPolicy?: PasswordPolicyOptions,
 ): Promise<LocalOwnerClaimResult> {
   // Resolve the tenant before writing anything: `Tenant` upserts on its slug,
@@ -980,6 +994,26 @@ async function createLocalOwnerRecords(
   // and orphan every row that points at it (#3032).
   const tenants = await TenantCollection.create({ db });
   const existingTenant = await tenants.findBySlug(ownerTenant.slug);
+  const defaultTenant = ownerTenant.slug === DEFAULT_OWNER_TENANT_SLUG;
+  const reservedTenant = defaultTenant
+    ? await tenants.get(identity.tenantId)
+    : null;
+  if (reservedTenant && reservedTenant.id !== existingTenant?.id) {
+    throw new LocalRuntimeError(
+      'owner_tenant_conflict',
+      'The reserved local tenant identity is already in use.',
+    );
+  }
+  const users = await UserCollection.create({ db });
+  if (
+    (await users.get(identity.ownerId)) ||
+    (await users.findByEmail(input.email.trim()))
+  ) {
+    throw new LocalRuntimeError(
+      'owner_identity_conflict',
+      'The local owner identity is already in use.',
+    );
+  }
   const memberships = await MembershipCollection.create({ db });
   if (existingTenant) {
     await assertAdoptableOwnerTenant(existingTenant, ownerTenant, memberships);
@@ -994,53 +1028,59 @@ async function createLocalOwnerRecords(
   );
   const person = new Person({
     db,
+    id: identity.profileId,
+    _skipLoad: true,
     typeId: requireId(personType.id, 'Person profile type'),
     tenantId: null,
     name: input.name.trim(),
     email: input.email.trim(),
   });
   await person.initialize();
+  person.requireInsertOnSave({ preserveDerivedSlug: true });
   await person.save();
 
-  const users = await UserCollection.create({ db });
   const user = await users.create({
+    id: identity.ownerId,
+    _insertOnly: true,
     profileId: requireId(person.id, 'Person'),
     email: input.email.trim(),
     status: UserStatus.ACTIVE,
     lastLoginAt: new Date(),
   });
-  await user.save();
   const userId = requireId(user.id, 'User');
 
-  let tenant: Tenant;
-  let membership: { id?: string | null };
+  let ownership: TenantWithOwnershipResult;
   if (existingTenant) {
     const roles = await RoleCollection.create({ db });
     const ownerRole = await roles.findSystemRoleBySlug(
       DEFAULT_ROLE_SLUGS.OWNER,
     );
-    const created = await memberships.create({
-      userId,
-      tenantId: requireId(existingTenant.id, 'Tenant'),
-      roleId: requireId(ownerRole?.id, 'Owner role'),
-      status: MembershipStatus.ACTIVE,
-    });
-    await created.save();
-    tenant = existingTenant;
-    membership = created;
+    ownership = {
+      tenant: existingTenant,
+      membership: await memberships.create({
+        id: identity.membershipId,
+        _insertOnly: true,
+        userId,
+        tenantId: requireId(existingTenant.id, 'Tenant'),
+        roleId: requireId(ownerRole?.id, 'Owner role'),
+        status: MembershipStatus.ACTIVE,
+      }),
+    };
   } else {
     const tenantName = input.tenantName?.trim() || ownerTenant.name;
-    const tenantService = new TenantService(
+    const service = await TenantService.create(
       { db },
       { mode: 'required', maxTenants: 1, defaultName: tenantName },
     );
-    await tenantService.initialize();
-    ({ tenant, membership } = await tenantService.createTenantWithOwnership(
-      userId,
-      tenantName,
-      { slug: ownerTenant.slug },
-    ));
+    ownership = await service.createTenantWithOwnership(userId, tenantName, {
+      slug: ownerTenant.slug,
+      reservedIdentity: {
+        tenantId: defaultTenant ? identity.tenantId : undefined,
+        membershipId: identity.membershipId,
+      },
+    });
   }
+  const { tenant, membership } = ownership;
 
   // Bind the owner's profile to the actual created or adopted tenant before
   // committing the claim; the shared Person profile type remains global.
@@ -1528,10 +1568,16 @@ function preservePrimaryFailure(
 async function prepareLocalFilesystem(
   paths: LocalRuntimePaths,
   canonicalSourceRoot: string,
-): Promise<void> {
+): Promise<LocalInstallationIdentity> {
   await ensureSafeDirectoryTree(paths.assets, canonicalSourceRoot);
   await ensureSafeDirectoryTree(paths.secrets, canonicalSourceRoot);
   await ensureApplicationSecret(paths.applicationSecret, canonicalSourceRoot);
+  return deriveLocalInstallationIdentity(
+    await validateApplicationSecret(
+      paths.applicationSecret,
+      canonicalSourceRoot,
+    ),
+  );
 }
 
 async function prepareDedicatedRoot(

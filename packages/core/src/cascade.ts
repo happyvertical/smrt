@@ -15,7 +15,7 @@
  *
  * - Cascaded rows are removed with set-based statements. Their `beforeDelete` /
  *   `afterDelete` hooks and interceptors do **not** run, and no change-feed
- *   tombstone is written for them — exactly as `ON DELETE CASCADE` behaves.
+ *   event is written for them. Tracked descendants get durable sync tombstones.
  *   Only the object `delete()` was called on runs the full lifecycle.
  * - Every delete runs inside a single transaction when the adapter exposes
  *   one, including cleanup of framework-owned context and embedding rows, so
@@ -71,7 +71,7 @@ import { classifyDatabaseError } from './db-errors.js';
 import {
   isEmbeddedDatabase,
   isFrameworkTransactionHandle,
-  isPostgresDatabase,
+  usesPostgresDialect,
   withEmbeddedWriteTransaction,
 } from './embedded-write-queue.js';
 import { ConfigurationError, DatabaseError } from './errors.js';
@@ -85,6 +85,11 @@ import {
   resolveForeignKeyDeleteAction,
 } from './schema/foreign-key-policy.js';
 import type { ForeignKeyAction } from './schema/types.js';
+import {
+  deleteSyncRows,
+  nullSyncReference,
+  type SyncRowIdentity,
+} from './sync-tombstones.js';
 import { chunkArray, IN_LIST_CHUNK_SIZE } from './utils/chunk.js';
 import { toSnakeCase } from './utils/naming.js';
 
@@ -172,6 +177,8 @@ export type CascadeRegistryView = Pick<
   | 'getClass'
   | 'getSTIBase'
   | 'getDescendants'
+  | 'getOwnershipTenantColumn'
+  | 'getTableStrategy'
 >;
 
 /**
@@ -439,7 +446,7 @@ const cascadeWrites = new WeakMap<DatabaseInterface, number>();
  * Record a cascade write on `db`. A result that reports `affected: 0` changed
  * nothing; anything else (including adapters that report no count) counts.
  */
-function recordCascadeWrite<T>(db: DatabaseInterface, result: T): T {
+export function recordCascadeWrite<T>(db: DatabaseInterface, result: T): T {
   const affected = (result as { affected?: unknown } | undefined)?.affected;
   if (typeof affected !== 'number' || affected > 0) {
     cascadeWrites.set(db, (cascadeWrites.get(db) ?? 0) + 1);
@@ -555,7 +562,7 @@ async function selectIds(
 ): Promise<string[]> {
   const found: string[] = [];
   for (const batch of chunkArray(ids, IN_LIST_CHUNK_SIZE)) {
-    const dialect = isPostgresDatabase(db) ? 'postgres' : 'sqlite';
+    const dialect = usesPostgresDialect(db) ? 'postgres' : 'sqlite';
     const where = buildWhere(idPredicate(column, batch), 1, dialect);
     const table = `"${tableName.replaceAll('"', '""')}"`;
     const sql = `SELECT CAST("id" AS VARCHAR) AS "id" FROM ${table} ${where.sql}`;
@@ -574,15 +581,16 @@ async function selectIds(
 
 async function deleteByIds(
   db: DatabaseInterface,
-  tableName: string,
+  identity: SyncRowIdentity,
   ids: string[],
 ): Promise<void> {
+  const { tableName } = identity;
   for (const batch of chunkArray(ids, IN_LIST_CHUNK_SIZE)) {
     await tolerateMissingTable(
       () =>
-        db
-          .delete(tableName, idPredicate('id', batch))
-          .then((result) => recordCascadeWrite(db, result)),
+        deleteSyncRows(db, identity, idPredicate('id', batch), (affected) =>
+          recordCascadeWrite(db, { affected }),
+        ),
       undefined,
       { table: tableName, action: 'CASCADE delete' },
     );
@@ -708,13 +716,13 @@ async function resolveReferences(
       for (const batch of chunkArray(pending, IN_LIST_CHUNK_SIZE)) {
         await tolerateMissingTable(
           () =>
-            ctx.db
-              .update(
-                reference.tableName,
-                idPredicate(reference.column, batch),
-                { [reference.column]: null },
-              )
-              .then((result) => recordCascadeWrite(ctx.db, result)),
+            nullSyncReference(
+              ctx.db,
+              reference.tableName,
+              reference.column,
+              idPredicate(reference.column, batch),
+              (affected) => recordCascadeWrite(ctx.db, { affected }),
+            ),
           undefined,
           { table: reference.tableName, action: 'SET NULL' },
         );
@@ -749,7 +757,18 @@ async function resolveReferences(
       childIds,
       ownerClassCandidates(ctx.registry, reference.className),
     );
-    await deleteByIds(ctx.db, reference.tableName, childIds);
+    await deleteByIds(
+      ctx.db,
+      {
+        tableName: reference.tableName,
+        model: toQualifiedClassName(ctx.registry, reference.className),
+        tenantColumn: ctx.registry.getOwnershipTenantColumn(
+          reference.className,
+        ),
+        sti: ctx.registry.getTableStrategy(reference.className) === 'sti',
+      },
+      childIds,
+    );
     ctx.affectedTables.add(reference.tableName);
     ctx.affectedTableClasses.set(
       reference.tableName,
@@ -772,9 +791,20 @@ async function resolveReferences(
       }
       const result = await tolerateMissingTable(
         () =>
-          ctx.db
-            .delete(association.tableName, where)
-            .then((result) => recordCascadeWrite(ctx.db, result)),
+          deleteSyncRows(
+            ctx.db,
+            {
+              tableName: association.tableName,
+              model: toQualifiedClassName(ctx.registry, association.className),
+              tenantColumn: ctx.registry.getOwnershipTenantColumn(
+                association.className,
+              ),
+              sti:
+                ctx.registry.getTableStrategy(association.className) === 'sti',
+            },
+            where,
+            (affected) => recordCascadeWrite(ctx.db, { affected }),
+          ),
         undefined,
         {
           table: association.tableName,
@@ -873,6 +903,7 @@ export async function runCascadeDelete(
     id: string | null | undefined;
   },
   deleteSelf: (db: DatabaseInterface) => Promise<void>,
+  shouldCascade?: (db: DatabaseInterface) => Promise<boolean>,
 ): Promise<CascadeResult> {
   const ids = target.id ? [target.id] : [];
 
@@ -891,11 +922,13 @@ export async function runCascadeDelete(
     const runWithoutReferences = async (
       bound: DatabaseInterface,
     ): Promise<CascadeResult> => {
-      await deleteSystemRows(
-        bound,
-        ids,
-        ownerClassCandidates(registry, target.className),
-      );
+      if (!shouldCascade || (await shouldCascade(bound))) {
+        await deleteSystemRows(
+          bound,
+          ids,
+          ownerClassCandidates(registry, target.className),
+        );
+      }
       await deleteSelf(bound);
       return { affectedTables: new Set(), affectedTableClasses: new Map() };
     };
@@ -905,11 +938,17 @@ export async function runCascadeDelete(
   }
 
   const run = async (bound: DatabaseInterface): Promise<CascadeResult> => {
-    const result = await cascadeReferencesTo(bound, registry, {
-      className: target.className,
-      tableName: target.tableName,
-      ids,
-    });
+    const result =
+      !shouldCascade || (await shouldCascade(bound))
+        ? await cascadeReferencesTo(bound, registry, {
+            className: target.className,
+            tableName: target.tableName,
+            ids,
+          })
+        : {
+            affectedTables: new Set<string>(),
+            affectedTableClasses: new Map<string, string>(),
+          };
     await deleteSelf(bound);
     return result;
   };
@@ -1008,13 +1047,12 @@ export async function runInOwningCascadeTransaction<T>(
  * ends, and ending it discards its writes. The statement is expected to throw;
  * its error is not the one the caller needs, so it is dropped.
  */
-async function abortJoinedDuckDbTransaction(
+export async function abortJoinedDuckDbTransaction(
   db: DatabaseInterface,
+  message = CASCADE_ABORTED_CALLER_TRANSACTION,
 ): Promise<void> {
   try {
-    await db.query(
-      `SELECT error('${CASCADE_ABORTED_CALLER_TRANSACTION.replaceAll("'", "''")}')`,
-    );
+    await db.query(`SELECT error('${message.replaceAll("'", "''")}')`);
   } catch {
     // Expected: this statement exists to fail.
   }

@@ -188,6 +188,8 @@ postgres('trusted operator provisioning on PostgreSQL', () => {
     const { db } = await fixture();
     const roles = await RoleCollection.create({ db });
     await roles.seedSystemRoles();
+    // Other suites may seed grants in the shared PostgreSQL test database.
+    await db.query('DELETE FROM role_permissions');
     const owner = input();
     const snapshot = async () => {
       const rows = [];

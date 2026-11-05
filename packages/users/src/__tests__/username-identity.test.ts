@@ -22,8 +22,9 @@ describe('ordinary username persistence', () => {
     isolated = await createIsolatedTestDbFromManifest({
       includeObjects: ['User'],
     });
-    // Use the base executor deliberately: each save commits independently, so
-    // the uniqueness check is exercised across concurrent autocommit writes.
+    // Release the unused isolation transaction before writing on the base
+    // executor, so the concurrent saves exercise independent commits.
+    await isolated.db.rollback();
     const users = await UserCollection.create({ db: isolated.baseDb });
     const suffix = randomUUID();
     const records = await Promise.all(

@@ -15,7 +15,7 @@
  * Playwright's own install.
  */
 import { existsSync } from 'node:fs';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -28,7 +28,10 @@ if (!existsSync(namingModule)) {
   throw new Error(`${namingModule} is missing; run \`pnpm build\` first`);
 }
 
-const workDir = await mkdtemp(resolve(tmpdir(), 'smrt-core-unbundled-dev-'));
+// Vite keys inline HTML modules by their canonical path.
+const workDir = await mkdtemp(
+  resolve(await realpath(tmpdir()), 'smrt-core-unbundled-dev-'),
+);
 let server;
 let browser;
 try {
