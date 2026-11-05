@@ -33,6 +33,7 @@ import {
   declareWindows,
   fitsCapacity,
   localEnd,
+  MAX_SEGMENTS,
   measures,
   type Reservation,
   remainingCapacity,
@@ -324,16 +325,18 @@ export class BookingService {
       context,
       'configure-offering',
       key,
+      // Fields at their defaults are omitted so a v1 retry key still replays its receipt.
       {
         offeringId,
         kind,
-        unit,
-        priceCents,
-        currency,
-        title,
-        description,
-        public: isPublic,
         enabled,
+        ...(unit !== (kind === 'supervision-day' ? 'day' : 'hour')
+          ? { unit }
+          : {}),
+        ...(priceCents !== null ? { priceCents, currency } : {}),
+        ...(title !== '' ? { title } : {}),
+        ...(description !== '' ? { description } : {}),
+        ...(isPublic ? { public: true } : {}),
       },
       operator,
       async (tx, ctx) => {
@@ -431,7 +434,12 @@ export class BookingService {
       context,
       'request',
       key,
-      { offeringId, contactId, projectId, quantity },
+      {
+        offeringId,
+        contactId,
+        projectId,
+        ...(quantity !== 1 ? { quantity } : {}),
+      },
       (access) => {
         if (!access.operator) contact(access, contactId);
       },
@@ -505,11 +513,12 @@ export class BookingService {
       context,
       'propose',
       key,
+      // The v1 single-window shape (and hash) is kept for a single segment at the default quantity.
       {
         bookingId,
         providerId,
-        windows,
-        quantity: requestedQuantity,
+        ...(windows.length === 1 ? { window: windows[0] } : { windows }),
+        ...(requestedQuantity !== null ? { quantity: requestedQuantity } : {}),
         terms,
         approvedPlan,
       },
@@ -1027,6 +1036,7 @@ export class BookingService {
           const segments = bundle.map(project);
           if (
             segments.length === 0 ||
+            segments.length > MAX_SEGMENTS ||
             segments[0].start.slice(0, 10) !== d0 ||
             !segments.every(inRange) ||
             !measures(unit, quantity, segments) ||

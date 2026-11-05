@@ -240,7 +240,8 @@ export function fitsCapacity(
   return remainingCapacity(candidate, declared, occupied) >= 1;
 }
 
-const MAX_SEGMENTS = 400;
+/** Most segments one proposal may reserve; discovery never lists a larger bundle. */
+export const MAX_SEGMENTS = 400;
 
 /** Resolve one or more same-zone segments into sorted, non-overlapping windows and their span. */
 export function resolveCoverage(windows: readonly BookingWindow[]): {

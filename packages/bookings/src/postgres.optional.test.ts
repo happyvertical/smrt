@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
@@ -373,6 +373,25 @@ describe.skipIf(!url)('Bookings on PostgreSQL', () => {
         projectId,
       );
       void planId;
+      // A v1 retry key committed before the upgrade (hashes as v1 computed them).
+      const sha = (value: string) =>
+        createHash('sha256').update(value).digest('hex');
+      const legacyKey = randomUUID();
+      await q(
+        `INSERT INTO smrt_booking_commands (tenant_id, operation, key_hash, actor_id, payload_hash, booking_id, result)
+         VALUES (?, 'request', ?, 'requester', ?, ?, ?)`,
+        tenantId,
+        sha(legacyKey),
+        sha(
+          JSON.stringify({
+            offeringId: hourOffering,
+            contactId: customerId,
+            projectId: null,
+          }),
+        ),
+        hourBooking,
+        JSON.stringify({ id: hourBooking }),
+      );
 
       await migrateBookingsV2(old);
 
@@ -387,6 +406,12 @@ describe.skipIf(!url)('Bookings on PostgreSQL', () => {
       const service = new BookingService(old, authority);
       const operatorContext = { tenantId, actorId: 'operator' };
       const requester = { tenantId, actorId: 'requester' };
+      expect(
+        await service.request(requester, legacyKey, {
+          offeringId: hourOffering,
+          contactId: customerId,
+        }),
+      ).toEqual({ id: hourBooking });
       const offerings = (await service.listOfferings(operatorContext)).items;
       expect(offerings).toEqual(
         expect.arrayContaining([
@@ -905,6 +930,44 @@ describe.skipIf(!url)('Bookings on PostgreSQL', () => {
           terms,
         }),
       ).resolves.toMatchObject({ id: booking.id });
+
+      // Discovery never lists a bundle that exceeds the proposal segment limit.
+      const long = Array.from({ length: 201 }, (_, i) => {
+        const date = new Date(Date.UTC(2027, 3, 1 + i))
+          .toISOString()
+          .slice(0, 10);
+        return [
+          {
+            start: `${date}T09:00+00:00`,
+            end: `${date}T12:00+00:00`,
+            capacity: 1,
+            supervision: false,
+          },
+          {
+            start: `${date}T13:00+00:00`,
+            end: `${date}T17:00+00:00`,
+            capacity: 1,
+            supervision: false,
+          },
+        ];
+      }).flat();
+      await w.a.declareAvailability(w.operatorContext, randomUUID(), {
+        providerId: w.providerId,
+        zone: 'UTC',
+        windows: long,
+      });
+      const longQuery = (quantity: number) =>
+        w.a.listOpenSlots(w.requester, {
+          offeringId: w.dayOffering,
+          providerId: w.providerId,
+          from: '2027-03-31T00:00:00Z',
+          to: '2027-10-20T00:00:00Z',
+          quantity,
+        });
+      expect((await longQuery(201)).items).toEqual([]);
+      expect(
+        (await longQuery(200)).items.map((slot) => slot.windows.length),
+      ).toEqual([400, 400]);
 
       await w.a.declareAvailability(w.operatorContext, randomUUID(), {
         providerId: w.providerId,
