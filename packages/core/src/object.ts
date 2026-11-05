@@ -1,8 +1,11 @@
 import type { AITextCompletionOptions, AITool } from '@happyvertical/ai';
 import { createLogger } from '@happyvertical/logger';
+import type { DatabaseInterface } from '@happyvertical/sql';
 import {
+  abortJoinedDuckDbTransaction,
   buildCascadePlan,
   cascadeReferencesTo,
+  recordCascadeWrite,
   runCascadeDelete,
   runInOwningCascadeTransaction,
 } from './cascade';
@@ -30,8 +33,10 @@ import {
 } from './decisions';
 import {
   isEmbeddedDatabase,
+  isKnownDatabaseTransaction,
   isPostgresDatabase,
   usesEmbeddedRevisionFallback,
+  usesPostgresDialect,
   withEmbeddedWriteQueue,
   withEmbeddedWriteTransaction,
 } from './embedded-write-queue';
@@ -54,7 +59,10 @@ import {
   GlobalInterceptors,
   resolveGetStringFilter,
 } from './interceptors';
-import { isKnownNativeDuckDbHandle } from './native-duckdb';
+import {
+  isJsonAdapterHandle,
+  isKnownNativeDuckDbHandle,
+} from './native-duckdb';
 import { getBoxedPrimitiveKind, isRawJSON } from './plain-json';
 import { ObjectRegistry } from './registry';
 import { assertRuntimeTableBindings } from './registry/table-mappings.js';
@@ -67,6 +75,17 @@ import {
 import { postgresRevisionCondition } from './revision-guard';
 import { detectEngine } from './schema/ddl/index';
 import { verifyPersistenceTable } from './schema/table-verifier';
+import { getDatabaseSyncDeviceId } from './sync-device';
+import {
+  bindSyncRevision,
+  compareSyncRevisions,
+  deleteSyncRows,
+  lockSyncRowIdentity,
+  putSyncTombstone,
+  SYNC_TOMBSTONES_TABLE,
+  syncRevisionConflict,
+  validateSyncRevision,
+} from './sync-tombstones';
 import {
   executeToolCall as executeToolCallInternal,
   type ToolCall,
@@ -269,6 +288,19 @@ function toPlainJSONValue(
  */
 const AI_PROMPT_DATA_MAX_LENGTH = 100_000;
 
+/** Per-row metadata for an explicitly tracked object. */
+export interface SmrtSyncMetadata {
+  readonly originDeviceId: string;
+  readonly revision: number;
+  readonly tombstone: boolean;
+}
+
+/** Revision supplied by a trusted sync caller. */
+export interface SmrtSyncWrite {
+  originDeviceId: string;
+  revision: number;
+}
+
 /** Optional optimistic-concurrency guard for persisted-object saves. */
 export interface SmrtSaveOptions {
   /**
@@ -276,6 +308,9 @@ export interface SmrtSaveOptions {
    * `RUNTIME_REVISION_CONFLICT` without writing the row.
    */
   expectedUpdatedAt?: Date | string;
+  /** Opt this row into tracking with the configured local device. */
+  trackSync?: boolean;
+  sync?: SmrtSyncWrite;
 }
 
 /** Optional optimistic-concurrency guard for irreversible deletes. */
@@ -285,6 +320,8 @@ export interface SmrtDeleteOptions {
    * `RUNTIME_REVISION_CONFLICT` before any durable cascade is committed.
    */
   expectedUpdatedAt?: Date | string;
+  /** Apply a deletion revision from a trusted sync caller. */
+  sync?: SmrtSyncWrite;
 }
 
 /**
@@ -571,6 +608,7 @@ export class SmrtObject extends SmrtClass {
    * (issue #1472).
    */
   private _persisted = false;
+  private _explicitId = false;
 
   /**
    * When set (and the object is not yet persisted), `save()` performs a plain
@@ -632,6 +670,69 @@ export class SmrtObject extends SmrtClass {
    * Last update timestamp
    */
   public updated_at: Date | null | undefined = null;
+  private _syncMetadata: SmrtSyncMetadata | null = null;
+
+  /** Sync state read from or committed to the backing row. */
+  get syncMetadata(): SmrtSyncMetadata | null {
+    return this._syncMetadata;
+  }
+
+  /** @internal Read only from a physical row, never from model input or STI JSON. */
+  hydrateSyncMetadata(row: Record<string, unknown>): void {
+    const origin = row._sync_origin_device_id;
+    const revision = Number(row._sync_revision);
+    this._syncMetadata =
+      typeof origin === 'string' &&
+      Number.isSafeInteger(revision) &&
+      revision > 0
+        ? Object.freeze({
+            originDeviceId: origin,
+            revision,
+            tombstone: false,
+          })
+        : null;
+  }
+
+  private normalizeSyncRowId(id: string): string {
+    if (
+      ObjectRegistry.getConfig(this.getResolvedQualifiedName()).idType ===
+        'text' ||
+      (!usesPostgresDialect(this.db) && !this.isPositivelyNativeDuckDb())
+    )
+      return id;
+    const hex = id.replace(/[-{}]/g, '').toLowerCase();
+    return /^[0-9a-f]{32}$/.test(hex)
+      ? [
+          hex.slice(0, 8),
+          hex.slice(8, 12),
+          hex.slice(12, 16),
+          hex.slice(16, 20),
+          hex.slice(20),
+        ].join('-')
+      : id;
+  }
+
+  private nextSyncMetadata(
+    write?: SmrtSyncWrite,
+    trackSync = false,
+  ): SmrtSyncMetadata | null {
+    const previous = this._syncMetadata;
+    if (!write && !previous && !trackSync) return null;
+    if (write && trackSync) {
+      throw new ValidationError(
+        'Choose either local tracking or an incoming revision',
+        'VALIDATION_SYNC_METADATA',
+      );
+    }
+    const revision = validateSyncRevision(
+      write?.originDeviceId ?? getDatabaseSyncDeviceId(this.db),
+      write ? write.revision : (previous?.revision ?? 0) + 1,
+    );
+    if (write && previous && compareSyncRevisions(revision, previous) <= 0) {
+      throw syncRevisionConflict(this.id);
+    }
+    return Object.freeze({ ...revision, tombstone: false });
+  }
 
   /**
    * Creates a new SmrtObject instance
@@ -648,6 +749,7 @@ export class SmrtObject extends SmrtClass {
       throw new Error('options cant be null');
     }
     this._id = options.id || null;
+    this._explicitId = Boolean(options.id);
     this._slug = options.slug || null;
     this._context = options.context || '';
 
@@ -799,6 +901,7 @@ export class SmrtObject extends SmrtClass {
    * @internal
    */
   protected setId(id: string): void {
+    if (id !== this._id) this._explicitId = true;
     this._id = id;
   }
 
@@ -891,6 +994,7 @@ export class SmrtObject extends SmrtClass {
           ? new Date(this.updated_at)
           : this.updated_at,
       persisted: this._persisted,
+      syncMetadata: this._syncMetadata,
     };
     try {
       return await withEmbeddedWriteTransaction(
@@ -905,6 +1009,7 @@ export class SmrtObject extends SmrtClass {
       this.created_at = persistence.createdAt;
       this.updated_at = persistence.updatedAt;
       this._persisted = persistence.persisted;
+      this._syncMetadata = persistence.syncMetadata;
       throw error;
     }
   }
@@ -1028,6 +1133,8 @@ export class SmrtObject extends SmrtClass {
     if (!value || value === 'undefined' || value === 'null') {
       throw new Error(`id is required, ${value} given`);
     }
+    // Model normalization may reassign a framework-generated ID unchanged.
+    if (value !== this._id) this._explicitId = true;
     this._id = value;
   }
 
@@ -1308,6 +1415,8 @@ export class SmrtObject extends SmrtClass {
         totalFields: Object.keys(fields).length,
       });
     }
+
+    this.hydrateSyncMetadata(data);
 
     // The data came from an existing row, so subsequent saves must update
     // that row by primary key even if natural-key fields change (issue #1472).
@@ -2390,14 +2499,14 @@ export class SmrtObject extends SmrtClass {
           item.constructor !== first.constructor ||
           !SmrtObject.prototype.supportsJunctionBatch.call(item),
       ) ||
-      added.some((item) => item.isPersisted) ||
+      added.some((item) => item.isPersisted || item._explicitId) ||
       removed.some((item) => !item.id)
     )
       return false;
     if (first.getDatabaseEngineHint() === 'json') return false;
     const duck = first.isNativeDuckDb();
     if (duck && !first.isPositivelyNativeDuckDb()) return false;
-    const engine = isPostgresDatabase(first.db)
+    const engine = usesPostgresDialect(first.db)
       ? 'postgres'
       : duck
         ? 'duckdb'
@@ -2463,10 +2572,9 @@ export class SmrtObject extends SmrtClass {
               ? Number(value)
               : value;
     // A new item whose natural key already names a row (other than one this
-    // batch removes first) takes the per-item path: its guard adopts the
-    // existing id instead of letting `DO UPDATE` rewrite the primary key, and
-    // `ON UPDATE CASCADE` re-point the row's children. Conflict values are
-    // never NULL here (checked above), so plain equality matches the index.
+    // batch removes first) takes the per-item path, which can safely adopt
+    // an untracked row. Conflict values are never NULL here (checked above),
+    // so plain equality matches the index.
     if (added.length > 0 && conflict.length > 0) {
       const probeValues: unknown[] = [];
       const placeholder = () =>
@@ -2533,13 +2641,24 @@ export class SmrtObject extends SmrtClass {
             tableName: first.tableName,
             ids,
           });
-          await db.delete(first.tableName, { 'id in': ids });
+          const model = first.getResolvedQualifiedName();
+          await deleteSyncRows(
+            db,
+            {
+              tableName: first.tableName,
+              model,
+              tenantColumn: ObjectRegistry.getOwnershipTenantColumn(model),
+            },
+            { 'id in': ids },
+            (affected) => recordCascadeWrite(db, { affected }),
+          );
           return result;
         },
         true,
       );
       for (const instance of removed) {
         instance._persisted = false;
+        instance._explicitId = true;
         instance.invalidateCollectionReadCache();
         await instance.runHook('afterDelete');
       }
@@ -2562,9 +2681,9 @@ export class SmrtObject extends SmrtClass {
             })
             .join(', ')})`,
       );
-      // Defense in depth for a row inserted between the probe above and this
-      // statement: `DO UPDATE` never rewrites the primary key, the row's
-      // ownership, or its creation time.
+      // Keep untracked late collisions in place. RETURNING the physical
+      // rows works on legacy schemas too; tracked collisions roll back all
+      // additions before their hooks or change-feed entries can run.
       const updates = columns
         .filter(
           (column) =>
@@ -2574,38 +2693,40 @@ export class SmrtObject extends SmrtClass {
         )
         .map((column) => `${quote(column)} = excluded.${quote(column)}`)
         .join(', ');
-      const sql = `INSERT INTO ${quote(first.tableName)} (${columns.map(quote).join(', ')}) VALUES ${tuples.join(', ')} ON CONFLICT (${conflict.map(quote).join(', ')}) DO UPDATE SET ${updates}`;
-      await withEmbeddedWriteQueue(first.db, isEmbeddedDatabase(first.db), () =>
-        ErrorUtils.withRetry(
-          async () => {
-            try {
-              await first.db.query(sql, ...values);
-            } catch (error) {
-              if (!(error instanceof Error)) throw error;
-              const classification = classifyDatabaseError(error);
-              const field = first.extractConstraintFieldFromChain(
-                error,
-                classification,
-              );
-              if (classification.kind === 'unique_violation')
-                throw ValidationError.uniqueConstraint(
-                  field,
-                  first.getFieldValue(field),
+      const sql = `INSERT INTO ${quote(first.tableName)} (${columns.map(quote).join(', ')}) VALUES ${tuples.join(', ')} ON CONFLICT (${conflict.map(quote).join(', ')}) DO UPDATE SET ${updates} RETURNING *`;
+      await ErrorUtils.withRetry(
+        async () => {
+          try {
+            await withEmbeddedWriteTransaction(
+              first.db,
+              isEmbeddedDatabase(first.db),
+              async (db) => {
+                const { rows } = await db.query(sql, ...values);
+                const tracked = rows.find(
+                  (row) => row._sync_origin_device_id != null,
                 );
-              if (classification.kind === 'not_null_violation')
-                throw ValidationError.requiredField(
-                  field,
-                  first.getResolvedClassName(),
+                if (!tracked) return;
+                if (duck && db === first.db) {
+                  await abortJoinedDuckDbTransaction(
+                    db,
+                    'smrt: tracked junction conflict aborted the caller transaction',
+                  );
+                }
+                throw first.trackedIdentityWriteError(
+                  typeof tracked.id === 'string' ? tracked.id : undefined,
                 );
-              throw DatabaseError.queryFailed(
-                `UPSERT INTO ${first.tableName}`,
-                error,
-              );
-            }
-          },
-          3,
-          500,
-        ),
+              },
+              duck,
+            );
+          } catch (error) {
+            throw first.toTypedWriteError(
+              error,
+              `UPSERT INTO ${first.tableName}`,
+            );
+          }
+        },
+        3,
+        500,
       );
       const completions: BulkMutationEntry[] = [];
       for (let i = 0; i < added.length; i++) {
@@ -2630,7 +2751,10 @@ export class SmrtObject extends SmrtClass {
   }
 
   /** Shared preparation for ordinary saves and compatible bulk creates. */
-  private async prepareSave(revisionGuard: Date | string | undefined) {
+  private async prepareSave(
+    revisionGuard: Date | string | undefined,
+    syncMetadata: SmrtSyncMetadata | null = null,
+  ) {
     const className = this.getResolvedClassName();
     if (ObjectRegistry.getConfig(this.getResolvedQualifiedName()).abstract) {
       throw new ValidationError(
@@ -2769,6 +2893,16 @@ export class SmrtObject extends SmrtClass {
     // named `updatedAt` also snake-cases to this column, so assert the
     // freshly issued framework value after serializing model fields.
     data.updated_at = this.updated_at;
+    // These physical columns cannot be supplied through model serialization.
+    delete data._sync_origin_device_id;
+    delete data._sync_revision;
+    if (syncMetadata) {
+      data._sync_origin_device_id = syncMetadata.originDeviceId;
+      data._sync_revision = bindSyncRevision(
+        syncMetadata.revision,
+        this.isPositivelyNativeDuckDb(),
+      );
+    }
 
     // Coerce empty-string values to NULL for native UUID columns (declared
     // FKs / cross-package refs). The TypeScript default for an unset
@@ -2815,6 +2949,8 @@ export class SmrtObject extends SmrtClass {
       'updated_at',
       '_meta_type',
       '_meta_data',
+      '_sync_origin_device_id',
+      '_sync_revision',
       ...conflictColumns.map(toSnakeCase),
     ]);
     for (const [name, field] of registeredFields) {
@@ -2964,6 +3100,10 @@ export class SmrtObject extends SmrtClass {
   async save(options: SmrtSaveOptions = {}) {
     const className = this.getResolvedClassName();
     const expectedUpdatedAt = options.expectedUpdatedAt;
+    const explicitNewId =
+      !this._persisted &&
+      (this._explicitId || options.sync || options.trackSync) &&
+      this.id;
     const previousUpdatedAt = this.updated_at;
     let revisionPersisted = false;
     // Persisted objects always write through a compare-and-swap predicate.
@@ -2987,8 +3127,33 @@ export class SmrtObject extends SmrtClass {
           { className },
         );
       }
+      const syncMetadata = this.nextSyncMetadata(
+        options.sync,
+        options.trackSync,
+      );
+      if (
+        syncMetadata &&
+        (this.getDatabaseEngineHint() === 'json' ||
+          isJsonAdapterHandle(this.db))
+      ) {
+        throw RuntimeError.invalidState(
+          'Sync revisions require a SQL database',
+          { className },
+        );
+      }
+      if (syncMetadata && !this._persisted) {
+        if (!this.id) {
+          throw RuntimeError.invalidState(
+            'A tracked create requires an explicit id',
+            {
+              className,
+            },
+          );
+        }
+        this.requireInsertOnSave();
+      }
       const { interceptorContext, data, writePlan, conflictColumns } =
-        await this.prepareSave(revisionGuard);
+        await this.prepareSave(revisionGuard, syncMetadata);
 
       // Issue #1472: objects backed by an existing row must conflict on the
       // primary key. With natural-key conflict columns, editing a natural-key
@@ -3039,10 +3204,8 @@ export class SmrtObject extends SmrtClass {
       // the write succeeds, so a failed save never leaves it holding another
       // row's id (a cleanup delete() would remove that row).
       const adopted: AdoptedNaturalKeyRow = {};
-      await withEmbeddedWriteQueue(
-        this.db,
-        serializeEmbeddedWrite,
-        async () => {
+      const write = () =>
+        withEmbeddedWriteQueue(this.db, serializeEmbeddedWrite, async () => {
           const writeGuard = GlobalInterceptors.executeWriteGuard(
             this,
             interceptorContext,
@@ -3136,7 +3299,7 @@ export class SmrtObject extends SmrtClass {
                   await this.writeNaturalKeyUpsert(
                     data,
                     naturalKeyConflictColumns,
-                    adopted.existing ?? null,
+                    adopted,
                     writeGuard,
                   );
                 }
@@ -3155,8 +3318,45 @@ export class SmrtObject extends SmrtClass {
             3,
             500,
           );
-        },
-      );
+        });
+      if (
+        explicitNewId &&
+        this.getDatabaseEngineHint() !== 'json' &&
+        !isJsonAdapterHandle(this.db)
+      ) {
+        const guardedWrite = async (tx: DatabaseInterface) => {
+          const rowId = this.normalizeSyncRowId(explicitNewId);
+          const filter = { table_name: this.tableName, row_id: rowId };
+          await lockSyncRowIdentity(tx, this.tableName, rowId);
+          if (await tx.get(SYNC_TOMBSTONES_TABLE, filter))
+            throw syncRevisionConflict(rowId);
+          await this.withDatabase(tx, write);
+          // A concurrent ordinary delete may finish while an INSERT is
+          // blocked on the live row's primary-key index.
+          if (
+            isPostgresDatabase(tx) &&
+            (await tx.get(SYNC_TOMBSTONES_TABLE, filter))
+          ) {
+            throw syncRevisionConflict(rowId);
+          }
+        };
+        const embedded = usesEmbeddedRevisionFallback(this.db);
+        if (embedded && isKnownDatabaseTransaction(this.db)) {
+          await withEmbeddedWriteQueue(this.db, true, () =>
+            guardedWrite(this.db),
+          );
+        } else {
+          // An unmarked no-savepoint handle may still join on typed refusal.
+          await withEmbeddedWriteTransaction(
+            this.db,
+            serializeEmbeddedWrite,
+            guardedWrite,
+            embedded,
+          );
+        }
+      } else {
+        await write();
+      }
 
       if (!revisionMatched) {
         throw new RuntimeError(
@@ -3166,6 +3366,7 @@ export class SmrtObject extends SmrtClass {
         );
       }
       revisionPersisted = true;
+      this._syncMetadata = syncMetadata;
       if (adopted.id) {
         this.id = adopted.id;
         if (adopted.createdAt != null) {
@@ -3242,6 +3443,17 @@ export class SmrtObject extends SmrtClass {
     await GlobalInterceptors.executeBeforeSave(this, interceptorContext);
 
     const updatedAt = this.nextRevisionTimestamp(expectedUpdatedAt);
+    const syncMetadata = this.nextSyncMetadata();
+    const updates = {
+      updated_at: updatedAt.toISOString(),
+      ...(syncMetadata && {
+        _sync_origin_device_id: syncMetadata.originDeviceId,
+        _sync_revision: bindSyncRevision(
+          syncMetadata.revision,
+          this.isPositivelyNativeDuckDb(),
+        ),
+      }),
+    };
     let result: Awaited<ReturnType<typeof this.db.update>> | undefined;
     let revisionMatched = true;
     const useEmbeddedRevisionFallback = usesEmbeddedRevisionFallback(this.db);
@@ -3279,19 +3491,17 @@ export class SmrtObject extends SmrtClass {
               { id: this.id, ...this.revisionPredicate(expectedUpdatedAt) },
               writeGuard,
             ),
-            { updated_at: updatedAt.toISOString() },
+            updates,
           );
         } else if (this.isPositivelyNativeDuckDb()) {
           // Native DuckDB rewrites a row whose indexed column is assigned, even
           // unchanged, and a referenced parent then refuses it (#3737). The
           // claim changes only the revision, so it assigns only the revision.
-          result = await this.updateDuckDbRowById(this.id, {
-            updated_at: updatedAt.toISOString(),
-          });
+          result = await this.updateDuckDbRowById(this.id, updates);
         } else {
           result = await this.db.upsert(this.tableName, ['id'], {
             ...current,
-            updated_at: updatedAt.toISOString(),
+            ...updates,
           });
         }
       },
@@ -3305,6 +3515,7 @@ export class SmrtObject extends SmrtClass {
     }
 
     this.updated_at = updatedAt;
+    this._syncMetadata = syncMetadata;
     this.invalidateCollectionReadCache();
     // claimRevision intentionally skips domain afterSave hooks, but the public
     // row revision still changed and must remain visible to ETags, delta pull,
@@ -3461,10 +3672,14 @@ export class SmrtObject extends SmrtClass {
   private async writeNaturalKeyUpsert(
     data: Record<string, unknown>,
     conflictColumns: string[],
-    existing: Record<string, unknown> | null,
+    adopted: AdoptedNaturalKeyRow,
     writeGuard?: Record<string, unknown>,
-  ) {
-    if (writeGuard) {
+  ): Promise<{ affected: number } | undefined> {
+    const existing = adopted.existing ?? null;
+    const postgres = isPostgresDatabase(this.db);
+    const crossProcess = !usesEmbeddedRevisionFallback(this.db);
+    const guardAdoptedSync = crossProcess && existing !== null;
+    if (writeGuard || guardAdoptedSync) {
       // A late collision must never enter an unconditional SDK UPSERT. A fresh
       // insert either succeeds or reports a collision; existing rows are changed
       // only by an UPDATE whose mandatory predicate is checked by the database.
@@ -3477,11 +3692,18 @@ export class SmrtObject extends SmrtClass {
         Object.entries(data).filter(
           ([column]) =>
             column !== 'id' &&
+            (!guardAdoptedSync || column !== 'created_at') &&
             !unchanged.has(column) &&
             !conflictColumns.includes(column),
         ),
       );
-      const filter = this.guardedWriteFilter({ id: stored.id }, writeGuard);
+      const filter = this.guardedWriteFilter(
+        {
+          id: stored.id,
+          ...(guardAdoptedSync ? { _sync_origin_device_id: null } : {}),
+        },
+        writeGuard,
+      );
       let result: { affected: number };
       if (this.isPositivelyNativeDuckDb()) {
         // Native DuckDB is serialized by the same embedded write queue. Its
@@ -3492,10 +3714,88 @@ export class SmrtObject extends SmrtClass {
       } else {
         result = await this.db.update(this.tableName, filter, assignments);
       }
-      if (result.affected !== 1)
+      if (result.affected !== 1) {
+        if (guardAdoptedSync && !writeGuard)
+          throw this.trackedIdentityWriteError(stored.id);
         throw new Error('Mandatory write predicate denied mutation');
+      }
       return result;
     }
+
+    const idConflict =
+      conflictColumns.length === 1 && conflictColumns[0] === 'id';
+    if (!this._persisted && idConflict && postgres) {
+      if (!(await this.insertIfAbsent(data, conflictColumns, true))) {
+        throw this.trackedIdentityWriteError(data.id);
+      }
+      return;
+    }
+    if (
+      !this._persisted &&
+      ((!crossProcess && idConflict) ||
+        !conflictColumns.every((column) => data[column] !== undefined))
+    ) {
+      const current = await this.readNaturalKeyRow({ id: data.id });
+      if (current?._sync_origin_device_id != null) {
+        throw this.trackedIdentityWriteError(data.id);
+      }
+    }
+
+    if (
+      !this._persisted &&
+      crossProcess &&
+      conflictColumns.every((column) => data[column] !== undefined) &&
+      (!postgres ||
+        (!existing && conflictColumns.some((column) => data[column] === null)))
+    ) {
+      // LibSQL opens a server-side write transaction. PostgreSQL also
+      // serializes nullable natural keys across SMRT connections.
+      const filter = Object.fromEntries(
+        conflictColumns.map((column) => [column, data[column]]),
+      );
+      return withEmbeddedWriteTransaction(this.db, false, async (tx) => {
+        if (postgres) {
+          await tx.query(
+            'SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))',
+            `smrt.nullable-natural-key:${this.tableName}`,
+            JSON.stringify(
+              Object.keys(filter)
+                .sort()
+                .map((column) => [column, filter[column]]),
+              (_, value) =>
+                typeof value === 'bigint' || typeof value === 'number'
+                  ? String(value)
+                  : value,
+            ),
+          );
+        }
+        return this.withDatabase(tx, async () => {
+          const current = await this.readNaturalKeyRow(filter);
+          if (!current) {
+            if (!postgres) return tx.insert(this.tableName, data);
+            if (await this.insertIfAbsent(data, conflictColumns)) return;
+          }
+          // A PostgreSQL writer outside the advisory lock can still win the
+          // unique key. DO NOTHING leaves its ID and creation time intact.
+          const winner = current ?? (await this.readNaturalKeyRow(filter));
+          if (!winner) {
+            throw RuntimeError.invalidState(
+              'Natural-key winner disappeared before it could be adopted',
+              { className: this.getResolvedClassName() },
+            );
+          }
+          this.adoptNaturalKeyRow(
+            data,
+            winner,
+            conflictColumns,
+            filter,
+            adopted,
+          );
+          return this.writeNaturalKeyUpsert(data, conflictColumns, adopted);
+        });
+      });
+    }
+
     const unchanged = await this.unchangedIndexedColumnsOf(data, existing);
     if (!existing || unchanged.size === 0 || existing.id == null) {
       return this.db.upsert(this.tableName, conflictColumns, data);
@@ -3512,7 +3812,7 @@ export class SmrtObject extends SmrtClass {
       assignments[column] = value;
     }
     return Object.keys(assignments).length === 0
-      ? { operation: 'upsert', affected: 1 }
+      ? { affected: 1 }
       : this.updateDuckDbRowById(existing.id, assignments);
   }
 
@@ -3569,7 +3869,7 @@ export class SmrtObject extends SmrtClass {
    * compare/upsert fallback in {@link usesEmbeddedRevisionFallback}.
    */
   private revisionPredicate(revision: Date | string): Record<string, unknown> {
-    if (isPostgresDatabase(this.db)) {
+    if (usesPostgresDialect(this.db)) {
       return postgresRevisionCondition(revision);
     }
     return { updated_at: this.revisionPredicateValue(revision) };
@@ -3792,26 +4092,13 @@ export class SmrtObject extends SmrtClass {
         if (atomic) continue;
         return 'insert';
       }
-      this.assertSameNaturalKeyOwner(
+      this.adoptNaturalKeyRow(
         data,
         existing,
         conflictColumns,
         conflictFilter,
+        adopted,
       );
-      const existingId = existing.id;
-      if (
-        typeof existingId === 'string' &&
-        existingId !== '' &&
-        existingId !== data.id
-      ) {
-        data.id = existingId;
-        adopted.id = existingId;
-        if (existing.created_at != null && existing.created_at !== '') {
-          data.created_at = existing.created_at;
-          adopted.createdAt = existing.created_at;
-        }
-      }
-      adopted.existing = existing;
       return 'upsert';
     }
     throw DatabaseError.queryFailed(
@@ -3820,6 +4107,34 @@ export class SmrtObject extends SmrtClass {
         'The natural key kept colliding with concurrent writes; retry the save.',
       ),
     );
+  }
+
+  private adoptNaturalKeyRow(
+    data: Record<string, unknown>,
+    existing: Record<string, unknown>,
+    conflictColumns: string[],
+    conflictFilter: Record<string, unknown>,
+    adopted: AdoptedNaturalKeyRow,
+  ): void {
+    this.assertSameNaturalKeyOwner(
+      data,
+      existing,
+      conflictColumns,
+      conflictFilter,
+    );
+    if (existing._sync_origin_device_id != null) {
+      throw this.trackedIdentityWriteError(existing.id);
+    }
+    const existingId = existing.id;
+    if (typeof existingId === 'string' && existingId !== '') {
+      data.id = existingId;
+      adopted.id = existingId;
+      if (existing.created_at != null && existing.created_at !== '') {
+        data.created_at = existing.created_at;
+        adopted.createdAt = existing.created_at;
+      }
+    }
+    adopted.existing = existing;
   }
 
   private scopePartialConflictFilter(
@@ -3868,6 +4183,13 @@ export class SmrtObject extends SmrtClass {
     });
   }
 
+  private trackedIdentityWriteError(id: unknown): RuntimeError {
+    return RuntimeError.invalidState(
+      'A tracked row must be loaded by identity before saving',
+      { className: this.getResolvedClassName(), id },
+    );
+  }
+
   /**
    * PostgreSQL: `INSERT … ON CONFLICT (conflict) DO NOTHING RETURNING id`.
    * Values are serialized exactly as the SDK's insert does (undefined
@@ -3878,6 +4200,7 @@ export class SmrtObject extends SmrtClass {
   private async insertIfAbsent(
     data: Record<string, unknown>,
     conflictColumns: string[],
+    updateUntrackedId = false,
   ): Promise<boolean> {
     const quote = (identifier: string) =>
       `"${identifier.replaceAll('"', '""')}"`;
@@ -3899,12 +4222,22 @@ export class SmrtObject extends SmrtClass {
       );
     }
     const placeholders = values.map((_, index) => `$${index + 1}`).join(', ');
-    const predicate = ObjectRegistry.getConflictPredicate(
-      this.getResolvedQualifiedName(),
-    );
+    const table = quote(this.tableName);
+    const predicate = updateUntrackedId
+      ? undefined
+      : ObjectRegistry.getConflictPredicate(this.getResolvedQualifiedName());
     const conflictWhere = predicate ? ` WHERE ${predicate}` : '';
+    const action = updateUntrackedId
+      ? `DO UPDATE SET ${columns
+          .filter(
+            (column) =>
+              column !== quote('id') && column !== quote('created_at'),
+          )
+          .map((column) => `${column} = excluded.${column}`)
+          .join(', ')} WHERE ${table}."_sync_origin_device_id" IS NULL`
+      : 'DO NOTHING';
     const result = await this.db.query(
-      `INSERT INTO ${quote(this.tableName)} (${columns.join(', ')}) VALUES (${placeholders}) ON CONFLICT (${conflictColumns.map(quote).join(', ')})${conflictWhere} DO NOTHING RETURNING ${quote('id')}`,
+      `INSERT INTO ${table} (${columns.join(', ')}) VALUES (${placeholders}) ON CONFLICT (${conflictColumns.map(quote).join(', ')})${conflictWhere} ${action} RETURNING ${quote('id')}`,
       ...values,
     );
     return (result?.rows?.length ?? 0) > 0;
@@ -4957,6 +5290,23 @@ export class SmrtObject extends SmrtClass {
   public async delete(options: SmrtDeleteOptions = {}): Promise<void> {
     const className = this.getResolvedClassName();
     const expectedUpdatedAt = options.expectedUpdatedAt;
+    const incoming =
+      options.sync &&
+      validateSyncRevision(options.sync.originDeviceId, options.sync.revision);
+    const model = this.getResolvedQualifiedName();
+    const identity = {
+      tableName: this.tableName,
+      model,
+      sti: ObjectRegistry.getTableStrategy(model) === 'sti',
+      tenantColumn: ObjectRegistry.getOwnershipTenantColumn(model),
+    };
+    if (incoming && !this.id) {
+      throw RuntimeError.invalidState(
+        'An incoming deletion requires an explicit id',
+        { className },
+      );
+    }
+
     if (expectedUpdatedAt !== undefined && (!this._persisted || !this.id)) {
       throw RuntimeError.invalidState(
         'A revision-guarded delete requires a persisted object',
@@ -4976,6 +5326,22 @@ export class SmrtObject extends SmrtClass {
     await this.runHook('beforeDelete');
 
     await this.verifyStorageReady();
+    const incomingDeletion = (() => {
+      if (!incoming || !this.id) return undefined;
+      const tenantId = identity.tenantColumn
+        ? (Object.entries(this.toJSON()).find(
+            ([key]) => toSnakeCase(key) === identity.tenantColumn,
+          )?.[1] ?? null)
+        : null;
+      if (tenantId !== null && typeof tenantId !== 'string') {
+        throw syncRevisionConflict(this.id);
+      }
+      return {
+        rowId: this.normalizeSyncRowId(this.id),
+        tenantId,
+        revision: incoming,
+      };
+    })();
 
     const embeddedRevisionGuard =
       expectedUpdatedAt !== undefined && usesEmbeddedRevisionFallback(this.db);
@@ -5032,25 +5398,13 @@ export class SmrtObject extends SmrtClass {
                 },
                 writeGuard,
               );
-              // Some adapters report a constant one from delete(), even when
-              // no row matched. Guarded mutations require a reliable outcome.
-              let affected: number;
-              if (writeGuard) {
-                const dialect = isPostgresDatabase(this.db)
-                  ? 'postgres'
-                  : this.isNativeDuckDb()
-                    ? 'duckdb'
-                    : 'sqlite';
-                const { sql, values } = buildWhere(filter, 1, dialect);
-                const table = `"${this.tableName.replaceAll('"', '""')}"`;
-                const result = await db.query(
-                  `DELETE FROM ${table} ${sql} RETURNING id`,
-                  ...values,
-                );
-                affected = result.rows.length;
-              } else {
-                affected = (await db.delete(this.tableName, filter)).affected;
-              }
+              const { affected } = await deleteSyncRows(
+                db,
+                identity,
+                filter,
+                (count) => recordCascadeWrite(db, { affected: count }),
+                incomingDeletion,
+              );
               if (
                 (expectedUpdatedAt !== undefined || writeGuard !== undefined) &&
                 affected !== 1
@@ -5061,7 +5415,35 @@ export class SmrtObject extends SmrtClass {
                   { className, id: this.id },
                 );
               }
+              if (incomingDeletion && affected === 0) {
+                if (await db.get(this.tableName, { id: this.id })) {
+                  throw syncRevisionConflict(this.id);
+                }
+                await putSyncTombstone(
+                  db,
+                  identity,
+                  incomingDeletion.rowId,
+                  identity.model,
+                  incomingDeletion.tenantId,
+                  incomingDeletion.revision,
+                );
+              }
             },
+            incomingDeletion
+              ? async (db) => {
+                  await lockSyncRowIdentity(
+                    db,
+                    this.tableName,
+                    incomingDeletion.rowId,
+                  );
+                  return Boolean(
+                    await db.get(
+                      this.tableName,
+                      this.guardedWriteFilter({ id: this.id }, writeGuard),
+                    ),
+                  );
+                }
+              : undefined,
           );
         },
       );
@@ -5069,6 +5451,7 @@ export class SmrtObject extends SmrtClass {
     // The backing row is gone — a later save() should go through the
     // natural-key insert path again rather than targeting a deleted id.
     this._persisted = false;
+    this._explicitId = true;
 
     // Bust cached collection reads for this table (issue #1498) and for every
     // table the cascade touched — a stale junction read is as wrong as a stale

@@ -483,6 +483,15 @@ export async function assertWorkbookMigration(
         HISTORY.map(async (t) => [t, sorted(await listOwn(t))] as const),
       ),
     );
+    // Only SQLite uses the exact legacy activity table; the PostgreSQL
+    // fixture starts with today's manifest and already has sync metadata.
+    const addedActivityMetadata =
+      engine === 'sqlite'
+        ? {
+            _sync_origin_device_id: null,
+            _sync_revision: null,
+          }
+        : {};
     const diff = await new SchemaComparer(db, { engineHint: engine }).compare(
       schemas,
     );
@@ -530,6 +539,10 @@ export async function assertWorkbookMigration(
       ['courses', 'book_key'],
       ['courses', 'work_policy_version'],
       ['courses', 'work_review_required'],
+      ...Object.keys(addedActivityMetadata).map((column) => [
+        'workbook_activities',
+        column,
+      ]),
     ]);
     const generated = new MigrationGenerator({ engine }).generateFromDiff(
       diff,
@@ -597,11 +610,17 @@ export async function assertWorkbookMigration(
     });
     expect(await snapshot()).toEqual(migrated);
 
-    // Lossless: every learner history row is untouched.
+    // Lossless: every original learner history value is untouched, and
+    // old activity rows remain untracked after the nullable additions.
     for (const table of HISTORY.filter(
       (t) => t !== 'lesson_progress' && t !== 'lessons',
-    ))
-      expect(sorted(await listOwn(table))).toEqual(before[table]);
+    )) {
+      const expected =
+        table === 'workbook_activities'
+          ? before[table].map((row) => ({ ...row, ...addedActivityMetadata }))
+          : before[table];
+      expect(sorted(await listOwn(table))).toEqual(expected);
+    }
     // Lessons are unchanged; the one new lesson holds the book-only filing.
     const lessonsAfter = sorted(await listOwn('lessons'));
     expect(

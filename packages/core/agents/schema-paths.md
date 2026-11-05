@@ -17,6 +17,12 @@ it links the relevant runtime and generation contracts.
 | `generateSTISchemaFromRegistry` | `src/testing/database.ts` (`getTestDatabase()`), `src/schema/utils.ts` (`generateSchema`; `ensureSchema` only as a fallback) | tests + runtime helpers |
 | `generateSchemaFromRegistry` | the same two callers | tests + runtime helpers |
 
+The migration differ and CREATE TABLE planner share adapter-aware engine
+selection. A native in-memory DuckDB handle can report `:memory:` and expose
+`exportTable`, so use the native and JSON adapter discriminators before URL
+inference. For native DuckDB the differ reads inline UNIQUE constraints from
+`duckdb_constraints()` because the adapter index list omits them.
+
 Production DDL takes the manifest route:
 
 ```

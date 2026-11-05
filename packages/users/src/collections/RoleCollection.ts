@@ -4,6 +4,7 @@
  */
 
 import {
+  isEmbeddedDatabase,
   isPostgresDatabase,
   SmrtCollection,
   withEmbeddedWriteTransaction,
@@ -95,8 +96,14 @@ export class RoleCollection extends SmrtCollection<Role> {
 
   /** Find a built-in system role only; tenant slug collisions never match. */
   async findSystemRoleBySlug(slug: string): Promise<Role | null> {
+    const builtIn = DEFAULT_ROLES.find((role) => role.slug === slug);
     const systemRoles = await this.list({
-      where: { slug, tenantId: null, isSystem: true },
+      where: {
+        slug,
+        tenantId: null,
+        isSystem: true,
+        ...(builtIn && { id: builtIn.id }),
+      },
       limit: 1,
     });
     return systemRoles[0] ?? null;
@@ -120,11 +127,28 @@ export class RoleCollection extends SmrtCollection<Role> {
     }
 
     const seed = async (writer: RoleCollection) => {
+      // A joined DuckDB transaction has no savepoint. Check all application
+      // identity refusals before any writes so callers can catch them safely.
+      const existingRoles = new Map<string, Role>();
+      const globalRoles = await writer.findSystemRoles();
+      for (const roleDef of DEFAULT_ROLES) {
+        const matches = globalRoles.filter(({ slug }) => slug === roleDef.slug);
+        const [existing] = matches;
+        if (
+          matches.length > 1 ||
+          (existing && (!existing.isSystem || existing.id !== roleDef.id)) ||
+          (!existing && (await writer.count({ where: { id: roleDef.id } })) > 0)
+        ) {
+          throw new Error(
+            `System role identity collision for '${roleDef.slug}'`,
+          );
+        }
+        if (existing) existingRoles.set(roleDef.slug, existing);
+      }
+
       for (const roleDef of DEFAULT_ROLES) {
         const inheritable = inheritableSlugs.has(roleDef.slug);
-
-        // Check if role already exists
-        const existing = await writer.findBySlug(roleDef.slug);
+        const existing = existingRoles.get(roleDef.slug);
         if (existing) {
           // Additive-only convergence: flag a listed slug, never unset one.
           if (inheritable && !existing.inheritsToDescendants) {
@@ -136,9 +160,11 @@ export class RoleCollection extends SmrtCollection<Role> {
         }
 
         // Create new system role. `create()` already persists, so the second
-        // `save()` this used to make was a redundant UPDATE plus an extra
-        // change-feed append (#3022).
+        // `save()` was a redundant UPDATE plus an extra change-feed append
+        // (#3022). Strict INSERT also protects against a concurrent collision.
         const role = await writer.create({
+          id: roleDef.id,
+          _insertOnly: true,
           slug: roleDef.slug,
           name: roleDef.name,
           description: roleDef.description,
@@ -149,15 +175,15 @@ export class RoleCollection extends SmrtCollection<Role> {
         roles.push(role);
       }
     };
-    if (isPostgresDatabase(this.db)) {
-      // NULL-tenant keys use the SDK's null-aware upsert. Its lock begins
-      // after core's identity pre-read; lock the whole seeding read/write
-      // sequence so concurrent bootstraps never return an overwritten ID.
+    const postgres = isPostgresDatabase(this.db);
+    const embedded = isEmbeddedDatabase(this.db);
+    if (postgres || embedded) {
       await withEmbeddedWriteTransaction(
         this.db as DatabaseInterface,
-        false,
+        embedded,
         async (db) => {
-          await db.query('SELECT pg_advisory_xact_lock(3329, 1)');
+          // Serialize global identity checks with other PostgreSQL seeders.
+          if (postgres) await db.query('SELECT pg_advisory_xact_lock(3329, 1)');
           await seed(await RoleCollection.create({ ...this.options, db }));
         },
         true,
@@ -165,7 +191,7 @@ export class RoleCollection extends SmrtCollection<Role> {
       // Return objects bound to the caller, not the completed batch handle.
       roles.length = 0;
       for (const roleDef of DEFAULT_ROLES) {
-        const role = await this.findBySlug(roleDef.slug);
+        const role = await this.findSystemRoleBySlug(roleDef.slug);
         if (role) roles.push(role);
       }
     } else {

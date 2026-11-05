@@ -39,6 +39,9 @@ export interface OidcTestServer {
   userinfoRequests: Array<{ authorization?: string }>;
 }
 
+const MODEL_SYNC_COLUMNS = `
+  "_sync_origin_device_id" TEXT,
+  "_sync_revision" BIGINT,`;
 /**
  * Schema for the tables OIDC user provisioning touches
  * (`UserCollection.getOrCreateFromOidc`): the smrt-profiles trio plus users
@@ -63,7 +66,7 @@ CREATE TABLE IF NOT EXISTS "profile_types" (
   "_meta_type" TEXT NOT NULL,
   "_meta_data" JSON,
   "created_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,
-  "updated_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,
+  "updated_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,${MODEL_SYNC_COLUMNS}
   "tenant_id" TEXT,
   "name" TEXT DEFAULT '',
   "description" TEXT
@@ -78,7 +81,7 @@ CREATE TABLE IF NOT EXISTS "profiles" (
   "_meta_type" TEXT NOT NULL,
   "_meta_data" JSON,
   "created_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,
-  "updated_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,
+  "updated_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,${MODEL_SYNC_COLUMNS}
   "tenant_id" TEXT,
   "type_id" TEXT,
   "email" TEXT,
@@ -96,7 +99,7 @@ CREATE TABLE IF NOT EXISTS "oidc_profile_email_reservations" (
   "slug" TEXT NOT NULL,
   "context" TEXT NOT NULL DEFAULT '',
   "created_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,
-  "updated_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,
+  "updated_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,${MODEL_SYNC_COLUMNS}
   "profile_id" TEXT NOT NULL,
   "email_key" TEXT NOT NULL
 );
@@ -109,7 +112,7 @@ CREATE TABLE IF NOT EXISTS "oidc_identities" (
   "slug" TEXT NOT NULL,
   "context" TEXT NOT NULL DEFAULT '',
   "created_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,
-  "updated_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,
+  "updated_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,${MODEL_SYNC_COLUMNS}
   "profile_id" TEXT NOT NULL,
   "provider" TEXT DEFAULT '',
   "issuer" TEXT DEFAULT '',
@@ -126,7 +129,7 @@ CREATE TABLE IF NOT EXISTS "users" (
   "slug" TEXT NOT NULL,
   "context" TEXT NOT NULL DEFAULT '',
   "created_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,
-  "updated_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,
+  "updated_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,${MODEL_SYNC_COLUMNS}
   "profile_id" TEXT DEFAULT '',
   "email" TEXT DEFAULT '',
   "email_key" TEXT,
@@ -145,7 +148,7 @@ CREATE TABLE IF NOT EXISTS "sessions" (
   "slug" TEXT NOT NULL,
   "context" TEXT NOT NULL DEFAULT '',
   "created_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,
-  "updated_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,
+  "updated_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,${MODEL_SYNC_COLUMNS}
   "user_id" TEXT DEFAULT '',
   "tenant_id" TEXT,
   "status" TEXT,

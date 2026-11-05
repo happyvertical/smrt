@@ -16,7 +16,11 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { getTestDatabase, ObjectRegistry } from '@happyvertical/smrt-core';
+import {
+  generateDDLForEngine,
+  getTestDatabase,
+  ObjectRegistry,
+} from '@happyvertical/smrt-core';
 import {
   generateSchemaDiff,
   getSQLFromDiff,
@@ -557,11 +561,13 @@ describe.each(
   const saveContributor = async (
     contributors: ContentContributorCollection,
     tenantId: string,
+    insertOnly = false,
   ) =>
     withTenant({ tenantId }, async () => {
       const contributor = await contributors.create({
         email: 'Legacy@Example.com',
         name: 'Legacy',
+        _insertOnly: insertOnly,
       });
       await contributor.save();
       return contributor;
@@ -653,13 +659,46 @@ describe.each(
   it('replaces the narrower unique index in place, preserving rows, and is then a no-op', async () => {
     const inA = <T>(fn: () => Promise<T>) =>
       withTenant({ tenantId: tenantA }, fn);
+    const all = ObjectRegistry.getAllSchemasAsDefinitions();
+    const schemas = Object.fromEntries(
+      Object.keys(TABLES).map((table) => [table, all[table]]),
+    );
+    // Install the legacy global unique before seeding. DuckDB emits the
+    // widened key inline, so dropping a named index cannot remove it.
+    for (const [table, column] of Object.entries(TABLES)) {
+      const widenedName = `${table}_tenant_id_${column}_idx`;
+      if (engine === 'duckdb') {
+        const schema = schemas[table];
+        const ddl = generateDDLForEngine(
+          {
+            ...schema,
+            indexes: schema.indexes.filter(({ name }) => name !== widenedName),
+          },
+          engine,
+        );
+        await db.query(`DROP TABLE ${table}`);
+        await db.query(ddl.createTable);
+        for (const statement of ddl.indexes) await db.query(statement);
+      } else {
+        await db.query(`DROP INDEX IF EXISTS ${widenedName}`);
+      }
+      await db.query(
+        `CREATE UNIQUE INDEX ${table}_${column}_idx ON ${table} (${column})`,
+      );
+    }
+
     const contributors = await ContentContributorCollection.create({ db });
     const policies = await ContentGovernancePolicyCollection.create({ db });
-    const legacyContributor = await saveContributor(contributors, tenantA);
+    const legacyContributor = await saveContributor(
+      contributors,
+      tenantA,
+      true,
+    );
     const legacyPolicy = await withSystemContext(async () => {
       const policy = await policies.create({
         key: 'Legacy Key ✓',
         label: 'Legacy',
+        _insertOnly: true,
       });
       await policy.save();
       return policy;
@@ -669,18 +708,6 @@ describe.each(
       policies: await selectRows(db, 'content_governance_policies'),
     };
 
-    // Re-create the pre-#3305 shape: the framework-named global unique.
-    for (const [table, column] of Object.entries(TABLES)) {
-      await db.query(`DROP INDEX IF EXISTS ${table}_tenant_id_${column}_idx`);
-      await db.query(
-        `CREATE UNIQUE INDEX ${table}_${column}_idx ON ${table} (${column})`,
-      );
-    }
-
-    const all = ObjectRegistry.getAllSchemasAsDefinitions();
-    const schemas = Object.fromEntries(
-      Object.keys(TABLES).map((table) => [table, all[table]]),
-    );
     const diff = await generateSchemaDiff(db, schemas, { engineHint: engine });
     const indexChanges = diff.changes
       .filter(

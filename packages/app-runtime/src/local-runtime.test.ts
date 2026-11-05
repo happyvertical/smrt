@@ -17,6 +17,8 @@ import { homedir, platform, tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { JobHandle, SmrtJobCollection } from '@happyvertical/smrt-jobs';
+import { Person, ProfileTypeCollection } from '@happyvertical/smrt-profiles';
+import { withSystemContext } from '@happyvertical/smrt-tenancy';
 import {
   MembershipCollection,
   MembershipStatus,
@@ -39,7 +41,10 @@ import {
   validateApplicationId,
   validateLocalDatabaseStorage,
 } from './index.js';
+import { deriveLocalInstallationIdentity } from './local-installation-identity.js';
 
+// Concurrent test processes must never clean up each other's synthetic UID root.
+const outsideUid = 4_000_000 + process.pid;
 const temporaryRoots: string[] = [];
 const initializationLockPaths = new Set<string>();
 const execFileAsync = promisify(execFile);
@@ -355,10 +360,15 @@ describe('local application runtime', () => {
       ipAddress: '127.0.0.1',
     });
 
-    expect(claim.profileId).toMatch(/^[0-9a-f-]{36}$/);
-    expect(claim.userId).toMatch(/^[0-9a-f-]{36}$/);
-    expect(claim.tenantId).toMatch(/^[0-9a-f-]{36}$/);
-    expect(claim.membershipId).toMatch(/^[0-9a-f-]{36}$/);
+    const identity = deriveLocalInstallationIdentity(
+      await readFile(initialized.runtime.paths.applicationSecret, 'utf8'),
+    );
+    expect(claim).toMatchObject({
+      userId: identity.ownerId,
+      tenantId: identity.tenantId,
+      profileId: identity.profileId,
+      membershipId: identity.membershipId,
+    });
     expect(claim.sessionId).toMatch(/^[0-9a-f-]{36}$/);
 
     const profile = await initialized.runtime.db.query(
@@ -459,6 +469,66 @@ describe('local application runtime', () => {
     ).toBe('password');
   });
 
+  it('leaves unrelated records at the reserved owner and Person UUIDs untouched', async () => {
+    const initialized = await initializeLocalApplicationRuntime({
+      appId: 'user-reserved-id',
+      ...(await localDirectories('user-reserved-id')),
+    });
+    const identity = deriveLocalInstallationIdentity(
+      await readFile(initialized.runtime.paths.applicationSecret, 'utf8'),
+    );
+    const { db } = initialized.runtime;
+    const types = await ProfileTypeCollection.create({ db });
+    const type = await withSystemContext(() =>
+      types.getOrCreateGlobalBySlug('person', { name: 'Person' }),
+    );
+    const profile = new Person({
+      db,
+      id: identity.profileId,
+      typeId: type.id as string,
+      tenantId: null,
+      name: 'Unrelated',
+      email: 'unrelated@example.com',
+    });
+    await profile.initialize();
+    await profile.save();
+    const users = await UserCollection.create({ db });
+    const occupied = await users.create({
+      id: identity.ownerId,
+      profileId: profile.id as string,
+      email: 'unrelated@example.com',
+      status: UserStatus.ACTIVE,
+    });
+    const input = {
+      token: initialized.bootstrap?.token as string,
+      name: 'Owner',
+      email: 'owner@example.com',
+    };
+    await expect(initialized.runtime.claimOwner(input)).rejects.toMatchObject({
+      code: 'owner_identity_conflict',
+    });
+    expect((await users.get(identity.ownerId))?.email).toBe(occupied.email);
+    expect(await countRows(db, 'memberships')).toBe(0);
+    expect(await countRows(db, 'sessions')).toBe(0);
+    await occupied.delete();
+    await expect(initialized.runtime.claimOwner(input)).rejects.toThrow();
+    expect(
+      (
+        await db.query(
+          'SELECT name FROM profiles WHERE id = ?',
+          identity.profileId,
+        )
+      ).rows,
+    ).toEqual([{ name: 'Unrelated' }]);
+    expect(await countRows(db, 'users')).toBe(0);
+    expect(await countRows(db, 'memberships')).toBe(0);
+    await profile.delete();
+    await expect(initialized.runtime.claimOwner(input)).resolves.toMatchObject({
+      userId: identity.ownerId,
+      tenantId: identity.tenantId,
+    });
+  });
+
   describe('owner tenant (#3032)', () => {
     async function seedTenant(
       db: Parameters<typeof TenantCollection.create>[0]['db'],
@@ -514,6 +584,42 @@ describe('local application runtime', () => {
       );
       expect(created.rows[0]).toEqual({ slug: 'workspace', name: 'Workspace' });
       expect(await countRows(reopened.runtime.db, 'tenants')).toBe(2);
+    });
+
+    it('rejects a different tenant using the reserved UUID and permits retry', async () => {
+      const initialized = await initializeLocalApplicationRuntime({
+        appId: 'tenant-reserved-id',
+        ...(await localDirectories('tenant-reserved-id')),
+      });
+      const identity = deriveLocalInstallationIdentity(
+        await readFile(initialized.runtime.paths.applicationSecret, 'utf8'),
+      );
+      const { db } = initialized.runtime;
+      const tenants = await TenantCollection.create({ db });
+      const occupied = await tenants.create({
+        id: identity.tenantId,
+        slug: 'unrelated',
+        name: 'Unrelated',
+      });
+      const input = {
+        token: initialized.bootstrap?.token as string,
+        name: 'Owner',
+        email: 'owner@example.com',
+      };
+      await expect(initialized.runtime.claimOwner(input)).rejects.toMatchObject(
+        {
+          code: 'owner_tenant_conflict',
+        },
+      );
+      expect(await countRows(db, 'memberships')).toBe(0);
+      expect((await tenants.get(identity.tenantId))?.slug).toBe('unrelated');
+      await occupied.delete();
+      await expect(
+        initialized.runtime.claimOwner(input),
+      ).resolves.toMatchObject({
+        tenantId: identity.tenantId,
+        userId: identity.ownerId,
+      });
     });
 
     it('adopts an application-seeded member-less tenant and keeps its id', async () => {
@@ -636,6 +742,74 @@ describe('local application runtime', () => {
         }),
       ).rejects.toMatchObject({ code: 'invalid_configuration' });
     });
+  });
+
+  it('keeps same-app bootstrap authority distinct across independent installs', async () => {
+    async function install(label: string) {
+      const directories = await localDirectories(label);
+      const options = { appId: 'lolaus', ...directories };
+      const first = await initializeLocalApplicationRuntime(options);
+      const expected = deriveLocalInstallationIdentity(
+        await readFile(first.runtime.paths.applicationSecret, 'utf8'),
+      );
+      await first.runtime.db.close?.();
+      const restarted = await initializeLocalApplicationRuntime(options);
+      const claim = await restarted.runtime.claimOwner({
+        token: first.bootstrap?.token as string,
+        name: 'Owner',
+        email: 'owner@example.com',
+      });
+      expect(claim).toMatchObject({
+        userId: expected.ownerId,
+        tenantId: expected.tenantId,
+        profileId: expected.profileId,
+        membershipId: expected.membershipId,
+      });
+      const session = await restarted.runtime.restoreSession(claim.sessionId);
+      expect(session?.tenantId).toBe(claim.tenantId);
+      expect(session?.membership?.id).toBe(claim.membershipId);
+
+      const tenants = await TenantCollection.create({
+        db: restarted.runtime.db,
+      });
+      const tenant = await tenants.get(claim.tenantId);
+      if (!tenant) throw new Error('Missing claimed tenant');
+      const remoteDeviceId = crypto.randomUUID();
+      await tenant.save({
+        sync: { originDeviceId: remoteDeviceId, revision: 7 },
+      });
+      expect(tenant.syncMetadata?.originDeviceId).toBe(remoteDeviceId);
+
+      tenant.name = 'Local edit';
+      await tenant.save();
+      const reloaded = await tenants.get(claim.tenantId);
+      expect(reloaded?.syncMetadata).toMatchObject({
+        originDeviceId: expected.deviceId,
+        revision: 8,
+      });
+      return {
+        claim,
+        roleId: session?.membership?.roleId,
+        deviceId: reloaded?.syncMetadata?.originDeviceId,
+      };
+    }
+
+    const first = await install('install-one');
+    const second = await install('install-two');
+    for (const key of [
+      'userId',
+      'tenantId',
+      'profileId',
+      'membershipId',
+    ] as const) {
+      expect(first.claim[key]).toMatch(
+        /^[0-9a-f-]{14}8[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+      );
+      expect(second.claim[key]).not.toBe(first.claim[key]);
+    }
+    expect(first.roleId).toBeTruthy();
+    expect(second.roleId).toBe(first.roleId);
+    expect(second.deviceId).not.toBe(first.deviceId);
   });
 
   it('is restart-idempotent and never duplicates an active invitation or owner records', async () => {
@@ -1513,7 +1687,6 @@ describe('local application runtime', () => {
   it('names the legacy lease after the uid outside a remapping user namespace (#3877)', async () => {
     const directories = await localDirectories('lease-uid-map');
     const currentUid = process.getuid?.() as number;
-    const outsideUid = 4_000_000 + (currentUid % 1000);
     filesystemInterleave.uidMap = `${currentUid} ${outsideUid} 1\n`;
     const lockKey = createHash('sha256')
       .update(
@@ -1578,7 +1751,6 @@ describe('local application runtime', () => {
   it('also waits for an older release in the same remapped namespace (#3877)', async () => {
     const directories = await localDirectories('lease-uid-map-inner');
     const currentUid = process.getuid?.() as number;
-    const outsideUid = 4_000_000 + (currentUid % 1000);
     filesystemInterleave.uidMap = `${currentUid} ${outsideUid} 1\n`;
     const outsideLockRoot = join(await realpath('/tmp'), `.smrt-${outsideUid}`);
     // An older release in this namespace locks the in-namespace uid's lease.
@@ -1653,7 +1825,6 @@ describe('local application runtime', () => {
   it('skips a foreign-owned in-namespace legacy root and takes the mapped lease (#3877)', async () => {
     const directories = await localDirectories('lease-uid-map-foreign');
     const currentUid = process.getuid?.() as number;
-    const outsideUid = 4_000_000 + (currentUid % 1000);
     filesystemInterleave.uidMap = `${currentUid} ${outsideUid} 1\n`;
     const canonicalTemporaryRoot = await realpath('/tmp');
     const innerLockRoot = join(canonicalTemporaryRoot, `.smrt-${currentUid}`);
@@ -1689,7 +1860,6 @@ describe('local application runtime', () => {
   it('still fails closed on a symlinked in-namespace legacy root (#3877)', async () => {
     const directories = await localDirectories('lease-uid-map-symlink');
     const currentUid = process.getuid?.() as number;
-    const outsideUid = 4_000_000 + (currentUid % 1000);
     filesystemInterleave.uidMap = `${currentUid} ${outsideUid} 1\n`;
     const canonicalTemporaryRoot = await realpath('/tmp');
     const innerLockRoot = join(canonicalTemporaryRoot, `.smrt-${currentUid}`);
