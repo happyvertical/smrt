@@ -1,5 +1,20 @@
 # @happyvertical/smrt-support
 
+## 0.60.9
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.60.9
+  - @happyvertical/smrt-chat@0.60.9
+  - @happyvertical/smrt-jobs@0.60.9
+  - @happyvertical/smrt-messages@0.60.9
+  - @happyvertical/smrt-projects@0.60.9
+  - @happyvertical/smrt-tenancy@0.60.9
+  - @happyvertical/smrt-timesheets@0.60.9
+  - @happyvertical/smrt-users@0.60.9
+  - @happyvertical/smrt-ui@0.60.9
+
 ## 0.60.8
 
 ### Patch Changes
