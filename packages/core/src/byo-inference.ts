@@ -112,6 +112,13 @@ async function readModels(
   for (const entry of entries) {
     const id = readField(entry, service.idField);
     if (typeof id !== 'string' || !id.trim()) continue;
+    // Ollama's local inventory can include aliases for upstream models.
+    if (
+      service.service === 'ollama' &&
+      (readField(entry, 'remote_model') || readField(entry, 'remote_host'))
+    ) {
+      continue;
+    }
     // Lemonade can also list hosted models and older versions can list models
     // that still need a download. Keep only local models from those responses.
     if (

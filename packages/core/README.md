@@ -491,6 +491,7 @@ to suggest models. It makes parallel, credential-free GET requests to Ollama
 a 1 MiB response limit. A reachable service with an empty model list returns
 `available: true` and `models: []`. An unreachable service, a service that
 requires authentication, or a failed probe returns `available: false`.
+Discovery excludes Ollama models with upstream model or host metadata.
 Ollama's `baseUrl` is suitable for the SDK's `ollama` provider. Lemonade
 model IDs can be used with the `lemonade` preset.
 
@@ -498,7 +499,7 @@ Provider references are available for [OpenRouter](https://openrouter.ai/develop
 [Lemonade](https://lemonade-server.ai/docs/api/openai/#get-v1models),
 [llama.cpp](https://github.com/ggml-org/llama.cpp/tree/master/tools/server#quick-start),
 [LM Studio](https://lmstudio.ai/docs/developer/openai-compat), and
-[Ollama](https://docs.ollama.com/api/tags).
+[Ollama](https://github.com/ollama/ollama/blob/main/docs/openapi.yaml).
 
 ### Opt-In Read Cache
 

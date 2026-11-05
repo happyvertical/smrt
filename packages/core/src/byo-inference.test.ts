@@ -112,6 +112,23 @@ describe('discoverLocalInferenceModels', () => {
                   models: [
                     { name: 'ollama-model' },
                     { name: 'ollama-model' },
+                    {
+                      name: 'local-empty-metadata',
+                      remote_host: '',
+                      remote_model: '',
+                    },
+                    {
+                      name: 'remote-model-alias',
+                      remote_model: 'upstream-model',
+                    },
+                    {
+                      name: 'remote-host-alias',
+                      remote_host: 'https://example.invalid',
+                    },
+                    {
+                      name: 'malformed-remote',
+                      remote_host: { invalid: true },
+                    },
                     {},
                     null,
                   ],
@@ -138,7 +155,7 @@ describe('discoverLocalInferenceModels', () => {
             service: 'ollama',
             baseUrl: 'http://127.0.0.1:11434',
             available: true,
-            models: ['ollama-model'],
+            models: ['ollama-model', 'local-empty-metadata'],
           },
           {
             service: 'lemonade',
