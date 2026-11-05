@@ -99,7 +99,8 @@ if (
   resolve(process.argv[1]) === fileURLToPath(import.meta.url)
 ) {
   try {
-    const target = process.argv[2];
+    // `pnpm build --force` appends its flags to the last command; ignore them.
+    const target = process.argv.slice(2).find((arg) => !arg.startsWith('-'));
     if (target) {
       const written = shipPackageKnowledge(resolve(target));
       console.log(`[knowledge:ship] ${written.length} file(s) for ${target}`);
