@@ -11,12 +11,21 @@
  * Set PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH to use a Chromium other than
  * Playwright's own install.
  */
+import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import {
+  copyFile,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { dirname, extname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { promisify } from 'node:util';
 import { chromium } from 'playwright-core';
 import { build, createLogger } from 'vite';
 
@@ -24,14 +33,6 @@ const packageDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const browserEntry = resolve(packageDir, 'dist/browser.js');
 const browserHost = resolve(packageDir, 'dist/host.browser.js');
 const cascadeProbe = process.argv.includes('--pglite-cascade');
-// Load the optional peer's published ESM and WASM as shipped. Its Emscripten
-// loader only imports Node modules under a Node runtime, but Vite still
-// warns on those imports when bundling the peer itself.
-const pgliteDir = cascadeProbe
-  ? dirname(
-      fileURLToPath((await import('./fixtures/pglite-peer/peer.js')).pgliteEntry),
-    )
-  : undefined;
 if (!existsSync(browserEntry)) {
   throw new Error(`${browserEntry} is missing; run \`pnpm build\` first`);
 }
@@ -45,7 +46,32 @@ const contentTypes = {
   '.wasm': 'application/wasm',
 };
 
+async function provisionPglite() {
+  const source = resolve(packageDir, 'scripts/fixtures/pglite-peer');
+  const scratch = resolve(workDir, 'pglite-peer');
+  await mkdir(scratch);
+  await Promise.all(
+    ['package.json', 'peer.js', 'pnpm-lock.yaml', 'pnpm-workspace.yaml'].map(
+      (file) => copyFile(resolve(source, file), resolve(scratch, file)),
+    ),
+  );
+  await promisify(execFile)('pnpm', [
+    '--dir',
+    scratch,
+    'install',
+    '--frozen-lockfile',
+  ]);
+
+  // Serve the peer's published ESM and WASM. Its Emscripten loader guards
+  // Node imports at runtime, but Vite warns about them when bundling the peer.
+  const { pgliteEntry } = await import(
+    pathToFileURL(resolve(scratch, 'peer.js')).href
+  );
+  return dirname(fileURLToPath(pgliteEntry));
+}
+
 try {
+  const pgliteDir = cascadeProbe ? await provisionPglite() : undefined;
   await writeFile(
     entry,
     `import * as core from ${JSON.stringify(browserEntry)};
