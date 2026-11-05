@@ -5,11 +5,11 @@ description: "Development MCP server for SMRT framework knowledge, review contex
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T14:39:02Z"
+  at: "2026-11-05T14:50:25Z"
 audience: "internal"
 evidence_level: "manifest-described"
 package_version: "0.60.8"
-source_revision: "sha256:f059589275d7a5d07fa8fe92bb35f65f714a15106034cbef0834d27ca56846d6"
+source_revision: "sha256:d08eca31f3c1f3c037da0d70a5ac0e2133304bca19c8e1901b1cf16649ecd71f"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/smrt-dev-mcp/package.json"

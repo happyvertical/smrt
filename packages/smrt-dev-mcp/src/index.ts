@@ -970,9 +970,22 @@ async function mainHttp(cli: ReturnType<typeof parseHttpCliArgs>) {
 }
 
 if (isEntrypoint()) {
-  const cli = parseHttpCliArgs(process.argv.slice(2));
-  (cli.http ? mainHttp(cli) : main()).catch((error) => {
-    console.error(`[${SERVER_NAME}] Fatal error:`, error);
-    process.exit(1);
-  });
+  if (process.argv[2] === 'review') {
+    // `smrt-dev-mcp review ...`: one-shot advisory review for CI (#4690).
+    import('./tools/review-cli.js')
+      .then(({ runReviewCli }) => runReviewCli(process.argv.slice(3)))
+      .then((code) => {
+        process.exitCode = code;
+      })
+      .catch((error) => {
+        console.error(`[${SERVER_NAME}] review failed:`, error);
+        process.exit(1);
+      });
+  } else {
+    const cli = parseHttpCliArgs(process.argv.slice(2));
+    (cli.http ? mainHttp(cli) : main()).catch((error) => {
+      console.error(`[${SERVER_NAME}] Fatal error:`, error);
+      process.exit(1);
+    });
+  }
 }

@@ -1,0 +1,10 @@
+{
+  "name": "@fixture/consumer-clean",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "@happyvertical/smrt-core": "^0.60.0",
+    "@happyvertical/smrt-jobs": "^0.60.0",
+    "@happyvertical/smrt-messages": "^0.60.0"
+  }
+}

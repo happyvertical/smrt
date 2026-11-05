@@ -334,7 +334,8 @@ available it falls back to `@happyvertical/smrt-scanner`.
 Run an advisory downstream ecosystem review. The tool scans package manifests
 and source imports for missing HappyVertical dependencies, direct storage
 bypasses, custom HTTP shells, custom object manifest generation, local
-auth/tenancy/audit seams, and UI shell drift. It returns deterministic findings
+auth/tenancy/audit seams, UI shell drift, and hand-rolled equivalents of
+smrt packages. It returns deterministic findings
 and suggested follow-up issue titles; it does not modify files.
 
 | Parameter | Type | Required | Description |
@@ -343,6 +344,17 @@ and suggested follow-up issue titles; it does not modify files.
 | `rootDir` | `string` | No | Compatibility alias for `directory` |
 | `includeSourceEvidence` | `boolean` | No | Include file/line evidence (default: true) |
 | `maxFindings` | `number` | No | Limit findings returned |
+| `intentIndexPath` | `string` | No | Intent index driving duplicate detection (default: `docs/knowledge/intents/index.md` or `.agents/smrt-knowledge/intents/index.md` under `directory`) |
+| `detectDuplicates` | `boolean` | No | Run the intent-driven hand-rolled-equivalent pass (default: true) |
+
+Duplicate detection is table-driven: each row of the intent index names home
+packages and `import:`, `call:`, `regex:` and `decimal-field:` signals. When a
+package shows a signal and imports none of the row's home packages, the tool
+emits an advisory `duplicate-detection` finding anchored at `path:line` that
+names the intent page and component pages. Unknown signal kinds are skipped
+with a stderr note. The same pass runs from a shell with
+`npx @happyvertical/smrt-dev-mcp review --directory . [--intent-index PATH] [--format summary]`
+and from the reusable `consumer-knowledge-review.yml` workflow.
 
 ### `reflect-knowledge`
 

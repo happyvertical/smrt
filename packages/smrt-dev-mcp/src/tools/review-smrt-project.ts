@@ -5,14 +5,35 @@
 
 import { type Dirent, existsSync } from 'node:fs';
 import { access, readdir, readFile } from 'node:fs/promises';
-import { dirname, join, relative, resolve, sep } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import {
+  type DetectorPackage,
+  detectHandRolled,
+  type HandRolledFinding,
+} from './intent-detector.js';
+import { type IntentRow, parseIntentIndex } from './intent-index.js';
 
 interface ReviewSmrtProjectArgs {
   directory?: string;
   rootDir?: string;
   includeSourceEvidence?: boolean;
   maxFindings?: number;
+  /**
+   * Intent index to drive duplicate detection. Default: the first of
+   * `docs/knowledge/intents/index.md` (monorepo) or
+   * `.agents/smrt-knowledge/intents/index.md` (exported bundle) that exists
+   * under the project directory. Relative paths resolve against it.
+   */
+  intentIndexPath?: string;
+  /** Set false to skip the intent-driven duplicate-detection pass. */
+  detectDuplicates?: boolean;
 }
+
+/** Locations of the intent index, in resolution order (#4690). */
+export const INTENT_INDEX_CANDIDATES = [
+  join('docs', 'knowledge', 'intents', 'index.md'),
+  join('.agents', 'smrt-knowledge', 'intents', 'index.md'),
+];
 
 type Severity = 'high' | 'medium' | 'low';
 
@@ -30,12 +51,19 @@ interface Finding {
     | 'api-shell'
     | 'manifest'
     | 'auth-tenancy'
-    | 'ui-shell';
+    | 'ui-shell'
+    | 'duplicate-detection';
   code: string;
   title: string;
   evidence: Evidence[];
   recommendation: string;
   suggestedIssueTitle: string;
+  /** Duplicate-detection findings only (same anchors as `build-context`). */
+  message?: string;
+  file?: string;
+  packageName?: string;
+  intentPage?: string;
+  componentPages?: string[];
 }
 
 interface PackageInventory {
@@ -114,8 +142,15 @@ export async function reviewSmrtProject(
   const sourceFiles = await listSourceFiles(projectPath, packageContexts);
   await attachSourceFiles(sourceFiles, packageContexts, projectPath);
 
+  const duplicates = await runDuplicateDetection(
+    args,
+    projectPath,
+    packageContexts,
+  );
+
   const findings = limitFindings(
     [
+      ...duplicates.findings,
       ...findMissingHappyVerticalDependencies(packageContexts),
       ...findCustomManifestGeneration(sourceFiles, projectPath),
       ...findDirectStorageBypasses(sourceFiles, packageContexts, projectPath),
@@ -146,6 +181,7 @@ export async function reviewSmrtProject(
           ? findings.map(({ evidence: _evidence, ...finding }) => finding)
           : findings,
       summary,
+      duplicateDetection: duplicates.status,
       referenceChecks: [
         'Prefer SMRT scanner/runtime manifests over custom manifest builders.',
         'Prefer SvelteKit plus @happyvertical/smrt-svelte for app shells.',
@@ -713,4 +749,127 @@ async function pathExists(path: string): Promise<boolean> {
 
 function pathExistsSyncHint(path: string): boolean {
   return existsSync(path);
+}
+
+interface DuplicateDetectionStatus {
+  enabled: boolean;
+  indexPath: string | null;
+  intentCount: number;
+  notes: string[];
+}
+
+async function runDuplicateDetection(
+  args: ReviewSmrtProjectArgs,
+  projectPath: string,
+  packageContexts: PackageContext[],
+): Promise<{ findings: Finding[]; status: DuplicateDetectionStatus }> {
+  const status: DuplicateDetectionStatus = {
+    enabled: args.detectDuplicates !== false,
+    indexPath: null,
+    intentCount: 0,
+    notes: [],
+  };
+  if (!status.enabled) return { findings: [], status };
+
+  const explicit = args.intentIndexPath
+    ? isAbsolute(args.intentIndexPath)
+      ? args.intentIndexPath
+      : resolve(projectPath, args.intentIndexPath)
+    : undefined;
+  const candidates = explicit
+    ? [explicit]
+    : INTENT_INDEX_CANDIDATES.map((candidate) => join(projectPath, candidate));
+  const indexPath = candidates.find((candidate) => existsSync(candidate));
+  if (!indexPath) {
+    status.notes.push(
+      `No intent index found (tried ${candidates.join(', ')}); duplicate detection skipped.`,
+    );
+    return { findings: [], status };
+  }
+
+  const rows: IntentRow[] = parseIntentIndex(
+    await readFile(indexPath, 'utf-8'),
+  );
+  status.indexPath = indexPath;
+  status.intentCount = rows.length;
+  if (rows.length === 0) {
+    status.notes.push(`Intent index ${indexPath} has no parsable rows.`);
+    return { findings: [], status };
+  }
+
+  // Only SMRT consumers get advice: a project with no @happyvertical/smrt-*
+  // dependency or import has no installed home package to prefer.
+  const isSmrtConsumer = packageContexts.some(
+    (pkg) =>
+      Array.from(pkg.dependencies).some((name) =>
+        name.startsWith(SMRT_PACKAGE_PREFIX),
+      ) ||
+      Array.from(pkg.imports.keys()).some((name) =>
+        name.startsWith(SMRT_PACKAGE_PREFIX),
+      ),
+  );
+  if (!isSmrtConsumer) {
+    status.notes.push(
+      'No @happyvertical/smrt-* dependency or import found; duplicate detection skipped.',
+    );
+    return { findings: [], status };
+  }
+
+  const homeNames = new Set(
+    rows.flatMap((row) => row.homePackages.map((home) => home.packageName)),
+  );
+  const packages: DetectorPackage[] = packageContexts.map((pkg) => ({
+    name: typeof pkg.json.name === 'string' ? pkg.json.name : undefined,
+    relativePath: pkg.relativePath,
+    installed: new Set(
+      Array.from(homeNames).filter(
+        (name) =>
+          pkg.dependencies.has(name) ||
+          existsSync(join(pkg.directory, 'node_modules', name)) ||
+          existsSync(join(projectPath, 'node_modules', name)),
+      ),
+    ),
+    files: pkg.sourceFiles.map((file) => ({
+      relativePath: relative(projectPath, file.path),
+      content: file.content,
+      imports: extractImports(file.content),
+    })),
+  }));
+
+  const detected = detectHandRolled(rows, packages, {
+    onNote: (note) => {
+      status.notes.push(note);
+      process.stderr.write(`[smrt-dev-mcp] ${note}\n`);
+    },
+  });
+  return { findings: detected.map(duplicateFinding), status };
+}
+
+function duplicateFinding(found: HandRolledFinding): Finding {
+  const first = found.evidence[0];
+  const installedUnused = found.installedHomePackages.length > 0;
+  const homeList = found.homePackages.join(', ');
+  const title = `${found.packageName} appears to hand-roll "${found.intent}"`;
+  return {
+    severity: installedUnused ? 'medium' : 'low',
+    area: 'duplicate-detection',
+    code: found.code,
+    title,
+    message: `${title} (signals: ${found.matchedSignals.join(', ')}); ${
+      installedUnused
+        ? `${found.installedHomePackages.join(', ')} is installed but never imported`
+        : `none of ${homeList} is imported`
+    }. Intent page ${found.intentPage}; component pages ${found.componentPages.join(', ')}.`,
+    file: `${first.filePath}:${first.line}`,
+    packageName: found.packageName,
+    intentPage: found.intentPage,
+    componentPages: found.componentPages,
+    evidence: found.evidence.map((item) => ({
+      filePath: item.filePath,
+      line: item.line,
+      detail: item.detail,
+    })),
+    recommendation: `Read ${found.intentPage} before keeping this implementation; the framework entry point is ${found.entryPoint} (${found.componentPages.join(', ')}). Advisory only: keep the hand-rolled code if it covers a case the package does not.`,
+    suggestedIssueTitle: `Evaluate ${homeList} instead of hand-rolled ${found.intent.toLowerCase()} in ${found.packageName}`,
+  };
 }
