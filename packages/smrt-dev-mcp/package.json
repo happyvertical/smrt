@@ -17,6 +17,10 @@
       "types": "./dist/knowledge.d.ts",
       "import": "./dist/knowledge.js"
     },
+    "./agent-skills": {
+      "types": "./dist/agent-skills.d.ts",
+      "import": "./dist/agent-skills.js"
+    },
     "./dev-plane": {
       "types": "./dist/dev-plane.d.ts",
       "import": "./dist/dev-plane.js"

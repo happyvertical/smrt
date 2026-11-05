@@ -20,6 +20,7 @@ export default defineConfig({
       entry: {
         index: resolve(packageDir, 'src/index.ts'),
         knowledge: resolve(packageDir, 'src/knowledge.ts'),
+        'agent-skills': resolve(packageDir, 'src/agent-skills.ts'),
         'dev-plane': resolve(packageDir, 'src/dev-plane.ts'),
         runtime: resolve(packageDir, 'src/runtime.ts'),
       },

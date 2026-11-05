@@ -32,6 +32,7 @@ import {
   resolveIntentSource,
   unscopedName,
 } from './docs-knowledge-bundle.js';
+import { installAgentSkills } from './docs-skills-install.js';
 
 export interface PackageInfo {
   name: string;
@@ -77,6 +78,7 @@ interface DocsHandlerOptions {
   output?: string;
   'dry-run'?: boolean;
   complete?: boolean;
+  'no-install-skills'?: boolean;
 }
 
 function createDocsCommand(config: DocsCommandOptions): CLICommand {
@@ -95,6 +97,12 @@ function createDocsCommand(config: DocsCommandOptions): CLICommand {
       complete: {
         type: 'boolean',
         description: 'Include every linked module document in the snapshot',
+        default: false,
+      },
+      'no-install-skills': {
+        type: 'boolean',
+        description:
+          'Do not install the smrt agent skills into .claude/skills and .agents/skills (installed by default)',
         default: false,
       },
       'dry-run': {
@@ -233,6 +241,15 @@ function createDocsCommand(config: DocsCommandOptions): CLICommand {
           }
         }
 
+        // Skills (#4708): installed under the directory the command runs in.
+        const skillResults = options['no-install-skills']
+          ? []
+          : installAgentSkills({
+              projectRoot: process.cwd(),
+              skills: ['smrt-catalog'],
+              generatedBy: config.generatedBy,
+            });
+
         const totalPackages = packages.length + sdkPackages.length;
         console.log(`\n✅ Generated ${outputPath}`);
         console.log(`   ${totalPackages} packages documented`);
@@ -270,6 +287,15 @@ function createDocsCommand(config: DocsCommandOptions): CLICommand {
               `   ${bundle.withoutPages.length} installed packages ship no knowledge page`,
             );
           }
+        }
+        const written = skillResults.filter(
+          (result) =>
+            result.status === 'installed' || result.status === 'updated',
+        );
+        if (written.length > 0) {
+          console.log(
+            `   ${written.length} agent skill files written (${[...new Set(written.map((result) => result.skill))].join(', ')})`,
+          );
         }
         console.log('');
       } catch (error) {

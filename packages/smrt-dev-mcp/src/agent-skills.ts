@@ -30,7 +30,23 @@ const AGENT_SKILLS: AgentSkillDefinition[] = [
     skillFile: 'skills/smrt-code-review/SKILL.md',
     references: ['skills/smrt-code-review/references/review-output.md'],
   },
+  {
+    name: 'smrt-catalog',
+    description:
+      'Router skill: before writing infrastructure, utility, or integration code in a project that depends on smrt packages, consult the smrt knowledge catalog and reuse the installed package.',
+    path: 'skills/smrt-catalog/SKILL.md',
+    skillFile: 'skills/smrt-catalog/SKILL.md',
+    references: [],
+  },
 ];
+
+/** Version of the smrt-dev-mcp package that ships these skills. */
+export function getAgentSkillsPackageVersion(): string {
+  const manifest = JSON.parse(readPackageFile('package.json')) as {
+    version?: string;
+  };
+  return manifest.version ?? '0.0.0';
+}
 
 export function listAgentSkills(): AgentSkillSummary[] {
   return AGENT_SKILLS.map(({ skillFile: _skillFile, ...skill }) => skill);
