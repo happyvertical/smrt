@@ -53,6 +53,7 @@
     "check:node-roots": "node scripts/survey-node-root-load.mjs --strict --allow=@happyvertical/smrt-products",
     "knowledge:check": "tsx scripts/check-knowledge.ts",
     "knowledge:graph": "tsx scripts/generate-knowledge-graph.ts",
+    "knowledge:okf": "tsx scripts/generate-knowledge-okf.ts",
     "changeset": "changeset",
     "changeset:auto": "npx tsx scripts/auto-changeset.ts",
     "changeset:version": "changeset version",
@@ -90,7 +91,8 @@
     "turbo": "2.10.5",
     "typescript": "6.0.3",
     "vite": "8.1.6",
-    "vitest": "4.1.10"
+    "vitest": "4.1.10",
+    "yaml": "^2.9.1"
   },
   "engines": {
     "node": ">=26.0.0",
