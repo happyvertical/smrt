@@ -1792,11 +1792,16 @@ for authentication, deduplication, and status semantics.
 | Member | `566aef94-1328-4876-b291-b7cf18d4df03` |
 | Viewer | `566aef94-1328-4876-b291-b7cf18d4df04` |
 
-Fresh roles use the UUIDs above. Repeat seeding keeps existing global system
-roles and their IDs, including roles created by earlier releases. Tenant roles
-can share these slugs under their own identities. A reserved UUID occupied by a
-different role causes seeding to fail without rewriting role ownership or
-memberships.
+Repeat seeding requires each built-in role to have the documented UUID, global
+scope, and system flag. A conflicting global slug or occupied reserved UUID
+fails seeding without rewriting role ownership or memberships. Tenant roles
+can share these slugs under their own identities.
+
+Trusted provisioning can pass `reservedIdentity` to
+`TenantService.createTenantWithOwnership()` on its transaction-bound service.
+The service applies `maxTenants`, resolves the global owner role, and inserts
+the tenant and membership with the supplied IDs. A collision aborts
+provisioning. Keep these IDs under server control.
 
 ## Dependencies
 

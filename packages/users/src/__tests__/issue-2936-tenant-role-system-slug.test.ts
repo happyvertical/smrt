@@ -55,7 +55,7 @@ describe('tenant Role sharing a system slug (#2936)', () => {
     expect(shopOwner.id).not.toBe(system?.id);
     expect((await roles.findBySlug('owner', tenantId))?.id).toBe(shopOwner.id);
   });
-  it('preserves a legitimate system role seeded by an earlier release', async () => {
+  it('refuses a global role at an unreserved UUID without granting authority', async () => {
     const roles = await RoleCollection.create({ db });
     const oldId = crypto.randomUUID();
     await roles.create({
@@ -66,17 +66,14 @@ describe('tenant Role sharing a system slug (#2936)', () => {
       isSystem: true,
     });
 
-    const seeded = await roles.seedSystemRoles({
-      inheritsToDescendants: ['owner'],
-    });
-    expect(seeded.map(({ id }) => id)).toEqual([
-      oldId,
-      ...DEFAULT_ROLES.slice(1).map(({ id }) => id),
-    ]);
-    expect(await roles.findSystemRoleBySlug('owner')).toMatchObject({
-      id: oldId,
+    await expect(
+      roles.seedSystemRoles({ inheritsToDescendants: ['owner'] }),
+    ).rejects.toThrow("System role identity collision for 'owner'");
+    expect((await roles.list()).map(({ id }) => id)).toEqual([oldId]);
+    expect(await roles.findSystemRoleBySlug('owner')).toBeNull();
+    expect(await roles.get(oldId)).toMatchObject({
       name: 'Legacy owner',
-      inheritsToDescendants: true,
+      inheritsToDescendants: false,
     });
   });
 
@@ -99,7 +96,8 @@ describe('tenant Role sharing a system slug (#2936)', () => {
     await expect(roles.seedSystemRoles()).rejects.toThrow(
       "System role identity collision for 'owner'",
     );
-    expect((await roles.findSystemRoleBySlug('owner'))?.id).toBe(legacy.id);
+    expect(await roles.findSystemRoleBySlug('owner')).toBeNull();
+    expect(await roles.get(String(legacy.id))).toMatchObject({ slug: 'owner' });
     expect(await roles.get(DEFAULT_ROLES[0].id)).toMatchObject({
       slug: 'impostor',
       isSystem: false,

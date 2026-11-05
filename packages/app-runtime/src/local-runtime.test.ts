@@ -32,8 +32,6 @@ import * as sql from '@happyvertical/sql';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as localRuntimeApi from './index.js';
 import {
-  DEFAULT_LOCAL_OWNER_ID,
-  DEFAULT_LOCAL_TENANT_ID,
   encodeApplicationId,
   initializeLocalApplicationRuntime,
   LocalRuntimeError,
@@ -43,6 +41,7 @@ import {
   validateApplicationId,
   validateLocalDatabaseStorage,
 } from './index.js';
+import { deriveLocalInstallationIdentity } from './local-installation-identity.js';
 
 // Concurrent test processes must never clean up each other's synthetic UID root.
 const outsideUid = 4_000_000 + process.pid;
@@ -361,10 +360,15 @@ describe('local application runtime', () => {
       ipAddress: '127.0.0.1',
     });
 
-    expect(claim.profileId).toMatch(/^[0-9a-f-]{36}$/);
-    expect(claim.userId).toBe(DEFAULT_LOCAL_OWNER_ID);
-    expect(claim.tenantId).toBe(DEFAULT_LOCAL_TENANT_ID);
-    expect(claim.membershipId).toMatch(/^[0-9a-f-]{36}$/);
+    const identity = deriveLocalInstallationIdentity(
+      await readFile(initialized.runtime.paths.applicationSecret, 'utf8'),
+    );
+    expect(claim).toMatchObject({
+      userId: identity.ownerId,
+      tenantId: identity.tenantId,
+      profileId: identity.profileId,
+      membershipId: identity.membershipId,
+    });
     expect(claim.sessionId).toMatch(/^[0-9a-f-]{36}$/);
 
     const profile = await initialized.runtime.db.query(
@@ -465,11 +469,14 @@ describe('local application runtime', () => {
     ).toBe('password');
   });
 
-  it('leaves an unrelated account at the reserved owner UUID untouched', async () => {
+  it('leaves unrelated records at the reserved owner and Person UUIDs untouched', async () => {
     const initialized = await initializeLocalApplicationRuntime({
       appId: 'user-reserved-id',
       ...(await localDirectories('user-reserved-id')),
     });
+    const identity = deriveLocalInstallationIdentity(
+      await readFile(initialized.runtime.paths.applicationSecret, 'utf8'),
+    );
     const { db } = initialized.runtime;
     const types = await ProfileTypeCollection.create({ db });
     const type = await withSystemContext(() =>
@@ -477,6 +484,7 @@ describe('local application runtime', () => {
     );
     const profile = new Person({
       db,
+      id: identity.profileId,
       typeId: type.id as string,
       tenantId: null,
       name: 'Unrelated',
@@ -486,7 +494,7 @@ describe('local application runtime', () => {
     await profile.save();
     const users = await UserCollection.create({ db });
     const occupied = await users.create({
-      id: DEFAULT_LOCAL_OWNER_ID,
+      id: identity.ownerId,
       profileId: profile.id as string,
       email: 'unrelated@example.com',
       status: UserStatus.ACTIVE,
@@ -499,15 +507,25 @@ describe('local application runtime', () => {
     await expect(initialized.runtime.claimOwner(input)).rejects.toMatchObject({
       code: 'owner_identity_conflict',
     });
-    expect((await users.get(DEFAULT_LOCAL_OWNER_ID))?.email).toBe(
-      occupied.email,
-    );
+    expect((await users.get(identity.ownerId))?.email).toBe(occupied.email);
     expect(await countRows(db, 'memberships')).toBe(0);
     expect(await countRows(db, 'sessions')).toBe(0);
     await occupied.delete();
+    await expect(initialized.runtime.claimOwner(input)).rejects.toThrow();
+    expect(
+      (
+        await db.query(
+          'SELECT name FROM profiles WHERE id = ?',
+          identity.profileId,
+        )
+      ).rows,
+    ).toEqual([{ name: 'Unrelated' }]);
+    expect(await countRows(db, 'users')).toBe(0);
+    expect(await countRows(db, 'memberships')).toBe(0);
+    await profile.delete();
     await expect(initialized.runtime.claimOwner(input)).resolves.toMatchObject({
-      userId: DEFAULT_LOCAL_OWNER_ID,
-      tenantId: DEFAULT_LOCAL_TENANT_ID,
+      userId: identity.ownerId,
+      tenantId: identity.tenantId,
     });
   });
 
@@ -573,10 +591,13 @@ describe('local application runtime', () => {
         appId: 'tenant-reserved-id',
         ...(await localDirectories('tenant-reserved-id')),
       });
+      const identity = deriveLocalInstallationIdentity(
+        await readFile(initialized.runtime.paths.applicationSecret, 'utf8'),
+      );
       const { db } = initialized.runtime;
       const tenants = await TenantCollection.create({ db });
       const occupied = await tenants.create({
-        id: DEFAULT_LOCAL_TENANT_ID,
+        id: identity.tenantId,
         slug: 'unrelated',
         name: 'Unrelated',
       });
@@ -591,15 +612,13 @@ describe('local application runtime', () => {
         },
       );
       expect(await countRows(db, 'memberships')).toBe(0);
-      expect((await tenants.get(DEFAULT_LOCAL_TENANT_ID))?.slug).toBe(
-        'unrelated',
-      );
+      expect((await tenants.get(identity.tenantId))?.slug).toBe('unrelated');
       await occupied.delete();
       await expect(
         initialized.runtime.claimOwner(input),
       ).resolves.toMatchObject({
-        tenantId: DEFAULT_LOCAL_TENANT_ID,
-        userId: DEFAULT_LOCAL_OWNER_ID,
+        tenantId: identity.tenantId,
+        userId: identity.ownerId,
       });
     });
 
@@ -723,6 +742,50 @@ describe('local application runtime', () => {
         }),
       ).rejects.toMatchObject({ code: 'invalid_configuration' });
     });
+  });
+
+  it('keeps same-app bootstrap authority distinct across independent installs', async () => {
+    async function install(label: string) {
+      const directories = await localDirectories(label);
+      const options = { appId: 'lolaus', ...directories };
+      const first = await initializeLocalApplicationRuntime(options);
+      const expected = deriveLocalInstallationIdentity(
+        await readFile(first.runtime.paths.applicationSecret, 'utf8'),
+      );
+      await first.runtime.db.close?.();
+      const restarted = await initializeLocalApplicationRuntime(options);
+      const claim = await restarted.runtime.claimOwner({
+        token: first.bootstrap?.token as string,
+        name: 'Owner',
+        email: 'owner@example.com',
+      });
+      expect(claim).toMatchObject({
+        userId: expected.ownerId,
+        tenantId: expected.tenantId,
+        profileId: expected.profileId,
+        membershipId: expected.membershipId,
+      });
+      const session = await restarted.runtime.restoreSession(claim.sessionId);
+      expect(session?.tenantId).toBe(claim.tenantId);
+      expect(session?.membership?.id).toBe(claim.membershipId);
+      return { claim, roleId: session?.membership?.roleId };
+    }
+
+    const first = await install('install-one');
+    const second = await install('install-two');
+    for (const key of [
+      'userId',
+      'tenantId',
+      'profileId',
+      'membershipId',
+    ] as const) {
+      expect(first.claim[key]).toMatch(
+        /^[0-9a-f-]{14}8[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+      );
+      expect(second.claim[key]).not.toBe(first.claim[key]);
+    }
+    expect(first.roleId).toBeTruthy();
+    expect(second.roleId).toBe(first.roleId);
   });
 
   it('is restart-idempotent and never duplicates an active invitation or owner records', async () => {

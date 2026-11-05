@@ -134,17 +134,21 @@ remains global. Startup and setup are idempotent; replayed, expired, or
 concurrent claims fail closed.
 `ownerTenant: { slug, name, adoptExisting }` (also accepted by the SvelteKit
 runtime) selects the bootstrap tenant; the default is a new tenant with slug
-`default` with UUID `566aef94-1328-4876-b291-b7cf18d4df05`
-(`DEFAULT_LOCAL_TENANT_ID`). The local owner account uses UUID
-`566aef94-1328-4876-b291-b7cf18d4df06` (`DEFAULT_LOCAL_OWNER_ID`).
-The invitation and active owner membership authorize the owner. These UUIDs
-are allocated by local bootstrap and confer no authority by themselves.
+`default`. The default tenant, owner User, owner Person, and owner Membership
+have separate UUIDv8 identifiers derived with domain-separated HMAC-SHA256
+from the installation's private `secrets/application.secret`. Independent
+installs of the same app get distinct identities and share the global built-in
+role IDs. Restarts reuse the same installation identities. A backup restored
+as the same installation must preserve the secret alongside the database and
+keep it in protected storage. The invitation and active owner membership
+authorize the owner.
 
 A tenant with the selected slug causes `owner_tenant_conflict`, unless
 `adoptExisting: true` explicitly allows adopting an active root tenant with
 zero memberships of any status. An adopted tenant keeps its id and name.
 The claim rejects an unrelated row using the reserved tenant UUID and an
-account using the owner UUID or the claimed email. A failed claim rolls back
+account using the owner UUID or the claimed email. The owner Person and
+Membership also use strict inserts. A failed claim rolls back
 and leaves the invitation claimable.
 Authenticated session TTLs are configured in whole seconds with a minimum of
 one second, and invalid values are rejected before filesystem mutation.

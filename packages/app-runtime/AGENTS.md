@@ -46,7 +46,11 @@ Application infrastructure composition for the validated runtime profiles in
   selects the tenant slug (default `default`); because `Tenant` upserts on
   slug, the claim must look the slug up first and fail closed
   (`owner_tenant_conflict`) rather than save over it. `adoptExisting` adopts
-  only an active root tenant with zero memberships (#3032).
+  only an active root tenant with zero memberships (#3032). Fresh tenant
+  creation uses `TenantService` with the local ownership policy and a trusted
+  reserved identity. Default tenant and owner graph IDs derive from the
+  protected per-install application secret. Preserve that file when restoring
+  the same installation.
 - Bootstrap is loopback-only. Only an HMAC of the short-lived token is stored.
   A token that cannot claim fails a read-only preflight before role/catalog
   seeding (#3323); the claim transaction's conditional UPDATE stays the

@@ -96,8 +96,14 @@ export class RoleCollection extends SmrtCollection<Role> {
 
   /** Find a built-in system role only; tenant slug collisions never match. */
   async findSystemRoleBySlug(slug: string): Promise<Role | null> {
+    const builtIn = DEFAULT_ROLES.find((role) => role.slug === slug);
     const systemRoles = await this.list({
-      where: { slug, tenantId: null, isSystem: true },
+      where: {
+        slug,
+        tenantId: null,
+        isSystem: true,
+        ...(builtIn && { id: builtIn.id }),
+      },
       limit: 1,
     });
     return systemRoles[0] ?? null;
@@ -124,21 +130,20 @@ export class RoleCollection extends SmrtCollection<Role> {
       // A joined DuckDB transaction has no savepoint. Check all application
       // identity refusals before any writes so callers can catch them safely.
       const existingRoles = new Map<string, Role>();
+      const globalRoles = await writer.findSystemRoles();
       for (const roleDef of DEFAULT_ROLES) {
-        const existing = await writer.findBySlug(roleDef.slug);
-        if (!existing) continue;
+        const matches = globalRoles.filter(({ slug }) => slug === roleDef.slug);
+        const [existing] = matches;
         if (
-          !existing.isSystem ||
-          existing.tenantId != null ||
-          (existing.id !== roleDef.id &&
-            (DEFAULT_ROLES.some(({ id }) => id === existing.id) ||
-              (await writer.count({ where: { id: roleDef.id } })) > 0))
+          matches.length > 1 ||
+          (existing && (!existing.isSystem || existing.id !== roleDef.id)) ||
+          (!existing && (await writer.count({ where: { id: roleDef.id } })) > 0)
         ) {
           throw new Error(
             `System role identity collision for '${roleDef.slug}'`,
           );
         }
-        existingRoles.set(roleDef.slug, existing);
+        if (existing) existingRoles.set(roleDef.slug, existing);
       }
 
       for (const roleDef of DEFAULT_ROLES) {
@@ -156,8 +161,7 @@ export class RoleCollection extends SmrtCollection<Role> {
 
         // Create new system role. `create()` already persists, so the second
         // `save()` was a redundant UPDATE plus an extra change-feed append
-        // (#3022). An occupied reserved ID fails the strict INSERT at the
-        // database, which also aborts a joined DuckDB transaction.
+        // (#3022). Strict INSERT also protects against a concurrent collision.
         const role = await writer.create({
           id: roleDef.id,
           _insertOnly: true,
