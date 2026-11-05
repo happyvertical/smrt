@@ -54,6 +54,19 @@ The in-app channel: one stored row per person, with read state.
 - Hosts decide who is told (e.g. `SocialPost.createdByUserId` for a failed
   post). New table: consumers run `db:migrate`.
 
+## Notification email outbox (`NotificationDelivery`)
+
+`NotificationOutboxService` is the external-channel counterpart of
+`UserNotificationService`: `enqueueEmail()` stores one delivery per
+`(tenant, recipient, channel, sourceRef)` after the host resolves the
+recipient address and same-tenant sender account (callers never choose an
+address); `dispatchDue()` leases due rows by compare-and-set
+(`NotificationDelivery.transition()`), creates the single outbound `Email`
+under the lease, and settles sent/retry/failed/uncertain. Never resend an
+`uncertain` row automatically. Contract, retry, and reconciliation policy:
+[agents/notification-outbox.md](agents/notification-outbox.md). New table:
+consumers run `db:migrate`.
+
 ## Credential Security
 
 Account credentials stored via tenant-bound `credentialSecretId` →

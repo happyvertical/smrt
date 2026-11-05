@@ -23,6 +23,7 @@ export { AttachmentCollection } from './collections/AttachmentCollection';
 // Base collections
 export { MessageCollection } from './collections/MessageCollection';
 export { MessagingEndpointCollection } from './collections/MessagingEndpointCollection.js';
+export { NotificationDeliveryCollection } from './collections/NotificationDeliveryCollection.js';
 export { PersonaMessageRouteCollection } from './collections/PersonaMessageRouteCollection.js';
 export { UserNotificationCollection } from './collections/UserNotificationCollection.js';
 export { Account } from './models/Account';
@@ -30,6 +31,14 @@ export { Attachment } from './models/Attachment';
 // Base models
 export { Message } from './models/Message';
 export { MessagingEndpoint } from './models/MessagingEndpoint.js';
+export {
+  NOTIFICATION_DELIVERY_CHANNELS,
+  NotificationDelivery,
+  type NotificationDeliveryChannel,
+  type NotificationDeliveryOptions,
+  type NotificationDeliveryStatus,
+  type NotificationDeliveryTransition,
+} from './models/NotificationDelivery.js';
 export { PersonaMessageRoute } from './models/PersonaMessageRoute.js';
 export {
   USER_NOTIFICATION_SEVERITIES,
@@ -111,6 +120,28 @@ export {
   MessagingSettingsService,
   type PersonaMessageRouteInput,
 } from './services/MessagingSettingsService.js';
+export {
+  buildNotificationLink,
+  messageSendTransport,
+  type NotificationDispatchOptions,
+  type NotificationDispatchOutcome,
+  type NotificationDispatchReport,
+  type NotificationEmailInput,
+  type NotificationEnqueueResult,
+  type NotificationOutboxDenialReason,
+  NotificationOutboxDeniedError,
+  type NotificationOutboxOptions,
+  NotificationOutboxService,
+  type NotificationRecipient,
+  type NotificationRecipientRequest,
+  type NotificationReconcileOutcome,
+  type NotificationSuppressionRequest,
+  type NotificationTransport,
+  type NotificationTransportOutcome,
+  type NotificationTransportReconciliation,
+  type NotificationTransportRequest,
+  notificationDeliveryCorrelationId,
+} from './services/NotificationOutboxService.js';
 export {
   type PersonaMessageSendResult,
   PersonaMessagingService,
