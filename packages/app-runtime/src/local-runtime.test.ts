@@ -768,7 +768,30 @@ describe('local application runtime', () => {
       const session = await restarted.runtime.restoreSession(claim.sessionId);
       expect(session?.tenantId).toBe(claim.tenantId);
       expect(session?.membership?.id).toBe(claim.membershipId);
-      return { claim, roleId: session?.membership?.roleId };
+
+      const tenants = await TenantCollection.create({
+        db: restarted.runtime.db,
+      });
+      const tenant = await tenants.get(claim.tenantId);
+      if (!tenant) throw new Error('Missing claimed tenant');
+      const remoteDeviceId = crypto.randomUUID();
+      await tenant.save({
+        sync: { originDeviceId: remoteDeviceId, revision: 7 },
+      });
+      expect(tenant.syncMetadata?.originDeviceId).toBe(remoteDeviceId);
+
+      tenant.name = 'Local edit';
+      await tenant.save();
+      const reloaded = await tenants.get(claim.tenantId);
+      expect(reloaded?.syncMetadata).toMatchObject({
+        originDeviceId: expected.deviceId,
+        revision: 8,
+      });
+      return {
+        claim,
+        roleId: session?.membership?.roleId,
+        deviceId: reloaded?.syncMetadata?.originDeviceId,
+      };
     }
 
     const first = await install('install-one');
@@ -786,6 +809,7 @@ describe('local application runtime', () => {
     }
     expect(first.roleId).toBeTruthy();
     expect(second.roleId).toBe(first.roleId);
+    expect(second.deviceId).not.toBe(first.deviceId);
   });
 
   it('is restart-idempotent and never duplicates an active invitation or owner records', async () => {

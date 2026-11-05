@@ -32,6 +32,7 @@ import {
   type RuntimeProviderOverrides,
   resolveApplicationRuntime,
 } from '@happyvertical/smrt-config';
+import { setDatabaseSyncDeviceId } from '@happyvertical/smrt-core';
 import { TaskRunner, type TaskRunnerConfig } from '@happyvertical/smrt-jobs';
 import { Person, ProfileTypeCollection } from '@happyvertical/smrt-profiles';
 import { withSystemContext } from '@happyvertical/smrt-tenancy';
@@ -590,6 +591,7 @@ export async function initializeLocalApplicationRuntime(
     db = acquired.db;
     const { canonicalSourceRoot } = acquired;
     const identity = await prepareLocalFilesystem(paths, canonicalSourceRoot);
+    setDatabaseSyncDeviceId(db, identity.deviceId);
     await tuneLocalSqlite(db);
     try {
       await options.prepareDatabase?.(db);

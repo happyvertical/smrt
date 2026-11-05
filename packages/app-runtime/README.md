@@ -141,7 +141,9 @@ installs of the same app get distinct identities and share the global built-in
 role IDs. Restarts reuse the same installation identities. A backup restored
 as the same installation must preserve the secret alongside the database and
 keep it in protected storage. The invitation and active owner membership
-authorize the owner.
+authorize the owner. The same seed derives a separate writer UUID. The local
+runtime binds it to the database so local edits to tracked rows identify this
+installation, including after a restart.
 
 A tenant with the selected slug causes `owner_tenant_conflict`, unless
 `adoptExisting: true` explicitly allows adopting an active root tenant with
