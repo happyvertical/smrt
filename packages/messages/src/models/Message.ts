@@ -24,6 +24,37 @@ import type {
   SendStatus,
 } from '../types';
 
+/** `metadata` key recording that the last failed send may have been accepted. */
+export const SEND_OUTCOME_UNKNOWN_METADATA_KEY = 'sendOutcomeUnknown';
+
+/**
+ * The stored metadata JSON with the outcome-unknown marker set or cleared, or
+ * undefined when it needs no change (or is not a JSON object to edit).
+ */
+function withSendOutcomeMarker(
+  stored: unknown,
+  outcomeUnknown: boolean,
+): string | undefined {
+  let bag: Record<string, unknown> = {};
+  if (typeof stored === 'string' && stored.trim()) {
+    try {
+      const parsed: unknown = JSON.parse(stored);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        return undefined;
+      }
+      bag = parsed as Record<string, unknown>;
+    } catch {
+      return undefined;
+    }
+  }
+  if (Boolean(bag[SEND_OUTCOME_UNKNOWN_METADATA_KEY]) === outcomeUnknown) {
+    return undefined;
+  }
+  if (outcomeUnknown) bag[SEND_OUTCOME_UNKNOWN_METADATA_KEY] = true;
+  else delete bag[SEND_OUTCOME_UNKNOWN_METADATA_KEY];
+  return JSON.stringify(bag);
+}
+
 @TenantScoped({ mode: 'optional' })
 @smrt({
   tableStrategy: 'sti',
@@ -163,11 +194,18 @@ export class Message extends SmrtObject {
         const currentRevisionMs = new Date(String(currentRevision)).getTime();
         if (!Number.isFinite(currentRevisionMs)) return;
         nextRevision = new Date(Math.max(Date.now(), currentRevisionMs + 1));
+        // Record durably whether a failure may still have been accepted, so a
+        // later reconciliation can tell it from a definite rejection.
+        const metadata = withSendOutcomeMarker(
+          current.metadata,
+          !result.success && result.outcomeUnknown === true,
+        );
         const values = {
           send_status: sendStatus,
           sent_at: result.success ? result.sentAt : null,
           send_error: sendError,
           updated_at: nextRevision,
+          ...(metadata === undefined ? {} : { metadata }),
         };
         if (useEmbeddedFallback) {
           await this.db.upsert(this.tableName, ['id'], {
@@ -474,14 +512,51 @@ export class Message extends SmrtObject {
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
+      // A sender that throws mid-send says nothing about provider acceptance.
       result = {
         success: false,
         error: errorMessage,
+        outcomeUnknown: true,
         sentAt: new Date(),
       };
     }
     await this.finalizeSendLifecycle(result);
     return result;
+  }
+
+  /**
+   * Whether the latest failed send may still have been accepted by the
+   * provider (see `MessageSendResult.outcomeUnknown`).
+   */
+  isSendOutcomeUnknown(): boolean {
+    return (
+      this.sendStatus === 'failed' &&
+      this.getMetadata()[SEND_OUTCOME_UNKNOWN_METADATA_KEY] === true
+    );
+  }
+
+  /**
+   * Release a send claim whose sender is gone (a crash or lost lease left the
+   * row in `sending`): move it to `failed` with an unknown outcome so the
+   * owner of the delivery decision can send it again. Returns false, changing
+   * nothing, unless the stored row is still `sending`. Only for callers that
+   * have established that no live sender holds the claim.
+   */
+  async abandonSendAttempt(reason: string): Promise<boolean> {
+    if (!this.id) return false;
+    const current = await this.getCanonicalPersistedRow({ id: this.id });
+    if (current?.send_status !== 'sending') return false;
+    try {
+      await this.finalizeSendLifecycle({
+        success: false,
+        error: reason,
+        outcomeUnknown: true,
+        sentAt: new Date(),
+      });
+    } catch {
+      return false;
+    }
+    return this.sendStatus === 'failed';
   }
 
   /**

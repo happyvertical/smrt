@@ -101,6 +101,12 @@ export interface MessageSendResult {
   rejected?: string[];
   error?: string;
   providerResponse?: Record<string, unknown>;
+  /**
+   * Set on a failure when the provider may still have accepted the message
+   * (the connection dropped or timed out mid-send, or the sender threw), as
+   * opposed to a definite rejection. Callers must not blindly resend it.
+   */
+  outcomeUnknown?: boolean;
   sentAt: Date;
 }
 

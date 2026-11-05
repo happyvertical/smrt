@@ -107,6 +107,26 @@ and question answer state remain separate lifecycles.
 renders authorized projections and emits typed answer/decision callbacks. It
 does not fetch records or decide application permissions.
 
+`ProjectInterview` (registry slot `project-interview`) is the guided,
+one-record-at-a-time surface over the same `ProjectQuestionView` /
+`ProjectDecisionView` projections and `onanswer` / `ondecide` callbacks. It
+also does not fetch. Props: `questions`, `decisions` (asked after the
+questions, each in the host's order), `busy`, `framing` (keyed by record id:
+`why`, `unblocks` labels, `recommendedOptionId`), `startIndex` (read once on
+mount; defaults to the first open record) and `onadvance`, which receives a
+`ProjectInterviewAdvanceDetail` (`index`, `total`, `id`, `kind`, `reason`) on
+every move so hosts can persist resume position. The recommended option
+(`framing.recommendedOptionId`, else the option's `recommended` flag) is listed
+first but never preselected, and question choices keep the Other text box. The
+interview only advances after the host re-renders the submitted record with a
+non-`open` status (or withdraws it), so a failed save leaves the person on that
+question. Skip moves on without calling a callback; Back revisits earlier
+records, showing recorded answers read-only. Progress shows the position and
+answered count; when no record remains open it shows a completion state,
+otherwise a summary that returns to skipped records. Focus moves to each new
+record's heading. The entry animation runs only when the browser reports no
+reduced-motion preference.
+
 ### Canonical project specification
 
 `ProjectSpecificationService` persists one canonical specification per tenant
