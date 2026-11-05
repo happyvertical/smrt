@@ -147,6 +147,8 @@ export function createPackedConsumer({ root, packageNames, evidence, consumerDep
     }
     copyPackedProducerSupportFiles(root, producer, [...selected.keys()]);
     cpSync(resolve(root, 'scripts'), resolve(producer, 'scripts'), { recursive: true });
+    // prepack re-ships the committed OKF pages (#4689) from docs/knowledge.
+    cpSync(resolve(root, 'docs/knowledge'), resolve(producer, 'docs/knowledge'), { recursive: true });
     const linkDependencies = (source, destination) => {
       mkdirSync(destination, { recursive: true });
       for (const entry of readdirSync(source, { withFileTypes: true })) {
