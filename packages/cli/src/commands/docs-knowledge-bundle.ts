@@ -24,7 +24,7 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   OKF_BUNDLE_DIR_NAME,
@@ -43,6 +43,8 @@ export interface BundlePackage {
   name: string;
   version: string;
   directory?: string;
+  /** Identity the package was discovered under; `name` must equal it when set. */
+  specifier?: string;
 }
 
 export interface IntentRow {
@@ -64,6 +66,44 @@ export interface IntentSource {
 
 const ROW =
   /^\| (.+?) \| \[[^\]]+\]\(\/intents\/([a-z0-9-]+)\.md\) \| (.+?) \| (.+?) \| .* \|$/;
+
+/** Strict npm package name: optional lowercase scope, no path segments. */
+const PACKAGE_NAME = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/;
+
+export function isValidPackageName(name: unknown): name is string {
+  return typeof name === 'string' && PACKAGE_NAME.test(name);
+}
+
+/**
+ * `target` resolved under `root`, or a thrown error when it escapes (`..`,
+ * absolute segments). Every bundle write and delete goes through this.
+ */
+export function containedPath(root: string, target: string): string {
+  const base = resolve(root);
+  const full = resolve(base, target);
+  if (full !== base && !full.startsWith(base + sep)) {
+    throw new Error(`Refusing to write outside ${base}: ${target}`);
+  }
+  return full;
+}
+
+/**
+ * Whether a package may supply bundle file names: a plain npm name that equals
+ * the identity its directory was discovered under (a mismatching name could
+ * claim another package's page or point the target elsewhere).
+ */
+export function isBundleSafePackage(pkg: BundlePackage): boolean {
+  if (
+    isValidPackageName(pkg.name) &&
+    !(pkg.specifier && pkg.name !== pkg.specifier)
+  ) {
+    return true;
+  }
+  console.warn(
+    `   ⚠️  Skipping ${JSON.stringify(pkg.name)} in the knowledge bundle: invalid package name or it does not match its directory`,
+  );
+  return false;
+}
 
 export function unscopedName(name: string): string {
   return name.replace(/^@[^/]+\//, '');
@@ -250,14 +290,15 @@ export function exportKnowledgeBundle(options: {
   exportedBy: string;
   now?: Date;
 }): BundleExportResult | null {
+  const safePackages = options.packages.filter(isBundleSafePackage);
   const installed = new Map(
-    options.packages.map((pkg) => [unscopedName(pkg.name), pkg.version]),
+    safePackages.map((pkg) => [unscopedName(pkg.name), pkg.version]),
   );
 
   const pages = new Map<string, string>();
   const manifestPackages: OkfBundlePackage[] = [];
   const withoutPages: string[] = [];
-  for (const pkg of [...options.packages].sort((a, b) =>
+  for (const pkg of [...safePackages].sort((a, b) =>
     a.name.localeCompare(b.name),
   )) {
     const source = componentPageSource(pkg, options.monorepoRoot);
@@ -319,11 +360,20 @@ export function exportKnowledgeBundle(options: {
       ? previous.exportedAt
       : (options.now ?? new Date()).toISOString().replace(/\.\d{3}Z$/, 'Z');
 
-  for (const dir of ['components', 'intents']) {
-    rmSync(join(options.bundleDir, dir), { recursive: true, force: true });
-  }
-  for (const [concept, text] of pages) {
-    const target = join(options.bundleDir, concept.replace(/^\/+/, ''));
+  // Resolve and contain every destination before anything is deleted or written.
+  const writes = [...pages].map(
+    ([concept, text]) =>
+      [
+        containedPath(options.bundleDir, concept.replace(/^\/+/, '')),
+        text,
+      ] as const,
+  );
+  const manifestPath = containedPath(options.bundleDir, OKF_BUNDLE_MANIFEST);
+  const pageDirs = ['components', 'intents'].map((dir) =>
+    containedPath(options.bundleDir, dir),
+  );
+  for (const dir of pageDirs) rmSync(dir, { recursive: true, force: true });
+  for (const [target, text] of writes) {
     mkdirSync(dirname(target), { recursive: true });
     writeFileSync(target, text, 'utf8');
   }
@@ -335,11 +385,7 @@ export function exportKnowledgeBundle(options: {
     packages: manifestPackages,
     intents: intentSlugs,
   };
-  writeFileSync(
-    join(options.bundleDir, OKF_BUNDLE_MANIFEST),
-    `${JSON.stringify(manifest, null, 2)}\n`,
-    'utf8',
-  );
+  writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
 
   return {
     bundleDir: options.bundleDir,

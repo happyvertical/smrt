@@ -26,6 +26,7 @@ import type { CLICommand } from '../cli-generator.js';
 import {
   type BundleExportResult,
   exportKnowledgeBundle,
+  isBundleSafePackage,
   loadIntentRows,
   renderIntentSection,
   resolveIntentSource,
@@ -137,8 +138,9 @@ function createDocsCommand(config: DocsCommandOptions): CLICommand {
 
         // Knowledge bundle (#4689): the intent section lists only intents
         // whose home package is installed in this project.
+        const bundlePackages = packages.filter(isBundleSafePackage);
         const installedVersions = new Map(
-          packages.map((pkg) => [unscopedName(pkg.name), pkg.version]),
+          bundlePackages.map((pkg) => [unscopedName(pkg.name), pkg.version]),
         );
         const intentSource = resolveIntentSource({
           monorepoRoot,
@@ -178,7 +180,7 @@ function createDocsCommand(config: DocsCommandOptions): CLICommand {
 
         const bundle: BundleExportResult | null = exportKnowledgeBundle({
           bundleDir: join(outputDir, bundleDirName),
-          packages,
+          packages: bundlePackages,
           monorepoRoot,
           intentSource,
           intentRows,

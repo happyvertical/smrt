@@ -18,6 +18,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { requireCommandHandler } from '../../__tests__/command-handler.js';
 import { docsCommands } from '../docs-claude.js';
+import { containedPath, isValidPackageName } from '../docs-knowledge-bundle.js';
 
 let tempDir: string;
 let originalCwd: string;
@@ -44,7 +45,7 @@ function install(
   name: string,
   version: string,
   opts: { shipsPage?: boolean } = {},
-): void {
+): string {
   const dir = join(tempDir, 'node_modules', '@happyvertical', name);
   mkdirSync(join(dir, 'dist'), { recursive: true });
   writeFileSync(
@@ -56,6 +57,7 @@ function install(
     // Stamped with the monorepo version, as committed; export must re-stamp.
     writeFileSync(join(dir, 'dist', 'smrt-knowledge.okf.md'), page(name));
   }
+  return dir;
 }
 
 /** The installed smrt-cli carries the intent pages. */
@@ -169,6 +171,64 @@ describe('docs:agents knowledge bundle (#4689)', () => {
     expect(manifest.intents).toEqual(['background-work']);
     expect(printed()).toContain('knowledge bundle exported');
     expect(printed()).toContain('ship no knowledge page');
+  });
+
+  it('skips a package whose name escapes the bundle or mismatches its directory', async () => {
+    installCliWithIntents();
+    install('smrt-jobs', '1.2.3', { shipsPage: true });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    // Traversal name that would resolve to .agents/smrt-framework.md.
+    const evil = install('smrt-x', '9.9.9', { shipsPage: true });
+    writeFileSync(
+      join(evil, 'package.json'),
+      JSON.stringify({
+        name: '@happyvertical/smrt-x/../../../smrt-framework',
+        version: '9.9.9',
+      }),
+    );
+    // Valid-looking name that is not the directory's identity.
+    const liar = install('smrt-liar', '1.0.0', { shipsPage: true });
+    writeFileSync(
+      join(liar, 'package.json'),
+      JSON.stringify({ name: '@happyvertical/smrt-jobs', version: '6.6.6' }),
+    );
+    const sentinel = join(tempDir, '.agents', 'smrt-framework.md');
+
+    await run();
+    warn.mockRestore();
+
+    const bundle = join(tempDir, '.agents', 'smrt-knowledge');
+    const manifest = JSON.parse(
+      readFileSync(join(bundle, 'bundle.json'), 'utf-8'),
+    );
+    expect(manifest.packages.map((p: { name: string }) => p.name)).toEqual([
+      '@happyvertical/smrt-jobs',
+    ]);
+    expect(manifest.packages[0].version).toBe('1.2.3');
+    expect(existsSync(join(bundle, 'components', 'smrt-x.md'))).toBe(false);
+    expect(existsSync(join(tempDir, '.agents', 'smrt-framework', 'x.md'))).toBe(
+      false,
+    );
+    // The framework file is the generated one, not the hostile page.
+    expect(readFileSync(sentinel, 'utf-8')).not.toContain('source_revision');
+    expect(
+      readFileSync(join(bundle, 'components', 'smrt-jobs.md'), 'utf-8'),
+    ).toContain('package_version: "1.2.3"');
+  });
+
+  it('refuses to write a destination outside the bundle directory', () => {
+    expect(() => containedPath('/tmp/bundle', '../escape.md')).toThrow(
+      /outside/,
+    );
+    expect(() => containedPath('/tmp/bundle', 'components/../../x')).toThrow(
+      /outside/,
+    );
+    expect(containedPath('/tmp/bundle', 'components/a.md')).toBe(
+      '/tmp/bundle/components/a.md',
+    );
+    expect(isValidPackageName('@happyvertical/smrt-x/../../y')).toBe(false);
+    expect(isValidPackageName('@happyvertical/smrt-jobs')).toBe(true);
+    expect(isValidPackageName('plain-name')).toBe(true);
   });
 
   it('keeps exportedAt while content is unchanged and drops uninstalled pages on rerun', async () => {
