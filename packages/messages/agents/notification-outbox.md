@@ -74,14 +74,26 @@ Per row:
 Delivery is at-most-once once a provider may have seen the message.
 
 - A lapsed lease with no `handedOffAt` never reached the provider: it is resent.
+- Ambiguous provider failures are not rejections. `EmailSender` sets
+  `MessageSendResult.outcomeUnknown` unless `isDefiniteSendRejection()` proves
+  the send was refused (an SMTP reply code, an SDK auth/validation error, a
+  send error that accepted no recipient, or a connection that was never made);
+  `Message.send()` sets it when a sender throws. `Message` persists the marker
+  in `metadata.sendOutcomeUnknown` with the `failed` status
+  (`Message.isSendOutcomeUnknown()`), and `messageSendTransport` maps it to
+  `unknown`, so the delivery becomes `uncertain` instead of being retried.
 - A lapsed lease after `handedOffAt` asks `transport.reconcile()`. The default
   `messageSendTransport` reads the canonical `Message.sendStatus`: `sent` →
-  delivery `sent` (no resend), `failed` → normal retry, `draft`/`pending` →
-  resend, anything else → `uncertain`.
+  delivery `sent` (no resend), `failed` → normal retry (or `uncertain` when the
+  failure carries the outcome-unknown marker), `draft`/`pending` → resend,
+  anything else (e.g. still `sending`) → `uncertain`.
 - `uncertain` rows are never resent automatically. Operators list them with
   `listUncertain({ tenantId })` and settle them with
   `reconcile({ tenantId, deliveryId, outcome: 'sent' | 'failed' | 'retry', note? })`
-  after checking the provider; `retry` accepts the risk of a duplicate.
+  after checking the provider; `retry` accepts the risk of a duplicate. It
+  first releases a message a dead sender left `sending`
+  (`Message.abandonSendAttempt()`, a compare-and-set to `failed`) so the next
+  lease can send it, and refuses when the message is recorded as `sent`.
 - A transport with `idempotent: true` declares that its provider deduplicates on
   `idempotencyKey` (stable per delivery); unknown outcomes are then retried
   instead of parked. SMTP and the current SDK email providers take no key, so

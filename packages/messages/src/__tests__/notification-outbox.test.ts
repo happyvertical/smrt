@@ -11,6 +11,10 @@ import {
   SEND_MESSAGES_PERMISSION,
 } from '../permissions.js';
 import {
+  EmailSender,
+  isDefiniteSendRejection,
+} from '../senders/EmailSender.js';
+import {
   buildNotificationLink,
   messageSendTransport,
   type NotificationEmailInput,
@@ -678,6 +682,159 @@ describe('NotificationOutboxService', () => {
       expect(providerSend).toHaveBeenCalledTimes(2);
       const [message] = await messagesFor(delivery);
       expect(message?.sendStatus).toBe('sent');
+    });
+
+    it('parks an ambiguous provider error from the default transport', async () => {
+      // A real EmailSender over a client whose connection drops mid-send:
+      // the provider may have taken the message, so it is never resent.
+      const clientSend = vi.fn(async () => {
+        throw Object.assign(new Error('Connection closed unexpectedly'), {
+          code: 'CONNECTION_ERROR',
+          cause: Object.assign(new Error('socket hang up'), {
+            code: 'ECONNRESET',
+          }),
+        });
+      });
+      vi.spyOn(EmailAccount.prototype, 'createSender').mockImplementation(
+        async function (this: EmailAccount) {
+          return new EmailSender(
+            { send: clientSend } as unknown as ConstructorParameters<
+              typeof EmailSender
+            >[0],
+            this,
+          );
+        },
+      );
+      const outbox = service({ transport: messageSendTransport });
+      const { delivery } = await outbox.enqueueEmail(input());
+
+      expect((await outbox.dispatchDue()).outcomes[0]?.outcome).toBe(
+        'uncertain',
+      );
+      const [message] = await messagesFor(delivery);
+      expect(message?.sendStatus).toBe('failed');
+      expect(message?.isSendOutcomeUnknown()).toBe(true);
+      clock = new Date(clock.getTime() + 60 * 60_000);
+      expect((await outbox.dispatchDue()).leased).toBe(0);
+      expect(clientSend).toHaveBeenCalledTimes(1);
+    });
+
+    it('a crash after an ambiguous failure was recorded stays uncertain', async () => {
+      const providerSend = vi.fn(async () => ({
+        success: false,
+        error: 'timeout',
+        outcomeUnknown: true,
+        sentAt: new Date(),
+      }));
+      vi.spyOn(EmailAccount.prototype, 'createSender').mockResolvedValue({
+        providerType: 'smtp',
+        isReady: () => true,
+        send: providerSend,
+      });
+      const outbox = service({ transport: messageSendTransport });
+      const { delivery } = await outbox.enqueueEmail(input());
+      const transition = NotificationDelivery.prototype.transition;
+      const crash = vi
+        .spyOn(NotificationDelivery.prototype, 'transition')
+        .mockImplementation(function (
+          this: NotificationDelivery,
+          changes,
+          expected,
+        ) {
+          if (changes.status === 'uncertain') throw new Error('process killed');
+          return transition.call(this, changes, expected);
+        });
+      await expect(outbox.dispatchDue()).rejects.toThrow('process killed');
+      crash.mockRestore();
+
+      clock = new Date(clock.getTime() + 10 * 60_000);
+      expect((await outbox.dispatchDue()).outcomes[0]?.outcome).toBe(
+        'uncertain',
+      );
+      expect(providerSend).toHaveBeenCalledTimes(1);
+    });
+
+    it('operator retry releases a message a crash left claimed and sends once more', async () => {
+      // The dispatcher dies inside the provider call: Message stays 'sending'.
+      const providerSend = vi
+        .fn()
+        .mockImplementationOnce(() => new Promise(() => {}))
+        .mockResolvedValueOnce({ success: true, sentAt: new Date() });
+      vi.spyOn(EmailAccount.prototype, 'createSender').mockResolvedValue({
+        providerType: 'smtp',
+        isReady: () => true,
+        send: providerSend,
+      });
+      const outbox = service({ transport: messageSendTransport });
+      const { delivery } = await outbox.enqueueEmail(input());
+      void outbox.dispatchDue(); // never settles: the "dead" dispatcher
+      await vi.waitFor(() => expect(providerSend).toHaveBeenCalledTimes(1));
+      expect((await messagesFor(delivery))[0]?.sendStatus).toBe('sending');
+
+      clock = new Date(clock.getTime() + 10 * 60_000);
+      expect((await outbox.dispatchDue()).outcomes[0]?.outcome).toBe(
+        'uncertain',
+      );
+      expect(
+        await outbox.reconcile({
+          tenantId: tenantA,
+          deliveryId: delivery.id as string,
+          outcome: 'retry',
+          note: 'Not in the provider log.',
+        }),
+      ).toBe(true);
+      const released = (await messagesFor(delivery))[0];
+      expect(released?.sendStatus).toBe('failed');
+
+      expect((await outbox.dispatchDue()).outcomes[0]?.outcome).toBe('sent');
+      expect(providerSend).toHaveBeenCalledTimes(2);
+      expect(await messagesFor(delivery)).toHaveLength(1);
+      expect((await messagesFor(delivery))[0]?.sendStatus).toBe('sent');
+    });
+  });
+
+  describe('isDefiniteSendRejection', () => {
+    it('separates refused sends from ones the provider may have accepted', () => {
+      const withCause = (cause: object, code = 'SMTP_ERROR') =>
+        Object.assign(new Error('x'), { code, cause });
+      // Definite: an SMTP reply, an auth/validation failure, never connected.
+      expect(isDefiniteSendRejection(withCause({ responseCode: 550 }))).toBe(
+        true,
+      );
+      expect(
+        isDefiniteSendRejection(withCause({}, 'AUTHENTICATION_ERROR')),
+      ).toBe(true);
+      expect(
+        isDefiniteSendRejection(
+          withCause({ code: 'ECONNREFUSED' }, 'CONNECTION_ERROR'),
+        ),
+      ).toBe(true);
+      expect(
+        isDefiniteSendRejection(
+          Object.assign(new Error('x'), { code: 'SEND_ERROR', accepted: [] }),
+        ),
+      ).toBe(true);
+      // Unknown: timeouts, resets, partial acceptance, anything unclassified.
+      expect(
+        isDefiniteSendRejection(
+          withCause({ code: 'ETIMEDOUT' }, 'TIMEOUT_ERROR'),
+        ),
+      ).toBe(false);
+      expect(
+        isDefiniteSendRejection(
+          withCause({ code: 'ECONNRESET' }, 'CONNECTION_ERROR'),
+        ),
+      ).toBe(false);
+      expect(
+        isDefiniteSendRejection(
+          Object.assign(new Error('x'), {
+            code: 'SEND_ERROR',
+            accepted: ['a@example.com'],
+          }),
+        ),
+      ).toBe(false);
+      expect(isDefiniteSendRejection(new Error('boom'))).toBe(false);
+      expect(isDefiniteSendRejection('boom')).toBe(false);
     });
   });
 });

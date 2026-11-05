@@ -76,6 +76,10 @@ directly. Credential descriptor schemas contain field definitions, never values.
 ## Send Lifecycle
 
 `message.send()`: resolves account → creates provider sender → updates sendStatus. Retry support with `maxRetries` budget.
+A failure the provider may still have accepted carries
+`MessageSendResult.outcomeUnknown` (set by `EmailSender` unless
+`isDefiniteSendRejection()` proves a refusal, and when a sender throws) and is
+persisted as `metadata.sendOutcomeUnknown`; never auto-resend it.
 `EmailSender` attaches the message's stored `Attachment` rows (read through
 `Attachment.readContent()`, under the message's tenant context) plus
 `SendEmailOptions.attachments` bytes; an unreadable or file-less row fails the

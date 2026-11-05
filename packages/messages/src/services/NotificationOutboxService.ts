@@ -90,12 +90,17 @@ export const messageSendTransport: NotificationTransport = {
           : {}),
       };
     }
-    // send() refuses without contacting the provider when its own claim on
-    // the message fails; another sender may be mid-flight, so do not retry.
-    if (message.sendStatus === 'sending' || message.sendStatus === 'sent') {
+    // The provider may have taken it (a dropped connection or a thrown
+    // sender), or send() refused because its own claim on the message
+    // failed and another sender may be mid-flight: never retry blindly.
+    if (
+      result.outcomeUnknown ||
+      message.sendStatus === 'sending' ||
+      message.sendStatus === 'sent'
+    ) {
       return {
         status: 'unknown',
-        error: result.error ?? 'Message is already being sent.',
+        error: result.error ?? 'The provider did not confirm the outcome.',
       };
     }
     return {
@@ -111,6 +116,13 @@ export const messageSendTransport: NotificationTransport = {
       case 'sent':
         return { status: 'accepted' };
       case 'failed':
+        if (stored.isSendOutcomeUnknown()) {
+          return {
+            status: 'unknown',
+            error:
+              stored.sendError || 'The provider did not confirm the outcome.',
+          };
+        }
         return {
           status: 'rejected',
           error: stored.sendError || 'Send failed',
@@ -515,8 +527,9 @@ export class NotificationOutboxService {
   /**
    * Settle an `uncertain` delivery after checking the provider out of band:
    * `sent` (it arrived), `failed` (give up), or `retry` (send again,
-   * accepting the risk of a duplicate). Returns false when the row is not
-   * uncertain any more.
+   * accepting the risk of a duplicate; a message left claimed by a dead
+   * sender is released first). Returns false when the row is not uncertain
+   * any more, or for `retry` when the message is recorded as sent.
    */
   async reconcile(input: {
     tenantId: string;
@@ -553,7 +566,22 @@ export class NotificationOutboxService {
             status: 'failed',
             lastError: note || delivery.lastError,
           });
-        case 'retry':
+        case 'retry': {
+          // The canonical message must be sendable again: a crash can leave
+          // it claimed ('sending') by a sender that no longer exists. The
+          // delivery is uncertain, so no dispatcher holds it.
+          const message = delivery.messageId
+            ? await this.loadMessage(delivery.messageId)
+            : null;
+          if (message?.sendStatus === 'sent') return false;
+          if (
+            message?.sendStatus === 'sending' &&
+            !(await message.abandonSendAttempt(
+              note || 'Released for an operator-approved retry.',
+            ))
+          ) {
+            return false;
+          }
           return delivery.transition({
             status: 'pending',
             nextAttemptAt: now,
@@ -562,6 +590,7 @@ export class NotificationOutboxService {
             attempts: Math.min(delivery.attempts, delivery.maxAttempts - 1),
             ...(note ? { lastError: note } : {}),
           });
+        }
         default:
           throw new Error(`Unknown reconcile outcome '${input.outcome}'.`);
       }
