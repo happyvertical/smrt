@@ -157,6 +157,12 @@ server is always launched from a repo that installs the package. Prefer an
 absolute `node /path/to/node_modules/@happyvertical/smrt-dev-mcp/dist/index.js`
 launcher or a small wrapper script with an absolute Node path.
 
+This monorepo's `.mcp.json` runs `node scripts/mcp-servers/smrt-dev-mcp.mjs`:
+stdout is protocol-only, the launcher never installs or uses `pnpm exec`/`npx`
+(their stdout banner breaks stdio, #4685), and it falls back to `tsx` on `src/`
+when `dist` is missing or older, so rebuild `dist` after server edits. Guarded by
+`src/launcher-stdio.test.ts`; see [scripts/mcp-servers/README.md](../../scripts/mcp-servers/README.md).
+
 ## MCP Tier Context
 
 - **Tier 1** (Runtime): auto-generated from `@smrt()` objects — live data operations
