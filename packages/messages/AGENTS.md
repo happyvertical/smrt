@@ -67,6 +67,16 @@ under the lease, and settles sent/retry/failed/uncertain. Never resend an
 [agents/notification-outbox.md](agents/notification-outbox.md). New table:
 consumers run `db:migrate`.
 
+`NotificationOptOut` (`notification_opt_outs`, tenant-required, generated
+surfaces off) is the per-recipient opt-out ledger for the outbox's
+`isSuppressed` hook, keyed `(tenant, recipient, channel, scope)` with scope `*`
+or `project:<uuid>`-style keys. `NotificationOptOutService`: idempotent
+`optOut`/`optIn` (with a `principal` only `userId === recipientUserId` may
+change a row, and only in the principal's own `tenantId`, else
+`NotificationOptOutDeniedError`; no principal = trusted host code), trusted `isOptedOut` (a `*` row matches every scope), `listForRecipient`
+(principal required). `optOutSuppression(service, scopeOf)` builds the
+`isSuppressed` function. Details in the outbox doc; consumers run `db:migrate`.
+
 ## Credential Security
 
 Account credentials stored via tenant-bound `credentialSecretId` →

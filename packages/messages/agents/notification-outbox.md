@@ -32,7 +32,8 @@ Host authorization, all checked before anything is stored:
   system code that authorizes itself.
 - `isSuppressed(...)` (optional) is the opt-out hook. A suppressed enqueue stores
   a `cancelled` row (so the event stays deduplicated); suppression at dispatch
-  cancels before handoff. The package has no preference store of its own.
+  cancels before handoff. The package's own preference store is the
+  [opt-out ledger](#opt-out-ledger); wire it with `optOutSuppression`.
 
 Deep links: `path` must be host-relative (`/portal/...`); it is joined to
 `linkBaseUrl` (absolute http(s), no credentials/query/fragment, validated at
@@ -108,9 +109,54 @@ The default delivers through `Message.send()` → account → registered provide
 sender (import `@happyvertical/smrt-messages/providers/email` at server
 startup). Tests inject a fake; nothing in the outbox reaches a provider SDK.
 
+## Opt-out ledger
+
+`NotificationOptOut` (`notification_opt_outs`, tenant-required, generated
+REST/MCP/CLI off) records one row per `(tenant_id, recipient_user_id, channel,
+scope)`: `channel` is `email`; `scope` is `*` (all notification email in the
+tenant) or a host key such as `project:<uuid>` (lowercase prefix, `:`, then
+`[A-Za-z0-9._:-]{1,200}`; malformed scopes throw). `optedOutAt` is set while
+opted out and cleared by an opt-in (the row stays as history); `updatedBy` is
+the person's user id, or `system` for host code. It exists because
+`smrt-preferences` is owner-read only, while suppression runs where the recipient
+is not the caller (a manager enqueues, a worker dispatches).
+
+`NotificationOptOutService({ db })`:
+
+- `optOut({ tenantId, recipientUserId, channel, scope, principal? })` and
+  `optIn(...)` are idempotent. With `principal: { userId, tenantId }` only
+  `principal.userId === recipientUserId` may change the row, and only when
+  `principal.tenantId` equals the request's tenant: a principal never acts in
+  another tenant (`NotificationOptOutDeniedError`, reason `principal` or
+  `tenant`). Without a principal the call is trusted host code that
+  authenticated the recipient itself (e.g. a signed unsubscribe link, or a host
+  route whose member belongs to a child tenant of the delivery tenant).
+- `isOptedOut({ tenantId, recipientUserId, channel, scope })` is the trusted
+  suppression read, under `withTenant`; a `*` row matches every scope.
+- `listForRecipient({ tenantId, recipientUserId, principal })` returns only the
+  recipient's own active opt-outs; any other principal is denied.
+
+```ts
+const optOuts = new NotificationOptOutService({ db });
+new NotificationOutboxService({
+  // ...
+  // `scopeOf` maps the host's own event to a scope; null = not opt-out-able.
+  // A question's sourceRef names the question, not its project, so the host
+  // resolves the project itself (scopeOf may be async).
+  isSuppressed: optOutSuppression(optOuts, async (request) => {
+    const projectId = await projectIdForSourceRef(request.tenantId, request.sourceRef);
+    return projectId ? `project:${projectId}` : null;
+  }),
+});
+```
+
+Because the outbox re-checks at dispatch, an opt-out recorded after enqueue
+cancels the pending delivery before handoff. Tests:
+`src/__tests__/notification-opt-out*.test.ts`.
+
 ## Schema
 
-New table `notification_deliveries` (tenant-required, generated REST/MCP/CLI
+New tables `notification_opt_outs` (same rules) and `notification_deliveries` (tenant-required, generated REST/MCP/CLI
 off): consumers run `db:migrate`. `recipient_user_id` is a cross-package uuid
 ref to `smrt-users:User`; `account_id`/`message_id` are FKs to `accounts` and
 `messages`.
