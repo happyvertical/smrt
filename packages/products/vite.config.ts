@@ -1,7 +1,7 @@
 // Hand-written by design — does not use createPackageConfig (per
 // docs/content/standards.md §3 and §9). Products is the reference for
 // triple-consumption (npm library + module federation + standalone
-// SvelteKit app). Uses @originjs/vite-plugin-federation, multi-mode
+// SvelteKit app). Uses @module-federation/vite, multi-mode
 // builds (lib/app/federation), declarations in dist/lib, and an index.html for the standalone variant — none of which
 // fit createPackageConfig's library-only output shape.
 
@@ -194,9 +194,7 @@ export default defineConfig(async ({ mode }) => {
 
 	// Module-federation remote: expose browser-safe components → dist/federation.
 	if (mode === 'federation') {
-		const { default: federation } = await import(
-			'@originjs/vite-plugin-federation'
-		);
+		const { federation } = await import('@module-federation/vite');
 		const { flattenedExposes } = await import(
 			'./src/federation/expose.config.js'
 		);
@@ -220,7 +218,7 @@ export default defineConfig(async ({ mode }) => {
 				smrt,
 				federation({
 					name: 'smrt_products',
-					filename: 'remoteEntry.js',
+					filename: 'assets/remoteEntry.js',
 					exposes: {
 						'./federation-entry': resolve(
 							packageDir,
@@ -229,6 +227,7 @@ export default defineConfig(async ({ mode }) => {
 						...flattenedExposes,
 					},
 					shared: sharedDependencies,
+					dts: false,
 				}),
 			],
 		};
