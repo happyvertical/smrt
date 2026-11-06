@@ -2,7 +2,7 @@ import type { UserConfig } from 'vite';
 import { createPackageConfig } from '../../vite.config.base.js';
 
 const baseConfig = createPackageConfig('app-runtime', {
-  entries: ['sveltekit', 'sveltekit-runtime'],
+  entries: ['sveltekit', 'sveltekit-runtime', 'vault-recovery'],
 });
 
 /**
