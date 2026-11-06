@@ -124,11 +124,13 @@ is not the caller (a manager enqueues, a worker dispatches).
 `NotificationOptOutService({ db })`:
 
 - `optOut({ tenantId, recipientUserId, channel, scope, principal? })` and
-  `optIn(...)` are idempotent. With `principal: { userId, tenantId? }` only
-  `principal.userId === recipientUserId` may change the row
-  (`NotificationOptOutDeniedError`, reason `principal` or `tenant`); without
-  one the call is trusted host code that authenticated the recipient (e.g. a
-  signed unsubscribe link).
+  `optIn(...)` are idempotent. With `principal: { userId, tenantId }` only
+  `principal.userId === recipientUserId` may change the row, and only when
+  `principal.tenantId` equals the request's tenant: a principal never acts in
+  another tenant (`NotificationOptOutDeniedError`, reason `principal` or
+  `tenant`). Without a principal the call is trusted host code that
+  authenticated the recipient itself (e.g. a signed unsubscribe link, or a host
+  route whose member belongs to a child tenant of the delivery tenant).
 - `isOptedOut({ tenantId, recipientUserId, channel, scope })` is the trusted
   suppression read, under `withTenant`; a `*` row matches every scope.
 - `listForRecipient({ tenantId, recipientUserId, principal })` returns only the

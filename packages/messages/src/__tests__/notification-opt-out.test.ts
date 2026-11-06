@@ -80,26 +80,41 @@ describe('NotificationOptOutService', () => {
 
   it('lets only the recipient change their row when a principal is given', async () => {
     await expect(
-      service.optOut(key({ principal: { userId: bob } })),
+      service.optOut(key({ principal: { userId: bob, tenantId: tenantA } })),
     ).rejects.toMatchObject({
       name: 'NotificationOptOutDeniedError',
       reason: 'principal',
     });
     await expect(
-      service.optIn(key({ principal: { userId: bob } })),
+      service.optIn(key({ principal: { userId: bob, tenantId: tenantA } })),
     ).rejects.toBeInstanceOf(NotificationOptOutDeniedError);
     expect(await rowsIn(tenantA)).toHaveLength(0);
 
-    const row = await service.optOut(key({ principal: { userId: alice } }));
+    const row = await service.optOut(
+      key({ principal: { userId: alice, tenantId: tenantA } }),
+    );
     expect(row.updatedBy).toBe(alice);
     await expect(
-      service.optIn(key({ principal: { userId: bob } })),
+      service.optIn(key({ principal: { userId: bob, tenantId: tenantA } })),
     ).rejects.toThrow(NotificationOptOutDeniedError);
     expect(await service.isOptedOut(key())).toBe(true);
 
     await expect(
       service.optOut(key({ principal: { userId: alice, tenantId: tenantB } })),
     ).rejects.toMatchObject({ reason: 'tenant' });
+    // A principal without a tenant never chooses one: it cannot write or list
+    // in a tenant it was not authenticated in (#4717 review).
+    await expect(
+      service.optOut(key({ principal: { userId: alice } as never })),
+    ).rejects.toMatchObject({ reason: 'tenant' });
+    await expect(
+      service.listForRecipient({
+        tenantId: tenantB,
+        recipientUserId: alice,
+        principal: { userId: alice } as never,
+      }),
+    ).rejects.toMatchObject({ reason: 'tenant' });
+    expect(await rowsIn(tenantB)).toHaveLength(0);
 
     // Trusted host code (no principal) may change it.
     const trusted = await service.optIn(key());
@@ -115,7 +130,7 @@ describe('NotificationOptOutService', () => {
     const mine = await service.listForRecipient({
       tenantId: tenantA,
       recipientUserId: alice,
-      principal: { userId: alice },
+      principal: { userId: alice, tenantId: tenantA },
     });
     expect(mine.map((row) => row.scope)).toEqual([project]);
     expect(mine.every((row) => row.recipientUserId === alice)).toBe(true);
@@ -124,7 +139,7 @@ describe('NotificationOptOutService', () => {
       service.listForRecipient({
         tenantId: tenantA,
         recipientUserId: alice,
-        principal: { userId: bob },
+        principal: { userId: bob, tenantId: tenantA },
       }),
     ).rejects.toBeInstanceOf(NotificationOptOutDeniedError);
     await expect(

@@ -72,8 +72,8 @@ surfaces off) is the per-recipient opt-out ledger for the outbox's
 `isSuppressed` hook, keyed `(tenant, recipient, channel, scope)` with scope `*`
 or `project:<uuid>`-style keys. `NotificationOptOutService`: idempotent
 `optOut`/`optIn` (with a `principal` only `userId === recipientUserId` may
-change a row, else `NotificationOptOutDeniedError`; no principal = trusted host
-code), trusted `isOptedOut` (a `*` row matches every scope), `listForRecipient`
+change a row, and only in the principal's own `tenantId`, else
+`NotificationOptOutDeniedError`; no principal = trusted host code), trusted `isOptedOut` (a `*` row matches every scope), `listForRecipient`
 (principal required). `optOutSuppression(service, scopeOf)` builds the
 `isSuppressed` function. Details in the outbox doc; consumers run `db:migrate`.
 

@@ -259,19 +259,22 @@ import {
 } from '@happyvertical/smrt-messages';
 
 const optOuts = new NotificationOptOutService({ db });
-// Idempotent; with a principal only the recipient may change their own row.
+// Idempotent; with a principal only the recipient may change their own row,
+// in the tenant the principal is authenticated in.
 await optOuts.optOut({
   tenantId,
   recipientUserId,
   channel: 'email',
   scope: `project:${projectId}`,
-  principal: { userId: session.userId },
+  principal: { userId: session.userId, tenantId },
 });
 
 // Pass to the outbox: enqueue and dispatch both honour opt-outs.
-const isSuppressed = optOutSuppression(optOuts, (request) => {
-  const id = /^project-question:([^:]+):/.exec(request.sourceRef)?.[1];
-  return id ? `project:${id}` : null; // null = not opt-out-able
+const isSuppressed = optOutSuppression(optOuts, async (request) => {
+  // The host maps its own event to a scope; null = not opt-out-able.
+  // Here a question's sourceRef is resolved to its project by a host lookup.
+  const projectId = await projectIdForSourceRef(request.tenantId, request.sourceRef);
+  return projectId ? `project:${projectId}` : null;
 });
 ```
 

@@ -18,8 +18,14 @@ import type { NotificationSuppressionRequest } from './NotificationOutboxService
 /** The signed-in person making a request, as the host authenticated them. */
 export interface NotificationOptOutPrincipal {
   userId: string;
-  /** When set, must equal the request's tenant. */
-  tenantId?: string;
+  /**
+   * The tenant the principal is authenticated in. Required and must equal the
+   * request's tenant: a principal never acts in another tenant. A host whose
+   * recipient is authenticated elsewhere (e.g. a member of a child tenant)
+   * authorizes the recipient itself and makes a trusted call without a
+   * principal instead.
+   */
+  tenantId: string;
 }
 
 export interface NotificationOptOutKey {
@@ -32,9 +38,11 @@ export interface NotificationOptOutKey {
 
 export interface NotificationOptOutChange extends NotificationOptOutKey {
   /**
-   * The signed-in person. When present only the recipient themself may change
-   * the row; when omitted the call is trusted host code that has already
-   * authenticated the recipient (e.g. a signed unsubscribe link).
+   * The signed-in person, authenticated in this tenant. When present only the
+   * recipient themself may change the row, and only in the principal's own
+   * tenant; when omitted the call is trusted host code that has already
+   * authenticated the recipient (e.g. a signed unsubscribe link, or a host
+   * route whose member belongs to a child tenant of the delivery tenant).
    */
   principal?: NotificationOptOutPrincipal;
 }
@@ -88,7 +96,7 @@ function authorize(
   recipientUserId: string,
 ): string {
   if (!principal) return 'system';
-  if (principal.tenantId && principal.tenantId !== tenantId) {
+  if (!principal.tenantId || principal.tenantId !== tenantId) {
     throw new NotificationOptOutDeniedError(
       'tenant',
       'Principal does not belong to this tenant.',
