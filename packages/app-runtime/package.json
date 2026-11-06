@@ -21,6 +21,10 @@
     "./vault-recovery": {
       "types": "./dist/vault-recovery.d.ts",
       "import": "./dist/vault-recovery.js"
+    },
+    "./vault-device-key": {
+      "types": "./dist/vault-device-key.d.ts",
+      "import": "./dist/vault-device-key.js"
     }
   },
   "files": [
