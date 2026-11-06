@@ -56,6 +56,36 @@ fallback includes `application_type`, `grant_types`, `response_types`, and
 `token_endpoint_auth_method`; post that request only to the discovered
 `registration_endpoint`.
 
+### ChatGPT and Claude connectors
+
+Give the host the application's public HTTPS Streamable HTTP endpoint. Serve
+protected-resource metadata for that exact endpoint and point it at the
+operator's issuer. Configure registration in the host's connector settings.
+The registration helper above applies to clients that call it. The external
+host selects and presents its own client identity.
+
+- **ChatGPT.** Select Client ID Metadata Documents (CIMD) when the issuer
+  supports them. Verify the HTTPS document's `client_id` and exact redirect
+  URI at the issuer. Use DCR as an explicit compatibility mode if CIMD is
+  unavailable for the connection, and retain the registered client for the
+  lifetime of that connection. The issuer must accept the token endpoint
+  authentication method negotiated with the host.
+  [OpenAI client registration guidance](https://developers.openai.com/plugins/build/auth#client-registration)
+- **Claude.** When adding a custom web connector, choose Claude's published
+  identity if the issuer supports it. Choose automatic registration for a
+  supported DCR fallback, or supply a previously registered OAuth client
+  when the operator manages that client. Verify the selected identity and exact
+  callback URI at the issuer.
+  [Claude custom connector setup](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp)
+
+For either host, verify authorization-code PKCE with `S256`, bind the code to
+the client and exact redirect URI, and bind the token to the intended resource.
+Verify that the issuer returns its exact RFC 9207 `iss` value and that the host
+refuses a mismatched issuer before exchanging the code. Test the registration
+mode the connector actually uses and exercise DCR separately if offered.
+[MCP authorization specification](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization)
+· [RFC 9207](https://www.rfc-editor.org/rfc/rfc9207.html)
+
 ## Application wiring
 
 For the application MCP route:
@@ -90,6 +120,22 @@ permissions; the route resolves the profile per request and fails closed when
 the runtime cannot supply the profile's adapter. Hosted profiles use the runtime's membership-backed
 `resolveMcpPrincipal` unless the application supplies `resolvePrincipal`.
 
+### Write tools
+
+Keep the remote tool catalog read-only until the application supplies and tests
+an authorization policy for each exposed write operation. Before a mutation,
+require the operation's scope and check the actor's current membership,
+permission, active tenant, and access to the target record using the server's
+trusted context. Apply the same checks when a task resumes or retries. Derive
+the tenant and actor from that context and look up any required approval in the
+owning workflow. Host confirmations and tool annotations describe intent.
+
+For example, an `applications:prepare` grant can allow an authorized member to
+create a pending application in their tenant. Repeating the request must
+preserve the owning workflow's idempotency and audit trail. Employer submission
+requires the separate human approval in the product's review flow. See the
+[MCP Apps security and deployment invariants](mcp-apps-integration.md#security-and-deployment-invariants).
+
 ## Deployment verification
 
 Before promoting Anytown or Ergot:
@@ -109,6 +155,22 @@ Before promoting Anytown or Ergot:
 
 Keep issuer metadata, client documents, and gateway policy in deployment source
 control. Never place client secrets or bearer tokens in the repository.
+
+For live host qualification, repeat the following on ChatGPT and Claude with a
+test tenant. Record the date, host and version if visible, server revision,
+selected registration mode, and sanitized outcomes in
+[the MCP Apps integration epic](https://github.com/happyvertical/smrt/issues/3202).
+
+- Connect, sign in, and call a permitted read tool. Record the issuer-observed
+  client identity, callback, `S256` challenge method, and resource. Verify the
+  issuer rejects an invalid verifier and unregistered redirect. Record any
+  failure probes performed with a separate test client as fixture evidence.
+- Exercise issuer mismatch, wrong resource, missing scope, and revoked
+  membership. Verify the failed grant or tool denial occurs before dispatch.
+- If write tools are enabled, create one pending record with an allowed actor.
+  Retry it and verify the same outcome. Attempt the same operation as a read-only
+  actor and against another tenant's record. Verify both requests leave state
+  unchanged and the pending record requires product approval to advance.
 
 ## Server-only protected-resource adapter
 
