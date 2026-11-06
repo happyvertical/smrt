@@ -17,7 +17,7 @@ import {
 import { Order } from '../../models/Contract.js';
 import { MoneyValidationError } from '../../money.js';
 import { withTenantMoneyRuntime } from '../../tenant-money-barrier.js';
-import { ContractStatus } from '../../types/index.js';
+import { ContractStatus, ContractType } from '../../types/index.js';
 
 /** Public conversion commands exercised against native collections and the caller's executor. */
 export async function proveEstimateConversion(
@@ -196,6 +196,21 @@ export async function proveEstimateConversion(
       tampered[field] = 'forged';
       await expect(tampered.save()).rejects.toThrow('immutable');
     }
+    const retyped = (await contracts.get(
+      { id: converted.orderId },
+      { cache: false },
+    )) as Order;
+    retyped.contractType = ContractType.LEASE;
+    await expect(retyped.save()).rejects.toThrow('immutable');
+    await expect(
+      (
+        (await contracts.get(
+          { id: converted.orderId },
+          { cache: false },
+        )) as Order
+      ).delete(),
+    ).rejects.toThrow('cannot be deleted');
+    expect(await findOrderForEstimate(db, tenantId, quote.id!)).not.toBeNull();
     await expect(
       contracts.create({
         _meta_type: '@happyvertical/smrt-commerce:Order',

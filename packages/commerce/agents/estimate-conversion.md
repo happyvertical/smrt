@@ -37,5 +37,6 @@ active tenant context, and rolls back with a failing parent transaction.
 
 Lineage is written only by this command; an ordinary save that changes any of the
 three fields is refused (`FROZEN_DOCUMENT`), as is creating an Order with them
-set. The write phase runs in its own savepoint, so a failed conversion leaves no
+set; a converted Order's contract type is also frozen and it cannot be deleted
+(that would erase the only conversion identity). The write phase runs in its own savepoint, so a failed conversion leaves no
 Order even if you call it inside your own money runtime and catch its error

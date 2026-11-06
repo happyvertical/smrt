@@ -135,6 +135,17 @@ function assertConversionLineage(
   if (!('sourceEstimateId' in contract)) return;
   const proposed = contract as unknown as Record<string, string | null>;
   const stored = (existing ?? {}) as Record<string, string | null | undefined>;
+  // Lineage discovery filters on the contract type, so a converted Order keeps it.
+  if (
+    existing &&
+    stored.sourceEstimateId &&
+    (contract.contractType !== existing.contractType ||
+      contract.constructor !== existing.constructor)
+  )
+    throw new MoneyValidationError(
+      'FROZEN_DOCUMENT',
+      'The type of an Order converted from an Estimate is immutable',
+    );
   for (const field of CONVERSION_LINEAGE_FIELDS) {
     const before = stored[field] ?? '';
     if (
@@ -701,6 +712,11 @@ export async function deleteContract(
     const existing = await loadContract(db, contractId);
     if (!existing) return;
     await withLockedContract(db, tenantId, contractId, async (stored) => {
+      if ((stored as { sourceEstimateId?: string }).sourceEstimateId)
+        throw new MoneyValidationError(
+          'FROZEN_DOCUMENT',
+          'An Order converted from an Estimate cannot be deleted',
+        );
       if (stored.billingScheduleJson)
         throw new MoneyValidationError(
           'FROZEN_DOCUMENT',
