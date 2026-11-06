@@ -474,3 +474,33 @@ plane. Those remain operator/managed-platform responsibilities. Enabling the
 `database-rls` selector also requires the deployment migration to apply the
 documented s-m-r-t PostgreSQL policies; the selector does not grant or mutate
 database privileges at runtime.
+
+## Vault recovery key wrapping
+
+The Node-only `@happyvertical/smrt-app-runtime/vault-recovery` entry can wrap a
+32-byte vault data key with a recovery secret held by the user.
+`wrapVaultRecoveryKey({ keyId, key }, recoverySecret, { accountId, generation })`
+returns an opaque record. `openVaultRecoveryKey(record, recoverySecret, context)`
+returns the authenticated key ID and key. Use a high-entropy passphrase or a
+randomly generated printable recovery code. Keep the secret separate from the
+wrapped record. Losing every authorized device and the recovery secret means
+losing access to the data. These functions leave storage, device enrollment,
+rotation, and revocation to their callers.
+
+Supply the expected account and key generation from trusted local or pairing
+state. The recovery record cannot establish which account or generation is
+current. A holder of the wrapped record can try guesses offline, so callers
+should run recovery locally after user action.
+
+The v1 record starts with ASCII `HVRK`, the byte `01`, and a 16-byte random
+salt. The rest is an uncompressed
+[SDK v1 envelope](https://github.com/happyvertical/sdk/blob/v0.111.6/packages/encryption/README.md#vault-snapshot-envelopes).
+Its plaintext is the 32-byte data key. The record has 195 bytes plus the
+UTF-8 byte length of the account ID. Readers reject incompatible lengths and
+envelope headers before deriving the wrapping key. The header carries the data key's ID
+as 32 lowercase hex digits in the API. The authenticated context uses the
+account ID, the fixed device slot `smrt-vault-recovery-v1`, and the unsigned
+64-bit generation as the sequence. The wrapping key is 32 bytes derived
+with scrypt (`N=131072, r=8, p=1`) from the secret and the salt prefixed
+with ASCII `smrt-vault-recovery-v1`. The secret is encoded as 16 to 1024 bytes
+of well-formed UTF-8 with no normalization or trimming.

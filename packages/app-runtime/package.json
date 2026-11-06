@@ -17,6 +17,10 @@
     "./sveltekit": {
       "types": "./dist/sveltekit/index.d.ts",
       "import": "./dist/sveltekit.js"
+    },
+    "./vault-recovery": {
+      "types": "./dist/vault-recovery.d.ts",
+      "import": "./dist/vault-recovery.js"
     }
   },
   "files": [
@@ -43,6 +47,7 @@
     }
   },
   "dependencies": {
+    "@happyvertical/encryption": "catalog:",
     "@happyvertical/smrt-config": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-jobs": "workspace:*",
