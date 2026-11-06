@@ -495,6 +495,51 @@ export function nominationCases(
     ).rejects.toThrow('active referrers in the same tenant');
   });
 
+  it('checks every award when a matched nomination competes with a manual assignment', async () => {
+    const request = input('Alice Baker');
+    const competingReferrer = await makeReferrer('Another Referrer');
+    const inactiveId = await makeReferrer('Inactive Referrer');
+    const inactive = await referrers.get({ id: inactiveId });
+    if (!inactive) throw new Error('Missing inactive referrer fixture');
+    inactive.status = 'suspended';
+    await inactive.save();
+    const foreignId = await makeReferrer('Foreign Referrer', randomUUID());
+    const attribution = await AttributionService.create({ db });
+    const actorProfileId = randomUUID();
+    await attribution.recordManualAssignment({
+      ...request,
+      referrerId: competingReferrer,
+      actorProfileId,
+      occurredAt: NOW,
+    });
+    const conflict = await resolver.resolve(request);
+    expect(conflict.exception?.conflictReason).toBe('competing_touches');
+    expect(
+      conflict.exception?.getCandidates().map(({ kind }) => kind),
+    ).toContain('nomination');
+
+    const award = (referrerId: string) =>
+      attribution.resolveException({
+        exceptionId: conflict.exception?.id as string,
+        awards: [{ referrerId, creditFraction: 1 }],
+        resolutionReason: 'Confirmed introduction',
+        actorProfileId,
+        now: NOW,
+      });
+    await expect(award(foreignId)).rejects.toThrow(
+      'active referrers in the same tenant',
+    );
+    await expect(award(inactiveId)).rejects.toThrow(
+      'active referrers in the same tenant',
+    );
+    expect((await resolver.resolve(request)).exception?.id).toBe(
+      conflict.exception?.id,
+    );
+    expect((await award(aliceId)).referrals).toMatchObject([
+      { referrerId: aliceId, status: 'attributed' },
+    ]);
+  });
+
   it('keeps global identifiers unique and excludes tenant-owned aliases from the global lane', async () => {
     const globalReferrer = await makeReferrer('Global Referrer', null);
     const globalProgram = await makeProgram(null);

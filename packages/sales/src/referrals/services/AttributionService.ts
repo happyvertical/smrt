@@ -444,7 +444,11 @@ export class AttributionService {
       );
     }
 
-    if (exception.conflictReason === 'nomination_unresolved') {
+    const candidates = exception.getCandidates();
+    if (
+      exception.conflictReason === 'nomination_unresolved' ||
+      candidates.some((candidate) => candidate.kind === 'nomination')
+    ) {
       for (const { referrerId } of input.awards) {
         const referrer = await this.deps.referrers.get({ id: referrerId });
         if (!referrer?.isActive() || referrer.tenantId !== exception.tenantId) {
@@ -456,7 +460,6 @@ export class AttributionService {
     }
 
     const policyPin = await this.resolvePolicyPin(exception);
-    const candidates = exception.getCandidates();
     const splitGroupId = input.awards.length > 1 ? randomUUID() : '';
     const referrals: Referral[] = [];
     for (const award of input.awards) {
