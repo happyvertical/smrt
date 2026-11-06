@@ -15,7 +15,19 @@ import type { Asset } from './asset';
 import type { AssetCollection } from './assets';
 // The files SDK is loaded through the lazy boundary in files-runtime.ts so it
 // never enters provider-neutral consumer bundles (#1977/#1979).
-import { getFilesystemLazy, isFileNotFoundError } from './files-runtime.js';
+import {
+  getFilesystemLazy,
+  isBuiltinLocalFilesystem,
+  isFileNotFoundError,
+} from './files-runtime.js';
+import {
+  checkLocalAssetPath,
+  isLocalAssetLocator,
+  keyFromLegacyFileLocator,
+  localAssetKey,
+  makeLocalAssetLocator,
+  requireLocalAssetRoot,
+} from './local-asset-locator.js';
 
 /**
  * MIME type to file extension mapping
@@ -89,7 +101,26 @@ function serializeStoreMetadata(
  * Provider options for configuring the filesystem backend.
  * Accepts any @happyvertical/files options or a simple basePath string for local storage.
  */
-export type ProviderOptions = GetFilesystemOptions | string;
+export type ProviderOptions =
+  | GetFilesystemOptions
+  | PortableLocalAssetStorageOptions
+  | string;
+
+/** Opt into portable locators for managed files under a trusted local root. */
+export interface PortableLocalAssetStorageOptions
+  extends Extract<GetFilesystemOptions, { type?: 'local' }> {
+  type: 'local';
+  basePath: string;
+  locatorMode: 'relative';
+}
+
+type AssetProviderOptions = Exclude<ProviderOptions, string>;
+
+function usesPortableLocators(
+  options: AssetProviderOptions,
+): options is PortableLocalAssetStorageOptions {
+  return 'locatorMode' in options && options.locatorMode === 'relative';
+}
 
 /**
  * Asset storage operation currently being resolved.
@@ -109,7 +140,7 @@ export interface AssetStorageResolveRequest {
   sourceUri: string;
   mimeType?: string;
   typeSlug?: string;
-  defaultProviderOptions: GetFilesystemOptions;
+  defaultProviderOptions: AssetProviderOptions;
   defaultFilesystem: FilesystemInterface;
 }
 
@@ -137,16 +168,28 @@ export interface AssetStoreOptions {
 
 interface ResolvedAssetStorageTarget {
   filesystem: FilesystemInterface;
-  providerOptions: GetFilesystemOptions;
+  providerOptions: AssetProviderOptions;
   path: string;
   sourceUri: string;
 }
 
 function normalizeProviderOptions(
   providerOrBasePath: ProviderOptions,
-): GetFilesystemOptions {
+): AssetProviderOptions {
   if (typeof providerOrBasePath === 'string') {
     return { type: 'local', basePath: providerOrBasePath };
+  }
+  if ('locatorMode' in providerOrBasePath) {
+    if (
+      providerOrBasePath.type !== 'local' ||
+      providerOrBasePath.locatorMode !== 'relative'
+    ) {
+      throw new Error('Unsupported asset storage locator mode');
+    }
+    return {
+      ...providerOrBasePath,
+      basePath: requireLocalAssetRoot(providerOrBasePath.basePath),
+    };
   }
   return providerOrBasePath;
 }
@@ -184,7 +227,8 @@ function normalizeProviderOptions(
  */
 export class AssetStore {
   private fs: FilesystemInterface | null = null;
-  private readonly fsOptions: GetFilesystemOptions;
+  private localRoot?: string;
+  private readonly fsOptions: AssetProviderOptions;
   private readonly fsCache = new Map<string, FilesystemInterface>();
   private readonly resolver?: AssetStorageResolver;
 
@@ -209,6 +253,11 @@ export class AssetStore {
   async initialize(): Promise<this> {
     this.fs = await getFilesystemLazy(this.fsOptions);
     this.fsCache.set(this.providerCacheKey(this.fsOptions), this.fs);
+    this.localRoot = undefined;
+    if (isBuiltinLocalFilesystem(this.fs)) {
+      const { resolve } = process.getBuiltinModule('node:path');
+      this.localRoot = resolve(this.fsOptions.basePath || '.');
+    }
     return this;
   }
 
@@ -247,8 +296,10 @@ export class AssetStore {
 
   private static buildSourceUriForProvider(
     filePath: string,
-    providerOptions: GetFilesystemOptions,
+    providerOptions: AssetProviderOptions,
   ): string {
+    if (usesPortableLocators(providerOptions))
+      return makeLocalAssetLocator(filePath);
     const type = providerOptions.type;
     if (type === 's3') {
       const bucket = providerOptions.bucket ?? '';
@@ -303,6 +354,53 @@ export class AssetStore {
     const providerOptions = resolution?.providerOptions
       ? normalizeProviderOptions(resolution.providerOptions)
       : this.fsOptions;
+    const portableWrite =
+      request.operation === 'write' && usesPortableLocators(providerOptions);
+    const portableReadOrDelete =
+      request.operation !== 'write' &&
+      (isLocalAssetLocator(request.sourceUri) ||
+        usesPortableLocators(providerOptions));
+    if (portableWrite || portableReadOrDelete) {
+      // These locators identify a key in this store's root, never in a
+      // resolver-selected root or an opaque custom filesystem.
+      if (
+        providerOptions !== this.fsOptions ||
+        !this.localRoot ||
+        resolution?.filesystem
+      ) {
+        throw new Error(
+          'Portable local asset locators require the configured filesystem',
+        );
+      }
+      let path: string;
+      let sourceUri: string;
+      if (portableWrite) {
+        path = resolution?.path ?? request.path;
+        sourceUri = makeLocalAssetLocator(path);
+      } else {
+        sourceUri = request.sourceUri;
+        path = isLocalAssetLocator(sourceUri)
+          ? localAssetKey(sourceUri)
+          : keyFromLegacyFileLocator(this.localRoot, sourceUri);
+      }
+      if (
+        (resolution?.path !== undefined && path !== resolution.path) ||
+        (resolution?.sourceUri !== undefined &&
+          sourceUri !== resolution.sourceUri)
+      ) {
+        throw new Error(
+          'Portable local asset locator does not match the storage path',
+        );
+      }
+      await checkLocalAssetPath(this.localRoot, path);
+      return {
+        filesystem: defaultFilesystem,
+        providerOptions,
+        path,
+        sourceUri,
+      };
+    }
+
     const path = AssetStore.providerRelativePath(
       resolution?.path ?? request.path,
       providerOptions,
@@ -312,6 +410,11 @@ export class AssetStore {
       (resolution?.path || resolution?.providerOptions
         ? AssetStore.buildSourceUriForProvider(path, providerOptions)
         : request.sourceUri);
+    if (isLocalAssetLocator(sourceUri)) {
+      throw new Error(
+        'Portable local asset locators require the configured filesystem',
+      );
+    }
     const filesystem =
       resolution?.filesystem ??
       (providerOptions === this.fsOptions
@@ -544,11 +647,11 @@ export class AssetStore {
    * @returns File data as a Buffer
    */
   async read(asset: Asset): Promise<Buffer> {
-    const filePath = AssetStore.pathFromUri(asset.sourceUri);
+    const path = this.requestPath(asset.sourceUri);
     const target = await this.resolveStorage({
       operation: 'read',
       asset,
-      path: AssetStore.providerRelativePath(filePath, this.fsOptions),
+      path,
       sourceUri: asset.sourceUri,
     });
     return (await target.filesystem.read(target.path, { raw: true })) as Buffer;
@@ -580,11 +683,11 @@ export class AssetStore {
   async removeFile(asset: Asset): Promise<void> {
     // Delete the file if it exists
     if (asset.sourceUri) {
-      const filePath = AssetStore.pathFromUri(asset.sourceUri);
+      const path = this.requestPath(asset.sourceUri);
       const target = await this.resolveStorage({
         operation: 'delete',
         asset,
-        path: AssetStore.providerRelativePath(filePath, this.fsOptions),
+        path,
         sourceUri: asset.sourceUri,
       });
       try {
@@ -604,14 +707,25 @@ export class AssetStore {
     await asset.delete();
   }
 
+  private requestPath(sourceUri: string): string {
+    // A portable key is already relative, even when its first component
+    // happens to match a configured path. Never strip a root from it.
+    if (isLocalAssetLocator(sourceUri)) return localAssetKey(sourceUri);
+    return AssetStore.providerRelativePath(
+      AssetStore.pathFromUri(sourceUri),
+      this.fsOptions,
+    );
+  }
+
   /**
    * Extract filesystem path from a sourceUri.
-   * Handles file://, s3://, and plain paths.
+   * Handles portable local locators, file://, s3://, and plain paths.
    *
    * @param sourceUri - Asset sourceUri (e.g., 'file:///path/to/file.mp4', 's3://bucket/key')
    * @returns Filesystem path
    */
   static pathFromUri(sourceUri: string): string {
+    if (isLocalAssetLocator(sourceUri)) return localAssetKey(sourceUri);
     if (sourceUri.startsWith('file://')) {
       return sourceUri.slice(7);
     }

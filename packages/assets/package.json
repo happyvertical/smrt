@@ -22,6 +22,10 @@
       "types": "./dist/filesystem.d.ts",
       "import": "./dist/filesystem.js"
     },
+    "./locator": {
+      "types": "./dist/locator.d.ts",
+      "import": "./dist/locator.js"
+    },
     "./ui": {
       "types": "./dist/ui.d.ts",
       "import": "./dist/ui.js"

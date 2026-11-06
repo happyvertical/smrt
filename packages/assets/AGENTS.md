@@ -21,6 +21,11 @@ Provider-agnostic asset management with versioning, type classification, and gen
   failures other than not-found. The caller owns receipt fencing/serialization.
   `removeFile(asset)` removes only bytes for recovery cleanup, including an
   already-pruned owner record; `remove(asset)` also deletes the owner record.
+  Opt into `asset-local:<key>` writes with
+  `{ type: 'local', basePath: absoluteRoot, locatorMode: 'relative' }`.
+  Keep the root app-owned; portable paths must resolve beneath it without links.
+  See [portable local storage](README.md#portable-local-storage) for adoption and
+  the legacy locator boundary.
 - **Ownership rule**: base/domain-owned asset relationships should live on noun join tables such as `content_assets`, `profile_assets`, `event_assets`, `place_assets`, and `product_assets`; keep `AssetAssociation` for generic/provenance links like image derivation.
 
 ## Runtime surface

@@ -53,6 +53,8 @@ export default defineConfig({
         // Internal SMRT packages
         '@happyvertical/smrt-agents',
         '@happyvertical/smrt-app-runtime',
+        '@happyvertical/smrt-assets',
+        '@happyvertical/smrt-assets/locator',
         '@happyvertical/smrt-config',
         '@happyvertical/smrt-core',
         /^@happyvertical\/smrt-core\//,

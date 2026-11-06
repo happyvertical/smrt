@@ -27,6 +27,11 @@ import {
 } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import {
+  isLocalAssetLocator,
+  localAssetKey,
+  makeLocalAssetLocator,
+} from '@happyvertical/smrt-assets/locator';
 
 export const ASSET_MANIFEST_SCHEMA_VERSION = 1;
 export const MAX_ASSET_COUNT = 1_000;
@@ -56,6 +61,8 @@ export interface AssetManifestEntry {
   byteLength: number;
   contentDigest: string;
   payloadPath: string;
+  /** Omitted for bundles whose assets import as absolute file URLs. */
+  locator?: 'relative';
 }
 
 /** One embedded asset payload. */
@@ -269,11 +276,12 @@ function readRegularFileUnchecked(
   path: string,
   approvedRoot: string,
   onOpened?: () => void,
+  requireSingleLink = false,
 ): Buffer {
   const lexicalPath = resolve(path);
   if (!isInside(approvedRoot, lexicalPath)) throw fail('asset-outside-root');
   const before = lstatSync(lexicalPath);
-  if (before.isSymbolicLink() || !before.isFile()) {
+  if (!before.isFile() || (requireSingleLink && before.nlink !== 1)) {
     throw fail('asset-not-regular');
   }
   if (before.size > MAX_ASSET_BYTES) throw fail('asset-too-large');
@@ -284,7 +292,11 @@ function readRegularFileUnchecked(
   const descriptor = openSync(lexicalPath, constants.O_RDONLY | noFollow);
   try {
     const opened = fstatSync(descriptor);
-    if (!opened.isFile() || opened.size !== before.size) {
+    if (
+      !opened.isFile() ||
+      opened.size !== before.size ||
+      (requireSingleLink && opened.nlink !== 1)
+    ) {
       throw fail('asset-changed-during-read');
     }
     onOpened?.();
@@ -307,6 +319,7 @@ function readRegularFileUnchecked(
       after.dev !== opened.dev ||
       after.ino !== opened.ino ||
       after.size !== opened.size ||
+      (requireSingleLink && after.nlink !== 1) ||
       bytes.byteLength !== opened.size ||
       !isInside(approvedRoot, realpathSync(lexicalPath)) ||
       afterPath.dev !== opened.dev ||
@@ -324,24 +337,34 @@ function readRegularFile(
   path: string,
   approvedRoot: string,
   onOpened?: () => void,
+  requireSingleLink = false,
 ): Buffer {
   try {
-    return readRegularFileUnchecked(path, approvedRoot, onOpened);
+    return readRegularFileUnchecked(
+      path,
+      approvedRoot,
+      onOpened,
+      requireSingleLink,
+    );
   } catch (error) {
     if (isSanitizedFailure(error)) throw error;
     throw fail('asset-changed-during-read');
   }
 }
 
-function pathFromSourceUri(sourceUri: unknown): string {
-  if (typeof sourceUri !== 'string' || !sourceUri.startsWith('file://')) {
+function pathFromSourceUri(sourceUri: unknown, root: string): string {
+  if (typeof sourceUri !== 'string') {
     throw fail('unsupported-asset-source');
   }
   try {
-    return fileURLToPath(sourceUri);
+    if (isLocalAssetLocator(sourceUri)) {
+      return join(root, localAssetKey(sourceUri));
+    }
+    if (sourceUri.startsWith('file://')) return fileURLToPath(sourceUri);
   } catch {
     throw fail('unsupported-asset-source');
   }
+  throw fail('unsupported-asset-source');
 }
 
 function assetRows(tables: unknown[]): PortableRow[] {
@@ -397,10 +420,13 @@ export function collectFilesystemAssets({
     const payloadPath = payloadPathForKey(key);
     if (payloadPaths.has(payloadPath)) throw fail('duplicate-payload-path');
     payloadPaths.add(payloadPath);
+    const relativeLocator =
+      typeof row.source_uri === 'string' && isLocalAssetLocator(row.source_uri);
     const bytes = readRegularFile(
-      pathFromSourceUri(row.source_uri),
+      pathFromSourceUri(row.source_uri, root),
       root,
       onSourceOpened,
+      relativeLocator,
     );
     totalBytes += bytes.byteLength;
     if (totalBytes > MAX_TOTAL_ASSET_BYTES) throw fail('asset-total-too-large');
@@ -410,6 +436,7 @@ export function collectFilesystemAssets({
       byteLength: bytes.byteLength,
       contentDigest,
       payloadPath,
+      ...(relativeLocator ? { locator: 'relative' } : {}),
     });
     payloads.push({
       path: payloadPath,
@@ -492,6 +519,7 @@ export function verifyFilesystemAssets({
   }
   const keys = new Set<string>();
   const paths = new Set<string>();
+  const relativeLocators = new Set<string>();
   const verified: VerifiedAsset[] = [];
   let totalBytes = 0;
   for (const rawEntry of bundle.entries) {
@@ -502,6 +530,8 @@ export function verifyFilesystemAssets({
       throw fail('duplicate-asset-key');
     }
     if (paths.has(payloadPath)) throw fail('duplicate-payload-path');
+    if (entry?.locator === 'relative') relativeLocators.add(key);
+    else if (entry?.locator !== undefined) throw fail('invalid-asset-locator');
     keys.add(key);
     paths.add(payloadPath);
     const byteLength = entry?.byteLength;
@@ -539,9 +569,11 @@ export function verifyFilesystemAssets({
   if (verified.length === 0) return { root: null, entries: [] };
   const root = assertAssetRoot({ sourceRoot, assetRoot, allowMissing: true });
   for (const entry of verified) {
-    (rowByKey.get(entry.key) as PortableRow).source_uri = pathToFileURL(
-      join(root, entry.relativePath),
-    ).href;
+    (rowByKey.get(entry.key) as PortableRow).source_uri = relativeLocators.has(
+      entry.key,
+    )
+      ? makeLocalAssetLocator(entry.relativePath)
+      : pathToFileURL(join(root, entry.relativePath)).href;
   }
   return { root, entries: verified };
 }

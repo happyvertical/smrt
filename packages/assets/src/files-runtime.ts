@@ -46,6 +46,15 @@ export async function getFilesystemLazy(
   return mod.getFilesystem(options);
 }
 
+/** Recognize the SDK's built-in Node filesystem, not an injected adapter. */
+export function isBuiltinLocalFilesystem(
+  filesystem: FilesystemInterface,
+): boolean {
+  return (
+    !!filesModule && filesystem instanceof filesModule.LocalFilesystemProvider
+  );
+}
+
 /**
  * True when `error` is the files SDK's FileNotFoundError. Uses the loaded
  * module's class when available and falls back to an `error.name` check so

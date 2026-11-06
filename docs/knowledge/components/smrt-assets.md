@@ -5,10 +5,10 @@ description: "Asset management system with versioning, metadata, and AI-powered 
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T15:48:19Z"
+  at: "2026-11-06T01:23:41Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:8d3ea47126764ba304fced5c78c4f301892c094158ba79d2625184e77857c9a2"
+source_revision: "sha256:73bdc0cbe39f1720505c0abd7438920e0e7d167f84e8ca629c3cb40127d8027c"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/assets/package.json"
@@ -17,6 +17,9 @@ sources:
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/assets/AGENTS.md"
     title: "@happyvertical/smrt-assets packages/assets/AGENTS.md"
   - id: "agents-2"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/assets/README.md"
+    title: "@happyvertical/smrt-assets packages/assets/README.md"
+  - id: "agents-3"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/assets/agents/private-assets.md"
     title: "@happyvertical/smrt-assets packages/assets/agents/private-assets.md"
 ---
@@ -33,6 +36,7 @@ sources:
 ## Documentation
 
 - `packages/assets/AGENTS.md`
+- `packages/assets/README.md`
 - `packages/assets/agents/private-assets.md`
 
 ## Framework dependencies
@@ -57,6 +61,7 @@ sources:
 
 - `.`
 - `./filesystem`
+- `./locator`
 - `./manifest`
 - `./manifest.json`
 - `./playground`
