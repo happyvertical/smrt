@@ -1,3 +1,5 @@
+> Fork or clone contributors without the control-plane skills: follow [`smrt-contribute`](.agents/skills/smrt-contribute/SKILL.md), not the maintainer lifecycle below.
+
 <!-- hv-managed-policy:start revision=1.0.0 sha256=2c2f4d048293cab2fc7f8c636eee474c0386c13a9c7bbf2c535c5ada47d1d6e5 -->
 
 ## Shared development kernel
@@ -40,22 +42,17 @@ never the answer, and a reflex issue usually is not either.
   under edit; here it is expected. Noticing and leaving it is the thing this
   section forbids. Ledger it under `Drive-by fixes` with its files and commit.
 - **Outside that envelope, the kernel routes to the patch train or the tracker,
-  and this section does not change that.** What it adds is a burden of proof:
-  a tracker issue must name the specific reason the work cannot ship in the
-  branch that found it, in the issue. "Out of scope" is not a reason; "needs a
-  migration window", "changes a published contract", or "the design decision is
-  someone else's" are. Issue proliferation is not thoroughness — it is
-  unreviewed debt plus the cost of rediscovering the context — so an issue you
-  cannot justify in one sentence is a fix you should be making.
+  and this section does not change that.** It adds a burden of proof: a tracker
+  issue must name the specific reason the work cannot ship in the branch that
+  found it. "Out of scope" is not a reason; "needs a migration window", "changes
+  a published contract", or "the design decision is someone else's" are. An
+  issue you cannot justify in one sentence is a fix you should be making.
 - **This file grants no exception to the bound above, and cannot.** The kernel
-  is precedence-bound — a repository instruction may add stricter rules, never
-  weaker ones — and a task or issue instruction is bound the same way, so
-  neither this file nor an in-session request can raise the ten-line envelope.
-  An owner who overrides that routing is acting outside the kernel, not under a
-  rule this file supplies; when it happens, log the override and its scope in
-  the PR body next to the commit it covers so the exception is auditable rather
-  than invisible. Making it the standing default means changing the
-  control-plane kernel, which is the only place with the precedence to do it.
+  is precedence-bound: a repository, task, or issue instruction may add
+  stricter rules, never weaker ones, so none can raise the ten-line envelope.
+  An owner who overrides that routing is acting outside the kernel; log the
+  override and its scope in the PR body next to the commit it covers. Making it
+  the standing default means changing the control-plane kernel.
 
 pnpm/TypeScript monorepo: `@smrt()` business objects generate persistence,
 REST, CLI, MCP, and AI operations. Read the affected package's `AGENTS.md`;

@@ -135,7 +135,11 @@ Skill-aware harnesses can parse the frontmatter; other harnesses can ignore it.
   Agents should fetch it with `get-agent-skill`, then call `build-context` (`task: review`) for
   deterministic context, inspect the actual diff, and produce a findings-first
   review.
+- `skills/smrt-catalog/SKILL.md` — catalog router skill (#4708), installed into consumers by `smrt docs:agents`.
+- `skills/smrt-contribute/SKILL.md` — contributor skill (#4709) for forks of this repository; an identical copy is
+  checked in at the root `.agents/skills/smrt-contribute/SKILL.md` and a test fails on drift.
 
+Trigger evals, the registry and install contract, and the drift rule: [agents/agent-skills.md](agents/agent-skills.md).
 
 ## Project runtime prerequisite
 
@@ -196,6 +200,8 @@ when `dist` is missing or older, so rebuild `dist` after server edits. Guarded b
 - `src/agent-skills.ts` — bundled skill registry and file loader
 - `plugin.json` / `mcp.json` — Agent Plugins 1.0.0 portable root manifests
 - `skills/smrt-code-review/SKILL.md` — downstream SMRT review procedure
+- `skills/smrt-contribute/SKILL.md` — contributor skill (copy at repo-root `.agents/skills/smrt-contribute/`)
+- `skills/smrt-catalog/SKILL.md` — catalog router skill; `skills/smrt-catalog/evals.json` — its trigger eval set
 - `src/tools/generate-smrt-class.ts` — class generation logic and package-ready templates
 - `src/tools/introspect-project.ts` — manifest-first project scanning, falling back to `@happyvertical/smrt-scanner`
 - `src/dev-plane.ts` — in-app runtime dev-plane (#2782): `createDevPlane({ token, projectRoot, db })` serves JSON + MCP on one mount with loopback/bearer guards and a positive catalog (`registry-live` + the nine runtime tools); mounted by the generated `_dev/[...tool]` SvelteKit route

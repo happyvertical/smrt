@@ -3,8 +3,10 @@
 [AGENTS.md](AGENTS.md) and [.agents/project.yaml](.agents/project.yaml) define
 repository policy and tracker routing. This page is a navigation aid; shared
 lifecycle procedures are maintained in `happyvertical/have-config`. They govern
-maintainer and agent work; outside contributors follow
-[CONTRIBUTING.md](CONTRIBUTING.md) instead.
+maintainer and agent work; outside contributors and their agents follow the
+[`smrt-contribute`](.agents/skills/smrt-contribute/SKILL.md) skill and
+[CONTRIBUTING.md](CONTRIBUTING.md) instead. The sections below are for
+maintainer sessions with the control-plane skills.
 
 ## Starting work on an issue
 

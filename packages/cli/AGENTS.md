@@ -296,6 +296,7 @@ skipping it: agents/db-drop-framework-base-tables.md.
 - `src/discovery/manifest-discovery.ts` — manifest auto-discovery
 - `src/commands/docs-claude.ts` — downstream AGENTS.md generation + Claude alias; no object scanning
 - `src/commands/docs-knowledge-bundle.ts` — knowledge-bundle half of `docs:agents`
+- `src/commands/docs-skills-install.ts` — skill-installation half of `docs:agents` (#4708)
 
 ## docs:agents knowledge bundle (consumer contract)
 
@@ -308,6 +309,12 @@ artifacts — `scripts/ship-knowledge-pages.mjs` (root `pnpm build`, `prepack-pa
 `docs/knowledge` pages into `dist/`; intents ship in smrt-cli `dist/knowledge/intents/` — never from a checkout (monorepo
 runs fall back to `docs/knowledge`). Links to uninstalled packages' pages dangle by design. The shape lives in
 `@happyvertical/smrt-dev-mcp/knowledge` (`okf-bundle.ts`); `dev:knowledge-check` reads it (`stale-okf-bundle`).
+
+Skill install (#4708): unless `--no-install-skills`, `docs:agents` also writes the `smrt-catalog` skill from
+`@happyvertical/smrt-dev-mcp` to `.claude/skills/smrt-catalog/SKILL.md` and `.agents/skills/smrt-catalog/SKILL.md`
+under the working directory (skipped on `--dry-run`). The copy carries a `<!-- smrt-generated: … smrt-dev-mcp@<version> … -->`
+marker after the frontmatter: a rerun replaces a marked copy, a copy without the marker is left alone with a warning.
+The shipped text names `.agents/smrt-knowledge/`; the installer substitutes the real bundle dir (`docs:claude`, custom `--output`). Only the smrt repository itself (root `package.json` name `@happyvertical/smrt`, not any pnpm monorepo) also gets `smrt-contribute`; an unmarked copy byte-identical to the shipped skill (the repo's own `.agents/skills/smrt-contribute`) counts as current. Destinations go through `containedPath` and are refused when any path segment is a symlink, before any write.
 
 ## Gotchas
 

@@ -186,6 +186,11 @@ alias supports the same flag and retains its historical output path.
 Regenerate snapshots after moving the project or updating dependencies so the
 local source paths remain current.
 
+`docs:agents` also installs the `smrt-catalog` agent skill into
+`.claude/skills/` and `.agents/skills/` so an agent consults the knowledge
+catalog before hand-rolling infrastructure. Pass `--no-install-skills` to skip
+it. A copy you edited (the generated marker removed) is never overwritten.
+
 Review and architecture prompt bundles include package guidance and modules
 matched by file or focus hints. Add `--complete` to either context command to
 include every module for the selected packages. These commands still build the
