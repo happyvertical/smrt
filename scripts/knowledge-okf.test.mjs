@@ -157,6 +157,29 @@ test('generation is deterministic and keeps generated.at while content is unchan
   assert.deepEqual(checkBundle(models, bundleDir), []);
 });
 
+test('foreign models and tools in a development aggregate do not stale its component page (#4719)', (t) => {
+  const { jobs, core } = setup(t);
+  const ownModel = { className: 'Job', qualifiedName: `${jobs.name}:Job` };
+  const legacyModel = { className: 'LegacyJob' };
+  const ownTool = { name: 'job_list', sourceObject: ownModel.qualifiedName };
+  const customTool = { name: 'refresh_jobs', sourceObject: '' };
+  const local = {
+    ...jobs,
+    objectSource: 'domain-artifact',
+    objects: [ownModel, legacyModel],
+    mcpTools: [ownTool, customTool],
+  };
+  const aggregate = {
+    ...local,
+    objects: [...local.objects, { className: 'Asset', qualifiedName: `${core.name}:Asset` }],
+    mcpTools: [...local.mcpTools, { name: 'asset_list', sourceObject: `${core.name}:Asset` }],
+  };
+  assert.deepEqual(
+    buildComponentModels(indexOf(aggregate, core)),
+    buildComponentModels(indexOf(local, core)),
+  );
+});
+
 test('adding one intent changes only that package page and moves its pin', (t) => {
   const { bundleDir, jobs, core } = setup(t);
   const before = buildComponentModels(indexOf(jobs, core));
