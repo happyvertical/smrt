@@ -1,6 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
-import { generateDesktopPluginArtifacts } from '../desktop-plugins.js';
+import {
+  type DesktopPluginLauncher,
+  generateDesktopPluginArtifacts,
+} from '../desktop-plugins.js';
 
 const kitchen = JSON.parse(
   readFileSync(
@@ -8,7 +11,10 @@ const kitchen = JSON.parse(
     'utf8',
   ),
 );
-const launcher = { executable: 'server/smrt-mcp-launcher' };
+const launcher: DesktopPluginLauncher = {
+  platform: 'darwin',
+  executable: 'server/smrt-mcp-launcher',
+};
 const pluginDir = 'plugins/smrt-kitchen';
 
 describe('generateDesktopPluginArtifacts', () => {
@@ -34,10 +40,11 @@ describe('generateDesktopPluginArtifacts', () => {
       manifest_version: '0.3',
       ...metadata,
       display_name: 'SMRT Kitchen',
+      compatibility: { platforms: ['darwin'] },
       server: {
         type: 'binary',
         entry_point: launcher.executable,
-        mcp_config: { command: launcher.executable },
+        mcp_config: { command: `\${__dirname}/${launcher.executable}` },
       },
     });
     const openaiMarket = read('.agents/plugins/marketplace.json');
@@ -96,7 +103,10 @@ describe('generateDesktopPluginArtifacts', () => {
       description: 'My local product',
       author: { name: 'Developer' },
     };
-    const windows = { executable: 'server/windows/launcher.exe' };
+    const windows: DesktopPluginLauncher = {
+      platform: 'win32',
+      executable: 'server/windows/launcher.exe',
+    };
     const files = generateDesktopPluginArtifacts(minimal, windows);
     expect(files).toEqual(
       generateDesktopPluginArtifacts(
@@ -108,7 +118,11 @@ describe('generateDesktopPluginArtifacts', () => {
       JSON.parse(files['claude-desktop/my-product/manifest.json']),
     ).toMatchObject({
       display_name: 'my-product',
-      server: { entry_point: windows.executable },
+      compatibility: { platforms: ['win32'] },
+      server: {
+        entry_point: windows.executable,
+        mcp_config: { command: `\${__dirname}/${windows.executable}` },
+      },
     });
     expect(JSON.parse(files['plugins/my-product/mcp.json']).mcpServers).toEqual(
       {
@@ -118,6 +132,38 @@ describe('generateDesktopPluginArtifacts', () => {
           cwd: `\${PLUGIN_ROOT}`,
         },
       },
+    );
+  });
+
+  it('marks the Linux binary as Linux-only', () => {
+    const files = generateDesktopPluginArtifacts(kitchen, {
+      platform: 'linux',
+      executable: 'server/linux/launcher',
+    });
+    expect(
+      JSON.parse(files['claude-desktop/smrt-kitchen/manifest.json']),
+    ).toMatchObject({
+      compatibility: { platforms: ['linux'] },
+      server: {
+        entry_point: 'server/linux/launcher',
+        mcp_config: { command: `\${__dirname}/server/linux/launcher` },
+      },
+    });
+  });
+
+  it.each([
+    undefined,
+    'windows',
+    'freebsd',
+    ['linux'],
+  ])('rejects invalid launcher platforms (%#)', (platform) => {
+    expect(() =>
+      generateDesktopPluginArtifacts(kitchen, {
+        ...launcher,
+        platform,
+      } as DesktopPluginLauncher),
+    ).toThrow(
+      'Desktop plugin launcher platform must be darwin, win32, or linux',
     );
   });
 
@@ -165,6 +211,7 @@ describe('generateDesktopPluginArtifacts', () => {
   ])('rejects launcher paths outside the portable executable contract (%#)', (executable) => {
     expect(() =>
       generateDesktopPluginArtifacts(kitchen, {
+        ...launcher,
         executable,
       } as typeof launcher),
     ).toThrow('Desktop plugin launcher must be a portable path under server/');

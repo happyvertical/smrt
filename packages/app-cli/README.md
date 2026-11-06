@@ -257,6 +257,7 @@ required fields are `name` (lowercase letters, digits and single hyphens),
 import { generateDesktopPluginArtifacts } from '@happyvertical/smrt-app-cli';
 
 const files = generateDesktopPluginArtifacts(productManifest, {
+  platform: 'darwin',
   executable: 'server/smrt-mcp-launcher',
 });
 ```
@@ -264,13 +265,16 @@ const files = generateDesktopPluginArtifacts(productManifest, {
 The result maps distribution-root-relative paths to deterministic UTF-8 JSON.
 Materialize the files in a fresh staging directory. Place the executable under
 the same `server/` path in each plugin directory. Run the generator for the
-target platform, using an `.exe` launcher filename for Windows. The launcher
+target platform (`darwin`, `win32`, or `linux`), using an `.exe` launcher
+filename for Windows. The launcher
 must resolve the installed app's bundled runtime and obtain local authorization
 at launch. The generator reads public metadata only and takes no environment,
 MCP arguments, endpoint, or authentication configuration.
 
 - `claude-desktop/<name>/manifest.json` is the binary extension manifest in
   the staging directory for `mcpb pack`. Include the executable when packing.
+  The manifest declares the target platform and resolves the launcher from the
+  installed extension directory.
   [Claude Desktop Extensions](https://www.anthropic.com/research/desktop-extensions) ·
   [MCPB manifest format](https://github.com/modelcontextprotocol/mcpb/blob/main/MANIFEST.md)
 - `plugins/<name>/plugin.json` and `mcp.json` are the portable ChatGPT

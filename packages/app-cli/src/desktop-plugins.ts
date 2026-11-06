@@ -6,6 +6,8 @@ const PORTABLE_SEGMENT = /^[a-zA-Z0-9_-]+(?:\.[a-zA-Z0-9_-]+)*$/;
 const WINDOWS_DEVICE = /^(?:con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\.|$)/i;
 
 export interface DesktopPluginLauncher {
+  /** Platform of the packaged executable. */
+  readonly platform: 'darwin' | 'win32' | 'linux';
   /** Executable the desktop packager supplies under server/ in each package. */
   readonly executable: string;
 }
@@ -101,9 +103,14 @@ export function generateDesktopPluginArtifacts(
       ? name
       : publicText(displayNameValue, 'OpenAI interface displayName');
 
-  const executable = resolveLauncher(
-    field(object(launcher, 'launcher'), 'executable'),
-  );
+  const launcherConfig = object(launcher, 'launcher');
+  const platform = field(launcherConfig, 'platform');
+  if (platform !== 'darwin' && platform !== 'win32' && platform !== 'linux') {
+    throw new Error(
+      'Desktop plugin launcher platform must be darwin, win32, or linux',
+    );
+  }
+  const executable = resolveLauncher(field(launcherConfig, 'executable'));
   const metadata = { name, version, description, author };
   const pluginDir = `plugins/${name}`;
   const source = `./${pluginDir}`;
@@ -112,10 +119,11 @@ export function generateDesktopPluginArtifacts(
       manifest_version: '0.3',
       ...metadata,
       display_name: displayName,
+      compatibility: { platforms: [platform] },
       server: {
         type: 'binary',
         entry_point: executable,
-        mcp_config: { command: executable },
+        mcp_config: { command: `\${__dirname}/${executable}` },
       },
     },
     [`${pluginDir}/plugin.json`]: {
