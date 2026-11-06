@@ -222,6 +222,9 @@ independent `cost-billing` subpath; see [contract](agents/cost-billing.md).
 See [contract billing schedules](agents/contract-billing-schedules.md) for exact
 approved milestone capacity, immutable amendments and atomic canonical invoice issue.
 
+See [estimate conversion](agents/estimate-conversion.md) for turning an accepted
+Estimate into an idempotent Order with copied lines and lineage.
+
 ## Customer funds (#4079)
 
 See [customer advances](agents/customer-funds.md) for explicitly configured

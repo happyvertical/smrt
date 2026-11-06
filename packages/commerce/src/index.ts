@@ -207,6 +207,14 @@ export {
   type PreviewInvoiceMoneyResult,
   previewInvoiceMoney,
 } from './document-money.js';
+export type {
+  ConvertEstimateToOrderInput,
+  ConvertedEstimateOrder,
+} from './estimate-conversion.js';
+export {
+  convertEstimateToOrder,
+  findOrderForEstimate,
+} from './estimate-conversion.js';
 export {
   applyHistoricalCustomerFunds,
   getHistoricalCustomerFundsPosition,

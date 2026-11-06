@@ -117,6 +117,36 @@ function assertUnchanged<T extends object>(
         `${label} ${String(field)} is frozen`,
       );
 }
+const CONVERSION_LINEAGE_FIELDS = [
+  'sourceEstimateId',
+  'conversionRequestId',
+  'acceptanceEvidenceRef',
+] as const;
+const conversionWriters = new WeakSet<object>();
+/** @internal Lets convertEstimateToOrder, and nothing else, set an Order's conversion lineage. */
+export function allowConversionLineageWrite(order: Contract): void {
+  conversionWriters.add(order);
+}
+/** Conversion lineage is written once by the conversion command and is immutable after. */
+function assertConversionLineage(
+  contract: Contract,
+  existing: Contract | null,
+): void {
+  if (!('sourceEstimateId' in contract)) return;
+  const proposed = contract as unknown as Record<string, string | null>;
+  const stored = (existing ?? {}) as Record<string, string | null | undefined>;
+  for (const field of CONVERSION_LINEAGE_FIELDS) {
+    const before = stored[field] ?? '';
+    if (
+      (proposed[field] ?? '') !== before &&
+      (before !== '' || !conversionWriters.has(contract))
+    )
+      throw new MoneyValidationError(
+        'FROZEN_DOCUMENT',
+        `Order ${field} is written only by convertEstimateToOrder and is immutable`,
+      );
+  }
+}
 function isFrozen(contract: Contract): boolean {
   return contract.status !== ContractStatus.DRAFT || !!contract.moneySnapshotId;
 }
@@ -423,6 +453,7 @@ export async function saveContract(
           'FROZEN_DOCUMENT',
           'Billing schedule is managed by schedule commands',
         );
+      assertConversionLineage(contract, existing);
       if (existing && existing.tenantId !== scope.tenantId)
         throw new MoneyValidationError(
           'FROZEN_DOCUMENT',
