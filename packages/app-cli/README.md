@@ -243,3 +243,52 @@ credentials must match both server and issuer; environment credentials also
 require `${PREFIX}_TOKEN_ISSUER`. This does not replace the terminal device
 flow with browser OAuth. See the
 [remote authorization contract](../../docs/content/architecture/remote-mcp-authorization.md).
+
+### Generate local desktop plugin metadata
+
+Use `generateDesktopPluginArtifacts` in the product's packaging step. Pass
+public product metadata from the portable plugin manifest, such as the
+[checked-in Kitchen manifest](../../plugins/smrt-kitchen/plugin.json). The
+required fields are `name` (lowercase letters, digits and single hyphens),
+`version` (SemVer), `description`, and `author.name`. The optional
+`extensions["com.openai"].interface.displayName` defaults to `name`.
+
+```ts
+import { generateDesktopPluginArtifacts } from '@happyvertical/smrt-app-cli';
+
+const files = generateDesktopPluginArtifacts(productManifest, {
+  platform: 'darwin',
+  executable: 'server/smrt-mcp-launcher',
+});
+```
+
+The result maps distribution-root-relative paths to deterministic UTF-8 JSON.
+Materialize the files in a fresh staging directory. Place the executable under
+the same `server/` path in each plugin directory. Run the generator for the
+target platform (`darwin`, `win32`, or `linux`), using an `.exe` launcher
+filename for Windows. The launcher
+must resolve the installed app's bundled runtime and obtain local authorization
+at launch. The generator reads public metadata only and takes no environment,
+MCP arguments, endpoint, or authentication configuration.
+
+- `claude-desktop/<name>/manifest.json` is the binary extension manifest in
+  the staging directory for `mcpb pack`. Include the executable when packing.
+  The manifest declares the target platform and resolves the launcher from the
+  installed extension directory.
+  [Claude Desktop Extensions](https://www.anthropic.com/research/desktop-extensions) ·
+  [MCPB manifest format](https://github.com/modelcontextprotocol/mcpb/blob/main/MANIFEST.md)
+- `plugins/<name>/plugin.json` and `mcp.json` are the portable ChatGPT
+  desktop plugin, listed in `.agents/plugins/marketplace.json`.
+  [OpenAI plugin packaging](https://developers.openai.com/plugins/build/plugins) ·
+  [Desktop-only plugins](https://developers.openai.com/plugins/deploy/desktop-only) ·
+  [Agent Plugins stdio path rules](https://agent-plugins.org/plugin-authors/mcp-servers#stdio-commands-and-paths)
+- `plugins/<name>/.claude-plugin/plugin.json` and
+  `.claude-plugin/marketplace.json` provide Claude Code marketplace
+  compatibility. Claude Desktop installs the MCPB extension from the separate
+  staging directory.
+  [Claude Code marketplaces](https://code.claude.com/docs/en/plugin-marketplaces)
+
+Each generated catalog contains one entry. For a shared catalog, merge the
+entry into the catalog maintained by the packager. Live installation and
+execution in Claude Desktop and ChatGPT desktop require the production
+launcher and separate host verification.
