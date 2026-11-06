@@ -77,7 +77,12 @@ Application infrastructure composition for the validated runtime profiles in
   `tenantBinding: 'direct'` and the
   `LOCAL_MCP_TOKEN_PRINCIPAL` brand; `runAsPrincipal` rejects a copy that
   widens the binding, so the two public APIs compose safely.
-  Never log or return the token outside `issue()`. The operator store opens an
+  Return bearer material only to the issuing operator or the authenticated
+  desktop credential response. The opt-in `createLocalMcpCredentialHandler`
+  requires a direct loopback peer, matching Host and exact Origin, and the sole
+  active owner's first-class session. Desktop slots use a disjoint ID namespace,
+  atomic hash replacement and terminal revocation. See the desktop protocol in
+  [README.md](README.md). The operator store opens an
   uncached connection and takes no writer lease (revocation is per request).
 - Background jobs and application-defined paid capabilities are default-off.
 - The embedded runner reuses `TaskRunner`; it is not a second job contract.

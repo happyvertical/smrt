@@ -103,6 +103,24 @@ export const { load, actions } = createOwnerSetupPage(runtime, {
 });
 `,
   );
+  write(
+    'src/routes/api/local/mcp-credentials/+server.js',
+    `
+import { createLocalMcpCredentialHandler } from '@happyvertical/smrt-app-runtime/sveltekit';
+const runtime = {
+  resolvedRuntime: async () => ({ profile: 'local' }),
+  sessionCookie: { name: 'fixture-session' },
+  localRuntime: async () => ({
+    restoreSession: async (id) => id === 'fixture-session' ? {
+      user: { id: 'owner' }, tenantId: 'workspace', membership: { isActive: () => true },
+      authMethod: 'password', permissions: ['notes.read'], permissionCeiling: null,
+    } : null,
+    mcpTokens: { manageDesktopCredential: async () => ({ token: 'fixture-private', scopes: ['notes.read'], expiresAt: '2030-01-01T00:00:00.000Z' }) }
+  })
+};
+export const POST = createLocalMcpCredentialHandler(runtime);
+`,
+  );
   const preset = pathToFileURL(
     resolve(import.meta.dirname, '../../core/src/vite-preset/index.ts'),
   ).href;
@@ -224,4 +242,61 @@ console.log(JSON.stringify(results));
     type: 'failure',
     status: 409,
   });
+  write(
+    'desktop-probe.mjs',
+    `
+import { createServer, request } from 'node:http';
+delete process.env.ADDRESS_HEADER;
+delete process.env.HOST_HEADER;
+delete process.env.PROTOCOL_HEADER;
+const server = createServer();
+await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+const origin = 'http://127.0.0.1:' + server.address().port;
+process.env.ORIGIN = origin;
+const { handler } = await import('./build/handler.js');
+server.on('request', handler);
+const results = [];
+try {
+  for (const headers of [
+    { origin, cookie: 'fixture-session=fixture-session' },
+    { origin },
+    { origin: 'https://hostile.test', cookie: 'fixture-session=fixture-session' },
+    { origin, host: 'hostile.test', cookie: 'fixture-session=fixture-session' }
+  ]) {
+    const outcome = await new Promise((resolve, reject) => {
+      const body = JSON.stringify({ action: 'put', id: 'fixture', scopes: ['notes.read'], expiresInSeconds: 60 });
+      const req = request(origin + '/api/local/mcp-credentials', {
+        method: 'POST',
+        headers: { ...headers, 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) }
+      }, (res) => {
+        res.setEncoding('utf8');
+        let json = '';
+        res.on('data', (chunk) => { json += chunk; });
+        res.on('end', () => resolve({
+          status: res.statusCode, cache: res.headers['cache-control'],
+          hasToken: JSON.parse(json).token === 'fixture-private'
+        }));
+      });
+      req.on('error', reject);
+      req.end(body);
+    });
+    results.push(outcome);
+  }
+} finally { await new Promise(resolve => server.close(resolve)); }
+console.log(JSON.stringify(results));
+`,
+  );
+  const desktop = await exec(process.execPath, ['desktop-probe.mjs'], {
+    cwd: root,
+    timeout: 30000,
+    maxBuffer: 1024 * 1024,
+  });
+  expect(
+    JSON.parse(desktop.stdout.trim().split('\n').at(-1) as string),
+  ).toEqual([
+    { status: 200, cache: 'no-store', hasToken: true },
+    { status: 403, cache: 'no-store', hasToken: false },
+    { status: 403, cache: 'no-store', hasToken: false },
+    { status: 403, cache: 'no-store', hasToken: false },
+  ]);
 }, 150000);
