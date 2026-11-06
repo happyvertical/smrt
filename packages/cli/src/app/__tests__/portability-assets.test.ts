@@ -1009,12 +1009,18 @@ const postgresUrl = process.env.SMRT_TEST_POSTGRES_URL;
 describe.skipIf(!postgresUrl)(
   'asset-aware SQLite to PostgreSQL portability',
   () => {
+    // The M5 reference gate identifies the absolute case by its test title.
     it.each([
-      'absolute',
-      'relative',
-    ])('imports a verified %s asset and preserves the owner relationship', async (locatorMode) => {
+      [
+        'imports the same record, authorization links, association, and verified blob',
+        false,
+      ],
+      [
+        'imports a verified relative asset and preserves the owner relationship',
+        true,
+      ],
+    ] as const)('%s', async (_title, relative) => {
       const fixture = fixtureContext();
-      const relative = locatorMode === 'relative';
       await exportFixture(
         fixture,
         relative ? 'asset-local:reference.json' : undefined,
