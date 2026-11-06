@@ -495,7 +495,9 @@ should run recovery locally after user action.
 The v1 record starts with ASCII `HVRK`, the byte `01`, and a 16-byte random
 salt. The rest is an uncompressed
 [SDK v1 envelope](https://github.com/happyvertical/sdk/blob/v0.111.6/packages/encryption/README.md#vault-snapshot-envelopes).
-Its plaintext is the 32-byte data key. The header carries the data key's ID
+Its plaintext is the 32-byte data key. The record has 195 bytes plus the
+UTF-8 byte length of the account ID. Readers reject incompatible lengths and
+envelope headers before deriving the wrapping key. The header carries the data key's ID
 as 32 lowercase hex digits in the API. The authenticated context uses the
 account ID, the fixed device slot `smrt-vault-recovery-v1`, and the unsigned
 64-bit generation as the sequence. The wrapping key is 32 bytes derived

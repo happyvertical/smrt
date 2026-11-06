@@ -72,7 +72,19 @@ describe('vault key recovery', () => {
         openVaultRecoveryKey(invalid, recoverySecret, context),
       ).rejects.toThrow('Unsupported vault recovery format');
     }
-    for (const invalid of [record.subarray(0, 21), new Uint8Array(513)]) {
+    const brokenEnvelope = Uint8Array.from(record);
+    brokenEnvelope[21] ^= 1;
+    const compressedEnvelope = Uint8Array.from(record);
+    compressedEnvelope[27] = 1;
+    for (const invalid of [
+      record.subarray(0, 21),
+      record.subarray(0, 22),
+      record.subarray(0, record.length - 1),
+      Buffer.concat([record, Buffer.of(0)]),
+      new Uint8Array(513),
+      brokenEnvelope,
+      compressedEnvelope,
+    ]) {
       await expect(
         openVaultRecoveryKey(invalid, recoverySecret, context),
       ).rejects.toThrow('Invalid vault recovery record');

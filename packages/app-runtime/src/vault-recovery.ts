@@ -11,9 +11,14 @@ const SALT_BYTES = 16;
 const SALT_OFFSET = MAGIC.length + 1;
 const ENVELOPE_OFFSET = SALT_OFFSET + SALT_BYTES;
 const KEY_BYTES = 32;
-const MAX_RECORD_BYTES = 512;
 const MAX_GENERATION = (1n << 64n) - 1n;
 const RECOVERY_DOMAIN = 'smrt-vault-recovery-v1';
+const V1_ENVELOPE_PREFIX = Buffer.of(0x48, 0x56, 0x53, 0x45, 1, 1, 0);
+// SDK v1: two 47-byte headers, 16-byte secretbox tag, two one-byte
+// ID lengths and an eight-byte sequence, plus the device ID and data key.
+const V1_RECORD_FIXED_BYTES =
+  ENVELOPE_OFFSET + 2 * 47 + 16 + 10 + RECOVERY_DOMAIN.length + KEY_BYTES;
+const MAX_RECORD_BYTES = V1_RECORD_FIXED_BYTES + 255;
 // In Unicode mode, a valid surrogate pair is matched as one code point.
 const LONE_SURROGATE = /[\ud800-\udfff]/u;
 
@@ -142,13 +147,21 @@ export async function openVaultRecoveryKey(
   }
 
   const trustedContext = snapshotContext(context);
+  const envelope = bytes.subarray(ENVELOPE_OFFSET);
+  if (
+    bytes.length !==
+      V1_RECORD_FIXED_BYTES + Buffer.byteLength(trustedContext.accountId) ||
+    !envelope.subarray(0, V1_ENVELOPE_PREFIX.length).equals(V1_ENVELOPE_PREFIX)
+  ) {
+    throw new Error('Invalid vault recovery record');
+  }
   const wrappingKey = await deriveWrappingKey(
     recoverySecret,
     bytes.subarray(SALT_OFFSET, ENVELOPE_OFFSET),
   );
   let keyId = '';
   try {
-    const key = openVaultSnapshot(bytes.subarray(ENVELOPE_OFFSET), {
+    const key = openVaultSnapshot(envelope, {
       context: trustedContext,
       resolveKey(id) {
         keyId = id;
