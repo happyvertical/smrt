@@ -47,6 +47,7 @@ export {
   type SessionLayoutData,
   type SessionLayoutUser,
 } from './handlers.js';
+export { createLocalMcpCredentialHandler } from './local-mcp-credentials.js';
 export {
   createOwnerSetupPage,
   DEFAULT_OWNER_SETUP_MESSAGES,

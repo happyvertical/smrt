@@ -4,7 +4,7 @@
  * `smrt app token`, and the runtime's membership-backed hosted resolver.
  * Everything runs on the real local runtime and SQLite.
  */
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import {
   mkdir,
   mkdtemp,
@@ -29,12 +29,13 @@ import {
   PermissionCollection,
   RoleCollection,
   RolePermissionCollection,
+  SessionCollection,
   TenantCollection,
   UserCollection,
   UserStatus,
 } from '@happyvertical/smrt-users';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { afterAll, afterEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 import {
   LOCAL_MCP_TOKEN_PRINCIPAL,
   LOCAL_MCP_TOKEN_TABLE,
@@ -42,6 +43,7 @@ import {
   openLocalMcpTokenStore,
 } from './index.js';
 import {
+  createLocalMcpCredentialHandler,
   createSmrtSvelteKitRuntime,
   type SmrtSvelteKitRuntime,
 } from './sveltekit.js';
@@ -931,5 +933,309 @@ describe('membership-backed hosted MCP principal', () => {
     await expect(hostedRuntime.resolveMcpPrincipal(identity)).resolves.toBe(
       null,
     );
+  });
+});
+
+function desktopRequest(runtime: SmrtSvelteKitRuntime, sessionId: string) {
+  const handle = createLocalMcpCredentialHandler(runtime);
+  return (
+    body: unknown,
+    options: {
+      url?: string;
+      host?: string;
+      origin?: string | null;
+      peer?: string;
+      fetchSite?: string;
+      method?: string;
+      mediaType?: string;
+      raw?: string;
+      cookie?: string;
+    } = {},
+  ) => {
+    const url = new URL(
+      options.url ?? 'http://127.0.0.1:4678/api/local/mcp-credentials',
+    );
+    const request = new Request(url, {
+      method: options.method ?? 'POST',
+      headers: {
+        host: options.host ?? url.host,
+        'content-type': options.mediaType ?? 'application/json',
+        ...(options.origin === null
+          ? {}
+          : { origin: options.origin ?? url.origin }),
+        ...(options.fetchSite ? { 'sec-fetch-site': options.fetchSite } : {}),
+      },
+      ...(options.method === 'GET'
+        ? {}
+        : { body: options.raw ?? JSON.stringify(body) }),
+    });
+    return handle({
+      request,
+      url,
+      getClientAddress: () => options.peer ?? '::ffff:127.0.0.1',
+      cookies: { get: () => options.cookie ?? sessionId } as Parameters<
+        typeof handle
+      >[0]['cookies'],
+    });
+  };
+}
+
+describe('desktop local MCP credential handler', () => {
+  it('mints, rotates, expires and revokes a private owner slot without colliding with operator tokens', async () => {
+    const clock = { now: new Date() };
+    const { runtime, local, owner } = await ownedRuntime(
+      'desktop-lifecycle',
+      clock,
+    );
+    const store = local.mcpTokens;
+    if (!store) throw new Error('token store missing');
+    const manual = await store.issue({ scopes: [EXPORT] });
+    const desktop = desktopRequest(runtime, owner.sessionId);
+    // Even knowing the manual id cannot make its UUIDv4 row a desktop slot.
+    const put = {
+      action: 'put',
+      id: manual.id,
+      scopes: [READ],
+      expiresInSeconds: 60,
+    };
+    const response = await desktop(put);
+    expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(response.headers.get('referrer-policy')).toBe('no-referrer');
+    expect(response.headers.get('x-content-type-options')).toBe('nosniff');
+    const first = await response.json();
+    expect(first).toEqual({
+      id: manual.id,
+      token: expect.stringMatching(/^smrt_mcp_[A-Za-z0-9_-]{43}$/),
+      scopes: [READ],
+      expiresAt: new Date(clock.now.getTime() + 60_000).toISOString(),
+    });
+    expect(await runtime.verifyLocalMcpToken(first.token)).toMatchObject({
+      id: owner.userId,
+      tenantId: owner.tenantId,
+      scopes: [READ],
+    });
+    const rotated = await (await desktop({ ...put, scopes: [EXPORT] })).json();
+    expect(rotated.token).not.toBe(first.token);
+    expect(await runtime.verifyLocalMcpToken(first.token)).toBeNull();
+    expect(await runtime.verifyLocalMcpToken(rotated.token)).toMatchObject({
+      scopes: [EXPORT],
+    });
+    const persisted = JSON.stringify(await tokenRows(local.db));
+    expect(persisted).not.toContain(rotated.token);
+    expect(await store.list()).toHaveLength(2);
+    clock.now = new Date(clock.now.getTime() + 60_000);
+    expect(await runtime.verifyLocalMcpToken(rotated.token)).toBeNull();
+
+    for (let retry = 0; retry < 2; retry += 1) {
+      const response = await desktop({ action: 'revoke', id: put.id });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ status: 'revoked' });
+    }
+    expect((await desktop(put)).status).toBe(409);
+    expect(await runtime.verifyLocalMcpToken(manual.token)).not.toBeNull();
+    expect(await store.list()).toHaveLength(2);
+  });
+
+  it('denies hostile peers, origins, hosts, and callers and refuses malformed or excessive scopes and expiry', async () => {
+    const { runtime, owner, local, revokePermission } =
+      await ownedRuntime('desktop-trust');
+    const desktop = desktopRequest(runtime, owner.sessionId);
+    const put = {
+      action: 'put',
+      id: randomUUID(),
+      scopes: [READ],
+      expiresInSeconds: 60,
+    };
+    const users = await UserCollection.create({ db: local.db });
+    const nonOwner = await users.create({
+      email: 'visitor@example.test',
+      status: UserStatus.ACTIVE,
+    });
+    const roles = await RoleCollection.create({ db: local.db });
+    const viewer = await roles.findSystemRoleBySlug(DEFAULT_ROLE_SLUGS.VIEWER);
+    const memberships = await MembershipCollection.create({ db: local.db });
+    await memberships.create({
+      tenantId: owner.tenantId,
+      userId: nonOwner.id as string,
+      roleId: viewer?.id as string,
+      status: MembershipStatus.ACTIVE,
+    });
+    const sessions = await SessionCollection.create({ db: local.db });
+    const visitorSession = await sessions.createSession({
+      tenantId: owner.tenantId,
+      userId: nonOwner.id as string,
+      authMethod: 'password',
+    });
+    const tenants = await TenantCollection.create({ db: local.db });
+    const anotherTenant = await tenants.create({
+      name: 'Other',
+      slug: 'other',
+    });
+    const wrongTenantSession = await sessions.createSession({
+      tenantId: anotherTenant.id as string,
+      userId: owner.userId,
+      authMethod: 'password',
+    });
+    const cappedSession = await sessions.createSession({
+      tenantId: owner.tenantId,
+      userId: owner.userId,
+      authMethod: 'password',
+      data: { permissionCeiling: [EXPORT] },
+    });
+    const deviceSession = await sessions.createSession({
+      tenantId: owner.tenantId,
+      userId: owner.userId,
+      authMethod: 'pin',
+    });
+    for (const options of [
+      { peer: '192.0.2.1' },
+      { url: 'https://attacker.example/api/local/mcp-credentials' },
+      { host: 'attacker.example' },
+      { origin: null },
+      { origin: 'null' },
+      { origin: 'http://127.0.0.1:4679' },
+      { origin: 'http://localhost:4678' },
+      { fetchSite: 'cross-site' },
+      { cookie: '' },
+      { cookie: 'forged-session' },
+      { cookie: visitorSession.id as string },
+      { cookie: wrongTenantSession.id as string },
+      { cookie: deviceSession.id as string },
+      { cookie: cappedSession.id as string },
+    ]) {
+      const response = await desktop(put, options);
+      expect(response.status).toBe(403);
+      expect(response.headers.get('cache-control')).toBe('no-store');
+      expect(await response.json()).toEqual({ code: 'forbidden' });
+    }
+    for (const input of [
+      { ...put, id: 'bad-id' },
+      { ...put, action: 'unknown' },
+      { ...put, scopes: [] },
+      { ...put, scopes: ['missing.scope'] },
+      { ...put, scopes: [{ unexpected: 'object' }] },
+      { ...put, expiresInSeconds: undefined },
+      { ...put, expiresInSeconds: 59 },
+      { ...put, expiresInSeconds: 365 * 86400 + 1 },
+      { ...put, tenantId: owner.tenantId },
+    ]) {
+      expect((await desktop(input)).status).toBe(400);
+    }
+    expect((await desktop(put, { method: 'GET' })).status).toBe(405);
+    expect((await desktop(put, { mediaType: 'text/plain' })).status).toBe(415);
+    expect((await desktop(put, { raw: '{broken' })).status).toBe(400);
+    expect((await desktop(put, { raw: ' '.repeat(13 * 1024) })).status).toBe(
+      400,
+    );
+    expect(
+      (
+        await desktop(
+          { action: 'revoke', id: put.id },
+          { cookie: cappedSession.id as string },
+        )
+      ).status,
+    ).toBe(403);
+    expect(await tokenRows(local.db)).toEqual([]);
+
+    const issued = await (await desktop(put)).json();
+    expect(
+      (await desktop(put, { cookie: cappedSession.id as string })).status,
+    ).toBe(403);
+    expect(await runtime.verifyLocalMcpToken(issued.token)).toMatchObject({
+      scopes: [READ],
+    });
+    await revokePermission(READ);
+    expect((await desktop(put)).status).toBe(400);
+    expect(await runtime.verifyLocalMcpToken(issued.token)).toMatchObject({
+      scopes: [],
+    });
+
+    const ownerRole = await roles.findSystemRoleBySlug(
+      DEFAULT_ROLE_SLUGS.OWNER,
+    );
+    const otherMembership = await memberships.findByUserAndTenant(
+      nonOwner.id as string,
+      owner.tenantId,
+    );
+    if (!otherMembership || !ownerRole?.id)
+      throw new Error('Missing owner fixture');
+    otherMembership.roleId = ownerRole.id;
+    await otherMembership.save();
+    expect((await desktop({ ...put, scopes: [EXPORT] })).status).toBe(403);
+    expect(await tokenRows(local.db)).toHaveLength(1);
+  });
+
+  it('preserves the previous credential on failed rotation and converges after lost or concurrent responses', async () => {
+    const { runtime, owner, local } = await ownedRuntime('desktop-retry');
+    const desktop = desktopRequest(runtime, owner.sessionId);
+    const put = {
+      action: 'put',
+      id: randomUUID(),
+      scopes: [READ],
+      expiresInSeconds: 60,
+    };
+    const initial = await (await desktop(put)).json();
+    const secret = initial.token;
+    const driverSentinel = `smrt_mcp_${'S'.repeat(43)}`;
+    // The driver exception includes sensitive text that must not escape the route.
+    await local.db.query(`CREATE TEMP TRIGGER fail_desktop_rotation BEFORE UPDATE ON ${LOCAL_MCP_TOKEN_TABLE} BEGIN
+      SELECT RAISE(ABORT, '${driverSentinel}'); END`);
+    const log = vi.spyOn(console, 'log');
+    const warn = vi.spyOn(console, 'warn');
+    const error = vi.spyOn(console, 'error');
+    try {
+      const failure = await desktop(put);
+      expect(failure.status).toBe(500);
+      expect(await failure.json()).toEqual({
+        code: 'credential_operation_failed',
+      });
+      const output = JSON.stringify([
+        ...log.mock.calls,
+        ...warn.mock.calls,
+        ...error.mock.calls,
+      ]);
+      expect(output).not.toContain(driverSentinel);
+      expect(output).not.toContain(secret);
+      expect(process.argv.join(' ')).not.toContain(secret);
+      expect(await runtime.verifyLocalMcpToken(secret)).not.toBeNull();
+    } finally {
+      log.mockRestore();
+      warn.mockRestore();
+      error.mockRestore();
+      await local.db.query('DROP TRIGGER fail_desktop_rotation');
+    }
+    // A response can be lost after commit. One more PUT replaces it in the
+    // same slot, and concurrent writers still leave only one valid token.
+    expect((await desktop(put)).status).toBe(200);
+    const writes = await Promise.all([desktop(put), desktop(put)]);
+    expect(writes.map((response) => response.status)).toEqual([200, 200]);
+    const replies = await Promise.all(
+      writes.map((response) => response.json()),
+    );
+    const principals = await Promise.all(
+      replies.map((reply) => runtime.verifyLocalMcpToken(reply.token)),
+    );
+    expect(principals.filter(Boolean)).toHaveLength(1);
+    expect(await runtime.verifyLocalMcpToken(secret)).toBeNull();
+    expect(await tokenRows(local.db)).toHaveLength(1);
+    const revoked = await Promise.all([
+      desktop(put),
+      desktop({ action: 'revoke', id: put.id }),
+    ]);
+    expect([200, 409]).toContain(revoked[0].status);
+    expect(revoked[1].status).toBe(200);
+    if (revoked[0].ok) {
+      expect(
+        await runtime.verifyLocalMcpToken((await revoked[0].json()).token),
+      ).toBeNull();
+    }
+    expect((await desktop(put)).status).toBe(409);
+    const unused = { ...put, id: randomUUID() };
+    expect((await desktop({ action: 'revoke', id: unused.id })).status).toBe(
+      200,
+    );
+    expect((await desktop(unused)).status).toBe(409);
+    await expectDatabaseIntegrity(local.db);
   });
 });

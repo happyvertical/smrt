@@ -5,10 +5,10 @@ description: "Validated local, self-hosted, and cloud runtime composition for s-
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T20:27:03Z"
+  at: "2026-11-06T02:36:23Z"
 audience: "internal"
 evidence_level: "manifest-described"
-source_revision: "sha256:e9f48d984a2e263720842aabe4ede9b0e377e1bcef19208b4788f72f8b4d8889"
+source_revision: "sha256:11ea4a4fc9a78d6668f2fc0a457f8172779678b1b0d408b61a2290c52eb35c8b"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-runtime/package.json"
@@ -16,6 +16,9 @@ sources:
   - id: "agents"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-runtime/AGENTS.md"
     title: "@happyvertical/smrt-app-runtime packages/app-runtime/AGENTS.md"
+  - id: "agents-2"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-runtime/README.md"
+    title: "@happyvertical/smrt-app-runtime packages/app-runtime/README.md"
 ---
 
 # @happyvertical/smrt-app-runtime
@@ -30,6 +33,7 @@ sources:
 ## Documentation
 
 - `packages/app-runtime/AGENTS.md`
+- `packages/app-runtime/README.md`
 
 ## Framework dependencies
 

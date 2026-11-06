@@ -75,6 +75,8 @@ export {
   LOCAL_MCP_TOKEN_PREFIX,
   LOCAL_MCP_TOKEN_PRINCIPAL,
   LOCAL_MCP_TOKEN_TABLE,
+  type LocalMcpDesktopCredentialInput,
+  type LocalMcpDesktopOwnerSession,
   type LocalMcpTokenPrincipal,
   type LocalMcpTokenRecord,
   type LocalMcpTokenStatus,
@@ -1178,19 +1180,21 @@ function resolveOwnerTenant(
 
 async function findExistingOwner(
   db: DatabaseInterface,
+  requireUnique = false,
 ): Promise<ExistingOwner | null> {
   const roles = await RoleCollection.create({ db });
   const ownerRole = await roles.findSystemRoleBySlug(DEFAULT_ROLE_SLUGS.OWNER);
   if (!ownerRole?.id) return null;
   const memberships = await MembershipCollection.create({ db });
   const ownerMemberships = await memberships.findByRole(ownerRole.id);
-  const active = ownerMemberships.find(
+  const activeOwners = ownerMemberships.filter(
     (membership) =>
       membership.status === MembershipStatus.ACTIVE &&
       typeof membership.userId === 'string' &&
       typeof membership.tenantId === 'string',
   );
-  return active
+  const active = activeOwners[0];
+  return active && (!requireUnique || activeOwners.length === 1)
     ? { userId: active.userId as string, tenantId: active.tenantId as string }
     : null;
 }
