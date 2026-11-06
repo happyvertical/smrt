@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.60.12
+
+### Patch Changes
+
+- ### Features
+  
+  - convert an accepted Estimate into an Order (#4731) (commerce)
+- @happyvertical/smrt-config@0.60.12
+  - @happyvertical/smrt-scanner@0.60.12
+  - @happyvertical/smrt-types@0.60.12
+
 ## 0.60.11
 
 ### Patch Changes
