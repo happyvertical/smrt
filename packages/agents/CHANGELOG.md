@@ -1,5 +1,21 @@
 # @happyvertical/smrt-agents
 
+## 0.60.11
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.60.11
+  - @happyvertical/smrt-jobs@0.60.11
+  - @happyvertical/smrt-playbooks@0.60.11
+  - @happyvertical/smrt-reports@0.60.11
+  - @happyvertical/smrt-secrets@0.60.11
+  - @happyvertical/smrt-tenancy@0.60.11
+  - @happyvertical/smrt-users@0.60.11
+  - @happyvertical/smrt-config@0.60.11
+  - @happyvertical/smrt-ui@0.60.11
+  - @happyvertical/smrt-types@0.60.11
+
 ## 0.60.10
 
 ### Patch Changes

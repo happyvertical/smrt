@@ -1,5 +1,20 @@
 # @happyvertical/smrt-core
 
+## 0.60.11
+
+### Patch Changes
+
+- ### Features
+  
+  - per-recipient notification opt-out ledger for the outbox (#4720) (messages)
+  - generate local desktop assistant plugin artifacts (#4727) (app-cli)
+  - manage scoped local desktop MCP credentials (#4726) (app-runtime)
+  - support portable local asset locators (#4723) (assets)
+  - smrt-catalog and smrt-contribute agent skills, installed by docs:agents (#4713) (cli)
+- @happyvertical/smrt-config@0.60.11
+  - @happyvertical/smrt-scanner@0.60.11
+  - @happyvertical/smrt-types@0.60.11
+
 ## 0.60.10
 
 ### Patch Changes
