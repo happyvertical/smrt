@@ -140,9 +140,12 @@ is not the caller (a manager enqueues, a worker dispatches).
 const optOuts = new NotificationOptOutService({ db });
 new NotificationOutboxService({
   // ...
-  isSuppressed: optOutSuppression(optOuts, (request) => {
-    const project = /^project-question:([^:]+):/.exec(request.sourceRef)?.[1];
-    return project ? `project:${project}` : null; // null = not opt-out-able
+  // `scopeOf` maps the host's own event to a scope; null = not opt-out-able.
+  // A question's sourceRef names the question, not its project, so the host
+  // resolves the project itself (scopeOf may be async).
+  isSuppressed: optOutSuppression(optOuts, async (request) => {
+    const projectId = await projectIdForSourceRef(request.tenantId, request.sourceRef);
+    return projectId ? `project:${projectId}` : null;
   }),
 });
 ```
