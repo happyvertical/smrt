@@ -495,6 +495,41 @@ export function nominationCases(
     ).rejects.toThrow('active referrers in the same tenant');
   });
 
+  it('retains the global policy fallback for a tenant-owned program in background resolution', async () => {
+    const policyKey = 'global-nomination-policy';
+    for (const [owner, version] of [
+      [null, 1],
+      [randomUUID(), 2],
+    ] as const) {
+      await policies.create({
+        tenantId: owner,
+        policyKey,
+        version,
+        status: 'active',
+        windowDays: 30,
+        creditMode: 'assigned',
+      });
+    }
+    const program = await programs.create({
+      tenantId,
+      key: randomUUID(),
+      status: 'active',
+      defaultAttributionPolicyKey: policyKey,
+    });
+    const result = await resolver.resolve({
+      ...input('Alice Baker'),
+      programId: program.id as string,
+    });
+    expect(result.referrals).toMatchObject([
+      {
+        tenantId,
+        referrerId: aliceId,
+        policyKey,
+        policyVersion: 1,
+      },
+    ]);
+  });
+
   it('checks every award when a matched nomination competes with a manual assignment', async () => {
     const request = input('Alice Baker');
     const competingReferrer = await makeReferrer('Another Referrer');

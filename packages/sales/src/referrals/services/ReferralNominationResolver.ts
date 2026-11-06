@@ -139,81 +139,82 @@ export class ReferralNominationResolver {
   async resolve(
     input: ResolveReferralNominationInput,
   ): Promise<AttributionResolution> {
-    return await inTenant(input.tenantId, async () => {
-      const program = await this.requireProgram(input);
-      const existing = await this.attribution.findExistingResolution(
-        input,
-        input.tenantId,
-      );
-      if (existing) return existing;
-      if (!program.isActive()) {
-        return {
-          referrals: [],
-          exception: null,
-          refused: 'no_eligible_touches',
-        };
-      }
+    // Keep background resolution in its explicit tenant lane so policy
+    // lookup can apply the canonical global fallback.
+    assertTenantLane(input.tenantId);
+    const program = await this.requireProgram(input);
+    const existing = await this.attribution.findExistingResolution(
+      input,
+      input.tenantId,
+    );
+    if (existing) return existing;
+    if (!program.isActive()) {
+      return {
+        referrals: [],
+        exception: null,
+        refused: 'no_eligible_touches',
+      };
+    }
 
-      const now = input.now ?? new Date();
-      const policy = await this.policies.latestActiveByKey(
-        program.defaultAttributionPolicyKey,
-        now,
-        input.tenantId,
-      );
-      if (!program.defaultAttributionPolicyKey || !policy) {
-        return { referrals: [], exception: null, refused: 'no_active_policy' };
-      }
-      if (input.isExistingClient && !policy.allowExistingClients) {
-        return {
-          referrals: [],
-          exception: null,
-          refused: 'existing_client_ineligible',
-        };
-      }
+    const now = input.now ?? new Date();
+    const policy = await this.policies.latestActiveByKey(
+      program.defaultAttributionPolicyKey,
+      now,
+      input.tenantId,
+    );
+    if (!program.defaultAttributionPolicyKey || !policy) {
+      return { referrals: [], exception: null, refused: 'no_active_policy' };
+    }
+    if (input.isExistingClient && !policy.allowExistingClients) {
+      return {
+        referrals: [],
+        exception: null,
+        refused: 'existing_client_ineligible',
+      };
+    }
 
-      const tags = parseNomination(input);
-      const occurredAt = input.occurredAt ?? now;
-      if (
-        occurredAt > now ||
-        occurredAt.getTime() < now.getTime() - policy.windowDays * MS_PER_DAY
-      ) {
-        return await this.attribution.resolve({ ...input, now });
-      }
-      const { touch, candidates } = await this.recordMatch(
-        input,
-        tags,
-        occurredAt,
-      );
-      if (touch) return await this.attribution.resolve({ ...input, now });
+    const tags = parseNomination(input);
+    const occurredAt = input.occurredAt ?? now;
+    if (
+      occurredAt > now ||
+      occurredAt.getTime() < now.getTime() - policy.windowDays * MS_PER_DAY
+    ) {
+      return await this.attribution.resolve({ ...input, now });
+    }
+    const { touch, candidates } = await this.recordMatch(
+      input,
+      tags,
+      occurredAt,
+    );
+    if (touch) return await this.attribution.resolve({ ...input, now });
 
-      const exception = await this.exceptions.create({
-        tenantId: input.tenantId,
-        programId: input.programId,
-        targetKind: input.targetKind,
-        targetId: input.targetId,
-        status: 'open',
-        conflictReason: 'nomination_unresolved',
-        candidates: JSON.stringify(
-          candidates.map(
-            (referrerId): AttributionExceptionCandidate => ({
-              touchId: '',
-              referrerId,
-              kind: 'nomination',
-              occurredAt: occurredAt.toISOString(),
-            }),
-          ),
+    const exception = await this.exceptions.create({
+      tenantId: input.tenantId,
+      programId: input.programId,
+      targetKind: input.targetKind,
+      targetId: input.targetId,
+      status: 'open',
+      conflictReason: 'nomination_unresolved',
+      candidates: JSON.stringify(
+        candidates.map(
+          (referrerId): AttributionExceptionCandidate => ({
+            touchId: '',
+            referrerId,
+            kind: 'nomination',
+            occurredAt: occurredAt.toISOString(),
+          }),
         ),
-        metadata: JSON.stringify({
-          ...nominationInputs(input),
-          subjectKind: input.subjectKind,
-          subjectId: input.subjectId,
-          policyKey: policy.policyKey,
-          policyVersion: policy.version,
-          windowDays: policy.windowDays,
-        }),
-      });
-      return { referrals: [], exception };
+      ),
+      metadata: JSON.stringify({
+        ...nominationInputs(input),
+        subjectKind: input.subjectKind,
+        subjectId: input.subjectId,
+        policyKey: policy.policyKey,
+        policyVersion: policy.version,
+        windowDays: policy.windowDays,
+      }),
     });
+    return { referrals: [], exception };
   }
 
   /**
@@ -417,13 +418,18 @@ async function inTenant<T>(
   tenantId: string | null,
   run: () => Promise<T>,
 ): Promise<T> {
+  const activeTenant = assertTenantLane(tenantId);
+  return tenantId && !activeTenant
+    ? await withTenant({ tenantId }, run)
+    : await run();
+}
+
+function assertTenantLane(tenantId: string | null): string | undefined {
   const activeTenant = getTenantId();
   if (activeTenant && activeTenant !== tenantId) {
     throw new Error('Referral nomination tenant mismatch');
   }
-  return tenantId && !activeTenant
-    ? await withTenant({ tenantId }, run)
-    : await run();
+  return activeTenant;
 }
 
 function parseNomination(input: RecordReferralNominationInput): NominationTags {
