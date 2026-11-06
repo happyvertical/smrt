@@ -599,6 +599,26 @@ export class Order extends SalesContract {
   override customerId: string | null = null;
   override contractType = ContractType.ORDER;
 
+  /** Accepted Estimate this Order was converted from; empty for a direct Order. */
+  @field({
+    description: 'The accepted estimate this order was converted from, if any.',
+  })
+  sourceEstimateId: Meta<string> = '';
+
+  /** Idempotency identity of the conversion that created this Order. */
+  @field({
+    description:
+      'The request identity of the conversion that created this order.',
+  })
+  conversionRequestId: Meta<string> = '';
+
+  /** Host-owned evidence reference for the customer's acceptance of the Estimate. */
+  @field({
+    description:
+      'Where the proof of the customer accepting the estimate is kept.',
+  })
+  acceptanceEvidenceRef: Meta<string> = '';
+
   constructor(options: SalesContractOptions = {}) {
     super(options);
     if (options.customerId !== undefined) this.customerId = options.customerId;
