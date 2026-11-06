@@ -97,6 +97,8 @@ config loading; `bin/smrt.js` imports `dist/` in-process so SIGTERM reaches
   publishes via `link()` (never replaces); import requires a 0600 regular
   bundle for the same app, an exactly matching manifest schema, and an empty
   target; deployed import requires `SMRT_MAINTENANCE_MODE=true`.
+  Local relative asset locators resolve against the approved asset root during
+  export and stay relative after import. Legacy file URLs import as file URLs.
 - **Process identity**: `app.pid` is trusted only when the live command
   line's last two tokens are a path with basename `smrt-web.mjs` and exactly
   `--smrt-instance=<record instance>` (an app started by the template's former

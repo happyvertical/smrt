@@ -78,6 +78,7 @@ export {
   type AssetStorageResolver,
   AssetStore,
   type AssetStoreOptions,
+  type PortableLocalAssetStorageOptions,
   type ProviderOptions,
   type StoreOptions,
 } from './asset-store';
@@ -98,6 +99,11 @@ export {
 } from './files-runtime';
 export { Folder } from './folder';
 export { FolderCollection } from './folders';
+export {
+  isLocalAssetLocator,
+  localAssetKey,
+  makeLocalAssetLocator,
+} from './local-asset-locator';
 export {
   type MediaBundleFileDescriptor,
   type MediaBundleGpsTrackPoint,
