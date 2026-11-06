@@ -2,8 +2,8 @@
  * ReferralTouch — immutable attribution evidence.
  *
  * A touch records that a prospect interacted with a referral artifact: a
- * link click, a code entry, a partner-submitted introduction, or an
- * operator's manual assignment. Touches are the CANDIDATE SET attribution
+ * link click, a code entry, a partner-submitted introduction, a matched
+ * prospect nomination, or an operator's manual assignment. Touches are the CANDIDATE SET attribution
  * resolves over — `AttributionService.resolve()` gathers eligible touches
  * within the policy window and credits per the policy's mode.
  *
@@ -70,7 +70,8 @@ export class ReferralTouch extends SmrtObject {
 
   /**
    * Evidence payload as a JSON object string (the code/link/url for clicks,
-   * actor + reason for manual assignments, …). Use
+   * actor + reason for manual assignments, `ReferralNominationEvidence` for
+   * matched nominations, …). Use
    * {@link getEvidence}/{@link setEvidence}.
    */
   evidence: string = '{}';

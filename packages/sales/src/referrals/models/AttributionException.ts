@@ -63,9 +63,10 @@ export class AttributionException extends SmrtObject {
   /**
    * Why the exception was raised — recommended vocabulary: `'tie'`
    * (exact-timestamp tie between distinct referrers),
-   * `'competing_touches'` (competing manual assignments), and
-   * `'policy_review'` (`conflictBehavior: 'review'` with multiple
-   * referrers). Open string.
+   * `'competing_touches'` (competing manual assignments or nominations),
+   * `'policy_review'` (`conflictBehavior: 'review'` with multiple referrers),
+   * and `'nomination_unresolved'` (no confident, unique nomination match).
+   * Open string.
    */
   conflictReason: string = '';
 

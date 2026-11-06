@@ -27,9 +27,16 @@ export class AttributionExceptionCollection extends SmrtCollection<AttributionEx
     targetKind: string,
     targetId: string,
     programId: string,
+    tenantId?: string | null,
   ): Promise<AttributionException | null> {
     const results = await this.list({
-      where: { targetKind, targetId, programId, status: 'open' },
+      where: {
+        targetKind,
+        targetId,
+        programId,
+        status: 'open',
+        ...(tenantId !== undefined && { tenantId }),
+      },
       orderBy: 'created_at ASC',
       limit: 1,
     });

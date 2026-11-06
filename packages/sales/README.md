@@ -194,6 +194,16 @@ to use an empty descriptor. Unknown/malformed descriptors and extra fields
   agreement execution, and attribution have service-owned invariants that raw
   generated CRUD must not bypass.
 
+## Referrer nominations
+
+Register known aliases with `ReferrerIdentifierCollection.register()`. A host
+can record a matched nomination at intake using `ReferralNominationResolver`
+and later resolve it under the referral program's active policy. An ambiguous
+or unknown nomination opens an operator review with the original input and
+policy version. Run the normal manifest migration to add
+`referrer_identifiers`. See [referral behavior](agents/referrals.md) for matching
+rules, replay, and tenant boundaries.
+
 ## Lead intake and lifecycle
 
 `LeadWorkflowService` is the tenant-safe, application-facing seam for generic

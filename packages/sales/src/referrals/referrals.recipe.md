@@ -30,7 +30,7 @@ each affiliate has earned and what has been paid out.
 
 1. Open the commissions and find the affiliate.
 2. Read the **{field:Commission.amountCents}** and the **{field:Commission.status}** of each one.
-3. A commission moves from pending to approved, then payable, then paid as it is worked through.
+3. A commission moves from pending to earned, approved, payable, and paid as it is worked through.
 
 ### Check a payout
 

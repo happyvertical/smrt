@@ -90,8 +90,31 @@ export const REFERRAL_TOUCH_KINDS = [
   'code_entry',
   'manual_assignment',
   'partner_entry',
+  'nomination',
 ] as const;
 export type ReferralTouchKind = (typeof REFERRAL_TOUCH_KINDS)[number];
+
+/** Evidence carried by a touch created from a prospect's nomination. */
+export interface ReferralNominationEvidence {
+  nominationText: string;
+  nominationEmail?: string;
+  nominationCode?: string;
+  matchedIdentifierId?: string;
+  matchedBy: 'identifier' | 'link_code' | 'fuzzy_name';
+  actorProfileId?: string;
+}
+
+export type ReferrerIdentifierStatus = 'active' | 'disabled';
+
+export interface ReferrerIdentifierOptions extends SmrtObjectOptions {
+  tenantId?: string | null;
+  referrerId?: string;
+  programId?: string | null;
+  kind?: string;
+  value?: string;
+  status?: ReferrerIdentifierStatus;
+  metadata?: string;
+}
 
 /**
  * Lifecycle of a Referral. Guarded transitions (save-time, authoritative
@@ -159,7 +182,7 @@ export type ReferralAgreementApprovalMode =
  * JSON array — enough to review the conflict without re-querying touches.
  */
 export interface AttributionExceptionCandidate {
-  /** Id of the candidate ReferralTouch (empty for touchless awards). */
+  /** Id of the candidate touch (empty for unresolved nominations and touchless awards). */
   touchId: string;
   /** The referrer the touch credits. */
   referrerId: string;
