@@ -1,5 +1,9 @@
 # @happyvertical/smrt-desktop
 
+## 0.60.13
+
+No changes in this release.
+
 ## 0.60.12
 
 No changes in this release.

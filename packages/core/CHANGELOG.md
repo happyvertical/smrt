@@ -1,5 +1,22 @@
 # @happyvertical/smrt-core
 
+## 0.60.13
+
+### Patch Changes
+
+- ### Features
+  
+  - wrap vault data keys for individual devices (#4742) (app-runtime)
+  - resolve referrer nominations (#4740) (sales)
+  - wrap vault data keys for user-held recovery (#4739) (app-runtime)
+  
+  ### Other Changes
+  
+  - chore: sync sdk packages to v0.111.6 (#4728) (deps)
+- @happyvertical/smrt-config@0.60.13
+  - @happyvertical/smrt-scanner@0.60.13
+  - @happyvertical/smrt-types@0.60.13
+
 ## 0.60.12
 
 ### Patch Changes
