@@ -116,7 +116,10 @@ export async function wrapVaultRecoveryKey(
         key: wrappingKey,
         keyId,
       });
-      return Buffer.concat([MAGIC, Buffer.of(VERSION), salt, envelope]);
+      const record = Buffer.concat([MAGIC, Buffer.of(VERSION), salt, envelope]);
+      const output = Buffer.alloc(record.length);
+      record.copy(output);
+      return output;
     } finally {
       wrappingKey.fill(0);
     }

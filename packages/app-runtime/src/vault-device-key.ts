@@ -47,7 +47,10 @@ export function wrapVaultDeviceKey(
       key: wrappingKey,
       keyId,
     });
-    return Buffer.concat([RECORD_PREFIX, envelope]);
+    const record = Buffer.concat([RECORD_PREFIX, envelope]);
+    const output = Buffer.alloc(record.length);
+    record.copy(output);
+    return output;
   } finally {
     wrappingKey.fill(0);
   }

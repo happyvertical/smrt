@@ -25,6 +25,10 @@
     "./vault-device-key": {
       "types": "./dist/vault-device-key.d.ts",
       "import": "./dist/vault-device-key.js"
+    },
+    "./vault-key-generation": {
+      "types": "./dist/vault-key-generation.d.ts",
+      "import": "./dist/vault-key-generation.js"
     }
   },
   "files": [
