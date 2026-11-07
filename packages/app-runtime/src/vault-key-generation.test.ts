@@ -24,6 +24,11 @@ describe('prepareVaultKeyGeneration', () => {
       recoveryRecord: expect.any(Uint8Array),
     });
 
+    for (const record of [prepared.deviceRecord, prepared.recoveryRecord]) {
+      expect(record.byteOffset).toBe(0);
+      expect(record.buffer.byteLength).toBe(record.byteLength);
+    }
+
     const deviceKey = openVaultDeviceKey(
       prepared.deviceRecord,
       options.deviceSecret,
