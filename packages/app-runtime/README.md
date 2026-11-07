@@ -504,3 +504,26 @@ account ID, the fixed device slot `smrt-vault-recovery-v1`, and the unsigned
 with scrypt (`N=131072, r=8, p=1`) from the secret and the salt prefixed
 with ASCII `smrt-vault-recovery-v1`. The secret is encoded as 16 to 1024 bytes
 of well-formed UTF-8 with no normalization or trimming.
+
+## Vault device key wrapping
+
+Use the Node entry `@happyvertical/smrt-app-runtime/vault-device-key` to wrap an
+account data key on a device that already holds it. Pass a distinct, randomly
+generated 32-byte device secret for each device. Keep the device secret in local
+credential custody and store or transfer only the returned wrapped record.
+
+`wrapVaultDeviceKey(dataKey, deviceSecret, context)` returns the record.
+`openVaultDeviceKey(record, deviceSecret, context)` returns the 32-byte data key
+after authentication. Supply `{ accountId, deviceId, generation, keyId }` from
+trusted device state. The generation is an unsigned 64-bit bigint and the key
+ID is 32 lowercase hex digits. The caller manages enrollment, storage, and
+which generations are current. Removing a wrapped record cannot revoke a key
+a device already recovered.
+
+A v1 record starts with ASCII `HVDK` and the byte `01`. The remainder is an
+uncompressed [SDK v1 envelope](https://github.com/happyvertical/sdk/blob/v0.111.6/packages/encryption/README.md#vault-snapshot-envelopes).
+Its plaintext is the 32-byte data key. Its authenticated context uses the
+account ID, device ID, and generation as the snapshot sequence. Its header
+carries the data key ID. Derive the 32-byte wrapping key from the device secret
+with [HKDF-SHA256](https://www.rfc-editor.org/rfc/rfc5869), an empty salt, and
+ASCII `smrt-vault-device-key-v1` as the info string.
