@@ -5,10 +5,10 @@ description: "Modular sales for the SMRT framework: agreement execution, CRM, re
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T15:48:19Z"
+  at: "2026-11-06T21:34:17Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:0629891e27cc57a6a5419797a7b005dcf71629583bdba36ad5e4b65ad595cc3a"
+source_revision: "sha256:d4873ba74d72d43a63b08a775750f76af40ed6994383f23cd3e92cc9115f0dca"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/sales/package.json"
@@ -130,6 +130,8 @@ sources:
 - `ReferralTouchCollection` (collection `referraltouches`, extends `SmrtCollection`)
 - `Referrer` (collection `referrers`, extends `SmrtObject`)
 - `ReferrerCollection` (collection `referrers`, extends `SmrtCollection`)
+- `ReferrerIdentifier` (collection `referreridentifiers`, extends `SmrtObject`)
+- `ReferrerIdentifierCollection` (collection `referreridentifiers`, extends `SmrtCollection`)
 - `SalesActivity` (collection `salesactivities`, extends `SmrtObject`)
 - `SalesActivityCollection` (collection `salesactivities`, extends `SmrtCollection`)
 - `SalesGovernanceEvent` (collection `salesgovernanceevents`, extends `SmrtObject`)
@@ -192,6 +194,8 @@ sources:
 - `referrer_create`: create on `@happyvertical/smrt-sales:Referrer`
 - `referrer_get`: get on `@happyvertical/smrt-sales:Referrer`
 - `referrer_list`: list on `@happyvertical/smrt-sales:Referrer`
+- `referreridentifier_get`: get on `@happyvertical/smrt-sales:ReferrerIdentifier`
+- `referreridentifier_list`: list on `@happyvertical/smrt-sales:ReferrerIdentifier`
 - `salesactivity_create`: create on `@happyvertical/smrt-sales:SalesActivity`
 - `salesactivity_list`: list on `@happyvertical/smrt-sales:SalesActivity`
 - `salesrepresentative_get`: get on `@happyvertical/smrt-sales:SalesRepresentative`

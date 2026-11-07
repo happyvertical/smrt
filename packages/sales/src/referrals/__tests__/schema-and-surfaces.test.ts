@@ -21,6 +21,9 @@ describe('Referrals schema and generation surfaces', () => {
   describe('natural keys (conflictColumns)', () => {
     it('registers the documented natural keys', () => {
       expect(
+        ObjectRegistry.getConfig('ReferrerIdentifier').conflictColumns,
+      ).toEqual(['tenant_id', 'kind', 'normalized_value']);
+      expect(
         ObjectRegistry.getConfig('ReferralProgram').conflictColumns,
       ).toEqual(['tenant_id', 'key']);
       expect(
@@ -74,6 +77,7 @@ describe('Referrals schema and generation surfaces', () => {
   describe('generation surfaces are explicit (never wide open)', () => {
     it.each([
       'Referrer',
+      'ReferrerIdentifier',
       'ReferralProgram',
       'AttributionPolicy',
       'ReferralLink',
@@ -118,6 +122,21 @@ describe('Referrals schema and generation surfaces', () => {
       }
     });
 
+    it('exposes referrer identifiers as read-only', () => {
+      expect(ObjectRegistry.getConfig('ReferrerIdentifier')).toMatchObject({
+        api: { include: ['list', 'get'] },
+        mcp: { include: ['list', 'get'] },
+        cli: false,
+      });
+      expect(ObjectRegistry.getSchema('ReferrerIdentifier')).toMatchObject({
+        tableName: 'referrer_identifiers',
+        columns: {
+          referrer_id: { type: 'UUID', notNull: true },
+          program_id: { type: 'UUID' },
+        },
+      });
+    });
+
     it('keeps the click replay fence completely private', () => {
       expect(ObjectRegistry.getConfig('ReferralClickOperation')).toMatchObject({
         api: false,
@@ -129,6 +148,7 @@ describe('Referrals schema and generation surfaces', () => {
     it('never exposes delete on any referrals model', () => {
       for (const className of [
         'Referrer',
+        'ReferrerIdentifier',
         'ReferralProgram',
         'AttributionPolicy',
         'ReferralLink',

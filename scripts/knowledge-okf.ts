@@ -194,8 +194,12 @@ export function buildComponentModel(pkg: KnowledgePackage): ComponentModel {
   }
   docs.sort(byString((doc) => doc.path));
 
+  // A local artifact may also register models consumed from other packages.
+  const owns = (name?: string) =>
+    !name?.includes(':') || name.startsWith(`${pkg.name}:`);
   const surface = pkg.agentSurface;
   const models = pkg.objects
+    .filter((object) => owns(object.qualifiedName))
     .map((object) => ({
       className: object.className,
       collection: object.collection,
@@ -204,6 +208,7 @@ export function buildComponentModel(pkg: KnowledgePackage): ComponentModel {
     }))
     .sort(byString((model) => model.className));
   const mcpTools = pkg.mcpTools
+    .filter((tool) => owns(tool.sourceObject))
     .map((tool) => ({
       name: tool.name,
       operation: tool.operation,

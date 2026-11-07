@@ -51,6 +51,22 @@ describe('sales manifest runtime exports', () => {
     expect(missingExports).toEqual([]);
   });
 
+  it('publishes the referrer identifier and nomination runtime', async () => {
+    const manifest = await readSalesManifest();
+    expect(
+      manifest.objects['@happyvertical/smrt-sales:ReferrerIdentifier'],
+    ).toBeDefined();
+    expect(referralsPublicApi.ReferrerIdentifier).toBe(
+      salesPublicApi.ReferrerIdentifier,
+    );
+    expect(referralsPublicApi.ReferrerIdentifierCollection).toBe(
+      salesPublicApi.ReferrerIdentifierCollection,
+    );
+    expect(referralsPublicApi.ReferralNominationResolver).toBe(
+      salesPublicApi.ReferralNominationResolver,
+    );
+  });
+
   it('keeps operation fences off generated application surfaces', async () => {
     const manifest = await readSalesManifest();
 
