@@ -251,7 +251,10 @@ unowned, so they must be Flux's own apply metadata
 (`kustomize.toolkit.fluxcd.io/{name,namespace,prune}`) or spec/data fields
 reviewed by the relinquished identity; anything else blocks, and the orphan set's
 identity is journaled. A legacy manager seen at `finalized` or later means the
-legacy applier wrote again and blocks.
+legacy applier wrote again and blocks. The legacy Kustomization must keep
+reconciling, unsuspended, through `helm-established`; finalization requires it
+suspended (the platform's reviewed retirement step), and every normal mutable
+command afterwards refuses a resumed or unsuspended legacy Kustomization.
 Finalization atomically renames staging to canonical with status `complete`,
 `adoption-proof` (observation identity) and `adoption-state` (journal identity).
 Actual binding-version annotations are pinned. Resume after finalization

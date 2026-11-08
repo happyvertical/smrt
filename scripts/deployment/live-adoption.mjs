@@ -543,7 +543,7 @@ export function createAdoptionMethods(config, command, helpers, options) {
       );
     }
   }
-  async function legacyFlux(plan, revision, relinquished) {
+  async function legacyFlux(plan, revision, relinquished, finalizing = false) {
     const [source, ks] = await Promise.all([
       helpers.get(
         'gitrepository',
@@ -566,8 +566,17 @@ export function createAdoptionMethods(config, command, helpers, options) {
         matches(ks.status.lastAppliedRevision, revision),
       'Legacy Flux UID/repository/exact reviewed revision not acknowledged',
     );
+    // The legacy applier must keep reconciling (and reporting) through the
+    // handover, then be retired: a finalized adoption requires it suspended so
+    // a later legacy push cannot force-apply over Helm-owned objects.
     demand(
-      !ks.spec.suspend && (!relinquished || ks.spec.prune === false),
+      finalizing ? ks.spec.suspend === true : !ks.spec.suspend,
+      finalizing
+        ? 'Legacy Kustomization must be suspended before finalization'
+        : 'Legacy Kustomization must not be suspended before finalization',
+    );
+    demand(
+      !relinquished || ks.spec.prune === false,
       'Legacy pruning must be disabled before relinquishment',
     );
     return ks;
@@ -753,7 +762,12 @@ export function createAdoptionMethods(config, command, helpers, options) {
           hash(plan),
       'Adopted HelmRelease annotation mismatch',
     );
-    const ks = await legacyFlux(plan, plan.legacy.relinquishRevision, true);
+    const ks = await legacyFlux(
+      plan,
+      plan.legacy.relinquishRevision,
+      true,
+      stage === 'finalized',
+    );
     demand(
       Array.isArray(ks.status?.inventory?.entries) &&
         !ks.status.inventory.entries.some((entry) =>
@@ -1010,6 +1024,28 @@ export function createAdoptionMethods(config, command, helpers, options) {
             annotations[`${adoptionAnnotation}proof`] ===
               hash(state.observations),
           'Pending or mismatched adoption journal blocks normal release commands',
+        );
+        // The retired legacy applier must stay retired: resumed, it would
+        // force-apply its branch over Helm-owned objects on the next push.
+        const legacyUid =
+          state.observations.at(-1)?.nativeObservation?.flux
+            ?.legacyKustomizationUid;
+        demand(legacyUid, 'Adoption journal lacks the legacy Kustomization');
+        const kustomizations = JSON.parse(
+          await command('kubectl', [
+            'get',
+            'kustomizations.kustomize.toolkit.fluxcd.io',
+            '--all-namespaces',
+            '-o',
+            'json',
+          ]),
+        );
+        const legacyKs = (kustomizations.items ?? []).find(
+          (o) => o.metadata?.uid === legacyUid,
+        );
+        demand(
+          !legacyKs || legacyKs.spec?.suspend === true,
+          'Legacy Flux Kustomization resumed after adoption',
         );
       } else
         demand(

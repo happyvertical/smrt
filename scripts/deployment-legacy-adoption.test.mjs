@@ -801,10 +801,14 @@ test('native legacy gates bind actual UID, stop/relinquish revisions, selectors,
     assert.equal(released.length, 2, 'an already released resource is not patched again');
     assert.equal(fences, 1, 'no fence needed without a release');
     assert.deepEqual(again.resources.map((r) => r.orphanedFieldsIdentity), [null, null]);
+    await assert.rejects(counting.observeAdopted(plan, adopted, 'finalized'), /must be suspended before finalization/);
+    ks.spec.suspend = true;
+    await assert.rejects(counting.observeAdopted(plan, adopted, 'helm-established'), /must not be suspended before finalization/);
     assert.ok(await counting.observeAdopted(plan, adopted, 'finalized'));
     actual.metadata.managedFields.unshift(structuredClone(legacyEntry));
     await assert.rejects(counting.observeAdopted(plan, adopted, 'finalized'), /returned after establishment/);
     assert.equal(released.length, 2, 'nothing is released after establishment');
+    delete ks.spec.suspend;
     reset({ manager: 'kubectl-edit', operation: 'Update', fieldsType: 'FieldsV1', fieldsV1: { 'f:spec': { 'f:replicas': {} } } });
     await assert.rejects(counting.observeAdopted(plan, adopted, 'helm-established'), /Unreviewed adopted resource field manager/);
     assert.equal(released.length, 2, 'a foreign manager blocks before any release');
@@ -844,10 +848,15 @@ test('native normal-command interlock refuses pending live markers, missing jour
   const final = adapter.snapshot();
   let pending = false,
     staging = false,
-    journal = final.state;
+    journal = final.state,
+    legacyKs = null;
   const methods = createAdoptionMethods(
     config,
     async (tool, args) => {
+      if (tool === 'kubectl' && args.includes('kustomizations.kustomize.toolkit.fluxcd.io'))
+        return JSON.stringify({
+          items: legacyKs ? [legacyKs] : [],
+        });
       if (tool === 'kubectl')
         return JSON.stringify({
           items: pending
@@ -900,6 +909,14 @@ test('native normal-command interlock refuses pending live markers, missing jour
     /journal is missing/,
   );
   journal = final.state;
+  const legacyUid = final.state.observations.at(-1).nativeObservation.flux.legacyKustomizationUid;
+  legacyKs = { metadata: { uid: legacyUid }, spec: { suspend: true } };
+  await methods.assertAdoptionComplete(snapshot);
+  legacyKs = { metadata: { uid: 'other-uid' }, spec: {} };
+  await methods.assertAdoptionComplete(snapshot);
+  legacyKs = { metadata: { uid: legacyUid }, spec: { prune: false } };
+  await assert.rejects(() => methods.assertAdoptionComplete(snapshot), /resumed after adoption/);
+  legacyKs = null;
   snapshot.document.metadata.annotations[
     'smrt.happyvertical.com/adoption-state'
   ] = 'c'.repeat(64);
