@@ -1042,11 +1042,31 @@ export abstract class Agent extends SmrtObject {
         tenantId:
           getCurrentTenant()?.tenantId ||
           (typeof this.tenantId === 'string' ? this.tenantId : undefined),
+        // Wired below through this instance's own pipeline instead.
+        recordUsage: false,
       });
       if (resolvedAi) {
         (this.options as AgentOptions).ai = resolvedAi as AIClientOptions &
           Record<string, unknown>;
       }
+    }
+
+    // A subclass that builds its own client per call
+    // (`getAI(this.options.ai)`) records usage through this agent's pipeline;
+    // the agent's own `this.ai` client drops the sink and records once
+    // (#3077). A client object passed as `ai` (tests) is left alone.
+    const agentAi = (this.options as AgentOptions).ai as
+      | Record<string, unknown>
+      | undefined;
+    if (
+      agentAi &&
+      typeof agentAi === 'object' &&
+      typeof agentAi.message !== 'function' &&
+      typeof agentAi.embed !== 'function'
+    ) {
+      (this.options as AgentOptions).ai = this.withAiUsage(
+        agentAi,
+      ) as AIClientOptions & Record<string, unknown>;
     }
 
     if ((this.options as AgentOptions).manageProcessSignals) {
