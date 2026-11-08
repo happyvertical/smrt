@@ -424,6 +424,7 @@ export class SmrtJob extends SmrtObject {
 
     this.status = 'cancelled';
     this.completedAt = completedAt;
+    this.updated_at = completedAt;
   }
 
   /**
