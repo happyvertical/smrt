@@ -220,6 +220,9 @@ export const FUSION_SEAT_COUNTS = {
 /** The gate's other choice label: run the remaining stage. */
 export const FUSION_GATE_CONTINUE = 'continue';
 
+/** The `seat` tag of the gate's decision usage row; no seat may use it. */
+export const FUSION_GATE_SEAT = 'gate';
+
 /**
  * Structural problems of one fusion definition, named by path (`path` is
  * `inference.fusions.<key>` or `fusions.<key>` for `defineFusion()`).
@@ -288,7 +291,12 @@ export function findFusionDefinitionIssues(
       const name = text(seat.name) ?? prompt;
       if (name) {
         const first = names.get(name);
-        if (first !== undefined) {
+        if (name === FUSION_GATE_SEAT) {
+          invalid(
+            `${at}.name`,
+            `${at}.name "${FUSION_GATE_SEAT}" is reserved for the decision gate's usage row`,
+          );
+        } else if (first !== undefined) {
           invalid(
             `${at}.name`,
             `${at} has the same name "${name}" as seats[${first}]; name each seat (the name defaults to the prompt key)`,

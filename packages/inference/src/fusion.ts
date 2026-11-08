@@ -39,6 +39,7 @@ import {
   candidateLabel,
   EXECUTOR_KINDS,
   FUSION_GATE_CONTINUE,
+  FUSION_GATE_SEAT,
   findFusionDefinitionIssues,
   findFusionDefinitionPromptIssues,
 } from './config.js';
@@ -628,7 +629,7 @@ class FusionRun {
             ...this.callerTags,
             runId: this.runId,
             fusionKey: this.key,
-            seat: 'gate',
+            seat: FUSION_GATE_SEAT,
           },
           ...(this.signal ? { signal: this.signal } : {}),
         },
