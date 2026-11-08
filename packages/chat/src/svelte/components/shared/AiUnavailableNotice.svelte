@@ -33,7 +33,7 @@ const MESSAGES = {
 const message = $derived(t(MESSAGES[status.reason] ?? MESSAGES.off));
 </script>
 
-<p class="ai-unavailable" role="status" data-reason={status.reason}>
+<p class="ai-unavailable" role="status" data-reason={status.reason} data-smrt-component="AiUnavailableNotice">
   <span>{message}</span>
   {#if settingsHref}
     <a class="ai-unavailable-link" href={settingsHref}>
@@ -43,6 +43,8 @@ const message = $derived(t(MESSAGES[status.reason] ?? MESSAGES.off));
 </p>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .ai-unavailable {
     display: flex;
     flex-wrap: wrap;
@@ -60,4 +62,5 @@ const message = $derived(t(MESSAGES[status.reason] ?? MESSAGES.off));
     color: var(--smrt-color-primary);
     font-weight: var(--smrt-typography-weight-semibold);
   }
+}
 </style>
