@@ -9,9 +9,15 @@
  * A filter selects what is totalled, never what is accounted for: calls
  * without a prompt key print as unattributed, and rows a `--tenant` filter
  * leaves out are counted under "excluded" rather than vanishing.
+ *
+ * `--by fusion` also totals runs from `_smrt_ai_runs` (#4753) through
+ * `reportAiRuns()`: runs per fusion with ok / degraded / failed, seats,
+ * degraded seats and p50 run duration (JSON: a `runs` member).
  */
 
 import type {
+  AiRunReport,
+  AiRunReportStats,
   AiUsageReport,
   AiUsageReportDimension,
   AiUsageReportStats,
@@ -196,6 +202,63 @@ export function formatAiUsageReport(report: AiUsageReport): string {
   return lines.join('\n');
 }
 
+function runRow(label: string, stats: AiRunReportStats): string[] {
+  return [
+    label,
+    formatInt(stats.runs),
+    formatInt(stats.ok),
+    formatInt(stats.degraded),
+    formatInt(stats.failed),
+    formatInt(stats.seats),
+    formatInt(stats.degradedSeats),
+    stats.p50DurationMs === null ? '-' : `${formatInt(stats.p50DurationMs)}ms`,
+  ];
+}
+
+/** Render the `_smrt_ai_runs` totals behind `--by fusion` (#4753). */
+export function formatAiRunReport(report: AiRunReport): string {
+  const header = [
+    'fusion',
+    'runs',
+    'ok',
+    'degraded',
+    'failed',
+    'seats',
+    'degr. seats',
+    'p50',
+  ];
+  const rows = report.buckets.map((bucket) => runRow(bucket.fusionKey, bucket));
+  const totalRow = runRow('total', report.totals);
+  const widths = header.map((title, index) =>
+    Math.max(
+      title.length,
+      totalRow[index]?.length ?? 0,
+      ...rows.map((cells) => cells[index]?.length ?? 0),
+    ),
+  );
+  const render = (cells: readonly string[]) =>
+    `  ${cells
+      .map((cell, index) =>
+        index === 0
+          ? cell.padEnd(widths[index] ?? 0)
+          : cell.padStart(widths[index] ?? 0),
+      )
+      .join('  ')
+      .trimEnd()}`;
+  const rule = `  ${widths.map((width) => '-'.repeat(width)).join('  ')}`;
+  const lines = [render(header), rule, ...rows.map(render)];
+  if (rows.length === 0)
+    lines.push('  (no fusion runs recorded in this window)');
+  lines.push(rule, render(totalRow));
+  if (report.excluded.otherTenants > 0) {
+    lines.push(
+      '',
+      `  Excluded from totals: ${formatInt(report.excluded.otherTenants)} run(s) of other tenants`,
+    );
+  }
+  return lines.join('\n');
+}
+
 export const aiUsageCommand: CLICommand = {
   name: 'ai:usage',
   description:
@@ -205,7 +268,7 @@ export const aiUsageCommand: CLICommand = {
     by: {
       type: 'string',
       description:
-        'Comma-separated grouping: prompt, model, tier, class, tenant, fusion (default: prompt)',
+        'Comma-separated grouping: prompt, model, tier, class, tenant, fusion (default: prompt); fusion also totals runs',
     },
     since: {
       type: 'string',
@@ -250,16 +313,23 @@ export const aiUsageCommand: CLICommand = {
       const { getDatabase } = await import('@happyvertical/sql');
       db = await getDatabase({ type: dbType, url: dbUrl });
 
-      const { reportAiUsage } = await import('@happyvertical/smrt-core');
-      const report = await reportAiUsage(db, {
-        by,
+      const { reportAiRuns, reportAiUsage } = await import(
+        '@happyvertical/smrt-core'
+      );
+      const filters = {
         since,
         until,
         ...(options.tenant ? { tenantId: options.tenant } : {}),
-      });
+      };
+      const report = await reportAiUsage(db, { by, ...filters });
+      const runs = by.includes('fusion')
+        ? await reportAiRuns(db, filters)
+        : undefined;
 
       if (options.json) {
-        console.log(JSON.stringify(report, null, 2));
+        console.log(
+          JSON.stringify(runs ? { ...report, runs } : report, null, 2),
+        );
         return;
       }
 
@@ -271,11 +341,15 @@ export const aiUsageCommand: CLICommand = {
         }${options.tenant ? `  (tenant ${options.tenant})` : ''}\n`,
       );
       console.log(formatAiUsageReport(report));
+      if (runs) {
+        console.log('\nFusion runs (_smrt_ai_runs)\n');
+        console.log(formatAiRunReport(runs));
+      }
       console.log();
     } catch (error) {
       const raw = error instanceof Error ? error.message : String(error);
-      const hint = /prompt_key|_smrt_ai_usage_outcomes/.test(raw)
-        ? ' (system tables predate #4751: start the app once, or run `smrt db:migrate`, to upgrade them)'
+      const hint = /prompt_key|_smrt_ai_usage_outcomes|_smrt_ai_runs/.test(raw)
+        ? ' (system tables predate #4751/#4753: start the app once, or run `smrt db:migrate`, to upgrade them)'
         : '';
       const message = redactDatabaseUrlsInText(`${raw}${hint}`);
       if (options.json) {
