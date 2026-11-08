@@ -22,15 +22,16 @@ const SYSTEM_TABLE_BOOTSTRAP_LOCK_SQL =
  *
  * The runtime pool's session `lock_timeout`/`statement_timeout` (#2377) are
  * sized for request work. This transaction is not request work: it holds the
- * advisory lock across up to 29 sequential DDL round-trips — ~18.85 s on a
- * high-latency link at 650 ms per round trip — and a second replica cold-starting
+ * advisory lock across 53 sequential DDL statements plus compatibility probes
+ * (schema 1.13.0) — ~35 s on a high-latency link at 650 ms per round trip —
+ * and a second replica cold-starting
  * against the same fresh database *waits* on that lock. Both GUCs bound that
  * wait, because `pg_advisory_xact_lock` is an ordinary statement in the lock
  * manager, so at the runtime defaults the second replica would abort with
  * "canceling statement due to lock timeout" where it previously waited and
  * succeeded.
  *
- * Five minutes is an order of magnitude above the documented worst case and
+ * Five minutes is roughly eight times the documented worst case and
  * still bounded — this is a raise, not a disable. `SET LOCAL` scopes it to this
  * transaction, the same lever migrations use for the same reason (#2362).
  */

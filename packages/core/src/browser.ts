@@ -320,6 +320,57 @@ export {
   type TypedHttpFailure,
 } from './generators/typed-http-error';
 export { type HierarchyView, SmrtHierarchical } from './hierarchical';
+// Inference tiers and the binding resolver seam (#4750). Browser-safe; keep
+// this list identical in index.ts and browser.ts.
+export {
+  assertInferenceConfig,
+  builtInInferenceResolver,
+  compareInferenceTiers,
+  DEFAULT_INFERENCE_TIER,
+  getInferenceConfig,
+  getInferenceExecutor,
+  getInferenceResolver,
+  INFERENCE_TARGET_UNBOUND,
+  INFERENCE_TIERS,
+  type InferenceAlias,
+  InferenceBindingError,
+  type InferenceCallOptions,
+  type InferenceCandidate,
+  type InferenceConfig,
+  type InferenceExecutionContext,
+  type InferenceExecutor,
+  type InferenceLatency,
+  type InferenceModelClient,
+  type InferenceRequest,
+  type InferenceResolution,
+  type InferenceResolutionSource,
+  type InferenceResolver,
+  type InferenceResolverContext,
+  type InferenceTarget,
+  type InferenceTargetKind,
+  type InferenceTier,
+  type InferenceTierRequest,
+  type InferenceUsageRecord,
+  inferenceExecutorFor,
+  inferenceTargetKind,
+  inferenceUsageTags,
+  isInferenceTier,
+  isInferenceTierRequest,
+  mergeInferenceConfigs,
+  type ResolveInferenceOptions,
+  resolveAutoTier,
+  resolveInference,
+  resolveInferenceFromConfig,
+  setInferenceExecutor,
+  setInferenceResolver,
+} from './inference';
+export {
+  INFERENCE_PRESET_IDS,
+  INFERENCE_PRESETS,
+  type InferencePresetId,
+  isInferencePresetId,
+  resolveInferencePreset,
+} from './inference-presets';
 // Global interceptors system (for tenancy, soft-delete, audit logging, etc.)
 export * from './interceptors';
 export {

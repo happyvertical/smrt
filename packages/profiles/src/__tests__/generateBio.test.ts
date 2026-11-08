@@ -83,4 +83,17 @@ describe('Profile.generateBio()', () => {
     const [, options] = aiMessageMock.mock.calls[0];
     expect(options).toBeTypeOf('object');
   });
+
+  it('forwards the prompt-run usage tags to ai.message (#4751)', async () => {
+    const profile = makeProfile();
+
+    await profile.generateBio();
+
+    const [, options] = aiMessageMock.mock.calls[0];
+    expect(options.usageTags).toEqual({
+      promptKey: 'smrtProfiles.profile.generateBio',
+      promptLayer: 'default',
+      templateHash: expect.stringMatching(/^[0-9a-f]{12}$/),
+    });
+  });
 });

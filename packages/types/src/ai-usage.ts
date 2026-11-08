@@ -60,6 +60,21 @@ export interface SmrtAiUsageEvent {
 export interface SmrtAiUsageRecord extends SmrtAiUsageEvent {
   /** Persistent record identifier */
   id: string;
+
+  /**
+   * Registered prompt key (`prompt_key` column, lifted from the `promptKey`
+   * tag). Undefined for calls made without a resolved prompt (#4751).
+   */
+  promptKey?: string;
+
+  /** Tier the call asked for (`tier_requested`, from the `tierRequested` tag). */
+  tierRequested?: string;
+
+  /** Tier that answered (`tier_resolved`, from the `tierResolved` tag). */
+  tierResolved?: string;
+
+  /** Run id shared by every row of one multi-call run (`run_id`, from `runId`). */
+  runId?: string;
 }
 
 /**
@@ -124,7 +139,9 @@ export type AiUsageGroupBy =
   | 'class'
   | 'tenant'
   | 'operation'
-  | 'day';
+  | 'day'
+  | 'prompt'
+  | 'tier';
 
 /**
  * Options for listing raw AI usage records from persistence.
@@ -150,6 +167,18 @@ export interface AiUsageListOptions {
 
   /** Filter by tenant ID */
   tenantId?: string | null;
+
+  /** Filter by prompt key; `null` selects rows recorded without one */
+  promptKey?: string | null;
+
+  /** Filter by run id */
+  runId?: string;
+
+  /** Filter by requested tier */
+  tierRequested?: string;
+
+  /** Filter by resolved tier */
+  tierResolved?: string;
 
   /** Maximum number of rows to return */
   limit?: number;

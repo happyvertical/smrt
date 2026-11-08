@@ -8,6 +8,7 @@ CLI with lazy-loaded commands, manifest discovery, and class introspection.
 smrt introspect              # Discover SMRT objects in project
 smrt doctor                  # Umbrella diagnostics; can verify a generation snapshot
 smrt doctor --db             # Add the live-schema parity section (see below)
+smrt doctor --ai [--probe]   # Inference tier/alias bindings, offline unless --probe (src/commands/doctor-ai.ts; ../inference/AGENTS.md); unresolvable binding exits 1
 smrt db:status               # Pending schema changes + failed migration classification (+ tenant natural-key findings: a missing tenant-led unique exits 1, a surviving legacy global unique warns until `db:migrate --drop-legacy-natural-key`: src/commands/tenant-natural-keys.ts)
 smrt db:status --parity      # Same, plus live-schema parity (see below)
 smrt db:orphans              # agents/db-orphans.md
@@ -30,6 +31,7 @@ smrt db:rollback             # Roll back migrations by executing their recorded 
 smrt db:rollback --mark-only # Record-only flip; schema untouched
 smrt db:prune                # Prune framework system tables to their retention windows
 smrt db:prune --dry-run      # Same predicates, counted rather than deleted
+smrt ai:usage [--by prompt,model,tier,class,tenant,fusion] [--since 7d] [--tenant <id>] [--json] # ../core/agents/ai-usage.md
 smrt docs:agents             # Generate .agents/smrt-framework.md
 smrt docs:claude             # Deprecated alias writing .claude/smrt-framework.md
 smrt dev:knowledge-*         # Deterministic agent knowledge index/check/diff
@@ -264,6 +266,14 @@ sessions/magic-link tokens/CLI-auth requests from `smrt-users`).
   looks clean to cron. Individual task failures never abort the others.
 - Deployments running a jobs `TaskRunner` already get the same sweep every six
   hours; this command is for those that do not, and for one-off operator runs.
+
+## `ai:usage` reports, it never filters accounting away (#4751)
+
+A thin wrapper over core `reportAiUsage()`; read-only, it never bootstraps
+system tables (a pre-1.13.0 database fails with a hint to start the app or run
+`db:migrate`). Calls without a prompt key print as `(unattributed)`, uncosted
+calls are counted beside the cost total with the cost basis printed, and rows
+outside `--tenant` or from external agents are listed as excluded.
 
 ## `db:drop-framework-base-tables` is a one-time remediation (#2647)
 

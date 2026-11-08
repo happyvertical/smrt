@@ -13,7 +13,7 @@ import {
 } from '@happyvertical/smrt-core';
 import {
   type PromptConfigOverrideInput,
-  type ResolvedPromptAI,
+  promptMessageOptions,
   resolvePrompt,
 } from '@happyvertical/smrt-prompts';
 import {
@@ -184,17 +184,6 @@ function parseClaimSupportResponse(raw: string): FactClaimSupportAssessment {
     matchedEvidenceIds,
     rationale: normalizeWhitespace(parsed?.rationale) || '',
     confidence: normalizeConfidence(parsed?.confidence),
-  };
-}
-
-function promptMessageOptions(ai: ResolvedPromptAI) {
-  return {
-    ...(ai.params || {}),
-    ...(ai.model ? { model: ai.model } : {}),
-    ...(typeof ai.temperature === 'number'
-      ? { temperature: ai.temperature }
-      : {}),
-    ...(typeof ai.maxTokens === 'number' ? { maxTokens: ai.maxTokens } : {}),
   };
 }
 
