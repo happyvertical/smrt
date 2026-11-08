@@ -738,5 +738,17 @@ export function expandTarget(
       ]),
     });
   }
+  // A chain stamped with a binding origin as a whole (a resolver's hosted
+  // chain, #4760) hands it to every candidate step that names none, so core
+  // gates each hosted attempt in `clientFor()` and its usage meters as
+  // hosted, on a ladder step too.
+  const source = target.source;
+  if (kind !== 'single' && source !== undefined) {
+    for (const step of out) {
+      if (step.target.source === undefined) {
+        step.target = { ...step.target, source };
+      }
+    }
+  }
   return out;
 }

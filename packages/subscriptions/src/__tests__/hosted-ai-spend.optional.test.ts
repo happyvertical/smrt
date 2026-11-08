@@ -107,6 +107,16 @@ describe('hosted AI spend gate on PostgreSQL (#4760)', () => {
         await expect(
           reader.summarize({ tenantId, userId: 'u%1', window }),
         ).resolves.toMatchObject({ spend: 0 });
+        // The rolling lift runs as one window-function query on PostgreSQL.
+        await expect(
+          reader.liftsAt?.({
+            tenantId,
+            userId,
+            window,
+            cap: 700_000,
+            windowMs: 1_000,
+          }),
+        ).resolves.toBeInstanceOf(Date);
 
         const plans = await SubscriptionPlanCollection.create({ db });
         const plan = await plans.create({

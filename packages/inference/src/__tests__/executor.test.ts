@@ -380,6 +380,61 @@ describe('chain executor', () => {
     expect(sources).toEqual(['app', 'hosted']);
   });
 
+  it("hands a hosted chain's source to its candidates on a ladder step (#4760)", async () => {
+    const seen: Array<string | undefined> = [];
+    const h = harness(
+      {
+        tiers: {
+          great: { candidates: [{ provider: 'openai', model: 'a' }] },
+          good: {
+            candidates: [{ provider: 'openai', model: 'g' }],
+            source: 'hosted',
+          },
+        },
+      },
+      { a: fail(new AuthenticationError('openai')) },
+    );
+    const answered = await h.client.message('hi', {
+      usageTags: { source: 'app' },
+    });
+    expect(answered).toBe('answer from g');
+    expect(h.calls.map((call) => call.options.usageTags?.source)).toEqual([
+      'app',
+      'hosted',
+    ]);
+    // The step target core gates in clientFor() carries the source too.
+    const gated = harness(
+      {
+        tiers: {
+          great: { candidates: [{ provider: 'openai', model: 'a' }] },
+          good: {
+            candidates: [{ provider: 'openai', model: 'g' }],
+            source: 'hosted',
+          },
+        },
+      },
+      { a: fail(new AuthenticationError('openai')) },
+      {
+        clientFor: async (target: InferenceTarget) => {
+          seen.push(target.source);
+          if (target.source === 'hosted') {
+            throw new InferenceUnavailableError({
+              reason: 'entitlement',
+              mode: 'hosted',
+              entitlement: { policy: 'kill-switch', disabledBy: 'global' },
+            });
+          }
+          throw new AuthenticationError('openai');
+        },
+      },
+    );
+    await expect(gated.client.message('hi')).rejects.toBeInstanceOf(
+      InferenceUnavailableError,
+    );
+    expect(seen).toEqual([undefined, 'hosted']);
+    expect(gated.usage).toEqual([]);
+  });
+
   it('stops on a hosted-gate block and records nothing more (#4760)', async () => {
     const blocked = new InferenceUnavailableError({
       reason: 'entitlement',
