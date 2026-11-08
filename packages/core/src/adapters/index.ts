@@ -11,7 +11,11 @@
  */
 
 export type { AiUsageSnapshot, AiUsageStats } from '@happyvertical/smrt-types';
-export { AiUsageCollector, AiUsagePersistenceHandler } from './ai-usage.js';
+export {
+  AI_USAGE_TAG_COLUMNS,
+  AiUsageCollector,
+  AiUsagePersistenceHandler,
+} from './ai-usage.js';
 export {
   DEFAULT_AI_COST_RATES,
   estimateAiUsageCost,
