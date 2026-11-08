@@ -5,10 +5,10 @@ description: "Tenant-owned, context-scoped agent personas and resolution for the
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-08T19:39:45Z"
+  at: "2026-11-08T20:10:42Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:099b9b26bd3886fbc52ab7aa0d5e8356cc8374067e7b5360af1e5a4363de26da"
+source_revision: "sha256:7172af7274cf4543e2a502e3bd413a10ed8e534d71a4a9137ef7628d10c3b2f1"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/personas/package.json"
@@ -24,7 +24,7 @@ sources:
 
 - Directory: `packages/personas`
 - Private: no
-- Object source: `scanner`
+- Object source: `domain-artifact`
 - Evidence level: `source-inspected`
 
 ## Documentation
@@ -56,14 +56,17 @@ sources:
 ## Models
 
 - `AgentPersona` (collection `agentpersonas`, extends `SmrtObject`)
+- `AgentPersonaCollection` (collection `agentpersonas`, extends `SmrtCollection`)
 - `DirectiveProposal` (collection `directiveproposals`, extends `SmrtObject`)
+- `DirectiveProposalCollection` (collection `directiveproposals`, extends `SmrtCollection`)
 - `Feedback` (collection `feedbacks`, extends `SmrtObject`)
+- `FeedbackCollection` (collection `feedbacks`, extends `SmrtCollection`)
 
 ## MCP tools
 
-- `get_agentpersonas`: get on `@happyvertical/smrt-personas:AgentPersona`
-- `get_directiveproposals`: get on `@happyvertical/smrt-personas:DirectiveProposal`
-- `get_feedbacks`: get on `@happyvertical/smrt-personas:Feedback`
-- `list_agentpersonas`: list on `@happyvertical/smrt-personas:AgentPersona`
-- `list_directiveproposals`: list on `@happyvertical/smrt-personas:DirectiveProposal`
-- `list_feedbacks`: list on `@happyvertical/smrt-personas:Feedback`
+- `agentpersona_get`: get on `@happyvertical/smrt-personas:AgentPersona`
+- `agentpersona_list`: list on `@happyvertical/smrt-personas:AgentPersona`
+- `directiveproposal_get`: get on `@happyvertical/smrt-personas:DirectiveProposal`
+- `directiveproposal_list`: list on `@happyvertical/smrt-personas:DirectiveProposal`
+- `feedback_get`: get on `@happyvertical/smrt-personas:Feedback`
+- `feedback_list`: list on `@happyvertical/smrt-personas:Feedback`

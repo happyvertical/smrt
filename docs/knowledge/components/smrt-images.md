@@ -5,10 +5,10 @@ description: "Image asset management with AI-powered categorization, search, edi
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-08T19:39:45Z"
+  at: "2026-11-08T20:10:42Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:2b18249094a1d6af10a0e49e0f8152b4e42b125f378e3542559f477328adc1cd"
+source_revision: "sha256:d1c52a86c79f7779a4d7485ed81e9e0ea3243227870394fb3733bd8968fac23f"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/images/package.json"
@@ -24,7 +24,7 @@ sources:
 
 - Directory: `packages/images`
 - Private: no
-- Object source: `scanner`
+- Object source: `domain-artifact`
 - Evidence level: `source-inspected`
 
 ## Documentation
@@ -62,12 +62,13 @@ sources:
 
 ## Models
 
-- `Image` (collection `images`, extends `Asset`)
+- `Image` (collection `assets`, extends `Asset`, STI table)
+- `ImageCollection` (collection `assets`, extends `SmrtCollection`)
 
 ## MCP tools
 
-- `create_images`: create on `@happyvertical/smrt-images:Image`
-- `generateAltText_images`: generateAltText on `@happyvertical/smrt-images:Image`
-- `get_images`: get on `@happyvertical/smrt-images:Image`
-- `list_images`: list on `@happyvertical/smrt-images:Image`
-- `update_images`: update on `@happyvertical/smrt-images:Image`
+- `image_create`: create on `@happyvertical/smrt-images:Image`
+- `image_generatealttext`: generateAltText on `@happyvertical/smrt-images:Image`
+- `image_get`: get on `@happyvertical/smrt-images:Image`
+- `image_list`: list on `@happyvertical/smrt-images:Image`
+- `image_update`: update on `@happyvertical/smrt-images:Image`
