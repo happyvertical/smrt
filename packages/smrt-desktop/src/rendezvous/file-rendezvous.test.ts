@@ -317,6 +317,59 @@ posixOnly(
         expect(spawnShell).toHaveBeenCalledTimes(1);
       });
 
+      it('never spawns a second shell when the instance becomes ready after longer than the server read timeout', async () => {
+        const supervisor = createReferenceSupervisor({ productId: PRODUCT });
+        await boot({ supervisor, requestReadTimeoutMs: 100 });
+        setTimeout(() => supervisor.ready(ORIGIN), 400);
+        const result = await make().ensureReady({ timeoutMs: 5000 });
+        expect(result).toMatchObject({ state: 'ready', origin: ORIGIN });
+        expect(spawnShell).not.toHaveBeenCalled();
+      });
+
+      it('re-probes status instead of spawning when a long poll is dropped after a verified starting', async () => {
+        const net = await import('node:net');
+        const path = `${dir}/c-aaaabbbbccccddddeeeeffff00001111.sock`;
+        const asked: string[] = [];
+        const answer = (state: 'starting' | 'ready') =>
+          `${JSON.stringify({
+            v: 1,
+            ok: true,
+            state,
+            instanceNonce: NONCE_B,
+            productId: PRODUCT,
+            ...(state === 'ready' ? { origin: ORIGIN } : {}),
+          })}\n`;
+        const flaky = net.createServer((socket) => {
+          socket.on('error', () => {});
+          socket.on('data', (chunk) => {
+            const op = JSON.parse(chunk.toString()).op as string;
+            asked.push(op);
+            if (op === 'ensure-ready') {
+              socket.destroy(); // the long poll is dropped mid-wait
+            } else {
+              socket.end(answer(asked.length === 1 ? 'starting' : 'ready'));
+            }
+          });
+        });
+        await new Promise<void>((resolve) => flaky.listen(path, resolve));
+        chmodSync(path, 0o600);
+        try {
+          writeRecord(
+            recordText({
+              control: { kind: 'unix', path },
+              state: 'ready',
+              origin: ORIGIN,
+            }),
+          );
+          const result = await make().ensureReady({ timeoutMs: 5000 });
+          expect(result).toMatchObject({ state: 'ready', origin: ORIGIN });
+          expect(asked).toEqual(['status', 'ensure-ready', 'status']);
+          expect(spawnShell).not.toHaveBeenCalled();
+        } finally {
+          flaky.close();
+        }
+      });
+
       it('times out while a live shell stays in starting', async () => {
         await boot();
         expect(await make().ensureReady({ timeoutMs: 150 })).toEqual({

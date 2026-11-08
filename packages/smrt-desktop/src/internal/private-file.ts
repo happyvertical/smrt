@@ -5,6 +5,7 @@ import {
   FsTrustError,
   nodeFs,
   O_NOFOLLOW,
+  O_NONBLOCK,
   O_RDONLY,
   O_WRONLY_CREATE_EXCL,
   type StatsLike,
@@ -16,7 +17,7 @@ import {
  * (`<app_local_data_dir>/.desktop-shell/`, mode 0700) and for trusted package
  * files.
  *
- * Readers open with `O_RDONLY|O_NOFOLLOW` and validate `fstat` of the open
+ * Readers open with `O_RDONLY|O_NOFOLLOW|O_NONBLOCK` and validate `fstat` of the open
  * descriptor, never `stat`-then-`open`. `O_NOFOLLOW` guards only the final
  * path component; the parent directory is covered by `assertPrivateDirectory`
  * (an `lstat` that rejects symlinks) or by the trust walk in `abs-path.ts`.
@@ -54,7 +55,7 @@ async function readChecked(
   const maxBytes = options.maxBytes ?? DEFAULT_MAX_FILE_BYTES;
   let handle: FileHandleLike | undefined;
   try {
-    handle = await fs.open(path, O_RDONLY | O_NOFOLLOW);
+    handle = await fs.open(path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK);
     const stat = await handle.stat();
     if (!stat.isFile() || !accept(stat)) throw new FsTrustError('untrusted');
     if (stat.size > maxBytes) throw new FsTrustError('too_large');

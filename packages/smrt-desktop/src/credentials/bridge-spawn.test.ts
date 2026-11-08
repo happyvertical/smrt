@@ -148,15 +148,18 @@ describe('spawnBridgeWithCredential (guards, fake spawner)', () => {
     expect(captured[0]?.env).toEqual({ PATH: '/usr/bin', HOME: '/home/u' });
   });
 
-  it('T3/T4: refuses to spawn when the token is in argv, env or command', async () => {
+  it('T3/T4: refuses to spawn when the token is in argv, env, command or cwd', async () => {
     for (const patch of [
       { args: [`--token=${CANARY_TOKEN}`] },
       { env: { SMRT_NOTES_TOKEN: CANARY_TOKEN } },
       { env: { X: `a${CANARY_TOKEN}b` } },
+      { command: `/opt/bridge/${CANARY_TOKEN}` },
+      { cwd: `/work/${CANARY_TOKEN}` },
     ]) {
       const error = await thrown(() =>
         spawnBridgeWithCredential({
-          command: process.execPath,
+          command: patch.command ?? process.execPath,
+          ...(patch.cwd === undefined ? {} : { cwd: patch.cwd }),
           args: [fakeBridge, ...(patch.args ?? [])],
           env: { PATH: '/usr/bin', ...patch.env },
           lease: lease(),

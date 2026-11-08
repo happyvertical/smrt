@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import {
   chmodSync,
   mkdirSync,
@@ -87,6 +88,16 @@ posixOnly('private files on a real filesystem', () => {
     );
     mkdirSync(join(dir, 'sub'), { mode: 0o700 });
     expect(await kind(readPrivateFile(join(dir, 'sub')))).toBe('untrusted');
+  });
+
+  it('rejects a FIFO planted at the record path without blocking', async () => {
+    const fifo = join(dir, 'instance.json');
+    const made = spawnSync('mkfifo', [fifo]);
+    expect(made.status).toBe(0);
+    const started = Date.now();
+    expect(await kind(readPrivateFile(fifo))).toBe('untrusted');
+    expect(await kind(readTrustedFile(fifo))).toBe('untrusted');
+    expect(Date.now() - started).toBeLessThan(2000);
   });
 
   it('rejects a foreign uid on the descriptor', async () => {
