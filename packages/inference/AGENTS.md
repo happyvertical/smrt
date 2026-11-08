@@ -95,8 +95,8 @@ order), `fallback`, the app `inference` block, then the configured client
 `provisionHostedInference({ db, tenantId, userId, budget })`,
 `revokeHostedInference({ db, tenantId, userId })`, or one
 `createHostedInferenceProvisioner({ db, secrets?, gateway?, admin?, actor? })`
-(`provision`, `revoke`, `syncBudget`, `status`, `listActive`, `revokeTenant`,
-`syncTenantBudget`).
+(`provision`, `revoke`, `syncBudget`, `status`, `listActive`, `listKnown`,
+`revokeTenant`, `syncTenantBudget`, `reconcileTenant`).
 
 - **Gateway.** Admin calls go through `ai.admin` (`AIAdminInterface`) of the
   `bifrost` / `litellm` provider of `@happyvertical/ai`; never reimplement
@@ -104,9 +104,12 @@ order), `fallback`, the app `inference` block, then the configured client
   `createVirtualKey` only: `updateVirtualKey` / `deleteVirtualKey` are
   feature-detected on `HostedGatewayAdmin` (happyvertical/sdk#1494). Without
   them budget sync returns `unsupported` (state keeps the old budget so a
-  later sync retries) and revoke returns `gateway: 'unsupported'`, still
-  removing the key locally and auditing `manualGatewayRevocation` with the
-  key's id and alias. A failing delete call changes nothing (retry).
+  later sync retries). Revoke always ends local use first (config restored,
+  state retired); a deletion the gateway cannot perform (`unsupported`,
+  `failed`, or a key a failed provision left) goes to the state's
+  `pendingGatewayRevocations` (id + alias, never the key), is audited with
+  `manualGatewayRevocation`, and is retried by `revoke()` /
+  `reconcileTenant()`.
 - **Config, read once from the environment** (`getHostedGatewayConfig()`;
   unset provider = hosted off): `SMRT_INFERENCE_HOSTED_PROVIDER`
   (`bifrost|litellm`), `_BASE_URL` (the OpenAI-compatible endpoint keys are
@@ -124,12 +127,22 @@ order), `fallback`, the app `inference` block, then the configured client
   through `runOnce()`, LiteLLM id `smrt-<tenantId>`). Every write passes
   `auditDetails.operation` (`inference.hosted.provision|revoke|budget|project`)
   to `SecretAuditLog`.
-- **Idempotency.** An active grant whose binding is still the stored one is
-  returned (`created: false`), its budget synced when it differs. The create
-  path runs under `runOnce()` keyed by `(tenantId, userId, generation)`;
-  revoke advances the generation (alias `smrt-<tenant>-<user>-g<n>`), so
-  re-provisioning mints a new key. A user who replaced the hosted binding
-  keeps their config: re-provisioning retires the stale key first.
+- **Idempotency and ordering.** An active grant whose binding is still the
+  stored one is returned (`created: false`), its budget synced when it
+  differs. The create path runs under `runOnce()` keyed by `(tenantId,
+  userId, generation)`; revoke advances the generation. Aliases
+  (`smrt-<tenant>-<user>-g<n>-<nonce>`) and LiteLLM project ids
+  (`smrt-<tenant>-<nonce>`) are unique per attempt, so a failed attempt's
+  leftovers never block the retry. One user's provision, revoke and budget
+  sync are serialized: in process by a promise chain, across processes on
+  PostgreSQL by `pg_advisory_xact_lock` held in a transaction for the
+  operation (its writes use other pooled connections, so the pool needs a
+  few free connections). A failed binding write deletes or records the new
+  key and restores the previous state after the claim rolls back (no delete
+  inside the claim transaction: single-connection adapters would wait on
+  it). A user who replaced the hosted binding keeps their config:
+  re-provisioning retires the stale key first. Writes through the #4756
+  resolver (the settings panel) do not take this lock.
 - **Revoke** restores the prior config when it holds a binding or a mode,
   else writes `{ mode: 'off' }`; a config the user replaced is kept.
 - **Budget** is integer micro-dollars (`{ limitMicros, window? }`, `day |
@@ -140,12 +153,16 @@ order), `fallback`, the app `inference` block, then the configured client
   provisioner, users, budgetFor?, defaultBudget? })` structurally matches
   smrt-subscriptions' `EntitlementChangeListener` (register it with
   `registerEntitlementChangeListener()`; the host wraps its webhook write in
-  `trackEntitlementChange()`). Gain of `inference.hosted` provisions
-  `users(tenantId)` (membership is the host's; later joiners are provisioned
-  by calling `provision()`), loss revokes every active grant, a changed grant
-  syncs budgets. The plan's budget is the grant's `metadata.budget`
-  (`{ limitMicros, window }`). Per-user failures are thrown together after
-  all users were tried.
+  `trackEntitlementChange()`). A change touching `inference.hosted`
+  reconciles the tenant to the change's `after` snapshot through
+  `createHostedInferenceReconciler()`: entitled provisions `users(tenantId)`
+  (membership is the host's; exclude users an operator revoked) and syncs
+  budgets, not entitled revokes every grant, both retry owed deletions. The
+  plan's budget is the grant's `metadata.budget` (`{ limitMicros, window }`).
+  A replayed webhook diffs to "no change", so hosts also call the reconciler
+  with `snapshotEntitlements()` on redelivery and on a schedule; that is
+  what repairs a reaction lost to a crash. Per-user failures are thrown
+  together after all users were tried.
 - **Keys.** Never in results, errors (gateway failures carry only the
   operation and error code), audit details, `runOnce()` results or logs.
   Usage rows carry `source: hosted` and `gatewayKeyAlias` (from

@@ -152,6 +152,9 @@ that reverted to DECIMAL passes every SQLite suite.
   `registerEntitlementChangeListener()` (a `Symbol.for` slot) or passed in.
   Listeners run after `apply`; their failures are returned in `failures`,
   never thrown, and never undo the write, so listeners must be idempotent.
-  An `apply` error propagates and notifies nobody. Listeners satisfy the
+  An `apply` error propagates and notifies nobody. A redelivered webhook
+  diffs to no change, so a lost reaction is repaired by the consumer's
+  reconcile entry point (hosted inference: `createHostedInferenceReconciler()`
+  with `snapshotEntitlements()`), run on redelivery or a schedule. Listeners satisfy the
   structural type (smrt-inference's hosted listener), so this package
   depends on none of them.

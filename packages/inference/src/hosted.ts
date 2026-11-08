@@ -20,7 +20,12 @@
  *
  * Idempotency: provisioning runs under `runOnce()` per `(tenantId, userId,
  * generation)`, so concurrent deliveries create one key; the generation
- * advances on every revoke, so a later re-provision runs again.
+ * advances on every revoke, so a later re-provision runs again. One user's
+ * provision, revoke and budget sync are serialized (in process, and across
+ * processes on PostgreSQL through an advisory lock). A revoke ends local
+ * use of the key whatever the gateway answers; deletions the gateway could
+ * not perform are kept as `pendingGatewayRevocations` and retried by
+ * `revoke()` / `reconcileTenant()`.
  *
  * The key never appears in returned objects, errors, logs, usage tags,
  * audit details or `runOnce()` results: usage rows carry `source: hosted`
@@ -37,6 +42,7 @@ import {
   ensureSystemTables,
   INFERENCE_TIERS,
   type InferenceTier,
+  isPostgresDatabase,
   runOnce,
 } from '@happyvertical/smrt-core';
 import { SmrtError } from '@happyvertical/smrt-core/smrt-error';
@@ -365,22 +371,38 @@ export async function createHostedGatewayAdmin(
 // Stored state
 // ---------------------------------------------------------------------------
 
+/** A gateway key SMRT no longer uses but could not delete yet. */
+export interface HostedPendingGatewayRevocation {
+  keyId: string | null;
+  keyAlias: string;
+  /** Why it is pending: the SDK has no delete call, or the call failed. */
+  reason: 'unsupported' | 'failed' | 'orphaned';
+  since: string;
+}
+
 /** A user's provisioning state (`inference.hosted:user:<userId>`). */
 export interface HostedInferenceState {
   version: 1;
   status: 'active' | 'revoked';
   /** Lifecycle generation; advances on every revoke. */
   generation: number;
-  provider: HostedGatewayProvider;
-  projectId: string;
+  provider?: HostedGatewayProvider;
+  projectId?: string;
   /** The gateway's non-secret key id (update/delete handle), when returned. */
   keyId: string | null;
+  /** Empty when no key was ever stored (only pending cleanups). */
   keyAlias: string;
-  budget: Required<HostedInferenceBudget>;
-  provisionedAt: string;
+  budget?: Required<HostedInferenceBudget>;
+  provisionedAt?: string;
   revokedAt?: string;
   /** The user's provider config before provisioning; dropped on revoke. */
   prior: InferenceProviderConfig | null;
+  /**
+   * Keys SMRT stopped using whose gateway deletion is still owed (no SDK
+   * delete call, a failed call, or a key left by a failed provision).
+   * Retried by `revoke()` and `reconcileTenant()`; never holds a key value.
+   */
+  pendingGatewayRevocations?: HostedPendingGatewayRevocation[];
 }
 
 /** What provisioning and revocation return: never the key. */
@@ -394,6 +416,8 @@ export interface HostedInferenceDescriptor {
   keyId?: string | null;
   keyAlias?: string;
   budget?: Required<HostedInferenceBudget>;
+  /** Non-secret handles of keys whose gateway deletion is still owed. */
+  pendingGatewayRevocations?: HostedPendingGatewayRevocation[];
 }
 
 /** Result of {@link HostedInferenceProvisioner.provision}. */
@@ -410,6 +434,7 @@ export type HostedGatewayRevokeStatus =
   | 'revoked'
   | 'missing'
   | 'unsupported'
+  | 'failed'
   | 'none';
 
 /** Result of {@link HostedInferenceProvisioner.revoke}. */
@@ -418,8 +443,11 @@ export interface RevokeHostedInferenceResult extends HostedInferenceDescriptor {
   /**
    * `revoked`: the gateway deleted the key; `missing`: it no longer existed;
    * `unsupported`: the SDK has no delete call (happyvertical/sdk#1494) or the
-   * gateway returned no key id, so the key must be revoked on the gateway by
-   * hand (the audit entry names its id and alias); `none`: nothing to revoke.
+   * gateway returned no key id; `failed`: the delete call failed. For
+   * `unsupported` and `failed` SMRT has already stopped using the key and
+   * records it in `pendingGatewayRevocations` (and the audit log) for a
+   * later retry or a manual revocation on the gateway; `none`: nothing to
+   * revoke.
    */
   gateway: HostedGatewayRevokeStatus;
   /** What the user's provider config became. */
@@ -432,6 +460,27 @@ export type HostedBudgetSyncStatus = 'updated' | 'unchanged' | 'unsupported';
 /** Result of {@link HostedInferenceProvisioner.syncBudget}. */
 export interface SyncHostedBudgetResult extends HostedInferenceDescriptor {
   sync: HostedBudgetSyncStatus | 'none';
+}
+
+/** What {@link HostedInferenceProvisioner.reconcileTenant} should converge to. */
+export interface HostedReconcileTarget {
+  /** Whether the tenant's plan grants `inference.hosted` now. */
+  entitled: boolean;
+  /** The plan's budget (required to provision; syncs active grants). */
+  budget?: HostedInferenceBudget;
+  /** Users to hold an active grant while entitled (idempotent). */
+  users?: readonly string[];
+}
+
+/** Per-user outcome of a reconcile. */
+export interface HostedReconcileResult {
+  tenantId: string;
+  provisioned: ProvisionHostedInferenceResult[];
+  revoked: RevokeHostedInferenceResult[];
+  synced: SyncHostedBudgetResult[];
+  /** Pending gateway deletions retried, and what is still pending. */
+  pending: Array<{ userId: string; remaining: number }>;
+  failures: Array<{ userId: string; error: unknown }>;
 }
 
 /** The secret store calls provisioning uses (`SecretService` satisfies it). */
@@ -455,7 +504,7 @@ export interface HostedSecretStore {
 
 /** Options for {@link createHostedInferenceProvisioner}. */
 export interface HostedInferenceProvisionerOptions {
-  /** Database for `runOnce()` claims and, without `secrets`, the secrets. */
+  /** Database for `runOnce()` claims, the lifecycle lock and, without `secrets`, the secrets. */
   db: DatabaseInterface;
   /** Secret store; default `SecretService.create({ db })`. */
   secrets?: HostedSecretStore;
@@ -467,6 +516,8 @@ export interface HostedInferenceProvisionerOptions {
   actor?: string;
   /** Clock seam. */
   now?: () => Date;
+  /** Alias/project nonce seam (tests). Default: random. */
+  nonce?: () => string;
 }
 
 /** Hosted provisioning bound to one database, store and gateway. */
@@ -476,6 +527,10 @@ export interface HostedInferenceProvisioner {
     userId: string;
     budget: HostedInferenceBudget;
   }): Promise<ProvisionHostedInferenceResult>;
+  /**
+   * Revoke the user's active grant; with none active, retry any pending
+   * gateway deletions. Idempotent.
+   */
   revoke(options: {
     tenantId: string;
     userId: string;
@@ -492,6 +547,8 @@ export interface HostedInferenceProvisioner {
   }): Promise<HostedInferenceDescriptor>;
   /** Users of the tenant with an active hosted grant. */
   listActive(tenantId: string): Promise<string[]>;
+  /** Users of the tenant with any hosted state (active, revoked, pending). */
+  listKnown(tenantId: string): Promise<string[]>;
   revokeTenant(
     tenantId: string,
     options?: { reason?: string },
@@ -500,6 +557,16 @@ export interface HostedInferenceProvisioner {
     tenantId: string,
     budget: HostedInferenceBudget,
   ): Promise<SyncHostedBudgetResult[]>;
+  /**
+   * Converge the tenant to `target` (idempotent): not entitled revokes every
+   * active grant; entitled provisions `users` and syncs active budgets; both
+   * retry pending gateway deletions. Run it on webhook redelivery or on a
+   * schedule so a lost entitlement reaction is repaired.
+   */
+  reconcileTenant(
+    tenantId: string,
+    target: HostedReconcileTarget,
+  ): Promise<HostedReconcileResult>;
 }
 
 const STATE_PREFIX = `${HOSTED_INFERENCE_SECRET_CATEGORY}:user:`;
@@ -559,10 +626,10 @@ export function toGatewayBudget(
 }
 
 function sameBudget(
-  a: Required<HostedInferenceBudget>,
+  a: Required<HostedInferenceBudget> | undefined,
   b: Required<HostedInferenceBudget>,
 ): boolean {
-  return a.limitMicros === b.limitMicros && a.window === b.window;
+  return !!a && a.limitMicros === b.limitMicros && a.window === b.window;
 }
 
 function parseState(value: string): HostedInferenceState {
@@ -584,7 +651,8 @@ function parseState(value: string): HostedInferenceState {
     typeof state.generation !== 'number' ||
     !Number.isSafeInteger(state.generation) ||
     typeof state.keyAlias !== 'string' ||
-    typeof state.projectId !== 'string'
+    (state.status === 'active' &&
+      (typeof state.projectId !== 'string' || !state.budget))
   ) {
     throw new HostedInferenceError(
       'Stored hosted inference state is invalid',
@@ -618,11 +686,14 @@ function describeState(
     userId,
     status: state.status,
     generation: state.generation,
-    provider: state.provider,
-    projectId: state.projectId,
+    ...(state.provider ? { provider: state.provider } : {}),
+    ...(state.projectId ? { projectId: state.projectId } : {}),
     keyId: state.keyId,
-    keyAlias: state.keyAlias,
-    budget: state.budget,
+    ...(state.keyAlias ? { keyAlias: state.keyAlias } : {}),
+    ...(state.budget ? { budget: state.budget } : {}),
+    ...(state.pendingGatewayRevocations?.length
+      ? { pendingGatewayRevocations: state.pendingGatewayRevocations }
+      : {}),
   };
 }
 
@@ -696,14 +767,23 @@ function restoredConfig(prior: InferenceProviderConfig | null): {
   return { config: { mode: 'off' }, restored: 'off' };
 }
 
+function defaultNonce(): string {
+  return globalThis.crypto.randomUUID().replace(/-/g, '').slice(0, 10);
+}
+
+/** In-process lifecycle chains per `(tenantId, userId)`. */
+const lifecycleChains = new Map<string, Promise<unknown>>();
+
 /**
- * Create a provisioner. One per process (or per request) is fine: it holds
- * no per-user state; the admin client and secret store are built lazily.
+ * Create a provisioner. One per process (or per request) is fine: per-user
+ * lifecycle operations are serialized through a process-wide chain and, on
+ * PostgreSQL, a transaction-scoped advisory lock (cross-process).
  */
 export function createHostedInferenceProvisioner(
   options: HostedInferenceProvisionerOptions,
 ): HostedInferenceProvisioner {
   const now = options.now ?? (() => new Date());
+  const nonce = options.nonce ?? defaultNonce;
   let secretsPromise: Promise<HostedSecretStore> | undefined;
   let adminPromise: Promise<HostedGatewayAdmin> | undefined;
   let tablesPromise: Promise<void> | undefined;
@@ -735,6 +815,22 @@ export function createHostedInferenceProvisioner(
     return adminPromise;
   };
 
+  /** The admin surface, or `undefined` when none is usable (revoke path). */
+  const optionalAdmin = async (): Promise<HostedGatewayAdmin | undefined> => {
+    try {
+      return await getAdmin(gatewayConfig());
+    } catch (error) {
+      if (
+        error instanceof HostedInferenceError &&
+        (error.code === 'HOSTED_GATEWAY_NOT_CONFIGURED' ||
+          error.code === 'HOSTED_GATEWAY_UNSUPPORTED')
+      ) {
+        return undefined;
+      }
+      throw error;
+    }
+  };
+
   const ensureTables = () => {
     tablesPromise ??= ensureSystemTables(options.db)
       .then(() => undefined)
@@ -750,6 +846,44 @@ export function createHostedInferenceProvisioner(
       { tenantId, ...(options.actor ? { userId: options.actor } : {}) },
       fn,
     );
+
+  /**
+   * Serialize one user's provision / revoke / budget sync: in process
+   * through a promise chain, across processes on PostgreSQL through a
+   * transaction-scoped advisory lock held for the operation (the operation's
+   * own writes use other pooled connections). Single-connection adapters
+   * (SQLite) serve one process, which the chain covers.
+   */
+  const withLifecycleLock = <T>(
+    tenantId: string,
+    userId: string,
+    fn: () => Promise<T>,
+  ): Promise<T> => {
+    const key = JSON.stringify(['smrt.inference.hosted', tenantId, userId]);
+    const previous = lifecycleChains.get(key) ?? Promise.resolve();
+    const run = async () => {
+      if (isPostgresDatabase(options.db) && options.db.transaction) {
+        return options.db.transaction(async (tx) => {
+          await tx.query(
+            'SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))',
+            key,
+          );
+          return fn();
+        });
+      }
+      return fn();
+    };
+    const result = previous.then(run, run);
+    const settled = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    lifecycleChains.set(key, settled);
+    void settled.then(() => {
+      if (lifecycleChains.get(key) === settled) lifecycleChains.delete(key);
+    });
+    return result;
+  };
 
   const read = async (
     secrets: HostedSecretStore,
@@ -816,8 +950,29 @@ export function createHostedInferenceProvisioner(
   /** Whether the user's current config is this grant's hosted binding. */
   const isOurs = (
     config: InferenceProviderConfig | undefined,
-    state: HostedInferenceState,
-  ) => config?.source === 'hosted' && config.gatewayKeyAlias === state.keyAlias;
+    keyAlias: string,
+  ) =>
+    !!keyAlias &&
+    config?.source === 'hosted' &&
+    config.gatewayKeyAlias === keyAlias;
+
+  /**
+   * Try to delete a key on the gateway. Never throws: the outcome says
+   * whether SMRT still owes the deletion.
+   */
+  const deleteGatewayKey = async (
+    admin: HostedGatewayAdmin | undefined,
+    keyId: string | null,
+  ): Promise<'revoked' | 'missing' | 'unsupported' | 'failed'> => {
+    if (!keyId || typeof admin?.deleteVirtualKey !== 'function') {
+      return 'unsupported';
+    }
+    try {
+      return (await admin.deleteVirtualKey(keyId)) ? 'revoked' : 'missing';
+    } catch {
+      return 'failed';
+    }
+  };
 
   /** The tenant's gateway project, created once (runOnce) on first use. */
   const ensureProject = async (
@@ -855,8 +1010,9 @@ export function createHostedInferenceProvisioner(
         let project: AIAdminProject;
         try {
           project = await admin.createProject({
-            // LiteLLM requires a stable id; Bifrost generates its own.
-            id: `smrt-${tenantId}`,
+            // LiteLLM requires an id, unique per attempt so a retry after a
+            // failed attempt never collides with the team that attempt left.
+            id: `smrt-${tenantId}-${nonce()}`,
             name: `smrt tenant ${tenantId}`,
             tenantId,
             metadata: { smrt: HOSTED_INFERENCE_FEATURE_KEY, tenantId },
@@ -895,7 +1051,30 @@ export function createHostedInferenceProvisioner(
     return result.projectId;
   };
 
-  /** Revoke inside a tenant context; shared by revoke and re-provision. */
+  /** Retry owed gateway deletions; returns the state to store (or same). */
+  const retryPending = async (
+    state: HostedInferenceState,
+  ): Promise<HostedInferenceState> => {
+    const pending = state.pendingGatewayRevocations ?? [];
+    if (pending.length === 0) return state;
+    const admin = await optionalAdmin();
+    const remaining: HostedPendingGatewayRevocation[] = [];
+    for (const entry of pending) {
+      const outcome = await deleteGatewayKey(admin, entry.keyId);
+      if (outcome === 'unsupported' || outcome === 'failed') {
+        remaining.push(entry);
+      }
+    }
+    if (remaining.length === pending.length) return state;
+    return { ...state, pendingGatewayRevocations: remaining };
+  };
+
+  /**
+   * Revoke an active grant (caller holds the lifecycle lock). Local access
+   * ends whatever the gateway answers: the config is restored and the state
+   * retired first-class; a deletion the gateway could not perform is kept in
+   * `pendingGatewayRevocations` and audited.
+   */
   const revokeLocked = async (
     tenantId: string,
     userId: string,
@@ -904,79 +1083,313 @@ export function createHostedInferenceProvisioner(
     reason: string,
     restore: boolean,
   ): Promise<RevokeHostedInferenceResult> => {
-    return runOnce(
+    const gateway = await deleteGatewayKey(await optionalAdmin(), state.keyId);
+    const owed = gateway === 'unsupported' || gateway === 'failed';
+    const audit = {
+      operation: 'inference.hosted.revoke',
+      reason,
+      gateway,
+      keyAlias: state.keyAlias,
+      ...(state.keyId ? { keyId: state.keyId } : {}),
+      ...(owed ? { manualGatewayRevocation: true } : {}),
+    };
+    let restored: RevokeHostedInferenceResult['restored'] = 'kept';
+    if (restore) {
+      const current = await readUserConfig(secrets, userId);
+      if (isOurs(current, state.keyAlias)) {
+        const next = restoredConfig(state.prior);
+        restored = next.restored;
+        await writeUserConfig(secrets, userId, next.config, {
+          ...audit,
+          restored,
+        });
+      }
+    }
+    const next: HostedInferenceState = {
+      ...state,
+      status: 'revoked',
+      generation: state.generation + 1,
+      revokedAt: now().toISOString(),
+      prior: null,
+      pendingGatewayRevocations: [
+        ...(state.pendingGatewayRevocations ?? []),
+        ...(owed
+          ? [
+              {
+                keyId: state.keyId,
+                keyAlias: state.keyAlias,
+                reason: gateway,
+                since: now().toISOString(),
+              } satisfies HostedPendingGatewayRevocation,
+            ]
+          : []),
+      ],
+    };
+    await writeState(secrets, userId, next, { ...audit, restored });
+    return {
+      ...describeState(tenantId, userId, next),
+      revoked: true,
+      gateway,
+      restored,
+    };
+  };
+
+  const provisionLocked = async (
+    tenantId: string,
+    userId: string,
+    budget: Required<HostedInferenceBudget>,
+    gateway: HostedGatewayConfig,
+    secrets: HostedSecretStore,
+  ): Promise<ProvisionHostedInferenceResult> => {
+    let state = await readState(secrets, userId);
+    if (state?.status === 'active') {
+      const current = await readUserConfig(secrets, userId);
+      if (isOurs(current, state.keyAlias)) {
+        const sync = sameBudget(state.budget, budget)
+          ? undefined
+          : await syncLocked(tenantId, userId, budget, secrets);
+        const fresh = (await readState(secrets, userId)) ?? state;
+        return {
+          ...describeState(tenantId, userId, fresh),
+          created: false,
+          ...(sync && sync.sync !== 'none' ? { budgetSync: sync.sync } : {}),
+        };
+      }
+      // The user replaced the hosted binding since: retire that key
+      // (keeping their new config) and provision afresh.
+      await revokeLocked(
+        tenantId,
+        userId,
+        secrets,
+        state,
+        'reprovision',
+        false,
+      );
+      state = await readState(secrets, userId);
+    }
+    const generation = state?.generation ?? 0;
+    const admin = await getAdmin(gateway);
+    const projectId = await ensureProject(tenantId, gateway, admin, secrets);
+    let rollback: (() => Promise<unknown>) | undefined;
+    const provisioned = await runOnce(
       {
         db: options.db,
         tenantId,
         actor: userId,
-        token: 'smrt-inference-hosted:revoke',
-        content: { userId, generation: state.generation },
+        token: 'smrt-inference-hosted:provision',
+        content: { userId, generation },
       },
       async () => {
-        let gateway: HostedGatewayRevokeStatus = 'unsupported';
-        let admin: HostedGatewayAdmin | undefined;
-        try {
-          admin = await getAdmin(gatewayConfig());
-        } catch (error) {
-          // No usable admin surface (gateway env gone, SDK without admin):
-          // revocation still removes the key locally and says so.
-          if (
-            !(error instanceof HostedInferenceError) ||
-            (error.code !== 'HOSTED_GATEWAY_NOT_CONFIGURED' &&
-              error.code !== 'HOSTED_GATEWAY_UNSUPPORTED')
-          ) {
-            throw error;
-          }
-        }
-        if (state.keyId && typeof admin?.deleteVirtualKey === 'function') {
-          try {
-            gateway = (await admin.deleteVirtualKey(state.keyId))
-              ? 'revoked'
-              : 'missing';
-          } catch (error) {
-            // Transient: change nothing locally so a retry finishes the job.
-            throw gatewayFailure('deleteVirtualKey', error);
-          }
-        }
-        const audit = {
-          operation: 'inference.hosted.revoke',
-          reason,
-          gateway,
-          keyAlias: state.keyAlias,
-          ...(state.keyId ? { keyId: state.keyId } : {}),
-          ...(gateway === 'unsupported'
-            ? { manualGatewayRevocation: true }
-            : {}),
+        const current = await readUserConfig(secrets, userId);
+        // Keep the user's own config to restore on revoke; a leftover
+        // hosted binding is never a prior.
+        const prior = current && current.source !== 'hosted' ? current : null;
+        // Unique per attempt: a failed attempt's key (which a create-only
+        // SDK cannot delete) never blocks the retry's alias.
+        const keyAlias = `smrt-${tenantId}-${userId}-g${generation}-${nonce()}`;
+        const models = keyModels(gateway);
+        const request: CreateAIVirtualKeyOptions = {
+          name: keyAlias,
+          description: `smrt hosted inference for user ${userId}`,
+          projectId,
+          tenantId,
+          userId,
+          budget: toGatewayBudget(budget),
+          ...(models ? { models } : {}),
+          ...(gateway.keyDuration ? { duration: gateway.keyDuration } : {}),
+          ...(gateway.provider === 'bifrost' ? { keyIds: ['*'] } : {}),
+          metadata: {
+            smrt: HOSTED_INFERENCE_FEATURE_KEY,
+            tenantId,
+            userId,
+            generation,
+          },
         };
-        let restored: RevokeHostedInferenceResult['restored'] = 'kept';
-        if (restore) {
-          const current = await readUserConfig(secrets, userId);
-          if (isOurs(current, state)) {
-            const next = restoredConfig(state.prior);
-            restored = next.restored;
-            await writeUserConfig(secrets, userId, next.config, {
-              ...audit,
-              restored,
-            });
-          }
+        let key: AIVirtualKey;
+        try {
+          key = await admin.createVirtualKey(request);
+        } catch (error) {
+          throw gatewayFailure('createVirtualKey', error);
+        }
+        const keyId = text(key?.id) ?? null;
+        const apiKey = text(key?.key);
+        /**
+         * After the claim rolled back (a delete inside its transaction would
+         * wait on it on single-connection adapters): delete the new key or
+         * record it as owed, and put the previous state back so the user's
+         * prior config survives for the retry.
+         */
+        const scheduleRollback = () => {
+          const previous = state;
+          rollback = async () => {
+            const outcome = await deleteGatewayKey(admin, keyId);
+            const owed = outcome === 'unsupported' || outcome === 'failed';
+            const audit = {
+              operation: 'inference.hosted.provision-rollback',
+              keyAlias,
+              gateway: outcome,
+              ...(keyId ? { keyId } : {}),
+              ...(owed ? { manualGatewayRevocation: true } : {}),
+            };
+            const pending = [
+              ...(previous?.pendingGatewayRevocations ?? []),
+              ...(owed
+                ? [
+                    {
+                      keyId,
+                      keyAlias,
+                      reason: 'orphaned',
+                      since: now().toISOString(),
+                    } satisfies HostedPendingGatewayRevocation,
+                  ]
+                : []),
+            ];
+            if (previous) {
+              await writeState(
+                secrets,
+                userId,
+                { ...previous, pendingGatewayRevocations: pending },
+                audit,
+              );
+            } else if (owed) {
+              await writeState(
+                secrets,
+                userId,
+                {
+                  version: 1,
+                  status: 'revoked',
+                  generation,
+                  keyId: null,
+                  keyAlias: '',
+                  prior: null,
+                  pendingGatewayRevocations: pending,
+                },
+                audit,
+              );
+            } else {
+              await secrets.delete(hostedInferenceStateSecretName(userId), {
+                auditDetails: audit,
+              });
+            }
+          };
+        };
+        if (!apiKey) {
+          scheduleRollback();
+          throw new HostedInferenceError(
+            'Gateway createVirtualKey returned no key value.',
+            'HOSTED_GATEWAY_FAILED',
+            { operation: 'createVirtualKey' },
+          );
         }
         const next: HostedInferenceState = {
-          ...state,
-          status: 'revoked',
-          generation: state.generation + 1,
-          revokedAt: now().toISOString(),
-          prior: null,
+          version: 1,
+          status: 'active',
+          generation,
+          provider: gateway.provider,
+          projectId,
+          keyId,
+          keyAlias,
+          budget,
+          provisionedAt: now().toISOString(),
+          prior,
+          ...(state?.pendingGatewayRevocations?.length
+            ? { pendingGatewayRevocations: state.pendingGatewayRevocations }
+            : {}),
         };
-        await writeState(secrets, userId, next, { ...audit, restored });
-        const result: RevokeHostedInferenceResult = {
+        const audit = {
+          operation: 'inference.hosted.provision',
+          keyAlias,
+          projectId,
+          provider: gateway.provider,
+          ...(keyId ? { keyId } : {}),
+        };
+        try {
+          await writeState(secrets, userId, next, audit);
+          await writeUserConfig(
+            secrets,
+            userId,
+            hostedProviderConfig(gateway, apiKey, keyAlias),
+            audit,
+          );
+        } catch (error) {
+          scheduleRollback();
+          throw error;
+        }
+        const created: ProvisionHostedInferenceResult = {
           ...describeState(tenantId, userId, next),
-          revoked: true,
-          gateway,
-          restored,
+          created: true,
         };
-        return result;
+        return created;
       },
-    );
+    ).catch(async (error: unknown) => {
+      if (rollback) await rollback().catch(() => undefined);
+      throw error;
+    });
+    // A replayed claim must describe what is stored. It does not when the
+    // state was removed out of band (claims outlive it for the retention
+    // window): refuse rather than report a grant that does not exist.
+    const stored = await readUserConfig(secrets, userId);
+    if (!isOurs(stored, provisioned.keyAlias ?? '')) {
+      throw new HostedInferenceError(
+        'Hosted inference state for this user was removed outside provisioning; revoke the gateway key named in the audit log and provision again after the run-once claim expires.',
+        'HOSTED_STATE_INVALID',
+        { tenantId, userId, keyAlias: provisioned.keyAlias },
+      );
+    }
+    return provisioned;
+  };
+
+  const syncLocked = async (
+    tenantId: string,
+    userId: string,
+    budget: Required<HostedInferenceBudget>,
+    secrets: HostedSecretStore,
+  ): Promise<SyncHostedBudgetResult> => {
+    const state = await readState(secrets, userId);
+    if (state?.status !== 'active') {
+      return { ...describeState(tenantId, userId, state), sync: 'none' };
+    }
+    if (sameBudget(state.budget, budget)) {
+      return { ...describeState(tenantId, userId, state), sync: 'unchanged' };
+    }
+    const admin = await getAdmin(gatewayConfig());
+    if (!state.keyId || typeof admin.updateVirtualKey !== 'function') {
+      // Recorded state keeps the old budget so a later sync retries.
+      return { ...describeState(tenantId, userId, state), sync: 'unsupported' };
+    }
+    try {
+      await admin.updateVirtualKey(state.keyId, {
+        budget: toGatewayBudget(budget),
+      });
+    } catch (error) {
+      throw gatewayFailure('updateVirtualKey', error);
+    }
+    const next = { ...state, budget };
+    await writeState(secrets, userId, next, {
+      operation: 'inference.hosted.budget',
+      keyAlias: state.keyAlias,
+      keyId: state.keyId,
+      limitMicros: budget.limitMicros,
+      window: budget.window,
+    });
+    return { ...describeState(tenantId, userId, next), sync: 'updated' };
+  };
+
+  const listStates = async (tenantId: string) => {
+    const secrets = await getSecrets();
+    return inTenant(tenantId, async () => {
+      const rows = await secrets.list({
+        category: HOSTED_INFERENCE_SECRET_CATEGORY,
+      });
+      const states: Array<{ userId: string; state: HostedInferenceState }> = [];
+      for (const row of rows) {
+        if (!row.name.startsWith(STATE_PREFIX)) continue;
+        const userId = row.name.slice(STATE_PREFIX.length);
+        const state = await readState(secrets, userId);
+        if (state) states.push({ userId, state });
+      }
+      return states.sort((a, b) => a.userId.localeCompare(b.userId));
+    });
   };
 
   const provisioner: HostedInferenceProvisioner = {
@@ -987,180 +1400,15 @@ export function createHostedInferenceProvisioner(
       const gateway = gatewayConfig();
       await ensureTables();
       const secrets = await getSecrets();
-      const result = await inTenant(tenantId, async () => {
-        let state = await readState(secrets, userId);
-        if (state?.status === 'active') {
-          const current = await readUserConfig(secrets, userId);
-          if (isOurs(current, state)) {
-            const sync = sameBudget(state.budget, budget)
-              ? undefined
-              : await provisioner.syncBudget({ tenantId, userId, budget });
-            const fresh = (await readState(secrets, userId)) ?? state;
-            return {
-              ...describeState(tenantId, userId, fresh),
-              created: false,
-              ...(sync && sync.sync !== 'none'
-                ? { budgetSync: sync.sync }
-                : {}),
-            } satisfies ProvisionHostedInferenceResult;
-          }
-          // The user replaced the hosted binding since: retire that key
-          // (keeping their new config) and provision afresh.
-          await revokeLocked(
-            tenantId,
-            userId,
-            secrets,
-            state,
-            'reprovision',
-            false,
-          );
-          state = await readState(secrets, userId);
-        }
-        const generation = state?.generation ?? 0;
-        let rollback: (() => Promise<unknown>) | undefined;
-        const admin = await getAdmin(gateway);
-        const projectId = await ensureProject(
-          tenantId,
-          gateway,
-          admin,
-          secrets,
+      try {
+        return await withLifecycleLock(tenantId, userId, () =>
+          inTenant(tenantId, () =>
+            provisionLocked(tenantId, userId, budget, gateway, secrets),
+          ),
         );
-        return runOnce(
-          {
-            db: options.db,
-            tenantId,
-            actor: userId,
-            token: 'smrt-inference-hosted:provision',
-            content: { userId, generation },
-          },
-          async () => {
-            const current = await readUserConfig(secrets, userId);
-            // Keep the user's own config to restore on revoke; a leftover
-            // hosted binding is never a prior.
-            const prior =
-              current && current.source !== 'hosted' ? current : null;
-            const keyAlias = `smrt-${tenantId}-${userId}-g${generation}`;
-            const models = keyModels(gateway);
-            const request: CreateAIVirtualKeyOptions = {
-              name: keyAlias,
-              description: `smrt hosted inference for user ${userId}`,
-              projectId,
-              tenantId,
-              userId,
-              budget: toGatewayBudget(budget),
-              ...(models ? { models } : {}),
-              ...(gateway.keyDuration ? { duration: gateway.keyDuration } : {}),
-              ...(gateway.provider === 'bifrost' ? { keyIds: ['*'] } : {}),
-              metadata: {
-                smrt: HOSTED_INFERENCE_FEATURE_KEY,
-                tenantId,
-                userId,
-                generation,
-              },
-            };
-            let key: AIVirtualKey;
-            try {
-              key = await admin.createVirtualKey(request);
-            } catch (error) {
-              throw gatewayFailure('createVirtualKey', error);
-            }
-            const keyId = text(key?.id) ?? null;
-            const apiKey = text(key?.key);
-            const discard = async () => {
-              if (keyId && typeof admin.deleteVirtualKey === 'function') {
-                await admin.deleteVirtualKey(keyId).catch(() => false);
-              }
-            };
-            if (!apiKey) {
-              await discard();
-              throw new HostedInferenceError(
-                'Gateway createVirtualKey returned no key value.',
-                'HOSTED_GATEWAY_FAILED',
-                { operation: 'createVirtualKey' },
-              );
-            }
-            const next: HostedInferenceState = {
-              version: 1,
-              status: 'active',
-              generation,
-              provider: gateway.provider,
-              projectId,
-              keyId,
-              keyAlias,
-              budget,
-              provisionedAt: now().toISOString(),
-              prior,
-            };
-            const audit = {
-              operation: 'inference.hosted.provision',
-              keyAlias,
-              projectId,
-              provider: gateway.provider,
-              ...(keyId ? { keyId } : {}),
-            };
-            try {
-              await writeState(secrets, userId, next, audit);
-              await writeUserConfig(
-                secrets,
-                userId,
-                hostedProviderConfig(gateway, apiKey, keyAlias),
-                audit,
-              );
-            } catch (error) {
-              await discard();
-              // Put the previous state back so the user's prior config is
-              // not lost and the next attempt starts from it. Runs after the
-              // claim's transaction has rolled back: a delete inside it
-              // would wait on that transaction on single-connection
-              // adapters.
-              const previous = state;
-              rollback = () =>
-                previous
-                  ? writeState(secrets, userId, previous, {
-                      operation: 'inference.hosted.provision-rollback',
-                      keyAlias,
-                    })
-                  : secrets.delete(hostedInferenceStateSecretName(userId), {
-                      auditDetails: {
-                        operation: 'inference.hosted.provision-rollback',
-                        keyAlias,
-                      },
-                    });
-              throw error;
-            }
-            const created: ProvisionHostedInferenceResult = {
-              ...describeState(tenantId, userId, next),
-              created: true,
-            };
-            return created;
-          },
-        ).then(
-          async (provisioned) => {
-            // A replayed claim must describe what is stored. It does not when
-            // the state was removed out of band (claims outlive it for the
-            // retention window): refuse rather than report a grant that
-            // does not exist.
-            const stored = await readUserConfig(secrets, userId);
-            if (
-              stored?.source !== 'hosted' ||
-              stored.gatewayKeyAlias !== provisioned.keyAlias
-            ) {
-              throw new HostedInferenceError(
-                'Hosted inference state for this user was removed outside provisioning; revoke the gateway key named in the audit log and provision again after the run-once claim expires.',
-                'HOSTED_STATE_INVALID',
-                { tenantId, userId, keyAlias: provisioned.keyAlias },
-              );
-            }
-            return provisioned;
-          },
-          async (error: unknown) => {
-            if (rollback) await rollback().catch(() => undefined);
-            throw error;
-          },
-        );
-      });
-      invalidateUserInferenceResolvers({ tenantId, userId });
-      return result;
+      } finally {
+        invalidateUserInferenceResolvers({ tenantId, userId });
+      }
     },
 
     async revoke(input) {
@@ -1168,26 +1416,38 @@ export function createHostedInferenceProvisioner(
       const userId = requireId(input.userId, 'userId');
       await ensureTables();
       const secrets = await getSecrets();
-      const result = await inTenant(tenantId, async () => {
-        const state = await readState(secrets, userId);
-        if (state?.status !== 'active') {
-          return {
-            ...describeState(tenantId, userId, state),
-            revoked: false,
-            gateway: 'none',
-          } satisfies RevokeHostedInferenceResult;
-        }
-        return revokeLocked(
-          tenantId,
-          userId,
-          secrets,
-          state,
-          text(input.reason) ?? 'revoke',
-          true,
+      try {
+        return await withLifecycleLock(tenantId, userId, () =>
+          inTenant(tenantId, async () => {
+            const state = await readState(secrets, userId);
+            if (state?.status !== 'active') {
+              // Nothing active: finish owed gateway deletions, if any.
+              const retried = state ? await retryPending(state) : state;
+              if (state && retried && retried !== state) {
+                await writeState(secrets, userId, retried, {
+                  operation: 'inference.hosted.revoke-retry',
+                  remaining: retried.pendingGatewayRevocations?.length ?? 0,
+                });
+              }
+              return {
+                ...describeState(tenantId, userId, retried),
+                revoked: false,
+                gateway: 'none',
+              } satisfies RevokeHostedInferenceResult;
+            }
+            return revokeLocked(
+              tenantId,
+              userId,
+              secrets,
+              state,
+              text(input.reason) ?? 'revoke',
+              true,
+            );
+          }),
         );
-      });
-      invalidateUserInferenceResolvers({ tenantId, userId });
-      return result;
+      } finally {
+        invalidateUserInferenceResolvers({ tenantId, userId });
+      }
     },
 
     async syncBudget(input) {
@@ -1195,42 +1455,9 @@ export function createHostedInferenceProvisioner(
       const userId = requireId(input.userId, 'userId');
       const budget = normalizeHostedBudget(input.budget);
       const secrets = await getSecrets();
-      return inTenant(tenantId, async () => {
-        const state = await readState(secrets, userId);
-        if (state?.status !== 'active') {
-          return { ...describeState(tenantId, userId, state), sync: 'none' };
-        }
-        if (sameBudget(state.budget, budget)) {
-          return {
-            ...describeState(tenantId, userId, state),
-            sync: 'unchanged',
-          };
-        }
-        const admin = await getAdmin(gatewayConfig());
-        if (!state.keyId || typeof admin.updateVirtualKey !== 'function') {
-          // Recorded state keeps the old budget so a later sync retries.
-          return {
-            ...describeState(tenantId, userId, state),
-            sync: 'unsupported',
-          };
-        }
-        try {
-          await admin.updateVirtualKey(state.keyId, {
-            budget: toGatewayBudget(budget),
-          });
-        } catch (error) {
-          throw gatewayFailure('updateVirtualKey', error);
-        }
-        const next = { ...state, budget };
-        await writeState(secrets, userId, next, {
-          operation: 'inference.hosted.budget',
-          keyAlias: state.keyAlias,
-          keyId: state.keyId,
-          limitMicros: budget.limitMicros,
-          window: budget.window,
-        });
-        return { ...describeState(tenantId, userId, next), sync: 'updated' };
-      });
+      return withLifecycleLock(tenantId, userId, () =>
+        inTenant(tenantId, () => syncLocked(tenantId, userId, budget, secrets)),
+      );
     },
 
     async status(input) {
@@ -1244,20 +1471,14 @@ export function createHostedInferenceProvisioner(
 
     async listActive(tenantIdInput) {
       const tenantId = requireId(tenantIdInput, 'tenantId');
-      const secrets = await getSecrets();
-      return inTenant(tenantId, async () => {
-        const rows = await secrets.list({
-          category: HOSTED_INFERENCE_SECRET_CATEGORY,
-        });
-        const users: string[] = [];
-        for (const row of rows) {
-          if (!row.name.startsWith(STATE_PREFIX)) continue;
-          const userId = row.name.slice(STATE_PREFIX.length);
-          const state = await readState(secrets, userId);
-          if (state?.status === 'active') users.push(userId);
-        }
-        return users.sort();
-      });
+      return (await listStates(tenantId))
+        .filter(({ state }) => state.status === 'active')
+        .map(({ userId }) => userId);
+    },
+
+    async listKnown(tenantIdInput) {
+      const tenantId = requireId(tenantIdInput, 'tenantId');
+      return (await listStates(tenantId)).map(({ userId }) => userId);
     },
 
     async revokeTenant(tenantId, revokeOptions = {}) {
@@ -1282,6 +1503,91 @@ export function createHostedInferenceProvisioner(
         );
       }
       return results;
+    },
+
+    async reconcileTenant(tenantIdInput, target) {
+      const tenantId = requireId(tenantIdInput, 'tenantId');
+      const result: HostedReconcileResult = {
+        tenantId,
+        provisioned: [],
+        revoked: [],
+        synced: [],
+        pending: [],
+        failures: [],
+      };
+      const attempt = async (userId: string, fn: () => Promise<void>) => {
+        try {
+          await fn();
+        } catch (error) {
+          result.failures.push({ userId, error });
+        }
+      };
+      if (!target.entitled) {
+        for (const userId of await provisioner.listActive(tenantId)) {
+          await attempt(userId, async () => {
+            result.revoked.push(
+              await provisioner.revoke({
+                tenantId,
+                userId,
+                reason: 'entitlement-lost',
+              }),
+            );
+          });
+        }
+      } else {
+        const budget = target.budget
+          ? normalizeHostedBudget(target.budget)
+          : undefined;
+        if (target.users?.length && !budget) {
+          throw new HostedInferenceError(
+            'reconcileTenant needs a budget to provision users.',
+            'HOSTED_INFERENCE_INVALID',
+            { tenantId },
+          );
+        }
+        const wanted = new Set(target.users ?? []);
+        for (const userId of wanted) {
+          await attempt(userId, async () => {
+            result.provisioned.push(
+              await provisioner.provision({
+                tenantId,
+                userId,
+                budget: budget as Required<HostedInferenceBudget>,
+              }),
+            );
+          });
+        }
+        if (budget) {
+          for (const userId of await provisioner.listActive(tenantId)) {
+            if (wanted.has(userId)) continue; // provision() synced it
+            await attempt(userId, async () => {
+              result.synced.push(
+                await provisioner.syncBudget({ tenantId, userId, budget }),
+              );
+            });
+          }
+        }
+      }
+      // Retry owed gateway deletions for every user with state.
+      for (const { userId, state } of await listStates(tenantId)) {
+        if (!state.pendingGatewayRevocations?.length) continue;
+        if (state.status === 'active' && target.entitled) {
+          // Active grants keep their owed deletions until the next revoke.
+          result.pending.push({
+            userId,
+            remaining: state.pendingGatewayRevocations.length,
+          });
+          continue;
+        }
+        await attempt(userId, async () => {
+          const retried = await provisioner.revoke({ tenantId, userId });
+          result.pending.push({
+            userId,
+            remaining: retried.pendingGatewayRevocations?.length ?? 0,
+          });
+        });
+      }
+      return result;
     },
   };
   return provisioner;
@@ -1311,9 +1617,10 @@ export function provisionHostedInference(
 }
 
 /**
- * Revoke a user's hosted inference (downgrade, deletion): delete the gateway
- * key (when the SDK can), restore the user's prior provider config (or mode
- * `off`), and retire the state. Idempotent: nothing active is a no-op.
+ * Revoke a user's hosted inference (downgrade, deletion): stop using the key
+ * (restore the user's prior provider config, or mode `off`), retire the
+ * state, and delete the gateway key when the SDK can (otherwise it is kept
+ * as an owed deletion and audited). Idempotent.
  */
 export function revokeHostedInference(
   options: HostedInferenceProvisionerOptions & {
@@ -1346,27 +1653,31 @@ export function hostedBudgetFromGrantMetadata(
   };
 }
 
+/** Structural mirror of smrt-subscriptions' `EntitlementSnapshot` (grants). */
+export interface HostedEntitlementSnapshot {
+  grants: ReadonlyArray<{
+    featureKey: string;
+    enabled?: boolean;
+    metadata?: Record<string, unknown>;
+  }>;
+}
+
 /** Structural mirror of smrt-subscriptions' `EntitlementChange`. */
 export interface HostedEntitlementChange {
   tenantId: string;
   gained: readonly string[];
   lost: readonly string[];
   changed: readonly string[];
-  after: {
-    grants: ReadonlyArray<{
-      featureKey: string;
-      metadata?: Record<string, unknown>;
-    }>;
-  };
+  after: HostedEntitlementSnapshot;
 }
 
-/** Options for {@link createHostedInferenceEntitlementListener}. */
+/** Options for the entitlement listener and reconciler. */
 export interface HostedInferenceEntitlementListenerOptions {
   provisioner: HostedInferenceProvisioner;
   /**
-   * Users to provision when the tenant gains hosted inference (the tenant's
-   * members; membership is the host's). Users joining later are provisioned
-   * by the host calling `provision()` directly.
+   * Users who should hold a grant while the tenant is entitled (the
+   * tenant's members; membership is the host's). Users joining later are
+   * provisioned by the host calling `provision()` directly.
    */
   users(tenantId: string): Promise<readonly string[]>;
   /**
@@ -1375,91 +1686,99 @@ export interface HostedInferenceEntitlementListenerOptions {
    * `defaultBudget`.
    */
   budgetFor?(
-    change: HostedEntitlementChange,
+    tenantId: string,
+    snapshot: HostedEntitlementSnapshot,
   ): HostedInferenceBudget | undefined;
   defaultBudget?: HostedInferenceBudget;
 }
 
+function hostedGrant(snapshot: HostedEntitlementSnapshot) {
+  return snapshot.grants.find(
+    (grant) =>
+      grant.featureKey === HOSTED_INFERENCE_FEATURE_KEY &&
+      grant.enabled !== false,
+  );
+}
+
+function throwReconcileFailures(result: HostedReconcileResult): void {
+  if (result.failures.length === 0) return;
+  throw new HostedInferenceError(
+    `Hosted inference failed for ${result.failures.length} user(s) of tenant ${result.tenantId}.`,
+    'HOSTED_GATEWAY_FAILED',
+    {
+      tenantId: result.tenantId,
+      users: result.failures.map((failure) => failure.userId),
+      codes: result.failures.map((failure) =>
+        failure.error instanceof SmrtError
+          ? failure.error.code
+          : failure.error instanceof Error
+            ? failure.error.name
+            : 'unknown',
+      ),
+    },
+  );
+}
+
 /**
- * The smrt-subscriptions entitlement-change listener for hosted inference:
- * register it with `registerEntitlementChangeListener()`. Gaining
- * `inference.hosted` provisions every user `users()` names; losing it
- * revokes every active grant of the tenant; a changed grant (plan budget)
- * syncs the gateway budget. Per-user failures are collected and thrown
- * together after every user was attempted (the change outcome lists it);
- * all steps are idempotent, so the host can replay the change.
+ * Reconcile a tenant's hosted grants with its current entitlement snapshot
+ * (smrt-subscriptions' `snapshotEntitlements()`): entitled provisions
+ * `users()` and syncs budgets, not entitled revokes every grant, both retry
+ * owed gateway deletions. Idempotent: run it on webhook redelivery (a
+ * replayed write diffs to "no change") and on a schedule, so a reaction
+ * lost to a crash or a failed listener is repaired. Throws one error naming
+ * the users that failed, after trying all of them.
  */
-export function createHostedInferenceEntitlementListener(
+export function createHostedInferenceReconciler(
   options: HostedInferenceEntitlementListenerOptions,
-): (change: HostedEntitlementChange) => Promise<void> {
-  const budgetOf = (change: HostedEntitlementChange) => {
+): (
+  tenantId: string,
+  snapshot: HostedEntitlementSnapshot,
+) => Promise<HostedReconcileResult> {
+  return async (tenantId, snapshot) => {
+    const grant = hostedGrant(snapshot);
+    if (!grant) {
+      const result = await options.provisioner.reconcileTenant(tenantId, {
+        entitled: false,
+      });
+      throwReconcileFailures(result);
+      return result;
+    }
     const budget =
-      options.budgetFor?.(change) ??
-      hostedBudgetFromGrantMetadata(
-        change.after.grants.find(
-          (grant) => grant.featureKey === HOSTED_INFERENCE_FEATURE_KEY,
-        )?.metadata,
-      ) ??
+      options.budgetFor?.(tenantId, snapshot) ??
+      hostedBudgetFromGrantMetadata(grant.metadata) ??
       options.defaultBudget;
     if (!budget) {
       throw new HostedInferenceError(
         `The ${HOSTED_INFERENCE_FEATURE_KEY} grant names no budget (metadata.budget.limitMicros) and no defaultBudget is set.`,
         'HOSTED_INFERENCE_INVALID',
-        { tenantId: change.tenantId },
+        { tenantId },
       );
     }
-    return budget;
+    const result = await options.provisioner.reconcileTenant(tenantId, {
+      entitled: true,
+      budget,
+      users: await options.users(tenantId),
+    });
+    throwReconcileFailures(result);
+    return result;
   };
+}
+
+/**
+ * The smrt-subscriptions entitlement-change listener for hosted inference:
+ * register it with `registerEntitlementChangeListener()`. A change that
+ * gains, loses or changes `inference.hosted` reconciles the tenant to the
+ * change's `after` snapshot ({@link createHostedInferenceReconciler}).
+ */
+export function createHostedInferenceEntitlementListener(
+  options: HostedInferenceEntitlementListenerOptions,
+): (change: HostedEntitlementChange) => Promise<void> {
+  const reconcile = createHostedInferenceReconciler(options);
   return async (change) => {
-    const { tenantId } = change;
-    const failures: Array<{ userId?: string; error: unknown }> = [];
-    if (change.lost.includes(HOSTED_INFERENCE_FEATURE_KEY)) {
-      for (const userId of await options.provisioner.listActive(tenantId)) {
-        try {
-          await options.provisioner.revoke({
-            tenantId,
-            userId,
-            reason: 'entitlement-lost',
-          });
-        } catch (error) {
-          failures.push({ userId, error });
-        }
-      }
-    } else if (change.gained.includes(HOSTED_INFERENCE_FEATURE_KEY)) {
-      const budget = budgetOf(change);
-      for (const userId of await options.users(tenantId)) {
-        try {
-          await options.provisioner.provision({ tenantId, userId, budget });
-        } catch (error) {
-          failures.push({ userId, error });
-        }
-      }
-    } else if (change.changed.includes(HOSTED_INFERENCE_FEATURE_KEY)) {
-      const budget = budgetOf(change);
-      for (const userId of await options.provisioner.listActive(tenantId)) {
-        try {
-          await options.provisioner.syncBudget({ tenantId, userId, budget });
-        } catch (error) {
-          failures.push({ userId, error });
-        }
-      }
-    }
-    if (failures.length > 0) {
-      throw new HostedInferenceError(
-        `Hosted inference failed for ${failures.length} user(s) of tenant ${tenantId}.`,
-        'HOSTED_GATEWAY_FAILED',
-        {
-          tenantId,
-          users: failures.map((failure) => failure.userId),
-          codes: failures.map((failure) =>
-            failure.error instanceof SmrtError
-              ? failure.error.code
-              : failure.error instanceof Error
-                ? failure.error.name
-                : 'unknown',
-          ),
-        },
-      );
-    }
+    const touches = [change.gained, change.lost, change.changed].some((keys) =>
+      keys.includes(HOSTED_INFERENCE_FEATURE_KEY),
+    );
+    if (!touches) return;
+    await reconcile(change.tenantId, change.after);
   };
 }
