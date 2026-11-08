@@ -1850,6 +1850,18 @@ importers:
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
+      '@happyvertical/smrt-secrets':
+        specifier: workspace:*
+        version: link:../secrets
+      '@happyvertical/smrt-tenancy':
+        specifier: workspace:*
+        version: link:../tenancy
+      '@happyvertical/smrt-users':
+        specifier: workspace:*
+        version: link:../users
+      '@happyvertical/sql':
+        specifier: ^0.111.6
+        version: 0.111.6(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
     devDependencies:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*

@@ -1,6 +1,7 @@
 /**
  * @happyvertical/smrt-inference — inference binding behavior for SMRT tiers
- * (#4749). This entry is browser-safe; `./node` holds the doctor.
+ * (#4749). This entry is browser-safe; `./node` holds the doctor and
+ * `./resolver` the per-user / per-tenant resolver over smrt-secrets (#4756).
  *
  * Importing it registers the chain executor and the validating resolver
  * into core's seam (`setInferenceExecutor()` / `setInferenceResolver()`).
@@ -27,6 +28,23 @@ export {
   createChainClient,
   createChainExecutor,
 } from './executor.js';
+export {
+  INFERENCE_PROVIDER_CONFIG_SECRET_TYPE,
+  INFERENCE_PROVIDER_CONFIG_SOURCES,
+  type InferenceProviderBinding,
+  type InferenceProviderConfig,
+  InferenceProviderConfigError,
+  type InferenceProviderConfigSource,
+  inferenceProviderBindingFor,
+  inferenceProviderConfigSecretName,
+  inferenceProviderSource,
+  inferenceProviderTargets,
+  parseInferenceProviderConfig,
+  type RedactedInferenceProviderBinding,
+  type RedactedInferenceProviderConfig,
+  redactInferenceProviderConfig,
+  redactInferenceTarget,
+} from './provider-config.js';
 export {
   createInferenceResolver,
   isInferenceRegistered,

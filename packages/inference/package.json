@@ -18,6 +18,10 @@
     "./node": {
       "types": "./dist/node.d.ts",
       "import": "./dist/node.js"
+    },
+    "./resolver": {
+      "types": "./dist/resolver.d.ts",
+      "import": "./dist/resolver.js"
     }
   },
   "scripts": {
@@ -34,7 +38,11 @@
   "dependencies": {
     "@happyvertical/ai": "catalog:",
     "@happyvertical/smrt-config": "workspace:*",
-    "@happyvertical/smrt-core": "workspace:*"
+    "@happyvertical/smrt-core": "workspace:*",
+    "@happyvertical/smrt-secrets": "workspace:*",
+    "@happyvertical/smrt-tenancy": "workspace:*",
+    "@happyvertical/smrt-users": "workspace:*",
+    "@happyvertical/sql": "catalog:"
   },
   "devDependencies": {
     "@happyvertical/smrt-vitest": "workspace:*",

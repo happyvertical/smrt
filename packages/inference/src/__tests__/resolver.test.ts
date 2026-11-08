@@ -1,0 +1,447 @@
+/**
+ * Per-user and per-tenant inference bindings over smrt-secrets (#4756):
+ * precedence, the no-principal fallthrough, the cache and its invalidation,
+ * the redacted settings shape, and composition with #4752's validation.
+ */
+import {
+  getInferenceResolver,
+  type InferenceConfig,
+  resolveInference,
+  resolveInferenceTarget,
+  setInferenceResolver,
+} from '@happyvertical/smrt-core';
+import { withTenant } from '@happyvertical/smrt-tenancy';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { InferenceConfigError, registerInference } from '../index.js';
+import {
+  createUserInferenceResolver,
+  type InferencePrincipal,
+  InferenceProviderConfigError,
+  type InferenceSecretStore,
+  inferenceProviderConfigSecretName,
+  registerUserInferenceResolver,
+} from '../resolver.js';
+
+const TENANT = '11111111-1111-4111-8111-111111111111';
+const OTHER_TENANT = '22222222-2222-4222-8222-222222222222';
+const USER = '33333333-3333-4333-8333-333333333333';
+const USER_KEY = 'sk-user-secret-value';
+const TENANT_KEY = 'sk-tenant-secret-value';
+
+/** An in-memory secret store keyed by (tenant, name), like SecretService. */
+function fakeSecrets(tenantOf: () => string | undefined) {
+  const rows = new Map<string, string>();
+  const key = (name: string) => `${tenantOf() ?? '(none)'}|${name}`;
+  const store = {
+    retrieve: vi.fn(async (name: string) => {
+      const value = rows.get(key(name));
+      if (value === undefined) throw new Error(`Secret '${name}' not found`);
+      return { value };
+    }),
+    store: vi.fn(async (name: string, value: string) => {
+      rows.set(key(name), value);
+      return {};
+    }),
+    delete: vi.fn(async (name: string) => rows.delete(key(name))),
+    seed(tenantId: string, name: string, value: unknown) {
+      rows.set(`${tenantId}|${name}`, JSON.stringify(value));
+    },
+  } satisfies InferenceSecretStore & Record<string, unknown>;
+  return store;
+}
+
+async function currentTenant(): Promise<string | undefined> {
+  const { getCurrentTenant } = await import('@happyvertical/smrt-tenancy');
+  return getCurrentTenant()?.tenantId;
+}
+
+function setup(
+  options: {
+    principal?: InferencePrincipal | undefined;
+    now?: () => number;
+  } = {},
+) {
+  let tenantInContext: string | undefined;
+  const secrets = fakeSecrets(() => tenantInContext);
+  // Track the tenancy context the resolver runs secret calls in.
+  const wrap = <K extends 'retrieve' | 'store' | 'delete'>(name: K) => {
+    const inner = secrets[name] as (...args: unknown[]) => Promise<unknown>;
+    (secrets as Record<string, unknown>)[name] = vi.fn(
+      async (...args: unknown[]) => {
+        tenantInContext = await currentTenant();
+        return inner(...args);
+      },
+    );
+  };
+  wrap('retrieve');
+  wrap('store');
+  wrap('delete');
+  const principal = { current: options.principal };
+  const resolver = createUserInferenceResolver({
+    secrets,
+    principal: () => principal.current,
+    ...(options.now ? { now: options.now } : {}),
+  });
+  return { secrets, resolver, principal };
+}
+
+const userConfig = {
+  provider: 'openai',
+  baseUrl: 'https://openrouter.ai/api/v1',
+  model: 'user/default-model',
+  apiKey: USER_KEY,
+};
+const tenantConfig = {
+  provider: 'openai',
+  baseUrl: 'https://tenant.example/v1',
+  model: 'tenant/model',
+  apiKey: TENANT_KEY,
+};
+
+const appConfig: InferenceConfig = {
+  tiers: { best: { provider: 'anthropic', model: 'app-best' } },
+};
+
+afterEach(() => {
+  setInferenceResolver(undefined);
+});
+
+describe('createUserInferenceResolver precedence', () => {
+  it('binds user, then tenant, then app config, then the configured client', async () => {
+    const { secrets, resolver } = setup({
+      principal: { tenantId: TENANT, userId: USER },
+    });
+    secrets.seed(TENANT, inferenceProviderConfigSecretName({ userId: USER }), {
+      tiers: { great: userConfig },
+    });
+    secrets.seed(TENANT, inferenceProviderConfigSecretName({}), {
+      tiers: { great: tenantConfig, good: tenantConfig },
+    });
+
+    const resolve = (tier: 'great' | 'good' | 'best' | 'cheap') =>
+      resolveInference({ tier }, { resolver, config: appConfig });
+
+    const great = await resolve('great');
+    expect(great).toMatchObject({
+      tierResolved: 'great',
+      via: 'resolver',
+      target: { model: 'user/default-model', apiKey: USER_KEY, source: 'byo' },
+    });
+    expect((await resolve('good')).target).toMatchObject({
+      model: 'tenant/model',
+      apiKey: TENANT_KEY,
+    });
+    expect(await resolve('best')).toMatchObject({
+      via: 'config',
+      target: { model: 'app-best', source: 'app' },
+    });
+    expect(await resolve('cheap')).toEqual({
+      tierResolved: 'cheap',
+      via: 'default',
+      target: { source: 'app' },
+    });
+  });
+
+  it('applies the user default to every tier until a tier is bound individually', async () => {
+    const { secrets, resolver } = setup({
+      principal: { tenantId: TENANT, userId: USER },
+    });
+    secrets.seed(TENANT, inferenceProviderConfigSecretName({ userId: USER }), {
+      ...userConfig,
+      tiers: { best: { preset: 'lemonade', model: 'local-qwen' } },
+    });
+    const cheap = await resolveInference(
+      { tier: 'cheap' },
+      { resolver, config: appConfig },
+    );
+    expect(cheap.target.model).toBe('user/default-model');
+    const best = await resolveInference(
+      { tier: 'best' },
+      { resolver, config: appConfig },
+    );
+    expect(best.target).toMatchObject({
+      provider: 'openai',
+      baseUrl: 'http://127.0.0.1:13305/v1',
+      model: 'local-qwen',
+      apiKey: 'smrt-local',
+      source: 'local',
+    });
+  });
+
+  it('resolves auto to the app default tier before binding', async () => {
+    const { secrets, resolver } = setup({
+      principal: { tenantId: TENANT, userId: USER },
+    });
+    secrets.seed(TENANT, inferenceProviderConfigSecretName({ userId: USER }), {
+      tiers: { cheap: userConfig },
+    });
+    const auto = await resolveInference(
+      { tier: 'auto' },
+      { resolver, config: { defaultTier: 'cheap' } },
+    );
+    expect(auto).toMatchObject({ tierResolved: 'cheap', via: 'resolver' });
+  });
+
+  it('keeps a hosted source declared by the stored config (#4759)', async () => {
+    const { secrets, resolver } = setup({ principal: { tenantId: TENANT } });
+    secrets.seed(TENANT, inferenceProviderConfigSecretName({}), {
+      ...tenantConfig,
+      source: 'hosted',
+    });
+    const res = await resolveInference({ tier: 'good' }, { resolver });
+    expect(res.target.source).toBe('hosted');
+  });
+
+  it('defers to the fallback resolver before app config', async () => {
+    const fallback = {
+      resolve: vi.fn(async () => ({
+        tierResolved: 'good' as const,
+        target: { provider: 'openai', model: 'fallback' },
+        via: 'resolver' as const,
+      })),
+    };
+    const secrets = fakeSecrets(() => undefined);
+    const resolver = createUserInferenceResolver({
+      secrets,
+      fallback,
+      principal: () => undefined,
+    });
+    const res = await resolveInference({ tier: 'good' }, { resolver });
+    expect(res.target).toEqual({
+      provider: 'openai',
+      model: 'fallback',
+      source: 'app',
+    });
+  });
+});
+
+describe('identity', () => {
+  it('skips the user layer with no principal and never reads a user secret', async () => {
+    const { secrets, resolver } = setup({ principal: undefined });
+    secrets.seed(TENANT, inferenceProviderConfigSecretName({ userId: USER }), {
+      ...userConfig,
+    });
+    // No tenant either: nothing stored is read; the app binds.
+    const none = await resolveInference(
+      { tier: 'best' },
+      { resolver, config: appConfig },
+    );
+    expect(none.target).toMatchObject({ model: 'app-best', source: 'app' });
+    expect(secrets.retrieve).not.toHaveBeenCalled();
+
+    // A tenant named by the request (an object's tenant) gets its tenant
+    // layer, still without any user layer.
+    secrets.seed(TENANT, inferenceProviderConfigSecretName({}), tenantConfig);
+    const tenantOnly = await resolveInference(
+      { tier: 'best', tenantId: TENANT },
+      { resolver, config: appConfig },
+    );
+    expect(tenantOnly.target.apiKey).toBe(TENANT_KEY);
+    const names = secrets.retrieve.mock.calls.map((call) => call[0]);
+    expect(names).toEqual([inferenceProviderConfigSecretName({})]);
+  });
+
+  it('skips the user layer when the request acts for another tenant', async () => {
+    const { secrets, resolver } = setup({
+      principal: { tenantId: TENANT, userId: USER },
+    });
+    secrets.seed(TENANT, inferenceProviderConfigSecretName({ userId: USER }), {
+      ...userConfig,
+    });
+    const res = await resolveInference(
+      { tier: 'best', tenantId: OTHER_TENANT },
+      { resolver, config: appConfig },
+    );
+    expect(res.target).toMatchObject({ model: 'app-best' });
+    const names = secrets.retrieve.mock.calls.map((call) => call[0]);
+    expect(names).toEqual([inferenceProviderConfigSecretName({})]);
+  });
+
+  it('reads the ambient tenancy principal by default and reads secrets in its tenant', async () => {
+    const secrets = fakeSecrets(() => undefined);
+    let seenTenant: string | undefined;
+    const retrieve = secrets.retrieve;
+    const store: InferenceSecretStore = {
+      ...secrets,
+      retrieve: async (name) => {
+        seenTenant = await currentTenant();
+        if (name === inferenceProviderConfigSecretName({ userId: USER })) {
+          return { value: JSON.stringify(userConfig) };
+        }
+        return retrieve(name);
+      },
+    };
+    const resolver = createUserInferenceResolver({ secrets: store });
+    const res = await withTenant({ tenantId: TENANT, userId: USER }, () =>
+      resolveInference({ tier: 'good' }, { resolver }),
+    );
+    expect(res.target.apiKey).toBe(USER_KEY);
+    expect(seenTenant).toBe(TENANT);
+    // Outside any context there is no principal.
+    const outside = await resolveInference({ tier: 'good' }, { resolver });
+    expect(outside.via).toBe('default');
+  });
+});
+
+describe('cache', () => {
+  it('caches per (tenant, user), invalidates on write, and expires by TTL', async () => {
+    let clock = 0;
+    const { secrets, resolver } = setup({
+      principal: { tenantId: TENANT, userId: USER },
+      now: () => clock,
+    });
+    secrets.seed(TENANT, inferenceProviderConfigSecretName({ userId: USER }), {
+      ...userConfig,
+    });
+    const model = async () =>
+      (await resolveInference({ tier: 'good' }, { resolver })).target.model;
+
+    expect(await model()).toBe('user/default-model');
+    expect(await model()).toBe('user/default-model');
+    // user + tenant read once, then served from cache
+    expect(secrets.retrieve).toHaveBeenCalledTimes(2);
+
+    await resolver.write('user', { ...userConfig, model: 'user/new-model' });
+    expect(secrets.store).toHaveBeenCalledWith(
+      inferenceProviderConfigSecretName({ userId: USER }),
+      expect.any(String),
+      expect.objectContaining({ category: 'inference.provider-config' }),
+    );
+    expect(await model()).toBe('user/new-model');
+    expect(secrets.retrieve).toHaveBeenCalledTimes(4);
+
+    // A write elsewhere is seen after invalidate() or the TTL.
+    secrets.seed(TENANT, inferenceProviderConfigSecretName({ userId: USER }), {
+      ...userConfig,
+      model: 'user/external',
+    });
+    expect(await model()).toBe('user/new-model');
+    clock += 31_000;
+    expect(await model()).toBe('user/external');
+
+    secrets.seed(TENANT, inferenceProviderConfigSecretName({ userId: USER }), {
+      ...userConfig,
+      model: 'user/after-invalidate',
+    });
+    resolver.invalidate({ tenantId: TENANT });
+    expect(await model()).toBe('user/after-invalidate');
+
+    expect(await resolver.remove('user')).toBe(true);
+    expect((await resolveInference({ tier: 'good' }, { resolver })).via).toBe(
+      'default',
+    );
+  });
+
+  it('refuses a user write without a user principal and an invalid config', async () => {
+    const { resolver, principal } = setup({ principal: { tenantId: TENANT } });
+    await expect(resolver.write('user', userConfig)).rejects.toThrow(/user id/);
+    await expect(
+      resolver.write('tenant', { provider: 'openai', apiKey: TENANT_KEY }),
+    ).rejects.toThrow(InferenceProviderConfigError);
+    principal.current = undefined;
+    await expect(resolver.write('tenant', tenantConfig)).rejects.toThrow(
+      /tenant context/,
+    );
+  });
+});
+
+describe('redaction and errors', () => {
+  it('never returns a key in the redacted binding map', async () => {
+    const { secrets, resolver } = setup({
+      principal: { tenantId: TENANT, userId: USER },
+    });
+    secrets.seed(TENANT, inferenceProviderConfigSecretName({ userId: USER }), {
+      ...userConfig,
+      tiers: { best: { preset: 'openrouter', model: 'x', apiKey: USER_KEY } },
+    });
+    secrets.seed(TENANT, inferenceProviderConfigSecretName({}), tenantConfig);
+
+    const map = await resolver.resolveBindings(undefined, { redact: true });
+    const serialized = JSON.stringify(map);
+    expect(serialized).not.toContain(USER_KEY);
+    expect(serialized).not.toContain(TENANT_KEY);
+    expect(map.tiers.best).toMatchObject({
+      layer: 'user',
+      hasApiKey: true,
+      baseUrl: 'https://openrouter.ai/api/v1',
+    });
+    expect(map.tiers.best).not.toHaveProperty('apiKey');
+    expect(map.user).toMatchObject({ hasApiKey: true });
+    expect(map.tenant).toMatchObject({ hasApiKey: true });
+
+    // Redaction is the default.
+    expect(JSON.stringify(await resolver.resolveBindings())).not.toContain(
+      USER_KEY,
+    );
+    const raw = await resolver.resolveBindings(undefined, { redact: false });
+    expect(raw.tiers.good).toMatchObject({ apiKey: USER_KEY, layer: 'user' });
+  });
+
+  it('fails closed on a corrupt stored config without echoing the key', async () => {
+    const { secrets, resolver } = setup({ principal: { tenantId: TENANT } });
+    secrets.seed(TENANT, inferenceProviderConfigSecretName({}), {
+      provider: 'openai',
+      apiKey: TENANT_KEY,
+    });
+    const error = await resolveInference({ tier: 'good' }, { resolver }).then(
+      () => undefined,
+      (caught: unknown) => caught,
+    );
+    expect(error).toBeInstanceOf(InferenceProviderConfigError);
+    expect(String((error as Error).message)).not.toContain(TENANT_KEY);
+    expect((error as Error).message).toMatch(/baseUrl is required/);
+  });
+});
+
+describe('registration', () => {
+  it('sits behind the validating resolver in either import order', async () => {
+    const { secrets, resolver } = setup({
+      principal: { tenantId: TENANT, userId: USER },
+    });
+    secrets.seed(TENANT, inferenceProviderConfigSecretName({ userId: USER }), {
+      ...userConfig,
+    });
+    registerInference();
+    registerUserInferenceResolver(resolver);
+    registerInference(); // a later registration keeps the user resolver
+    const active = getInferenceResolver();
+    expect(active).not.toBe(resolver);
+
+    const res = await resolveInference({ tier: 'good' }, { config: {} });
+    expect(res.target.apiKey).toBe(USER_KEY);
+
+    await expect(
+      resolveInference(
+        { tier: 'good' },
+        { config: { tiers: { good: { alias: 'missing' } } } },
+      ),
+    ).rejects.toBeInstanceOf(InferenceConfigError);
+  });
+
+  it('feeds resolveInferenceTarget for raw getAI() sites with source tags', async () => {
+    const { secrets, resolver } = setup({
+      principal: { tenantId: TENANT, userId: USER },
+    });
+    secrets.seed(TENANT, inferenceProviderConfigSecretName({ userId: USER }), {
+      ...userConfig,
+    });
+    registerUserInferenceResolver(resolver);
+    const resolved = await resolveInferenceTarget({
+      base: { provider: 'anthropic', model: 'site-model', apiKey: 'site-key' },
+    });
+    expect(resolved.bound).toBe(true);
+    expect(resolved.source).toBe('byo');
+    expect(resolved.options).toMatchObject({
+      provider: 'openai',
+      type: 'openai',
+      model: 'user/default-model',
+      baseUrl: 'https://openrouter.ai/api/v1',
+      apiKey: USER_KEY,
+    });
+    expect(resolved.usageTags).toEqual({
+      tierRequested: 'auto',
+      tierResolved: 'good',
+      source: 'byo',
+    });
+  });
+});
