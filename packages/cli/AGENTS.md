@@ -32,6 +32,7 @@ smrt db:rollback --mark-only # Record-only flip; schema untouched
 smrt db:prune                # Prune framework system tables to their retention windows
 smrt db:prune --dry-run      # Same predicates, counted rather than deleted
 smrt ai:usage [--by prompt,model,tier,class,tenant,fusion,source] [--since 7d] [--tenant <id>] [--json] # ../core/agents/ai-usage.md
+smrt inference:hosted provision|revoke --tenant <id> --user <id> [--budget-usd 20|--budget-micros N] [--window month] [--json] # Hosted gateway keys (src/commands/inference-hosted.ts; ../inference/AGENTS.md); each subcommand is its own multi-word entry so #4760's enable|disable sit beside them
 smrt docs:agents             # Generate .agents/smrt-framework.md
 smrt docs:claude             # Deprecated alias writing .claude/smrt-framework.md
 smrt dev:knowledge-*         # Deterministic agent knowledge index/check/diff
