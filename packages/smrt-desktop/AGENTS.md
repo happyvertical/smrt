@@ -24,7 +24,9 @@ Clients are read-only: never write, rename or delete a record, socket, lease or
 lock, and never retry `failed(lease_held)`. Node cannot verify the control
 channel's peer, so the real check lives in the Rust shell; keep that stated.
 Control ops are extensible (`ControlOpSpec`, `createControlCodec`, handler
-registry); the credential contract adds its op there.
+registry); the credential contract adds its `acquire-credential` op there
+(`credentialControlCodec`, `credentialControlOp`), and `coreControlCodec` must
+stay credential-free. Rendezvous result types never carry a secret.
 
 The native credential handoff lives in `src/credentials` (slot record,
 mint-response validator, custody over an injected `SecretItemStore`, the

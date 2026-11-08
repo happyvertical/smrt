@@ -126,7 +126,7 @@ contract with its own section.
 | `smrt-bundle.json` | bundler | `locateInstallation`, launcher, plugin generator | identity and resource-relative layout |
 | `installation.json` | desktop shell, at every start | `locateInstallation` | absolute paths the shell runs from |
 | `instance.json` | desktop shell, on every phase change | `createFileRendezvous` | the running instance: nonce, control endpoint, state, origin |
-| control channel | desktop shell (server) | `createFileRendezvous`, launcher | `status`, `ensure-ready` (owner-only socket or pipe) |
+| control channel | desktop shell (server) | `createFileRendezvous`, launcher | `status`, `ensure-ready`, and the credential contract's `acquire-credential` (owner-only socket or pipe) |
 | `mcp-slot.json` | desktop shell | shell, `acquire-credential` handler | non-secret credential slot metadata (see the credential handoff) |
 
 `smrt-bundle.json` is static trusted package content (same trust class as the
@@ -444,7 +444,9 @@ below, so this is the shell's choice.
 most 4096 bytes excluding the terminator, closed schema, duplicate keys
 rejected, unknown `v` or `op` rejected, one request per connection (the server
 closes after its answer). This contract defines two operations; the credential
-handoff adds a third without changing the codec, because operations are data
+handoff adds a third (`acquire-credential`, see
+[Control channel: `acquire-credential`](#control-channel-acquire-credential))
+without changing `coreControlCodec`, because operations are data
 (`ControlOpSpec`), a codec is built from a list of them (`createControlCodec`),
 and handlers register in an open registry (`createControlHandlerRegistry`).
 
@@ -563,26 +565,6 @@ every phase change and leaves it on `close()`), and `serveControlChannel` with a
 handler registry. It models the Rust shell's observable behavior, not its
 peer checks or its single-instance lock.
 
-### Mapping to `LauncherProvider`
-
-<!-- TODO(#4796, contract c): add the credential parts of this mapping
-(`acquireCredential` via the control channel and the fd 3 handoff) once the
-credential handoff contract is integrated. Only the rendezvous half is
-documented here. -->
-
-`connectInstance` maps a `RendezvousResult` from
-`createFileRendezvous(...).ensureReady()`:
-
-| Result | `LauncherProvider` outcome |
-| --- | --- |
-| `ready` | `{ origin }`; keep `instanceNonce` for the credential request |
-| `not_installed` | `missing_install` |
-| `failed` with `unsupported_contract` | `unsupported_contract` |
-| every other `failed`, `not_running`, `untrusted_state`, `timeout` | `stale_instance` |
-
-`unexpected_endpoint` cannot arise from a `ready` result: the origin grammar
-(`http://127.0.0.1:<port>`) is enforced by the record and protocol parsers, and
-a violation surfaces as `untrusted_state`.
 ### Native credential handoff
 
 The owner mints a local MCP bearer in the signed-in desktop webview (#4726).
@@ -734,7 +716,7 @@ handler. It takes a request `{ v: 1, op: 'acquire-credential', instanceNonce,
 origin }` and returns `{ ok: true, lease }` or `{ ok: false, code }`, and it
 never throws. It is written against a minimal structural `ControlContext {
 instanceNonce, origin }` and imports nothing from the control protocol; the
-protocol registry registers it. Checks, in order:
+wiring below registers it. Checks, in order:
 
 1. `instance_mismatch` when the nonce or origin differs from the running
    instance (or the instance is not ready). Custody is not touched, so a stale
@@ -749,8 +731,34 @@ wire form (`{"v":1,"ok":true,"origin":"…","token":"…","expiresAt":"…"}` or
 `{"v":1,"ok":false,"code":"…"}`); the bearer appears in a success reply and
 nowhere else.
 
+**On the wire.** The op is added to contract (b)'s extension points, not to its
+core. `credentialControlOp` is the `ControlOpSpec` (request closed to `v`,
+`op`, `instanceNonce`, `origin`; the success body is parsed by
+`parseAcquireCredentialResponse`), and `credentialControlCodec` is
+`createControlCodec` over `status`, `ensure-ready` and `acquire-credential`
+with the extra error codes `credential_unavailable`, `credential_invalid` and
+`instance_mismatch`. `coreControlCodec` is unchanged: a core-only client cannot
+build the request, and a core-only server answers it `unsupported_op`. The
+codec encodes the success body with `encodeAcquireCredentialResponse` (a
+`SecretString` would serialize as `[REDACTED]` through the generic path) and
+re-parses its own line, so the bearer is revealed in one place and appears in
+the `ok: true` body of this op and nowhere else; no rendezvous type
+(`RendezvousResult`, `InstanceStateResponse`, `instance.json`) can carry it.
+
+A server wires it with `createCredentialReferenceRegistry(supervisor, {
+custody, slot })`, which registers `status`, `ensure-ready` and the handler,
+passing `current: referenceControlContext(supervisor)` so the nonce and origin
+the handler compares against are the serving instance's own (and `null`, hence
+`instance_mismatch`, while it is not `ready`). Hand the registry and the codec
+to `startReferenceShell({ ..., registry, codec: credentialControlCodec })`; a
+different server uses `registerAcquireCredential(registry, handler)` on a
+registry typed `ControlHandlerRegistry<CredentialControlRequest,
+CredentialControlResponse>`. `src/credentials/end-to-end.test.ts` runs the
+whole path over a real unix socket.
+
 `createControlChannelCredentialProvider({ send })` is the launcher side. `send`
-is injected (the rendezvous transport implements it); the provider validates
+is injected (`createControlChannelSend(endpoint)` implements it over the
+rendezvous transport and `credentialControlCodec`); the provider validates
 the nonce and origin before sending, applies a timeout (default 2 s) and the
 caller's `AbortSignal`, decodes the reply strictly, requires the reply origin
 to equal the requested origin, and refuses an expired bearer. Every transport
@@ -833,11 +841,11 @@ so; those parts are not claimed closed by this package.
 | T1 | Same-user malware reads the keychain item | The shell stores the item in the OS secret store (macOS: created by the signed shell, `WhenUnlockedThisDeviceOnly`, non-synchronizable; Windows/Linux have no same-user boundary: residual). Scopes and lifetime are bounded by the owner. Custody touches only `mcp-credential.<uuid>` names. | `credentials/custody.test.ts`: `T1: custody only touches mcp-credential.<uuid> item names`. Item attributes are asserted in the shell's macOS test (follow-up). |
 | T2 | Another OS user | Private directory 0700, files 0600, readers validate `fstat` (owner, mode); control-channel peer uid/SID check and pipe DACL are the shell's and contract (b)'s. | `credentials/slot-record.test.ts`: `T2: readSlotRecord rejects a foreign-owned, group-readable or symlinked record`. Peer-credential rejection is a Rust test (follow-up). |
 | T3 | Token in argv / `ps` | The bearer is never an argument (`--credential-fd=3` only); the spawn helper refuses a command, argument or cwd that contains it. | `credentials/bridge-spawn.test.ts`: `T3: argv and env passed to the spawner never contain the token`; `T3/T4: refuses to spawn when the token is in argv, env or command`; `T3: ps shows no token in the child command line` (real child). |
-| T4 | Token in the environment (`/proc/<pid>/environ`) | The child environment is exactly what the launcher passes, never inherited; the bridge in fd mode ignores `<PREFIX>_TOKEN`. | `credentials/bridge-spawn.test.ts`: `T4: the child environment as the OS reports it holds no token` (`/proc/<pid>/environ` on Linux, `ps eww` on macOS, real child with a real fd 3 pipe); `delivers the initial frame over fd 3 and keeps the token out of argv and env`. |
+| T4 | Token in the environment (`/proc/<pid>/environ`) | The child environment is exactly what the launcher passes, never inherited; the bridge in fd mode ignores `<PREFIX>_TOKEN`. | `credentials/bridge-spawn.test.ts`: `T4: the child environment as the OS reports it holds no token` (`/proc/<pid>/environ` on Linux, `ps eww` on macOS, real child with a real fd 3 pipe); `delivers the initial frame over fd 3 and keeps the token out of argv and env`; `credentials/end-to-end.test.ts`: `hands the minted token from the shell to the bridge over fd 3 and nowhere else`. |
 | T5 | Crash dumps and logs | The token lives in a `SecretString` until the three reveal sites; diagnostics are fixed text; buffers are zeroed. | `credentials/leak.test.ts`: `T5: SecretString is not serialized by JSON, inspect, String, template, structuredClone or console`; `T5: errors built with secrets in their context do not retain them`; `T5: every credential error message is fixed, value-free text`; the describe `T5/T11: every exported parser and handler, fed token-bearing invalid input`; `reveal() is called only by custody serialization, the wire encoders and the secret guard`. |
 | T6 | Webview XSS reaching the IPC command | No command returns a token; the helper never stores, logs or builds URLs from the body; the shell checks the webview origin equals the current ready origin, the slot id, and the body (follow-up). XSS in this origin already holds the session cookie and can mint itself, so the IPC path grants nothing new. | `webview/webview.test.ts`: `T6: touches no storage, cookie, console, URL or location API`; `T6: has no path to those APIs in its source or its import closure`; `mints with a same-origin POST and passes the RAW response text only to the put command`. Origin/slot/body rejection is a Rust test (follow-up). |
-| T7 | Replay after rotation | Server: only the latest write verifies (`app-runtime/src/local-mcp-tokens.test.ts`: `mints, rotates, expires and revokes a private owner slot without colliding with operator tokens`). Custody replaces atomically and the handler reads it on every call; the pipe delivers the new bearer on refresh. | `credentials/control-handler.test.ts`: `T7: after rotation the handler returns only the latest bearer`; `credentials/bridge-spawn.test.ts`: `T7: a refresh request after a simulated 401 delivers the rotated token`; `credentials/custody.test.ts`: `replaces atomically: a later put wins and old bytes are gone`. |
-| T8 | Confused deputy via the control channel | `acquire-credential` is bound to the current `instanceNonce` and `origin` and refuses before touching custody; one request per connection and the peer check are contract (b)'s and the shell's. | `credentials/control-handler.test.ts`: `T8: wrong nonce or origin yields instance_mismatch without touching custody`. Foreign peer is a Rust test (follow-up). |
+| T7 | Replay after rotation | Server: only the latest write verifies (`app-runtime/src/local-mcp-tokens.test.ts`: `mints, rotates, expires and revokes a private owner slot without colliding with operator tokens`). Custody replaces atomically and the handler reads it on every call; the pipe delivers the new bearer on refresh. | `credentials/control-handler.test.ts`: `T7: after rotation the handler returns only the latest bearer`; `credentials/bridge-spawn.test.ts`: `T7: a refresh request after a simulated 401 delivers the rotated token`; `credentials/custody.test.ts`: `replaces atomically: a later put wins and old bytes are gone`; over a real socket, `credentials/end-to-end.test.ts`: `yields only the latest token after a rotation`. |
+| T8 | Confused deputy via the control channel | `acquire-credential` is bound to the current `instanceNonce` and `origin` and refuses before touching custody; one request per connection and the peer check are contract (b)'s and the shell's. | `credentials/control-handler.test.ts`: `T8: wrong nonce or origin yields instance_mismatch without touching custody`; over a real socket, `credentials/end-to-end.test.ts`: `answers a wrong instance nonce or origin with instance_mismatch`. Foreign peer is a Rust test (follow-up). |
 | T9 | TOCTOU on state files | Readers open `O_NOFOLLOW` and validate the descriptor; writers use temp (`O_EXCL`) plus rename; clients never repair or delete. | `credentials/slot-record.test.ts`: `T9: a symlink swapped in for the record is never followed or repaired`; `persists the slot before the first request can be made` (write order); the stage-1 `internal/private-file.test.ts`. |
 | T10 | Windows named-pipe squatting | Random pipe name published in the private directory, `FILE_FLAG_FIRST_PIPE_INSTANCE`, DACL: contract (b) and the shell. This contract only guarantees that the provider opens no endpoint of its own. | `credentials/provider.test.ts`: `T10: talks only through the injected send and never opens an endpoint itself`. Name grammar belongs to contract (b)'s tests; the "second `CreateNamedPipe` fails" test is a Windows Rust test (follow-up). Residual: a Node client cannot query the server pid/SID. |
 | T11 | Token in error messages | Code-only errors; parsers never echo input; the webview helper replaces every `fetch`/`invoke` rejection with a fixed code and does not chain it. | `credentials/mint-response.test.ts`: `T11: never echoes the body or the token in any failure`; `webview/webview.test.ts`: `T11: a token-bearing malformed body yields a fixed-code error without the token`; `credentials/leak.test.ts`: `the webview helper maps token-bearing failures to fixed codes` and the `T5/T11` describe. |
@@ -868,26 +876,6 @@ so; those parts are not claimed closed by this package.
 - **Bridge behavior** (ignoring env in fd mode, pinning the origin, rate
   limiting refresh) is app-cli's and is not enforced by this package.
 
-#### Mapping to `LauncherProvider` (#4791)
-
-- `acquireCredential(context)` calls
-  `provider.acquire({ instanceNonce, origin, signal })` with the nonce and
-  origin the rendezvous reported for the same instance, and returns
-  `{ token: lease.token.reveal(), release }` **only** as long as #4791 still
-  passes the bearer as `<PREFIX>_TOKEN`. Once #4729 moves to fd 3, use
-  `spawnBridgeWithCredential` instead and drop the env handoff; the launcher's
-  `childEnvironment` must then contain no token.
-- #4791 accepts `localhost` origins; this contract allows only
-  `http://127.0.0.1:<port>`, so #4729 has to narrow `LOOPBACK_HOSTS`.
-- Error mapping: `credential_unavailable` and `credential_invalid` map to the
-  launcher's "connect the assistant in the app" outcome (distinct hints:
-  never connected versus expired or revoked); `instance_mismatch` means the
-  rendezvous answer went stale, so re-run `ensureReady` once and retry; every
-  other `DesktopContractError` from this contract is a launcher fault, not a
-  user action.
-- `release` has nothing to release for the pipe handoff: closing the
-  `BridgeHandoff` closes fd 3.
-
 #### Shell and elsewhere (follow-ups, not in this package)
 
 - Rust shell: the OS secret store behind `SecretItemStore` (shared with the
@@ -898,6 +886,42 @@ so; those parts are not claimed closed by this package.
 - app-cli: `--credential-fd` mode using the frame codec (a dependency on this
   package, or a copy of the 30-line codec).
 - #4729: env to fd 3, narrow the origin grammar, wire the control channel.
+
+### Mapping to `LauncherProvider`
+
+One table maps this package onto the launcher (#4791). `connectInstance` maps a
+`RendezvousResult` from `createFileRendezvous(...).ensureReady()`;
+`acquireCredential` maps the credential provider.
+
+| Source | Result | `LauncherProvider` outcome |
+| --- | --- | --- |
+| `ensureReady()` | `ready` | `{ origin }`; keep `instanceNonce` and `origin` for the credential request |
+| `ensureReady()` | `not_installed` | `missing_install` |
+| `ensureReady()` | `failed` with `unsupported_contract` | `unsupported_contract` |
+| `ensureReady()` | every other `failed`, `not_running`, `untrusted_state`, `timeout` | `stale_instance` |
+| `provider.acquire(...)` | a lease | `{ token, release }` (see the notes below) |
+| `provider.acquire(...)` | `credential_unavailable` | "connect the assistant in the app" (never connected) |
+| `provider.acquire(...)` | `credential_invalid` | "connect the assistant in the app" (expired or revoked: reconnect) |
+| `provider.acquire(...)` | `instance_mismatch` | the rendezvous answer went stale: re-run `ensureReady` once and retry |
+| `provider.acquire(...)` | any other `DesktopContractError` | a launcher fault, not a user action |
+
+`unexpected_endpoint` cannot arise from a `ready` result: the origin grammar
+(`http://127.0.0.1:<port>`) is enforced by the record and protocol parsers, and
+a violation surfaces as `untrusted_state`.
+
+- `acquireCredential(context)` builds the provider once per instance with
+  `createControlChannelCredentialProvider({ send: createControlChannelSend(endpoint) })`,
+  where `endpoint` is the `control` endpoint of the `instance.json` the
+  rendezvous vetted, and calls `provider.acquire({ instanceNonce, origin,
+  signal })` with the nonce and origin the rendezvous reported for the same
+  instance. It returns `{ token: lease.token.reveal(), release }` **only** as
+  long as #4791 still passes the bearer as `<PREFIX>_TOKEN`. Once #4729 moves
+  to fd 3, use `spawnBridgeWithCredential` instead and drop the env handoff;
+  the launcher's `childEnvironment` must then contain no token.
+- #4791 accepts `localhost` origins; this contract allows only
+  `http://127.0.0.1:<port>`, so #4729 has to narrow `LOOPBACK_HOSTS`.
+- `release` has nothing to release for the pipe handoff: closing the
+  `BridgeHandoff` closes fd 3.
 
 ### Versioning
 

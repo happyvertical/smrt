@@ -4,6 +4,7 @@ import { type DesktopFs, nodeFs } from '../internal/fs-seam.js';
 import { isLoopbackOrigin } from '../internal/grammar.js';
 import { writePrivateFileAtomic } from '../internal/private-file.js';
 import type {
+  ControlCodec,
   ControlRequest,
   ControlResponse,
   EnsureReadyRequest,
@@ -171,7 +172,10 @@ export function createReferenceRegistry(
   return registry;
 }
 
-export interface ReferenceShellOptions {
+export interface ReferenceShellOptions<
+  Req extends { readonly op: string } = ControlRequest,
+  Res extends { readonly ok: boolean } = ControlResponse,
+> {
   /** The private state directory; `instance.json` is written here. */
   readonly shellDirectory: string;
   /**
@@ -189,15 +193,24 @@ export interface ReferenceShellOptions {
   readonly now?: () => Date;
   /** Use an existing supervisor (to drive transitions from the test). */
   readonly supervisor?: ReferenceSupervisor;
-  readonly registry?: ControlHandlerRegistry;
+  /**
+   * Handler registry. Defaults to `status` and `ensure-ready` only; an
+   * extended registry needs the matching `codec`.
+   */
+  readonly registry?: ControlHandlerRegistry<Req, Res>;
+  /** Wire codec. Defaults to `coreControlCodec`; pass an extended codec. */
+  readonly codec?: ControlCodec<Req, Res>;
   readonly fs?: DesktopFs;
   readonly currentUid?: number;
 }
 
-export interface ReferenceShell {
+export interface ReferenceShell<
+  Req extends { readonly op: string } = ControlRequest,
+  Res extends { readonly ok: boolean } = ControlResponse,
+> {
   readonly supervisor: ReferenceSupervisor;
   readonly endpoint: ControlEndpoint;
-  readonly registry: ControlHandlerRegistry;
+  readonly registry: ControlHandlerRegistry<Req, Res>;
   /** The record as currently published. */
   record(): InstanceRecordV1;
   /** Resolves once every pending `instance.json` write has landed. */
@@ -206,15 +219,22 @@ export interface ReferenceShell {
   close(): Promise<void>;
 }
 
-export async function startReferenceShell(
-  options: ReferenceShellOptions,
-): Promise<ReferenceShell> {
+export async function startReferenceShell<
+  Req extends { readonly op: string } = ControlRequest,
+  Res extends { readonly ok: boolean } = ControlResponse,
+>(options: ReferenceShellOptions<Req, Res>): Promise<ReferenceShell<Req, Res>> {
   const platform = options.platform ?? process.platform;
   const separator = platform === 'win32' ? '\\' : '/';
   const supervisor =
     options.supervisor ??
     createReferenceSupervisor({ productId: options.productId });
-  const registry = options.registry ?? createReferenceRegistry(supervisor);
+  // With no registry the codec is the core one, so Req/Res are the defaults.
+  const registry =
+    options.registry ??
+    (createReferenceRegistry(supervisor) as unknown as ControlHandlerRegistry<
+      Req,
+      Res
+    >);
   const now = options.now ?? (() => new Date());
   const startedAt = now().toISOString();
   const endpoint = deriveControlEndpoint({
@@ -256,10 +276,13 @@ export async function startReferenceShell(
     return writes;
   };
 
-  const server: ControlServer = await serveControlChannel(
+  const server: ControlServer = await serveControlChannel<Req, Res>(
     endpoint,
-    registry.handler as ControlHandler<ControlRequest, ControlResponse>,
-    'currentUid' in options ? { currentUid: options.currentUid } : {},
+    registry.handler as ControlHandler<Req, Res>,
+    {
+      ...(options.codec === undefined ? {} : { codec: options.codec }),
+      ...('currentUid' in options ? { currentUid: options.currentUid } : {}),
+    },
   );
   const unsubscribe = supervisor.onChange(() => {
     void publish().catch(() => undefined);

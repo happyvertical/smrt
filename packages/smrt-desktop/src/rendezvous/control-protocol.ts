@@ -16,10 +16,10 @@ import { isInstanceNonce } from './instance-record.js';
  * response).
  *
  * This contract defines two operations, `status` and `ensure-ready`. The
- * credential handoff adds `acquire-credential` at integration without changing
- * this file's core: ops are data (`ControlOpSpec`), a codec is built from a
- * list of specs (`createControlCodec`), and the request/response unions widen
- * through the codec's type parameters.
+ * credential handoff adds `acquire-credential` (`credentials/control-channel.ts`)
+ * without changing this file's core: ops are data (`ControlOpSpec`), a codec
+ * is built from a list of specs (`createControlCodec`), and the
+ * request/response unions widen through the codec's type parameters.
  */
 
 export const CONTROL_PROTOCOL_VERSION = 1;
@@ -42,7 +42,7 @@ export interface EnsureReadyRequest {
 
 export type CoreControlRequest = StatusRequest | EnsureReadyRequest;
 
-/** Today's request union. Widened at integration with further ops. */
+/** The core request union. The credential module widens it with its op. */
 export type ControlRequest = CoreControlRequest;
 
 /**
@@ -94,7 +94,7 @@ export interface ControlErrorResponse {
 }
 
 export type CoreControlResponse = InstanceStateResponse | ControlErrorResponse;
-/** Today's response union. Widened at integration with further ops. */
+/** The core response union. The credential module widens it with its op. */
 export type ControlResponse = CoreControlResponse;
 
 type Fields = Readonly<Record<string, unknown>>;
