@@ -484,8 +484,8 @@ returns an opaque record. `openVaultRecoveryKey(record, recoverySecret, context)
 returns the authenticated key ID and key. Use a high-entropy passphrase or a
 randomly generated printable recovery code. Keep the secret separate from the
 wrapped record. Losing every authorized device and the recovery secret means
-losing access to the data. These functions leave storage, device enrollment,
-rotation, and revocation to their callers.
+losing access to the data. Storage, device enrollment, rotation, and
+revocation are in [Vault key lifecycle](#vault-key-lifecycle).
 
 Supply the expected account and key generation from trusted local or pairing
 state. The recovery record cannot establish which account or generation is
@@ -546,3 +546,97 @@ generation. Concurrent preparations can produce different candidates for the
 same next generation. Retain the wrapped keys needed to open existing
 backups. Device enrollment and revocation have their own authorization and
 storage requirements.
+
+## Vault key lifecycle
+
+Use `createVaultKeyLifecycle({ store })` from
+`@happyvertical/smrt-app-runtime/vault-key-lifecycle` to manage one device's
+vault keys. It builds on the three entries above and adds device enrollment,
+custody, rotation and revocation. The lifecycle runs one operation at a time.
+Processes that share a store must serialize their calls, for example under
+the application's operation lock.
+
+### Custody
+
+`VaultKeyStore` is the custody seam: `get`, `set` and `delete` named byte
+items, with atomic replacement. The desktop shell injects an OS keychain
+provider. Headless and development installs use `createFileVaultKeyStore(dir)`
+from `@happyvertical/smrt-app-runtime/vault-key-store`. The directory must be
+absolute. It is created with mode 0700 and must be a real directory owned by
+the current user. Items are mode 0600 files replaced by atomic rename. Keep
+the directory outside the application state root, so plain-data exports and
+backups never include it.
+
+The store holds the device secret, the device's wrapped record and the
+recovery record for each generation, and the device registry. The registry
+holds only IDs, generations, key IDs, timestamps and public keys. Secrets and
+wrapped keys never pass through process arguments. Errors are
+`VaultKeyLifecycleError` values with a stable `code` and a fixed message.
+Never log enrollment requests: they carry the pairing secret.
+
+### Enrollment
+
+1. The new device calls `createEnrollmentRequest({ accountId, deviceId })`.
+   It creates its own 32-byte device secret and returns a JSON request with
+   its X25519 public key and a single-use pairing secret. Show it to an
+   enrolled device only over the pairing channel, such as a QR code.
+2. The enrolled device calls `enrollDevice(request)`. The request must name
+   the enroller's account and a device ID and public key that are not
+   enrolled or revoked. The enroller records the device and returns a grant.
+3. The new device calls `acceptEnrollment(grant)`. It accepts only an
+   enrollment grant for its own pending request, sealed with the pairing
+   secret, and records the account's devices.
+
+A grant carries every generation the sender holds. Each data key is sealed
+to the recipient with `sealVaultDeviceTransfer` from
+`@happyvertical/smrt-app-runtime/vault-device-transfer`. The seal combines an
+ephemeral and a static X25519 agreement through HKDF-SHA256. The HKDF info
+binds the sender ID, both public keys and the ephemeral key. Enrollment uses
+the pairing secret as the HKDF salt. The resulting key wraps the data key as
+a `HVDK` record behind the `HVDT` `01` prefix and the ephemeral public key.
+The authenticated context binds the account, the recipient device, the
+generation and the key ID. The device secret never leaves the device: the
+X25519 private key is derived from it with HKDF info
+`smrt-vault-device-agreement-v1`.
+
+On a fresh machine, `enrollFromRecovery({ accountId, deviceId, generation,
+keyId, recoveryRecord, recoverySecret })` opens the recovery record and
+writes the same registry. That device starts with only its own entry and the
+supplied generation. Another enrolled device can send it older generations
+later.
+
+### Rotation and revocation
+
+`rotate({ recoverySecret })` first checks the recovery secret against the
+current recovery record. It then prepares the next generation with
+`prepareVaultKeyGeneration`, records the candidate, and writes the new
+records. Only then does it commit. The commit marks earlier generations
+read-only and returns a new recovery record and one update grant for each
+other active device. A crash at any point leaves the current generation
+usable. The next `rotate` call resumes a complete candidate or replaces an
+incomplete one.
+
+Another device applies an update grant with `acceptDeviceGrant(grant)`. The
+sender must be active in its registry. The current generation never moves
+backwards. A different key for a generation the device already holds is
+rejected as `generation_conflict`. `createDeviceGrant(deviceId)` re-sends the
+held generations to an active device.
+
+`revokeDevice(deviceId)` removes the device from the active list and keeps a
+revocation record. `openCurrentKey()` then refuses with `rotation_required`
+until a rotation excludes the device. A revoked device gets no new
+generation. Other devices reject its grants once they know of the
+revocation. It keeps any generation it had already opened, so use the
+rotation before writing new snapshots. `openGenerationKey(generation)` opens
+read-only generations for old snapshots. `recoveryRecord(generation)` returns
+the stored recovery record for publication.
+
+Registries are per device. Update grants propagate revocations but never add
+devices, so a rotating device reaches only the devices it enrolled or learned
+at its own enrollment. Use `createDeviceGrant` from a device that knows the
+others. Registry synchronization belongs to the relay.
+
+### Product rules
+
+Losing every enrolled device and the recovery code means losing the data.
+HappyVertical holds no escrow copy of any key and cannot recover it.
