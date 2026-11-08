@@ -350,42 +350,52 @@ describe('agent AI secret resolution', () => {
 
     it('falls through to the registered resolver when no agent secret is named', async () => {
       const { child } = await createTenantHierarchy();
+      const requests: Array<Record<string, unknown>> = [];
       setInferenceResolver({
-        resolve: (request) => ({
-          tierResolved: request.tier === 'auto' ? 'good' : request.tier,
-          target: { ...userTarget },
-          via: 'resolver',
-        }),
+        resolve: (request) => {
+          requests.push({ ...request });
+          return {
+            tierResolved: request.tier === 'auto' ? 'good' : request.tier,
+            target: { ...userTarget },
+            via: 'resolver',
+          };
+        },
       });
 
-      await withTenant({ tenantId: String(child.id) }, async () => {
-        await secrets.store('GEMINI_API_KEY', 'tenant-specific-key');
-        const agent = new GeminiSecretAgent({ db });
-        await agent.initialize();
-        const ai = agent.options.ai as Record<string, unknown> & {
-          onUsage?: (event: unknown) => Promise<void>;
-        };
-        expect(ai).toMatchObject({
-          provider: 'openai',
-          model: 'user/model',
-          baseUrl: 'https://openrouter.ai/api/v1',
-          apiKey: 'sk-user-binding',
-        });
-        await ai.onUsage?.({
-          provider: 'openai',
-          model: 'user/model',
-          operation: 'chat',
-          usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
-        });
-        const rows = await agent.listAiUsage({
-          className: 'GeminiSecretAgent',
-        });
-        expect(rows).toHaveLength(1);
-        expect(rows[0]).toMatchObject({
-          tenantId: child.id,
-          tags: expect.objectContaining({ source: 'byo' }),
-        });
-      });
+      // Initialized inside a user's request: the agent keeps the options
+      // for every later run, so the resolver is told no user applies.
+      await withTenant(
+        { tenantId: String(child.id), userId: 'u-1' },
+        async () => {
+          await secrets.store('GEMINI_API_KEY', 'tenant-specific-key');
+          const agent = new GeminiSecretAgent({ db });
+          await agent.initialize();
+          const ai = agent.options.ai as Record<string, unknown> & {
+            onUsage?: (event: unknown) => Promise<void>;
+          };
+          expect(ai).toMatchObject({
+            provider: 'openai',
+            model: 'user/model',
+            baseUrl: 'https://openrouter.ai/api/v1',
+            apiKey: 'sk-user-binding',
+          });
+          await ai.onUsage?.({
+            provider: 'openai',
+            model: 'user/model',
+            operation: 'chat',
+            usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
+          });
+          const rows = await agent.listAiUsage({
+            className: 'GeminiSecretAgent',
+          });
+          expect(rows).toHaveLength(1);
+          expect(rows[0]).toMatchObject({
+            tenantId: child.id,
+            tags: expect.objectContaining({ source: 'byo' }),
+          });
+        },
+      );
+      expect(requests[0]).toMatchObject({ tenantId: child.id, userId: null });
 
       // A named agent secret keeps the secret path.
       await withTenant({ tenantId: String(child.id) }, async () => {

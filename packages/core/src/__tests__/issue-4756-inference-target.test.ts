@@ -115,6 +115,30 @@ describe('#4756 resolveInferenceTarget', () => {
     expect(user).toMatchObject({ bound: true, source: 'byo' });
   });
 
+  it('forwards tenant, userId: null and promptKey to the resolver', async () => {
+    const seen: unknown[] = [];
+    setInferenceResolver({
+      resolve: (request) => {
+        seen.push(request);
+        return undefined;
+      },
+    });
+    await resolveInferenceTarget({
+      base: BASE,
+      tenantId: 'tenant-a',
+      userId: null,
+      promptKey: 'k.one',
+      className: 'Site',
+    });
+    expect(seen[0]).toEqual({
+      tier: 'auto',
+      tenantId: 'tenant-a',
+      userId: null,
+      className: 'Site',
+      promptKey: 'k.one',
+    });
+  });
+
   it('leaves a chain target to getAiClient(tier) and keeps the base', async () => {
     setInferenceResolver(resolverFor({ alias: 'frontier', source: 'app' }));
     const resolved = await resolveInferenceTarget({ base: BASE });

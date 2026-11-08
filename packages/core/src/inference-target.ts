@@ -141,6 +141,13 @@ export interface ResolveInferenceTargetOptions {
   base?: Record<string, unknown>;
   /** Tenant the call acts for; the resolver also reads the ambient one. */
   tenantId?: string | null;
+  /**
+   * `null`: the client serves more than one user (a long-lived agent, a
+   * cached client), so a resolver must not apply any user's binding. A
+   * per-user resolver reads the user from the ambient principal, never
+   * from a string here.
+   */
+  userId?: string | null;
   className?: string;
   promptKey?: string;
   /** Resolver to use instead of the registered one (tests, instances). */
@@ -208,6 +215,7 @@ export async function resolveInferenceTarget(
     tier,
     ...(options.latency ? { latency: options.latency } : {}),
     ...(options.tenantId !== undefined ? { tenantId: options.tenantId } : {}),
+    ...(options.userId !== undefined ? { userId: options.userId } : {}),
     ...(options.className ? { className: options.className } : {}),
     ...(options.promptKey ? { promptKey: options.promptKey } : {}),
   };

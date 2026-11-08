@@ -53,10 +53,14 @@ order), `fallback`, the app `inference` block, then the configured client
   `InferenceProviderConfigError` (paths only, never values); a missing,
   disabled or expired secret is simply no layer.
 - **Identity.** The ambient principal (tenancy context, then the users
-  session context: smrt-preferences' order). The tenant is the request's
-  (`tenantId` from the object) or the principal's; the user layer applies
-  only when the principal belongs to that tenant. No principal: no user
-  layer, never a guess. `request.userId` is ignored.
+  session context: smrt-preferences' order). With a principal: its tenant
+  and user. A request for another tenant (an object of tenant B used by a
+  principal of A) reads nothing stored and falls through to app config,
+  unless `allowCrossTenant` (then B's tenant layer, no user). No principal
+  (jobs): the request's tenant, no user layer, never a guess.
+  `request.userId === null` (core `resolveInferenceTarget({ userId: null })`)
+  skips the user layer for clients shared beyond one user (agents); a string
+  `userId` is ignored.
 - **Cache.** Decrypted layers per `(tenantId, userId)` for `ttlMs` (30 s);
   failed loads are evicted. `write(level, config)` / `remove(level)` store
   for the current principal and invalidate; `invalidate()` takes all, one
