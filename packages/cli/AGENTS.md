@@ -32,6 +32,7 @@ smrt db:rollback --mark-only # Record-only flip; schema untouched
 smrt db:prune                # Prune framework system tables to their retention windows
 smrt db:prune --dry-run      # Same predicates, counted rather than deleted
 smrt ai:usage [--by prompt,model,tier,class,tenant,fusion,source] [--since 7d] [--tenant <id>] [--json] # ../core/agents/ai-usage.md
+smrt inference:hosted disable|enable|status [--tenant <id>] [--json] # Hosted AI kill switch: agents/inference-hosted.md
 smrt docs:agents             # Generate .agents/smrt-framework.md
 smrt docs:claude             # Deprecated alias writing .claude/smrt-framework.md
 smrt dev:knowledge-*         # Deterministic agent knowledge index/check/diff
@@ -274,6 +275,9 @@ system tables (a pre-1.13.0 database fails with a hint to start the app or run
 `db:migrate`). Calls without a prompt key print as `(unattributed)`, uncosted
 calls are counted beside the cost total with the cost basis printed, and rows
 outside `--tenant` or from external agents are listed as excluded.
+
+Hosted-gate blocks (`operation: 'blocked'`, #4760) print in a `blocked`
+column beside `calls`.
 
 ## `db:drop-framework-base-tables` is a one-time remediation (#2647)
 

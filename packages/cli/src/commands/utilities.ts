@@ -91,6 +91,7 @@ import { dbUpgradeCommerceMoneyCommand } from './db-upgrade-commerce-money.js';
 import { devKnowledgeCommands } from './dev-knowledge.js';
 import { devRuntimeCommands } from './dev-runtime.js';
 import { exportCommand } from './export.js';
+import { inferenceHostedCommand } from './inference-hosted.js';
 import {
   mcpAppsCommands,
   validateMcpAppsPackage,
@@ -4013,6 +4014,7 @@ export default testManifest;
   'db:orphans': dbOrphansCommand,
   'db:prune': dbPruneCommand,
   'ai:usage': aiUsageCommand,
+  'inference:hosted': inferenceHostedCommand,
   'db:permissions': dbPermissionsCommand,
 
   // Configuration commands
