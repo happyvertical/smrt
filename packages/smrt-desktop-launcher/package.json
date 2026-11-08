@@ -1,0 +1,52 @@
+{
+  "name": "@happyvertical/smrt-desktop-launcher",
+  "version": "0.60.14",
+  "description": "Launcher core for SMRT desktop assistant plugins: injected provider, fixed diagnostics and stdio lifecycle",
+  "author": "HappyVertical",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "CLAUDE.md",
+    "dist",
+    "AGENTS.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "vite build",
+    "build:watch": "vite build --watch",
+    "dev": "npm run build:watch & npm run test:watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "clean": "rm -rf dist",
+    "verify:pack": "node ../../scripts/verify-package-types-exports.js .",
+    "build:fresh": "npm run clean && npm run build && npm run verify:pack",
+    "prepack": "node ../../scripts/prepack-package.js"
+  },
+  "devDependencies": {
+    "@happyvertical/smrt-core": "workspace:*",
+    "@types/node": "24.13.6",
+    "typescript": "6.0.3",
+    "vite": "8.1.6",
+    "vitest": "4.1.10"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/happyvertical/smrt.git",
+    "directory": "packages/smrt-desktop-launcher"
+  },
+  "engines": {
+    "node": ">=26.0.0"
+  }
+}
