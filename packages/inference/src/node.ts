@@ -475,6 +475,8 @@ export async function checkInferenceBindings(
     const ref = binding.candidates[0]?.label;
     if (binding.candidates.length !== 1 || !ref?.startsWith('alias:')) continue;
     const resolved = bindings.find((entry) => entry.binding === ref);
+    const reference = binding.candidates[0];
+    if (resolved && reference) reference.status = resolved.status;
     if (resolved?.status === 'error') {
       binding.status = 'error';
       binding.problems.push(`${ref} cannot resolve`);
