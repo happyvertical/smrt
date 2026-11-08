@@ -29,7 +29,12 @@ import {
   type InferenceTier,
 } from '@happyvertical/smrt-core';
 import { classifyInferenceFailure, isInferenceAbort } from './classify.js';
-import { CHAIN_KINDS, type ChainStep, expandTarget } from './config.js';
+import {
+  CHAIN_KINDS,
+  type ChainStep,
+  expandTarget,
+  validateInferenceConfig,
+} from './config.js';
 import { InferenceExhaustedError } from './errors.js';
 import type {
   InferenceFailureClass,
@@ -388,6 +393,15 @@ function isRefusalResponse(value: unknown): boolean {
   return typeof reason === 'string' && REFUSAL_FINISH.has(reason);
 }
 
+let lastValidated: string | undefined;
+
+function validateChainConfig(config: InferenceExecutionContext['config']) {
+  const key = JSON.stringify(config ?? null);
+  if (key === lastValidated) return;
+  validateInferenceConfig(config);
+  lastValidated = key;
+}
+
 /**
  * A client whose calls walk the chain in `context.resolution`. `message`,
  * `chat`, `complete` and `stream` walk; `embed` uses the first candidate
@@ -397,6 +411,9 @@ export function createChainClient(
   context: InferenceExecutionContext,
   options: ChainExecutorOptions = {},
 ): InferenceModelClient {
+  // Validate here too, not only in the resolver: a resolver registered after
+  // this package replaces ours, and a chain must never run half-configured.
+  validateChainConfig(context.config);
   const resolved: Required<ChainExecutorOptions> = {
     retryDelayMs: options.retryDelayMs ?? (() => 200 + Math.random() * 300),
     sleep: options.sleep ?? defaultSleep,
