@@ -201,8 +201,8 @@ minimumReleaseAgeExclude:
   - '@happyvertical/ocr@0.62.1'
 
 catalog:
-  '@aws-sdk/client-sqs': ^3.1136.0
-  '@google-cloud/tasks': ^7.1.1
+  '@aws-sdk/client-sqs': ^3.1164.0
+  '@google-cloud/tasks': ^7.3.1
   '@happyvertical/accounting': ^0.111.6
   '@happyvertical/ai': ^0.111.6
   '@happyvertical/auth': ^0.111.6
@@ -219,7 +219,7 @@ catalog:
   '@happyvertical/logger': ^0.111.6
   '@happyvertical/messages': ^0.111.6
   '@happyvertical/ocr': ^0.62.1
-  '@happyvertical/pdf': ^0.65.9
+  '@happyvertical/pdf': ^0.67.1
   '@happyvertical/projects': ^0.111.6
   '@happyvertical/repos': ^0.111.6
   '@happyvertical/secrets': ^0.111.6
@@ -228,9 +228,9 @@ catalog:
   '@happyvertical/spider': ^1.1.13
   '@happyvertical/sql': ^0.111.6
   '@happyvertical/utils': ^0.111.6
-  '@sentry/node': ^10.75.0
+  '@sentry/node': ^11.11.0
   bull: ^4.16.5
-  bullmq: ^6.3.8
+  bullmq: ^6.7.2
   sharp: ^0.35.5
 
 allowBuilds:

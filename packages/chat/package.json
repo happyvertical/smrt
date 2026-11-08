@@ -95,7 +95,7 @@
     "access": "public"
   },
   "dependencies": {
-    "@happyvertical/animation": "0.5.0",
+    "@happyvertical/animation": "0.5.1",
     "@happyvertical/ai": "catalog:",
     "@happyvertical/speech": "catalog:",
     "@happyvertical/smrt-images": "workspace:*",
@@ -112,7 +112,7 @@
     "@happyvertical/smrt-users": "workspace:*",
     "@happyvertical/sql": "catalog:",
     "@happyvertical/images": "catalog:",
-    "gsap": "^3.13.0"
+    "gsap": "^3.15.1"
   },
   "peerDependencies": {
     "svelte": "^5.57.0"
@@ -127,14 +127,14 @@
     "@happyvertical/smrt-scanner": "workspace:*",
     "@happyvertical/smrt-vitest": "workspace:*",
     "@happyvertical/smrt-web": "workspace:*",
-    "@mlc-ai/web-llm": "^0.2.85",
+    "@mlc-ai/web-llm": "^0.2.87",
     "bitgpu": "0.19.1",
-    "@sveltejs/kit": "2.69.1",
-    "@sveltejs/package": "^2.5.8",
-    "@sveltejs/vite-plugin-svelte": "^7.3.0",
-    "@types/node": "24.13.6",
-    "svelte": "^5.57.1",
-    "svelte-check": "^4.7.6",
+    "@sveltejs/kit": "2.69.3",
+    "@sveltejs/package": "^3.0.2",
+    "@sveltejs/vite-plugin-svelte": "^7.3.1",
+    "@types/node": "26.6.6",
+    "svelte": "^5.57.3",
+    "svelte-check": "^4.7.8",
     "typescript": "6.0.3",
     "vite": "8.1.6",
     "vitest": "4.1.10"

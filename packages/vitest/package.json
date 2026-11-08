@@ -65,14 +65,14 @@
     "@happyvertical/sql": "catalog:",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/svelte": "^5.4.2",
-    "@testing-library/user-event": "^14.6.7",
-    "axe-core": "^4.13.0",
+    "@testing-library/user-event": "^14.6.8",
+    "axe-core": "^4.14.0",
     "jsdom": "^29.1.1",
-    "tsx": "^4.23.13"
+    "tsx": "^4.23.15"
   },
   "peerDependencies": {
     "svelte": ">=5.57.0",
-    "vitest": ">=2.1.9"
+    "vitest": "5.1.0"
   },
   "peerDependenciesMeta": {
     "svelte": {
@@ -80,8 +80,8 @@
     }
   },
   "devDependencies": {
-    "@types/node": "24.13.6",
-    "svelte": "^5.57.1",
+    "@types/node": "26.6.6",
+    "svelte": "^5.57.3",
     "typescript": "6.0.3",
     "vitest": "4.1.10"
   },

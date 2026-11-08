@@ -107,7 +107,7 @@ runs:
 
     - name: Setup Node.js
       if: steps.node-check.outputs.skip != 'true'
-      uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+      uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
       with:
         node-version: ${{ inputs.node-version }}
         registry-url: ${{ inputs.registry-url || 'https://registry.npmjs.org' }}
@@ -174,7 +174,7 @@ runs:
 
     - name: Setup pnpm
       if: steps.pnpm-check.outputs.skip != 'true'
-      uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+      uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6
       with:
         version: ${{ steps.pnpm-check.outputs.required-version }}
         run_install: false
@@ -267,7 +267,7 @@ runs:
         github.event_name != 'pull_request_target' &&
         (inputs.turbo-cache-shim == 'on' || runner.environment == 'github-hosted')
       continue-on-error: true
-      uses: rharkor/caching-for-turbo@2238fae6eb9a9936f92356f54cb3660200d105e7 # v2.5.1
+      uses: rharkor/caching-for-turbo@760158c05c47e7a764f78e9a22ca3b5a6ed8c52e # v2.5.2
 
     # Check if ONNX deps are already installed or supplied by the runner image.
     # Jobs that skip `pnpm install` never load onnxruntime-node, so they do not
