@@ -37,9 +37,10 @@ export {
   type HostedAiSpendPolicy,
   HostedAiSpendPolicyError,
   type HostedAiSpendReader,
+  type HostedAiSpendScope,
   type HostedAiSpendSummary,
   hostedAiSpendThresholds,
-  hostedAiTagPattern,
+  hostedAiTagFragment,
   MICROS_PER_USD,
 } from './hosted-ai-spend.js';
 export {

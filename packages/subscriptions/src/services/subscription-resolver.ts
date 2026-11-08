@@ -187,7 +187,9 @@ export class SubscriptionResolver {
    * current subscription or it does not entitle now (thresholds are then
    * empty). The hosted inference gate reads its spend caps from here and
    * meters `_smrt_ai_usage` itself. Thresholds are returned as stored, valid
-   * or not, so a caller can refuse a malformed cap instead of skipping it.
+   * or not (the models' `getThresholds()` drops invalid entries), so a caller
+   * can refuse a malformed cap instead of skipping it; thresholds JSON that
+   * is not an array throws.
    */
   async resolvePlanThresholds(
     subscriber: Subscriber,
@@ -208,7 +210,7 @@ export class SubscriptionResolver {
     );
     return {
       entitled: terms !== null,
-      thresholds: terms ? terms.getThresholds() : [],
+      thresholds: terms ? rawThresholds(terms.thresholds) : [],
       planId: identity?.planId ?? null,
       planKey: identity?.planKey ?? null,
       planVersionId: identity?.planVersionId ?? null,
@@ -659,3 +661,20 @@ function emptyUsageSummary(
 }
 
 export type { PlanThreshold };
+
+/**
+ * Every stored threshold object, without the validity filter the plan
+ * models apply (#4760). Unparseable or non-array JSON throws: a broken
+ * plan must never read as "no caps".
+ */
+function rawThresholds(value: string | null | undefined): PlanThreshold[] {
+  if (value === null || value === undefined || value.trim() === '') return [];
+  const parsed: unknown = JSON.parse(value);
+  if (!Array.isArray(parsed)) {
+    throw new Error('Plan thresholds are not a JSON array.');
+  }
+  return parsed.filter(
+    (entry): entry is PlanThreshold =>
+      entry !== null && typeof entry === 'object' && !Array.isArray(entry),
+  );
+}

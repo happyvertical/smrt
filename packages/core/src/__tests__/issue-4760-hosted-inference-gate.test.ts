@@ -391,7 +391,37 @@ describe('#4760 hosted inference gate seam', () => {
     ).resolves.toMatchObject({ bound: true, source: 'byo' });
   });
 
-  it('gates hosted chain candidates per attempt, without a second failed row', async () => {
+  it('gates a chain stamped hosted before its executor client is built', async () => {
+    const createClient = vi.fn(() => ({ message: async () => 'ran' }));
+    const { setInferenceExecutor } = await import('../inference.js');
+    setInferenceExecutor({ kinds: ['candidates'], createClient } as never);
+    try {
+      setInferenceResolver({
+        resolve: () => ({
+          tierResolved: 'good',
+          via: 'resolver',
+          target: { candidates: [{ provider: 'openai' }], source: 'hosted' },
+        }),
+      });
+      setInferenceGate(gateAnswering(BLOCK));
+      const doc = new Issue4760Doc({
+        ai: BASE_AI,
+        usage: { handlers: [usage] },
+      } as never);
+      const error = await caught(doc.do('summarize', { tier: 'good' }));
+      expect(isInferenceUnavailableError(error)).toBe(true);
+      expect(createClient).not.toHaveBeenCalled();
+      expect(usage.handle).toHaveBeenCalledTimes(1);
+      expect(await doc.getInferenceStatus({ tier: 'good' })).toMatchObject({
+        available: false,
+        reason: 'entitlement',
+      });
+    } finally {
+      setInferenceExecutor(undefined);
+    }
+  });
+
+  it('gates a hosted target the executor reaches (a ladder step), without a second failed row', async () => {
     const recorded: unknown[] = [];
     const executor = {
       kinds: ['candidates'],

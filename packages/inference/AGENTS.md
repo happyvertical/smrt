@@ -179,7 +179,9 @@ its own `baseUrl` core's pair rule refuses it.
   `InferenceExhaustedError` (`reason: 'partial'`, `partialText`), unless
   `allowPartial` returns the text. A hosted-gate block (`AI_UNAVAILABLE`
   from `clientFor()`, #4760) stops the walk and records nothing (core wrote
-  the `blocked` row). A `stream()` consumer that stops reading
+  the `blocked` row). A step whose target names a `source` (a ladder step's
+  resolved binding) records that source over the chain's, so hosted spend
+  meters as hosted. A `stream()` consumer that stops reading
   aborts the provider stream (internal signal merged with the caller's).
 - Ladder: when a tier's chain is spent and `degrade !== false`, resolve the
   next lower tier through `context.resolveTier()`, stopping below

@@ -194,10 +194,12 @@ disabledBy? }`; `capability` is reserved for capability detection (#4758).
 plan caps; [smrt-inference](../../inference/AGENTS.md)). Core imports no
 subscriptions or features code.
 
-- **Who is asked.** Only a `single` target with `source: 'hosted'`
-  (`isHostedInferenceTarget()`): `getAiClient(tier)` before the client is
-  built, each hosted chain candidate in the executor's `clientFor()`,
-  `resolveInferenceTarget()` for a bound hosted target, and the probes.
+- **Who is asked.** Only a target with `source: 'hosted'`
+  (`isHostedInferenceTarget()`: a single target, or a chain a resolver
+  stamped hosted as a whole): `getAiClient(tier)` before the client is
+  built, any hosted target the executor reaches in `clientFor()` (ladder
+  steps), `resolveInferenceTarget()` for a bound hosted single target, and
+  the probes.
   `byo` / `local` / `app` never reach the gate. No gate registered: hosted
   calls run.
 - **Decisions.** `allow`, `warn` (runs; details for the host's sink), or

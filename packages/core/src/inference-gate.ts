@@ -28,7 +28,7 @@ import type {
   InferenceTierRequest,
   InferenceUsageRecord,
 } from './inference.js';
-import { inferenceTargetKind, inferenceUsageTags } from './inference.js';
+import { inferenceUsageTags } from './inference.js';
 import type { InferenceEntitlementDetails } from './inference-availability.js';
 import { InferenceUnavailableError } from './inference-availability.js';
 
@@ -41,7 +41,7 @@ export interface InferenceGateRequest {
   tierRequested: InferenceTierRequest;
   /** The concrete tier the binding answered. */
   tier: InferenceTier;
-  /** The `source: 'hosted'` target about to run. */
+  /** The `source: 'hosted'` target about to run (single or chain). */
   target: InferenceTarget;
   /** The request's tenant (the object's), when it named one. */
   tenantId?: string | null;
@@ -87,15 +87,16 @@ export function getInferenceGate(): InferenceGate | undefined {
   return (globalThis as GateHolder)[GATE_KEY];
 }
 
-/** True when `target` is a `single` target bound to hosted inference. */
+/**
+ * True when `target` is bound to hosted inference: a `single` target, or a
+ * chain a resolver stamped `source: 'hosted'` as a whole (its candidates
+ * carry no source of their own, so the chain is gated once, before its
+ * client is built).
+ */
 export function isHostedInferenceTarget(
   target: InferenceTarget | undefined,
 ): target is InferenceTarget {
-  return (
-    target !== undefined &&
-    target.source === 'hosted' &&
-    inferenceTargetKind(target) === 'single'
-  );
+  return target !== undefined && target.source === 'hosted';
 }
 
 function isMicros(value: unknown): boolean {

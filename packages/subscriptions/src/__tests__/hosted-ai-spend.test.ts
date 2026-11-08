@@ -32,7 +32,7 @@ import {
   HostedAiSpendPolicyError,
   type HostedAiSpendReader,
   hostedAiSpendThresholds,
-  hostedAiTagPattern,
+  hostedAiTagFragment,
 } from '../services/hosted-ai-spend.js';
 import type { PlanThreshold, UsageWindow } from '../types.js';
 
@@ -58,12 +58,8 @@ function cap(
 
 describe('hosted spend thresholds (#4760)', () => {
   const at = (spend: number, threshold: PlanThreshold) =>
-    evaluateHostedAiSpendThreshold(
-      'user-cap',
-      threshold,
-      { spend, oldestAt: null },
-      MONTH,
-    ).state;
+    evaluateHostedAiSpendThreshold('user-cap', threshold, { spend }, MONTH)
+      .state;
 
   it('allows below the warning ratio, warns from it, blocks at the cap', () => {
     const limit = cap(AI_HOSTED_USER_SPEND_METRIC, 1_000_000);
@@ -118,7 +114,7 @@ describe('hosted spend thresholds (#4760)', () => {
     const early = evaluateHostedAiSpendThreshold(
       'user-cap',
       cap(AI_HOSTED_USER_SPEND_METRIC, 10, { window: 'day' }),
-      { spend: 20, oldestAt: null },
+      { spend: 20 },
       {
         start: new Date('2026-11-18T00:00:00.000Z'),
         end: new Date('2026-11-19T00:00:00.000Z'),
@@ -127,7 +123,7 @@ describe('hosted spend thresholds (#4760)', () => {
     const late = evaluateHostedAiSpendThreshold(
       'tenant-cap',
       cap(AI_HOSTED_SPEND_METRIC, 10),
-      { spend: 20, oldestAt: null },
+      { spend: 20 },
       MONTH,
     );
     const decision = decideHostedAiSpend([early, late], {
@@ -142,18 +138,18 @@ describe('hosted spend thresholds (#4760)', () => {
     );
   });
 
-  it('a rolling cap lifts when its oldest counted spend leaves the window', () => {
+  it('a rolling cap reports no reset by itself (the evaluator computes it)', () => {
     const evaluation = evaluateHostedAiSpendThreshold(
       'user-cap',
       cap(AI_HOSTED_USER_SPEND_METRIC, 10, { window: 'rolling' }),
-      { spend: 10, oldestAt: new Date('2026-11-01T06:00:00.000Z') },
+      { spend: 10 },
       MONTH,
     );
-    expect(evaluation.resetsAt?.toISOString()).toBe('2026-12-01T06:00:00.000Z');
+    expect(evaluation).toMatchObject({ state: 'blocked', resetsAt: null });
   });
 
-  it('tag patterns anchor the value and escape LIKE wildcards', () => {
-    expect(hostedAiTagPattern('userId', 'u_1%')).toBe('%"userId":"u!_1!%"%');
+  it('tag fragments anchor the JSON value', () => {
+    expect(hostedAiTagFragment('userId', 'u_1%"')).toBe('"userId":"u_1%\\""');
   });
 });
 
@@ -163,7 +159,7 @@ describe('HostedAiSpendEvaluator (#4760)', () => {
     const reader: HostedAiSpendReader = {
       summarize: async ({ userId, window }) => {
         reads.push({ ...(userId ? { userId } : {}), window });
-        return { spend, oldestAt: null };
+        return { spend };
       },
     };
     const resolvePlanThresholds = vi.fn(async () => ({
@@ -252,7 +248,7 @@ describe('HostedAiSpendEvaluator (#4760)', () => {
       });
     const evaluator = new HostedAiSpendEvaluator({
       resolver: { resolvePlanThresholds },
-      spend: { summarize: async () => ({ spend: 0, oldestAt: null }) },
+      spend: { summarize: async () => ({ spend: 0 }) },
     });
     await expect(evaluator.evaluate({ tenantId: 't1' })).rejects.toThrow(
       'connection terminated',
@@ -368,6 +364,16 @@ describe('hosted spend gate end to end (#4760)', () => {
     await expect(
       reader.summarize({ tenantId, userId: 'u_1', window: MONTH }),
     ).resolves.toMatchObject({ spend: 1_000_000 });
+    // Matching is case-sensitive on SQLite too (LIKE would fold ASCII case).
+    await usageRow({ cost: 3, tags: { source: 'hosted', userId: 'Alice' } });
+    await usageRow({ cost: 4, tags: { source: 'hosted', userId: 'alice' } });
+    await expect(
+      reader.summarize({ tenantId, userId: 'Alice', window: MONTH }),
+    ).resolves.toMatchObject({ spend: 3_000_000 });
+    await usageRow({ cost: 5, tags: { source: 'HOSTED', userId } });
+    await expect(
+      reader.summarize({ tenantId, userId, window: MONTH }),
+    ).resolves.toMatchObject({ spend: 500_000 });
   });
 
   function gate(options: { requireSubscription?: boolean } = {}) {
@@ -492,6 +498,37 @@ describe('hosted spend gate end to end (#4760)', () => {
     await expect(hosted.check({ ...request, tenantId })).resolves.toEqual({
       action: 'allow',
     });
+  });
+
+  it('reports when a blocked rolling cap lifts, after enough spend expires', async () => {
+    const day = 24 * 60 * 60 * 1000;
+    const now = Date.now();
+    const at = (daysAgo: number) => new Date(now - daysAgo * day).toISOString();
+    await subscribe([
+      cap(AI_HOSTED_USER_SPEND_METRIC, 1_000_000, { window: 'rolling' }),
+    ]);
+    await usageRow({ cost: 1, tags: { source: 'hosted', userId }, at: at(20) });
+    await usageRow({ cost: 1, tags: { source: 'hosted', userId }, at: at(10) });
+    const decision = await (await gate()).check({ ...request, tenantId });
+    expect(decision).toMatchObject({
+      action: 'block',
+      details: { policy: 'user-cap', cap: 1_000_000, spend: 2_000_000 },
+    });
+    // The first expiry leaves spend at the cap; the call runs again only
+    // when the second row leaves the 30-day window.
+    const resetsAt = Date.parse(
+      (decision as { details: { resetsAt: string } }).details.resetsAt,
+    );
+    expect(Math.abs(resetsAt - (now + 20 * day))).toBeLessThan(5_000);
+  });
+
+  it('fails closed on a malformed cap in the pinned plan version', async () => {
+    await subscribe([
+      cap(AI_HOSTED_USER_SPEND_METRIC, 1_000_000, { window: 'hour' as never }),
+    ]);
+    await expect(
+      (await gate()).check({ ...request, tenantId }),
+    ).rejects.toThrow(HostedAiSpendPolicyError);
   });
 
   it('fails closed on a resolver transport failure, counting no spend', async () => {

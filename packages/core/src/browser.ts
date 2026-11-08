@@ -239,6 +239,7 @@ export {
   isEmbeddedDatabase,
   isPostgresDatabase,
   usesEmbeddedRevisionFallback,
+  usesPostgresDialect,
   withCallerOwnedDatabaseTransaction,
   withEmbeddedWriteQueue,
   withEmbeddedWriteTransaction,
