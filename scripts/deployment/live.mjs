@@ -239,6 +239,83 @@ function retainedDormantReplicaSet(object, all, rendered, release, namespace) {
       ),
   );
 }
+// Adopting a CronJob rewrites its template, not the metadata of Jobs and Pods
+// it already ran. Only terminal history whose single controller chain reaches
+// the adopted, release-labelled, rendered CronJob by UID may lack the label.
+function unlabelledHistoryBase(object, kind, apiVersion, namespace) {
+  return (
+    object.kind === kind &&
+    object.apiVersion === apiVersion &&
+    typeof object.metadata.uid === 'string' &&
+    Boolean(object.metadata.uid) &&
+    !Object.hasOwn(object.metadata.labels ?? {}, 'app.kubernetes.io/instance') &&
+    object.metadata.namespace === namespace &&
+    !object.metadata.deletionTimestamp
+  );
+}
+function soleController(object, kind, apiVersion, all, namespace) {
+  const owners = object.metadata.ownerReferences;
+  if (!Array.isArray(owners) || owners.length !== 1) return undefined;
+  const [owner] = owners;
+  if (
+    owner.controller !== true ||
+    owner.kind !== kind ||
+    owner.apiVersion !== apiVersion ||
+    typeof owner.uid !== 'string' ||
+    !owner.uid
+  )
+    return undefined;
+  return all.find(
+    (o) =>
+      o.kind === kind &&
+      o.apiVersion === apiVersion &&
+      o.metadata.namespace === namespace &&
+      o.metadata.name === owner.name &&
+      o.metadata.uid === owner.uid &&
+      !o.metadata.deletionTimestamp,
+  );
+}
+function retainedTerminalCronJob(object, all, rendered, release, namespace) {
+  if (
+    !unlabelledHistoryBase(object, 'Job', 'batch/v1', namespace) ||
+    ['active', 'ready', 'terminating'].some(
+      (key) => (object.status?.[key] ?? 0) !== 0,
+    ) ||
+    !object.status?.conditions?.some(
+      (c) => ['Complete', 'Failed'].includes(c.type) && c.status === 'True',
+    )
+  )
+    return false;
+  const cron = soleController(object, 'CronJob', 'batch/v1', all, namespace);
+  return Boolean(
+    cron &&
+      cron.metadata.labels?.['app.kubernetes.io/instance'] === release &&
+      rendered.some(
+        (o) =>
+          o.kind === 'CronJob' &&
+          o.apiVersion === 'batch/v1' &&
+          o.metadata.name === cron.metadata.name,
+      ),
+  );
+}
+function retainedTerminalCronPod(object, all, rendered, release, namespace) {
+  if (
+    !unlabelledHistoryBase(object, 'Pod', 'v1', namespace) ||
+    !['Succeeded', 'Failed'].includes(object.status?.phase)
+  )
+    return false;
+  const job = soleController(object, 'Job', 'batch/v1', all, namespace);
+  return Boolean(
+    job && retainedTerminalCronJob(job, all, rendered, release, namespace),
+  );
+}
+function retainedLegacyHistory(object, all, rendered, release, namespace) {
+  return (
+    retainedDormantReplicaSet(object, all, rendered, release, namespace) ||
+    retainedTerminalCronJob(object, all, rendered, release, namespace) ||
+    retainedTerminalCronPod(object, all, rendered, release, namespace)
+  );
+}
 // Standalone runtime proofs also bind security/account/volume fields directly to
 // declared values. The full rendered object is independently checked by provePhase.
 function declaredPodEnvelope(workload) {
@@ -821,14 +898,14 @@ export function createLiveAdapter(
       verifyKnownLegacyWorkloads(existing,
         { resources: adoptionContext.resources }, verifyPodEnvelope);
     } else {
-      const historicalSelectors = existing.some(o => o.kind === 'ReplicaSet' &&
+      const historicalSelectors = existing.some(o => ['ReplicaSet', 'Job', 'Pod'].includes(o.kind) &&
         !Object.hasOwn(o.metadata.labels ?? {}, 'app.kubernetes.io/instance'))
         ? await inventory(document) : [];
       demand(
         existing.every(
           (o) =>
             (o.metadata.labels?.['app.kubernetes.io/instance'] ===
-              document.metadata.name || retainedDormantReplicaSet(o, existing,
+              document.metadata.name || retainedLegacyHistory(o, existing,
                 historicalSelectors, document.metadata.name, namespace)) &&
             !['StatefulSet', 'DaemonSet', 'HorizontalPodAutoscaler'].includes(
               o.kind,
@@ -1329,7 +1406,7 @@ export function createLiveAdapter(
     const owned = (object) =>
       object.metadata.labels?.['app.kubernetes.io/instance'] ===
       document.metadata.name ||
-      retainedDormantReplicaSet(object, all, rendered, document.metadata.name, namespace);
+      retainedLegacyHistory(object, all, rendered, document.metadata.name, namespace);
     // v1 requires a dedicated app namespace. Unknown workloads cannot silently keep writing.
     for (const object of all.filter((o) =>
       [

@@ -316,6 +316,15 @@ The same bounded predicate applies during preflight and every native phase proof
 including adopted Helm and TLS observations. Explicit foreign instance labels,
 active history, unsupported or forged ancestry still fail closed. Historical Pod templates are not made current by this exception.
 
+Drained legacy CronJob history gets the same bounded treatment, because adopting a
+CronJob rewrites its template, not the Jobs and Pods it already ran. A Job without
+the instance label is accepted only when it is terminal (a true `Complete` or
+`Failed` condition, zero active/ready/terminating, not deleting) and has one
+same-namespace `batch/v1` CronJob controller owner, matched by name and UID, that
+carries the current instance label and matches a rendered CronJob name. An
+unlabelled Pod must be `Succeeded` or `Failed`, not deleting, and controlled by
+exactly such a Job.
+
 ## Bounded immutable Ingress TLS rotation
 
 For an existing accepted **active** release, prepare only named reference changes:

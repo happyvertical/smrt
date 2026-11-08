@@ -788,6 +788,109 @@ test('retained terminal declared CronJob Pods are drained; active or terminating
     assert.equal((await adapter.observe(doc, 'abc')).proven, !blocked);
   }
 });
+test('adopted CronJob terminal history without instance label is bounded by UID ancestry', async () => {
+  for (const failure of [
+    null,
+    'job-active', 'job-ready', 'job-terminating', 'job-incomplete',
+    'job-delete', 'job-foreign-label', 'job-owner-uid', 'job-owner-kind',
+    'job-owner-api', 'job-owner-controller', 'job-owner-multiple',
+    'job-namespace', 'cron-foreign', 'cron-unrendered', 'cron-delete',
+    'pod-running', 'pod-delete', 'pod-owner-uid', 'pod-owner-multiple',
+    'pod-namespace', 'pod-foreign-job',
+  ]) {
+    const { adapter, doc } = liveFixture('stopped', ({ all, doc, config }) => {
+      doc.spec.values.current.workloads.monitor = {
+        ...runtime.workloads.web,
+        schedule: '*/5 * * * *',
+      };
+      const labels = all[0].metadata.labels;
+      const cron = {
+        apiVersion: 'batch/v1',
+        kind: 'CronJob',
+        metadata: {
+          namespace: 'test',
+          name: 'example-monitor',
+          uid: 'cron',
+          labels: { ...labels },
+          ...(failure === 'cron-delete' ? { deletionTimestamp: 'now' } : {}),
+        },
+        spec: { suspend: true },
+      };
+      if (failure === 'cron-foreign')
+        cron.metadata.labels['app.kubernetes.io/instance'] = 'foreign';
+      const jobOwner = {
+        apiVersion: failure === 'job-owner-api' ? 'batch/v1beta1' : 'batch/v1',
+        kind: failure === 'job-owner-kind' ? 'Deployment' : 'CronJob',
+        name: 'example-monitor',
+        uid: failure === 'job-owner-uid' ? 'forged' : 'cron',
+        controller: failure !== 'job-owner-controller',
+      };
+      const job = {
+        apiVersion: 'batch/v1',
+        kind: 'Job',
+        metadata: {
+          namespace: failure === 'job-namespace' ? 'foreign' : 'test',
+          name: 'legacy-monitor-history',
+          uid: 'legacy-job',
+          labels: failure === 'job-foreign-label' ? { 'app.kubernetes.io/instance': 'foreign' } : { app: 'legacy-monitor' },
+          ownerReferences: failure === 'job-owner-multiple' ? [jobOwner, { ...jobOwner }] : [jobOwner],
+          ...(failure === 'job-delete' ? { deletionTimestamp: 'now' } : {}),
+        },
+        status: {
+          succeeded: 1,
+          conditions: failure === 'job-incomplete' ? [] : [{ type: 'Complete', status: 'True' }],
+          ...(failure === 'job-active' ? { active: 1 } : {}),
+          ...(failure === 'job-ready' ? { ready: 1 } : {}),
+          ...(failure === 'job-terminating' ? { terminating: 1 } : {}),
+        },
+      };
+      const podOwner = {
+        apiVersion: 'batch/v1',
+        kind: 'Job',
+        name: 'legacy-monitor-history',
+        uid: failure === 'pod-owner-uid' ? 'forged' : 'legacy-job',
+        controller: true,
+      };
+      const pod = {
+        apiVersion: 'v1',
+        kind: 'Pod',
+        metadata: {
+          namespace: failure === 'pod-namespace' ? 'foreign' : 'test',
+          name: 'legacy-monitor-history-pod',
+          uid: 'legacy-monitor-pod',
+          labels: { app: 'legacy-monitor' },
+          ownerReferences: failure === 'pod-owner-multiple' ? [podOwner, { ...podOwner }] : [podOwner],
+          ...(failure === 'pod-delete' ? { deletionTimestamp: 'now' } : {}),
+        },
+        status: { phase: failure === 'pod-running' ? 'Running' : 'Succeeded' },
+      };
+      all.push(cron, job, pod);
+      if (failure === 'pod-foreign-job') {
+        // A labelled Job owned by an unrendered controller cannot vouch for unlabelled Pods.
+        job.metadata.labels = { ...labels };
+        job.metadata.ownerReferences = [{ ...jobOwner, uid: 'cron' }];
+        cron.metadata.name = 'example-monitor';
+        all.push({ ...structuredClone(job), metadata: { ...structuredClone(job.metadata), name: 'other', uid: 'other-job' } });
+        pod.metadata.ownerReferences = [{ ...podOwner, name: 'other', uid: 'other-job' }];
+        all.at(-1).metadata.labels = { app: 'legacy-monitor' };
+        all.at(-1).status = { active: 1 };
+      }
+      config.fixtureRenderedResources = [
+        ...all.filter((o) => o.kind === 'Ingress'),
+        ...(failure === 'cron-unrendered'
+          ? []
+          : [{ apiVersion: 'batch/v1', kind: 'CronJob', metadata: { name: 'example-monitor', labels: { 'app.kubernetes.io/instance': 'example' } }, spec: { suspend: true } }]),
+      ];
+    });
+    if (failure === null) assert.equal((await adapter.observe(doc, 'abc')).proven, true, 'terminal history');
+    else
+      assert.equal(
+        await adapter.observe(doc, 'abc').then((p) => p.proven, () => false),
+        false,
+        failure,
+      );
+  }
+});
 test('migration attempt completion binds actual Pod image; failure cannot retry implicitly', async () => {
   for (const failure of [null, 'job', 'image', 'controller-token-volume', 'controller-sa-drift']) {
     const { adapter, doc } = liveFixture('migrate', ({ all }) => {
