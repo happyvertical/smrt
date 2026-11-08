@@ -4,7 +4,7 @@ import {
   buildSidecarEnv,
   parseSidecarManifest,
   RESERVED_ENV_KEYS,
-} from './index.js';
+} from './sidecar-manifest.js';
 
 const example = readFileSync(
   new URL('../examples/node26-sidecar.json', import.meta.url),
