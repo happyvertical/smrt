@@ -1,4 +1,5 @@
 import type {
+  InferenceTier,
   InferenceTierRequest,
   SmrtClassOptions,
 } from '@happyvertical/smrt-core';
@@ -18,6 +19,12 @@ export interface PromptAIInput {
   params?: PromptParams | null;
   temperature?: number;
   maxTokens?: number;
+  /**
+   * Lowest tier a tier-profile prompt may degrade to when its tier's chain
+   * fails (#4752). Code default only: config and stored overrides cannot
+   * lower it.
+   */
+  minimumTier?: InferenceTier;
   [key: string]: unknown;
 }
 
@@ -92,6 +99,8 @@ export interface PromptLayer {
 export interface NormalizedPromptAI {
   profile?: string;
   model?: string;
+  /** From the code default only (#4752). */
+  minimumTier?: InferenceTier;
   params: PromptParams;
 }
 
@@ -140,6 +149,8 @@ export interface ResolvedPromptAI extends PromptParams {
   tier?: InferenceTierRequest;
   /** The prompt key, set with `tier` for the call-time resolver request. */
   promptKey?: string;
+  /** The definition's `ai.minimumTier`, set with `tier` (#4752). */
+  minimumTier?: InferenceTier;
   allowedModels?: string[];
   params: PromptParams;
   temperature?: number;
