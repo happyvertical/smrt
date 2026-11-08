@@ -7,6 +7,7 @@ import {
   type DispatchBus,
   type DispatchMetadata,
   type DispatchTenantScope,
+  isInferenceUnavailableError,
   type LearningEpisode,
   LearningMemory,
   type LearningMemoryRecord,
@@ -47,7 +48,7 @@ import {
   type AgentLearningDeclaration,
   resolveAgentLearning,
 } from './learning.js';
-import type { AgentStatusType } from './types.js';
+import type { AgentRunRecord, AgentStatusType } from './types.js';
 import type { AgentAdminRoute, AgentCreateEntry, AgentUISlots } from './ui.js';
 
 /**
@@ -362,6 +363,9 @@ export abstract class Agent extends SmrtObject {
    */
   status: AgentStatusType = 'idle';
 
+  /** The outcome of the last {@link execute} on this instance (not persisted). */
+  #runRecord: AgentRunRecord | null = null;
+
   /**
    * Structured logger instance
    * Created with agent's class name as context
@@ -395,6 +399,8 @@ export abstract class Agent extends SmrtObject {
   #configuredAi: { value: AgentAIOptions | undefined } | undefined;
   /** What `initialize()` last wrote to `options.ai` (to spot a caller's change). */
   #boundAi: unknown;
+  /** Set by `initialize()` when the tenant's AI is unavailable (#4757). */
+  #aiUnavailable: Error | undefined;
 
   /**
    * Cached DispatchBus instance for inter-agent communication
@@ -956,6 +962,9 @@ export abstract class Agent extends SmrtObject {
           this._learningOutcome ?? { success: true },
         );
       } catch (error) {
+        // AI unavailable (#4757) is not a failed strategy: nothing ran, so
+        // the memory is neither reinforced nor decayed.
+        if (isInferenceUnavailableError(error)) throw error;
         // Capture the failure, but never mask the original error.
         try {
           await this.captureForRun(memory, {
@@ -1058,19 +1067,31 @@ export abstract class Agent extends SmrtObject {
     };
     const configuredAi = this.#configuredAi.value;
     let bindingTags: Record<string, string> | undefined;
+    this.#aiUnavailable = undefined;
     if (configuredAi && this._db) {
-      // Usage is wired below through this instance's own pipeline.
-      const { options: resolvedAi, tags } = await resolveAgentAIClientOptions({
-        aiConfig: configuredAi,
-        db: this._db,
-        tenantId:
-          getCurrentTenant()?.tenantId ||
-          (typeof this.tenantId === 'string' ? this.tenantId : undefined),
-      });
-      bindingTags = tags;
-      if (resolvedAi) {
-        (this.options as AgentOptions).ai = resolvedAi as AIClientOptions &
-          Record<string, unknown>;
+      try {
+        // Usage is wired below through this instance's own pipeline.
+        const { options: resolvedAi, tags } = await resolveAgentAIClientOptions(
+          {
+            aiConfig: configuredAi,
+            db: this._db,
+            tenantId:
+              getCurrentTenant()?.tenantId ||
+              (typeof this.tenantId === 'string' ? this.tenantId : undefined),
+          },
+        );
+        bindingTags = tags;
+        if (resolvedAi) {
+          (this.options as AgentOptions).ai = resolvedAi as AIClientOptions &
+            Record<string, unknown>;
+        }
+      } catch (error) {
+        // The tenant turned AI off (#4757). Initializing (hydration, admin
+        // listings) must still work: bind no client options, and let
+        // execute() end the run `skipped` with this reason.
+        if (!isInferenceUnavailableError(error)) throw error;
+        this.#aiUnavailable = error;
+        (this.options as AgentOptions).ai = undefined;
       }
     }
 
@@ -1323,6 +1344,13 @@ export abstract class Agent extends SmrtObject {
    * 2. Logs error
    * 3. Re-throws error
    *
+   * When AI is unavailable (`InferenceUnavailableError`, `AI_UNAVAILABLE`,
+   * #4757: mode `off`, nothing configured, ...) the run ends `skipped`
+   * instead: status `skipped`, {@link runRecord} carries the reason and
+   * mode, and nothing is thrown, so schedules and dispatch processing do not
+   * retry it. `run()` called directly (the background job path) still
+   * throws it; the jobs runner never retries it (`retryable: false`).
+   *
    * @example
    * ```typescript
    * const agent = new MyAgent({ name: 'my-agent' });
@@ -1336,8 +1364,10 @@ export abstract class Agent extends SmrtObject {
    * ```
    */
   async execute(): Promise<void> {
+    const startedAt = new Date();
     try {
       await this.initialize();
+      if (this.#aiUnavailable) throw this.#aiUnavailable;
       await this.validate();
 
       this.status = 'running';
@@ -1361,13 +1391,48 @@ export abstract class Agent extends SmrtObject {
       // alike — nothing learning-specific is needed in execute() itself.
       await this.run();
       this.status = 'idle';
+      this.#runRecord = {
+        status: 'completed',
+        startedAt,
+        finishedAt: new Date(),
+      };
 
       this.logger.info('Agent execution completed');
     } catch (error) {
+      if (isInferenceUnavailableError(error)) {
+        this.status = 'skipped';
+        this.#runRecord = {
+          status: 'skipped',
+          startedAt,
+          finishedAt: new Date(),
+          reason: error.reason,
+          mode: error.mode,
+        };
+        this.logger.info('Agent run skipped: AI is unavailable', {
+          reason: error.reason,
+          mode: error.mode,
+        });
+        return;
+      }
       this.status = 'error';
+      this.#runRecord = {
+        status: 'error',
+        startedAt,
+        finishedAt: new Date(),
+        error: error instanceof Error ? error.message : String(error),
+      };
       this.logger.error('Agent execution failed', { error });
       throw error;
     }
+  }
+
+  /**
+   * The outcome of the last {@link execute} on this instance: `completed`,
+   * `skipped` (AI unavailable, with `reason` and `mode`, #4757) or `error`.
+   * `null` before the first run. In memory only.
+   */
+  get runRecord(): AgentRunRecord | null {
+    return this.#runRecord;
   }
 
   /**
@@ -1412,6 +1477,9 @@ export abstract class Agent extends SmrtObject {
         const items = await this.queryInterestingObjects(className, config);
         results.push(...items);
       } catch (error) {
+        // AI unavailable (#4757) in a handler ends the whole query: every
+        // other type's handler would hit the same state.
+        if (isInferenceUnavailableError(error)) throw error;
         // Log warning and continue with other types
         this.logger.warn(`Failed to query ${className} for interests`, {
           error,

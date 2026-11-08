@@ -320,7 +320,7 @@ export {
   TenantAgentCollection,
   type TenantAgentStatus,
 } from './tenant-agent.js';
-export type { AgentStatusType } from './types.js';
+export type { AgentRunRecord, AgentStatusType } from './types.js';
 // UI types and registry for admin panels
 export {
   type AdminPanelBaseProps,
