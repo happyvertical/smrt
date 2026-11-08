@@ -80,15 +80,10 @@ describe('ScheduleRunner triggerSchedule enqueue failure (#1401 #4)', () => {
     const runner = createScheduleRunner();
     await runner.initialize(db);
 
-    // Force a transient enqueue failure on the runner's own collection.
-    const jobCollection = (
-      runner as unknown as { jobCollection: SmrtJobCollection }
-    ).jobCollection;
-    let enqueueCalled = false;
-    jobCollection.enqueueJob = async () => {
-      enqueueCalled = true;
-      throw new Error('transient db blip');
-    };
+    // Every enqueue inside the admission transaction uses the same public path.
+    const enqueue = vi
+      .spyOn(SmrtJobCollection.prototype, 'enqueueJob')
+      .mockRejectedValue(new Error('transient db blip'));
 
     const scheduleRow = {
       id: 'sched-1',
@@ -109,7 +104,8 @@ describe('ScheduleRunner triggerSchedule enqueue failure (#1401 #4)', () => {
       }
     ).triggerSchedule(scheduleRow);
 
-    expect(enqueueCalled).toBe(true);
+    expect(enqueue).toHaveBeenCalledOnce();
+    enqueue.mockRestore();
 
     const result = await db.query(
       `SELECT next_run, status, running_count, last_error
@@ -222,7 +218,7 @@ describe('ScheduleRunner triggerSchedule re-arm time zone (#3859)', () => {
       cron,
       timezone,
       'run',
-      '2025-06-01T00:00:00.000Z',
+      new Date(now).toISOString(),
     );
 
     const runner = createScheduleRunner();

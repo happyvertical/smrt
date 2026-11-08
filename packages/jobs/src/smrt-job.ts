@@ -1,3 +1,4 @@
+import { createHash, randomUUID } from 'node:crypto';
 import type { RetryStrategyConfig } from '@happyvertical/jobs';
 import {
   detectEngine,
@@ -22,6 +23,7 @@ import {
   clampRetries,
   DEFAULT_TENANT_JOB_CAP,
 } from './background-policy.js';
+import { SmrtJobDedupeSlotCollection } from './smrt-job-dedupe-slot.js';
 import { terminalSnapshot, transitionTerminalJob } from './terminal-outcome.js';
 
 /**
@@ -55,7 +57,7 @@ export const SMRT_JOB_PORTABLE_SELECT_COLUMNS = `
   timeout_behavior, started_at, completed_at, last_error,
   result_pointer, task_id, task_owner_id, task_result,
   task_input_requests, task_input_responses, retry_strategy,
-  worker_id, worker_heartbeat
+  worker_id, worker_heartbeat, dedupe_key
 `;
 
 /**
@@ -121,6 +123,10 @@ export class SmrtJob extends SmrtObject {
   /** Tenant context captured for this job, if any */
   @tenantId({ nullable: true })
   tenantId: string | null | undefined = undefined;
+
+  /** Caller key retained as provenance; only pending/running jobs reserve it. */
+  @field({ type: 'text', nullable: true, indexed: true })
+  dedupeKey: string | null = null;
 
   /** Queue name for the job */
   @field({ type: 'text', required: true, default: 'default' })
@@ -260,20 +266,126 @@ export class SmrtJob extends SmrtObject {
   /**
    * Mark the job for retry
    */
-  async retry(): Promise<void> {
-    if (this.status === 'completed') {
-      throw new Error('Cannot retry a completed job');
+  async retry(
+    options: Pick<EnqueueJobOptions, 'transaction'> = {},
+  ): Promise<void> {
+    if (!this.id) throw new Error('Cannot retry an unpersisted job');
+    const executor = options.transaction ?? this.db;
+    const initial = await readRetryJob(executor, this.id);
+    assertRetryTenant(initial.tenant_id);
+    assertRetryStatus(initial.status);
+    const scheduleId = persistedScheduleId(initial.args);
+    const dedupeKey = persistedDedupeKey(initial.dedupe_key);
+    const tenant = initial.tenant_id;
+    const tenantPredicate =
+      tenant === null ? 'tenant_id IS NULL' : 'tenant_id = ?';
+    const tenantValues = tenant === null ? [] : [tenant];
+
+    const retry = async (
+      tx: DatabaseInterface,
+    ): Promise<Record<string, unknown>> => {
+      // All paths acquire schedule -> dedupe slot -> job. Completion's job
+      // transaction commits before its separate schedule callback acquires a row.
+      let capacity: number | null = null;
+      if (scheduleId) {
+        const schedule = await tx.query(
+          `UPDATE _smrt_agent_schedules SET running_count = running_count
+           WHERE id = ? AND ${tenantPredicate} RETURNING max_concurrent`,
+          scheduleId,
+          ...tenantValues,
+        );
+        if (schedule.rows.length !== 1)
+          throw new Error('Scheduled retry association is unavailable');
+        capacity = Number(schedule.rows[0].max_concurrent ?? 1);
+        if (!Number.isSafeInteger(capacity) || capacity < 1)
+          throw new Error('Scheduled retry capacity is invalid');
+      }
+      let slotKey: string | null = null;
+      let slotJobId: unknown;
+      if (dedupeKey !== null) {
+        slotKey = jobSlotKey(tenant, dedupeKey);
+        const slot = await tx.query(
+          'UPDATE _smrt_job_dedupe_slots SET slot_key = slot_key WHERE slot_key = ? RETURNING job_id',
+          slotKey,
+        );
+        if (slot.rows.length !== 1)
+          throw new Error('Keyed job retry requires its enqueue slot');
+        slotJobId = slot.rows[0].job_id;
+      }
+      const locked = await tx.query(
+        `UPDATE _smrt_jobs SET id = id WHERE id = ? AND ${tenantPredicate}
+         RETURNING ${SMRT_JOB_PORTABLE_SELECT_COLUMNS}`,
+        initial.id,
+        ...tenantValues,
+      );
+      if (locked.rows.length !== 1)
+        throw new Error('Job ownership changed before retry');
+      const current = retryRow(locked.rows[0]);
+      assertRetryTenant(current.tenant_id);
+      if (
+        current.tenant_id !== tenant ||
+        persistedScheduleId(current.args) !== scheduleId ||
+        persistedDedupeKey(current.dedupe_key) !== dedupeKey
+      ) {
+        throw new Error(
+          'Persisted retry association changed; retry from current state',
+        );
+      }
+      assertRetryStatus(current.status);
+      const occupied = scheduleId
+        ? await countScheduleJobs(tx, scheduleId, tenant, current.id)
+        : 0;
+      if (capacity !== null && occupied >= capacity)
+        throw new Error('Scheduled retry capacity is full');
+      if (
+        slotKey &&
+        typeof slotJobId === 'string' &&
+        slotJobId !== current.id
+      ) {
+        const active = await tx.query(
+          "SELECT id FROM _smrt_jobs WHERE id = ? AND status IN ('pending', 'running')",
+          slotJobId,
+        );
+        if (active.rows.length)
+          throw new Error('Another job already reserves this dedupeKey');
+      }
+      const retried = await tx.query(
+        `UPDATE _smrt_jobs SET status = 'pending', attempts = 0, last_error = NULL,
+           started_at = NULL, completed_at = NULL, worker_id = NULL, worker_heartbeat = NULL,
+           updated_at = ? WHERE id = ? AND ${tenantPredicate}
+           AND status IN ('pending', 'failed', 'cancelled')
+           RETURNING ${SMRT_JOB_PORTABLE_SELECT_COLUMNS}`,
+        new Date().toISOString(),
+        current.id,
+        ...tenantValues,
+      );
+      if (retried.rows.length !== 1)
+        throw new Error('Job status changed before retry');
+      if (slotKey)
+        await tx.query(
+          'UPDATE _smrt_job_dedupe_slots SET job_id = ? WHERE slot_key = ?',
+          current.id,
+          slotKey,
+        );
+      if (scheduleId)
+        await tx.query(
+          `UPDATE _smrt_agent_schedules SET running_count = ? WHERE id = ? AND ${tenantPredicate}`,
+          occupied + 1,
+          scheduleId,
+          ...tenantValues,
+        );
+      return retried.rows[0];
+    };
+    let row: Record<string, unknown>;
+    if (options.transaction) row = await retry(options.transaction);
+    else {
+      if (!executor.transaction)
+        throw new Error('Job retry requires transaction support');
+      row = await executor.transaction(retry);
     }
-
-    this.status = 'pending';
-    this.attempts = 0;
-    this.lastError = null;
-    this.startedAt = null;
-    this.completedAt = null;
-    this.workerId = null;
-    this.workerHeartbeat = null;
-
-    await this.save();
+    // Hydrate the authoritative revision and immutable stored arguments. Do not
+    // save caller-edited business fields or leak an ended transaction handle.
+    await this.loadDataFromDb(row);
   }
 
   /**
@@ -329,6 +441,8 @@ export class SmrtJob extends SmrtObject {
  * Job data type (for create operations)
  */
 export interface SmrtJobData {
+  /** At most one pending/running job per effective tenant and key. */
+  dedupeKey?: string | null;
   tenantId?: string | null;
   queue?: string;
   objectType: string;
@@ -363,6 +477,12 @@ export interface EnqueueJobOptions {
    * (no-context / null tenant) jobs are always exempt.
    */
   tenantJobCap?: number;
+  /**
+   * Existing caller-owned transaction. All enqueue reads/writes use this handle;
+   * the caller must propagate failures and commit/rollback the transaction.
+   * Avoids nested transactions on engines without savepoints (DuckDB).
+   */
+  transaction?: DatabaseInterface;
 }
 
 /**
@@ -371,6 +491,8 @@ export interface EnqueueJobOptions {
 export interface ListReadyOptions {
   limit?: number;
   queues?: string[];
+  /** Allowed tenant identities; undefined selects all, [] selects none. */
+  tenantIds?: readonly (string | null)[];
 }
 
 /**
@@ -426,9 +548,7 @@ export class SmrtJobCollection extends SmrtCollection<SmrtJob> {
   /**
    * List pending jobs ready to run
    */
-  async listReady(
-    options: { limit?: number; queues?: string[] } = {},
-  ): Promise<SmrtJob[]> {
+  async listReady(options: ListReadyOptions = {}): Promise<SmrtJob[]> {
     const now = new Date().toISOString();
     const whereConditions: string[] = [
       "status = 'pending'",
@@ -443,13 +563,15 @@ export class SmrtJobCollection extends SmrtCollection<SmrtJob> {
       params.push(...options.queues);
     }
 
+    const scope = jobTenantScope(options.tenantIds);
+    params.push(...scope.params);
     params.push(options.limit || 100);
 
     // Worker-internal scan: the runner intentionally processes ready jobs
     // across all tenants, so it manages tenant context per-job at execution
     // time rather than filtering here (SmrtJob is now @TenantScoped, S5 #1402).
     return this.query(
-      `SELECT * FROM _smrt_jobs WHERE ${whereConditions.join(' AND ')} ORDER BY priority DESC, run_at ASC LIMIT ?`,
+      `SELECT * FROM _smrt_jobs WHERE ${whereConditions.join(' AND ')}${scope.sql} ORDER BY priority DESC, run_at ASC LIMIT ?`,
       params,
       { allowRawOnTenantScoped: true },
     );
@@ -490,11 +612,13 @@ export class SmrtJobCollection extends SmrtCollection<SmrtJob> {
       whereParams.push(...options.queues);
     }
 
+    const scope = jobTenantScope(options.tenantIds);
+    whereParams.push(...scope.params);
     const isPostgres = getDatabaseEngine(this.db) === 'postgres';
     const candidateSelect = `
       SELECT id AS claim_id
         FROM _smrt_jobs
-       WHERE ${whereConditions.join(' AND ')}
+       WHERE ${whereConditions.join(' AND ')}${scope.sql}
        ORDER BY priority DESC, run_at ASC, created_at ASC, id ASC
        LIMIT ?${isPostgres ? ' FOR UPDATE SKIP LOCKED' : ''}
     `;
@@ -612,6 +736,113 @@ export class SmrtJobCollection extends SmrtCollection<SmrtJob> {
     const effectiveTenant =
       explicitTenant !== undefined ? explicitTenant : (getTenantId() ?? null);
 
+    if (data.dedupeKey != null) {
+      if (
+        typeof data.dedupeKey !== 'string' ||
+        data.dedupeKey.trim().length === 0 ||
+        data.dedupeKey.length > 512
+      ) {
+        throw new TypeError(
+          'dedupeKey must be a nonblank string of at most 512 characters',
+        );
+      }
+      assertDedupeTenantSpelling(effectiveTenant);
+      const ambientTenant = getTenantId();
+      assertDedupeTenantSpelling(ambientTenant ?? null);
+      if (
+        ambientTenant &&
+        effectiveTenant !== ambientTenant &&
+        !isSystemContext() &&
+        !isSuperAdminBypass()
+      ) {
+        throw new TenantIsolationError(
+          'Cannot enqueue a job for another tenant',
+          {
+            tenantId: ambientTenant,
+            attemptedTenantId: effectiveTenant ?? 'null',
+          },
+        );
+      }
+      const db = options.transaction ?? this.db;
+      if (!options.transaction && !db.transaction)
+        throw new Error('Job deduplication requires transaction support');
+      await SmrtJobDedupeSlotCollection.create({ db });
+      const slotKey = jobSlotKey(effectiveTenant, data.dedupeKey);
+      const enqueue = async (tx: DatabaseInterface): Promise<string> => {
+        const id = randomUUID();
+        const now = new Date().toISOString();
+        await tx.query(
+          `INSERT INTO _smrt_job_dedupe_slots
+           (id, slug, context, created_at, updated_at, slot_key, job_id)
+           VALUES (?, ?, '', ?, ?, ?, NULL) ON CONFLICT (slot_key) DO NOTHING`,
+          id,
+          id,
+          now,
+          now,
+          slotKey,
+        );
+        const slot = await tx.query(
+          `UPDATE _smrt_job_dedupe_slots SET updated_at = ?
+           WHERE slot_key = ? RETURNING job_id`,
+          now,
+          slotKey,
+        );
+        if (slot.rows.length !== 1)
+          throw new Error('Job deduplication slot unavailable; retry enqueue');
+        const jobs = await SmrtJobCollection.create({ db: tx });
+        const jobId = slot.rows[0].job_id;
+        if (typeof jobId === 'string') {
+          const existing = await jobs.get({ id: jobId });
+          if (existing && (existing.tenantId ?? null) !== effectiveTenant)
+            throw new Error(
+              'Job deduplication slot has invalid tenant ownership',
+            );
+          if (
+            existing &&
+            (existing.status === 'pending' || existing.status === 'running')
+          )
+            return String(existing.id);
+        }
+        // Store provenance in the initial insert without reacquiring the slot.
+        const job = await jobs.createQueuedJob(
+          { ...data, tenantId: effectiveTenant },
+          cap,
+        );
+        await tx.query(
+          'UPDATE _smrt_job_dedupe_slots SET job_id = ? WHERE slot_key = ?',
+          job.id,
+          slotKey,
+        );
+        return String(job.id);
+      };
+      let jobId: string;
+      if (options.transaction) jobId = await enqueue(options.transaction);
+      else {
+        if (!db.transaction)
+          throw new Error('Job deduplication requires transaction support');
+        jobId = await db.transaction(enqueue);
+      }
+      // Do not return a model bound to a now-ended transaction.
+      const resultCollection = options.transaction
+        ? await SmrtJobCollection.create({ db: options.transaction })
+        : this;
+      const job = await resultCollection.get({ id: jobId });
+      if (!job) throw new Error('Enqueued job is unavailable');
+      return job;
+    }
+    if (options.transaction) {
+      const jobs = await SmrtJobCollection.create({ db: options.transaction });
+      return jobs.createQueuedJob({ ...data, tenantId: effectiveTenant }, cap);
+    }
+    return this.createQueuedJob({ ...data, tenantId: effectiveTenant }, cap);
+  }
+
+  /** Persist once, without a second save racing a consumer's first claim. */
+  private async createQueuedJob(
+    data: SmrtJobData,
+    cap: number,
+  ): Promise<SmrtJob> {
+    const effectiveTenant = data.tenantId;
     if (effectiveTenant && cap > 0) {
       const current = await this.countInFlightForTenant(effectiveTenant);
       assertWithinTenantCreationCap(effectiveTenant, current, cap);
@@ -623,7 +854,6 @@ export class SmrtJobCollection extends SmrtCollection<SmrtJob> {
       // retry ceiling (S5 audit #1402).
       maxAttempts: clampRetries(data.maxAttempts ?? 3),
     });
-    await job.save();
     return job;
   }
 
@@ -756,3 +986,140 @@ function timestamp(value: Date | null | undefined): number {
 }
 
 export default SmrtJob;
+
+function jobSlotKey(tenant: string | null, key: string): string {
+  return createHash('sha256')
+    .update(JSON.stringify([tenant, key]))
+    .digest('hex');
+}
+
+/** Internal SQL predicate shared by ready claims and worker recovery. */
+export function jobTenantScope(
+  tenantIds: readonly (string | null)[] | undefined,
+): { sql: string; params: string[] } {
+  if (tenantIds === undefined) return { sql: '', params: [] };
+  if (
+    !Array.isArray(tenantIds) ||
+    tenantIds.some(
+      (id) => id !== null && (typeof id !== 'string' || !id.trim()),
+    )
+  )
+    throw new TypeError('tenantIds must contain nonblank identities or null');
+  const ids = tenantIds.filter((id): id is string => id !== null);
+  const terms: string[] = [];
+  if (ids.length) terms.push(`tenant_id IN (${ids.map(() => '?').join(', ')})`);
+  if (tenantIds.includes(null)) terms.push('tenant_id IS NULL');
+  return {
+    sql: ` AND ${terms.length ? `(${terms.join(' OR ')})` : '1 = 0'}`,
+    params: ids,
+  };
+}
+
+type RetryJobRow = Record<string, unknown> & {
+  id: string;
+  tenant_id: string | null;
+  dedupe_key: string | null;
+  status: JobStatus;
+  args: unknown;
+};
+
+function retryRow(row: Record<string, unknown>): RetryJobRow {
+  if (
+    typeof row.id !== 'string' ||
+    (row.tenant_id !== null && typeof row.tenant_id !== 'string')
+  )
+    throw new Error('Invalid persisted job identity');
+  return row as RetryJobRow;
+}
+
+async function readRetryJob(
+  db: DatabaseInterface,
+  id: string,
+): Promise<RetryJobRow> {
+  const result = await db.query(
+    `SELECT ${SMRT_JOB_PORTABLE_SELECT_COLUMNS} FROM _smrt_jobs WHERE id = ?`,
+    id,
+  );
+  if (result.rows.length !== 1)
+    throw new Error('Persisted retry job is unavailable');
+  return retryRow(result.rows[0]);
+}
+
+function assertRetryTenant(tenant: string | null): void {
+  const ambient = getTenantId();
+  if (
+    ambient &&
+    tenant !== ambient &&
+    !isSystemContext() &&
+    !isSuperAdminBypass()
+  ) {
+    throw new TenantIsolationError('Cannot retry a job for another tenant', {
+      tenantId: ambient,
+      attemptedTenantId: tenant ?? 'null',
+    });
+  }
+}
+
+function assertRetryStatus(status: JobStatus): void {
+  if (status === 'completed' || status === 'running')
+    throw new Error(`Cannot retry a ${status} job`);
+  if (!['pending', 'failed', 'cancelled'].includes(status))
+    throw new Error('Unknown persisted retry job status');
+}
+
+function persistedDedupeKey(value: unknown): string | null {
+  if (value === null) return null;
+  if (typeof value !== 'string' || !value.trim())
+    throw new Error('Invalid persisted dedupeKey');
+  return value;
+}
+
+function persistedArguments(value: unknown): Record<string, unknown> {
+  const args = typeof value === 'string' ? JSON.parse(value) : value;
+  if (!args || typeof args !== 'object' || Array.isArray(args))
+    throw new Error('Invalid persisted job arguments');
+  return args as Record<string, unknown>;
+}
+
+function persistedScheduleId(value: unknown): string | null {
+  const args = persistedArguments(value);
+  if (!Object.hasOwn(args, '_scheduleId')) return null;
+  if (typeof args._scheduleId !== 'string' || !args._scheduleId.trim())
+    throw new Error('Invalid persisted schedule association');
+  return args._scheduleId;
+}
+
+/** @internal Count the same canonical pending/running schedule slots for admission and retry. */
+export async function countScheduleJobs(
+  db: DatabaseInterface,
+  scheduleId: string,
+  tenant: string | null,
+  excludeJobId?: string,
+): Promise<number> {
+  const result = await db.query(
+    `SELECT args FROM _smrt_jobs WHERE status IN ('pending', 'running')
+     AND ${tenant === null ? 'tenant_id IS NULL' : 'tenant_id = ?'}${excludeJobId ? ' AND id <> ?' : ''}`,
+    ...(tenant === null ? [] : [tenant]),
+    ...(excludeJobId ? [excludeJobId] : []),
+  );
+  return result.rows.filter((row) => {
+    try {
+      return persistedScheduleId(row.args) === scheduleId;
+    } catch {
+      return false;
+    }
+  }).length;
+}
+
+function assertDedupeTenantSpelling(tenant: string | null): void {
+  if (tenant === null) return;
+  const uuidLike = /^[0-9a-f]{32}$/i.test(tenant.replace(/[{}-]/g, ''));
+  const canonical =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(
+      tenant,
+    );
+  if (uuidLike && !canonical)
+    throw new TypeError(
+      'Keyed jobs require canonical lowercase hyphenated UUID tenant IDs; load the canonical tenant identity before enqueue',
+    );
+}

@@ -1,0 +1,132 @@
+# Safe scheduling and job deduplication
+
+Polls `_smrt_agent_schedules` every 60s. Due selection and the transactional
+claim both apply optional `agentTypes` and `tenantIds` scopes (`[]` admits none;
+`undefined` preserves system-wide operation). `queue` defaults to `agents`.
+Configure a dedicated task-worker queue and exact scopes for a host that must
+only run its own scheduled operation.
+
+Admission locks and re-reads the authoritative schedule row, rechecks enabled /
+active / due occurrence / capacity, then inserts the job and advances `next_run`
+in the same transaction. Competing runners cannot consume the same occurrence.
+A failed enqueue or process crash before commit rolls everything back; the next
+poll can retry the unchanged due slot. After commit the durable job belongs to
+TaskRunner's existing lease/retry/terminal recovery contract. ScheduleRunner
+never independently fails a TaskRunner-owned job. Pending jobs (including delayed
+retries) and running jobs both occupy `maxConcurrent` slots. Reconciliation takes
+the same schedule-row lock, so a stale count cannot erase a new admission.
+
+`args._scheduledFor` is the admitted original `next_run` as a UTC ISO instant,
+retained across task attempts and passed to the handler. `_scheduleId` remains
+internal metadata; neither field grants authority. `method_args` may not supply
+`_scheduledFor`, `_scheduleId`, or `_agentConfig`. The handler must resolve current
+authority and implement domain idempotency. `stop()` prevents new admissions and
+waits for the in-flight poll/transaction before resolving; stop the scheduler
+before draining its TaskRunner.
+
+`next_run` is recomputed from *now*, never from the previous slot: this is
+**fire-once-forward**. One overdue occurrence is admitted, then the next future
+zoned cron time is armed. There is no missed-run backfill. One admission per
+occurrence differs from no overlapping executions: `maxConcurrent = 1` prevents
+multiple pending/running jobs for that schedule; a job dedupe key can serialize
+a broader caller-defined resource. Neither promise preempts an orphaned timed-out
+handler (see the at-least-once contract above).
+
+### Store deduplication (#2994)
+
+`SmrtJobCollection.enqueueJob({ ..., dedupeKey })` reserves at most one
+pending/running job per effective tenant and nonblank key (at most 512 chars).
+Concurrent calls return the existing job unchanged, even if the later arguments
+differ. Terminal completion/failure/cancellation permits the next enqueue.
+Ordinary retry delays retain the reservation; manual retry of an older terminal
+job refuses while a newer job reserves its key. This is in-flight suppression,
+not permanent occurrence/request replay or an authorization boundary.
+
+The registered `_smrt_job_dedupe_slots` model owns the database uniqueness and
+row lock; the opaque hash partitions keys by tenant, including global NULL.
+The nullable indexed `SmrtJob.dedupeKey` retains provenance. Migrate before using
+upgraded workers (`smrt db:migrate`); no partial-index dependency on DuckDB.
+Slots retain one pointer per distinct key, including after terminal-job retention
+prunes the referenced row. Use stable resource keys rather than one-shot tokens.
+Generated slot API/CLI/MCP access is disabled. Callers must use `enqueueJob` and
+public retry/cancel APIs; direct model/SQL lifecycle writes bypass store guards.
+
+`enqueueJob(data, { transaction: tx })` uses an existing caller-owned transaction
+for every read/write and opens no nested transaction (DuckDB has no savepoints).
+The caller must propagate failures and commit/roll back `tx`. Without that option
+a keyed enqueue opens its own transaction. Returned models use the caller's
+connection, never an ended internal transaction. Enqueue persists once; a second
+save must never race a consumer's first claim.
+
+## Exact occurrence integrity
+
+A trusted host can opt into `ScheduleRunnerConfig.occurrenceSigner` using a
+`DurableJobPayloadSigner`; omitted or `null` preserves legacy unsigned runners.
+The host configuration is the only source of that signer, never schedule or job
+arguments. `ScheduleRunner.capabilities.occurrenceIntegrity` lets hosts reject an
+older runtime before enabling schedules that require this contract.
+
+During the same atomic occurrence transaction, after the real job ID exists,
+the runner signs and saves `args._scheduleAdmission` before commit. A signer,
+verification, or protected-save failure rolls back both job and consumed slot.
+There is no post-commit signing/save or visible unsigned protected job. Row
+`method_args` cannot supply the reserved `_scheduleAdmission` name.
+
+The exact envelope is `{ purpose: 'smrt.schedule-admission', version: 1, keyId,
+jobId, tenantId, scheduleId, scheduledFor, queue, objectType, objectId, method,
+args }`. The args snapshot uses the existing signer's canonical persisted JSON
+representation and excludes **only** top-level `_scheduleAdmission`; static
+consent, constructor config and all other arguments remain bound. Metadata is
+exactly `{ version: 1, keyId, signature }`. The tenant is explicit (`null` for
+global); occurrence time must be a canonical UTC ISO instant.
+
+`getScheduleAdmissionPayload(job, keyId)` is a pure payload builder, not a signer
+or public minting endpoint. `verifyScheduleAdmission(job, signer)` returns false
+on missing/unknown/malformed metadata, unknown/retired keys, tampered arguments,
+or a copied signature on a different job, period, schedule, tenant or execution
+target. Handlers requiring protected admission must verify the authoritative job
+row even if a legacy unsigned runner could enqueue it. Actual worker execution
+alone does not prove scheduler admission.
+
+Legitimate retries preserve the same job ID, args and signature; lifecycle fields
+are excluded. For key rotation a trusted keyring can mint with its current
+`keyId` while retaining older verification keys for existing jobs. Retiring an old
+key denies those retries until an explicit host reconciliation policy resolves
+it. Never put keys in arguments or logs. This signature proves admitted identity,
+not current actor grants, policy, database uniqueness, handler exactly-once
+execution, or safety against trusted code that holds a signing key. Hosts must
+still recheck current authority and use normal claims/domain idempotency.
+
+## Public retry capacity and lock order
+
+`job.retry()` reads canonical persisted tenant, schedule association, key and
+arguments. Caller-edited model fields cannot choose another schedule/key or
+rewrite business arguments/signatures. It validates current tenant ownership
+before taking write locks, then locks **schedule → dedupe slot → job** in one
+transaction. Admission and reconciliation use the same physical schedule row and
+pending/running count. A pending retry's own slot is excluded; other pending,
+delayed-retry and running occurrences count toward `maxConcurrent`, including
+values greater than 1. Full capacity denies without resetting attempts, changing
+status or reassigning the key. A later retry can proceed once a slot is free.
+Running/completed jobs cannot be retried. Missing/foreign/malformed persisted
+schedule associations fail closed.
+
+The transition changes lifecycle fields only, then hydrates the authoritative
+row/revision back into the model, including keyed retries. It preserves the exact
+stored args and signature. `retry({ transaction: tx })` joins an existing caller
+transaction without nesting (DuckDB has no savepoints); the caller must propagate
+errors and roll back on failure. That caller must not acquire lower-order locks
+before this API. Completion's job transaction commits before its separate schedule
+callback, so it never holds a job lock while waiting for a schedule lock. Automatic
+handler retry keeps its existing nonterminal slot; no new admission is made.
+This remains a nonterminal-row concurrency guarantee, not preemption of an orphan
+JavaScript handler or a substitute for handler authority/idempotency.
+
+Keyed enqueue requires canonical lowercase hyphenated UUID tenant identities,
+including ambient context. Valid alternate UUID spellings (uppercase, braces or
+compact form) fail before any slot/job write; load the canonical tenant identity
+first. This prevents native PostgreSQL/DuckDB UUID hydration from changing the
+identity used to hash a slot. Opaque non-UUID tenant strings remain exact and case
+sensitive; no global case folding or relaxed tenant guard is applied. Nonkeyed
+legacy enqueue behavior is unchanged. The keyed API is unreleased: private
+uppercase development fixtures are not an existing-public-data migration case.

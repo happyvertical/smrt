@@ -3,14 +3,17 @@ import { createLogger } from '@happyvertical/logger';
 import { ObjectRegistry } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { createId } from '@happyvertical/utils';
+import type { DurableJobPayloadSigner } from './durable-payload-integrity.js';
 import {
   redactErrorForPersistence,
   redactErrorMessage,
 } from './error-redaction.js';
-import { SmrtJobCollection } from './smrt-job.js';
-import { SmrtWorkerCollection } from './smrt-worker.js';
+import {
+  getScheduleAdmissionPayload,
+  verifyScheduleAdmission,
+} from './schedule-admission.js';
+import { countScheduleJobs, SmrtJobCollection } from './smrt-job.js';
 import { DEFAULT_TASK_HEARTBEAT_INTERVAL_MS } from './stale-recovery.js';
-import { isWorkerAlive } from './worker-liveness.js';
 
 /**
  * ScheduleRunner configuration
@@ -29,6 +32,14 @@ export interface ScheduleRunnerConfig {
   pollInterval?: number;
   /** Maximum schedules to process per poll */
   batchSize?: number;
+  /** Trusted host signer for exact occurrence/job integrity; null preserves unsigned behavior. */
+  occurrenceSigner?: DurableJobPayloadSigner | null;
+  /** Exact registered agent types this host may admit; empty means none. */
+  agentTypes?: readonly string[];
+  /** Tenant identities this host may admit; null selects global schedules. */
+  tenantIds?: readonly (string | null)[];
+  /** Queue consumed by this host's task worker (default: agents). */
+  queue?: string;
   /**
    * @deprecated No longer used. Slot reconciliation keys on worker liveness
    * (the `_smrt_workers` lease), not per-job heartbeat staleness (#1474).
@@ -66,10 +77,17 @@ export interface ScheduleInfo {
 /**
  * Default configuration
  */
-const DEFAULT_CONFIG: Required<ScheduleRunnerConfig> = {
+type ResolvedScheduleRunnerConfig = Required<
+  Omit<ScheduleRunnerConfig, 'agentTypes' | 'tenantIds'>
+> &
+  Pick<ScheduleRunnerConfig, 'agentTypes' | 'tenantIds'>;
+
+const DEFAULT_CONFIG: ResolvedScheduleRunnerConfig = {
   id: '',
   pollInterval: 60000, // 1 minute
   batchSize: 50,
+  occurrenceSigner: null,
+  queue: SCHEDULED_JOB_QUEUE,
   staleJobThresholdMs: 90000,
   taskHeartbeatInterval: DEFAULT_TASK_HEARTBEAT_INTERVAL_MS,
 };
@@ -104,12 +122,20 @@ const DEFAULT_CONFIG: Required<ScheduleRunnerConfig> = {
  * ```
  */
 export class ScheduleRunner extends EventEmitter {
+  /** Public contracts hosts may require before admitting enabled schedules. */
+  static readonly capabilities = Object.freeze({
+    atomicOccurrences: true,
+    scopedAdmission: true,
+    drain: true,
+    occurrenceIntegrity: true,
+  } as const);
   readonly id: string;
-  private readonly config: Required<ScheduleRunnerConfig>;
+  private readonly config: ResolvedScheduleRunnerConfig;
   private jobCollection: SmrtJobCollection | null = null;
-  private workerCollection: SmrtWorkerCollection | null = null;
   private running = false;
   private pollTimer: NodeJS.Timeout | null = null;
+  private pollInFlight: Promise<void> | null = null;
+  private stopping: Promise<void> | null = null;
   private db: DatabaseInterface | null = null;
   private logger = createLogger(true);
 
@@ -121,6 +147,81 @@ export class ScheduleRunner extends EventEmitter {
       id: config.id || `schedule_${createId().slice(0, 8)}`,
     };
     this.id = this.config.id;
+    const signer = this.config.occurrenceSigner;
+    if (
+      signer != null &&
+      (typeof signer.keyId !== 'string' ||
+        !signer.keyId.trim() ||
+        signer.keyId.length > 256 ||
+        typeof signer.sign !== 'function' ||
+        typeof signer.verify !== 'function')
+    ) {
+      throw new TypeError(
+        'occurrenceSigner must be a trusted host signer with a current keyId',
+      );
+    }
+    if (
+      !Number.isInteger(this.config.batchSize) ||
+      this.config.batchSize <= 0
+    ) {
+      throw new TypeError('batchSize must be a positive integer');
+    }
+    if (
+      !Number.isFinite(this.config.pollInterval) ||
+      this.config.pollInterval <= 0 ||
+      this.config.pollInterval > 2_147_483_647
+    ) {
+      throw new TypeError(
+        'pollInterval must be a finite positive Node timer interval',
+      );
+    }
+    if (typeof this.config.queue !== 'string' || !this.config.queue.trim())
+      throw new TypeError('queue must be nonblank');
+    for (const values of [this.config.agentTypes, this.config.tenantIds]) {
+      if (
+        values !== undefined &&
+        (!Array.isArray(values) ||
+          values.some(
+            (value) =>
+              value !== null && (typeof value !== 'string' || !value.trim()),
+          ))
+      ) {
+        throw new TypeError(
+          'ScheduleRunner scopes must contain nonblank identities',
+        );
+      }
+    }
+    if (this.config.agentTypes?.some((value) => value == null))
+      throw new TypeError('agentTypes cannot contain null');
+    if (this.config.agentTypes)
+      this.config.agentTypes = [...this.config.agentTypes];
+    if (this.config.tenantIds)
+      this.config.tenantIds = [...this.config.tenantIds];
+  }
+
+  private scheduleScope(): { sql: string; params: unknown[] } {
+    const terms: string[] = [];
+    const params: unknown[] = [];
+    if (this.config.agentTypes !== undefined) {
+      terms.push(
+        this.config.agentTypes.length
+          ? `agent_type IN (${this.config.agentTypes.map(() => '?').join(', ')})`
+          : '1 = 0',
+      );
+      params.push(...this.config.agentTypes);
+    }
+    if (this.config.tenantIds !== undefined) {
+      const tenants = this.config.tenantIds.filter(
+        (id): id is string => id !== null,
+      );
+      const parts: string[] = [];
+      if (tenants.length)
+        parts.push(`tenant_id IN (${tenants.map(() => '?').join(', ')})`);
+      if (this.config.tenantIds.includes(null)) parts.push('tenant_id IS NULL');
+      terms.push(parts.length ? `(${parts.join(' OR ')})` : '1 = 0');
+      params.push(...tenants);
+    }
+    return { sql: terms.length ? ` AND ${terms.join(' AND ')}` : '', params };
   }
 
   /**
@@ -129,13 +230,13 @@ export class ScheduleRunner extends EventEmitter {
   async initialize(db: DatabaseInterface): Promise<void> {
     this.db = db;
     this.jobCollection = await SmrtJobCollection.create({ db });
-    this.workerCollection = await SmrtWorkerCollection.create({ db });
   }
 
   /**
    * Start processing schedules
    */
   async start(): Promise<void> {
+    if (this.stopping) await this.stopping;
     if (this.running) return;
     if (!this.db) {
       throw new Error(
@@ -143,6 +244,9 @@ export class ScheduleRunner extends EventEmitter {
       );
     }
 
+    if (!this.db.transaction) {
+      throw new Error('ScheduleRunner requires transaction support');
+    }
     this.running = true;
 
     // Start polling loop
@@ -156,17 +260,23 @@ export class ScheduleRunner extends EventEmitter {
    * Stop processing schedules
    */
   async stop(): Promise<void> {
-    if (!this.running) return;
-
+    if (this.stopping) return this.stopping;
+    if (!this.running && !this.pollInFlight) return;
     this.running = false;
-
     if (this.pollTimer) {
       clearTimeout(this.pollTimer);
       this.pollTimer = null;
     }
-
-    this.emit('runner:stopped');
-    this.logger.info('ScheduleRunner stopped', { id: this.id });
+    this.stopping = (async () => {
+      await this.pollInFlight;
+      this.emit('runner:stopped');
+      this.logger.info('ScheduleRunner stopped', { id: this.id });
+    })();
+    try {
+      await this.stopping;
+    } finally {
+      this.stopping = null;
+    }
   }
 
   /**
@@ -189,6 +299,8 @@ export class ScheduleRunner extends EventEmitter {
   ): Promise<void> {
     if (!this.db) return;
 
+    const scope = this.scheduleScope();
+
     // `last_error` is persisted to a durable schedule row; strip secret-shaped
     // substrings the same way the job runner does (S5 audit #1402).
     const safeErrorMessage = redactErrorMessage(
@@ -197,7 +309,7 @@ export class ScheduleRunner extends EventEmitter {
 
     try {
       if (success) {
-        await this.db.query(
+        const result = await this.db.query(
           `UPDATE _smrt_agent_schedules
            SET running_count = CASE WHEN COALESCE(running_count, 0) > 0 THEN running_count - 1 ELSE 0 END,
                last_run = ?,
@@ -205,13 +317,15 @@ export class ScheduleRunner extends EventEmitter {
                last_error = NULL,
                run_count = COALESCE(run_count, 0) + 1,
                success_count = COALESCE(success_count, 0) + 1
-           WHERE id = ?`,
+           WHERE id = ?${scope.sql} RETURNING id`,
           new Date().toISOString(),
           scheduleId,
+          ...scope.params,
         );
+        if (result.rows.length !== 1) return;
         this.emit('schedule:completed', scheduleId);
       } else {
-        await this.db.query(
+        const result = await this.db.query(
           `UPDATE _smrt_agent_schedules
            SET running_count = CASE WHEN COALESCE(running_count, 0) > 0 THEN running_count - 1 ELSE 0 END,
                last_run = ?,
@@ -219,11 +333,13 @@ export class ScheduleRunner extends EventEmitter {
                last_error = ?,
                run_count = COALESCE(run_count, 0) + 1,
                failure_count = COALESCE(failure_count, 0) + 1
-           WHERE id = ?`,
+           WHERE id = ?${scope.sql} RETURNING id`,
           new Date().toISOString(),
           safeErrorMessage,
           scheduleId,
+          ...scope.params,
         );
+        if (result.rows.length !== 1) return;
         this.emit('schedule:failed', scheduleId, safeErrorMessage);
       }
     } catch (err) {
@@ -242,10 +358,13 @@ export class ScheduleRunner extends EventEmitter {
       if (!this.running) return;
 
       try {
-        await this.poll();
+        this.pollInFlight = this.poll();
+        await this.pollInFlight;
       } catch (error) {
         this.emit('runner:error', error as Error);
         this.logger.error('ScheduleRunner poll error', { error });
+      } finally {
+        this.pollInFlight = null;
       }
 
       // Schedule next poll
@@ -264,213 +383,151 @@ export class ScheduleRunner extends EventEmitter {
   private async poll(): Promise<void> {
     if (!this.db || !this.jobCollection) return;
 
+    const managedPoll = this.running;
     await this.recoverStaleScheduleState();
-
     const now = new Date().toISOString();
 
+    const scope = this.scheduleScope();
     // Find due schedules
     const result = await this.db.query(
-      `SELECT * FROM _smrt_agent_schedules
+      `SELECT *, CAST(id AS VARCHAR) AS schedule_id_text, CAST(tenant_id AS VARCHAR) AS schedule_tenant_text, CAST(next_run AS VARCHAR) AS occurrence_time FROM _smrt_agent_schedules
        WHERE enabled = true
        AND status = 'active'
-       AND next_run <= ?
+       AND next_run <= ?${scope.sql}
        AND COALESCE(running_count, 0) < COALESCE(max_concurrent, 1)
        ORDER BY next_run ASC
        LIMIT ?`,
       now,
+      ...scope.params,
       this.config.batchSize,
     );
 
     for (const row of result.rows) {
-      await this.triggerSchedule(row as ScheduleRow);
-    }
-  }
-
-  /**
-   * Reconcile stuck schedule slots against running jobs.
-   *
-   * This handles two failure modes:
-   * - a running job's owning worker is no longer alive (dead/restarted)
-   * - a schedule slot remains occupied even though no running job still exists
-   *
-   * Staleness keys on worker *liveness* (issue #1474), not per-job heartbeat
-   * freshness: a job whose `worker_id` is live in this process or holds a fresh
-   * lease in `_smrt_workers` is healthy even if its handler is holding the loop
-   * synchronously. ScheduleRunner has no in-process active-job set, so this is
-   * its entire correctness mechanism.
-   */
-  private async recoverStaleScheduleState(): Promise<void> {
-    if (!this.db || !this.workerCollection) return;
-
-    const schedulesResult = await this.db.query(
-      `SELECT id, running_count
-         FROM _smrt_agent_schedules
-        WHERE COALESCE(running_count, 0) > 0`,
-    );
-    const schedules = schedulesResult.rows as Array<{
-      id: string;
-      running_count: number;
-    }>;
-    if (schedules.length === 0) return;
-
-    // Without the workers table we cannot reason about liveness; treat every
-    // running job as alive (reconcile slot drift only, never fail jobs).
-    const workersReady = await this.workerCollection.tableReady();
-    const freshLeaseKeys = workersReady
-      ? await this.workerCollection.freshLeaseWorkerKeys()
-      : new Set<string>();
-
-    const jobsResult = await this.db.query(
-      `SELECT id, args, worker_id
-         FROM _smrt_jobs
-        WHERE status = 'running'`,
-    );
-    const jobRows = jobsResult.rows as Array<{
-      id: string;
-      args: unknown;
-      worker_id: string | null;
-    }>;
-
-    type ScheduleState = { live: number; staleJobIds: string[] };
-    const stateBySchedule = new Map<string, ScheduleState>();
-    for (const schedule of schedules) {
-      stateBySchedule.set(schedule.id, { live: 0, staleJobIds: [] });
-    }
-
-    for (const row of jobRows) {
-      const scheduleId = this.getScheduleIdFromJobArgs(row.args);
-      if (!scheduleId) continue;
-
-      const state = stateBySchedule.get(scheduleId);
-      if (!state) continue;
-
-      const alive = workersReady
-        ? isWorkerAlive(row.worker_id, freshLeaseKeys)
-        : true;
-
-      if (!alive) {
-        state.staleJobIds.push(row.id);
-      } else {
-        state.live += 1;
-      }
-    }
-
-    const now = new Date().toISOString();
-    const staleJobIds = schedules.flatMap((schedule) => {
-      const state = stateBySchedule.get(schedule.id);
-      return state?.staleJobIds ?? [];
-    });
-
-    // Only the jobs this pass actually transitioned to 'failed' — RETURNING id
-    // (not rowCount, which DuckDB/JSON always report as ≥1) so a job another
-    // recoverer already failed isn't double-counted into the schedule's
-    // run_count/failure_count.
-    const recoveredJobIds = new Set<string>();
-    if (staleJobIds.length > 0) {
-      const placeholders = staleJobIds.map(() => '?').join(', ');
-      const result = await this.db.query(
-        `UPDATE _smrt_jobs
-            SET status = 'failed',
-                completed_at = ?,
-                last_error = ?,
-                worker_id = NULL,
-                worker_heartbeat = NULL
-          WHERE status = 'running'
-            AND id IN (${placeholders})
-          RETURNING id`,
-        now,
-        'Recovered orphaned scheduled job: its owning worker is no longer ' +
-          'alive (no fresh liveness lease in _smrt_workers and not running in ' +
-          'this process).',
-        ...staleJobIds,
+      if (managedPoll && !this.running) break;
+      await this.triggerSchedule(
+        portableScheduleRow(row as ScheduleRow),
+        managedPoll,
       );
-      for (const row of result.rows as Array<{ id?: unknown }>) {
-        if (typeof row.id === 'string') recoveredJobIds.add(row.id);
-      }
-    }
-
-    for (const schedule of schedules) {
-      const state = stateBySchedule.get(schedule.id);
-      if (!state) continue;
-
-      const desiredRunningCount = state.live;
-      const recoveredCount = state.staleJobIds.filter((id) =>
-        recoveredJobIds.has(id),
-      ).length;
-
-      if (
-        Number(schedule.running_count) === desiredRunningCount &&
-        recoveredCount === 0
-      ) {
-        continue;
-      }
-
-      if (recoveredCount > 0) {
-        await this.db.query(
-          `UPDATE _smrt_agent_schedules
-              SET running_count = ?,
-                  last_run = ?,
-                  last_status = 'failed',
-                  last_error = ?,
-                  run_count = COALESCE(run_count, 0) + ?,
-                  failure_count = COALESCE(failure_count, 0) + ?
-            WHERE id = ?`,
-          desiredRunningCount,
-          now,
-          `Recovered ${recoveredCount} orphaned scheduled job(s) from dead worker(s)`,
-          recoveredCount,
-          recoveredCount,
-          schedule.id,
-        );
-        this.emit(
-          'schedule:failed',
-          schedule.id,
-          `Recovered ${recoveredCount} orphaned scheduled job(s)`,
-        );
-      } else {
-        await this.db.query(
-          `UPDATE _smrt_agent_schedules
-              SET running_count = ?
-            WHERE id = ?`,
-          desiredRunningCount,
-          schedule.id,
-        );
-      }
     }
   }
 
-  private getScheduleIdFromJobArgs(args: unknown): string | null {
-    if (!args) return null;
+  /** Pending retries occupy slots too; TaskRunner alone owns worker recovery. */
+  private async countScheduleJobs(
+    db: DatabaseInterface,
+    schedule: ScheduleRow,
+  ): Promise<number> {
+    return countScheduleJobs(
+      db,
+      String(schedule.id),
+      schedule.tenant_id == null ? null : String(schedule.tenant_id),
+    );
+  }
 
-    let parsedArgs = args;
-    if (typeof parsedArgs === 'string') {
-      try {
-        parsedArgs = JSON.parse(parsedArgs) as Record<string, unknown>;
-      } catch {
-        return null;
-      }
+  /** Reconcile cached slots without changing TaskRunner-owned job lifecycle. */
+  private async recoverStaleScheduleState(): Promise<void> {
+    const db = this.db;
+    if (!db?.transaction) return;
+    const scope = this.scheduleScope();
+    const schedules = await db.query(
+      `SELECT CAST(id AS VARCHAR) AS id FROM _smrt_agent_schedules WHERE 1 = 1${scope.sql}`,
+      ...scope.params,
+    );
+    for (const row of schedules.rows) {
+      await db.transaction(async (tx) => {
+        const locked = await tx.query(
+          `UPDATE _smrt_agent_schedules SET running_count = running_count WHERE id = ?${scope.sql} RETURNING *, CAST(id AS VARCHAR) AS schedule_id_text, CAST(tenant_id AS VARCHAR) AS schedule_tenant_text, CAST(next_run AS VARCHAR) AS occurrence_time`,
+          row.id,
+          ...scope.params,
+        );
+        if (locked.rows.length !== 1) return;
+        const schedule = portableScheduleRow(locked.rows[0] as ScheduleRow);
+        const occupied = await this.countScheduleJobs(tx, schedule);
+        await tx.query(
+          'UPDATE _smrt_agent_schedules SET running_count = ? WHERE id = ?',
+          occupied,
+          row.id,
+        );
+      });
     }
-
-    if (
-      !parsedArgs ||
-      typeof parsedArgs !== 'object' ||
-      Array.isArray(parsedArgs)
-    ) {
-      return null;
-    }
-
-    const scheduleId = (parsedArgs as Record<string, unknown>)._scheduleId;
-    return typeof scheduleId === 'string' && scheduleId.length > 0
-      ? scheduleId
-      : null;
   }
 
   /**
    * Trigger a schedule by creating a job
    */
-  private async triggerSchedule(schedule: ScheduleRow): Promise<void> {
+  private async triggerSchedule(
+    candidate: ScheduleRow,
+    managedPoll = false,
+  ): Promise<void> {
     if (!this.db || !this.jobCollection) return;
+    candidate = portableScheduleRow(candidate);
+    const db = this.db;
+    let admission: { schedule: ScheduleInfo; error?: Error } | undefined;
+    try {
+      if (!db.transaction)
+        throw new Error('ScheduleRunner requires transaction support');
+      admission = await db.transaction(async (tx) => {
+        if (managedPoll && !this.running) return;
+        // The write locks the current row. PostgreSQL rechecks its predicate
+        // after a competing writer commits; stale selected occurrences lose.
+        const expected = candidate.occurrence_time ?? candidate.next_run;
+        const scope = this.scheduleScope();
+        const claimed = await tx.query(
+          `UPDATE _smrt_agent_schedules SET running_count = running_count
+           WHERE id = ? AND enabled = TRUE AND status = 'active'
+             AND next_run <= ?${expected == null ? '' : ' AND next_run = ?'}${scope.sql}
+           RETURNING *, CAST(id AS VARCHAR) AS schedule_id_text, CAST(tenant_id AS VARCHAR) AS schedule_tenant_text, CAST(next_run AS VARCHAR) AS occurrence_time`,
+          candidate.id,
+          new Date().toISOString(),
+          ...(expected == null ? [] : [expected]),
+          ...scope.params,
+        );
+        if (claimed.rows.length !== 1 || (managedPoll && !this.running)) return;
+        const schedule = portableScheduleRow(claimed.rows[0] as ScheduleRow);
+        const occupied = await this.countScheduleJobs(tx, schedule);
+        await tx.query(
+          'UPDATE _smrt_agent_schedules SET running_count = ? WHERE id = ?',
+          occupied,
+          schedule.id,
+        );
+        if (occupied >= Number(schedule.max_concurrent ?? 1)) return;
+        const jobs = await SmrtJobCollection.create({ db: tx });
+        return this.triggerLockedSchedule(schedule, tx, jobs, occupied);
+      });
+    } catch (error) {
+      await db.query(
+        'UPDATE _smrt_agent_schedules SET last_error = ? WHERE id = ?',
+        redactErrorForPersistence(error),
+        candidate.id,
+      );
+      this.emit(
+        'schedule:error',
+        {
+          id: String(candidate.id),
+          agentType: String(candidate.agent_type),
+          agentId: candidate.agent_id as string | null,
+          cron: String(candidate.cron),
+        },
+        error as Error,
+      );
+      return;
+    }
+    // Notify subscribers only after the occurrence and job have committed.
+    if (admission?.error) {
+      this.emit('schedule:error', admission.schedule, admission.error);
+    } else if (admission) {
+      this.emit('schedule:triggered', admission.schedule);
+      this.logger.info('Schedule triggered', {
+        scheduleId: admission.schedule.id,
+      });
+    }
+  }
 
+  private async triggerLockedSchedule(
+    schedule: ScheduleRow,
+    db: DatabaseInterface,
+    jobs: SmrtJobCollection,
+    occupied: number,
+  ): Promise<{ schedule: ScheduleInfo; error?: Error } | undefined> {
     const rawAgentType = schedule.agent_type as string;
     const canonicalAgentType =
       ObjectRegistry.getClass(rawAgentType)?.qualifiedName || rawAgentType;
@@ -482,138 +539,127 @@ export class ScheduleRunner extends EventEmitter {
       cron: schedule.cron as string,
     };
 
-    try {
-      // Parse method_args and agent_config from JSON strings if needed
-      let methodArgs: Record<string, unknown> = {};
-      if (schedule.method_args) {
-        methodArgs =
-          typeof schedule.method_args === 'string'
-            ? JSON.parse(schedule.method_args as string)
-            : (schedule.method_args as Record<string, unknown>);
-      }
-      let agentConfig: Record<string, unknown> = {};
-      if (schedule.agent_config) {
-        agentConfig =
-          typeof schedule.agent_config === 'string'
-            ? JSON.parse(schedule.agent_config as string)
-            : (schedule.agent_config as Record<string, unknown>);
-      }
+    // Parse method_args and agent_config from JSON strings if needed
+    let methodArgs: Record<string, unknown> = {};
+    if (schedule.method_args) {
+      methodArgs =
+        typeof schedule.method_args === 'string'
+          ? JSON.parse(schedule.method_args as string)
+          : (schedule.method_args as Record<string, unknown>);
+    }
+    if (
+      !methodArgs ||
+      typeof methodArgs !== 'object' ||
+      Array.isArray(methodArgs)
+    )
+      throw new TypeError('Schedule method_args must be a JSON object');
+    for (const key of [
+      '_scheduleId',
+      '_scheduledFor',
+      '_agentConfig',
+      '_scheduleAdmission',
+    ]) {
+      if (Object.hasOwn(methodArgs, key))
+        throw new TypeError(`Schedule method_args cannot set reserved ${key}`);
+    }
+    let agentConfig: Record<string, unknown> = {};
+    if (schedule.agent_config) {
+      agentConfig =
+        typeof schedule.agent_config === 'string'
+          ? JSON.parse(schedule.agent_config as string)
+          : (schedule.agent_config as Record<string, unknown>);
+    }
 
-      // Compute next run time from cron before creating the job, evaluated
-      // in the row's zone; a missing/blank zone falls back to the column
-      // default (UTC) rather than the host's process zone (#3859).
-      // An invalid cron or zone is a deterministic configuration failure:
-      // retrying it every poll can never succeed, so move the row to
-      // status='error' (as AgentSchedule.calculateNextRun does). Only these
-      // validation errors are terminal; a valid cron whose next run lies past
-      // the search horizon (a leap-day schedule) stays active.
-      const timezone =
-        typeof schedule.timezone === 'string' && schedule.timezone.trim()
-          ? schedule.timezone.trim()
-          : 'UTC';
-      try {
-        validateCronExpression(schedule.cron as string);
-        validateCronTimezone(timezone);
-      } catch (error) {
-        await this.db.query(
-          `UPDATE _smrt_agent_schedules
+    // Compute next run time from cron before creating the job, evaluated
+    // in the row's zone; a missing/blank zone falls back to the column
+    // default (UTC) rather than the host's process zone (#3859).
+    // An invalid cron or zone is a deterministic configuration failure:
+    // retrying it every poll can never succeed, so move the row to
+    // status='error' (as AgentSchedule.calculateNextRun does). Only these
+    // validation errors are terminal; a valid cron whose next run lies past
+    // the search horizon (a leap-day schedule) stays active.
+    const timezone =
+      typeof schedule.timezone === 'string' && schedule.timezone.trim()
+        ? schedule.timezone.trim()
+        : 'UTC';
+    try {
+      validateCronExpression(schedule.cron as string);
+      validateCronTimezone(timezone);
+    } catch (error) {
+      await db.query(
+        `UPDATE _smrt_agent_schedules
            SET status = 'error', last_error = ?
            WHERE id = ?`,
-          redactErrorForPersistence(error),
-          schedule.id,
-        );
-        this.emit('schedule:error', scheduleInfo, error as Error);
-        this.logger.error('Schedule has an invalid cron or time zone', {
-          scheduleId: schedule.id,
-          error,
-        });
-        return;
-      }
-      const nextRun = getNextCronDate(schedule.cron as string, timezone);
-
-      // Create a job for this schedule
-      // Nest agent_config under _agentConfig so TaskRunner can pass it
-      // to the agent constructor separately from method args
-      const args: Record<string, unknown> = {
-        ...methodArgs,
-        _scheduleId: schedule.id,
-      };
-      if (Object.keys(agentConfig).length > 0) {
-        args._agentConfig = agentConfig;
-      }
-
-      // Enqueue the job BEFORE advancing next_run / incrementing running_count.
-      // Previously next_run was advanced and running_count incremented first; if
-      // enqueueJob then threw (a transient tenant-cap hit or DB blip), the catch
-      // disabled the schedule but never rolled next_run back, permanently losing
-      // that run slot AND taking the schedule out of the poll until manual
-      // re-activation (#4 in the #1401 review). By enqueuing first, a transient
-      // failure leaves next_run untouched, so the same due slot is retried on
-      // the next poll and the schedule stays active.
-      //
-      // Route scheduled jobs through the same centralized creation path as the
-      // fluent builder so the per-tenant in-flight cap and retry ceiling apply
-      // here too — previously a direct create() bypassed both (S5 audit #1402).
-      // The schedule's own tenant is passed explicitly so the cap is enforced
-      // for the owning tenant even with no ambient context.
-      const job = await this.jobCollection.enqueueJob({
-        tenantId:
-          typeof schedule.tenant_id === 'string' &&
-          schedule.tenant_id.length > 0
-            ? (schedule.tenant_id as string)
-            : null,
-        queue: SCHEDULED_JOB_QUEUE,
-        objectType: canonicalAgentType,
-        objectId: schedule.agent_id as string | null,
-        method: (schedule.method as string) || 'run',
-        args,
-        priority: 75, // High priority for scheduled agents
-        maxAttempts: 3,
-        timeout: (schedule.timeout as number) || 3600000,
-      });
-
-      // Only now that the job is durably enqueued do we consume the slot:
-      // increment running_count and advance next_run in one update.
-      await this.db.query(
-        `UPDATE _smrt_agent_schedules
-         SET agent_type = ?,
-             running_count = running_count + 1,
-             next_run = ?
-         WHERE id = ?`,
-        canonicalAgentType,
-        nextRun.toISOString(),
-        schedule.id,
-      );
-
-      this.emit('schedule:triggered', scheduleInfo);
-      this.logger.info('Schedule triggered', {
-        scheduleId: schedule.id,
-        agentType: canonicalAgentType,
-        jobId: job.id,
-        nextRun: nextRun.toISOString(),
-      });
-    } catch (error) {
-      // The slot was NOT consumed (enqueue runs before the next_run/
-      // running_count advance), so there is nothing to roll back: leave
-      // next_run and status='active' untouched so the next poll retries the
-      // same due slot rather than skipping it or disabling the schedule on a
-      // transient failure (#4). Record last_error for operator visibility only.
-      await this.db.query(
-        `UPDATE _smrt_agent_schedules
-         SET last_error = ?
-         WHERE id = ?`,
-        // Tolerate non-Error throwables: a thrown string/object has no
-        // `.message`, which would otherwise persist an empty `last_error`.
         redactErrorForPersistence(error),
         schedule.id,
       );
-
-      this.emit('schedule:error', scheduleInfo, error as Error);
-      this.logger.error('Schedule trigger failed', {
+      this.logger.error('Schedule has an invalid cron or time zone', {
         scheduleId: schedule.id,
         error,
       });
+      return { schedule: scheduleInfo, error: error as Error };
     }
+    const nextRun = getNextCronDate(schedule.cron as string, timezone);
+
+    // Create a job for this schedule
+    // Nest agent_config under _agentConfig so TaskRunner can pass it
+    // to the agent constructor separately from method args
+    const args: Record<string, unknown> = {
+      ...methodArgs,
+      _scheduleId: String(schedule.id),
+      _scheduledFor: scheduleOccurrenceInstant(schedule),
+    };
+    if (Object.keys(agentConfig).length > 0) {
+      args._agentConfig = agentConfig;
+    }
+
+    // The occurrence, job insert and slot update share the locked transaction.
+    const job = await jobs.enqueueJob({
+      tenantId:
+        typeof schedule.tenant_id === 'string' && schedule.tenant_id.length > 0
+          ? (schedule.tenant_id as string)
+          : null,
+      queue: this.config.queue,
+      objectType: canonicalAgentType,
+      objectId: schedule.agent_id as string | null,
+      method: (schedule.method as string) || 'run',
+      args,
+      priority: 75, // High priority for scheduled agents
+      maxAttempts: 3,
+      timeout: (schedule.timeout as number) || 3600000,
+    });
+
+    if (this.config.occurrenceSigner) {
+      const signer = this.config.occurrenceSigner;
+      const integrity = signer.sign(
+        getScheduleAdmissionPayload(job, signer.keyId),
+      );
+      job.args = { ...job.args, _scheduleAdmission: integrity };
+      if (!verifyScheduleAdmission(job, signer)) {
+        throw new Error(
+          'Occurrence signer returned invalid schedule admission integrity',
+        );
+      }
+      // This model is bound to the admission transaction. No consumer can see
+      // an unsigned protected job, and no producer save follows the commit.
+      await job.save();
+    }
+
+    // Only now that the job is durably enqueued do we consume the slot:
+    // increment running_count and advance next_run in one update.
+    await db.query(
+      `UPDATE _smrt_agent_schedules
+         SET agent_type = ?,
+             running_count = ?,
+             next_run = ?
+         WHERE id = ?`,
+      canonicalAgentType,
+      occupied + 1,
+      nextRun.toISOString(),
+      schedule.id,
+    );
+
+    return { schedule: scheduleInfo };
   }
 }
 
@@ -631,6 +677,32 @@ interface ScheduleRow {
   method: unknown;
   method_args: unknown;
   timeout: unknown;
+  next_run?: unknown;
+  occurrence_time?: unknown;
+  schedule_id_text?: string;
+  schedule_tenant_text?: string | null;
+  max_concurrent?: unknown;
+}
+
+function portableScheduleRow(row: ScheduleRow): ScheduleRow {
+  return {
+    ...row,
+    id: row.schedule_id_text ?? row.id,
+    tenant_id: Object.hasOwn(row, 'schedule_tenant_text')
+      ? row.schedule_tenant_text
+      : row.tenant_id,
+  };
+}
+
+/** SQL datetime columns store UTC wall clocks; never parse them in host TZ. */
+function scheduleOccurrenceInstant(schedule: ScheduleRow): string {
+  const raw = schedule.occurrence_time ?? schedule.next_run;
+  if (raw instanceof Date) return raw.toISOString();
+  let text = String(raw).trim();
+  if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:\.\d+)?$/.test(text)) {
+    text = `${text.replace(' ', 'T')}Z`;
+  }
+  return new Date(text).toISOString();
 }
 
 // --- Cron helpers (self-contained, no external dependency) ---
