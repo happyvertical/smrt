@@ -2463,6 +2463,17 @@ export async function legacyMain(env = process.env) {
     });
     assert.equal(sql('SELECT count(*) FROM fixture_effects'), '1');
     const tlsPlans = [];
+    // TLS commands observe point-in-time Flux state and fail closed on a
+    // periodic reconcile flip; success paths re-run like an operator would,
+    // bounded, reporting the last reason.
+    const tlsCli = async (description, args) => {
+      let result;
+      await until(description, async () => {
+        result = await releaseCli(args, () => adapter());
+        return true;
+      });
+      return result;
+    };
     const runTlsPlan = async (version, id) => {
       const refsFile = join(scratch, `tls-refs-${version}.json`),
         reviewed = join(scratch, `tls-plan-${version}.json`);
@@ -2473,10 +2484,7 @@ export async function legacyMain(env = process.env) {
           { name: 'legacy-site', tlsSecretName: `site-tls-v${version}` },
         ]),
       );
-      const result = await releaseCli(
-        ['tls-plan', configFile, refsFile, id],
-        () => adapter(),
-      );
+      const result = await tlsCli(`tls-plan ${id}`, ['tls-plan', configFile, refsFile, id]);
       writeFileSync(reviewed, JSON.stringify(result));
       tlsPlans.push(result);
       return reviewed;
@@ -2496,9 +2504,7 @@ export async function legacyMain(env = process.env) {
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
     const firstTls = await runTlsPlan(2, 'tls-positive');
-    await releaseCli(['tls-apply-or-resume', configFile, firstTls], () =>
-      adapter(),
-    );
+    await tlsCli('tls-apply-or-resume (positive)', ['tls-apply-or-resume', configFile, firstTls]);
     await until('real Ingress immutable TLS rotation acknowledged', async () =>
       Boolean(
         (
@@ -2531,10 +2537,7 @@ export async function legacyMain(env = process.env) {
         refs,
         JSON.stringify([{ name: 'legacy-web', tlsSecretName: invalid }]),
       );
-      const rejectedPlan = await releaseCli(
-        ['tls-plan', configFile, refs, invalid],
-        () => adapter(),
-      );
+      const rejectedPlan = await tlsCli(`tls-plan ${invalid}`, ['tls-plan', configFile, refs, invalid]);
       writeFileSync(reviewed, JSON.stringify(rejectedPlan));
       const beforeRejected = await adapter().read();
       // The binding rejection is the expected outcome; a transient Flux
@@ -2579,9 +2582,7 @@ export async function legacyMain(env = process.env) {
     apply([watchFault]);
     try {
       const failedTls = await runTlsPlan(3, 'tls-correlated-failure');
-      await releaseCli(['tls-apply-or-resume', configFile, failedTls], () =>
-        adapter(),
-      );
+      await tlsCli('tls-apply-or-resume (correlated failure)', ['tls-apply-or-resume', configFile, failedTls]);
       await until(
         'real stale served TLS certificate correlated to exact new Ingress refs',
         async () => {
@@ -2592,7 +2593,7 @@ export async function legacyMain(env = process.env) {
           return result.evidence?.failureCode === 'TLS_CORRELATED_FAILURE';
         },
       );
-      await releaseCli(['tls-rollback', configFile, failedTls], () => adapter());
+      await tlsCli('tls-rollback', ['tls-rollback', configFile, failedTls]);
       await until(
         'correlated TLS rollback restored retained immutable reference',
         async () =>
