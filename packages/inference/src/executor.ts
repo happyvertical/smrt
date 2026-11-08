@@ -232,6 +232,10 @@ class ChainCall {
     reason: InferenceSubstitutionReason | 'unclassified',
   ): Promise<void> {
     const step = this.lastStep;
+    // Nothing answered, so no tier resolved: drop the tag core added up
+    // front, or #4751 would lift a failed tier into tier_resolved.
+    const { tierResolved: _unanswered, ...callerTags } =
+      this.callerOptions.usageTags ?? {};
     try {
       await this.context.recordUsage({
         ...(typeof step?.target.provider === 'string'
@@ -243,7 +247,7 @@ class ChainCall {
         operation: this.operation,
         duration: Math.max(0, this.options.now() - this.started),
         tags: {
-          ...(this.callerOptions.usageTags ?? {}),
+          ...callerTags,
           tierRequested: this.tierRequested,
           outcome,
           reason,

@@ -153,6 +153,21 @@ describe('checkInferenceBindings (offline)', () => {
     expect(byBinding(report)['tier:great']?.status).toBe('warn');
   });
 
+  it('warns that HAVE_AI_* makes core refuse another provider without its own endpoint', async () => {
+    const report = await checkInferenceBindings({
+      config: {
+        tiers: {
+          great: { candidates: [{ provider: 'anthropic', model: 'x' }] },
+        },
+      },
+      env: { ...env, HAVE_AI_API_KEY: SECRET },
+    });
+    const candidate = byBinding(report)['tier:great']?.candidates[0];
+    expect(candidate?.status).toBe('warn');
+    expect(candidate?.problems.join(' ')).toContain('HAVE_AI_API_KEY is set');
+    expect(JSON.stringify(report)).not.toContain(SECRET);
+  });
+
   it('reports a structurally invalid block instead of throwing', async () => {
     const report = await checkInferenceBindings({
       config: { defaultTier: 'fast' } as never,
@@ -204,6 +219,23 @@ describe('probes', () => {
     expect(formatInferenceDoctorReport(report).join('\n')).not.toContain(
       SECRET,
     );
+  });
+
+  it('never follows a redirect with the key', async () => {
+    const fetch = vi.fn(
+      async (_url: string, init: RequestInit) =>
+        new Response(null, {
+          status: init.redirect === 'manual' ? 302 : 200,
+          headers: { location: 'https://elsewhere.example/' },
+        }),
+    );
+    const result = await probeInferenceCandidate(
+      { provider: 'anthropic', model: 'x' },
+      { env, fetch: fetch as unknown as typeof globalThis.fetch },
+    );
+    expect(fetch.mock.calls[0]?.[1]?.redirect).toBe('manual');
+    expect(result).toMatchObject({ reachable: false, status: 302 });
+    expect(result.detail).toContain('redirected (not followed');
   });
 
   it('times out a silent endpoint', async () => {

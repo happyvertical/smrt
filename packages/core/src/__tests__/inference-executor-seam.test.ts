@@ -10,6 +10,7 @@ import { field } from '../decorators';
 import {
   assertInferenceConfig,
   getInferenceExecutor,
+  INFERENCE_TARGET_UNBOUND,
   type InferenceExecutionContext,
   inferenceExecutorFor,
   inferenceTargetKind,
@@ -194,6 +195,13 @@ describe('inference executor seam', () => {
     await expect(
       context?.clientFor({ candidates: [] } as never),
     ).rejects.toThrow('cannot be bound to one client');
+    // Pair-rule refusals are typed, so an executor classifies them by code.
+    await expect(
+      context?.clientFor({ baseUrl: 'https://other.example/v1' }),
+    ).rejects.toMatchObject({
+      name: 'InferenceBindingError',
+      code: INFERENCE_TARGET_UNBOUND,
+    });
 
     // The failure row goes through the instance's usage handlers.
     await context?.recordUsage({

@@ -42,6 +42,9 @@ const QUOTA_NAMES = new Set(['ChatGPTPlanUsageLimitError']);
 
 const CREDENTIAL_CODES = new Set([
   'AUTH_ERROR',
+  // Core refused to bind the candidate before sending anything (pair rule,
+  // HAVE_AI_* fallbacks, injected client): this route has no usable key.
+  'INFERENCE_TARGET_UNBOUND',
   'invalid_api_key',
   'authentication_error',
   'permission_error',

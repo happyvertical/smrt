@@ -54,6 +54,7 @@ import { createFilesystemAdapter } from './filesystem-loader.js';
 import { getDatabase, importAI } from './host.js';
 import {
   getInferenceConfig as getProcessInferenceConfig,
+  InferenceBindingError,
   type InferenceConfig,
   type InferenceLatency,
   type InferenceModelClient,
@@ -1073,7 +1074,7 @@ export class SmrtClass {
       // object operation path also send the target model per call.
       if (this._ai && !identity.baseUrl && !identity.apiKey) return this._ai;
       if (!this._ai) return this.getAiClient();
-      throw new Error(
+      throw new InferenceBindingError(
         `${this._className} cannot rebind an injected AI client to a new endpoint; the inference target must name a provider.`,
       );
     }
@@ -1093,12 +1094,12 @@ export class SmrtClass {
     const keepsBaseEndpoint =
       sameProvider && identity.baseUrl === text(baseFields, 'baseUrl');
     if (identity.baseUrl && !identity.apiKey && !keepsBaseEndpoint) {
-      throw new Error(
+      throw new InferenceBindingError(
         `${this._className}: an inference target that names its own baseUrl must carry its own apiKey (use a placeholder such as 'smrt-local' for a keyless local server); a configured or environment key is never sent to another endpoint.`,
       );
     }
     if (identity.apiKey && !identity.baseUrl) {
-      throw new Error(
+      throw new InferenceBindingError(
         `${this._className}: an inference target that brings its own apiKey must name its baseUrl; a target key is never sent to an inherited or environment endpoint.`,
       );
     }
@@ -1109,7 +1110,7 @@ export class SmrtClass {
       const env = typeof process !== 'undefined' ? process.env : undefined;
       for (const name of ['HAVE_AI_BASE_URL', 'HAVE_AI_API_KEY']) {
         if (env?.[name]?.trim()) {
-          throw new Error(
+          throw new InferenceBindingError(
             `${this._className}: an inference target on another provider must name its baseUrl and apiKey while ${name} is set.`,
           );
         }
