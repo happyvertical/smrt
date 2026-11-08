@@ -451,11 +451,13 @@ export function promptMessageOptions(
     tier: _tier,
     latency: _latency,
     promptKey: _promptKey,
+    // Never spread raw: only the sanitized copy below may reach the call.
+    usageTags: paramTags,
     ...params
   } = ai.params || {};
   const routeTier = extra.routeTier !== false;
   const usageTags = {
-    ...paramUsageTags(params.usageTags),
+    ...paramUsageTags(paramTags),
     ...(ai.usageTags ?? {}),
     ...(extra.usageTags ?? {}),
   };

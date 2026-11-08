@@ -220,6 +220,13 @@ describe('prompt usage tags (#4751)', () => {
       },
     });
     expect(options.usageTags).toEqual({ source: 'params' });
+
+    // Reserved-only params tags leave no usageTags at all, never the raw map.
+    expect(
+      promptMessageOptions({
+        params: { usageTags: { runId: 'victim-run' } },
+      }),
+    ).toEqual({});
   });
 
   it('forwards tier and promptKey for a tier profile unless routeTier is false', async () => {
