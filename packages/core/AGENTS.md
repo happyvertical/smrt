@@ -23,7 +23,7 @@ and repository rules.
 | `src/vite-plugin/`, `src/consumer-plugin/`, `src/knowledge.ts` | Decorator UI hints, knowledge projection, generation snapshots | [agents/build-knowledge.md](agents/build-knowledge.md) |
 | `src/knowledge-graph.ts` | Cross-package knowledge graph merge and freshness check (#2863) — see [standards](../../docs/content/standards.md) | — |
 | `src/object.ts`, `src/collection.ts`, `src/learning/memory.ts` | Context memory and semantic search | [agents/memory.md](agents/memory.md) |
-| `src/adapters/ai-usage.ts`, `src/system/ai-usage-observability.ts` | Usage tags lifted to `prompt_key`/tier/`run_id` columns, outcome labels, `ai:usage` report (#4751) | [agents/ai-usage.md](agents/ai-usage.md) |
+| `src/adapters/ai-usage.ts`, `src/adapters/ai-usage-recorder.ts`, `src/system/ai-usage-observability.ts` | Public usage recorder, `withAiUsage()`, ambient-tenant slot, gateway cost ids (#3077); usage tags lifted to `prompt_key`/tier/`run_id` columns, outcome labels, `ai:usage` report (#4751) | [agents/ai-usage.md](agents/ai-usage.md) |
 | `src/system/diagnostics.ts` | SELECT-only `_smrt_*` diagnostics reader behind smrt-dev-mcp runtime tools (#1824) | [agents/system-diagnostics.md](agents/system-diagnostics.md) |
 | `src/system/registry-snapshot.ts` | Sanitized plain-JSON projection of the booted `ObjectRegistry` for the smrt-dev-mcp runtime dev-plane (#1831); never constructors, validators, values, or absolute paths | [agents/registry-snapshot.md](agents/registry-snapshot.md) |
 | `src/registry/qualified-name-aliases.ts`, `src/migrations/qualified-name-aliases.ts` | Model moves: `previousQualifiedNames` aliases, deprecation, doctor counts, opt-in backfill (#3338) | [agents/model-moves.md](agents/model-moves.md) |
@@ -31,7 +31,7 @@ and repository rules.
 | `src/recipe.ts`, `../scanner/src/recipes.ts` | `SmrtRecipe`: declared user-facing units (models, nav, `requires`, curation `options`) collected into manifest and knowledge `recipes` (#3590) | [agents/recipes.md](agents/recipes.md) |
 | `src/cookbook/` | Cookbook v1 document: browser-safe validate/migrate, JSON Schema (`./cookbook`, `./cookbook/v1.schema.json`; #3748) | [agents/cookbook.md](agents/cookbook.md) |
 | `src/cookbook/engine/` | Headless cookbook command engine: typed commands, idempotent retries, atomic batches, receipts, tool schemas (`./cookbook/engine`; #3753) | [agents/cookbook-engine.md](agents/cookbook-engine.md) |
-| `src/inference.ts`, `getAiClient(tier?)` | Inference tiers (`cheap`…`best`, `auto`), `inference` config, `setInferenceResolver()` seam, per-tier clients and usage tags (#4750) | [agents/inference.md](agents/inference.md) |
+| `src/inference.ts`, `getAiClient(tier?)`, `src/inference-availability.ts` | Inference tiers (`cheap`…`best`, `auto`), `inference` config, `setInferenceResolver()` / `setInferenceExecutor()` seams, per-tier clients and usage tags (#4750, #4752); mode and typed `AI_UNAVAILABLE`, status probe and `_inference` route (#4757) | [agents/inference.md](agents/inference.md) |
 | `src/browser.ts`, `src/host.ts`, `src/host.browser.ts` | Browser entry that builds and evaluates without Node-only modules: host seam, `package.json#browser` swaps, `pnpm test:browser` (#2838) | [agents/browser-entry.md](agents/browser-entry.md) |
 
 ## Cross-module invariants

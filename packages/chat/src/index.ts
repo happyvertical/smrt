@@ -56,6 +56,12 @@ import './__smrt-register__.js';
 // methods (getAgentSession, findActiveAgentSessions, getThread, listRoomThreads,
 // getThreadMessages, getRoomMessages, getRoomForMember, ...).
 
+export {
+  CHAT_AI_UNAVAILABLE_CODE,
+  type ChatUnavailableBody,
+  chatUnavailableBody,
+  chatUnconfiguredBody,
+} from './ai-unavailable.js';
 // Streamed assistant turn over the tool loop, with browser-executed tools
 // (#2908). The wire types are browser-safe (`./assistant-turn` subpath).
 export {

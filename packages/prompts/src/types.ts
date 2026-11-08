@@ -1,5 +1,6 @@
 import type {
   InferenceLatency,
+  InferenceTier,
   InferenceTierRequest,
   SmrtClassOptions,
 } from '@happyvertical/smrt-core';
@@ -29,6 +30,12 @@ export interface PromptAIInput {
   params?: PromptParams | null;
   temperature?: number;
   maxTokens?: number;
+  /**
+   * Lowest tier a tier-profile prompt may degrade to when its tier's chain
+   * fails (#4752). Code default only: config and stored overrides cannot
+   * lower it.
+   */
+  minimumTier?: InferenceTier;
   [key: string]: unknown;
 }
 
@@ -105,6 +112,8 @@ export interface NormalizedPromptAI {
   model?: string;
   /** Code-declared latency hint; only a registered definition carries it. */
   latency?: InferenceLatency;
+  /** From the code default only (#4752). */
+  minimumTier?: InferenceTier;
   params: PromptParams;
 }
 
@@ -155,6 +164,8 @@ export interface ResolvedPromptAI extends PromptParams {
   promptKey?: string;
   /** Set with `tier`: the code default's latency hint (#4755). */
   latency?: InferenceLatency;
+  /** The definition's `ai.minimumTier`, set with `tier` (#4752). */
+  minimumTier?: InferenceTier;
   allowedModels?: string[];
   params: PromptParams;
   temperature?: number;

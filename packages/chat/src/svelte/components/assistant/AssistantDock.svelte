@@ -29,8 +29,10 @@ import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import { type Component, type Snippet, tick, untrack } from 'svelte';
 import type { AssistantStatus } from '../../../assistant-turn-events.js';
+import type { ChatUnavailableStatus } from '../../../client.js';
 import { M } from '../../i18n.js';
 import ToolCallDisplay from '../agent/ToolCallDisplay.svelte';
+import AiUnavailableNotice from '../shared/AiUnavailableNotice.svelte';
 import ModelPicker from '../shared/ModelPicker.svelte';
 import AssistantChoiceCards from './AssistantChoiceCards.svelte';
 import AssistantComposer from './AssistantComposer.svelte';
@@ -250,6 +252,10 @@ export interface Props {
   /** The reply is being read aloud: hands-free listening pauses meanwhile;
    * see `AssistantComposer`. */
   speaking?: boolean;
+  /** Host route of its AI settings page (#4757). When a send is refused
+   * because AI is off or not set up (`ai_unavailable`), the dock shows
+   * "AI is off" with a link here instead of an error. */
+  aiSettingsHref?: string;
 }
 
 const {
@@ -290,8 +296,22 @@ const {
   sendOnPause = false,
   sendOnPauseMs,
   speaking = false,
+  aiSettingsHref,
 }: Props = $props();
 const { t } = useI18n();
+
+// Set when the server answered `ai_unavailable` (#4757); cleared by the next
+// successful send. Rendered as a notice with the host's settings link.
+let aiUnavailable = $state<ChatUnavailableStatus | null>(null);
+
+function noteUnavailable(error: unknown): boolean {
+  const status =
+    error && typeof error === 'object'
+      ? (error as { unavailable?: ChatUnavailableStatus }).unavailable
+      : undefined;
+  aiUnavailable = status?.reason ? status : null;
+  return aiUnavailable !== null;
+}
 
 // Passed to the controller as getters (not direct values) so a later
 // reassignment of these bound props (e.g. a host swapping the transport or
@@ -605,7 +625,11 @@ async function handleAnswerQuestion(
   try {
     await controller.answerQuestion(messageId, question, values);
   } catch (error) {
-    controller.setError(error instanceof Error ? error.message : String(error));
+    if (noteUnavailable(error)) controller.setError(null);
+    else
+      controller.setError(
+        error instanceof Error ? error.message : String(error),
+      );
     // The form learns it failed, so it stays answerable.
     throw error;
   }
@@ -624,8 +648,13 @@ async function handleSend(
   try {
     await controller.send(content, attachments);
     controller.setError(null);
+    aiUnavailable = null;
   } catch (error) {
-    controller.setError(error instanceof Error ? error.message : String(error));
+    if (noteUnavailable(error)) controller.setError(null);
+    else
+      controller.setError(
+        error instanceof Error ? error.message : String(error),
+      );
     throw error;
   }
 }
@@ -722,6 +751,9 @@ async function handleConfirmAction(requestId: string) {
     {/if}
 
     <div class="assistant-dock-main">
+      {#if aiUnavailable}
+        <AiUnavailableNotice status={aiUnavailable} settingsHref={aiSettingsHref} />
+      {/if}
       {#if controller.error}
         <p class="assistant-dock-error" role="alert">
           {t(M['chat.assistant_dock.error'], { message: controller.error })}

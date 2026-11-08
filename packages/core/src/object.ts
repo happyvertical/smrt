@@ -53,7 +53,11 @@ import {
   ValidationError,
 } from './errors';
 import { buildWhere } from './host.js';
-import type { InferenceLatency, InferenceTierRequest } from './inference';
+import type {
+  InferenceLatency,
+  InferenceTier,
+  InferenceTierRequest,
+} from './inference';
 import {
   type BulkMutationEntry,
   createInterceptorContext,
@@ -577,6 +581,19 @@ export interface AiOperationOptions extends AITextCompletionOptions {
    * into the usage event (`_smrt_ai_usage.tags`).
    */
   usageTags?: Record<string, string>;
+
+  /**
+   * Lowest tier a chain tier may degrade to when all its candidates fail
+   * (#4752). Prompts set it from `ai.minimumTier`. Not forwarded to
+   * `ai.message()`.
+   */
+  minimumTier?: InferenceTier;
+
+  /**
+   * Return the text a chain candidate already streamed when it fails
+   * mid-stream, instead of throwing (#4752). Not forwarded to `ai.message()`.
+   */
+  allowPartial?: boolean;
 }
 
 /**

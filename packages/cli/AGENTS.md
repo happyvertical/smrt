@@ -8,6 +8,7 @@ CLI with lazy-loaded commands, manifest discovery, and class introspection.
 smrt introspect              # Discover SMRT objects in project
 smrt doctor                  # Umbrella diagnostics; can verify a generation snapshot
 smrt doctor --db             # Add the live-schema parity section (see below)
+smrt doctor --ai [--probe]   # Inference tier/alias bindings, offline unless --probe (src/commands/doctor-ai.ts; ../inference/AGENTS.md); unresolvable binding exits 1
 smrt db:status               # Pending schema changes + failed migration classification (+ tenant natural-key findings: a missing tenant-led unique exits 1, a surviving legacy global unique warns until `db:migrate --drop-legacy-natural-key`: src/commands/tenant-natural-keys.ts)
 smrt db:status --parity      # Same, plus live-schema parity (see below)
 smrt db:orphans              # agents/db-orphans.md
@@ -30,7 +31,7 @@ smrt db:rollback             # Roll back migrations by executing their recorded 
 smrt db:rollback --mark-only # Record-only flip; schema untouched
 smrt db:prune                # Prune framework system tables to their retention windows
 smrt db:prune --dry-run      # Same predicates, counted rather than deleted
-smrt ai:usage [--by prompt,model,tier,class,tenant,fusion] [--since 7d] [--tenant <id>] [--json] # ../core/agents/ai-usage.md
+smrt ai:usage [--by prompt,model,tier,class,tenant,fusion,source] [--since 7d] [--tenant <id>] [--json] # ../core/agents/ai-usage.md
 smrt docs:agents             # Generate .agents/smrt-framework.md
 smrt docs:claude             # Deprecated alias writing .claude/smrt-framework.md
 smrt dev:knowledge-*         # Deterministic agent knowledge index/check/diff

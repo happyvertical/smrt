@@ -123,6 +123,12 @@ export const M = defineMessages({
     'The assistant is taking longer than expected.',
   'chat.assistant_dock.retry': 'Retry "{content}"',
   'chat.assistant_dock.error': 'Something went wrong: {message}',
+  // AiUnavailableNotice (#4757)
+  'chat.ai_unavailable.off': 'AI is off.',
+  'chat.ai_unavailable.unconfigured': 'AI is not set up yet.',
+  'chat.ai_unavailable.entitlement': 'AI is not included in your plan.',
+  'chat.ai_unavailable.capability': 'The configured AI model cannot do this.',
+  'chat.ai_unavailable.open_settings': 'Open AI settings',
   'chat.assistant_dock.send_failed':
     'A message failed to send. You can retry it below.',
   'chat.assistant_dock.attachments': 'Attachments',

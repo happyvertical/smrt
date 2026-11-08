@@ -204,4 +204,48 @@ describe('prompt tier profiles', () => {
       await (db as { close?: () => Promise<void> }).close?.();
     }
   });
+
+  it('carries the code default ai.minimumTier with the tier, never from params', async () => {
+    definePrompt({
+      key: 'tiers.floor',
+      template: 'Hi',
+      ai: { profile: 'great', minimumTier: 'good' },
+    });
+    const { ai } = await resolvePrompt('tiers.floor', {
+      tenantId: null,
+      // A runtime (or tenant) layer cannot lower the floor through params.
+      override: { params: { minimumTier: 'cheap' } },
+    });
+    expect(ai.minimumTier).toBe('good');
+    expect(ai.params).not.toHaveProperty('minimumTier');
+    expect(promptMessageOptions(ai)).toMatchObject({
+      tier: 'great',
+      promptKey: 'tiers.floor',
+      minimumTier: 'good',
+    });
+  });
+
+  it('drops minimumTier when the effective profile is not a tier', async () => {
+    definePrompt({
+      key: 'tiers.floor-profile',
+      template: 'Hi',
+      ai: { profile: 'great', minimumTier: 'good' },
+    });
+    const { ai } = await resolvePrompt('tiers.floor-profile', {
+      tenantId: null,
+      override: { profile: 'deep' },
+    });
+    expect(ai.tier).toBeUndefined();
+    expect(promptMessageOptions(ai)).not.toHaveProperty('minimumTier');
+  });
+
+  it('rejects an unknown minimumTier at definition', () => {
+    expect(() =>
+      definePrompt({
+        key: 'tiers.bad-floor',
+        template: 'Hi',
+        ai: { profile: 'great', minimumTier: 'fast' as never },
+      }),
+    ).toThrow('ai.minimumTier must be one of');
+  });
 });

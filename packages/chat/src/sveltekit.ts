@@ -52,16 +52,22 @@ import type {
 } from '@happyvertical/smrt-agents';
 import type { DataSurfaceActionAdapter } from '@happyvertical/smrt-agents/server';
 import {
+  AIProviderNotConfiguredError,
   getConfig,
   loadConfig,
   resolveConfiguredAIProvider,
   toAIClientOptions,
 } from '@happyvertical/smrt-config';
-import type { SmrtClassOptions } from '@happyvertical/smrt-core';
+import {
+  resolveInferenceTarget,
+  type SmrtClassOptions,
+} from '@happyvertical/smrt-core';
+import { withTenant } from '@happyvertical/smrt-tenancy';
 import {
   getCurrentSessionPermissionContext,
   getRequestScopedDatabase,
 } from '@happyvertical/smrt-users';
+import { chatUnavailableBody, chatUnconfiguredBody } from './ai-unavailable.js';
 import {
   ASSISTANT_TURN_GENERIC_ERROR,
   type AssistantContinuationStore,
@@ -238,9 +244,11 @@ export interface AssistantRouteBoundPrincipal {
 export interface MountAssistantRoutesOptions {
   /**
    * The AI client, or a factory called once per turn. Omitted, each turn
-   * builds a client from the `smrt.config` `ai` block through the shared
-   * resolver (`resolveConfiguredAIProvider` → `toAIClientOptions` →
-   * `getAI`), loading the config file first if nothing has. A factory that
+   * builds a client from the principal's stored inference binding (#4756,
+   * through core's `resolveInferenceTarget()`) over the `smrt.config` `ai`
+   * block through the shared resolver (`resolveConfiguredAIProvider` →
+   * `toAIClientOptions` → `getAI`), loading the config file first if nothing
+   * has. A factory that
    * throws (including `AIProviderNotConfiguredError` when nothing is
    * configured) answers 503 before anything is written; the error goes to
    * `onError` only. Passing `ai` explicitly as `undefined`/`null` is a mount
@@ -412,6 +420,8 @@ export class AssistantRouteError extends Error {
     readonly status: number,
     readonly code: string,
     message: string,
+    /** Extra user-safe body fields (the #4757 `unavailable` answer). */
+    readonly body?: Record<string, unknown>,
   ) {
     super(message);
     this.name = 'AssistantRouteError';
@@ -533,7 +543,30 @@ function json(
 }
 
 function errorResponse(error: AssistantRouteError): Response {
-  return json({ error: error.message, code: error.code }, error.status);
+  return json(
+    { ...(error.body ?? {}), error: error.message, code: error.code },
+    error.status,
+  );
+}
+
+/**
+ * The structured 503 for unavailable AI (#4757): core's
+ * `InferenceUnavailableError`, or smrt-config's "no provider" error from the
+ * default factory (`unconfigured`). `undefined` for anything else.
+ */
+function unavailableRouteError(
+  error: unknown,
+): AssistantRouteError | undefined {
+  const body =
+    chatUnavailableBody(error) ??
+    (error instanceof AIProviderNotConfiguredError
+      ? chatUnconfiguredBody()
+      : undefined);
+  if (!body) return undefined;
+  return new AssistantRouteError(503, body.code, body.error, {
+    type: body.type,
+    unavailable: body.unavailable,
+  });
 }
 
 const notFound = () =>
@@ -554,12 +587,19 @@ async function resolveValue<T>(
 let configLoad: Promise<unknown> | undefined;
 
 /**
- * The default AI factory: the `smrt.config` `ai` block (plus its key
- * variable) through the shared resolver. Loads the config file once when no
- * one has; throws `AIProviderNotConfiguredError` (variable names only, never
- * values) when nothing is configured.
+ * The default AI factory: the principal's stored inference binding (a
+ * per-user / per-tenant resolver registered with core, #4756) over the
+ * `smrt.config` `ai` block (plus its key variable) through the shared
+ * resolver. Loads the config file once when no one has; throws
+ * `AIProviderNotConfiguredError` (variable names only, never values) when
+ * neither a binding nor the config names a provider. Usage is recorded
+ * through the public recorder (#3077) with the binding's `source` tag; it
+ * reaches `config({ usage: { handlers } })`, not `_smrt_ai_usage`, because a
+ * turn's request database does not outlive the turn.
  */
-async function configuredAssistantAI(): Promise<AIInterface> {
+async function configuredAssistantAI(
+  context: AssistantRequestContext,
+): Promise<AIInterface> {
   if (getConfig() === null) {
     configLoad ??= loadConfig().catch((error: unknown) => {
       configLoad = undefined;
@@ -567,11 +607,35 @@ async function configuredAssistantAI(): Promise<AIInterface> {
     });
     await configLoad;
   }
-  const options = toAIClientOptions(resolveConfiguredAIProvider());
+  let base: Record<string, unknown> | undefined;
+  let notConfigured: unknown;
+  try {
+    base = toAIClientOptions(resolveConfiguredAIProvider()) as Record<
+      string,
+      unknown
+    >;
+  } catch (error) {
+    if (!(error instanceof AIProviderNotConfiguredError)) throw error;
+    notConfigured = error;
+  }
+  const { principal } = context;
+  // The resolver reads the ambient principal; enter the route's
+  // authenticated one for the resolution only.
+  const resolved = await withTenant(
+    { tenantId: principal.tenantId, userId: principal.userId },
+    () =>
+      resolveInferenceTarget({
+        ...(base ? { base } : {}),
+        tenantId: principal.tenantId,
+        className: 'AssistantRoute',
+        usage: { className: 'AssistantRoute', tenantId: principal.tenantId },
+      }),
+  );
+  if (!resolved.options) throw notConfigured;
   // Imported per turn, as the dev routes do: mounting (and SvelteKit's
   // build-time route analysis) never loads a provider SDK.
   const { getAI } = await import('@happyvertical/ai');
-  return getAI(options);
+  return getAI(resolved.options as Parameters<typeof getAI>[0]);
 }
 
 /**
@@ -1011,6 +1075,15 @@ export function mountAssistantRoutes(
       }
       return ai;
     } catch (error) {
+      // AI off / not set up is a state, not a fault (#4757): answer it
+      // structured. A chosen mode `off` is not logged; the default
+      // factory's "no provider" error still reaches `onError` (it names
+      // the config the operator must add).
+      const unavailable = unavailableRouteError(error);
+      if (unavailable) {
+        if (error instanceof AIProviderNotConfiguredError) safeLog(error);
+        throw unavailable;
+      }
       safeLog(error);
       throw new AssistantRouteError(
         503,

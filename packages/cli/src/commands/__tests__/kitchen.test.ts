@@ -881,6 +881,43 @@ describe('the configured model', () => {
     });
     expect(await ai?.chat([{ role: 'user', content: 'hi' }])).toBe('echo:1');
   });
+
+  it('takes a registered inference binding over the configured provider (#4756)', async () => {
+    const { setInferenceResolver } = await import('@happyvertical/smrt-core');
+    setInferenceResolver({
+      resolve: (request) => ({
+        tierResolved: request.tier === 'auto' ? 'good' : request.tier,
+        target: {
+          provider: 'openai',
+          baseUrl: 'http://127.0.0.1:1234/v1',
+          apiKey: 'smrt-local',
+          model: 'local-model',
+          source: 'local',
+        },
+        via: 'resolver',
+      }),
+    });
+    try {
+      const seen: unknown[] = [];
+      const ai = await resolveKitchenAI({
+        dir: work,
+        env: {},
+        createClient: async (clientOptions) => {
+          seen.push(clientOptions);
+          return { chat: async () => ({ content: 'ok' }) };
+        },
+      });
+      expect(ai?.label).toBe('openai (local-model)');
+      expect(seen[0]).toMatchObject({
+        provider: 'openai',
+        baseUrl: 'http://127.0.0.1:1234/v1',
+        model: 'local-model',
+        onUsage: expect.any(Function),
+      });
+    } finally {
+      setInferenceResolver(undefined);
+    }
+  });
 });
 
 describe('smrt kitchen apply', () => {

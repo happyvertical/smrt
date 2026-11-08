@@ -1,54 +1,11 @@
 import { get, type IncomingMessage } from 'node:http';
-import type { OpenAIOptions } from '@happyvertical/ai';
+import { INFERENCE_PRESETS } from './inference-presets.js';
 
-const LEMONADE_BASE_URL = 'http://127.0.0.1:13305/v1';
-
-const PRESETS = {
-  openrouter: {
-    baseUrl: 'https://openrouter.ai/api/v1',
-    requiresApiKey: true,
-  },
-  lemonade: {
-    baseUrl: LEMONADE_BASE_URL,
-    requiresApiKey: false,
-  },
-  'llama.cpp': {
-    baseUrl: 'http://127.0.0.1:9931/v1',
-    requiresApiKey: false,
-  },
-  'lm-studio': {
-    baseUrl: 'http://127.0.0.1:1234/v1',
-    requiresApiKey: false,
-  },
-} as const;
-
-export type InferencePresetId = keyof typeof PRESETS;
-
-/**
- * Resolve a named preset with an explicit model. Returns null when a preset,
- * model, or required API key is missing or invalid.
- */
-export function resolveInferencePreset(
-  id: string,
-  input: { model: string; apiKey?: string },
-): OpenAIOptions | null {
-  if (!Object.hasOwn(PRESETS, id)) return null;
-
-  const preset = PRESETS[id as InferencePresetId];
-  const model = typeof input.model === 'string' ? input.model.trim() : '';
-  const apiKey =
-    typeof input.apiKey === 'string' ? input.apiKey.trim() : undefined;
-  if (!model || (!apiKey && preset.requiresApiKey)) return null;
-
-  return {
-    type: 'openai',
-    baseUrl: preset.baseUrl,
-    defaultModel: model,
-    // The SDK requires a nonempty key. A fixed placeholder keeps keyless
-    // local servers from receiving credentials inherited from the environment.
-    apiKey: apiKey || 'smrt-local',
-  };
-}
+export {
+  type InferencePresetId,
+  isInferencePresetId,
+  resolveInferencePreset,
+} from './inference-presets.js';
 
 const LOCAL_SERVICES = [
   {
@@ -60,7 +17,7 @@ const LOCAL_SERVICES = [
   },
   {
     service: 'lemonade',
-    baseUrl: LEMONADE_BASE_URL,
+    baseUrl: INFERENCE_PRESETS.lemonade.baseUrl,
     modelPath: '/models',
     listField: 'data',
     idField: 'id',

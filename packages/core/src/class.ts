@@ -19,7 +19,6 @@ import type {
   AiUsageStats,
   AiUsageSummaryOptions,
   SignalAdapter,
-  SmrtAiUsageEvent,
   SmrtAiUsageRecord,
 } from '@happyvertical/smrt-types';
 import type { DatabaseInterface } from '@happyvertical/sql';
@@ -27,7 +26,20 @@ import {
   AiUsageCollector,
   AiUsagePersistenceHandler,
 } from './adapters/ai-usage.js';
-import { estimateAiUsageCost } from './adapters/cost-rates.js';
+import {
+  type AiUsageSinkAttribution,
+  aiUsageSinkAttribution,
+  attachAiUsageRecorder,
+  brandAiUsageSink,
+  dispatchAiUsageEvent,
+  normalizeAiUsageEvent,
+  normalizeAiUsageTags,
+  normalizeAiUsageTimestamp,
+  type ResolvedAiUsageConfig,
+  resolveAiUsageConfig,
+  resolveAiUsageTenantId,
+  unwrapAiUsageSink,
+} from './adapters/ai-usage-recorder.js';
 import { registerChangeFeedWriter } from './change-feed.js';
 import {
   getSmrtModuleConfig,
@@ -54,17 +66,34 @@ import { createFilesystemAdapter } from './filesystem-loader.js';
 import { getDatabase, importAI } from './host.js';
 import {
   getInferenceConfig as getProcessInferenceConfig,
+  InferenceBindingError,
   type InferenceConfig,
   type InferenceLatency,
+  type InferenceModelClient,
   type InferenceRequest,
   type InferenceResolution,
   type InferenceResolver,
   type InferenceTarget,
+  type InferenceTier,
   type InferenceTierRequest,
+  type InferenceUsageRecord,
+  inferenceExecutorFor,
+  inferenceModeForTarget,
+  inferenceTargetKind,
   inferenceUsageTags,
   mergeInferenceConfigs,
   resolveInference as resolveInferenceBinding,
+  resolveInferenceMode,
 } from './inference.js';
+import {
+  type InferenceStatus,
+  InferenceUnavailableError,
+  inferenceUnavailableStatus,
+} from './inference-availability.js';
+import {
+  bindInferenceTarget,
+  inferenceTargetIdentity,
+} from './inference-target.js';
 import { noteNativeDuckDbHandle } from './native-duckdb.js';
 import {
   applyPostgresRuntimeTimeouts,
@@ -96,14 +125,6 @@ type DatabaseWithConfig = DatabaseInterface & {
   type?: string;
 };
 
-interface ResolvedAiUsageConfig {
-  enabled: boolean;
-  persist: boolean;
-  estimateCosts: boolean;
-  costRates?: Record<string, { input: number; output: number }>;
-  handlers: AiUsageHandler[];
-}
-
 type AiUsageFilterOptions = Pick<
   AiUsageListOptions,
   | 'since'
@@ -128,12 +149,6 @@ interface AiUsageWhereClause {
 function firstString(...candidates: unknown[]): string | undefined {
   return candidates.find((candidate): candidate is string => {
     return typeof candidate === 'string';
-  });
-}
-
-function firstNumber(...candidates: unknown[]): number | undefined {
-  return candidates.find((candidate): candidate is number => {
-    return typeof candidate === 'number';
   });
 }
 
@@ -172,48 +187,6 @@ function getDatabaseTypeHint(
   return undefined;
 }
 
-function normalizeIncomingAiUsageTokens(
-  value: unknown,
-): AiTokenUsage | undefined {
-  if (!value || typeof value !== 'object') {
-    return undefined;
-  }
-
-  const usage = value as Record<string, unknown>;
-  const promptTokens =
-    typeof usage.promptTokens === 'number'
-      ? usage.promptTokens
-      : typeof usage.inputTokens === 'number'
-        ? usage.inputTokens
-        : undefined;
-  const completionTokens =
-    typeof usage.completionTokens === 'number'
-      ? usage.completionTokens
-      : typeof usage.outputTokens === 'number'
-        ? usage.outputTokens
-        : undefined;
-  const totalTokens =
-    typeof usage.totalTokens === 'number'
-      ? usage.totalTokens
-      : promptTokens !== undefined || completionTokens !== undefined
-        ? (promptTokens ?? 0) + (completionTokens ?? 0)
-        : undefined;
-
-  if (
-    promptTokens === undefined &&
-    completionTokens === undefined &&
-    totalTokens === undefined
-  ) {
-    return undefined;
-  }
-
-  return {
-    promptTokens,
-    completionTokens,
-    totalTokens,
-  };
-}
-
 function hydratePersistedAiUsageTokens(row: {
   prompt_tokens?: unknown;
   completion_tokens?: unknown;
@@ -247,22 +220,6 @@ function hydratePersistedAiUsageTokens(row: {
   };
 }
 
-function normalizeAiUsageTags(
-  value: unknown,
-): Record<string, string> | undefined {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return undefined;
-  }
-
-  const tags: Record<string, string> = {};
-  for (const [key, tagValue] of Object.entries(value)) {
-    if (tagValue === undefined || tagValue === null) continue;
-    tags[key] = String(tagValue);
-  }
-
-  return Object.keys(tags).length > 0 ? tags : undefined;
-}
-
 function parseAiUsageTags(value: unknown): Record<string, string> | undefined {
   if (typeof value !== 'string') {
     return undefined;
@@ -283,21 +240,6 @@ function optionalAiUsageColumn<K extends string>(
   return value === null || value === undefined
     ? {}
     : ({ [name]: String(value) } as Record<K, string>);
-}
-
-function normalizeAiUsageTimestamp(value: unknown): Date {
-  if (value instanceof Date) {
-    return value;
-  }
-
-  if (typeof value === 'string' || typeof value === 'number') {
-    const date = new Date(value);
-    if (!Number.isNaN(date.getTime())) {
-      return date;
-    }
-  }
-
-  return new Date();
 }
 
 function getQueryRows(
@@ -514,6 +456,8 @@ export class SmrtClass {
    */
   private _aiClientConfig?: Record<string, unknown>;
   private _aiUserOnUsage?: unknown;
+  /** Explicit attribution of a sink found in the config, kept on replace. */
+  private _aiSinkAttribution?: AiUsageSinkAttribution;
   private _aiUsageResolvedConfig?: ResolvedAiUsageConfig;
 
   /** Tier clients keyed by resolved `[provider, model, baseUrl]`, then key. */
@@ -878,17 +822,28 @@ export class SmrtClass {
               withAIAliases(aiConfig as Record<string, unknown>),
             );
 
-            const existingOnUsage =
+            // A recorder or `withAiUsage()` sink in the config is replaced
+            // (keeping the callback it wraps): this client records through
+            // the instance pipeline below, so a call is recorded once. The
+            // sink's explicit tenant and tags still apply (#3077).
+            const configuredOnUsage =
               aiConfig.onUsage ??
               (userConfig as Record<string, unknown>).onUsage ??
               undefined;
+            const existingOnUsage = unwrapAiUsageSink(configuredOnUsage);
+            const sinkAttribution = aiUsageSinkAttribution(configuredOnUsage);
             aiConfig.onUsage = async (event: unknown) => {
               if (typeof existingOnUsage === 'function') {
                 await (existingOnUsage as (usageEvent: unknown) => unknown)(
                   event,
                 );
               }
-              await this.handleAiUsageCallback(event, aiConfig, usageConfig);
+              await this.handleAiUsageCallback(
+                event,
+                aiConfig,
+                usageConfig,
+                sinkAttribution,
+              );
             };
 
             // Only initialize if we have a provider configured
@@ -907,6 +862,7 @@ export class SmrtClass {
               )) as unknown as AIClient;
               this._aiClientConfig = aiConfig as Record<string, unknown>;
               this._aiUserOnUsage = existingOnUsage;
+              this._aiSinkAttribution = sinkAttribution;
             }
           }
         }
@@ -941,6 +897,16 @@ export class SmrtClass {
    * `(provider, model, baseUrl)`; a tier with no binding (the unconfigured
    * default) returns the configured client. Pass `options.resolution` to reuse
    * a resolution the caller already made, so the resolver runs once per call.
+   *
+   * A chain target (`alias`, `candidates`; #4752) returns the registered
+   * executor's client, which walks the chain per call; `minimumTier` and
+   * `allowPartial` reach it. Without a registered executor a chain target
+   * throws rather than falling back to the configured client.
+   *
+   * Throws `InferenceUnavailableError` (`AI_UNAVAILABLE`, #4757) before any
+   * client is built when the resolution is unavailable (mode `off`, ...),
+   * when a registered resolver's `mode()` says `off` for an untiered call,
+   * or when nothing is configured (`unconfigured`).
    */
   protected async getAiClient(
     tier?: InferenceTierRequest,
@@ -948,28 +914,80 @@ export class SmrtClass {
       latency?: InferenceLatency;
       promptKey?: string;
       resolution?: InferenceResolution;
+      minimumTier?: InferenceTier;
+      allowPartial?: boolean;
     } = {},
   ): Promise<AIClient> {
     await this.ensureRuntimeServicesInitialized();
 
     if (tier !== undefined) {
+      const request: InferenceRequest = {
+        tier,
+        ...(options.latency ? { latency: options.latency } : {}),
+        ...(options.promptKey ? { promptKey: options.promptKey } : {}),
+      };
       const resolution =
-        options.resolution ??
-        (await this.resolveInferenceTier({
-          tier,
-          latency: options.latency,
-          promptKey: options.promptKey,
-        }));
-      return this.getAiClientForTarget(resolution.target);
-    }
-
-    if (!this._ai) {
-      throw new Error(
-        `${this._className} does not have an AI client configured. ` +
-          `Provide 'ai' in options or configure a global SMRT AI provider.`,
+        options.resolution ?? (await this.resolveInferenceTier(request));
+      if (resolution.unavailable) {
+        throw new InferenceUnavailableError({
+          reason: resolution.unavailable,
+          ...(resolution.mode ? { mode: resolution.mode } : {}),
+          tier: resolution.tierResolved,
+          owner: this._className,
+        });
+      }
+      const executor = inferenceExecutorFor(resolution.target);
+      if (executor) {
+        return executor.createClient({
+          request,
+          resolution,
+          config: this.getInferenceConfig(),
+          ...(options.minimumTier ? { minimumTier: options.minimumTier } : {}),
+          ...(options.allowPartial ? { allowPartial: true } : {}),
+          clientFor: async (target) =>
+            (await this.getAiClientForTarget(
+              target,
+            )) as unknown as InferenceModelClient,
+          resolveTier: (next) =>
+            this.resolveInferenceTier({ ...request, tier: next }),
+          recordUsage: (record) => this.recordInferenceUsage(record),
+        }) as unknown as AIClient;
+      }
+      return this.getAiClientForTarget(
+        resolution.target,
+        resolution.tierResolved,
       );
     }
 
+    const modeState = await this.resolveInferenceModeState();
+    if (modeState?.unavailable) {
+      throw new InferenceUnavailableError({
+        reason: modeState.unavailable,
+        mode: modeState.mode,
+        owner: this._className,
+      });
+    }
+    // An explicit stored mode (byo/local/hosted) is the principal's choice of
+    // where inference runs: untiered calls take it through `auto` rather than
+    // the configured client, so a `local` or keyless `byo` choice never runs
+    // on the app's provider.
+    if (modeState) return this.getAiClient('auto', options);
+    return this.requireConfiguredAi();
+  }
+
+  /**
+   * The configured client, or `InferenceUnavailableError('unconfigured')`
+   * (#4757; before, a plain `Error` "does not have an AI client
+   * configured").
+   */
+  private requireConfiguredAi(tier?: InferenceTier): AIClient {
+    if (!this._ai) {
+      throw new InferenceUnavailableError({
+        reason: 'unconfigured',
+        ...(tier ? { tier } : {}),
+        owner: this._className,
+      });
+    }
     return this._ai;
   }
 
@@ -992,24 +1010,55 @@ export class SmrtClass {
       latency?: InferenceLatency;
       promptKey?: string;
       usageTags?: Record<string, string>;
+      minimumTier?: InferenceTier;
+      allowPartial?: boolean;
     },
   >(
     options: T,
   ): Promise<{
     ai: AIClient;
-    aiOptions: Omit<T, 'tier' | 'latency' | 'promptKey'>;
+    aiOptions: Omit<
+      T,
+      'tier' | 'latency' | 'promptKey' | 'minimumTier' | 'allowPartial'
+    >;
   }> {
-    const { tier, latency, promptKey, ...rest } = options;
+    const {
+      tier: requestedTier,
+      latency,
+      promptKey,
+      minimumTier,
+      allowPartial,
+      ...rest
+    } = options;
+    let tier = requestedTier;
     if (tier === undefined) {
-      return { ai: await this.getAiClient(), aiOptions: rest };
+      // An explicit stored mode (#4757) routes untiered calls through `auto`
+      // so the chosen binding answers with its model, params and tags; an
+      // unavailable mode throws from getAiClient().
+      const modeState = await this.resolveInferenceModeState();
+      if (!modeState || modeState.unavailable) {
+        return { ai: await this.getAiClient(), aiOptions: rest };
+      }
+      tier = 'auto';
     }
     const resolution = await this.resolveInferenceTier({
       tier,
       latency,
       ...(promptKey ? { promptKey } : {}),
     });
-    const ai = await this.getAiClient(tier, { latency, promptKey, resolution });
-    const { target } = resolution;
+    const ai = await this.getAiClient(tier, {
+      latency,
+      promptKey,
+      resolution,
+      ...(minimumTier ? { minimumTier } : {}),
+      ...(allowPartial ? { allowPartial } : {}),
+    });
+    // A chain target carries no model or params of its own: each candidate
+    // applies its own inside the executor.
+    const target =
+      inferenceTargetKind(resolution.target) === 'single'
+        ? resolution.target
+        : {};
     return {
       ai,
       aiOptions: {
@@ -1022,8 +1071,117 @@ export class SmrtClass {
           ...(rest.usageTags ?? {}),
           ...inferenceUsageTags(tier, resolution),
         },
-      } as Omit<T, 'tier' | 'latency' | 'promptKey'>,
+      } as Omit<
+        T,
+        'tier' | 'latency' | 'promptKey' | 'minimumTier' | 'allowPartial'
+      >,
     };
+  }
+
+  /**
+   * `null` when this instance's AI client serves more than one user (a
+   * long-lived agent): resolutions and mode checks then skip every user's
+   * stored binding and mode (#4756, #4757). Default `undefined`: the
+   * ambient principal's user applies.
+   */
+  protected inferenceUserScope(): null | undefined {
+    return undefined;
+  }
+
+  /** This instance's resolver (instance `inference` option) and tenant. */
+  private inferenceRequestScope(): {
+    resolver: InferenceResolver | undefined;
+    tenantId: string | null | undefined;
+    userId: null | undefined;
+  } {
+    const instance = this.options.inference;
+    const resolver =
+      instance && typeof (instance as InferenceResolver).resolve === 'function'
+        ? (instance as InferenceResolver)
+        : undefined;
+    const tenantId =
+      'tenantId' in this &&
+      (this as { tenantId?: string | null }).tenantId !== undefined
+        ? ((this as { tenantId?: string | null }).tenantId ?? null)
+        : undefined;
+    return { resolver, tenantId, userId: this.inferenceUserScope() };
+  }
+
+  /**
+   * The stored mode for an untiered call (registered resolver's `mode()`).
+   * A non-`off` result means untiered calls route through `auto`.
+   */
+  protected async resolveInferenceModeState() {
+    const { resolver, tenantId, userId } = this.inferenceRequestScope();
+    return resolveInferenceMode(
+      {
+        className: this._className,
+        ...(tenantId !== undefined ? { tenantId } : {}),
+        ...(userId === null ? { userId: null } : {}),
+      },
+      resolver ? { resolver } : {},
+    );
+  }
+
+  /**
+   * Whether an AI call would run for this instance (#4757), without calling
+   * a model or recording usage. With `tier` it resolves the binding the way
+   * `getAiClient(tier)` does; without, it checks the stored mode and the
+   * configured client. A chain target counts as available (its candidates
+   * are tried at call time).
+   */
+  async getInferenceStatus(
+    options: { tier?: InferenceTierRequest } = {},
+  ): Promise<InferenceStatus> {
+    await this.ensureRuntimeServicesInitialized();
+    const configured = this._aiClientConfig;
+    if (options.tier === undefined) {
+      const state = await this.resolveInferenceModeState();
+      if (state?.unavailable) {
+        return inferenceUnavailableStatus(state.unavailable, state.mode);
+      }
+      if (state) {
+        // An explicit mode routes untiered calls through `auto`.
+        const { tier: _tier, ...routed } = await this.getInferenceStatus({
+          tier: 'auto',
+        });
+        return routed;
+      }
+      if (!this._ai) return inferenceUnavailableStatus('unconfigured');
+      return {
+        available: true,
+        mode: inferenceModeForTarget(undefined, configured),
+      };
+    }
+    const resolution = await this.resolveInferenceTier({ tier: options.tier });
+    const tier = resolution.tierResolved;
+    if (resolution.unavailable) {
+      return inferenceUnavailableStatus(
+        resolution.unavailable,
+        resolution.mode,
+        tier,
+      );
+    }
+    const target = resolution.target ?? {};
+    if (
+      inferenceTargetKind(target) === 'single' &&
+      !inferenceTargetIdentity(target).provider &&
+      !this._ai
+    ) {
+      return inferenceUnavailableStatus('unconfigured', undefined, tier);
+    }
+    return {
+      available: true,
+      mode: inferenceModeForTarget(resolution, configured),
+      tier,
+    };
+  }
+
+  /** `true` when {@link getInferenceStatus} reports `available`. */
+  async isInferenceAvailable(
+    options: { tier?: InferenceTierRequest } = {},
+  ): Promise<boolean> {
+    return (await this.getInferenceStatus(options)).available;
   }
 
   /**
@@ -1049,20 +1207,12 @@ export class SmrtClass {
   protected async resolveInferenceTier(
     request: InferenceRequest,
   ): Promise<InferenceResolution> {
-    const instance = this.options.inference;
-    const resolver =
-      instance && typeof (instance as InferenceResolver).resolve === 'function'
-        ? (instance as InferenceResolver)
-        : undefined;
-    const tenantId =
-      'tenantId' in this &&
-      (this as { tenantId?: string | null }).tenantId !== undefined
-        ? ((this as { tenantId?: string | null }).tenantId ?? null)
-        : undefined;
+    const { resolver, tenantId, userId } = this.inferenceRequestScope();
     return resolveInferenceBinding(
       {
         className: this._className,
         ...(tenantId !== undefined ? { tenantId } : {}),
+        ...(userId === null ? { userId: null } : {}),
         ...request,
       },
       { resolver, config: this.getInferenceConfig() },
@@ -1077,15 +1227,16 @@ export class SmrtClass {
    */
   private async getAiClientForTarget(
     target: InferenceTarget,
+    tier?: InferenceTier,
   ): Promise<AIClient> {
-    const identity: Record<string, string> = {};
-    for (const key of ['provider', 'model', 'baseUrl', 'apiKey'] as const) {
-      const value = target[key];
-      if (typeof value === 'string' && value.trim() !== '') {
-        identity[key] = value.trim();
-      }
+    if (inferenceExecutorFor(target)) {
+      throw new Error(
+        `${this._className}: a chain inference target cannot be bound to one client; run it through getAiClient(tier).`,
+      );
     }
-    if (Object.keys(identity).length === 0) return this.getAiClient();
+    const identity = inferenceTargetIdentity(target);
+    if (Object.keys(identity).length === 0)
+      return this.requireConfiguredAi(tier);
 
     const base = this._aiClientConfig;
     if (!base && !identity.provider) {
@@ -1093,59 +1244,13 @@ export class SmrtClass {
       // refine. A model-only target keeps the injected client; callers on the
       // object operation path also send the target model per call.
       if (this._ai && !identity.baseUrl && !identity.apiKey) return this._ai;
-      if (!this._ai) return this.getAiClient();
-      throw new Error(
+      if (!this._ai) return this.requireConfiguredAi(tier);
+      throw new InferenceBindingError(
         `${this._className} cannot rebind an injected AI client to a new endpoint; the inference target must name a provider.`,
       );
     }
 
-    const { onUsage: _onUsage, ...baseFields } = base ?? {};
-    const merged = mergeAIConfigObjects(baseFields, identity);
-    // Endpoint and credential are owned together (#3372) and travel as an
-    // explicit pair. `getAI()` and provider SDKs refill an unset key or
-    // endpoint from their own environment (`HAVE_AI_*`, `OPENAI_API_KEY`,
-    // `OPENAI_BASE_URL`, ...), so deleting an inherited field is not enough:
-    // an unbound pair fails closed here, before SDK construction.
-    const text = (config: Record<string, unknown>, key: string) =>
-      typeof config[key] === 'string' ? (config[key] as string).trim() : '';
-    const provider = text(merged, 'provider');
-    const sameProvider =
-      provider.toLowerCase() === text(baseFields, 'provider').toLowerCase();
-    const keepsBaseEndpoint =
-      sameProvider && identity.baseUrl === text(baseFields, 'baseUrl');
-    if (identity.baseUrl && !identity.apiKey && !keepsBaseEndpoint) {
-      throw new Error(
-        `${this._className}: an inference target that names its own baseUrl must carry its own apiKey (use a placeholder such as 'smrt-local' for a keyless local server); a configured or environment key is never sent to another endpoint.`,
-      );
-    }
-    if (identity.apiKey && !identity.baseUrl) {
-      throw new Error(
-        `${this._className}: an inference target that brings its own apiKey must name its baseUrl; a target key is never sent to an inherited or environment endpoint.`,
-      );
-    }
-    if (!sameProvider && !identity.baseUrl) {
-      // Another provider's default endpoint with that provider's own key
-      // variable. The SDK-wide `HAVE_AI_*` fallbacks belong to the configured
-      // client and would redirect or replace that key.
-      const env = typeof process !== 'undefined' ? process.env : undefined;
-      for (const name of ['HAVE_AI_BASE_URL', 'HAVE_AI_API_KEY']) {
-        if (env?.[name]?.trim()) {
-          throw new Error(
-            `${this._className}: an inference target on another provider must name its baseUrl and apiKey while ${name} is set.`,
-          );
-        }
-      }
-      const resolved = tryResolveAIProviderConfig({
-        explicit: merged as AIExplicitConfig,
-        config: null,
-        prefixes: [],
-        autoDetect: false,
-        requireProvider: false,
-        providerKeyEnvFallback: true,
-      });
-      if (!merged.apiKey && resolved?.apiKey) merged.apiKey = resolved.apiKey;
-    }
-    const tierConfig = withAIAliases(merged);
+    const tierConfig = bindInferenceTarget(base, target, this._className);
     const field = (config: Record<string, unknown> | undefined, key: string) =>
       typeof config?.[key] === 'string' ? (config[key] as string) : '';
 
@@ -1174,13 +1279,19 @@ export class SmrtClass {
     if (cached) return cached;
 
     const userOnUsage = this._aiUserOnUsage;
+    const sinkAttribution = this._aiSinkAttribution;
     const usageConfig =
       this._aiUsageResolvedConfig ?? this.mergeAiUsageConfig(config.toJSON());
     tierConfig.onUsage = async (event: unknown) => {
       if (typeof userOnUsage === 'function') {
         await (userOnUsage as (usageEvent: unknown) => unknown)(event);
       }
-      await this.handleAiUsageCallback(event, tierConfig, usageConfig);
+      await this.handleAiUsageCallback(
+        event,
+        tierConfig,
+        usageConfig,
+        sinkAttribution,
+      );
     };
 
     const pending = (async () => {
@@ -1197,6 +1308,45 @@ export class SmrtClass {
       }
     });
     return pending;
+  }
+
+  /**
+   * Record a zero-token usage row for an inference call that never answered
+   * (#4752), through the same handlers SDK usage events reach. The executor
+   * calls this once per exhausted call; it is not a second writer.
+   */
+  private async recordInferenceUsage(
+    record: InferenceUsageRecord,
+  ): Promise<void> {
+    const usageConfig =
+      this._aiUsageResolvedConfig ?? this.mergeAiUsageConfig(config.toJSON());
+    await this.handleAiUsageCallback(
+      {
+        // The configured client's identity fills an absent provider/model;
+        // 'unknown' keeps the row when there is none, so an exhausted call
+        // is never indistinguishable from an unlogged one.
+        provider:
+          record.provider ??
+          firstString(
+            this._aiClientConfig?.provider,
+            this._aiClientConfig?.type,
+          ) ??
+          'unknown',
+        model:
+          record.model ??
+          firstString(
+            this._aiClientConfig?.model,
+            this._aiClientConfig?.defaultModel,
+          ) ??
+          'unknown',
+        operation: record.operation,
+        usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+        duration: record.duration ?? 0,
+        tags: record.tags,
+      },
+      this._aiClientConfig ?? {},
+      usageConfig,
+    );
   }
 
   /**
@@ -1323,6 +1473,44 @@ export class SmrtClass {
       providerConfig,
       this.mergeAiUsageConfig(config.toJSON()),
     );
+  }
+
+  /**
+   * Return `aiConfig` with `onUsage` wired to this instance's usage pipeline,
+   * for clients the instance does not build itself:
+   * `getAI(this.withAiUsage(this.options.ai))`. The caller's own `onUsage`
+   * runs first and is kept; wiring an already-wired config replaces the
+   * previous sink, so a call is recorded once. Rows carry this class name and
+   * the tenant from `options.tenantId`, else this instance's `tenantId`, else
+   * the ambient tenant (`setAiUsageTenantResolver()`). An explicit
+   * `options.tenantId` / `options.tags` travels with the config: another
+   * instance that builds its client from it keeps them. Recording failures
+   * are logged and never reach the AI call (#3077).
+   */
+  withAiUsage<T extends object>(
+    aiConfig: T,
+    options: { tenantId?: string | null; tags?: Record<string, string> } = {},
+  ): T & { onUsage: (event: unknown) => Promise<void> } {
+    const providerConfig = aiConfig as Record<string, unknown>;
+    const sink = brandAiUsageSink(async (event: unknown) => {
+      try {
+        await this.ensureRuntimeServicesInitialized();
+        await this.handleAiUsageCallback(
+          event,
+          providerConfig,
+          this._aiUsageResolvedConfig ??
+            this.mergeAiUsageConfig(config.toJSON()),
+          options,
+        );
+      } catch (error) {
+        logger.warn(
+          `[smrt] AI usage recording failed for ${this._className}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }, options);
+    return attachAiUsageRecorder(aiConfig, sink);
   }
 
   private async isSystemSchemaVersionApplied(
@@ -1920,23 +2108,7 @@ export class SmrtClass {
   private mergeAiUsageConfig(
     globalConfig: GlobalSignalConfig,
   ): ResolvedAiUsageConfig {
-    const globalUsage = globalConfig.usage ?? {};
-    const instanceUsage = this.options.usage ?? {};
-
-    return {
-      enabled: instanceUsage.enabled ?? globalUsage.enabled ?? true,
-      persist: instanceUsage.persist ?? globalUsage.persist ?? true,
-      estimateCosts:
-        instanceUsage.estimateCosts ?? globalUsage.estimateCosts ?? true,
-      costRates: {
-        ...(globalUsage.costRates ?? {}),
-        ...(instanceUsage.costRates ?? {}),
-      },
-      handlers: [
-        ...(globalUsage.handlers ?? []),
-        ...(instanceUsage.handlers ?? []),
-      ],
-    };
+    return resolveAiUsageConfig(globalConfig.usage, this.options.usage);
   }
 
   private initializeAiUsageHandlers(config: ResolvedAiUsageConfig): void {
@@ -1961,92 +2133,30 @@ export class SmrtClass {
     event: unknown,
     aiConfig: Record<string, unknown>,
     usageConfig: ResolvedAiUsageConfig,
+    overrides: AiUsageSinkAttribution = {},
   ): Promise<void> {
     if (!usageConfig.enabled || this._aiUsageHandlers.length === 0) {
       return;
     }
 
-    const normalizedEvent = this.normalizeAiUsageEvent(event, aiConfig);
-    if (!normalizedEvent) {
-      return;
-    }
-
-    if (usageConfig.estimateCosts) {
-      normalizedEvent.estimatedCost = estimateAiUsageCost(
-        normalizedEvent.provider,
-        normalizedEvent.model,
-        normalizedEvent.usage,
-        usageConfig.costRates,
-      );
-    }
-
-    const results = await Promise.allSettled(
-      this._aiUsageHandlers.map((handler) => handler.handle(normalizedEvent)),
-    );
-
-    for (const result of results) {
-      if (result.status === 'rejected') {
-        logger.warn(
-          `[smrt] AI usage handler failed for ${normalizedEvent.provider}:${normalizedEvent.model}: ${
-            result.reason instanceof Error
-              ? result.reason.message
-              : String(result.reason)
-          }`,
-        );
-      }
-    }
-  }
-
-  private normalizeAiUsageEvent(
-    event: unknown,
-    aiConfig: Record<string, unknown>,
-  ): SmrtAiUsageEvent | undefined {
-    const raw = (event ?? {}) as Record<string, unknown>;
-    const provider = firstString(
-      raw.provider,
-      raw.type,
-      aiConfig.provider,
-      aiConfig.type,
-    );
-    const model = firstString(
-      raw.model,
-      raw.defaultModel,
-      aiConfig.model,
-      aiConfig.defaultModel,
-    );
-    const operation =
-      firstString(raw.operation, raw.kind, raw.method) ?? 'unknown';
-    const usage =
-      normalizeIncomingAiUsageTokens(raw.usage) ??
-      normalizeIncomingAiUsageTokens(raw.tokenUsage) ??
-      normalizeIncomingAiUsageTokens({
-        promptTokens: raw.promptTokens,
-        completionTokens: raw.completionTokens,
-        totalTokens: raw.totalTokens,
-      });
-
-    if (!provider || !model) {
-      return undefined;
-    }
-
-    const duration =
-      firstNumber(raw.duration, raw.durationMs, raw.latency) ?? 0;
-    const tenantId =
+    const instanceTenantId =
       'tenantId' in this &&
       (this as { tenantId?: string | null }).tenantId !== undefined
         ? ((this as { tenantId?: string | null }).tenantId ?? null)
         : undefined;
-
-    return {
-      provider,
-      model,
-      operation,
-      usage,
-      duration,
-      timestamp: normalizeAiUsageTimestamp(raw.timestamp),
-      tags: normalizeAiUsageTags(raw.tags),
+    const normalizedEvent = normalizeAiUsageEvent(event, aiConfig, {
       className: this._className,
-      tenantId,
-    };
+      tenantId: resolveAiUsageTenantId(overrides.tenantId, instanceTenantId),
+      tags: overrides.tags,
+    });
+    if (!normalizedEvent) {
+      return;
+    }
+
+    await dispatchAiUsageEvent(
+      normalizedEvent,
+      this._aiUsageHandlers,
+      usageConfig,
+    );
   }
 }

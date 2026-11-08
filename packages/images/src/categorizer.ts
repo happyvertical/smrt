@@ -6,7 +6,11 @@
  */
 
 import type { AssetCollection } from '@happyvertical/smrt-assets';
-import { type DecisionClient, executeDecision } from '@happyvertical/smrt-core';
+import {
+  type DecisionClient,
+  executeDecision,
+  resolveInferenceTarget,
+} from '@happyvertical/smrt-core';
 import type { Image } from './image';
 import type {
   CategorizedImageLabel,
@@ -325,7 +329,27 @@ export class ImageCategorizer {
     buffer?: Buffer,
   ): Promise<CategoryResult> {
     const { getAI } = await import('@happyvertical/ai');
-    const ai = await getAI(this.options.ai);
+    // A stored per-user / per-tenant inference binding (#4756) replaces the
+    // configured provider (app tier bindings do not); usage goes through the
+    // public recorder (#3077) with the binding's tags. No db is in scope, so
+    // it reaches the configured usage handlers.
+    const tenantId =
+      typeof image.tenantId === 'string' && image.tenantId
+        ? image.tenantId
+        : undefined;
+    const target = await resolveInferenceTarget({
+      base: this.options.ai as unknown as Record<string, unknown>,
+      ...(tenantId ? { tenantId } : {}),
+      className: 'ImageCategorizer',
+      appBindings: false,
+      usage: {
+        className: 'ImageCategorizer',
+        ...(tenantId ? { tenantId } : {}),
+      },
+    });
+    const ai = await getAI(
+      (target.options ?? this.options.ai) as Parameters<typeof getAI>[0],
+    );
 
     // TODO: When AI vision API is available, pass buffer for visual analysis
     void buffer;
