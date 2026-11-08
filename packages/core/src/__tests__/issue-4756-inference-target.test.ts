@@ -207,4 +207,41 @@ describe('#4756 resolveInferenceTarget', () => {
       }),
     ).toEqual({ tierRequested: 'good', tierResolved: 'good' });
   });
+
+  it('adds the target usageTags under the tier keys (#4759)', () => {
+    expect(
+      inferenceUsageTags('good', {
+        tierResolved: 'good',
+        target: {
+          source: 'hosted',
+          usageTags: {
+            gatewayKeyAlias: 'smrt-hosted-alias',
+            source: 'byo',
+            tierResolved: 'best',
+            bogus: 3 as never,
+          },
+        },
+        via: 'resolver',
+      }),
+    ).toEqual({
+      gatewayKeyAlias: 'smrt-hosted-alias',
+      tierRequested: 'good',
+      tierResolved: 'good',
+      source: 'hosted',
+    });
+  });
+
+  it('never treats usageTags as client identity', () => {
+    const bound = bindInferenceTarget(
+      BASE,
+      {
+        provider: 'openai',
+        baseUrl: 'https://gw.example.test/v1',
+        apiKey: 'gw-key',
+        usageTags: { gatewayKeyAlias: 'alias-1' },
+      },
+      'test',
+    );
+    expect(JSON.stringify(bound)).not.toContain('alias-1');
+  });
 });
