@@ -31,7 +31,8 @@ Rule in `../prompts/AGENTS.md`. `smrtFacts.extractCandidates`,
 (persisted facts and merges); `smrtFacts.assessClaimSupport` → `cheap`
 (closed-vocabulary status). `FactCollection.preparePromptCall()` binds the tier
 through `prepareAiOperation()`; a message-only client injected as `options.ai`
-is used as is and the tier keys are dropped. A typed-decision client answers
+that core does not adopt (no `embed`) is used as is with `routeTier: false`;
+one core adopts binds the tier. A typed-decision client answers
 reconciliation without any tier (#3158).
 
 ## Gotchas

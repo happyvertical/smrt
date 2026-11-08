@@ -230,6 +230,33 @@ describe('prompt-run usage tags reach the AI call (#4751)', () => {
     );
   });
 
+  it('binds the tier for an injected client core adopts (#4755)', async () => {
+    const calls: Array<Record<string, unknown> | undefined> = [];
+    const client = {
+      embed: async () => [],
+      message: async (_prompt: string, options?: Record<string, unknown>) => {
+        calls.push(options);
+        return '{"status":"unsupported","matchedFactIds":[],"matchedEvidenceIds":[],"rationale":"","confidence":0.1}';
+      },
+    };
+    const collection = new FactCollection({
+      ai: client,
+      inference: { tiers: { cheap: { model: 'mini' } } },
+    } as any);
+    await collection.assessClaimSupport('A claim.', [
+      { id: 'fact-1', statement: 'A fact.', evidence: [] },
+    ]);
+    expect(calls[0]).toMatchObject({
+      model: 'mini',
+      usageTags: {
+        ...defaultTags('smrtFacts.assessClaimSupport'),
+        tierRequested: 'cheap',
+        tierResolved: 'cheap',
+      },
+    });
+    expect(calls[0]).not.toHaveProperty('tier');
+  });
+
   it('reconcile disambiguation forwards smrtFacts.reconcile on the legacy text route', async () => {
     const { collection, calls, message } = capturingCollection('merge');
     // Legacy route: no typed-decision client, so the text call runs on `ai`.

@@ -221,7 +221,13 @@ export class FactCollection extends SmrtCollection<Fact> {
     promptAi: ResolvedPromptAI,
   ): Promise<{ ai: MessageCapableAi; aiOptions: Record<string, unknown> }> {
     const directAi = asMessageCapableAi(this.options.ai);
-    if (directAi) {
+    // Core adopts an injected client with `embed` and no `provider` as the
+    // instance client (SmrtClass runtime init), and that one binds tiers like
+    // any other. Only a client core does not adopt is used as is.
+    const adoptedByCore =
+      typeof (directAi as { embed?: unknown } | null)?.embed === 'function' &&
+      !(directAi as { provider?: unknown }).provider;
+    if (directAi && !adoptedByCore) {
       return {
         ai: directAi,
         aiOptions: promptMessageOptions(promptAi, { routeTier: false }),
