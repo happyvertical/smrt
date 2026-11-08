@@ -47,7 +47,8 @@ gate answer from the plan. Build one per request with
 `SubscriptionFeatureSource.create(dbOptions)` and pass it as `grantSource`, or
 register an app-wide one (`memoize: false`) with
 `registerSubscriptionFeatureSource()`. With no subscription tables or no
-entitled subscription it reports no grants.
+entitled subscription it reports no grants. A global feature override still
+outranks a grant (an operator stop), and a tenant override outranks both.
 
 ## Core model
 

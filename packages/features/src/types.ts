@@ -99,13 +99,30 @@ export interface FeatureResolutionContext {
 
 /**
  * Plan grants for one tenant, as reported by a {@link FeatureGrantSource}.
- * Only keys listed here are granted; every other key falls through to the
- * global scope and the code default.
+ * Only keys listed here are granted; every other key keeps its code default.
+ * The global and tenant overrides apply on top either way.
  */
 export interface FeatureGrantSnapshot {
   featureKeys: readonly string[];
   planId?: string | null;
   planKey?: string | null;
+}
+
+/**
+ * The layer that last set a feature's state during resolution, low → high:
+ * code default, plan grant, global override, tenant override. An `inherit`
+ * override row sets nothing, so it never decides.
+ */
+export type FeatureDecisionLayer =
+  | 'default'
+  | 'plan_grant'
+  | 'global_override'
+  | 'tenant_override';
+
+/** Result of `FeatureResolver.explain()`. */
+export interface FeatureResolution {
+  enabled: boolean;
+  decidedBy: FeatureDecisionLayer;
 }
 
 /** A plan that grants a feature key, for upgrade responses. */
@@ -117,7 +134,7 @@ export interface FeatureGrantingPlan {
 
 /**
  * Source of plan feature grants, consulted by `FeatureResolver` between the
- * tenant scope and the global scope (#4761). `smrt-subscriptions` provides
+ * code default and the global override (#4761). `smrt-subscriptions` provides
  * `SubscriptionFeatureSource`; features never imports it, so a local install
  * with no source (or no subscription tables) simply has no grants.
  */

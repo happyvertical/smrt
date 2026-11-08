@@ -163,19 +163,92 @@ describe('plan grants as feature flags (#4761)', () => {
     ).resolves.toBe(false);
   });
 
-  it('ranks a plan grant above the global scope', async () => {
+  it('lets a global DISABLE override beat a plan grant', async () => {
+    const { overrides, resolver } = await setup();
+    const source = grantSource({ t1: [FEATURE_SYNC_DEVICES] });
+    await overrides.setGlobalOverride(
+      FEATURE_SYNC_DEVICES,
+      FeatureOverrideEffect.DISABLE,
+    );
+    await expect(
+      resolver.explain(FEATURE_SYNC_DEVICES, {
+        tenantId: 't1',
+        grantSource: source,
+      }),
+    ).resolves.toEqual({ enabled: false, decidedBy: 'global_override' });
+
+    // An `inherit` global row sets nothing, so the grant stands.
+    await overrides.setGlobalOverride(
+      FEATURE_SYNC_DEVICES,
+      FeatureOverrideEffect.INHERIT,
+    );
+    await expect(
+      resolver.explain(FEATURE_SYNC_DEVICES, {
+        tenantId: 't1',
+        grantSource: source,
+      }),
+    ).resolves.toEqual({ enabled: true, decidedBy: 'plan_grant' });
+  });
+
+  it('lets a tenant ENABLE override beat a global DISABLE, granted or not', async () => {
     const { overrides, resolver } = await setup();
     await overrides.setGlobalOverride(
       FEATURE_SYNC_DEVICES,
       FeatureOverrideEffect.DISABLE,
     );
-    const source = grantSource({ t1: [FEATURE_SYNC_DEVICES] });
+    await overrides.setTenantOverride(
+      FEATURE_SYNC_DEVICES,
+      't1',
+      FeatureOverrideEffect.ENABLE,
+    );
+    for (const source of [
+      grantSource({ t1: [FEATURE_SYNC_DEVICES] }),
+      grantSource({}),
+    ]) {
+      await expect(
+        resolver.explain(FEATURE_SYNC_DEVICES, {
+          tenantId: 't1',
+          grantSource: source,
+        }),
+      ).resolves.toEqual({ enabled: true, decidedBy: 'tenant_override' });
+    }
+    // Another granted tenant without its own override stays off.
     await expect(
       resolver.isEnabled(FEATURE_SYNC_DEVICES, {
+        tenantId: 't2',
+        grantSource: grantSource({ t2: [FEATURE_SYNC_DEVICES] }),
+      }),
+    ).resolves.toBe(false);
+  });
+
+  it('enables a grant with no global row and ignores grants without a tenant', async () => {
+    const { overrides, resolver } = await setup();
+    const source = grantSource({ t1: [FEATURE_SYNC_DEVICES] });
+    await expect(
+      resolver.explain(FEATURE_SYNC_DEVICES, {
         tenantId: 't1',
         grantSource: source,
       }),
-    ).resolves.toBe(true);
+    ).resolves.toEqual({ enabled: true, decidedBy: 'plan_grant' });
+    await expect(
+      resolver.explain(FEATURE_SYNC_DEVICES, { grantSource: source }),
+    ).resolves.toEqual({ enabled: false, decidedBy: 'default' });
+
+    // No tenant context: default then global, as before.
+    await overrides.setGlobalOverride(
+      FEATURE_SYNC_DEVICES,
+      FeatureOverrideEffect.ENABLE,
+    );
+    await expect(
+      resolver.explain(FEATURE_SYNC_DEVICES, { grantSource: source }),
+    ).resolves.toEqual({ enabled: true, decidedBy: 'global_override' });
+    await overrides.setGlobalOverride(
+      FEATURE_SYNC_DEVICES,
+      FeatureOverrideEffect.DISABLE,
+    );
+    await expect(
+      resolver.isEnabled(FEATURE_SYNC_DEVICES, { grantSource: source }),
+    ).resolves.toBe(false);
   });
 
   it('lets an ungranted key fall through to global and default', async () => {
@@ -265,6 +338,60 @@ describe('plan grants as feature flags (#4761)', () => {
         grantSource: source,
       }),
     ).resolves.toBe(false);
+  });
+
+  it('resets a non-inheriting tenant to the post-global state', async () => {
+    const { db, overrides } = await setup();
+    const resolver = new FeatureResolver(
+      { db },
+      {
+        tenantHierarchyLoader: async () => ({
+          getChain: async (tenantId: string) => [
+            { id: 'root', inheritPermissions: true, cascadePermissions: true },
+            {
+              id: tenantId,
+              inheritPermissions: false,
+              cascadePermissions: true,
+            },
+          ],
+        }),
+      },
+    );
+    const source = grantSource({ child: [FEATURE_SYNC_DEVICES] });
+    // The root's ENABLE does not reach a non-inheriting child; the child's
+    // baseline is grant then global, and the global DISABLE wins there.
+    await overrides.setTenantOverride(
+      FEATURE_SYNC_DEVICES,
+      'root',
+      FeatureOverrideEffect.ENABLE,
+    );
+    await overrides.setGlobalOverride(
+      FEATURE_SYNC_DEVICES,
+      FeatureOverrideEffect.DISABLE,
+    );
+    await expect(
+      resolver.explain(FEATURE_SYNC_DEVICES, {
+        tenantId: 'child',
+        grantSource: source,
+      }),
+    ).resolves.toEqual({ enabled: false, decidedBy: 'global_override' });
+
+    // Without the global row the child resets to its grant.
+    await overrides.setGlobalOverride(
+      FEATURE_SYNC_DEVICES,
+      FeatureOverrideEffect.INHERIT,
+    );
+    await overrides.setTenantOverride(
+      FEATURE_SYNC_DEVICES,
+      'root',
+      FeatureOverrideEffect.DISABLE,
+    );
+    await expect(
+      resolver.explain(FEATURE_SYNC_DEVICES, {
+        tenantId: 'child',
+        grantSource: source,
+      }),
+    ).resolves.toEqual({ enabled: true, decidedBy: 'plan_grant' });
   });
 
   it('returns a structured upgrade response naming the granting plan', async () => {

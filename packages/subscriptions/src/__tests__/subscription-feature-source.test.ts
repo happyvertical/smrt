@@ -173,7 +173,7 @@ describe('SubscriptionFeatureSource (#4761)', () => {
     ).resolves.toBeNull();
   });
 
-  it('plugs into smrt-features: grant, override, fall-through and upgrade response', async () => {
+  it('plugs into smrt-features: grant, overrides, fall-through and upgrade response', async () => {
     expect(FEATURE_GRANT_SOURCE_SLOT_KEY).toBe(FEATURES_SLOT_KEY);
     const db = await getTestDatabase({
       classes: ['FeatureDefinition', 'FeatureOverride'],
@@ -224,6 +224,15 @@ describe('SubscriptionFeatureSource (#4761)', () => {
       featureKey: FEATURE_INFERENCE_HOSTED,
       grantingPlan: { planKey: 'cloud', name: 'CLOUD' },
     });
+
+    // A global DISABLE is an operator stop: it beats the plan grant.
+    await overrides.setGlobalOverride(
+      FEATURE_INFERENCE_HOSTED,
+      FeatureOverrideEffect.DISABLE,
+    );
+    await expect(
+      features.isEnabled(FEATURE_INFERENCE_HOSTED, { tenantId: 't1' }),
+    ).resolves.toBe(false);
     setFeatureGrantSource(undefined);
   });
 

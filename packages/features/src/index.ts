@@ -69,6 +69,7 @@ export {
 } from './standard-features.js';
 
 export {
+  type FeatureDecisionLayer,
   type FeatureDefinitionOptions,
   type FeatureDefinitionSeed,
   type FeatureGrantingPlan,
@@ -77,6 +78,7 @@ export {
   type FeatureMetadata,
   FeatureOverrideEffect,
   type FeatureOverrideOptions,
+  type FeatureResolution,
   type FeatureResolutionContext,
   type FeatureResolverOptions,
   type FeatureScopeType,

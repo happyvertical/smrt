@@ -59,8 +59,11 @@ accepts a s-m-r-t `SmartObjectManifest` containing class decorator metadata.
 ## Resolution
 
 The resolver starts with the registered class's `defaultEnabled` (falling
-back to the synced definition), then applies the global override and tenant
-overrides. Without a tenant context, only the global override applies.
+back to the synced definition), then applies the tenant's plan grant (see
+below), the global override, and tenant overrides, in that order. Without a
+tenant context, only the global override applies. `explain()` returns the
+same answer as `isEnabled()` plus `decidedBy`, the layer that set it
+(`default`, `plan_grant`, `global_override` or `tenant_override`).
 
 The default hierarchy loader discovers `@happyvertical/smrt-users` when
 available. Alternatively, supply `tenantHierarchyLoader` as the resolver's
@@ -68,15 +71,17 @@ second constructor argument; return a `FeatureTenantHierarchyProvider` or
 `null` for flat tenant resolution. Hierarchy traversal runs root to leaf:
 a child inherits its parent's state only when the parent has
 `cascadePermissions` and the child has `inheritPermissions`; otherwise its
-baseline resets to the global state. Each tenant's own override then applies.
+baseline resets to the global state (the plan grant with the global override
+applied). Each tenant's own override then applies.
 `inherit` preserves that baseline. Supported scopes are `global` and `tenant`.
 
 ## Plan grants and paid features
 
-A tenant's subscription plan can grant feature keys. Grants sit between the
-tenant overrides and the global scope: a granted key is on for that tenant
-unless a tenant override turns it off, and an ungranted key falls through to
-the global override and default. Features does not depend on
+A tenant's subscription plan can grant feature keys. A granted key is on for
+that tenant, and an ungranted key keeps its default. The global override then
+applies on top: a global row is an explicit operator act, so a global DISABLE
+stops the feature for every tenant, granted or not. Tenant overrides apply
+last and beat both the grant and the global override. Features does not depend on
 `@happyvertical/smrt-subscriptions`; it consults a `FeatureGrantSource`, and
 with none registered (a local install) there are no grants.
 
