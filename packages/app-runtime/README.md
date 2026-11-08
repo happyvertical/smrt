@@ -527,3 +527,22 @@ account ID, device ID, and generation as the snapshot sequence. Its header
 carries the data key ID. Derive the 32-byte wrapping key from the device secret
 with [HKDF-SHA256](https://www.rfc-editor.org/rfc/rfc5869), an empty salt, and
 ASCII `smrt-vault-device-key-v1` as the info string.
+
+## Preparing a vault key generation
+
+Use `prepareVaultKeyGeneration(options)` from
+`@happyvertical/smrt-app-runtime/vault-key-generation` on the initiating
+device. Supply the account and device IDs, the device's random 32-byte secret,
+the user's recovery secret, and the current generation from trusted state.
+Pass `currentGeneration: null` to prepare generation 1. The operation creates
+a fresh key and ID, then returns the new context and both wrapped records
+after both wraps succeed. The initiating device can open its record with
+`openVaultDeviceKey`. A device using the recovery secret can open the recovery
+record with `openVaultRecoveryKey`.
+
+The result is a candidate for publication. A caller that persists it must
+commit the records and context together, conditioned on the expected previous
+generation. Concurrent preparations can produce different candidates for the
+same next generation. Retain the wrapped keys needed to open existing
+backups. Device enrollment and revocation have their own authorization and
+storage requirements.
