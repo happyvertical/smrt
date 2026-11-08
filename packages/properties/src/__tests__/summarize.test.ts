@@ -130,6 +130,8 @@ describe('Property.summarize()', () => {
         promptKey: 'smrtProperties.property.summarize',
         promptLayer: 'default',
         templateHash: expect.stringMatching(/^[0-9a-f]{12}$/),
+        tierRequested: 'good',
+        tierResolved: 'good',
       },
     });
   });
