@@ -168,7 +168,7 @@ export function legacyRuntime(configHash, fixtureNamespace) {
     command: [
       'sh',
       '-c',
-      `printf 'pid /tmp/nginx.pid; error_log stderr; events {} http { access_log off; client_body_temp_path /tmp/client; server { listen 8080; root /srv/site; location / { try_files $uri /index.html; } } }' >/tmp/nginx.conf; exec nginx -p /tmp -c /tmp/nginx.conf -g 'daemon off;'`,
+      `printf 'pid /tmp/nginx.pid; error_log stderr; events {} http { access_log off; client_body_temp_path /tmp/client; proxy_temp_path /tmp/proxy; fastcgi_temp_path /tmp/fastcgi; uwsgi_temp_path /tmp/uwsgi; scgi_temp_path /tmp/scgi; server { listen 8080; root /srv/site; location / { try_files $uri /index.html; } } }' >/tmp/nginx.conf; exec nginx -p /tmp -c /tmp/nginx.conf -g 'daemon off;'`,
     ],
     readOnlyConfigMaps: [
       {
