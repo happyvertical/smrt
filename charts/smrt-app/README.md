@@ -178,7 +178,10 @@ through stopped and migrate. It requires `writer: false`, empty `env`, one to
 three replicas, explicit `automountServiceAccountToken: false`, and both strict
 hardening contexts described above. Its Deployment uses a fixed RollingUpdate
 strategy with `maxUnavailable: 0` and `maxSurge: 1`, preserving service while new
-pod labels or immutable configuration references roll out. Other Deployments keep
+pod labels or immutable configuration references roll out, and its container
+carries a `preStop` drain (`sleep 5`) so the ingress drops the old pod before
+nginx is signalled; `terminationGracePeriodSeconds` must be at least 10, which
+the chart validates. Other Deployments keep
 the existing Recreate strategy. Bootstrap still creates no application pods
 before verify; static runtime and HTTP 200 checks begin only when that target is
 actually rendered. This declaration alone proves no isolation: adoption requires live
