@@ -19,7 +19,6 @@ import type {
   AiUsageStats,
   AiUsageSummaryOptions,
   SignalAdapter,
-  SmrtAiUsageEvent,
   SmrtAiUsageRecord,
 } from '@happyvertical/smrt-types';
 import type { DatabaseInterface } from '@happyvertical/sql';
@@ -27,7 +26,18 @@ import {
   AiUsageCollector,
   AiUsagePersistenceHandler,
 } from './adapters/ai-usage.js';
-import { estimateAiUsageCost } from './adapters/cost-rates.js';
+import {
+  type AiUsageAttribution,
+  attachAiUsageRecorder,
+  dispatchAiUsageEvent,
+  normalizeAiUsageEvent,
+  normalizeAiUsageTags,
+  normalizeAiUsageTimestamp,
+  type ResolvedAiUsageConfig,
+  resolveAiUsageConfig,
+  resolveAiUsageTenantId,
+  unwrapAiUsageSink,
+} from './adapters/ai-usage-recorder.js';
 import { registerChangeFeedWriter } from './change-feed.js';
 import {
   getSmrtModuleConfig,
@@ -96,14 +106,6 @@ type DatabaseWithConfig = DatabaseInterface & {
   type?: string;
 };
 
-interface ResolvedAiUsageConfig {
-  enabled: boolean;
-  persist: boolean;
-  estimateCosts: boolean;
-  costRates?: Record<string, { input: number; output: number }>;
-  handlers: AiUsageHandler[];
-}
-
 type AiUsageFilterOptions = Pick<
   AiUsageListOptions,
   | 'since'
@@ -123,18 +125,6 @@ interface AiUsageWhereClause {
   conditions: string[];
   params: unknown[];
   nextParamIndex: number;
-}
-
-function firstString(...candidates: unknown[]): string | undefined {
-  return candidates.find((candidate): candidate is string => {
-    return typeof candidate === 'string';
-  });
-}
-
-function firstNumber(...candidates: unknown[]): number | undefined {
-  return candidates.find((candidate): candidate is number => {
-    return typeof candidate === 'number';
-  });
 }
 
 function getDatabaseUrl(db: DatabaseInterface): string {
@@ -172,48 +162,6 @@ function getDatabaseTypeHint(
   return undefined;
 }
 
-function normalizeIncomingAiUsageTokens(
-  value: unknown,
-): AiTokenUsage | undefined {
-  if (!value || typeof value !== 'object') {
-    return undefined;
-  }
-
-  const usage = value as Record<string, unknown>;
-  const promptTokens =
-    typeof usage.promptTokens === 'number'
-      ? usage.promptTokens
-      : typeof usage.inputTokens === 'number'
-        ? usage.inputTokens
-        : undefined;
-  const completionTokens =
-    typeof usage.completionTokens === 'number'
-      ? usage.completionTokens
-      : typeof usage.outputTokens === 'number'
-        ? usage.outputTokens
-        : undefined;
-  const totalTokens =
-    typeof usage.totalTokens === 'number'
-      ? usage.totalTokens
-      : promptTokens !== undefined || completionTokens !== undefined
-        ? (promptTokens ?? 0) + (completionTokens ?? 0)
-        : undefined;
-
-  if (
-    promptTokens === undefined &&
-    completionTokens === undefined &&
-    totalTokens === undefined
-  ) {
-    return undefined;
-  }
-
-  return {
-    promptTokens,
-    completionTokens,
-    totalTokens,
-  };
-}
-
 function hydratePersistedAiUsageTokens(row: {
   prompt_tokens?: unknown;
   completion_tokens?: unknown;
@@ -247,22 +195,6 @@ function hydratePersistedAiUsageTokens(row: {
   };
 }
 
-function normalizeAiUsageTags(
-  value: unknown,
-): Record<string, string> | undefined {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return undefined;
-  }
-
-  const tags: Record<string, string> = {};
-  for (const [key, tagValue] of Object.entries(value)) {
-    if (tagValue === undefined || tagValue === null) continue;
-    tags[key] = String(tagValue);
-  }
-
-  return Object.keys(tags).length > 0 ? tags : undefined;
-}
-
 function parseAiUsageTags(value: unknown): Record<string, string> | undefined {
   if (typeof value !== 'string') {
     return undefined;
@@ -283,21 +215,6 @@ function optionalAiUsageColumn<K extends string>(
   return value === null || value === undefined
     ? {}
     : ({ [name]: String(value) } as Record<K, string>);
-}
-
-function normalizeAiUsageTimestamp(value: unknown): Date {
-  if (value instanceof Date) {
-    return value;
-  }
-
-  if (typeof value === 'string' || typeof value === 'number') {
-    const date = new Date(value);
-    if (!Number.isNaN(date.getTime())) {
-      return date;
-    }
-  }
-
-  return new Date();
 }
 
 function getQueryRows(
@@ -878,10 +795,14 @@ export class SmrtClass {
               withAIAliases(aiConfig as Record<string, unknown>),
             );
 
-            const existingOnUsage =
+            // A recorder or `withAiUsage()` sink in the config is dropped
+            // (keeping the callback it wraps): this client records through
+            // the instance pipeline below, so a call is recorded once (#3077).
+            const existingOnUsage = unwrapAiUsageSink(
               aiConfig.onUsage ??
-              (userConfig as Record<string, unknown>).onUsage ??
-              undefined;
+                (userConfig as Record<string, unknown>).onUsage ??
+                undefined,
+            );
             aiConfig.onUsage = async (event: unknown) => {
               if (typeof existingOnUsage === 'function') {
                 await (existingOnUsage as (usageEvent: unknown) => unknown)(
@@ -1323,6 +1244,41 @@ export class SmrtClass {
       providerConfig,
       this.mergeAiUsageConfig(config.toJSON()),
     );
+  }
+
+  /**
+   * Return `aiConfig` with `onUsage` wired to this instance's usage pipeline,
+   * for clients the instance does not build itself:
+   * `getAI(this.withAiUsage(this.options.ai))`. The caller's own `onUsage`
+   * runs first and is kept; wiring an already-wired config replaces the
+   * previous sink, so a call is recorded once. Rows carry this class name and
+   * the tenant from `options.tenantId`, else this instance's `tenantId`, else
+   * the ambient tenant (`setAiUsageTenantResolver()`). Recording failures are
+   * logged and never reach the AI call (#3077).
+   */
+  withAiUsage<T extends object>(
+    aiConfig: T,
+    options: { tenantId?: string | null; tags?: Record<string, string> } = {},
+  ): T & { onUsage: (event: unknown) => Promise<void> } {
+    const providerConfig = aiConfig as Record<string, unknown>;
+    return attachAiUsageRecorder(aiConfig, async (event: unknown) => {
+      try {
+        await this.ensureRuntimeServicesInitialized();
+        await this.handleAiUsageCallback(
+          event,
+          providerConfig,
+          this._aiUsageResolvedConfig ??
+            this.mergeAiUsageConfig(config.toJSON()),
+          options,
+        );
+      } catch (error) {
+        logger.warn(
+          `[smrt] AI usage recording failed for ${this._className}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    });
   }
 
   private async isSystemSchemaVersionApplied(
@@ -1920,23 +1876,7 @@ export class SmrtClass {
   private mergeAiUsageConfig(
     globalConfig: GlobalSignalConfig,
   ): ResolvedAiUsageConfig {
-    const globalUsage = globalConfig.usage ?? {};
-    const instanceUsage = this.options.usage ?? {};
-
-    return {
-      enabled: instanceUsage.enabled ?? globalUsage.enabled ?? true,
-      persist: instanceUsage.persist ?? globalUsage.persist ?? true,
-      estimateCosts:
-        instanceUsage.estimateCosts ?? globalUsage.estimateCosts ?? true,
-      costRates: {
-        ...(globalUsage.costRates ?? {}),
-        ...(instanceUsage.costRates ?? {}),
-      },
-      handlers: [
-        ...(globalUsage.handlers ?? []),
-        ...(instanceUsage.handlers ?? []),
-      ],
-    };
+    return resolveAiUsageConfig(globalConfig.usage, this.options.usage);
   }
 
   private initializeAiUsageHandlers(config: ResolvedAiUsageConfig): void {
@@ -1961,92 +1901,32 @@ export class SmrtClass {
     event: unknown,
     aiConfig: Record<string, unknown>,
     usageConfig: ResolvedAiUsageConfig,
+    overrides: Pick<AiUsageAttribution, 'tags'> & {
+      tenantId?: string | null;
+    } = {},
   ): Promise<void> {
     if (!usageConfig.enabled || this._aiUsageHandlers.length === 0) {
       return;
     }
 
-    const normalizedEvent = this.normalizeAiUsageEvent(event, aiConfig);
-    if (!normalizedEvent) {
-      return;
-    }
-
-    if (usageConfig.estimateCosts) {
-      normalizedEvent.estimatedCost = estimateAiUsageCost(
-        normalizedEvent.provider,
-        normalizedEvent.model,
-        normalizedEvent.usage,
-        usageConfig.costRates,
-      );
-    }
-
-    const results = await Promise.allSettled(
-      this._aiUsageHandlers.map((handler) => handler.handle(normalizedEvent)),
-    );
-
-    for (const result of results) {
-      if (result.status === 'rejected') {
-        logger.warn(
-          `[smrt] AI usage handler failed for ${normalizedEvent.provider}:${normalizedEvent.model}: ${
-            result.reason instanceof Error
-              ? result.reason.message
-              : String(result.reason)
-          }`,
-        );
-      }
-    }
-  }
-
-  private normalizeAiUsageEvent(
-    event: unknown,
-    aiConfig: Record<string, unknown>,
-  ): SmrtAiUsageEvent | undefined {
-    const raw = (event ?? {}) as Record<string, unknown>;
-    const provider = firstString(
-      raw.provider,
-      raw.type,
-      aiConfig.provider,
-      aiConfig.type,
-    );
-    const model = firstString(
-      raw.model,
-      raw.defaultModel,
-      aiConfig.model,
-      aiConfig.defaultModel,
-    );
-    const operation =
-      firstString(raw.operation, raw.kind, raw.method) ?? 'unknown';
-    const usage =
-      normalizeIncomingAiUsageTokens(raw.usage) ??
-      normalizeIncomingAiUsageTokens(raw.tokenUsage) ??
-      normalizeIncomingAiUsageTokens({
-        promptTokens: raw.promptTokens,
-        completionTokens: raw.completionTokens,
-        totalTokens: raw.totalTokens,
-      });
-
-    if (!provider || !model) {
-      return undefined;
-    }
-
-    const duration =
-      firstNumber(raw.duration, raw.durationMs, raw.latency) ?? 0;
-    const tenantId =
+    const instanceTenantId =
       'tenantId' in this &&
       (this as { tenantId?: string | null }).tenantId !== undefined
         ? ((this as { tenantId?: string | null }).tenantId ?? null)
         : undefined;
-
-    return {
-      provider,
-      model,
-      operation,
-      usage,
-      duration,
-      timestamp: normalizeAiUsageTimestamp(raw.timestamp),
-      tags: normalizeAiUsageTags(raw.tags),
+    const normalizedEvent = normalizeAiUsageEvent(event, aiConfig, {
       className: this._className,
-      tenantId,
-    };
+      tenantId: resolveAiUsageTenantId(overrides.tenantId, instanceTenantId),
+      tags: overrides.tags,
+    });
+    if (!normalizedEvent) {
+      return;
+    }
+
+    await dispatchAiUsageEvent(
+      normalizedEvent,
+      this._aiUsageHandlers,
+      usageConfig,
+    );
   }
 }
