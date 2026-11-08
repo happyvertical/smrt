@@ -5,10 +5,10 @@ description: "Image asset management with AI-powered categorization, search, edi
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T15:48:19Z"
+  at: "2026-11-08T15:58:05Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:2cfe4eaa74d632275f65afd9c21743066e840bbb76e6423c5642eee63652093c"
+source_revision: "sha256:f7aa283ec0acd0253931e7b539d6e96463945c8ddb2d148b5399199a65012d1d"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/images/package.json"

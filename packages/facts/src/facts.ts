@@ -13,7 +13,7 @@ import {
 } from '@happyvertical/smrt-core';
 import {
   type PromptConfigOverrideInput,
-  type ResolvedPromptAI,
+  promptMessageOptions,
   resolvePrompt,
 } from '@happyvertical/smrt-prompts';
 import {
@@ -184,17 +184,6 @@ function parseClaimSupportResponse(raw: string): FactClaimSupportAssessment {
     matchedEvidenceIds,
     rationale: normalizeWhitespace(parsed?.rationale) || '',
     confidence: normalizeConfidence(parsed?.confidence),
-  };
-}
-
-function promptMessageOptions(ai: ResolvedPromptAI) {
-  return {
-    ...(ai.params || {}),
-    ...(ai.model ? { model: ai.model } : {}),
-    ...(typeof ai.temperature === 'number'
-      ? { temperature: ai.temperature }
-      : {}),
-    ...(typeof ai.maxTokens === 'number' ? { maxTokens: ai.maxTokens } : {}),
   };
 }
 
@@ -1115,7 +1104,7 @@ export class FactCollection extends SmrtCollection<Fact> {
 
     const response = await ai.message(
       resolvedPrompt.text,
-      promptMessageOptions(resolvedPrompt.ai),
+      promptMessageOptions(resolvedPrompt.ai, { routeTier: false }),
     );
     return parseFactExtractionResponse(response).slice(0, maxFacts);
   }
@@ -1170,7 +1159,7 @@ export class FactCollection extends SmrtCollection<Fact> {
 
     const response = await ai.message(
       resolvedPrompt.text,
-      promptMessageOptions(resolvedPrompt.ai),
+      promptMessageOptions(resolvedPrompt.ai, { routeTier: false }),
     );
     return parseFactExtractionResponse(response).slice(0, maxFacts);
   }
@@ -1226,7 +1215,7 @@ export class FactCollection extends SmrtCollection<Fact> {
 
     const response = await ai.message(
       resolvedPrompt.text,
-      promptMessageOptions(resolvedPrompt.ai),
+      promptMessageOptions(resolvedPrompt.ai, { routeTier: false }),
     );
     return parseClaimSupportResponse(response);
   }
@@ -1289,7 +1278,7 @@ export class FactCollection extends SmrtCollection<Fact> {
       // "branch" branches; every other successful response merges.
       const response = await this.ai.message(
         resolvedPrompt.text,
-        promptMessageOptions(resolvedPrompt.ai),
+        promptMessageOptions(resolvedPrompt.ai, { routeTier: false }),
       );
       const normalized = response.trim().toLowerCase();
       if (normalized.includes('branch')) {

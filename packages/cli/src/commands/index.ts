@@ -2,6 +2,7 @@
  * CLI Commands - Export all command modules
  */
 
+export { aiUsageCommand } from './ai-usage.js';
 export { configExportCommand } from './config-export.js';
 // Config commands
 export { cookbookCommands } from './cookbook.js';

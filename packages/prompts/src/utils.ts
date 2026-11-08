@@ -1,4 +1,7 @@
-import { isInferenceTierRequest } from '@happyvertical/smrt-core';
+import {
+  type InferenceTierRequest,
+  isInferenceTierRequest,
+} from '@happyvertical/smrt-core';
 import type {
   NormalizedPromptAI,
   PromptAIInput,
@@ -47,6 +50,11 @@ const AI_ROUTING_PARAM_KEYS = new Set([
   'type',
   'model',
   'defaultModel',
+  // Inference tier routing (#4750) comes only from the validated profile;
+  // a (tenant-editable) params layer can never pick or spoof it.
+  'tier',
+  'latency',
+  'promptKey',
 ]);
 
 export function isPlainObject(
@@ -369,6 +377,132 @@ export function buildResolvedAI(
   }
 
   return resolved;
+}
+
+const TEMPLATE_HASH_LENGTH = 12;
+
+/**
+ * Short SHA-256 fingerprint of an effective (unrendered) prompt template: the
+ * first 12 lowercase hex characters. Recorded as the `templateHash` usage tag
+ * so an override edit starts a new usage series (#4751).
+ *
+ * Uses Web Crypto (`globalThis.crypto.subtle`), available in Node and every
+ * browser, so the package root stays free of `node:crypto`.
+ */
+export async function promptTemplateHash(template: string): Promise<string> {
+  const digest = await globalThis.crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(template),
+  );
+  let hex = '';
+  for (const byte of new Uint8Array(digest)) {
+    hex += byte.toString(16).padStart(2, '0');
+    if (hex.length >= TEMPLATE_HASH_LENGTH) break;
+  }
+  return hex.slice(0, TEMPLATE_HASH_LENGTH);
+}
+
+/** The `ai.message()` options {@link promptMessageOptions} returns. */
+export interface PromptMessageOptions extends PromptParams {
+  model?: string;
+  /**
+   * Inference tier of a tier profile (#4750). Object call sites pass these
+   * options through `SmrtObject.prepareAiOperation()`, which picks the tier
+   * client and strips `tier`/`promptKey` before the provider sees them.
+   */
+  tier?: InferenceTierRequest;
+  /** Set with `tier`: the prompt key for the call-time resolver request. */
+  promptKey?: string;
+  temperature?: number;
+  maxTokens?: number;
+  usageTags?: Record<string, string>;
+}
+
+/** Extra call options merged by {@link promptMessageOptions}. */
+export interface PromptMessageOptionsExtra {
+  /** The caller's own usage tags; they win over the resolution's tags. */
+  usageTags?: Record<string, string>;
+  /**
+   * `false` omits `tier`/`promptKey` for a call site that sends the options
+   * straight to a client it already holds (no `prepareAiOperation()`), so
+   * the tier keys never reach a provider; the call runs on that client.
+   * Default `true`.
+   */
+  routeTier?: boolean;
+}
+
+/**
+ * Turn a resolved prompt's AI settings into `ai.message()` call options:
+ * params, `model`, `temperature`, `maxTokens`, the resolution's
+ * `usageTags` (`promptKey`, `promptLayer`, `templateHash`) and, for a tier
+ * profile, `tier` + `promptKey` (#4750). Send them through
+ * `SmrtObject.prepareAiOperation()` so the tier keys never reach a provider.
+ *
+ * Tag precedence, low to high: a `usageTags` object carried in the prompt's
+ * params (tenant-editable: reserved tags such as runId or tier tags are
+ * dropped from it), the resolution's identity tags, then `extra.usageTags`.
+ */
+export function promptMessageOptions(
+  ai: ResolvedPromptAI,
+  extra: PromptMessageOptionsExtra = {},
+): PromptMessageOptions {
+  // Tier routing keys never ride in on params, even for a hand-built object.
+  const {
+    tier: _tier,
+    latency: _latency,
+    promptKey: _promptKey,
+    // Never spread raw: only the sanitized copy below may reach the call.
+    usageTags: paramTags,
+    ...params
+  } = ai.params || {};
+  const routeTier = extra.routeTier !== false;
+  const usageTags = {
+    ...paramUsageTags(paramTags),
+    ...(ai.usageTags ?? {}),
+    ...(extra.usageTags ?? {}),
+  };
+  return {
+    ...params,
+    ...(ai.model ? { model: ai.model } : {}),
+    ...(routeTier && ai.tier ? { tier: ai.tier } : {}),
+    ...(routeTier && ai.tier && ai.promptKey
+      ? { promptKey: ai.promptKey }
+      : {}),
+    ...(typeof ai.temperature === 'number'
+      ? { temperature: ai.temperature }
+      : {}),
+    ...(typeof ai.maxTokens === 'number' ? { maxTokens: ai.maxTokens } : {}),
+    ...(Object.keys(usageTags).length > 0 ? { usageTags } : {}),
+  };
+}
+
+/**
+ * Usage tags that feed indexed columns, tenant checks or report accounting
+ * (#4751, #4750, #4752, #4753). A tenant-editable params layer must never
+ * set them: a forged `runId` could make another tenant's run look shared and
+ * block its outcome labels, and forged tier or substitution tags would skew
+ * the report. Only the resolution and the calling code may set these.
+ */
+const RESERVED_USAGE_TAGS = new Set([
+  'promptKey',
+  'promptLayer',
+  'templateHash',
+  'runId',
+  'tierRequested',
+  'tierResolved',
+  'substitutions',
+  'fusionKey',
+]);
+
+/** Free-form tags from params, minus the reserved ones. */
+function paramUsageTags(value: unknown): Record<string, string> {
+  if (!isPlainObject(value)) return {};
+  const tags: Record<string, string> = {};
+  for (const [key, tag] of Object.entries(value)) {
+    if (RESERVED_USAGE_TAGS.has(key)) continue;
+    if (tag !== undefined && tag !== null) tags[key] = String(tag);
+  }
+  return tags;
 }
 
 export function renderPromptTemplate(

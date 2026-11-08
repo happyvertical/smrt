@@ -1628,7 +1628,7 @@ export class Content
           const proposedBody = (
             await ai.message(
               resolvedPrompt.text,
-              promptMessageOptions(resolvedPrompt.ai),
+              promptMessageOptions(resolvedPrompt.ai, { routeTier: false }),
             )
           ).trim();
           if (proposedBody) {
@@ -3924,7 +3924,7 @@ export class Content
 
     const rawResponse = await ai.message(
       resolvedPrompt.text,
-      promptMessageOptions(resolvedPrompt.ai),
+      promptMessageOptions(resolvedPrompt.ai, { routeTier: false }),
     );
     const result = parseContentReviewResponse(rawResponse);
     const persistReview = async (content: Content) => {
