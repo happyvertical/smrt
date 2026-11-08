@@ -12,13 +12,59 @@ settings panel (#4754) builds on the executor and the doctor here.
   the executor (`alias`, `candidates`, `fusion`) and a validating resolver
   (`setInferenceResolver()`). The resolver binds nothing: it validates chain
   config, then defers to a resolver registered earlier (#4666 per-user
-  bindings) or to core's built-in config resolution. No aliases and no chain
+  bindings, `./resolver`) or to core's built-in config resolution. No aliases and no chain
   targets means no change in behavior. `browser-safe.test.ts` holds the graph
   free of `node:`, the AI SDK and smrt-config (no models, so the bundle-gate
   fixture does not cover it).
 - `./node`: `checkInferenceBindings()`, `probeInferenceCandidate()`,
   `formatInferenceDoctorReport()`; the CLI's `doctor --ai` and #4754's test
   connection call these.
+- `./resolver` (Node-only, #4756): `createUserInferenceResolver()` and
+  `registerUserInferenceResolver()` over smrt-secrets / tenancy / users. The
+  root re-exports only the browser-safe stored-config shape
+  (`src/provider-config.ts`): parse, redact, tier → target map.
+
+## Per-user and per-tenant bindings (`src/resolver.ts`, #4756)
+
+`createUserInferenceResolver({ db | secrets, fallback?, ttlMs?, principal? })`
+is core's `InferenceResolver`. Per tier, highest first: the user's stored
+config (its `tiers[tier]`, then its default binding), the tenant's (same
+order), `fallback`, the app `inference` block, then the configured client
+(`SMRT_AI_*` / process `ai`). Every resolution carries `target.source`
+(`byo | local | hosted | app`); core records it as the `source` usage tag.
+
+- **Registration order.** `registerUserInferenceResolver(r)` installs
+  `createInferenceResolver(r)`: the #4752 validating resolver stays outermost
+  (chain config is validated first), then the user resolver, then its
+  `fallback`, then core's config resolution. A later `registerInference()`
+  keeps it (the wrapper is marked as this package's own); a bare
+  `setInferenceResolver(r)` would drop the validation.
+- **Storage.** One smrt-secrets type, `inference.provider-config`
+  (`category`), via `SecretService.store()` / `retrieve()` only, with
+  `context = tenantId`. Names: `inference.provider-config:user:<userId>` and
+  `inference.provider-config:tenant`. The value is
+  `{ provider, baseUrl, model, apiKey, preset, params, source?, tiers? }`;
+  hosted (#4759) writes the same type with `source: 'hosted'`.
+  `parseInferenceProviderConfig()` refuses a key without its own endpoint
+  (core's pair rule; a preset supplies it), a preset without a model, unknown
+  fields, and `source: 'app'`. A corrupt stored value fails the call with
+  `InferenceProviderConfigError` (paths only, never values); a missing,
+  disabled or expired secret is simply no layer.
+- **Identity.** The ambient principal (tenancy context, then the users
+  session context: smrt-preferences' order). The tenant is the request's
+  (`tenantId` from the object) or the principal's; the user layer applies
+  only when the principal belongs to that tenant. No principal: no user
+  layer, never a guess. `request.userId` is ignored.
+- **Cache.** Decrypted layers per `(tenantId, userId)` for `ttlMs` (30 s);
+  failed loads are evicted. `write(level, config)` / `remove(level)` store
+  for the current principal and invalidate; `invalidate()` takes all, one
+  tenant (every user), or one user. Who may write the tenant config is the
+  host server action's decision (#4754).
+- **Keys.** Never logged or tagged. `resolveBindings()` returns the tier map
+  and both stored configs redacted by default (`hasApiKey`, no `apiKey`), the
+  shape the settings panel reads; `redact: false` is server-only.
+- Raw `getAI()` sites take the binding through core's
+  `resolveInferenceTarget()` (see [core inference.md](../core/agents/inference.md)).
 
 ## Config
 
