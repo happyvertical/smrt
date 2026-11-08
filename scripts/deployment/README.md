@@ -220,7 +220,7 @@ Kustomization pruning, relinquish its actual inventory, preserve UIDs/selectors,
 and set exact Helm release-name/release-namespace/managed-by metadata and
 `kustomize.toolkit.fluxcd.io/prune: disabled` on retained resources. Unknown
 controllers, field managers, live writers and changed identities remain blocking.
-The runner does not scale or patch legacy resources for the operator.
+The runner does not scale or patch legacy resource content for the operator.
 
 Staging preflight allows the exact approved legacy UID/manager state only and
 renders/admission-dry-runs all phases. Other SSA conflicts remain fatal; no force,
@@ -229,7 +229,12 @@ publishes the stopped candidate with `smrt.happyvertical.com/adoption-{id,plan,
 status:pending,origin}`. Canonical remains absent. Establishment requires exact
 Flux acknowledgement, normal Helm values/storage and established helm-controller
 ownership, preserved UIDs/selectors, stopped writers, static health and fresh
-fences. Finalization atomically renames staging to canonical with status `complete`,
+fences. Helm's forced apply leaves fields whose values already matched co-owned
+by the reviewed legacy manager, so establishment then removes only that
+manager's `managedFields` entries, as the release reconciler, with a JSON patch
+bound to each resource's observed UID and `resourceVersion`. Values are kept,
+other managers are untouched, and later ordinary phases dry-run without force.
+Finalization atomically renames staging to canonical with status `complete`,
 `adoption-proof` (observation identity) and `adoption-state` (journal identity).
 Actual binding-version annotations are pinned. Resume after finalization
 reobserves the exact final commit and all live gates before reporting success.

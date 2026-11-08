@@ -417,6 +417,46 @@ export async function run(command, args, input) {
     );
   }
 }
+// kubectl arguments that drop only the reviewed legacy manager's managedFields
+// entries, as the release reconciler identity. Values are kept; a changed UID
+// or resourceVersion fails the JSON patch test instead of releasing.
+export function legacyManagerRelease(o, manager, document, namespace) {
+  const kept = (o.metadata.managedFields ?? []).filter(
+    (entry) => entry.manager !== manager,
+  );
+  demand(
+    kept.some((entry) => entry.manager === 'helm-controller') &&
+      o.metadata.uid &&
+      o.metadata.resourceVersion,
+    'Adopted Helm ownership/manager not established',
+  );
+  const account = document.spec?.serviceAccountName;
+  demand(
+    /^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$/.test(account ?? ''),
+    'HelmRelease must declare reconciler serviceAccountName',
+  );
+  return [
+    '--namespace',
+    namespace,
+    `--as=system:serviceaccount:${namespace}:${account}`,
+    '--as-group=system:serviceaccounts',
+    `--as-group=system:serviceaccounts:${namespace}`,
+    '--as-group=system:authenticated',
+    'patch',
+    '--type=json',
+    '-p',
+    JSON.stringify([
+      { op: 'test', path: '/metadata/uid', value: o.metadata.uid },
+      {
+        op: 'test',
+        path: '/metadata/resourceVersion',
+        value: o.metadata.resourceVersion,
+      },
+      { op: 'replace', path: '/metadata/managedFields', value: kept },
+    ]),
+    `${o.kind.toLowerCase()}/${o.metadata.name}`,
+  ];
+}
 export function createLiveAdapter(
   config,
   command = run,
@@ -2020,6 +2060,17 @@ export function createLiveAdapter(
             false,
             true,
           );
+      },
+      releaseLegacyManager: async (o, manager, document) => {
+        const args = legacyManagerRelease(o, manager, document, namespace);
+        try {
+          await command('kubectl', args);
+        } catch {
+          throw new DeploymentError(
+            `Legacy field manager release failed: ${safeReference(args.at(-1))} namespace ${safeReference(namespace)}`,
+            'OWNERSHIP_CONFLICT',
+          );
+        }
       },
       helmOwner: (o, name, ns) =>
         demand(

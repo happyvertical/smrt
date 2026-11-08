@@ -16,6 +16,7 @@ import {
 } from './deployment/release.mjs';
 import {
   createLiveAdapter,
+  legacyManagerRelease,
   run,
   verifyRuntime,
   parseObjects,
@@ -2704,4 +2705,47 @@ test('actual adopted Helm observer preserves dormant history through native phas
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test('legacy manager release drops only that manager, as the reconciler, bound to UID and resourceVersion', () => {
+  const helm = { manager: 'helm-controller', operation: 'Apply', fieldsType: 'FieldsV1', fieldsV1: { 'f:data': {} } };
+  const status = { manager: 'kube-controller-manager', subresource: 'status' };
+  const o = {
+    kind: 'ConfigMap',
+    metadata: {
+      name: 'legacy-maintenance',
+      uid: 'cm-uid',
+      resourceVersion: '42',
+      managedFields: [{ manager: 'kustomize-controller', operation: 'Apply' }, helm, status],
+    },
+  };
+  const doc = { spec: { serviceAccountName: 'reconciler' } };
+  const args = legacyManagerRelease(o, 'kustomize-controller', doc, 'test');
+  assert.deepEqual(args.slice(0, 8), [
+    '--namespace',
+    'test',
+    '--as=system:serviceaccount:test:reconciler',
+    '--as-group=system:serviceaccounts',
+    '--as-group=system:serviceaccounts:test',
+    '--as-group=system:authenticated',
+    'patch',
+    '--type=json',
+  ]);
+  assert.equal(args.at(-1), 'configmap/legacy-maintenance');
+  assert.deepEqual(JSON.parse(args[9]), [
+    { op: 'test', path: '/metadata/uid', value: 'cm-uid' },
+    { op: 'test', path: '/metadata/resourceVersion', value: '42' },
+    { op: 'replace', path: '/metadata/managedFields', value: [helm, status] },
+  ]);
+  for (const [change, expected] of [
+    [(c) => { c.metadata.managedFields = [{ manager: 'kustomize-controller' }]; }, /Helm ownership/],
+    [(c) => { delete c.metadata.resourceVersion; }, /Helm ownership/],
+    [(c) => { delete c.metadata.uid; }, /Helm ownership/],
+  ]) {
+    const copy = structuredClone(o);
+    change(copy);
+    assert.throws(() => legacyManagerRelease(copy, 'kustomize-controller', doc, 'test'), expected);
+  }
+  for (const account of [undefined, '', 'Bad_Name', 'a'.repeat(64)])
+    assert.throws(() => legacyManagerRelease(o, 'kustomize-controller', { spec: { serviceAccountName: account } }, 'test'), /serviceAccountName/);
 });

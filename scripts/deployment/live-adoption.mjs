@@ -675,16 +675,34 @@ export function createAdoptionMethods(config, command, helpers, options) {
     );
     await helpers.acknowledge(document, snapshot.revision);
     const evidence = await helpers.provePhase(document, snapshot.revision);
-    const all = await helpers.namespaceInventory();
-    for (const r of saved.resources) {
-      const actual = all.find((o) => resourceKey(o) === resourceKey(r));
-      demand(
-        actual?.metadata.uid === r.uid &&
-          hash(actual.spec?.selector ?? {}) === hash(r.selector ?? {}),
-        'Adopted resource UID/selector changed',
+    const adopted = (all) =>
+      saved.resources.map((r) => {
+        const actual = all.find((o) => resourceKey(o) === resourceKey(r));
+        demand(
+          actual?.metadata.uid === r.uid &&
+            hash(actual.spec?.selector ?? {}) === hash(r.selector ?? {}),
+          'Adopted resource UID/selector changed',
+        );
+        helpers.helmOwner(actual, plan.releaseName, namespace);
+        return [r, actual];
+      });
+    let all = await helpers.namespaceInventory();
+    // Helm's forced establishment leaves fields whose values already matched
+    // co-owned by the reviewed legacy manager, so the first ordinary phase
+    // changing one would conflict. Release only that manager's entries; the
+    // values stay, and each patch is bound to the observed UID/resourceVersion.
+    const legacyOwned = ([r, actual]) =>
+      actual.metadata.managedFields?.some(
+        (entry) => entry.manager === r.legacyManager,
       );
-      helpers.helmOwner(actual, plan.releaseName, namespace);
-    }
+    const stale = adopted(all).filter(legacyOwned);
+    for (const [r, actual] of stale)
+      await helpers.releaseLegacyManager(actual, r.legacyManager, document);
+    if (stale.length) all = await helpers.namespaceInventory();
+    demand(
+      !adopted(all).some(legacyOwned),
+      'Reviewed legacy field manager not released after Helm establishment',
+    );
     await helpers.verifyStopped(document, all);
     await helpers.acknowledge(document, snapshot.revision);
     return safeNative(

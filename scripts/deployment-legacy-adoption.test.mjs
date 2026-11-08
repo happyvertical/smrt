@@ -704,6 +704,46 @@ test('native legacy gates bind actual UID, stop/relinquish revisions, selectors,
       );
       object[key] = before;
     }
+    // Helm establishment releases only the reviewed legacy manager, once.
+    const helmEntry = { manager: 'helm-controller', operation: 'Apply', fieldsType: 'FieldsV1', fieldsV1: { 'f:spec': {} } };
+    for (const o of [actual, ingress])
+      o.metadata.managedFields = [{ manager: 'kustomize-controller' }, helmEntry, ...o.metadata.managedFields.filter((e) => e.subresource)];
+    const adopted = {
+      ...snapshot,
+      canonical: {
+        spec: structuredClone(plan.candidate.spec),
+        metadata: {
+          annotations: {
+            'smrt.happyvertical.com/adoption-id': plan.adoptionId,
+            'smrt.happyvertical.com/adoption-plan': hash(plan),
+          },
+        },
+      },
+    };
+    const released = [];
+    let releaseWorks = true;
+    Object.assign(helpers, {
+      acknowledge: async () => {},
+      provePhase: async () => ({ bindings: sha }),
+      helmOwner: (o) => assert.ok(o.metadata.managedFields.some((e) => e.manager === 'helm-controller')),
+      releaseLegacyManager: async (o, manager, document) => {
+        assert.equal(document, adopted.canonical);
+        released.push([o.kind, manager]);
+        if (releaseWorks)
+          o.metadata.managedFields = o.metadata.managedFields.filter((e) => e.manager !== manager);
+      },
+    });
+    assert.ok(await methods.observeAdopted(plan, adopted, 'helm-established'));
+    assert.deepEqual(released, [['Deployment', 'kustomize-controller'], ['Ingress', 'kustomize-controller']]);
+    assert.ok(ingress.metadata.managedFields.includes(statusEntry), 'other managers are preserved');
+    assert.ok(await methods.observeAdopted(plan, adopted, 'finalized'));
+    assert.equal(released.length, 2, 'an already released resource is not patched again');
+    actual.metadata.managedFields.unshift({ manager: 'kustomize-controller' });
+    releaseWorks = false;
+    await assert.rejects(methods.observeAdopted(plan, adopted, 'finalized'), /legacy field manager not released/);
+    helpers.releaseLegacyManager = async () => { throw new Error('Legacy field manager release failed'); };
+    await assert.rejects(methods.observeAdopted(plan, adopted, 'finalized'), /release failed/);
+    actual.metadata.managedFields.shift();
     const before = snapshot.raw[plan.qualification.file];
     snapshot.raw[plan.qualification.file] = '{"passed":true}';
     await assert.rejects(

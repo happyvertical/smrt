@@ -2298,6 +2298,14 @@ export async function legacyMain(env = process.env) {
         hash(actual.spec?.selector ?? {}),
         hash(old.spec?.selector ?? {}),
       );
+      // Ordinary phases below dry-run without forcing; a leftover legacy
+      // co-owner would conflict on the first changed field.
+      assert.ok(
+        !actual.metadata.managedFields.some(
+          (entry) => entry.manager === 'kustomize-controller',
+        ),
+        `legacy field manager released from ${old.kind}/${old.metadata.name}`,
+      );
     }
     assert.deepEqual(
       [get('job', 'legacy-monitor-history'), historyPods()[0]].map((o) => [
