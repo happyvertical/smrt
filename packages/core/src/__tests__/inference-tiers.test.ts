@@ -209,7 +209,7 @@ describe('inference tiers', () => {
       resolve: () => ({ tierResolved: 'cheap', target: {}, via: 'resolver' }),
     });
     await expect(resolveInference({ tier: 'best' })).rejects.toThrow(
-      /substitutions are not supported/,
+      /a resolver must not substitute tiers/,
     );
     // `auto` may resolve to any tier.
     expect((await resolveInference({ tier: 'auto' })).tierResolved).toBe(
