@@ -49,6 +49,7 @@ import { SmrtError } from '@happyvertical/smrt-core/smrt-error';
 import { SecretService } from '@happyvertical/smrt-secrets';
 import { withTenant } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
+import { classifyInferenceFailure } from './classify.js';
 import {
   INFERENCE_PROVIDER_CONFIG_SECRET_TYPE,
   type InferenceProviderBinding,
@@ -604,6 +605,15 @@ export interface HostedInferenceProvisioner {
     tenantId: string,
     target: HostedReconcileTarget,
   ): Promise<HostedReconcileResult>;
+  /**
+   * Drop an owed gateway deletion after an operator revoked that key on the
+   * gateway by hand (audited). Returns whether an entry was removed.
+   */
+  acknowledgeGatewayRevocation(options: {
+    tenantId: string;
+    userId: string;
+    keyAlias: string;
+  }): Promise<boolean>;
 }
 
 const STATE_PREFIX = `${HOSTED_INFERENCE_SECRET_CATEGORY}:user:`;
@@ -771,6 +781,22 @@ function isGatewayTimeout(error: unknown): boolean {
     !!error &&
     typeof error === 'object' &&
     (error as { code?: unknown }).code === GATEWAY_TIMEOUT_CODE
+  );
+}
+
+/**
+ * Whether a failed create may still have minted the key: anything but an
+ * explicit refusal (credential, quota, missing model, refusal). Timeouts,
+ * transport resets, 5xx and unclassified errors are ambiguous.
+ */
+function mayHaveCreated(error: unknown): boolean {
+  if (isGatewayTimeout(error)) return true;
+  const failure = classifyInferenceFailure(error);
+  return (
+    failure !== 'credential' &&
+    failure !== 'quota' &&
+    failure !== 'missing-model' &&
+    failure !== 'refusal'
   );
 }
 
@@ -1404,9 +1430,9 @@ export function createHostedInferenceProvisioner(
           };
         };
         if (createError !== undefined) {
-          // A timed-out create may still mint the key on the gateway: record
-          // its alias as owed. A definitive failure created nothing.
-          if (isGatewayTimeout(createError)) scheduleRollback();
+          // An ambiguous failure may still mint the key on the gateway:
+          // record its alias as owed. An explicit refusal created nothing.
+          if (mayHaveCreated(createError)) scheduleRollback();
           throw gatewayFailure('createVirtualKey', createError);
         }
         if (!apiKey) {
@@ -1475,17 +1501,23 @@ export function createHostedInferenceProvisioner(
     return provisioned;
   };
 
+  /**
+   * Sync one grant's gateway budget (lock held). `force` re-applies it even
+   * when the stored budget matches: reconcile uses it, so a timed-out update
+   * that landed late on the gateway is overwritten on the next run.
+   */
   const syncLocked = async (
     tenantId: string,
     userId: string,
     budget: Required<HostedInferenceBudget>,
     secrets: HostedSecretStore,
+    force = false,
   ): Promise<SyncHostedBudgetResult> => {
     const state = await readState(secrets, userId);
     if (state?.status !== 'active') {
       return { ...describeState(tenantId, userId, state), sync: 'none' };
     }
-    if (sameBudget(state.budget, budget)) {
+    if (!force && sameBudget(state.budget, budget)) {
       return { ...describeState(tenantId, userId, state), sync: 'unchanged' };
     }
     const admin = await getAdmin(gatewayConfig());
@@ -1503,6 +1535,10 @@ export function createHostedInferenceProvisioner(
       );
     } catch (error) {
       throw gatewayFailure('updateVirtualKey', error);
+    }
+    if (sameBudget(state.budget, budget)) {
+      // A forced re-apply of the stored budget: nothing to record.
+      return { ...describeState(tenantId, userId, state), sync: 'updated' };
     }
     const next = { ...state, budget };
     await writeState(secrets, userId, next, {
@@ -1598,7 +1634,9 @@ export function createHostedInferenceProvisioner(
         );
         return;
       }
-      result.synced.push(await syncLocked(tenantId, userId, budget, secrets));
+      result.synced.push(
+        await syncLocked(tenantId, userId, budget, secrets, true),
+      );
       return;
     }
     result.provisioned.push(
@@ -1724,6 +1762,37 @@ export function createHostedInferenceProvisioner(
       });
     },
 
+    async acknowledgeGatewayRevocation(input) {
+      const tenantId = requireId(input.tenantId, 'tenantId');
+      const userId = requireId(input.userId, 'userId');
+      const keyAlias = text(input.keyAlias);
+      if (!keyAlias) {
+        throw new HostedInferenceError(
+          'keyAlias is required',
+          'HOSTED_INFERENCE_INVALID',
+          { field: 'keyAlias' },
+        );
+      }
+      return locked(tenantId, async (secrets) => {
+        const state = await readState(secrets, userId);
+        const pending = state?.pendingGatewayRevocations ?? [];
+        const remaining = pending.filter(
+          (entry) => entry.keyAlias !== keyAlias,
+        );
+        if (!state || remaining.length === pending.length) return false;
+        await writeState(
+          secrets,
+          userId,
+          { ...state, pendingGatewayRevocations: remaining },
+          {
+            operation: 'inference.hosted.revoke-acknowledged',
+            keyAlias,
+          },
+        );
+        return true;
+      });
+    },
+
     async reconcileTenant(tenantIdInput, target) {
       const tenantId = requireId(tenantIdInput, 'tenantId');
       const budget = target.budget
@@ -1802,7 +1871,7 @@ export function createHostedInferenceProvisioner(
                 if (wanted.has(userId) || state.status !== 'active') continue;
                 await attempt(userId, async () => {
                   result.synced.push(
-                    await syncLocked(tenantId, userId, budget, secrets),
+                    await syncLocked(tenantId, userId, budget, secrets, true),
                   );
                 });
               }

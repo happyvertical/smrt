@@ -784,7 +784,8 @@ describe('hosted inference provisioning (#4759)', () => {
         },
       ],
     });
-    expect(admin.updates).toHaveLength(2);
+    // Every reconcile re-applies budgets (2 users x 2 reconciles).
+    expect(admin.updates).toHaveLength(4);
     // A lost downgrade.
     const result = await reconcile(TENANT, { grants: [] });
     expect(result.revoked).toHaveLength(2);
@@ -1033,6 +1034,69 @@ describe('hosted inference provisioning (#4759)', () => {
     expect(result.provisioned).toHaveLength(0);
     expect(await p.listActive(TENANT)).toEqual([]);
     expect(admin.keys).toHaveLength(1);
+  });
+
+  it('records the alias of an ambiguous create failure but not of an explicit refusal', async () => {
+    const p = provisioner();
+    admin.failCreateKey = Object.assign(new Error('socket hang up'), {
+      code: 'ECONNRESET',
+    });
+    await expect(
+      p.provision({
+        tenantId: TENANT,
+        userId: ALICE,
+        budget: { limitMicros: 1_000_000 },
+      }),
+    ).rejects.toMatchObject({ code: 'HOSTED_GATEWAY_FAILED' });
+    const owed = await p.status({ tenantId: TENANT, userId: ALICE });
+    expect(owed.pendingGatewayRevocations).toEqual([
+      expect.objectContaining({ keyId: null, reason: 'orphaned' }),
+    ]);
+
+    admin.failCreateKey = Object.assign(new Error('denied'), { status: 401 });
+    await expect(
+      p.provision({
+        tenantId: TENANT,
+        userId: BOB,
+        budget: { limitMicros: 1_000_000 },
+      }),
+    ).rejects.toMatchObject({ code: 'HOSTED_GATEWAY_FAILED' });
+    await expect(
+      p.status({ tenantId: TENANT, userId: BOB }),
+    ).resolves.toMatchObject({ status: 'none' });
+
+    // An operator who revoked the key by hand clears the owed entry.
+    await expect(
+      p.acknowledgeGatewayRevocation({
+        tenantId: TENANT,
+        userId: ALICE,
+        keyAlias: `smrt-${TENANT}-${ALICE}-g0-x`,
+      }),
+    ).resolves.toBe(true);
+    const cleared = await p.status({ tenantId: TENANT, userId: ALICE });
+    expect(cleared.pendingGatewayRevocations).toBeUndefined();
+  });
+
+  it('reconcile re-applies the budget so a late timed-out update cannot stick', async () => {
+    const p = provisioner();
+    await p.provision({
+      tenantId: TENANT,
+      userId: ALICE,
+      budget: { limitMicros: 1_000_000 },
+    });
+    const result = await p.reconcileTenant(TENANT, {
+      entitled: true,
+      budget: { limitMicros: 1_000_000 },
+    });
+    expect(result.synced).toEqual([
+      expect.objectContaining({ userId: ALICE, sync: 'updated' }),
+    ]);
+    expect(admin.updates).toEqual([
+      {
+        id: 'key-id-1',
+        options: { budget: { maxLimit: 1, resetDuration: '30d' } },
+      },
+    ]);
   });
 
   it('never puts key material in results, audit rows, claims or logs', async () => {
