@@ -1,3 +1,4 @@
+import { isInferenceTierRequest } from '@happyvertical/smrt-core';
 import type {
   NormalizedPromptAI,
   PromptAIInput,
@@ -285,7 +286,9 @@ export function validateProfileName(
     );
   }
 
-  if (!config.profiles?.[profileName]) {
+  // Tier names (and `auto`) are reserved profile names that resolve through
+  // the core inference seam (#4750); a same-named configured profile wins.
+  if (!config.profiles?.[profileName] && !isInferenceTierRequest(profileName)) {
     throw new Error(`Prompt profile "${profileName}" is not configured`);
   }
 }
@@ -313,17 +316,22 @@ export function buildResolvedAI(
   let provider: string | undefined;
   let model = ai.model;
   let params = ai.params;
+  let tier: ResolvedPromptAI['tier'];
 
   if (ai.profile) {
     validateProfileName(ai.profile, config);
     const configuredProfile = config.profiles?.[ai.profile];
-    if (!configuredProfile) {
+    if (configuredProfile) {
+      const profileConfig = normalizeProfileConfig(configuredProfile);
+      provider = profileConfig.provider;
+      model = model ?? profileConfig.model;
+      params = mergePromptParams(profileConfig.params, params);
+    } else if (isInferenceTierRequest(ai.profile)) {
+      // Bound later through the core inference seam by `resolvePrompt()`.
+      tier = ai.profile;
+    } else {
       throw new Error(`Prompt profile "${ai.profile}" is not configured`);
     }
-    const profileConfig = normalizeProfileConfig(configuredProfile);
-    provider = profileConfig.provider;
-    model = model ?? profileConfig.model;
-    params = mergePromptParams(profileConfig.params, params);
   }
 
   if (ai.model) {
@@ -345,6 +353,7 @@ export function buildResolvedAI(
     profile: ai.profile,
     provider,
     model,
+    ...(tier ? { tier } : {}),
     ...(config.allowedModels
       ? { allowedModels: [...config.allowedModels] }
       : {}),

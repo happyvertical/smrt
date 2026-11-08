@@ -37,10 +37,15 @@ Top-level zones: {topLevelZones}`,
   },
 });
 
+// Duplicated in smrt-content, smrt-profiles, smrt-ledgers and others; #4751
+// consolidates these copies. `tier` (#4750) selects the tier client in
+// `SmrtObject.do()` and tags the usage row.
 export function promptMessageOptions(ai: ResolvedPromptAI) {
   return {
     ...(ai.params || {}),
     ...(ai.model ? { model: ai.model } : {}),
+    ...(ai.tier ? { tier: ai.tier } : {}),
+    ...(ai.tier && ai.promptKey ? { promptKey: ai.promptKey } : {}),
     ...(typeof ai.temperature === 'number'
       ? { temperature: ai.temperature }
       : {}),

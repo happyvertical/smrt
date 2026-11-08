@@ -111,10 +111,18 @@ export async function resolvePrompt(
     runtimeOverride,
   );
 
+  const ai = buildResolvedAI(merged.ai, config);
+  if (ai.tier) {
+    // The tier binds once, at call time, through the core inference seam
+    // (`SmrtObject.prepareAiOperation()` / `getAiClient(tier)`), with this
+    // key so prompt-scoped bindings apply (#4750).
+    ai.promptKey = key;
+  }
+
   return {
     key,
     template: merged.template,
     text: renderPromptTemplate(merged.template, options.variables),
-    ai: buildResolvedAI(merged.ai, config),
+    ai,
   };
 }

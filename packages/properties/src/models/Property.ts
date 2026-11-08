@@ -177,11 +177,11 @@ export class Property extends SmrtObject {
       },
     );
 
-    const ai = await this.getAiClient();
-    const response = await ai.message(
-      resolvedPrompt.text,
+    // A tier profile (#4750) selects the tier client and tags the usage row.
+    const { ai, aiOptions } = await this.prepareAiOperation(
       promptMessageOptions(resolvedPrompt.ai),
     );
+    const response = await ai.message(resolvedPrompt.text, aiOptions);
 
     return response.trim();
   }

@@ -1,4 +1,8 @@
-import type { AITextCompletionOptions, AITool } from '@happyvertical/ai';
+import type {
+  AIClient,
+  AITextCompletionOptions,
+  AITool,
+} from '@happyvertical/ai';
 import { createLogger } from '@happyvertical/logger';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import {
@@ -53,6 +57,11 @@ import {
   ValidationError,
 } from './errors';
 import { buildWhere } from './host.js';
+import {
+  type InferenceLatency,
+  type InferenceTierRequest,
+  inferenceUsageTags,
+} from './inference';
 import {
   type BulkMutationEntry,
   createInterceptorContext,
@@ -552,6 +561,30 @@ export interface AiOperationOptions extends AITextCompletionOptions {
    * Override the injected object-data truncation budget, in characters.
    */
   maxDataLength?: number;
+
+  /**
+   * Inference tier for this call (#4750). Resolved through the inference seam
+   * (`auto` → `inference.defaultTier`, else `good`); with no `inference`
+   * config every tier uses the configured client. Calls with a tier add
+   * `tierRequested` / `tierResolved` to `usageTags`. Not forwarded to
+   * `ai.message()`.
+   */
+  tier?: InferenceTierRequest;
+
+  /** Latency hint passed to the tier binding. Not forwarded to `ai.message()`. */
+  latency?: InferenceLatency;
+
+  /**
+   * Registered prompt key, passed to the inference resolver with `tier` so
+   * prompt-scoped bindings apply. Not forwarded to `ai.message()`.
+   */
+  promptKey?: string;
+
+  /**
+   * Per-call usage tags, forwarded to `ai.message()`; the SDK merges them
+   * into the usage event (`_smrt_ai_usage.tags`).
+   */
+  usageTags?: Record<string, string>;
 }
 
 /**
@@ -4844,6 +4877,57 @@ export class SmrtObject extends SmrtClass {
    *   truncation budget
    * @returns The content-body section (with a trailing newline) or `''`
    */
+  /**
+   * Pick the generation client for an AI operation and strip the tier keys.
+   *
+   * Without `tier` this is exactly `getAiClient()` and the options pass
+   * through untouched. With `tier` the binding is resolved once; the target's
+   * `params` and `model` become per-call defaults under the caller's options,
+   * and `tierRequested` / `tierResolved` are merged over the caller's
+   * `usageTags`. Subclasses that call `ai.message()` themselves (prompt
+   * helpers forwarding a resolved prompt's `tier`) use this too, so `tier`
+   * never reaches the provider as an unknown option.
+   */
+  protected async prepareAiOperation<
+    T extends {
+      tier?: InferenceTierRequest;
+      latency?: InferenceLatency;
+      promptKey?: string;
+      usageTags?: Record<string, string>;
+    },
+  >(
+    options: T,
+  ): Promise<{
+    ai: AIClient;
+    aiOptions: Omit<T, 'tier' | 'latency' | 'promptKey'>;
+  }> {
+    const { tier, latency, promptKey, ...rest } = options;
+    if (tier === undefined) {
+      return { ai: await this.getAiClient(), aiOptions: rest };
+    }
+    const resolution = await this.resolveInferenceTier({
+      tier,
+      latency,
+      ...(promptKey ? { promptKey } : {}),
+    });
+    const ai = await this.getAiClient(tier, { latency, promptKey, resolution });
+    const { target } = resolution;
+    return {
+      ai,
+      aiOptions: {
+        ...(target.params ?? {}),
+        ...(typeof target.model === 'string' && target.model.trim() !== ''
+          ? { model: target.model.trim() }
+          : {}),
+        ...rest,
+        usageTags: {
+          ...(rest.usageTags ?? {}),
+          ...inferenceUsageTags(tier, resolution),
+        },
+      } as Omit<T, 'tier' | 'latency' | 'promptKey'>,
+    };
+  }
+
   private buildAiContentSection(
     includeData: boolean | undefined,
     maxLength?: number,
@@ -4909,8 +4993,9 @@ export class SmrtObject extends SmrtClass {
       ).result;
     }
 
-    const ai = await this.getAiClient();
-    const { maxDataLength, includeData, ...legacyAiOptions } = options ?? {};
+    const { maxDataLength, includeData, ...operationOptions } = options ?? {};
+    const { ai, aiOptions: legacyAiOptions } =
+      await this.prepareAiOperation(operationOptions);
     let aiOptions = legacyAiOptions;
     if (tools.length > 0 && hasConfiguredDecisions) {
       const {
@@ -5057,7 +5142,6 @@ export class SmrtObject extends SmrtClass {
     criteria: string,
     options: EvaluateOptions,
   ): Promise<EvaluationResult> {
-    const ai = await this.getAiClient();
     const {
       maxDataLength,
       includeData,
@@ -5065,8 +5149,9 @@ export class SmrtObject extends SmrtClass {
       uncertaintyFallback,
       model: _decisionModel,
       generativeModel,
-      ...aiOptions
+      ...generationOptions
     } = options;
+    const { ai, aiOptions } = await this.prepareAiOperation(generationOptions);
     const contentSection = this.buildAiContentSection(
       includeData,
       maxDataLength,
@@ -5123,8 +5208,8 @@ export class SmrtObject extends SmrtClass {
    * @see {@link is} for boolean criteria checks
    */
   public async do(instructions: string, options: AiOperationOptions = {}) {
-    const ai = await this.getAiClient();
-    const { maxDataLength, includeData, ...aiOptions } = options ?? {};
+    const { maxDataLength, includeData, ...operationOptions } = options ?? {};
+    const { ai, aiOptions } = await this.prepareAiOperation(operationOptions);
     const contentSection = this.buildAiContentSection(
       includeData,
       maxDataLength,
@@ -5171,8 +5256,8 @@ export class SmrtObject extends SmrtClass {
    * ```
    */
   public async describe(options: AiOperationOptions = {}) {
-    const ai = await this.getAiClient();
-    const { maxDataLength, includeData, ...aiOptions } = options ?? {};
+    const { maxDataLength, includeData, ...operationOptions } = options ?? {};
+    const { ai, aiOptions } = await this.prepareAiOperation(operationOptions);
     const contentSection = this.buildAiContentSection(
       includeData,
       maxDataLength,
