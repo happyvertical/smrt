@@ -273,7 +273,8 @@ A thin wrapper over core `reportAiUsage()`; read-only, it never bootstraps
 system tables (a pre-1.13.0 database fails with a hint to start the app or run
 `db:migrate`). Calls without a prompt key print as `(unattributed)`, uncosted
 calls are counted beside the cost total with the cost basis printed, and rows
-outside `--tenant` or from external agents are listed as excluded.
+outside `--tenant` or from external agents are listed as excluded. `--by fusion`
+also totals `_smrt_ai_runs` per fusion via `reportAiRuns()` (#4753).
 
 ## `db:drop-framework-base-tables` is a one-time remediation (#2647)
 
