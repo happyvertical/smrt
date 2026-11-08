@@ -24,7 +24,10 @@ import {
   TenantScoped,
   tenantId,
 } from '@happyvertical/smrt-tenancy';
-import { type AgentAIOptions, resolveAgentAIOptions } from './ai-config.js';
+import {
+  type AgentAIOptions,
+  resolveAgentAIClientOptions,
+} from './ai-config.js';
 import { AgentConfig } from './config.js';
 import {
   instanceScopedSubscriber,
@@ -1035,16 +1038,17 @@ export abstract class Agent extends SmrtObject {
     const configuredAi =
       ((this.options as AgentOptions).ai as AgentAIOptions | undefined) ??
       fileAiConfig;
+    let bindingTags: Record<string, string> | undefined;
     if (configuredAi && this._db) {
-      const resolvedAi = await resolveAgentAIOptions({
+      // Usage is wired below through this instance's own pipeline.
+      const { options: resolvedAi, tags } = await resolveAgentAIClientOptions({
         aiConfig: configuredAi,
         db: this._db,
         tenantId:
           getCurrentTenant()?.tenantId ||
           (typeof this.tenantId === 'string' ? this.tenantId : undefined),
-        // Wired below through this instance's own pipeline instead.
-        recordUsage: false,
       });
+      bindingTags = tags;
       if (resolvedAi) {
         (this.options as AgentOptions).ai = resolvedAi as AIClientOptions &
           Record<string, unknown>;
@@ -1066,6 +1070,7 @@ export abstract class Agent extends SmrtObject {
     ) {
       (this.options as AgentOptions).ai = this.withAiUsage(
         agentAi,
+        bindingTags ? { tags: bindingTags } : {},
       ) as AIClientOptions & Record<string, unknown>;
     }
 

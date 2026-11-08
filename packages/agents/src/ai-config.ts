@@ -3,6 +3,7 @@ import { getDefaultAIKeyEnvName } from '@happyvertical/smrt-config';
 import {
   attachAiUsageRecorder,
   createAiUsageRecorder,
+  resolveInferenceTarget,
 } from '@happyvertical/smrt-core';
 import { SecretService } from '@happyvertical/smrt-secrets';
 import { getCurrentTenant, withTenant } from '@happyvertical/smrt-tenancy';
@@ -165,8 +166,11 @@ function isMissingSecretError(error: unknown, secretName: string): boolean {
 }
 
 /**
- * Resolve an agent's AI client options for the current tenant: the provider
- * API key comes from smrt-secrets (with optional ancestor fallback). With a
+ * Resolve an agent's AI client options for the current tenant. Without an
+ * explicit `apiKey` or `apiKeySecretName`, a stored per-user / per-tenant
+ * inference binding (the registered resolver, #4756) replaces the provider;
+ * otherwise the provider API key comes from smrt-secrets (with optional
+ * ancestor fallback). With a
  * `db`, the returned `onUsage` also records each call through the SMRT usage
  * pipeline, attributed to `tenantId` or else the ambient tenant at call time,
  * so a per-call `getAI(options)` client is metered (#3077).
@@ -174,7 +178,7 @@ function isMissingSecretError(error: unknown, secretName: string): boolean {
 export async function resolveAgentAIOptions(
   input: ResolveAgentAIOptionsInput,
 ): Promise<AIClientOptions | undefined> {
-  const resolved = await resolveAgentAIClientOptions(input);
+  const { options: resolved, tags } = await resolveAgentAIClientOptions(input);
   if (!resolved || !input.db || input.recordUsage === false) {
     return resolved;
   }
@@ -186,36 +190,71 @@ export async function resolveAgentAIOptions(
       // Unset (not null) when no tenant is named, so the recorder falls back
       // to the ambient tenant of each call.
       tenantId: asNonEmptyString(input.tenantId),
+      ...(tags ? { tags } : {}),
       aiConfig: resolved as Record<string, unknown>,
     }),
   );
 }
 
-async function resolveAgentAIClientOptions(
+/** {@link resolveAgentAIOptions} without the recorder. */
+export interface ResolvedAgentAIConfig {
+  options: AIClientOptions | undefined;
+  /**
+   * Usage tags of a stored inference binding (`tierRequested`,
+   * `tierResolved`, `source`; #4756), for a caller that records usage itself.
+   */
+  tags?: Record<string, string>;
+}
+
+/**
+ * Resolve the client options without attaching a recorder: an explicit
+ * `apiKey`, else (no `apiKeySecretName`) a stored per-user / per-tenant
+ * inference binding, else the named or provider-default tenant secret.
+ */
+export async function resolveAgentAIClientOptions(
   input: ResolveAgentAIOptionsInput,
-): Promise<AIClientOptions | undefined> {
+): Promise<ResolvedAgentAIConfig> {
   const { aiConfig, db } = input;
   if (!aiConfig) {
-    return undefined;
+    return { options: undefined };
   }
 
   const normalized = { ...aiConfig };
   if (asNonEmptyString(normalized.apiKey)) {
-    return stripAgentAISecretFields(normalized);
+    return { options: stripAgentAISecretFields(normalized) };
+  }
+
+  // No agent-level secret named: a stored per-user / per-tenant inference
+  // binding (#4756, the registered resolver) wins over the provider-default
+  // secret. App `inference` tier bindings do not replace the agent's own
+  // `ai` config (`appBindings: false`).
+  if (!asNonEmptyString(normalized.apiKeySecretName)) {
+    const stored = await resolveInferenceTarget({
+      base: stripAgentAISecretFields(normalized),
+      tenantId: asNonEmptyString(input.tenantId),
+      className: input.className ?? 'Agent',
+      appBindings: false,
+    });
+    if (stored.bound && stored.options) {
+      return {
+        options: stored.options as AIClientOptions,
+        tags: stored.usageTags,
+      };
+    }
   }
 
   const secretName =
     asNonEmptyString(normalized.apiKeySecretName) ??
     getDefaultSecretName(normalized);
   if (!secretName || !db) {
-    return stripAgentAISecretFields(normalized);
+    return { options: stripAgentAISecretFields(normalized) };
   }
 
   const tenantId =
     asNonEmptyString(input.tenantId) ??
     asNonEmptyString(getCurrentTenant()?.tenantId);
   if (!tenantId) {
-    return stripAgentAISecretFields(normalized);
+    return { options: stripAgentAISecretFields(normalized) };
   }
 
   const fallback = normalizeSecretFallback(normalized.apiKeySecretFallback);
@@ -224,11 +263,13 @@ async function resolveAgentAIClientOptions(
   const apiKey = await resolveSecretValue(service, tenantIds, secretName);
 
   if (!apiKey) {
-    return stripAgentAISecretFields(normalized);
+    return { options: stripAgentAISecretFields(normalized) };
   }
 
   return {
-    ...stripAgentAISecretFields(normalized),
-    apiKey,
+    options: {
+      ...stripAgentAISecretFields(normalized),
+      apiKey,
+    },
   };
 }
