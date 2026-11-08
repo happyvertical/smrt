@@ -1,4 +1,4 @@
-# Inference tiers and the binding resolver seam (#4750, #4752, #4753)
+# Inference tiers and the binding resolver seam (#4750, #4752, #4753, #4758)
 
 Source: `src/inference.ts`, `SmrtClass.getAiClient(tier?)` in `src/class.ts`,
 `SmrtObject.prepareAiOperation()` in `src/object.ts`. Epic: #4749.
@@ -120,6 +120,42 @@ events back for per-seat totals. Seat usage rows carry `runId` (lifted to
   client and never consult the resolver (the parity contract); a per-user
   binding reaches objects through `tier` (`auto` included).
 
+## Capabilities and fallbacks (#4758)
+
+`src/inference-capabilities.ts` (browser-safe). On the tier path only
+(untiered calls keep the parity contract), `prepareAiOperation()` detects the
+bound `single` target's `InferenceCapabilities { json, tools, vision,
+maxContext?, source }` and returns them with `executorRun` and `toolUse`;
+`resolveInferenceTarget()` results carry the static layers. Order, per field,
+highest first (a contract, tested): `provider` (the client's
+`getCapabilities()`, cached per client, counted only with no custom
+`baseUrl`: on a preset or local server the SDK reports its vendor's table),
+`preset` (`INFERENCE_PRESET_CAPABILITIES`, matched by preset id or preset
+`baseUrl`), `probe` (doctor only), the model heuristic
+(`INFERENCE_CAPABILITY_HEURISTICS`: WebLLM / `-MLC`, TinyLlama, SmolLM, …;
+reported as `assumed`, it is a guess), then `assumed` (all on, no limit:
+today's behavior). `source` names the highest layer that stated a field. The
+SDK has no JSON flag, so `json` comes from lower layers unless a provider
+reports `json` / `jsonMode` / a `json_object` operation.
+
+- `is()` / `evaluate()`'s generative route without `json`: no
+  `responseFormat`, a yes/no prompt, `parseInferenceTextVerdict()` (JSON
+  `{ result }`, a leading `yes|true` / `no|false` word as smrt-analytics'
+  legacy route, an embedded `{ result }`), tag `capabilityFallback:
+  'json→text'`.
+- Registered tools without `tools`: `toolUse: 'optional'` drops them (tag
+  `tools→none`); `'required'` (default) throws `InferenceUnavailableError`
+  (`src/inference-unavailable.ts`, code `AI_UNAVAILABLE`, `reason:
+  'capability'`, `details.capability`) before any call. #4757 owns the
+  error's other reasons (`off | unconfigured | entitlement`).
+- A prompt over a known `maxContext` (estimate: 3 characters per token, plus
+  `maxTokens`) is cut through `maxDataLength`, tag `truncated: 'true'`; one
+  that cannot fit without its data throws the capability error.
+- Chain targets: the call option `capabilityFallback` (`{ json: 'text' }` for
+  verdicts, `{ tools: 'drop' }` for optional tools) and the context's
+  `capabilitiesFor(target)` let the executor check each candidate; the verdict
+  parse accepts a text answer.
+
 ## Raw clients and binding source (#4756)
 
 `src/inference-target.ts`. `bindInferenceTarget(base, target, owner)` is the
@@ -155,4 +191,5 @@ Tests: `src/__tests__/issue-4756-inference-target.test.ts`,
 `src/__tests__/inference-tiers.test.ts`,
 `src/__tests__/class-inference-tiers.test.ts`,
 `src/__tests__/inference-executor-seam.test.ts`,
-`src/__tests__/issue-4753-ai-runs.test.ts`.
+`src/__tests__/issue-4753-ai-runs.test.ts`,
+`src/__tests__/issue-4758-capability-detection.test.ts`.

@@ -338,6 +338,7 @@ export {
   InferenceBindingError,
   type InferenceCallOptions,
   type InferenceCandidate,
+  type InferenceCapabilityFallbackOption,
   type InferenceConfig,
   type InferenceExecutionContext,
   type InferenceExecutor,
@@ -376,6 +377,26 @@ export {
   setInferenceResolver,
 } from './inference';
 export {
+  ASSUMED_INFERENCE_CAPABILITIES,
+  detectInferenceCapabilities,
+  estimateInferenceTokens,
+  INFERENCE_CAPABILITY_HEURISTICS,
+  INFERENCE_CAPABILITY_SOURCES,
+  INFERENCE_PRESET_CAPABILITIES,
+  type InferenceCapabilities,
+  type InferenceCapabilityEvidence,
+  type InferenceCapabilityHeuristic,
+  type InferenceCapabilityLayers,
+  type InferenceCapabilitySource,
+  type InferenceCapabilityTarget,
+  inferenceCapabilitiesFromSdk,
+  inferenceCapabilityHeuristic,
+  inferencePresetFor,
+  isInferenceCapabilities,
+  parseInferenceTextVerdict,
+  resolveInferenceCapabilities,
+} from './inference-capabilities';
+export {
   INFERENCE_PRESET_IDS,
   INFERENCE_PRESETS,
   type InferencePresetId,
@@ -389,6 +410,13 @@ export {
   type ResolveInferenceTargetOptions,
   resolveInferenceTarget,
 } from './inference-target';
+export {
+  AI_UNAVAILABLE,
+  INFERENCE_UNAVAILABLE_REASONS,
+  InferenceUnavailableError,
+  type InferenceUnavailableReason,
+  isInferenceUnavailableError,
+} from './inference-unavailable';
 // Global interceptors system (for tenancy, soft-delete, audit logging, etc.)
 export * from './interceptors';
 export {

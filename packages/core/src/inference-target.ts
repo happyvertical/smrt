@@ -36,6 +36,10 @@ import {
   isInferenceTargetSource,
   resolveInference,
 } from './inference.js';
+import {
+  detectInferenceCapabilities,
+  type InferenceCapabilities,
+} from './inference-capabilities.js';
 
 const IDENTITY_FIELDS = ['provider', 'model', 'baseUrl', 'apiKey'] as const;
 
@@ -196,6 +200,13 @@ export interface ResolvedInferenceTarget {
    * Unbound: `{ source: 'app' }` only. Also set on the recorder.
    */
   usageTags: Record<string, string>;
+  /**
+   * What `options` can do (#4758) from the static layers only (preset, model
+   * heuristic, assumed): no client exists yet. A site that builds the client
+   * can refine it with `detectInferenceCapabilities(identity, await
+   * client.getCapabilities())`.
+   */
+  capabilities: InferenceCapabilities;
 }
 
 /**
@@ -273,11 +284,20 @@ export async function resolveInferenceTarget(
       }),
     );
   }
+  const field = (key: string) =>
+    typeof clientOptions?.[key] === 'string'
+      ? (clientOptions[key] as string)
+      : undefined;
   return {
     options: clientOptions,
     resolution,
     bound,
     ...(source ? { source } : {}),
     usageTags,
+    capabilities: detectInferenceCapabilities({
+      provider: field('provider') ?? field('type'),
+      model: field('model') ?? field('defaultModel'),
+      baseUrl: field('baseUrl'),
+    }),
   };
 }

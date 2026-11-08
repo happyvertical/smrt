@@ -86,6 +86,10 @@ import {
   resolveInference as resolveInferenceBinding,
 } from './inference.js';
 import {
+  detectInferenceCapabilities,
+  type InferenceCapabilities,
+} from './inference-capabilities.js';
+import {
   bindInferenceTarget,
   inferenceTargetIdentity,
 } from './inference-target.js';
@@ -458,6 +462,11 @@ export class SmrtClass {
 
   /** Tier clients keyed by resolved `[provider, model, baseUrl]`, then key. */
   private _tierAiClients = new Map<string, Map<string, Promise<AIClient>>>();
+  /** `getCapabilities()` answers per client (#4758). */
+  private readonly _aiCapabilityAnswers = new WeakMap<
+    object,
+    Promise<unknown>
+  >();
 
   /**
    * Filesystem adapter for file operations
@@ -950,6 +959,8 @@ export class SmrtClass {
               tier: next,
             }),
           recordUsage: (record) => this.recordInferenceUsage(record),
+          capabilitiesFor: (target) =>
+            this.detectInferenceTargetCapabilities(target),
           ...(this._db ? { db: this._db } : {}),
           decide: (decisionRequest, decisionOptions) =>
             this.decideForInference(decisionRequest, decisionOptions),
@@ -1008,6 +1019,61 @@ export class SmrtClass {
       },
       { resolver, config: this.getInferenceConfig() },
     );
+  }
+
+  /**
+   * Capabilities of one `single` tier target (#4758): the client's
+   * `getCapabilities()` (cached per client), then the preset table, then the
+   * model-name heuristic, then assumed; see `inference-capabilities.ts`.
+   * Builds the target's client when `client` is not given; never calls a
+   * model.
+   */
+  protected async detectInferenceTargetCapabilities(
+    target: InferenceTarget,
+    client?: AIClient,
+  ): Promise<InferenceCapabilities> {
+    const ai = client ?? (await this.getAiClientForTarget(target));
+    const identity = inferenceTargetIdentity(target);
+    const base = this._aiClientConfig;
+    // The effective identity the client was built for: the target bound over
+    // the configured client under the pair rules (the configured client
+    // itself for an empty target).
+    const bound: Record<string, unknown> =
+      Object.keys(identity).length === 0
+        ? (base ?? {})
+        : base || identity.provider
+          ? bindInferenceTarget(base, target, this._className)
+          : identity;
+    const read = (key: string) =>
+      typeof bound[key] === 'string' && (bound[key] as string).trim() !== ''
+        ? (bound[key] as string).trim()
+        : undefined;
+    return detectInferenceCapabilities(
+      {
+        provider: read('provider') ?? read('type'),
+        model: identity.model ?? read('model') ?? read('defaultModel'),
+        baseUrl: read('baseUrl'),
+      },
+      await this.sdkCapabilities(ai),
+    );
+  }
+
+  /** A client's `getCapabilities()` answer, once per client; never throws. */
+  private sdkCapabilities(ai: AIClient): Promise<unknown> {
+    const key = ai as unknown as object;
+    let pending = this._aiCapabilityAnswers.get(key);
+    if (!pending) {
+      const getCapabilities = (ai as { getCapabilities?: unknown })
+        .getCapabilities;
+      pending =
+        typeof getCapabilities === 'function'
+          ? Promise.resolve()
+              .then(() => (getCapabilities as () => Promise<unknown>).call(ai))
+              .catch(() => undefined)
+          : Promise.resolve(undefined);
+      this._aiCapabilityAnswers.set(key, pending);
+    }
+    return pending;
   }
 
   /**
