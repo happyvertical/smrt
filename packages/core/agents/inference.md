@@ -117,7 +117,9 @@ when not. Per-call `model` options must follow the bound model.
 so tier calls record it too. The per-user resolver lives in
 [smrt-inference `./resolver`](../../inference/AGENTS.md). Converted raw
 sites: agents (`resolveAgentAIClientOptions`), chat (assistant default
-factory, dev text routes), languages (translation job), projects
+factory, resolved inside the route principal's tenancy context, recorder
+without db because the turn's request db does not outlive it; dev text
+routes via `devAIClientOptions()`, tenant-less), languages (translation job), projects
 (`Issue.incorporateFeedback` provider path), images (`ImageCategorizer`
 generated route), cli (`smrt kitchen`). Left: image generation (content
 thumbnails, images editor/deriver; tiers bind text models), ingestion vision
