@@ -1238,6 +1238,9 @@ export class SmrtClass {
             ? { ...resolution.target, model: callModel }
             : resolution.target,
           ai,
+          // The client was built for the bound model; its SDK answer does
+          // not describe an override.
+          { sdk: !callModel || callModel === resolution.target.model?.trim() },
         );
       } catch {
         // Detection never fails a call: an unknown answer is today's
@@ -1311,11 +1314,14 @@ export class SmrtClass {
    * `getCapabilities()` (cached per client), then the preset table, then the
    * model-name heuristic, then assumed; see `inference-capabilities.ts`.
    * Builds the target's client when `client` is not given; never calls a
-   * model.
+   * model. `sdk: false` skips the client's answer: a call that overrides
+   * the model runs on a client built for another model, whose answer does
+   * not describe the override.
    */
   protected async detectInferenceTargetCapabilities(
     target: InferenceTarget,
     client?: AIClient,
+    options: { sdk?: boolean } = {},
   ): Promise<InferenceCapabilities> {
     const ai = client ?? (await this.getAiClientForTarget(target));
     const identity = inferenceTargetIdentity(target);
@@ -1339,7 +1345,7 @@ export class SmrtClass {
         model: identity.model ?? read('model') ?? read('defaultModel'),
         baseUrl: read('baseUrl'),
       },
-      await this.sdkCapabilities(ai),
+      options.sdk === false ? undefined : await this.sdkCapabilities(ai),
     );
   }
 
