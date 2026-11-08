@@ -49,6 +49,7 @@
 {{- if eq (len $parts) 2 }}{{ range (splitList "." (first $parts)) }}{{ if not (regexMatch "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$" .) }}{{ fail "invalid selector DNS prefix" }}{{ end }}{{ end }}{{ end }}
 {{- end }}
 {{- if and $w.continuousStatic (or (ne $w.role "service") $w.writer (not $w.service) $w.schedule (gt (len $w.env) 0) (not $w.podSecurityContext) (not $w.securityContext) (not (hasKey $w "automountServiceAccountToken"))) }}{{ fail "continuous static requires credential-free hardened service" }}{{ end }}
+{{- if and $w.continuousStatic (lt (int $w.terminationGracePeriodSeconds) 10) }}{{ fail "continuous static workloads need terminationGracePeriodSeconds of at least 10 to drain through a rollover" }}{{ end }}
 {{- $names := dict }}{{ $paths := list }}
 {{- range $w.scratch }}{{ $_ := set $names .name true }}{{ $paths = append $paths .mountPath }}{{ end }}
 {{- range $w.readOnlyConfigMaps }}

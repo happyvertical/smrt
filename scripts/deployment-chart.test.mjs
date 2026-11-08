@@ -428,3 +428,16 @@ test('rendered ConfigMap data uses no YAML block scalars', () => {
         );
   }
 });
+
+test('continuous static and maintenance pods drain through rollovers', () => {
+  const values = legacyExerciseValues('a'.repeat(64), 'fixtures');
+  const docs = documents(values);
+  const container = (name) => resource(docs, 'Deployment', name).spec.template.spec.containers[0];
+  assert.deepEqual(container('fixture-site').lifecycle, { preStop: { exec: { command: ['sleep', '5'] } } });
+  assert.ok(resource(docs, 'Deployment', 'fixture-site').spec.template.spec.terminationGracePeriodSeconds >= 10);
+  assert.equal(container('fixture-web').lifecycle, undefined, 'only continuous static pods drain');
+  assert.deepEqual(container('fixture-maintenance').lifecycle, { preStop: { exec: { command: ['sleep', '5'] } } });
+  const short = legacyExerciseValues('a'.repeat(64), 'fixtures');
+  for (const runtime of [short.current, short.target]) runtime.workloads.site.terminationGracePeriodSeconds = 5;
+  assert.throws(() => render(short), /drain through a rollover/);
+});

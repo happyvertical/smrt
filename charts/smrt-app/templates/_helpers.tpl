@@ -18,6 +18,11 @@ smrt.happyvertical.com/sequence: {{ .Values.release.sequence | quote }}
   securityContext: {{ . | toJson }}
   {{- end }}
   readinessProbe: {{ $w.readinessProbe | toJson }}
+  {{- if $w.continuousStatic }}
+  # Continuous static pods must stay reachable through a rollover: hold the old
+  # pod open until the ingress has dropped its endpoint before nginx is signalled.
+  lifecycle: {preStop: {exec: {command: ["sleep", "5"]}}}
+  {{- end }}
   {{- with $w.startupProbe }}
   startupProbe: {{ . | toJson }}
   {{- end }}

@@ -174,6 +174,8 @@ export function legacyRuntime(configHash, fixtureNamespace) {
     writer: false,
     selectorLabels: { app: 'legacy-site' },
     continuousStatic: true,
+    // Continuous static pods drain through rollovers (chart validation).
+    terminationGracePeriodSeconds: 15,
     automountServiceAccountToken: false,
     command: [
       'sh',
@@ -2459,6 +2461,12 @@ export async function legacyMain(env = process.env) {
     );
     sampleStop = true;
     await sampler;
+    // Every sample and any sampler failure, timestamped, so a continuity blip
+    // can be placed against the stage notes in the job log.
+    writeFileSync(
+      join(evidence, 'http-samples.json'),
+      JSON.stringify({ failure: sampleFailure?.message ?? null, samples }, null, 2),
+    );
     assert.ifError(sampleFailure);
     assert.ok(
       samples.some((s) => s.app === 200) && samples.some((s) => s.app === 503),

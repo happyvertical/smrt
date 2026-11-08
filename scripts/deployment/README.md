@@ -293,6 +293,12 @@ next invocation rechecks that final state without another publication.
 
 ### Ordinary release fences for continuous static runtimes
 
+Continuous static pods and the maintenance responder carry a `preStop` drain
+(`sleep 5`) and continuous static workloads must set
+`terminationGracePeriodSeconds` of at least 10, so a rollover (for example the
+Helm takeover of a legacy pod template) never answers 502 while ingress-nginx
+still routes to the old pod.
+
 Every actual stopped/migrate proof that exempts a running continuous static
 runtime requires fresh native namespace/database writer-fence facts. This applies
 after adoption and to recovery observations as well. The protected configuration

@@ -37,12 +37,14 @@ spec:
         smrt.happyvertical.com/component: maintenance
     spec:
       automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 15
       containers:
         - name: maintenance
           image: {{ .Values.maintenance.image | quote }}
           command: {{ .Values.maintenance.command | toJson }}
           ports: [{name: http, containerPort: {{ .Values.maintenance.port }}}]
           readinessProbe: {httpGet: {path: /ready, port: http}}
+          lifecycle: {preStop: {exec: {command: ["sleep", "5"]}}}
           resources: {requests: {cpu: 10m, memory: 16Mi}, limits: {cpu: 100m, memory: 64Mi}}
           volumeMounts: [{name: config, mountPath: /etc/nginx/conf.d, readOnly: true}]
       volumes:
