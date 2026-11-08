@@ -2146,8 +2146,20 @@ export async function legacyMain(env = process.env) {
         plan,
       ),
     );
+    // Adoption observations are point-in-time and fail closed (e.g. a periodic
+    // Flux reconcile reports Ready=Unknown at the same revision); nothing is
+    // published before the Git CAS, so an operator re-runs. Success paths do
+    // the same, bounded, reporting the last reason; one stage per call.
+    const resumeAdoption = async (description) => {
+      let result;
+      await until(description, async () => {
+        result = await adoptOrResume(config, adapter(), plan);
+        return true;
+      });
+      return result;
+    };
     for (const expected of ['planned', 'legacy-stopped']) {
-      const result = await adoptOrResume(config, adapter(), plan);
+      const result = await resumeAdoption(`adoption ${expected}`);
       assert.equal(result.stage, expected);
     }
     await assert.rejects(
@@ -2168,7 +2180,7 @@ export async function legacyMain(env = process.env) {
       ),
       /revision/i,
     );
-    const relinquished = await adoptOrResume(config, adapter(), plan);
+    const relinquished = await resumeAdoption('adoption relinquished');
     assert.equal(relinquished.stage, 'relinquished');
     const conflictObject = {
       apiVersion: 'v1',
@@ -2189,7 +2201,20 @@ export async function legacyMain(env = process.env) {
       ],
       conflictObject,
     );
-    await assert.rejects(adoptOrResume(config, adapter(), plan), /manager/i);
+    // Retry only transient (non-manager) rejections. An acceptance would have
+    // advanced the journal, so it aborts at once instead of being retried.
+    let foreignAccepted = false;
+    await until('foreign field manager rejection', async () => {
+      try {
+        await adoptOrResume(config, adapter(), plan);
+        foreignAccepted = true;
+        return true;
+      } catch (error) {
+        if (/manager/i.test(error.message)) return true;
+        throw error;
+      }
+    });
+    assert.equal(foreignAccepted, false, 'foreign field manager was accepted');
     delete conflictObject.metadata.labels;
     k(
       [
@@ -2206,7 +2231,7 @@ export async function legacyMain(env = process.env) {
         (f) => f.manager === 'smrt-exercise-conflict',
       ),
     );
-    const staged = await adoptOrResume(config, adapter(), plan);
+    const staged = await resumeAdoption('adoption helm-staged');
     assert.equal(staged.stage, 'helm-staged');
     // Let rejections reach until(), which keeps the last reason for a timeout.
     await until('staging HR acknowledged', async () => {
@@ -2255,7 +2280,7 @@ export async function legacyMain(env = process.env) {
       );
       rmSync(rejectHook);
       const retryBefore = fenceCalls;
-      assert.equal((await adoptOrResume(config, adapter(), plan)).stage, stage);
+      assert.equal((await resumeAdoption(`adoption ${stage}`)).stage, stage);
       assert.ok(
         fenceCalls > retryBefore,
         'restart must reobserve native fence after actual rejected Git push',
@@ -2263,7 +2288,7 @@ export async function legacyMain(env = process.env) {
     }
     assert.equal(get('helmrelease', 'legacy').metadata.uid, stagedUid);
     assert.equal(
-      (await adoptOrResume(config, adapter(), plan)).stage,
+      (await resumeAdoption('adoption finalized (idempotent)')).stage,
       'finalized',
     );
     for (const old of original) {
