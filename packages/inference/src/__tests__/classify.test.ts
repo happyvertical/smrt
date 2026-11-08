@@ -6,6 +6,7 @@ import {
   AIError,
   AuthenticationError,
   ContentFilterError,
+  ContextLengthError,
   ModelNotFoundError,
   RateLimitError,
 } from '@happyvertical/ai';
@@ -74,6 +75,20 @@ describe('classifyInferenceFailure', () => {
       'credential',
     ],
     ['caller abort', new AIError('aborted', 'AI_ABORTED', 'openai'), undefined],
+    [
+      'API_ERROR over a definitive 400 stops the walk',
+      Object.assign(new AIError('x', 'API_ERROR', 'openai'), {
+        cause: httpError(400),
+      }),
+      undefined,
+    ],
+    ['HTTP 422', httpError(422), undefined],
+    [
+      'invalid_request_error',
+      Object.assign(new Error('x'), { type: 'invalid_request_error' }),
+      undefined,
+    ],
+    ['ContextLengthError', new ContextLengthError('openai'), undefined],
     ['plain TypeError', new TypeError('x is not a function'), undefined],
     [
       'message text alone is never read',

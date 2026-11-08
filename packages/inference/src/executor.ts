@@ -26,6 +26,7 @@ import {
   type InferenceExecutionContext,
   type InferenceExecutor,
   type InferenceModelClient,
+  type InferenceTarget,
   type InferenceTier,
 } from '@happyvertical/smrt-core';
 import { classifyInferenceFailure, isInferenceAbort } from './classify.js';
@@ -34,6 +35,7 @@ import {
   type ChainStep,
   expandTarget,
   validateInferenceConfig,
+  validateInferenceTarget,
 } from './config.js';
 import { InferenceExhaustedError } from './errors.js';
 import type {
@@ -264,7 +266,7 @@ class ChainCall {
       | { label: string; reason: InferenceFailureClass; error?: unknown }
       | undefined;
     let tier = context.resolution.tierResolved;
-    let steps = expandTarget(context.resolution.target, tier, context.config);
+    let steps = expandResolved(context.resolution.target, tier, context.config);
 
     for (;;) {
       for (const step of steps) {
@@ -332,7 +334,7 @@ class ChainCall {
       }
       const resolution = await context.resolveTier(next);
       tier = resolution.tierResolved;
-      steps = expandTarget(resolution.target, tier, context.config);
+      steps = expandResolved(resolution.target, tier, context.config);
     }
 
     if (pending) {
@@ -353,14 +355,30 @@ class ChainCall {
   }
 }
 
-/** Simple unbounded async queue backing `stream()`. */
-function createChunkQueue() {
+/** Validate a resolved target (config or resolver-sourced), then expand it. */
+function expandResolved(
+  target: InferenceTarget,
+  tier: InferenceTier,
+  config: InferenceExecutionContext['config'],
+): ChainStep[] {
+  validateInferenceTarget(target, `resolution.${tier}`, config);
+  return expandTarget(target, tier, config);
+}
+
+/** Async queue backing `stream()`; closing it stops the producer. */
+function createChunkQueue(onClose: () => void) {
   const chunks: string[] = [];
   let wake: (() => void) | undefined;
   let done = false;
+  let closed = false;
   let failure: { error: unknown } | undefined;
   return {
+    /** True once the consumer stopped reading. */
+    get closed() {
+      return closed;
+    },
     push(chunk: string) {
+      if (closed) return;
       chunks.push(chunk);
       wake?.();
     },
@@ -370,19 +388,29 @@ function createChunkQueue() {
       wake?.();
     },
     async *drain(): AsyncGenerator<string> {
-      for (;;) {
-        if (chunks.length > 0) {
-          yield chunks.shift() as string;
-          continue;
+      try {
+        for (;;) {
+          if (chunks.length > 0) {
+            yield chunks.shift() as string;
+            continue;
+          }
+          if (done) {
+            if (failure) throw failure.error;
+            return;
+          }
+          await new Promise<void>((resolve) => {
+            wake = resolve;
+          });
+          wake = undefined;
         }
-        if (done) {
-          if (failure) throw failure.error;
-          return;
+      } finally {
+        // The consumer finished, threw, or broke out early: stop the
+        // provider stream instead of reading (and paying for) the rest.
+        if (!done) {
+          closed = true;
+          chunks.length = 0;
+          onClose();
         }
-        await new Promise<void>((resolve) => {
-          wake = resolve;
-        });
-        wake = undefined;
       }
     },
   };
@@ -445,15 +473,23 @@ export function createChainClient(
       );
     },
     stream(messages: unknown, callerOptions?: InferenceCallOptions) {
-      const queue = createChunkQueue();
-      call('stream', callerOptions)
+      const controller = new AbortController();
+      const queue = createChunkQueue(() => controller.abort());
+      const callerSignal = (callerOptions as { signal?: AbortSignal })?.signal;
+      const signal = callerSignal
+        ? AbortSignal.any([callerSignal, controller.signal])
+        : controller.signal;
+      call('stream', { ...(callerOptions ?? {}), signal })
         .run<void>(
           async (client, opts, emit) => {
             const iterable = method(client, 'stream')(
               messages,
               opts,
             ) as AsyncIterable<string>;
+            // Breaking out of for-await calls the provider iterator's
+            // return(), which ends its request.
             for await (const chunk of iterable) {
+              if (queue.closed) break;
               emit(chunk);
               queue.push(chunk);
             }

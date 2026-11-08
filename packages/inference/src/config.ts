@@ -150,6 +150,56 @@ function checkCandidateList(
   });
 }
 
+function checkTarget(
+  target: InferenceTarget,
+  path: string,
+  aliases: Record<string, unknown>,
+  issues: InferenceConfigIssue[],
+): void {
+  const kind = inferenceTargetKind(target);
+  if (kind === 'alias') {
+    const name = text(target.alias);
+    if (!name) {
+      issues.push({
+        path,
+        code: 'candidate-invalid',
+        message: `${path} has kind "alias" without an alias name`,
+      });
+    } else if (!Object.hasOwn(aliases, name)) {
+      issues.push({
+        path,
+        code: 'alias-unknown',
+        message: `${path} points at unknown alias "${name}"`,
+      });
+    }
+  } else if (kind === 'candidates') {
+    checkCandidateList(
+      target.candidates,
+      `${path}.candidates`,
+      aliases,
+      issues,
+    );
+  }
+}
+
+/**
+ * Validate one resolved target against the config's aliases. A resolver
+ * (#4666 per-user bindings) can return chains that never appear in config,
+ * so the executor checks every target it runs, not only the config block.
+ */
+export function validateInferenceTarget(
+  target: InferenceTarget,
+  path: string,
+  config: InferenceConfig | undefined,
+): void {
+  const issues: InferenceConfigIssue[] = [];
+  const aliases: Record<string, unknown> = isRecord(config?.aliases)
+    ? config.aliases
+    : {};
+  checkTarget(target, path, aliases, issues);
+  if (issues.length > 0) throw new InferenceConfigError(issues);
+}
+
 /** Alias names a chain references directly (its `alias` candidates). */
 function aliasEdges(alias: unknown): string[] {
   if (!isRecord(alias) || !Array.isArray(alias.candidates)) return [];
@@ -190,31 +240,7 @@ export function findInferenceConfigIssues(
   for (const tier of INFERENCE_TIERS) {
     const target = config.tiers?.[tier];
     if (!target) continue;
-    const path = `inference.tiers.${tier}`;
-    const kind = inferenceTargetKind(target);
-    if (kind === 'alias') {
-      const name = text(target.alias);
-      if (!name) {
-        issues.push({
-          path,
-          code: 'candidate-invalid',
-          message: `${path} has kind "alias" without an alias name`,
-        });
-      } else if (!Object.hasOwn(aliases, name)) {
-        issues.push({
-          path,
-          code: 'alias-unknown',
-          message: `${path} points at unknown alias "${name}"`,
-        });
-      }
-    } else if (kind === 'candidates') {
-      checkCandidateList(
-        target.candidates,
-        `${path}.candidates`,
-        aliases,
-        issues,
-      );
-    }
+    checkTarget(target, `inference.tiers.${tier}`, aliases, issues);
   }
 
   // Cycles: depth-first over alias → alias edges, reported once each.
@@ -340,7 +366,10 @@ export function candidateToStep(
   target = {
     ...(provider ? { provider } : {}),
     ...(model ? { model } : {}),
-    ...(baseUrl ? { baseUrl, apiKey: key ?? KEYLESS_PLACEHOLDER } : {}),
+    ...(baseUrl ? { baseUrl } : {}),
+    // A key is never dropped: without its own baseUrl, core's pair rule
+    // refuses the target rather than running it on the configured key.
+    ...(key ? { apiKey: key } : baseUrl ? { apiKey: KEYLESS_PLACEHOLDER } : {}),
   };
   return {
     tier,
