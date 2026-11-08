@@ -27,7 +27,7 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     include: ['src/**/*.{test,spec}.ts'],
-    setupFiles: [smrtVitestSetupPath],
+    setupFiles: [smrtVitestSetupPath, './src/test-home.setup.ts'],
     testTimeout: 60000,
     hookTimeout: 60000,
     fileParallelism: false,

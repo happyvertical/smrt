@@ -143,10 +143,10 @@ role IDs. Restarts reuse the same installation identities. Treat
 with the database in protected backups and during a restore or move of the
 same installation. Deleting, replacing, or rotating the file changes the
 derived identities and invalidates existing bootstrap and local MCP tokens.
-Keep only one active installation for a given secret. A copied data root
-retains the same owner, tenant, and writer IDs, and the runtime currently has
-no way to detect that copy. Start independent installations with a fresh data
-root.
+A data root that is copied, restored or moved is governed by installation
+custody; see [Moving, restoring and copying an installation](#moving-restoring-and-copying-an-installation).
+A restored data root keeps its identities only when its seed does, and runtime
+initialization no longer silently regenerates a seed that went missing.
 
 The invitation and active owner membership authorize the owner. The same
 seed derives a separate writer UUID. The local runtime binds it to the
@@ -167,6 +167,89 @@ Background jobs and application-defined paid capabilities remain disabled until
 explicitly enabled. With embedded job topology, `createEmbeddedJobRunner()`
 returns the normal s-m-r-t `TaskRunner`, so the application keeps one enqueue
 and execution contract without requiring a separate worker service.
+
+### Moving, restoring and copying an installation
+
+The seed (`secrets/application.secret`) *is* the installation: the device,
+tenant, owner, profile and membership IDs and the keys of bootstrap and local
+MCP tokens all derive from it, and it lives inside the data root. Anything that
+copies the data root (`smrt app backup`, a synced folder, a manual `cp`) copies
+the identity. Offline, a restore onto a new machine and a second active copy
+are byte-identical, so the runtime never guesses between them (#4704).
+
+**Decision.** Which *location* last took custody of a seed is recorded, and
+every arrival it cannot attribute is refused until the operator says what it
+is. Two records carry the evidence; neither holds secret material, and each
+names the installation (the public device ID), an `epoch` that counts custody
+transfers, and a random `activationId`:
+
+- `<data root>/secrets/installation.json` travels with every copy.
+- `<state root>/installation.json` stays at the location. The state root is
+  derived from the data-root path and is outside the data root, so a copy never
+  carries it.
+
+Matching `activationId`s mean the data root was last activated here. Startup
+(`initializeLocalApplicationRuntime`, under its initialization lock, before any
+migration or table is touched) behaves as follows, with the `installation_*`
+code in `LocalRuntimeError`:
+
+| Situation | Status | Startup |
+|---|---|---|
+| First run, or a data root started fresh | n/a | Establishes custody, epoch 1 (a stale record for a deleted data root at this location is replaced) |
+| Installation older than the records | `unrecorded` | Adopted at epoch 1 (trust on first use; a copy made before this feature cannot be told from the original) |
+| Records agree | `in-custody` | Starts |
+| Copy or move arrived (this location never activated it) | `arrived` | `installation_unverified` |
+| Data root restored from another activation, an older backup, or another installation's backup put over this location | `diverged`, `data-record-missing` | `installation_unverified` (a first run that stopped between its two record writes is finished instead) |
+| Location retired by `retire` | `retired` | `installation_unverified` |
+| Seed differs from the recorded installation | `seed-mismatch` | `installation_unverified` |
+| Record malformed, extended, oversized, a link or not private | `record-invalid` | `installation_unverified` |
+| Seed file missing although the bootstrap table or the data root's custody record shows one existed | `seed-missing` | `installation_seed_missing`; the seed is **not** recreated |
+
+A refusal changes nothing and never reaches the database schema or tokens. Only
+a seed this very run created counts as new; a seed that already existed, even
+beside an empty database, is judged like any arrival. The data record is the
+authority on which installation a seed belongs to, so a seed that disagrees with
+it is `seed-mismatch` even if another record is corrupted.
+
+**Declarations** (exported functions; `smrt app installation <subcommand>`).
+All require the application to be stopped (they take the writer lease and the
+initialization lock) and print secret-free JSON that spells out the effects.
+`status` (`inspectInstallationCustody`) never changes a custody record; like
+startup it may create the private state directory and tighten the `secrets/`
+directory mode:
+
+| Declaration | Use it when | Seed | Identities | Seed-keyed tokens | Epoch |
+|---|---|---|---|---|---|
+| `restoreInstallation` (`restore --origin-retired`) | The same installation moved or was restored and the origin is stopped or deleted | kept | unchanged | still valid | +1 |
+| `reseedInstallation` (`reseed`) | A copy whose origin stays active; a lost seed with no backup; planned rotation | **replaced** (old one not kept) | **device, tenant, owner, profile, membership derivations change** | **invalidated**; active local MCP tokens are revoked | 1 (`previousInstallationId` names the old one) |
+| `recoverInstallationSeed` (`recover-seed <file>`) | The seed was lost or replaced and a backup exists | restored from backup, which must derive the recorded installation | unchanged | still valid | unchanged |
+| `retireInstallation` (`retire`) | After moving away from this location | kept | unchanged | unchanged | unchanged; this location cannot start until `restore` |
+
+`restore` requires the explicit assertion `originRetired: true`: the runtime
+cannot see another machine, so it records the claim rather than verifying it.
+A copy whose origin stays active must be re-seeded instead. Re-seeding keeps
+all application data: existing rows keep the IDs they were created with and
+only new derivations use the new seed, so the copy becomes a distinct sync
+device. A pending owner invitation was keyed by the old seed; run
+`smrt app recover` for a new one. Sessions are not seed-keyed and are not
+revoked. `smrt app export` / `import` produce an independent installation by
+construction (secrets are not exported; the target gets its own seed).
+
+**Missing seed.** There is no server escrow. A backup of the seed restores
+everything exactly (`recover-seed`); with no backup the seed is lost and the
+only way forward is `reseed`, whose effects are the table above. The runtime
+refuses to quietly mint a replacement because that would silently change every
+derived identity and token key.
+
+**Limits.** This is a local, cooperative control. A byte-identical clone of
+both the data root and the state root (a VM or home-directory image), a copy
+made before the records existed, and two operators who each assert `restore`
+from one backup are not detectable offline; the later primary-writer relay
+compares `epoch` and `activationId` to catch them (equal epochs with different
+activations are a conflict). The state root is keyed by the data-root path as
+spelled, so a differently cased alias of one macOS path is a different
+location. Declarations run `smrt-app-runtime` code under the writer lease; keep
+at most one SQLite writer on a data root (#3379).
 
 ### Local desktop MCP credentials
 

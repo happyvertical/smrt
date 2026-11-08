@@ -8,6 +8,7 @@
 
 import { resolve } from 'node:path';
 import { ApplicationStartError, boundedTail, redactSecrets } from './errors.js';
+import { runInstallationOperation } from './installation.js';
 import {
   devServerArguments,
   launchVite,
@@ -52,6 +53,8 @@ export const APP_COMMANDS: Readonly<Record<string, string>> = Object.freeze({
     'Prepare storage custody and run smrt db:migrate under the lock',
   'token [list|revoke <id>] [--scopes ...]':
     'Local: issue, list, or revoke a scoped bearer token for a local MCP client',
+  'installation [status|restore|reseed|recover-seed|retire]':
+    'Local: declare a restored move, an independent copy, or a recovered seed',
   'worker [task|schedule]': 'Deployed: run the task or schedule worker',
   'dev [...vite args]': "Run the application's Vite dev server",
   'build [...vite args]':
@@ -135,6 +138,7 @@ const ENV_FILE_OPERATIONS = new Set<string>([
   ...APP_OPERATIONS,
   'migrate',
   'token',
+  'installation',
   'dev',
   'build',
   'vite',
@@ -167,9 +171,9 @@ export async function runAppCommand(
     io.stdout(renderAppHelp());
     return 0;
   }
-  // `dev`/`build`/`vite` forward `--help` to Vite; `token` has its own usage.
+  // `dev`/`build`/`vite` forward `--help` to Vite; `token` and `installation` have their own usage.
   if (
-    !['dev', 'build', 'vite', 'token'].includes(operation) &&
+    !['dev', 'build', 'vite', 'token', 'installation'].includes(operation) &&
     args.some((arg) => arg === '--help' || arg === '-h')
   ) {
     io.stdout(renderAppHelp());
@@ -211,6 +215,9 @@ export async function runAppCommand(
     if (operation === 'migrate') return await prepareMigration(context, args);
     if (operation === 'worker') return await runWorker(context, args);
     if (operation === 'token') return await runTokenOperation(context, args);
+    if (operation === 'installation') {
+      return await runInstallationOperation(context, args);
+    }
     if (!(APP_OPERATIONS as readonly string[]).includes(operation)) {
       throw new Error(`Unknown app operation: ${operation}`);
     }
