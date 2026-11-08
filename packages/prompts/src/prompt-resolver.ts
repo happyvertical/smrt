@@ -162,6 +162,9 @@ export async function resolvePrompt(
     // declares it (#4755).
     const latency = PromptRegistry.get(key)?.ai.latency;
     if (latency) ai.latency = latency;
+    // The degradation floor is the code default's alone (#4752).
+    const minimumTier = PromptRegistry.get(key)?.ai.minimumTier;
+    if (minimumTier) ai.minimumTier = minimumTier;
   }
 
   return {
