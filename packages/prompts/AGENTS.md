@@ -52,13 +52,29 @@ write) or `PromptOverrideCollection.setTemplateOverride()` /
 - `vitest.config.ts` runs two projects (`server` node + `smrtVitestPlugin`, `svelte` jsdom + `@sveltejs/vite-plugin-svelte` with `conditions: ['browser']`) because the browser condition would send `smrt-core` to its browser build if applied globally.
 - `PromptSettingsService.create()` builds its `PromptOverrideCollection` with the caller's `defaultListLimit`/`maxListLimit` stripped before the bulk `getOverrideMapForKeys()` enumeration read that backs `listPromptSettings()` — the #3056 hazard class in `smrt-features`'s `FeatureOverrideCollection.getOverrideMap()`, applied here proactively rather than left for a follow-up issue. A host-configured list bound must never silently drop a key's override from a management screen.
 
+## Usage tags (#4751)
+
+`resolvePrompt()` returns `ai.usageTags = { promptKey, promptLayer,
+templateHash }`: `promptLayer` is the highest layer that supplied the template
+(`default | config | app | tenant | runtime`; a params-only layer does not
+count), `templateHash` the first 12 hex chars of the SHA-256 of the unrendered
+effective template (Web Crypto, so the root stays free of `node:crypto`).
+`promptMessageOptions(ai, { usageTags? })` is the one helper that turns a
+resolution into `ai.message()` options; package copies re-export it. Tag
+precedence, low to high: a `usageTags` object in params (tenant-editable, so
+it cannot mask identity), the resolution's tags, the caller's. Every consumer
+call site must forward them (`promptMessageOptions()` or a spread of
+`resolved.ai`); core lifts `promptKey` into `_smrt_ai_usage.prompt_key`
+(`../core/agents/ai-usage.md`).
+
 ## Prompt keys are persisted identifiers
 
 Overrides are stored keyed by the exact `key` string and resolved by that
 string at runtime. **Renaming a key orphans every existing override and
-silently reverts every tenant to the registry default.** Treat a shipped key
-as immutable; a rename needs a data migration over
-`_smrt_prompt_overrides.key`, not an edit.
+silently reverts every tenant to the registry default**, and it also orphans
+the key's `_smrt_ai_usage` series: history stays under the old `prompt_key`
+and outcome labels never join the new one. Treat a shipped key as immutable;
+a rename needs a data migration over `_smrt_prompt_overrides.key`, not an edit.
 
 ## Caching
 
