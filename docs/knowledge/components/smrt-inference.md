@@ -1,14 +1,14 @@
 ---
 type: "Component"
 title: "@happyvertical/smrt-inference"
-description: "Inference alias chains with classified failures, recorded fallback and ladder degradation, plus the smrt doctor --ai binding check, for SMRT inference tiers"
+description: "Inference alias chains with classified failures, recorded fallback and ladder degradation, the smrt doctor --ai binding check, layered app/tenant binding storage and the InferenceSettingsPanel, for SMRT inference tiers"
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-08T22:46:51Z"
+  at: "2026-11-08T22:53:53Z"
 audience: "internal"
-evidence_level: "manifest-described"
-source_revision: "sha256:b3d4b767bafa76e357937d2a6d056aa8814d2f1217eb2c37f407f740b6dd7fa1"
+evidence_level: "source-inspected"
+source_revision: "sha256:c2ba44fd583e06c303aea44a389155b070d5c1155ad59dff8ba33fa52c3dd4ad"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/inference/package.json"
@@ -25,7 +25,7 @@ sources:
 - Directory: `packages/inference`
 - Private: no
 - Object source: `domain-artifact`
-- Evidence level: `manifest-described`
+- Evidence level: `source-inspected`
 
 ## Documentation
 
@@ -49,5 +49,15 @@ sources:
 ## Exports
 
 - `.`
+- `./manifest`
+- `./manifest.json`
+- `./models`
 - `./node`
 - `./resolver`
+- `./server`
+- `./svelte`
+
+## Models
+
+- `InferenceOverride` (collection `inferenceoverrides`, extends `SmrtObject`)
+- `InferenceOverrideCollection` (collection `inferenceoverrides`, extends `SmrtCollection`)

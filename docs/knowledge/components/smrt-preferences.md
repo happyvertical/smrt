@@ -5,10 +5,10 @@ description: "Tenant defaults and per-user overrides for user-interface preferen
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T15:48:19Z"
+  at: "2026-11-08T15:31:46Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:11e765a68d68e23ce113800939d29faac492af871d71ef4a3d616976e5707669"
+source_revision: "sha256:5e96411045529866fa1032680995c44cc0866605465d46b046b41a3cb6d83b88"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/preferences/package.json"
@@ -38,6 +38,7 @@ sources:
 ## Framework dependencies
 
 - [smrt-core](/components/smrt-core.md)
+- [smrt-inference](/components/smrt-inference.md)
 - [smrt-svelte](/components/smrt-svelte.md)
 - [smrt-tenancy](/components/smrt-tenancy.md)
 - [smrt-users](/components/smrt-users.md)
