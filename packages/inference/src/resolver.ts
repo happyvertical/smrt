@@ -116,13 +116,11 @@ export type InferenceConfigLevel = 'user' | 'tenant';
 /** A resolver plus the read/write helpers the settings panel uses. */
 export interface UserInferenceResolver extends InferenceResolver {
   /**
-   * The tier → target map for the current principal (or `scope`), without
+   * The tier → target map for the ambient principal (never a caller-chosen
+   * tenant or user), without
    * keys unless `redact: false` (server-only; never send that to a client).
    */
-  resolveBindings(
-    scope?: Partial<InferencePrincipal>,
-    options?: { redact?: boolean },
-  ): Promise<InferenceBindingMap>;
+  resolveBindings(options?: { redact?: boolean }): Promise<InferenceBindingMap>;
   /**
    * Validate and store a config for the current principal through
    * `SecretService.store()`, then invalidate the cache. `user` needs a
@@ -358,11 +356,10 @@ export function createUserInferenceResolver(
       };
     },
 
-    async resolveBindings(scope, bindingOptions = {}) {
+    async resolveBindings(bindingOptions = {}) {
       const redact = bindingOptions.redact !== false;
-      const ambient = identityFor({ tenantId: scope?.tenantId });
-      const tenantId = ambient.tenantId;
-      const userId = scope?.userId ? text(scope.userId) : ambient.userId;
+      // Identity is ambient only: no caller-chosen tenant or user.
+      const { tenantId, userId } = identityFor({});
       if (!tenantId) return { tiers: {} };
       const layers = await getLayers(tenantId, userId);
       const map: InferenceBindingMap = {

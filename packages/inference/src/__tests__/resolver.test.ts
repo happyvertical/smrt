@@ -338,6 +338,10 @@ describe('cache', () => {
     await expect(
       resolver.write('tenant', { provider: 'openai', apiKey: TENANT_KEY }),
     ).rejects.toThrow(InferenceProviderConfigError);
+    // A provider-only binding would borrow the server's environment key.
+    await expect(
+      resolver.write('tenant', { provider: 'anthropic', model: 'x' }),
+    ).rejects.toThrow(/baseUrl is required.*apiKey is required/);
     principal.current = undefined;
     await expect(resolver.write('tenant', tenantConfig)).rejects.toThrow(
       /tenant context/,
@@ -356,7 +360,7 @@ describe('redaction and errors', () => {
     });
     secrets.seed(TENANT, inferenceProviderConfigSecretName({}), tenantConfig);
 
-    const map = await resolver.resolveBindings(undefined, { redact: true });
+    const map = await resolver.resolveBindings({ redact: true });
     const serialized = JSON.stringify(map);
     expect(serialized).not.toContain(USER_KEY);
     expect(serialized).not.toContain(TENANT_KEY);
@@ -373,7 +377,7 @@ describe('redaction and errors', () => {
     expect(JSON.stringify(await resolver.resolveBindings())).not.toContain(
       USER_KEY,
     );
-    const raw = await resolver.resolveBindings(undefined, { redact: false });
+    const raw = await resolver.resolveBindings({ redact: false });
     expect(raw.tiers.good).toMatchObject({ apiKey: USER_KEY, layer: 'user' });
   });
 

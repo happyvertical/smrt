@@ -45,9 +45,11 @@ order), `fallback`, the app `inference` block, then the configured client
   `inference.provider-config:tenant`. The value is
   `{ provider, baseUrl, model, apiKey, preset, params, source?, tiers? }`;
   hosted (#4759) writes the same type with `source: 'hosted'`.
-  `parseInferenceProviderConfig()` refuses a key without its own endpoint
-  (core's pair rule; a preset supplies it), a preset without a model, unknown
-  fields, and `source: 'app'`. A corrupt stored value fails the call with
+  `parseInferenceProviderConfig()` requires every binding to be
+  self-contained (`baseUrl` and `apiKey`, `'smrt-local'` for keyless local
+  servers, or a preset that supplies the endpoint), so a stored binding never
+  borrows the server's environment credentials; it also refuses a preset
+  without a model, unknown fields, and `source: 'app'`. A corrupt stored value fails the call with
   `InferenceProviderConfigError` (paths only, never values); a missing,
   disabled or expired secret is simply no layer.
 - **Identity.** The ambient principal (tenancy context, then the users
