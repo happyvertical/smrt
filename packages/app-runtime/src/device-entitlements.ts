@@ -67,8 +67,8 @@ const DEFAULT_REFRESH_TIMEOUT_MS = 10_000;
 const MAX_FILE_BYTES = 32 * 1024;
 const MAX_ID_LENGTH = 255;
 const MAX_KEY_ID_LENGTH = 128;
-const MAX_FEATURE_KEYS = 256;
-const MAX_FEATURE_KEY_LENGTH = 200;
+const MAX_FEATURE_KEYS = 64;
+const MAX_FEATURE_KEY_LENGTH = 128;
 const SIGNATURE_BYTES = 64;
 const SIGNATURE_DOMAIN = 'smrt-device-entitlement-v1\0';
 const BASE64URL = /^[A-Za-z0-9_-]+$/;
@@ -163,7 +163,7 @@ export interface DeviceEntitlementStatus {
   featureKeys: readonly string[];
   issuedAt?: number;
   expiresAt?: number;
-  /** End of the grace period, when the snapshot is in or past expiry. */
+  /** `expiresAt` plus the grace period; set whenever a snapshot is held. */
   graceEndsAt?: number;
 }
 
@@ -228,6 +228,9 @@ function validFeatureKeys(value: unknown): value is string[] {
 function toPublicKey(id: string, input: DeviceEntitlementPublicKey): KeyObject {
   let key: KeyObject;
   if (typeof input === 'string') {
+    if (/PRIVATE KEY/.test(input)) {
+      throw new TypeError(`Trusted key "${id}" must be a public key`);
+    }
     key = createPublicKey({ key: input, format: 'pem' });
   } else if (isKeyObject(input)) {
     if (input.type !== 'public') {
@@ -313,12 +316,16 @@ export function signDeviceEntitlementSnapshot(
     'utf8',
   );
   const signature = sign(null, signedBytes(payload), privateKey);
-  return {
+  const envelope: DeviceEntitlementEnvelope = {
     version: DEVICE_ENTITLEMENT_FORMAT_VERSION,
     keyId: snapshot.keyId,
     payload: payload.toString('base64url'),
     signature: signature.toString('base64url'),
   };
+  if (Buffer.byteLength(JSON.stringify(envelope)) > MAX_FILE_BYTES) {
+    throw new TypeError('Device entitlement snapshot is too large');
+  }
+  return envelope;
 }
 
 function signedBytes(payload: Buffer): Buffer {
@@ -415,6 +422,17 @@ interface ResolvedPolicy {
   maxLifetimeMs: number;
 }
 
+/** A clock that throws or returns junk reads as NaN, which fails closed. */
+function safeClock(clock: () => number): () => number {
+  return () => {
+    try {
+      return clock();
+    } catch {
+      return Number.NaN;
+    }
+  };
+}
+
 function resolvePolicy(
   options: DeviceEntitlementVerifyOptions,
 ): ResolvedPolicy {
@@ -425,7 +443,7 @@ function resolvePolicy(
     keys: buildKeySet(options.trustedKeys),
     accountId: options.accountId,
     deviceId: options.deviceId,
-    now: options.now ?? Date.now,
+    now: safeClock(options.now ?? Date.now),
     clockSkewMs: assertIntegerMs(
       options.clockSkewMs,
       'clockSkewMs',
@@ -749,6 +767,9 @@ export class DeviceEntitlementCache {
   }
 
   async #evaluate(): Promise<DeviceEntitlementStatus> {
+    // Watermark first: an install landing between the two reads then shows a
+    // newer file against an older watermark (accepted), never the reverse.
+    const watermark = await this.#readWatermark();
     const text = await readBounded(this.#filePath);
     if (text === null) return LOCAL_ABSENT;
     const verification = verifyWithPolicy(text, this.#policy);
@@ -758,7 +779,6 @@ export class DeviceEntitlementCache {
         verification.reason,
       );
     }
-    const watermark = await this.#readWatermark();
     if (watermark?.kind === 'corrupt') return local('invalid', 'unreadable');
     const { snapshot } = verification;
     if (watermark && snapshot.issuedAt < watermark.issuedAt) {
@@ -792,6 +812,9 @@ export class DeviceEntitlementCache {
       const floor = watermark?.kind === 'ok' ? watermark.issuedAt : -Infinity;
       const serialized =
         typeof offered === 'string' ? offered : JSON.stringify(offered);
+      if (Buffer.byteLength(serialized) > MAX_FILE_BYTES) {
+        throw new Error('too large');
+      }
       if (snapshot.issuedAt < floor) {
         return {
           accepted: false,

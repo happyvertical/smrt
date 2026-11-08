@@ -106,8 +106,8 @@ Application infrastructure composition for the validated runtime profiles in
   report a reason and keep what is stored. Invalid *configuration* (non-Ed25519
   or private key, empty key set, out-of-range durations) throws at construction.
 - Replay: the newest accepted `issuedAt` lives in `<filePath>.watermark`; install
-  and load both compare against it. Deleting both files or rolling the clock
-  back replays an unexpired snapshot; the issuer's lifetime bounds that.
+  and load both compare against it. Deleting/corrupting the watermark or rolling the
+  clock back replays an unexpired snapshot; the issuer's lifetime bounds that.
 - Grace (`gracePeriodMs`, default 0, max 30 d) keeps keys on past `expiresAt`
   (`state: 'grace'`); skew applies to `issuedAt` only, never extends expiry.
 - Features integration is structural: `cache.grantSource()` is a

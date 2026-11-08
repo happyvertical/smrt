@@ -580,8 +580,9 @@ const status = await entitlements.status(); // { tier, state, reason?, featureKe
   only; it never extends an expiry.
 - **Replay.** The newest accepted `issuedAt` is kept in `<filePath>.watermark`,
   and both `install()` and `status()` compare against it. A user who deletes
-  both files or sets the clock back can reuse a snapshot that has not expired;
-  keep issued lifetimes short enough that this is acceptable.
+  or corrupts the watermark (or both files) or sets the clock back can reuse a
+  snapshot that has not expired; keep issued lifetimes short enough that this is
+  acceptable. A snapshot carries at most 64 keys of 128 characters.
 - **Trust.** The cache file and its directory are not trusted; the key set is.
   Ship the public keys in the application, not in the data root.
 - **Refresh.** The transport is injected (the hosted endpoint is not part of

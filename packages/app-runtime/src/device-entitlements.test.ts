@@ -316,6 +316,31 @@ describe('verifyDeviceEntitlementSnapshot', () => {
     ).toBe('bad_signature');
   });
 
+  it('round-trips a maximal snapshot within the storage cap', () => {
+    const featureKeys = Array.from(
+      { length: 64 },
+      (_, index) => `${'k'.repeat(120)}.${String(index).padStart(7, '0')}`,
+    );
+    expect(featureKeys[0]).toHaveLength(128);
+    const envelope = issue({ featureKeys });
+    expect(JSON.stringify(envelope).length).toBeLessThan(32 * 1024);
+    expect(reasonOf(envelope)).toBe('ok');
+    expect(() => issue({ featureKeys: [...featureKeys, 'one.more'] })).toThrow(
+      TypeError,
+    );
+  });
+
+  it('treats a throwing or junk clock as fail-closed', () => {
+    expect(reasonOf(issue(), { now: () => Number.NaN })).toBe('unreadable');
+    expect(
+      reasonOf(issue(), {
+        now: () => {
+          throw new Error('clock');
+        },
+      }),
+    ).toBe('unreadable');
+  });
+
   it('refuses to sign an invalid snapshot', () => {
     for (const bad of [
       { featureKeys: ['a', 'a'] },
@@ -341,6 +366,14 @@ describe('verifyDeviceEntitlementSnapshot', () => {
       verifyDeviceEntitlementSnapshot(issue(), {
         ...base,
         trustedKeys: { [KEY_ID]: issuer.privateKey },
+      }),
+    ).toThrow(/public key/);
+    expect(() =>
+      verifyDeviceEntitlementSnapshot(issue(), {
+        ...base,
+        trustedKeys: {
+          [KEY_ID]: issuer.privateKey.export({ type: 'pkcs8', format: 'pem' }),
+        },
       }),
     ).toThrow(/public key/);
     expect(() =>
