@@ -396,6 +396,8 @@ export async function run(command, args, input) {
       { maxBuffer: 32 * 1024 * 1024 },
       () => {},
     );
+    // An early-exiting tool must fail by exit status, not an unhandled EPIPE.
+    child.stdin.on('error', () => {});
     if (input !== undefined) child.stdin.end(input);
     return await new Promise((resolve, reject) => {
       let output = '';
@@ -1682,6 +1684,7 @@ export function createLiveAdapter(
           env,
           maxBuffer: 8 * 1024 * 1024,
         });
+        child.stdin.on('error', () => {});
         child.stdin.end(input);
         let output = '';
         child.stdout.on('data', (chunk) => {
