@@ -47,14 +47,17 @@ export {
 } from './framework-features.js';
 export {
   checkFeature,
+  FEATURE_DISABLED_CODE,
+  FEATURE_GATE_STATUS,
   FEATURE_UPGRADE_REQUIRED_CODE,
-  FEATURE_UPGRADE_STATUS,
+  type FeatureDisabled,
+  type FeatureGateDenial,
   type FeatureGateOptions,
   type FeatureGateResult,
+  FeatureUnavailableError,
   type FeatureUpgradeRequired,
-  FeatureUpgradeRequiredError,
+  featureDenialResponse,
   featureGateResponse,
-  featureUpgradeResponse,
   requireFeature,
 } from './require-feature.js';
 export {

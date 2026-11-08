@@ -16,8 +16,9 @@ import {
 } from './framework-features.js';
 import {
   checkFeature,
+  FEATURE_DISABLED_CODE,
   FEATURE_UPGRADE_REQUIRED_CODE,
-  FeatureUpgradeRequiredError,
+  FeatureUnavailableError,
   featureGateResponse,
   requireFeature,
 } from './require-feature.js';
@@ -409,7 +410,7 @@ describe('plan grants as feature flags (#4761)', () => {
     expect(denied).toEqual({
       allowed: false,
       featureKey: FEATURE_INFERENCE_HOSTED,
-      upgrade: {
+      denial: {
         code: FEATURE_UPGRADE_REQUIRED_CODE,
         featureKey: FEATURE_INFERENCE_HOSTED,
         label: 'Hosted AI',
@@ -439,14 +440,15 @@ describe('plan grants as feature flags (#4761)', () => {
       tenantId: 't1',
       grantSource: source,
     }).catch((caught: unknown) => caught);
-    expect(error).toBeInstanceOf(FeatureUpgradeRequiredError);
-    expect((error as FeatureUpgradeRequiredError).status).toBe(403);
-    expect((error as FeatureUpgradeRequiredError).featureKey).toBe(
+    expect(error).toBeInstanceOf(FeatureUnavailableError);
+    expect((error as FeatureUnavailableError).status).toBe(403);
+    expect((error as FeatureUnavailableError).code).toBe(
+      FEATURE_UPGRADE_REQUIRED_CODE,
+    );
+    expect((error as FeatureUnavailableError).featureKey).toBe(
       FEATURE_INFERENCE_HOSTED,
     );
-    expect((error as FeatureUpgradeRequiredError).toResponse().status).toBe(
-      403,
-    );
+    expect((error as FeatureUnavailableError).toResponse().status).toBe(403);
   });
 
   it('allows a granted key and keeps a denial when plan lookup fails', async () => {
@@ -479,9 +481,104 @@ describe('plan grants as feature flags (#4761)', () => {
       grantSource: failing,
     });
     expect(denied.allowed).toBe(false);
-    expect(denied.allowed ? null : denied.upgrade).toMatchObject({
+    expect(denied.allowed ? null : denied.denial).toMatchObject({
       grantingPlan: null,
       message: 'Hosted AI is not included in the current plan.',
+    });
+  });
+
+  it('answers feature_disabled, not an upgrade, under a DISABLE override', async () => {
+    const { overrides, resolver } = await setup();
+    const findGrantingPlan = vi.fn(async () => ({
+      planKey: 'cloud',
+      name: 'Cloud',
+    }));
+    const source: FeatureGrantSource = {
+      getGrants: async (tenantId: string) =>
+        tenantId === 't1'
+          ? { featureKeys: [FEATURE_INFERENCE_HOSTED], planKey: 'cloud' }
+          : null,
+      findGrantingPlan,
+    };
+    await overrides.setGlobalOverride(
+      FEATURE_INFERENCE_HOSTED,
+      FeatureOverrideEffect.DISABLE,
+    );
+
+    // Granted and ungranted tenants alike: upgrading would not help.
+    for (const tenantId of ['t1', 't2']) {
+      const denied = await checkFeature(FEATURE_INFERENCE_HOSTED, {
+        resolver,
+        tenantId,
+        grantSource: source,
+      });
+      expect(denied).toEqual({
+        allowed: false,
+        featureKey: FEATURE_INFERENCE_HOSTED,
+        denial: {
+          code: FEATURE_DISABLED_CODE,
+          featureKey: FEATURE_INFERENCE_HOSTED,
+          label: 'Hosted AI',
+          paid: true,
+          tenantId,
+          disabledBy: 'global_override',
+          message: 'Hosted AI is disabled.',
+        },
+      });
+    }
+    expect(findGrantingPlan).not.toHaveBeenCalled();
+
+    const response = await featureGateResponse(FEATURE_INFERENCE_HOSTED, {
+      resolver,
+      tenantId: 't1',
+      grantSource: source,
+    });
+    expect(response?.status).toBe(403);
+    const body = await response?.json();
+    expect(body).toMatchObject({
+      error: 'Hosted AI is disabled.',
+      code: FEATURE_DISABLED_CODE,
+    });
+    expect(body).not.toHaveProperty('grantingPlan');
+
+    const error = await requireFeature(FEATURE_INFERENCE_HOSTED, {
+      resolver,
+      tenantId: 't1',
+      grantSource: source,
+    }).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(FeatureUnavailableError);
+    expect((error as FeatureUnavailableError).code).toBe(FEATURE_DISABLED_CODE);
+
+    // A tenant DISABLE on a granted tenant is also not an upgrade.
+    await overrides.setGlobalOverride(
+      FEATURE_INFERENCE_HOSTED,
+      FeatureOverrideEffect.INHERIT,
+    );
+    await overrides.setTenantOverride(
+      FEATURE_INFERENCE_HOSTED,
+      't1',
+      FeatureOverrideEffect.DISABLE,
+    );
+    const tenantDenied = await checkFeature(FEATURE_INFERENCE_HOSTED, {
+      resolver,
+      tenantId: 't1',
+      grantSource: source,
+    });
+    expect(tenantDenied.allowed ? null : tenantDenied.denial).toMatchObject({
+      code: FEATURE_DISABLED_CODE,
+      disabledBy: 'tenant_override',
+    });
+
+    // Merely ungranted, with no override: still the upgrade answer.
+    const ungranted = await checkFeature(FEATURE_INFERENCE_HOSTED, {
+      resolver,
+      tenantId: 't2',
+      grantSource: source,
+    });
+    expect(ungranted.allowed ? null : ungranted.denial).toMatchObject({
+      code: FEATURE_UPGRADE_REQUIRED_CODE,
+      grantingPlan: { planKey: 'cloud', name: 'Cloud' },
+      message: 'Hosted AI requires the Cloud plan.',
     });
   });
 

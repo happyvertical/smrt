@@ -56,8 +56,11 @@ describe('package entry', () => {
       'requireFeature',
       'checkFeature',
       'featureGateResponse',
-      'featureUpgradeResponse',
-      'FeatureUpgradeRequiredError',
+      'featureDenialResponse',
+      'FeatureUnavailableError',
+      'FEATURE_GATE_STATUS',
+      'FEATURE_UPGRADE_REQUIRED_CODE',
+      'FEATURE_DISABLED_CODE',
     ]) {
       expect((entry as Record<string, unknown>)[name]).toBeDefined();
     }

@@ -97,13 +97,18 @@ import { SubscriptionFeatureSource } from '@happyvertical/smrt-subscriptions';
 const grantSource = await SubscriptionFeatureSource.create(dbOptions);
 const resolver = new FeatureResolver(dbOptions);
 
-// SvelteKit +server.ts: a structured 403 naming the key and the plan.
+// SvelteKit +server.ts: a structured 403 naming the key and the reason.
 const denied = await featureGateResponse(FEATURE_SYNC_DEVICES, { resolver, tenantId, grantSource });
 if (denied) return denied;
 
-// Services: throws FeatureUpgradeRequiredError (status 403, .upgrade, .toResponse()).
+// Services: throws FeatureUnavailableError (status 403, .code, .denial, .toResponse()).
 await requireFeature(FEATURE_SYNC_DEVICES, { resolver, tenantId, grantSource });
 ```
+
+A denial body has `code: 'feature_upgrade_required'` with the `grantingPlan`
+when the plan is what is missing, or `code: 'feature_disabled'` with
+`disabledBy` (`global_override` or `tenant_override`) and no plan when an
+override turned the feature off, since no upgrade would help.
 
 The gate checks only that the feature is present for the tenant; authenticate
 the caller and check its permissions first, and pass the tenant you verified.

@@ -5,10 +5,10 @@ description: "Code-first feature flags and tenant-aware overrides for the SMRT f
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-08T15:00:30Z"
+  at: "2026-11-08T15:01:48Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:cc0d83f83d96991b2328fb426f0a52ca17a6d9051471d3c1e0d8070370f4cfd1"
+source_revision: "sha256:91e99a4eb3b920b7352f226177702205e226a9674a08e7fe164f2badfb82363a"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/features/package.json"
