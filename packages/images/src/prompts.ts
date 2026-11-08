@@ -27,6 +27,7 @@ Image name: {imageName}
 Image description: {imageDescription}
 
 Return only the alt text, with no commentary or surrounding quotation marks.`,
+  ai: { profile: 'good' },
   editable: {
     template: true,
     profile: true,
