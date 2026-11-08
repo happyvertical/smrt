@@ -32,215 +32,43 @@ panel with layered binding storage (#4754).
 - `./gate` (Node-only, #4760): the hosted spend gate and kill switch
   (below). `browser-safe.test.ts` keeps it off the root graph.
 
-## Per-user and per-tenant bindings (`src/resolver.ts`, #4756)
+## Per-user and per-tenant bindings (#4756)
 
-`createUserInferenceResolver({ db | secrets, fallback?, ttlMs?, principal? })`
-is core's `InferenceResolver`. Per tier, highest first: the user's stored
-config (its `tiers[tier]`, then its default binding), the tenant's (same
-order), `fallback`, the app `inference` block, then the configured client
-(`SMRT_AI_*` / process `ai`). Every resolution carries `target.source`
-(`byo | local | hosted | app`); core records it as the `source` usage tag.
+`createUserInferenceResolver()` resolves per tier: the user's stored config,
+the tenant's, `fallback`, the app `inference` block, then the configured
+client; every resolution carries `target.source` (`byo | local | hosted |
+app`, the `source` usage tag). Keys live only in the smrt-secrets type
+`inference.provider-config` (`context = tenantId`), every stored binding is
+self-contained (own `baseUrl` + `apiKey`, or a preset), the user layer
+applies only to a principal of that tenant, and agents pass `userId: null`
+(tenant layer only). The stored config also carries `mode` (#4757).
+Details: [agents/resolver.md](agents/resolver.md).
 
-- **Registration order.** `registerUserInferenceResolver(r)` installs
-  `createInferenceResolver(r)`: the #4752 validating resolver stays outermost
-  (chain config is validated first), then the user resolver, then its
-  `fallback`, then core's config resolution. A later `registerInference()`
-  keeps it (the wrapper is marked as this package's own); a bare
-  `setInferenceResolver(r)` would drop the validation.
-- **Storage.** One smrt-secrets type, `inference.provider-config`
-  (`category`), via `SecretService.store()` / `retrieve()` only, with
-  `context = tenantId`. Names: `inference.provider-config:user:<userId>` and
-  `inference.provider-config:tenant`. The value is
-  `{ provider, baseUrl, model, apiKey, preset, params, source?, mode?,
-  gatewayKeyAlias?, tiers? }`; hosted (#4759) writes the same type with
-  `source: 'hosted'` and `gatewayKeyAlias` (refused on any other source;
-  every target of the config carries it as `usageTags`).
-  `parseInferenceProviderConfig()` requires every binding to be
-  self-contained (`baseUrl` and `apiKey`, `'smrt-local'` for keyless local
-  servers, or a preset that supplies the endpoint), so a stored binding never
-  borrows the server's environment credentials; it also refuses a `baseUrl`
-  with userinfo, query or fragment, `params` beyond the scalar generation
-  options in `INFERENCE_PROVIDER_PARAM_KEYS`, a preset without a model,
-  unknown fields, and `source: 'app'`. Redaction copies known non-secret
-  fields only. A corrupt stored value fails the call with
-  `InferenceProviderConfigError` (paths only, never values); a missing,
-  disabled or expired secret is simply no layer.
-- **Identity.** The ambient principal (tenancy context, then the users
-  session context: smrt-preferences' order). With a principal: its tenant
-  and user. A request for another tenant (an object of tenant B used by a
-  principal of A) reads nothing stored and falls through to app config,
-  unless `allowCrossTenant` (then B's tenant layer, no user). No principal
-  (jobs): the request's tenant, no user layer, never a guess.
-  `request.userId === null` (core `resolveInferenceTarget({ userId: null })`)
-  skips the user layer for clients shared beyond one user (agents); a string
-  `userId` is ignored.
-- **Cache.** Decrypted layers per `(tenantId, userId)` for `ttlMs` (30 s);
-  failed loads are evicted. `write(level, config)` / `remove(level)` store
-  for the current principal and invalidate; `invalidate()` takes all, one
-  tenant (every user), or one user. Who may write the tenant config is the
-  host server action's decision (#4754).
-- **Mode (#4757).** A stored config may carry `mode` (`byo | local | hosted
-  | off`) and may hold only a mode (no binding, no key). The user's mode,
-  else the tenant's, applies: `off` answers every tier `{ unavailable:
-  'off' }` and `mode()` (untiered calls) `{ mode: 'off', unavailable: 'off' }`;
-  `byo` / `local` / `hosted` bind only a stored binding of that `source`
-  (user, then tenant), else `unavailable: 'unconfigured'`, never app config.
-  No mode: the order above, reporting the binding's source as `mode`.
-  `mode()` returns an explicit mode, which core uses to route untiered calls
-  through `auto` (so they bind the same way).
-  `setMode(level, mode | null)` keeps the binding (deletes a config left
-  empty) and invalidates; `write()` replaces the whole config, mode
-  included. `resolveBindings()` adds `mode: { mode, layer }`. The #4752
-  wrapper forwards `mode()` only when the base has one.
-- **Keys.** Never logged or tagged. `resolveBindings()` returns the tier map
-  and both stored configs redacted by default (`hasApiKey`, no `apiKey`), the
-  shape the settings panel reads; `redact: false` is server-only.
-- Raw `getAI()` sites take the binding through core's
-  `resolveInferenceTarget()` (see [core inference.md](../core/agents/inference.md)).
+## Resolver composition
 
-## Hosted provisioning (`src/hosted.ts`, #4759)
+One resolver is registered, outermost first: the #4752 validating wrapper,
+the #4756 user resolver, its `fallback`, then core's config resolution.
+Hosts using the #4754 override table pass
+`createInferenceOverrideResolver({ db })` as that `fallback`:
+`registerUserInferenceResolver(createUserInferenceResolver({ db, fallback:
+createInferenceOverrideResolver({ db }) }))`. Order per tier: user stored
+binding, tenant stored binding, allowed tenant override row, app override
+row, `inference` config, configured client. Keys are stored once, in
+`inference.provider-config`: #4754's `bindInferenceKey()` record is a subset
+of that value, never a second secret type.
 
-`provisionHostedInference({ db, tenantId, userId, budget })`,
-`revokeHostedInference({ db, tenantId, userId })`, or one
-`createHostedInferenceProvisioner({ db, secrets?, gateway?, admin?, actor? })`
-(`provision`, `revoke`, `syncBudget`, `status`, `listActive`, `listKnown`,
-`revokeTenant`, `syncTenantBudget`, `reconcileTenant`,
-`acknowledgeGatewayRevocation` to drop an owed deletion an operator did by
-hand).
+## Hosted inference (#4759, #4760)
 
-- **Gateway.** Admin calls go through `ai.admin` (`AIAdminInterface`) of the
-  `bifrost` / `litellm` provider of `@happyvertical/ai`; never reimplement
-  gateway administration here. The SDK has `createProject` and
-  `createVirtualKey` only: `updateVirtualKey` / `deleteVirtualKey` are
-  feature-detected on `HostedGatewayAdmin` (happyvertical/sdk#1494). Without
-  them budget sync returns `unsupported` (state keeps the old budget so a
-  later sync retries). Revoke ends local use before touching the gateway
-  (config restored, state retired with the key owed, then the delete); a
-  deletion the gateway cannot perform (`unsupported`,
-  `failed`, or a key a failed provision left) goes to the state's
-  `pendingGatewayRevocations` (id + alias, never the key), is audited with
-  `manualGatewayRevocation`, and is retried by `revoke()` /
-  `reconcileTenant()`.
-- **Config, read once from the environment** (`getHostedGatewayConfig()`;
-  unset provider = hosted off): `SMRT_INFERENCE_HOSTED_PROVIDER`
-  (`bifrost|litellm`), `_BASE_URL` (the OpenAI-compatible endpoint keys are
-  used against), `_ADMIN_URL`, `_ADMIN_KEY` (LiteLLM master key, required for
-  litellm; or a Bifrost admin key), `_ADMIN_USER` / `_ADMIN_PASSWORD`
-  (Bifrost Basic auth), `_MODEL`, `_<TIER>_MODEL`, `_MODELS` (comma list the
-  key may use; default the binding's models), `_KEY_DURATION`,
-  `_ADMIN_TIMEOUT_MS` (deadline per admin call, default 30 s, also passed as
-  the SDK `timeout`; a call past it is a failure, so a stalled gateway never
-  holds the lifecycle lock). A create that fails ambiguously (timeout,
-  transport reset, 5xx, unclassified; anything but a credential, quota,
-  missing-model or refusal answer per `classifyInferenceFailure`) records
-  its alias as owed, since the gateway may have minted the key.
-  Errors name missing fields, never values.
-- **Storage** (smrt-secrets, `context = tenantId`): the key lives only in
-  the user's `inference.provider-config:user:<id>` (`source: 'hosted'`,
-  `mode: 'hosted'`, `gatewayKeyAlias`, a binding per configured tier);
-  `inference.hosted:user:<id>` (category `inference.hosted`) holds status,
-  generation, key id and alias, budget and the user's prior config;
-  `inference.hosted:project` the tenant's gateway project (created once
-  through `runOnce()`, LiteLLM id `smrt-<tenantId>-<nonce>`). Every write passes
-  `auditDetails.operation` (`inference.hosted.provision|revoke|budget|project`)
-  to `SecretAuditLog`.
-- **Idempotency and ordering.** An active grant whose binding is still the
-  stored one is returned (`created: false`), its budget synced when it
-  differs. The create path runs under `runOnce()` keyed by `(tenantId,
-  userId, generation)`; revoke advances the generation. Aliases
-  (`smrt-<tenant>-<user>-g<n>-<nonce>`) and LiteLLM project ids
-  (`smrt-<tenant>-<nonce>`) are unique per attempt, so a failed attempt's
-  leftovers never block the retry. Lifecycle operations run one at a time
-  per process (a process-wide chain: rare operations, and it bounds the
-  pooled connections held) and, on PostgreSQL, under a per-tenant
-  `pg_advisory_xact_lock` held in a transaction for the whole operation
-  (its writes use other pooled connections: at most three per process), so
-  a tenant-wide revoke or reconcile never misses an in-flight provision.
-  The optional `entitled(tenantId)` check runs inside that lock before a
-  key is minted (`HOSTED_NOT_ENTITLED`) and before an entitled reconcile
-  acts (a stale snapshot then revokes), so a stale gain or late retry after
-  a downgrade does not activate. Hosts running the listener or reconciler
-  across processes should set it. A failed binding write deletes or records the new
-  key and restores the previous state after the claim rolls back (no delete
-  inside the claim transaction: single-connection adapters would wait on
-  it). A user who replaced the hosted binding keeps their config: an
-  explicit `provision()` retires the stale key and mints anew; a reconcile
-  only retires it and marks the state `optedOut`, which later reconciles
-  respect until an explicit `provision()`. Writes through the #4756
-  resolver (the settings panel) do not take this lock.
-- **Revoke** restores the prior config when it holds a binding or a mode,
-  else writes `{ mode: 'off' }`; a config the user replaced is kept.
-- **Budget** is integer micro-dollars (`{ limitMicros, window? }`, `day |
-  week | month | year`, default month), converted to the gateway's USD
-  `maxLimit` and `1d|7d|30d|365d` only at the admin call. #4760's spend gate
-  is the authoritative pre-call check; the gateway budget is defense in depth.
-  An unchanged budget is never re-sent (a gateway update may restart the
-  spend window); after a failed or timed-out update (`budgetSyncUncertainAt`,
-  it may still land) syncs re-apply the stored budget until a confirmed
-  update 15 minutes later.
-- **Entitlement hook.** `createHostedInferenceEntitlementListener({
-  provisioner, users, budgetFor?, defaultBudget? })` structurally matches
-  smrt-subscriptions' `EntitlementChangeListener` (register it with
-  `registerEntitlementChangeListener()`; the host wraps its webhook write in
-  `trackEntitlementChange()`). A change touching `inference.hosted`
-  reconciles the tenant to the change's `after` snapshot through
-  `createHostedInferenceReconciler()`: entitled provisions `users(tenantId)`
-  (membership is the host's; exclude users an operator revoked) unless
-  they opted out, and syncs budgets; not entitled revokes every grant; both
-  retry owed deletions (also for active grants: they are old keys). The
-  plan's budget is the grant's `metadata.budget` (`{ limitMicros, window }`).
-  A replayed webhook diffs to "no change", so hosts also call the reconciler
-  with `snapshotEntitlements()` on redelivery and on a schedule; that is
-  what repairs a reaction lost to a crash. Per-user failures are thrown
-  together after all users were tried.
-- **Keys.** Never in results, errors (gateway failures carry only the
-  operation and error code), audit details, `runOnce()` results or logs.
-  Usage rows carry `source: hosted` and `gatewayKeyAlias` (from
-  `InferenceTarget.usageTags`). Other processes see a new binding after the
-  resolver cache expires; this process is invalidated through
-  `invalidateUserInferenceResolvers()`.
-
-## Hosted gate (`src/gate.ts`, #4760)
-
-`createHostedInferenceGate({ killSwitch, spend, principal?,
-requireSubscription?, onWarning? })` is core's `InferenceGate` (seam:
-[core inference.md](../core/agents/inference.md), "Hosted gate");
-`registerHostedInferenceGate(gate | options)` installs it and the
-principal's user as the `userId` usage tag. Host wiring:
-
-```ts
-registerHostedInferenceGate({
-  killSwitch: new KillSwitchService({ db }),          // smrt-features
-  spend: await HostedAiSpendEvaluator.create({ db }), // smrt-subscriptions
-});
-```
-
-Both stores are structural: smrt-features and smrt-subscriptions build with
-the CLI, which depends on this package, so a dependency on either is a turbo
-cycle. Checks, in order, on every `source: hosted` call:
-
-1. **Kill switch** `inference.hosted.enabled` (`HOSTED_INFERENCE_KILL_SWITCH`):
-   global DISABLE, then the tenant's DISABLE, blocks (`policy:
-   'kill-switch'`, `disabledBy`). Uncached, no model call: **the incident
-   lever** (`smrt inference:hosted disable [--tenant <id>]`; programmatic
-   `setHostedInferenceEnabled(store, { enabled, tenantId? })`,
-   `getHostedInferenceSwitch()`). Stored as smrt-features override rows
-   with kill-switch semantics, not as a flag: a tenant ENABLE can never
-   lift a global DISABLE, and `inference.hosted` (the plan key) stays a pure
-   entitlement. Hosts with an admin UI write the same DISABLE rows through
-   `FeatureOverrideService` and their authorizer.
-2. **Tenant**: request tenant, else the principal's; none blocks (`no-tenant`).
-3. **Entitlement**: no entitled subscription blocks (`subscription`) unless
-   `requireSubscription: false`.
-4. **Spend**: the plan's tenant and per-user caps (smrt-subscriptions
-   AGENTS, "Hosted AI spend caps"): `blocked` blocks with `cap`, `spend`
-   (micro-dollars) and `resetsAt`; `warn` returns `warn` and calls
-   `onWarning` (errors swallowed). The user is the principal's, only in its
-   own tenant, and none for `userId: null` (agents).
-
-Any thrown error propagates and core blocks with `gate-error`. The plan
-check does not test the `inference.hosted` feature key: provisioning the
-hosted binding (#4759) is where entitlement to hosted is granted.
+`./node` provisions per-user gateway keys through `ai.admin` of the
+`bifrost` / `litellm` provider (`SMRT_INFERENCE_HOSTED_*`, read once), storing
+the key only in the user's `inference.provider-config` (`source: 'hosted'`).
+Budget update and key delete wait on happyvertical/sdk#1494 (feature-detected;
+revoke ends local use first and records owed deletions). `./gate`'s
+`registerHostedInferenceGate({ killSwitch, spend })` is core's
+`InferenceGate`: kill switch `inference.hosted.enabled` (a global DISABLE
+always wins), tenant, entitlement, then plan spend caps; a block throws
+`InferenceUnavailableError` (`entitlement`) and writes a `blocked` usage row.
+Details: [agents/hosted.md](agents/hosted.md).
 
 ## Config
 
@@ -320,97 +148,15 @@ its own `baseUrl` core's pair rule refuses it.
   (`createChainExecutor()` in `fusion.ts` dispatches on it); consumers
   ignore kinds they do not run.
 
-## Fusions
+## Fusions (#4753)
 
-`src/fusion.ts` runs `{ fusion: '<key>' }` tier targets. SMRT ships the
-interpreter and the vocabulary, never a fusion: modes are code, fusions are
-config. A fusion comes from `inference.fusions.<key>` (app config, wins) or
-`defineFusion({ key, mode, seats, gate?, description? })` (process registry
-on `globalThis`). A seat is `{ name?, prompt, target, temperature?, output? }`:
-`prompt` is a smrt-prompts key whose resolved template (code default,
-config, app and tenant overrides, read through `context.db`) is the seat's
-system message, so tenant overrides of a seat need nothing new; `target` is
-a tier (resolved through the same resolver with the seat's prompt key, so
-per-user bindings apply), `{ alias }`, `{ candidates }` or an inline
-`{ provider, model }`, never a fusion. Each seat runs through
-`createChainClient()`, so chains, classified fallback and (tier seats only)
-the ladder apply per seat. `name` defaults to the prompt key and must be
-unique.
-
-Example (a consumer's code; SMRT does not ship it):
-
-```ts
-definePrompt({ key: 'contracts.skeptic', template: 'List the risks…' });
-definePrompt({ key: 'contracts.advocate', template: 'List the benefits…' });
-definePrompt({ key: 'contracts.synthesis', template: 'Weigh both reviews…' });
-config({ inference: {
-  tiers: { best: { fusion: 'contract-review' } },
-  fusions: { 'contract-review': {
-    mode: 'pair',
-    seats: [
-      { name: 'skeptic', prompt: 'contracts.skeptic', target: 'good' },
-      { name: 'advocate', prompt: 'contracts.advocate', target: { alias: 'frontier' } },
-      { name: 'synthesis', prompt: 'contracts.synthesis', target: 'great' },
-    ],
-    gate: { criteria: 'Both reviews agree on every material risk.',
-            sufficientWhen: { choice: 'agree', minConfidence: 0.85 } },
-  } },
-} });
-await contract.do('Summarize this contract', { tier: 'best' }); // unchanged caller
-```
-
-- **Modes and call counts** (model calls; a seat's fallback candidates are
-  substitutions of that seat, not extra seats): `single` 1 (one seat);
-  `pair` 3 (seats 0 and 1 in parallel, then seat 2 merges both outputs,
-  labelled by seat and model); `handoff` 2 (seat 0 drafts, seat 1 receives
-  the draft and answers). A mode that adds a call is a bug.
-- **Gate** (`pair`, `handoff`): one choice question through
-  `context.decide()` (core's typed-decision client, the `evaluate()` path)
-  over the outputs so far, labels `sufficientWhen.choice` and `continue`.
-  The chosen label at `minConfidence` or above skips the remaining stage,
-  recorded `skipped`; the answer is then seat 0's output (`pair`: the first
-  live one) or the draft. No decision client (`unavailable`) or a decision
-  error runs the stage. Its usage row has `seat: 'gate'`, a reserved seat
-  name.
-- **Failure semantics.** A dead seat never aborts a `pair`: the merge seat
-  is told which seat failed and why (class and message). A dead merge or
-  handoff answer seat falls back to the first live output, recorded
-  `degraded`; the handoff answer seat is told when the draft died. A run
-  whose seats all died throws `InferenceFusionError`
-  (`INFERENCE_FUSION_FAILED`, `result` holds every seat) with the run
-  recorded `failed`, never an empty answer. A seat whose setup fails (prompt
-  override read, its tier's resolver) dies like a model failure. A config
-  error, a caller abort, or a final seat that already streamed text
-  (`partial`) rethrows, after both `pair` seats have settled.
-- **JSON**: `output: 'json'` sends `responseFormat: json_object` and parses;
-  a seat whose text does not parse keeps it under `raw` (with `parseError`)
-  in `FusionSeatResult` and hands the raw text on, labelled. A candidate
-  without JSON mode runs the seat in text on that recovery path
-  (`capabilityFallback: { json: 'text' }`, #4758) instead of being skipped.
-- **Caller options**: generation options (`responseFormat`, `tools`,
-  `onProgress`, …) reach the final seat only; `signal` / `timeout` reach every
-  seat; `history` is the seat's instructions. `onFusionResult(result)`
-  receives the structured `FusionRunResult`. Only `message()` runs a fusion.
-- **Record**: every seat's usage row carries `runId`, `fusionKey`, `seat`
-  and the seat's prompt tags; `context.recordRun()` writes one
-  `_smrt_ai_runs` row (`ok | degraded | failed`; a seat is degraded when it
-  died or answered through a substitution) with identities and totals only
-  (`../core/agents/ai-usage.md`). `smrt ai:usage --by fusion` totals runs.
-- **Validation**: `findInferenceConfigIssues()` names structural offenders
-  by path (`fusion-invalid`, `fusion-unknown`, `fusion-nested`); an
-  unregistered seat prompt key is a load error (`fusion-prompt-unknown`) from
-  `validateInferenceConfig()`, the resolver, the executor and
-  `defineFusion()`, but not the doctor (it runs without the app's prompts).
-- Seat prompts resolve through `@happyvertical/smrt-prompts` (a dependency;
-  never a peer, #1582), imported by a variable specifier from this package
-  (strict layouts find it; bundlers do not follow it, so the root stays browser-safe),
-  then core's `importOptionalDependency()` (a module registered with
-  `registerOptionalDependency()` in bundled builds).
-  `setFusionPromptResolver()` replaces it.
-- **Tenant-level fusions are deferred** to #4754's allow-list: a fusion
-  multiplies hosted model spend per call, so a tenant must not be able to
-  define or rebind one until bindings have a tenant allow-list. v1 reads
-  fusions from app config and code only.
+`{ fusion: '<key>' }` tier targets run consumer-defined fusions (`single` 1
+call, `pair` 3, `handoff` 2) from `inference.fusions` (wins) or
+`defineFusion()`. SMRT ships the interpreter, never a fusion. Seats are
+smrt-prompts keys run through `createChainClient()`; a dead seat never
+aborts a `pair`, all seats dead throws `InferenceFusionError`; each run writes
+one `_smrt_ai_runs` row. Tenant-level fusions stay deferred. Details:
+[agents/fusions.md](agents/fusions.md).
 
 ## Doctor (`src/node.ts`)
 
@@ -430,82 +176,14 @@ no SDK clients).
 
 ## Settings UI and binding storage (#4754)
 
-Consumer guide: [docs/content/inference-settings.md](../../docs/content/inference-settings.md).
-
-- **Storage split, enforced by API shape.** Keys: the panel emits
-  `onSaveKey({ provider, key, preset?, baseUrl? })` (the endpoint shown when
-  the key was typed; the key input remounts on a provider or base URL
-  change), the host writes through smrt-secrets'
-  `SecretService` the record `bindInferenceKey()` returns, and the panel
-  only ever gets `keySet` back. User choices (mode `byo | local | hosted |
-  off`, provider, base URL, model, default tier): smrt-preferences kind
-  `inference` (`inferencePreferenceKind`, permissions `inference.customize`
-  / `inference.personalize`; the host registers both, smrt-preferences is
-  not a dependency). App/tenant bindings: `_smrt_inference_overrides`.
-- **Key rule** (`src/settings/keys.ts`, ported from the planner's BYO
-  screen): a key is bound when saved to the origin of its endpoint
-  (explicit base URL, else preset, else `inferenceProbeUrl()`'s provider
-  default, a provider id that is a preset id counting as that preset;
-  https only, plain http for loopback; gateways such as
-  `litellm`/`bifrost` need a base URL) and `inferenceKeyFor()` releases it
-  only for a URL on that origin. `testConnection()` reads no environment key
-  and never probes another origin with a stored key; details pass
-  `redactInferenceSecret()`. Binding rows, preference payloads and tested
-  candidates refuse credential-shaped members (`findKeyMember()`; `key` is
-  allowed because #4753 fusions carry one).
-- **Override table**: one row per `(binding, context)`, binding
-  `tier:<tier> | default-tier | alias:<name> | fusion:<name>`, `context`
-  `__app__` or the tenant id (the prompts pattern), `target` JSON,
-  `tenant_allow_list` JSON on app rows. Generated surfaces are closed; ships
-  through `smrt db:migrate` (`override-migration.test.ts`). A tier target is
-  exactly a model `{ provider?, model }`, an alias `{ alias }` or a fusion
-  `{ kind: 'fusion', fusion }`: no endpoint, key or inline chain (those go
-  in an alias). Layers, low to high: code default (configured client),
-  `inference` config, app row, tenant row; each target replaced whole.
-- **Tenant allow-list**: a tenant writes only `tier:*` and `default-tier`,
-  only to a reference (`model:<provider>/<model>`, `alias:<n>`,
-  `fusion:<n>`, `tier:<t>`; trailing `*` and `*` match) on the app row's
-  list (no list allows nothing), and only when the
-  `tenantTargetPolicy` hook returns `true`; this hook is where #4667 caps
-  the maximum hosted tier. Both are re-checked on every layered read, so a
-  narrowed list or policy disables existing tenant rows (`tenantBlocked`).
-  Aliases and fusions are app-scope only (a tenant definition could
-  redefine an allow-listed name).
-- **`InferenceSettingsService`** mirrors `PromptSettingsService`:
-  `listInferenceSettings()` returns one row per tier with the effective
-  target, each scope's raw value and both revert previews computed
-  separately (`appRevertTarget` = config, never the app row;
-  `inheritedTarget` = config + app row), plus `getDefaultTierSetting()`,
-  `listInferenceAliases()`, `listInferenceFusions()` (registry via the
-  `registryFusions` option, config `inference.fusions`, editable app rows;
-  soft dependency on #4753). Writes go through `InferenceOverrideService`
-  (authorizer first, fails closed; without `authorize` the service is
-  read-only) and refuse a value that adds a config issue to the layer it
-  lands in; removing an app alias or fusion that any row (every tenant) or
-  config still names is refused (`InferenceBindingInUseError`, tenant rows
-  only counted, checked after the authorizer allowed the write) unless
-  config or the registry keeps defining it. Every config-backed value a row method
-  returns passes `stripKeyMembers()` (config may carry literal keys);
-  `getEffectiveConfig()` is server-side only. `testConnection()`, `testCandidate()` and `doctor()` reuse
-  `./node`; `testCandidate()` reads a key variable only for a candidate
-  already in the effective config (an unsaved one is probed keyless);
-  `usage()` is `reportAiUsage()` by model (default), tier, prompt.
-- **`createInferenceOverrideResolver({ db, base })`** applies stored
-  bindings at call time and defers unbound tiers to `base` or config; an
-  app-only alias is returned as its inline candidate chain because the
-  executor reads only the process config. Rows (not layers) are cached per
-  tenant for `ttlMs` (30 s) and invalidated by any write in the process; the
-  allow-list and policy are re-applied on every call, and only the requested
-  tier's chain is validated, so one dangling reference fails one tier. Where it sits
-  relative to #4756's per-user resolver is that resolver's composition.
-- **Panel** (`src/svelte`): built like `PromptSettingsPanel` (presentational,
-  `svelte` optional peer, prune script, two-project Vitest, `svelte-check`,
-  named `$props()` interfaces, types free of core). The default view is the
-  whole screen for one provider; Advanced (tier ladder, `auto` tier,
-  aliases, fusions) is not rendered until opened. The key input is its own
-  form, never in state, cleared on submit. Tenant scope disables targets
-  off the allow-list (display only) and makes aliases/fusions read-only.
-  Rows remount on `contextKey`.
+`./svelte` `InferenceSettingsPanel`, `./server` `InferenceSettingsService` /
+`InferenceOverrideService` / `createInferenceOverrideResolver()`, `./models`
+the `_smrt_inference_overrides` model (ships through `smrt db:migrate`).
+Keys go to smrt-secrets through the host and are bound to their endpoint's
+origin; user choices are the smrt-preferences kind `inference`; app/tenant
+bindings are override rows, tenants limited to the app row's allow-list and
+the `tenantTargetPolicy` hook. Details: [agents/settings.md](agents/settings.md),
+consumer guide [docs/content/inference-settings.md](../../docs/content/inference-settings.md).
 
 ## Validation
 

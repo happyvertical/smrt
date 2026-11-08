@@ -145,10 +145,12 @@ reports `json` / `jsonMode` / a `json_object` operation.
   legacy route, an embedded `{ result }`), tag `capabilityFallback:
   'json→text'`.
 - Registered tools without `tools`: `toolUse: 'optional'` drops them (tag
-  `tools→none`); `'required'` (default) throws `InferenceUnavailableError`
-  (`src/inference-unavailable.ts`, code `AI_UNAVAILABLE`, `reason:
-  'capability'`, `details.capability`) before any call. #4757 owns the
-  error's other reasons (`off | unconfigured | entitlement`).
+  `tools→none`); `'required'` (default) throws #4757's
+  `InferenceUnavailableError` (`src/inference-availability.ts`, code
+  `AI_UNAVAILABLE`, `reason: 'capability'`, a specific `message` and
+  `context` merged into `details`: `details.capability`) before any call.
+  There is one definition of the error; #4758 adds only the optional
+  `message` / `context` details.
 - A prompt over a known `maxContext` (estimate: 3 characters per token, plus
   `maxTokens`) is cut through `maxDataLength`, tag `truncated: 'true'`; one
   that cannot fit without its data throws the capability error.

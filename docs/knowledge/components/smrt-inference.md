@@ -5,10 +5,10 @@ description: "Inference alias chains with classified failures, recorded fallback
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-08T23:20:26Z"
+  at: "2026-11-08T23:22:17Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:df84354ecf9750f0a0ec6a2ad808aa71143e9f25f8fc185dfcd1650b2bc3fc0f"
+source_revision: "sha256:95aa4508580e80f7ff772887ba0938db8de8854bdf5e2a7e27007379016b68a1"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/inference/package.json"
@@ -16,6 +16,18 @@ sources:
   - id: "agents"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/inference/AGENTS.md"
     title: "@happyvertical/smrt-inference packages/inference/AGENTS.md"
+  - id: "agents-2"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/inference/agents/fusions.md"
+    title: "@happyvertical/smrt-inference packages/inference/agents/fusions.md"
+  - id: "agents-3"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/inference/agents/hosted.md"
+    title: "@happyvertical/smrt-inference packages/inference/agents/hosted.md"
+  - id: "agents-4"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/inference/agents/resolver.md"
+    title: "@happyvertical/smrt-inference packages/inference/agents/resolver.md"
+  - id: "agents-5"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/inference/agents/settings.md"
+    title: "@happyvertical/smrt-inference packages/inference/agents/settings.md"
 ---
 
 # @happyvertical/smrt-inference
@@ -30,6 +42,10 @@ sources:
 ## Documentation
 
 - `packages/inference/AGENTS.md`
+- `packages/inference/agents/fusions.md`
+- `packages/inference/agents/hosted.md`
+- `packages/inference/agents/resolver.md`
+- `packages/inference/agents/settings.md`
 
 ## Framework dependencies
 
