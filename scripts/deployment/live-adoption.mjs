@@ -157,6 +157,44 @@ const specManagers = (kind, managedFields) =>
     ),
   ].sort();
 
+// Proves the reviewed legacy revisions in a private bare store fetched from the
+// legacy repository's tracked ref: the original, maintenance and stop revisions
+// must exist and chain, the relinquish revision must exist once relinquished
+// (it is pushed only after the writers stop), and the observed revision must be
+// on the fetched ref. The store is removed afterwards.
+export async function proveLegacyAncestry({
+  command,
+  repository,
+  plan,
+  ref,
+  fetchUrl,
+  rev,
+  relinquished,
+}) {
+  const store = `${repository}/.git-smrt-legacy-${randomUUID()}`;
+  const legacy = (...args) => command('git', ['-C', store, ...args]);
+  try {
+    await command('git', ['init', '--quiet', '--bare', store]);
+    await legacy('fetch', '--quiet', '--no-tags', fetchUrl, `+${ref}:refs/smrt/legacy`);
+    for (const revision of [
+      plan.legacy.revision,
+      plan.legacy.maintenanceRevision,
+      plan.legacy.stopRevision,
+      ...(relinquished ? [plan.legacy.relinquishRevision] : []),
+    ])
+      await legacy('cat-file', '-e', `${revision}^{commit}`);
+    for (const earlier of [
+      plan.legacy.revision,
+      plan.legacy.maintenanceRevision,
+      plan.legacy.stopRevision,
+    ])
+      await legacy('merge-base', '--is-ancestor', earlier, rev);
+    await legacy('merge-base', '--is-ancestor', rev, 'refs/smrt/legacy');
+  } finally {
+    await rm(store, { recursive: true, force: true });
+  }
+}
+
 export function createAdoptionMethods(config, command, helpers, options) {
   const { repository, branch, namespace } = config;
   const git = (...args) => command('git', ['-C', repository, ...args]);
@@ -647,7 +685,7 @@ export function createAdoptionMethods(config, command, helpers, options) {
   // a private object store beside the checkout and prove there that every
   // reviewed revision exists, that stop descends from maintenance and the
   // original, and that the observed revision is on that ref.
-  async function legacyAncestry(plan, rev) {
+  async function legacyAncestry(plan, rev, relinquished) {
     const source = await helpers.get(
       'gitrepository',
       plan.legacy.source.name,
@@ -677,28 +715,15 @@ export function createAdoptionMethods(config, command, helpers, options) {
         /^\/[A-Za-z0-9][A-Za-z0-9._\/-]{0,1023}$/.test(fetchUrl),
       'Invalid legacy fetch source',
     );
-    const store = `${repository}/.git-smrt-legacy-${randomUUID()}`;
-    const legacy = (...args) => command('git', ['-C', store, ...args]);
-    try {
-      await command('git', ['init', '--quiet', '--bare', store]);
-      await legacy('fetch', '--quiet', '--no-tags', fetchUrl, `+${ref}:refs/smrt/legacy`);
-      for (const revision of [
-        plan.legacy.revision,
-        plan.legacy.maintenanceRevision,
-        plan.legacy.stopRevision,
-        plan.legacy.relinquishRevision,
-      ])
-        await legacy('cat-file', '-e', `${revision}^{commit}`);
-      for (const earlier of [
-        plan.legacy.revision,
-        plan.legacy.maintenanceRevision,
-        plan.legacy.stopRevision,
-      ])
-        await legacy('merge-base', '--is-ancestor', earlier, rev);
-      await legacy('merge-base', '--is-ancestor', rev, 'refs/smrt/legacy');
-    } finally {
-      await rm(store, { recursive: true, force: true });
-    }
+    await proveLegacyAncestry({
+      command,
+      repository,
+      plan,
+      ref,
+      fetchUrl,
+      rev,
+      relinquished,
+    });
   }
   async function observeLegacy(plan, snapshot, stage) {
     const saved = await qualifyAdoption(plan, snapshot);
@@ -706,7 +731,7 @@ export function createAdoptionMethods(config, command, helpers, options) {
     const rev = relinquished
       ? plan.legacy.relinquishRevision
       : plan.legacy.stopRevision;
-    await legacyAncestry(plan, rev);
+    await legacyAncestry(plan, rev, relinquished);
     const ks = await legacyFlux(plan, rev, relinquished);
     const all = await helpers.namespaceInventory();
     verifyKnownLegacyWorkloads(all.filter(o => ['Pod','ReplicaSet','Deployment','CronJob','Job','StatefulSet','DaemonSet','HorizontalPodAutoscaler'].includes(o.kind)), saved, helpers.verifyPodEnvelope);

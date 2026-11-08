@@ -12,7 +12,7 @@ import {
   verifyAdoptionGate,
 } from './deployment/adopt.mjs';
 import { hash } from './deployment/release.mjs';
-import { createAdoptionMethods } from './deployment/live-adoption.mjs';
+import { createAdoptionMethods, proveLegacyAncestry } from './deployment/live-adoption.mjs';
 import { main } from './deployment/cli.mjs';
 const sha = 'a'.repeat(64),
   revision = 'b'.repeat(40);
@@ -684,11 +684,14 @@ test('native legacy gates bind actual UID, stop/relinquish revisions, selectors,
     assert.deepEqual(commands.filter(([tool, ...args]) => tool === 'git' && args.includes(store)).map((c) => c.slice(1).join(' ').replace(store, 'STORE')), [
       `init --quiet --bare STORE`,
       `-C STORE fetch --quiet --no-tags ${plan.legacy.repository} +refs/heads/legacy:refs/smrt/legacy`,
-      ...[plan.legacy.revision, plan.legacy.maintenanceRevision, plan.legacy.stopRevision, plan.legacy.relinquishRevision].map((r) => `-C STORE cat-file -e ${r}^{commit}`),
+      ...[plan.legacy.revision, plan.legacy.maintenanceRevision, plan.legacy.stopRevision].map((r) => `-C STORE cat-file -e ${r}^{commit}`),
       ...[plan.legacy.revision, plan.legacy.maintenanceRevision, plan.legacy.stopRevision].map((r) => `-C STORE merge-base --is-ancestor ${r} ${plan.legacy.stopRevision}`),
       `-C STORE merge-base --is-ancestor ${plan.legacy.stopRevision} refs/smrt/legacy`,
     ]);
     assert.ok(!commands.some(([tool, , dir, verb]) => tool === 'git' && dir === '/unit' && ['merge-base', 'cat-file', 'fetch'].includes(verb)), 'no ancestry query against the deployment repository');
+    commands.length = 0;
+    assert.ok(await methods.observeLegacy(plan, snapshot, 'relinquished'));
+    assert.ok(commands.some(([tool, ...args]) => tool === 'git' && args.includes('cat-file') && args.includes(`${plan.legacy.relinquishRevision}^{commit}`)), 'the relinquish revision is required once relinquished');
     for (const failure of ['cat-file', 'merge-base --is-ancestor', 'fetch --quiet']) {
       failGit = failure;
       await assert.rejects(methods.observeLegacy(plan, snapshot, 'legacy-stopped'), /git/);
@@ -1096,4 +1099,42 @@ test('adoption gate admits only stage-appropriate spec managers', () => {
   observation.resources[0].orphanedFieldsIdentity = 'not-a-sha';
   observation.inventoryIdentity = hash(observation.resources);
   assert.throws(() => verifyAdoptionGate(plan, 'finalized', observation, fence(plan)), /safe native adoption observation/);
+});
+
+test('legacy ancestry is proven against the legacy repository in push order and cleans up its store', async () => {
+  const { execFile } = await import('node:child_process');
+  const { promisify } = await import('node:util');
+  const execute = promisify(execFile);
+  const dir = await mkdtemp(join(tmpdir(), 'smrt-legacy-ancestry-'));
+  const legacyBare = join(dir, 'legacy.git'), work = join(dir, 'work'), repository = join(dir, 'deploy');
+  const command = async (tool, args) => (await execute(tool, args)).stdout;
+  const git = async (...args) => (await execute('git', ['-C', work, ...args])).stdout.trim();
+  try {
+    await execute('git', ['init', '--bare', '--initial-branch=legacy', legacyBare]);
+    await execute('git', ['init', '-b', 'legacy', work]);
+    await execute('mkdir', ['-p', repository]);
+    await git('config', 'user.email', 'legacy@example.test');
+    await git('config', 'user.name', 'Legacy');
+    await git('remote', 'add', 'origin', legacyBare);
+    const commit = async (name) => { await writeFile(join(work, 'app.yaml'), `${name}\n`); await git('add', '.'); await git('commit', '-q', '-m', name); return git('rev-parse', 'HEAD'); };
+    const revision = await commit('active'), maintenanceRevision = await commit('maintenance'), stopRevision = await commit('stop');
+    await git('push', '-q', 'origin', 'HEAD:legacy');
+    const relinquishRevision = await commit('relinquish');
+    const plan = { legacy: { revision, maintenanceRevision, stopRevision, relinquishRevision } };
+    const prove = (rev, relinquished, overrides = {}) => proveLegacyAncestry({ command, repository, plan: { legacy: { ...plan.legacy, ...overrides } }, ref: 'refs/heads/legacy', fetchUrl: legacyBare, rev, relinquished });
+    await prove(stopRevision, false);
+    await assert.rejects(prove(relinquishRevision, true), /git/, 'relinquish revision not yet pushed');
+    await git('push', '-q', 'origin', 'HEAD:legacy');
+    await prove(relinquishRevision, true);
+    await prove(stopRevision, false);
+    await assert.rejects(prove(revision, false, { stopRevision: revision, maintenanceRevision }), /git/, 'stop must descend from maintenance');
+    await git('checkout', '-q', '-b', 'other');
+    const stray = await commit('stray');
+    await git('push', '-q', 'origin', 'HEAD:other');
+    await assert.rejects(prove(stray, true, { relinquishRevision: stray }), /git/, 'observed revision must be on the tracked ref');
+    const { readdir } = await import('node:fs/promises');
+    assert.deepEqual((await readdir(repository)).filter((n) => n.startsWith('.git-smrt-legacy-')), [], 'private stores are removed');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
