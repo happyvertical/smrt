@@ -64,6 +64,7 @@ export class ExpensesRecipe extends SmrtRecipe {
           help: 'The job, project or client the cost belongs to.',
         },
         costObjectType: { visibility: 'hidden' },
+        activeAllocationRevisionId: { visibility: 'hidden' },
         financialBreakdown: { visibility: 'hidden' },
         supplierPayableJson: { visibility: 'hidden' },
         refundRecipient: { visibility: 'hidden' },
