@@ -1,5 +1,9 @@
 import type { AIClientOptions } from '@happyvertical/ai';
 import { getDefaultAIKeyEnvName } from '@happyvertical/smrt-config';
+import {
+  attachAiUsageRecorder,
+  createAiUsageRecorder,
+} from '@happyvertical/smrt-core';
 import { SecretService } from '@happyvertical/smrt-secrets';
 import { getCurrentTenant, withTenant } from '@happyvertical/smrt-tenancy';
 import { TenantCollection } from '@happyvertical/smrt-users';
@@ -29,6 +33,15 @@ interface ResolveAgentAIOptionsInput {
   aiConfig: AgentAIOptions | undefined;
   db: DatabaseInterface | null | undefined;
   tenantId?: string | null;
+  /**
+   * Record each call's usage into `_smrt_ai_usage` through the SMRT usage
+   * pipeline (`createAiUsageRecorder`, #3077). Defaults to `true` when `db`
+   * is given. Pass `false` when the caller wires usage itself, e.g. with
+   * `SmrtClass#withAiUsage()`.
+   */
+  recordUsage?: boolean;
+  /** `class_name` for recorded usage rows (default `'Agent'`). */
+  className?: string;
 }
 
 const DEFAULT_SECRET_FALLBACK: AgentAISecretFallback = 'ancestors';
@@ -151,7 +164,34 @@ function isMissingSecretError(error: unknown, secretName: string): boolean {
   );
 }
 
+/**
+ * Resolve an agent's AI client options for the current tenant: the provider
+ * API key comes from smrt-secrets (with optional ancestor fallback). With a
+ * `db`, the returned `onUsage` also records each call through the SMRT usage
+ * pipeline, attributed to `tenantId` or else the ambient tenant at call time,
+ * so a per-call `getAI(options)` client is metered (#3077).
+ */
 export async function resolveAgentAIOptions(
+  input: ResolveAgentAIOptionsInput,
+): Promise<AIClientOptions | undefined> {
+  const resolved = await resolveAgentAIClientOptions(input);
+  if (!resolved || !input.db || input.recordUsage === false) {
+    return resolved;
+  }
+  return attachAiUsageRecorder(
+    resolved,
+    createAiUsageRecorder({
+      db: input.db,
+      className: input.className ?? 'Agent',
+      // Unset (not null) when no tenant is named, so the recorder falls back
+      // to the ambient tenant of each call.
+      tenantId: asNonEmptyString(input.tenantId),
+      aiConfig: resolved as Record<string, unknown>,
+    }),
+  );
+}
+
+async function resolveAgentAIClientOptions(
   input: ResolveAgentAIOptionsInput,
 ): Promise<AIClientOptions | undefined> {
   const { aiConfig, db } = input;
