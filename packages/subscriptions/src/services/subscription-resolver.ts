@@ -184,6 +184,42 @@ export class SubscriptionResolver {
     };
   }
 
+  /**
+   * The entitled plan terms' thresholds, without reading any usage meter
+   * (#4760). Same subscription, plan-version and entitlement rules as
+   * {@link resolveEntitlements}; `entitled` is false when there is no
+   * current subscription or it does not entitle now (thresholds are then
+   * empty). The hosted inference gate reads its spend caps from here and
+   * meters `_smrt_ai_usage` itself. Thresholds are returned as stored, valid
+   * or not, so a caller can refuse a malformed cap instead of skipping it.
+   */
+  async resolvePlanThresholds(
+    subscriber: Subscriber,
+    options: SubscriptionResolverOptions = {},
+  ): Promise<{
+    entitled: boolean;
+    thresholds: PlanThreshold[];
+    planId: string | null;
+    planKey: string | null;
+    planVersionId: string | null;
+    subscriptionId: string | null;
+  }> {
+    const now = options.now ?? new Date();
+    const { identity, terms } = await this.resolveEntitledTerms(
+      subscriber,
+      now,
+      options,
+    );
+    return {
+      entitled: terms !== null,
+      thresholds: terms ? terms.getThresholds() : [],
+      planId: identity?.planId ?? null,
+      planKey: identity?.planKey ?? null,
+      planVersionId: identity?.planVersionId ?? null,
+      subscriptionId: identity?.subscriptionId ?? null,
+    };
+  }
+
   private async resolveEntitledTerms(
     subscriber: Subscriber,
     now: Date,

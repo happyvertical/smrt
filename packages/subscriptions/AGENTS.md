@@ -86,6 +86,43 @@ that reverted to DECIMAL passes every SQLite suite.
   `retainsPaidPeriod`, derived on save from an entitled pre-cancel row.
 - **Recipe `subscriptions.plans`** (`src/recipes.ts`, help in `src/plans.recipe.md`): lists plans, subscriptions, plan versions (read-only, written by `plan-versioning.ts`) and charges (read-only, written by the usage service) for the planner and other catalog hosts. Fields it shows carry `@field({ description })` in plain words, money fields saying "in cents"; keep them when editing the models. Reseller models and pricing rules stay out of it.
 
+## Hosted AI spend caps (#4760)
+
+`src/services/hosted-ai-spend.ts`. Plans cap platform-paid (`source:
+hosted`) inference with ordinary `PlanThreshold`s on two reserved keys, so
+window, amount and enforcement come from the plan (pinned version included):
+`AI_HOSTED_SPEND_METRIC` (`ai.hosted.spend_micros`, the tenant) and
+`AI_HOSTED_USER_SPEND_METRIC` (`ai.hosted.user_spend_micros`, each user).
+
+- `limit` is **integer micro-dollars** (1 USD = 1,000,000; the money rule at
+  per-call precision). `block` blocks at or over the cap, `warn` warns,
+  `observe` never affects a call; `warningRatio` (default 0.8) warns early;
+  a 0 cap blocks every hosted call. A malformed hosted cap (fractional or
+  negative limit, unknown window/enforcement) throws
+  `HostedAiSpendPolicyError` (the gate fails closed); it never reads as "no
+  cap".
+- Spend: `createHostedAiSpendReader(db)` sums `_smrt_ai_usage.estimated_cost`
+  (USD, rounded to micro-dollars) by `tenant_id` and `created_at` in the
+  cap's window for rows whose `tags` hold `"source":"hosted"` (and
+  `"userId":"<id>"` for the per-user cap), as exact JSON fragments with
+  `LIKE … ESCAPE '!'` (`hostedAiTagPattern()`); errors only over-count.
+  `operation: 'blocked'` rows and external-agent measurements never count;
+  uncosted rows add nothing (give hosted models a cost rate). The `userId`
+  tag exists only while the hosted gate's ambient-user resolver is
+  registered.
+- `resetsAt`: the calendar window's end; for `rolling` (30 days) the oldest
+  counted row plus 30 days. A blocked decision names the blocking cap that
+  lifts last.
+- `HostedAiSpendEvaluator` (`create({ db })`): plan thresholds via
+  `SubscriptionResolver.resolvePlanThresholds()` (entitled terms, no usage
+  meters; memoized per tenant for `termsTtlMs`, 30 s, failures evicted,
+  `invalidate()`), spend read fresh per call; per-user caps only with a
+  user. Errors propagate. smrt-inference's `./gate` consumes it.
+- `resolveEntitlements()` / the tenant usage meter report these keys with
+  quantity 0: only the evaluator meters them. `SpendingPolicy` rows stay the
+  billed-charge (cents) policy; hosted AI caps are plan terms because the
+  issue's window and amount come from the plan.
+
 ## Reseller billing (#3059)
 
 - Billing ownership is consumed from `smrt-tenancy`'s

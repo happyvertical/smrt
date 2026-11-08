@@ -42,6 +42,24 @@ export {
   trackEntitlementChange,
 } from './entitlement-changes.js';
 export {
+  AI_HOSTED_SPEND_METRIC,
+  AI_HOSTED_USER_SPEND_METRIC,
+  createHostedAiSpendReader,
+  decideHostedAiSpend,
+  evaluateHostedAiSpendThreshold,
+  type HostedAiSpendDecision,
+  type HostedAiSpendEvaluation,
+  HostedAiSpendEvaluator,
+  type HostedAiSpendEvaluatorOptions,
+  type HostedAiSpendPolicy,
+  HostedAiSpendPolicyError,
+  type HostedAiSpendReader,
+  type HostedAiSpendSummary,
+  hostedAiSpendThresholds,
+  hostedAiTagPattern,
+  MICROS_PER_USD,
+} from './hosted-ai-spend.js';
+export {
   type AssignPriceBooksInput,
   type DefinePriceBookPriceInput,
   type DelegatedSpendingPolicyInput,
