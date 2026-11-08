@@ -384,7 +384,7 @@ describe('InferenceSettingsService', () => {
   });
 
   it('lists fusions from the registry, config and app rows', async () => {
-    (config as InferenceConfig & { fusions?: unknown }).fusions = {
+    (config as { fusions?: unknown }).fusions = {
       'review-pair': { mode: 'pair', seats: [] },
     };
     const admin = await service({
@@ -554,7 +554,7 @@ describe('InferenceSettingsService', () => {
         },
       },
     };
-    (config as InferenceConfig & { fusions?: unknown }).fusions = {
+    (config as { fusions?: unknown }).fusions = {
       pair: { mode: 'pair', seats: [{ target: { apiKey: SECRET } }] },
     };
     const admin = await service({
@@ -599,9 +599,28 @@ describe('InferenceSettingsService', () => {
       .setAlias({ name: 'byo', alias: null })
       .catch((error: unknown) => error);
     expect(refused).toBeInstanceOf(InferenceBindingInUseError);
-    expect((refused as InferenceBindingInUseError).referrers).toEqual(
-      expect.arrayContaining(['alias:outer', `tier:good (tenant ${tenantId})`]),
-    );
+    expect((refused as InferenceBindingInUseError).referrers).toEqual([
+      'alias:outer',
+    ]);
+    expect((refused as InferenceBindingInUseError).tenantReferences).toBe(1);
+    expect(String(refused)).not.toContain(tenantId);
+
+    // A caller the authorizer refuses learns nothing: 403 before any scan.
+    for (const denied of [
+      await service(),
+      await service({
+        authorize: () => {
+          throw new Error('boom');
+        },
+      }),
+    ]) {
+      await expect(
+        denied.setAlias({ name: 'byo', alias: null }),
+      ).rejects.toBeInstanceOf(InferenceOverrideAuthorizationError);
+      await expect(
+        denied.setFusion({ name: 'ab', definition: null }),
+      ).rejects.toBeInstanceOf(InferenceOverrideAuthorizationError);
+    }
 
     // A config alias of the same name keeps the references valid.
     await admin.setAlias({
