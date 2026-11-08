@@ -8,6 +8,7 @@ import type { TenantSubscription } from '../models/TenantSubscription.js';
 import type {
   EntitlementResolution,
   EntitlementResolutionContext,
+  PlanFeatureGrant,
   PlanThreshold,
   SmrtClassOptions,
   Subscriber,
@@ -164,6 +165,8 @@ export class SubscriptionResolver {
     options: SubscriptionResolverOptions = {},
   ): Promise<{
     featureKeys: string[];
+    /** The entitled terms' grants with their `metadata` (#4759). */
+    grants: PlanFeatureGrant[];
     planId: string | null;
     planKey: string | null;
   }> {
@@ -175,6 +178,7 @@ export class SubscriptionResolver {
     );
     return {
       featureKeys: terms ? terms.getFeatureKeys() : [],
+      grants: terms ? terms.getFeatureGrants() : [],
       planId: identity?.planId ?? null,
       planKey: identity?.planKey ?? null,
     };
