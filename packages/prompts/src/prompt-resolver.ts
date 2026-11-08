@@ -135,12 +135,18 @@ export async function resolvePrompt(
   const promptLayer: PromptSourceLayer = suppliesTemplate(runtimeOverride)
     ? 'runtime'
     : base.templateLayer;
-  const ai = buildResolvedAI(merged.ai, config);
+  const ai = buildResolvedAI(merged.ai, config, {
+    defaultProfile: PromptRegistry.get(key)?.ai.profile,
+  });
   if (ai.tier) {
     // The tier binds once, at call time, through the core inference seam
     // (`SmrtObject.prepareAiOperation()` / `getAiClient(tier)`), with this
     // key so prompt-scoped bindings apply (#4750).
     ai.promptKey = key;
+    // The latency hint belongs to the call site, so only the code default
+    // declares it (#4755).
+    const latency = PromptRegistry.get(key)?.ai.latency;
+    if (latency) ai.latency = latency;
   }
 
   return {

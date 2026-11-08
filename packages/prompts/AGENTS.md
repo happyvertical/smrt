@@ -28,7 +28,7 @@ Each layer can override any subset of fields (template, profile, model, params).
 - **Stored overrides use nullable fields** so inheritance stays field-by-field — null means "use the lower layer"
 - **Provider selection is indirect** in v1: prompts select named profiles, and profiles resolve to provider/model in `smrt-config`
 - **`editable` flags are enforced on `PromptOverride.save()`** — definitions can lock specific fields against tenant override
-- **Tier names are reserved profile names** (#4750): `cheap`, `good`, `great`, `best` and `auto` need no `profiles` entry. `resolvePrompt()` only marks them (`ai.tier`, `ai.promptKey`) and never copies a binding into `provider`/`model`/`params`: the tier binds once, at call time, through core's seam (`prepareAiOperation()` / `getAiClient(tier)`) with the prompt key, so prompt and call cannot disagree. `allowedProfileNames` still applies to tier names; an explicit prompt `model` stays validated by `allowedModels` and is sent per call on the tier client. **Footgun:** a same-named `profiles` entry wins and silently opts that name out of tiers. The canonical `promptMessageOptions()` forwards `ai.tier` and `ai.promptKey`; object call sites send it through `prepareAiOperation()` (analytics, images, ledgers, profiles, properties, and `do()`). Sites holding their own client (content, facts, thumbnails, the translation job, `Issue`'s explicit-provider path) pass `{ routeTier: false }` or drop the keys, so a tier profile there runs on that client with prompt tags but no tier tags.
+- **Tier names are reserved profile names** (#4750): `cheap`, `good`, `great`, `best` and `auto` need no `profiles` entry. `resolvePrompt()` only marks them (`ai.tier`, `ai.promptKey`, and the code default's `ai.latency`) and never copies a binding into `provider`/`model`/`params`: the tier binds once, at call time, through core's seam (`prepareAiOperation()` / `getAiClient(tier)`) with the prompt key, so prompt and call cannot disagree. `allowedProfileNames` applies to tier names chosen by config or an override, but not to the tier the code default itself declares (#4755), so an allow-list never breaks framework prompts. An explicit prompt `model` stays validated by `allowedModels` and is sent per call on the tier client. **Footgun:** a same-named `profiles` entry wins and silently opts that name out of tiers. `tier`, `latency` and `promptKey` never come from params. The canonical `promptMessageOptions()` forwards them; callers send the result through `prepareAiOperation()` (`SmrtClass`, so collections too), which strips them before the provider call. Sites holding their own client (content chat and thumbnails, facts' injected message-only client, the translation job, `Issue`'s explicit-provider path) pass `{ routeTier: false }` or drop the keys, so a tier profile there runs on that client with prompt tags but no tier tags.
 
 ## Generated surfaces
 
@@ -69,6 +69,19 @@ validated profile. Every consumer
 call site must forward them (`promptMessageOptions()` or a spread of
 `resolved.ai`); core lifts `promptKey` into `_smrt_ai_usage.prompt_key`
 (`../core/agents/ai-usage.md`).
+
+## Framework prompt tiers (#4755)
+
+Every framework `definePrompt()` declares `ai.profile` as a tier: closed-
+vocabulary classification and yes/no predicates → `cheap`; summaries,
+descriptions, translations, headlines → `good`; synthesis over user content
+that is persisted or applied (feedback incorporation, reviews, corrections,
+fact extraction and reconciliation) → `great`; nothing defaults to `best`.
+`ai.latency` is `interactive` on request paths (chat, editor) and `background`
+for jobs, else unset; only the code default declares it. Prompts that make no model call (persona instructions,
+chat system prompts) or call a non-text model (image generation) declare no
+tier. An explicit model on the call path wins over the tier. Each package's
+`AGENTS.md` records its choices; one test per package pins the tag set.
 
 ## Prompt keys are persisted identifiers
 

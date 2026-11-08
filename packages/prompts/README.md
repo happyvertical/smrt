@@ -18,7 +18,10 @@ definePrompt({
   key: 'projects.issue.incorporateFeedback',
   template: 'Rewrite the issue body incorporating this feedback: {feedback}',
   ai: {
-    profile: 'default',
+    // An inference tier (`cheap | good | great | best | auto`) or a profile
+    // named in config. With no `inference` config every tier runs on the
+    // app's configured AI client.
+    profile: 'great',
     params: { temperature: 0.4 },
   },
 });
