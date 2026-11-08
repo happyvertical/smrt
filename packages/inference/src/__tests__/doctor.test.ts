@@ -260,6 +260,22 @@ describe('probes', () => {
     expect(fetch.mock.calls[0]?.[0]).toBe('http://127.0.0.1:11434/api/tags');
   });
 
+  it('never sends a candidate key without its own baseUrl', async () => {
+    const fetch = vi.fn(async () => new Response('{}', { status: 200 }));
+    for (const candidate of [
+      { provider: 'openai', model: 'm', apiKey: SECRET },
+      { provider: 'openai', model: 'm', apiKeyEnv: 'PROXY_KEY' },
+    ]) {
+      const result = await probeInferenceCandidate(candidate, {
+        env,
+        fetch: fetch as unknown as typeof globalThis.fetch,
+      });
+      expect(result).toMatchObject({ reachable: false });
+      expect(result.detail).toContain('needs its own baseUrl');
+    }
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it('skips providers with no cheap probe', async () => {
     const result = await probeInferenceCandidate(
       { provider: 'claude-cli', model: 'x' },

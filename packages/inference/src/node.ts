@@ -252,6 +252,21 @@ export async function probeInferenceCandidate(
   > = {},
 ): Promise<InferenceProbeResult> {
   const env = options.env ?? process.env;
+  if (
+    (text(candidate.apiKey) || text(candidate.apiKeyEnv)) &&
+    !text(candidate.baseUrl) &&
+    !text(candidate.preset)
+  ) {
+    // Core's pair rule: a candidate's own key travels only with its own
+    // endpoint. Refuse before any request rather than sending it to a
+    // provider default.
+    return {
+      reachable: false,
+      durationMs: 0,
+      detail:
+        'not probed: a candidate key needs its own baseUrl (it is never sent to a provider default endpoint)',
+    };
+  }
   const request = probeRequest(candidate, resolveKey(candidate, env));
   if (!request) {
     return {
