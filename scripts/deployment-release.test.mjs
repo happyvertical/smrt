@@ -350,7 +350,19 @@ function liveFixture(phase = 'stopped', mutate = () => {}, httpStatus) {
       return JSON.stringify(config.fixtureFluxObject?.(args) ?? source);
     if (args.includes('helmrelease')) return JSON.stringify(doc);
     if (args.includes('secret')) return JSON.stringify(config.fixtureSecret);
-    if (args.includes('get')) return JSON.stringify({ items: all });
+    if (args.includes('get')) {
+      // Like real kubectl (1.21+): managedFields are omitted unless requested.
+      const show = args.includes('--show-managed-fields=true');
+      return JSON.stringify({
+        items: show
+          ? all
+          : all.map((o) => {
+              const copy = structuredClone(o);
+              if (copy.metadata) delete copy.metadata.managedFields;
+              return copy;
+            }),
+      });
+    }
     throw new Error('Unexpected tool operation');
   };
   const request = async (url) => {

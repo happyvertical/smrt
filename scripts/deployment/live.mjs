@@ -1963,11 +1963,14 @@ export function createLiveAdapter(
       },
     };
   }
+  // kubectl omits managedFields unless asked; adoption field-manager and Helm
+  // ownership checks read them from this inventory.
   const namespaceInventory = async () =>
     items(
       await json(
         'get',
         'pods,deployments,replicasets,jobs,cronjobs,endpointslices,horizontalpodautoscalers,statefulsets,daemonsets,ingresses,services,configmaps',
+        '--show-managed-fields=true',
       ),
     );
   const adoption = createAdoptionMethods(
