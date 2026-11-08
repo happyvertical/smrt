@@ -202,6 +202,13 @@ export interface InferenceTarget {
    * never part of the client identity.
    */
   source?: InferenceTargetSource;
+  /**
+   * Non-secret tags the binding adds to every usage row it answers, such as
+   * hosted inference's `gatewayKeyAlias` (#4759). Never identity, never a
+   * credential; the tier keys (`tierRequested`, `tierResolved`, `source`)
+   * always win over a same-named entry.
+   */
+  usageTags?: Record<string, string>;
 }
 
 /** Binding origins recorded as the `source` usage tag (#4756). */
@@ -739,15 +746,24 @@ export function inferenceModeForTarget(
 }
 
 /**
- * `usageTags` recorded for a call through the tier path: the requested and
- * resolved tier, plus the binding's `source` when the target names one.
+ * `usageTags` recorded for a call through the tier path: the target's own
+ * string `usageTags` (#4759), then the requested and resolved tier, plus the
+ * binding's `source` when the target names one.
  */
 export function inferenceUsageTags(
   tierRequested: InferenceTierRequest,
   resolution: InferenceResolution,
 ): Record<string, string> {
   const source = resolution.target?.source;
+  const own = resolution.target?.usageTags;
   return {
+    ...(own && typeof own === 'object'
+      ? Object.fromEntries(
+          Object.entries(own).filter(
+            ([key, value]) => typeof value === 'string' && key !== '',
+          ),
+        )
+      : {}),
     tierRequested,
     tierResolved: resolution.tierResolved,
     ...(isInferenceTargetSource(source) ? { source } : {}),

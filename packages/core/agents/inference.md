@@ -176,7 +176,9 @@ when not. Per-call `model` options must follow the bound model.
 
 `InferenceTarget.source` (`INFERENCE_TARGET_SOURCES`: `byo | local | hosted
 | app`) is never identity; `inferenceUsageTags()` adds it as the `source` tag,
-so tier calls record it too. The per-user resolver lives in
+so tier calls record it too. `InferenceTarget.usageTags` (#4759) are
+non-secret tags a binding adds under the tier keys (hosted inference's
+`gatewayKeyAlias`); they are never identity and never a credential. The per-user resolver lives in
 [smrt-inference `./resolver`](../../inference/AGENTS.md). Converted raw
 sites: agents (`resolveAgentAIClientOptions`), chat (assistant default
 factory, resolved inside the route principal's tenancy context, recorder
