@@ -7,13 +7,16 @@
 import {
   AiUsagePersistenceHandler,
   ensureSystemTables,
+  recordAiRun,
   recordAiUsageOutcome,
+  reportAiRuns,
   reportAiUsage,
 } from '@happyvertical/smrt-core';
 import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   aiUsageCommand,
+  formatAiRunReport,
   formatAiUsageReport,
   parseUsageDimensions,
   parseUsageTime,
@@ -136,6 +139,60 @@ describe('formatAiUsageReport', () => {
     expect(formatAiUsageReport(report)).toContain(
       '(no AI usage recorded in this window)',
     );
+  });
+});
+
+describe('formatAiRunReport (--by fusion, #4753)', () => {
+  let db: DatabaseInterface;
+
+  beforeEach(async () => {
+    db = await getDatabase({ type: 'sqlite', url: ':memory:' });
+    await ensureSystemTables(db, 'sqlite');
+    const base = { mode: 'pair', seats: 3, duration: 100 };
+    await recordAiRun(db, {
+      ...base,
+      id: 'r1',
+      fusionKey: 'review-pair',
+      status: 'ok',
+      degradedSeats: 0,
+      tenantId: 'tenant-a',
+    });
+    await recordAiRun(db, {
+      ...base,
+      id: 'r2',
+      fusionKey: 'review-pair',
+      status: 'degraded',
+      degradedSeats: 1,
+      tenantId: 'tenant-a',
+    });
+    await recordAiRun(db, {
+      ...base,
+      id: 'r3',
+      fusionKey: 'review-pair',
+      status: 'failed',
+      degradedSeats: 3,
+      tenantId: 'tenant-b',
+    });
+  });
+
+  afterEach(async () => {
+    await db.close?.();
+  });
+
+  it('totals runs per fusion with outcome counts and exclusions', async () => {
+    const text = formatAiRunReport(
+      await reportAiRuns(db, { tenantId: 'tenant-a' }),
+    );
+    expect(text).toMatch(/review-pair\s+2\s+1\s+1\s+0\s+6\s+1\s+100ms/);
+    expect(text).toMatch(/total\s+2\s+1\s+1\s+0/);
+    expect(text).toContain('Excluded from totals: 1 run(s) of other tenants');
+  });
+
+  it('says so when no run was recorded', async () => {
+    const text = formatAiRunReport(
+      await reportAiRuns(db, { since: new Date('2999-01-01T00:00:00Z') }),
+    );
+    expect(text).toContain('(no fusion runs recorded in this window)');
   });
 });
 

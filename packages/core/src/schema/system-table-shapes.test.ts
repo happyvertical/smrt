@@ -103,6 +103,7 @@ describe('getSystemTableShapes', () => {
     const shapes = getSystemTableShapes('sqlite');
 
     expect([...shapes.keys()].sort()).toEqual([
+      '_smrt_ai_runs',
       '_smrt_ai_usage',
       '_smrt_ai_usage_outcomes',
       '_smrt_backfills',

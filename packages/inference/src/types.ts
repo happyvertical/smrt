@@ -54,6 +54,10 @@ export interface InferenceConfigIssue {
     | 'alias-cycle'
     | 'candidate-invalid'
     | 'candidate-key-without-endpoint'
-    | 'preset-unknown';
+    | 'preset-unknown'
+    | 'fusion-invalid'
+    | 'fusion-unknown'
+    | 'fusion-nested'
+    | 'fusion-prompt-unknown';
   message: string;
 }

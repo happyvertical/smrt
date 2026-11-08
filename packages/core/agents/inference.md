@@ -1,4 +1,4 @@
-# Inference tiers and the binding resolver seam (#4750)
+# Inference tiers and the binding resolver seam (#4750, #4752, #4753)
 
 Source: `src/inference.ts`, `SmrtClass.getAiClient(tier?)` in `src/class.ts`,
 `SmrtObject.prepareAiOperation()` in `src/object.ts`. Epic: #4749.
@@ -60,9 +60,33 @@ the pair rules and the usage pipeline), `resolveTier(tier)`, and
 nothing answered). Pair-rule refusals throw `InferenceBindingError`
 (`INFERENCE_TARGET_UNBOUND`) so an executor classifies them by code. `AiOperationOptions.minimumTier` / `allowPartial` are
 stripped before `ai.message()`; `prepareAiOperation()` applies a target's
-`model`/`params` only for `single` targets. Later kinds (`fusion`, #4753)
-register into the same seam; consumers ignore members they do not
-understand. Browser-safe presets (#4674): `src/inference-presets.ts`.
+`model`/`params` only for `single` targets. `fusion` (#4753) registers into the
+same seam; consumers ignore members they do not understand. Browser-safe presets (#4674): `src/inference-presets.ts`.
+
+## Fusions (#4753)
+
+`kind: 'fusion'` (`{ fusion: '<key>' }`, read as that kind without `kind`)
+binds a tier to a consumer-defined fusion; the registered executor runs it
+([smrt-inference](../../inference/AGENTS.md#fusions)). Core owns the
+vocabulary only: `INFERENCE_FUSION_MODES = ['single', 'pair', 'handoff']`,
+`InferenceFusionDefinition { mode, seats, gate?, description? }`,
+`InferenceFusionSeat { name?, prompt, target, temperature?, output? }`,
+`InferenceFusionGate { criteria, sufficientWhen: { choice, minConfidence } }`
+and `InferenceConfig.fusions` (app-level, replaced whole per key by the
+highest layer). SMRT ships no fusion.
+
+The executor context adds what a fusion needs, all optional for other
+executors: `request` now carries the instance's `className` / `tenantId`;
+`resolveTier(tier, { promptKey })` resolves a seat's tier with the seat's
+prompt key (so prompt-scoped and per-user resolvers apply per seat); `db`
+(read-only, for stored prompt overrides); `decide(request, { usageTags,
+signal })`, the instance's typed-decision client exactly as `evaluate()`
+uses it (`undefined` without one), recording its usage row with the given
+tags; `recordRun(record)`, the `_smrt_ai_runs` writer
+([ai-usage.md](ai-usage.md#run-records-_smrt_ai_runs-4753)); and
+`observeUsage(runId, listener)`, which feeds the run's normalized usage
+events back for per-seat totals. Seat usage rows carry `runId` (lifted to
+`run_id`), `fusionKey` and `seat` tags.
 
 ## Clients and calls
 
@@ -130,4 +154,5 @@ and the dev photo-setup route (vision / decision providers).
 Tests: `src/__tests__/issue-4756-inference-target.test.ts`,
 `src/__tests__/inference-tiers.test.ts`,
 `src/__tests__/class-inference-tiers.test.ts`,
-`src/__tests__/inference-executor-seam.test.ts`.
+`src/__tests__/inference-executor-seam.test.ts`,
+`src/__tests__/issue-4753-ai-runs.test.ts`.

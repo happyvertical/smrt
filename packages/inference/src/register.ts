@@ -17,7 +17,8 @@ import {
   setInferenceResolver,
 } from '@happyvertical/smrt-core';
 import { hasInferenceChains, validateInferenceConfig } from './config.js';
-import { type ChainExecutorOptions, createChainExecutor } from './executor.js';
+import type { ChainExecutorOptions } from './executor.js';
+import { createChainExecutor } from './fusion.js';
 
 const OWN_RESOLVER = Symbol.for('smrt.inference.chainResolver');
 

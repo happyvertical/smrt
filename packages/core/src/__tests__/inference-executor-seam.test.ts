@@ -166,7 +166,11 @@ describe('inference executor seam', () => {
     ).resolves.toBe('from chain');
 
     const [context] = contexts;
-    expect(context?.request).toEqual({ tier: 'great', promptKey: 'k' });
+    expect(context?.request).toEqual({
+      className: 'Issue4752SeamNote',
+      tier: 'great',
+      promptKey: 'k',
+    });
     expect(context?.resolution).toMatchObject({
       tierResolved: 'great',
       via: 'config',
@@ -220,6 +224,162 @@ describe('inference executor seam', () => {
       tags: { outcome: 'failed', reason: 'quota' },
     });
     expect(injected.message).not.toHaveBeenCalled();
+  });
+
+  it('runs fusion targets through the executor with the run seams (#4753)', async () => {
+    expect(inferenceTargetKind({ fusion: 'review' })).toBe('fusion');
+    expect(() => inferenceExecutorFor({ fusion: 'review' })).toThrow(
+      'Inference target kind "fusion" needs a registered executor',
+    );
+    const contexts: InferenceExecutionContext[] = [];
+    setInferenceExecutor({
+      kinds: ['fusion'],
+      createClient: (context) => {
+        contexts.push(context);
+        return { message: async () => 'fused' };
+      },
+    });
+    const decide = vi.fn(async (_request: unknown, _options?: object) => ({
+      provenance: { provider: 'typesafe', model: 'judge' },
+      answers: {
+        gate: {
+          type: 'choice',
+          choice: 'done',
+          probabilities: { done: 0.9, continue: 0.1 },
+          confidence: 0.9,
+        },
+      },
+    }));
+    const events: Array<Record<string, unknown>> = [];
+    const injected = { embed: () => {}, message: vi.fn(async () => 'plain') };
+    const note = new Issue4752SeamNote({
+      ai: injected,
+      decisions: { getCapabilities: async () => ({ decisions: true }), decide },
+      inference: {
+        tiers: { best: { fusion: 'review' }, cheap: { model: 'c' } },
+      },
+      usage: {
+        handlers: [
+          {
+            handle: async (event: Record<string, unknown>) => {
+              events.push(event);
+            },
+          },
+        ],
+      },
+    } as never);
+    await expect(
+      note.do('x', { tier: 'best', promptKey: 'entry' }),
+    ).resolves.toBe('fused');
+    const [context] = contexts;
+    expect(context?.resolution.target).toEqual({ fusion: 'review' });
+
+    // A seat resolves its tier with its own prompt key.
+    const resolverSeen: unknown[] = [];
+    setInferenceResolver({
+      resolve: (request) => {
+        resolverSeen.push(request);
+        return undefined;
+      },
+    });
+    await context?.resolveTier('cheap', { promptKey: 'seat.prompt' });
+    expect(resolverSeen[0]).toMatchObject({
+      tier: 'cheap',
+      promptKey: 'seat.prompt',
+      className: 'Issue4752SeamNote',
+    });
+
+    // The gate decision goes through the decision client and records usage
+    // with the run tags.
+    const result = await context?.decide?.(
+      {
+        state: {},
+        questions: {
+          gate: {
+            type: 'choice',
+            instructions: 'ok?',
+            criteria: { done: 'y', continue: 'n' },
+          },
+        },
+      },
+      { usageTags: { runId: 'r1', fusionKey: 'review', seat: 'gate' } },
+    );
+    expect(result?.answers.gate).toMatchObject({ choice: 'done' });
+    expect(decide).toHaveBeenCalledTimes(1);
+    expect(events.at(-1)).toMatchObject({
+      provider: 'typesafe',
+      model: 'judge',
+      operation: 'decision',
+      tags: {
+        runId: 'r1',
+        fusionKey: 'review',
+        seat: 'gate',
+        operation: 'decision',
+      },
+    });
+
+    // Usage observers see only their run's events, until unsubscribed.
+    const seen: string[] = [];
+    const stop = context?.observeUsage?.('r1', (event) => {
+      seen.push(`${event.model}:${event.tags.seat}:${event.totalTokens}`);
+    });
+    await context?.recordUsage({
+      operation: 'message',
+      model: 'm',
+      tags: { runId: 'r1', seat: 'skeptic' },
+    });
+    await context?.recordUsage({
+      operation: 'message',
+      model: 'm',
+      tags: { runId: 'other', seat: 'x' },
+    });
+    stop?.();
+    await context?.recordUsage({
+      operation: 'message',
+      model: 'm',
+      tags: { runId: 'r1', seat: 'late' },
+    });
+    expect(seen).toEqual(['m:skeptic:0']);
+
+    // No database: recordRun is a quiet no-op.
+    await expect(
+      context?.recordRun?.({
+        id: 'r1',
+        fusionKey: 'review',
+        mode: 'pair',
+        seats: 3,
+        degradedSeats: 0,
+        status: 'ok',
+        duration: 5,
+        details: {},
+      }),
+    ).resolves.toBeUndefined();
+  });
+
+  it('merges fusions whole per key and rejects malformed ones', () => {
+    const merged = mergeInferenceConfigs(
+      {
+        fusions: {
+          a: { mode: 'single', seats: [{ prompt: 'p', target: 'cheap' }] },
+          b: { mode: 'single', seats: [{ prompt: 'q', target: 'cheap' }] },
+        },
+      },
+      {
+        fusions: {
+          a: { mode: 'single', seats: [{ prompt: 'r', target: 'best' }] },
+        },
+      },
+    );
+    expect(merged?.fusions).toEqual({
+      a: { mode: 'single', seats: [{ prompt: 'r', target: 'best' }] },
+      b: { mode: 'single', seats: [{ prompt: 'q', target: 'cheap' }] },
+    });
+    expect(() => assertInferenceConfig({ fusions: [] } as never)).toThrow(
+      'inference.fusions must be an object',
+    );
+    expect(() =>
+      assertInferenceConfig({ fusions: { a: 'x' } } as never),
+    ).toThrow('inference.fusions.a must be an object');
   });
 
   it('strips minimumTier and allowPartial from untiered calls', async () => {

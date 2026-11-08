@@ -3,6 +3,7 @@
  * the environment through `globalThis.process` when one exists.
  */
 import {
+  INFERENCE_FUSION_MODES,
   INFERENCE_PRESETS,
   INFERENCE_TIERS,
   type InferenceAlias,
@@ -12,8 +13,10 @@ import {
   type InferenceTier,
   inferenceTargetKind,
   isInferencePresetId,
+  isInferenceTierRequest,
 } from '@happyvertical/smrt-core';
 import { InferenceConfigError } from './errors.js';
+import { isPromptRegistered, lookupFusion } from './fusion-store.js';
 import type { InferenceConfigIssue, InferenceFailureClass } from './types.js';
 
 /** Target kinds this package runs. */
@@ -32,14 +35,23 @@ function text(value: unknown): string | undefined {
     : undefined;
 }
 
-/** True when the config binds any chain (aliases or a chain tier target). */
+/** Target kinds the executor runs: the chains plus `fusion` (#4753). */
+export const EXECUTOR_KINDS = [...CHAIN_KINDS, 'fusion'] as const;
+
+/**
+ * True when the config binds anything this package validates: aliases,
+ * fusions, or a chain or fusion tier target.
+ */
 export function hasInferenceChains(config: InferenceConfig | undefined) {
   if (!config) return false;
   if (isRecord(config.aliases) && Object.keys(config.aliases).length > 0) {
     return true;
   }
+  if (isRecord(config.fusions) && Object.keys(config.fusions).length > 0) {
+    return true;
+  }
   return Object.values(config.tiers ?? {}).some((target) =>
-    (CHAIN_KINDS as readonly string[]).includes(
+    (EXECUTOR_KINDS as readonly string[]).includes(
       inferenceTargetKind(target as InferenceTarget),
     ),
   );
@@ -155,6 +167,7 @@ function checkTarget(
   path: string,
   aliases: Record<string, unknown>,
   issues: InferenceConfigIssue[],
+  config?: InferenceConfig,
 ): void {
   const kind = inferenceTargetKind(target);
   if (kind === 'alias') {
@@ -179,7 +192,242 @@ function checkTarget(
       aliases,
       issues,
     );
+  } else if (kind === 'fusion') {
+    const name = text(target.fusion);
+    if (!name) {
+      issues.push({
+        path,
+        code: 'fusion-invalid',
+        message: `${path} has kind "fusion" without a fusion key`,
+      });
+    } else if (!lookupFusion(name, config)) {
+      issues.push({
+        path,
+        code: 'fusion-unknown',
+        message: `${path} points at unknown fusion "${name}" (define it with defineFusion() or inference.fusions)`,
+      });
+    }
   }
+}
+
+/** Seats per mode: each mode's call count is fixed (#4753). */
+export const FUSION_SEAT_COUNTS = {
+  single: 1,
+  pair: 3,
+  handoff: 2,
+} as const;
+
+/** The gate's other choice label: run the remaining stage. */
+export const FUSION_GATE_CONTINUE = 'continue';
+
+/** The `seat` tag of the gate's decision usage row; no seat may use it. */
+export const FUSION_GATE_SEAT = 'gate';
+
+/**
+ * Structural problems of one fusion definition, named by path (`path` is
+ * `inference.fusions.<key>` or `fusions.<key>` for `defineFusion()`).
+ * Prompt registration is checked separately ({@link findFusionPromptIssues})
+ * because the doctor runs without the app's prompts loaded.
+ */
+export function findFusionDefinitionIssues(
+  definition: unknown,
+  path: string,
+  config: InferenceConfig | undefined,
+): InferenceConfigIssue[] {
+  const issues: InferenceConfigIssue[] = [];
+  const invalid = (at: string, message: string) =>
+    issues.push({ path: at, code: 'fusion-invalid', message });
+  if (!isRecord(definition)) {
+    invalid(path, `${path} must be an object with mode and seats`);
+    return issues;
+  }
+  const mode = definition.mode;
+  const known = (INFERENCE_FUSION_MODES as readonly unknown[]).includes(mode);
+  if (!known) {
+    invalid(
+      `${path}.mode`,
+      `${path}.mode must be one of ${INFERENCE_FUSION_MODES.join(', ')}; got "${String(mode)}"`,
+    );
+  }
+  if (
+    definition.description !== undefined &&
+    typeof definition.description !== 'string'
+  ) {
+    invalid(`${path}.description`, `${path}.description must be a string`);
+  }
+  const seats = definition.seats;
+  if (!Array.isArray(seats)) {
+    invalid(`${path}.seats`, `${path}.seats must be an array of seats`);
+  } else {
+    const expected = known
+      ? FUSION_SEAT_COUNTS[mode as keyof typeof FUSION_SEAT_COUNTS]
+      : undefined;
+    if (expected !== undefined && seats.length !== expected) {
+      invalid(
+        `${path}.seats`,
+        `${path}.seats must hold exactly ${expected} seat(s) for mode "${String(mode)}"; got ${seats.length}`,
+      );
+    }
+    const aliases: Record<string, unknown> = isRecord(config?.aliases)
+      ? config.aliases
+      : {};
+    const names = new Map<string, number>();
+    seats.forEach((seat, index) => {
+      const at = `${path}.seats[${index}]`;
+      if (!isRecord(seat)) {
+        invalid(at, `${at} must be an object with prompt and target`);
+        return;
+      }
+      const prompt = text(seat.prompt);
+      if (!prompt) {
+        invalid(
+          `${at}.prompt`,
+          `${at}.prompt must name a registered prompt key`,
+        );
+      }
+      if (seat.name !== undefined && !text(seat.name)) {
+        invalid(`${at}.name`, `${at}.name must be a non-empty string`);
+      }
+      const name = text(seat.name) ?? prompt;
+      if (name) {
+        const first = names.get(name);
+        if (name === FUSION_GATE_SEAT) {
+          invalid(
+            `${at}.name`,
+            `${at}.name "${FUSION_GATE_SEAT}" is reserved for the decision gate's usage row`,
+          );
+        } else if (first !== undefined) {
+          invalid(
+            `${at}.name`,
+            `${at} has the same name "${name}" as seats[${first}]; name each seat (the name defaults to the prompt key)`,
+          );
+        } else {
+          names.set(name, index);
+        }
+      }
+      if (
+        seat.temperature !== undefined &&
+        (typeof seat.temperature !== 'number' ||
+          !Number.isFinite(seat.temperature))
+      ) {
+        invalid(`${at}.temperature`, `${at}.temperature must be a number`);
+      }
+      if (
+        seat.output !== undefined &&
+        seat.output !== 'text' &&
+        seat.output !== 'json'
+      ) {
+        invalid(`${at}.output`, `${at}.output must be "text" or "json"`);
+      }
+      const target = seat.target;
+      if (typeof target === 'string') {
+        if (!isInferenceTierRequest(target)) {
+          invalid(
+            `${at}.target`,
+            `${at}.target "${target}" is not a tier (auto, ${INFERENCE_TIERS.join(', ')})`,
+          );
+        }
+      } else if (isRecord(target)) {
+        if (inferenceTargetKind(target as InferenceTarget) === 'fusion') {
+          issues.push({
+            path: `${at}.target`,
+            code: 'fusion-nested',
+            message: `${at}.target names another fusion; seats run a tier, an alias or a model, never a fusion`,
+          });
+        } else {
+          checkTarget(
+            target as InferenceTarget,
+            `${at}.target`,
+            aliases,
+            issues,
+            config,
+          );
+        }
+      } else {
+        invalid(
+          `${at}.target`,
+          `${at}.target must be a tier name or a target ({ alias }, { candidates } or { provider, model })`,
+        );
+      }
+    });
+  }
+  const gate = definition.gate;
+  if (gate !== undefined) {
+    if (mode !== 'pair' && mode !== 'handoff') {
+      invalid(`${path}.gate`, `${path}.gate applies to pair and handoff only`);
+    } else if (!isRecord(gate)) {
+      invalid(`${path}.gate`, `${path}.gate must be an object`);
+    } else {
+      if (!text(gate.criteria)) {
+        invalid(
+          `${path}.gate.criteria`,
+          `${path}.gate.criteria must be a non-empty string`,
+        );
+      }
+      const when = gate.sufficientWhen;
+      if (!isRecord(when)) {
+        invalid(
+          `${path}.gate.sufficientWhen`,
+          `${path}.gate.sufficientWhen must be { choice, minConfidence }`,
+        );
+      } else {
+        const choice = text(when.choice);
+        if (!choice || choice === FUSION_GATE_CONTINUE) {
+          invalid(
+            `${path}.gate.sufficientWhen.choice`,
+            `${path}.gate.sufficientWhen.choice must be a non-empty label other than "${FUSION_GATE_CONTINUE}"`,
+          );
+        }
+        const min = when.minConfidence;
+        if (
+          typeof min !== 'number' ||
+          !Number.isFinite(min) ||
+          min < 0 ||
+          min > 1
+        ) {
+          invalid(
+            `${path}.gate.sufficientWhen.minConfidence`,
+            `${path}.gate.sufficientWhen.minConfidence must be a number in [0, 1]`,
+          );
+        }
+      }
+    }
+  }
+  return issues;
+}
+
+/** Seats of `definition` whose prompt key no `definePrompt()` registered. */
+export function findFusionDefinitionPromptIssues(
+  definition: unknown,
+  path: string,
+): InferenceConfigIssue[] {
+  if (!isRecord(definition) || !Array.isArray(definition.seats)) return [];
+  const issues: InferenceConfigIssue[] = [];
+  definition.seats.forEach((seat, index) => {
+    const prompt = isRecord(seat) ? text(seat.prompt) : undefined;
+    if (prompt && !isPromptRegistered(prompt)) {
+      const at = `${path}.seats[${index}].prompt`;
+      issues.push({
+        path: at,
+        code: 'fusion-prompt-unknown',
+        message: `${at} names prompt "${prompt}", which no definePrompt() registered`,
+      });
+    }
+  });
+  return issues;
+}
+
+/**
+ * Seats of `inference.fusions` whose prompt key is not registered. A load
+ * error: the validating resolver and the executor refuse such a config.
+ */
+export function findFusionPromptIssues(
+  config: InferenceConfig | undefined,
+): InferenceConfigIssue[] {
+  if (!isRecord(config?.fusions)) return [];
+  return Object.entries(config.fusions).flatMap(([key, definition]) =>
+    findFusionDefinitionPromptIssues(definition, `inference.fusions.${key}`),
+  );
 }
 
 /**
@@ -196,7 +444,7 @@ export function validateInferenceTarget(
   const aliases: Record<string, unknown> = isRecord(config?.aliases)
     ? config.aliases
     : {};
-  checkTarget(target, path, aliases, issues);
+  checkTarget(target, path, aliases, issues, config);
   if (issues.length > 0) throw new InferenceConfigError(issues);
 }
 
@@ -240,7 +488,25 @@ export function findInferenceConfigIssues(
   for (const tier of INFERENCE_TIERS) {
     const target = config.tiers?.[tier];
     if (!target) continue;
-    checkTarget(target, `inference.tiers.${tier}`, aliases, issues);
+    checkTarget(target, `inference.tiers.${tier}`, aliases, issues, config);
+  }
+
+  if (config.fusions !== undefined && !isRecord(config.fusions)) {
+    issues.push({
+      path: 'inference.fusions',
+      code: 'fusion-invalid',
+      message: 'inference.fusions must be an object of named fusions',
+    });
+  } else {
+    for (const [key, definition] of Object.entries(config.fusions ?? {})) {
+      issues.push(
+        ...findFusionDefinitionIssues(
+          definition,
+          `inference.fusions.${key}`,
+          config,
+        ),
+      );
+    }
   }
 
   // Cycles: depth-first over alias → alias edges, reported once each.
@@ -272,11 +538,17 @@ export function findInferenceConfigIssues(
   return issues;
 }
 
-/** Throw an {@link InferenceConfigError} naming every offender. */
+/**
+ * Throw an {@link InferenceConfigError} naming every offender, including
+ * fusion seats whose prompt key is not registered (a load error).
+ */
 export function validateInferenceConfig(
   config: InferenceConfig | undefined,
 ): void {
-  const issues = findInferenceConfigIssues(config);
+  const issues = [
+    ...findInferenceConfigIssues(config),
+    ...findFusionPromptIssues(config),
+  ];
   if (issues.length > 0) throw new InferenceConfigError(issues);
 }
 

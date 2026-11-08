@@ -19,6 +19,7 @@ import type {
   AiUsageStats,
   AiUsageSummaryOptions,
   SignalAdapter,
+  SmrtAiUsageEvent,
   SmrtAiUsageRecord,
 } from '@happyvertical/smrt-types';
 import type { DatabaseInterface } from '@happyvertical/sql';
@@ -40,6 +41,7 @@ import {
   resolveAiUsageTenantId,
   unwrapAiUsageSink,
 } from './adapters/ai-usage-recorder.js';
+import { estimateAiUsageCost } from './adapters/cost-rates.js';
 import { registerChangeFeedWriter } from './change-feed.js';
 import {
   getSmrtModuleConfig,
@@ -73,9 +75,11 @@ import {
   type InferenceRequest,
   type InferenceResolution,
   type InferenceResolver,
+  type InferenceRunRecord,
   type InferenceTarget,
   type InferenceTier,
   type InferenceTierRequest,
+  type InferenceUsageObservation,
   type InferenceUsageRecord,
   inferenceExecutorFor,
   mergeInferenceConfigs,
@@ -92,6 +96,7 @@ import {
 } from './postgres-timeouts.js';
 import { detectEngine } from './schema/ddl/index.js';
 import { SignalBus } from './signals/bus.js';
+import { recordAiRun } from './system/ai-runs.js';
 import { ensureSystemTables as ensureFrameworkSystemTables } from './system/bootstrap.js';
 import {
   ensureDeferredSystemTableCompatibility,
@@ -489,6 +494,11 @@ export class SmrtClass {
    * Registered AI usage handlers for this instance.
    */
   private _aiUsageHandlers: AiUsageHandler[] = [];
+  /** Per-run usage observers (fusion run records, #4753), keyed by run id. */
+  private readonly _aiRunUsageListeners = new Map<
+    string,
+    Set<(event: InferenceUsageObservation) => void>
+  >();
 
   /**
    * Tracks whether optional runtime services (signals, AI, fs) are ready.
@@ -916,8 +926,13 @@ export class SmrtClass {
         options.resolution ?? (await this.resolveInferenceTier(request));
       const executor = inferenceExecutorFor(resolution.target);
       if (executor) {
+        const tenantId = this.currentTenantId();
         return executor.createClient({
-          request,
+          request: {
+            className: this._className,
+            ...(tenantId !== undefined ? { tenantId } : {}),
+            ...request,
+          },
           resolution,
           config: this.getInferenceConfig(),
           ...(options.minimumTier ? { minimumTier: options.minimumTier } : {}),
@@ -926,9 +941,21 @@ export class SmrtClass {
             (await this.getAiClientForTarget(
               target,
             )) as unknown as InferenceModelClient,
-          resolveTier: (next) =>
-            this.resolveInferenceTier({ ...request, tier: next }),
+          resolveTier: (next, overrides) =>
+            this.resolveInferenceTier({
+              ...request,
+              ...(overrides?.promptKey
+                ? { promptKey: overrides.promptKey }
+                : {}),
+              tier: next,
+            }),
           recordUsage: (record) => this.recordInferenceUsage(record),
+          ...(this._db ? { db: this._db } : {}),
+          decide: (decisionRequest, decisionOptions) =>
+            this.decideForInference(decisionRequest, decisionOptions),
+          recordRun: (record) => this.recordInferenceRun(record),
+          observeUsage: (runId, listener) =>
+            this.observeRunUsage(runId, listener),
         }) as unknown as AIClient;
       }
       return this.getAiClientForTarget(resolution.target);
@@ -972,11 +999,7 @@ export class SmrtClass {
       instance && typeof (instance as InferenceResolver).resolve === 'function'
         ? (instance as InferenceResolver)
         : undefined;
-    const tenantId =
-      'tenantId' in this &&
-      (this as { tenantId?: string | null }).tenantId !== undefined
-        ? ((this as { tenantId?: string | null }).tenantId ?? null)
-        : undefined;
+    const tenantId = this.currentTenantId();
     return resolveInferenceBinding(
       {
         className: this._className,
@@ -1081,6 +1104,108 @@ export class SmrtClass {
    * (#4752), through the same handlers SDK usage events reach. The executor
    * calls this once per exhausted call; it is not a second writer.
    */
+  /** This instance's tenant id: a value, `null` (global), or unknown. */
+  private currentTenantId(): string | null | undefined {
+    return 'tenantId' in this &&
+      (this as { tenantId?: string | null }).tenantId !== undefined
+      ? ((this as { tenantId?: string | null }).tenantId ?? null)
+      : undefined;
+  }
+
+  /**
+   * A fusion gate's decision (#4753): the instance's typed-decision client,
+   * as `evaluate()` uses it, with the run's usage tags on the usage row.
+   */
+  private async decideForInference(
+    request: DecisionRequest,
+    options: { usageTags?: Record<string, string>; signal?: AbortSignal } = {},
+  ): Promise<DecisionResult | undefined> {
+    const decision = await this.getDecisionClient();
+    if (!decision) return undefined;
+    const result = await executeDecision(decision, request, {
+      ...(options.signal ? { signal: options.signal } : {}),
+      usageTags: { ...(options.usageTags ?? {}), operation: 'decision' },
+    } as DecisionOptions);
+    await this.recordAiUsageEvent(
+      {
+        provider: result.provenance.provider,
+        model: result.provenance.model,
+        operation: 'decision',
+        usage: result.usage,
+        tags: { ...(options.usageTags ?? {}), operation: 'decision' },
+      },
+      result.provenance,
+    );
+    return result;
+  }
+
+  /**
+   * Write a fusion run record (#4753) when usage persistence is on. A write
+   * failure is logged, never thrown: it must not mask the run's own result.
+   */
+  private async recordInferenceRun(record: InferenceRunRecord): Promise<void> {
+    const usageConfig =
+      this._aiUsageResolvedConfig ?? this.mergeAiUsageConfig(config.toJSON());
+    if (!usageConfig.enabled || !usageConfig.persist || !this._db) return;
+    try {
+      await recordAiRun(this._db, {
+        ...record,
+        className: this._className,
+        tenantId: this.currentTenantId() ?? null,
+      });
+    } catch (error) {
+      logger.warn(
+        `[smrt] AI run record failed for fusion ${record.fusionKey}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+
+  private observeRunUsage(
+    runId: string,
+    listener: (event: InferenceUsageObservation) => void,
+  ): () => void {
+    let listeners = this._aiRunUsageListeners.get(runId);
+    if (!listeners) {
+      listeners = new Set();
+      this._aiRunUsageListeners.set(runId, listeners);
+    }
+    listeners.add(listener);
+    return () => {
+      const current = this._aiRunUsageListeners.get(runId);
+      current?.delete(listener);
+      if (current && current.size === 0)
+        this._aiRunUsageListeners.delete(runId);
+    };
+  }
+
+  private notifyRunUsage(event: SmrtAiUsageEvent): void {
+    const runId = event.tags?.runId;
+    if (!runId) return;
+    const listeners = this._aiRunUsageListeners.get(runId);
+    if (!listeners) return;
+    const observation: InferenceUsageObservation = {
+      provider: event.provider,
+      model: event.model,
+      promptTokens: event.usage?.promptTokens ?? 0,
+      completionTokens: event.usage?.completionTokens ?? 0,
+      totalTokens: event.usage?.totalTokens ?? 0,
+      ...(event.estimatedCost !== undefined
+        ? { estimatedCost: event.estimatedCost }
+        : {}),
+      duration: event.duration,
+      tags: { ...(event.tags ?? {}) },
+    };
+    for (const listener of listeners) {
+      try {
+        listener(observation);
+      } catch {
+        // An observer must never break usage handling.
+      }
+    }
+  }
+
   private async recordInferenceUsage(
     record: InferenceUsageRecord,
   ): Promise<void> {
@@ -1901,7 +2026,11 @@ export class SmrtClass {
     usageConfig: ResolvedAiUsageConfig,
     overrides: AiUsageSinkAttribution = {},
   ): Promise<void> {
-    if (!usageConfig.enabled || this._aiUsageHandlers.length === 0) {
+    const observed = this._aiRunUsageListeners.size > 0;
+    if (
+      !usageConfig.enabled ||
+      (this._aiUsageHandlers.length === 0 && !observed)
+    ) {
       return;
     }
 
@@ -1919,6 +2048,17 @@ export class SmrtClass {
       return;
     }
 
+    if (observed) {
+      if (usageConfig.estimateCosts) {
+        normalizedEvent.estimatedCost = estimateAiUsageCost(
+          normalizedEvent.provider,
+          normalizedEvent.model,
+          normalizedEvent.usage,
+          usageConfig.costRates,
+        );
+      }
+      this.notifyRunUsage(normalizedEvent);
+    }
     await dispatchAiUsageEvent(
       normalizedEvent,
       this._aiUsageHandlers,

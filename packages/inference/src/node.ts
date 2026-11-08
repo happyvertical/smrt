@@ -327,6 +327,7 @@ function describeTarget(target: InferenceTarget): string {
   if (kind === 'candidates') {
     return `${target.candidates?.length ?? 0} inline candidate(s)`;
   }
+  if (kind === 'fusion') return `fusion ${String(target.fusion)}`;
   if (kind !== 'single') return `kind ${kind} (not checked here)`;
   const base = text(target.baseUrl);
   return `${candidateLabel(target)}${base ? ` at ${redactBaseUrl(base)}` : ''}`;
@@ -489,6 +490,20 @@ export async function checkInferenceBindings(
         `${list.length} candidate(s)${alias?.description ? ` — ${alias.description}` : ''}`,
         issuesFor(`inference.aliases.${name}`),
         await checkList(list),
+      ),
+    );
+  }
+
+  // Fusions (#4753): structure only; each seat's target is a tier, alias or
+  // model checked above. Prompt keys are the app's and are checked at load.
+  for (const [name, fusion] of Object.entries(config?.fusions ?? {})) {
+    const seats = Array.isArray(fusion?.seats) ? fusion.seats.length : 0;
+    bindings.push(
+      settle(
+        `fusion:${name}`,
+        `${String(fusion?.mode)}, ${seats} seat(s)${fusion?.description ? ` — ${fusion.description}` : ''}`,
+        issuesFor(`inference.fusions.${name}`),
+        [],
       ),
     );
   }

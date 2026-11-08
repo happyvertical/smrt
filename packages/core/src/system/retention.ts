@@ -339,6 +339,47 @@ export interface AiUsageRetention {
 /** Name of the AI usage telemetry table. */
 const AI_USAGE_TABLE = '_smrt_ai_usage';
 
+/** Name of the fusion run table (#4753). */
+const AI_RUNS_TABLE = '_smrt_ai_runs';
+
+/** Options for {@link pruneAiRuns}. */
+export interface AiRunsRetention {
+  /** Delete runs older than this many milliseconds. */
+  maxAgeMs: number;
+  /** One tenant (`null`: global runs); omit for every tenant. */
+  tenantId?: string | null;
+  dryRun?: boolean;
+  now?: Date;
+}
+
+/**
+ * Prune fusion run records (`_smrt_ai_runs`, #4753) older than `maxAgeMs`.
+ * The retention sweep applies the AI usage age bound to runs too, so a run
+ * row never outlives its usage rows by the policy; a usage row-count bound
+ * does not apply to runs. Served by `idx_smrt_ai_runs_tenant_created` /
+ * `idx_smrt_ai_runs_created`.
+ */
+export async function pruneAiRuns(
+  db: DatabaseInterface,
+  retention: AiRunsRetention,
+): Promise<{ pruned: number }> {
+  const { maxAgeMs, dryRun = false } = retention;
+  if (!Number.isFinite(maxAgeMs) || maxAgeMs < 0) {
+    throw new Error(`pruneAiRuns maxAgeMs must be >= 0, got ${maxAgeMs}`);
+  }
+  const now = retention.now ?? new Date();
+  const scope = tenantScopeClause(retention);
+  const cutoff = new Date(now.getTime() - maxAgeMs).toISOString();
+  const pruned = await deleteFrom(
+    db,
+    AI_RUNS_TABLE,
+    [...scope.conditions, 'created_at < ?'],
+    [...scope.params, cutoff],
+    dryRun,
+  );
+  return { pruned };
+}
+
 /** Name of the remembered-context table. */
 const CONTEXTS_TABLE = '_smrt_contexts';
 
@@ -711,18 +752,26 @@ function aiUsageTask(policy: RetentionPolicy): RetentionTask | null {
 
   return {
     name: 'ai-usage',
-    description: 'Prune AI usage telemetry (_smrt_ai_usage)',
+    description:
+      'Prune AI usage telemetry (_smrt_ai_usage) and, by age, fusion runs (_smrt_ai_runs)',
     run: async (db, context) => {
+      const maxAgeMs =
+        config.maxAgeDays == null ? undefined : config.maxAgeDays * MS_PER_DAY;
       const { pruned } = await pruneAiUsage(db, {
-        maxAgeMs:
-          config.maxAgeDays == null
-            ? undefined
-            : config.maxAgeDays * MS_PER_DAY,
+        maxAgeMs,
         maxRows: config.maxRows,
         dryRun: context.dryRun,
         now: context.now,
       });
-      return pruned;
+      if (maxAgeMs == null || !(await tableExists(db, AI_RUNS_TABLE))) {
+        return pruned;
+      }
+      const runs = await pruneAiRuns(db, {
+        maxAgeMs,
+        dryRun: context.dryRun,
+        now: context.now,
+      });
+      return pruned + runs.pruned;
     },
   };
 }

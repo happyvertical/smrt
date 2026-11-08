@@ -39,6 +39,7 @@
     "@happyvertical/ai": "catalog:",
     "@happyvertical/smrt-config": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
+    "@happyvertical/smrt-prompts": "workspace:*",
     "@happyvertical/smrt-secrets": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",
     "@happyvertical/smrt-users": "workspace:*",
