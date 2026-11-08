@@ -463,6 +463,55 @@ describe('#3077 SmrtClass#withAiUsage()', () => {
     expect(handler.handle.mock.calls[0][0].tenantId).toBe('tenant-explicit');
     expect(recorderHandler.handle).not.toHaveBeenCalled();
   });
+
+  it('withAiUsage() keeps an existing sink attribution unless overridden (review round 3)', async () => {
+    setAiUsageTenantResolver(() => 'tenant-ambient');
+    const handler = handlerSpy();
+    const instance = new TenantRecorderTestClass({
+      usage: { handlers: [handler] },
+    });
+    const branded = attachAiUsageRecorder(
+      AI,
+      createAiUsageRecorder({ tenantId: null, tags: { feature: 'f' } }),
+    );
+
+    await instance.withAiUsage(branded).onUsage(usageEvent());
+    await instance
+      .withAiUsage(branded, { tenantId: 'tenant-call' })
+      .onUsage(usageEvent());
+
+    expect(handler.handle.mock.calls[0][0]).toMatchObject({
+      tenantId: null,
+      tags: { feature: 'f' },
+    });
+    expect(handler.handle.mock.calls[1][0]).toMatchObject({
+      tenantId: 'tenant-call',
+      tags: { feature: 'f' },
+    });
+  });
+
+  it('the instance client records even when the caller callback throws (review round 3)', async () => {
+    const handler = handlerSpy();
+    const wired = attachAiUsageRecorder(
+      {
+        ...AI,
+        onUsage: () => {
+          throw new Error('caller failed');
+        },
+      },
+      createAiUsageRecorder({}),
+    );
+    const instance = new RecorderTestClass({
+      ai: wired as never,
+      usage: { handlers: [handler] },
+    });
+    await instance.init();
+    const aiConfig = getAIMock.mock.calls[0]?.[0] as Record<string, unknown>;
+    await expect(
+      (aiConfig.onUsage as (event: unknown) => Promise<void>)(usageEvent()),
+    ).rejects.toThrow('caller failed');
+    expect(handler.handle).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('#3077 gateway model ids in cost estimation', () => {

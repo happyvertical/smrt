@@ -1,7 +1,12 @@
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ObjectRegistry, smrt } from '@happyvertical/smrt-core';
+import {
+  attachAiUsageRecorder,
+  createAiUsageRecorder,
+  ObjectRegistry,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { getTestDatabase } from '@happyvertical/smrt-core/testing';
 import {
   Secret,
@@ -299,6 +304,34 @@ describe('agent AI secret resolution', () => {
         db: undefined,
       })) as UsageSink;
       expect(noDb.onUsage).toBeUndefined();
+    });
+
+    it('keeps an explicit recorder attribution passed as agent ai (review round 3)', async () => {
+      const { root, child } = await createTenantHierarchy();
+
+      await withTenant({ tenantId: String(root.id) }, async () => {
+        const agent = new GeminiSecretAgent({
+          db,
+          ai: attachAiUsageRecorder(
+            { type: 'gemini', apiKey: 'explicit-key' },
+            createAiUsageRecorder({
+              tenantId: child.id,
+              tags: { feature: 'per-call' },
+            }),
+          ),
+        });
+        await agent.initialize();
+        await (agent.options.ai as UsageSink).onUsage?.(usageEvent);
+
+        const rows = await agent.listAiUsage({
+          className: 'GeminiSecretAgent',
+        });
+        expect(rows).toHaveLength(1);
+        expect(rows[0]).toMatchObject({
+          tenantId: child.id,
+          tags: { feature: 'per-call' },
+        });
+      });
     });
   });
 });

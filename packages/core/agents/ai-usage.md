@@ -28,6 +28,9 @@ present and `persist` is on, plus `usage.handlers`; instances also keep an
   `tenantId`/`tags` (`aiUsageSinkAttribution`) still apply, while class name,
   instance tenant and ambient tenant follow the building instance. Keep that
   unwrap and attribution on every client the class builds (default and tier).
+  `withAiUsage()` on a config that already carries a sink inherits its explicit
+  attribution unless its own options set one. Instance clients record even when
+  the caller's callback throws (the error still propagates).
 - Tenant: explicit `tenantId` (a string; `null` = global, skip ambient) →
   instance `tenantId` (non-empty) → ambient tenant from
   `setAiUsageTenantResolver()` → none. smrt-tenancy registers `getTenantId()`

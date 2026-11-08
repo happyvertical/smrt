@@ -810,17 +810,22 @@ export class SmrtClass {
             const existingOnUsage = unwrapAiUsageSink(configuredOnUsage);
             const sinkAttribution = aiUsageSinkAttribution(configuredOnUsage);
             aiConfig.onUsage = async (event: unknown) => {
-              if (typeof existingOnUsage === 'function') {
-                await (existingOnUsage as (usageEvent: unknown) => unknown)(
+              // Record even when the caller's callback throws; its error
+              // still propagates (#3077).
+              try {
+                if (typeof existingOnUsage === 'function') {
+                  await (existingOnUsage as (usageEvent: unknown) => unknown)(
+                    event,
+                  );
+                }
+              } finally {
+                await this.handleAiUsageCallback(
                   event,
+                  aiConfig,
+                  usageConfig,
+                  sinkAttribution,
                 );
               }
-              await this.handleAiUsageCallback(
-                event,
-                aiConfig,
-                usageConfig,
-                sinkAttribution,
-              );
             };
 
             // Only initialize if we have a provider configured
@@ -1111,15 +1116,18 @@ export class SmrtClass {
     const usageConfig =
       this._aiUsageResolvedConfig ?? this.mergeAiUsageConfig(config.toJSON());
     tierConfig.onUsage = async (event: unknown) => {
-      if (typeof userOnUsage === 'function') {
-        await (userOnUsage as (usageEvent: unknown) => unknown)(event);
+      try {
+        if (typeof userOnUsage === 'function') {
+          await (userOnUsage as (usageEvent: unknown) => unknown)(event);
+        }
+      } finally {
+        await this.handleAiUsageCallback(
+          event,
+          tierConfig,
+          usageConfig,
+          sinkAttribution,
+        );
       }
-      await this.handleAiUsageCallback(
-        event,
-        tierConfig,
-        usageConfig,
-        sinkAttribution,
-      );
     };
 
     const pending = (async () => {
@@ -1273,7 +1281,9 @@ export class SmrtClass {
    * the tenant from `options.tenantId`, else this instance's `tenantId`, else
    * the ambient tenant (`setAiUsageTenantResolver()`). An explicit
    * `options.tenantId` / `options.tags` travels with the config: another
-   * instance that builds its client from it keeps them. Recording failures
+   * instance that builds its client from it keeps them, and wiring a config
+   * that already carries a sink keeps that sink's explicit tenant and tags
+   * unless `options` sets its own. Recording failures
    * are logged and never reach the AI call (#3077).
    */
   withAiUsage<T extends object>(
@@ -1281,6 +1291,16 @@ export class SmrtClass {
     options: { tenantId?: string | null; tags?: Record<string, string> } = {},
   ): T & { onUsage: (event: unknown) => Promise<void> } {
     const providerConfig = aiConfig as Record<string, unknown>;
+    // A sink already on the config keeps its explicit attribution unless
+    // `options` names its own (#3077).
+    const inherited = aiUsageSinkAttribution(
+      (aiConfig as { onUsage?: unknown }).onUsage,
+    );
+    const attribution: AiUsageSinkAttribution = {
+      tenantId:
+        options.tenantId !== undefined ? options.tenantId : inherited?.tenantId,
+      tags: options.tags ?? inherited?.tags,
+    };
     const sink = brandAiUsageSink(async (event: unknown) => {
       try {
         await this.ensureRuntimeServicesInitialized();
@@ -1289,7 +1309,7 @@ export class SmrtClass {
           providerConfig,
           this._aiUsageResolvedConfig ??
             this.mergeAiUsageConfig(config.toJSON()),
-          options,
+          attribution,
         );
       } catch (error) {
         logger.warn(
@@ -1298,7 +1318,7 @@ export class SmrtClass {
           }`,
         );
       }
-    }, options);
+    }, attribution);
     return attachAiUsageRecorder(aiConfig, sink);
   }
 
