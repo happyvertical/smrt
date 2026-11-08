@@ -1,4 +1,4 @@
-# AI usage observability (#4751)
+# AI usage observability (#4751, #4753)
 
 `_smrt_ai_usage` answers "how does model X do on prompt Y". Sources:
 `src/adapters/ai-usage.ts` (persistence), `src/adapters/ai-usage-recorder.ts`
@@ -69,6 +69,35 @@ pass (column-existence-guarded ALTER on SQLite, PostgreSQL, DuckDB) before the
 1.13.0 DDL replay creates the indexes. No backfill: old rows keep NULL columns
 and their `tags`. A writer must not depend on the columns without
 `ensureSystemTables()` having run. `pruneAiUsage()` is unchanged.
+
+## Run records (`_smrt_ai_runs`, #4753)
+
+Source: `src/system/ai-runs.ts`. One row per multi-call run (a fusion):
+`id` (the `runId` every seat's usage row carries in `run_id`), `fusion_key`,
+`mode`, `tenant_id` / `class_name` (the instance's, like a usage row),
+`prompt_key` of the entry call, `seats` that ran, `degraded_seats` (died or
+answered through a substitution), `status` (`ok | degraded | failed`),
+`duration` and `details` (JSON: per-seat persona, prompt, status, target and
+model labels, token usage, substitutions, failure class; gate verdict). Never
+prompts, inputs, outputs or keys. Seat usage rows also carry the `fusionKey`
+and `seat` tags (`seat: 'gate'` for the gate's decision row).
+
+- Writer: the executor context's `recordRun()` (`class.ts`), only when usage
+  is enabled and persisted and the instance has a database; a write failure is
+  logged, never thrown. Direct API: `recordAiRun(db, input)`.
+- Readers: `listAiRuns(db, { id?, fusionKey?, status?, tenantId?, since?,
+  until?, limit? })` (newest first) and `reportAiRuns(db, { since, until,
+  tenantId })` (per fusion: runs, ok/degraded/failed, seats, degraded seats,
+  p50 duration; other tenants counted in `excluded`). `smrt ai:usage --by
+  fusion` prints it beside the usage report.
+- Indexes: `created_at`, `(fusion_key, created_at)`, `(tenant_id,
+  created_at)`; `status` is always read with one of them. `tenant_id` stays
+  TEXT like `_smrt_ai_usage.tenant_id`. `run_id` is not a foreign key.
+- Retention: the sweep's `ai-usage` task prunes runs with the AI usage age
+  bound (`pruneAiRuns()`); a usage row-count bound does not apply to runs.
+- Schema 1.14.0 creates the table through `ensureSystemTables()` (new table,
+  no compatibility ALTERs). PostgreSQL lane:
+  `issue-4753-ai-runs-postgres.optional.test.ts`.
 
 ## Outcome labels
 
