@@ -638,6 +638,12 @@ interface AiRequestShape {
   capabilityFallback?: InferenceCapabilityFallbackOption;
 }
 
+/** True for a JSON `responseFormat` (`json_object` or `json_schema`). */
+function isJsonResponseFormat(format: unknown): boolean {
+  const type = (format as { type?: unknown } | undefined)?.type;
+  return type === 'json_object' || type === 'json_schema';
+}
+
 const JSON_VERDICT_ASK =
   "Does the content meet all the given criteria? Reply with a json object with a single boolean 'result' property";
 const TEXT_VERDICT_ASK =
@@ -5013,8 +5019,17 @@ export class SmrtObject extends SmrtClass {
     let capabilities: InferenceCapabilities | undefined;
     if (single) {
       try {
+        // The model the call will run: a caller `model` replaces the
+        // target's per call (below), so capabilities follow it.
+        const requested = (rest as { model?: unknown }).model;
+        const callModel =
+          typeof requested === 'string' && requested.trim() !== ''
+            ? requested.trim()
+            : undefined;
         capabilities = await this.detectInferenceTargetCapabilities(
-          resolution.target,
+          callModel
+            ? { ...resolution.target, model: callModel }
+            : resolution.target,
           ai,
         );
       } catch {
@@ -5152,6 +5167,42 @@ export class SmrtObject extends SmrtClass {
     return { prompt: build(Math.floor(allowed)), truncated: true };
   }
 
+  /**
+   * The `ai.message()` options for a shaped request (#4758): the caller's
+   * options, the capability tags, `responseFormat: json_object` for a
+   * verdict in JSON mode, the shaped `tools`, and the executor's
+   * `capabilityFallback`. After a `json→text` fallback no `responseFormat`
+   * survives, whether it came from the caller or a target's params.
+   */
+  private shapedMessageOptions(
+    aiOptions: Record<string, unknown>,
+    shape: AiRequestShape,
+    truncated: boolean,
+    verdict: boolean,
+    extra: Record<string, unknown> = {},
+  ): Record<string, unknown> {
+    const options: Record<string, unknown> = {
+      ...aiOptions,
+      ...this.capabilityUsageTags(
+        aiOptions.usageTags as Record<string, string> | undefined,
+        shape,
+        truncated,
+      ),
+      ...extra,
+      ...(verdict && shape.json
+        ? { responseFormat: { type: 'json_object' as const } }
+        : {}),
+      tools: shape.tools,
+      ...(shape.capabilityFallback
+        ? { capabilityFallback: shape.capabilityFallback }
+        : {}),
+    };
+    if (shape.fallbacks.includes(JSON_TEXT_FALLBACK)) {
+      delete options.responseFormat;
+    }
+    return options;
+  }
+
   /** `usageTags` with the request shape's fallback and truncation tags. */
   private capabilityUsageTags(
     usageTags: Record<string, string> | undefined,
@@ -5260,17 +5311,10 @@ export class SmrtObject extends SmrtClass {
       'is',
     );
 
-    const message = await ai.message(prompt, {
-      ...aiOptions,
-      ...this.capabilityUsageTags(aiOptions.usageTags, shape, truncated),
-      ...(shape.json
-        ? { responseFormat: { type: 'json_object' as const } }
-        : {}),
-      tools: shape.tools,
-      ...(shape.capabilityFallback
-        ? { capabilityFallback: shape.capabilityFallback }
-        : {}),
-    });
+    const message = await ai.message(
+      prompt,
+      this.shapedMessageOptions(aiOptions, shape, truncated, true),
+    );
 
     if (!shape.json) {
       const verdict = parseInferenceTextVerdict(message);
@@ -5418,7 +5462,13 @@ export class SmrtObject extends SmrtClass {
       generativeModel,
       ...generationOptions
     } = options;
-    const prepared = await this.prepareAiOperation(generationOptions);
+    // `generativeModel` is the model this route runs, so capability
+    // detection must see it (#4758).
+    const prepared = await this.prepareAiOperation(
+      generativeModel
+        ? { ...generationOptions, model: generativeModel }
+        : generationOptions,
+    );
     const { ai, aiOptions } = prepared;
     const tools = this.getAvailableTools();
     const shape = this.shapeAiRequest(
@@ -5434,22 +5484,16 @@ export class SmrtObject extends SmrtClass {
       (aiOptions as { maxTokens?: unknown }).maxTokens,
       'evaluate',
     );
-    const message = await ai.message(prompt, {
-      ...aiOptions,
-      ...this.capabilityUsageTags(
-        (aiOptions as { usageTags?: Record<string, string> }).usageTags,
+    const message = await ai.message(
+      prompt,
+      this.shapedMessageOptions(
+        aiOptions,
         shape,
         truncated,
+        true,
+        generativeModel ? { model: generativeModel } : {},
       ),
-      ...(generativeModel ? { model: generativeModel } : {}),
-      ...(shape.json
-        ? { responseFormat: { type: 'json_object' as const } }
-        : {}),
-      tools: shape.tools,
-      ...(shape.capabilityFallback
-        ? { capabilityFallback: shape.capabilityFallback }
-        : {}),
-    });
+    );
     if (!shape.json || shape.capabilityFallback?.json) {
       const verdict = parseInferenceTextVerdict(message);
       if (verdict !== undefined)
@@ -5509,7 +5553,10 @@ export class SmrtObject extends SmrtClass {
     // Get available tools for AI function calling
     const shape = this.shapeAiRequest(
       prepared,
-      { json: false, tools: this.getAvailableTools() },
+      {
+        json: isJsonResponseFormat(aiOptions.responseFormat),
+        tools: this.getAvailableTools(),
+      },
       'do',
     );
     const { prompt, truncated } = this.fitAiPrompt(
@@ -5521,14 +5568,10 @@ export class SmrtObject extends SmrtClass {
       'do',
     );
 
-    const result = await ai.message(prompt, {
-      ...aiOptions,
-      ...this.capabilityUsageTags(aiOptions.usageTags, shape, truncated),
-      tools: shape.tools,
-      ...(shape.capabilityFallback
-        ? { capabilityFallback: shape.capabilityFallback }
-        : {}),
-    });
+    const result = await ai.message(
+      prompt,
+      this.shapedMessageOptions(aiOptions, shape, truncated, false),
+    );
 
     return result;
   }
@@ -5569,7 +5612,10 @@ export class SmrtObject extends SmrtClass {
     // Get available tools for AI function calling
     const shape = this.shapeAiRequest(
       prepared,
-      { json: false, tools: this.getAvailableTools() },
+      {
+        json: isJsonResponseFormat(aiOptions.responseFormat),
+        tools: this.getAvailableTools(),
+      },
       'describe',
     );
     const { prompt, truncated } = this.fitAiPrompt(
@@ -5581,14 +5627,10 @@ export class SmrtObject extends SmrtClass {
       'describe',
     );
 
-    const result = await ai.message(prompt, {
-      ...aiOptions,
-      ...this.capabilityUsageTags(aiOptions.usageTags, shape, truncated),
-      tools: shape.tools,
-      ...(shape.capabilityFallback
-        ? { capabilityFallback: shape.capabilityFallback }
-        : {}),
-    });
+    const result = await ai.message(
+      prompt,
+      this.shapedMessageOptions(aiOptions, shape, truncated, false),
+    );
 
     return result;
   }

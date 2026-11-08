@@ -46,13 +46,17 @@ const TOOL = {
 };
 
 function harness(
-  models: string[],
+  models: Array<string | { model: string; params: Record<string, unknown> }>,
   capabilities: Record<string, InferenceCapabilities>,
 ) {
   const config: InferenceConfig = {
     tiers: {
       great: {
-        candidates: models.map((model) => ({ provider: 'openai', model })),
+        candidates: models.map((entry) =>
+          typeof entry === 'string'
+            ? { provider: 'openai', model: entry }
+            : { provider: 'openai', ...entry },
+        ),
       },
     },
     degrade: false,
@@ -153,6 +157,28 @@ describe('missing-capability in the chain walk', () => {
     expect(options).not.toHaveProperty('tools');
     expect(options).not.toHaveProperty('capabilityFallback');
     expect(options.usageTags?.capabilityFallback).toBe('json→text,tools→none');
+  });
+
+  it("checks and strips a candidate's own params, not only caller options", async () => {
+    const jsonParams = { responseFormat: { type: 'json_object' } };
+    const skipped = harness([{ model: 'small', params: jsonParams }, 'big'], {
+      small: TEXT_ONLY,
+    });
+    await skipped.client.message('hi');
+    expect(skipped.calls.map((call) => call.model)).toEqual(['big']);
+
+    const degraded = harness(
+      [{ model: 'small', params: { ...jsonParams, tools: [TOOL] } }],
+      { small: TEXT_ONLY },
+    );
+    await degraded.client.message('hi', {
+      capabilityFallback: { json: 'text', tools: 'drop' },
+    });
+    expect(degraded.calls[0]?.options).not.toHaveProperty('responseFormat');
+    expect(degraded.calls[0]?.options).not.toHaveProperty('tools');
+    expect(degraded.calls[0]?.options.usageTags?.capabilityFallback).toBe(
+      'json→text,tools→none',
+    );
   });
 
   it('leaves capable candidates and plain calls untouched', async () => {

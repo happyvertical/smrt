@@ -161,8 +161,13 @@ class ChainCall {
    * (#4758). Without a detector (older core) or a requirement, it fits.
    */
   private async capabilityFit(step: ChainStep): Promise<CapabilityFit> {
-    const json = wantsJson(this.callerOptions);
-    const tools = wantsTools(this.callerOptions);
+    // The options the candidate would receive: its params under the caller's.
+    const effective: InferenceCallOptions = {
+      ...(step.params ?? {}),
+      ...this.callerOptions,
+    };
+    const json = wantsJson(effective);
+    const tools = wantsTools(effective);
     if ((!json && !tools) || !this.context.capabilitiesFor) return { ok: true };
     let capabilities: Awaited<
       ReturnType<NonNullable<InferenceExecutionContext['capabilitiesFor']>>
@@ -216,20 +221,15 @@ class ChainCall {
       onRefusal,
       // Executor-only: never reaches a provider.
       capabilityFallback: _capabilityFallback,
-      ...shaped
+      ...rest
     } = this.callerOptions as InferenceCallOptions & {
       onProgress?: (chunk: string) => void;
       onFinishReason?: (reason: string) => void;
       onRefusal?: (refusal: unknown) => void;
     };
-    const { responseFormat: _responseFormat, tools: _tools, ...rest } = shaped;
-    if (!adjust?.dropJson && shaped.responseFormat !== undefined) {
-      rest.responseFormat = shaped.responseFormat;
-    }
-    if (!adjust?.dropTools && 'tools' in shaped) rest.tools = shaped.tools;
     const model =
       typeof step.target.model === 'string' ? step.target.model : undefined;
-    return {
+    const options: InferenceCallOptions = {
       ...(step.params ?? {}),
       ...rest,
       // A candidate names its own model; a caller model cannot follow the
@@ -268,6 +268,11 @@ class ChainCall {
           }
         : {}),
     };
+    // After the merge, so a candidate's own params cannot bring back a
+    // feature its fallback removed (#4758).
+    if (adjust?.dropJson) delete options.responseFormat;
+    if (adjust?.dropTools) delete options.tools;
+    return options;
   }
 
   private async attemptOnce<T>(
