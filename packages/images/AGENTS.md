@@ -19,7 +19,7 @@ Image management with AI categorization, editing, and metadata extraction. Exten
 
 ## AI Operations
 
-`generateAltText()` uses the `smrtImages.image.generateAltText` prompt registered via `@happyvertical/smrt-prompts` (resolves tenant overrides via `resolvePrompt()` then dispatches through `getAiClient().message()`). Computed properties: `isLandscape`, `isPortrait`, `aspectRatio`.
+`generateAltText()` uses the `smrtImages.image.generateAltText` prompt registered via `@happyvertical/smrt-prompts` (resolves tenant overrides via `resolvePrompt()` then dispatches through `prepareAiOperation()` so a tier profile picks the tier client). Computed properties: `isLandscape`, `isPortrait`, `aspectRatio`.
 
 ## Prompt Registry
 

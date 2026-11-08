@@ -503,7 +503,14 @@ export class Issue extends SmrtObject {
     );
 
     // Params, model and the prompt-run usage tags (#4751) for both paths.
+    // The do() path routes a tier profile through prepareAiOperation(); the
+    // explicit-provider path holds its own client, so it drops the tier keys.
     const aiOptions = promptMessageOptions(resolvedPrompt.ai);
+    const {
+      tier: _tier,
+      promptKey: _promptKey,
+      ...providerAiOptions
+    } = aiOptions;
 
     let synthesized: string;
 
@@ -511,7 +518,7 @@ export class Issue extends SmrtObject {
       synthesized = await this.runPromptWithResolvedAI(
         resolvedPrompt.text,
         resolvedPrompt.ai.provider,
-        aiOptions,
+        providerAiOptions,
       );
     } else {
       // The resolved prompt template already curates the issue body + comments,

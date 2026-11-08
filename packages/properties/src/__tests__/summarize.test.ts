@@ -175,8 +175,16 @@ describe('Property.summarize()', () => {
       clearPromptCache();
       await makeProperty().summarize();
       const [, options] = aiMessageMock.mock.calls[0];
+      // Prompt-run tags (#4751) and tier tags (#4750) both reach the call;
+      // tier and promptKey are stripped before the provider sees them.
       expect(options).toEqual({
-        usageTags: { tierRequested: 'auto', tierResolved: 'good' },
+        usageTags: {
+          promptKey: smrtPropertiesSummarizePrompt.key,
+          promptLayer: 'default',
+          templateHash: expect.stringMatching(/^[0-9a-f]{12}$/),
+          tierRequested: 'auto',
+          tierResolved: 'good',
+        },
       });
     } finally {
       clearCache();

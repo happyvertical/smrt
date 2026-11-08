@@ -417,6 +417,13 @@ export interface PromptMessageOptions extends PromptParams {
 export interface PromptMessageOptionsExtra {
   /** The caller's own usage tags; they win over the resolution's tags. */
   usageTags?: Record<string, string>;
+  /**
+   * `false` omits `tier`/`promptKey` for a call site that sends the options
+   * straight to a client it already holds (no `prepareAiOperation()`), so
+   * the tier keys never reach a provider; the call runs on that client.
+   * Default `true`.
+   */
+  routeTier?: boolean;
 }
 
 /**
@@ -435,6 +442,7 @@ export function promptMessageOptions(
   extra: PromptMessageOptionsExtra = {},
 ): PromptMessageOptions {
   const params = ai.params || {};
+  const routeTier = extra.routeTier !== false;
   const usageTags = {
     ...stringTags(params.usageTags),
     ...(ai.usageTags ?? {}),
@@ -443,8 +451,10 @@ export function promptMessageOptions(
   return {
     ...params,
     ...(ai.model ? { model: ai.model } : {}),
-    ...(ai.tier ? { tier: ai.tier } : {}),
-    ...(ai.tier && ai.promptKey ? { promptKey: ai.promptKey } : {}),
+    ...(routeTier && ai.tier ? { tier: ai.tier } : {}),
+    ...(routeTier && ai.tier && ai.promptKey
+      ? { promptKey: ai.promptKey }
+      : {}),
     ...(typeof ai.temperature === 'number'
       ? { temperature: ai.temperature }
       : {}),

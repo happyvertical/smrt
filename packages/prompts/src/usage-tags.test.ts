@@ -205,6 +205,26 @@ describe('prompt usage tags (#4751)', () => {
     });
   });
 
+  it('forwards tier and promptKey for a tier profile unless routeTier is false', async () => {
+    definePrompt({
+      key: 'tags.tier',
+      template: 'Tiered',
+      ai: { profile: 'great' },
+    });
+
+    const resolved = await resolvePrompt('tags.tier');
+    expect(promptMessageOptions(resolved.ai)).toMatchObject({
+      tier: 'great',
+      promptKey: 'tags.tier',
+      usageTags: { promptKey: 'tags.tier', promptLayer: 'default' },
+    });
+
+    const direct = promptMessageOptions(resolved.ai, { routeTier: false });
+    expect(direct).not.toHaveProperty('tier');
+    expect(direct).not.toHaveProperty('promptKey');
+    expect(direct.usageTags?.promptKey).toBe('tags.tier');
+  });
+
   it('omits usageTags for a hand-built AI object with none', () => {
     expect(promptMessageOptions({ params: {} })).toEqual({});
   });

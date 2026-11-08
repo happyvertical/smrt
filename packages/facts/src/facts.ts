@@ -1104,7 +1104,7 @@ export class FactCollection extends SmrtCollection<Fact> {
 
     const response = await ai.message(
       resolvedPrompt.text,
-      promptMessageOptions(resolvedPrompt.ai),
+      promptMessageOptions(resolvedPrompt.ai, { routeTier: false }),
     );
     return parseFactExtractionResponse(response).slice(0, maxFacts);
   }
@@ -1159,7 +1159,7 @@ export class FactCollection extends SmrtCollection<Fact> {
 
     const response = await ai.message(
       resolvedPrompt.text,
-      promptMessageOptions(resolvedPrompt.ai),
+      promptMessageOptions(resolvedPrompt.ai, { routeTier: false }),
     );
     return parseFactExtractionResponse(response).slice(0, maxFacts);
   }
@@ -1215,7 +1215,7 @@ export class FactCollection extends SmrtCollection<Fact> {
 
     const response = await ai.message(
       resolvedPrompt.text,
-      promptMessageOptions(resolvedPrompt.ai),
+      promptMessageOptions(resolvedPrompt.ai, { routeTier: false }),
     );
     return parseClaimSupportResponse(response);
   }
@@ -1278,7 +1278,7 @@ export class FactCollection extends SmrtCollection<Fact> {
       // "branch" branches; every other successful response merges.
       const response = await this.ai.message(
         resolvedPrompt.text,
-        promptMessageOptions(resolvedPrompt.ai),
+        promptMessageOptions(resolvedPrompt.ai, { routeTier: false }),
       );
       const normalized = response.trim().toLowerCase();
       if (normalized.includes('branch')) {
