@@ -512,6 +512,150 @@ describe('vault key lifecycle: rotation and revocation', () => {
   });
 });
 
+describe('vault key lifecycle: grant integrity', () => {
+  it('threat: every grant field is authenticated, not only the wrapped keys', async () => {
+    const laptop = device();
+    await laptop.lifecycle.initializeAccount({
+      accountId: ACCOUNT,
+      deviceId: 'laptop',
+      recoverySecret: RECOVERY_SECRET,
+    });
+    const joiner = device();
+    const request = await joiner.lifecycle.createEnrollmentRequest({
+      accountId: ACCOUNT,
+      deviceId: 'phone',
+    });
+    const grant = await laptop.lifecycle.enrollDevice(request);
+    const attackerKey = Buffer.alloc(32, 7).toString('base64url');
+    const foreignRecovery = Buffer.from(
+      (
+        await device().lifecycle.initializeAccount({
+          accountId: ACCOUNT,
+          deviceId: 'other',
+          recoverySecret: RECOVERY_SECRET,
+        })
+      ).recoveryRecord,
+    ).toString('base64url');
+    const forgeries = [
+      tamper(grant, {
+        devices: [
+          ...grant.devices,
+          { ...grant.devices[0], deviceId: 'attacker', publicKey: attackerKey },
+        ],
+      }),
+      tamper(grant, {
+        revokedDevices: [
+          {
+            deviceId: 'tablet',
+            publicKey: attackerKey,
+            revokedAt: grant.issuedAt,
+            effectiveGeneration: null,
+          },
+        ],
+      }),
+      tamper(grant, {
+        generations: grant.generations.map((entry) => ({
+          ...entry,
+          recoveryRecord: foreignRecovery,
+        })),
+      }),
+      tamper(grant, { issuedAt: '2000-01-01T00:00:00.000Z' }),
+    ];
+    for (const forged of forgeries) {
+      await expectCode(
+        joiner.lifecycle.acceptEnrollment(forged),
+        'grant_rejected',
+      );
+    }
+    await joiner.lifecycle.acceptEnrollment(grant);
+
+    const tablet = await enroll(laptop.lifecycle, 'tablet');
+    const update = await laptop.lifecycle.createDeviceGrant('phone');
+    const tabletKey = (await tablet.lifecycle.status())?.devices.find(
+      (entry) => entry.deviceId === 'tablet',
+    )?.publicKey as string;
+    for (const forged of [
+      tamper(update, {
+        revokedDevices: [
+          {
+            deviceId: 'laptop-alias',
+            publicKey: tabletKey,
+            revokedAt: update.issuedAt,
+            effectiveGeneration: null,
+          },
+        ],
+      }),
+      tamper(update, {
+        generations: update.generations.map((entry) => ({
+          ...entry,
+          recoveryRecord: foreignRecovery,
+        })),
+      }),
+    ]) {
+      await expectCode(
+        joiner.lifecycle.acceptDeviceGrant(forged),
+        'grant_rejected',
+      );
+    }
+    const before = Buffer.from(
+      joiner.store.items.get('recovery.1') as Uint8Array,
+    );
+    await joiner.lifecycle.acceptDeviceGrant(update);
+    expect(
+      Buffer.from(joiner.store.items.get('recovery.1') as Uint8Array),
+    ).toEqual(before);
+    expect((await joiner.lifecycle.status())?.rotationRequired).toBe(false);
+  });
+
+  it('applies a revocation learned before the rotation that made it effective', async () => {
+    const { laptop, tablet } = await family();
+    await laptop.lifecycle.revokeDevice('phone');
+    await tablet.lifecycle.acceptDeviceGrant(
+      await laptop.lifecycle.createDeviceGrant('tablet'),
+    );
+    expect((await tablet.lifecycle.status())?.rotationRequired).toBe(true);
+    const rotated = await laptop.lifecycle.rotate({
+      recoverySecret: RECOVERY_SECRET,
+    });
+    const status = await tablet.lifecycle.acceptDeviceGrant(rotated.grants[0]);
+    expect(status.rotationRequired).toBe(false);
+    expect(status.revokedDevices[0]).toMatchObject({
+      deviceId: 'phone',
+      effectiveGeneration: 2n,
+    });
+    expect((await tablet.lifecycle.openCurrentKey()).generation).toBe(2n);
+  });
+
+  it('refuses to rotate past the generation limit instead of saving an unreadable registry', async () => {
+    const laptop = device();
+    await laptop.lifecycle.initializeAccount({
+      accountId: ACCOUNT,
+      deviceId: 'laptop',
+      recoverySecret: RECOVERY_SECRET,
+    });
+    const registry = JSON.parse(
+      Buffer.from(laptop.store.items.get('registry') as Uint8Array).toString(),
+    );
+    registry.generations = Array.from({ length: 1024 }, (_, index) => ({
+      generation: String(index + 1),
+      keyId: randomBytes(16).toString('hex'),
+      status: index === 1023 ? 'current' : 'read-only',
+    }));
+    registry.currentGeneration = '1024';
+    laptop.store.items.set(
+      'registry',
+      new Uint8Array(Buffer.from(JSON.stringify(registry))),
+    );
+    expect((await laptop.lifecycle.status())?.generations).toHaveLength(1024);
+    const saved = laptop.store.items.get('registry');
+    await expectCode(
+      laptop.lifecycle.rotate({ recoverySecret: RECOVERY_SECRET }),
+      'generation_limit',
+    );
+    expect(laptop.store.items.get('registry')).toBe(saved);
+  });
+});
+
 describe('vault key lifecycle: secret custody', () => {
   it('threat: secret material never reaches registries, grants or errors', async () => {
     const { laptop, phone } = await family();

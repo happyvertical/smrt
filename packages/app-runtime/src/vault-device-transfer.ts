@@ -36,6 +36,11 @@ export interface VaultDeviceTransferContext extends VaultDeviceKeyContext {
   recipientPublicKey?: Uint8Array;
   /** Single-use 32-byte pairing secret; present only for enrollment. */
   pairingSecret?: Uint8Array;
+  /**
+   * SHA-256 digest of the metadata that travels with the transfer. Binding it
+   * makes any change to that metadata fail authentication.
+   */
+  bindingDigest?: Uint8Array;
 }
 
 function assertKeyBytes(value: unknown, message: string): Uint8Array {
@@ -105,13 +110,20 @@ function transferSecret(
   {
     senderDeviceId,
     pairingSecret,
-  }: Pick<VaultDeviceTransferContext, 'senderDeviceId' | 'pairingSecret'>,
+    bindingDigest,
+  }: Pick<
+    VaultDeviceTransferContext,
+    'senderDeviceId' | 'pairingSecret' | 'bindingDigest'
+  >,
   senderPublicKey: Uint8Array,
   recipientPublicKey: Uint8Array,
   ephemeralPublicKey: Uint8Array,
 ): Uint8Array {
   if (pairingSecret !== undefined) {
     assertKeyBytes(pairingSecret, 'Vault pairing secret must be 32 bytes');
+  }
+  if (bindingDigest !== undefined) {
+    assertKeyBytes(bindingDigest, 'Vault binding digest must be 32 bytes');
   }
   const ikm = Buffer.concat([ephemeralShared, staticShared]);
   try {
@@ -122,11 +134,15 @@ function transferSecret(
         pairingSecret ?? Buffer.alloc(0),
         Buffer.concat([
           TRANSFER_INFO,
-          Buffer.of(pairingSecret === undefined ? 0 : 1),
+          Buffer.of(
+            (pairingSecret === undefined ? 0 : 1) |
+              (bindingDigest === undefined ? 0 : 2),
+          ),
           senderIdBytes(senderDeviceId),
           senderPublicKey,
           recipientPublicKey,
           ephemeralPublicKey,
+          bindingDigest ?? Buffer.alloc(0),
         ]),
         KEY_BYTES,
       ),

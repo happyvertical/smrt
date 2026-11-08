@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { deepFrozenPlainCopy } from './plain-data.js';
 import { openVaultDeviceKey, wrapVaultDeviceKey } from './vault-device-key.js';
 import {
@@ -19,7 +19,7 @@ const FORMAT_VERSION = 1;
 const MAX_GENERATION = (1n << 64n) - 1n;
 const MAX_DEVICES = 64;
 const MAX_REVOKED_DEVICES = 256;
-const MAX_GENERATIONS = 256;
+const MAX_GENERATIONS = 1024;
 const KEY_BYTES = 32;
 const KEY_ID = /^[0-9a-f]{32}$/;
 const GENERATION_TEXT = /^[1-9][0-9]{0,19}$/;
@@ -40,7 +40,8 @@ export type VaultKeyLifecycleErrorCode =
   | 'grant_rejected'
   | 'generation_conflict'
   | 'recovery_rejected'
-  | 'rotation_required';
+  | 'rotation_required'
+  | 'generation_limit';
 
 const ERROR_MESSAGES: Record<VaultKeyLifecycleErrorCode, string> = {
   not_initialized: 'Vault keys are not initialized on this device',
@@ -55,6 +56,7 @@ const ERROR_MESSAGES: Record<VaultKeyLifecycleErrorCode, string> = {
   generation_conflict: 'Vault key generation conflicts with local state',
   recovery_rejected: 'Vault recovery secret was rejected',
   rotation_required: 'Vault key rotation is required before encrypting',
+  generation_limit: 'Vault key generation limit reached',
 };
 
 /** Lifecycle failure with a stable code; messages never carry key material. */
@@ -514,6 +516,44 @@ function parseGrant(value: unknown): VaultDeviceGrant {
   };
 }
 
+/**
+ * Digest of everything in a grant except the sealed transfers. Each transfer
+ * binds it, so a changed device list, revocation, recovery record or header
+ * fails authentication. Field order is fixed here, not taken from the input.
+ */
+function grantDigest(grant: VaultDeviceGrant): Uint8Array {
+  const canonical = JSON.stringify([
+    grant.format,
+    grant.version,
+    grant.kind,
+    grant.accountId,
+    grant.senderDeviceId,
+    grant.senderPublicKey,
+    grant.recipientDeviceId,
+    grant.issuedAt,
+    grant.currentGeneration,
+    grant.generations.map((entry) => [
+      entry.generation,
+      entry.keyId,
+      entry.recoveryRecord,
+    ]),
+    grant.devices.map((device) => [
+      device.deviceId,
+      device.publicKey,
+      device.generation,
+      device.keyId,
+      device.enrolledAt,
+    ]),
+    grant.revokedDevices.map((device) => [
+      device.deviceId,
+      device.publicKey,
+      device.revokedAt,
+      device.effectiveGeneration,
+    ]),
+  ]);
+  return new Uint8Array(createHash('sha256').update(canonical).digest());
+}
+
 function generationItem(prefix: 'key' | 'recovery', generation: bigint) {
   return `${prefix}.${generation.toString()}`;
 }
@@ -558,10 +598,10 @@ export function createVaultKeyLifecycle({
   }
 
   async function saveRegistry(registry: VaultDeviceRegistry): Promise<void> {
-    await store.set(
-      REGISTRY_ITEM,
-      new Uint8Array(Buffer.from(serializeVaultDeviceRegistry(registry))),
-    );
+    const serialized = serializeVaultDeviceRegistry(registry);
+    // Never persist a registry the next load would reject.
+    parseVaultDeviceRegistry(serialized);
+    await store.set(REGISTRY_ITEM, new Uint8Array(Buffer.from(serialized)));
   }
 
   async function deviceSecret(create: boolean): Promise<Uint8Array> {
@@ -626,39 +666,7 @@ export function createVaultKeyLifecycle({
     pairingSecret?: Uint8Array,
   ): Promise<VaultDeviceGrant> {
     const senderPublicKey = deriveVaultDevicePublicKey(secret);
-    const generations: VaultDeviceGrant['generations'] = [];
-    for (const entry of registry.generations) {
-      const dataKey = await openOwnKey(
-        registry,
-        secret,
-        entry.generation,
-        entry.keyId,
-      );
-      try {
-        generations.push({
-          generation: entry.generation.toString(),
-          keyId: entry.keyId,
-          transfer: encode(
-            sealVaultDeviceTransfer(dataKey, secret, {
-              accountId: registry.accountId,
-              deviceId: recipient.deviceId,
-              generation: entry.generation,
-              keyId: entry.keyId,
-              senderDeviceId: registry.deviceId,
-              senderPublicKey,
-              recipientPublicKey: decodeBytes(recipient.publicKey, KEY_BYTES),
-              pairingSecret,
-            }),
-          ),
-          recoveryRecord: encode(
-            await requireItem(generationItem('recovery', entry.generation)),
-          ),
-        });
-      } finally {
-        dataKey.fill(0);
-      }
-    }
-    return {
+    const grant: VaultDeviceGrant = {
       format: GRANT_FORMAT,
       version: FORMAT_VERSION,
       kind: pairingSecret === undefined ? 'update' : 'enrollment',
@@ -668,10 +676,48 @@ export function createVaultKeyLifecycle({
       recipientDeviceId: recipient.deviceId,
       issuedAt: isoNow(),
       currentGeneration: registry.currentGeneration.toString(),
-      generations,
+      generations: [],
       devices: registry.devices.map(serializeDevice),
       revokedDevices: registry.revokedDevices.map(serializeRevokedDevice),
     };
+    for (const entry of registry.generations) {
+      grant.generations.push({
+        generation: entry.generation.toString(),
+        keyId: entry.keyId,
+        transfer: '',
+        recoveryRecord: encode(
+          await requireItem(generationItem('recovery', entry.generation)),
+        ),
+      });
+    }
+    // Every transfer authenticates the whole grant, not just its own key.
+    const bindingDigest = grantDigest(grant);
+    for (const [index, entry] of registry.generations.entries()) {
+      const dataKey = await openOwnKey(
+        registry,
+        secret,
+        entry.generation,
+        entry.keyId,
+      );
+      try {
+        grant.generations[index].transfer = encode(
+          sealVaultDeviceTransfer(dataKey, secret, {
+            accountId: registry.accountId,
+            deviceId: recipient.deviceId,
+            generation: entry.generation,
+            keyId: entry.keyId,
+            senderDeviceId: registry.deviceId,
+            senderPublicKey,
+            recipientPublicKey: decodeBytes(recipient.publicKey, KEY_BYTES),
+            pairingSecret,
+            bindingDigest,
+          }),
+        );
+      } finally {
+        dataKey.fill(0);
+      }
+    }
+    return grant;
   }
 
   /** Open every transfer in a grant before anything is written. */
@@ -682,6 +728,7 @@ export function createVaultKeyLifecycle({
     pairingSecret?: Uint8Array,
   ) {
     const senderPublicKey = decodeBytes(grant.senderPublicKey, KEY_BYTES);
+    const bindingDigest = grantDigest(grant);
     const opened: Array<{
       generation: bigint;
       keyId: string;
@@ -702,6 +749,7 @@ export function createVaultKeyLifecycle({
             senderDeviceId: grant.senderDeviceId,
             senderPublicKey,
             pairingSecret,
+            bindingDigest,
           },
         );
         opened.push({
@@ -1080,9 +1128,16 @@ export function createVaultKeyLifecycle({
         ) {
           fail('grant_rejected');
         }
+        const self = registry.devices.find(
+          (device) => device.deviceId === registry.deviceId,
+        ) as VaultRegistryDevice;
         const grantRevoked = grant.revokedDevices.map(parseRevokedDevice);
         if (
-          grantRevoked.some((device) => device.deviceId === registry.deviceId)
+          grantRevoked.some(
+            (device) =>
+              device.deviceId === self.deviceId ||
+              device.publicKey === self.publicKey,
+          )
         ) {
           fail('grant_rejected');
         }
@@ -1103,15 +1158,15 @@ export function createVaultKeyLifecycle({
             grantCurrent > registry.currentGeneration
               ? grantCurrent
               : registry.currentGeneration;
+          const merged = copyRegistry(registry);
           if (
-            registry.pendingRotation &&
-            registry.pendingRotation.generation <= currentGeneration
+            merged.pendingRotation &&
+            merged.pendingRotation.generation <= currentGeneration
           ) {
-            registry.pendingRotation = null;
+            merged.pendingRotation = null;
           }
-          await storeOpenedKeys(registry, secret, fresh);
-          registry.generations = [
-            ...registry.generations,
+          merged.generations = [
+            ...merged.generations,
             ...fresh.map((entry) => ({
               generation: entry.generation,
               keyId: entry.keyId,
@@ -1127,34 +1182,60 @@ export function createVaultKeyLifecycle({
             .sort((left, right) =>
               left.generation < right.generation ? -1 : 1,
             );
-          registry.currentGeneration = currentGeneration;
+          merged.currentGeneration = currentGeneration;
           for (const revoked of grantRevoked) {
-            if (
-              registry.revokedDevices.some(
-                (device) => device.deviceId === revoked.deviceId,
-              )
-            ) {
+            const effectiveGeneration =
+              revoked.effectiveGeneration !== null &&
+              revoked.effectiveGeneration <= currentGeneration
+                ? revoked.effectiveGeneration
+                : null;
+            const known = merged.revokedDevices.find(
+              (device) =>
+                device.deviceId === revoked.deviceId ||
+                device.publicKey === revoked.publicKey,
+            );
+            if (known) {
+              // A revocation learned early becomes effective with the
+              // rotation that excluded the device.
+              if (
+                known.effectiveGeneration === null &&
+                effectiveGeneration !== null
+              ) {
+                known.effectiveGeneration = effectiveGeneration;
+              }
               continue;
             }
-            registry.devices = registry.devices.filter(
+            const active = merged.devices.find(
+              (device) =>
+                device.deviceId === revoked.deviceId ||
+                device.publicKey === revoked.publicKey,
+            );
+            if (
+              active &&
+              (active.deviceId !== revoked.deviceId ||
+                active.publicKey !== revoked.publicKey)
+            ) {
+              fail('grant_rejected');
+            }
+            merged.devices = merged.devices.filter(
               (device) => device.deviceId !== revoked.deviceId,
             );
-            registry.revokedDevices.push({
-              ...revoked,
-              effectiveGeneration:
-                revoked.effectiveGeneration !== null &&
-                revoked.effectiveGeneration <= currentGeneration
-                  ? revoked.effectiveGeneration
-                  : null,
-            });
+            merged.revokedDevices.push({ ...revoked, effectiveGeneration });
           }
-          const self = registry.devices.find(
-            (device) => device.deviceId === registry.deviceId,
+          const mergedSelf = merged.devices.find(
+            (device) => device.deviceId === merged.deviceId,
           ) as VaultRegistryDevice;
-          self.generation = currentGeneration;
-          self.keyId = keyIdFor(registry, currentGeneration) as string;
-          await saveRegistry(registry);
-          return toStatus(registry);
+          mergedSelf.generation = currentGeneration;
+          mergedSelf.keyId = keyIdFor(merged, currentGeneration) as string;
+          // Validate the merged registry before writing any key material.
+          try {
+            parseVaultDeviceRegistry(serializeVaultDeviceRegistry(merged));
+          } catch {
+            fail('grant_rejected');
+          }
+          await storeOpenedKeys(merged, secret, fresh);
+          await saveRegistry(merged);
+          return toStatus(merged);
         } finally {
           for (const entry of opened) entry.key.fill(0);
         }
@@ -1189,6 +1270,9 @@ export function createVaultKeyLifecycle({
     rotate: (input) =>
       serial(async () => {
         const registry = await requireRegistry();
+        if (registry.generations.length >= MAX_GENERATIONS) {
+          fail('generation_limit');
+        }
         const secret = await deviceSecret(false);
         const recoverySecret = input?.recoverySecret;
         await verifyRecoverySecret(

@@ -591,8 +591,10 @@ A grant carries every generation the sender holds. Each data key is sealed
 to the recipient with `sealVaultDeviceTransfer` from
 `@happyvertical/smrt-app-runtime/vault-device-transfer`. The seal combines an
 ephemeral and a static X25519 agreement through HKDF-SHA256. The HKDF info
-binds the sender ID, both public keys and the ephemeral key. Enrollment uses
-the pairing secret as the HKDF salt. The resulting key wraps the data key as
+binds the sender ID, both public keys, the ephemeral key and a SHA-256 digest
+of every other grant field (devices, revocations, recovery records, header).
+A change to any of them fails authentication. Enrollment uses the pairing
+secret as the HKDF salt. The resulting key wraps the data key as
 a `HVDK` record behind the `HVDT` `01` prefix and the ephemeral public key.
 The authenticated context binds the account, the recipient device, the
 generation and the key ID. The device secret never leaves the device: the
@@ -614,7 +616,9 @@ records. Only then does it commit. The commit marks earlier generations
 read-only and returns a new recovery record and one update grant for each
 other active device. A crash at any point leaves the current generation
 usable. The next `rotate` call resumes a complete candidate or replaces an
-incomplete one.
+incomplete one. A registry holds at most 1024 generations; past that,
+`rotate` refuses with `generation_limit`. Every registry write is validated
+first, so a device never saves state it cannot read back.
 
 Another device applies an update grant with `acceptDeviceGrant(grant)`. The
 sender must be active in its registry. The current generation never moves
