@@ -22,6 +22,17 @@ const ready = (o) =>
       c.status === 'True' &&
       c.observedGeneration === o.metadata.generation,
   );
+// A suspended Kustomization never reconciles again, so suspending it (which
+// bumps metadata.generation) leaves its last reconciled Ready condition behind
+// the generation for good; that last acknowledgement is what retirement keeps.
+const lastReady = (o) =>
+  o.status?.conditions?.some(
+    (c) =>
+      c.type === 'Ready' &&
+      c.status === 'True' &&
+      Number.isInteger(c.observedGeneration) &&
+      c.observedGeneration <= o.metadata.generation,
+  );
 const matches = (value, rev) =>
   typeof value === 'string' && value.endsWith(`sha1:${rev}`);
 const resourceKey = (o) =>
@@ -613,7 +624,7 @@ export function createAdoptionMethods(config, command, helpers, options) {
         ks.metadata.uid === plan.legacy.kustomization.uid &&
         source.spec.url === plan.legacy.repository &&
         ready(source) &&
-        ready(ks) &&
+        (finalizing ? lastReady(ks) : ready(ks)) &&
         matches(source.status.artifact?.revision, revision) &&
         matches(ks.status.lastAppliedRevision, revision),
       'Legacy Flux UID/repository/exact reviewed revision not acknowledged',

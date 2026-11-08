@@ -850,12 +850,20 @@ test('native legacy gates bind actual UID, stop/relinquish revisions, selectors,
     assert.deepEqual((await counting.observeAdopted(plan, adopted, 'helm-established')).resources.map((r) => r.orphanedFieldsIdentity), [null, null], 'no record means no release happened here');
     await assert.rejects(counting.observeAdopted(plan, adopted, 'finalized'), /must be suspended before finalization/);
     ks.spec.suspend = true;
-    await assert.rejects(counting.observeAdopted(plan, adopted, 'helm-established'), /must not be suspended before finalization/);
+    // Suspending bumps the generation; the suspended controller never catches up.
+    ks.metadata.generation = 2;
+    await assert.rejects(counting.observeAdopted(plan, adopted, 'helm-established'), /not acknowledged|must not be suspended/);
+    assert.ok(await counting.observeAdopted(plan, adopted, 'finalized'), 'the last reconciled Ready acknowledges a retired Kustomization');
+    const conditions = ks.status.conditions;
+    ks.status.conditions = [];
+    await assert.rejects(counting.observeAdopted(plan, adopted, 'finalized'), /not acknowledged/);
+    ks.status.conditions = conditions;
     assert.ok(await counting.observeAdopted(plan, adopted, 'finalized'));
     actual.metadata.managedFields.unshift(structuredClone(legacyEntry));
     await assert.rejects(counting.observeAdopted(plan, adopted, 'finalized'), /returned after establishment/);
     assert.equal(released.length, 2, 'nothing is released after establishment');
     delete ks.spec.suspend;
+    ks.metadata.generation = 1;
     for (const entry of [
       { manager: 'kubectl-patch', operation: 'Update', fieldsType: 'FieldsV1', fieldsV1: { 'f:metadata': { 'f:annotations': { 'f:smrt.happyvertical.com/adoption-orphaned-fields': {} } } } },
       { manager: 'smrt-adoption', operation: 'Update', fieldsType: 'FieldsV1', fieldsV1: { 'f:metadata': { 'f:annotations': { 'f:smrt.happyvertical.com/adoption-orphaned-fields': {}, 'f:other': {} } } } },
