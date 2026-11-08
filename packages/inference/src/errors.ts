@@ -59,3 +59,39 @@ export class InferenceExhaustedError extends SmrtError {
     if (input.partialText !== undefined) this.partialText = input.partialText;
   }
 }
+
+/** The result shape {@link InferenceFusionError} carries (fusion.ts). */
+interface FailedFusionRun {
+  runId: string;
+  fusionKey: string;
+  seats: Array<{
+    name: string;
+    status: string;
+    failure?: { reason: string; message: string };
+  }>;
+}
+
+/**
+ * A fusion run that produced no answer (`INFERENCE_FUSION_FAILED`, #4753):
+ * every seat that ran died, or the run stopped on an unexpected error. The
+ * run is recorded as `failed`; `result` holds every seat's outcome.
+ */
+export class InferenceFusionError extends SmrtError {
+  readonly result: FailedFusionRun;
+
+  constructor(result: FailedFusionRun, cause?: unknown) {
+    const failures = result.seats
+      .filter((seat) => seat.failure)
+      .map((seat) => `${seat.name}: ${seat.failure?.reason}`);
+    super(
+      `Fusion "${result.fusionKey}" produced no answer (run ${result.runId}${
+        failures.length > 0 ? `; ${failures.join(', ')}` : ''
+      }).`,
+      'INFERENCE_FUSION_FAILED',
+      'ai',
+      { runId: result.runId, fusionKey: result.fusionKey, failures },
+      cause instanceof Error ? cause : undefined,
+    );
+    this.result = result;
+  }
+}

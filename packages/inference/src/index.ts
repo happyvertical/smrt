@@ -2,8 +2,9 @@
  * @happyvertical/smrt-inference — inference binding behavior for SMRT tiers
  * (#4749). This entry is browser-safe; `./node` holds the doctor.
  *
- * Importing it registers the chain executor and the validating resolver
- * into core's seam (`setInferenceExecutor()` / `setInferenceResolver()`).
+ * Importing it registers the executor (alias chains and fusions) and the
+ * validating resolver into core's seam (`setInferenceExecutor()` /
+ * `setInferenceResolver()`).
  */
 import { registerInference } from './register.js';
 
@@ -16,17 +17,44 @@ export {
   type ChainStep,
   candidateLabel,
   candidateToStep,
+  EXECUTOR_KINDS,
   expandTarget,
+  FUSION_GATE_CONTINUE,
+  FUSION_SEAT_COUNTS,
+  findFusionDefinitionIssues,
+  findFusionPromptIssues,
   findInferenceConfigIssues,
   hasInferenceChains,
   validateInferenceConfig,
 } from './config.js';
-export { InferenceConfigError, InferenceExhaustedError } from './errors.js';
+export {
+  InferenceConfigError,
+  InferenceExhaustedError,
+  InferenceFusionError,
+} from './errors.js';
 export {
   type ChainExecutorOptions,
   createChainClient,
-  createChainExecutor,
 } from './executor.js';
+export {
+  clearFusions,
+  createChainExecutor,
+  createFusionClient,
+  type DefineFusionInput,
+  defineFusion,
+  type FusionCallOptions,
+  type FusionGateResult,
+  type FusionPromptResolver,
+  type FusionRunResult,
+  type FusionSeatPrompt,
+  type FusionSeatResult,
+  type FusionSeatStatus,
+  type FusionSeatUsage,
+  getFusion,
+  listFusions,
+  runFusion,
+  setFusionPromptResolver,
+} from './fusion.js';
 export {
   createInferenceResolver,
   isInferenceRegistered,
