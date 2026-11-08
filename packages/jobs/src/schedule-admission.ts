@@ -3,6 +3,45 @@ import type {
   DurableJobPayloadSigner,
 } from './durable-payload-integrity.js';
 
+/** Durable, versioned requirement persisted in AgentSchedule.methodArgs. */
+export interface ScheduleAdmissionPolicy {
+  version: 1;
+  requireIntegrity: true;
+  queue: string;
+  keyId: string;
+}
+
+/** Absent policy preserves legacy behavior; any malformed present policy fails closed. */
+export function getScheduleAdmissionPolicy(
+  args: unknown,
+): ScheduleAdmissionPolicy | null {
+  if (typeof args === 'string') args = JSON.parse(args);
+  if (!record(args))
+    throw new TypeError('Schedule method_args must be a JSON object');
+  if (!Object.hasOwn(args, '_scheduleAdmissionPolicy')) return null;
+  const value = args._scheduleAdmissionPolicy;
+  if (
+    !record(value) ||
+    Object.keys(value).sort().join(',') !==
+      'keyId,queue,requireIntegrity,version' ||
+    value.version !== 1 ||
+    value.requireIntegrity !== true ||
+    typeof value.queue !== 'string' ||
+    !value.queue.trim() ||
+    typeof value.keyId !== 'string' ||
+    !value.keyId.trim() ||
+    value.keyId.length > 256
+  ) {
+    throw new TypeError('Unsupported or malformed schedule admission policy');
+  }
+  return {
+    version: 1,
+    requireIntegrity: true,
+    queue: value.queue,
+    keyId: value.keyId,
+  };
+}
+
 /** Purpose-separated, immutable JSON identity of one scheduler admission. */
 export interface ScheduleAdmissionPayload {
   purpose: 'smrt.schedule-admission';
@@ -63,6 +102,10 @@ export function getScheduleAdmissionPayload(
   }
   const signatureKey = identity(keyId, 'keyId');
   if (signatureKey.length > 256) throw new TypeError('Invalid admission keyId');
+  const policy = getScheduleAdmissionPolicy(row.args);
+  if (policy && (policy.queue !== row.queue || policy.keyId !== signatureKey)) {
+    throw new TypeError('Schedule admission does not match its durable policy');
+  }
   const { _scheduleAdmission: _, ...argumentsWithoutSignature } = row.args;
   // Match the representation actually stored as JSON, preserving own __proto__
   // keys and Date serialization. Never retain a mutable reference to caller args.

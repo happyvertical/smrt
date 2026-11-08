@@ -1,10 +1,16 @@
 import {
   field,
+  GlobalInterceptors,
+  ObjectRegistry,
   SmrtCollection,
   SmrtObject,
   smrt,
 } from '@happyvertical/smrt-core';
-import { getNextCronDate } from '@happyvertical/smrt-jobs';
+import {
+  getNextCronDate,
+  getScheduleAdmissionPolicy,
+  type ScheduleAdmissionPolicy,
+} from '@happyvertical/smrt-jobs';
 import {
   queryGlobal,
   queryWithGlobals,
@@ -18,6 +24,23 @@ import {
 } from './identity.js';
 
 type SaveOptions = NonNullable<Parameters<SmrtObject['save']>[0]>;
+
+// Per-operation ownership state is never read from constructor options or JSON.
+const admissionWriteGuards = new WeakMap<SmrtObject, Record<string, unknown>>();
+GlobalInterceptors.register({
+  name: 'agent-schedule-admission-policy',
+  writeGuard: (instance) => admissionWriteGuards.get(instance),
+});
+
+/** Trusted host authorization must recheck current operator/tenant authority. */
+export interface ScheduleAdmissionReconfiguration {
+  authorize(context: {
+    scheduleId: string;
+    tenantId: string | null;
+    previousPolicy: unknown;
+    nextPolicy: ScheduleAdmissionPolicy | null;
+  }): Promise<void>;
+}
 
 /**
  * Status of a scheduled agent
@@ -69,6 +92,11 @@ export type ScheduleStatus = 'active' | 'paused' | 'disabled' | 'error';
   ],
 })
 export class AgentSchedule extends SmrtObject {
+  /** Persisted protected policy cannot be downgraded through ordinary saves. */
+  static readonly capabilities = Object.freeze({
+    requiredAdmissionPolicy: true,
+  } as const);
+
   /**
    * Tenant ID for multi-tenant isolation
    * Nullable to support both tenant-scoped and global schedules
@@ -239,8 +267,108 @@ export class AgentSchedule extends SmrtObject {
    * with `create()` + `save()` kept a NULL `next_run` and never fired (#3390).
    */
   override async save(options: SaveOptions = {}): Promise<this> {
+    return this.saveWithAdmissionPolicy(options);
+  }
+
+  /** Explicit trusted-host boundary for policy rotation/removal; never exposed by generated update. */
+  async reconfigureAdmissionPolicy(
+    policy: ScheduleAdmissionPolicy | null,
+    authorization: ScheduleAdmissionReconfiguration,
+    options: SaveOptions = {},
+  ): Promise<this> {
+    if (!authorization || typeof authorization.authorize !== 'function') {
+      throw new TypeError(
+        'Admission policy reconfiguration requires trusted host authorization',
+      );
+    }
+    const nextPolicy =
+      policy === null
+        ? null
+        : getScheduleAdmissionPolicy({ _scheduleAdmissionPolicy: policy });
+    if (nextPolicy) Object.freeze(nextPolicy);
+    return this.saveWithAdmissionPolicy(options, {
+      policy: nextPolicy,
+      authorization,
+    });
+  }
+
+  private async saveWithAdmissionPolicy(
+    options: SaveOptions,
+    reconfiguration?: {
+      policy: ScheduleAdmissionPolicy | null;
+      authorization: ScheduleAdmissionReconfiguration;
+    },
+  ): Promise<this> {
     await this.beforeSave();
-    return super.save(options);
+    // Use the same public natural identity core uses. The mandatory raw JSON
+    // predicate below closes the gap between this read and core's final write.
+    let stored = this.id
+      ? await this.getCanonicalPersistedRow({ id: this.id })
+      : null;
+    if (!stored && !this.isPersisted && this.slug) {
+      const values = this.toJSON() as Record<string, unknown>;
+      const filter: Record<string, unknown> = {};
+      for (const column of ObjectRegistry.getConflictColumns(
+        this.getResolvedQualifiedName(),
+      )) {
+        filter[column] =
+          column === 'tenant_id'
+            ? this.tenantId
+            : column === 'slug'
+              ? this.slug
+              : column === 'context'
+                ? this.context
+                : (values[column] ?? null);
+      }
+      stored = await this.getCanonicalPersistedRow(filter);
+    }
+    const previousArgs =
+      typeof stored?.method_args === 'string'
+        ? JSON.parse(stored.method_args)
+        : stored?.method_args;
+    if (stored && (stored.tenant_id ?? null) !== this.tenantId) {
+      throw new Error(
+        'Admission policy update requires the persisted schedule tenant',
+      );
+    }
+    const previousPolicy =
+      previousArgs && typeof previousArgs === 'object'
+        ? (previousArgs as Record<string, unknown>)._scheduleAdmissionPolicy
+        : undefined;
+    if (reconfiguration) {
+      if (!stored || !this.isPersisted)
+        throw new Error('Reconfigure a loaded persisted schedule');
+      await reconfiguration.authorization.authorize({
+        scheduleId: String(stored.id),
+        tenantId: this.tenantId,
+        previousPolicy,
+        nextPolicy: reconfiguration.policy,
+      });
+      this.methodArgs = { ...this.methodArgs };
+      if (reconfiguration.policy === null)
+        delete this.methodArgs._scheduleAdmissionPolicy;
+      else this.methodArgs._scheduleAdmissionPolicy = reconfiguration.policy;
+    } else {
+      const proposedPolicy = getScheduleAdmissionPolicy(this.methodArgs);
+      if (
+        previousArgs &&
+        Object.hasOwn(previousArgs, '_scheduleAdmissionPolicy') &&
+        JSON.stringify(getScheduleAdmissionPolicy(previousArgs)) !==
+          JSON.stringify(proposedPolicy)
+      ) {
+        throw new Error(
+          'Persisted schedule admission policy requires explicit authorized reconfiguration',
+        );
+      }
+    }
+    admissionWriteGuards.set(this, {
+      method_args: stored?.method_args ?? null,
+    });
+    try {
+      return await super.save(options);
+    } finally {
+      admissionWriteGuards.delete(this);
+    }
   }
 
   /**

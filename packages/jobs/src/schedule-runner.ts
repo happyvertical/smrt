@@ -10,10 +10,14 @@ import {
 } from './error-redaction.js';
 import {
   getScheduleAdmissionPayload,
+  getScheduleAdmissionPolicy,
   verifyScheduleAdmission,
 } from './schedule-admission.js';
 import { countScheduleJobs, SmrtJobCollection } from './smrt-job.js';
 import { DEFAULT_TASK_HEARTBEAT_INTERVAL_MS } from './stale-recovery.js';
+
+/** A blocked host must not consume or alter a protected schedule. */
+class ScheduleAdmissionBlockedError extends Error {}
 
 /**
  * ScheduleRunner configuration
@@ -55,6 +59,10 @@ export interface ScheduleRunnerConfig {
  * ScheduleRunner events
  */
 export interface ScheduleRunnerEvents {
+  'schedule:blocked': (diagnostic: {
+    scheduleId: string;
+    reason: string;
+  }) => void;
   'schedule:triggered': (schedule: ScheduleInfo) => void;
   'schedule:error': (schedule: ScheduleInfo, error: Error) => void;
   'schedule:completed': (scheduleId: string) => void;
@@ -128,6 +136,7 @@ export class ScheduleRunner extends EventEmitter {
     scopedAdmission: true,
     drain: true,
     occurrenceIntegrity: true,
+    requiredOccurrenceIntegrity: true,
   } as const);
   readonly id: string;
   private readonly config: ResolvedScheduleRunnerConfig;
@@ -411,6 +420,34 @@ export class ScheduleRunner extends EventEmitter {
     }
   }
 
+  private assertAdmissionHost(schedule: ScheduleRow): void {
+    let policy: ReturnType<typeof getScheduleAdmissionPolicy>;
+    try {
+      policy = getScheduleAdmissionPolicy(schedule.method_args || {});
+    } catch {
+      throw new ScheduleAdmissionBlockedError('INVALID_ADMISSION_POLICY');
+    }
+    if (!policy) return;
+    if (!this.config.occurrenceSigner)
+      throw new ScheduleAdmissionBlockedError('MISSING_OCCURRENCE_SIGNER');
+    if (this.config.occurrenceSigner.keyId !== policy.keyId)
+      throw new ScheduleAdmissionBlockedError('WRONG_OCCURRENCE_KEY');
+    if (this.config.queue !== policy.queue)
+      throw new ScheduleAdmissionBlockedError('WRONG_OCCURRENCE_QUEUE');
+  }
+
+  private reportBlocked(schedule: ScheduleRow, error: Error): void {
+    const diagnostic = {
+      scheduleId: String(schedule.id),
+      reason: error.message,
+    };
+    this.emit('schedule:blocked', diagnostic);
+    this.logger.warn(
+      'Schedule admission blocked by durable policy',
+      diagnostic,
+    );
+  }
+
   /** Pending retries occupy slots too; TaskRunner alone owns worker recovery. */
   private async countScheduleJobs(
     db: DatabaseInterface,
@@ -429,25 +466,33 @@ export class ScheduleRunner extends EventEmitter {
     if (!db?.transaction) return;
     const scope = this.scheduleScope();
     const schedules = await db.query(
-      `SELECT CAST(id AS VARCHAR) AS id FROM _smrt_agent_schedules WHERE 1 = 1${scope.sql}`,
+      `SELECT *, CAST(id AS VARCHAR) AS schedule_id_text, CAST(tenant_id AS VARCHAR) AS schedule_tenant_text FROM _smrt_agent_schedules WHERE 1 = 1${scope.sql}`,
       ...scope.params,
     );
     for (const row of schedules.rows) {
-      await db.transaction(async (tx) => {
-        const locked = await tx.query(
-          `UPDATE _smrt_agent_schedules SET running_count = running_count WHERE id = ?${scope.sql} RETURNING *, CAST(id AS VARCHAR) AS schedule_id_text, CAST(tenant_id AS VARCHAR) AS schedule_tenant_text, CAST(next_run AS VARCHAR) AS occurrence_time`,
-          row.id,
-          ...scope.params,
-        );
-        if (locked.rows.length !== 1) return;
-        const schedule = portableScheduleRow(locked.rows[0] as ScheduleRow);
-        const occupied = await this.countScheduleJobs(tx, schedule);
-        await tx.query(
-          'UPDATE _smrt_agent_schedules SET running_count = ? WHERE id = ?',
-          occupied,
-          row.id,
-        );
-      });
+      const candidate = portableScheduleRow(row as ScheduleRow);
+      try {
+        this.assertAdmissionHost(candidate);
+        await db.transaction(async (tx) => {
+          const locked = await tx.query(
+            `UPDATE _smrt_agent_schedules SET running_count = running_count WHERE id = ?${scope.sql} RETURNING *, CAST(id AS VARCHAR) AS schedule_id_text, CAST(tenant_id AS VARCHAR) AS schedule_tenant_text, CAST(next_run AS VARCHAR) AS occurrence_time`,
+            candidate.id,
+            ...scope.params,
+          );
+          if (locked.rows.length !== 1) return;
+          const schedule = portableScheduleRow(locked.rows[0] as ScheduleRow);
+          this.assertAdmissionHost(schedule);
+          const occupied = await this.countScheduleJobs(tx, schedule);
+          await tx.query(
+            'UPDATE _smrt_agent_schedules SET running_count = ? WHERE id = ?',
+            occupied,
+            candidate.id,
+          );
+        });
+      } catch (error) {
+        if (!(error instanceof ScheduleAdmissionBlockedError)) throw error;
+        this.reportBlocked(candidate, error);
+      }
     }
   }
 
@@ -463,6 +508,7 @@ export class ScheduleRunner extends EventEmitter {
     const db = this.db;
     let admission: { schedule: ScheduleInfo; error?: Error } | undefined;
     try {
+      this.assertAdmissionHost(candidate);
       if (!db.transaction)
         throw new Error('ScheduleRunner requires transaction support');
       admission = await db.transaction(async (tx) => {
@@ -483,6 +529,7 @@ export class ScheduleRunner extends EventEmitter {
         );
         if (claimed.rows.length !== 1 || (managedPoll && !this.running)) return;
         const schedule = portableScheduleRow(claimed.rows[0] as ScheduleRow);
+        this.assertAdmissionHost(schedule);
         const occupied = await this.countScheduleJobs(tx, schedule);
         await tx.query(
           'UPDATE _smrt_agent_schedules SET running_count = ? WHERE id = ?',
@@ -494,6 +541,10 @@ export class ScheduleRunner extends EventEmitter {
         return this.triggerLockedSchedule(schedule, tx, jobs, occupied);
       });
     } catch (error) {
+      if (error instanceof ScheduleAdmissionBlockedError) {
+        this.reportBlocked(candidate, error);
+        return;
+      }
       await db.query(
         'UPDATE _smrt_agent_schedules SET last_error = ? WHERE id = ?',
         redactErrorForPersistence(error),

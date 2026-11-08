@@ -310,3 +310,11 @@ consuming app, not just this package's.
 | `src/tenant-agent.ts` | TenantAgent — junction table, hierarchical resolution |
 | `src/interests.ts` | Interest filter types and configuration |
 | `src/config.ts` | File + DB config management, UI slots |
+
+Protected schedules persist the public `ScheduleAdmissionPolicy` in
+`methodArgs._scheduleAdmissionPolicy` (version, required integrity, queue, keyId).
+Ordinary saves preserve it; trusted hosts use loaded-model
+`reconfigureAdmissionPolicy(policyOrNull, { authorize })` for an explicitly
+current-authorized change. See [durable required admission](../jobs/agents/scheduling.md#durable-required-admission-3346).
+The owning write guard binds canonical stored JSON and composes with tenancy;
+never set authorization from constructor options, request JSON or persisted args.

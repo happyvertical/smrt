@@ -158,7 +158,9 @@ export {
 } from './runner.js';
 export {
   getScheduleAdmissionPayload,
+  getScheduleAdmissionPolicy,
   type ScheduleAdmissionPayload,
+  type ScheduleAdmissionPolicy,
   verifyScheduleAdmission,
 } from './schedule-admission.js';
 

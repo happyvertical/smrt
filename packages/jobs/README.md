@@ -442,3 +442,10 @@ values before any awaited enqueue work. Extra caller fields are not persisted,
 and later mutation of the caller's binding cannot change the durable review
 reference. Live authorization still checks the saved reference at execution
 and resume; the snapshot never grants approval.
+
+Protected schedules can require a durable exact queue/signing-key policy through
+`methodArgs._scheduleAdmissionPolicy`. An unsigned/default runner leaves them
+untouched and emits `schedule:blocked`; require the
+`requiredOccurrenceIntegrity` capability before creating such schedules. See
+[durable required admission](agents/scheduling.md#durable-required-admission-3346)
+for the typed policy, authorized rotation and verification-key retention contract.

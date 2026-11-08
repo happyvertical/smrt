@@ -130,3 +130,63 @@ identity used to hash a slot. Opaque non-UUID tenant strings remain exact and ca
 sensitive; no global case folding or relaxed tenant guard is applied. Nonkeyed
 legacy enqueue behavior is unchanged. The keyed API is unreleased: private
 uppercase development fixtures are not an existing-public-data migration case.
+
+## Durable required admission (#3346)
+
+A schedule that must never be consumed by an unsigned or differently routed host
+persists this public requirement in `AgentSchedule.methodArgs`:
+
+```ts
+const policy: ScheduleAdmissionPolicy = {
+  version: 1,
+  requireIntegrity: true,
+  queue: 'protected-agents',
+  keyId: 'current-host-key',
+};
+schedule.methodArgs = { ...consentedArguments, _scheduleAdmissionPolicy: policy };
+```
+
+`getScheduleAdmissionPolicy(args)` returns a validated copy, or `null` only when
+absent. A present malformed/unknown policy blocks. `ScheduleRunner` requires a
+trusted `occurrenceSigner` whose current `keyId` matches and the exact `queue`.
+It checks before reconciliation/claim writes and again under the occurrence
+lock. A blocked schedule keeps its due time, counts, errors and jobs unchanged;
+`schedule:blocked` emits only `{ scheduleId, reason }` with a bounded reason code
+(`INVALID_ADMISSION_POLICY`, `MISSING_OCCURRENCE_SIGNER`, `WRONG_OCCURRENCE_KEY`,
+`WRONG_OCCURRENCE_QUEUE`). This diagnostic is not persisted on the schedule.
+Hosts must require both `ScheduleRunner.capabilities.requiredOccurrenceIntegrity`
+and `AgentSchedule.capabilities.requiredAdmissionPolicy`, plus the public
+`AgentSchedule.prototype.reconfigureAdmissionPolicy` method, before enabling
+protected schedules. New jobs with old agents is an unsupported mixed cohort.
+Absent policy retains legacy unsigned scheduling behavior. Full immutable job
+arguments, including this policy, participate in admission signing. Verification
+also rejects a policy inconsistent with the signed job queue or signature key.
+
+Ordinary public `AgentSchedule.save()`/generated updates cannot remove or replace
+an existing policy through mutated arguments, including fresh-object natural-key
+upserts. An agents-owned mandatory write predicate binds the canonical stored
+JSON; late collisions fail closed and callers reload/retry. This uses core's
+public `GlobalInterceptors.writeGuard` seam without replacing tenant predicates.
+Ordinary sequential same-policy and unprotected upserts keep their existing API.
+
+A trusted host explicitly rotates/removes policy through the loaded model's
+`reconfigureAdmissionPolicy(nextPolicyOrNull, { authorize: async context => ... })`.
+The callback must check the **current** authenticated operator/tenant permission;
+its context contains persisted schedule ID/tenant and previous/next policy.
+Throwing denies without a write. Generated CRUD never supplies this callback.
+Current tenant ownership and normal loaded revision CAS still apply. The same
+instance must not be concurrently saved/rebound during this operation. This is
+an explicit authorization boundary, not a serialized bypass flag.
+
+For rotation, first retain old verification keys in the trusted keyring while
+selecting a new current minting key, then authorize the durable policy key change.
+Existing jobs retain their original exact arguments/signature on retry; unknown
+or retired verification keys deny. Integrity does not replace current authority,
+job/schedule locking or downstream command idempotency. Code holding trusted keys
+and authorization callbacks remains trusted; this does not defend against it.
+
+Owning focused tests cover SQLite and native DuckDB policy blocking, locked
+recheck, exact protected retry/rotation, public save/CAS and late collision.
+`packages/jobs/src/__tests__/retry-admission-postgres.optional.test.ts` additionally
+covers real separate-connection retry/admission commit and rollback with signature
+preservation. Coordinator integration owns PostgreSQL and the complete gates.
