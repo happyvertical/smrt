@@ -152,8 +152,9 @@ Consumer guide: [docs/content/inference-settings.md](../../docs/content/inferenc
   (authorizer first, fails closed; without `authorize` the service is
   read-only) and refuse a value that adds a config issue to the layer it
   lands in; removing an app alias or fusion that any row (every tenant) or
-  config still names is refused (`InferenceBindingInUseError`) unless config
-  or the registry keeps defining it. Every config-backed value a row method
+  config still names is refused (`InferenceBindingInUseError`, tenant rows
+  only counted, checked after the authorizer allowed the write) unless
+  config or the registry keeps defining it. Every config-backed value a row method
   returns passes `stripKeyMembers()` (config may carry literal keys);
   `getEffectiveConfig()` is server-side only. `testConnection()`, `testCandidate()` and `doctor()` reuse
   `./node`; `testCandidate()` reads a key variable only for a candidate

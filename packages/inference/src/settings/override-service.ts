@@ -236,6 +236,14 @@ export class InferenceOverrideService {
     scopeType: InferenceOverrideScopeType,
     scopeId: string,
     value: unknown,
+    options: {
+      /**
+       * Runs after the authorizer allowed the write and before it lands; a
+       * check that reads other rows belongs here, never before
+       * authorization.
+       */
+      beforeWrite?: (normalized: unknown) => Promise<void>;
+    } = {},
   ): Promise<void> {
     assertValidInferenceScope(scopeType, scopeId);
     const normalized = normalizeBindingValue(binding, value);
@@ -276,6 +284,7 @@ export class InferenceOverrideService {
         );
       }
     }
+    await options.beforeWrite?.(normalized);
     await this.overrides.setOverride(binding, scopeType, scopeId, {
       target: normalized,
     });

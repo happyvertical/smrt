@@ -207,9 +207,16 @@ export class InferenceBindingInUseError extends Error {
   readonly status = 409;
   constructor(
     readonly binding: string,
+    /** App-scope and config referrers. */
     readonly referrers: string[],
+    /** How many tenant rows name it (never which tenants). */
+    readonly tenantReferences: number,
   ) {
-    super(`${binding} is still referenced by ${referrers.join(', ')}`);
+    const parts = [...referrers];
+    if (tenantReferences > 0) {
+      parts.push(`${tenantReferences} tenant binding(s)`);
+    }
+    super(`${binding} is still referenced by ${parts.join(', ')}`);
     this.name = 'InferenceBindingInUseError';
   }
 }
@@ -596,14 +603,19 @@ export class InferenceSettingsService {
       await this.assertConfigStaysValid('app', APP_INFERENCE_SCOPE_ID, {
         aliases: { [request.name]: request.alias },
       });
-    } else {
-      await this.assertNotReferenced('alias', request.name);
     }
     await this.writes.setValue(
       binding,
       'app',
       APP_INFERENCE_SCOPE_ID,
       request.alias,
+      {
+        // After authorization: the check reads rows of every tenant.
+        beforeWrite: (normalized) =>
+          normalized === null
+            ? this.assertNotReferenced('alias', request.name)
+            : Promise.resolve(),
+      },
     );
   }
 
@@ -616,14 +628,18 @@ export class InferenceSettingsService {
     if (!INFERENCE_BINDING_NAME_PATTERN.test(String(request.name))) {
       throw new InferenceBindingValueError(binding, 'invalid fusion name');
     }
-    if (request.definition === null) {
-      await this.assertNotReferenced('fusion', request.name);
-    }
     await this.writes.setValue(
       binding,
       'app',
       APP_INFERENCE_SCOPE_ID,
       request.definition,
+      {
+        // After authorization: the check reads rows of every tenant.
+        beforeWrite: (normalized) =>
+          normalized === null
+            ? this.assertNotReferenced('fusion', request.name)
+            : Promise.resolve(),
+      },
     );
   }
 
@@ -657,7 +673,9 @@ export class InferenceSettingsService {
         referrers.push(`config aliases.${alias}`);
       }
     }
-    // Every scope: a tenant row bound to this name would dangle too.
+    // Every scope: a tenant row bound to this name would dangle too. Tenant
+    // rows are only counted; the error never names another tenant.
+    let tenantReferences = 0;
     for (const row of await this.overrides.list({})) {
       let value: unknown;
       try {
@@ -665,16 +683,16 @@ export class InferenceSettingsService {
       } catch {
         continue;
       }
-      if (bindingRefersTo(row.binding, value, kind, name)) {
-        referrers.push(
-          row.tenantId
-            ? `${row.binding} (tenant ${row.tenantId})`
-            : row.binding,
-        );
-      }
+      if (!bindingRefersTo(row.binding, value, kind, name)) continue;
+      if (row.tenantId) tenantReferences += 1;
+      else referrers.push(row.binding);
     }
-    if (referrers.length > 0) {
-      throw new InferenceBindingInUseError(`${kind}:${name}`, referrers);
+    if (referrers.length > 0 || tenantReferences > 0) {
+      throw new InferenceBindingInUseError(
+        `${kind}:${name}`,
+        referrers,
+        tenantReferences,
+      );
     }
   }
 
