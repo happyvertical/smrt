@@ -143,3 +143,15 @@ that reverted to DECIMAL passes every SQLite suite.
   subscription report no grants silently; every other error propagates.
   `findGrantingPlan()` names the first active plan by `sortOrder` visible in
   the current context.
+- **Entitlement change hook (#4759).** `src/services/entitlement-changes.ts`.
+  The host wraps its billing-webhook write in
+  `trackEntitlementChange({ tenantId, resolver }, apply)`: it snapshots
+  `resolveFeatureGrants()` (keys plus grant `metadata`, no usage reads)
+  before and after, diffs `gained` / `lost` / `changed` (metadata, e.g. a
+  plan budget) and calls listeners registered with
+  `registerEntitlementChangeListener()` (a `Symbol.for` slot) or passed in.
+  Listeners run after `apply`; their failures are returned in `failures`,
+  never thrown, and never undo the write, so listeners must be idempotent.
+  An `apply` error propagates and notifies nobody. Listeners satisfy the
+  structural type (smrt-inference's hosted listener), so this package
+  depends on none of them.

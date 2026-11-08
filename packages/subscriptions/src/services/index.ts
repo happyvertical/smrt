@@ -25,6 +25,23 @@ export {
   UnsupportedCommercialBillingStorageError,
 } from './commercial.js';
 export {
+  diffEntitlements,
+  ENTITLEMENT_CHANGE_LISTENERS_SLOT_KEY,
+  type EntitlementChange,
+  type EntitlementChangeFailure,
+  type EntitlementChangeListener,
+  type EntitlementChangeOutcome,
+  type EntitlementSnapshot,
+  emptyEntitlementSnapshot,
+  getEntitlementChangeListeners,
+  hasEntitlementChange,
+  notifyEntitlementChange,
+  registerEntitlementChangeListener,
+  snapshotEntitlements,
+  type TrackEntitlementChangeOptions,
+  trackEntitlementChange,
+} from './entitlement-changes.js';
+export {
   type AssignPriceBooksInput,
   type DefinePriceBookPriceInput,
   type DelegatedSpendingPolicyInput,
