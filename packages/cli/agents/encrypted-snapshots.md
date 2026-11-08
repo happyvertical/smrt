@@ -38,7 +38,10 @@ are exactly the chunk size. Integers are big-endian.
 `data-root` plaintext is an HVSA v1 archive: `"HVSA" 0x01`, then entries
 `type u8 (1 dir, 2 file) | path length u16 | UTF-8 relative path |
 (file) size u64 | bytes`, ending with type 0. Only directories and regular
-files; a symbolic link or special file in the data root fails the backup.
+files; a symbolic link, special file, or a name restore would refuse (a
+backslash, or invalid UTF-8) fails the backup up front, so every successful
+backup is restorable. All writes loop until complete and the written size is
+checked before publication.
 `export-bundle` plaintext is the logical bundle JSON.
 
 ## Limits

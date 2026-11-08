@@ -18,9 +18,10 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
+import { open } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { planDataRootArchive } from '../snapshot-archive.js';
 import {
   decryptSnapshot,
@@ -247,6 +248,49 @@ describe('encrypted snapshot framing', () => {
     expect(() => planDataRootArchive(data)).toThrow(
       'Encrypted backup refuses a symbolic link or special file: link',
     );
+  });
+
+  it('refuses a data-root name restore would reject, before writing anything', () => {
+    const root = workspace();
+    const data = join(root, 'data');
+    mkdirSync(data);
+    writeFileSync(join(data, 'back\\slash'), 'x');
+    expect(() => planDataRootArchive(data)).toThrow(
+      'Data root path cannot be stored in an encrypted snapshot: back\\slash',
+    );
+  });
+
+  it('completes short writes on both sides instead of publishing a truncated file', async () => {
+    const root = workspace();
+    const ring = keyring();
+    const probe = await open(join(root, 'probe'), 'w');
+    const prototype = Object.getPrototypeOf(probe);
+    await probe.close();
+    const original = prototype.write;
+    const spy = vi.spyOn(prototype, 'write').mockImplementation(function (
+      this: unknown,
+      buffer: Uint8Array,
+      offset = 0,
+      length = buffer.length - offset,
+    ) {
+      return original.call(this, buffer, offset, Math.min(length, 999));
+    } as never);
+    try {
+      const plaintext = randomBytes(MIN_SNAPSHOT_CHUNK_BYTES * 2 + 5);
+      const source = join(root, 'short.hvsnap');
+      await sealBytes(ring, source, plaintext);
+      const destination = join(root, 'short.bin');
+      await decryptSnapshot({
+        source,
+        destination,
+        context: ring.context,
+        keys: ring,
+      });
+      expect(readFileSync(destination).equals(plaintext)).toBe(true);
+      expect(spy.mock.calls.length).toBeGreaterThan(10);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   describe('threats', () => {

@@ -303,6 +303,22 @@ async function publishFile(
   }
 }
 
+/** Write every byte; `FileHandle.write` may write fewer than requested. */
+async function writeAll(handle: FileHandle, bytes: Uint8Array): Promise<void> {
+  let offset = 0;
+  while (offset < bytes.length) {
+    const { bytesWritten } = await handle.write(
+      bytes,
+      offset,
+      bytes.length - offset,
+    );
+    if (bytesWritten <= 0) {
+      throw new EncryptedSnapshotError('Encrypted snapshot write failed');
+    }
+    offset += bytesWritten;
+  }
+}
+
 /** Options for {@link writeEncryptedSnapshot}. */
 export interface WriteEncryptedSnapshotOptions {
   /** New file; never replaced. Parent directories are created 0700. */
@@ -390,7 +406,8 @@ export async function writeEncryptedSnapshot(
     try {
       handle = await open(temporary, 'wx', 0o600);
       const output = handle;
-      await output.write(headerBytes);
+      await writeAll(output, headerBytes);
+      let written = headerBytes.length;
       const writeRecord = async (plaintext: Uint8Array) => {
         const envelope = sealVaultSnapshot(plaintext, {
           key,
@@ -399,8 +416,9 @@ export async function writeEncryptedSnapshot(
         });
         const length = Buffer.alloc(4);
         length.writeUInt32BE(envelope.length, 0);
-        await output.write(length);
-        await output.write(envelope);
+        await writeAll(output, length);
+        await writeAll(output, envelope);
+        written += 4 + envelope.length;
       };
 
       let index = 0;
@@ -453,6 +471,9 @@ export async function writeEncryptedSnapshot(
       digest.copy(manifest, PAYLOAD_PREFIX_BYTES + 8);
       await writeRecord(manifest);
       await output.sync();
+      if ((await output.stat()).size !== written) {
+        throw new EncryptedSnapshotError('Encrypted snapshot write was short');
+      }
       await output.close();
       handle = undefined;
       await publishFile(
@@ -762,9 +783,12 @@ export async function decryptSnapshot(
       staged = true;
       try {
         digest = await drain(remaining(), async (chunk) => {
-          await handle.write(chunk);
+          await writeAll(handle, chunk);
         });
         await handle.sync();
+        if ((await handle.stat()).size !== parsed.totalLength) {
+          throw new EncryptedSnapshotError('Restore write was short');
+        }
       } finally {
         await handle.close();
       }

@@ -50,7 +50,27 @@ function encodePath(path: string): Buffer {
   if (bytes.length < 1 || bytes.length > MAX_PATH_BYTES) {
     throw new Error(`Data root path is too long for a snapshot: ${path}`);
   }
+  // Refuse at backup time exactly what restore refuses, so a successful
+  // backup is always restorable.
+  if (!isSafePath(path) || bytes.toString('utf8') !== path) {
+    throw new Error(
+      `Data root path cannot be stored in an encrypted snapshot: ${path}`,
+    );
+  }
   return bytes;
+}
+
+function isSafePath(path: string): boolean {
+  return path
+    .split('/')
+    .every(
+      (segment) =>
+        segment !== '' &&
+        segment !== '.' &&
+        segment !== '..' &&
+        !segment.includes('\\') &&
+        !segment.includes('\0'),
+    );
 }
 
 function entryHeader(entry: PlannedEntry): Buffer {
@@ -225,17 +245,7 @@ function validatedPath(bytes: Buffer): string {
   } catch {
     throw new Error('Snapshot archive contains an invalid path');
   }
-  const segments = path.split('/');
-  if (
-    segments.some(
-      (segment) =>
-        segment === '' ||
-        segment === '.' ||
-        segment === '..' ||
-        segment.includes('\\') ||
-        segment.includes('\0'),
-    )
-  ) {
+  if (!isSafePath(path)) {
     throw new Error('Snapshot archive contains an unsafe path');
   }
   return path;
