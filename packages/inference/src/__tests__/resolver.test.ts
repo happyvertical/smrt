@@ -241,20 +241,75 @@ describe('identity', () => {
     expect(names).toEqual([inferenceProviderConfigSecretName({})]);
   });
 
-  it('skips the user layer when the request acts for another tenant', async () => {
+  it('reads nothing stored when the request acts for another tenant', async () => {
     const { secrets, resolver } = setup({
       principal: { tenantId: TENANT, userId: USER },
     });
     secrets.seed(TENANT, inferenceProviderConfigSecretName({ userId: USER }), {
       ...userConfig,
     });
+    secrets.seed(
+      OTHER_TENANT,
+      inferenceProviderConfigSecretName({}),
+      tenantConfig,
+    );
     const res = await resolveInference(
       { tier: 'best', tenantId: OTHER_TENANT },
       { resolver, config: appConfig },
     );
-    expect(res.target).toMatchObject({ model: 'app-best' });
+    expect(res.target).toMatchObject({ model: 'app-best', source: 'app' });
+    expect(secrets.retrieve).not.toHaveBeenCalled();
+  });
+
+  it('reads the other tenant layer only with allowCrossTenant, never a user', async () => {
+    const secrets = fakeSecrets(() => undefined);
+    const names: string[] = [];
+    const tenants: (string | undefined)[] = [];
+    const resolver = createUserInferenceResolver({
+      allowCrossTenant: true,
+      principal: () => ({ tenantId: TENANT, userId: USER }),
+      secrets: {
+        ...secrets,
+        retrieve: async (name) => {
+          names.push(name);
+          tenants.push(await currentTenant());
+          if (name === inferenceProviderConfigSecretName({})) {
+            return { value: JSON.stringify(tenantConfig) };
+          }
+          throw new Error(`Secret '${name}' not found`);
+        },
+      },
+    });
+    const res = await resolveInference(
+      { tier: 'best', tenantId: OTHER_TENANT },
+      { resolver, config: appConfig },
+    );
+    expect(res.target.apiKey).toBe(TENANT_KEY);
+    expect(names).toEqual([inferenceProviderConfigSecretName({})]);
+    expect(tenants).toEqual([OTHER_TENANT]);
+  });
+
+  it('skips the user layer for a request marked userId: null (shared clients)', async () => {
+    const { secrets, resolver } = setup({
+      principal: { tenantId: TENANT, userId: USER },
+    });
+    secrets.seed(TENANT, inferenceProviderConfigSecretName({ userId: USER }), {
+      ...userConfig,
+    });
+    secrets.seed(TENANT, inferenceProviderConfigSecretName({}), tenantConfig);
+    const res = await resolveInference(
+      { tier: 'good', userId: null },
+      { resolver },
+    );
+    expect(res.target.apiKey).toBe(TENANT_KEY);
     const names = secrets.retrieve.mock.calls.map((call) => call[0]);
     expect(names).toEqual([inferenceProviderConfigSecretName({})]);
+    // A string userId never selects another user's config.
+    const other = await resolveInference(
+      { tier: 'good', userId: 'someone-else' },
+      { resolver },
+    );
+    expect(other.target.apiKey).toBe(USER_KEY);
   });
 
   it('reads the ambient tenancy principal by default and reads secrets in its tenant', async () => {

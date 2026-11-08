@@ -105,7 +105,8 @@ promptKey, appBindings, usage })` resolves through the registered resolver
 and returns `{ options, resolution, bound, source, usageTags }` for a site
 that calls `getAI()` itself: `base` unchanged when the tier is unbound or the
 target is a chain (raw clients cannot run one), else the target bound over
-`base` (the caller's `onUsage` kept). `appBindings: false` lets only a
+`base` (the caller's `onUsage` kept). `userId: null` marks a client shared beyond one user (no user binding
+applies). `appBindings: false` lets only a
 resolver resolution whose `source` is not `app` replace `base`: sites whose
 `base` is their own explicit config (agent `ai`, a prompt's model) keep it
 against app tier bindings. `usage` attaches the #3077 recorder with

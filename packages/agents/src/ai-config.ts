@@ -167,8 +167,9 @@ function isMissingSecretError(error: unknown, secretName: string): boolean {
 
 /**
  * Resolve an agent's AI client options for the current tenant. Without an
- * explicit `apiKey` or `apiKeySecretName`, a stored per-user / per-tenant
- * inference binding (the registered resolver, #4756) replaces the provider;
+ * explicit `apiKey` or `apiKeySecretName`, a stored per-tenant inference
+ * binding (the registered resolver, #4756; never a user's) replaces the
+ * provider;
  * otherwise the provider API key comes from smrt-secrets (with optional
  * ancestor fallback). With a
  * `db`, the returned `onUsage` also records each call through the SMRT usage
@@ -208,8 +209,9 @@ export interface ResolvedAgentAIConfig {
 
 /**
  * Resolve the client options without attaching a recorder: an explicit
- * `apiKey`, else (no `apiKeySecretName`) a stored per-user / per-tenant
- * inference binding, else the named or provider-default tenant secret.
+ * `apiKey`, else (no `apiKeySecretName`) a stored per-tenant inference
+ * binding (never a user's: the options are shared by every later run), else
+ * the named or provider-default tenant secret.
  */
 export async function resolveAgentAIClientOptions(
   input: ResolveAgentAIOptionsInput,
@@ -224,14 +226,16 @@ export async function resolveAgentAIClientOptions(
     return { options: stripAgentAISecretFields(normalized) };
   }
 
-  // No agent-level secret named: a stored per-user / per-tenant inference
-  // binding (#4756, the registered resolver) wins over the provider-default
-  // secret. App `inference` tier bindings do not replace the agent's own
-  // `ai` config (`appBindings: false`).
+  // No agent-level secret named: a stored per-tenant inference binding
+  // (#4756, the registered resolver) wins over the provider-default secret.
+  // App `inference` tier bindings do not replace the agent's own `ai` config
+  // (`appBindings: false`). The result outlives the call (an agent keeps it
+  // for every later run), so no user's binding applies (`userId: null`).
   if (!asNonEmptyString(normalized.apiKeySecretName)) {
     const stored = await resolveInferenceTarget({
       base: stripAgentAISecretFields(normalized),
       tenantId: asNonEmptyString(input.tenantId),
+      userId: null,
       className: input.className ?? 'Agent',
       appBindings: false,
     });

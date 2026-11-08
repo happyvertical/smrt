@@ -85,6 +85,15 @@ export interface UserInferenceResolverOptions {
    * the ambient principal, read the way smrt-preferences reads it.
    */
   principal?: () => InferencePrincipal | undefined;
+  /**
+   * Let a request for another tenant than the principal's (an object of
+   * tenant B used by a principal of tenant A) read tenant B's stored config.
+   * Default `false`: such a request skips the stored layers and falls through
+   * to the app config, because reading B's key for A's action is a
+   * cross-tenant read. Principal-less contexts (jobs) always use the
+   * request's tenant.
+   */
+  allowCrossTenant?: boolean;
 }
 
 /** The stored layers for one `(tenantId, userId)`. */
@@ -280,19 +289,24 @@ export function createUserInferenceResolver(
     return value;
   };
 
-  /** The tenant this request acts for, and the user only when it matches. */
+  /**
+   * Whose stored layers answer this request. With a principal: its tenant
+   * (or the request's when they match), its user unless the request says
+   * `userId: null` (a client shared beyond one user, e.g. a long-lived
+   * agent). A request for another tenant reads nothing stored unless
+   * `allowCrossTenant`. Without a principal: the request's tenant, no user.
+   */
   const identityFor = (
-    request: Pick<InferenceRequest, 'tenantId'>,
+    request: Pick<InferenceRequest, 'tenantId' | 'userId'>,
   ): { tenantId?: string; userId?: string } => {
     const principal = principalOf();
-    const tenantId = text(request.tenantId) ?? principal?.tenantId;
-    if (!tenantId) return {};
-    // A user's config belongs to the tenant it was stored in; acting for
-    // another tenant's object skips the user layer rather than guess.
-    const userId =
-      principal && principal.tenantId === tenantId
-        ? text(principal.userId)
-        : undefined;
+    const requested = text(request.tenantId);
+    if (!principal) return requested ? { tenantId: requested } : {};
+    if (requested && requested !== principal.tenantId) {
+      return options.allowCrossTenant ? { tenantId: requested } : {};
+    }
+    const tenantId = principal.tenantId;
+    const userId = request.userId === null ? undefined : text(principal.userId);
     return userId ? { tenantId, userId } : { tenantId };
   };
 
