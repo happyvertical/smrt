@@ -468,9 +468,17 @@ test('native Git CAS atomically renames staging, rejects superseded file history
     await git('fetch', 'origin');
     assert.equal(await git('rev-parse', 'origin/main'), beforeFinal, 'an unverified fence at the publication boundary pushes nothing');
     staleFence = false;
+    // A rejected push is reported as a publication failure, not a generic Git
+    // fault, and publishes nothing.
+    const hook = join(remote, 'hooks', 'pre-receive');
+    await writeFile(hook, '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+    await assert.rejects(() => methods.casAdoption(snapshot, plan, final.state, final.canonical), /Adoption Git publication failed/);
+    await git('fetch', 'origin');
+    assert.equal(await git('rev-parse', 'origin/main'), beforeFinal, 'a rejected push publishes nothing');
+    await rm(hook, { force: true });
     await methods.casAdoption(snapshot, plan, final.state, final.canonical);
     const published = await methods.readAdoption(plan);
-    assert.equal(fences, 7, 'every publication refreshes and verifies the writer fence at its boundary');
+    assert.equal(fences, 8, 'every publication refreshes and verifies the writer fence at its boundary');
     assert.equal(published.staging, null);
     assert.ok(published.canonical);
     assert.equal(

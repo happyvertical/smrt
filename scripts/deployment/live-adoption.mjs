@@ -1030,7 +1030,13 @@ export function createAdoptionMethods(config, command, helpers, options) {
         await observeWriterFence(plan, snapshot, state.stage),
         { ...plan.fenceContract, namespace: plan.namespace },
       );
-      await git('push', 'origin', `${revision}:refs/heads/${branch}`);
+      try {
+        await git('push', 'origin', `${revision}:refs/heads/${branch}`);
+      } catch {
+        // A rejected or raced push is the expected failure at this boundary;
+        // name it so operators and the exercise can tell it from other faults.
+        demand(false, 'Adoption Git publication failed', 'ADOPTION_PUBLICATION');
+      }
       return { stage: state.stage, revision };
     } finally {
       await rm(index, { force: true });
