@@ -267,4 +267,17 @@ describe('probes', () => {
     );
     expect(result).toMatchObject({ reachable: false, skipped: true });
   });
+
+  it('never probes OpenAI with a gateway key when the gateway has no base URL', async () => {
+    const fetch = vi.fn(async () => new Response('{}', { status: 200 }));
+    const result = await probeInferenceCandidate(
+      { provider: 'litellm', model: 'x' },
+      {
+        env: { LITELLM_API_KEY: 'sk-gateway-secret' },
+        fetch: fetch as unknown as typeof globalThis.fetch,
+      },
+    );
+    expect(fetch).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ reachable: false, skipped: true });
+  });
 });
