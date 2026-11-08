@@ -252,10 +252,18 @@ export async function probeInferenceCandidate(
   > = {},
 ): Promise<InferenceProbeResult> {
   const env = options.env ?? process.env;
+  const preset = text(candidate.preset);
+  if (preset && !isInferencePresetId(preset)) {
+    return {
+      reachable: false,
+      durationMs: 0,
+      detail: `not probed: unknown preset "${preset}"`,
+    };
+  }
   if (
     (text(candidate.apiKey) || text(candidate.apiKeyEnv)) &&
     !text(candidate.baseUrl) &&
-    !text(candidate.preset)
+    !preset
   ) {
     // Core's pair rule: a candidate's own key travels only with its own
     // endpoint. Refuse before any request rather than sending it to a
