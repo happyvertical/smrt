@@ -158,6 +158,9 @@ export function createCredentialControlHandler(
 }
 
 const successKeys = ['v', 'ok', 'origin', 'token', 'expiresAt'];
+/** Success reply as the control codec decodes it: the bearer already wrapped. */
+const decodedSuccessKeys = ['v', 'ok', 'lease'];
+const decodedLeaseKeys = ['token', 'origin', 'expiresAt'];
 const failureKeys = ['v', 'ok', 'code'];
 
 /**
@@ -184,9 +187,10 @@ export function encodeAcquireCredentialResponse(
 }
 
 /**
- * Strictly decode an `acquire-credential` reply (a JSON line, or the object
- * the control transport already parsed) into a result whose bearer is a
- * `SecretString`. Any deviation (unknown key, bad origin, bad token, bad
+ * Strictly decode an `acquire-credential` reply (a JSON line, the object the
+ * control transport parsed, or the control codec's decoded form
+ * `{ v, ok: true, lease }`, which is re-validated field by field) into a
+ * result whose bearer is a `SecretString`. Any deviation (unknown key, bad origin, bad token, bad
  * timestamp, unknown code) throws a value-free `credential_unavailable`.
  */
 export function parseAcquireCredentialResponse(
@@ -209,6 +213,27 @@ export function parseAcquireCredentialResponse(
       throw new DesktopContractError('credential_unavailable');
     }
     return refuse(value.code);
+  }
+  if (hasClosedKeys(value, decodedSuccessKeys)) {
+    const lease = value.lease;
+    if (
+      !isRecord(lease) ||
+      !hasClosedKeys(lease, decodedLeaseKeys) ||
+      !(lease.token instanceof SecretString) ||
+      !isMcpToken(lease.token.reveal()) ||
+      !isLoopbackOrigin(lease.origin) ||
+      !isIsoUtcTimestamp(lease.expiresAt)
+    ) {
+      throw new DesktopContractError('credential_unavailable');
+    }
+    return Object.freeze({
+      ok: true,
+      lease: Object.freeze({
+        token: lease.token,
+        origin: lease.origin,
+        expiresAt: lease.expiresAt,
+      }),
+    });
   }
   if (
     !hasClosedKeys(value, successKeys) ||
