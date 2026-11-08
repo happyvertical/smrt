@@ -23,13 +23,13 @@ All four persisted models are `@TenantScoped({ mode: 'optional' })` with a nulla
 
 ## Prompt Registry
 
-Three prompts are registered at module-load time via `definePrompt()` from `@happyvertical/smrt-prompts`. Re-exported from the package root for tenant override targeting.
+Three prompts are registered at module-load time via `definePrompt()` from `@happyvertical/smrt-prompts`. Re-exported from the package root for tenant override targeting. Tiers follow the #4755 rule (`../prompts/AGENTS.md`); calls bind them through `prepareAiOperation()`.
 
-| Key | Method | Variables (PII-conscious) |
-|-----|--------|---------------------------|
-| `smrtAnalytics.property.analyzePerformance` | `AnalyticsProperty.analyzePerformance()` | `period`, `propertyDisplayName`, `propertyProvider` |
-| `smrtAnalytics.report.analyzeResults` | `AnalyticsReport.analyzeResults()` | `reportName`, `reportDimensions`, `reportMetrics`, `dateRangeStart`, `dateRangeEnd`, `rowCount`, `reportData` |
-| `smrtAnalytics.report.hasPositiveTrends` | `AnalyticsReport.hasPositiveTrends()` | `reportMetrics`, `reportData` |
+| Key | Method | Tier | Variables (PII-conscious) |
+|-----|--------|------|---------------------------|
+| `smrtAnalytics.property.analyzePerformance` | `AnalyticsProperty.analyzePerformance()` | `good` | `period`, `propertyDisplayName`, `propertyProvider` |
+| `smrtAnalytics.report.analyzeResults` | `AnalyticsReport.analyzeResults()` | `good` | `reportName`, `reportDimensions`, `reportMetrics`, `dateRangeStart`, `dateRangeEnd`, `rowCount`, `reportData` |
+| `smrtAnalytics.report.hasPositiveTrends` | `AnalyticsReport.hasPositiveTrends()` | `cheap` | `reportMetrics`, `reportData` |
 
 **Excluded from variables (never reach the AI provider):**
 - `id`, `propertyId`, `tenantId`, `externalId` — internal foreign keys / UUIDs that link to identifying records.

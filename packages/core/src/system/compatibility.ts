@@ -1068,6 +1068,33 @@ export async function ensureDeferredSystemTableCompatibility(
 }
 
 /**
+ * Prompt-run observability columns on `_smrt_ai_usage` (#4751).
+ *
+ * Nullable TEXT, populated from usage tags by `AiUsagePersistenceHandler`;
+ * existing rows keep NULL (no backfill: `tags` still holds the full copy).
+ * Each ALTER is guarded by a column-existence probe on every engine, and must
+ * run before the DDL replay because its `CREATE INDEX` clauses reference the
+ * new columns.
+ */
+export async function ensureAiUsageSystemTableCompatibility(
+  db: DatabaseInterface,
+  typeHint?: string,
+): Promise<void> {
+  if (!(await tableExists(db, '_smrt_ai_usage', typeHint))) {
+    return;
+  }
+
+  for (const column of [
+    'prompt_key',
+    'tier_requested',
+    'tier_resolved',
+    'run_id',
+  ]) {
+    await addColumnIfMissing(db, '_smrt_ai_usage', column, 'TEXT', typeHint);
+  }
+}
+
+/**
  * The compatibility pass that must precede replaying system DDL.
  *
  * Only the tables `bootstrapSystemTables()` itself creates belong here: an
@@ -1088,6 +1115,7 @@ export async function ensureBootstrapSystemTableCompatibility(
 ): Promise<void> {
   await ensureDispatchSystemTableCompatibility(db, typeHint);
   await ensureDispatchSubscriptionsSystemTableCompatibility(db, typeHint);
+  await ensureAiUsageSystemTableCompatibility(db, typeHint);
 }
 
 /**

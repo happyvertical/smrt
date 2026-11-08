@@ -52,6 +52,19 @@ import {
 } from './decisions.js';
 import { createFilesystemAdapter } from './filesystem-loader.js';
 import { getDatabase, importAI } from './host.js';
+import {
+  getInferenceConfig as getProcessInferenceConfig,
+  type InferenceConfig,
+  type InferenceLatency,
+  type InferenceRequest,
+  type InferenceResolution,
+  type InferenceResolver,
+  type InferenceTarget,
+  type InferenceTierRequest,
+  inferenceUsageTags,
+  mergeInferenceConfigs,
+  resolveInference as resolveInferenceBinding,
+} from './inference.js';
 import { noteNativeDuckDbHandle } from './native-duckdb.js';
 import {
   applyPostgresRuntimeTimeouts,
@@ -100,6 +113,10 @@ type AiUsageFilterOptions = Pick<
   | 'operation'
   | 'className'
   | 'tenantId'
+  | 'promptKey'
+  | 'runId'
+  | 'tierRequested'
+  | 'tierResolved'
 >;
 
 interface AiUsageWhereClause {
@@ -258,6 +275,16 @@ function parseAiUsageTags(value: unknown): Record<string, string> | undefined {
   }
 }
 
+/** Spread helper: `{ [name]: value }` for a non-null column, else `{}`. */
+function optionalAiUsageColumn<K extends string>(
+  name: K,
+  value: unknown,
+): Partial<Record<K, string>> {
+  return value === null || value === undefined
+    ? {}
+    : ({ [name]: String(value) } as Record<K, string>);
+}
+
 function normalizeAiUsageTimestamp(value: unknown): Date {
   if (value instanceof Date) {
     return value;
@@ -328,6 +355,29 @@ function buildAiUsageWhereClause(
     params.push(options.tenantId);
   }
 
+  // Prompt-run observability columns (#4751).
+  if (options.promptKey === null) {
+    conditions.push(`prompt_key IS NULL`);
+  } else if (options.promptKey) {
+    conditions.push(`prompt_key = $${nextParamIndex++}`);
+    params.push(options.promptKey);
+  }
+
+  if (options.runId) {
+    conditions.push(`run_id = $${nextParamIndex++}`);
+    params.push(options.runId);
+  }
+
+  if (options.tierRequested) {
+    conditions.push(`tier_requested = $${nextParamIndex++}`);
+    params.push(options.tierRequested);
+  }
+
+  if (options.tierResolved) {
+    conditions.push(`tier_resolved = $${nextParamIndex++}`);
+    params.push(options.tierResolved);
+  }
+
   return {
     conditions,
     params,
@@ -378,6 +428,13 @@ export interface SmrtClassOptions {
    * It is independent from `ai`, which remains the generation client.
    */
   decisions?: DecisionConfig | DecisionClient;
+
+  /**
+   * Inference tier bindings for this instance, layered over the environment,
+   * `config({ inference })` and smrt.config, or a resolver that replaces the
+   * process-wide one for this instance (#4750).
+   */
+  inference?: InferenceConfig | InferenceResolver;
 
   /**
    * AI usage tracking configuration (overrides global defaults)
@@ -449,6 +506,18 @@ export class SmrtClass {
   protected _decisionClient?: DecisionClient;
 
   private _decisionClientInitPromise?: Promise<DecisionClient | undefined>;
+
+  /**
+   * The resolved provider config the default client was built from, its
+   * caller-supplied `onUsage`, and the usage config, kept so tier clients can
+   * inherit tuning fields and report through the same handlers (#4750).
+   */
+  private _aiClientConfig?: Record<string, unknown>;
+  private _aiUserOnUsage?: unknown;
+  private _aiUsageResolvedConfig?: ResolvedAiUsageConfig;
+
+  /** Tier clients keyed by resolved `[provider, model, baseUrl]`, then key. */
+  private _tierAiClients = new Map<string, Map<string, Promise<AIClient>>>();
 
   /**
    * Filesystem adapter for file operations
@@ -704,6 +773,7 @@ export class SmrtClass {
         const globalConfig = config.toJSON();
         const usageConfig = this.mergeAiUsageConfig(globalConfig);
         this.initializeAiUsageHandlers(usageConfig);
+        this._aiUsageResolvedConfig = usageConfig;
 
         // The smrt.config.ts `ai` block (resolved through smrt-config's shared
         // resolver) is the lowest-priority declared source, above SMRT_AI_*.
@@ -835,6 +905,8 @@ export class SmrtClass {
               this._ai = (await getAI(
                 aiConfig as unknown as Parameters<typeof getAI>[0],
               )) as unknown as AIClient;
+              this._aiClientConfig = aiConfig as Record<string, unknown>;
+              this._aiUserOnUsage = existingOnUsage;
             }
           }
         }
@@ -862,9 +934,34 @@ export class SmrtClass {
 
   /**
    * Resolve the AI client, initializing deferred runtime services on demand.
+   *
+   * With no `tier` this returns the instance's configured client, exactly as
+   * before #4750. With a tier it resolves the binding through the inference
+   * seam and returns a client for the bound target, cached per resolved
+   * `(provider, model, baseUrl)`; a tier with no binding (the unconfigured
+   * default) returns the configured client. Pass `options.resolution` to reuse
+   * a resolution the caller already made, so the resolver runs once per call.
    */
-  protected async getAiClient(): Promise<AIClient> {
+  protected async getAiClient(
+    tier?: InferenceTierRequest,
+    options: {
+      latency?: InferenceLatency;
+      promptKey?: string;
+      resolution?: InferenceResolution;
+    } = {},
+  ): Promise<AIClient> {
     await this.ensureRuntimeServicesInitialized();
+
+    if (tier !== undefined) {
+      const resolution =
+        options.resolution ??
+        (await this.resolveInferenceTier({
+          tier,
+          latency: options.latency,
+          promptKey: options.promptKey,
+        }));
+      return this.getAiClientForTarget(resolution.target);
+    }
 
     if (!this._ai) {
       throw new Error(
@@ -874,6 +971,232 @@ export class SmrtClass {
     }
 
     return this._ai;
+  }
+
+  /**
+   * Pick the generation client for an AI operation and strip the tier keys.
+   *
+   * Without `tier` this is exactly `getAiClient()` and the options pass
+   * through untouched. With `tier` the binding is resolved once; the target's
+   * `params` and `model` become per-call defaults under the caller's options,
+   * and `tierRequested` / `tierResolved` are merged over the caller's
+   * `usageTags`. Subclasses that call `ai.message()` themselves (prompt
+   * helpers forwarding a resolved prompt's `tier`) use this too, so `tier`
+   * never reaches the provider as an unknown option. It lives on `SmrtClass`
+   * so collections that run prompts (e.g. smrt-facts) bind tiers the same way
+   * objects do (#4755).
+   */
+  protected async prepareAiOperation<
+    T extends {
+      tier?: InferenceTierRequest;
+      latency?: InferenceLatency;
+      promptKey?: string;
+      usageTags?: Record<string, string>;
+    },
+  >(
+    options: T,
+  ): Promise<{
+    ai: AIClient;
+    aiOptions: Omit<T, 'tier' | 'latency' | 'promptKey'>;
+  }> {
+    const { tier, latency, promptKey, ...rest } = options;
+    if (tier === undefined) {
+      return { ai: await this.getAiClient(), aiOptions: rest };
+    }
+    const resolution = await this.resolveInferenceTier({
+      tier,
+      latency,
+      ...(promptKey ? { promptKey } : {}),
+    });
+    const ai = await this.getAiClient(tier, { latency, promptKey, resolution });
+    const { target } = resolution;
+    return {
+      ai,
+      aiOptions: {
+        ...(target.params ?? {}),
+        ...(typeof target.model === 'string' && target.model.trim() !== ''
+          ? { model: target.model.trim() }
+          : {}),
+        ...rest,
+        usageTags: {
+          ...(rest.usageTags ?? {}),
+          ...inferenceUsageTags(tier, resolution),
+        },
+      } as Omit<T, 'tier' | 'latency' | 'promptKey'>,
+    };
+  }
+
+  /**
+   * The merged inference config for this instance: smrt.config <
+   * `config({ inference })` < environment < instance `inference` options.
+   */
+  protected getInferenceConfig(): InferenceConfig | undefined {
+    const instance = this.options.inference;
+    const instanceConfig =
+      instance &&
+      typeof instance === 'object' &&
+      typeof (instance as InferenceResolver).resolve !== 'function'
+        ? (instance as InferenceConfig)
+        : undefined;
+    return mergeInferenceConfigs(getProcessInferenceConfig(), instanceConfig);
+  }
+
+  /**
+   * Resolve a tier request through the inference seam with this instance's
+   * class, tenant, config, and (when given) instance resolver. Never calls a
+   * model.
+   */
+  protected async resolveInferenceTier(
+    request: InferenceRequest,
+  ): Promise<InferenceResolution> {
+    const instance = this.options.inference;
+    const resolver =
+      instance && typeof (instance as InferenceResolver).resolve === 'function'
+        ? (instance as InferenceResolver)
+        : undefined;
+    const tenantId =
+      'tenantId' in this &&
+      (this as { tenantId?: string | null }).tenantId !== undefined
+        ? ((this as { tenantId?: string | null }).tenantId ?? null)
+        : undefined;
+    return resolveInferenceBinding(
+      {
+        className: this._className,
+        ...(tenantId !== undefined ? { tenantId } : {}),
+        ...request,
+      },
+      { resolver, config: this.getInferenceConfig() },
+    );
+  }
+
+  /**
+   * Client for one tier target. Absent fields inherit from the configured
+   * client; a target naming another provider drops the configured
+   * credentials and model (provider ownership, #3372) and falls back to that
+   * provider's own key variable.
+   */
+  private async getAiClientForTarget(
+    target: InferenceTarget,
+  ): Promise<AIClient> {
+    const identity: Record<string, string> = {};
+    for (const key of ['provider', 'model', 'baseUrl', 'apiKey'] as const) {
+      const value = target[key];
+      if (typeof value === 'string' && value.trim() !== '') {
+        identity[key] = value.trim();
+      }
+    }
+    if (Object.keys(identity).length === 0) return this.getAiClient();
+
+    const base = this._aiClientConfig;
+    if (!base && !identity.provider) {
+      // An injected (or absent) default client has no provider config to
+      // refine. A model-only target keeps the injected client; callers on the
+      // object operation path also send the target model per call.
+      if (this._ai && !identity.baseUrl && !identity.apiKey) return this._ai;
+      if (!this._ai) return this.getAiClient();
+      throw new Error(
+        `${this._className} cannot rebind an injected AI client to a new endpoint; the inference target must name a provider.`,
+      );
+    }
+
+    const { onUsage: _onUsage, ...baseFields } = base ?? {};
+    const merged = mergeAIConfigObjects(baseFields, identity);
+    // Endpoint and credential are owned together (#3372) and travel as an
+    // explicit pair. `getAI()` and provider SDKs refill an unset key or
+    // endpoint from their own environment (`HAVE_AI_*`, `OPENAI_API_KEY`,
+    // `OPENAI_BASE_URL`, ...), so deleting an inherited field is not enough:
+    // an unbound pair fails closed here, before SDK construction.
+    const text = (config: Record<string, unknown>, key: string) =>
+      typeof config[key] === 'string' ? (config[key] as string).trim() : '';
+    const provider = text(merged, 'provider');
+    const sameProvider =
+      provider.toLowerCase() === text(baseFields, 'provider').toLowerCase();
+    const keepsBaseEndpoint =
+      sameProvider && identity.baseUrl === text(baseFields, 'baseUrl');
+    if (identity.baseUrl && !identity.apiKey && !keepsBaseEndpoint) {
+      throw new Error(
+        `${this._className}: an inference target that names its own baseUrl must carry its own apiKey (use a placeholder such as 'smrt-local' for a keyless local server); a configured or environment key is never sent to another endpoint.`,
+      );
+    }
+    if (identity.apiKey && !identity.baseUrl) {
+      throw new Error(
+        `${this._className}: an inference target that brings its own apiKey must name its baseUrl; a target key is never sent to an inherited or environment endpoint.`,
+      );
+    }
+    if (!sameProvider && !identity.baseUrl) {
+      // Another provider's default endpoint with that provider's own key
+      // variable. The SDK-wide `HAVE_AI_*` fallbacks belong to the configured
+      // client and would redirect or replace that key.
+      const env = typeof process !== 'undefined' ? process.env : undefined;
+      for (const name of ['HAVE_AI_BASE_URL', 'HAVE_AI_API_KEY']) {
+        if (env?.[name]?.trim()) {
+          throw new Error(
+            `${this._className}: an inference target on another provider must name its baseUrl and apiKey while ${name} is set.`,
+          );
+        }
+      }
+      const resolved = tryResolveAIProviderConfig({
+        explicit: merged as AIExplicitConfig,
+        config: null,
+        prefixes: [],
+        autoDetect: false,
+        requireProvider: false,
+        providerKeyEnvFallback: true,
+      });
+      if (!merged.apiKey && resolved?.apiKey) merged.apiKey = resolved.apiKey;
+    }
+    const tierConfig = withAIAliases(merged);
+    const field = (config: Record<string, unknown> | undefined, key: string) =>
+      typeof config?.[key] === 'string' ? (config[key] as string) : '';
+
+    if (
+      base &&
+      this._ai &&
+      ['provider', 'model', 'baseUrl', 'apiKey'].every(
+        (key) => field(base, key) === field(tierConfig, key),
+      )
+    ) {
+      return this._ai;
+    }
+
+    const cacheKey = JSON.stringify([
+      field(tierConfig, 'provider'),
+      field(tierConfig, 'model'),
+      field(tierConfig, 'baseUrl'),
+    ]);
+    const credentialKey = field(tierConfig, 'apiKey');
+    let byCredential = this._tierAiClients.get(cacheKey);
+    if (!byCredential) {
+      byCredential = new Map();
+      this._tierAiClients.set(cacheKey, byCredential);
+    }
+    const cached = byCredential.get(credentialKey);
+    if (cached) return cached;
+
+    const userOnUsage = this._aiUserOnUsage;
+    const usageConfig =
+      this._aiUsageResolvedConfig ?? this.mergeAiUsageConfig(config.toJSON());
+    tierConfig.onUsage = async (event: unknown) => {
+      if (typeof userOnUsage === 'function') {
+        await (userOnUsage as (usageEvent: unknown) => unknown)(event);
+      }
+      await this.handleAiUsageCallback(event, tierConfig, usageConfig);
+    };
+
+    const pending = (async () => {
+      // Same lazy SDK import as the default client (#2894).
+      const { getAI } = await importAI();
+      return (await getAI(
+        tierConfig as unknown as Parameters<typeof getAI>[0],
+      )) as unknown as AIClient;
+    })();
+    byCredential.set(credentialKey, pending);
+    pending.catch(() => {
+      if (byCredential.get(credentialKey) === pending) {
+        byCredential.delete(credentialKey);
+      }
+    });
+    return pending;
   }
 
   /**
@@ -1466,6 +1789,10 @@ export class SmrtClass {
           : (row.tenant_id as string | null),
       tags: parseAiUsageTags(row.tags),
       timestamp: normalizeAiUsageTimestamp(row.created_at),
+      ...optionalAiUsageColumn('promptKey', row.prompt_key),
+      ...optionalAiUsageColumn('tierRequested', row.tier_requested),
+      ...optionalAiUsageColumn('tierResolved', row.tier_resolved),
+      ...optionalAiUsageColumn('runId', row.run_id),
     }));
   }
 
@@ -1494,7 +1821,11 @@ export class SmrtClass {
               ? `COALESCE(tenant_id, 'global')`
               : groupBy === 'operation'
                 ? `operation`
-                : `substr(CAST(created_at AS TEXT), 1, 10)`;
+                : groupBy === 'prompt'
+                  ? `COALESCE(prompt_key, 'unattributed')`
+                  : groupBy === 'tier'
+                    ? `COALESCE(tier_resolved, tier_requested, 'untiered')`
+                    : `substr(CAST(created_at AS TEXT), 1, 10)`;
 
     const { conditions, params } = buildAiUsageWhereClause(options);
 

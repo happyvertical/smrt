@@ -89,4 +89,19 @@ describe('Image.generateAltText()', () => {
     const [, options] = aiMessageMock.mock.calls[0];
     expect(options).toBeTypeOf('object');
   });
+
+  it('forwards the prompt-run usage tags to ai.message (#4751)', async () => {
+    const image = makeImage();
+
+    await image.generateAltText();
+
+    const [, options] = aiMessageMock.mock.calls[0];
+    expect(options.usageTags).toEqual({
+      promptKey: 'smrtImages.image.generateAltText',
+      promptLayer: 'default',
+      templateHash: expect.stringMatching(/^[0-9a-f]{12}$/),
+      tierRequested: 'good',
+      tierResolved: 'good',
+    });
+  });
 });

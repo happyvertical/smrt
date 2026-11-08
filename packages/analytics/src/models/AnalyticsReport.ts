@@ -429,13 +429,11 @@ export class AnalyticsReport extends SmrtObject {
       },
     );
 
-    const ai = await this.getAiClient();
-    const analysis = (
-      await ai.message(
-        resolvedPrompt.text,
-        promptMessageOptions(resolvedPrompt.ai),
-      )
-    ).trim();
+    // A tier profile (#4750) picks the tier client; tier keys are stripped.
+    const { ai, aiOptions } = await this.prepareAiOperation(
+      promptMessageOptions(resolvedPrompt.ai),
+    );
+    const analysis = (await ai.message(resolvedPrompt.text, aiOptions)).trim();
 
     return {
       action: 'analyzeResults',
@@ -541,13 +539,11 @@ export class AnalyticsReport extends SmrtObject {
       }
     }
 
-    const ai = await this.getAiClient();
-    const response = (
-      await ai.message(
-        resolvedPrompt.text,
-        promptMessageOptions(resolvedPrompt.ai),
-      )
-    ).trim();
+    // A tier profile (#4750) picks the tier client; tier keys are stripped.
+    const { ai, aiOptions } = await this.prepareAiOperation(
+      promptMessageOptions(resolvedPrompt.ai),
+    );
+    const response = (await ai.message(resolvedPrompt.text, aiOptions)).trim();
 
     return /^\s*(yes|true)\b/i.test(response);
   }

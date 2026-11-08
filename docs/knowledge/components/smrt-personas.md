@@ -5,10 +5,10 @@ description: "Tenant-owned, context-scoped agent personas and resolution for the
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T15:48:19Z"
+  at: "2026-11-08T08:57:02Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:a42af9543bfb602c4cf09748e6946029e34da39c90ac01357f4e1a7184f7e021"
+source_revision: "sha256:7172af7274cf4543e2a502e3bd413a10ed8e534d71a4a9137ef7628d10c3b2f1"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/personas/package.json"

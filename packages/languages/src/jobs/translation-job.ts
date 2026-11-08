@@ -53,6 +53,7 @@ definePrompt({
     'Match the organization glossary where applicable:\n{glossary}\n' +
     'String to translate: "{template}"\n' +
     'Reply with a JSON object shaped like {responseShapeExample} where the translation field is your translated string.',
+  ai: { profile: 'good', latency: 'background' },
   editable: {
     template: true,
     profile: true,
@@ -169,7 +170,15 @@ export class LanguageTranslationTask extends SmrtObject {
     // (client construction) and `ai.message()` (request options) so the
     // override actually takes effect end-to-end.
     const promptAi = (prompt.ai ?? {}) as Record<string, unknown>;
-    const mergedAiConfig: Record<string, unknown> = { ...promptAi };
+    // A per-call getAI() client cannot pick an inference tier (#4750), so the
+    // tier routing keys never reach the provider; usageTags still forward.
+    const {
+      tier: _tier,
+      promptKey: _promptKey,
+      latency: _latency,
+      ...routedAi
+    } = promptAi;
+    const mergedAiConfig: Record<string, unknown> = { ...routedAi };
     if (args.model) mergedAiConfig.model = args.model;
     const ai = await getAI(mergedAiConfig as GetAIOptions);
 

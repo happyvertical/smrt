@@ -16,9 +16,9 @@ Double-entry accounting with chart of accounts, journal lifecycle, and balance e
 
 Registered at module-load time via `definePrompt()` in `src/prompts.ts`. Side-effect imported from `src/index.ts` so consumers automatically see the prompts after importing any export from this package.
 
-| Key | Method | Variables |
-|-----|--------|-----------|
-| `smrtLedgers.journal.summarize` | `Journal.summarize()` | `journalNumber`, `journalDate`, `journalDescription`, `journalStatus`, `journalTotal`, `entryCount`, `journalBalanced` |
+| Key | Method | Tier | Variables |
+|-----|--------|------|-----------|
+| `smrtLedgers.journal.summarize` | `Journal.summarize()` | `good` | `journalNumber`, `journalDate`, `journalDescription`, `journalStatus`, `journalTotal`, `entryCount`, `journalBalanced` |
 
 PII-conscious variable selection: `tenantId`, `sourceRef` (may reference customer/vendor identifiers), per-entry `accountId`/`id`, and the extensible `metadata` blob are intentionally NOT exposed as prompt variables. Tenants who need richer context should override the template via `PromptOverride` and supply their own variables through a custom call site.
 

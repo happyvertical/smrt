@@ -53,6 +53,7 @@ import {
   ValidationError,
 } from './errors';
 import { buildWhere } from './host.js';
+import type { InferenceLatency, InferenceTierRequest } from './inference';
 import {
   type BulkMutationEntry,
   createInterceptorContext,
@@ -552,6 +553,30 @@ export interface AiOperationOptions extends AITextCompletionOptions {
    * Override the injected object-data truncation budget, in characters.
    */
   maxDataLength?: number;
+
+  /**
+   * Inference tier for this call (#4750). Resolved through the inference seam
+   * (`auto` → `inference.defaultTier`, else `good`); with no `inference`
+   * config every tier uses the configured client. Calls with a tier add
+   * `tierRequested` / `tierResolved` to `usageTags`. Not forwarded to
+   * `ai.message()`.
+   */
+  tier?: InferenceTierRequest;
+
+  /** Latency hint passed to the tier binding. Not forwarded to `ai.message()`. */
+  latency?: InferenceLatency;
+
+  /**
+   * Registered prompt key, passed to the inference resolver with `tier` so
+   * prompt-scoped bindings apply. Not forwarded to `ai.message()`.
+   */
+  promptKey?: string;
+
+  /**
+   * Per-call usage tags, forwarded to `ai.message()`; the SDK merges them
+   * into the usage event (`_smrt_ai_usage.tags`).
+   */
+  usageTags?: Record<string, string>;
 }
 
 /**
@@ -4909,8 +4934,9 @@ export class SmrtObject extends SmrtClass {
       ).result;
     }
 
-    const ai = await this.getAiClient();
-    const { maxDataLength, includeData, ...legacyAiOptions } = options ?? {};
+    const { maxDataLength, includeData, ...operationOptions } = options ?? {};
+    const { ai, aiOptions: legacyAiOptions } =
+      await this.prepareAiOperation(operationOptions);
     let aiOptions = legacyAiOptions;
     if (tools.length > 0 && hasConfiguredDecisions) {
       const {
@@ -5057,7 +5083,6 @@ export class SmrtObject extends SmrtClass {
     criteria: string,
     options: EvaluateOptions,
   ): Promise<EvaluationResult> {
-    const ai = await this.getAiClient();
     const {
       maxDataLength,
       includeData,
@@ -5065,8 +5090,9 @@ export class SmrtObject extends SmrtClass {
       uncertaintyFallback,
       model: _decisionModel,
       generativeModel,
-      ...aiOptions
+      ...generationOptions
     } = options;
+    const { ai, aiOptions } = await this.prepareAiOperation(generationOptions);
     const contentSection = this.buildAiContentSection(
       includeData,
       maxDataLength,
@@ -5123,8 +5149,8 @@ export class SmrtObject extends SmrtClass {
    * @see {@link is} for boolean criteria checks
    */
   public async do(instructions: string, options: AiOperationOptions = {}) {
-    const ai = await this.getAiClient();
-    const { maxDataLength, includeData, ...aiOptions } = options ?? {};
+    const { maxDataLength, includeData, ...operationOptions } = options ?? {};
+    const { ai, aiOptions } = await this.prepareAiOperation(operationOptions);
     const contentSection = this.buildAiContentSection(
       includeData,
       maxDataLength,
@@ -5171,8 +5197,8 @@ export class SmrtObject extends SmrtClass {
    * ```
    */
   public async describe(options: AiOperationOptions = {}) {
-    const ai = await this.getAiClient();
-    const { maxDataLength, includeData, ...aiOptions } = options ?? {};
+    const { maxDataLength, includeData, ...operationOptions } = options ?? {};
+    const { ai, aiOptions } = await this.prepareAiOperation(operationOptions);
     const contentSection = this.buildAiContentSection(
       includeData,
       maxDataLength,

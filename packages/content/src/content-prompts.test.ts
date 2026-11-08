@@ -1,6 +1,7 @@
 import { clearCache, setConfig } from '@happyvertical/smrt-config';
 import { clearPromptCache, resolvePrompt } from '@happyvertical/smrt-prompts';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { Content } from './content';
 import {
   smrtContentApplyCorrectionPrompt,
   smrtContentReviewPrompt,
@@ -80,5 +81,33 @@ describe('content prompt definitions', () => {
 
     expect(resolved.text).toContain('The old claim.');
     expect(resolved.text).toContain('The corrected claim.');
+  });
+
+  it('forwards the apply-correction usage tags to the AI call (#4751)', async () => {
+    const message = vi.fn().mockResolvedValue('The corrected body.');
+    const content = new Content({
+      title: 'Budget Update',
+      body: 'A body that does not contain the incorrect text.',
+    } as any);
+    (content as any)._ai = { message };
+
+    const draft = await (content as any).buildCorrectionDraftSnapshot(
+      {
+        summary: 'Fix the claim.',
+        correctedText: 'The corrected claim.',
+        incorrectText: 'Absent text.',
+      },
+      '',
+    );
+
+    expect(draft.metadata.generationMethod).toBe('ai');
+    expect(message).toHaveBeenCalledTimes(1);
+    expect(message.mock.calls[0][1]?.usageTags).toEqual({
+      promptKey: 'smrtContent.applyCorrection',
+      promptLayer: 'default',
+      templateHash: expect.stringMatching(/^[0-9a-f]{12}$/),
+      tierRequested: 'great',
+      tierResolved: 'great',
+    });
   });
 });

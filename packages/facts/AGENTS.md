@@ -24,6 +24,17 @@ Distributed knowledge base with semantic deduplication, provenance tracking, and
 
 `recalculateConfidence()`: weighted formula from `sourceCount`, `avgSourceCredibility`, `daysSinceLastSource`, `corroborationScore`.
 
+## Prompt tiers (#4755)
+
+Rule in `../prompts/AGENTS.md`. `smrtFacts.extractCandidates`,
+`smrtFacts.extractArticleClaims` and `smrtFacts.reconcile` → `great`
+(persisted facts and merges); `smrtFacts.assessClaimSupport` → `cheap`
+(closed-vocabulary status). `FactCollection.preparePromptCall()` binds the tier
+through `prepareAiOperation()`; a message-only client injected as `options.ai`
+that core does not adopt (no `embed`) is used as is with `routeTier: false`;
+one core adopts binds the tier. A typed-decision client answers
+reconciliation without any tier (#3158).
+
 ## Gotchas
 
 - **Embedding failures non-fatal**: try/catch with silent fail — doesn't block fact creation

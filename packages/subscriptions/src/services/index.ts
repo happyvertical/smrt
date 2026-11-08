@@ -40,6 +40,16 @@ export {
   type ResellerBillingErrorCode,
 } from './reseller-errors.js';
 export {
+  FEATURE_GRANT_SOURCE_SLOT_KEY,
+  type GrantingPlanReader,
+  isMissingSubscriptionTableError,
+  registerSubscriptionFeatureSource,
+  type SubscriptionFeatureGrants,
+  SubscriptionFeatureSource,
+  type SubscriptionFeatureSourceOptions,
+  type SubscriptionGrantingPlan,
+} from './subscription-feature-source.js';
+export {
   type SubscriptionPlanReader,
   type SubscriptionPlanVersionReader,
   SubscriptionResolver,

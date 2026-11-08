@@ -5,10 +5,10 @@ description: "Analytics integration models for SMRT framework"
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T15:48:19Z"
+  at: "2026-11-08T08:40:59Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:0956cf7e880461b1b116bcd6d83f48e2a3a3c07a31c2ce7e7fb5b0ff3ca39a2f"
+source_revision: "sha256:da9625dcc5cd080352c83d4a4df595e3fe351beae9958b165611bfccf341f60f"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/analytics/package.json"

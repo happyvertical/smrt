@@ -129,16 +129,24 @@ describe('Journal.summarize()', () => {
     expect(text).toContain('Balanced: No');
   });
 
-  it('passes empty AI options for the default registered prompt (no ai config)', async () => {
+  it('passes only the prompt-run usage tags for the default registered prompt (no ai config, #4751)', async () => {
     const journal = makeJournal();
 
     await journal.summarize();
 
     expect(aiMessageMock).toHaveBeenCalledTimes(1);
     // The default registered prompt has no model/temperature/maxTokens/params,
-    // so the options object derived by promptMessageOptions should be empty.
+    // so promptMessageOptions contributes only the usage tags.
     const [, options] = aiMessageMock.mock.calls[0];
-    expect(options).toEqual({});
+    expect(options).toEqual({
+      usageTags: {
+        promptKey: 'smrtLedgers.journal.summarize',
+        promptLayer: 'default',
+        templateHash: expect.stringMatching(/^[0-9a-f]{12}$/),
+        tierRequested: 'good',
+        tierResolved: 'good',
+      },
+    });
   });
 
   it('forwards model/temperature/maxTokens from a runtime ai override to ai.message', async () => {

@@ -19,7 +19,7 @@ Image management with AI categorization, editing, and metadata extraction. Exten
 
 ## AI Operations
 
-`generateAltText()` uses the `smrtImages.image.generateAltText` prompt registered via `@happyvertical/smrt-prompts` (resolves tenant overrides via `resolvePrompt()` then dispatches through `getAiClient().message()`). Computed properties: `isLandscape`, `isPortrait`, `aspectRatio`.
+`generateAltText()` uses the `smrtImages.image.generateAltText` prompt registered via `@happyvertical/smrt-prompts` (resolves tenant overrides via `resolvePrompt()` then dispatches through `prepareAiOperation()` so a tier profile picks the tier client). Computed properties: `isLandscape`, `isPortrait`, `aspectRatio`.
 
 ## Prompt Registry
 
@@ -29,6 +29,8 @@ Image management with AI categorization, editing, and metadata extraction. Exten
 import { smrtImagesGenerateAltTextPrompt } from '@happyvertical/smrt-images';
 // key: 'smrtImages.image.generateAltText'
 ```
+
+Tier (#4755 rule, `../prompts/AGENTS.md`): `good` (a description). The call binds it through `prepareAiOperation()`.
 
 Only non-PII metadata fields are passed to the AI provider: `name`, `description`. Source URIs, internal foreign-key fields (`parentId`, `tenantId`), and the extensible `metadata` blob are intentionally excluded — source URIs may embed signed/private bucket paths and `metadata` may contain EXIF GPS data or tenant-private configuration.
 

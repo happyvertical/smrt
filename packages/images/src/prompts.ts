@@ -8,10 +8,7 @@
  * `prompts.ts`) and `@happyvertical/smrt-properties` (see `prompts.ts`).
  */
 
-import {
-  definePrompt,
-  type ResolvedPromptAI,
-} from '@happyvertical/smrt-prompts';
+import { definePrompt } from '@happyvertical/smrt-prompts';
 
 // Alt text generation only uses non-PII metadata describing the image
 // itself (name and description). Source URIs, internal foreign-key
@@ -30,6 +27,7 @@ Image name: {imageName}
 Image description: {imageDescription}
 
 Return only the alt text, with no commentary or surrounding quotation marks.`,
+  ai: { profile: 'good' },
   editable: {
     template: true,
     profile: true,
@@ -38,13 +36,9 @@ Return only the alt text, with no commentary or surrounding quotation marks.`,
   },
 });
 
-export function promptMessageOptions(ai: ResolvedPromptAI) {
-  return {
-    ...(ai.params || {}),
-    ...(ai.model ? { model: ai.model } : {}),
-    ...(typeof ai.temperature === 'number'
-      ? { temperature: ai.temperature }
-      : {}),
-    ...(typeof ai.maxTokens === 'number' ? { maxTokens: ai.maxTokens } : {}),
-  };
-}
+/**
+ * Canonical helper lives in `@happyvertical/smrt-prompts` (#4751): it also
+ * forwards the resolution's `usageTags` (`promptKey`, `promptLayer`,
+ * `templateHash`). Re-exported here for existing importers.
+ */
+export { promptMessageOptions } from '@happyvertical/smrt-prompts';

@@ -85,6 +85,8 @@ import { smrtProfilesGenerateBioPrompt } from '@happyvertical/smrt-profiles';
 // key: 'smrtProfiles.profile.generateBio'
 ```
 
+Tier (#4755 rule, `../prompts/AGENTS.md`): `good` (a description). The call binds it through `prepareAiOperation()`.
+
 ## Gotchas
 
 - **SERVER_MASTER_SECRET required** for Nostr private key decryption — centralized key management

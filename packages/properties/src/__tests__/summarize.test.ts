@@ -9,6 +9,7 @@
  * package's own integration tests; here we focus on Property-level behavior.
  */
 
+import { clearCache, setConfig } from '@happyvertical/smrt-config';
 import { clearPromptCache } from '@happyvertical/smrt-prompts';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Property } from '../models/Property.js';
@@ -115,16 +116,24 @@ describe('Property.summarize()', () => {
     expect(text).not.toMatch(/Top-level zones:[^\n]*\bHeader Slot\b/);
   });
 
-  it('passes empty AI options for the default registered prompt (no ai config)', async () => {
+  it('passes only the prompt-run usage tags for the default registered prompt (no ai config, #4751)', async () => {
     const property = makeProperty();
 
     await property.summarize();
 
     expect(aiMessageMock).toHaveBeenCalledTimes(1);
     // The default registered prompt has no model/temperature/maxTokens/params,
-    // so the options object derived by promptMessageOptions should be empty.
+    // so promptMessageOptions contributes only the usage tags.
     const [, options] = aiMessageMock.mock.calls[0];
-    expect(options).toEqual({});
+    expect(options).toEqual({
+      usageTags: {
+        promptKey: 'smrtProperties.property.summarize',
+        promptLayer: 'default',
+        templateHash: expect.stringMatching(/^[0-9a-f]{12}$/),
+        tierRequested: 'good',
+        tierResolved: 'good',
+      },
+    });
   });
 
   it('forwards model/temperature/maxTokens from a runtime ai override to ai.message', async () => {
@@ -147,5 +156,41 @@ describe('Property.summarize()', () => {
       temperature: 0.42,
       maxTokens: 256,
     });
+  });
+  it('forwards a tier profile to the tier path and tags usage (#4750)', async () => {
+    const { promptMessageOptions } = await import('../prompts.js');
+    expect(
+      promptMessageOptions({ tier: 'cheap', promptKey: 'k', params: {} }),
+    ).toEqual({ tier: 'cheap', promptKey: 'k' });
+    expect(promptMessageOptions({ promptKey: 'k', params: {} })).toEqual({});
+
+    setConfig({
+      packages: {
+        prompts: {
+          prompts: {
+            [smrtPropertiesSummarizePrompt.key]: { ai: { profile: 'auto' } },
+          },
+        },
+      },
+    });
+    try {
+      clearPromptCache();
+      await makeProperty().summarize();
+      const [, options] = aiMessageMock.mock.calls[0];
+      // Prompt-run tags (#4751) and tier tags (#4750) both reach the call;
+      // tier and promptKey are stripped before the provider sees them.
+      expect(options).toEqual({
+        usageTags: {
+          promptKey: smrtPropertiesSummarizePrompt.key,
+          promptLayer: 'default',
+          templateHash: expect.stringMatching(/^[0-9a-f]{12}$/),
+          tierRequested: 'auto',
+          tierResolved: 'good',
+        },
+      });
+    } finally {
+      clearCache();
+      clearPromptCache();
+    }
   });
 });

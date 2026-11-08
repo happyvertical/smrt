@@ -43,10 +43,7 @@
  * labels (which are public GA4/Plausible/Matomo schema names).
  */
 
-import {
-  definePrompt,
-  type ResolvedPromptAI,
-} from '@happyvertical/smrt-prompts';
+import { definePrompt } from '@happyvertical/smrt-prompts';
 
 /**
  * `AnalyticsProperty.analyzePerformance()` prompt. Only the human-readable
@@ -58,6 +55,7 @@ export const smrtAnalyticsAnalyzePerformancePrompt = definePrompt({
   template: `Analyze the analytics performance for this property over the last {period}.
 Consider: traffic trends, user engagement, conversion patterns.
 Property: {propertyDisplayName} ({propertyProvider})`,
+  ai: { profile: 'good' },
   editable: {
     template: true,
     profile: true,
@@ -104,6 +102,7 @@ Provide:
 1. Key findings
 2. Trends or patterns
 3. Actionable recommendations`,
+  ai: { profile: 'good' },
   editable: {
     template: true,
     profile: true,
@@ -139,6 +138,7 @@ Consider: user growth, engagement, conversions as positive indicators.
 Begin your response with the single word "yes" or "no" (lower case), then
 optionally provide a one-sentence explanation. Tooling parses the leading
 word — "yes" or "true" means positive, anything else means negative.`,
+  ai: { profile: 'cheap' },
   editable: {
     template: true,
     profile: true,
@@ -148,17 +148,8 @@ word — "yes" or "true" means positive, anything else means negative.`,
 });
 
 /**
- * Build the message-options object passed to `aiClient.message()` from a
- * `ResolvedPromptAI` shape. Mirrors the helper in `smrt-properties` and
- * `smrt-content` so behavior across packages is identical.
+ * Canonical helper lives in `@happyvertical/smrt-prompts` (#4751): it also
+ * forwards the resolution's `usageTags` (`promptKey`, `promptLayer`,
+ * `templateHash`). Re-exported here for existing importers.
  */
-export function promptMessageOptions(ai: ResolvedPromptAI) {
-  return {
-    ...(ai.params || {}),
-    ...(ai.model ? { model: ai.model } : {}),
-    ...(typeof ai.temperature === 'number'
-      ? { temperature: ai.temperature }
-      : {}),
-    ...(typeof ai.maxTokens === 'number' ? { maxTokens: ai.maxTokens } : {}),
-  };
-}
+export { promptMessageOptions } from '@happyvertical/smrt-prompts';
