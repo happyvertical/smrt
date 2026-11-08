@@ -55,6 +55,7 @@ export const smrtAnalyticsAnalyzePerformancePrompt = definePrompt({
   template: `Analyze the analytics performance for this property over the last {period}.
 Consider: traffic trends, user engagement, conversion patterns.
 Property: {propertyDisplayName} ({propertyProvider})`,
+  ai: { profile: 'good' },
   editable: {
     template: true,
     profile: true,
@@ -101,6 +102,7 @@ Provide:
 1. Key findings
 2. Trends or patterns
 3. Actionable recommendations`,
+  ai: { profile: 'good' },
   editable: {
     template: true,
     profile: true,
@@ -136,6 +138,7 @@ Consider: user growth, engagement, conversions as positive indicators.
 Begin your response with the single word "yes" or "no" (lower case), then
 optionally provide a one-sentence explanation. Tooling parses the leading
 word — "yes" or "true" means positive, anything else means negative.`,
+  ai: { profile: 'cheap' },
   editable: {
     template: true,
     profile: true,
