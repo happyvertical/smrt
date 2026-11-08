@@ -603,7 +603,7 @@ test('native legacy gates bind actual UID, stop/relinquish revisions, selectors,
     };
     const source = {
       metadata: { uid: plan.legacy.source.uid, generation: 1 },
-      spec: { url: plan.legacy.repository },
+      spec: { url: plan.legacy.repository, ref: { branch: 'legacy' } },
       status: { ...condition, artifact: { revision: `main@sha1:${revision}` } },
     };
     const ks = {
@@ -654,11 +654,44 @@ test('native legacy gates bind actual UID, stop/relinquish revisions, selectors,
       maintenance: async () => {},
       bindings: async () => sha,
     };
-    const methods = createAdoptionMethods(config, async () => '', helpers, {
-      adoptionFenceObserver: async () => fence(plan),
-    });
+    const commands = [];
+    let failGit = null;
+    const methods = createAdoptionMethods(
+      config,
+      async (tool, args) => {
+        commands.push([tool, ...args]);
+        if (tool === 'git' && failGit && args.join(' ').includes(failGit)) throw new Error('git failed');
+        return '';
+      },
+      helpers,
+      { adoptionFenceObserver: async () => fence(plan) },
+    );
     assert.ok(await methods.qualifyAdoption(plan, snapshot));
+    commands.length = 0;
     assert.ok(await methods.observeLegacy(plan, snapshot, 'legacy-stopped'));
+    // Legacy ancestry is proven in a private store fetched from the legacy
+    // repository's tracked ref, never in the deployment checkout.
+    const legacyGit = commands.filter(([tool, , dir]) => tool === 'git' && /\.git-smrt-legacy-/.test(dir));
+    const store = legacyGit[0][2];
+    assert.deepEqual(commands.filter(([tool, ...args]) => tool === 'git' && args.includes(store)).map((c) => c.slice(1).join(' ').replace(store, 'STORE')), [
+      `init --quiet --bare STORE`,
+      `-C STORE fetch --quiet --no-tags ${plan.legacy.repository} +refs/heads/legacy:refs/smrt/legacy`,
+      ...[plan.legacy.revision, plan.legacy.maintenanceRevision, plan.legacy.stopRevision, plan.legacy.relinquishRevision].map((r) => `-C STORE cat-file -e ${r}^{commit}`),
+      ...[plan.legacy.revision, plan.legacy.maintenanceRevision, plan.legacy.stopRevision].map((r) => `-C STORE merge-base --is-ancestor ${r} ${plan.legacy.stopRevision}`),
+      `-C STORE merge-base --is-ancestor ${plan.legacy.stopRevision} refs/smrt/legacy`,
+    ]);
+    assert.ok(!commands.some(([tool, , dir, verb]) => tool === 'git' && dir === '/unit' && ['merge-base', 'cat-file', 'fetch'].includes(verb)), 'no ancestry query against the deployment repository');
+    for (const failure of ['cat-file', 'merge-base --is-ancestor', 'fetch --quiet']) {
+      failGit = failure;
+      await assert.rejects(methods.observeLegacy(plan, snapshot, 'legacy-stopped'), /git/);
+    }
+    failGit = null;
+    const ref = source.spec.ref;
+    delete source.spec.ref;
+    await assert.rejects(methods.observeLegacy(plan, snapshot, 'legacy-stopped'), /reviewed branch or tag/);
+    source.spec.ref = { tag: 'bad ref' };
+    await assert.rejects(methods.observeLegacy(plan, snapshot, 'legacy-stopped'), /reviewed branch or tag/);
+    source.spec.ref = ref;
     assert.ok(await methods.observeLegacy(plan, snapshot, 'relinquished'));
     const statusEntry = { manager: 'nginx-ingress-controller', subresource: 'status', fieldsType: 'FieldsV1', fieldsV1: { 'f:status': { 'f:loadBalancer': {} } } };
     ingress.metadata.managedFields.push(statusEntry);

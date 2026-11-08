@@ -616,19 +616,67 @@ export function createAdoptionMethods(config, command, helpers, options) {
       },
     };
   }
+  // Reviewed legacy revisions live in the legacy repository, which need not be
+  // the deployment repository. Fetch the ref the legacy Flux source tracks into
+  // a private object store beside the checkout and prove there that every
+  // reviewed revision exists, that stop descends from maintenance and the
+  // original, and that the observed revision is on that ref.
+  async function legacyAncestry(plan, rev) {
+    const source = await helpers.get(
+      'gitrepository',
+      plan.legacy.source.name,
+      plan.legacy.source.namespace,
+    );
+    const ref = source.spec?.ref?.branch
+      ? `refs/heads/${source.spec.ref.branch}`
+      : source.spec?.ref?.tag
+        ? `refs/tags/${source.spec.ref.tag}`
+        : null;
+    demand(
+      source.metadata.uid === plan.legacy.source.uid &&
+        source.spec?.url === plan.legacy.repository,
+      'Legacy Flux UID/repository/exact reviewed revision not acknowledged',
+    );
+    demand(
+      ref && /^refs\/(heads|tags)\/[A-Za-z0-9][A-Za-z0-9._\/-]{0,200}$/.test(ref),
+      'Legacy Flux source must track a reviewed branch or tag',
+    );
+    const store = `${repository}/.git-smrt-legacy-${randomUUID()}`;
+    const legacy = (...args) => command('git', ['-C', store, ...args]);
+    try {
+      await command('git', ['init', '--quiet', '--bare', store]);
+      await legacy(
+        'fetch',
+        '--quiet',
+        '--no-tags',
+        plan.legacy.repository,
+        `+${ref}:refs/smrt/legacy`,
+      );
+      for (const revision of [
+        plan.legacy.revision,
+        plan.legacy.maintenanceRevision,
+        plan.legacy.stopRevision,
+        plan.legacy.relinquishRevision,
+      ])
+        await legacy('cat-file', '-e', `${revision}^{commit}`);
+      for (const earlier of [
+        plan.legacy.revision,
+        plan.legacy.maintenanceRevision,
+        plan.legacy.stopRevision,
+      ])
+        await legacy('merge-base', '--is-ancestor', earlier, rev);
+      await legacy('merge-base', '--is-ancestor', rev, 'refs/smrt/legacy');
+    } finally {
+      await rm(store, { recursive: true, force: true });
+    }
+  }
   async function observeLegacy(plan, snapshot, stage) {
     const saved = await qualifyAdoption(plan, snapshot);
     const relinquished = ['relinquished', 'helm-staged'].includes(stage);
     const rev = relinquished
       ? plan.legacy.relinquishRevision
       : plan.legacy.stopRevision;
-    // A stop revision must descend from the reviewed maintenance and original commits.
-    for (const earlier of [
-      plan.legacy.revision,
-      plan.legacy.maintenanceRevision,
-      plan.legacy.stopRevision,
-    ])
-      await git('merge-base', '--is-ancestor', earlier, rev);
+    await legacyAncestry(plan, rev);
     const ks = await legacyFlux(plan, rev, relinquished);
     const all = await helpers.namespaceInventory();
     verifyKnownLegacyWorkloads(all.filter(o => ['Pod','ReplicaSet','Deployment','CronJob','Job','StatefulSet','DaemonSet','HorizontalPodAutoscaler'].includes(o.kind)), saved, helpers.verifyPodEnvelope);

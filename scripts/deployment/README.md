@@ -211,7 +211,12 @@ namespace admission/credential restrictions and database credentials/sessions;
 this runner cannot manufacture a database fence from workload labels or a lock.
 
 The platform first publishes separately reviewed legacy maintenance/stop changes.
-The runner verifies exact legacy UID/source/revision acknowledgement, observed
+The runner fetches the ref the legacy Flux source tracks from the reviewed
+legacy repository into a private object store beside the checkout and proves
+there that every reviewed legacy revision exists, that stop descends from
+maintenance and the original, and that the observed revision is on that ref; the
+legacy repository need not be the deployment repository. It then verifies exact
+legacy UID/source/revision acknowledgement, observed
 normalized specs/selectors, actual drained writers/Jobs, identity-bound HTTP 503
 and legal/static route HTTP 200 plus the fresh namespace/database fence. Protected
 `staticAssertions` target every additional static host and require status 200.
