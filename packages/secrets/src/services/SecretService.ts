@@ -63,6 +63,17 @@ export interface StoreSecretOptions {
   expiresAt?: Date;
   /** Additional metadata */
   metadata?: Record<string, unknown>;
+  /**
+   * Context recorded in this write's `SecretAuditLog` entry (`details`), such
+   * as the operation that caused it. Never put a secret value here.
+   */
+  auditDetails?: Record<string, unknown>;
+}
+
+/** Options for {@link SecretService.delete}. */
+export interface DeleteSecretOptions {
+  /** Context recorded in the delete's audit entry. Never a secret value. */
+  auditDetails?: Record<string, unknown>;
 }
 
 /**
@@ -378,6 +389,7 @@ export class SecretService {
           userId,
           'update',
           'success',
+          options.auditDetails,
         );
         return existing;
       }
@@ -399,7 +411,14 @@ export class SecretService {
         tenantId,
       });
 
-      await this.audit(secret.id ?? null, name, userId, 'create', 'success');
+      await this.audit(
+        secret.id ?? null,
+        name,
+        userId,
+        'create',
+        'success',
+        options.auditDetails,
+      );
       return secret;
     } catch (error) {
       const classifiedError = await this.classifyTenantKeyFailure(
@@ -414,6 +433,7 @@ export class SecretService {
         isUpdate ? 'update' : 'create',
         'failure',
         {
+          ...options.auditDetails,
           error: classifiedError.message,
         },
       );
@@ -910,7 +930,10 @@ export class SecretService {
   /**
    * Delete a secret
    */
-  async delete(name: string): Promise<boolean> {
+  async delete(
+    name: string,
+    options: DeleteSecretOptions = {},
+  ): Promise<boolean> {
     const tenantId = requireTenantId();
     const userId = this.getCurrentUserId();
 
@@ -922,10 +945,18 @@ export class SecretService {
 
     try {
       await secret.delete();
-      await this.audit(secret.id ?? null, name, userId, 'delete', 'success');
+      await this.audit(
+        secret.id ?? null,
+        name,
+        userId,
+        'delete',
+        'success',
+        options.auditDetails,
+      );
       return true;
     } catch (error) {
       await this.audit(secret.id ?? null, name, userId, 'delete', 'failure', {
+        ...options.auditDetails,
         error: (error as Error).message,
       });
       throw error;
