@@ -956,6 +956,10 @@ export function createAdoptionMethods(config, command, helpers, options) {
         ['commit-tree', tree, '-p', latest.revision],
         `Adopt ${plan.releaseName}: ${state.stage}\n`,
       );
+      // Publication boundary: the fence observed before the gate may have aged
+      // past its window during the fetch and history checks; refresh it here,
+      // as the ordinary release CAS does, before anything becomes durable.
+      await observeWriterFence(plan, snapshot, state.stage);
       await git('push', 'origin', `${revision}:refs/heads/${branch}`);
       return { stage: state.stage, revision };
     } finally {

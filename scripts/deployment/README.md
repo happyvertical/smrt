@@ -234,7 +234,8 @@ publishes the stopped candidate with `smrt.happyvertical.com/adoption-{id,plan,
 status:pending,origin}`. Canonical remains absent. Every journal publication
 re-checks the dedicated Flux directory, and the directory's own history, on the
 exact revision it builds on, so an interleaved commit cannot carry unreviewed
-manifests into the handover. Establishment requires exact
+manifests into the handover, and refreshes the writer fence at that boundary
+before pushing, as the ordinary release CAS does. Establishment requires exact
 Flux acknowledgement, normal Helm values/storage and established helm-controller
 ownership, preserved UIDs/selectors, stopped writers, static health and fresh
 fences. After establishment every adopted resource may carry only

@@ -417,11 +417,12 @@ test('native Git CAS atomically renames staging, rejects superseded file history
     await git('push', 'origin', 'main');
     const { plan } = fixture();
     const fluxPath = plan.canonicalFile.slice(0, plan.canonicalFile.lastIndexOf('/'));
+    let fences = 0;
     const methods = createAdoptionMethods(
       { repository, branch: 'main', adoption: { fluxPath } },
       command,
       {},
-      {},
+      { adoptionFenceObserver: async () => { fences++; return fence(plan); } },
     );
     const adapter = unitAdapter(plan);
     // Produce valid protocol journals while exercising publication against a real local bare remote.
@@ -463,6 +464,7 @@ test('native Git CAS atomically renames staging, rejects superseded file history
     const final = adapter.snapshot();
     await methods.casAdoption(snapshot, plan, final.state, final.canonical);
     const published = await methods.readAdoption(plan);
+    assert.equal(fences, 6, 'every publication refreshes the writer fence at its boundary');
     assert.equal(published.staging, null);
     assert.ok(published.canonical);
     assert.equal(
