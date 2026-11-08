@@ -29,6 +29,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   createHostedInferenceEntitlementListener,
   createHostedInferenceProvisioner,
+  createHostedInferenceReconciler,
   type HostedGatewayAdmin,
   type HostedGatewayConfig,
   HostedInferenceError,
@@ -145,12 +146,15 @@ describe('hosted inference provisioning (#4759)', () => {
     const value = await read(inferenceProviderConfigSecretName({ userId }));
     return value === undefined ? undefined : JSON.parse(value);
   };
-  const provisioner = (overrides: { admin?: HostedGatewayAdmin } = {}) =>
+  const provisioner = (
+    overrides: { admin?: HostedGatewayAdmin; nonce?: () => string } = {},
+  ) =>
     createHostedInferenceProvisioner({
       db,
       secrets,
       gateway: GATEWAY,
       admin: overrides.admin ?? admin,
+      nonce: overrides.nonce ?? (() => 'x'),
     });
   const writeByo = (userId: string) =>
     withTenant({ tenantId: TENANT }, () =>
@@ -196,6 +200,7 @@ describe('hosted inference provisioning (#4759)', () => {
       secrets,
       gateway: GATEWAY,
       admin,
+      nonce: () => 'x',
       tenantId: TENANT,
       userId: ALICE,
       budget: { limitMicros: 5_000_000 },
@@ -204,15 +209,15 @@ describe('hosted inference provisioning (#4759)', () => {
       status: 'active',
       created: true,
       generation: 0,
-      projectId: `smrt-${TENANT}`,
+      projectId: `smrt-${TENANT}-x`,
       keyId: 'key-id-1',
-      keyAlias: `smrt-${TENANT}-${ALICE}-g0`,
+      keyAlias: `smrt-${TENANT}-${ALICE}-g0-x`,
       budget: { limitMicros: 5_000_000, window: 'month' },
     });
     expect(admin.projects).toHaveLength(1);
     expect(admin.keys[0]).toMatchObject({
-      name: `smrt-${TENANT}-${ALICE}-g0`,
-      projectId: `smrt-${TENANT}`,
+      name: `smrt-${TENANT}-${ALICE}-g0-x`,
+      projectId: `smrt-${TENANT}-x`,
       tenantId: TENANT,
       userId: ALICE,
       budget: { maxLimit: 5, resetDuration: '30d' },
@@ -227,7 +232,7 @@ describe('hosted inference provisioning (#4759)', () => {
       baseUrl: GATEWAY.baseUrl,
       apiKey: `${KEY_MARK}-1`,
       model: 'gpt-good',
-      gatewayKeyAlias: `smrt-${TENANT}-${ALICE}-g0`,
+      gatewayKeyAlias: `smrt-${TENANT}-${ALICE}-g0-x`,
     });
     expect(stored.tiers?.best?.model).toBe('gpt-best');
 
@@ -269,12 +274,12 @@ describe('hosted inference provisioning (#4759)', () => {
         provider: 'litellm',
         model: 'gpt-cheap',
         source: 'hosted',
-        usageTags: { gatewayKeyAlias: `smrt-${TENANT}-${ALICE}-g0` },
+        usageTags: { gatewayKeyAlias: `smrt-${TENANT}-${ALICE}-g0-x` },
       },
     });
     const tags = inferenceUsageTags('cheap', resolution as never);
     expect(tags).toEqual({
-      gatewayKeyAlias: `smrt-${TENANT}-${ALICE}-g0`,
+      gatewayKeyAlias: `smrt-${TENANT}-${ALICE}-g0-x`,
       tierRequested: 'cheap',
       tierResolved: 'cheap',
       source: 'hosted',
@@ -285,7 +290,7 @@ describe('hosted inference provisioning (#4759)', () => {
     );
     expect(JSON.stringify(bindings)).not.toContain(KEY_MARK);
     expect(bindings.user).toMatchObject({
-      gatewayKeyAlias: `smrt-${TENANT}-${ALICE}-g0`,
+      gatewayKeyAlias: `smrt-${TENANT}-${ALICE}-g0-x`,
     });
   });
 
@@ -402,7 +407,7 @@ describe('hosted inference provisioning (#4759)', () => {
     expect(again).toMatchObject({
       created: true,
       generation: 1,
-      keyAlias: `smrt-${TENANT}-${ALICE}-g1`,
+      keyAlias: `smrt-${TENANT}-${ALICE}-g1-x`,
     });
     expect(admin.keys).toHaveLength(2);
     // The prior BYO config is kept again for the next revoke.
@@ -422,6 +427,7 @@ describe('hosted inference provisioning (#4759)', () => {
       secrets,
       gateway: GATEWAY,
       admin,
+      nonce: () => 'x',
       tenantId: TENANT,
       userId: BOB,
     });
@@ -438,7 +444,13 @@ describe('hosted inference provisioning (#4759)', () => {
       budget: { limitMicros: 1_000_000 },
     });
     const revoked = await p.revoke({ tenantId: TENANT, userId: ALICE });
-    expect(revoked).toMatchObject({ gateway: 'unsupported', restored: 'off' });
+    expect(revoked).toMatchObject({
+      gateway: 'unsupported',
+      restored: 'off',
+      pendingGatewayRevocations: [
+        expect.objectContaining({ keyId: 'key-id-1', reason: 'unsupported' }),
+      ],
+    });
     expect(JSON.stringify(await userConfig(ALICE))).not.toContain(KEY_MARK);
 
     const logs = await withTenant({ tenantId: TENANT }, () =>
@@ -453,7 +465,7 @@ describe('hosted inference provisioning (#4759)', () => {
       gateway: 'unsupported',
       manualGatewayRevocation: true,
       keyId: 'key-id-1',
-      keyAlias: `smrt-${TENANT}-${ALICE}-g0`,
+      keyAlias: `smrt-${TENANT}-${ALICE}-g0-x`,
     });
   });
 
@@ -537,6 +549,7 @@ describe('hosted inference provisioning (#4759)', () => {
       secrets: flaky,
       gateway: GATEWAY,
       admin,
+      nonce: () => 'x',
     });
     await expect(
       p.provision({
@@ -584,6 +597,198 @@ describe('hosted inference provisioning (#4759)', () => {
       }),
     ).rejects.toMatchObject({ code: 'HOSTED_STATE_INVALID' });
     expect(admin.keys).toHaveLength(1);
+  });
+
+  it('a downgrade ends local use even when the gateway delete fails, and a retry finishes it', async () => {
+    await writeByo(ALICE);
+    const p = provisioner();
+    await p.provision({
+      tenantId: TENANT,
+      userId: ALICE,
+      budget: { limitMicros: 1_000_000 },
+    });
+    const realDelete = admin.deleteVirtualKey.bind(admin);
+    admin.deleteVirtualKey = async () => {
+      throw Object.assign(new Error('401'), { code: 'AUTH_ERROR' });
+    };
+    const revoked = await p.revoke({ tenantId: TENANT, userId: ALICE });
+    expect(revoked).toMatchObject({
+      revoked: true,
+      gateway: 'failed',
+      restored: 'prior',
+      pendingGatewayRevocations: [
+        {
+          keyId: 'key-id-1',
+          reason: 'failed',
+          keyAlias: `smrt-${TENANT}-${ALICE}-g0-x`,
+        },
+      ],
+    });
+    expect((await userConfig(ALICE)).apiKey).toBe('sk-byo-alice');
+
+    admin.deleteVirtualKey = realDelete;
+    const retried = await p.revoke({ tenantId: TENANT, userId: ALICE });
+    expect(retried).toMatchObject({ revoked: false, gateway: 'none' });
+    expect(retried.pendingGatewayRevocations).toBeUndefined();
+    expect(admin.deleted).toContain('key-id-1');
+  });
+
+  it('records the key a failed provision leaves on a create-only SDK and retries under a new alias', async () => {
+    const createOnly = new CreateOnlyAdmin();
+    const configName = inferenceProviderConfigSecretName({ userId: ALICE });
+    let failNext = true;
+    const flaky = {
+      retrieve: (name: string) => secrets.retrieve(name),
+      list: (options?: { category?: string }) => secrets.list(options),
+      delete: (
+        name: string,
+        options?: { auditDetails?: Record<string, unknown> },
+      ) => secrets.delete(name, options),
+      store: (
+        name: string,
+        value: string,
+        options?: Parameters<SecretService['store']>[2],
+      ) => {
+        if (name === configName && failNext) {
+          failNext = false;
+          return Promise.reject(new Error('disk full'));
+        }
+        return secrets.store(name, value, options);
+      },
+    };
+    let n = 0;
+    const p = createHostedInferenceProvisioner({
+      db,
+      secrets: flaky,
+      gateway: GATEWAY,
+      admin: createOnly,
+      nonce: () => `n${++n}`,
+    });
+    await expect(
+      p.provision({
+        tenantId: TENANT,
+        userId: ALICE,
+        budget: { limitMicros: 1_000_000 },
+      }),
+    ).rejects.toThrow('disk full');
+    const after = await p.status({ tenantId: TENANT, userId: ALICE });
+    expect(after.pendingGatewayRevocations).toEqual([
+      expect.objectContaining({ keyId: 'key-id-1', reason: 'orphaned' }),
+    ]);
+    const audit = await withTenant({ tenantId: TENANT }, () =>
+      secrets.getAuditLogs({
+        secretName: hostedInferenceStateSecretName(ALICE),
+      }),
+    );
+    expect(
+      audit.some(
+        (entry) =>
+          entry.details?.operation === 'inference.hosted.provision-rollback' &&
+          entry.details?.manualGatewayRevocation === true &&
+          entry.details?.keyId === 'key-id-1',
+      ),
+    ).toBe(true);
+
+    const ok = await p.provision({
+      tenantId: TENANT,
+      userId: ALICE,
+      budget: { limitMicros: 1_000_000 },
+    });
+    expect(ok.created).toBe(true);
+    const aliases = createOnly.inner.keys.map((key) => key.name);
+    expect(new Set(aliases).size).toBe(2);
+    expect(ok.pendingGatewayRevocations).toHaveLength(1);
+  });
+
+  it('serializes a downgrade behind an in-flight provision', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const create = admin.createVirtualKey.bind(admin);
+    admin.createVirtualKey = async (options) => {
+      await gate;
+      return create(options);
+    };
+    const p = provisioner();
+    const provisioning = p.provision({
+      tenantId: TENANT,
+      userId: ALICE,
+      budget: { limitMicros: 1_000_000 },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const revoking = p.revoke({ tenantId: TENANT, userId: ALICE });
+    release();
+    await provisioning;
+    const revoked = await revoking;
+    expect(revoked).toMatchObject({ revoked: true, status: 'revoked' });
+    expect(await userConfig(ALICE)).toEqual({ mode: 'off' });
+  });
+
+  it('a delayed budget sync never resurrects a revoked grant', async () => {
+    const p = provisioner();
+    await p.provision({
+      tenantId: TENANT,
+      userId: ALICE,
+      budget: { limitMicros: 1_000_000 },
+    });
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const update = admin.updateVirtualKey.bind(admin);
+    admin.updateVirtualKey = async (id, options) => {
+      await gate;
+      return update(id, options);
+    };
+    const syncing = p.syncBudget({
+      tenantId: TENANT,
+      userId: ALICE,
+      budget: { limitMicros: 2_000_000 },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const revoking = p.revoke({ tenantId: TENANT, userId: ALICE });
+    release();
+    await syncing;
+    await revoking;
+    await expect(
+      p.status({ tenantId: TENANT, userId: ALICE }),
+    ).resolves.toMatchObject({ status: 'revoked', generation: 1 });
+  });
+
+  it('reconciles a lost reaction from the current entitlement snapshot', async () => {
+    const p = provisioner();
+    const reconcile = createHostedInferenceReconciler({
+      provisioner: p,
+      users: async () => [ALICE, BOB],
+    });
+    const entitled = {
+      grants: [
+        {
+          featureKey: 'inference.hosted',
+          metadata: { budget: { limitMicros: 2_000_000 } },
+        },
+      ],
+    };
+    // A lost upgrade: reconcile provisions everyone, twice is a no-op.
+    await reconcile(TENANT, entitled);
+    await reconcile(TENANT, entitled);
+    expect(admin.keys).toHaveLength(2);
+    expect(await p.listActive(TENANT)).toEqual([ALICE, BOB].sort());
+    // A lost budget change.
+    await reconcile(TENANT, {
+      grants: [
+        {
+          featureKey: 'inference.hosted',
+          metadata: { budget: { limitMicros: 3_000_000 } },
+        },
+      ],
+    });
+    expect(admin.updates).toHaveLength(2);
+    // A lost downgrade.
+    const result = await reconcile(TENANT, { grants: [] });
+    expect(result.revoked).toHaveLength(2);
+    expect(await p.listActive(TENANT)).toEqual([]);
   });
 
   it('never puts key material in results, audit rows, claims or logs', async () => {
