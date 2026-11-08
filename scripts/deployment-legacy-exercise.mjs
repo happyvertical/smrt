@@ -318,6 +318,41 @@ export function assertRetryOnFailureSupport(documents) {
     );
 }
 
+// kubectl port-forward exits when its pod or API stream goes away and never
+// comes back, so every later probe sees ECONNREFUSED with no diagnosis. Keep
+// the local port stable, respawn on exit until stopped, and report each exit.
+export function supervisedForward(start, { name, note, retryMs = 2000, startupMs = 30000 }) {
+  let child, output = '', port = 0, stopped = false;
+  const lastLine = () => output.trim().split('\n').filter(Boolean).at(-1) ?? '';
+  const spawnChild = () => {
+    output = '';
+    child = start(port);
+    for (const stream of [child.stdout, child.stderr])
+      stream?.on('data', (chunk) => { output += chunk; });
+    child.on('exit', (code, signal) => {
+      if (stopped) return;
+      note(`port-forward ${name} exited (${code ?? signal}): ${lastLine()}; restarting on 127.0.0.1:${port}`);
+      setTimeout(() => { if (!stopped) spawnChild(); }, retryMs).unref?.();
+    });
+  };
+  const stop = () => { stopped = true; child?.kill('SIGTERM'); };
+  return new Promise((resolve, reject) => {
+    const settle = (fn) => { clearTimeout(deadline); clearInterval(poll); fn(); };
+    const first = { exit: (code, signal) => settle(() => { stop(); reject(new Error(`forward ${name} exited (${code ?? signal}) before listening: ${lastLine()}`)); }) };
+    const deadline = setTimeout(() => { child.off('exit', first.exit); settle(() => { stop(); reject(new Error(`Timeout forward ${name}: ${lastLine()}`)); }); }, startupMs);
+    spawnChild();
+    child.once('exit', first.exit);
+    const poll = setInterval(() => {
+      const match = output.match(/127\.0\.0\.1:(\d+)/);
+      if (!match) return;
+      child.off('exit', first.exit);
+      port = Number(match[1]);
+      settle(() => resolve({ port, stop, kill: stop }));
+    }, 50);
+    poll.unref?.();
+  });
+}
+
 export function legacyAdmissionPolicy(namespace, allowedNames, commands) {
   const controllerActors = [
     'system:serviceaccount:kube-system:replicaset-controller',
@@ -526,40 +561,29 @@ export async function legacyMain(env = process.env) {
     throw new Error(`Timeout ${description}${last ? `: ${last}` : ''}`);
   };
   const forward = async (name, port, ns = fixtures) => {
-    const child = spawn(
-      'kubectl',
-      [
-        '--kubeconfig',
-        kubeconfig,
-        '-n',
-        ns,
-        'port-forward',
-        `service/${name}`,
-        `:${port}`,
-        '--address=127.0.0.1',
-      ],
-      {
-        env: { ...env, KUBECONFIG: kubeconfig },
-        stdio: ['ignore', 'pipe', 'pipe'],
-      },
+    const handle = await supervisedForward(
+      (local) =>
+        spawn(
+          'kubectl',
+          [
+            '--kubeconfig',
+            kubeconfig,
+            '-n',
+            ns,
+            'port-forward',
+            `service/${name}`,
+            `${local}:${port}`,
+            '--address=127.0.0.1',
+          ],
+          {
+            env: { ...env, KUBECONFIG: kubeconfig },
+            stdio: ['ignore', 'pipe', 'pipe'],
+          },
+        ),
+      { name, note },
     );
-    children.push(child);
-    let output = '';
-    child.stdout.on('data', (chunk) => {
-      output += chunk;
-    });
-    child.stderr.on('data', (chunk) => {
-      output += chunk;
-    });
-    await until(
-      `forward ${name}`,
-      () => {
-        assert.equal(child.exitCode, null);
-        return /127\.0\.0\.1:(\d+)/.test(output);
-      },
-      30000,
-    );
-    return Number(output.match(/127\.0\.0\.1:(\d+)/)[1]);
+    children.push(handle);
+    return handle.port;
   };
   const download = async (artifact, name) => {
     const response = await fetch(artifact.url);
