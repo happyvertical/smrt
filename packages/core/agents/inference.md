@@ -38,13 +38,31 @@ that instance. `resolve(request, { config, resolveFromConfig })` receives
 `{ tier, latency?, tenantId?, userId?, className?, promptKey? }` and returns
 `{ tierResolved, target, via }`, or `undefined` to defer to the built-in
 config resolution. `resolveInference()` validates the result and rejects a
-concrete tier answered by another tier: v1 has no substitutions, and #4749
-requires degradation to be recorded, never silent.
+concrete tier answered by another tier: resolvers bind, only the executor
+degrades, and #4749 requires every degradation to be recorded.
 
 The #4666 per-user resolver is an `InferenceResolver` returning a tier →
-target binding map, not a single `AIClientOptions`. Later children extend
-`InferenceTarget` (optional `kind`, `alias`, `candidates`, `fusion`) without
-breaking v1; consumers ignore members they do not understand.
+target binding map, not a single `AIClientOptions`.
+
+## Chain kinds and the executor seam (#4752)
+
+`InferenceTarget.kind` selects the shape (`inferenceTargetKind()`: explicit
+`kind`, else `alias` when `alias` is set, else `candidates` when a list is
+set, else `single`). `InferenceConfig` adds `aliases` (each replaced whole by
+the highest layer) and `degrade`. Core runs only `single`; any other kind
+goes to the executor registered with `setInferenceExecutor()` (behavior in
+[smrt-inference](../../inference/AGENTS.md)), and a chain target with no
+executor throws (`inferenceExecutorFor()`) rather than falling back to the
+configured client. `getAiClient(tier)` hands the executor an
+`InferenceExecutionContext`: the request and resolution, merged config,
+`minimumTier`, `allowPartial`, `clientFor(target)` (a `single` client with
+the pair rules and the usage pipeline), `resolveTier(tier)`, and
+`recordUsage()` (a zero-token row through the same usage handlers, for a call
+nothing answered). `AiOperationOptions.minimumTier` / `allowPartial` are
+stripped before `ai.message()`; `prepareAiOperation()` applies a target's
+`model`/`params` only for `single` targets. Later kinds (`fusion`, #4753)
+register into the same seam; consumers ignore members they do not
+understand. Browser-safe presets (#4674): `src/inference-presets.ts`.
 
 ## Clients and calls
 
@@ -76,4 +94,5 @@ breaking v1; consumers ignore members they do not understand.
 - Prompts: see `packages/prompts/AGENTS.md` (tier profile names).
 
 Tests: `src/__tests__/inference-tiers.test.ts`,
-`src/__tests__/class-inference-tiers.test.ts`.
+`src/__tests__/class-inference-tiers.test.ts`,
+`src/__tests__/inference-executor-seam.test.ts`.
