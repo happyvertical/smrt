@@ -942,6 +942,99 @@ describe('hosted inference provisioning (#4759)', () => {
     expect(admin.keys).toHaveLength(0);
   });
 
+  it('a hung gateway delete never holds a downgrade: local access ends, the key is owed', async () => {
+    const p = createHostedInferenceProvisioner({
+      db,
+      secrets,
+      gateway: { ...GATEWAY, adminTimeoutMs: 50 },
+      admin,
+      nonce: () => 'x',
+    });
+    await p.provision({
+      tenantId: TENANT,
+      userId: ALICE,
+      budget: { limitMicros: 1_000_000 },
+    });
+    admin.deleteVirtualKey = () => new Promise<boolean>(() => {});
+    const revoked = await p.revoke({ tenantId: TENANT, userId: ALICE });
+    expect(revoked).toMatchObject({
+      gateway: 'failed',
+      restored: 'off',
+      pendingGatewayRevocations: [
+        expect.objectContaining({ keyId: 'key-id-1', reason: 'failed' }),
+      ],
+    });
+    expect(await userConfig(ALICE)).toEqual({ mode: 'off' });
+    // The next operation is not blocked behind the hung call.
+    await expect(
+      p.provision({
+        tenantId: TENANT,
+        userId: BOB,
+        budget: { limitMicros: 1_000_000 },
+      }),
+    ).resolves.toMatchObject({ created: true });
+  });
+
+  it('a timed-out key creation records the alias as owed and leaves no grant', async () => {
+    const p = createHostedInferenceProvisioner({
+      db,
+      secrets,
+      gateway: { ...GATEWAY, adminTimeoutMs: 50 },
+      admin,
+      nonce: () => 'x',
+    });
+    admin.createVirtualKey = () => new Promise<AIVirtualKey>(() => {});
+    await expect(
+      p.provision({
+        tenantId: TENANT,
+        userId: ALICE,
+        budget: { limitMicros: 1_000_000 },
+      }),
+    ).rejects.toMatchObject({
+      code: 'HOSTED_GATEWAY_FAILED',
+      details: expect.objectContaining({
+        gatewayCode: 'HOSTED_GATEWAY_TIMEOUT',
+      }),
+    });
+    const after = await p.status({ tenantId: TENANT, userId: ALICE });
+    expect(after.status).toBe('revoked');
+    expect(after.pendingGatewayRevocations).toEqual([
+      expect.objectContaining({
+        keyId: null,
+        keyAlias: `smrt-${TENANT}-${ALICE}-g0-x`,
+        reason: 'orphaned',
+      }),
+    ]);
+    expect(await userConfig(ALICE)).toBeUndefined();
+  });
+
+  it('reconcile trusts the current entitlement over a stale entitled target', async () => {
+    let entitled = true;
+    const p = createHostedInferenceProvisioner({
+      db,
+      secrets,
+      gateway: GATEWAY,
+      admin,
+      nonce: () => 'x',
+      entitled: async () => entitled,
+    });
+    await p.provision({
+      tenantId: TENANT,
+      userId: ALICE,
+      budget: { limitMicros: 1_000_000 },
+    });
+    entitled = false; // downgraded since the snapshot was taken
+    const result = await p.reconcileTenant(TENANT, {
+      entitled: true,
+      budget: { limitMicros: 1_000_000 },
+      users: [ALICE, BOB],
+    });
+    expect(result.revoked).toHaveLength(1);
+    expect(result.provisioned).toHaveLength(0);
+    expect(await p.listActive(TENANT)).toEqual([]);
+    expect(admin.keys).toHaveLength(1);
+  });
+
   it('never puts key material in results, audit rows, claims or logs', async () => {
     await writeByo(ALICE);
     const logs = [
@@ -1108,6 +1201,7 @@ describe('hosted gateway config from the environment', () => {
       SMRT_INFERENCE_HOSTED_MODEL: 'openai/gpt-good',
       SMRT_INFERENCE_HOSTED_GREAT_MODEL: 'anthropic/claude-great',
       SMRT_INFERENCE_HOSTED_MODELS: 'openai/gpt-good, anthropic/claude-great',
+      SMRT_INFERENCE_HOSTED_ADMIN_TIMEOUT_MS: '5000',
     });
     expect(config).toEqual({
       provider: 'bifrost',
@@ -1118,6 +1212,7 @@ describe('hosted gateway config from the environment', () => {
       model: 'openai/gpt-good',
       tiers: { great: 'anthropic/claude-great' },
       models: ['openai/gpt-good', 'anthropic/claude-great'],
+      adminTimeoutMs: 5000,
     });
     expect(INFERENCE_TIERS).toContain('great');
   });

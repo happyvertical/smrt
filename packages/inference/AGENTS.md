@@ -110,8 +110,9 @@ order), `fallback`, the app `inference` block, then the configured client
   `createVirtualKey` only: `updateVirtualKey` / `deleteVirtualKey` are
   feature-detected on `HostedGatewayAdmin` (happyvertical/sdk#1494). Without
   them budget sync returns `unsupported` (state keeps the old budget so a
-  later sync retries). Revoke always ends local use first (config restored,
-  state retired); a deletion the gateway cannot perform (`unsupported`,
+  later sync retries). Revoke ends local use before touching the gateway
+  (config restored, state retired with the key owed, then the delete); a
+  deletion the gateway cannot perform (`unsupported`,
   `failed`, or a key a failed provision left) goes to the state's
   `pendingGatewayRevocations` (id + alias, never the key), is audited with
   `manualGatewayRevocation`, and is retried by `revoke()` /
@@ -122,8 +123,11 @@ order), `fallback`, the app `inference` block, then the configured client
   used against), `_ADMIN_URL`, `_ADMIN_KEY` (LiteLLM master key, required for
   litellm; or a Bifrost admin key), `_ADMIN_USER` / `_ADMIN_PASSWORD`
   (Bifrost Basic auth), `_MODEL`, `_<TIER>_MODEL`, `_MODELS` (comma list the
-  key may use; default the binding's models), `_KEY_DURATION`. Errors name
-  missing fields, never values.
+  key may use; default the binding's models), `_KEY_DURATION`,
+  `_ADMIN_TIMEOUT_MS` (deadline per admin call, default 30 s, also passed as
+  the SDK `timeout`; a call past it is a failure, so a stalled gateway never
+  holds the lifecycle lock; a timed-out create records its alias as owed).
+  Errors name missing fields, never values.
 - **Storage** (smrt-secrets, `context = tenantId`): the key lives only in
   the user's `inference.provider-config:user:<id>` (`source: 'hosted'`,
   `mode: 'hosted'`, `gatewayKeyAlias`, a binding per configured tier);
@@ -146,8 +150,10 @@ order), `fallback`, the app `inference` block, then the configured client
   (its writes use other pooled connections: at most three per process), so
   a tenant-wide revoke or reconcile never misses an in-flight provision.
   The optional `entitled(tenantId)` check runs inside that lock before a
-  key is minted (`HOSTED_NOT_ENTITLED`), so a stale gain or late retry
-  after a downgrade does not activate. A failed binding write deletes or records the new
+  key is minted (`HOSTED_NOT_ENTITLED`) and before an entitled reconcile
+  acts (a stale snapshot then revokes), so a stale gain or late retry after
+  a downgrade does not activate. Hosts running the listener or reconciler
+  across processes should set it. A failed binding write deletes or records the new
   key and restores the previous state after the claim rolls back (no delete
   inside the claim transaction: single-connection adapters would wait on
   it). A user who replaced the hosted binding keeps their config: an

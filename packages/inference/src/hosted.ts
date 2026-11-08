@@ -144,7 +144,16 @@ export interface HostedGatewayConfig {
   models?: string[];
   /** Key lifetime (`30d`, `permanent`, ...), where the gateway supports it. */
   keyDuration?: string;
+  /**
+   * Deadline for each admin call in ms (default
+   * {@link HOSTED_GATEWAY_ADMIN_TIMEOUT_MS}). A call past it counts as
+   * failed, so a stalled gateway never holds the lifecycle lock.
+   */
+  adminTimeoutMs?: number;
 }
+
+/** Default deadline of one gateway admin call. */
+export const HOSTED_GATEWAY_ADMIN_TIMEOUT_MS = 30_000;
 
 /**
  * The admin calls provisioning uses. `createProject` and `createVirtualKey`
@@ -177,6 +186,7 @@ export const HOSTED_GATEWAY_ENV = {
   model: 'SMRT_INFERENCE_HOSTED_MODEL',
   models: 'SMRT_INFERENCE_HOSTED_MODELS',
   keyDuration: 'SMRT_INFERENCE_HOSTED_KEY_DURATION',
+  adminTimeoutMs: 'SMRT_INFERENCE_HOSTED_ADMIN_TIMEOUT_MS',
 } as const;
 
 function text(value: unknown): string | undefined {
@@ -245,6 +255,13 @@ export function parseHostedGatewayConfig(
     const model = text(value.tiers?.[tier]);
     if (model) tiers[tier] = model;
   }
+  const adminTimeoutMs = value.adminTimeoutMs;
+  if (
+    adminTimeoutMs !== undefined &&
+    (!Number.isSafeInteger(adminTimeoutMs) || adminTimeoutMs <= 0)
+  ) {
+    issues.push('adminTimeoutMs must be a positive integer (ms)');
+  }
   const model = text(value.model);
   const models = (value.models ?? [])
     .map((entry) => text(entry))
@@ -269,6 +286,7 @@ export function parseHostedGatewayConfig(
     ...(text(value.keyDuration)
       ? { keyDuration: text(value.keyDuration) }
       : {}),
+    ...(adminTimeoutMs !== undefined ? { adminTimeoutMs } : {}),
   };
 }
 
@@ -300,6 +318,11 @@ export function hostedGatewayConfigFromEnv(
     tiers,
     models: (env[HOSTED_GATEWAY_ENV.models] ?? '').split(','),
     keyDuration: env[HOSTED_GATEWAY_ENV.keyDuration],
+    ...(text(env[HOSTED_GATEWAY_ENV.adminTimeoutMs])
+      ? {
+          adminTimeoutMs: Number(text(env[HOSTED_GATEWAY_ENV.adminTimeoutMs])),
+        }
+      : {}),
   });
 }
 
@@ -339,6 +362,7 @@ export async function createHostedGatewayAdmin(
     // The client is only used for admin calls; the inference key is
     // per-user and stored separately.
     apiKey: config.adminApiKey ?? 'smrt-admin',
+    timeout: config.adminTimeoutMs ?? HOSTED_GATEWAY_ADMIN_TIMEOUT_MS,
     ...(config.adminUrl ? { adminUrl: config.adminUrl } : {}),
     ...(config.adminApiKey ? { adminApiKey: config.adminApiKey } : {}),
   };
@@ -710,6 +734,46 @@ function describeState(
   };
 }
 
+/** Error code of an admin call that passed its deadline. */
+const GATEWAY_TIMEOUT_CODE = 'HOSTED_GATEWAY_TIMEOUT';
+
+/**
+ * `call()` bounded by `ms`: past it the result rejects with a timeout error
+ * (the call itself may still finish on the gateway; callers treat a timed
+ * out create as a possibly created key).
+ */
+async function withDeadline<T>(
+  call: () => Promise<T>,
+  ms: number,
+  operation: string,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () =>
+        reject(
+          Object.assign(new Error(`Gateway ${operation} timed out`), {
+            code: GATEWAY_TIMEOUT_CODE,
+          }),
+        ),
+      ms,
+    );
+  });
+  try {
+    return await Promise.race([call(), deadline]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+function isGatewayTimeout(error: unknown): boolean {
+  return (
+    !!error &&
+    typeof error === 'object' &&
+    (error as { code?: unknown }).code === GATEWAY_TIMEOUT_CODE
+  );
+}
+
 /** Name an admin-call failure without echoing the SDK's error text. */
 function gatewayFailure(
   operation: string,
@@ -803,6 +867,13 @@ export function createHostedInferenceProvisioner(
 ): HostedInferenceProvisioner {
   const now = options.now ?? (() => new Date());
   const nonce = options.nonce ?? defaultNonce;
+  const deadlineMs = (): number => {
+    try {
+      return gatewayConfig().adminTimeoutMs ?? HOSTED_GATEWAY_ADMIN_TIMEOUT_MS;
+    } catch {
+      return HOSTED_GATEWAY_ADMIN_TIMEOUT_MS;
+    }
+  };
   let secretsPromise: Promise<HostedSecretStore> | undefined;
   let adminPromise: Promise<HostedGatewayAdmin> | undefined;
   let tablesPromise: Promise<void> | undefined;
@@ -984,7 +1055,14 @@ export function createHostedInferenceProvisioner(
       return 'unsupported';
     }
     try {
-      return (await admin.deleteVirtualKey(keyId)) ? 'revoked' : 'missing';
+      const deleteKey = admin.deleteVirtualKey.bind(admin);
+      return (await withDeadline(
+        () => deleteKey(keyId),
+        deadlineMs(),
+        'deleteVirtualKey',
+      ))
+        ? 'revoked'
+        : 'missing';
     } catch {
       return 'failed';
     }
@@ -1025,14 +1103,19 @@ export function createHostedInferenceProvisioner(
       async () => {
         let project: AIAdminProject;
         try {
-          project = await admin.createProject({
-            // LiteLLM requires an id, unique per attempt so a retry after a
-            // failed attempt never collides with the team that attempt left.
-            id: `smrt-${tenantId}-${nonce()}`,
-            name: `smrt tenant ${tenantId}`,
-            tenantId,
-            metadata: { smrt: HOSTED_INFERENCE_FEATURE_KEY, tenantId },
-          });
+          project = await withDeadline(
+            () =>
+              admin.createProject({
+                // LiteLLM requires an id, unique per attempt so a retry after a
+                // failed attempt never collides with the team that attempt left.
+                id: `smrt-${tenantId}-${nonce()}`,
+                name: `smrt tenant ${tenantId}`,
+                tenantId,
+                metadata: { smrt: HOSTED_INFERENCE_FEATURE_KEY, tenantId },
+              }),
+            deadlineMs(),
+            'createProject',
+          );
         } catch (error) {
           throw gatewayFailure('createProject', error);
         }
@@ -1100,16 +1183,14 @@ export function createHostedInferenceProvisioner(
     restore: boolean,
     optOut = false,
   ): Promise<RevokeHostedInferenceResult> => {
-    const gateway = await deleteGatewayKey(await optionalAdmin(), state.keyId);
-    const owed = gateway === 'unsupported' || gateway === 'failed';
+    const since = now().toISOString();
     const audit = {
       operation: 'inference.hosted.revoke',
       reason,
-      gateway,
       keyAlias: state.keyAlias,
       ...(state.keyId ? { keyId: state.keyId } : {}),
-      ...(owed ? { manualGatewayRevocation: true } : {}),
     };
+    // 1. End local use first, whatever the gateway does next.
     let restored: RevokeHostedInferenceResult['restored'] = 'kept';
     if (restore) {
       const current = await readUserConfig(secrets, userId);
@@ -1122,28 +1203,46 @@ export function createHostedInferenceProvisioner(
         });
       }
     }
-    const next: HostedInferenceState = {
+    const owedEntry: HostedPendingGatewayRevocation = {
+      keyId: state.keyId,
+      keyAlias: state.keyAlias,
+      reason: 'failed',
+      since,
+    };
+    const retired: HostedInferenceState = {
       ...state,
       status: 'revoked',
       generation: state.generation + 1,
-      revokedAt: now().toISOString(),
+      revokedAt: since,
       prior: null,
       ...(optOut ? { optedOut: true } : {}),
+      // Owed until the gateway confirms the deletion below.
       pendingGatewayRevocations: [
         ...(state.pendingGatewayRevocations ?? []),
-        ...(owed
-          ? [
-              {
-                keyId: state.keyId,
-                keyAlias: state.keyAlias,
-                reason: gateway,
-                since: now().toISOString(),
-              } satisfies HostedPendingGatewayRevocation,
-            ]
-          : []),
+        owedEntry,
       ],
     };
-    await writeState(secrets, userId, next, { ...audit, restored });
+    await writeState(secrets, userId, retired, {
+      ...audit,
+      restored,
+      gateway: 'pending',
+    });
+    // 2. Then the gateway (bounded by the admin deadline).
+    const gateway = await deleteGatewayKey(await optionalAdmin(), state.keyId);
+    const owed = gateway === 'unsupported' || gateway === 'failed';
+    const next: HostedInferenceState = {
+      ...retired,
+      pendingGatewayRevocations: [
+        ...(state.pendingGatewayRevocations ?? []),
+        ...(owed ? [{ ...owedEntry, reason: gateway }] : []),
+      ],
+    };
+    await writeState(secrets, userId, next, {
+      ...audit,
+      restored,
+      gateway,
+      ...(owed ? { manualGatewayRevocation: true } : {}),
+    });
     return {
       ...describeState(tenantId, userId, next),
       revoked: true,
@@ -1231,11 +1330,16 @@ export function createHostedInferenceProvisioner(
             generation,
           },
         };
-        let key: AIVirtualKey;
+        let key: AIVirtualKey | undefined;
+        let createError: unknown;
         try {
-          key = await admin.createVirtualKey(request);
+          key = await withDeadline(
+            () => admin.createVirtualKey(request),
+            deadlineMs(),
+            'createVirtualKey',
+          );
         } catch (error) {
-          throw gatewayFailure('createVirtualKey', error);
+          createError = error;
         }
         const keyId = text(key?.id) ?? null;
         const apiKey = text(key?.key);
@@ -1299,6 +1403,12 @@ export function createHostedInferenceProvisioner(
             }
           };
         };
+        if (createError !== undefined) {
+          // A timed-out create may still mint the key on the gateway: record
+          // its alias as owed. A definitive failure created nothing.
+          if (isGatewayTimeout(createError)) scheduleRollback();
+          throw gatewayFailure('createVirtualKey', createError);
+        }
         if (!apiKey) {
           scheduleRollback();
           throw new HostedInferenceError(
@@ -1384,9 +1494,13 @@ export function createHostedInferenceProvisioner(
       return { ...describeState(tenantId, userId, state), sync: 'unsupported' };
     }
     try {
-      await admin.updateVirtualKey(state.keyId, {
-        budget: toGatewayBudget(budget),
-      });
+      const update = admin.updateVirtualKey.bind(admin);
+      const keyId = state.keyId;
+      await withDeadline(
+        () => update(keyId, { budget: toGatewayBudget(budget) }),
+        deadlineMs(),
+        'updateVirtualKey',
+      );
     } catch (error) {
       throw gatewayFailure('updateVirtualKey', error);
     }
@@ -1647,7 +1761,13 @@ export function createHostedInferenceProvisioner(
           };
           // Enumerated under the tenant lock: no provision is in flight.
           const states = await listStates(tenantId);
-          if (!target.entitled) {
+          // A stale "entitled" target (an old snapshot processed after a
+          // downgrade) loses to the host's current answer, read under the
+          // lock.
+          const entitled =
+            target.entitled &&
+            (!options.entitled || (await options.entitled(tenantId)));
+          if (!entitled) {
             for (const { userId, state } of states) {
               if (state.status !== 'active') continue;
               await attempt(userId, async () => {
