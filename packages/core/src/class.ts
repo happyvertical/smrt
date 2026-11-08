@@ -27,8 +27,10 @@ import {
   AiUsagePersistenceHandler,
 } from './adapters/ai-usage.js';
 import {
-  type AiUsageAttribution,
+  type AiUsageSinkAttribution,
+  aiUsageSinkAttribution,
   attachAiUsageRecorder,
+  brandAiUsageSink,
   dispatchAiUsageEvent,
   normalizeAiUsageEvent,
   normalizeAiUsageTags,
@@ -430,6 +432,8 @@ export class SmrtClass {
    */
   private _aiClientConfig?: Record<string, unknown>;
   private _aiUserOnUsage?: unknown;
+  /** Explicit attribution of a sink found in the config, kept on replace. */
+  private _aiSinkAttribution?: AiUsageSinkAttribution;
   private _aiUsageResolvedConfig?: ResolvedAiUsageConfig;
 
   /** Tier clients keyed by resolved `[provider, model, baseUrl]`, then key. */
@@ -794,21 +798,28 @@ export class SmrtClass {
               withAIAliases(aiConfig as Record<string, unknown>),
             );
 
-            // A recorder or `withAiUsage()` sink in the config is dropped
+            // A recorder or `withAiUsage()` sink in the config is replaced
             // (keeping the callback it wraps): this client records through
-            // the instance pipeline below, so a call is recorded once (#3077).
-            const existingOnUsage = unwrapAiUsageSink(
+            // the instance pipeline below, so a call is recorded once. The
+            // sink's explicit tenant and tags still apply (#3077).
+            const configuredOnUsage =
               aiConfig.onUsage ??
-                (userConfig as Record<string, unknown>).onUsage ??
-                undefined,
-            );
+              (userConfig as Record<string, unknown>).onUsage ??
+              undefined;
+            const existingOnUsage = unwrapAiUsageSink(configuredOnUsage);
+            const sinkAttribution = aiUsageSinkAttribution(configuredOnUsage);
             aiConfig.onUsage = async (event: unknown) => {
               if (typeof existingOnUsage === 'function') {
                 await (existingOnUsage as (usageEvent: unknown) => unknown)(
                   event,
                 );
               }
-              await this.handleAiUsageCallback(event, aiConfig, usageConfig);
+              await this.handleAiUsageCallback(
+                event,
+                aiConfig,
+                usageConfig,
+                sinkAttribution,
+              );
             };
 
             // Only initialize if we have a provider configured
@@ -827,6 +838,7 @@ export class SmrtClass {
               )) as unknown as AIClient;
               this._aiClientConfig = aiConfig as Record<string, unknown>;
               this._aiUserOnUsage = existingOnUsage;
+              this._aiSinkAttribution = sinkAttribution;
             }
           }
         }
@@ -1041,13 +1053,19 @@ export class SmrtClass {
     if (cached) return cached;
 
     const userOnUsage = this._aiUserOnUsage;
+    const sinkAttribution = this._aiSinkAttribution;
     const usageConfig =
       this._aiUsageResolvedConfig ?? this.mergeAiUsageConfig(config.toJSON());
     tierConfig.onUsage = async (event: unknown) => {
       if (typeof userOnUsage === 'function') {
         await (userOnUsage as (usageEvent: unknown) => unknown)(event);
       }
-      await this.handleAiUsageCallback(event, tierConfig, usageConfig);
+      await this.handleAiUsageCallback(
+        event,
+        tierConfig,
+        usageConfig,
+        sinkAttribution,
+      );
     };
 
     const pending = (async () => {
@@ -1199,15 +1217,17 @@ export class SmrtClass {
    * runs first and is kept; wiring an already-wired config replaces the
    * previous sink, so a call is recorded once. Rows carry this class name and
    * the tenant from `options.tenantId`, else this instance's `tenantId`, else
-   * the ambient tenant (`setAiUsageTenantResolver()`). Recording failures are
-   * logged and never reach the AI call (#3077).
+   * the ambient tenant (`setAiUsageTenantResolver()`). An explicit
+   * `options.tenantId` / `options.tags` travels with the config: another
+   * instance that builds its client from it keeps them. Recording failures
+   * are logged and never reach the AI call (#3077).
    */
   withAiUsage<T extends object>(
     aiConfig: T,
     options: { tenantId?: string | null; tags?: Record<string, string> } = {},
   ): T & { onUsage: (event: unknown) => Promise<void> } {
     const providerConfig = aiConfig as Record<string, unknown>;
-    return attachAiUsageRecorder(aiConfig, async (event: unknown) => {
+    const sink = brandAiUsageSink(async (event: unknown) => {
       try {
         await this.ensureRuntimeServicesInitialized();
         await this.handleAiUsageCallback(
@@ -1224,7 +1244,8 @@ export class SmrtClass {
           }`,
         );
       }
-    });
+    }, options);
+    return attachAiUsageRecorder(aiConfig, sink);
   }
 
   private async isSystemSchemaVersionApplied(
@@ -1847,9 +1868,7 @@ export class SmrtClass {
     event: unknown,
     aiConfig: Record<string, unknown>,
     usageConfig: ResolvedAiUsageConfig,
-    overrides: Pick<AiUsageAttribution, 'tags'> & {
-      tenantId?: string | null;
-    } = {},
+    overrides: AiUsageSinkAttribution = {},
   ): Promise<void> {
     if (!usageConfig.enabled || this._aiUsageHandlers.length === 0) {
       return;

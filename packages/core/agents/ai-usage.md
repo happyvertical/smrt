@@ -24,8 +24,10 @@ present and `persist` is on, plus `usage.handlers`; instances also keep an
   instance's pipeline: `getAI(this.withAiUsage(this.options.ai))`.
 - Sinks are branded. When `SmrtClass` builds its own client (default or tier)
   from a config that already carries one, it drops the sink and keeps the
-  wrapped caller callback, so a call is recorded once. Keep that unwrap
-  (`unwrapAiUsageSink`) on every client the class builds.
+  wrapped caller callback, so a call is recorded once; the sink's explicit
+  `tenantId`/`tags` (`aiUsageSinkAttribution`) still apply, while class name,
+  instance tenant and ambient tenant follow the building instance. Keep that
+  unwrap and attribution on every client the class builds (default and tier).
 - Tenant: explicit `tenantId` (a string; `null` = global, skip ambient) →
   instance `tenantId` (non-empty) → ambient tenant from
   `setAiUsageTenantResolver()` → none. smrt-tenancy registers `getTenantId()`

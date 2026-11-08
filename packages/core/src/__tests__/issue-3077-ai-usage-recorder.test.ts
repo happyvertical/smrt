@@ -368,6 +368,101 @@ describe('#3077 SmrtClass#withAiUsage()', () => {
     await (aiConfig.onUsage as (event: unknown) => Promise<void>)(usageEvent());
     expect(handler.handle).toHaveBeenCalledTimes(1);
   });
+
+  async function recordThroughInstanceClient(
+    ai: Record<string, unknown>,
+    handler: ReturnType<typeof handlerSpy>,
+    Cls: typeof RecorderTestClass = RecorderTestClass,
+  ) {
+    getAIMock.mockClear();
+    const instance = new Cls({
+      ai: ai as never,
+      usage: { handlers: [handler] },
+    });
+    await instance.init();
+    const aiConfig = getAIMock.mock.calls[0]?.[0] as Record<string, unknown>;
+    await (aiConfig.onUsage as (event: unknown) => Promise<void>)(usageEvent());
+    return handler.handle.mock.calls.at(-1)?.[0];
+  }
+
+  it('keeps a replaced sink explicit tenant and tags (review round 1)', async () => {
+    setAiUsageTenantResolver(() => 'tenant-ambient');
+    const handler = handlerSpy();
+
+    const viaRecorder = await recordThroughInstanceClient(
+      attachAiUsageRecorder(
+        AI,
+        createAiUsageRecorder({
+          tenantId: 'tenant-explicit',
+          tags: { feature: 'compose' },
+        }),
+      ),
+      handler,
+      TenantRecorderTestClass,
+    );
+    expect(viaRecorder).toMatchObject({
+      tenantId: 'tenant-explicit',
+      className: 'TenantRecorderTestClass',
+      tags: { feature: 'compose' },
+    });
+
+    const owner = new RecorderTestClass({});
+    const viaWithAiUsage = await recordThroughInstanceClient(
+      owner.withAiUsage(AI, { tenantId: 'tenant-call', tags: { k: 'v' } }),
+      handler,
+      TenantRecorderTestClass,
+    );
+    expect(viaWithAiUsage).toMatchObject({
+      tenantId: 'tenant-call',
+      tags: { k: 'v' },
+    });
+
+    const explicitGlobal = await recordThroughInstanceClient(
+      attachAiUsageRecorder(AI, createAiUsageRecorder({ tenantId: null })),
+      handler,
+    );
+    expect(explicitGlobal.tenantId).toBeNull();
+
+    const implicit = await recordThroughInstanceClient(
+      attachAiUsageRecorder(AI, createAiUsageRecorder({})),
+      handler,
+    );
+    expect(implicit.tenantId).toBe('tenant-ambient');
+    expect(handler.handle).toHaveBeenCalledTimes(4);
+  });
+
+  it('a tier client keeps the replaced sink attribution too', async () => {
+    class TierRecorder extends RecorderTestClass {
+      client(tier: 'cheap') {
+        return this.getAiClient(tier);
+      }
+    }
+    const handler = handlerSpy();
+    const recorderHandler = handlerSpy();
+    const instance = new TierRecorder({
+      ai: attachAiUsageRecorder(
+        { ...AI, apiKey: 'sk-test' },
+        createAiUsageRecorder({
+          tenantId: 'tenant-explicit',
+          usage: { handlers: [recorderHandler] },
+        }),
+      ) as never,
+      inference: { tiers: { cheap: { model: 'mini' } } },
+      usage: { handlers: [handler] },
+    } as never);
+    await instance.client('cheap');
+    const tierConfig = getAIMock.mock.calls.at(-1)?.[0] as Record<
+      string,
+      unknown
+    >;
+    expect(tierConfig.model).toBe('mini');
+    await (tierConfig.onUsage as (event: unknown) => Promise<void>)(
+      usageEvent({ model: 'mini' }),
+    );
+    expect(handler.handle).toHaveBeenCalledTimes(1);
+    expect(handler.handle.mock.calls[0][0].tenantId).toBe('tenant-explicit');
+    expect(recorderHandler.handle).not.toHaveBeenCalled();
+  });
 });
 
 describe('#3077 gateway model ids in cost estimation', () => {
