@@ -61,6 +61,7 @@ import {
   describeInferenceTarget,
   INFERENCE_BINDING_NAME_PATTERN,
   InferenceBindingValueError,
+  stripKeyMembers,
   tierBinding,
 } from './targets.js';
 
@@ -201,6 +202,18 @@ export class InferenceSettingsConfigError extends Error {
   }
 }
 
+/** Thrown when removing an alias or fusion that something still names. Nothing is written. */
+export class InferenceBindingInUseError extends Error {
+  readonly status = 409;
+  constructor(
+    readonly binding: string,
+    readonly referrers: string[],
+  ) {
+    super(`${binding} is still referenced by ${referrers.join(', ')}`);
+    this.name = 'InferenceBindingInUseError';
+  }
+}
+
 /** See prompts' `withoutListBounds`: an enumeration read must never be capped. */
 function withoutListBounds(
   options: SmrtClassOptions | SmrtCollectionOptions,
@@ -239,8 +252,39 @@ function allowListOf(
   }
 }
 
+/** A config target for a screen: `null` when empty, never with a credential. */
 function nonEmpty(target: InferenceTarget | undefined | null) {
-  return target && Object.keys(target).length > 0 ? target : null;
+  return target && Object.keys(target).length > 0
+    ? stripKeyMembers(target)
+    : null;
+}
+
+function bindingRefersTo(
+  binding: string,
+  value: unknown,
+  kind: 'alias' | 'fusion',
+  name: string,
+): boolean {
+  if (!isRecord(value)) return false;
+  if (binding.startsWith('tier:')) {
+    return kind === 'alias'
+      ? value.alias === name
+      : value.fusion === name ||
+          (value.kind === 'fusion' && value.fusion === name);
+  }
+  if (
+    kind === 'alias' &&
+    binding.startsWith('alias:') &&
+    binding !== `alias:${name}`
+  ) {
+    return (
+      Array.isArray(value.candidates) &&
+      value.candidates.some(
+        (candidate) => isRecord(candidate) && candidate.alias === name,
+      )
+    );
+  }
+  return false;
 }
 
 const PRESET_LABELS: Record<string, string> = {
@@ -293,6 +337,8 @@ export class InferenceSettingsService {
   /**
    * The effective config for a tenant: config < app rows < allowed tenant
    * rows. What the override resolver binds and the doctor checks.
+   * Server-side only: config layers may carry literal keys, so never send
+   * this to a browser (the row methods strip them).
    */
   async getEffectiveConfig(
     options: { tenantId?: string | null } = {},
@@ -419,7 +465,9 @@ export class InferenceSettingsService {
       const setting: InferenceAliasSetting = {
         name,
         source: app ? 'app' : 'config',
-        candidates: Array.isArray(alias?.candidates) ? alias.candidates : [],
+        candidates: Array.isArray(alias?.candidates)
+          ? stripKeyMembers(alias.candidates)
+          : [],
         inConfig: Object.hasOwn(configAliases, name),
       };
       if (alias?.description) setting.description = alias.description;
@@ -437,10 +485,9 @@ export class InferenceSettingsService {
     const out = new Map<string, InferenceFusionSetting>();
     for (const fusion of this.options.registryFusions?.() ?? []) {
       if (!fusion || typeof fusion.key !== 'string') continue;
-      const definition = JSON.parse(JSON.stringify(fusion)) as Record<
-        string,
-        unknown
-      >;
+      const definition = stripKeyMembers(
+        JSON.parse(JSON.stringify(fusion)) as Record<string, unknown>,
+      );
       out.set(fusion.key, {
         name: fusion.key,
         source: 'registry',
@@ -460,7 +507,7 @@ export class InferenceSettingsService {
         out.set(name, {
           name,
           source: 'config',
-          definition,
+          definition: stripKeyMembers(definition),
           description:
             typeof definition.description === 'string'
               ? definition.description
@@ -549,6 +596,8 @@ export class InferenceSettingsService {
       await this.assertConfigStaysValid('app', APP_INFERENCE_SCOPE_ID, {
         aliases: { [request.name]: request.alias },
       });
+    } else {
+      await this.assertNotReferenced('alias', request.name);
     }
     await this.writes.setValue(
       binding,
@@ -567,12 +616,66 @@ export class InferenceSettingsService {
     if (!INFERENCE_BINDING_NAME_PATTERN.test(String(request.name))) {
       throw new InferenceBindingValueError(binding, 'invalid fusion name');
     }
+    if (request.definition === null) {
+      await this.assertNotReferenced('fusion', request.name);
+    }
     await this.writes.setValue(
       binding,
       'app',
       APP_INFERENCE_SCOPE_ID,
       request.definition,
     );
+  }
+
+  /**
+   * Refuse removing an app alias or fusion that a stored binding (any
+   * scope, any tenant) or the config still names, unless config or the
+   * registry keeps defining it. Otherwise the removal would leave dangling
+   * references that fail at call time.
+   */
+  private async assertNotReferenced(
+    kind: 'alias' | 'fusion',
+    name: string,
+  ): Promise<void> {
+    const config = this.readConfig() as InferenceSettingsConfig | undefined;
+    const defined =
+      kind === 'alias'
+        ? Object.hasOwn(config?.aliases ?? {}, name)
+        : Object.hasOwn(config?.fusions ?? {}, name) ||
+          [...(this.options.registryFusions?.() ?? [])].some(
+            (fusion) => fusion?.key === name,
+          );
+    if (defined) return;
+    const referrers: string[] = [];
+    for (const [tier, target] of Object.entries(config?.tiers ?? {})) {
+      if (bindingRefersTo(`tier:${tier}`, target, kind, name)) {
+        referrers.push(`config tiers.${tier}`);
+      }
+    }
+    for (const [alias, definition] of Object.entries(config?.aliases ?? {})) {
+      if (bindingRefersTo(`alias:${alias}`, definition, kind, name)) {
+        referrers.push(`config aliases.${alias}`);
+      }
+    }
+    // Every scope: a tenant row bound to this name would dangle too.
+    for (const row of await this.overrides.list({})) {
+      let value: unknown;
+      try {
+        value = row.getValue();
+      } catch {
+        continue;
+      }
+      if (bindingRefersTo(row.binding, value, kind, name)) {
+        referrers.push(
+          row.tenantId
+            ? `${row.binding} (tenant ${row.tenantId})`
+            : row.binding,
+        );
+      }
+    }
+    if (referrers.length > 0) {
+      throw new InferenceBindingInUseError(`${kind}:${name}`, referrers);
+    }
   }
 
   /**

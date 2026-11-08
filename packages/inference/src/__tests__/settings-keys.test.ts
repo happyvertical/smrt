@@ -23,6 +23,13 @@ describe('origin-bound keys', () => {
     expect(inferenceKeyOrigin({ preset: 'openrouter' })).toBe(
       'https://openrouter.ai',
     );
+    // The panel's preset choices arrive as a provider id.
+    expect(inferenceKeyOrigin({ provider: 'openrouter' })).toBe(
+      'https://openrouter.ai',
+    );
+    expect(bindInferenceKey({ provider: 'openrouter', key: KEY }).origin).toBe(
+      'https://openrouter.ai',
+    );
     expect(
       inferenceKeyOrigin({ provider: 'openai', baseUrl: 'https://gw.test/v1' }),
     ).toBe('https://gw.test');

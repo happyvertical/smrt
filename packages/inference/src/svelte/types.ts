@@ -71,6 +71,13 @@ export interface InferenceDefaultsChange {
 export interface InferenceKeyChange {
   provider: string;
   key: string;
+  /** Set when the provider choice is a #4674 preset. */
+  preset?: string;
+  /**
+   * The base URL shown when the key was entered. The host binds the key to
+   * this endpoint's origin (`bindInferenceKey()`), not to saved choices.
+   */
+  baseUrl?: string;
 }
 
 /** One provider choice (`InferenceProviderOption` from `./server`). */

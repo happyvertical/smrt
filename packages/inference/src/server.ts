@@ -32,10 +32,13 @@ export {
   redactInferenceSecret,
 } from './settings/keys.js';
 export {
+  buildInferenceOverrideLayers,
   type InferenceOverrideLayers,
+  type InferenceOverrideRows,
   type InferenceSettingsConfig,
   loadInferenceOverrideLayers,
   mergeSettingsConfigs,
+  readInferenceOverrideRows,
 } from './settings/layers.js';
 export {
   assertValidInferenceScope,
@@ -70,6 +73,7 @@ export {
 } from './settings/resolver.js';
 export {
   type InferenceAliasSetting,
+  InferenceBindingInUseError,
   type InferenceConnectionInput,
   type InferenceConnectionResult,
   type InferenceDefaultTierSetting,
@@ -93,5 +97,6 @@ export {
   isAllowedByList,
   matchesAllowPattern,
   parseInferenceBinding,
+  stripKeyMembers,
   tierBinding,
 } from './settings/targets.js';

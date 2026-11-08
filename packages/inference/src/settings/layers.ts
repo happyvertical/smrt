@@ -100,10 +100,32 @@ function layerFromRows(
   return layer;
 }
 
+/** The raw rows of the app scope and (with a tenant) one tenant scope. */
+export interface InferenceOverrideRows {
+  tenantId: string | null;
+  appRows: Map<string, InferenceOverride>;
+  tenantRows: Map<string, InferenceOverride>;
+}
+
+/** Two bounded reads: the app scope and, with `tenantId`, that tenant's. */
+export async function readInferenceOverrideRows(
+  overrides: InferenceOverrideCollection,
+  tenantId: string | null | undefined,
+): Promise<InferenceOverrideRows> {
+  const tenant = tenantId ?? null;
+  const [appRows, tenantRows] = await Promise.all([
+    overrides.getScopeMap('app', APP_INFERENCE_SCOPE_ID),
+    tenant
+      ? overrides.getScopeMap('tenant', tenant)
+      : Promise.resolve(new Map<string, InferenceOverride>()),
+  ]);
+  return { tenantId: tenant, appRows, tenantRows };
+}
+
 /**
- * Read the app layer and (with `tenantId`) the tenant layer. Two bounded
- * reads; the tenant layer keeps only tier and default-tier rows the
- * allow-list and policy still allow.
+ * Read the app layer and (with `tenantId`) the tenant layer; the tenant
+ * layer keeps only tier and default-tier rows the allow-list and policy
+ * still allow.
  */
 export async function loadInferenceOverrideLayers(
   overrides: InferenceOverrideCollection,
@@ -112,14 +134,23 @@ export async function loadInferenceOverrideLayers(
     tenantTargetPolicy?: InferenceTenantTargetPolicy;
   } = {},
 ): Promise<InferenceOverrideLayers> {
-  const tenantId = options.tenantId ?? null;
-  const [appRows, tenantRows] = await Promise.all([
-    overrides.getScopeMap('app', APP_INFERENCE_SCOPE_ID),
-    tenantId
-      ? overrides.getScopeMap('tenant', tenantId)
-      : Promise.resolve(new Map<string, InferenceOverride>()),
-  ]);
+  return buildInferenceOverrideLayers(
+    await readInferenceOverrideRows(overrides, options.tenantId),
+    options.tenantTargetPolicy,
+  );
+}
 
+/**
+ * Layers from rows already read. Applies the allow-list and the policy hook
+ * now, so a caller that caches rows (the override resolver) still re-checks
+ * the current policy on every use.
+ */
+export async function buildInferenceOverrideLayers(
+  rows: InferenceOverrideRows,
+  tenantTargetPolicy?: InferenceTenantTargetPolicy,
+): Promise<InferenceOverrideLayers> {
+  const { tenantId, appRows, tenantRows } = rows;
+  const options = { tenantTargetPolicy };
   const app = layerFromRows(appRows, () => true);
   const blocked: string[] = [];
   const allowedTenant = new Set<string>();

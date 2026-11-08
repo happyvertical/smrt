@@ -103,7 +103,9 @@ appear in the report.
 Consumer guide: [docs/content/inference-settings.md](../../docs/content/inference-settings.md).
 
 - **Storage split, enforced by API shape.** Keys: the panel emits
-  `onSaveKey({ provider, key })`, the host writes through smrt-secrets'
+  `onSaveKey({ provider, key, preset?, baseUrl? })` (the endpoint shown when
+  the key was typed; the key input remounts on a provider or base URL
+  change), the host writes through smrt-secrets'
   `SecretService` the record `bindInferenceKey()` returns, and the panel
   only ever gets `keySet` back. User choices (mode `byo | local | hosted |
   off`, provider, base URL, model, default tier): smrt-preferences kind
@@ -113,7 +115,8 @@ Consumer guide: [docs/content/inference-settings.md](../../docs/content/inferenc
 - **Key rule** (`src/settings/keys.ts`, ported from the planner's BYO
   screen): a key is bound when saved to the origin of its endpoint
   (explicit base URL, else preset, else `inferenceProbeUrl()`'s provider
-  default; https only, plain http for loopback; gateways such as
+  default, a provider id that is a preset id counting as that preset;
+  https only, plain http for loopback; gateways such as
   `litellm`/`bifrost` need a base URL) and `inferenceKeyFor()` releases it
   only for a URL on that origin. `testConnection()` reads no environment key
   and never probes another origin with a stored key; details pass
@@ -148,15 +151,21 @@ Consumer guide: [docs/content/inference-settings.md](../../docs/content/inferenc
   soft dependency on #4753). Writes go through `InferenceOverrideService`
   (authorizer first, fails closed; without `authorize` the service is
   read-only) and refuse a value that adds a config issue to the layer it
-  lands in. `testConnection()`, `testCandidate()` and `doctor()` reuse
+  lands in; removing an app alias or fusion that any row (every tenant) or
+  config still names is refused (`InferenceBindingInUseError`) unless config
+  or the registry keeps defining it. Every config-backed value a row method
+  returns passes `stripKeyMembers()` (config may carry literal keys);
+  `getEffectiveConfig()` is server-side only. `testConnection()`, `testCandidate()` and `doctor()` reuse
   `./node`; `testCandidate()` reads a key variable only for a candidate
   already in the effective config (an unsaved one is probed keyless);
   `usage()` is `reportAiUsage()` by model (default), tier, prompt.
 - **`createInferenceOverrideResolver({ db, base })`** applies stored
   bindings at call time and defers unbound tiers to `base` or config; an
   app-only alias is returned as its inline candidate chain because the
-  executor reads only the process config. Layers are cached per tenant for
-  `ttlMs` (30 s) and invalidated by any write in the process. Where it sits
+  executor reads only the process config. Rows (not layers) are cached per
+  tenant for `ttlMs` (30 s) and invalidated by any write in the process; the
+  allow-list and policy are re-applied on every call, and only the requested
+  tier's chain is validated, so one dangling reference fails one tier. Where it sits
   relative to #4756's per-user resolver is that resolver's composition.
 - **Panel** (`src/svelte`): built like `PromptSettingsPanel` (presentational,
   `svelte` optional peer, prune script, two-project Vitest, `svelte-check`,
