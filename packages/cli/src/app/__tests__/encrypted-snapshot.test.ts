@@ -519,6 +519,15 @@ describe('encrypted snapshot framing', () => {
           }),
         ).rejects.toThrow(/longer|shorter/);
       }
+      await expect(
+        writeEncryptedSnapshot({
+          destination,
+          kind: 'toString' as SnapshotKind,
+          totalLength: 0,
+          source: [],
+          sealing: await ring.sealingKey(),
+        }),
+      ).rejects.toThrow('Unsupported encrypted snapshot kind');
       expect(readdirSync(root)).toEqual([]);
     });
 

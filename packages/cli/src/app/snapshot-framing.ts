@@ -370,7 +370,7 @@ export async function writeEncryptedSnapshot(
       chunkCount,
       totalLength,
     };
-    if (!(options.kind in KIND_CODES)) {
+    if (!Object.hasOwn(KIND_CODES, options.kind)) {
       throw new EncryptedSnapshotError('Unsupported encrypted snapshot kind');
     }
     const headerBytes = encodeHeader(header);
@@ -733,6 +733,7 @@ export async function decryptSnapshot(
   options: DecryptSnapshotOptions,
 ): Promise<EncryptedSnapshotSummary & { destination: string }> {
   const { destination } = options;
+  await assertAbsent(destination);
   let header: SnapshotHeader | undefined;
   const chunks = openSnapshotChunks(options, (parsed) => {
     header = parsed;
@@ -740,10 +741,10 @@ export async function decryptSnapshot(
   // Pull the header first so the staging shape follows the snapshot kind.
   const first = await chunks.next();
   const parsed = header as SnapshotHeader;
-  await mkdir(dirname(destination), { recursive: true, mode: 0o700 });
   const staging = temporarySibling(destination, 'partial');
   let staged = false;
   try {
+    await mkdir(dirname(destination), { recursive: true, mode: 0o700 });
     async function* remaining(): AsyncGenerator<Buffer, string> {
       if (first.done) return first.value;
       yield first.value;
