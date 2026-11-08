@@ -386,6 +386,15 @@ export abstract class Agent extends SmrtObject {
    * Signal handlers for graceful shutdown
    */
   private signalHandlers: Map<NodeJS.Signals, () => void> = new Map();
+  /**
+   * The `ai` options as configured, before `initialize()` bound secrets or
+   * an inference binding into `options.ai`. Every `initialize()` (so every
+   * `execute()`) resolves from this, so a rotated or removed tenant key is
+   * not kept from an earlier run (#4756).
+   */
+  #configuredAi: { value: AgentAIOptions | undefined } | undefined;
+  /** What `initialize()` last wrote to `options.ai` (to spot a caller's change). */
+  #boundAi: unknown;
 
   /**
    * Cached DispatchBus instance for inter-agent communication
@@ -1035,9 +1044,19 @@ export abstract class Agent extends SmrtObject {
       (this.config as Record<string, unknown>).ai !== null
         ? ((this.config as Record<string, unknown>).ai as AgentAIOptions)
         : undefined;
-    const configuredAi =
-      ((this.options as AgentOptions).ai as AgentAIOptions | undefined) ??
-      fileAiConfig;
+    if (
+      this.#configuredAi &&
+      (this.options as AgentOptions).ai !== this.#boundAi
+    ) {
+      // The caller replaced `options.ai` since the last initialize().
+      this.#configuredAi = undefined;
+    }
+    this.#configuredAi ??= {
+      value:
+        ((this.options as AgentOptions).ai as AgentAIOptions | undefined) ??
+        fileAiConfig,
+    };
+    const configuredAi = this.#configuredAi.value;
     let bindingTags: Record<string, string> | undefined;
     if (configuredAi && this._db) {
       // Usage is wired below through this instance's own pipeline.
@@ -1073,6 +1092,7 @@ export abstract class Agent extends SmrtObject {
         bindingTags ? { tags: bindingTags } : {},
       ) as AIClientOptions & Record<string, unknown>;
     }
+    this.#boundAi = (this.options as AgentOptions).ai;
 
     if ((this.options as AgentOptions).manageProcessSignals) {
       this.setupSignalHandlers();

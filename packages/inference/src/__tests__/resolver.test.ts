@@ -436,6 +436,64 @@ describe('redaction and errors', () => {
     expect(raw.tiers.good).toMatchObject({ apiKey: USER_KEY, layer: 'user' });
   });
 
+  it('keeps credentials out of params and baseUrl, even in legacy rows', async () => {
+    const { secrets, resolver } = setup({
+      principal: { tenantId: TENANT, userId: USER },
+    });
+    await expect(
+      resolver.write('user', {
+        ...userConfig,
+        params: { temperature: 0.2, apiKey: 'sk-hidden' },
+      }),
+    ).rejects.toThrow(/params\.apiKey is not a supported generation option/);
+    await expect(
+      resolver.write('user', {
+        ...userConfig,
+        params: { stop: { Authorization: 'Bearer x' } },
+      }),
+    ).rejects.toThrow(/params\.stop must be a number or string/);
+    await expect(
+      resolver.write('user', {
+        ...userConfig,
+        baseUrl: 'https://user:sk-hidden@example.com/v1',
+      }),
+    ).rejects.toThrow(/baseUrl must be an http\(s\) URL without credentials/);
+    await expect(
+      resolver.write('user', {
+        ...userConfig,
+        baseUrl: 'https://example.com/v1?key=sk-hidden',
+      }),
+    ).rejects.toThrow(/without credentials, query or fragment/);
+
+    // A row written before (or around) validation: parsing refuses it on
+    // the call path, and the redaction helpers copy known fields only.
+    const legacy = {
+      ...userConfig,
+      params: {
+        temperature: 0.2,
+        apiKey: 'sk-hidden',
+        headers: { Authorization: 'Bearer sk-hidden' },
+      },
+    };
+    const { redactInferenceProviderConfig, redactInferenceTarget } =
+      await import('../provider-config.js');
+    const view = JSON.stringify([
+      redactInferenceProviderConfig(legacy as never),
+      redactInferenceTarget({ ...legacy, extra: 'sk-hidden' } as never),
+    ]);
+    expect(view).not.toContain('sk-hidden');
+    expect(view).not.toContain(USER_KEY);
+    expect(view).toContain('"temperature":0.2');
+    secrets.seed(
+      TENANT,
+      inferenceProviderConfigSecretName({ userId: USER }),
+      legacy,
+    );
+    await expect(resolver.resolveBindings()).rejects.toThrow(
+      InferenceProviderConfigError,
+    );
+  });
+
   it('fails closed on a corrupt stored config without echoing the key', async () => {
     const { secrets, resolver } = setup({ principal: { tenantId: TENANT } });
     secrets.seed(TENANT, inferenceProviderConfigSecretName({}), {

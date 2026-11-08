@@ -413,6 +413,35 @@ describe('agent AI secret resolution', () => {
       });
     });
 
+    it('re-resolves on every initialize, so a rotated tenant binding or secret is not kept', async () => {
+      const { child } = await createTenantHierarchy();
+      let key = 'sk-first';
+      setInferenceResolver({
+        resolve: (request) => ({
+          tierResolved: request.tier === 'auto' ? 'good' : request.tier,
+          target: { ...userTarget, apiKey: key },
+          via: 'resolver',
+        }),
+      });
+      await withTenant({ tenantId: String(child.id) }, async () => {
+        const agent = new GeminiSecretAgent({ db });
+        await agent.initialize();
+        expect(agent.options.ai).toMatchObject({ apiKey: 'sk-first' });
+        key = 'sk-rotated';
+        await agent.initialize();
+        expect(agent.options.ai).toMatchObject({ apiKey: 'sk-rotated' });
+
+        // The tenant secret path re-reads too once the binding is removed.
+        setInferenceResolver(undefined);
+        await secrets.store('GEMINI_API_KEY', 'secret-one');
+        await agent.initialize();
+        expect(agent.options.ai).toMatchObject({ apiKey: 'secret-one' });
+        await secrets.store('GEMINI_API_KEY', 'secret-two');
+        await agent.initialize();
+        expect(agent.options.ai).toMatchObject({ apiKey: 'secret-two' });
+      });
+    });
+
     it('keeps the agent config against an app inference binding', async () => {
       setInferenceResolver({
         resolve: (request) => ({

@@ -48,8 +48,11 @@ order), `fallback`, the app `inference` block, then the configured client
   `parseInferenceProviderConfig()` requires every binding to be
   self-contained (`baseUrl` and `apiKey`, `'smrt-local'` for keyless local
   servers, or a preset that supplies the endpoint), so a stored binding never
-  borrows the server's environment credentials; it also refuses a preset
-  without a model, unknown fields, and `source: 'app'`. A corrupt stored value fails the call with
+  borrows the server's environment credentials; it also refuses a `baseUrl`
+  with userinfo, query or fragment, `params` beyond the scalar generation
+  options in `INFERENCE_PROVIDER_PARAM_KEYS`, a preset without a model,
+  unknown fields, and `source: 'app'`. Redaction copies known non-secret
+  fields only. A corrupt stored value fails the call with
   `InferenceProviderConfigError` (paths only, never values); a missing,
   disabled or expired secret is simply no layer.
 - **Identity.** The ambient principal (tenancy context, then the users
