@@ -88,6 +88,53 @@ export interface FeatureSyncResult {
 
 export interface FeatureResolutionContext {
   tenantId?: string;
+  /**
+   * Per-request plan grant source (#4761). Takes precedence over the
+   * resolver's `grantSource` option and the registered global source. Build
+   * it once per request (for example one `SubscriptionFeatureSource` around
+   * one `SubscriptionResolver`) and pass the same object to every check.
+   */
+  grantSource?: FeatureGrantSource | null;
+}
+
+/**
+ * Plan grants for one tenant, as reported by a {@link FeatureGrantSource}.
+ * Only keys listed here are granted; every other key falls through to the
+ * global scope and the code default.
+ */
+export interface FeatureGrantSnapshot {
+  featureKeys: readonly string[];
+  planId?: string | null;
+  planKey?: string | null;
+}
+
+/** A plan that grants a feature key, for upgrade responses. */
+export interface FeatureGrantingPlan {
+  planKey: string;
+  planId?: string | null;
+  name?: string | null;
+}
+
+/**
+ * Source of plan feature grants, consulted by `FeatureResolver` between the
+ * tenant scope and the global scope (#4761). `smrt-subscriptions` provides
+ * `SubscriptionFeatureSource`; features never imports it, so a local install
+ * with no source (or no subscription tables) simply has no grants.
+ */
+export interface FeatureGrantSource {
+  /**
+   * Grants for the tenant, or `null` when it has none (no subscription, no
+   * subscription tables). Must not throw for "no subscription".
+   */
+  getGrants(tenantId: string): Promise<FeatureGrantSnapshot | null>;
+  /**
+   * Optional: the plan an upgrade response should name for `featureKey`, or
+   * `null` when no visible plan grants it.
+   */
+  findGrantingPlan?(
+    featureKey: string,
+    tenantId: string | null,
+  ): Promise<FeatureGrantingPlan | null>;
 }
 
 export interface FeatureTenantNode {
@@ -106,6 +153,12 @@ export type FeatureTenantHierarchyLoader = (
 
 export interface FeatureResolverOptions {
   tenantHierarchyLoader?: FeatureTenantHierarchyLoader;
+  /**
+   * Grant source for this resolver instance. `null` disables grants even when
+   * a global source is registered; omitted falls back to the global source
+   * from `setFeatureGrantSource()`.
+   */
+  grantSource?: FeatureGrantSource | null;
 }
 
 /**

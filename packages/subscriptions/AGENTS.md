@@ -129,3 +129,17 @@ that reverted to DECIMAL passes every SQLite suite.
   current subscription and plan.
 - Subscription UI components should stay provider-neutral and receive actions
   from the host app.
+- **Feature grants as flags (#4761).** `SubscriptionFeatureSource` implements
+  `smrt-features`' `FeatureGrantSource` structurally (no dependency either
+  way). Build one per request (`SubscriptionFeatureSource.create(options)` or
+  `new SubscriptionFeatureSource({ resolver })`; it memoizes grants per
+  tenant) and pass it as `grantSource`, or register an app-wide one built with
+  `memoize: false` through `registerSubscriptionFeatureSource()`, which writes
+  the features slot key `FEATURE_GRANT_SOURCE_SLOT_KEY`. It reads
+  `SubscriptionResolver.resolveFeatureGrants()`, which shares the
+  version-pinning and entitlement rules of `resolveEntitlements()` but never
+  evaluates thresholds, so a flag check reads no usage meters. Missing
+  subscription tables (`isMissingSubscriptionTableError`) and no entitled
+  subscription report no grants silently; every other error propagates.
+  `findGrantingPlan()` names the first active plan by `sortOrder` visible in
+  the current context.

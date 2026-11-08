@@ -39,6 +39,16 @@ Create one resolver per request or application unit of work and reuse the
 loaded `EntitlementResolutionContext` when several checks need the same
 subscription and plan.
 
+### Plan grants as feature flags
+
+`SubscriptionFeatureSource` feeds a tenant's plan grants into
+`@happyvertical/smrt-features`, so `FeatureResolver` and its `requireFeature()`
+gate answer from the plan. Build one per request with
+`SubscriptionFeatureSource.create(dbOptions)` and pass it as `grantSource`, or
+register an app-wide one (`memoize: false`) with
+`registerSubscriptionFeatureSource()`. With no subscription tables or no
+entitled subscription it reports no grants.
+
 ## Core model
 
 - `SubscriptionPlan` is tenant-scoped by `(tenantId, planKey)` and stores

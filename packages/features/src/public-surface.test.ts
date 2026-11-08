@@ -40,6 +40,29 @@ describe('package entry', () => {
     }
   });
 
+  it('exports the plan grant bridge, standard keys and gate (#4761)', () => {
+    // #4760 and #4759 import these from the package root.
+    for (const name of [
+      'FEATURE_INFERENCE_HOSTED',
+      'FEATURE_SYNC_DEVICES',
+      'FEATURE_BACKUP_VAULT',
+      'FEATURE_CLOUD_HOSTED',
+      'FEATURE_PLUGINS_REMOTE',
+      'STANDARD_FEATURE_KEYS',
+      'STANDARD_FEATURES',
+      'defineFrameworkFeature',
+      'setFeatureGrantSource',
+      'getFeatureGrantSource',
+      'requireFeature',
+      'checkFeature',
+      'featureGateResponse',
+      'featureUpgradeResponse',
+      'FeatureUpgradeRequiredError',
+    ]) {
+      expect((entry as Record<string, unknown>)[name]).toBeDefined();
+    }
+  });
+
   it('keeps the entry free of Svelte components', () => {
     // The root export must stay importable by a server-only consumer that has
     // no `svelte` installed; `svelte` is an optional peer dependency.

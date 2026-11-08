@@ -71,6 +71,42 @@ a child inherits its parent's state only when the parent has
 baseline resets to the global state. Each tenant's own override then applies.
 `inherit` preserves that baseline. Supported scopes are `global` and `tenant`.
 
+## Plan grants and paid features
+
+A tenant's subscription plan can grant feature keys. Grants sit between the
+tenant overrides and the global scope: a granted key is on for that tenant
+unless a tenant override turns it off, and an ungranted key falls through to
+the global override and default. Features does not depend on
+`@happyvertical/smrt-subscriptions`; it consults a `FeatureGrantSource`, and
+with none registered (a local install) there are no grants.
+
+The standard paid keys are exported as constants and all default off:
+`FEATURE_SYNC_DEVICES`, `FEATURE_BACKUP_VAULT`, `FEATURE_CLOUD_HOSTED`,
+`FEATURE_INFERENCE_HOSTED`, `FEATURE_PLUGINS_REMOTE`.
+
+```ts
+import { FEATURE_SYNC_DEVICES, FeatureResolver, featureGateResponse, requireFeature } from '@happyvertical/smrt-features';
+import { SubscriptionFeatureSource } from '@happyvertical/smrt-subscriptions';
+
+// Once per request.
+const grantSource = await SubscriptionFeatureSource.create(dbOptions);
+const resolver = new FeatureResolver(dbOptions);
+
+// SvelteKit +server.ts: a structured 403 naming the key and the plan.
+const denied = await featureGateResponse(FEATURE_SYNC_DEVICES, { resolver, tenantId, grantSource });
+if (denied) return denied;
+
+// Services: throws FeatureUpgradeRequiredError (status 403, .upgrade, .toResponse()).
+await requireFeature(FEATURE_SYNC_DEVICES, { resolver, tenantId, grantSource });
+```
+
+The gate checks only that the feature is present for the tenant; authenticate
+the caller and check its permissions first, and pass the tenant you verified.
+Register an app-wide source with `setFeatureGrantSource()` instead of passing
+one per call. `defineFrameworkFeature()` adds your own dotted keys, and
+`FeatureSyncService.syncFrameworkDefinitions()` stores them for the settings
+screen.
+
 ## Storage
 
 - `_smrt_feature_definitions` — code-owned class identity, local id, boolean default, label, description, and metadata

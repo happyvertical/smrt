@@ -154,20 +154,45 @@ export class SubscriptionResolver {
   }
 
   /**
-   * Polymorphic entitlement resolution. Works for both `'tenant'`-kind and
-   * `'external'`-kind subscribers and is the preferred surface — the
-   * `resolveTenantEntitlements(tenantId)` method below is a thin wrapper.
+   * Feature keys the subscriber's entitled terms grant, without evaluating
+   * usage thresholds (#4761). Same subscription, plan-version and entitlement
+   * rules as {@link resolveEntitlements}; used by `SubscriptionFeatureSource`
+   * so a flag check never reads usage meters.
    */
-  async resolveEntitlements(
+  async resolveFeatureGrants(
     subscriber: Subscriber,
     options: SubscriptionResolverOptions = {},
-  ): Promise<EntitlementResolution> {
+  ): Promise<{
+    featureKeys: string[];
+    planId: string | null;
+    planKey: string | null;
+  }> {
     const now = options.now ?? new Date();
+    const { identity, terms } = await this.resolveEntitledTerms(
+      subscriber,
+      now,
+      options,
+    );
+    return {
+      featureKeys: terms ? terms.getFeatureKeys() : [],
+      planId: identity?.planId ?? null,
+      planKey: identity?.planKey ?? null,
+    };
+  }
+
+  private async resolveEntitledTerms(
+    subscriber: Subscriber,
+    now: Date,
+    options: SubscriptionResolverOptions,
+  ): Promise<{
+    identity: EntitlementIdentity | null;
+    terms: SubscriptionPlan | SubscriptionPlanVersion | null;
+  }> {
     const { subscription, plan, planVersion } =
       await this.loadEntitlementContext(subscriber, { ...options, now });
 
     if (!subscription) {
-      return emptyResolution(subscriber);
+      return { identity: null, terms: null };
     }
 
     // With versioning the frozen version is authoritative: a later edit,
@@ -192,6 +217,28 @@ export class SubscriptionResolver {
     };
 
     if (!terms?.isActive() || !subscription.isEntitled(now)) {
+      return { identity, terms: null };
+    }
+    return { identity, terms };
+  }
+
+  /**
+   * Polymorphic entitlement resolution. Works for both `'tenant'`-kind and
+   * `'external'`-kind subscribers and is the preferred surface — the
+   * `resolveTenantEntitlements(tenantId)` method below is a thin wrapper.
+   */
+  async resolveEntitlements(
+    subscriber: Subscriber,
+    options: SubscriptionResolverOptions = {},
+  ): Promise<EntitlementResolution> {
+    const now = options.now ?? new Date();
+    const entitled = await this.resolveEntitledTerms(subscriber, now, options);
+
+    if (!entitled.identity) {
+      return emptyResolution(subscriber);
+    }
+    const { identity, terms } = entitled;
+    if (!terms) {
       return { ...emptyResolution(subscriber), ...identity };
     }
 
@@ -430,6 +477,16 @@ export class SubscriptionResolver {
     return evaluations;
   }
 }
+
+type EntitlementIdentity = Pick<
+  EntitlementResolution,
+  | 'planId'
+  | 'planKey'
+  | 'planVersionId'
+  | 'planVersion'
+  | 'subscriptionId'
+  | 'status'
+>;
 
 function toSubscriber(input: Subscriber | string): Subscriber {
   if (typeof input === 'string') {

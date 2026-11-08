@@ -14,11 +14,19 @@ Code-first feature flag system with global and tenant-hierarchy resolution.
 
 ## Resolution chain (priority high → low)
 
-1. Tenant scope (`scopeType: 'tenant'`) — root-to-leaf traversal; a child inherits only when its parent allows cascading and it allows inheritance, otherwise its baseline resets to global
-2. Global scope (`scopeType: 'global'`, `scopeId: GLOBAL_FEATURE_SCOPE_ID`)
-3. Boolean `defaultEnabled` from the registered class, falling back to its synced definition
+1. Tenant scope (`scopeType: 'tenant'`) — root-to-leaf traversal; a child inherits only when its parent allows cascading and it allows inheritance, otherwise its baseline resets to the plan-grant baseline
+2. Plan grant (#4761) — a key the tenant's plan grants starts the tenant walk enabled; an ungranted key falls through
+3. Global scope (`scopeType: 'global'`, `scopeId: GLOBAL_FEATURE_SCOPE_ID`)
+4. Boolean `defaultEnabled` from the registered class or framework definition, falling back to its synced definition
 
-`FeatureResolver` is instantiated with database options; call `isEnabled(key, { tenantId })` or `isEnabledFor(Class, localId, { tenantId })` on that instance. With no tenant context only global/default apply. There is no user scope.
+`FeatureResolver` is instantiated with database options; call `isEnabled(key, { tenantId, grantSource? })` or `isEnabledFor(Class, localId, { tenantId })` on that instance. With no tenant context only global/default apply (grants are tenant-level). There is no user scope.
+
+## Plan grants, standard keys, gates (#4761)
+
+- **Grant source slot.** Features never imports `smrt-subscriptions`. A `FeatureGrantSource` (`getGrants(tenantId)`, optional `findGrantingPlan()`) is taken from `context.grantSource`, else `FeatureResolverOptions.grantSource`, else the global slot (`setFeatureGrantSource()`, stored under `Symbol.for(FEATURE_GRANT_SOURCE_SLOT_KEY)`; `smrt-subscriptions` writes the same key, so never rename it). `null` at either level disables grants. No source = no grants = pre-#4761 behavior. A global DISABLE override does not revoke a plan grant; use a tenant override or remove the grant. Grant-source errors propagate (an outage must not read as "no plan").
+- **Framework features** (`framework-features.ts`): dotted keys (`inference.hosted`) owned by no class, registered on `globalThis` via `defineFrameworkFeature()` (identical re-definition is a no-op, a conflicting one throws). The resolver reads their default before the class registry. `FeatureSyncService.syncFrameworkDefinitions()` upserts them as rows with an empty `qualifiedClassName`; class-sync pruning skips those rows.
+- **Standard paid keys** (`standard-features.ts`): `FEATURE_SYNC_DEVICES`, `FEATURE_BACKUP_VAULT`, `FEATURE_CLOUD_HOSTED`, `FEATURE_INFERENCE_HOSTED`, `FEATURE_PLUGINS_REMOTE` (also `STANDARD_FEATURE_KEYS`, `STANDARD_FEATURES`); all `metadata.paid: true`, default off, seeded lazily (no import side effect). Gates import the constants, never string literals; plans grant the same strings.
+- **Gates** (`require-feature.ts`): `requireFeature(key, { resolver, tenantId, grantSource? })` throws `FeatureUpgradeRequiredError` (`status` 403, `.upgrade`, `.toResponse()`) for services; `featureGateResponse()` returns `null` or the JSON upgrade `Response` for SvelteKit routes; `checkFeature()` returns the union. The body (`code: 'feature_upgrade_required'`, `featureKey`, `label`, `paid`, `tenantId`, `grantingPlan`, `message`) is never a bare 403; a failing plan lookup only nulls `grantingPlan`. Semantics are "feature present", not identity: callers authenticate and authorize the principal and pass the tenant they verified.
 
 ## Conventions
 

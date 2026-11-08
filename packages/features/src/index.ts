@@ -13,6 +13,11 @@ import './__smrt-register__.js';
 
 export { FeatureDefinition } from './feature-definition.js';
 export { FeatureDefinitionCollection } from './feature-definitions.js';
+export {
+  FEATURE_GRANT_SOURCE_SLOT_KEY,
+  getFeatureGrantSource,
+  setFeatureGrantSource,
+} from './feature-grants.js';
 export { FeatureOverride } from './feature-override.js';
 export {
   FeatureOverrideAuthorizationError,
@@ -33,10 +38,42 @@ export {
   UnknownFeatureKeyError,
 } from './feature-settings.js';
 export { FeatureSyncService } from './feature-sync.js';
+export {
+  defineFrameworkFeature,
+  type FrameworkFeatureDefinition,
+  getFrameworkFeature,
+  isFrameworkFeatureKey,
+  listFrameworkFeatures,
+} from './framework-features.js';
+export {
+  checkFeature,
+  FEATURE_UPGRADE_REQUIRED_CODE,
+  FEATURE_UPGRADE_STATUS,
+  type FeatureGateOptions,
+  type FeatureGateResult,
+  type FeatureUpgradeRequired,
+  FeatureUpgradeRequiredError,
+  featureGateResponse,
+  featureUpgradeResponse,
+  requireFeature,
+} from './require-feature.js';
+export {
+  FEATURE_BACKUP_VAULT,
+  FEATURE_CLOUD_HOSTED,
+  FEATURE_INFERENCE_HOSTED,
+  FEATURE_PLUGINS_REMOTE,
+  FEATURE_SYNC_DEVICES,
+  STANDARD_FEATURE_KEYS,
+  STANDARD_FEATURES,
+  type StandardFeatureKey,
+} from './standard-features.js';
 
 export {
   type FeatureDefinitionOptions,
   type FeatureDefinitionSeed,
+  type FeatureGrantingPlan,
+  type FeatureGrantSnapshot,
+  type FeatureGrantSource,
   type FeatureMetadata,
   FeatureOverrideEffect,
   type FeatureOverrideOptions,

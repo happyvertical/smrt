@@ -1,9 +1,16 @@
 import type { SmrtClassOptions } from '@happyvertical/smrt-core';
 import { importWorkspaceModule } from '@happyvertical/smrt-core/utils/import-workspace-module';
 import { FeatureDefinitionCollection } from './feature-definitions.js';
+import { getFeatureGrantSource } from './feature-grants.js';
 import { FeatureOverrideCollection } from './feature-overrides.js';
+import {
+  getFrameworkFeature,
+  isFrameworkFeatureKey,
+} from './framework-features.js';
 import { type FeatureHostOptions, withoutListBounds } from './list-bounds.js';
 import {
+  type FeatureGrantingPlan,
+  type FeatureGrantSource,
   FeatureOverrideEffect,
   type FeatureResolutionContext,
   type FeatureResolverOptions,
@@ -49,13 +56,20 @@ export class FeatureResolver {
       return globalState;
     }
 
+    // Plan grants sit between the tenant scope and the global scope (#4761):
+    // a granted key starts the tenant walk enabled, so only a tenant override
+    // can turn it off; an ungranted key keeps the global baseline.
+    const grantedState = (await this.isGranted(featureKey, context))
+      ? true
+      : globalState;
+
     const tenantHierarchy = await this.getTenantHierarchy();
     if (!tenantHierarchy) {
       const directOverride = await this.featureOverrides.getTenantOverride(
         featureKey,
         context.tenantId,
       );
-      return this.applyOverride(globalState, directOverride?.effect);
+      return this.applyOverride(grantedState, directOverride?.effect);
     }
 
     const chain = await tenantHierarchy.getChain(context.tenantId);
@@ -64,7 +78,7 @@ export class FeatureResolver {
         featureKey,
         context.tenantId,
       );
-      return this.applyOverride(globalState, directOverride?.effect);
+      return this.applyOverride(grantedState, directOverride?.effect);
     }
 
     const overrides = await this.featureOverrides.getOverrideMap(
@@ -73,7 +87,7 @@ export class FeatureResolver {
       chain.map((node) => node.id),
     );
 
-    let inheritedState = globalState;
+    let inheritedState = grantedState;
 
     for (let index = 0; index < chain.length; index++) {
       const current = chain[index];
@@ -82,7 +96,7 @@ export class FeatureResolver {
         index === 0 ||
         (!!previous?.cascadePermissions && current.inheritPermissions);
 
-      const baseline = shouldInherit ? inheritedState : globalState;
+      const baseline = shouldInherit ? inheritedState : grantedState;
       const override = overrides.get(current.id);
       inheritedState = this.applyOverride(baseline, override?.effect);
     }
@@ -97,6 +111,45 @@ export class FeatureResolver {
   ): Promise<boolean> {
     const { featureKey } = resolveFeatureKeyForTarget(classOrInstance, localId);
     return this.isEnabled(featureKey, context);
+  }
+
+  /**
+   * The plan that grants `featureKey`, for an upgrade response; `null` when
+   * no grant source is available or no visible plan grants it.
+   */
+  async findGrantingPlan(
+    featureKey: string,
+    context: FeatureResolutionContext = {},
+  ): Promise<FeatureGrantingPlan | null> {
+    const source = this.grantSourceFor(context);
+    if (!source?.findGrantingPlan) {
+      return null;
+    }
+    return source.findGrantingPlan(featureKey, context.tenantId ?? null);
+  }
+
+  private grantSourceFor(
+    context: FeatureResolutionContext,
+  ): FeatureGrantSource | null {
+    if (context.grantSource !== undefined) {
+      return context.grantSource;
+    }
+    if (this.resolverOptions.grantSource !== undefined) {
+      return this.resolverOptions.grantSource;
+    }
+    return getFeatureGrantSource() ?? null;
+  }
+
+  private async isGranted(
+    featureKey: string,
+    context: FeatureResolutionContext,
+  ): Promise<boolean> {
+    const source = this.grantSourceFor(context);
+    if (!source || !context.tenantId) {
+      return false;
+    }
+    const grants = await source.getGrants(context.tenantId);
+    return grants?.featureKeys.includes(featureKey) ?? false;
   }
 
   private async ensureInitialized(): Promise<void> {
@@ -117,7 +170,16 @@ export class FeatureResolver {
   }
 
   private async resolveBaseState(featureKey: string): Promise<boolean> {
-    const registryDefault = findFeatureDefaultInRegistry(featureKey);
+    const frameworkFeature = getFrameworkFeature(featureKey);
+    if (frameworkFeature) {
+      return frameworkFeature.defaultEnabled;
+    }
+
+    // A framework (dotted) key registered in another process may still have
+    // a synced definition; it has no class to look up in the registry.
+    const registryDefault = isFrameworkFeatureKey(featureKey)
+      ? undefined
+      : findFeatureDefaultInRegistry(featureKey);
     if (registryDefault !== undefined) {
       return registryDefault;
     }
