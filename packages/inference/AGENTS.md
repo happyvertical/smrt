@@ -124,7 +124,7 @@ order), `fallback`, the app `inference` block, then the configured client
   `inference.hosted:user:<id>` (category `inference.hosted`) holds status,
   generation, key id and alias, budget and the user's prior config;
   `inference.hosted:project` the tenant's gateway project (created once
-  through `runOnce()`, LiteLLM id `smrt-<tenantId>`). Every write passes
+  through `runOnce()`, LiteLLM id `smrt-<tenantId>-<nonce>`). Every write passes
   `auditDetails.operation` (`inference.hosted.provision|revoke|budget|project`)
   to `SecretAuditLog`.
 - **Idempotency and ordering.** An active grant whose binding is still the
@@ -133,15 +133,21 @@ order), `fallback`, the app `inference` block, then the configured client
   userId, generation)`; revoke advances the generation. Aliases
   (`smrt-<tenant>-<user>-g<n>-<nonce>`) and LiteLLM project ids
   (`smrt-<tenant>-<nonce>`) are unique per attempt, so a failed attempt's
-  leftovers never block the retry. One user's provision, revoke and budget
-  sync are serialized: in process by a promise chain, across processes on
-  PostgreSQL by `pg_advisory_xact_lock` held in a transaction for the
-  operation (its writes use other pooled connections, so the pool needs a
-  few free connections). A failed binding write deletes or records the new
+  leftovers never block the retry. Lifecycle operations run one at a time
+  per process (a process-wide chain: rare operations, and it bounds the
+  pooled connections held) and, on PostgreSQL, under a per-tenant
+  `pg_advisory_xact_lock` held in a transaction for the whole operation
+  (its writes use other pooled connections: at most three per process), so
+  a tenant-wide revoke or reconcile never misses an in-flight provision.
+  The optional `entitled(tenantId)` check runs inside that lock before a
+  key is minted (`HOSTED_NOT_ENTITLED`), so a stale gain or late retry
+  after a downgrade does not activate. A failed binding write deletes or records the new
   key and restores the previous state after the claim rolls back (no delete
   inside the claim transaction: single-connection adapters would wait on
-  it). A user who replaced the hosted binding keeps their config:
-  re-provisioning retires the stale key first. Writes through the #4756
+  it). A user who replaced the hosted binding keeps their config: an
+  explicit `provision()` retires the stale key and mints anew; a reconcile
+  only retires it and marks the state `optedOut`, which later reconciles
+  respect until an explicit `provision()`. Writes through the #4756
   resolver (the settings panel) do not take this lock.
 - **Revoke** restores the prior config when it holds a binding or a mode,
   else writes `{ mode: 'off' }`; a config the user replaced is kept.
@@ -156,8 +162,9 @@ order), `fallback`, the app `inference` block, then the configured client
   `trackEntitlementChange()`). A change touching `inference.hosted`
   reconciles the tenant to the change's `after` snapshot through
   `createHostedInferenceReconciler()`: entitled provisions `users(tenantId)`
-  (membership is the host's; exclude users an operator revoked) and syncs
-  budgets, not entitled revokes every grant, both retry owed deletions. The
+  (membership is the host's; exclude users an operator revoked) unless
+  they opted out, and syncs budgets; not entitled revokes every grant; both
+  retry owed deletions (also for active grants: they are old keys). The
   plan's budget is the grant's `metadata.budget` (`{ limitMicros, window }`).
   A replayed webhook diffs to "no change", so hosts also call the reconciler
   with `snapshotEntitlements()` on redelivery and on a schedule; that is
@@ -247,6 +254,7 @@ appear in the report.
 
 ```bash
 pnpm --filter @happyvertical/smrt-inference test
+pnpm --filter @happyvertical/smrt-inference test:postgres   # hosted provisioning on PostgreSQL (advisory lock, runOnce)
 pnpm --filter @happyvertical/smrt-inference typecheck
 pnpm --filter @happyvertical/smrt-inference build
 ```

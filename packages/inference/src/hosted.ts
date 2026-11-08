@@ -20,9 +20,9 @@
  *
  * Idempotency: provisioning runs under `runOnce()` per `(tenantId, userId,
  * generation)`, so concurrent deliveries create one key; the generation
- * advances on every revoke, so a later re-provision runs again. One user's
- * provision, revoke and budget sync are serialized (in process, and across
- * processes on PostgreSQL through an advisory lock). A revoke ends local
+ * advances on every revoke, so a later re-provision runs again. Lifecycle
+ * operations run one at a time per process and, on PostgreSQL, under a
+ * per-tenant advisory lock across processes. A revoke ends local
  * use of the key whatever the gateway answers; deletions the gateway could
  * not perform are kept as `pendingGatewayRevocations` and retried by
  * `revoke()` / `reconcileTenant()`.
@@ -99,7 +99,8 @@ export type HostedInferenceErrorCode =
   | 'HOSTED_GATEWAY_NOT_CONFIGURED'
   | 'HOSTED_GATEWAY_UNSUPPORTED'
   | 'HOSTED_GATEWAY_FAILED'
-  | 'HOSTED_STATE_INVALID';
+  | 'HOSTED_STATE_INVALID'
+  | 'HOSTED_NOT_ENTITLED';
 
 /**
  * A provisioning failure. Messages name fields and operations, never a key,
@@ -403,6 +404,11 @@ export interface HostedInferenceState {
    * Retried by `revoke()` and `reconcileTenant()`; never holds a key value.
    */
   pendingGatewayRevocations?: HostedPendingGatewayRevocation[];
+  /**
+   * The member replaced the hosted binding with their own config: reconcile
+   * leaves them alone; only an explicit `provision()` re-provisions.
+   */
+  optedOut?: boolean;
 }
 
 /** What provisioning and revocation return: never the key. */
@@ -518,6 +524,13 @@ export interface HostedInferenceProvisionerOptions {
   now?: () => Date;
   /** Alias/project nonce seam (tests). Default: random. */
   nonce?: () => string;
+  /**
+   * Current entitlement check, run inside the tenant lock before a new key
+   * is minted (e.g. the host's `checkFeature('inference.hosted')`). With it,
+   * a provision that arrives after a downgrade (a stale event, a late
+   * retry) refuses with `HOSTED_NOT_ENTITLED` instead of activating.
+   */
+  entitled?: (tenantId: string) => Promise<boolean>;
 }
 
 /** Hosted provisioning bound to one database, store and gateway. */
@@ -771,13 +784,19 @@ function defaultNonce(): string {
   return globalThis.crypto.randomUUID().replace(/-/g, '').slice(0, 10);
 }
 
-/** In-process lifecycle chains per `(tenantId, userId)`. */
-const lifecycleChains = new Map<string, Promise<unknown>>();
+/**
+ * Process-wide chain of hosted lifecycle operations. One at a time per
+ * process: they are rare (webhooks, operators) and this bounds the pooled
+ * connections an operation holds (the PostgreSQL lock transaction plus its
+ * own writes) whatever the number of tenants changing at once.
+ */
+let lifecycleChain: Promise<unknown> = Promise.resolve();
 
 /**
- * Create a provisioner. One per process (or per request) is fine: per-user
- * lifecycle operations are serialized through a process-wide chain and, on
- * PostgreSQL, a transaction-scoped advisory lock (cross-process).
+ * Create a provisioner. One per process (or per request) is fine: lifecycle
+ * operations run one at a time per process and, on PostgreSQL, hold a
+ * per-tenant transaction-scoped advisory lock (cross-process), so a
+ * tenant-wide revoke never misses an in-flight provision.
  */
 export function createHostedInferenceProvisioner(
   options: HostedInferenceProvisionerOptions,
@@ -848,19 +867,20 @@ export function createHostedInferenceProvisioner(
     );
 
   /**
-   * Serialize one user's provision / revoke / budget sync: in process
-   * through a promise chain, across processes on PostgreSQL through a
-   * transaction-scoped advisory lock held for the operation (the operation's
-   * own writes use other pooled connections). Single-connection adapters
-   * (SQLite) serve one process, which the chain covers.
+   * Run one lifecycle operation for a tenant: after every earlier operation
+   * of this process (the chain), and on PostgreSQL under a per-tenant
+   * transaction-scoped advisory lock held for the whole operation, so
+   * operations of other processes on the same tenant wait (the operation's
+   * own writes use other pooled connections: the pool needs at least three).
+   * Single-connection adapters (SQLite) serve one process, which the chain
+   * covers. Callers inside a locked operation use the `*Locked` helpers,
+   * never these public methods (the chain is not re-entrant).
    */
-  const withLifecycleLock = <T>(
+  const withTenantLock = <T>(
     tenantId: string,
-    userId: string,
     fn: () => Promise<T>,
   ): Promise<T> => {
-    const key = JSON.stringify(['smrt.inference.hosted', tenantId, userId]);
-    const previous = lifecycleChains.get(key) ?? Promise.resolve();
+    const key = JSON.stringify(['smrt.inference.hosted', tenantId]);
     const run = async () => {
       if (isPostgresDatabase(options.db) && options.db.transaction) {
         return options.db.transaction(async (tx) => {
@@ -873,15 +893,11 @@ export function createHostedInferenceProvisioner(
       }
       return fn();
     };
-    const result = previous.then(run, run);
-    const settled = result.then(
+    const result = lifecycleChain.then(run, run);
+    lifecycleChain = result.then(
       () => undefined,
       () => undefined,
     );
-    lifecycleChains.set(key, settled);
-    void settled.then(() => {
-      if (lifecycleChains.get(key) === settled) lifecycleChains.delete(key);
-    });
     return result;
   };
 
@@ -1082,6 +1098,7 @@ export function createHostedInferenceProvisioner(
     state: HostedInferenceState,
     reason: string,
     restore: boolean,
+    optOut = false,
   ): Promise<RevokeHostedInferenceResult> => {
     const gateway = await deleteGatewayKey(await optionalAdmin(), state.keyId);
     const owed = gateway === 'unsupported' || gateway === 'failed';
@@ -1111,6 +1128,7 @@ export function createHostedInferenceProvisioner(
       generation: state.generation + 1,
       revokedAt: now().toISOString(),
       prior: null,
+      ...(optOut ? { optedOut: true } : {}),
       pendingGatewayRevocations: [
         ...(state.pendingGatewayRevocations ?? []),
         ...(owed
@@ -1162,10 +1180,18 @@ export function createHostedInferenceProvisioner(
         userId,
         secrets,
         state,
-        'reprovision',
+        'user-replaced',
         false,
+        true,
       );
       state = await readState(secrets, userId);
+    }
+    if (options.entitled && !(await options.entitled(tenantId))) {
+      throw new HostedInferenceError(
+        `Tenant ${tenantId} is not entitled to ${HOSTED_INFERENCE_FEATURE_KEY}; nothing was provisioned.`,
+        'HOSTED_NOT_ENTITLED',
+        { tenantId, userId },
+      );
     }
     const generation = state?.generation ?? 0;
     const admin = await getAdmin(gateway);
@@ -1392,71 +1418,138 @@ export function createHostedInferenceProvisioner(
     });
   };
 
+  /** Retry a user's owed gateway deletions and persist what changed. */
+  const retryPendingLocked = async (
+    userId: string,
+    secrets: HostedSecretStore,
+  ): Promise<HostedInferenceState | undefined> => {
+    const state = await readState(secrets, userId);
+    if (!state?.pendingGatewayRevocations?.length) return state;
+    const retried = await retryPending(state);
+    if (retried === state) return state;
+    await writeState(secrets, userId, retried, {
+      operation: 'inference.hosted.revoke-retry',
+      remaining: retried.pendingGatewayRevocations?.length ?? 0,
+    });
+    return retried;
+  };
+
+  /** Revoke one user (lock held): active grant, else owed deletions only. */
+  const revokeUserLocked = async (
+    tenantId: string,
+    userId: string,
+    secrets: HostedSecretStore,
+    reason: string,
+  ): Promise<RevokeHostedInferenceResult> => {
+    const state = await readState(secrets, userId);
+    if (state?.status !== 'active') {
+      const retried = await retryPendingLocked(userId, secrets);
+      return {
+        ...describeState(tenantId, userId, retried),
+        revoked: false,
+        gateway: 'none',
+      };
+    }
+    return revokeLocked(tenantId, userId, secrets, state, reason, true);
+  };
+
+  /**
+   * Converge one entitled user (lock held). A user who replaced the hosted
+   * binding with their own config keeps it: the stale key is retired and
+   * the user marked opted out, so later reconciles leave them alone.
+   */
+  const reconcileUserLocked = async (
+    tenantId: string,
+    userId: string,
+    budget: Required<HostedInferenceBudget>,
+    gateway: HostedGatewayConfig,
+    secrets: HostedSecretStore,
+    result: HostedReconcileResult,
+  ): Promise<void> => {
+    const state = await readState(secrets, userId);
+    if (state?.status === 'revoked' && state.optedOut) return;
+    if (state?.status === 'active') {
+      const current = await readUserConfig(secrets, userId);
+      if (!isOurs(current, state.keyAlias)) {
+        result.revoked.push(
+          await revokeLocked(
+            tenantId,
+            userId,
+            secrets,
+            state,
+            'user-replaced',
+            false,
+            true,
+          ),
+        );
+        return;
+      }
+      result.synced.push(await syncLocked(tenantId, userId, budget, secrets));
+      return;
+    }
+    result.provisioned.push(
+      await provisionLocked(tenantId, userId, budget, gateway, secrets),
+    );
+  };
+
+  /** Common entry: prepare, lock the tenant, set its context. */
+  const locked = async <T>(
+    tenantId: string,
+    fn: (secrets: HostedSecretStore) => Promise<T>,
+    invalidate?: { userId?: string },
+  ): Promise<T> => {
+    await ensureTables();
+    const secrets = await getSecrets();
+    try {
+      return await withTenantLock(tenantId, () =>
+        inTenant(tenantId, () => fn(secrets)),
+      );
+    } finally {
+      if (invalidate) {
+        invalidateUserInferenceResolvers({
+          tenantId,
+          ...(invalidate.userId ? { userId: invalidate.userId } : {}),
+        });
+      }
+    }
+  };
+
   const provisioner: HostedInferenceProvisioner = {
     async provision(input) {
       const tenantId = requireId(input.tenantId, 'tenantId');
       const userId = requireId(input.userId, 'userId');
       const budget = normalizeHostedBudget(input.budget);
       const gateway = gatewayConfig();
-      await ensureTables();
-      const secrets = await getSecrets();
-      try {
-        return await withLifecycleLock(tenantId, userId, () =>
-          inTenant(tenantId, () =>
-            provisionLocked(tenantId, userId, budget, gateway, secrets),
-          ),
-        );
-      } finally {
-        invalidateUserInferenceResolvers({ tenantId, userId });
-      }
+      return locked(
+        tenantId,
+        (secrets) =>
+          provisionLocked(tenantId, userId, budget, gateway, secrets),
+        { userId },
+      );
     },
 
     async revoke(input) {
       const tenantId = requireId(input.tenantId, 'tenantId');
       const userId = requireId(input.userId, 'userId');
-      await ensureTables();
-      const secrets = await getSecrets();
-      try {
-        return await withLifecycleLock(tenantId, userId, () =>
-          inTenant(tenantId, async () => {
-            const state = await readState(secrets, userId);
-            if (state?.status !== 'active') {
-              // Nothing active: finish owed gateway deletions, if any.
-              const retried = state ? await retryPending(state) : state;
-              if (state && retried && retried !== state) {
-                await writeState(secrets, userId, retried, {
-                  operation: 'inference.hosted.revoke-retry',
-                  remaining: retried.pendingGatewayRevocations?.length ?? 0,
-                });
-              }
-              return {
-                ...describeState(tenantId, userId, retried),
-                revoked: false,
-                gateway: 'none',
-              } satisfies RevokeHostedInferenceResult;
-            }
-            return revokeLocked(
-              tenantId,
-              userId,
-              secrets,
-              state,
-              text(input.reason) ?? 'revoke',
-              true,
-            );
-          }),
-        );
-      } finally {
-        invalidateUserInferenceResolvers({ tenantId, userId });
-      }
+      return locked(
+        tenantId,
+        (secrets) =>
+          revokeUserLocked(
+            tenantId,
+            userId,
+            secrets,
+            text(input.reason) ?? 'revoke',
+          ),
+        { userId },
+      );
     },
 
     async syncBudget(input) {
       const tenantId = requireId(input.tenantId, 'tenantId');
       const userId = requireId(input.userId, 'userId');
       const budget = normalizeHostedBudget(input.budget);
-      const secrets = await getSecrets();
-      return withLifecycleLock(tenantId, userId, () =>
-        inTenant(tenantId, () => syncLocked(tenantId, userId, budget, secrets)),
+      return locked(tenantId, (secrets) =>
+        syncLocked(tenantId, userId, budget, secrets),
       );
     },
 
@@ -1481,113 +1574,133 @@ export function createHostedInferenceProvisioner(
       return (await listStates(tenantId)).map(({ userId }) => userId);
     },
 
-    async revokeTenant(tenantId, revokeOptions = {}) {
-      const results: RevokeHostedInferenceResult[] = [];
-      for (const userId of await provisioner.listActive(tenantId)) {
-        results.push(
-          await provisioner.revoke({
-            tenantId,
-            userId,
-            ...(revokeOptions.reason ? { reason: revokeOptions.reason } : {}),
-          }),
-        );
-      }
-      return results;
+    async revokeTenant(tenantIdInput, revokeOptions = {}) {
+      const tenantId = requireId(tenantIdInput, 'tenantId');
+      return locked(
+        tenantId,
+        async (secrets) => {
+          const results: RevokeHostedInferenceResult[] = [];
+          for (const { userId, state } of await listStates(tenantId)) {
+            if (state.status !== 'active') continue;
+            results.push(
+              await revokeUserLocked(
+                tenantId,
+                userId,
+                secrets,
+                text(revokeOptions.reason) ?? 'revoke',
+              ),
+            );
+          }
+          return results;
+        },
+        {},
+      );
     },
 
-    async syncTenantBudget(tenantId, budget) {
-      const results: SyncHostedBudgetResult[] = [];
-      for (const userId of await provisioner.listActive(tenantId)) {
-        results.push(
-          await provisioner.syncBudget({ tenantId, userId, budget }),
-        );
-      }
-      return results;
+    async syncTenantBudget(tenantIdInput, budgetInput) {
+      const tenantId = requireId(tenantIdInput, 'tenantId');
+      const budget = normalizeHostedBudget(budgetInput);
+      return locked(tenantId, async (secrets) => {
+        const results: SyncHostedBudgetResult[] = [];
+        for (const { userId, state } of await listStates(tenantId)) {
+          if (state.status !== 'active') continue;
+          results.push(await syncLocked(tenantId, userId, budget, secrets));
+        }
+        return results;
+      });
     },
 
     async reconcileTenant(tenantIdInput, target) {
       const tenantId = requireId(tenantIdInput, 'tenantId');
-      const result: HostedReconcileResult = {
+      const budget = target.budget
+        ? normalizeHostedBudget(target.budget)
+        : undefined;
+      const users = (target.users ?? []).map((userId) =>
+        requireId(userId, 'userId'),
+      );
+      if (target.entitled && users.length > 0 && !budget) {
+        throw new HostedInferenceError(
+          'reconcileTenant needs a budget to provision users.',
+          'HOSTED_INFERENCE_INVALID',
+          { tenantId },
+        );
+      }
+      const gateway =
+        target.entitled && users.length > 0 ? gatewayConfig() : undefined;
+      return locked(
         tenantId,
-        provisioned: [],
-        revoked: [],
-        synced: [],
-        pending: [],
-        failures: [],
-      };
-      const attempt = async (userId: string, fn: () => Promise<void>) => {
-        try {
-          await fn();
-        } catch (error) {
-          result.failures.push({ userId, error });
-        }
-      };
-      if (!target.entitled) {
-        for (const userId of await provisioner.listActive(tenantId)) {
-          await attempt(userId, async () => {
-            result.revoked.push(
-              await provisioner.revoke({
-                tenantId,
-                userId,
-                reason: 'entitlement-lost',
-              }),
-            );
-          });
-        }
-      } else {
-        const budget = target.budget
-          ? normalizeHostedBudget(target.budget)
-          : undefined;
-        if (target.users?.length && !budget) {
-          throw new HostedInferenceError(
-            'reconcileTenant needs a budget to provision users.',
-            'HOSTED_INFERENCE_INVALID',
-            { tenantId },
-          );
-        }
-        const wanted = new Set(target.users ?? []);
-        for (const userId of wanted) {
-          await attempt(userId, async () => {
-            result.provisioned.push(
-              await provisioner.provision({
-                tenantId,
-                userId,
-                budget: budget as Required<HostedInferenceBudget>,
-              }),
-            );
-          });
-        }
-        if (budget) {
-          for (const userId of await provisioner.listActive(tenantId)) {
-            if (wanted.has(userId)) continue; // provision() synced it
-            await attempt(userId, async () => {
-              result.synced.push(
-                await provisioner.syncBudget({ tenantId, userId, budget }),
+        async (secrets) => {
+          const result: HostedReconcileResult = {
+            tenantId,
+            provisioned: [],
+            revoked: [],
+            synced: [],
+            pending: [],
+            failures: [],
+          };
+          const attempt = async (userId: string, fn: () => Promise<void>) => {
+            try {
+              await fn();
+            } catch (error) {
+              result.failures.push({ userId, error });
+            }
+          };
+          // Enumerated under the tenant lock: no provision is in flight.
+          const states = await listStates(tenantId);
+          if (!target.entitled) {
+            for (const { userId, state } of states) {
+              if (state.status !== 'active') continue;
+              await attempt(userId, async () => {
+                result.revoked.push(
+                  await revokeLocked(
+                    tenantId,
+                    userId,
+                    secrets,
+                    state,
+                    'entitlement-lost',
+                    true,
+                  ),
+                );
+              });
+            }
+          } else {
+            const wanted = new Set(users);
+            for (const userId of wanted) {
+              await attempt(userId, () =>
+                reconcileUserLocked(
+                  tenantId,
+                  userId,
+                  budget as Required<HostedInferenceBudget>,
+                  gateway as HostedGatewayConfig,
+                  secrets,
+                  result,
+                ),
               );
+            }
+            if (budget) {
+              for (const { userId, state } of states) {
+                if (wanted.has(userId) || state.status !== 'active') continue;
+                await attempt(userId, async () => {
+                  result.synced.push(
+                    await syncLocked(tenantId, userId, budget, secrets),
+                  );
+                });
+              }
+            }
+          }
+          // Owed gateway deletions for every user with state (an active
+          // grant's pending entries are old keys, never the current one).
+          for (const { userId } of await listStates(tenantId)) {
+            await attempt(userId, async () => {
+              const state = await retryPendingLocked(userId, secrets);
+              const remaining = state?.pendingGatewayRevocations?.length ?? 0;
+              if (remaining > 0) result.pending.push({ userId, remaining });
             });
           }
-        }
-      }
-      // Retry owed gateway deletions for every user with state.
-      for (const { userId, state } of await listStates(tenantId)) {
-        if (!state.pendingGatewayRevocations?.length) continue;
-        if (state.status === 'active' && target.entitled) {
-          // Active grants keep their owed deletions until the next revoke.
-          result.pending.push({
-            userId,
-            remaining: state.pendingGatewayRevocations.length,
-          });
-          continue;
-        }
-        await attempt(userId, async () => {
-          const retried = await provisioner.revoke({ tenantId, userId });
-          result.pending.push({
-            userId,
-            remaining: retried.pendingGatewayRevocations?.length ?? 0,
-          });
-        });
-      }
-      return result;
+          return result;
+        },
+        {},
+      );
     },
   };
   return provisioner;
