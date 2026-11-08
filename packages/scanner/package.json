@@ -35,14 +35,14 @@
   },
   "dependencies": {
     "@happyvertical/smrt-types": "workspace:*",
-    "minimatch": "10.2.6",
-    "oxc-parser": "^0.150.0",
+    "minimatch": "11.0.5",
+    "oxc-parser": "^0.157.0",
     "oxc-resolver": "^11.24.2",
     "tinyglobby": "0.2.17"
   },
   "devDependencies": {
-    "@types/node": "24.13.6",
-    "tsx": "^4.23.13",
+    "@types/node": "26.6.6",
+    "tsx": "^4.23.15",
     "vite": "8.1.6",
     "vitest": "4.1.10"
   },
