@@ -1850,10 +1850,10 @@ importers:
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
-    devDependencies:
       '@happyvertical/smrt-prompts':
         specifier: workspace:*
         version: link:../prompts
+    devDependencies:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
         version: link:../vitest

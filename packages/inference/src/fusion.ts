@@ -180,14 +180,14 @@ interface PromptsModule {
 /**
  * Default resolver: smrt-prompts' `resolvePrompt()` (code default, config,
  * app and tenant overrides), loaded without a static edge so this entry
- * stays browser-safe and smrt-prompts stays an optional peer.
+ * stays browser-safe (smrt-prompts pulls in smrt-config and the SDKs).
  */
 const PROMPTS_SPECIFIER = '@happyvertical/smrt-prompts';
 
 async function loadPrompts(): Promise<PromptsModule> {
   try {
-    // Resolved from this package (its optional peer), so strict layouts
-    // (no hoisting, PnP) find the app's copy. A variable specifier keeps
+    // Resolved from this package (a dependency), so strict layouts
+    // (no hoisting, PnP) find it. A variable specifier keeps
     // bundlers from following it into the browser-safe graph.
     const specifier = PROMPTS_SPECIFIER;
     return (await import(/* @vite-ignore */ specifier)) as PromptsModule;
