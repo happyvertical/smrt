@@ -1226,8 +1226,17 @@ export class SmrtClass {
     let capabilities: InferenceCapabilities | undefined;
     if (single) {
       try {
+        // The model the call will run: a caller `model` replaces the
+        // target's per call (below), so capabilities follow it.
+        const requested = (rest as { model?: unknown }).model;
+        const callModel =
+          typeof requested === 'string' && requested.trim() !== ''
+            ? requested.trim()
+            : undefined;
         capabilities = await this.detectInferenceTargetCapabilities(
-          resolution.target,
+          callModel
+            ? { ...resolution.target, model: callModel }
+            : resolution.target,
           ai,
         );
       } catch {

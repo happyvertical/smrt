@@ -255,6 +255,62 @@ describe('object operations against a text-only model', () => {
     );
   });
 
+  it('strips a JSON responseFormat from caller options and target params on the text path', async () => {
+    replies.push('yes');
+    await note().is('ok?', {
+      tier: 'cheap',
+      responseFormat: { type: 'json_object' },
+    } as never);
+    expect(lastCall().options).not.toHaveProperty('responseFormat');
+
+    replies.push('done');
+    await note().do('x', {
+      tier: 'cheap',
+      responseFormat: { type: 'json_object' },
+    } as never);
+    expect(lastCall().options).not.toHaveProperty('responseFormat');
+    expect(lastCall().options.usageTags.capabilityFallback).toBe('json→text');
+
+    config({
+      inference: {
+        tiers: {
+          cheap: {
+            model: 'tinyllama-1.1b-chat',
+            params: { responseFormat: { type: 'json_object' } },
+          },
+        },
+      },
+    });
+    replies.push('no');
+    await expect(note().is('ok?', { tier: 'cheap' })).resolves.toBe(false);
+    expect(lastCall().options).not.toHaveProperty('responseFormat');
+  });
+
+  it('detects capabilities for the model the call runs, not the bound one', async () => {
+    // `great` is bound to a capable model; the caller overrides it with a
+    // small local one.
+    replies.push('yes');
+    await expect(
+      note().is('ok?', { tier: 'great', model: 'tinyllama-1.1b-chat' }),
+    ).resolves.toBe(true);
+    expect(lastCall().options.model).toBe('tinyllama-1.1b-chat');
+    expect(lastCall().options).not.toHaveProperty('responseFormat');
+
+    replies.push('yes');
+    await expect(
+      note().evaluate('ok?', {
+        tier: 'great',
+        generativeModel: 'tinyllama-1.1b-chat',
+      }),
+    ).resolves.toEqual({ result: true, route: 'generative' });
+    expect(lastCall().options).not.toHaveProperty('responseFormat');
+
+    // And the reverse: a capable override on the small binding keeps JSON.
+    replies.push('{"result": true}');
+    await note().is('ok?', { tier: 'cheap', model: 'other-model' });
+    expect(lastCall().options.responseFormat).toEqual({ type: 'json_object' });
+  });
+
   it("evaluate()'s generative path falls back the same way", async () => {
     replies.push('yes');
     await expect(
