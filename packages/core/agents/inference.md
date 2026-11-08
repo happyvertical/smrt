@@ -52,10 +52,12 @@ breaking v1; consumers ignore members they do not understand.
   users' keys never share a client. A target equal to the configured identity
   returns the configured client. Absent fields inherit from the configured
   client through `mergeAIConfigObjects`; another provider drops the configured
-  key, base URL and model. Endpoint and key are owned together: a target
-  `baseUrl` never inherits the configured key, a target `apiKey` never
-  inherits the configured `baseUrl`, and only a provider's default endpoint
-  falls back to that provider's own key variable.
+  key, base URL and model. Endpoint and key are owned together and an
+  unbound pair fails closed before the SDK can fill it from its own
+  environment: a target `baseUrl` (other than the configured one) must carry
+  its own `apiKey`; a target `apiKey` drops the configured `baseUrl` and must
+  name its own while `<PROVIDER>_BASE_URL` is set; only a provider's default
+  endpoint falls back to that provider's own key variable.
   Failed builds are evicted. `@happyvertical/ai` stays a dynamic import
   (#2894). An injected client keeps serving model-only targets (the model
   goes per call); a target naming an endpoint must name a provider.

@@ -43,6 +43,7 @@ const ENV_KEYS = [
   'SMRT_AI_MODEL',
   'OPENAI_API_KEY',
   'ANTHROPIC_API_KEY',
+  'OPENAI_BASE_URL',
   'SMRT_INFERENCE_DEFAULT_TIER',
 ];
 
@@ -166,12 +167,15 @@ describe('SmrtClass inference tiers', () => {
         },
       },
     } as never);
+    await probe.client();
+    getAIMock.mockClear();
+    // The SDK would fill an unset key from OPENAI_API_KEY: fail closed first.
     for (const tier of ['cheap', 'good'] as const) {
-      const client = (await probe.client(tier)) as unknown as FakeClient;
-      expect(client.options.baseUrl).toMatch(/example/);
-      expect(client.options.apiKey).toBeUndefined();
-      expect(JSON.stringify(client.options)).not.toMatch(/sk-base|sk-env/);
+      await expect(probe.client(tier)).rejects.toThrow(
+        /must carry its own apiKey/,
+      );
     }
+    expect(getAIMock).not.toHaveBeenCalled();
     const great = (await probe.client('great')) as unknown as FakeClient;
     expect(great.options).toMatchObject({ apiKey: 'sk-router' });
   });
@@ -184,6 +188,43 @@ describe('SmrtClass inference tiers', () => {
     const best = (await probe.client('best')) as unknown as FakeClient;
     expect(best.options.apiKey).toBe('sk-user');
     expect(best.options.baseUrl).toBeUndefined();
+  });
+
+  it('refuses a target key when the provider endpoint variable would redirect it', async () => {
+    process.env.OPENAI_BASE_URL = 'https://operator-proxy.example/v1';
+    const probe = new TierProbe({
+      ai: BASE_AI,
+      inference: {
+        tiers: {
+          best: { apiKey: 'sk-user', model: 'byo' },
+          great: {
+            apiKey: 'sk-user',
+            baseUrl: 'https://api.openai.com/v1',
+          },
+        },
+      },
+    } as never);
+    await expect(probe.client('best')).rejects.toThrow(/OPENAI_BASE_URL/);
+    const great = (await probe.client('great')) as unknown as FakeClient;
+    expect(great.options).toMatchObject({
+      apiKey: 'sk-user',
+      baseUrl: 'https://api.openai.com/v1',
+    });
+  });
+
+  it('keeps a target on the configured endpoint with the configured key', async () => {
+    const probe = new TierProbe({
+      ai: { ...BASE_AI, baseUrl: 'https://proxy.internal/v1' },
+      inference: {
+        tiers: { cheap: { baseUrl: 'https://proxy.internal/v1', model: 'm' } },
+      },
+    } as never);
+    const cheap = (await probe.client('cheap')) as unknown as FakeClient;
+    expect(cheap.options).toMatchObject({
+      apiKey: 'sk-base',
+      baseUrl: 'https://proxy.internal/v1',
+      model: 'm',
+    });
   });
 
   it('separates cached clients by credential', async () => {
