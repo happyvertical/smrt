@@ -265,13 +265,15 @@ describe('probes', () => {
     for (const candidate of [
       { provider: 'openai', model: 'm', apiKey: SECRET },
       { provider: 'openai', model: 'm', apiKeyEnv: 'PROXY_KEY' },
+      { preset: 'unknown', model: 'm', apiKey: SECRET },
+      { preset: 'unknown', model: 'm', apiKeyEnv: 'PROXY_KEY' },
     ]) {
       const result = await probeInferenceCandidate(candidate, {
         env,
         fetch: fetch as unknown as typeof globalThis.fetch,
       });
       expect(result).toMatchObject({ reachable: false });
-      expect(result.detail).toContain('needs its own baseUrl');
+      expect(result.detail).toMatch(/needs its own baseUrl|unknown preset/);
     }
     expect(fetch).not.toHaveBeenCalled();
   });
