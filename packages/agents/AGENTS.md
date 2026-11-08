@@ -57,6 +57,10 @@ async run() { for (const { type, data } of await this.interesting()) { ... } }
   agents use `AgentOptions.personaId` as the durable config owner; legacy agents
   use the saved Agent row id.
 - **Merged**: `getMergedConfig('slotId')` — DB overrides file config
+- **AI usage (#3077)**: `initialize()` wires `options.ai` through
+  `withAiUsage()`, and `resolveAgentAIOptions({ db })` attaches a usage
+  recorder, so per-call `getAI(...)` clients write `_smrt_ai_usage` for the
+  run's tenant. See core [ai-usage](../core/agents/ai-usage.md).
 - **UI slots**: `static uiSlots` declares admin panels (id, label, icon, order,
   `scope`, optional versioned `settingsSchema`). Without a registered custom
   component, `AgentSettingsForm` renders that schema.

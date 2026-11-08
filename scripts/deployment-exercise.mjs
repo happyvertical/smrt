@@ -13,6 +13,7 @@ import { join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
+import { chartArtifact } from './deployment-chart-artifact.mjs';
 import { verifyRuntime, isCorrelatedMigrationFailure } from './deployment/live.mjs';
 import { transition, repairRelease, validateRepairEvidence, identity, hash as releaseHash } from './deployment/release.mjs';
 
@@ -438,10 +439,11 @@ try {
   assert.equal((await s3(bucketEndpoint, 'PUT', '/assets/sentinel', 'preserve-object')).status, 200);
   const endpoint = await forward('traefik', 8080);
   const registryEndpoint = await forward('registry', 5000);
-  execFileSync(helm, ['push', join(scratch, 'smrt-app-0.2.1.tgz'), `oci://${new URL(registryEndpoint).host}/charts`, '--plain-http'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  const artifact = chartArtifact(join(root, 'charts/smrt-app'), scratch, registryEndpoint);
+  execFileSync(helm, ['push', artifact.packagePath, `oci://${new URL(registryEndpoint).host}/charts`, '--plain-http'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
   // Helm may write the receipt to stderr; inspect the registry manifest itself
   // to bind the OCIRepository to the exact published artifact digest.
-  const receipt = await fetch(`${registryEndpoint}/v2/charts/smrt-app/manifests/0.2.1`, { headers: { Accept: 'application/vnd.oci.image.manifest.v1+json' } });
+  const receipt = await fetch(artifact.manifestUrl, { headers: { Accept: 'application/vnd.oci.image.manifest.v1+json' } });
   assert.equal(receipt.status, 200, 'published chart manifest exists');
   const chartDigest = receipt.headers.get('docker-content-digest');
   assert.match(chartDigest, /^sha256:[a-f0-9]{64}$/);

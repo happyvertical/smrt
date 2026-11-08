@@ -26,12 +26,137 @@ export function demand(condition, reason, code) {
   if (!condition) throw new DeploymentError(reason, code);
 }
 export const identity = (document) => hash(document.spec.values);
+export function assertNoPendingTls(document) {
+  const raw =
+    document?.metadata?.annotations?.['smrt.happyvertical.com/tls-transition'];
+  if (raw === undefined) return;
+  let marker;
+  try {
+    marker = JSON.parse(raw);
+  } catch {
+    demand(false, 'Malformed TLS transition annotation', 'TLS_TRANSITION');
+  }
+  demand(
+    marker && ['complete', 'rolled-back'].includes(marker.status),
+    'Pending TLS transition owns this release',
+    'TLS_TRANSITION',
+  );
+}
+
+export const phaseRenderedRuntime = (values) =>
+  ['verify', 'active'].includes(values.release.phase) ? values.target : values.current;
 const object = (value) =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
 const exactKeys = (value, keys) =>
   object(value) &&
   Object.keys(value).length === keys.length &&
   keys.every((key) => Object.hasOwn(value, key));
+// These helpers describe only the bounded public chart contract. Live identity,
+// immutable ConfigMap contents and CNI fencing must still be proven by observation.
+export const effectiveWorkloadSelectors = (releaseName, name, workload) =>
+  workload.selectorLabels ?? {
+    'app.kubernetes.io/instance': releaseName,
+    'smrt.happyvertical.com/workload': name,
+  };
+export const effectiveWorkloadStrategy = (workload) =>
+  isContinuousStatic(workload)
+    ? { type: 'RollingUpdate', rollingUpdate: { maxUnavailable: 0, maxSurge: 1 } }
+    : { type: 'Recreate' };
+export const readOnlyConfigBindings = (runtime) =>
+  Object.entries(runtime?.workloads ?? {}).flatMap(([workload, value]) =>
+    (value.readOnlyConfigMaps ?? []).map((binding) => ({ workload, ...binding })),
+  );
+export const isContinuousStatic = (w) => {
+  if (!object(w)) return false;
+  try { validatePodCapabilities(w, false); } catch { return false; }
+  return Boolean(
+  w?.continuousStatic === true && w.role === 'service' && w.writer === false &&
+  Array.isArray(w.env) && w.env.length === 0 && !w.schedule && !!w.service &&
+  w.automountServiceAccountToken === false &&
+  w.podSecurityContext?.runAsNonRoot === true && w.podSecurityContext?.runAsUser > 0 &&
+  w.podSecurityContext?.runAsGroup > 0 && w.podSecurityContext?.seccompProfile?.type === 'RuntimeDefault' &&
+  w.securityContext?.allowPrivilegeEscalation === false && w.securityContext?.readOnlyRootFilesystem === true &&
+  hash(w.securityContext?.capabilities?.drop) === hash(['ALL']) &&
+  Number.isSafeInteger(w.replicas) && w.replicas >= 1 && w.replicas <= 3);
+};
+export function normalizedIngressRecords(values, releaseName) {
+  const ingress = values.ingress ?? {};
+  const web = Object.entries(values.target.workloads).find(([, w]) => w.role === 'web')?.[0];
+  return [{ name: ingress.name ?? releaseName, host: ingress.host,
+    className: ingress.className, tlsSecretName: ingress.tlsSecretName,
+    annotations: ingress.annotations ?? {}, workload: web, continuousStatic: false },
+  ...(ingress.additionalRoutes ?? []).map((route) => ({ ...route,
+    className: ingress.className, annotations: route.annotations ?? {}, continuousStatic: true }))];
+}
+const safeMount = (path) => typeof path === 'string' &&
+  /^\/(?!var(?:\/|$)|run(?:\/|$)|proc(?:\/|$)|sys(?:\/|$)|dev(?:\/|$))[A-Za-z0-9_][A-Za-z0-9_./-]*$/.test(path) &&
+  !path.includes('//') && !path.split('/').some((part) => ['.', '..'].includes(part));
+const labelName = /^[A-Za-z0-9](?:[A-Za-z0-9_.-]{0,61}[A-Za-z0-9])?$/;
+function validateWorkloadExtensions(w) {
+  demand(!['volumes', 'volumeMounts', 'podSpec', 'initContainers', 'containers', 'strategy'].some((field) => Object.hasOwn(w, field)),
+    'Raw workload pod/volume escapes are forbidden');
+  if (w.selectorLabels !== undefined) demand(object(w.selectorLabels) &&
+    Object.keys(w.selectorLabels).length > 0 && Object.keys(w.selectorLabels).length <= 8 &&
+    Object.entries(w.selectorLabels).every(([key, value]) => {
+      const parts = key.split('/');
+      return parts.length <= 2 && labelName.test(parts.at(-1)) &&
+        (parts.length === 1 || (parts[0].length <= 253 && parts[0].split('.').every((p) => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(p)))) &&
+        !key.startsWith('smrt.happyvertical.com/') && key !== 'app.kubernetes.io/instance' &&
+        typeof value === 'string' && (value === '' || labelName.test(value));
+    }), 'Invalid workload selectorLabels');
+  if (w.continuousStatic !== undefined) demand(typeof w.continuousStatic === 'boolean' &&
+    (!w.continuousStatic || isContinuousStatic(w)), 'Invalid continuous static workload');
+  if (w.automountServiceAccountToken !== undefined) demand(w.automountServiceAccountToken === false, 'Runtime API tokens are forbidden');
+  if (w.readOnlyConfigMaps !== undefined) demand(Array.isArray(w.readOnlyConfigMaps) && w.readOnlyConfigMaps.length <= 8 &&
+    w.readOnlyConfigMaps.every((b) => exactKeys(b, ['volumeName', 'configMapName', 'hash', 'mountPath', 'items']) &&
+      /^[a-z][a-z0-9-]{0,62}$/.test(b.volumeName) && b.volumeName !== 'smrt-observer' &&
+      /^[a-z][a-z0-9-]{0,62}$/.test(b.configMapName) && /^[a-f0-9]{64}$/.test(b.hash) && safeMount(b.mountPath) &&
+      Array.isArray(b.items) && b.items.length > 0 && b.items.length <= 32 &&
+      b.items.every((i) => exactKeys(i, ['key', 'path']) && /^[A-Za-z0-9._-]+$/.test(i.key) && /^[A-Za-z0-9_-][A-Za-z0-9_.-]*$/.test(i.path)) &&
+      new Set(b.items.map((i) => i.path)).size === b.items.length), 'Invalid read-only ConfigMap binding');
+  const mounts = [...(w.scratch ?? []).map((b) => ({ name: b.name, path: b.mountPath })),
+    ...(w.readOnlyConfigMaps ?? []).map((b) => ({ name: b.volumeName, path: b.mountPath }))];
+  demand(mounts.every((b, index) => mounts.every((other, j) => index === j ||
+    (b.name !== other.name && b.path !== other.path && !b.path.startsWith(`${other.path}/`)))), 'Overlapping or duplicate workload mounts');
+  for (const [key, max] of Object.entries({ startingDeadlineSeconds: 600, activeDeadlineSeconds: 3300,
+    ttlSecondsAfterFinished: 86400, successfulJobsHistoryLimit: 2, failedJobsHistoryLimit: 3 })) {
+    if (w[key] !== undefined) demand(!!w.schedule && Number.isInteger(w[key]) &&
+      w[key] >= (key.includes('History') ? 0 : 1) && w[key] <= max, 'Invalid CronJob timing/history');
+  }
+}
+function validateRuntimeContinuity(values, releaseName) {
+  for (const [name, target] of Object.entries(values.target.workloads)) {
+    const current = values.current?.workloads?.[name];
+    if (current) demand(hash(effectiveWorkloadSelectors(releaseName, name, current)) === hash(effectiveWorkloadSelectors(releaseName, name, target)) &&
+      !!current.continuousStatic === !!target.continuousStatic, 'Workload selector/static identity cannot change during an ordinary release');
+    if (current?.continuousStatic) demand(current.service?.port === target.service?.port, 'Continuous static Service port cannot change during an ordinary release');
+  }
+  const configs = new Map();
+  for (const runtime of [values.current, values.target]) {
+    for (const binding of readOnlyConfigBindings(runtime)) {
+      demand(!configs.has(binding.configMapName) || configs.get(binding.configMapName) === binding.hash, "Conflicting ConfigMap hashes");
+      configs.set(binding.configMapName, binding.hash);
+    }
+  }
+  const ingress = values.ingress ?? {};
+  const resourceName = (name) => typeof name === 'string' && /^[a-z][a-z0-9-]{0,62}$/.test(name);
+  if (ingress.name !== undefined) demand(resourceName(ingress.name), 'Invalid ingress name');
+  if (ingress.additionalRoutes !== undefined) demand(Array.isArray(ingress.additionalRoutes) && ingress.additionalRoutes.length <= 8 &&
+    ingress.additionalRoutes.every((route) => object(route) && Object.keys(route).every((key) => ['name', 'host', 'workload', 'tlsSecretName', 'annotations'].includes(key)) &&
+      resourceName(route.name) && resourceName(route.workload) && typeof route.host === 'string' && /^[a-z0-9][a-z0-9.-]*[a-z0-9]$/.test(route.host) &&
+      (route.tlsSecretName === undefined || resourceName(route.tlsSecretName)) && (route.annotations === undefined || object(route.annotations))), 'Invalid additional ingress route');
+  if (ingress.annotations !== undefined) demand(object(ingress.annotations), 'Invalid ingress annotations');
+  const records = normalizedIngressRecords(values, releaseName);
+  demand(new Set(records.map((r) => r.name)).size === records.length && new Set(records.map((r) => r.host)).size === records.length, 'Duplicate ingress name/host');
+  for (const r of records) {
+    demand(Object.entries(r.annotations).every(([key, value]) =>
+      key === 'nginx.ingress.kubernetes.io/proxy-body-size' ? ['1m','2m','4m','8m','10m','11m'].includes(value) :
+      key === 'nginx.ingress.kubernetes.io/proxy-buffer-size' && ['4k','8k','16k','32k','64k'].includes(value)), 'Unsafe ingress annotation');
+    if (r.continuousStatic) demand(isContinuousStatic(values.target.workloads[r.workload]) &&
+      (values.current === false || isContinuousStatic(values.current.workloads[r.workload])), 'Additional ingress requires continuous static service in each runtime');
+  }
+}
+
 function validatePodCapabilities(workload, migration) {
   const pod = workload.podSecurityContext;
   const container = workload.securityContext;
@@ -145,6 +270,7 @@ export function validateRuntime(runtime) {
       'Invalid RuntimeSnapshot image/command/environment',
     );
     validatePodCapabilities(workload, workload === runtime.migration);
+    validateWorkloadExtensions(workload);
     demand(
       !Object.hasOwn(workload, 'envFrom') &&
         workload.env.every((entry) => {
@@ -202,6 +328,7 @@ export function validate(document) {
   );
   if (v.current !== false) validateRuntime(v.current);
   validateRuntime(v.target);
+  validateRuntimeContinuity(v, document.spec.releaseName ?? document.metadata?.name);
   if (
     v.release.sequence === 0 ||
     (v.current === false && v.release.phase === 'maintenance')
@@ -215,6 +342,7 @@ export function validate(document) {
   return v;
 }
 export function planRelease(previous, target, id) {
+  assertNoPendingTls(previous);
   const old = validate(previous);
   demand(
     old.release.phase === 'active',
@@ -223,6 +351,7 @@ export function planRelease(previous, target, id) {
   demand(old.release.id !== id, 'Release id must be unique');
   const next = structuredClone(previous);
   if (next.metadata.annotations) {
+    delete next.metadata.annotations['smrt.happyvertical.com/tls-transition'];
     delete next.metadata.annotations[
       'smrt.happyvertical.com/binding-reference-set'
     ];
@@ -248,6 +377,7 @@ export function planRelease(previous, target, id) {
   return next;
 }
 export function transition(document, evidence, recovery = false) {
+  assertNoPendingTls(document);
   const v = validate(document);
   demand(
     evidence.identity === identity(document) && evidence.accepted === true,
@@ -313,6 +443,7 @@ export function transition(document, evidence, recovery = false) {
   if (v.release.phase === 'active')
     result.spec.values.current = structuredClone(v.target);
   result.metadata.annotations ??= {};
+  delete result.metadata.annotations['smrt.happyvertical.com/tls-transition'];
   if (recovery && v.release.phase === 'migrate')
     result.metadata.annotations['smrt.happyvertical.com/failed-migration'] =
       JSON.stringify(evidence.failedMigration);
@@ -346,7 +477,10 @@ export async function applyOrResume(
 ) {
   const snapshot = await adapter.read();
   const current = snapshot.document;
-  if (current) validate(current);
+  if (current) {
+    assertNoPendingTls(current);
+    validate(current);
+  }
   if (planned) {
     const v = validate(planned);
     demand(
@@ -389,6 +523,11 @@ export async function applyOrResume(
     allowFailedMigration:
       recovery && current.spec.values.release.phase === 'migrate',
   });
+  demand(
+    evidence.failureCode !== 'TLS_CORRELATED_FAILURE',
+    'Correlated TLS failure requires the bounded TLS rollback command',
+    'TLS_TRANSITION',
+  );
   if (current.spec.values.release.phase === 'active' && !recovery) {
     if (evidence.proven === true) return { complete: true, evidence };
     recovery = true;
@@ -399,6 +538,7 @@ export async function applyOrResume(
 }
 
 export function repairRelease(document, target, evidence) {
+  assertNoPendingTls(document);
   const v = validate(document);
   demand(
     v.release.phase === 'stopped' &&
