@@ -43,7 +43,7 @@ order), `fallback`, the app `inference` block, then the configured client
   (`category`), via `SecretService.store()` / `retrieve()` only, with
   `context = tenantId`. Names: `inference.provider-config:user:<userId>` and
   `inference.provider-config:tenant`. The value is
-  `{ provider, baseUrl, model, apiKey, preset, params, source?, tiers? }`;
+  `{ provider, baseUrl, model, apiKey, preset, params, source?, mode?, tiers? }`;
   hosted (#4759) writes the same type with `source: 'hosted'`.
   `parseInferenceProviderConfig()` requires every binding to be
   self-contained (`baseUrl` and `apiKey`, `'smrt-local'` for keyless local
@@ -69,6 +69,17 @@ order), `fallback`, the app `inference` block, then the configured client
   for the current principal and invalidate; `invalidate()` takes all, one
   tenant (every user), or one user. Who may write the tenant config is the
   host server action's decision (#4754).
+- **Mode (#4757).** A stored config may carry `mode` (`byo | local | hosted
+  | off`) and may hold only a mode (no binding, no key). The user's mode,
+  else the tenant's, applies: `off` answers every tier `{ unavailable:
+  'off' }` and `mode()` (untiered calls) `{ mode: 'off', unavailable: 'off' }`;
+  `byo` / `local` / `hosted` bind only a stored binding of that `source`
+  (user, then tenant), else `unavailable: 'unconfigured'`, never app config.
+  No mode: the order above, reporting the binding's source as `mode`.
+  `setMode(level, mode | null)` keeps the binding (deletes a config left
+  empty) and invalidates; `write()` replaces the whole config, mode
+  included. `resolveBindings()` adds `mode: { mode, layer }`. The #4752
+  wrapper forwards `mode()` only when the base has one.
 - **Keys.** Never logged or tagged. `resolveBindings()` returns the tier map
   and both stored configs redacted by default (`hasApiKey`, no `apiKey`), the
   shape the settings panel reads; `redact: false` is server-only.

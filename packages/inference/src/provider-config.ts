@@ -10,10 +10,13 @@
  */
 
 import {
+  INFERENCE_MODES,
   INFERENCE_PRESETS,
   INFERENCE_TIERS,
+  type InferenceMode,
   type InferenceTarget,
   type InferenceTier,
+  isInferenceMode,
   isInferencePresetId,
   isInferenceTier,
 } from '@happyvertical/smrt-core';
@@ -61,6 +64,13 @@ export interface InferenceProviderConfig extends InferenceProviderBinding {
   version?: 1;
   /** Declared origin; derived (`local` / `byo`) when absent. */
   source?: InferenceProviderConfigSource;
+  /**
+   * The chosen inference mode (#4757). `off` turns every call off for this
+   * scope; `byo` / `local` / `hosted` use only a stored binding of that
+   * source. Absent: the fall-through order (user, tenant, app). A config may
+   * hold only a mode (no binding, no key).
+   */
+  mode?: InferenceMode;
   tiers?: Partial<Record<InferenceTier, InferenceProviderBinding>>;
 }
 
@@ -75,6 +85,7 @@ export interface RedactedInferenceProviderConfig
   extends RedactedInferenceProviderBinding {
   version?: 1;
   source?: InferenceProviderConfigSource;
+  mode?: InferenceMode;
   tiers?: Partial<Record<InferenceTier, RedactedInferenceProviderBinding>>;
 }
 
@@ -256,7 +267,11 @@ export function parseInferenceProviderConfig(
     ...(parseBinding(
       Object.fromEntries(
         Object.entries(raw).filter(
-          ([key]) => key !== 'tiers' && key !== 'source' && key !== 'version',
+          ([key]) =>
+            key !== 'tiers' &&
+            key !== 'source' &&
+            key !== 'version' &&
+            key !== 'mode',
         ),
       ),
       'config',
@@ -281,6 +296,13 @@ export function parseInferenceProviderConfig(
       );
     }
   }
+  if (raw.mode !== undefined) {
+    if (isInferenceMode(raw.mode)) {
+      config.mode = raw.mode;
+    } else {
+      issues.push(`mode must be one of ${INFERENCE_MODES.join(', ')}`);
+    }
+  }
   if (raw.tiers !== undefined) {
     if (!isRecord(raw.tiers)) {
       issues.push('tiers must be an object');
@@ -302,9 +324,14 @@ export function parseInferenceProviderConfig(
   }
   for (const known of Object.keys(raw)) {
     if (
-      ![...BINDING_FIELDS, 'params', 'tiers', 'source', 'version'].includes(
-        known,
-      )
+      ![
+        ...BINDING_FIELDS,
+        'params',
+        'tiers',
+        'source',
+        'version',
+        'mode',
+      ].includes(known)
     ) {
       issues.push(`config.${known} is not a provider config field`);
     }
@@ -442,11 +469,12 @@ function redactBinding(
 export function redactInferenceProviderConfig(
   config: InferenceProviderConfig,
 ): RedactedInferenceProviderConfig {
-  const { tiers, version, source, ...binding } = config;
+  const { tiers, version, source, mode, ...binding } = config;
   const redacted: RedactedInferenceProviderConfig = {
     ...redactBinding(binding),
     ...(version ? { version } : {}),
     ...(source ? { source } : {}),
+    ...(mode ? { mode } : {}),
   };
   if (tiers) {
     redacted.tiers = {};
