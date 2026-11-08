@@ -2537,12 +2537,21 @@ export async function legacyMain(env = process.env) {
       );
       writeFileSync(reviewed, JSON.stringify(rejectedPlan));
       const beforeRejected = await adapter().read();
-      await assert.rejects(
-        releaseCli(['tls-apply-or-resume', configFile, reviewed], () =>
-          adapter(),
-        ),
-        (error) => error.code === 'TLS_BINDING',
-      );
+      // The binding rejection is the expected outcome; a transient Flux
+      // acknowledgement flip is retried, and acceptance fails the test.
+      let bindingAccepted = false;
+      await until('reviewed TLS plan rejected for its binding', async () => {
+        try {
+          await releaseCli(['tls-apply-or-resume', configFile, reviewed], () => adapter());
+        } catch (error) {
+          if (error.code === 'TLS_BINDING') return true;
+          note(`TLS binding rejection not yet observed: ${String(error.message).slice(0, 200)}`);
+          return false;
+        }
+        bindingAccepted = true;
+        return true;
+      });
+      assert.ok(!bindingAccepted, 'a plan with a foreign TLS binding must be rejected');
       assert.equal(
         (await adapter().read()).revision,
         beforeRejected.revision,
