@@ -55,10 +55,38 @@ const RENDEZVOUS_ERROR_MESSAGES = {
   control_server_failed: 'Control channel server could not be started',
 } as const;
 
+/**
+ * Contract (c): the native credential handoff. Messages describe what is
+ * wrong, never the offending value: the inputs of every code here may carry a
+ * bearer token.
+ */
+const CREDENTIAL_ERROR_MESSAGES = {
+  credential_unavailable:
+    'No credential is available; open the desktop app and connect the assistant',
+  credential_invalid:
+    'The stored credential is expired, revoked or malformed; open the desktop app to reconnect',
+  instance_mismatch: 'Request does not match the running desktop app instance',
+  invalid_mint_response:
+    'Credential response does not match the documented success reply',
+  invalid_handoff_frame: 'Credential handoff frame is not valid',
+  handoff_frame_too_large: 'Credential handoff frame exceeds the size limit',
+  handoff_failed: 'Credential handoff to the bridge process failed',
+  slot_unavailable: 'The credential slot is unavailable',
+  credential_forbidden:
+    'The desktop app refused the credential request; sign in as the owner',
+  credential_rejected: 'The desktop app rejected the credential request',
+  credential_request_failed:
+    'The credential request did not complete; try again',
+  native_rejected: 'The desktop shell rejected the credential',
+  invalid_native_response:
+    'The desktop shell answered with an unexpected reply',
+} as const;
+
 const ERROR_MESSAGES = {
   ...COMMON_ERROR_MESSAGES,
   ...INSTALL_ERROR_MESSAGES,
   ...RENDEZVOUS_ERROR_MESSAGES,
+  ...CREDENTIAL_ERROR_MESSAGES,
 } as const;
 
 /** Closed set of codes for contract (a), the installed-product bundle. */
@@ -66,6 +94,9 @@ export type InstallErrorCode = keyof typeof INSTALL_ERROR_MESSAGES;
 
 /** Closed set of codes for contract (b), the supervisor rendezvous. */
 export type RendezvousErrorCode = keyof typeof RENDEZVOUS_ERROR_MESSAGES;
+
+/** Closed set of codes for contract (c), the native credential handoff. */
+export type CredentialErrorCode = keyof typeof CREDENTIAL_ERROR_MESSAGES;
 
 /** Every code a `DesktopContractError` can carry. */
 export type DesktopContractErrorCode = keyof typeof ERROR_MESSAGES;

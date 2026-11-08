@@ -24,8 +24,18 @@ Clients are read-only: never write, rename or delete a record, socket, lease or
 lock, and never retry `failed(lease_held)`. Node cannot verify the control
 channel's peer, so the real check lives in the Rust shell; keep that stated.
 Control ops are extensible (`ControlOpSpec`, `createControlCodec`, handler
-registry); the credential contract adds its op there. Keep the
-package free of runtime dependencies and use Node built-ins only.
+registry); the credential contract adds its op there.
+
+The native credential handoff lives in `src/credentials` (slot record,
+mint-response validator, custody over an injected `SecretItemStore`, the
+`acquire-credential` reference handler, the provider, the fd 3 frame codec and
+the bridge spawn helper) and `src/webview` (the browser-safe `./webview` entry:
+no Node built-ins, no storage, console, URL or location, no command returns a
+token to JS). Tokens are `SecretString`s; `reveal()` is allowed only in
+`custody.ts`, `control-handler.ts` and `handoff-frame.ts` (a test enforces it).
+Every threat in the README table must keep a test with the named title.
+
+Keep the package free of runtime dependencies and use Node built-ins only.
 
 From this directory, run `npm run build`, `npm run typecheck`, and
 `smrt test src`.

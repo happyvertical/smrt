@@ -127,6 +127,7 @@ contract with its own section.
 | `installation.json` | desktop shell, at every start | `locateInstallation` | absolute paths the shell runs from |
 | `instance.json` | desktop shell, on every phase change | `createFileRendezvous` | the running instance: nonce, control endpoint, state, origin |
 | control channel | desktop shell (server) | `createFileRendezvous`, launcher | `status`, `ensure-ready` (owner-only socket or pipe) |
+| `mcp-slot.json` | desktop shell | shell, `acquire-credential` handler | non-secret credential slot metadata (see the credential handoff) |
 
 `smrt-bundle.json` is static trusted package content (same trust class as the
 sidecar manifest, sealed by the bundle's code signature). `installation.json`
@@ -164,6 +165,9 @@ The older sidecar manifest parser predates this type and still throws plain
 | `invalid_control_message`, `control_message_too_large`, `unsupported_op` | a control-channel message violated the protocol (see below) |
 | `invalid_endpoint`, `untrusted_endpoint` | a control endpoint is malformed, or its directory failed the trust checks |
 | `control_unreachable`, `control_timeout`, `control_aborted`, `control_server_failed` | control-channel transport outcomes |
+
+The credential handoff adds `CredentialErrorCode`; see
+[Credential error codes](#credential-error-codes).
 
 ### SecretString
 
@@ -579,6 +583,321 @@ documented here. -->
 `unexpected_endpoint` cannot arise from a `ready` result: the origin grammar
 (`http://127.0.0.1:<port>`) is enforced by the record and protocol parsers, and
 a violation surfaces as `untrusted_state`.
+### Native credential handoff
+
+The owner mints a local MCP bearer in the signed-in desktop webview (#4726).
+The bearer must reach the MCP bridge that an assistant host (Claude, ChatGPT)
+spawns, without ever sitting in argv, in the environment, in browser storage,
+in a log, or in a file other than the OS secret store. Everything in this
+section is exported from the package root except the webview helper, which is
+the browser-safe subpath `@happyvertical/smrt-desktop/webview`.
+
+```text
+owner webview --fetch POST /api/local/mcp-credentials (cookie, same origin)--> sidecar
+      |  raw response text
+      +--invoke('desktop-credential-put', { slotId, body })--> shell (Rust)
+                          validates, stores in the OS secret store, marks the slot
+launcher --control channel: acquire-credential(instanceNonce, origin)--> shell --> token
+launcher --inherited anonymous pipe, fd 3: { token, origin }--> bridge
+                          (the bridge asks for a refresh over the same pipe)
+```
+
+This package contains the contract and a reference implementation of each
+step the shell mirrors in Rust (parsers, the custody layer, the
+`acquire-credential` handler) plus the parts that run in JavaScript (the
+webview helper, the provider, the fd 3 codec and the bridge spawn helper). The
+OS keychain implementation, the Tauri commands and the control socket are the
+shell's (see the follow-up list at the end of this section).
+
+#### Slot record (`mcp-slot.json`)
+
+One slot per installation in v1. The record holds no secret:
+
+```json
+{
+  "version": 1,
+  "slotId": "2c70f518-b95a-445b-a75e-8126ae7c032a",
+  "scopes": ["notes.read"],
+  "expiresAt": "2026-12-01T12:00:00Z",
+  "state": "minted"
+}
+```
+
+- `slotId`: opaque lowercase UUIDv4 chosen by the desktop app, never by the
+  server. `newSlotId()` generates it; the record is written (`writeSlotRecord`:
+  temp file, fsync, rename, fsync the directory, mode 0600) **before the first
+  request** for that id, as #4726 requires, so a lost response can be retried
+  with the same id.
+- `scopes`: permission slugs (1 to 64, each up to 128 printable ASCII
+  characters without space, `"` or `\`, no duplicates).
+- `expiresAt`: `null` while the slot is only reserved, then the expiry of the
+  credential committed to custody.
+- `state`: `minted` (id reserved; a credential is committed once `expiresAt` is
+  set), `revoking` (disconnect started, the server revoke not yet confirmed:
+  the shell stops serving the credential at once and retries the revoke), or
+  `revoked` (the server confirmed; permanent for the id, so the next connect
+  uses a new id).
+
+`parseSlotRecord` / `serializeSlotRecord` are strict (closed schema, duplicate
+keys rejected, `version: 1` only) and `readSlotRecord` opens with
+`O_NOFOLLOW` and validates the descriptor like every private state file. See
+[`examples/mcp-slot.json`](examples/mcp-slot.json) (shared with the Rust tests).
+
+#### Lifecycle
+
+- **Mint.** The webview POSTs `{ action: 'put', id, scopes, expiresInSeconds }`
+  to `/api/local/mcp-credentials` (the #4726 route: the `put` action is sent as a
+  `POST`). The success reply `{ id, token, scopes, expiresAt }` goes, as raw text,
+  to `desktop-credential-put`. `parseMintResponse(body, slotId)` is the
+  reference validator the shell mirrors: strict JSON, exactly those four keys,
+  `id` equal to the slot, the token matches `^smrt_mcp_[A-Za-z0-9_-]{43}$`, the
+  scopes are valid, `expiresAt` is at least 60 seconds ahead, body at most
+  12 KiB. The token becomes a `SecretString` immediately.
+- **Rotate.** A new PUT on the same slot id replaces the bearer atomically; only
+  the latest committed write verifies on the server (#4726). Custody replaces
+  the item atomically, the `acquire-credential` handler reads custody on every
+  call, and running bridges see a 401 and ask for a refresh over fd 3. Rotate
+  when the remaining lifetime drops below `max(lifetime / 4, 24 h)`.
+- **Retry.** A network error, an unreadable response body, a 5xx, 408 or 429
+  repeats the PUT with the **same** slot id (bounded, three attempts by
+  default). A native rejection after a 200 also retries the PUT, because a
+  fresh PUT replaces the lost bearer without leaving a second active one. A 409
+  `slot_unavailable` (revoked slot) asks the shell for a **new** slot id
+  (`desktop-credential-slot { action: 'replace' }`), at most twice. 403 and
+  other 4xx are not retried.
+- **Revoke (disconnect).** The server revoke comes first (`{ action: 'revoke',
+  id }`; a `revoked` reply and a 409 both count as done), then
+  `desktop-credential-forget { slotId, revoked: true }` makes the shell delete
+  the item and mark the slot `revoked`. If the server cannot be reached the
+  helper still tells the shell (`revoked: false`) so the slot becomes `revoking`
+  and the credential is no longer served; the next connect or disconnect
+  finishes the revoke first. A credential is therefore never forgotten while
+  the server still honors it.
+- **Expiry.** A credential within 30 seconds of `expiresAt` is treated as
+  expired: `acquire-credential` answers `credential_invalid` ("open the app to
+  reconnect") rather than hand out a bearer that dies in flight.
+
+#### Webview helper (`@happyvertical/smrt-desktop/webview`)
+
+```ts
+import { invoke } from '@tauri-apps/api/core';
+import {
+  connectDesktopAssistant,
+  disconnectDesktopAssistant,
+  getDesktopAssistantStatus,
+} from '@happyvertical/smrt-desktop/webview';
+
+const status = await connectDesktopAssistant({
+  invoke,
+  fetch: window.fetch.bind(window),
+  scopes: ['notes.read'],
+  expiresInSeconds: 30 * 24 * 60 * 60,
+});
+// { state: 'connected', slotId, scopes, expiresAt }  (never a token)
+```
+
+`fetch` and Tauri `invoke` are injected, so the helper has no dependency and
+imports no Node built-in (the build and a test check the dist file). It sends
+the request with `credentials: 'same-origin'`, `cache: 'no-store'`,
+`redirect: 'error'` and `referrerPolicy: 'no-referrer'` to a relative URL (no
+`location`, no `URL`), hands `await res.text()` untouched to
+`desktop-credential-put`, and returns only non-secret status. It does not touch
+`localStorage`, `sessionStorage`, IndexedDB, cookies, `console`, `location`,
+`history` or URL construction (a test booby-traps those globals), and every
+rejection from `fetch` or `invoke` is replaced by a `DesktopContractError`
+with a fixed message (the original, which could echo a body, is dropped, never
+chained).
+
+The helper calls four native commands. **No command returns a token to
+JavaScript**:
+
+| Command | Arguments | Returns (non-secret) |
+| --- | --- | --- |
+| `desktop-credential-slot` | `{ action: 'ensure' \| 'replace' }` | `{ slotId, state, scopes, expiresAt }`; persists a new slot before returning |
+| `desktop-credential-put` | `{ slotId, body }` (raw response text) | `{ status: 'active', scopes, expiresAt }` |
+| `desktop-credential-status` | `{}` | the slot (as above) or `null` |
+| `desktop-credential-forget` | `{ slotId, revoked }` | `{ status: 'revoked' \| 'revoking' }` |
+
+The shell must grant these four commands, and only these, to the `main` window
+for the sidecar's loopback origin (`remote.urls: ["http://127.0.0.1:*"]` in a
+dedicated `desktop-credential` capability). This reverses the posture that
+remote content gets no IPC and is owner decision D1 of the design. At call time
+the shell must check that the invoking webview's URL origin equals the
+supervisor's *current* ready origin exactly (the capability glob matches any
+port), that `slotId` is the persisted slot, and that the body is at most 12 KiB
+and valid per `parseMintResponse`.
+
+#### Control channel: `acquire-credential`
+
+`createCredentialControlHandler({ custody, slot, current })` is the reference
+handler. It takes a request `{ v: 1, op: 'acquire-credential', instanceNonce,
+origin }` and returns `{ ok: true, lease }` or `{ ok: false, code }`, and it
+never throws. It is written against a minimal structural `ControlContext {
+instanceNonce, origin }` and imports nothing from the control protocol; the
+protocol registry registers it. Checks, in order:
+
+1. `instance_mismatch` when the nonce or origin differs from the running
+   instance (or the instance is not ready). Custody is not touched, so a stale
+   launcher cannot trigger a keychain read.
+2. `credential_unavailable` when there is no slot, the slot has no committed
+   credential, custody holds no item, or the store fails.
+3. `credential_invalid` when the slot is `revoking` or `revoked`, the item is
+   malformed, or the credential is expired.
+
+`encodeAcquireCredentialResponse` / `parseAcquireCredentialResponse` are the
+wire form (`{"v":1,"ok":true,"origin":"…","token":"…","expiresAt":"…"}` or
+`{"v":1,"ok":false,"code":"…"}`); the bearer appears in a success reply and
+nowhere else.
+
+`createControlChannelCredentialProvider({ send })` is the launcher side. `send`
+is injected (the rendezvous transport implements it); the provider validates
+the nonce and origin before sending, applies a timeout (default 2 s) and the
+caller's `AbortSignal`, decodes the reply strictly, requires the reply origin
+to equal the requested origin, and refuses an expired bearer. Every transport
+or parse failure is `credential_unavailable` with the cause dropped.
+
+#### fd 3 frame protocol and bridge spawn
+
+The launcher hands the bearer to the bridge over an anonymous pipe inherited
+at descriptor 3 (a socketpair on POSIX, a named pipe on Windows via libuv's
+extra stdio, so both directions work everywhere). argv carries only the
+non-secret `--credential-fd=3`, and the environment is built from scratch.
+
+NDJSON, one frame per line, at most 2048 bytes including the newline, `"v":1`,
+closed schemas, duplicate keys rejected. Each side accepts only the other
+side's frames (`parseHandoffFrame(line, direction)`):
+
+| Direction | Frame |
+| --- | --- |
+| launcher to bridge | `{"v":1,"type":"credential","seq":0,"origin":"http://127.0.0.1:N","token":"smrt_mcp_…","expiresAt":"…"}`; `seq` 0 is the initial frame, a higher `seq` is a refresh after rotation, expiry or a sidecar port change |
+| launcher to bridge | `{"v":1,"type":"unavailable","seq":N,"code":"credential_invalid" \| "credential_unavailable" \| "instance_mismatch"}` |
+| bridge to launcher | `{"v":1,"type":"refresh"}` after a 401, a 403 or a refused connection (the bridge rate-limits it to one per ten seconds) |
+
+`HandoffFrameDecoder` reassembles frames from pipe chunks, bounds buffering at
+the cap and poisons itself on the first violation.
+`spawnBridgeWithCredential({ command, args, env, lease, refresh })` spawns the
+child with `stdio: [..., 'pipe']`, no shell, and exactly the given `env`; it
+refuses (`handoff_failed`) if the bearer appears in the command, the arguments,
+the environment or the working directory, refuses a lease whose origin is not
+`http://127.0.0.1:<port>`, writes the initial frame before the child can read,
+answers `refresh` requests through the `refresh` callback (typically
+`provider.acquire` after a `status` check), serializes concurrent requests, and
+closes the pipe when the child exits or misbehaves.
+
+The bridge side (`--credential-fd` in app-cli) is out of scope here: it needs
+only `parseHandoffFrame`/`HandoffFrameDecoder` (or the 30 lines duplicated),
+and when `--credential-fd` is present it must ignore `<PREFIX>_TOKEN`,
+`<PREFIX>_SERVER_URL` and config files, pin the origin from the frame and keep
+refusing redirects.
+
+#### SecretString rules
+
+The bearer is a `SecretString` from the moment it is parsed. `reveal()` is
+called in exactly three source files, enforced by a test that scans the
+sources: `credentials/custody.ts` (serializing the item), `credentials/
+control-handler.ts` (the control wire reply) and `credentials/handoff-frame.ts`
+(the fd 3 frame and the argv/env guard `containsSecret`). Results, leases and
+stored credentials contain a `SecretString`, so `JSON.stringify`,
+`util.inspect`, `console.log`, template literals and `structuredClone` of any
+of them are safe. `SecretItemStore` buffers are zeroed after use (JavaScript
+strings cannot be, see the residual risks).
+
+#### Credential error codes
+
+All are `DesktopContractError` codes with fixed, value-free messages; `field`
+is a static schema name.
+
+| Code | Meaning |
+| --- | --- |
+| `credential_unavailable` | no slot, never minted, custody missing or failing, transport failure: connect the assistant in the app |
+| `credential_invalid` | expired, revoked or revoking, or a malformed stored item: reconnect in the app |
+| `instance_mismatch` | the request names another app instance, origin or malformed nonce |
+| `invalid_mint_response` | the mint reply is not the documented success reply (`field` names the part) |
+| `invalid_handoff_frame`, `handoff_frame_too_large` | fd 3 frame violations |
+| `handoff_failed` | the bridge could not be spawned safely, or the pipe is closed |
+| `slot_unavailable` | the server keeps refusing new slot ids, or a pending revoke is unconfirmed |
+| `credential_forbidden` | not the signed-in owner (403) |
+| `credential_rejected` | other 4xx, or invalid helper input |
+| `credential_request_failed` | network or server failure after the retry budget, or aborted |
+| `native_rejected` | the shell rejected the body or a command failed |
+| `invalid_native_response` | a native command replied outside its schema |
+
+#### Threat model
+
+Every row names the mitigation and the exact tests (`file: test name`) that
+close it. Rows whose enforcement point is the Rust shell or contract (b) say
+so; those parts are not claimed closed by this package.
+
+| # | Threat | Mitigation | Closing test(s) |
+| --- | --- | --- | --- |
+| T1 | Same-user malware reads the keychain item | The shell stores the item in the OS secret store (macOS: created by the signed shell, `WhenUnlockedThisDeviceOnly`, non-synchronizable; Windows/Linux have no same-user boundary: residual). Scopes and lifetime are bounded by the owner. Custody touches only `mcp-credential.<uuid>` names. | `credentials/custody.test.ts`: `T1: custody only touches mcp-credential.<uuid> item names`. Item attributes are asserted in the shell's macOS test (follow-up). |
+| T2 | Another OS user | Private directory 0700, files 0600, readers validate `fstat` (owner, mode); control-channel peer uid/SID check and pipe DACL are the shell's and contract (b)'s. | `credentials/slot-record.test.ts`: `T2: readSlotRecord rejects a foreign-owned, group-readable or symlinked record`. Peer-credential rejection is a Rust test (follow-up). |
+| T3 | Token in argv / `ps` | The bearer is never an argument (`--credential-fd=3` only); the spawn helper refuses a command, argument or cwd that contains it. | `credentials/bridge-spawn.test.ts`: `T3: argv and env passed to the spawner never contain the token`; `T3/T4: refuses to spawn when the token is in argv, env or command`; `T3: ps shows no token in the child command line` (real child). |
+| T4 | Token in the environment (`/proc/<pid>/environ`) | The child environment is exactly what the launcher passes, never inherited; the bridge in fd mode ignores `<PREFIX>_TOKEN`. | `credentials/bridge-spawn.test.ts`: `T4: the child environment as the OS reports it holds no token` (`/proc/<pid>/environ` on Linux, `ps eww` on macOS, real child with a real fd 3 pipe); `delivers the initial frame over fd 3 and keeps the token out of argv and env`. |
+| T5 | Crash dumps and logs | The token lives in a `SecretString` until the three reveal sites; diagnostics are fixed text; buffers are zeroed. | `credentials/leak.test.ts`: `T5: SecretString is not serialized by JSON, inspect, String, template, structuredClone or console`; `T5: errors built with secrets in their context do not retain them`; `T5: every credential error message is fixed, value-free text`; the describe `T5/T11: every exported parser and handler, fed token-bearing invalid input`; `reveal() is called only by custody serialization, the wire encoders and the secret guard`. |
+| T6 | Webview XSS reaching the IPC command | No command returns a token; the helper never stores, logs or builds URLs from the body; the shell checks the webview origin equals the current ready origin, the slot id, and the body (follow-up). XSS in this origin already holds the session cookie and can mint itself, so the IPC path grants nothing new. | `webview/webview.test.ts`: `T6: touches no storage, cookie, console, URL or location API`; `T6: has no path to those APIs in its source or its import closure`; `mints with a same-origin POST and passes the RAW response text only to the put command`. Origin/slot/body rejection is a Rust test (follow-up). |
+| T7 | Replay after rotation | Server: only the latest write verifies (`app-runtime/src/local-mcp-tokens.test.ts`: `mints, rotates, expires and revokes a private owner slot without colliding with operator tokens`). Custody replaces atomically and the handler reads it on every call; the pipe delivers the new bearer on refresh. | `credentials/control-handler.test.ts`: `T7: after rotation the handler returns only the latest bearer`; `credentials/bridge-spawn.test.ts`: `T7: a refresh request after a simulated 401 delivers the rotated token`; `credentials/custody.test.ts`: `replaces atomically: a later put wins and old bytes are gone`. |
+| T8 | Confused deputy via the control channel | `acquire-credential` is bound to the current `instanceNonce` and `origin` and refuses before touching custody; one request per connection and the peer check are contract (b)'s and the shell's. | `credentials/control-handler.test.ts`: `T8: wrong nonce or origin yields instance_mismatch without touching custody`. Foreign peer is a Rust test (follow-up). |
+| T9 | TOCTOU on state files | Readers open `O_NOFOLLOW` and validate the descriptor; writers use temp (`O_EXCL`) plus rename; clients never repair or delete. | `credentials/slot-record.test.ts`: `T9: a symlink swapped in for the record is never followed or repaired`; `persists the slot before the first request can be made` (write order); the stage-1 `internal/private-file.test.ts`. |
+| T10 | Windows named-pipe squatting | Random pipe name published in the private directory, `FILE_FLAG_FIRST_PIPE_INSTANCE`, DACL: contract (b) and the shell. This contract only guarantees that the provider opens no endpoint of its own. | `credentials/provider.test.ts`: `T10: talks only through the injected send and never opens an endpoint itself`. Name grammar belongs to contract (b)'s tests; the "second `CreateNamedPipe` fails" test is a Windows Rust test (follow-up). Residual: a Node client cannot query the server pid/SID. |
+| T11 | Token in error messages | Code-only errors; parsers never echo input; the webview helper replaces every `fetch`/`invoke` rejection with a fixed code and does not chain it. | `credentials/mint-response.test.ts`: `T11: never echoes the body or the token in any failure`; `webview/webview.test.ts`: `T11: a token-bearing malformed body yields a fixed-code error without the token`; `credentials/leak.test.ts`: `the webview helper maps token-bearing failures to fixed codes` and the `T5/T11` describe. |
+| T12 | Port squatting after ready | The credential is released only for the nonce and origin the channel confirms; the provider requires the reply origin to equal the requested origin. | `credentials/control-handler.test.ts`: `T12: an origin that differs from the running instance never gets a token`; `credentials/provider.test.ts`: `T12: rejects a lease whose origin differs from the origin it asked about`. Nonce echo in the health route is optional (design D5). |
+| T13 | Credential sent to a non-owned endpoint | Origin grammar `http://127.0.0.1:<1..65535>` everywhere (no `localhost`, no `[::1]`, no https, no path or userinfo); the bridge pins the origin from the frame. | `credentials/handoff-frame.test.ts`: `T13: only the exact loopback origin grammar is accepted`; `credentials/provider.test.ts`: `T13: only the loopback origin grammar is ever accepted in a reply`; `credentials/bridge-spawn.test.ts`: `T13: refuses a lease for a non-loopback origin`. |
+| T14 | Roaming profile copies state to another machine | State lives only under `app_local_data_dir` (`LOCALAPPDATA`, never `APPDATA`). | Stage-1 `install/locations.test.ts`: `uses LOCALAPPDATA and never the roaming APPDATA on Windows`. |
+
+#### Residual risks
+
+- **Webview JavaScript.** The bearer exists as an immutable JS string in the
+  page realm between `res.text()` and garbage collection. Script running in
+  that realm (XSS, a compromised dependency) can wrap `fetch`, `Response.text`
+  or `invoke` and read it, and the WebView network inspector shows it while
+  devtools are open. The mitigations are a strict CSP, devtools off in release
+  builds, no storage, and the argument that the same script could mint its own
+  token with the session cookie. The stronger option (design D1-B: the shell
+  mints natively with the webview cookie so the token never enters JS) is not
+  implemented.
+- **Same-user processes.** On macOS the keychain ACL prompts for other
+  binaries; on Windows and Linux any same-user process can read the OS store
+  entry, and `ptrace`/`task_for_pid` (restricted by Yama and the hardened
+  runtime, not eliminated) can read the launcher or bridge memory. The fd 3
+  pipe removes the bearer from `argv`, `environ` and children, not from memory.
+- **Memory.** JavaScript strings cannot be zeroed; `SecretString` limits
+  accidental serialization, not memory inspection or a heap snapshot.
+- **The control channel** relies on peer-uid/SID checks in the shell. The
+  reference handler cannot enforce them.
+- **Bridge behavior** (ignoring env in fd mode, pinning the origin, rate
+  limiting refresh) is app-cli's and is not enforced by this package.
+
+#### Mapping to `LauncherProvider` (#4791)
+
+- `acquireCredential(context)` calls
+  `provider.acquire({ instanceNonce, origin, signal })` with the nonce and
+  origin the rendezvous reported for the same instance, and returns
+  `{ token: lease.token.reveal(), release }` **only** as long as #4791 still
+  passes the bearer as `<PREFIX>_TOKEN`. Once #4729 moves to fd 3, use
+  `spawnBridgeWithCredential` instead and drop the env handoff; the launcher's
+  `childEnvironment` must then contain no token.
+- #4791 accepts `localhost` origins; this contract allows only
+  `http://127.0.0.1:<port>`, so #4729 has to narrow `LOOPBACK_HOSTS`.
+- Error mapping: `credential_unavailable` and `credential_invalid` map to the
+  launcher's "connect the assistant in the app" outcome (distinct hints:
+  never connected versus expired or revoked); `instance_mismatch` means the
+  rendezvous answer went stale, so re-run `ensureReady` once and retry; every
+  other `DesktopContractError` from this contract is a launcher fault, not a
+  user action.
+- `release` has nothing to release for the pipe handoff: closing the
+  `BridgeHandoff` closes fd 3.
+
+#### Shell and elsewhere (follow-ups, not in this package)
+
+- Rust shell: the OS secret store behind `SecretItemStore` (shared with the
+  vault keys of #4792), the four commands and the `desktop-credential`
+  capability with the checks above, a per-slot mutex, the control server and
+  its peer-credential checks, mirrors of `parseSlotRecord`/`parseMintResponse`
+  tested against `examples/mcp-slot.json`.
+- app-cli: `--credential-fd` mode using the frame codec (a dependency on this
+  package, or a copy of the 30-line codec).
+- #4729: env to fd 3, narrow the origin grammar, wire the control channel.
 
 ### Versioning
 
