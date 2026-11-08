@@ -1,7 +1,7 @@
 /**
  * ai:usage Command — prompt-run observability report (#4751).
  *
- * Groups `_smrt_ai_usage` by prompt, model, tier, class, tenant or fusion
+ * Groups `_smrt_ai_usage` by prompt, model, tier, class, tenant, fusion or source
  * through core's `reportAiUsage()`: calls, tokens, estimated cost (with its
  * basis stated and uncosted calls counted beside the total), p50 duration,
  * recorded substitutions and outcome labels per bucket.
@@ -47,6 +47,7 @@ const DIMENSIONS: readonly AiUsageReportDimension[] = [
   'class',
   'tenant',
   'fusion',
+  'source',
 ];
 
 /** Rendered for a dimension a row did not carry. */
@@ -262,13 +263,13 @@ export function formatAiRunReport(report: AiRunReport): string {
 export const aiUsageCommand: CLICommand = {
   name: 'ai:usage',
   description:
-    'Report AI usage by prompt, model, tier, class, tenant or fusion (#4751)',
+    'Report AI usage by prompt, model, tier, class, tenant, fusion or source (#4751, #4756)',
   args: [],
   options: {
     by: {
       type: 'string',
       description:
-        'Comma-separated grouping: prompt, model, tier, class, tenant, fusion (default: prompt); fusion also totals runs',
+        'Comma-separated grouping: prompt, model, tier, class, tenant, fusion, source (default: prompt); fusion also totals runs',
     },
     since: {
       type: 'string',

@@ -421,6 +421,7 @@ export const AI_USAGE_REPORT_DIMENSIONS = [
   'class',
   'tenant',
   'fusion',
+  'source',
 ] as const;
 
 export type AiUsageReportDimension =
@@ -570,13 +571,19 @@ function dimensionValue(
       const fusion = tags?.fusionKey;
       return typeof fusion === 'string' && fusion.length > 0 ? fusion : null;
     }
+    case 'source': {
+      // Binding origin from the `source` tag (#4756): byo, local, hosted, app.
+      const source = tags?.source;
+      return typeof source === 'string' && source.length > 0 ? source : null;
+    }
   }
 }
 
 const REPORT_PAGE_SIZE = 1000;
 
 /**
- * Group persisted AI usage by prompt, model, tier, class, tenant or fusion.
+ * Group persisted AI usage by prompt, model, tier, class, tenant, fusion or
+ * binding source.
  *
  * Rows are read in bounded keyset pages (never one unbounded result set) and
  * aggregated in memory, which keeps the median and the tag-derived
