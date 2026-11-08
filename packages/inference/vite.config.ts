@@ -1,3 +1,3 @@
 import { createPackageConfig } from '../../vite.config.base.js';
 
-export default createPackageConfig('inference', { entries: ['node', 'resolver'] });
+export default createPackageConfig('inference', { entries: ['node', 'resolver', 'gate'] });

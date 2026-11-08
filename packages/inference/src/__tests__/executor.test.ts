@@ -16,6 +16,7 @@ import {
   type InferenceModelClient,
   type InferenceTarget,
   type InferenceTier,
+  InferenceUnavailableError,
   type InferenceUsageRecord,
   resolveInferenceFromConfig,
 } from '@happyvertical/smrt-core';
@@ -357,6 +358,26 @@ describe('chain executor', () => {
     const h = harness(chain('a', 'b'), { a: fail(abort) });
     await expect(h.client.message('hi')).rejects.toBe(abort);
     expect(h.calls).toHaveLength(1);
+    expect(h.usage).toEqual([]);
+  });
+
+  it('stops on a hosted-gate block and records nothing more (#4760)', async () => {
+    const blocked = new InferenceUnavailableError({
+      reason: 'entitlement',
+      mode: 'hosted',
+      entitlement: { policy: 'kill-switch', disabledBy: 'global' },
+    });
+    const h = harness(
+      chain('a', 'b'),
+      {},
+      {
+        clientFor: async () => {
+          throw blocked;
+        },
+      },
+    );
+    await expect(h.client.message('hi')).rejects.toBe(blocked);
+    // Core already wrote the `blocked` row; no `failed` row on top of it.
     expect(h.usage).toEqual([]);
   });
 

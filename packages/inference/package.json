@@ -22,6 +22,10 @@
     "./resolver": {
       "types": "./dist/resolver.d.ts",
       "import": "./dist/resolver.js"
+    },
+    "./gate": {
+      "types": "./dist/gate.d.ts",
+      "import": "./dist/gate.js"
     }
   },
   "scripts": {

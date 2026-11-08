@@ -28,6 +28,7 @@ import {
   type InferenceModelClient,
   type InferenceTarget,
   type InferenceTier,
+  isInferenceUnavailableError,
 } from '@happyvertical/smrt-core';
 import { classifyInferenceFailure, isInferenceAbort } from './classify.js';
 import {
@@ -313,9 +314,14 @@ class ChainCall {
         }
         if (outcome.cls === undefined) {
           // Not a routing failure: a caller abort records nothing (nothing
-          // ran to completion by choice); anything else is recorded and
-          // rethrown as the caller's own error.
-          if (!isInferenceAbort(outcome.error)) {
+          // ran to completion by choice), nor does a hosted-gate block
+          // (`AI_UNAVAILABLE`, #4760: core already wrote its `blocked`
+          // row); anything else is recorded and rethrown as the caller's
+          // own error.
+          if (
+            !isInferenceAbort(outcome.error) &&
+            !isInferenceUnavailableError(outcome.error)
+          ) {
             await this.recordFailure('failed', 'unclassified');
           }
           throw outcome.error;
