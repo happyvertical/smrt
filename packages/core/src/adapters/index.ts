@@ -4,6 +4,8 @@
  * Pre-built components for common observability and communication patterns:
  * - AiUsageCollector / AiUsagePersistenceHandler: AI usage handlers for
  *   normalized telemetry collection and persistence
+ * - createAiUsageRecorder / attachAiUsageRecorder: the usage pipeline as an
+ *   `onUsage` sink for any AI client (#3077)
  * - MetricsAdapter: Signal adapter for execution metrics
  *   (Prometheus-compatible)
  * - PubSubAdapter: Signal adapter to broadcast signals to subscribers
@@ -16,6 +18,18 @@ export {
   AiUsageCollector,
   AiUsagePersistenceHandler,
 } from './ai-usage.js';
+export type {
+  AiUsageRecorder,
+  AiUsageTenantResolver,
+  CreateAiUsageRecorderOptions,
+} from './ai-usage-recorder.js';
+export {
+  attachAiUsageRecorder,
+  createAiUsageRecorder,
+  getAiUsageTenantResolver,
+  resolveAiUsageTenantId,
+  setAiUsageTenantResolver,
+} from './ai-usage-recorder.js';
 export {
   DEFAULT_AI_COST_RATES,
   estimateAiUsageCost,

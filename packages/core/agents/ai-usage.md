@@ -1,8 +1,45 @@
 # AI usage observability (#4751)
 
 `_smrt_ai_usage` answers "how does model X do on prompt Y". Sources:
-`src/adapters/ai-usage.ts` (persistence), `src/system/ai-usage-observability.ts`
-(outcome labels, report), `src/class.ts` (`listAiUsage` / `summarizeAiUsage`).
+`src/adapters/ai-usage.ts` (persistence), `src/adapters/ai-usage-recorder.ts`
+(the shared pipeline and public recorder, #3077),
+`src/system/ai-usage-observability.ts` (outcome labels, report), `src/class.ts`
+(`listAiUsage` / `summarizeAiUsage`).
+
+## Recording from any client (#3077)
+
+One pipeline serves every client: `normalizeAiUsageEvent()` →
+`estimateAiUsageCost()` → handlers (`AiUsagePersistenceHandler` when a db is
+present and `persist` is on, plus `usage.handlers`; instances also keep an
+`AiUsageCollector`). Usage config merges as global `config({ usage })` < local.
+
+- `createAiUsageRecorder({ db?, className?, tenantId?, usage?, tags?, aiConfig? })`
+  returns an `onUsage` sink for clients that are not SMRT objects. It never
+  rejects; `tags` sit under the event's own tags; `aiConfig` is the
+  provider/model fallback.
+- `attachAiUsageRecorder(aiConfig, recorder)` returns a copy whose `onUsage`
+  runs the caller's callback, then the recorder. Re-attaching replaces the
+  previous sink instead of stacking it.
+- `SmrtClass#withAiUsage(aiConfig, { tenantId?, tags? })` does the same with the
+  instance's pipeline: `getAI(this.withAiUsage(this.options.ai))`.
+- Sinks are branded. When `SmrtClass` builds its own client (default or tier)
+  from a config that already carries one, it drops the sink and keeps the
+  wrapped caller callback, so a call is recorded once; the sink's explicit
+  `tenantId`/`tags` (`aiUsageSinkAttribution`) still apply, while class name,
+  instance tenant and ambient tenant follow the building instance. Keep that
+  unwrap and attribution on every client the class builds (default and tier).
+- Tenant: explicit `tenantId` (a string; `null` = global, skip ambient) →
+  instance `tenantId` (non-empty) → ambient tenant from
+  `setAiUsageTenantResolver()` → none. smrt-tenancy registers `getTenantId()`
+  there at `enableTenancy()` (a system context yields none). Attribution never
+  guesses: with no source the row is global.
+- smrt-agents: `resolveAgentAIOptions()` attaches a recorder when given a db,
+  and `Agent.initialize()` wires `options.ai` through `withAiUsage()`. Other raw
+  `getAI()` sites are converted under #4756.
+- Cost rates: `aiCostRateKeys()` tries `provider:model`, `model`, then for a
+  gateway id (`openai/gpt-4.1-mini`) `openai:gpt-4.1-mini` and `gpt-4.1-mini`,
+  one leading segment at a time. Rate lookups use own keys only. The
+  missing-rate warning is logged once per `provider:model`.
 
 ## Tags and lifted columns
 
