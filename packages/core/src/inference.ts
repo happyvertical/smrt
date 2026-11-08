@@ -1,0 +1,625 @@
+/**
+ * Inference tiers and the binding resolver seam (#4750, epic #4749).
+ *
+ * Callers ask for a quality tier (`cheap < good < great < best`, or `auto`)
+ * instead of a provider and model. A binding maps each tier to an
+ * {@link InferenceTarget}. Core owns the vocabulary, the config block, and the
+ * seam; behavior such as alias chains, fusions, and layered per-user/tenant
+ * bindings is registered into the seam by a later package through
+ * {@link setInferenceResolver}, so core never imports it.
+ *
+ * With no `inference` configuration and no registered resolver every tier
+ * resolves to an empty target with `via: 'default'`, which `getAiClient(tier)`
+ * maps to the instance's existing AI client. Unconfigured apps see no change.
+ *
+ * This module is browser-safe and imports nothing from `@happyvertical/ai`.
+ */
+
+import { getSmrtModuleConfig } from './config/global-config.js';
+import { config as globalSignalConfig } from './config.js';
+import { SmrtError } from './smrt-error.js';
+
+/** Ordered quality tiers, cheapest first. `fast` is deliberately not a tier. */
+export const INFERENCE_TIERS = ['cheap', 'good', 'great', 'best'] as const;
+
+/** One of the ordered quality tiers. */
+export type InferenceTier = (typeof INFERENCE_TIERS)[number];
+
+/** A tier request: a concrete tier, or `auto` to use the app default. */
+export type InferenceTierRequest = InferenceTier | 'auto';
+
+/**
+ * Latency hint, independent of quality. A binding may honor it; core only
+ * forwards it.
+ */
+export type InferenceLatency = 'interactive' | 'background';
+
+/** The tier `auto` resolves to when no `inference.defaultTier` is configured. */
+export const DEFAULT_INFERENCE_TIER: InferenceTier = 'good';
+
+/**
+ * Target shapes. `single` (the default when `kind` is omitted) is one
+ * provider and model. `alias` names an entry of `inference.aliases`, and
+ * `candidates` is an inline ordered chain; both are run by the registered
+ * {@link InferenceExecutor} (`@happyvertical/smrt-inference`, #4752). Later
+ * children add further kinds (`fusion`, #4753).
+ */
+export type InferenceTargetKind = 'single' | 'alias' | 'candidates';
+
+/**
+ * One entry of an ordered fallback chain (#4752).
+ *
+ * A candidate is exactly one of: a provider and model (`provider`, `model`,
+ * optional `baseUrl` with `apiKeyEnv` or `apiKey`), a #4674 preset with a
+ * model (`preset`, `model`, optional `apiKeyEnv`), or a nested alias
+ * reference (`alias`), expanded in place. Keys are read from the environment
+ * variable named by `apiKeyEnv` at call time and never logged or tagged; a
+ * key travels only with its own `baseUrl` (the pair rule on
+ * {@link InferenceTarget.apiKey}).
+ */
+export interface InferenceCandidate {
+  /** Provider name (`openai`, `anthropic`, ...). */
+  provider?: string;
+  /** Model id. */
+  model?: string;
+  /** Provider base URL; required with `apiKeyEnv` / `apiKey`. */
+  baseUrl?: string;
+  /** Environment variable holding this candidate's key. */
+  apiKeyEnv?: string;
+  /** Literal key (resolvers only; never put keys in config files). */
+  apiKey?: string;
+  /** A #4674 preset id (`openrouter`, `lemonade`, `llama.cpp`, `lm-studio`). */
+  preset?: string;
+  /** Another alias, expanded in place. */
+  alias?: string;
+  /** Per-call defaults for this candidate; caller options win. */
+  params?: Record<string, unknown>;
+}
+
+/** `inference.aliases.<name>`: a version-free name for an ordered chain. */
+export interface InferenceAlias {
+  /** Tried in order; the first that answers wins. */
+  candidates: InferenceCandidate[];
+  /** Free text for settings screens and `smrt doctor --ai`. */
+  description?: string;
+}
+
+/**
+ * A tier's binding target.
+ *
+ * The default `single` kind is an `AIConfig`-shaped target: every field is
+ * optional, and a field that is absent inherits from the instance's
+ * configured AI client. An empty target means "the configured client".
+ *
+ * Extension point: `kind` selects the shape. `alias` (`{ alias }`) and
+ * `candidates` (`{ candidates }`) are chains run by the registered
+ * {@link InferenceExecutor} (#4752); a later child adds `fusion`. A target
+ * with `alias` or `candidates` and no `kind` is read as that kind (see
+ * {@link inferenceTargetKind}). Code that consumes a target must ignore
+ * members it does not understand rather than reject them.
+ */
+export interface InferenceTarget {
+  /** Target shape; see {@link inferenceTargetKind} for the default. */
+  kind?: InferenceTargetKind;
+  /** Provider name (`openai`, `anthropic`, ...). Absent: the configured one. */
+  provider?: string;
+  /** Model id. Absent: the provider's configured default model. */
+  model?: string;
+  /** Provider base URL, for OpenAI-compatible endpoints. */
+  baseUrl?: string;
+  /**
+   * Credential for this target. Never logged or tagged. Endpoint and key
+   * travel as an explicit pair and an unbound pair fails closed: a target
+   * naming its own `baseUrl` must carry its own key (a placeholder such as
+   * `'smrt-local'` for keyless local servers), and a target with its own key
+   * must name its `baseUrl`. A target on another provider with neither uses
+   * that provider's default endpoint and own key variable
+   * (`OPENAI_API_KEY`, ...), and is refused while the SDK-wide
+   * `HAVE_AI_BASE_URL` / `HAVE_AI_API_KEY` fallbacks are set.
+   */
+  apiKey?: string;
+  /** Per-call defaults (temperature, maxTokens, ...); caller options win. */
+  params?: Record<string, unknown>;
+  /** The latency class this target serves, if the binding declares one. */
+  latency?: InferenceLatency;
+  /** `kind: 'alias'`: the `inference.aliases` entry to run. */
+  alias?: string;
+  /** `kind: 'candidates'`: an inline ordered chain. */
+  candidates?: InferenceCandidate[];
+}
+
+/**
+ * The effective kind of a target: its `kind`, else `alias` when it names an
+ * alias, else `candidates` when it carries a list, else `single`. Unknown
+ * kinds from later children are returned as written.
+ */
+export function inferenceTargetKind(
+  target: InferenceTarget | undefined | null,
+): string {
+  if (!target || typeof target !== 'object') return 'single';
+  const kind: unknown = target.kind;
+  if (typeof kind === 'string' && kind !== '') return kind;
+  if (typeof target.alias === 'string') return 'alias';
+  if (Array.isArray(target.candidates)) return 'candidates';
+  return 'single';
+}
+
+/** `SmrtConfig.inference`: the app's tier bindings. */
+export interface InferenceConfig {
+  /** The tier `auto` resolves to. Default `good`. */
+  defaultTier?: InferenceTier;
+  /** Tier bindings. A tier without a binding uses the configured client. */
+  tiers?: Partial<Record<InferenceTier, InferenceTarget>>;
+  /**
+   * Named ordered chains a tier (or a candidate) can reference by name
+   * (#4752). Each alias is replaced whole by the highest layer defining it.
+   */
+  aliases?: Record<string, InferenceAlias>;
+  /**
+   * Walk down the tier ladder when every candidate of a chain tier fails
+   * (#4752). Default `true`; a call's `minimumTier` stops the walk.
+   */
+  degrade?: boolean;
+}
+
+/** Input to an {@link InferenceResolver}. */
+export interface InferenceRequest {
+  tier: InferenceTierRequest;
+  latency?: InferenceLatency;
+  tenantId?: string | null;
+  userId?: string | null;
+  className?: string;
+  promptKey?: string;
+}
+
+/** Where a binding came from. */
+export type InferenceResolutionSource = 'default' | 'config' | 'resolver';
+
+/** Output of an {@link InferenceResolver}. */
+export interface InferenceResolution {
+  /** The concrete tier that answers (`auto` is resolved). */
+  tierResolved: InferenceTier;
+  /** The target for that tier. An empty target means the configured client. */
+  target: InferenceTarget;
+  via: InferenceResolutionSource;
+}
+
+/** Context handed to a registered resolver. */
+export interface InferenceResolverContext {
+  /** The merged inference config (instance > env > `config()` > smrt.config). */
+  config: InferenceConfig | undefined;
+  /** The built-in config resolution, for resolvers that layer over it. */
+  resolveFromConfig(request: InferenceRequest): InferenceResolution;
+}
+
+/**
+ * Replaceable tier binding resolution.
+ *
+ * Return a resolution to bind the request, or `undefined` to defer to the
+ * built-in config resolution. A resolver must not call a model to decide.
+ *
+ * The per-user resolver planned in #4666 should be implemented as an
+ * `InferenceResolver` that returns a tier → target binding map (one
+ * {@link InferenceTarget} per tier, selected here by `request.tier`), not as
+ * a single `AIClientOptions` replacement for the configured client.
+ */
+export interface InferenceResolver {
+  resolve(
+    request: InferenceRequest,
+    context: InferenceResolverContext,
+  ): InferenceResolution | undefined | Promise<InferenceResolution | undefined>;
+}
+
+const RESOLVER_KEY = Symbol.for('smrt.inference.resolver');
+
+type ResolverHolder = { [RESOLVER_KEY]?: InferenceResolver };
+
+/**
+ * Register the process-wide inference resolver. Pass `undefined` to restore
+ * the built-in config resolution. Stored on `globalThis` so the registration
+ * survives HMR and duplicate core copies, like the object registry.
+ */
+export function setInferenceResolver(
+  resolver: InferenceResolver | undefined,
+): void {
+  if (
+    resolver !== undefined &&
+    (resolver === null ||
+      typeof (resolver as Partial<InferenceResolver>).resolve !== 'function')
+  ) {
+    throw new Error('An inference resolver must implement resolve().');
+  }
+  const holder = globalThis as ResolverHolder;
+  if (resolver === undefined) delete holder[RESOLVER_KEY];
+  else holder[RESOLVER_KEY] = resolver;
+}
+
+/**
+ * The active process-wide resolver: the registered one, or the built-in
+ * resolver that reads the merged `inference` config.
+ */
+export function getInferenceResolver(): InferenceResolver {
+  return (
+    (globalThis as ResolverHolder)[RESOLVER_KEY] ?? builtInInferenceResolver
+  );
+}
+
+/** Built-in resolution over the merged config; never calls a model. */
+export const builtInInferenceResolver: InferenceResolver = {
+  resolve: (request, context) => context.resolveFromConfig(request),
+};
+
+export function isInferenceTier(value: unknown): value is InferenceTier {
+  return (
+    typeof value === 'string' &&
+    (INFERENCE_TIERS as readonly string[]).includes(value)
+  );
+}
+
+export function isInferenceTierRequest(
+  value: unknown,
+): value is InferenceTierRequest {
+  return value === 'auto' || isInferenceTier(value);
+}
+
+/** Negative when `a` is cheaper than `b`, zero when equal, positive above. */
+export function compareInferenceTiers(
+  a: InferenceTier,
+  b: InferenceTier,
+): number {
+  return INFERENCE_TIERS.indexOf(a) - INFERENCE_TIERS.indexOf(b);
+}
+
+function assertTierRequest(
+  value: unknown,
+): asserts value is InferenceTierRequest {
+  if (!isInferenceTierRequest(value)) {
+    throw new Error(
+      `Unknown inference tier "${String(value)}"; expected one of auto, ${INFERENCE_TIERS.join(', ')}.`,
+    );
+  }
+}
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function readEnv(name: string): string | undefined {
+  const env =
+    typeof process !== 'undefined' && process?.env ? process.env : undefined;
+  const value = env?.[name];
+  return typeof value === 'string' && value.trim() !== ''
+    ? value.trim()
+    : undefined;
+}
+
+/**
+ * Environment layer: `SMRT_INFERENCE_DEFAULT_TIER` and, per tier,
+ * `SMRT_INFERENCE_<TIER>_PROVIDER` / `SMRT_INFERENCE_<TIER>_MODEL`.
+ */
+function inferenceConfigFromEnv(): InferenceConfig | undefined {
+  const out: InferenceConfig = {};
+  const defaultTier = readEnv('SMRT_INFERENCE_DEFAULT_TIER');
+  if (defaultTier) out.defaultTier = defaultTier as InferenceTier;
+  for (const tier of INFERENCE_TIERS) {
+    const upper = tier.toUpperCase();
+    const provider = readEnv(`SMRT_INFERENCE_${upper}_PROVIDER`);
+    const model = readEnv(`SMRT_INFERENCE_${upper}_MODEL`);
+    if (provider || model) {
+      out.tiers ??= {};
+      out.tiers[tier] = {
+        ...(provider ? { provider } : {}),
+        ...(model ? { model } : {}),
+      };
+    }
+  }
+  return out.defaultTier || out.tiers ? out : undefined;
+}
+
+/**
+ * Merge inference config layers, lowest priority first. `defaultTier` takes
+ * the highest layer that sets it; each tier's target is replaced whole by the
+ * highest layer that binds it (targets are never field-merged across layers,
+ * so a credential cannot leak to another layer's provider).
+ */
+export function mergeInferenceConfigs(
+  ...layers: Array<InferenceConfig | undefined | null>
+): InferenceConfig | undefined {
+  let merged: InferenceConfig | undefined;
+  for (const layer of layers) {
+    const record = asRecord(layer);
+    if (!record) continue;
+    merged ??= {};
+    if (record.defaultTier !== undefined) {
+      merged.defaultTier = record.defaultTier as InferenceTier;
+    }
+    if (record.degrade !== undefined) {
+      merged.degrade = record.degrade as boolean;
+    }
+    const aliases = asRecord(record.aliases);
+    if (aliases) {
+      for (const [name, alias] of Object.entries(aliases)) {
+        if (alias === undefined) continue;
+        merged.aliases ??= {};
+        merged.aliases[name] = alias as InferenceAlias;
+      }
+    }
+    const tiers = asRecord(record.tiers);
+    if (tiers) {
+      for (const [tier, target] of Object.entries(tiers)) {
+        if (target === undefined) continue;
+        merged.tiers ??= {};
+        merged.tiers[tier as InferenceTier] = target as InferenceTarget;
+      }
+    }
+  }
+  return merged;
+}
+
+/**
+ * The process-level inference config: smrt.config `smrt.inference` <
+ * `config({ inference })` < environment. Instance options layer on top in
+ * `SmrtClass`.
+ */
+export function getInferenceConfig(): InferenceConfig | undefined {
+  const project = getSmrtModuleConfig<Record<string, unknown>>('smrt', {})
+    .inference as InferenceConfig | undefined;
+  const global = globalSignalConfig.toJSON().inference;
+  return mergeInferenceConfigs(project, global, inferenceConfigFromEnv());
+}
+
+/** Validate a config block, failing loudly on unknown tiers. */
+export function assertInferenceConfig(
+  value: InferenceConfig | undefined,
+): void {
+  if (!value) return;
+  if (value.defaultTier !== undefined && !isInferenceTier(value.defaultTier)) {
+    throw new Error(
+      `inference.defaultTier must be one of ${INFERENCE_TIERS.join(', ')}; got "${String(value.defaultTier)}".`,
+    );
+  }
+  for (const [tier, target] of Object.entries(value.tiers ?? {})) {
+    if (!isInferenceTier(tier)) {
+      throw new Error(
+        `inference.tiers has unknown tier "${tier}"; expected ${INFERENCE_TIERS.join(', ')}.`,
+      );
+    }
+    if (!asRecord(target)) {
+      throw new Error(`inference.tiers.${tier} must be an object.`);
+    }
+  }
+  if (value.degrade !== undefined && typeof value.degrade !== 'boolean') {
+    throw new Error('inference.degrade must be a boolean.');
+  }
+  if (value.aliases !== undefined && !asRecord(value.aliases)) {
+    throw new Error('inference.aliases must be an object of named chains.');
+  }
+  for (const [name, alias] of Object.entries(value.aliases ?? {})) {
+    if (!asRecord(alias)) {
+      throw new Error(`inference.aliases.${name} must be an object.`);
+    }
+  }
+}
+
+/** The tier `auto` resolves to under a config. */
+export function resolveAutoTier(
+  inference: InferenceConfig | undefined,
+): InferenceTier {
+  return inference?.defaultTier ?? DEFAULT_INFERENCE_TIER;
+}
+
+/**
+ * Built-in resolution: `auto` becomes `defaultTier` (else `good`); a bound
+ * tier returns its target with `via: 'config'`; an unbound tier returns an
+ * empty target with `via: 'default'` (the configured client).
+ */
+export function resolveInferenceFromConfig(
+  request: InferenceRequest,
+  inference: InferenceConfig | undefined,
+): InferenceResolution {
+  assertTierRequest(request.tier);
+  assertInferenceConfig(inference);
+  const tierResolved =
+    request.tier === 'auto' ? resolveAutoTier(inference) : request.tier;
+  const bound = inference?.tiers?.[tierResolved];
+  if (bound && Object.keys(bound).length > 0) {
+    return { tierResolved, target: { ...bound }, via: 'config' };
+  }
+  return { tierResolved, target: {}, via: 'default' };
+}
+
+function assertResolution(
+  value: unknown,
+): asserts value is InferenceResolution {
+  const record = asRecord(value);
+  if (
+    !record ||
+    !isInferenceTier(record.tierResolved) ||
+    !asRecord(record.target) ||
+    (record.via !== 'default' &&
+      record.via !== 'config' &&
+      record.via !== 'resolver')
+  ) {
+    throw new Error(
+      'Inference resolver returned an invalid resolution; expected { tierResolved, target, via }.',
+    );
+  }
+}
+
+/** Options for {@link resolveInference}. */
+export interface ResolveInferenceOptions {
+  /** Resolver to use instead of the process-wide one. */
+  resolver?: InferenceResolver;
+  /** Config to use instead of {@link getInferenceConfig}. */
+  config?: InferenceConfig;
+}
+
+/**
+ * Resolve a tier request through the seam: the given (or registered) resolver
+ * first, then the built-in config resolution when it defers. Never calls a
+ * model.
+ */
+export async function resolveInference(
+  request: InferenceRequest,
+  options: ResolveInferenceOptions = {},
+): Promise<InferenceResolution> {
+  assertTierRequest(request.tier);
+  const inference = 'config' in options ? options.config : getInferenceConfig();
+  const context: InferenceResolverContext = {
+    config: inference,
+    resolveFromConfig: (next) => resolveInferenceFromConfig(next, inference),
+  };
+  const resolver = options.resolver ?? getInferenceResolver();
+  const resolved = await resolver.resolve({ ...request }, context);
+  if (resolved === undefined) {
+    return context.resolveFromConfig(request);
+  }
+  assertResolution(resolved);
+  if (request.tier !== 'auto' && resolved.tierResolved !== request.tier) {
+    // A concrete tier request answered by another tier is a silent
+    // substitution (#4749: degradation is reported). Resolvers bind; only the
+    // executor degrades, and it records every step (#4752).
+    throw new Error(
+      `Inference resolver answered tier "${request.tier}" with "${resolved.tierResolved}"; a resolver must not substitute tiers.`,
+    );
+  }
+  return resolved;
+}
+
+/** `usageTags` recorded for a call through the tier path. */
+export function inferenceUsageTags(
+  tierRequested: InferenceTierRequest,
+  resolution: InferenceResolution,
+): Record<string, string> {
+  return { tierRequested, tierResolved: resolution.tierResolved };
+}
+
+/** Per-call options a chain client receives (the `ai.message()` options). */
+export type InferenceCallOptions = Record<string, unknown> & {
+  usageTags?: Record<string, string>;
+};
+
+/**
+ * The client surface an {@link InferenceExecutor} drives and returns: the
+ * subset of the AI SDK client it needs. Core passes real SDK clients in and
+ * treats the executor's client as one.
+ */
+export interface InferenceModelClient {
+  message(text: string, options?: InferenceCallOptions): Promise<string>;
+  [method: string]: unknown;
+}
+
+/** A usage row recorded without a model call (a chain that never answered). */
+export interface InferenceUsageRecord {
+  provider?: string;
+  model?: string;
+  operation: string;
+  /** Wall time spent on the attempts, in ms. */
+  duration?: number;
+  tags: Record<string, string>;
+}
+
+/** What core hands an {@link InferenceExecutor} for one call. */
+export interface InferenceExecutionContext {
+  /** The tier request as the caller made it. */
+  request: InferenceRequest;
+  /** The resolution whose target the executor runs. */
+  resolution: InferenceResolution;
+  /** The merged inference config (aliases, `degrade`). */
+  config: InferenceConfig | undefined;
+  /** Floor for ladder degradation (call option or prompt `ai.minimumTier`). */
+  minimumTier?: InferenceTier;
+  /** Return the text already streamed when a candidate fails mid-stream. */
+  allowPartial?: boolean;
+  /**
+   * A client for one `single` target, built by core with its credential pair
+   * rules and wired into the instance's usage pipeline.
+   */
+  clientFor(target: InferenceTarget): Promise<InferenceModelClient>;
+  /** Resolve another tier through the same seam (ladder degradation). */
+  resolveTier(tier: InferenceTier): Promise<InferenceResolution>;
+  /**
+   * Record a zero-token usage row through the instance's existing usage
+   * pipeline: the row for a call whose every candidate failed.
+   */
+  recordUsage(record: InferenceUsageRecord): Promise<void>;
+}
+
+/**
+ * Runs targets whose kind core does not (chains, later fusions). Registered
+ * by `@happyvertical/smrt-inference` on import; core never imports it.
+ */
+export interface InferenceExecutor {
+  /** Target kinds this executor runs. */
+  readonly kinds: readonly string[];
+  /** A client whose calls run the target in `context.resolution`. */
+  createClient(context: InferenceExecutionContext): InferenceModelClient;
+}
+
+const EXECUTOR_KEY = Symbol.for('smrt.inference.executor');
+
+type ExecutorHolder = { [EXECUTOR_KEY]?: InferenceExecutor };
+
+/**
+ * Register the process-wide executor for non-`single` target kinds, or pass
+ * `undefined` to remove it. Stored on `globalThis` like the resolver.
+ */
+export function setInferenceExecutor(
+  executor: InferenceExecutor | undefined,
+): void {
+  if (
+    executor !== undefined &&
+    (executor === null ||
+      typeof (executor as Partial<InferenceExecutor>).createClient !==
+        'function' ||
+      !Array.isArray((executor as Partial<InferenceExecutor>).kinds))
+  ) {
+    throw new Error(
+      'An inference executor must declare kinds and implement createClient().',
+    );
+  }
+  const holder = globalThis as ExecutorHolder;
+  if (executor === undefined) delete holder[EXECUTOR_KEY];
+  else holder[EXECUTOR_KEY] = executor;
+}
+
+/** The registered executor, if any. */
+export function getInferenceExecutor(): InferenceExecutor | undefined {
+  return (globalThis as ExecutorHolder)[EXECUTOR_KEY];
+}
+
+/**
+ * The executor for a target's kind. `single` targets return `undefined`
+ * (core runs them); any other kind without a registered executor throws, so
+ * a chain is never silently replaced by the configured client.
+ */
+export function inferenceExecutorFor(
+  target: InferenceTarget,
+): InferenceExecutor | undefined {
+  const kind = inferenceTargetKind(target);
+  if (kind === 'single') return undefined;
+  const executor = getInferenceExecutor();
+  if (!executor || !executor.kinds.includes(kind)) {
+    throw new Error(
+      `Inference target kind "${kind}" needs a registered executor; import @happyvertical/smrt-inference.`,
+    );
+  }
+  return executor;
+}
+
+/** Code of {@link InferenceBindingError}. */
+export const INFERENCE_TARGET_UNBOUND = 'INFERENCE_TARGET_UNBOUND';
+
+/**
+ * A tier target core refuses to bind before any request is sent: an unbound
+ * endpoint/key pair, another provider while `HAVE_AI_*` is set, or an
+ * injected client asked for a new endpoint. Typed so a chain executor can
+ * classify it (as `credential`) without reading the message (#4752).
+ */
+export class InferenceBindingError extends SmrtError {
+  constructor(message: string) {
+    super(message, INFERENCE_TARGET_UNBOUND, 'configuration');
+  }
+}

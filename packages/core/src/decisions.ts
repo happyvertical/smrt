@@ -15,6 +15,11 @@ import type {
   DecisionValue,
 } from '@happyvertical/ai';
 import type { AiTokenUsage } from '@happyvertical/smrt-types';
+import type {
+  InferenceLatency,
+  InferenceTier,
+  InferenceTierRequest,
+} from './inference.js';
 
 export type {
   DecisionAnswer,
@@ -279,6 +284,19 @@ export interface EvaluateOptions {
   model?: string;
   /** Model for an explicit generative fallback or tool route. */
   generativeModel?: string;
+  /**
+   * Inference tier for the generative route only (fallback or tool route).
+   * The typed-decision route ignores it (#3158: decisions stay separate).
+   */
+  tier?: InferenceTierRequest;
+  /** Latency hint for the generative route's tier binding. */
+  latency?: InferenceLatency;
+  /** Prompt key passed to the generative route's tier resolver. */
+  promptKey?: string;
+  /** Ladder floor for the generative route's chain tier (#4752). */
+  minimumTier?: InferenceTier;
+  /** Keep a chain candidate's streamed text on a mid-stream failure (#4752). */
+  allowPartial?: boolean;
   /** Abort an in-flight provider request. */
   signal?: AbortSignal;
   /** Provider request deadline in milliseconds. */
