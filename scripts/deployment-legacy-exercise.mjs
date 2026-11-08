@@ -465,7 +465,9 @@ export async function legacyMain(env = process.env) {
       value === undefined ? undefined : JSON.stringify(value),
     );
   const get = (kind, name, ns = namespace) =>
-    JSON.parse(k(['-n', ns, 'get', kind, name, '-o', 'json']));
+    JSON.parse(
+      k(['-n', ns, 'get', kind, name, '--show-managed-fields=true', '-o', 'json']),
+    );
   const apply = (items) =>
     k(['apply', '-f', '-'], { apiVersion: 'v1', kind: 'List', items });
   const r = (apiVersion, kind, name, spec = {}, ns = fixtures) => ({
