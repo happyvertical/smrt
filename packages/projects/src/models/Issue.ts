@@ -9,6 +9,7 @@ import { type AIClientOptions, getAI } from '@happyvertical/ai';
 import {
   field,
   foreignKey,
+  resolveInferenceTarget,
   SmrtObject,
   type SmrtObjectOptions,
   smrt,
@@ -596,16 +597,36 @@ export class Issue extends SmrtObject {
           ? env.GEMINI_API_KEY
           : env.OPENAI_API_KEY);
 
-    const ai = await getAI({
+    const base: Record<string, unknown> = {
       ...aiConfig,
       provider,
       type: provider,
       model: options.model ?? aiConfig.model,
       defaultModel: options.model ?? aiConfig.model,
       apiKey,
-    } as AIClientOptions);
+    };
+    // A stored per-user / per-tenant binding (#4756) replaces the prompt's
+    // provider; app tier bindings do not. Usage records through this
+    // instance's pipeline (#3077) with the binding's tags.
+    const target = await resolveInferenceTarget({
+      base,
+      tenantId: this.tenantId ?? null,
+      className: this._className,
+      promptKey: issueIncorporateFeedbackPrompt.key,
+      appBindings: false,
+    });
+    const clientConfig = target.options ?? base;
+    const ai = await getAI(
+      this.withAiUsage(clientConfig, {
+        tags: target.usageTags,
+      }) as unknown as AIClientOptions,
+    );
 
-    return this.sendPromptMessage(ai, instructions, options);
+    return this.sendPromptMessage(
+      ai,
+      instructions,
+      target.bound ? { ...options, model: clientConfig.model } : options,
+    );
   }
 
   /**
