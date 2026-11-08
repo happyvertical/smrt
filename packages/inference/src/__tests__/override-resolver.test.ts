@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   APP_INFERENCE_SCOPE_ID,
   createInferenceOverrideResolver,
+  InferenceOverrideCollection,
   InferenceSettingsService,
 } from '../server.js';
 
@@ -163,5 +164,45 @@ describe('createInferenceOverrideResolver', () => {
     };
     resolver = createInferenceOverrideResolver({ db: { db }, base });
     expect((await resolve('cheap')).target).toEqual({ model: 'from-base' });
+  });
+
+  it('re-applies the tenant policy on every call, even with warm rows', async () => {
+    let allowFrontier = true;
+    resolver = createInferenceOverrideResolver({
+      db: { db },
+      ttlMs: 60_000,
+      tenantTargetPolicy: ({ ref }) => allowFrontier || ref !== 'alias:local',
+    });
+    await admin.setTenantAllowList({ binding: 'tier:good', allowList: ['*'] });
+    await admin.setTierOverride({
+      tier: 'good',
+      scopeType: 'tenant',
+      scopeId: tenantId,
+      target: { alias: 'local' },
+    });
+    expect((await resolve('good', tenantId)).target).toEqual({
+      alias: 'local',
+    });
+    allowFrontier = false; // narrowed without any override write
+    expect(await resolve('good', tenantId)).toEqual({
+      tierResolved: 'good',
+      target: {},
+      via: 'default',
+    });
+  });
+
+  it('fails only the tier whose chain dangles', async () => {
+    const overrides = (await InferenceOverrideCollection.create({
+      db,
+    })) as InferenceOverrideCollection;
+    // Written past the service (which would refuse it): a dangling alias.
+    await overrides.setOverride('tier:cheap', 'app', APP, {
+      target: { alias: 'ghost' },
+    });
+    await overrides.setOverride('tier:best', 'app', APP, {
+      target: { model: 'ok' },
+    });
+    await expect(resolve('cheap')).rejects.toThrow(/ghost/);
+    expect((await resolve('best')).target).toEqual({ model: 'ok' });
   });
 });

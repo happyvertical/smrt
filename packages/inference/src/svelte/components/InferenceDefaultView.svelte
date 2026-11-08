@@ -115,8 +115,11 @@ async function saveKey(event: SubmitEvent): Promise<void> {
   keyError = null;
   if (!onSaveKey || !provider || !key.trim()) return;
   const savedFor = provider;
+  const change: InferenceKeyChange = { provider: savedFor, key };
+  if (selected?.kind === 'preset') change.preset = selected.id;
+  if (baseUrl.trim()) change.baseUrl = baseUrl.trim();
   try {
-    await onSaveKey({ provider: savedFor, key });
+    await onSaveKey(change);
     keySavedFor = savedFor;
   } catch {
     keyError = 'The key was not saved.';
@@ -227,6 +230,9 @@ async function testConnection(): Promise<void> {
   </form>
 
   {#if needsProvider && provider && (selected?.requiresApiKey ?? true)}
+    <!-- Remount on a provider or endpoint change: a typed key never carries
+         over to another endpoint. -->
+    {#key `${provider}\n${baseUrl.trim()}`}
     <form class="isp-key" onsubmit={saveKey} autocomplete="off" data-testid="inference-key-form">
       <span class="isp-key-status" data-testid="inference-key-status">
         API key: {keySet ? 'set' : 'not set'}
@@ -251,6 +257,7 @@ async function testConnection(): Promise<void> {
         <p class="isp-result" role="alert">{keyError}</p>
       {/if}
     </form>
+    {/key}
   {/if}
 </div>
 

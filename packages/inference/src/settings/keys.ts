@@ -75,11 +75,15 @@ export function inferenceKeyOrigin(input: {
 }): string | null {
   const baseUrl = text(input.baseUrl);
   if (baseUrl) return originOf(baseUrl);
-  const preset = text(input.preset);
   const provider = text(input.provider)?.toLowerCase();
+  // A provider id that names a #4674 preset (the panel's preset choices)
+  // binds to that preset's endpoint.
+  const preset =
+    text(input.preset) ??
+    (provider && isInferencePresetId(provider) ? provider : undefined);
   if (!preset && (!provider || NEEDS_BASE_URL.has(provider))) return null;
   if (preset && !isInferencePresetId(preset)) return null;
-  const url = inferenceProbeUrl({ provider, preset });
+  const url = inferenceProbeUrl(preset ? { preset } : { provider });
   return url ? originOf(url) : null;
 }
 

@@ -87,7 +87,8 @@ function text(value: unknown): string | undefined {
 /**
  * Key-shaped members are never stored in a binding row: keys live only in
  * smrt-secrets, written by the host (#4754 storage split). `apiKeyEnv` (the
- * name of a variable) is allowed.
+ * name of a variable) is allowed, and so is `key`: #4753 fusion
+ * definitions carry one as their identifier.
  */
 const KEY_MEMBERS = new Set([
   'apikey',
@@ -99,6 +100,23 @@ const KEY_MEMBERS = new Set([
   'authorization',
   'bearer',
 ]);
+
+/**
+ * A deep copy of `value` with every credential-shaped member removed. Used
+ * on every config-backed value a settings screen receives: config tiers and
+ * alias candidates may legitimately carry a literal `apiKey` (resolvers and
+ * endpoint-bound config), and none of it may reach a browser.
+ */
+export function stripKeyMembers<T>(value: T): T {
+  if (Array.isArray(value)) return value.map(stripKeyMembers) as T;
+  if (!isRecord(value)) return value;
+  const out: Record<string, unknown> = {};
+  for (const [member, inner] of Object.entries(value)) {
+    if (KEY_MEMBERS.has(member.toLowerCase())) continue;
+    out[member] = stripKeyMembers(inner);
+  }
+  return out as T;
+}
 
 /** Dotted path of the first key-shaped member anywhere in `value`, or `null`. */
 export function findKeyMember(value: unknown, path = ''): string | null {

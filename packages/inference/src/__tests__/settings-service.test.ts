@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { clearFusions, defineFusion } from '../fusion.js';
 import {
   APP_INFERENCE_SCOPE_ID,
+  InferenceBindingInUseError,
   InferenceBindingValueError,
   InferenceOverrideAuthorizationError,
   type InferenceOverrideWriteRequest,
@@ -527,5 +528,103 @@ describe('InferenceSettingsService', () => {
     expect(report.bindings.map((binding) => binding.binding)).toContain(
       'tier:good',
     );
+  });
+
+  it('never returns a configured literal key in any settings row', async () => {
+    const SECRET = 'sk-config-literal-0123456789';
+    config = {
+      tiers: {
+        good: {
+          provider: 'openai',
+          model: 'gpt-x',
+          baseUrl: 'https://gw.test/v1',
+          apiKey: SECRET,
+        },
+      },
+      aliases: {
+        gateway: {
+          candidates: [
+            {
+              provider: 'openai',
+              model: 'gpt-x',
+              baseUrl: 'https://gw.test/v1',
+              apiKey: SECRET,
+            },
+          ],
+        },
+      },
+    };
+    (config as InferenceConfig & { fusions?: unknown }).fusions = {
+      pair: { mode: 'pair', seats: [{ target: { apiKey: SECRET } }] },
+    };
+    const admin = await service({
+      authorize: true,
+      registry: [{ key: 'reg', token: SECRET } as never],
+    });
+    const payload = JSON.stringify([
+      await admin.listInferenceSettings({ tenantId }),
+      await admin.listInferenceAliases(),
+      await admin.listInferenceFusions(),
+      await admin.getDefaultTierSetting({ tenantId }),
+    ]);
+    expect(payload).not.toContain(SECRET);
+    const [good] = (await admin.listInferenceSettings()).filter(
+      (row) => row.tier === 'good',
+    );
+    expect(good?.configTarget).toEqual({
+      provider: 'openai',
+      model: 'gpt-x',
+      baseUrl: 'https://gw.test/v1',
+    });
+  });
+
+  it('refuses to remove an alias or fusion a stored binding still names', async () => {
+    const admin = await service({ authorize: true });
+    await admin.setAlias({
+      name: 'byo',
+      alias: { candidates: [{ preset: 'lemonade', model: 'qwen' }] },
+    });
+    await admin.setAlias({
+      name: 'outer',
+      alias: { candidates: [{ alias: 'byo' }] },
+    });
+    await admin.setTenantAllowList({ binding: 'tier:good', allowList: ['*'] });
+    await admin.setTierOverride({
+      tier: 'good',
+      scopeType: 'tenant',
+      scopeId: tenantId,
+      target: { alias: 'byo' },
+    });
+    const refused = await admin
+      .setAlias({ name: 'byo', alias: null })
+      .catch((error: unknown) => error);
+    expect(refused).toBeInstanceOf(InferenceBindingInUseError);
+    expect((refused as InferenceBindingInUseError).referrers).toEqual(
+      expect.arrayContaining(['alias:outer', `tier:good (tenant ${tenantId})`]),
+    );
+
+    // A config alias of the same name keeps the references valid.
+    await admin.setAlias({
+      name: 'frontier',
+      alias: { candidates: [{ preset: 'lemonade', model: 'big' }] },
+    });
+    await admin.setTierOverride({
+      tier: 'best',
+      scopeType: 'app',
+      scopeId: APP,
+      target: { alias: 'frontier' },
+    });
+    await admin.setAlias({ name: 'frontier', alias: null });
+
+    await admin.setFusion({ name: 'ab', definition: { mode: 'pair' } });
+    await admin.setTierOverride({
+      tier: 'great',
+      scopeType: 'app',
+      scopeId: APP,
+      target: { kind: 'fusion', fusion: 'ab' } as never,
+    });
+    await expect(
+      admin.setFusion({ name: 'ab', definition: null }),
+    ).rejects.toBeInstanceOf(InferenceBindingInUseError);
   });
 });

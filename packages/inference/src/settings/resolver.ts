@@ -21,13 +21,14 @@ import {
   type SmrtClassOptions,
   type SmrtCollectionOptions,
 } from '@happyvertical/smrt-core';
-import { validateInferenceConfig } from '../config.js';
+import { validateInferenceTarget } from '../config.js';
 import { InferenceOverrideCollection } from '../models/InferenceOverrideCollection.js';
 import { getInferenceOverrideGeneration } from './cache.js';
 import {
-  type InferenceOverrideLayers,
-  loadInferenceOverrideLayers,
+  buildInferenceOverrideLayers,
+  type InferenceOverrideRows,
   mergeSettingsConfigs,
+  readInferenceOverrideRows,
 } from './layers.js';
 import type { InferenceTenantTargetPolicy } from './override-service.js';
 
@@ -79,7 +80,7 @@ export function createInferenceOverrideResolver(
   const ttlMs = options.ttlMs ?? 30_000;
   const cache = new Map<
     string,
-    { at: number; generation: number; layers: InferenceOverrideLayers }
+    { at: number; generation: number; rows: InferenceOverrideRows }
   >();
   let collection: Promise<InferenceOverrideCollection> | undefined;
 
@@ -93,24 +94,27 @@ export function createInferenceOverrideResolver(
     return collection;
   };
 
-  const layersFor = async (tenantId: string | null) => {
+  // Rows are cached, never layers: the allow-list and the policy hook are
+  // applied again on every resolution, so narrowing the policy takes effect
+  // on the next call without an override write.
+  const rowsFor = async (tenantId: string | null) => {
     const key = tenantId ?? '';
     const generation = getInferenceOverrideGeneration();
     const hit = cache.get(key);
     if (hit && hit.generation === generation && Date.now() - hit.at < ttlMs) {
-      return hit.layers;
+      return hit.rows;
     }
-    const layers = await loadInferenceOverrideLayers(await getCollection(), {
+    const rows = await readInferenceOverrideRows(
+      await getCollection(),
       tenantId,
-      tenantTargetPolicy: options.tenantTargetPolicy,
-    });
+    );
     cache.delete(key);
-    cache.set(key, { at: Date.now(), generation, layers });
+    cache.set(key, { at: Date.now(), generation, rows });
     if (cache.size > MAX_CACHED_TENANTS) {
       const oldest = cache.keys().next().value;
       if (oldest !== undefined) cache.delete(oldest);
     }
-    return layers;
+    return rows;
   };
 
   return {
@@ -119,7 +123,10 @@ export function createInferenceOverrideResolver(
         typeof request.tenantId === 'string' && request.tenantId
           ? request.tenantId
           : null;
-      const layers = await layersFor(tenantId);
+      const layers = await buildInferenceOverrideLayers(
+        await rowsFor(tenantId),
+        options.tenantTargetPolicy,
+      );
       const merged = mergeSettingsConfigs(
         context.config,
         layers.app,
@@ -140,7 +147,9 @@ export function createInferenceOverrideResolver(
           ? context.resolveFromConfig(next)
           : undefined;
       }
-      validateInferenceConfig(merged);
+      // Only the requested tier's chain is checked: a dangling reference
+      // elsewhere fails that binding, not every stored tier.
+      validateInferenceTarget(stored, `inference.tiers.${tier}`, merged);
       return {
         tierResolved: tier,
         target: expandStoredAliases(

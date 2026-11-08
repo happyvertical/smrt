@@ -42,13 +42,10 @@ export async function load({ locals }) {
 
 export const actions = {
   saveKey: async ({ request, locals }) => {
-    const form = await request.formData();
-    const choices = (await createInferencePreferences(locals.preferenceStore).read()).choices;
-    const record = bindInferenceKey({
-      provider: String(form.get('provider')),
-      key: String(form.get('key')),
-      baseUrl: choices.baseUrl,
-    });
+    // The panel's onSaveKey change: { provider, key, preset?, baseUrl? }.
+    // Bind to the endpoint the key was entered for, not to saved choices.
+    const change = await request.json();
+    const record = bindInferenceKey(change);
     await locals.secrets.store(`inference.key.${record.provider}`, JSON.stringify(record));
   },
 };

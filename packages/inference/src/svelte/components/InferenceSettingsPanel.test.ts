@@ -218,6 +218,39 @@ describe('InferenceSettingsPanel default view', () => {
     expect(JSON.stringify(change)).not.toContain(KEY);
   });
 
+  it('drops a typed key when the provider or endpoint changes', async () => {
+    const onSaveKey = vi.fn(async () => {});
+    const target = render({
+      defaults: { mode: 'byo', provider: 'openai' },
+      providers: PROVIDERS,
+      onSaveKey,
+    });
+    const typed = target.querySelector<HTMLInputElement>(
+      'input[name="apiKey"]',
+    );
+    if (!typed) throw new Error('no key input');
+    typed.value = KEY;
+    select(target, 'select[name="provider"]', 'openrouter');
+    const fresh = target.querySelector<HTMLInputElement>(
+      'input[name="apiKey"]',
+    );
+    expect(fresh?.value).toBe('');
+    expect(document.body.innerHTML).not.toContain(KEY);
+    submit(target.querySelector('[data-testid="inference-key-form"]'));
+    await tick();
+    expect(onSaveKey).not.toHaveBeenCalled();
+
+    if (!fresh) throw new Error('no key input');
+    fresh.value = KEY;
+    submit(target.querySelector('[data-testid="inference-key-form"]'));
+    await tick();
+    expect(onSaveKey).toHaveBeenCalledWith({
+      provider: 'openrouter',
+      preset: 'openrouter',
+      key: KEY,
+    });
+  });
+
   it('tests the connection through the host without a key', async () => {
     const onTestConnection = vi.fn(async () => ({
       reachable: true,
