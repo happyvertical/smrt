@@ -1,3 +1,13 @@
+import type { SmrtSaveOptions } from '@happyvertical/smrt-core';
+import {
+  assertProtectedNotificationDelete,
+  assertProtectedNotificationRetry,
+  assertProtectedNotificationSave,
+  assertProtectedSenderHandoff,
+  beginProtectedNotificationSend,
+  ProtectedNotificationHandoffError,
+  rememberNotificationOrigin,
+} from '../protected-notification-handoff.js';
 /**
  * Message model - Base class for all message types (STI)
  *
@@ -53,6 +63,29 @@ function withSendOutcomeMarker(
   if (outcomeUnknown) bag[SEND_OUTCOME_UNKNOWN_METADATA_KEY] = true;
   else delete bag[SEND_OUTCOME_UNKNOWN_METADATA_KEY];
   return JSON.stringify(bag);
+}
+
+// Only the canonical send/retry implementation can authorize its exact local
+// lifecycle save. An active provider scope never grants arbitrary public saves.
+const lifecycleSaves = new WeakMap<Message, string>();
+function lifecycleSignature(message: Message): string {
+  return JSON.stringify([
+    message.sendStatus,
+    message.retryCount,
+    message.maxRetries,
+    message.sendError,
+    message.sentAt,
+    message.scheduledSendAt,
+    message.metadata,
+  ]);
+}
+async function saveSendLifecycle(message: Message): Promise<void> {
+  lifecycleSaves.set(message, lifecycleSignature(message));
+  try {
+    await message.save();
+  } finally {
+    lifecycleSaves.delete(message);
+  }
 }
 
 @TenantScoped({ mode: 'optional' })
@@ -175,6 +208,36 @@ export class Message extends SmrtObject {
       this.inReplyToMessageId = options.inReplyToMessageId;
     if (options.createdAt) this.createdAt = options.createdAt;
     if (options.updatedAt) this.updatedAt = options.updatedAt;
+    rememberNotificationOrigin(this);
+  }
+
+  /** Ordinary saves preserve protected outbox provenance and approved content. */
+  override async save(options?: SmrtSaveOptions): Promise<this> {
+    const signature = lifecycleSaves.get(this);
+    lifecycleSaves.delete(this);
+    return this.withTransaction(async () => {
+      const authorized =
+        signature !== undefined && signature === lifecycleSignature(this);
+      await assertProtectedNotificationSave(this, options, authorized);
+      if (signature !== undefined && signature !== lifecycleSignature(this))
+        throw new Error('Message lifecycle changed during its guarded save.');
+      const result = await super.save(options);
+      // Core may adopt a natural-key row that appeared during save. Verify
+      // its resulting durable identity before this transaction can commit.
+      await assertProtectedNotificationSave(this, options, authorized);
+      if (signature !== undefined && signature !== lifecycleSignature(this))
+        throw new Error('Message lifecycle changed during its guarded save.');
+      rememberNotificationOrigin(this);
+      return result;
+    });
+  }
+
+  /** Protected outbound evidence is retained; ordinary message deletion remains unchanged. */
+  override async delete(
+    options: { expectedUpdatedAt?: Date | string } = {},
+  ): Promise<void> {
+    await assertProtectedNotificationDelete(this);
+    return super.delete(options);
   }
 
   private async finalizeSendLifecycle(
@@ -377,6 +440,15 @@ export class Message extends SmrtObject {
    * Send this message via its account's sender
    */
   async send(options?: SendMessageOptions): Promise<MessageSendResult> {
+    try {
+      await beginProtectedNotificationSend(this, options);
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+        sentAt: new Date(),
+      };
+    }
     // Entry guard: a message that is already in flight or delivered must not be
     // sent again. Catches same-instance double-clicks before any work happens.
     if (this.sendStatus === 'sending' || this.sendStatus === 'sent') {
@@ -398,7 +470,7 @@ export class Message extends SmrtObject {
       this.sendStatus = 'failed';
       this.sendError = result.error ?? '';
       this.updatedAt = new Date();
-      await this.save();
+      await saveSendLifecycle(this);
       return result;
     }
 
@@ -411,7 +483,7 @@ export class Message extends SmrtObject {
       this.sendStatus = 'failed';
       this.sendError = result.error ?? '';
       this.updatedAt = new Date();
-      await this.save();
+      await saveSendLifecycle(this);
       return result;
     }
 
@@ -425,7 +497,7 @@ export class Message extends SmrtObject {
       this.sendStatus = 'failed';
       this.sendError = errorMessage;
       this.updatedAt = new Date();
-      await this.save();
+      await saveSendLifecycle(this);
       return {
         success: false,
         error: errorMessage,
@@ -503,11 +575,12 @@ export class Message extends SmrtObject {
     } else {
       this.sendStatus = 'sending';
       this.updatedAt = new Date();
-      await this.save();
+      await saveSendLifecycle(this);
     }
 
     let result: MessageSendResult;
     try {
+      await assertProtectedSenderHandoff(this, options);
       result = await sender.send(this, options);
     } catch (error) {
       const errorMessage =
@@ -516,7 +589,9 @@ export class Message extends SmrtObject {
       result = {
         success: false,
         error: errorMessage,
-        outcomeUnknown: true,
+        ...(error instanceof ProtectedNotificationHandoffError
+          ? {}
+          : { outcomeUnknown: true }),
         sentAt: new Date(),
       };
     }
@@ -563,6 +638,15 @@ export class Message extends SmrtObject {
    * Retry sending a failed message
    */
   async retrySend(options?: SendMessageOptions): Promise<MessageSendResult> {
+    try {
+      await assertProtectedNotificationRetry(this, options);
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+        sentAt: new Date(),
+      };
+    }
     if (this.sendStatus !== 'failed') {
       return {
         success: false,
@@ -581,7 +665,7 @@ export class Message extends SmrtObject {
 
     this.retryCount++;
     this.updatedAt = new Date();
-    await this.save();
+    await saveSendLifecycle(this);
 
     return this.send(options);
   }

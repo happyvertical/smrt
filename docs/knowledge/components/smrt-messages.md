@@ -5,10 +5,10 @@ description: "Unified multi-channel messaging with STI-based hierarchies"
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-06T03:05:34Z"
+  at: "2026-11-08T02:59:42Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:99b6d6b6c81224d0127273516be7be6b62754883c9b6b9d3ee4d1bc6db3e9222"
+source_revision: "sha256:45d77fca7e4c10b7ed827bcf3e19851ae8b28e8292c311828027ba6d287c859e"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/messages/package.json"
@@ -19,6 +19,9 @@ sources:
   - id: "agents-2"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/messages/agents/notification-outbox.md"
     title: "@happyvertical/smrt-messages packages/messages/agents/notification-outbox.md"
+  - id: "agents-3"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/messages/agents/profile-recipients.md"
+    title: "@happyvertical/smrt-messages packages/messages/agents/profile-recipients.md"
 ---
 
 # @happyvertical/smrt-messages
@@ -34,11 +37,13 @@ sources:
 
 - `packages/messages/AGENTS.md`
 - `packages/messages/agents/notification-outbox.md`
+- `packages/messages/agents/profile-recipients.md`
 
 ## Framework dependencies
 
 - [smrt-core](/components/smrt-core.md)
 - [smrt-ledgers](/components/smrt-ledgers.md)
+- [smrt-profiles](/components/smrt-profiles.md)
 - [smrt-secrets](/components/smrt-secrets.md)
 - [smrt-tenancy](/components/smrt-tenancy.md)
 - [smrt-types](/components/smrt-types.md)

@@ -161,6 +161,362 @@ describe('NotificationOutboxService', () => {
     await db.close?.();
   });
 
+  describe('scoped attachment dispatch', () => {
+    it('selects exact delivery ids before pagination for pending and expired rows', async () => {
+      const transport = fakeTransport();
+      const outbox = service({ transport });
+      const old = await outbox.enqueueEmail(input({ sourceRef: 'older' }));
+      const expired = await outbox.enqueueEmail(
+        input({ sourceRef: 'expired' }),
+      );
+      await withTenant({ tenantId: tenantA }, () =>
+        expired.delivery.transition({
+          status: 'sending',
+          leaseToken: crypto.randomUUID(),
+          leaseExpiresAt: new Date(clock.getTime() - 1),
+          attempts: 1,
+        }),
+      );
+      const chosen = await outbox.enqueueEmail(input({ sourceRef: 'chosen' }));
+      await outbox.dispatchDue({
+        tenantIds: [tenantA],
+        deliveryIds: [chosen.delivery.id as string],
+        limit: 1,
+      });
+      expect(transport.calls.map((call) => call.delivery.id)).toEqual([
+        chosen.delivery.id,
+      ]);
+      expect((await reload(old.delivery)).status).toBe('pending');
+      expect((await reload(expired.delivery)).status).toBe('sending');
+      await outbox.dispatchDue({
+        tenantIds: [tenantA],
+        deliveryIds: [expired.delivery.id as string],
+        limit: 1,
+      });
+      expect(transport.calls.map((call) => call.delivery.id)).toEqual([
+        chosen.delivery.id,
+        expired.delivery.id,
+      ]);
+    });
+
+    it('empty and malformed selectors never dispatch, and foreign ids cannot cross tenant scope', async () => {
+      const transport = fakeTransport();
+      const outbox = service({ transport });
+      await outbox.enqueueEmail(input());
+      const foreign = await outbox.enqueueEmail(
+        input({ tenantId: tenantB, recipientUserId: bob }),
+      );
+      expect((await outbox.dispatchDue({ deliveryIds: [] })).leased).toBe(0);
+      await expect(
+        outbox.dispatchDue({ deliveryIds: ['invalid'] }),
+      ).rejects.toThrow();
+      expect(
+        (
+          await outbox.dispatchDue({
+            tenantIds: [tenantA],
+            deliveryIds: [foreign.delivery.id as string],
+          })
+        ).leased,
+      ).toBe(0);
+      expect(transport.calls).toHaveLength(0);
+    });
+
+    it('denies principal scopes before loading or leasing and defaults to the principal tenant', async () => {
+      const transport = fakeTransport();
+      const seed = service();
+      const own = await seed.enqueueEmail(input());
+      const foreign = await seed.enqueueEmail(
+        input({ tenantId: tenantB, recipientUserId: bob }),
+      );
+      const principal = messagingPrincipalFromPermissions(
+        [SEND_MESSAGES_PERMISSION],
+        { tenantId: tenantA },
+      );
+      const outbox = service({ transport, principal });
+      const reads = vi.spyOn(NotificationDeliveryCollection.prototype, 'list');
+      await expect(
+        outbox.dispatchDue({ tenantIds: [tenantA, tenantB] }),
+      ).rejects.toThrow(NotificationOutboxDeniedError);
+      expect(reads).not.toHaveBeenCalled();
+      expect((await reload(own.delivery)).attempts).toBe(0);
+      expect((await reload(foreign.delivery)).attempts).toBe(0);
+      const denied = service({
+        transport,
+        principal: messagingPrincipalFromPermissions([], { tenantId: tenantA }),
+      });
+      reads.mockClear();
+      await expect(
+        denied.dispatchDue({ tenantIds: [tenantA] }),
+      ).rejects.toThrow(NotificationOutboxDeniedError);
+      expect(reads).not.toHaveBeenCalled();
+      await outbox.dispatchDue();
+      expect(transport.calls.map((call) => call.delivery.id)).toEqual([
+        own.delivery.id,
+      ]);
+      expect((await reload(foreign.delivery)).status).toBe('pending');
+    });
+
+    it('resolves actual PDF bytes again on safe retry before provider handoff', async () => {
+      const bytes = Buffer.from(
+        '%PDF-1.7\nsynthetic immutable document\n%%EOF',
+      );
+      const attachment = {
+        filename: 'invoice.pdf',
+        contentType: 'application/pdf',
+        content: bytes,
+      };
+      const resolveAttachments = vi.fn(
+        async ({ delivery }: NotificationTransportRequest) => {
+          expect(delivery.handedOffAt).toBeNull();
+          return [attachment];
+        },
+      );
+      const transport = fakeTransport((_request, call) =>
+        call === 1
+          ? { status: 'rejected', error: 'definite refusal', retryable: true }
+          : { status: 'accepted' },
+      );
+      const outbox = service({ transport, resolveAttachments });
+      await outbox.enqueueEmail(input());
+      await outbox.dispatchDue();
+      clock = new Date(clock.getTime() + 120_000);
+      await outbox.dispatchDue();
+      expect(resolveAttachments).toHaveBeenCalledTimes(2);
+      expect(transport.calls).toHaveLength(2);
+      expect(
+        Buffer.from(transport.calls[1]?.attachments?.[0]?.content ?? []),
+      ).toEqual(bytes);
+    });
+
+    it('forwards bytes through the default transport and reconciles unknown acceptance without a resend', async () => {
+      const bytes = Buffer.from('%PDF-1.7\nretained\n%%EOF');
+      const attachment = {
+        filename: 'receipt.pdf',
+        content: bytes,
+        contentType: 'application/pdf',
+      };
+      const providerSend = vi.fn(async (_message, options) => {
+        expect(Buffer.from(options.attachments[0].content)).toEqual(bytes);
+        return {
+          success: true,
+          providerMessageId: 'capture-only',
+          sentAt: clock,
+        };
+      });
+      vi.spyOn(EmailAccount.prototype, 'createSender').mockResolvedValue({
+        providerType: 'smtp',
+        isReady: () => true,
+        send: providerSend,
+      });
+      const outbox = service({ resolveAttachments: () => [attachment] });
+      await outbox.enqueueEmail(input());
+      expect((await outbox.dispatchDue()).outcomes[0]?.outcome).toBe('sent');
+      expect(providerSend).toHaveBeenCalledTimes(1);
+      expect((await outbox.dispatchDue()).leased).toBe(0);
+
+      const resolver = vi.fn(() => [attachment]);
+      const uncertain = fakeTransport(() => ({
+        status: 'unknown',
+        error: 'lost response',
+      }));
+      const other = service({
+        transport: uncertain,
+        resolveAttachments: resolver,
+      });
+      await other.enqueueEmail(input({ sourceRef: 'uncertain-document' }));
+      expect((await other.dispatchDue()).outcomes[0]?.outcome).toBe(
+        'uncertain',
+      );
+      clock = new Date(clock.getTime() + 3_600_000);
+      expect((await other.dispatchDue()).leased).toBe(0);
+      expect(resolver).toHaveBeenCalledTimes(1);
+      expect(uncertain.calls).toHaveLength(1);
+    });
+
+    it('requires explicit scopes for unscoped principals and rejects malformed attachment metadata', async () => {
+      const transport = fakeTransport();
+      const principal = messagingPrincipalFromPermissions([
+        SEND_MESSAGES_PERMISSION,
+      ]);
+      await expect(
+        service({ transport, principal }).dispatchDue(),
+      ).rejects.toThrow(NotificationOutboxDeniedError);
+      const invalid = service({
+        transport,
+        resolveAttachments: async () => [
+          { filename: 'invoice.pdf', content: 'file:///private.pdf' as never },
+        ],
+      });
+      const { delivery } = await invalid.enqueueEmail(input());
+      await invalid.dispatchDue({
+        tenantIds: [tenantA],
+        deliveryIds: [delivery.id as string],
+      });
+      expect(transport.calls).toHaveLength(0);
+      expect(await reload(delivery)).toMatchObject({
+        status: 'pending',
+        handedOffAt: null,
+      });
+    });
+
+    it('unreadable or malformed attachment resolution never reaches a provider', async () => {
+      const transport = fakeTransport();
+      const outbox = service({
+        transport,
+        resolveAttachments: async () => {
+          throw new Error('private artifact revoked');
+        },
+      });
+      const { delivery } = await outbox.enqueueEmail(input());
+      await outbox.dispatchDue();
+      expect(transport.calls).toHaveLength(0);
+      expect(await reload(delivery)).toMatchObject({
+        status: 'pending',
+        handedOffAt: null,
+      });
+      const malformed = service({
+        transport,
+        resolveAttachments: async () => undefined as never,
+      });
+      clock = new Date(clock.getTime() + 120_000);
+      await malformed.dispatchDue();
+      expect(transport.calls).toHaveLength(0);
+    });
+  });
+
+  describe('required dispatch policy', () => {
+    const policyId = 'fixture.invoice.v1';
+    const bytes = Buffer.from('%PDF-1.7\nprotected synthetic invoice\n%%EOF');
+    const protectedInput = () =>
+      input({
+        kind: `protected:${policyId}`,
+        requiredDispatchPolicy: policyId,
+        dispatchPolicyBinding: {
+          artifact: 'retained-document',
+          version: 1,
+          digest: 'fixture-sha256',
+          recipientUserId: alice,
+        },
+      });
+    const policy = {
+      resolveAttachments: async ({
+        delivery,
+      }: NotificationTransportRequest) => {
+        const binding =
+          typeof delivery.dispatchPolicyBinding === 'string'
+            ? JSON.parse(delivery.dispatchPolicyBinding)
+            : delivery.dispatchPolicyBinding;
+        if (
+          binding.recipientUserId !== delivery.recipientUserId ||
+          binding.artifact !== 'retained-document' ||
+          binding.version !== 1
+        )
+          throw new Error('approved artifact binding changed');
+        return [
+          {
+            filename: 'invoice.pdf',
+            contentType: 'application/pdf',
+            content: bytes,
+          },
+        ];
+      },
+    };
+
+    it('blocks a broad default dispatcher before leases/provider calls, then allows the exact trusted policy', async () => {
+      const transport = fakeTransport();
+      const owner = service({
+        transport,
+        dispatchPolicies: { [policyId]: policy },
+      });
+      const { delivery } = await owner.enqueueEmail(protectedInput());
+      const report = await service({ transport }).dispatchDue();
+      expect(report).toMatchObject({
+        leased: 0,
+        outcomes: [{ outcome: 'blocked' }],
+      });
+      expect(await reload(delivery)).toMatchObject({
+        status: 'pending',
+        attempts: 0,
+        handedOffAt: null,
+      });
+      expect(transport.calls).toHaveLength(0);
+      await owner.dispatchDue({
+        tenantIds: [tenantA],
+        deliveryIds: [delivery.id as string],
+      });
+      expect(transport.calls).toHaveLength(1);
+      expect(
+        Buffer.from(transport.calls[0]?.attachments?.[0]?.content ?? []),
+      ).toEqual(bytes);
+    });
+
+    it('requires recognized policy and binding at enqueue, and denies empty/mismatched policy output', async () => {
+      await expect(service().enqueueEmail(protectedInput())).rejects.toThrow();
+      const transport = fakeTransport();
+      const owner = service({
+        transport,
+        dispatchPolicies: { [policyId]: policy },
+      });
+      await expect(
+        owner.enqueueEmail({ ...protectedInput(), dispatchPolicyBinding: {} }),
+      ).rejects.toThrow();
+      const { delivery } = await owner.enqueueEmail(protectedInput());
+      const empty = service({
+        transport,
+        dispatchPolicies: { [policyId]: { resolveAttachments: () => [] } },
+      });
+      await empty.dispatchDue();
+      expect(transport.calls).toHaveLength(0);
+      expect(await reload(delivery)).toMatchObject({
+        status: 'pending',
+        handedOffAt: null,
+      });
+    });
+
+    it('protects persisted consent and rejects policy removal on new protected clones', async () => {
+      const owner = service({ dispatchPolicies: { [policyId]: policy } });
+      const { delivery } = await owner.enqueueEmail(protectedInput());
+      for (const changes of [
+        { requiredDispatchPolicy: '' },
+        { recipientAddress: 'other@example.com' },
+        { dispatchPolicyBinding: '{}' },
+        { kind: 'ordinary' },
+        { sourceRef: 'different' },
+        { textBody: 'different' },
+      ]) {
+        const row = await reload(delivery);
+        Object.assign(row, changes);
+        await expect(
+          withTenant({ tenantId: tenantA }, () => row.save()),
+        ).rejects.toThrow(/immutable|exact dispatch policy/);
+      }
+      const lifecycle = await reload(delivery);
+      lifecycle.status = 'sent';
+      await expect(
+        withTenant({ tenantId: tenantA }, () => lifecycle.save()),
+      ).rejects.toThrow('guarded transition');
+      await expect(
+        owner.enqueueEmail({
+          ...protectedInput(),
+          requiredDispatchPolicy: undefined,
+        }),
+      ).rejects.toThrow();
+      const clone = new NotificationDelivery({
+        db,
+        id: crypto.randomUUID(),
+        tenantId: tenantA,
+        recipientUserId: alice,
+        kind: `protected:${policyId}`,
+        sourceRef: 'clone',
+        requiredDispatchPolicy: '',
+      });
+      await clone.initialize();
+      await expect(
+        withTenant({ tenantId: tenantA }, () => clone.save()),
+      ).rejects.toThrow('exact dispatch policy');
+    });
+  });
+
   describe('enqueue', () => {
     it('stores one delivery per source event, returning the first untouched', async () => {
       const outbox = service({ transport: fakeTransport() });
