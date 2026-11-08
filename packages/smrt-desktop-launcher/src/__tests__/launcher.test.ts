@@ -326,7 +326,12 @@ describe('provider diagnostics', () => {
     const provider = fakeProvider(stage, stub);
     // The staged node is a hard link: replace it, never write through it.
     await rm(stage.install.nodePath);
-    await writeFileMode(stage.install.nodePath, 'not an executable', 0o755);
+    // A shebang naming a missing interpreter fails execve on every platform.
+    await writeFileMode(
+      stage.install.nodePath,
+      '#!/nonexistent/interpreter\n',
+      0o755,
+    );
     const run = start(provider, stub);
     expect(await run.result).toBe(17);
     expect(run.stderr.text).toBe(diagnostic('bridge_start_failed'));
