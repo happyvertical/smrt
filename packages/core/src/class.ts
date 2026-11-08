@@ -1165,11 +1165,6 @@ export class SmrtClass {
     return pending;
   }
 
-  /**
-   * Record a zero-token usage row for an inference call that never answered
-   * (#4752), through the same handlers SDK usage events reach. The executor
-   * calls this once per exhausted call; it is not a second writer.
-   */
   /** This instance's tenant id: a value, `null` (global), or unknown. */
   private currentTenantId(): string | null | undefined {
     return 'tenantId' in this &&
@@ -1272,6 +1267,11 @@ export class SmrtClass {
     }
   }
 
+  /**
+   * Record a zero-token usage row for an inference call that never answered
+   * (#4752), through the same handlers SDK usage events reach. The executor
+   * calls this once per exhausted call; it is not a second writer.
+   */
   private async recordInferenceUsage(
     record: InferenceUsageRecord,
   ): Promise<void> {
