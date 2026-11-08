@@ -91,6 +91,12 @@ import {
   inferenceUnavailableStatus,
 } from './inference-availability.js';
 import {
+  checkInferenceGate,
+  enforceInferenceGate,
+  inferenceGateRequest,
+  isHostedInferenceTarget,
+} from './inference-gate.js';
+import {
   bindInferenceTarget,
   inferenceTargetIdentity,
 } from './inference-target.js';
@@ -936,6 +942,9 @@ export class SmrtClass {
           owner: this._className,
         });
       }
+      // A single hosted target passes the gate before its client is built;
+      // a chain's hosted candidates pass it in `clientFor`, per attempt.
+      await this.enforceHostedInferenceGate(request, resolution);
       const executor = inferenceExecutorFor(resolution.target);
       if (executor) {
         return executor.createClient({
@@ -944,10 +953,12 @@ export class SmrtClass {
           config: this.getInferenceConfig(),
           ...(options.minimumTier ? { minimumTier: options.minimumTier } : {}),
           ...(options.allowPartial ? { allowPartial: true } : {}),
-          clientFor: async (target) =>
-            (await this.getAiClientForTarget(
+          clientFor: async (target) => {
+            await this.enforceHostedInferenceGate(request, resolution, target);
+            return (await this.getAiClientForTarget(
               target,
-            )) as unknown as InferenceModelClient,
+            )) as unknown as InferenceModelClient;
+          },
           resolveTier: (next) =>
             this.resolveInferenceTier({ ...request, tier: next }),
           recordUsage: (record) => this.recordInferenceUsage(record),
@@ -973,6 +984,48 @@ export class SmrtClass {
     // on the app's provider.
     if (modeState) return this.getAiClient('auto', options);
     return this.requireConfiguredAi();
+  }
+
+  /**
+   * The hosted gate (#4760) for one target: `byo` / `local` / `app` targets
+   * return at once; a `source: 'hosted'` target asks the registered gate and,
+   * on a block (or a failing gate: fail closed), records the zero-usage
+   * `operation: 'blocked'` row through this instance's usage pipeline and
+   * throws `InferenceUnavailableError` (`reason: 'entitlement'`).
+   */
+  private async enforceHostedInferenceGate(
+    request: InferenceRequest,
+    resolution: InferenceResolution,
+    target: InferenceTarget = resolution.target,
+  ): Promise<void> {
+    if (!isHostedInferenceTarget(target)) return;
+    await enforceInferenceGate(
+      this.hostedGateRequest(request, resolution, target),
+      {
+        record: (row) => this.recordInferenceUsage(row),
+        resolution,
+        owner: this._className,
+      },
+    );
+  }
+
+  /** The gate request for this instance's class, tenant and user scope. */
+  private hostedGateRequest(
+    request: InferenceRequest,
+    resolution: InferenceResolution,
+    target: InferenceTarget,
+  ) {
+    const { tenantId, userId } = this.inferenceRequestScope();
+    return inferenceGateRequest(
+      {
+        className: this._className,
+        ...(tenantId !== undefined ? { tenantId } : {}),
+        ...(userId === null ? { userId: null } : {}),
+        ...request,
+      },
+      resolution,
+      target,
+    );
   }
 
   /**
@@ -1169,6 +1222,21 @@ export class SmrtClass {
       !this._ai
     ) {
       return inferenceUnavailableStatus('unconfigured', undefined, tier);
+    }
+    if (isHostedInferenceTarget(target)) {
+      // Ask the hosted gate (#4760) as a probe: decide, record nothing.
+      const decision = await checkInferenceGate({
+        ...this.hostedGateRequest({ tier: options.tier }, resolution, target),
+        probe: true,
+      });
+      if (decision.action === 'block') {
+        return inferenceUnavailableStatus(
+          'entitlement',
+          'hosted',
+          tier,
+          decision.details,
+        );
+      }
     }
     return {
       available: true,

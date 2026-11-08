@@ -377,6 +377,7 @@ export {
   AI_UNAVAILABLE,
   INFERENCE_MODES,
   INFERENCE_UNAVAILABLE_REASONS,
+  type InferenceEntitlementDetails,
   type InferenceMode,
   type InferenceStatus,
   type InferenceUnavailableDetails,
@@ -388,6 +389,19 @@ export {
   isInferenceUnavailableError,
   isInferenceUnavailableReason,
 } from './inference-availability';
+export {
+  checkInferenceGate,
+  enforceInferenceGate,
+  getInferenceGate,
+  INFERENCE_BLOCKED_OPERATION,
+  type InferenceGate,
+  type InferenceGateDecision,
+  type InferenceGateRequest,
+  inferenceBlockedUsageRecord,
+  inferenceGateRequest,
+  isHostedInferenceTarget,
+  setInferenceGate,
+} from './inference-gate';
 export {
   INFERENCE_PRESET_IDS,
   INFERENCE_PRESETS,

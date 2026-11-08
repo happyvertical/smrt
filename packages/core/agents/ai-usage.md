@@ -28,6 +28,12 @@ present and `persist` is on, plus `usage.handlers`; instances also keep an
   `tenantId`/`tags` (`aiUsageSinkAttribution`) still apply, while class name,
   instance tenant and ambient tenant follow the building instance. Keep that
   unwrap and attribution on every client the class builds (default and tier).
+- User (#4760): `setAiUsageUserResolver()` is the ambient-user slot. When
+  registered (the hosted gate registers the principal's user), every row
+  whose event and attribution carry no `userId` tag gets the resolver's
+  user as `userId` (`AI_USAGE_USER_TAG`); an explicit tag wins and a
+  throwing resolver attributes nothing. Per-user hosted spend caps meter
+  that tag.
 - Tenant: explicit `tenantId` (a string; `null` = global, skip ambient) →
   instance `tenantId` (non-empty) → ambient tenant from
   `setAiUsageTenantResolver()` → none. smrt-tenancy registers `getTenantId()`
@@ -57,7 +63,10 @@ indexed TEXT columns (`AI_USAGE_TAG_COLUMNS`); `tags` always keeps the full map.
 
 Tag-only keys read by the report: `promptLayer` and `templateHash` (prompts),
 `substitutions` (JSON array, #4752), `fusionKey` (#4753), `source` (binding
-origin `byo | local | hosted | app`, #4756). Indexes:
+origin `byo | local | hosted | app`, #4756). `userId` (#4760) and the hosted
+gate's audit tags (`reason`, `policy`, `cap`, `spend`, `resetsAt`,
+`disabledBy` on `operation: 'blocked'` rows) stay in `tags`; smrt-subscriptions
+meters `source`/`userId` with an exact-fragment `LIKE` on `tags`. Indexes:
 `idx_smrt_ai_usage_prompt_key (prompt_key, created_at)`, `idx_smrt_ai_usage_run (run_id)`.
 The tier filters of `listAiUsage()` have no index on purpose: four-value
 columns, always read with a time window that `idx_smrt_ai_usage_created` serves.
@@ -95,6 +104,9 @@ windows each page rescans the window; keyset on `(created_at, id)` is a
 follow-up that needs per-engine timestamp round-tripping. A filter
 selects what is totalled, never what is accounted for:
 
+- Hosted-gate blocks (`operation: 'blocked'`, #4760) count in `blocked`,
+  beside `calls` and never in it: no tokens, cost, duration or
+  unattributed count.
 - NULL dimension values are their own bucket (`(unattributed)` in the CLI);
   `unattributedCalls` counts calls without a prompt key.
 - `estimatedCost` sums recorded costs only; rows without a rate are

@@ -136,8 +136,9 @@ and the dev photo-setup route (vision / decision providers).
 `InferenceUnavailableError` (`SmrtError` code `AI_UNAVAILABLE`, category
 `configuration`, `retryable: false`, `reason: off | unconfigured |
 entitlement | capability`; `isInferenceUnavailableError()` matches by code
-across core copies). `entitlement` is reserved for the hosted gate (#4760)
-and `capability` for capability detection (#4758); nothing raises them yet.
+across core copies). `entitlement` is raised by the hosted gate (#4760,
+below) and carries `entitlement: { policy, cap?, spend?, resetsAt?,
+disabledBy? }`; `capability` is reserved for capability detection (#4758).
 `off` and `unconfigured` always report mode `off`.
 
 - **Where it is thrown.** `getAiClient()`, before any client is built, so
@@ -185,7 +186,47 @@ and `capability` for capability detection (#4758); nothing raises them yet.
 - **Consumers.** Agents end the run `skipped` (agents AGENTS); chat answers a
   structured `ai_unavailable` 503 (chat AGENTS).
 
-Tests: `src/__tests__/issue-4757-inference-unavailable.test.ts`,
+## Hosted gate (#4760)
+
+`src/inference-gate.ts` (browser-safe): `setInferenceGate()` /
+`getInferenceGate()` hold one process-wide `InferenceGate` on `globalThis`;
+`@happyvertical/smrt-inference/gate` registers the real one (kill switch,
+plan caps; [smrt-inference](../../inference/AGENTS.md)). Core imports no
+subscriptions or features code.
+
+- **Who is asked.** Only a `single` target with `source: 'hosted'`
+  (`isHostedInferenceTarget()`): `getAiClient(tier)` before the client is
+  built, each hosted chain candidate in the executor's `clientFor()`,
+  `resolveInferenceTarget()` for a bound hosted target, and the probes.
+  `byo` / `local` / `app` never reach the gate. No gate registered: hosted
+  calls run.
+- **Decisions.** `allow`, `warn` (runs; details for the host's sink), or
+  `block`. A gate that throws or answers anything malformed is a `block`
+  with policy `gate-error` (`checkInferenceGate()`, fail closed; the cause
+  never reaches the message). Amounts must be safe integers (micro-dollars)
+  or they are dropped.
+- **Block.** `enforceInferenceGate()` writes one zero-usage row through the
+  caller's own usage pipeline (`recordInferenceUsage()` for objects; the
+  #3077 recorder for raw sites, persisted only when `usage.db` is given):
+  `operation: 'blocked'`, tier tags, `source: hosted`, `reason:
+  entitlement`, `policy`, and `cap` / `spend` / `resetsAt` / `disabledBy`
+  when known. Then it throws `InferenceUnavailableError` (`reason:
+  'entitlement'`, mode `hosted`). The row is the audit record; recording
+  failures never lift the block. The executor neither records a second row
+  nor advances on `AI_UNAVAILABLE`.
+- **Request.** `InferenceGateRequest = { tierRequested, tier, target,
+  tenantId?, userId?: null, className?, promptKey?, probe? }`: the instance
+  tenant, `userId: null` for shared clients (agents), never a user id (the
+  gate reads the principal). Probes pass `probe: true` and record nothing;
+  a blocked probe answers `{ available: false, reason: 'entitlement', mode:
+  'hosted', policy, resetsAt? }` (never cap or spend).
+- **Granularity.** The gate runs once per client acquisition: every object
+  operation (`do()`, `prepareAiOperation()`), every chain attempt, every
+  `resolveInferenceTarget()`. A caller that keeps a raw client across many
+  calls is checked when it built it.
+
+Tests: `src/__tests__/issue-4760-hosted-inference-gate.test.ts`,
+`src/__tests__/issue-4757-inference-unavailable.test.ts`,
 `src/__tests__/issue-4756-inference-target.test.ts`,
 `src/__tests__/inference-tiers.test.ts`,
 `src/__tests__/class-inference-tiers.test.ts`,

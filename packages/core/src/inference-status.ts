@@ -31,6 +31,11 @@ import {
   type InferenceStatus,
   inferenceUnavailableStatus,
 } from './inference-availability.js';
+import {
+  checkInferenceGate,
+  inferenceGateRequest,
+  isHostedInferenceTarget,
+} from './inference-gate.js';
 import { inferenceTargetIdentity } from './inference-target.js';
 
 /** Options for {@link getInferenceStatus}. */
@@ -148,6 +153,21 @@ export async function getInferenceStatus(
     !configured
   ) {
     return inferenceUnavailableStatus('unconfigured', undefined, tier);
+  }
+  if (isHostedInferenceTarget(target)) {
+    // The hosted gate (#4760), asked as a probe: decide, record nothing.
+    const decision = await checkInferenceGate({
+      ...inferenceGateRequest({ tier: options.tier, ...scope }, resolution),
+      probe: true,
+    });
+    if (decision.action === 'block') {
+      return inferenceUnavailableStatus(
+        'entitlement',
+        'hosted',
+        tier,
+        decision.details,
+      );
+    }
   }
   return {
     available: true,
