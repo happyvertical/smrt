@@ -1287,8 +1287,6 @@ export abstract class Agent extends SmrtObject {
    * Main agent logic
    * Must be implemented by extending class
    *
-   * Update this.lastRun.itemsProcessed to track work done
-   *
    * @example
    * ```typescript
    * async run(): Promise<void> {
@@ -1300,7 +1298,6 @@ export abstract class Agent extends SmrtObject {
    *     processed++;
    *   }
    *
-   *   this.lastRun.itemsProcessed = processed;
    *   this.logger.info(`Processed ${processed} items`);
    * }
    * ```
