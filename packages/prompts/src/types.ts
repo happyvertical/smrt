@@ -180,5 +180,11 @@ export interface PromptCacheValue {
   template: string;
   /** The highest stored/config layer that supplied `template`. */
   templateLayer: Exclude<PromptSourceLayer, 'runtime'>;
+  /**
+   * The highest stored/config layer that supplied `ai.profile`. Only a
+   * profile the code default supplied is exempt from `allowedProfileNames`
+   * (#4755).
+   */
+  profileLayer: Exclude<PromptSourceLayer, 'runtime'>;
   ai: NormalizedPromptAI;
 }

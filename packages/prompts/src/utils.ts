@@ -331,7 +331,10 @@ export function buildResolvedAI(
   ai: NormalizedPromptAI,
   config: PromptPackageConfig,
   options: {
-    /** The registered code default's profile (`definePrompt({ ai })`). */
+    /**
+     * The registered code default's profile (`definePrompt({ ai })`), passed
+     * only when no config, stored or runtime layer set a profile.
+     */
     defaultProfile?: string;
   } = {},
 ): ResolvedPromptAI {

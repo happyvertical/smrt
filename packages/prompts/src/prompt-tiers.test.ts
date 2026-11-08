@@ -129,12 +129,24 @@ describe('prompt tier profiles', () => {
     // The framework's own declaration never breaks an app's allow-list.
     const { ai } = await resolvePrompt('tiers.denied', { tenantId: null });
     expect(ai.tier).toBe('cheap');
-    // A tier selected by an override layer is still a choice the list governs.
+    // A tier selected by an override layer is still a choice the list governs,
+    // including one that re-selects the code default's own tier.
+    for (const profile of ['best', 'cheap']) {
+      await expect(
+        resolvePrompt('tiers.denied', {
+          tenantId: null,
+          override: { profile },
+        }),
+      ).rejects.toThrow('not in the allowed profile list');
+    }
+    clearPromptCache();
+    clearCache();
+    usePromptConfig({
+      allowedProfileNames: ['deep'],
+      prompts: { 'tiers.denied': { profile: 'cheap' } },
+    });
     await expect(
-      resolvePrompt('tiers.denied', {
-        tenantId: null,
-        override: { profile: 'best' },
-      }),
+      resolvePrompt('tiers.denied', { tenantId: null }),
     ).rejects.toThrow('not in the allowed profile list');
   });
 

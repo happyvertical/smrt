@@ -28,6 +28,11 @@ function suppliesTemplate(layer: PromptLayer | null | undefined): boolean {
   return layer?.template !== undefined && layer.template !== null;
 }
 
+/** True when `layer` sets the profile (null and undefined inherit). */
+function suppliesProfile(layer: PromptLayer | null | undefined): boolean {
+  return layer?.profile !== undefined && layer.profile !== null;
+}
+
 function getPromptConfig(): PromptPackageConfig {
   return getPackageConfig<PromptPackageConfig>('prompts', {
     profiles: {},
@@ -101,13 +106,16 @@ async function loadPromptBase(
 
   const merged = mergePromptLayers(...layers.map(({ layer }) => layer));
   let templateLayer: PromptCacheValue['templateLayer'] = 'default';
+  let profileLayer: PromptCacheValue['profileLayer'] = 'default';
   for (const { name, layer } of layers) {
     if (suppliesTemplate(layer)) templateLayer = name;
+    if (suppliesProfile(layer)) profileLayer = name;
   }
   const value: PromptCacheValue = {
     key,
     template: merged.template,
     templateLayer,
+    profileLayer,
     ai: merged.ai,
   };
 
@@ -135,8 +143,15 @@ export async function resolvePrompt(
   const promptLayer: PromptSourceLayer = suppliesTemplate(runtimeOverride)
     ? 'runtime'
     : base.templateLayer;
+  // Only a profile the code default itself supplied is exempt from
+  // `allowedProfileNames`; any config, stored or runtime layer that sets one
+  // (even the same tier again) is a choice the allow-list governs.
+  const profileFromDefault =
+    base.profileLayer === 'default' && !suppliesProfile(runtimeOverride);
   const ai = buildResolvedAI(merged.ai, config, {
-    defaultProfile: PromptRegistry.get(key)?.ai.profile,
+    defaultProfile: profileFromDefault
+      ? PromptRegistry.get(key)?.ai.profile
+      : undefined,
   });
   if (ai.tier) {
     // The tier binds once, at call time, through the core inference seam
