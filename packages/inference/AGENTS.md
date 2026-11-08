@@ -140,8 +140,10 @@ await contract.do('Summarize this contract', { tier: 'best' }); // unchanged cal
   `degraded`; the handoff answer seat is told when the draft died. A run
   whose seats all died throws `InferenceFusionError`
   (`INFERENCE_FUSION_FAILED`, `result` holds every seat) with the run
-  recorded `failed`, never an empty answer. A config error, a caller abort,
-  or a final seat that already streamed text (`partial`) rethrows.
+  recorded `failed`, never an empty answer. A seat whose setup fails (prompt
+  override read, its tier's resolver) dies like a model failure. A config
+  error, a caller abort, or a final seat that already streamed text
+  (`partial`) rethrows, after both `pair` seats have settled.
 - **JSON**: `output: 'json'` sends `responseFormat: json_object` and parses;
   a seat whose text does not parse keeps it under `raw` (with `parseError`)
   in `FusionSeatResult` and hands the raw text on, labelled.
@@ -159,8 +161,11 @@ await contract.do('Summarize this contract', { tier: 'best' }); // unchanged cal
   unregistered seat prompt key is a load error (`fusion-prompt-unknown`) from
   `validateInferenceConfig()`, the resolver, the executor and
   `defineFusion()`, but not the doctor (it runs without the app's prompts).
-- Seat prompts resolve through `@happyvertical/smrt-prompts` (optional peer,
-  imported with `importOptionalDependency()` so the root stays browser-safe);
+- Seat prompts resolve through `@happyvertical/smrt-prompts` (optional peer),
+  imported by a variable specifier from this package (strict layouts find
+  the app's copy; bundlers do not follow it, so the root stays browser-safe),
+  then core's `importOptionalDependency()` (a module registered with
+  `registerOptionalDependency()` in bundled builds).
   `setFusionPromptResolver()` replaces it.
 - **Tenant-level fusions are deferred** to #4754's allow-list: a fusion
   multiplies hosted model spend per call, so a tenant must not be able to
