@@ -161,9 +161,9 @@ await contract.do('Summarize this contract', { tier: 'best' }); // unchanged cal
   unregistered seat prompt key is a load error (`fusion-prompt-unknown`) from
   `validateInferenceConfig()`, the resolver, the executor and
   `defineFusion()`, but not the doctor (it runs without the app's prompts).
-- Seat prompts resolve through `@happyvertical/smrt-prompts` (optional peer),
-  imported by a variable specifier from this package (strict layouts find
-  the app's copy; bundlers do not follow it, so the root stays browser-safe),
+- Seat prompts resolve through `@happyvertical/smrt-prompts` (a dependency;
+  never a peer, #1582), imported by a variable specifier from this package
+  (strict layouts find it; bundlers do not follow it, so the root stays browser-safe),
   then core's `importOptionalDependency()` (a module registered with
   `registerOptionalDependency()` in bundled builds).
   `setFusionPromptResolver()` replaces it.

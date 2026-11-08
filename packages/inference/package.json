@@ -34,23 +34,15 @@
   "dependencies": {
     "@happyvertical/ai": "catalog:",
     "@happyvertical/smrt-config": "workspace:*",
-    "@happyvertical/smrt-core": "workspace:*"
+    "@happyvertical/smrt-core": "workspace:*",
+    "@happyvertical/smrt-prompts": "workspace:*"
   },
   "devDependencies": {
-    "@happyvertical/smrt-prompts": "workspace:*",
     "@happyvertical/smrt-vitest": "workspace:*",
     "@types/node": "24.13.6",
     "typescript": "6.0.3",
     "vite": "8.1.6",
     "vitest": "4.1.10"
-  },
-  "peerDependencies": {
-    "@happyvertical/smrt-prompts": "workspace:*"
-  },
-  "peerDependenciesMeta": {
-    "@happyvertical/smrt-prompts": {
-      "optional": true
-    }
   },
   "keywords": [
     "smrt",
