@@ -2,6 +2,7 @@ export type {
   DesktopContractErrorCode,
   DesktopContractErrorOptions,
   InstallErrorCode,
+  RendezvousErrorCode,
 } from './errors.js';
 export { DesktopContractError } from './errors.js';
 export type {
@@ -30,6 +31,7 @@ export type {
   FileHandleLike,
   StatsLike,
 } from './internal/fs-seam.js';
+export * from './rendezvous/index.js';
 export { SecretString } from './secret-string.js';
 export type { SidecarManifestV1 } from './sidecar-manifest.js';
 export {
