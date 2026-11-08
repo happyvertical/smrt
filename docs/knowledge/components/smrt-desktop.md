@@ -1,14 +1,14 @@
 ---
 type: "Component"
 title: "@happyvertical/smrt-desktop"
-description: "Versioned sidecar manifest for SMRT desktop apps"
+description: "Versioned sidecar manifest and installed-product contracts for SMRT desktop apps"
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-08T21:49:53Z"
+  at: "2026-11-08T22:59:18Z"
 audience: "internal"
 evidence_level: "manifest-described"
-source_revision: "sha256:d91524a1468a37374a679ecebe99a8a85efd5b6b9f4e1762d57207853e092c8e"
+source_revision: "sha256:a07c75818d90d0e2fe56dcfda194abc8c94765c20df15de63404de7414f6c77d"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/smrt-desktop/package.json"

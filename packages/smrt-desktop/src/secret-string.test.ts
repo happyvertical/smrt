@@ -9,6 +9,7 @@ function dumps(secret: SecretString): string[] {
   return [
     String(secret),
     `${secret}`,
+    // biome-ignore lint/style/useTemplate: exercises concatenation coercion
     `${secret}x` + secret,
     secret.toString(),
     JSON.stringify(secret),
@@ -67,6 +68,7 @@ describe('SecretString', () => {
   it('coerces to a redaction for every primitive hint', () => {
     const secret = new SecretString(SECRET);
     expect(`${secret}`).toBe('[REDACTED]');
+    // biome-ignore lint/style/useTemplate: exercises concatenation coercion
     expect(secret + '').toBe('[REDACTED]');
     expect(Number.isNaN(Number(secret))).toBe(true);
   });

@@ -38,7 +38,7 @@ const cases: [string, (value: unknown) => boolean, unknown[], unknown[]][] = [
       'com.example.n\u00f6tes',
       'aux.example.app',
       'NUL.example',
-      'a.b.'.repeat(80) + 'c',
+      `${'a.b.'.repeat(80)}c`,
       42,
     ],
   ],
