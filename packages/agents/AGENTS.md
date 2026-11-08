@@ -68,8 +68,9 @@ async run() { for (const { type, data } of await this.interesting()) { ... } }
   its `source` / tier tags ride on the usage rows. Never a user's binding:
   the agent keeps the options for every later run, whoever starts it. App
   `inference` tier bindings never replace an agent's own `ai`; a named
-  secret keeps the secret path. Like the tenant secret, the binding is read
-  at `initialize()`.
+  secret keeps the secret path. Every `initialize()` (each `execute()`)
+  re-resolves from the configured `ai`, so a rotated or removed tenant key
+  or binding is never kept from an earlier run.
 - **UI slots**: `static uiSlots` declares admin panels (id, label, icon, order,
   `scope`, optional versioned `settingsSchema`). Without a registered custom
   component, `AgentSettingsForm` renders that schema.

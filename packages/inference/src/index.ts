@@ -31,6 +31,7 @@ export {
 export {
   INFERENCE_PROVIDER_CONFIG_SECRET_TYPE,
   INFERENCE_PROVIDER_CONFIG_SOURCES,
+  INFERENCE_PROVIDER_PARAM_KEYS,
   type InferenceProviderBinding,
   type InferenceProviderConfig,
   InferenceProviderConfigError,

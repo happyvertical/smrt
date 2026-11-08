@@ -44,7 +44,11 @@ export interface InferenceProviderBinding {
   apiKey?: string;
   /** A #4674 preset id (`openrouter`, `lemonade`, ...); needs `model`. */
   preset?: string;
-  /** Per-call defaults (temperature, ...); caller options win. */
+  /**
+   * Per-call generation defaults; caller options win. Only
+   * {@link INFERENCE_PROVIDER_PARAM_KEYS} with scalar values are accepted,
+   * so no credential or header can hide here.
+   */
   params?: Record<string, unknown>;
 }
 
@@ -92,6 +96,45 @@ export class InferenceProviderConfigError extends SmrtError {
   }
 }
 
+/** Generation options a stored binding may carry in `params`. */
+export const INFERENCE_PROVIDER_PARAM_KEYS = [
+  'temperature',
+  'maxTokens',
+  'topP',
+  'topK',
+  'frequencyPenalty',
+  'presencePenalty',
+  'seed',
+  'stop',
+] as const;
+
+const PARAM_KEYS: readonly string[] = INFERENCE_PROVIDER_PARAM_KEYS;
+
+function isParamValue(value: unknown): boolean {
+  if (typeof value === 'number') return Number.isFinite(value);
+  if (typeof value === 'string') return true;
+  return (
+    Array.isArray(value) &&
+    value.length <= 16 &&
+    value.every((entry) => typeof entry === 'string')
+  );
+}
+
+/** Only the allowed scalar generation options (defence for legacy rows). */
+function safeParams(
+  params: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  if (!params) return undefined;
+  const out: Record<string, unknown> = {};
+  for (const key of PARAM_KEYS) {
+    const value = params[key];
+    if (value !== undefined && isParamValue(value)) {
+      out[key] = Array.isArray(value) ? [...value] : value;
+    }
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
 const BINDING_FIELDS = [
   'provider',
   'baseUrl',
@@ -136,8 +179,21 @@ function parseBinding(
     binding[field] = parsed;
   }
   if (value.params !== undefined) {
-    if (isRecord(value.params)) binding.params = { ...value.params };
-    else issues.push(`${path}.params must be an object`);
+    if (!isRecord(value.params)) {
+      issues.push(`${path}.params must be an object`);
+    } else {
+      for (const [key, param] of Object.entries(value.params)) {
+        if (!PARAM_KEYS.includes(key)) {
+          issues.push(
+            `${path}.params.${key} is not a supported generation option (${INFERENCE_PROVIDER_PARAM_KEYS.join(', ')})`,
+          );
+        } else if (!isParamValue(param)) {
+          issues.push(`${path}.params.${key} must be a number or string`);
+        }
+      }
+      const params = safeParams(value.params);
+      if (params) binding.params = params;
+    }
   }
   if (binding.preset) {
     if (!isInferencePresetId(binding.preset)) {
@@ -153,6 +209,11 @@ function parseBinding(
     }
   } else if (Object.keys(binding).length > 0 && !binding.provider) {
     issues.push(`${path}.provider is required`);
+  }
+  if (binding.baseUrl && !isPlainEndpoint(binding.baseUrl)) {
+    issues.push(
+      `${path}.baseUrl must be an http(s) URL without credentials, query or fragment`,
+    );
   }
   // A stored binding is self-contained: its own endpoint and its own key
   // (core's pair rule), so it never borrows the server's environment
@@ -252,6 +313,22 @@ export function parseInferenceProviderConfig(
   return config;
 }
 
+/** An http(s) URL with no userinfo, query or fragment (no hidden secrets). */
+function isPlainEndpoint(baseUrl: string): boolean {
+  try {
+    const url = new URL(baseUrl);
+    return (
+      (url.protocol === 'http:' || url.protocol === 'https:') &&
+      !url.username &&
+      !url.password &&
+      !url.search &&
+      !url.hash
+    );
+  } catch {
+    return false;
+  }
+}
+
 function isLoopbackUrl(baseUrl: string | undefined): boolean {
   if (!baseUrl) return false;
   try {
@@ -300,7 +377,9 @@ function bindingToTarget(
       baseUrl: binding.baseUrl ?? INFERENCE_PRESETS[binding.preset].baseUrl,
       ...(binding.model ? { model: binding.model } : {}),
       apiKey: binding.apiKey ?? KEYLESS_PLACEHOLDER,
-      ...(binding.params ? { params: { ...binding.params } } : {}),
+      ...(safeParams(binding.params)
+        ? { params: safeParams(binding.params) }
+        : {}),
       source,
     };
   }
@@ -309,7 +388,9 @@ function bindingToTarget(
     ...(binding.model ? { model: binding.model } : {}),
     ...(binding.baseUrl ? { baseUrl: binding.baseUrl } : {}),
     ...(binding.apiKey ? { apiKey: binding.apiKey } : {}),
-    ...(binding.params ? { params: { ...binding.params } } : {}),
+    ...(safeParams(binding.params)
+      ? { params: safeParams(binding.params) }
+      : {}),
     source,
   };
 }
@@ -344,11 +425,16 @@ export function inferenceProviderTargets(
 function redactBinding(
   binding: InferenceProviderBinding,
 ): RedactedInferenceProviderBinding {
-  const { apiKey, ...rest } = binding;
+  // Copy known non-secret fields only: nothing unexpected in a stored row
+  // (legacy or hand-written) can reach the settings view.
+  const params = safeParams(binding.params);
   return {
-    ...rest,
-    ...(rest.params ? { params: { ...rest.params } } : {}),
-    hasApiKey: !!apiKey && apiKey !== KEYLESS_PLACEHOLDER,
+    ...(binding.provider ? { provider: binding.provider } : {}),
+    ...(binding.preset ? { preset: binding.preset } : {}),
+    ...(binding.baseUrl ? { baseUrl: binding.baseUrl } : {}),
+    ...(binding.model ? { model: binding.model } : {}),
+    ...(params ? { params } : {}),
+    hasApiKey: !!binding.apiKey && binding.apiKey !== KEYLESS_PLACEHOLDER,
   };
 }
 
@@ -375,11 +461,15 @@ export function redactInferenceProviderConfig(
 export function redactInferenceTarget(
   target: InferenceTarget,
 ): Omit<InferenceTarget, 'apiKey'> & { hasApiKey: boolean } {
-  const { apiKey, ...rest } = target;
+  const params = safeParams(target.params);
   return {
-    ...rest,
-    ...(rest.params ? { params: { ...rest.params } } : {}),
-    hasApiKey: !!apiKey && apiKey !== KEYLESS_PLACEHOLDER,
+    ...(target.provider ? { provider: target.provider } : {}),
+    ...(target.baseUrl ? { baseUrl: target.baseUrl } : {}),
+    ...(target.model ? { model: target.model } : {}),
+    ...(target.latency ? { latency: target.latency } : {}),
+    ...(target.source ? { source: target.source } : {}),
+    ...(params ? { params } : {}),
+    hasApiKey: !!target.apiKey && target.apiKey !== KEYLESS_PLACEHOLDER,
   };
 }
 
