@@ -1388,9 +1388,19 @@ export async function legacyMain(env = process.env) {
     const maintenancePrepared = commit('reviewed legacy maintenance responder');
     git('push', 'legacy', 'HEAD:legacy');
     await acknowledgeGit('legacy-source', 'legacy-app', maintenancePrepared);
-    await until('legacy maintenance responder ready', () => {
-      const status = get('deployment', 'legacy-maintenance').status ?? {};
-      return (status.availableReplicas ?? 0) >= 1;
+    // The responder Deployment exists in every phase and rolls on the phase
+    // label change, so wait for that rollout to complete (kubectl rollout
+    // status semantics), not merely for an available replica.
+    await until('legacy maintenance responder rolled out', () => {
+      const deployment = get('deployment', 'legacy-maintenance');
+      const status = deployment.status ?? {};
+      const want = deployment.spec.replicas ?? 1;
+      return (
+        status.observedGeneration === deployment.metadata.generation &&
+        status.updatedReplicas === want &&
+        status.availableReplicas === want &&
+        (status.replicas ?? 0) === want
+      );
     });
     write('legacy/resources.yaml', {
       apiVersion: 'v1',
