@@ -784,8 +784,7 @@ describe('hosted inference provisioning (#4759)', () => {
         },
       ],
     });
-    // Every reconcile re-applies budgets (2 users x 2 reconciles).
-    expect(admin.updates).toHaveLength(4);
+    expect(admin.updates).toHaveLength(2);
     // A lost downgrade.
     const result = await reconcile(TENANT, { grants: [] });
     expect(result.revoked).toHaveLength(2);
@@ -1077,26 +1076,49 @@ describe('hosted inference provisioning (#4759)', () => {
     expect(cleared.pendingGatewayRevocations).toBeUndefined();
   });
 
-  it('reconcile re-applies the budget so a late timed-out update cannot stick', async () => {
-    const p = provisioner();
+  it('re-applies an unchanged budget only while an earlier update is uncertain', async () => {
+    let clock = Date.parse('2026-11-08T12:00:00Z');
+    const p = createHostedInferenceProvisioner({
+      db,
+      secrets,
+      gateway: GATEWAY,
+      admin,
+      nonce: () => 'x',
+      now: () => new Date(clock),
+    });
     await p.provision({
       tenantId: TENANT,
       userId: ALICE,
       budget: { limitMicros: 1_000_000 },
     });
-    const result = await p.reconcileTenant(TENANT, {
-      entitled: true,
-      budget: { limitMicros: 1_000_000 },
+    const sync = (limitMicros: number) =>
+      p.syncBudget({
+        tenantId: TENANT,
+        userId: ALICE,
+        budget: { limitMicros },
+      });
+    // Unchanged: never re-sent (an update may restart the spend window).
+    await expect(sync(1_000_000)).resolves.toMatchObject({ sync: 'unchanged' });
+    expect(admin.updates).toHaveLength(0);
+
+    // An update that fails may still land: the state remembers it.
+    const update = admin.updateVirtualKey.bind(admin);
+    admin.updateVirtualKey = async () => {
+      throw Object.assign(new Error('reset'), { code: 'ECONNRESET' });
+    };
+    await expect(sync(2_000_000)).rejects.toMatchObject({
+      code: 'HOSTED_GATEWAY_FAILED',
     });
-    expect(result.synced).toEqual([
-      expect.objectContaining({ userId: ALICE, sync: 'updated' }),
-    ]);
-    expect(admin.updates).toEqual([
-      {
-        id: 'key-id-1',
-        options: { budget: { maxLimit: 1, resetDuration: '30d' } },
-      },
-    ]);
+    admin.updateVirtualKey = update;
+
+    // While uncertain, even the stored budget is re-applied.
+    await expect(sync(1_000_000)).resolves.toMatchObject({ sync: 'updated' });
+    clock += 16 * 60_000;
+    await expect(sync(1_000_000)).resolves.toMatchObject({ sync: 'updated' });
+    expect(admin.updates).toHaveLength(2);
+    // Settled: back to sending only real changes.
+    await expect(sync(1_000_000)).resolves.toMatchObject({ sync: 'unchanged' });
+    expect(admin.updates).toHaveLength(2);
   });
 
   it('never puts key material in results, audit rows, claims or logs', async () => {
