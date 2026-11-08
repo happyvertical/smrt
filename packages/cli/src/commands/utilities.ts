@@ -29,6 +29,7 @@ import type { DomainKnowledgeManifest } from '@happyvertical/smrt-types';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import type { CLICommand } from '../cli-generator.js';
 import { autoDiscoverAndLoad } from '../discovery/index.js';
+import { aiUsageCommand } from './ai-usage.js';
 import {
   RESET_RECIPE,
   scanProjectForUnlayeredResets,
@@ -3973,6 +3974,7 @@ export default testManifest;
   'db:drop-framework-base-tables': dbDropFrameworkBaseTablesCommand,
   'db:orphans': dbOrphansCommand,
   'db:prune': dbPruneCommand,
+  'ai:usage': aiUsageCommand,
   'db:permissions': dbPermissionsCommand,
 
   // Configuration commands
