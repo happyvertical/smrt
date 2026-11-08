@@ -1,11 +1,18 @@
+import { adoptionAnnotation, adoptionRecordManager, orphanedFieldsAnnotation } from './adopt.mjs';
 import { execFile } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
+import { createAdoptionMethods, verifyKnownLegacyWorkloads } from './live-adoption.mjs';
 import {
   DeploymentError,
   demand,
   hash,
   identity,
+  effectiveWorkloadSelectors,
+  readOnlyConfigBindings,
+  normalizedIngressRecords,
+  isContinuousStatic,
+  phaseRenderedRuntime,
   phases,
   validate,
   validateRepairEvidence,
@@ -164,6 +171,150 @@ function verifyControllerEnvelope(actual, desired) {
   const template = podTemplate(desired);
   if (template) verifyPodEnvelope(podTemplate(actual)?.spec, template.spec);
 }
+// Historical ReplicaSets are not relabelled when Helm adopts their Deployment.
+// Only proven dormant native history may lack the ordinary instance label.
+function retainedDormantReplicaSet(object, all, rendered, release, namespace) {
+  const instance = 'app.kubernetes.io/instance';
+  if (
+    object.kind !== 'ReplicaSet' ||
+    object.apiVersion !== 'apps/v1' ||
+    typeof object.metadata.uid !== 'string' ||
+    !object.metadata.uid ||
+    Object.hasOwn(object.metadata.labels ?? {}, instance) ||
+    object.metadata.namespace !== namespace ||
+    object.metadata.deletionTimestamp ||
+    object.spec?.replicas !== 0 ||
+    [
+      'replicas',
+      'readyReplicas',
+      'availableReplicas',
+      'fullyLabeledReplicas',
+      'terminatingReplicas',
+    ].some((key) => (object.status?.[key] ?? 0) !== 0)
+  )
+    return false;
+  const owners = object.metadata.ownerReferences;
+  if (!Array.isArray(owners) || owners.length !== 1) return false;
+  const owner = owners[0];
+  if (
+    owner.controller !== true ||
+    owner.apiVersion !== 'apps/v1' ||
+    owner.kind !== 'Deployment' ||
+    typeof owner.uid !== 'string' ||
+    !owner.uid
+  )
+    return false;
+  const parent = all.find(
+    (o) =>
+      o.kind === 'Deployment' &&
+      o.apiVersion === 'apps/v1' &&
+      o.metadata.namespace === namespace &&
+      o.metadata.name === owner.name &&
+      o.metadata.uid === owner.uid,
+  );
+  const expected = rendered.find(
+    (o) =>
+      o.kind === 'Deployment' &&
+      o.apiVersion === 'apps/v1' &&
+      o.metadata.name === owner.name,
+  );
+  return Boolean(
+    parent &&
+      expected &&
+      !parent.metadata.deletionTimestamp &&
+      parent.metadata.labels?.[instance] === release &&
+      parent.spec?.selector &&
+      expected.spec?.selector &&
+      hash(parent.spec?.selector) === hash(expected.spec?.selector) &&
+      Object.entries(parent.spec?.selector?.matchLabels ?? {}).every(
+        ([key, value]) => object.spec?.selector?.matchLabels?.[key] === value,
+      ) &&
+      !all.some(
+        (o) =>
+          o.kind === 'Pod' &&
+          o.metadata.ownerReferences?.some(
+            (ref) => ref.uid === object.metadata.uid,
+          ),
+      ),
+  );
+}
+// Adopting a CronJob rewrites its template, not the metadata of Jobs and Pods
+// it already ran. Only terminal history whose single controller chain reaches
+// the adopted, release-labelled, rendered CronJob by UID may lack the label.
+function unlabelledHistoryBase(object, kind, apiVersion, namespace) {
+  return (
+    object.kind === kind &&
+    object.apiVersion === apiVersion &&
+    typeof object.metadata.uid === 'string' &&
+    Boolean(object.metadata.uid) &&
+    !Object.hasOwn(object.metadata.labels ?? {}, 'app.kubernetes.io/instance') &&
+    object.metadata.namespace === namespace &&
+    !object.metadata.deletionTimestamp
+  );
+}
+function soleController(object, kind, apiVersion, all, namespace) {
+  const owners = object.metadata.ownerReferences;
+  if (!Array.isArray(owners) || owners.length !== 1) return undefined;
+  const [owner] = owners;
+  if (
+    owner.controller !== true ||
+    owner.kind !== kind ||
+    owner.apiVersion !== apiVersion ||
+    typeof owner.uid !== 'string' ||
+    !owner.uid
+  )
+    return undefined;
+  return all.find(
+    (o) =>
+      o.kind === kind &&
+      o.apiVersion === apiVersion &&
+      o.metadata.namespace === namespace &&
+      o.metadata.name === owner.name &&
+      o.metadata.uid === owner.uid &&
+      !o.metadata.deletionTimestamp,
+  );
+}
+function retainedTerminalCronJob(object, all, rendered, release, namespace) {
+  if (
+    !unlabelledHistoryBase(object, 'Job', 'batch/v1', namespace) ||
+    ['active', 'ready', 'terminating'].some(
+      (key) => (object.status?.[key] ?? 0) !== 0,
+    ) ||
+    !object.status?.conditions?.some(
+      (c) => ['Complete', 'Failed'].includes(c.type) && c.status === 'True',
+    )
+  )
+    return false;
+  const cron = soleController(object, 'CronJob', 'batch/v1', all, namespace);
+  return Boolean(
+    cron &&
+      cron.metadata.labels?.['app.kubernetes.io/instance'] === release &&
+      rendered.some(
+        (o) =>
+          o.kind === 'CronJob' &&
+          o.apiVersion === 'batch/v1' &&
+          o.metadata.name === cron.metadata.name,
+      ),
+  );
+}
+function retainedTerminalCronPod(object, all, rendered, release, namespace) {
+  if (
+    !unlabelledHistoryBase(object, 'Pod', 'v1', namespace) ||
+    !['Succeeded', 'Failed'].includes(object.status?.phase)
+  )
+    return false;
+  const job = soleController(object, 'Job', 'batch/v1', all, namespace);
+  return Boolean(
+    job && retainedTerminalCronJob(job, all, rendered, release, namespace),
+  );
+}
+function retainedLegacyHistory(object, all, rendered, release, namespace) {
+  return (
+    retainedDormantReplicaSet(object, all, rendered, release, namespace) ||
+    retainedTerminalCronJob(object, all, rendered, release, namespace) ||
+    retainedTerminalCronPod(object, all, rendered, release, namespace)
+  );
+}
 // Standalone runtime proofs also bind security/account/volume fields directly to
 // declared values. The full rendered object is independently checked by provePhase.
 function declaredPodEnvelope(workload) {
@@ -174,6 +325,17 @@ function declaredPodEnvelope(workload) {
   const volumes = (workload.scratch ?? []).map(
     ({ name, mountPath, ...emptyDir }) => ({ name, emptyDir }),
   );
+  for (const binding of workload.readOnlyConfigMaps ?? []) {
+    mounts.push({
+      name: binding.volumeName,
+      mountPath: binding.mountPath,
+      readOnly: true,
+    });
+    volumes.push({
+      name: binding.volumeName,
+      configMap: { name: binding.configMapName, items: binding.items },
+    });
+  }
   if (workload.observerAccess) {
     mounts.push({
       name: 'smrt-observer',
@@ -233,6 +395,8 @@ export async function run(command, args, input) {
       { maxBuffer: 32 * 1024 * 1024 },
       () => {},
     );
+    // An early-exiting tool must fail by exit status, not an unhandled EPIPE.
+    child.stdin.on('error', () => {});
     if (input !== undefined) child.stdin.end(input);
     return await new Promise((resolve, reject) => {
       let output = '';
@@ -252,7 +416,81 @@ export async function run(command, args, input) {
     );
   }
 }
-export function createLiveAdapter(config, command = run, request = fetch) {
+// kubectl arguments that drop only the reviewed legacy manager's managedFields
+// entries, as the release reconciler identity. Values are kept; a changed UID
+// or resourceVersion fails the JSON patch test instead of releasing.
+export function legacyManagerRelease(
+  o,
+  manager,
+  document,
+  namespace,
+  orphanedFieldsIdentity,
+) {
+  const kept = (o.metadata.managedFields ?? []).filter(
+    (entry) => entry.manager !== manager,
+  );
+  demand(
+    kept.some((entry) => entry.manager === 'helm-controller') &&
+      o.metadata.uid &&
+      o.metadata.resourceVersion,
+    'Adopted Helm ownership/manager not established',
+  );
+  const account = document.spec?.serviceAccountName;
+  demand(
+    /^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$/.test(account ?? ''),
+    'HelmRelease must declare reconciler serviceAccountName',
+  );
+  demand(
+    orphanedFieldsIdentity === 'none' ||
+      /^[a-f0-9]{64}$/.test(orphanedFieldsIdentity ?? ''),
+    'Orphaned field record must be a digest or none',
+  );
+  // Journaled evidence must survive a failed publication: record what the
+  // release left unowned on the object itself, in the same atomic patch.
+  const key = orphanedFieldsAnnotation;
+  const record = o.metadata.annotations
+    ? {
+        op: 'add',
+        path: `/metadata/annotations/${key.replaceAll('~', '~0').replaceAll('/', '~1')}`,
+        value: orphanedFieldsIdentity,
+      }
+    : {
+        op: 'add',
+        path: '/metadata/annotations',
+        value: { [key]: orphanedFieldsIdentity },
+      };
+  return [
+    '--namespace',
+    namespace,
+    `--as=system:serviceaccount:${namespace}:${account}`,
+    '--as-group=system:serviceaccounts',
+    `--as-group=system:serviceaccounts:${namespace}`,
+    '--as-group=system:authenticated',
+    'patch',
+    // A non-apply update attributes the changed annotation to the request's
+    // field manager; pin a reviewed one instead of kubectl's default.
+    `--field-manager=${adoptionRecordManager}`,
+    '--type=json',
+    '-p',
+    JSON.stringify([
+      { op: 'test', path: '/metadata/uid', value: o.metadata.uid },
+      {
+        op: 'test',
+        path: '/metadata/resourceVersion',
+        value: o.metadata.resourceVersion,
+      },
+      { op: 'replace', path: '/metadata/managedFields', value: kept },
+      record,
+    ]),
+    `${o.kind.toLowerCase()}/${o.metadata.name}`,
+  ];
+}
+export function createLiveAdapter(
+  config,
+  command = run,
+  request = fetch,
+  options = {},
+) {
   const { repository, branch, file, namespace, source, kustomization, chart } =
     config;
   demand(
@@ -378,16 +616,33 @@ export function createLiveAdapter(config, command = run, request = fetch) {
         secret.metadata.resourceVersion,
       ]);
     }
-    if (v.ingress.tlsSecretName) {
-      const secret = await get('secret', v.ingress.tlsSecretName);
+    const tlsNames = normalizedIngressRecords(v, document.metadata.name)
+      .map(r => r.tlsSecretName).filter(Boolean);
+    for (const name of new Set(tlsNames)) {
+      const secret = await get('secret', name);
+      demand(secret.immutable === true, 'TLS Secret must be immutable and versioned');
+      proof.push([secret.metadata.name, secret.metadata.uid, secret.metadata.resourceVersion]);
+    }
+    for (const binding of [v.current, v.target]
+      .filter(Boolean)
+      .flatMap(readOnlyConfigBindings)) {
+      const cm = await get('configmap', binding.configMapName);
       demand(
-        secret.immutable === true,
-        'TLS Secret must be immutable and versioned',
+        cm.immutable === true &&
+          hash({ data: cm.data ?? {}, binaryData: cm.binaryData ?? {} }) ===
+            binding.hash &&
+          binding.items.every(
+            (item) =>
+              Object.hasOwn(cm.data ?? {}, item.key) ||
+              Object.hasOwn(cm.binaryData ?? {}, item.key),
+          ),
+        'Read-only ConfigMap immutable content/key mismatch',
       );
       proof.push([
-        secret.metadata.name,
-        secret.metadata.uid,
-        secret.metadata.resourceVersion,
+        cm.metadata.name,
+        cm.metadata.uid,
+        cm.metadata.resourceVersion,
+        binding.hash,
       ]);
     }
     return hash(proof.sort());
@@ -454,8 +709,17 @@ export function createLiveAdapter(config, command = run, request = fetch) {
     );
     return object;
   }
-  async function preflight(document) {
+  async function preflight(document, adoptionContext) {
+    demand(
+      adoptionContext ||
+        document.metadata.annotations?.[
+          'smrt.happyvertical.com/adoption-status'
+        ] !== 'pending',
+      'Pending adoption blocks normal release preflight',
+    );
     fluxPolicy(document);
+    if (!adoptionContext && Object.values(document.spec.values.current?.workloads ?? {}).some(isContinuousStatic))
+      await adoption.prepareReleaseWriterFence();
     const bindingProof = await bindings(document);
     demand(
       document.spec.serviceAccountName,
@@ -642,17 +906,26 @@ export function createLiveAdapter(config, command = run, request = fetch) {
         'pods,deployments,replicasets,jobs,cronjobs,statefulsets,daemonsets,horizontalpodautoscalers',
       ),
     );
-    demand(
-      existing.every(
-        (o) =>
-          o.metadata.labels?.['app.kubernetes.io/instance'] ===
-            document.metadata.name &&
-          !['StatefulSet', 'DaemonSet', 'HorizontalPodAutoscaler'].includes(
-            o.kind,
-          ),
-      ),
-      'Unknown or unsupported writer exists before maintenance',
-    );
+    if (adoptionContext) {
+      verifyKnownLegacyWorkloads(existing,
+        { resources: adoptionContext.resources }, verifyPodEnvelope);
+    } else {
+      const historicalSelectors = existing.some(o => ['ReplicaSet', 'Job', 'Pod'].includes(o.kind) &&
+        !Object.hasOwn(o.metadata.labels ?? {}, 'app.kubernetes.io/instance'))
+        ? await inventory(document) : [];
+      demand(
+        existing.every(
+          (o) =>
+            (o.metadata.labels?.['app.kubernetes.io/instance'] ===
+              document.metadata.name || retainedLegacyHistory(o, existing,
+                historicalSelectors, document.metadata.name, namespace)) &&
+            !['StatefulSet', 'DaemonSet', 'HorizontalPodAutoscaler'].includes(
+              o.kind,
+            ),
+        ),
+        'Unknown or unsupported writer exists before maintenance',
+      );
+    }
     for (const phase of phases) {
       const candidate = structuredClone(document);
       candidate.spec.values.release.phase = phase;
@@ -756,6 +1029,11 @@ export function createLiveAdapter(config, command = run, request = fetch) {
           '-o',
           'json',
         ]);
+        // helm-controller always forces conflicts on server-side apply. Only a
+        // reviewed legacy resource for this adoption (UID, prune disabled and
+        // legacy manager proven below; unreviewed managers are rejected by the
+        // relinquished observation in the same transition) is dry-run that way.
+        let forceReviewedLegacy = false;
         if (existingResource.trim()) {
           const metadata = JSON.parse(existingResource).metadata;
           demand(
@@ -767,15 +1045,31 @@ export function createLiveAdapter(config, command = run, request = fetch) {
             `Helm ownership conflict: ${safeReference(resourceName)} namespace ${safeReference(namespace)}; reviewed ownership transfer required`,
             'OWNERSHIP_CONFLICT',
           );
+          const legacy = adoptionContext?.resources.find(
+            (r) =>
+              r.kind === resource.kind &&
+              r.name === resource.metadata.name &&
+              r.namespace === namespace,
+          );
+          forceReviewedLegacy = Boolean(
+            legacy &&
+              metadata.uid === legacy.uid &&
+              metadata.annotations?.['kustomize.toolkit.fluxcd.io/prune'] ===
+                'disabled' &&
+              metadata.managedFields?.some(
+                (entry) => entry.manager === legacy.legacyManager,
+              ),
+          );
           demand(
-            metadata.managedFields?.some(
-              (entry) =>
-                entry.manager === 'helm-controller' &&
-                ['Apply', 'Update'].includes(entry.operation) &&
-                entry.fieldsType === 'FieldsV1' &&
-                entry.fieldsV1 &&
-                Object.keys(entry.fieldsV1).length > 0,
-            ),
+            forceReviewedLegacy ||
+              metadata.managedFields?.some(
+                (entry) =>
+                  entry.manager === 'helm-controller' &&
+                  ['Apply', 'Update'].includes(entry.operation) &&
+                  entry.fieldsType === 'FieldsV1' &&
+                  entry.fieldsV1 &&
+                  Object.keys(entry.fieldsV1).length > 0,
+              ),
             `Helm manager not established: ${safeReference(resourceName)} namespace ${safeReference(namespace)}`,
             'OWNERSHIP_CONFLICT',
           );
@@ -799,8 +1093,10 @@ export function createLiveAdapter(config, command = run, request = fetch) {
               'apply',
               '--server-side',
               '--dry-run=server',
-              // Same established reconciler manager, dry run only; never force field ownership.
+              // Same established reconciler manager, dry run only. Ordinary
+              // resources never force, so a foreign co-owner surfaces here.
               '--field-manager=helm-controller',
+              ...(forceReviewedLegacy ? ['--force-conflicts'] : []),
               '-o',
               'json',
               '-f',
@@ -968,7 +1264,136 @@ export function createLiveAdapter(config, command = run, request = fetch) {
         );
     }
   }
-  async function provePhase(document, revision, options = {}) {
+  async function verifyStopped(document, all, strictMaintenance = false) {
+    const v = validate(document);
+    const staticNames = new Set(
+      Object.entries(phaseRenderedRuntime(v)?.workloads ?? {})
+        .filter(([, w]) => isContinuousStatic(w))
+        .map(([name]) => `${document.metadata.name}-${name}`),
+    );
+    const staticDeployments = all.filter(
+      (o) => o.kind === 'Deployment' && staticNames.has(o.metadata.name),
+    );
+    const staticRS = all.filter(
+      (o) =>
+        o.kind === 'ReplicaSet' &&
+        o.metadata.ownerReferences?.some((r) =>
+          staticDeployments.some((d) => d.metadata.uid === r.uid),
+        ),
+    );
+    const isStatic = (o) =>
+      staticNames.has(o.metadata.name) ||
+      (o.kind === 'ReplicaSet' && staticRS.includes(o)) ||
+      (o.kind === 'Pod' &&
+        o.metadata.ownerReferences?.some((r) =>
+          staticRS.some((rs) => rs.metadata.uid === r.uid),
+        ));
+    if (staticNames.size)
+      await verifyRuntime(document, all, { staticOnly: true });
+    let isMaintenance = (o) =>
+      o.kind === 'Deployment'
+        ? o.metadata.name.endsWith('-maintenance')
+        : o.metadata.name.startsWith(`${document.metadata.name}-maintenance-`);
+    if (strictMaintenance) {
+      const expectedMaintenance = (await inventory(document)).find(
+        (o) =>
+          o.kind === 'Deployment' &&
+          o.metadata.name === `${document.metadata.name}-maintenance`,
+      );
+      const maintenanceDeployment = all.find(
+        (o) =>
+          o.kind === 'Deployment' &&
+          o.metadata.name === `${document.metadata.name}-maintenance`,
+      );
+      demand(
+        expectedMaintenance &&
+          maintenanceDeployment &&
+          containsDesired(maintenanceDeployment.spec, expectedMaintenance.spec),
+        'Stopped maintenance controller differs from rendered template',
+      );
+      verifyControllerEnvelope(maintenanceDeployment, expectedMaintenance);
+      const maintenanceRS = all.filter(
+        (o) =>
+          o.kind === 'ReplicaSet' &&
+          o.metadata.ownerReferences?.some(
+            (r) => r.uid === maintenanceDeployment.metadata.uid,
+          ),
+      );
+      const maintenancePods = all.filter(
+        (o) =>
+          o.kind === 'Pod' &&
+          o.metadata.ownerReferences?.some((r) =>
+            maintenanceRS.some((rs) => rs.metadata.uid === r.uid),
+          ),
+      );
+      demand(
+        maintenancePods.length === expectedMaintenance.spec.replicas &&
+          maintenanceDeployment.status?.observedGeneration ===
+            maintenanceDeployment.metadata.generation &&
+          maintenanceDeployment.status?.readyReplicas ===
+            expectedMaintenance.spec.replicas,
+        'Stopped maintenance runtime is not ready',
+      );
+      for (const pod of maintenancePods) {
+        verifyPodEnvelope(pod.spec, expectedMaintenance.spec.template.spec);
+        demand(
+          !pod.metadata.deletionTimestamp &&
+            pod.status?.conditions?.some(
+              (c) => c.type === 'Ready' && c.status === 'True',
+            ) &&
+            digest(pod.status?.containerStatuses?.[0]?.imageID) ===
+              digest(
+                expectedMaintenance.spec.template.spec.containers[0].image,
+              ),
+          'Stopped maintenance Pod/image differs from rendered runtime',
+        );
+      }
+      isMaintenance = (o) =>
+        o === maintenanceDeployment ||
+        maintenanceRS.includes(o) ||
+        maintenancePods.includes(o);
+    }
+    for (const object of all) {
+      if (isStatic(object) || isMaintenance(object)) continue;
+      if (object.kind === 'CronJob')
+        demand(
+          object.spec.suspend === true && !object.status?.active?.length,
+          'Schedule is not stopped',
+        );
+      if (object.kind === 'Deployment')
+        demand(
+          object.spec.replicas === 0 && (object.status?.replicas ?? 0) === 0,
+          'Runtime deployment is not stopped',
+        );
+      if (object.kind === 'ReplicaSet')
+        demand(
+          (object.spec.replicas ?? 0) === 0 &&
+            (object.status?.replicas ?? 0) === 0,
+          'ReplicaSet remains active',
+        );
+      if (object.kind === 'Pod') {
+        const ownerJob = all.find(
+          (o) =>
+            o.kind === 'Job' &&
+            object.metadata.ownerReferences?.some(
+              (r) => r.uid === o.metadata.uid,
+            ),
+        );
+        demand(
+          ownerJob &&
+            ['Succeeded', 'Failed'].includes(object.status.phase) &&
+            !object.metadata.deletionTimestamp,
+          'Actual runtime Pod remains, including terminating Pods',
+        );
+      }
+      if (object.kind === 'Job')
+        demand((object.status?.active ?? 0) === 0, 'Job remains active');
+    }
+  }
+
+  // Only the private adoption helper can select the separately fenced adoption
+  // path. Public observe options cannot suppress the ordinary writer fence.
+  async function provePhase(document, revision, options = {}, adoptionProof = false) {
     const v = validate(document);
     let failedMigration;
     const before = await bindings(document);
@@ -983,7 +1408,8 @@ export function createLiveAdapter(config, command = run, request = fetch) {
       'pods,deployments,replicasets,jobs,cronjobs,endpointslices,horizontalpodautoscalers,statefulsets,daemonsets,ingresses,services,configmaps',
     );
     const all = items(snapshot);
-    for (const desired of await inventory(document)) {
+    const rendered = await inventory(document);
+    for (const desired of rendered) {
       const actual = all.find(
         (o) =>
           o.kind === desired.kind && o.metadata.name === desired.metadata.name,
@@ -999,7 +1425,8 @@ export function createLiveAdapter(config, command = run, request = fetch) {
     }
     const owned = (object) =>
       object.metadata.labels?.['app.kubernetes.io/instance'] ===
-      document.metadata.name;
+      document.metadata.name ||
+      retainedLegacyHistory(object, all, rendered, document.metadata.name, namespace);
     // v1 requires a dedicated app namespace. Unknown workloads cannot silently keep writing.
     for (const object of all.filter((o) =>
       [
@@ -1077,73 +1504,53 @@ export function createLiveAdapter(config, command = run, request = fetch) {
         'Stale controller phase identity',
       );
     }
-    const ingress = all.find(
-      (o) => o.kind === 'Ingress' && o.metadata.name === document.metadata.name,
-    );
-    const web = Object.entries(v.target.workloads).find(
-      ([, w]) => w.role === 'web',
-    );
-    const route =
-      phase === 'active'
-        ? `${document.metadata.name}-${web?.[0]}`
-        : `${document.metadata.name}-maintenance`;
+    const routes = normalizedIngressRecords(v, document.metadata.name);
     demand(
-      ingress?.spec.rules?.length === 1 &&
-        ingress.spec.rules[0].host === v.ingress.host &&
-        ingress.spec.rules[0].http?.paths?.length === 1 &&
-        ingress.spec.rules[0].http.paths[0].backend?.service?.name === route,
-      'Ingress routing identity mismatch',
+      all.filter((o) => o.kind === 'Ingress').length === routes.length,
+      'Unexpected or missing ingress route',
     );
-    if (phase !== 'active') await http(config.maintenanceAssertions, v, true);
-    if (['stopped', 'migrate'].includes(phase)) {
-      for (const object of all) {
-        if (object.kind === 'CronJob')
-          demand(
-            object.spec.suspend === true && !object.status?.active?.length,
-            'Schedule is not stopped',
-          );
-        if (
-          object.kind === 'Deployment' &&
-          !object.metadata.name.endsWith('-maintenance')
-        )
-          demand(
-            object.spec.replicas === 0 && (object.status?.replicas ?? 0) === 0,
-            'Runtime deployment is not stopped',
-          );
-        if (
-          object.kind === 'ReplicaSet' &&
-          !object.metadata.name.startsWith(
-            `${document.metadata.name}-maintenance-`,
-          )
-        )
-          demand(
-            (object.spec.replicas ?? 0) === 0 &&
-              (object.status?.replicas ?? 0) === 0,
-            'ReplicaSet remains active',
-          );
-        if (
-          object.kind === 'Pod' &&
-          !object.metadata.name.startsWith(
-            `${document.metadata.name}-maintenance-`,
-          )
-        ) {
-          const ownerJob = all.find(
-            (o) =>
-              o.kind === 'Job' &&
-              object.metadata.ownerReferences?.some(
-                (r) => r.uid === o.metadata.uid,
-              ),
-          );
-          demand(
-            ownerJob &&
-              ['Succeeded', 'Failed'].includes(object.status.phase) &&
-              !object.metadata.deletionTimestamp,
-            'Actual runtime Pod remains, including terminating Pods',
-          );
-        }
-        if (object.kind === 'Job')
-          demand((object.status?.active ?? 0) === 0, 'Job remains active');
+    for (const route of routes) {
+      const ingress = all.find(
+        (o) => o.kind === 'Ingress' && o.metadata.name === route.name,
+      );
+      const backend =
+        phase === 'active' || route.continuousStatic
+          ? `${document.metadata.name}-${route.workload}`
+          : `${document.metadata.name}-maintenance`;
+      demand(
+        ingress?.spec.rules?.length === 1 &&
+          ingress.spec.rules[0].host === route.host &&
+          ingress.spec.rules[0].http?.paths?.length === 1 &&
+          ingress.spec.rules[0].http.paths[0].backend?.service?.name ===
+            backend,
+        'Ingress routing identity mismatch',
+      );
+      if (route.continuousStatic && phaseRenderedRuntime(v)) {
+        demand(
+          config.staticAssertions?.every((a) => a.status === 200),
+          'Static assertions must require HTTP 200',
+        );
+        await http(
+          config.staticAssertions?.filter(
+            (a) => new URL(a.url).hostname === route.host,
+          ),
+          { ...v, ingress: { ...v.ingress, host: route.host } },
+          false,
+          true,
+        );
       }
+    }
+    if (phase !== 'active') {
+      demand(
+        config.maintenanceAssertions?.every((a) => a.status === 503),
+        'Maintenance assertions must require HTTP 503',
+      );
+      await http(config.maintenanceAssertions, v, true);
+    }
+    if (['stopped', 'migrate'].includes(phase)) {
+      if (!adoptionProof && Object.values(phaseRenderedRuntime(v)?.workloads ?? {}).some(isContinuousStatic))
+        await adoption.observeReleaseWriterFence(document, revision);
+      await verifyStopped(document, all);
     }
     if (phase === 'migrate') {
       const name = `${document.metadata.name}-migration-${v.release.id}-${v.release.attempt}`;
@@ -1274,6 +1681,15 @@ export function createLiveAdapter(config, command = run, request = fetch) {
         'Release CAS conflict; superseded file history',
       );
     }
+    const actual = latest.document?.spec?.values;
+    if (actual && ['stopped', 'migrate'].includes(actual.release.phase) &&
+        Object.values(phaseRenderedRuntime(actual)?.workloads ?? {}).some(isContinuousStatic)) {
+      demand(latest.revision === snapshot.revision && hash(latest.document) === hash(snapshot.document),
+        'Static writer fence CAS source snapshot changed; reobserve exact revision', 'WRITER_FENCE');
+      // Candidate preflight can outlive a native observation. Refresh only the
+      // published current document, before any private-index or Git publication.
+      await adoption.observeReleaseWriterFence(snapshot.document, snapshot.revision);
+    }
     // Build a tree from the remote parent in a private index; no shared checkout/index mutation.
     const index = `${repository}/.git-smrt-release-index-${randomUUID()}`;
     const env = { ...process.env, GIT_INDEX_FILE: index };
@@ -1283,6 +1699,7 @@ export function createLiveAdapter(config, command = run, request = fetch) {
           env,
           maxBuffer: 8 * 1024 * 1024,
         });
+        child.stdin.on('error', () => {});
         child.stdin.end(input);
         let output = '';
         child.stdout.on('data', (chunk) => {
@@ -1325,7 +1742,83 @@ export function createLiveAdapter(config, command = run, request = fetch) {
       await rm(index, { force: true });
     }
   }
+  // kubectl omits managedFields unless asked; adoption field-manager and Helm
+  // ownership checks read them from this inventory.
+  const namespaceInventory = async () =>
+    items(
+      await json(
+        'get',
+        'pods,deployments,replicasets,jobs,cronjobs,endpointslices,horizontalpodautoscalers,statefulsets,daemonsets,ingresses,services,configmaps',
+        '--show-managed-fields=true',
+      ),
+    );
+  const adoption = createAdoptionMethods(
+    config,
+    command,
+    {
+      get,
+      bindings,
+      inventory,
+      preflight,
+      acknowledge,
+      provePhase: (document, revision) => provePhase(document, revision, {}, true),
+      namespaceInventory,
+      verifyPodEnvelope,
+      verifyStopped: (d, all) => verifyStopped(d, all, true),
+      maintenance: async (d) => {
+        const v = validate(d);
+        demand(
+          config.maintenanceAssertions?.every((a) => a.status === 503),
+          'Maintenance assertions must require HTTP 503',
+        );
+        await http(config.maintenanceAssertions, v, true);
+        demand(
+          !normalizedIngressRecords(v, d.metadata.name).some(
+            (r) => r.continuousStatic,
+          ) || !phaseRenderedRuntime(v) || config.staticAssertions?.every((a) => a.status === 200),
+          'Static assertions must require HTTP 200',
+        );
+        for (const route of normalizedIngressRecords(v, d.metadata.name).filter(
+          (r) => r.continuousStatic && phaseRenderedRuntime(v),
+        ))
+          await http(
+            config.staticAssertions?.filter(
+              (a) => new URL(a.url).hostname === route.host,
+            ),
+            { ...v, ingress: { ...v.ingress, host: route.host } },
+            false,
+            true,
+          );
+      },
+      releaseLegacyManager: async (o, manager, document, orphanedFieldsIdentity) => {
+        const args = legacyManagerRelease(o, manager, document, namespace, orphanedFieldsIdentity);
+        try {
+          await command('kubectl', args);
+        } catch {
+          throw new DeploymentError(
+            `Legacy field manager release failed: ${safeReference(args.at(-1))} namespace ${safeReference(namespace)}`,
+            'OWNERSHIP_CONFLICT',
+          );
+        }
+      },
+      helmOwner: (o, name, ns) =>
+        demand(
+          o.metadata.labels?.['app.kubernetes.io/managed-by'] === 'Helm' &&
+            o.metadata.annotations?.['meta.helm.sh/release-name'] === name &&
+            o.metadata.annotations?.['meta.helm.sh/release-namespace'] === ns &&
+            o.metadata.managedFields?.some(
+              (entry) =>
+                entry.manager === 'helm-controller' &&
+                entry.fieldsType === 'FieldsV1' &&
+                Object.keys(entry.fieldsV1 ?? {}).length > 0,
+            ),
+          'Adopted Helm ownership/manager not established',
+        ),
+    },
+    options,
+  );
   return {
+    ...adoption,
     read,
     preflight,
     cas,
@@ -1358,13 +1851,16 @@ export function createLiveAdapter(config, command = run, request = fetch) {
   };
 }
 
-export async function verifyRuntime(document, all) {
+export async function verifyRuntime(document, all, options = {}) {
   const v = validate(document);
+  const runtime = options.staticOnly ? phaseRenderedRuntime(v) : v.target;
   const prefix = document.metadata.name;
-  const scheduled = Object.entries(v.target.workloads).filter(
-    ([, w]) => w.schedule,
+  const scheduled = Object.entries(runtime?.workloads ?? {}).filter(
+    ([, w]) => w.schedule && !options.staticOnly,
   );
-  const cronjobs = all.filter((o) => o.kind === 'CronJob');
+  const cronjobs = all.filter(
+    (o) => o.kind === 'CronJob' && !options.staticOnly,
+  );
   demand(
     cronjobs.length === scheduled.length,
     'Unexpected or missing scheduled workload',
@@ -1424,11 +1920,15 @@ export async function verifyRuntime(document, all) {
         'Schedule started during verify',
       );
   }
-  const expected = Object.entries(v.target.workloads).filter(
-    ([, w]) => !w.schedule,
+  const expected = Object.entries(runtime?.workloads ?? {}).filter(
+    ([, w]) => !w.schedule && (!options.staticOnly || isContinuousStatic(w)),
   );
   const deployments = all.filter(
-    (o) => o.kind === 'Deployment' && !o.metadata.name.endsWith('-maintenance'),
+    (o) =>
+      o.kind === 'Deployment' &&
+      !o.metadata.name.endsWith('-maintenance') &&
+      (!options.staticOnly ||
+        expected.some(([name]) => o.metadata.name === `${prefix}-${name}`)),
   );
   demand(
     deployments.length === expected.length,
@@ -1451,6 +1951,11 @@ export async function verifyRuntime(document, all) {
     verifyPodEnvelope(
       deployment.spec?.template?.spec,
       declaredPodEnvelope(workload),
+    );
+    demand(
+      hash(deployment.spec?.selector?.matchLabels ?? {}) ===
+        hash(effectiveWorkloadSelectors(prefix, name, workload)),
+      'Runtime selector identity mismatch',
     );
     const rs = all.filter(
       (o) =>

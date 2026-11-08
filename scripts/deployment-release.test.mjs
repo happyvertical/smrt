@@ -16,6 +16,7 @@ import {
 } from './deployment/release.mjs';
 import {
   createLiveAdapter,
+  legacyManagerRelease,
   run,
   verifyRuntime,
   parseObjects,
@@ -124,7 +125,7 @@ function objects() {
   return [
     {
       kind: 'Deployment',
-      spec: { template: { spec: { automountServiceAccountToken: false, containers: [{ image }] } } },
+      spec: { selector: { matchLabels: { 'app.kubernetes.io/instance': 'example', 'smrt.happyvertical.com/workload': 'web' } }, template: { spec: { automountServiceAccountToken: false, containers: [{ image }] } } },
       metadata: { name: 'example-web', uid: 'deployment', generation: 2 },
       status: {
         observedGeneration: 2,
@@ -156,6 +157,10 @@ function objects() {
 test('ready exact images and endpoint UID pass', async () =>
   verifyRuntime(document('verify'), objects()));
 for (const [name, mutate] of [
+  [
+    'changed selector identity',
+    (o) => { o[0].spec.selector.matchLabels['smrt.happyvertical.com/workload'] = 'other'; },
+  ],
   [
     'old imageID',
     (o) => {
@@ -329,6 +334,7 @@ function liveFixture(phase = 'stopped', mutate = () => {}, httpStatus) {
   };
   mutate({ doc, all, config, source });
   const command = async (name, args) => {
+    if (name === 'git') return args.includes('rev-parse') ? (config.fixtureRevision ?? 'abc') : '';
     if (name === 'helm') {
       if (args.includes('template')) return 'rendered';
       config.fixtureAfterHelmValues?.();
@@ -342,13 +348,26 @@ function liveFixture(phase = 'stopped', mutate = () => {}, httpStatus) {
         spec: { ref: { digest: config.chartSource.digest } },
       });
     if (args.includes('gitrepository') || args.includes('kustomization'))
-      return JSON.stringify(source);
+      return JSON.stringify(config.fixtureFluxObject?.(args) ?? source);
     if (args.includes('helmrelease')) return JSON.stringify(doc);
     if (args.includes('secret')) return JSON.stringify(config.fixtureSecret);
-    if (args.includes('get')) return JSON.stringify({ items: all });
+    if (args.includes('get')) {
+      // Like real kubectl (1.21+): managedFields are omitted unless requested.
+      const show = args.includes('--show-managed-fields=true');
+      return JSON.stringify({
+        items: show
+          ? all
+          : all.map((o) => {
+              const copy = structuredClone(o);
+              if (copy.metadata) delete copy.metadata.managedFields;
+              return copy;
+            }),
+      });
+    }
     throw new Error('Unexpected tool operation');
   };
   const request = async (url) => {
+    if (config.fixtureRequest) return config.fixtureRequest(url);
     config.fixtureDuringRequest?.();
     if (config.fixtureRequestError) throw new Error(config.fixtureRequestError);
     return new Response('healthy', {
@@ -358,7 +377,7 @@ function liveFixture(phase = 'stopped', mutate = () => {}, httpStatus) {
       headers: { 'X-Smrt-Release': 'release-1', 'X-Smrt-Sequence': '1' },
     });
   };
-  return { doc, adapter: createLiveAdapter(config, command, request) };
+  return { doc, config, all, command, request, adapter: createLiveAdapter(config, command, request, config.fixtureAdapterOptions ?? {}) };
 }
 test('live stopped proof checks independent maintenance HTTP', async () => {
   const { adapter, doc } = liveFixture();
@@ -537,6 +556,22 @@ test('full inventory preflight impersonates reconciler and rejects permission/ad
     };
     for (const failure of [
       null,
+      'dormant-history',
+      'dormant-foreign', 'dormant-null', 'dormant-spec', 'dormant-ready',
+      'dormant-replicas', 'dormant-available', 'dormant-labelled', 'dormant-terminating', 'dormant-missing-uid',
+      'dormant-delete', 'dormant-parent-uid', 'dormant-owner-kind',
+      'dormant-owner-api', 'dormant-owner-name', 'dormant-owner-controller',
+      'dormant-owner-multiple', 'dormant-parent-foreign',
+      'dormant-parent-selector', 'dormant-rs-selector',
+      'dormant-parent-unknown', 'dormant-child', 'dormant-namespace',
+      'dormant-parent-delete',
+      'legacy-labels',
+      'reviewed-cm',
+      'reviewed-cm-uid',
+      'reviewed-cm-prune',
+      'legacy-forged-owner',
+      'legacy-unknown',
+      'ordinary-legacy-labels',
       'permission',
       'admission',
       'storage',
@@ -553,6 +588,39 @@ test('full inventory preflight impersonates reconciler and rejects permission/ad
       'controller-sa-drift',
       'controller-token-volume',
     ]) {
+      const legacySpec={selector:{matchLabels:{app:'legacy-site'}},template:{spec:{automountServiceAccountToken:false,containers:[{name:'app',image}]}}};
+      const legacyDeployment={apiVersion:'apps/v1',kind:'Deployment',metadata:{namespace:'test',name:'legacy-site',uid:'legacy-deploy',labels:{app:'legacy-site'}},spec:legacySpec};
+      const legacyRS={apiVersion:'apps/v1',kind:'ReplicaSet',metadata:{namespace:'test',name:'legacy-site-rs',uid:'legacy-rs',labels:{app:'legacy-site'},ownerReferences:[{apiVersion:'apps/v1',kind:'Deployment',name:'legacy-site',uid:'legacy-deploy',controller:true}]},spec:structuredClone(legacySpec)};
+      const legacyPod={apiVersion:'v1',kind:'Pod',metadata:{namespace:'test',name:'legacy-site-pod',uid:'legacy-pod',labels:{app:'legacy-site'},ownerReferences:[{apiVersion:'apps/v1',kind:'ReplicaSet',name:'legacy-site-rs',uid:'legacy-rs',controller:failure!=='legacy-forged-owner'}]},spec:structuredClone(legacySpec.template.spec)};
+      const legacyObjects=[legacyDeployment,legacyRS,legacyPod];
+      if(failure==='legacy-unknown')legacyObjects.push({...structuredClone(legacyDeployment),metadata:{...legacyDeployment.metadata,name:'unknown',uid:'unknown'}});
+      const reviewedLegacy=failure?.startsWith('reviewed-cm');
+      const adoptionContext=reviewedLegacy?{resources:[{apiVersion:'v1',kind:'ConfigMap',namespace:'test',name:'example-inventory',uid:'legacy-cm',legacyManager:'kustomize-controller'}]}:failure?.startsWith('legacy-')?{resources:[{apiVersion:'apps/v1',kind:'Deployment',namespace:'test',name:'legacy-site',uid:'legacy-deploy',normalizedSpecIdentity:hash(legacySpec),selector:legacySpec.selector}]}:undefined;
+      const dormant = failure?.startsWith('dormant-');
+      if (dormant) {
+        legacyDeployment.metadata.name='example-web';legacyDeployment.metadata.labels['app.kubernetes.io/instance']='example';
+        legacyRS.metadata.ownerReferences[0].name='example-web';legacyRS.spec.replicas=0;legacyRS.status={replicas:0};legacyObjects.pop();
+        const owner=legacyRS.metadata.ownerReferences[0];
+        if(failure==='dormant-foreign')legacyRS.metadata.labels['app.kubernetes.io/instance']='foreign';
+        if(failure==='dormant-null')legacyRS.metadata.labels['app.kubernetes.io/instance']=null;
+        if(failure==='dormant-spec')legacyRS.spec.replicas=1;
+        for(const [mode,key] of [['replicas','replicas'],['ready','readyReplicas'],['available','availableReplicas'],['labelled','fullyLabeledReplicas'],['terminating','terminatingReplicas']])if(failure===`dormant-${mode}`)legacyRS.status[key]=1;
+        if(failure==='dormant-missing-uid')delete legacyRS.metadata.uid;
+        if(failure==='dormant-delete')legacyRS.metadata.deletionTimestamp='2026-10-29T00:00:00Z';
+        if(failure==='dormant-parent-uid')owner.uid='forged';
+        if(failure==='dormant-owner-kind')owner.kind='Job';
+        if(failure==='dormant-owner-api')owner.apiVersion='apps/v1beta1';
+        if(failure==='dormant-owner-name')owner.name='forged';
+        if(failure==='dormant-owner-controller')owner.controller=false;
+        if(failure==='dormant-owner-multiple')legacyRS.metadata.ownerReferences.push({...owner});
+        if(failure==='dormant-parent-foreign')legacyDeployment.metadata.labels['app.kubernetes.io/instance']='foreign';
+        if(failure==='dormant-parent-selector')legacyDeployment.spec.selector.matchLabels.app='forged';
+        if(failure==='dormant-rs-selector')legacyRS.spec.selector.matchLabels.app='forged';
+        if(failure==='dormant-parent-unknown'){legacyDeployment.metadata.name='unknown';owner.name='unknown';}
+        if(failure==='dormant-child'){legacyPod.metadata.labels['app.kubernetes.io/instance']='example';legacyObjects.push(legacyPod);}
+        if(failure==='dormant-namespace')legacyRS.metadata.namespace='foreign';
+        if(failure==='dormant-parent-delete')legacyDeployment.metadata.deletionTimestamp='2026-10-29T00:00:00Z';
+      }
       const calls = [];
       const command = async (name, args, input) => {
         calls.push({ name, args, input });
@@ -560,6 +628,19 @@ test('full inventory preflight impersonates reconciler and rejects permission/ad
         if (args.includes('--ignore-not-found')) {
           if (failure === 'ownership')
             return JSON.stringify({ metadata: { name: 'example-inventory' } });
+          if (reviewedLegacy && args.includes('configmap/example-inventory'))
+            return JSON.stringify({
+              metadata: {
+                uid: failure === 'reviewed-cm-uid' ? 'forged' : 'legacy-cm',
+                labels: { 'app.kubernetes.io/managed-by': 'Helm' },
+                annotations: {
+                  'meta.helm.sh/release-name': 'example',
+                  'meta.helm.sh/release-namespace': 'test',
+                  ...(failure === 'reviewed-cm-prune' ? {} : { 'kustomize.toolkit.fluxcd.io/prune': 'disabled' }),
+                },
+                managedFields: [{ manager: 'kustomize-controller', operation: 'Apply', fieldsType: 'FieldsV1', fieldsV1: { 'f:data': {} } }],
+              },
+            });
           if (['foreign-manager', 'owned'].includes(failure))
             return JSON.stringify({
               metadata: {
@@ -622,7 +703,7 @@ test('full inventory preflight impersonates reconciler and rejects permission/ad
         if (args.includes('create'))
           return JSON.stringify({
             items: [
-              { apiVersion: 'apps/v1', kind: 'Deployment', metadata: { name: 'example-web' }, spec: { template: { metadata: { labels: { app: 'example' } }, spec: { automountServiceAccountToken: false, containers: [{ name: 'app', image }] } } } },
+              { apiVersion: 'apps/v1', kind: 'Deployment', metadata: { name: 'example-web' }, spec: { selector:{matchLabels:{app:'legacy-site'}}, template: { metadata: { labels: { app: 'example' } }, spec: { automountServiceAccountToken: false, containers: [{ name: 'app', image }] } } } },
               {
                 apiVersion: 'v1',
                 kind: 'ConfigMap',
@@ -636,13 +717,13 @@ test('full inventory preflight impersonates reconciler and rejects permission/ad
             ],
           });
         if (args.some((a) => a.startsWith('pods,')))
-          return JSON.stringify({ items: [] });
+          return JSON.stringify({ items: (failure?.includes('legacy') || dormant) ? legacyObjects : [] });
         return JSON.stringify({ metadata: {} });
       };
       const adapter = createLiveAdapter(config, command);
-      if (failure && failure !== 'owned')
+      if (failure && !['owned','legacy-labels','dormant-history','reviewed-cm'].includes(failure))
         await assert.rejects(
-          adapter.preflight(doc),
+          adapter.preflight(doc, adoptionContext),
           (error) =>
             error instanceof DeploymentError &&
             (failure !== 'ownership' ||
@@ -652,11 +733,11 @@ test('full inventory preflight impersonates reconciler and rejects permission/ad
                 ))),
         );
       else {
-        assert.deepEqual(await adapter.preflight(doc), {
+        assert.deepEqual(await adapter.preflight(doc, adoptionContext), {
           bindings: hash([]),
           bindingReferences: [],
         });
-        assert.equal(calls.filter((c) => c.name === 'helm').length, 5);
+        assert.equal(calls.filter((c) => c.name === 'helm').length, dormant ? 6 : 5);
       }
       for (const call of calls.filter(
         (c) =>
@@ -670,10 +751,17 @@ test('full inventory preflight impersonates reconciler and rejects permission/ad
         assert.ok(
           call.args.includes('--as=system:serviceaccount:test:reconciler') || call.args.includes('--as=system:serviceaccount:test:observer'),
         );
+      if (failure === 'reviewed-cm')
+        assert.ok(calls.some((c) => c.args.includes('--force-conflicts')));
       for (const call of calls.filter((c) => c.args.includes('apply'))) {
         assert.ok(call.args.includes('--dry-run=server'));
         assert.ok(call.args.includes('--field-manager=helm-controller'));
-        assert.ok(!call.args.includes('--force-conflicts'));
+        // Only the reviewed legacy resource is dry-run as helm-controller
+        // actually applies (forced); everything else must surface conflicts.
+        assert.equal(
+          call.args.includes('--force-conflicts'),
+          failure === 'reviewed-cm' && call.input.includes('example-inventory'),
+        );
       }
     }
   } finally {
@@ -735,6 +823,109 @@ test('retained terminal declared CronJob Pods are drained; active or terminating
       });
     });
     assert.equal((await adapter.observe(doc, 'abc')).proven, !blocked);
+  }
+});
+test('adopted CronJob terminal history without instance label is bounded by UID ancestry', async () => {
+  for (const failure of [
+    null,
+    'job-active', 'job-ready', 'job-terminating', 'job-incomplete',
+    'job-delete', 'job-foreign-label', 'job-owner-uid', 'job-owner-kind',
+    'job-owner-api', 'job-owner-controller', 'job-owner-multiple',
+    'job-namespace', 'cron-foreign', 'cron-unrendered', 'cron-delete',
+    'pod-running', 'pod-delete', 'pod-owner-uid', 'pod-owner-multiple',
+    'pod-namespace', 'pod-foreign-job',
+  ]) {
+    const { adapter, doc } = liveFixture('stopped', ({ all, doc, config }) => {
+      doc.spec.values.current.workloads.monitor = {
+        ...runtime.workloads.web,
+        schedule: '*/5 * * * *',
+      };
+      const labels = all[0].metadata.labels;
+      const cron = {
+        apiVersion: 'batch/v1',
+        kind: 'CronJob',
+        metadata: {
+          namespace: 'test',
+          name: 'example-monitor',
+          uid: 'cron',
+          labels: { ...labels },
+          ...(failure === 'cron-delete' ? { deletionTimestamp: 'now' } : {}),
+        },
+        spec: { suspend: true },
+      };
+      if (failure === 'cron-foreign')
+        cron.metadata.labels['app.kubernetes.io/instance'] = 'foreign';
+      const jobOwner = {
+        apiVersion: failure === 'job-owner-api' ? 'batch/v1beta1' : 'batch/v1',
+        kind: failure === 'job-owner-kind' ? 'Deployment' : 'CronJob',
+        name: 'example-monitor',
+        uid: failure === 'job-owner-uid' ? 'forged' : 'cron',
+        controller: failure !== 'job-owner-controller',
+      };
+      const job = {
+        apiVersion: 'batch/v1',
+        kind: 'Job',
+        metadata: {
+          namespace: failure === 'job-namespace' ? 'foreign' : 'test',
+          name: 'legacy-monitor-history',
+          uid: 'legacy-job',
+          labels: failure === 'job-foreign-label' ? { 'app.kubernetes.io/instance': 'foreign' } : { app: 'legacy-monitor' },
+          ownerReferences: failure === 'job-owner-multiple' ? [jobOwner, { ...jobOwner }] : [jobOwner],
+          ...(failure === 'job-delete' ? { deletionTimestamp: 'now' } : {}),
+        },
+        status: {
+          succeeded: 1,
+          conditions: failure === 'job-incomplete' ? [] : [{ type: 'Complete', status: 'True' }],
+          ...(failure === 'job-active' ? { active: 1 } : {}),
+          ...(failure === 'job-ready' ? { ready: 1 } : {}),
+          ...(failure === 'job-terminating' ? { terminating: 1 } : {}),
+        },
+      };
+      const podOwner = {
+        apiVersion: 'batch/v1',
+        kind: 'Job',
+        name: 'legacy-monitor-history',
+        uid: failure === 'pod-owner-uid' ? 'forged' : 'legacy-job',
+        controller: true,
+      };
+      const pod = {
+        apiVersion: 'v1',
+        kind: 'Pod',
+        metadata: {
+          namespace: failure === 'pod-namespace' ? 'foreign' : 'test',
+          name: 'legacy-monitor-history-pod',
+          uid: 'legacy-monitor-pod',
+          labels: { app: 'legacy-monitor' },
+          ownerReferences: failure === 'pod-owner-multiple' ? [podOwner, { ...podOwner }] : [podOwner],
+          ...(failure === 'pod-delete' ? { deletionTimestamp: 'now' } : {}),
+        },
+        status: { phase: failure === 'pod-running' ? 'Running' : 'Succeeded' },
+      };
+      all.push(cron, job, pod);
+      if (failure === 'pod-foreign-job') {
+        // A labelled Job owned by an unrendered controller cannot vouch for unlabelled Pods.
+        job.metadata.labels = { ...labels };
+        job.metadata.ownerReferences = [{ ...jobOwner, uid: 'cron' }];
+        cron.metadata.name = 'example-monitor';
+        all.push({ ...structuredClone(job), metadata: { ...structuredClone(job.metadata), name: 'other', uid: 'other-job' } });
+        pod.metadata.ownerReferences = [{ ...podOwner, name: 'other', uid: 'other-job' }];
+        all.at(-1).metadata.labels = { app: 'legacy-monitor' };
+        all.at(-1).status = { active: 1 };
+      }
+      config.fixtureRenderedResources = [
+        ...all.filter((o) => o.kind === 'Ingress'),
+        ...(failure === 'cron-unrendered'
+          ? []
+          : [{ apiVersion: 'batch/v1', kind: 'CronJob', metadata: { name: 'example-monitor', labels: { 'app.kubernetes.io/instance': 'example' } }, spec: { suspend: true } }]),
+      ];
+    });
+    if (failure === null) assert.equal((await adapter.observe(doc, 'abc')).proven, true, 'terminal history');
+    else
+      assert.equal(
+        await adapter.observe(doc, 'abc').then((p) => p.proven, () => false),
+        false,
+        failure,
+      );
   }
 });
 test('migration attempt completion binds actual Pod image; failure cannot retry implicitly', async () => {
@@ -1837,4 +2028,737 @@ test('live inventory binds maintenance controller envelope to the original rende
     });
     assert.equal((await live.adapter.observe(live.doc, 'abc')).proven, !inject);
   }
+});
+
+test('legacy central helpers bind selectors, static classification and read-only configuration', async () => {
+  const { effectiveWorkloadSelectors, readOnlyConfigBindings, isContinuousStatic, normalizedIngressRecords } = await import('./deployment/release.mjs');
+  const doc = document('stopped');
+  const w = doc.spec.values.target.workloads.web;
+  w.selectorLabels = { app: 'legacy' };
+  doc.spec.values.current.workloads.web.selectorLabels = { app: 'legacy' };
+  assert.deepEqual(effectiveWorkloadSelectors('example', 'web', w), { app: 'legacy' });
+  assert.doesNotThrow(() => validate(doc), 'real current stopped sequence one stays valid');
+  w.selectorLabels.app = 'different';
+  assert.throws(() => validate(doc), /selector\/static identity/);
+  assert.equal(isContinuousStatic({ writer: false }), false);
+  assert.deepEqual(readOnlyConfigBindings(runtime), []);
+  assert.equal(normalizedIngressRecords(document().spec.values, 'example')[0].name, 'example');
+});
+
+test('central validation rejects bounded legacy contract violations and binds all fields', async () => {
+  const { readFileSync } = await import('node:fs');
+  const values = JSON.parse(readFileSync(new URL('../charts/smrt-app/fixtures/iolaus.json', import.meta.url), 'utf8'));
+  for (const runtime of [values.current, values.target]) runtime.workloads.site = {
+    ...structuredClone(runtime.workloads.web), role: 'service', writer: false, env: [], replicas: 1,
+    continuousStatic: true, automountServiceAccountToken: false,
+    podSecurityContext: { runAsNonRoot: true, runAsUser: 101, runAsGroup: 101, seccompProfile: { type: 'RuntimeDefault' } },
+    securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: ['ALL'] } },
+    readOnlyConfigMaps: [{ volumeName: 'site', configMapName: 'site-v1', hash: 'a'.repeat(64), mountPath: '/site', items: [{ key: 'index', path: 'index.html' }] }],
+  };
+  values.release.sequence = 1;
+  values.ingress.additionalRoutes = [{ name: 'site', host: 'www.example.test', workload: 'site' }];
+  const doc = { ...document('stopped'), spec: { ...document().spec, values } };
+  assert.doesNotThrow(() => validate(doc));
+  const { effectiveWorkloadStrategy } = await import('./deployment/release.mjs');
+  assert.deepEqual(effectiveWorkloadStrategy(values.target.workloads.site), { type: 'RollingUpdate', rollingUpdate: { maxUnavailable: 0, maxSurge: 1 } });
+  assert.deepEqual(effectiveWorkloadStrategy(values.target.workloads.web), { type: 'Recreate' });
+  for (const mutate of [
+    (v) => { v.current.workloads.site.strategy = { type: 'Recreate' }; },
+    (v) => { v.target.workloads.site.service.port += 1; },
+    (v) => { v.current.workloads.site.volumes = [{ name: 'credentials', secret: { secretName: 'runtime' } }]; },
+    (v) => { v.current.workloads.site.selectorLabels = { 'app.kubernetes.io/instance': 'other' }; },
+    (v) => { v.current.workloads.site.writer = true; },
+    (v) => { v.current.workloads.site.env = v.current.workloads.web.env; },
+    (v) => { v.current.workloads.site.automountServiceAccountToken = true; },
+    (v) => { v.target.workloads.site.readOnlyConfigMaps[0].hash = 'b'.repeat(64); },
+    (v) => { v.current.workloads.site.readOnlyConfigMaps[0].items[0].path = '../key'; },
+    (v) => { v.current.workloads.site.scratch = [{ name: 'tmp', mountPath: '/site/overlap' }]; },
+    (v) => { v.ingress.additionalRoutes[0].workload = 'task'; },
+    (v) => { v.ingress.annotations = { 'nginx.ingress.kubernetes.io/server-snippet': 'x' }; },
+  ]) { const copy = structuredClone(doc); mutate(copy.spec.values); assert.throws(() => validate(copy), undefined, mutate.toString()); }
+  const copy = structuredClone(doc); copy.spec.values.target.workloads.site.command.push('new');
+  assert.notEqual(identity(copy), identity(doc));
+});
+
+function staticPhaseFixture(
+  phase,
+  { bootstrap = false, route = true, observer, proofMutation } = {},
+) {
+  const revision = 'a'.repeat(40);
+  let calls = 0;
+  const live = liveFixture(phase, ({ doc, all, config, source }) => {
+    const site = {
+      ...structuredClone(runtime.workloads.web),
+      role: 'service',
+      writer: false,
+      replicas: 1,
+      continuousStatic: true,
+      automountServiceAccountToken: false,
+      podSecurityContext: {
+        runAsNonRoot: true,
+        runAsUser: 101,
+        runAsGroup: 101,
+        seccompProfile: { type: 'RuntimeDefault' },
+      },
+      securityContext: {
+        allowPrivilegeEscalation: false,
+        readOnlyRootFilesystem: true,
+        capabilities: { drop: ['ALL'] },
+      },
+    };
+    doc.spec.values.target.workloads.site = site;
+    if (bootstrap) {
+      doc.spec.values.current = false;
+      if (phase === 'maintenance') doc.spec.values.release.sequence = 0;
+    } else doc.spec.values.current.workloads.site = structuredClone(site);
+    source.status.artifact.revision =
+      source.status.lastAppliedRevision = `main@sha1:${revision}`;
+    config.fixtureRevision = revision;
+    config.writerFence = { id: 'native-test', identity: 'f'.repeat(64) };
+    const defaultObserver = async (context) => {
+      calls++;
+      const now = Date.now();
+      const proof = {
+        apiVersion: 'smrt.happyvertical.com/writer-fence-v1',
+        contractId: context.contractId,
+        contractIdentity: context.contractIdentity,
+        context: context.context,
+        namespace: context.namespace,
+        epoch: 'epoch-1',
+        observedAt: now,
+        expiresAt: now + 20000,
+        namespacePolicyIdentity: 'b'.repeat(64),
+        databasePolicyIdentity: 'c'.repeat(64),
+        observations: ['namespace', 'database'].map((scope) => ({
+          scope,
+          identity: 'd'.repeat(64),
+          observedAt: now,
+          activeWriters: 0,
+        })),
+      };
+      proofMutation?.(proof, context);
+      return proof;
+    };
+    config.fixtureAdapterOptions = {
+      adoptionFenceObserver:
+        observer === false ? undefined : (observer ?? defaultObserver),
+    };
+    config.fixtureRequest = async (url) =>
+      new Response('healthy', {
+        status:
+          url.includes('site.test') ||
+          phase === 'active' ||
+          !url.startsWith('https:')
+            ? 200
+            : 503,
+        headers: {
+          'X-Smrt-Release': 'release-1',
+          'X-Smrt-Sequence': String(doc.spec.values.release.sequence),
+        },
+      });
+    if (route) {
+      doc.spec.values.ingress.additionalRoutes = [
+        { name: 'example-site', host: 'site.test', workload: 'site' },
+      ];
+      all.push({
+        kind: 'Ingress',
+        metadata: { name: 'example-site' },
+        spec: {
+          rules: [
+            {
+              host: 'site.test',
+              http: {
+                paths: [{ backend: { service: { name: 'example-site' } } }],
+              },
+            },
+          ],
+        },
+      });
+      config.staticAssertions = [{ url: 'https://site.test/', status: 200 }];
+    }
+    if (!bootstrap || ['verify', 'active'].includes(phase)) {
+      const siteObjects = structuredClone(objects());
+      for (const o of siteObjects) {
+        o.metadata.name ??= `site-${o.kind.toLowerCase()}`;
+        if (o.kind === 'Deployment') {
+          o.metadata.name = 'example-site';
+          o.metadata.uid = 'site-deployment';
+          o.spec.selector.matchLabels['smrt.happyvertical.com/workload'] =
+            'site';
+          o.spec.template.spec.securityContext = site.podSecurityContext;
+          o.spec.template.spec.containers[0].securityContext =
+            site.securityContext;
+        }
+        if (o.kind === 'ReplicaSet') {
+          o.metadata.uid = 'site-rs';
+          o.metadata.ownerReferences = [{ uid: 'site-deployment' }];
+        }
+        if (o.kind === 'Pod') {
+          o.metadata.uid = 'site-pod';
+          o.metadata.ownerReferences = [{ uid: 'site-rs' }];
+          o.spec.securityContext = site.podSecurityContext;
+          o.spec.containers[0].securityContext = site.securityContext;
+        }
+        if (o.kind === 'EndpointSlice') {
+          o.metadata.labels['kubernetes.io/service-name'] = 'example-site';
+          o.endpoints[0].targetRef.uid = 'site-pod';
+        }
+      }
+      all.push(...siteObjects);
+    }
+    if (phase === 'migrate') {
+      const name = 'example-migration-release-1-1';
+      const spec = {
+        automountServiceAccountToken: false,
+        restartPolicy: 'Never',
+        containers: [{ image }],
+      };
+      all.push(
+        {
+          kind: 'Job',
+          metadata: { name, uid: 'migration-job' },
+          spec: { backoffLimit: 0, template: { spec } },
+          status: { succeeded: 1 },
+        },
+        {
+          kind: 'Pod',
+          metadata: {
+            name: `${name}-pod`,
+            uid: 'migration-pod',
+            ownerReferences: [{ uid: 'migration-job' }],
+          },
+          spec: structuredClone(spec),
+          status: {
+            phase: 'Succeeded',
+            containerStatuses: [{ imageID: image }],
+          },
+        },
+      );
+    }
+    for (const o of all)
+      o.metadata.labels = {
+        ...o.metadata.labels,
+        'app.kubernetes.io/instance': 'example',
+        'smrt.happyvertical.com/release': 'release-1',
+        'smrt.happyvertical.com/phase': phase,
+        'smrt.happyvertical.com/sequence': String(
+          doc.spec.values.release.sequence,
+        ),
+      };
+  });
+  return { ...live, revision, calls: () => calls };
+}
+
+test('actual bootstrap phase proofs do not invent static current before verify, with and without routes', async () => {
+  for (const route of [false, true])
+    for (const phase of [
+      'maintenance',
+      'stopped',
+      'migrate',
+      'verify',
+      'active',
+    ]) {
+      const live = staticPhaseFixture(phase, {
+        bootstrap: true,
+        route,
+        observer: false,
+      });
+      const requests = [];
+      live.config.fixtureRequest = async (url) => {
+        requests.push(url);
+        return new Response('healthy', {
+          status:
+            url.includes('site.test') ||
+            phase === 'active' ||
+            !url.startsWith('https:')
+              ? 200
+              : 503,
+          headers: {
+            'X-Smrt-Release': 'release-1',
+            'X-Smrt-Sequence': String(live.doc.spec.values.release.sequence),
+          },
+        });
+      };
+      const proof = await live.adapter.observe(live.doc, live.revision);
+      assert.equal(proof.proven, true, `${route}/${phase}: ${proof.failure}`);
+      assert.equal(
+        requests.some((url) => url.includes('site.test')),
+        route && ['verify', 'active'].includes(phase),
+      );
+    }
+});
+
+test('ordinary stopped/migrate static exemptions require fresh exactly bound platform fences', async () => {
+  for (const phase of ['stopped', 'migrate']) {
+    const valid = staticPhaseFixture(phase);
+    const validProof = await valid.adapter.observe(valid.doc, valid.revision);
+    assert.equal(validProof.proven, true, validProof.failure);
+    assert.equal(valid.calls(), 1);
+    for (const mutation of [
+      (p) => {
+        p.expiresAt = Date.now() - 1;
+      },
+      (p) => {
+        p.observedAt = Date.now() - 31000;
+      },
+      (p) => {
+        p.namespace = 'foreign';
+      },
+      (p) => {
+        p.contractIdentity = 'e'.repeat(64);
+      },
+      (p) => {
+        p.context = { ...p.context, documentSha256: 'e'.repeat(64) };
+      },
+      (p) => {
+        p.context = { ...p.context, revision: 'b'.repeat(40) };
+      },
+      (p) => {
+        p.context = { ...p.context, phase: 'active' };
+      },
+      (p) => {
+        p.context = { ...p.context, attempt: 2 };
+      },
+      (p) => {
+        p.observations[0].activeWriters = 1;
+      },
+      (p) => {
+        p.observations[1].observedAt -= 31000;
+      },
+      (p) => {
+        p.extra = true;
+      },
+    ]) {
+      const live = staticPhaseFixture(phase, { proofMutation: mutation });
+      const proof = await live.adapter.observe(live.doc, live.revision);
+      assert.equal(proof.proven, false);
+      assert.equal(proof.failureCode, 'WRITER_FENCE');
+    }
+    const missing = staticPhaseFixture(phase, { observer: false });
+    assert.equal(
+      (await missing.adapter.observe(missing.doc, missing.revision))
+        .failureCode,
+      'WRITER_FENCE',
+    );
+  }
+});
+
+test('ordinary fence binds full HelmRelease controls and redacts provider failures', async () => {
+  let saved;
+  const live = staticPhaseFixture('stopped', {
+    proofMutation: (proof) => {
+      if (saved) Object.assign(proof, saved);
+      else saved = structuredClone(proof);
+    },
+  });
+  const firstProof = await live.adapter.observe(live.doc, live.revision);
+  assert.equal(firstProof.proven, true, firstProof.failure);
+  const before = identity(live.doc);
+  live.doc.metadata.annotations.reviewed = 'changed';
+  assert.equal(identity(live.doc), before);
+  assert.equal(
+    (await live.adapter.observe(live.doc, live.revision)).failureCode,
+    'WRITER_FENCE',
+  );
+  const throwing = staticPhaseFixture('stopped', {
+    observer: async () => {
+      throw new Error('SECRET_CANARY');
+    },
+  });
+  const proof = await throwing.adapter.observe(throwing.doc, throwing.revision);
+  assert.equal(proof.failureCode, 'WRITER_FENCE');
+  assert.ok(!proof.failure.includes('SECRET_CANARY'));
+});
+
+test('ordinary preflight validates provider presence without zero-writer observation while maintenance writers run', async () => {
+  const live = staticPhaseFixture('maintenance');
+  live.doc.spec.serviceAccountName = 'reconciler';
+  live.all.push({
+    kind: 'Pod',
+    metadata: { name: 'legitimate-maintenance-writer' },
+    status: { phase: 'Running' },
+  });
+  await assert.rejects(
+    live.adapter.preflight(live.doc),
+    /Missing protected app validation/,
+  );
+  assert.equal(
+    live.calls(),
+    0,
+    'preflight must not query zero writers for a prospective stopped phase',
+  );
+  const absent = staticPhaseFixture('maintenance', { observer: false });
+  absent.doc.spec.serviceAccountName = 'reconciler';
+  await assert.rejects(
+    absent.adapter.preflight(absent.doc),
+    /provider is required/,
+  );
+});
+
+function dormantHistoryObserver(phase, invalid) {
+  return liveFixture(phase, ({ doc, all, config }) => {
+    let parent = all.find((o) => o.kind === 'Deployment');
+    if (!parent) {
+      parent = objects()[0];
+      parent.spec.replicas = 0;
+      parent.status.replicas = 0;
+      parent.metadata.labels = structuredClone(all[0].metadata.labels);
+      all.push(parent);
+    }
+    parent.apiVersion = 'apps/v1';
+    parent.metadata.namespace = 'test';
+    const history = {
+      apiVersion: 'apps/v1',
+      kind: 'ReplicaSet',
+      metadata: {
+        namespace: 'test',
+        name: 'example-web-old-history',
+        uid: 'old-history',
+        labels: { app: 'legacy-web' },
+        ownerReferences: [
+          {
+            controller: true,
+            apiVersion: 'apps/v1',
+            kind: 'Deployment',
+            name: parent.metadata.name,
+            uid: parent.metadata.uid,
+          },
+        ],
+      },
+      spec: { replicas: 0, selector: structuredClone(parent.spec.selector) },
+      status: { replicas: 0 },
+    };
+    all.push(history);
+    if (phase === 'migrate') {
+      const labels = parent.metadata.labels,
+        name = 'example-migration-release-1-1',
+        spec = {
+          automountServiceAccountToken: false,
+          restartPolicy: 'Never',
+          containers: [{ image }],
+        };
+      all.push({
+        kind: 'Job',
+        metadata: { name, uid: 'migration-job', labels },
+        spec: { backoffLimit: 0, template: { spec } },
+        status: { succeeded: 1 },
+      });
+      all.push({
+        kind: 'Pod',
+        metadata: {
+          name: `${name}-pod`,
+          uid: 'migration-pod',
+          labels,
+          ownerReferences: [{ uid: 'migration-job' }],
+        },
+        spec: structuredClone(spec),
+        status: { phase: 'Succeeded', containerStatuses: [{ imageID: image }] },
+      });
+    }
+    config.fixtureRenderedResources = all
+      .filter((o) => ['Deployment', 'Ingress'].includes(o.kind))
+      .map((o) => structuredClone(o));
+    if (invalid === 'foreign')
+      history.metadata.labels['app.kubernetes.io/instance'] = 'foreign';
+    if (invalid === 'active') history.spec.replicas = 1;
+    if (invalid === 'forged')
+      history.metadata.ownerReferences[0].uid = 'forged';
+    if (invalid === 'child')
+      all.push({
+        kind: 'Pod',
+        metadata: {
+          name: 'old-child',
+          uid: 'old-child',
+          labels: { 'app.kubernetes.io/instance': 'example' },
+          ownerReferences: [{ uid: history.metadata.uid }],
+        },
+        spec: { automountServiceAccountToken: false, containers: [{ image }] },
+        status: { phase: 'Running' },
+      });
+  });
+}
+test('actual ordinary phase observers preserve dormant legacy RS history and reject unsafe ancestry', async () => {
+  for (const phase of ['stopped', 'migrate', 'active'])
+    for (const invalid of [null, 'foreign', 'active', 'forged', 'child']) {
+      const { adapter, doc } = dormantHistoryObserver(phase, invalid);
+      const result = await adapter.observe(doc, 'abc');
+      assert.equal(
+        result.proven,
+        !invalid,
+        `${phase}/${invalid ?? 'retained history'}: ${result.failure ?? ''}`,
+      );
+    }
+});
+
+test('actual adopted Helm observer preserves dormant history through native phase proof', async () => {
+  const { mkdtemp, writeFile, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { createHash } = await import('node:crypto');
+  const dir = await mkdtemp(join(tmpdir(), 'smrt-adopted-history-'));
+  try {
+    const chart = join(dir, 'chart.tgz');
+    await writeFile(chart, 'qualified-chart');
+    const bytes = (s) => createHash('sha256').update(s).digest('hex');
+    for (const invalid of [null, 'foreign', 'active', 'forged', 'child']) {
+      const live = dormantHistoryObserver('stopped', invalid);
+      const { doc, all, config, source } = live;
+      const parent = all.find((o) => o.kind === 'Deployment');
+      parent.metadata.labels['app.kubernetes.io/managed-by'] = 'Helm';
+      parent.metadata.annotations = {
+        'meta.helm.sh/release-name': 'example',
+        'meta.helm.sh/release-namespace': 'test',
+      };
+      parent.metadata.managedFields = [
+        {
+          manager: 'helm-controller',
+          fieldsType: 'FieldsV1',
+          fieldsV1: { 'f:spec': {} },
+        },
+      ];
+      const maintenance = structuredClone(parent);
+      maintenance.metadata = {
+        ...structuredClone(parent.metadata),
+        name: 'example-maintenance',
+        uid: 'maintenance',
+        generation: 1,
+      };
+      maintenance.spec.replicas = 1;
+      maintenance.status = {
+        observedGeneration: 1,
+        readyReplicas: 1,
+        replicas: 1,
+      };
+      const rs = {
+        kind: 'ReplicaSet',
+        metadata: {
+          name: 'example-maintenance-rs',
+          uid: 'maintenance-rs',
+          labels: parent.metadata.labels,
+          ownerReferences: [{ uid: 'maintenance' }],
+        },
+      };
+      const pod = {
+        kind: 'Pod',
+        metadata: {
+          name: 'example-maintenance-pod',
+          uid: 'maintenance-pod',
+          labels: parent.metadata.labels,
+          ownerReferences: [{ uid: 'maintenance-rs' }],
+        },
+        spec: structuredClone(maintenance.spec.template.spec),
+        status: {
+          conditions: [{ type: 'Ready', status: 'True' }],
+          containerStatuses: [{ imageID: image }],
+        },
+      };
+      all.push(maintenance, rs, pod);
+      config.fixtureRenderedResources.push(structuredClone(maintenance));
+      const plan = {
+        adoptionId: 'adopt-history',
+        namespace: 'test',
+        releaseName: 'example',
+        candidate: structuredClone(doc),
+        canonicalFile: 'apps/release.json',
+        stagingFile: 'apps/adoption.json',
+        stateFile: 'proof/state.json',
+        snapshot: { file: 'proof/snapshot.json' },
+        qualification: { file: 'proof/qualification.json' },
+        legacy: {
+          repository: 'https://example.test/repo.git',
+          relinquishRevision: 'abc',
+          source: {
+            name: 'legacy-source',
+            namespace: 'test',
+            uid: 'old-source',
+          },
+          kustomization: {
+            name: 'legacy-ks',
+            namespace: 'test',
+            uid: 'old-ks',
+          },
+        },
+        normalizedCurrentIdentity: hash(doc.spec.values.current),
+        targetIdentity: hash(doc.spec.values.target),
+        configurationIdentity: hash({
+          bindings: {},
+          ingress: doc.spec.values.ingress,
+        }),
+        chartArtifactSha256: bytes('qualified-chart'),
+        chartOciDigest: config.chartSource.digest,
+        fenceContract: { identity: 'a'.repeat(64) },
+      };
+      const saved = {
+        apiVersion: 'smrt.happyvertical.com/legacy-snapshot-v1',
+        adoptionId: plan.adoptionId,
+        legacy: plan.legacy,
+        normalization: {
+          normalizedCurrentIdentity: plan.normalizedCurrentIdentity,
+          explanation: 'reviewed native identity',
+        },
+        resources: [
+          {
+            apiVersion: 'apps/v1',
+            kind: 'Deployment',
+            namespace: 'test',
+            name: parent.metadata.name,
+            uid: parent.metadata.uid,
+            spec: parent.spec,
+            specIdentity: hash(parent.spec),
+            normalizedSpecIdentity: hash(parent.spec),
+            selector: parent.spec.selector,
+            podSpec: parent.spec.template.spec,
+            oldImages: [image],
+            legacyManager: 'kustomize-controller',
+            fluxInventoryId: 'test_example-web_apps_Deployment',
+          },
+        ],
+      };
+      const savedRaw = JSON.stringify(saved);
+      plan.snapshot.sha256 = bytes(savedRaw);
+      const qualification = {
+        apiVersion: 'smrt.happyvertical.com/legacy-adoption-qualification-v1',
+        adoptionId: plan.adoptionId,
+        snapshotSha256: plan.snapshot.sha256,
+        normalizedCurrentIdentity: plan.normalizedCurrentIdentity,
+        targetIdentity: plan.targetIdentity,
+        configurationIdentity: plan.configurationIdentity,
+        chartArtifactSha256: plan.chartArtifactSha256,
+        chartOciDigest: plan.chartOciDigest,
+        fenceContractIdentity: plan.fenceContract.identity,
+        source: 'trusted-fixture',
+        tree: 'tree',
+        lock: 'lock',
+        toolchain: 'node26',
+        validation: { passed: true },
+      };
+      const qualificationRaw = JSON.stringify(qualification);
+      plan.qualification.sha256 = bytes(qualificationRaw);
+      config.chart = chart;
+      config.adoption = {
+        snapshotSha256: plan.snapshot.sha256,
+        qualificationSha256: plan.qualification.sha256,
+        fluxPath: 'apps',
+        sourceUid: 'new-source',
+        kustomizationUid: 'new-ks',
+      };
+      const ready = {
+        conditions: [{ type: 'Ready', status: 'True', observedGeneration: 1 }],
+        artifact: { revision: 'main@sha1:abc' },
+        lastAppliedRevision: 'main@sha1:abc',
+        inventory: { entries: [] },
+      };
+      config.fixtureFluxObject = (args) =>
+        args.includes('legacy-source')
+          ? {
+              metadata: { uid: 'old-source', generation: 1 },
+              spec: { url: plan.legacy.repository },
+              status: ready,
+            }
+          : args.includes('legacy-ks')
+            ? {
+                metadata: { uid: 'old-ks', generation: 1 },
+                spec: { prune: false },
+                status: ready,
+              }
+            : args.includes('gitrepository')
+              ? {
+                  metadata: { uid: 'new-source', generation: 1 },
+                  status: ready,
+                }
+              : {
+                  metadata: { uid: 'new-ks', namespace: 'test', generation: 1 },
+                  spec: {
+                    path: './apps',
+                    sourceRef: {
+                      kind: 'GitRepository',
+                      name: 'source',
+                      namespace: 'test',
+                    },
+                  },
+                  status: ready,
+                };
+      doc.metadata.annotations['smrt.happyvertical.com/adoption-id'] =
+        plan.adoptionId;
+      doc.metadata.annotations['smrt.happyvertical.com/adoption-plan'] =
+        hash(plan);
+      const snapshot = {
+        revision: 'abc',
+        staging: doc,
+        raw: {
+          [plan.snapshot.file]: savedRaw,
+          [plan.qualification.file]: qualificationRaw,
+        },
+      };
+      const adapter = createLiveAdapter(config, live.command, live.request);
+      if (invalid)
+        await assert.rejects(
+          adapter.observeAdopted(plan, snapshot, 'helm-staged'),
+          /Unknown workload/,
+        );
+      else
+        assert.equal(
+          (await adapter.observeAdopted(plan, snapshot, 'helm-staged')).stage,
+          'helm-staged',
+        );
+    }
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('legacy manager release drops only that manager, as the reconciler, bound to UID and resourceVersion', () => {
+  const helm = { manager: 'helm-controller', operation: 'Apply', fieldsType: 'FieldsV1', fieldsV1: { 'f:data': {} } };
+  const status = { manager: 'kube-controller-manager', subresource: 'status' };
+  const o = {
+    kind: 'ConfigMap',
+    metadata: {
+      name: 'legacy-maintenance',
+      uid: 'cm-uid',
+      resourceVersion: '42',
+      managedFields: [{ manager: 'kustomize-controller', operation: 'Apply' }, helm, status],
+    },
+  };
+  const doc = { spec: { serviceAccountName: 'reconciler' } };
+  o.metadata.annotations = { 'meta.helm.sh/release-name': 'legacy' };
+  const record = 'd'.repeat(64);
+  const args = legacyManagerRelease(o, 'kustomize-controller', doc, 'test', record);
+  assert.deepEqual(args.slice(0, 9), [
+    '--namespace',
+    'test',
+    '--as=system:serviceaccount:test:reconciler',
+    '--as-group=system:serviceaccounts',
+    '--as-group=system:serviceaccounts:test',
+    '--as-group=system:authenticated',
+    'patch',
+    '--field-manager=smrt-adoption',
+    '--type=json',
+  ]);
+  assert.equal(args.at(-1), 'configmap/legacy-maintenance');
+  assert.deepEqual(JSON.parse(args[10]), [
+    { op: 'test', path: '/metadata/uid', value: 'cm-uid' },
+    { op: 'test', path: '/metadata/resourceVersion', value: '42' },
+    { op: 'replace', path: '/metadata/managedFields', value: [helm, status] },
+    { op: 'add', path: '/metadata/annotations/smrt.happyvertical.com~1adoption-orphaned-fields', value: record },
+  ]);
+  const bare = structuredClone(o);
+  delete bare.metadata.annotations;
+  assert.deepEqual(JSON.parse(legacyManagerRelease(bare, 'kustomize-controller', doc, 'test', 'none')[10]).at(-1), {
+    op: 'add',
+    path: '/metadata/annotations',
+    value: { 'smrt.happyvertical.com/adoption-orphaned-fields': 'none' },
+  });
+  for (const bad of [undefined, null, '', 'some', 'D'.repeat(64)])
+    assert.throws(() => legacyManagerRelease(o, 'kustomize-controller', doc, 'test', bad), /digest or none/);
+  for (const [change, expected] of [
+    [(c) => { c.metadata.managedFields = [{ manager: 'kustomize-controller' }]; }, /Helm ownership/],
+    [(c) => { delete c.metadata.resourceVersion; }, /Helm ownership/],
+    [(c) => { delete c.metadata.uid; }, /Helm ownership/],
+  ]) {
+    const copy = structuredClone(o);
+    change(copy);
+    assert.throws(() => legacyManagerRelease(copy, 'kustomize-controller', doc, 'test', record), expected);
+  }
+  for (const account of [undefined, '', 'Bad_Name', 'a'.repeat(64)])
+    assert.throws(() => legacyManagerRelease(o, 'kustomize-controller', { spec: { serviceAccountName: account } }, 'test', record), /serviceAccountName/);
 });
