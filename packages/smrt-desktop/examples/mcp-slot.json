@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "slotId": "2c70f518-b95a-445b-a75e-8126ae7c032a",
+  "scopes": [
+    "notes.read"
+  ],
+  "expiresAt": "2026-12-01T12:00:00Z",
+  "state": "minted"
+}
