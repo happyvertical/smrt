@@ -791,6 +791,157 @@ describe('hosted inference provisioning (#4759)', () => {
     expect(await p.listActive(TENANT)).toEqual([]);
   });
 
+  it('a tenant downgrade waits for an in-flight provision and revokes it', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const create = admin.createVirtualKey.bind(admin);
+    admin.createVirtualKey = async (options) => {
+      await gate;
+      return create(options);
+    };
+    const p = provisioner();
+    const provisioning = p.provision({
+      tenantId: TENANT,
+      userId: ALICE,
+      budget: { limitMicros: 1_000_000 },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const listener = createHostedInferenceEntitlementListener({
+      provisioner: p,
+      users: async () => [],
+    });
+    const downgrade = listener({
+      tenantId: TENANT,
+      gained: [],
+      lost: ['inference.hosted'],
+      changed: [],
+      after: { grants: [] },
+    });
+    release();
+    await provisioning;
+    await downgrade;
+    expect(await p.listActive(TENANT)).toEqual([]);
+    expect(await userConfig(ALICE)).toEqual({ mode: 'off' });
+  });
+
+  it('runs one lifecycle operation at a time per process, across tenants', async () => {
+    const OTHER = '22222222-2222-4222-8222-222222222222';
+    let running = 0;
+    let peak = 0;
+    const create = admin.createVirtualKey.bind(admin);
+    admin.createVirtualKey = async (options) => {
+      running += 1;
+      peak = Math.max(peak, running);
+      await new Promise((resolve) => setTimeout(resolve, 15));
+      running -= 1;
+      return create(options);
+    };
+    const p = provisioner();
+    await Promise.all([
+      p.provision({
+        tenantId: TENANT,
+        userId: ALICE,
+        budget: { limitMicros: 1_000_000 },
+      }),
+      p.provision({
+        tenantId: OTHER,
+        userId: BOB,
+        budget: { limitMicros: 1_000_000 },
+      }),
+    ]);
+    expect(admin.keys).toHaveLength(2);
+    expect(peak).toBe(1);
+  });
+
+  it('reconcile leaves a member who chose their own key alone', async () => {
+    const p = provisioner();
+    const reconcile = createHostedInferenceReconciler({
+      provisioner: p,
+      users: async () => [ALICE],
+    });
+    const entitled = {
+      grants: [
+        {
+          featureKey: 'inference.hosted',
+          metadata: { budget: { limitMicros: 2_000_000 } },
+        },
+      ],
+    };
+    await reconcile(TENANT, entitled);
+    await writeByo(ALICE); // the member saves their own key in settings
+    const first = await reconcile(TENANT, entitled);
+    expect(first.revoked).toHaveLength(1);
+    expect(first.provisioned).toHaveLength(0);
+    await reconcile(TENANT, entitled);
+    expect(admin.keys).toHaveLength(1);
+    expect((await userConfig(ALICE)).apiKey).toBe('sk-byo-alice');
+    await expect(
+      p.status({ tenantId: TENANT, userId: ALICE }),
+    ).resolves.toMatchObject({ status: 'revoked' });
+
+    // An explicit provision opts them back in.
+    await expect(
+      p.provision({
+        tenantId: TENANT,
+        userId: ALICE,
+        budget: { limitMicros: 2_000_000 },
+      }),
+    ).resolves.toMatchObject({ created: true });
+  });
+
+  it('reconcile retries owed deletions for an active grant too', async () => {
+    const createOnly = new CreateOnlyAdmin();
+    const p = provisioner({ admin: createOnly });
+    await p.provision({
+      tenantId: TENANT,
+      userId: ALICE,
+      budget: { limitMicros: 1_000_000 },
+    });
+    await writeByo(ALICE);
+    // Explicit re-provision retires the replaced key; the SDK cannot delete it.
+    await p.provision({
+      tenantId: TENANT,
+      userId: ALICE,
+      budget: { limitMicros: 1_000_000 },
+    });
+    const owed = await p.status({ tenantId: TENANT, userId: ALICE });
+    expect(owed.pendingGatewayRevocations).toHaveLength(1);
+
+    // The SDK gains delete: a reconcile while still entitled finishes it.
+    const upgraded = provisioner({ admin });
+    admin.live.add('key-id-1');
+    const result = await upgraded.reconcileTenant(TENANT, {
+      entitled: true,
+      budget: { limitMicros: 1_000_000 },
+    });
+    expect(result.pending).toEqual([]);
+    expect(admin.deleted).toContain('key-id-1');
+    const after = await p.status({ tenantId: TENANT, userId: ALICE });
+    expect(after.status).toBe('active');
+    expect(after.pendingGatewayRevocations).toBeUndefined();
+  });
+
+  it('refuses to mint a key for a tenant the host reports not entitled', async () => {
+    const p = createHostedInferenceProvisioner({
+      db,
+      secrets,
+      gateway: GATEWAY,
+      admin,
+      nonce: () => 'x',
+      entitled: async () => false,
+    });
+    await expect(
+      p.provision({
+        tenantId: TENANT,
+        userId: ALICE,
+        budget: { limitMicros: 1_000_000 },
+      }),
+    ).rejects.toMatchObject({ code: 'HOSTED_NOT_ENTITLED' });
+    expect(admin.keys).toHaveLength(0);
+  });
+
   it('never puts key material in results, audit rows, claims or logs', async () => {
     await writeByo(ALICE);
     const logs = [
