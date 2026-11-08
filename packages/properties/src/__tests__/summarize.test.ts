@@ -116,16 +116,22 @@ describe('Property.summarize()', () => {
     expect(text).not.toMatch(/Top-level zones:[^\n]*\bHeader Slot\b/);
   });
 
-  it('passes empty AI options for the default registered prompt (no ai config)', async () => {
+  it('passes only the prompt-run usage tags for the default registered prompt (no ai config, #4751)', async () => {
     const property = makeProperty();
 
     await property.summarize();
 
     expect(aiMessageMock).toHaveBeenCalledTimes(1);
     // The default registered prompt has no model/temperature/maxTokens/params,
-    // so the options object derived by promptMessageOptions should be empty.
+    // so promptMessageOptions contributes only the usage tags.
     const [, options] = aiMessageMock.mock.calls[0];
-    expect(options).toEqual({});
+    expect(options).toEqual({
+      usageTags: {
+        promptKey: 'smrtProperties.property.summarize',
+        promptLayer: 'default',
+        templateHash: expect.stringMatching(/^[0-9a-f]{12}$/),
+      },
+    });
   });
 
   it('forwards model/temperature/maxTokens from a runtime ai override to ai.message', async () => {

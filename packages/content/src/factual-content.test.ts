@@ -325,6 +325,12 @@ describe('Content governance', () => {
       });
 
       expect(message).toHaveBeenCalledTimes(1);
+      // Prompt-run usage tags reach the review call (#4751).
+      expect(message.mock.calls[0][1]?.usageTags).toEqual({
+        promptKey: 'smrtContent.review',
+        promptLayer: 'default',
+        templateHash: expect.stringMatching(/^[0-9a-f]{12}$/),
+      });
       expect(review).toMatchObject({ kind, status: 'passed' });
       expect(await db.list('content_reviews', { kind })).toHaveLength(1);
     } finally {

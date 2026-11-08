@@ -8,10 +8,7 @@
  * `prompts.ts`) and `@happyvertical/smrt-content` (see `content-prompts.ts`).
  */
 
-import {
-  definePrompt,
-  type ResolvedPromptAI,
-} from '@happyvertical/smrt-prompts';
+import { definePrompt } from '@happyvertical/smrt-prompts';
 
 // Property summarization only uses non-PII property fields
 // (name, domain, description, status) plus aggregate zone information.
@@ -37,18 +34,9 @@ Top-level zones: {topLevelZones}`,
   },
 });
 
-// Duplicated in smrt-content, smrt-profiles, smrt-ledgers and others; #4751
-// consolidates these copies. `tier` (#4750) selects the tier client in
-// `SmrtObject.do()` and tags the usage row.
-export function promptMessageOptions(ai: ResolvedPromptAI) {
-  return {
-    ...(ai.params || {}),
-    ...(ai.model ? { model: ai.model } : {}),
-    ...(ai.tier ? { tier: ai.tier } : {}),
-    ...(ai.tier && ai.promptKey ? { promptKey: ai.promptKey } : {}),
-    ...(typeof ai.temperature === 'number'
-      ? { temperature: ai.temperature }
-      : {}),
-    ...(typeof ai.maxTokens === 'number' ? { maxTokens: ai.maxTokens } : {}),
-  };
-}
+/**
+ * Canonical helper lives in `@happyvertical/smrt-prompts` (#4751): it also
+ * forwards the resolution's `usageTags` (`promptKey`, `promptLayer`,
+ * `templateHash`). Re-exported here for existing importers.
+ */
+export { promptMessageOptions } from '@happyvertical/smrt-prompts';

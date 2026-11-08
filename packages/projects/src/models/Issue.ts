@@ -14,7 +14,10 @@ import {
   smrt,
   config as smrtConfig,
 } from '@happyvertical/smrt-core';
-import { resolvePrompt } from '@happyvertical/smrt-prompts';
+import {
+  promptMessageOptions,
+  resolvePrompt,
+} from '@happyvertical/smrt-prompts';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import { loadEnvConfig } from '@happyvertical/utils';
 import { SYNC_THROTTLE_MS } from '../constants';
@@ -499,10 +502,8 @@ export class Issue extends SmrtObject {
       },
     );
 
-    const aiOptions = {
-      ...resolvedPrompt.ai.params,
-      ...(resolvedPrompt.ai.model ? { model: resolvedPrompt.ai.model } : {}),
-    };
+    // Params, model and the prompt-run usage tags (#4751) for both paths.
+    const aiOptions = promptMessageOptions(resolvedPrompt.ai);
 
     let synthesized: string;
 

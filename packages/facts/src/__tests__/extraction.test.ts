@@ -1,6 +1,6 @@
 import { clearCache, setConfig } from '@happyvertical/smrt-config';
 import { clearPromptCache } from '@happyvertical/smrt-prompts';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FactCollection } from '../facts';
 
 describe('FactCollection.extractCandidatesFromText()', () => {
@@ -75,6 +75,13 @@ describe('FactCollection.extractCandidatesFromText()', () => {
       options: {
         model: 'test-model',
         temperature: 0.2,
+        // Prompt-run usage tags (#4751): the runtime override supplied the
+        // template, so the layer is `runtime`.
+        usageTags: {
+          promptKey: 'smrtFacts.extractCandidates',
+          promptLayer: 'runtime',
+          templateHash: expect.stringMatching(/^[0-9a-f]{12}$/),
+        },
       },
     });
     expect(facts[0].statement).toBe('Council received the report.');
@@ -165,4 +172,76 @@ beforeEach(() => {
 afterEach(() => {
   clearCache();
   clearPromptCache();
+});
+
+describe('prompt-run usage tags reach the AI call (#4751)', () => {
+  const defaultTags = (promptKey: string) => ({
+    promptKey,
+    promptLayer: 'default',
+    templateHash: expect.stringMatching(/^[0-9a-f]{12}$/),
+  });
+
+  function capturingCollection(reply: string) {
+    const calls: Array<Record<string, unknown> | undefined> = [];
+    const message = async (
+      _prompt: string,
+      options?: Record<string, unknown>,
+    ) => {
+      calls.push(options);
+      return reply;
+    };
+    const collection = new FactCollection({ ai: { message } } as any);
+    return { collection, calls, message };
+  }
+
+  beforeEach(() => {
+    clearPromptCache();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('extractCandidatesFromText forwards smrtFacts.extractCandidates', async () => {
+    const { collection, calls } = capturingCollection('[]');
+    await collection.extractCandidatesFromText('Report item');
+    expect(calls[0]?.usageTags).toEqual(
+      defaultTags('smrtFacts.extractCandidates'),
+    );
+  });
+
+  it('extractArticleClaims forwards smrtFacts.extractArticleClaims', async () => {
+    const { collection, calls } = capturingCollection('{"facts":[]}');
+    await collection.extractArticleClaims('Council approved Bylaw 255-2025.');
+    expect(calls[0]?.usageTags).toEqual(
+      defaultTags('smrtFacts.extractArticleClaims'),
+    );
+  });
+
+  it('assessClaimSupport forwards smrtFacts.assessClaimSupport', async () => {
+    const { collection, calls } = capturingCollection(
+      '{"status":"unsupported","matchedFactIds":[],"matchedEvidenceIds":[],"rationale":"","confidence":0.1}',
+    );
+    await collection.assessClaimSupport('A claim.', [
+      { id: 'fact-1', statement: 'A fact.', evidence: [] },
+    ]);
+    expect(calls[0]?.usageTags).toEqual(
+      defaultTags('smrtFacts.assessClaimSupport'),
+    );
+  });
+
+  it('reconcile disambiguation forwards smrtFacts.reconcile on the legacy text route', async () => {
+    const { collection, calls, message } = capturingCollection('merge');
+    // Legacy route: no typed-decision client, so the text call runs on `ai`.
+    (collection as any)._ai = { message };
+    vi.spyOn(collection as any, 'attemptDecision').mockResolvedValue(undefined);
+
+    const decision = await (collection as any)._disambiguateWithAI(
+      'The sky looks blue',
+      { textRefined: 'The sky is blue' },
+    );
+
+    expect(decision).toBe('merge');
+    expect(calls[0]?.usageTags).toEqual(defaultTags('smrtFacts.reconcile'));
+  });
 });
