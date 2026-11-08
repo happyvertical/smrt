@@ -1,29 +1,48 @@
 /**
- * The root entry stays browser-safe (#4752): no `node:` built-ins and no
- * value import of the AI SDK outside the `./node` subpath. Model packages are
- * held by the bundle-gate browser fixture; this package has no models, so it
- * guards its own graph here.
+ * The browser-facing entries stay browser-safe (#4752, #4754): no `node:`
+ * built-ins, no value import of the AI SDK and no smrt-config anywhere in
+ * the relative import graph of the root entry or of `./models` (generated
+ * consumer registration imports the model from there). `./node` and
+ * `./server` are the Node-only subpaths. The graph is walked from each entry,
+ * so a new module is covered as soon as an entry reaches it.
  */
-import { readdirSync, readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 const SRC = join(dirname(fileURLToPath(import.meta.url)), '..');
 
-describe('root entry graph', () => {
-  const rootFiles = readdirSync(SRC).filter(
-    (name) =>
-      name.endsWith('.ts') && name !== 'node.ts' && !name.endsWith('.d.ts'),
-  );
+function graph(entry: string): string[] {
+  const seen = new Set<string>();
+  const visit = (file: string) => {
+    if (seen.has(file)) return;
+    seen.add(file);
+    const source = readFileSync(file, 'utf8');
+    for (const match of source.matchAll(
+      /(?:import|export)\s[^'"]*?from\s+['"](\.[^'"]+)['"]|import\s+['"](\.[^'"]+)['"]/g,
+    )) {
+      const specifier = (match[1] ?? match[2]) as string;
+      const target = resolve(dirname(file), specifier.replace(/\.js$/, '.ts'));
+      if (existsSync(target)) visit(target);
+    }
+  };
+  visit(join(SRC, entry));
+  return [...seen].map((file) => file.slice(SRC.length + 1)).sort();
+}
 
-  it('covers the source files', () => {
-    expect(rootFiles).toEqual(
-      expect.arrayContaining(['index.ts', 'executor.ts', 'config.ts']),
-    );
+describe.each(['index.ts', 'models.ts'])('%s import graph', (entry) => {
+  const files = graph(entry);
+
+  it('is walked', () => {
+    expect(files.length).toBeGreaterThan(1);
+    expect(files).not.toContain('node.ts');
+    expect(files).not.toContain('server.ts');
   });
 
-  it.each(rootFiles)('%s imports no node: module or AI SDK value', (name) => {
+  it.each(
+    files,
+  )('%s imports no node: module, AI SDK value or smrt-config', (name) => {
     const source = readFileSync(join(SRC, name), 'utf8');
     expect(source).not.toMatch(/from ['"]node:/);
     expect(source).not.toMatch(
@@ -31,4 +50,10 @@ describe('root entry graph', () => {
     );
     expect(source).not.toMatch(/from ['"]@happyvertical\/smrt-config['"]/);
   });
+});
+
+it('the root graph covers the executor and config', () => {
+  expect(graph('index.ts')).toEqual(
+    expect.arrayContaining(['index.ts', 'executor.ts', 'config.ts']),
+  );
 });

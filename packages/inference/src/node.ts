@@ -249,6 +249,17 @@ function probeRequest(
 }
 
 /**
+ * The URL {@link probeInferenceCandidate} would call for a candidate, or
+ * `undefined` when no cheap probe is known. Key-free; the settings key rule
+ * (#4754) binds a key to this URL's origin.
+ */
+export function inferenceProbeUrl(
+  candidate: InferenceCandidate,
+): string | undefined {
+  return probeRequest(candidate, undefined)?.url;
+}
+
+/**
  * Probe one candidate's cheapest list endpoint (`/models`, Ollama
  * `/api/tags`) with a short timeout. The key goes only to the candidate's
  * own endpoint and never appears in the result.

@@ -4,8 +4,8 @@
     "composite": false,
     "rootDir": ".",
     "noEmit": true,
-    "types": ["node", "vitest/globals"]
+    "types": ["node", "svelte", "vitest/globals"]
   },
-  "include": ["src/**/*.ts"],
+  "include": ["ambient.d.ts", "src/**/*.ts"],
   "exclude": []
 }
