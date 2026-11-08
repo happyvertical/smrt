@@ -11,7 +11,12 @@
  *   (bearer token): device registration and revocation, sizes and dates,
  *   usage repair, and the expiry sweep. Serve it on a private listener.
  */
-import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
+import {
+  createHash,
+  randomBytes,
+  randomUUID,
+  timingSafeEqual,
+} from 'node:crypto';
 import {
   FEATURE_BACKUP_VAULT,
   type FeatureGrantSource,
@@ -549,7 +554,7 @@ export class VaultRelay {
         );
         if (!record) throw new RelayError(404, 'no_snapshot');
         if (request.method.toUpperCase() === 'DELETE') {
-          await this.removeSnapshot(record, device.handle);
+          await this.removeSnapshot(record, device.handle, 'committed');
           return json(204, null);
         }
         return json(200, snapshotView(record));
@@ -573,7 +578,7 @@ export class VaultRelay {
         if (record?.status !== 'pending') {
           throw new RelayError(404, 'no_upload');
         }
-        await this.removeSnapshot(record, device.handle);
+        await this.removeSnapshot(record, device.handle, 'pending');
         return json(204, null);
       }
     }
@@ -620,6 +625,19 @@ export class VaultRelay {
         highWaterSequence: usage.highWaterSequence,
       });
     }
+    // Reserve before inserting, so a failure in between can only over-count.
+    const reserved = await this.store.reserve(
+      device.accountId,
+      byteSize,
+      quota.maxBytes,
+      quota.maxSnapshots,
+    );
+    if (!reserved) {
+      throw new RelayError(413, 'quota_exceeded', {
+        maxBytes: quota.maxBytes,
+        maxSnapshots: quota.maxSnapshots,
+      });
+    }
     const uploadId = randomUUID();
     const created = await this.store.createPending({
       accountId: device.accountId,
@@ -632,19 +650,15 @@ export class VaultRelay {
       sha256: input.sha256,
       createdAt: now,
     });
-    if (!created) throw new RelayError(409, 'sequence_exists');
-    const reserved = await this.store.reserve(
-      device.accountId,
-      byteSize,
-      quota.maxBytes,
-      quota.maxSnapshots,
-    );
-    if (!reserved) {
-      await this.store.deleteSnapshotRow(device.accountId, uploadId);
-      throw new RelayError(413, 'quota_exceeded', {
-        maxBytes: quota.maxBytes,
-        maxSnapshots: quota.maxSnapshots,
-      });
+    if (!created) {
+      await this.store.release(device.accountId, byteSize);
+      const latest = await this.store.getUsage(device.accountId);
+      if (latest && sequence <= latest.highWaterSequence) {
+        throw new RelayError(409, 'stale_sequence', {
+          highWaterSequence: latest.highWaterSequence,
+        });
+      }
+      throw new RelayError(409, 'sequence_exists');
     }
     return json(201, {
       uploadId,
@@ -665,7 +679,7 @@ export class VaultRelay {
       throw new RelayError(404, 'no_upload');
     }
     if (this.now() - record.createdAt > this.policy.limits.uploadTtlMs) {
-      await this.removeSnapshot(record, device.handle);
+      await this.removeSnapshot(record, device.handle, 'pending');
       throw new RelayError(404, 'no_upload');
     }
     return record;
@@ -689,11 +703,32 @@ export class VaultRelay {
     if (digest !== device.contentSha256) {
       throw new RelayError(400, 'content_digest_mismatch');
     }
-    await this.objects.put(
-      chunkObjectKey(device.handle, record.uploadId, index),
-      body,
-    );
-    await this.store.putChunk(record.uploadId, index, body.length, digest);
+    // Each attempt gets its own object; the row insert below decides which
+    // attempt counts, and only while the upload is still pending.
+    const objectId = randomBytes(16).toString('hex');
+    const key = chunkObjectKey(device.handle, record.uploadId, index, objectId);
+    await this.objects.put(key, body);
+    const added = await this.store.addChunk(device.accountId, record.uploadId, {
+      index,
+      byteSize: body.length,
+      sha256: digest,
+      objectId,
+    });
+    if (!added) {
+      await this.deleteObject(key, device.handle);
+      const existing = await this.store.getChunk(record.uploadId, index);
+      const current = await this.store.getByUpload(
+        device.accountId,
+        record.uploadId,
+      );
+      // A retry of the same bytes is idempotent; anything else is refused.
+      if (existing?.sha256 !== digest || current?.status !== 'pending') {
+        throw new RelayError(
+          current?.status === 'pending' ? 409 : 404,
+          current?.status === 'pending' ? 'chunk_exists' : 'no_upload',
+        );
+      }
+    }
     return json(200, { index, byteSize: body.length, sha256: digest });
   }
 
@@ -716,7 +751,12 @@ export class VaultRelay {
     const whole = createHash('sha256');
     for (const chunk of chunks) {
       const bytes = await this.objects.get(
-        chunkObjectKey(device.handle, record.uploadId, chunk.index),
+        chunkObjectKey(
+          device.handle,
+          record.uploadId,
+          chunk.index,
+          chunk.objectId,
+        ),
       );
       if (!bytes || sha256Hex(bytes) !== chunk.sha256) {
         throw new RelayError(409, 'incomplete_upload');
@@ -730,7 +770,7 @@ export class VaultRelay {
     if (
       !(await this.store.advanceHighWater(device.accountId, record.sequence))
     ) {
-      await this.removeSnapshot(record, device.handle);
+      await this.removeSnapshot(record, device.handle, 'pending');
       throw new RelayError(409, 'stale_sequence');
     }
     const now = this.now();
@@ -760,7 +800,7 @@ export class VaultRelay {
     const chunk = await this.store.getChunk(record.uploadId, index);
     if (!chunk) throw new RelayError(404, 'no_chunk');
     const bytes = await this.objects.get(
-      chunkObjectKey(device.handle, record.uploadId, index),
+      chunkObjectKey(device.handle, record.uploadId, index, chunk.objectId),
     );
     if (!bytes || sha256Hex(bytes) !== chunk.sha256) {
       this.logger.error('stored_chunk_unreadable', {
@@ -784,32 +824,39 @@ export class VaultRelay {
   // Retention and cleanup ----------------------------------------------------
 
   /**
-   * Remove a snapshot or upload: the row first (so it can never be listed or
-   * served half-deleted), then counters, then chunk rows and objects.
+   * Remove a snapshot or upload while it still has `status`: the row first (so
+   * it can never be listed or served half-deleted, and a concurrent publish
+   * or abort cannot be undone), then counters, then chunk rows and objects.
    */
   private async removeSnapshot(
     record: SnapshotRecord,
     handle: string,
+    status: SnapshotRecord['status'],
   ): Promise<void> {
     const removed = await this.store.deleteSnapshotRow(
       record.accountId,
       record.uploadId,
+      status,
     );
     if (!removed) return;
     await this.store.release(record.accountId, removed.byteSize);
-    await this.store.deleteChunks(removed.uploadId);
-    for (let index = 0; index < removed.chunkCount; index++) {
-      try {
-        await this.objects.delete(
-          chunkObjectKey(handle, removed.uploadId, index),
-        );
-      } catch (error) {
-        this.logger.warn('object_delete_failed', {
-          account: handle,
-          index,
-          error: error instanceof Error ? error.name : 'unknown',
-        });
-      }
+    const chunks = await this.store.deleteChunks(removed.uploadId);
+    for (const chunk of chunks) {
+      await this.deleteObject(
+        chunkObjectKey(handle, removed.uploadId, chunk.index, chunk.objectId),
+        handle,
+      );
+    }
+  }
+
+  private async deleteObject(key: string, handle: string): Promise<void> {
+    try {
+      await this.objects.delete(key);
+    } catch (error) {
+      this.logger.warn('object_delete_failed', {
+        account: handle,
+        error: error instanceof Error ? error.name : 'unknown',
+      });
     }
   }
 
@@ -825,7 +872,7 @@ export class VaultRelay {
       if (position < keepLast) continue;
       const age = now - (record.committedAt ?? record.createdAt);
       if (age <= keepWithinMs) continue;
-      await this.removeSnapshot(record, handle);
+      await this.removeSnapshot(record, handle, 'committed');
     }
   }
 
@@ -836,7 +883,11 @@ export class VaultRelay {
       SWEEP_BATCH,
     );
     for (const record of stale) {
-      await this.removeSnapshot(record, accountHandle(record.accountId));
+      await this.removeSnapshot(
+        record,
+        accountHandle(record.accountId),
+        'pending',
+      );
     }
     await this.store.pruneNonces(now);
     return stale.length;

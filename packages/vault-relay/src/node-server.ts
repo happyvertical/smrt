@@ -22,7 +22,15 @@ function toRequest(req: IncomingMessage): Request {
     headers.set(name, Array.isArray(value) ? value.join(', ') : value);
   }
   const method = (req.method ?? 'GET').toUpperCase();
-  const hasBody = method !== 'GET' && method !== 'HEAD';
+  // Only a request that declares a body gets one: clients send no
+  // Content-Length on a bodiless DELETE or POST, and such a request must
+  // reach the handler with `body === null`, not as an unsized stream.
+  const length = req.headers['content-length'];
+  const hasBody =
+    method !== 'GET' &&
+    method !== 'HEAD' &&
+    ((length !== undefined && length !== '0') ||
+      req.headers['transfer-encoding'] !== undefined);
   return new Request(`${ORIGIN}${req.url ?? '/'}`, {
     method,
     headers,

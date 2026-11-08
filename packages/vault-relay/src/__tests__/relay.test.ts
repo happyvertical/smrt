@@ -3,6 +3,7 @@ import { readdir } from 'node:fs/promises';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { HEADER_SIGNATURE } from '../auth.js';
 import { sha256Hex } from '../encoding.js';
+import { VaultRelayStore } from '../metadata-store.js';
 import {
   adminRequest,
   BASE,
@@ -599,5 +600,145 @@ describe('admin surface', () => {
     expect(await response.json()).toMatchObject({
       usage: { usedBytes: 100, usedSnapshots: 1 },
     });
+  });
+});
+
+describe('concurrent writes', () => {
+  async function begin(
+    harness: Harness,
+    device: TestDevice,
+    sequence: number,
+    blob: Uint8Array,
+  ): Promise<string> {
+    const response = await harness.relay.handle(
+      signed(harness, device, 'POST', '/v1/uploads', {
+        body: JSON.stringify({
+          sequence,
+          byteSize: blob.length,
+          chunkSize: 4096,
+          sha256: sha256Hex(blob),
+        }),
+      }),
+    );
+    expect(response.status).toBe(201);
+    return ((await response.json()) as { uploadId: string }).uploadId;
+  }
+
+  it('discards a chunk that lands after its upload was aborted', async () => {
+    let onPut: (() => Promise<void>) | null = null;
+    const local = await createHarness({
+      wrapObjects: (store) => ({
+        ...store,
+        get: (key) => store.get(key),
+        delete: (key) => store.delete(key),
+        check: () => store.check(),
+        async put(key, data) {
+          await store.put(key, data);
+          const hook = onPut;
+          onPut = null;
+          await hook?.();
+        },
+      }),
+    });
+    try {
+      const device = newDevice('acct-a', 'device-a1');
+      await registerDevice(local, device);
+      const blob = randomBytes(100);
+      const uploadId = await begin(local, device, 1, blob);
+      onPut = async () => {
+        const abort = await local.relay.handle(
+          signed(local, device, 'DELETE', `/v1/uploads/${uploadId}`),
+        );
+        expect(abort.status).toBe(204);
+      };
+      const put = await local.relay.handle(
+        signed(local, device, 'PUT', `/v1/uploads/${uploadId}/chunks/0`, {
+          body: blob,
+        }),
+      );
+      expect(put.status).toBe(404);
+      const files = await readdir(local.storeRoot, {
+        recursive: true,
+        withFileTypes: true,
+      });
+      expect(files.filter((entry) => entry.isFile())).toEqual([]);
+      const rows = await local.db.query('SELECT * FROM vault_relay_chunks');
+      expect(rows.rows).toEqual([]);
+      const view = await local.relay.operatorView('acct-a');
+      expect(view.usage).toMatchObject({ usedBytes: 0, usedSnapshots: 0 });
+    } finally {
+      await local.close();
+    }
+  });
+
+  it('never replaces a chunk once stored; an identical retry is idempotent', async () => {
+    const blob = randomBytes(100);
+    const uploadId = await begin(h, a1, 1, blob);
+    const put = (body: Uint8Array) =>
+      h.relay.handle(
+        signed(h, a1, 'PUT', `/v1/uploads/${uploadId}/chunks/0`, { body }),
+      );
+    expect((await put(blob)).status).toBe(200);
+    expect((await put(blob)).status).toBe(200);
+    const other = await put(randomBytes(100));
+    expect(other.status).toBe(409);
+    expect(await errorCode(other)).toBe('chunk_exists');
+    expect(
+      (
+        await h.relay.handle(
+          signed(h, a1, 'POST', `/v1/uploads/${uploadId}/commit`),
+        )
+      ).status,
+    ).toBe(201);
+    // After publish the upload is gone: no write reaches the snapshot.
+    const late = await put(randomBytes(100));
+    expect(late.status).toBe(404);
+    expect(Buffer.from(await downloadSnapshot(h, a1, 1))).toEqual(blob);
+    const files = await readdir(h.storeRoot, {
+      recursive: true,
+      withFileTypes: true,
+    });
+    expect(files.filter((entry) => entry.isFile())).toHaveLength(1);
+  });
+
+  it('cannot delete a snapshot that was published while its removal was pending', async () => {
+    const blob = randomBytes(10);
+    const uploadId = await begin(h, a1, 1, blob);
+    await h.relay.handle(
+      signed(h, a1, 'PUT', `/v1/uploads/${uploadId}/chunks/0`, { body: blob }),
+    );
+    const store = new VaultRelayStore(h.db);
+    const [stale] = await store.stalePending(h.clock.now + 1, 10);
+    expect(stale.uploadId).toBe(uploadId);
+    // The commit wins the race against an expiry sweep that already listed it.
+    await h.relay.handle(
+      signed(h, a1, 'POST', `/v1/uploads/${uploadId}/commit`),
+    );
+    expect(
+      await store.deleteSnapshotRow('acct-a', uploadId, 'pending'),
+    ).toBeNull();
+    expect(
+      (await h.relay.handle(signed(h, a1, 'GET', '/v1/snapshots/1'))).status,
+    ).toBe(200);
+  });
+
+  it('refuses to re-create a published and deleted sequence at the store', async () => {
+    expect((await uploadSnapshot(h, a1, 3, randomBytes(10))).status).toBe(201);
+    await h.relay.handle(signed(h, a1, 'DELETE', '/v1/snapshots/3'));
+    const store = new VaultRelayStore(h.db);
+    const created = await store.createPending({
+      accountId: 'acct-a',
+      sequence: 3,
+      uploadId: '00000000-0000-4000-8000-000000000003',
+      deviceId: 'device-a1',
+      byteSize: 10,
+      chunkSize: 10,
+      chunkCount: 1,
+      sha256: sha256Hex('x'),
+      createdAt: h.clock.now,
+    });
+    expect(created).toBe(false);
+    const view = await h.relay.operatorView('acct-a');
+    expect(view.usage).toMatchObject({ usedBytes: 0, usedSnapshots: 0 });
   });
 });

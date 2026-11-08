@@ -1,7 +1,8 @@
 /**
  * Ciphertext object storage. The relay stores opaque chunk bytes under keys it
- * derives itself (`v1/<account handle>/<upload id>/<chunk index>`); no client
- * string ever becomes part of a key. {@link assertObjectKey} enforces that
+ * derives itself (`v1/<account handle>/<upload id>/<chunk index>.<object id>`,
+ * the object id random per write attempt, so no write can replace an object a
+ * commit already verified); no client string ever becomes part of a key. {@link assertObjectKey} enforces that
  * shape at the store boundary as a second line of defence against path
  * traversal.
  */
@@ -22,31 +23,17 @@ import type {
 } from '@happyvertical/files';
 
 const OBJECT_KEY =
-  /^v1\/[0-9a-f]{64}\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/(0|[1-9][0-9]{0,5})$/;
-const OBJECT_PREFIX =
-  /^v1\/[0-9a-f]{64}\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/$/;
-
-/** Build the object key of one chunk of one upload. */
+  /^v1\/[0-9a-f]{64}\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/(0|[1-9][0-9]{0,5})\.[0-9a-f]{32}$/;
+/** Build the object key of one stored attempt of one chunk of one upload. */
 export function chunkObjectKey(
   accountHandle: string,
   uploadId: string,
   index: number,
+  objectId: string,
 ): string {
-  const key = `v1/${accountHandle}/${uploadId}/${index}`;
+  const key = `v1/${accountHandle}/${uploadId}/${index}.${objectId}`;
   assertObjectKey(key);
   return key;
-}
-
-/** Prefix that holds every chunk of one upload. */
-export function uploadObjectPrefix(
-  accountHandle: string,
-  uploadId: string,
-): string {
-  const prefix = `v1/${accountHandle}/${uploadId}/`;
-  if (!OBJECT_PREFIX.test(prefix)) {
-    throw new Error('vault relay: invalid object prefix');
-  }
-  return prefix;
 }
 
 /** Throw unless `key` is a relay-derived chunk key. */

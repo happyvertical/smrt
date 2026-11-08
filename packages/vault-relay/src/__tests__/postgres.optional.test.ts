@@ -118,6 +118,30 @@ describe.skipIf(!url)('vault relay on PostgreSQL', () => {
     );
     expect(tooBig.status).toBe(413);
 
+    // Expiry sweep (LIMIT parameter) and usage repair (SUM/COUNT subqueries).
+    const pending = await h.relay.handle(
+      signed(h, device, 'POST', '/v1/uploads', {
+        body: JSON.stringify({
+          sequence: 10,
+          byteSize: 100,
+          chunkSize: 100,
+          sha256: sha256Hex('x'),
+        }),
+      }),
+    );
+    expect(pending.status).toBe(201);
+    h.clock.now += 25 * 60 * 60 * 1000;
+    expect(await h.relay.sweepExpired()).toBeGreaterThanOrEqual(1);
+    await db.query(
+      'UPDATE vault_relay_accounts SET used_bytes = 1 WHERE account_id = ?',
+      account,
+    );
+    await new VaultRelayStore(db).reconcileUsage(account);
+    expect((await h.relay.operatorView(account)).usage).toMatchObject({
+      usedBytes: 10_000,
+      usedSnapshots: 2,
+    });
+
     await h.relay.revokeDevice(account, 'device-1');
     const revoked = await h.relay.handle(
       signed(h, device, 'GET', '/v1/snapshots'),

@@ -24,7 +24,7 @@ ciphertext; responses are JSON unless noted.
 | Route | Purpose |
 | --- | --- |
 | `POST /v1/uploads` | Begin an upload: `{ sequence, byteSize, chunkSize, sha256 }`. Reserves quota. Returns `uploadId`, `chunkCount`, `expiresAt`. |
-| `PUT /v1/uploads/:uploadId/chunks/:index` | Upload one chunk. Every chunk except the last is exactly `chunkSize` bytes; the request must carry that exact `Content-Length`. Re-uploading an index replaces it. |
+| `PUT /v1/uploads/:uploadId/chunks/:index` | Upload one chunk. Every chunk except the last is exactly `chunkSize` bytes; the request must carry that exact `Content-Length`. A stored chunk is never replaced: an identical retry answers 200, different bytes `409 chunk_exists`. |
 | `POST /v1/uploads/:uploadId/commit` | Publish. The relay checks every chunk is present and the SHA-256 of the whole ciphertext matches the declared digest, then atomically makes it the newest snapshot. |
 | `DELETE /v1/uploads/:uploadId` | Abort a pending upload and release its quota. |
 | `GET /v1/snapshots` | Committed snapshots, newest first. |
@@ -46,7 +46,10 @@ Rules the relay enforces:
   an upload begins (`413 quota_exceeded`) and released on abort, expiry,
   deletion, and retention.
 - **Retention** runs after each commit: the newest `keepLast` committed
-  snapshots are kept, plus any committed within the age window.
+  snapshots are kept, plus any committed within the age window. Snapshots
+  inside the window count against the snapshot quota, so choose
+  `maxSnapshots` above the number of backups an account makes per window plus
+  one, or new uploads are refused until older snapshots age out.
 - **Bounded requests.** Chunk size is capped (default 8 MiB plus 64 KiB, hard
   ceiling 64 MiB), JSON bodies at 4 KiB. A body without `Content-Length`, or
   with the wrong one, is refused before it is buffered.
@@ -103,8 +106,10 @@ The same hooks are available in-process: `relay.registerDevice()`,
 ## Storage
 
 Chunk bytes live in an object store under relay-derived keys,
-`v1/<sha256 account handle>/<upload uuid>/<index>`; no client string becomes
-part of a key. `FilesystemObjectStore` (atomic temp-and-rename writes) serves
+`v1/<sha256 account handle>/<upload uuid>/<index>.<random object id>`; no
+client string becomes part of a key. Each write attempt gets its own object,
+and a chunk row is recorded only while its upload is still pending, so a write
+that lands after an abort, expiry, or publish is deleted instead of counted. `FilesystemObjectStore` (atomic temp-and-rename writes) serves
 tests and single-node development. `createS3ObjectStore()` uses the
 `@happyvertical/files` S3 provider with path-style addressing for Garage.
 
@@ -117,7 +122,7 @@ serving.
 ## Required configuration
 
 These are owner inputs. The relay has no defaults for them and refuses to start
-without them. Values are not chosen here.
+without them (except the admin token, see its row). Values are not chosen here.
 
 | Variable | Meaning |
 | --- | --- |
@@ -132,7 +137,7 @@ without them. Values are not chosen here.
 | `VAULT_RELAY_QUOTA_MAX_SNAPSHOTS` | Per-account snapshot quota (committed plus pending). Must exceed `KEEP_LAST`. |
 | `VAULT_RELAY_RETENTION_KEEP_LAST` | Newest committed snapshots always kept (at least 1). |
 | `VAULT_RELAY_RETENTION_KEEP_WITHIN_DAYS` | Also keep snapshots committed within this many days (0 for none). |
-| `VAULT_RELAY_ADMIN_TOKEN` | Admin bearer token, at least 32 characters. Secret. Without it the admin listener does not start. |
+| `VAULT_RELAY_ADMIN_TOKEN` | Admin bearer token, at least 32 characters. Secret. Optional to the process: without it the admin listener does not start, so the account layer cannot register devices. |
 
 Optional technical settings: `VAULT_RELAY_PORT` (8080), `VAULT_RELAY_ADMIN_PORT`
 (8081), `VAULT_RELAY_MAX_CHUNK_BYTES` (8454144), `VAULT_RELAY_UPLOAD_TTL_SECONDS`
@@ -141,7 +146,11 @@ Optional technical settings: `VAULT_RELAY_PORT` (8080), `VAULT_RELAY_ADMIN_PORT`
 
 The deployment also needs, from the owner: the namespace, the public domain and
 TLS for the device API, the image registry and digest, and network policy that
-keeps the admin port private.
+keeps the admin port private. The device Ingress must accept request bodies of
+at least the maximum chunk size plus headroom: with the default 8 MiB + 64 KiB
+chunks, set the ingress body limit to at least `9m` (`10m` in the `smrt-app`
+chart's allowed set; ingress-nginx defaults to `1m`). Keep
+`VAULT_RELAY_MAX_CHUNK_BYTES` below the ingress limit the chart permits.
 
 ## Deployment
 
@@ -185,9 +194,10 @@ horizontally: every security check is a conditional database statement.
 | Path traversal in object keys | Keys derived from hash, server UUID, and index; regex and containment checks | `storage-and-config.test.ts` |
 
 Residual risks: an operator can see ciphertext sizes, timing, and device ids;
-quota counters can over-count after a crash between a delete and its counter
-update (`reconcile` repairs it); a lapsed subscription blocks downloads as well
-as uploads.
+quota counters can over-count after a crash between steps (`reconcile`
+repairs it); a crash between storing a chunk object and recording it can leave
+one unreferenced ciphertext object; a lapsed subscription blocks downloads as
+well as uploads.
 
 ## Development
 

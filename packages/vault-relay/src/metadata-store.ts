@@ -70,6 +70,7 @@ const SCHEMA_V1 = [
     chunk_index INTEGER NOT NULL CHECK (chunk_index >= 0),
     byte_size BIGINT NOT NULL CHECK (byte_size > 0),
     sha256 TEXT NOT NULL,
+    object_id TEXT NOT NULL,
     PRIMARY KEY (upload_id, chunk_index)
   )`,
 ];
@@ -120,6 +121,8 @@ export interface ChunkRecord {
   index: number;
   byteSize: number;
   sha256: string;
+  /** Random id of the stored object attempt this row points at. */
+  objectId: string;
 }
 
 export interface AccountUsage {
@@ -163,6 +166,15 @@ function snapshotFromRow(row: Row): SnapshotRecord {
       row.committed_at === null || row.committed_at === undefined
         ? null
         : toSafeInteger(row.committed_at, 'committed_at'),
+  };
+}
+
+function chunkFromRow(row: Row): ChunkRecord {
+  return {
+    index: toSafeInteger(row.chunk_index, 'chunk_index'),
+    byteSize: toSafeInteger(row.byte_size, 'byte_size'),
+    sha256: String(row.sha256),
+    objectId: String(row.object_id),
   };
 }
 
@@ -348,26 +360,28 @@ export class VaultRelayStore {
     );
   }
 
-  /** Recompute the quota counters from the snapshot rows. */
+  /** Recompute the quota counters from the snapshot rows, in one statement. */
   async reconcileUsage(accountId: string): Promise<void> {
-    const found = await this.db.query(
-      `SELECT COALESCE(SUM(byte_size), 0) AS bytes, COUNT(*) AS snapshots
-         FROM vault_relay_snapshots WHERE account_id = ?`,
-      accountId,
-    );
-    const row = found.rows[0] ?? {};
     await this.db.query(
-      `UPDATE vault_relay_accounts SET used_bytes = ?, used_snapshots = ?
+      `UPDATE vault_relay_accounts SET
+         used_bytes = (SELECT COALESCE(SUM(byte_size), 0)
+                         FROM vault_relay_snapshots WHERE account_id = ?),
+         used_snapshots = (SELECT COUNT(*)
+                             FROM vault_relay_snapshots WHERE account_id = ?)
         WHERE account_id = ?`,
-      toSafeInteger(row.bytes ?? 0, 'bytes'),
-      toSafeInteger(row.snapshots ?? 0, 'snapshots'),
+      accountId,
+      accountId,
       accountId,
     );
   }
 
   // Snapshots --------------------------------------------------------------
 
-  /** Insert a pending snapshot; `false` when the sequence already exists. */
+  /**
+   * Insert a pending snapshot. `false` when the sequence already exists or is
+   * at or below the account's high-water mark (it was published before, even
+   * if since deleted).
+   */
   async createPending(record: {
     accountId: string;
     sequence: number;
@@ -382,7 +396,10 @@ export class VaultRelayStore {
     const inserted = await this.db.query(
       `INSERT INTO vault_relay_snapshots
          (${SNAPSHOT_COLUMNS})
-       VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, NULL)
+       SELECT ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, NULL
+        WHERE NOT EXISTS (
+          SELECT 1 FROM vault_relay_accounts
+           WHERE account_id = ? AND high_water_sequence >= ?)
        ON CONFLICT DO NOTHING
        RETURNING upload_id`,
       record.accountId,
@@ -394,6 +411,8 @@ export class VaultRelayStore {
       record.chunkCount,
       record.sha256,
       record.createdAt,
+      record.accountId,
+      record.sequence,
     );
     return inserted.rows.length === 1;
   }
@@ -503,75 +522,86 @@ export class VaultRelayStore {
     return updated.rows.length === 1;
   }
 
-  /** Delete the snapshot row; returns it when this call removed it. */
+  /**
+   * Delete the snapshot row only while it still has `status`, so removing a
+   * pending upload can never delete a snapshot that was published meanwhile.
+   * Returns the row when this call removed it.
+   */
   async deleteSnapshotRow(
     accountId: string,
     uploadId: string,
+    status: SnapshotStatus,
   ): Promise<SnapshotRecord | null> {
     const deleted = await this.db.query(
       `DELETE FROM vault_relay_snapshots
-        WHERE account_id = ? AND upload_id = ?
+        WHERE account_id = ? AND upload_id = ? AND status = ?
         RETURNING ${SNAPSHOT_COLUMNS}`,
       accountId,
       uploadId,
+      status,
     );
     return deleted.rows[0] ? snapshotFromRow(deleted.rows[0]) : null;
   }
 
   // Chunks -----------------------------------------------------------------
 
-  async putChunk(
+  /**
+   * Record a stored chunk object, only while its upload is still pending for
+   * the account and only if the index has no object yet. Returns `false`
+   * otherwise; the caller then removes the object it wrote, so a late write
+   * after an abort, expiry, or commit leaves nothing behind.
+   */
+  async addChunk(
+    accountId: string,
     uploadId: string,
-    index: number,
-    byteSize: number,
-    sha256: string,
-  ): Promise<void> {
-    await this.db.query(
-      `INSERT INTO vault_relay_chunks (upload_id, chunk_index, byte_size, sha256)
-       VALUES (?, ?, ?, ?)
-       ON CONFLICT (upload_id, chunk_index)
-       DO UPDATE SET byte_size = excluded.byte_size, sha256 = excluded.sha256`,
+    chunk: ChunkRecord,
+  ): Promise<boolean> {
+    const inserted = await this.db.query(
+      `INSERT INTO vault_relay_chunks
+         (upload_id, chunk_index, byte_size, sha256, object_id)
+       SELECT ?, ?, ?, ?, ?
+        WHERE EXISTS (
+          SELECT 1 FROM vault_relay_snapshots
+           WHERE account_id = ? AND upload_id = ? AND status = 'pending')
+       ON CONFLICT (upload_id, chunk_index) DO NOTHING
+       RETURNING chunk_index`,
       uploadId,
-      index,
-      byteSize,
-      sha256,
+      chunk.index,
+      chunk.byteSize,
+      chunk.sha256,
+      chunk.objectId,
+      accountId,
+      uploadId,
     );
+    return inserted.rows.length === 1;
   }
 
   async listChunks(uploadId: string): Promise<ChunkRecord[]> {
     const found = await this.db.query(
-      `SELECT chunk_index, byte_size, sha256 FROM vault_relay_chunks
+      `SELECT chunk_index, byte_size, sha256, object_id FROM vault_relay_chunks
         WHERE upload_id = ? ORDER BY chunk_index`,
       uploadId,
     );
-    return found.rows.map((row) => ({
-      index: toSafeInteger(row.chunk_index, 'chunk_index'),
-      byteSize: toSafeInteger(row.byte_size, 'byte_size'),
-      sha256: String(row.sha256),
-    }));
+    return found.rows.map(chunkFromRow);
   }
 
   async getChunk(uploadId: string, index: number): Promise<ChunkRecord | null> {
     const found = await this.db.query(
-      `SELECT chunk_index, byte_size, sha256 FROM vault_relay_chunks
+      `SELECT chunk_index, byte_size, sha256, object_id FROM vault_relay_chunks
         WHERE upload_id = ? AND chunk_index = ?`,
       uploadId,
       index,
     );
-    const row = found.rows[0];
-    return row
-      ? {
-          index: toSafeInteger(row.chunk_index, 'chunk_index'),
-          byteSize: toSafeInteger(row.byte_size, 'byte_size'),
-          sha256: String(row.sha256),
-        }
-      : null;
+    return found.rows[0] ? chunkFromRow(found.rows[0]) : null;
   }
 
-  async deleteChunks(uploadId: string): Promise<void> {
-    await this.db.query(
-      'DELETE FROM vault_relay_chunks WHERE upload_id = ?',
+  /** Delete every chunk row of an upload; returns the removed rows. */
+  async deleteChunks(uploadId: string): Promise<ChunkRecord[]> {
+    const deleted = await this.db.query(
+      `DELETE FROM vault_relay_chunks WHERE upload_id = ?
+        RETURNING chunk_index, byte_size, sha256, object_id`,
       uploadId,
     );
+    return deleted.rows.map(chunkFromRow);
   }
 }

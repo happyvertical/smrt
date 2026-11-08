@@ -7,7 +7,10 @@ import { exportDevicePublicKey, signRelayRequest } from '../auth.js';
 import type { VaultRelayPolicyInput } from '../config.js';
 import { sha256Hex } from '../encoding.js';
 import { migrateVaultRelayV1, VaultRelayStore } from '../metadata-store.js';
-import { FilesystemObjectStore } from '../object-store.js';
+import {
+  FilesystemObjectStore,
+  type VaultObjectStore,
+} from '../object-store.js';
 import {
   VaultRelay,
   type VaultRelayEntitlements,
@@ -79,6 +82,8 @@ export async function createHarness(
     policy?: VaultRelayPolicyInput;
     entitled?: string[];
     entitlements?: VaultRelayEntitlements;
+    /** Wrap the filesystem store, e.g. to interleave a concurrent request. */
+    wrapObjects?: (store: VaultObjectStore) => VaultObjectStore;
   } = {},
 ): Promise<Harness> {
   const db = await getDatabase({ type: 'sqlite', url: ':memory:' });
@@ -91,7 +96,9 @@ export async function createHarness(
   const clock = { now: Date.UTC(2026, 10, 8, 12, 0, 0) };
   const relay = new VaultRelay({
     store: new VaultRelayStore(db),
-    objects: new FilesystemObjectStore(storeRoot),
+    objects: (options.wrapObjects ?? ((store) => store))(
+      new FilesystemObjectStore(storeRoot),
+    ),
     entitlements: options.entitlements ?? entitlements,
     policy: options.policy ?? DEFAULT_POLICY,
     adminToken: ADMIN_TOKEN,

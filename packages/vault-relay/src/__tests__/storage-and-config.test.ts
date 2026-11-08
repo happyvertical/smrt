@@ -24,11 +24,14 @@ import {
 } from './helpers.js';
 
 const UPLOAD = '3f2b8c1e-5d4a-4e6f-9a7b-1c2d3e4f5a6b';
+const OBJECT = '0123456789abcdef0123456789abcdef';
 
 describe('object keys', () => {
-  it('derives keys only from the account hash, upload id, and index', () => {
+  it('derives keys only from the account hash, upload id, index, and attempt id', () => {
     const handle = accountHandle('acct-a');
-    expect(chunkObjectKey(handle, UPLOAD, 7)).toBe(`v1/${handle}/${UPLOAD}/7`);
+    expect(chunkObjectKey(handle, UPLOAD, 7, OBJECT)).toBe(
+      `v1/${handle}/${UPLOAD}/7.${OBJECT}`,
+    );
     expect(handle).not.toContain('acct-a');
   });
 
@@ -40,14 +43,21 @@ describe('object keys', () => {
     `/v1/${'a'.repeat(64)}/${UPLOAD}/0`,
     `v1/${'A'.repeat(64)}/${UPLOAD}/0`,
     `v1/${'a'.repeat(64)}/${UPLOAD}/0/extra`,
+    `v1/${'a'.repeat(64)}/${UPLOAD}/0`,
+    `v1/${'a'.repeat(64)}/${UPLOAD}/0.${OBJECT}/../x`,
     `v1\\${'a'.repeat(64)}\\${UPLOAD}\\0`,
   ])('rejects the hostile key %s', (key) => {
     expect(() => assertObjectKey(key)).toThrow('invalid object key');
   });
 
   it('rejects path segments in identifiers before they reach a key', () => {
-    expect(() => chunkObjectKey('../../x', UPLOAD, 0)).toThrow();
-    expect(() => chunkObjectKey(accountHandle('a'), '../x', 0)).toThrow();
+    expect(() => chunkObjectKey('../../x', UPLOAD, 0, OBJECT)).toThrow();
+    expect(() =>
+      chunkObjectKey(accountHandle('a'), '../x', 0, OBJECT),
+    ).toThrow();
+    expect(() =>
+      chunkObjectKey(accountHandle('a'), UPLOAD, 0, '../x'),
+    ).toThrow();
   });
 });
 
@@ -62,7 +72,7 @@ describe('FilesystemObjectStore', () => {
 
   it('writes atomically, reads back, and deletes', async () => {
     const store = new FilesystemObjectStore(root);
-    const key = chunkObjectKey(accountHandle('a'), UPLOAD, 0);
+    const key = chunkObjectKey(accountHandle('a'), UPLOAD, 0, OBJECT);
     const data = new Uint8Array(randomBytes(1000));
     await store.put(key, data);
     expect(Buffer.from((await store.get(key)) ?? [])).toEqual(
@@ -112,7 +122,7 @@ describe('FilesObjectStore (S3 adapter)', () => {
   it('stores bytes under the validated key and maps missing objects to null', async () => {
     const { objects, fs } = fakeFilesystem();
     const store = new FilesObjectStore(fs);
-    const key = chunkObjectKey(accountHandle('a'), UPLOAD, 3);
+    const key = chunkObjectKey(accountHandle('a'), UPLOAD, 3, OBJECT);
     await store.put(key, new Uint8Array([1, 2, 3]));
     expect([...objects.keys()]).toEqual([key]);
     expect([...((await store.get(key)) ?? [])]).toEqual([1, 2, 3]);
@@ -234,6 +244,47 @@ describe('Node HTTP adapter', () => {
         { method: 'PUT', headers: put.headers, body: 'hello' },
       );
       expect(stored.status).toBe(200);
+      // Bodiless POST and DELETE: clients send no Content-Length.
+      const commit = signed(
+        h,
+        device,
+        'POST',
+        `/v1/uploads/${uploadId}/commit`,
+      );
+      const committed = await fetch(
+        `http://127.0.0.1:${port}/v1/uploads/${uploadId}/commit`,
+        { method: 'POST', headers: commit.headers },
+      );
+      expect(committed.status).toBe(201);
+      const remove = signed(h, device, 'DELETE', '/v1/snapshots/1');
+      const removed = await fetch(`http://127.0.0.1:${port}/v1/snapshots/1`, {
+        method: 'DELETE',
+        headers: remove.headers,
+      });
+      expect(removed.status).toBe(204);
+
+      const second = JSON.stringify({
+        sequence: 2,
+        byteSize: 5,
+        chunkSize: 5,
+        sha256: sha256Hex('hello'),
+      });
+      const begun = await fetch(`http://127.0.0.1:${port}/v1/uploads`, {
+        method: 'POST',
+        headers: signed(h, device, 'POST', '/v1/uploads', { body: second })
+          .headers,
+        body: second,
+      });
+      const { uploadId: pending } = (await begun.json()) as {
+        uploadId: string;
+      };
+      const abort = signed(h, device, 'DELETE', `/v1/uploads/${pending}`);
+      const aborted = await fetch(
+        `http://127.0.0.1:${port}/v1/uploads/${pending}`,
+        { method: 'DELETE', headers: abort.headers },
+      );
+      expect(aborted.status).toBe(204);
+
       const health = await fetch(`http://127.0.0.1:${port}/healthz`);
       expect(health.status).toBe(200);
     } finally {
