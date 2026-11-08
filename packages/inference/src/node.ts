@@ -209,6 +209,15 @@ function probeRequest(
       ? INFERENCE_PRESETS[preset].baseUrl
       : undefined);
   const trim = (url: string) => url.replace(/\/+$/, '');
+  // A gateway has no public default endpoint: never send its key to OpenAI's.
+  if (
+    !preset &&
+    !baseUrl &&
+    provider !== 'openai' &&
+    OPENAI_COMPATIBLE.has(provider)
+  ) {
+    return undefined;
+  }
   if (preset || OPENAI_COMPATIBLE.has(provider)) {
     return {
       url: `${trim(baseUrl ?? OPENAI_DEFAULT_BASE)}/models`,
