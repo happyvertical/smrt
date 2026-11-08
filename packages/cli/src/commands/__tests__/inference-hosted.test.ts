@@ -1,148 +1,168 @@
 /**
- * `smrt inference:hosted provision|revoke` (#4759): budget parsing, output
- * shape, and that no key reaches the output. The provisioning itself is
- * covered in smrt-inference's `hosted.test.ts`.
+ * `smrt inference:hosted disable | enable | status [--tenant]` (#4760): the
+ * kill switch writes and reads `inference.hosted.enabled` through the
+ * project's smrt-features `KillSwitchService` (faked here), never calls a
+ * model, and shares the command group with other subcommands (#4759).
  */
-import type { HostedInferenceProvisioner } from '@happyvertical/smrt-inference/node';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
-  inferenceHostedProvisionCommands,
-  parseHostedBudget,
-  runInferenceHosted,
+  formatInferenceHostedHelp,
+  INFERENCE_HOSTED_SUBCOMMANDS,
+  inferenceHostedCommand,
 } from '../inference-hosted.js';
-import { utilityCommands } from '../utilities.js';
+import {
+  createInferenceHostedSwitchSubcommands,
+  formatHostedSwitchState,
+  type InferenceHostedSwitchDeps,
+} from '../inference-hosted-switch.js';
 
-function fakeProvisioner(): HostedInferenceProvisioner {
-  return {
-    provision: vi.fn(async ({ tenantId, userId, budget }) => ({
-      tenantId,
-      userId,
-      status: 'active' as const,
-      generation: 0,
-      provider: 'litellm' as const,
-      projectId: 'smrt-t1',
-      keyId: 'key-id-1',
-      keyAlias: 'smrt-t1-u1-g0',
-      budget: { window: 'month' as const, ...budget },
-      created: true,
-    })),
-    revoke: vi.fn(async ({ tenantId, userId }) => ({
-      tenantId,
-      userId,
-      status: 'revoked' as const,
-      generation: 1,
-      keyId: 'key-id-1',
-      keyAlias: 'smrt-t1-u1-g0',
-      revoked: true,
-      gateway: 'unsupported' as const,
-      restored: 'prior' as const,
-    })),
-    syncBudget: vi.fn(),
-    status: vi.fn(),
-    listActive: vi.fn(),
-    revokeTenant: vi.fn(),
-    syncTenantBudget: vi.fn(),
-  } as unknown as HostedInferenceProvisioner;
+interface Row {
+  enabled: boolean;
+  disabledBy?: 'global' | 'tenant';
 }
 
-describe('parseHostedBudget', () => {
-  it('reads micro-dollars or exact USD, never floats', () => {
-    expect(parseHostedBudget({ 'budget-micros': '2500000' })).toEqual({
-      limitMicros: 2_500_000,
-    });
-    expect(parseHostedBudget({ 'budget-usd': '7.5', window: 'Week' })).toEqual({
-      limitMicros: 7_500_000,
-      window: 'week',
-    });
-    expect(parseHostedBudget({ 'budget-usd': '0.000001' })).toEqual({
-      limitMicros: 1,
-    });
-    expect(parseHostedBudget({ 'budget-usd': '20.10' })).toEqual({
-      limitMicros: 20_100_000,
-    });
+function fakeDeps(): InferenceHostedSwitchDeps & {
+  writes: Array<{ key: string; enabled: boolean; tenantId?: string | null }>;
+  closed: number;
+} {
+  const disabled = new Set<string>();
+  const writes: Array<{
+    key: string;
+    enabled: boolean;
+    tenantId?: string | null;
+  }> = [];
+  const state = (
+    key: string,
+    tenantId?: string | null,
+  ): Row & { key: string } =>
+    disabled.has('global')
+      ? { key, enabled: false, disabledBy: 'global' }
+      : tenantId && disabled.has(tenantId)
+        ? { key, enabled: false, disabledBy: 'tenant' }
+        : { key, enabled: true };
+  const deps = {
+    writes,
+    closed: 0,
+    openDatabase: async () => ({ db: {} as never, display: 'sqlite::memory:' }),
+    closeDatabase: async () => {
+      deps.closed += 1;
+    },
+    killSwitch: async () => ({
+      read: async (key: string, options: { tenantId?: string | null }) =>
+        state(key, options.tenantId),
+      set: async (
+        key: string,
+        options: { enabled: boolean; tenantId?: string | null },
+      ) => {
+        writes.push({ key, ...options });
+        const scope = options.tenantId ?? 'global';
+        if (options.enabled) disabled.delete(scope);
+        else disabled.add(scope);
+        return state(key, options.tenantId);
+      },
+    }),
+  };
+  return deps;
+}
+
+describe('inference:hosted kill switch (#4760)', () => {
+  const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+  const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+  afterEach(() => {
+    log.mockClear();
+    error.mockClear();
+    process.exitCode = undefined;
   });
 
-  it('refuses missing, doubled, fractional-micro and zero budgets', () => {
-    expect(() => parseHostedBudget({})).toThrow(/exactly one/);
-    expect(() =>
-      parseHostedBudget({ 'budget-micros': '1', 'budget-usd': '1' }),
-    ).toThrow(/exactly one/);
-    expect(() => parseHostedBudget({ 'budget-micros': '1.5' })).toThrow();
-    expect(() => parseHostedBudget({ 'budget-usd': '1.0000001' })).toThrow();
-    expect(() => parseHostedBudget({ 'budget-usd': '0' })).toThrow(/zero/);
-    expect(() =>
-      parseHostedBudget({ 'budget-micros': '1', window: 'hour' }),
-    ).toThrow(/--window/);
-  });
-});
+  const output = () => log.mock.calls.map((call) => String(call[0])).join('\n');
 
-describe('runInferenceHosted', () => {
-  it('provisions with the parsed budget and prints alias and budget', async () => {
-    const provisioner = fakeProvisioner();
-    const lines: string[] = [];
-    await runInferenceHosted(
-      'provision',
-      { tenant: 't1', user: 'u1', 'budget-usd': '20' },
-      { provisioner, log: (line) => lines.push(line) },
-    );
-    expect(provisioner.provision).toHaveBeenCalledWith({
-      tenantId: 't1',
-      userId: 'u1',
-      budget: { limitMicros: 20_000_000 },
-    });
-    expect(lines.join('\n')).toContain('smrt-t1-u1-g0');
-    expect(lines.join('\n')).toContain('$20 per month');
-  });
+  it('disables and enables globally and per tenant', async () => {
+    const deps = fakeDeps();
+    const sub = createInferenceHostedSwitchSubcommands(deps);
 
-  it('revokes and tells the operator to revoke an unsupported key by hand', async () => {
-    const provisioner = fakeProvisioner();
-    const lines: string[] = [];
-    await runInferenceHosted(
-      'revoke',
-      { tenant: 't1', user: 'u1', json: false },
-      { provisioner, log: (line) => lines.push(line) },
-    );
-    expect(provisioner.revoke).toHaveBeenCalledWith({
-      tenantId: 't1',
-      userId: 'u1',
-      reason: 'operator',
-    });
-    expect(lines.join('\n')).toMatch(/by hand.*key-id-1|key-id-1.*by hand/);
-  });
-
-  it('prints JSON without any key value', async () => {
-    const provisioner = fakeProvisioner();
-    const lines: string[] = [];
-    const result = await runInferenceHosted(
-      'provision',
-      { tenant: 't1', user: 'u1', 'budget-micros': '1', json: true },
-      { provisioner, log: (line) => lines.push(line) },
-    );
-    expect(JSON.parse(lines.join('\n'))).toEqual(result);
-    expect(Object.keys(result)).not.toContain('apiKey');
-    expect(Object.keys(result)).not.toContain('key');
-  });
-
-  it('requires tenant and user', async () => {
-    await expect(
-      runInferenceHosted(
-        'revoke',
-        { user: 'u1' },
-        { provisioner: fakeProvisioner(), log: () => {} },
-      ),
-    ).rejects.toThrow('--tenant is required');
-  });
-});
-
-describe('command registration', () => {
-  it('registers provision and revoke as their own multi-word commands', () => {
-    expect(Object.keys(inferenceHostedProvisionCommands)).toEqual([
-      'inference:hosted provision',
-      'inference:hosted revoke',
+    await sub.disable.run([], { tenant: ' tenant-a ' });
+    expect(deps.writes).toEqual([
+      { key: 'inference.hosted.enabled', enabled: false, tenantId: 'tenant-a' },
     ]);
-    expect(utilityCommands['inference:hosted provision']).toBe(
-      inferenceHostedProvisionCommands['inference:hosted provision'],
+    expect(output()).toContain(
+      'Hosted inference: DISABLED (tenant tenant-a; disabled for tenant tenant-a)',
     );
-    expect(utilityCommands['inference:hosted revoke']).toBeDefined();
+
+    await sub.disable.run([], {});
+    log.mockClear();
+    await sub.enable.run([], { tenant: 'tenant-a' });
+    expect(output()).toContain('Still disabled: a global disable outranks');
+
+    log.mockClear();
+    await sub.enable.run([], {});
+    await sub.status.run([], { tenant: 'tenant-a', json: true });
+    expect(JSON.parse(log.mock.calls.at(-1)?.[0] as string)).toEqual({
+      action: 'status',
+      tenantId: 'tenant-a',
+      key: 'inference.hosted.enabled',
+      enabled: true,
+    });
+    expect(deps.closed).toBe(5);
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it('refuses a blank --tenant and reports store failures with exit 1', async () => {
+    const deps = fakeDeps();
+    const sub = createInferenceHostedSwitchSubcommands(deps);
+    await sub.disable.run([], { tenant: '  ' });
+    expect(process.exitCode).toBe(1);
+    expect(deps.writes).toEqual([]);
+
+    process.exitCode = undefined;
+    const failing = createInferenceHostedSwitchSubcommands({
+      ...deps,
+      killSwitch: async () => {
+        throw new Error(
+          'relation "_smrt_feature_overrides" does not exist (postgres://u:secret@db/x)',
+        );
+      },
+    });
+    await failing.disable.run([], {});
+    expect(process.exitCode).toBe(1);
+    const message = String(error.mock.calls.at(-1)?.[0]);
+    expect(message).toContain('run `smrt db:migrate`');
+    expect(message).not.toContain('secret');
+  });
+
+  it('formats every state', () => {
+    expect(
+      formatHostedSwitchState({ key: 'k', enabled: true }, undefined),
+    ).toBe('Hosted inference: ENABLED (global)');
+    expect(
+      formatHostedSwitchState(
+        { key: 'k', enabled: false, disabledBy: 'global' },
+        't1',
+      ),
+    ).toBe('Hosted inference: DISABLED (tenant t1; disabled globally)');
+  });
+});
+
+describe('inference:hosted command group', () => {
+  const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+  const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+  afterEach(() => {
+    log.mockClear();
+    error.mockClear();
+    process.exitCode = undefined;
+  });
+
+  it('lists its subcommands and refuses unknown ones', async () => {
+    expect(Object.keys(INFERENCE_HOSTED_SUBCOMMANDS)).toEqual(
+      expect.arrayContaining(['disable', 'enable', 'status']),
+    );
+    expect(formatInferenceHostedHelp()).toContain('disable [--tenant <id>]');
+    await inferenceHostedCommand.handler?.([], {});
+    expect(String(log.mock.calls[0]?.[0])).toContain(
+      'Usage: smrt inference:hosted',
+    );
+    await inferenceHostedCommand.handler?.(['constructor'], {});
+    expect(process.exitCode).toBe(1);
   });
 });

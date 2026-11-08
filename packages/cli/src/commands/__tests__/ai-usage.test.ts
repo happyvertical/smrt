@@ -129,7 +129,35 @@ describe('formatAiUsageReport', () => {
     expect(text).toContain(
       'Cost basis: estimated_cost as recorded at call time',
     );
-    expect(text).toMatch(/total\s+2\s+300/);
+    expect(text).toMatch(/total\s+2\s+0\s+300/);
+  });
+
+  it('counts hosted-gate blocks beside calls, by tier (#4760)', async () => {
+    const handler = new AiUsagePersistenceHandler(db);
+    await handler.handle({
+      provider: 'openai',
+      model: 'hosted-model',
+      operation: 'blocked',
+      usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+      duration: 0,
+      timestamp: new Date(),
+      tenantId: 'tenant-a',
+      estimatedCost: 0,
+      tags: {
+        tierRequested: 'good',
+        tierResolved: 'good',
+        source: 'hosted',
+        reason: 'entitlement',
+        policy: 'user-cap',
+        cap: '1000000',
+        spend: '1200000',
+      },
+    });
+    const report = await reportAiUsage(db, { by: ['tier'] });
+    const text = formatAiUsageReport(report);
+    expect(text).toMatch(/calls\s+blocked/);
+    expect(text).toMatch(/good\s+0\s+1\s+0/);
+    expect(text).toMatch(/total\s+3\s+1\s+450/);
   });
 
   it('says so when the window is empty', async () => {

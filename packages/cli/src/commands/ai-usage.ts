@@ -3,7 +3,8 @@
  *
  * Groups `_smrt_ai_usage` by prompt, model, tier, class, tenant, fusion or source
  * through core's `reportAiUsage()`: calls, tokens, estimated cost (with its
- * basis stated and uncosted calls counted beside the total), p50 duration,
+ * basis stated and uncosted calls counted beside the total), hosted-gate
+ * blocks counted beside calls (#4760), p50 duration,
  * recorded substitutions and outcome labels per bucket.
  *
  * A filter selects what is totalled, never what is accounted for: calls
@@ -129,10 +130,11 @@ function formatOutcomes(outcomes: Record<string, number>): string {
 function row(
   label: string,
   stats: AiUsageReportStats,
-): [string, string, string, string, string, string, string] {
+): [string, string, string, string, string, string, string, string] {
   return [
     label,
     formatInt(stats.calls),
+    formatInt(stats.blocked),
     formatInt(stats.totalTokens),
     formatCost(stats),
     stats.p50DurationMs === null ? '-' : `${formatInt(stats.p50DurationMs)}ms`,
@@ -146,6 +148,7 @@ export function formatAiUsageReport(report: AiUsageReport): string {
   const header = [
     report.by.join(' / '),
     'calls',
+    'blocked',
     'tokens',
     'est. cost',
     'p50',
