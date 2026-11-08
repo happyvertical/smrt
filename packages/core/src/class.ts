@@ -78,9 +78,17 @@ import {
   type InferenceTierRequest,
   type InferenceUsageRecord,
   inferenceExecutorFor,
+  inferenceModeForTarget,
+  inferenceTargetKind,
   mergeInferenceConfigs,
   resolveInference as resolveInferenceBinding,
+  resolveInferenceMode,
 } from './inference.js';
+import {
+  type InferenceStatus,
+  InferenceUnavailableError,
+  inferenceUnavailableStatus,
+} from './inference-availability.js';
 import {
   bindInferenceTarget,
   inferenceTargetIdentity,
@@ -893,6 +901,11 @@ export class SmrtClass {
    * executor's client, which walks the chain per call; `minimumTier` and
    * `allowPartial` reach it. Without a registered executor a chain target
    * throws rather than falling back to the configured client.
+   *
+   * Throws `InferenceUnavailableError` (`AI_UNAVAILABLE`, #4757) before any
+   * client is built when the resolution is unavailable (mode `off`, ...),
+   * when a registered resolver's `mode()` says `off` for an untiered call,
+   * or when nothing is configured (`unconfigured`).
    */
   protected async getAiClient(
     tier?: InferenceTierRequest,
@@ -914,6 +927,14 @@ export class SmrtClass {
       };
       const resolution =
         options.resolution ?? (await this.resolveInferenceTier(request));
+      if (resolution.unavailable) {
+        throw new InferenceUnavailableError({
+          reason: resolution.unavailable,
+          ...(resolution.mode ? { mode: resolution.mode } : {}),
+          tier: resolution.tierResolved,
+          owner: this._className,
+        });
+      }
       const executor = inferenceExecutorFor(resolution.target);
       if (executor) {
         return executor.createClient({
@@ -931,17 +952,124 @@ export class SmrtClass {
           recordUsage: (record) => this.recordInferenceUsage(record),
         }) as unknown as AIClient;
       }
-      return this.getAiClientForTarget(resolution.target);
-    }
-
-    if (!this._ai) {
-      throw new Error(
-        `${this._className} does not have an AI client configured. ` +
-          `Provide 'ai' in options or configure a global SMRT AI provider.`,
+      return this.getAiClientForTarget(
+        resolution.target,
+        resolution.tierResolved,
       );
     }
 
+    const modeState = await this.resolveInferenceModeState();
+    if (modeState?.unavailable) {
+      throw new InferenceUnavailableError({
+        reason: modeState.unavailable,
+        mode: modeState.mode,
+        owner: this._className,
+      });
+    }
+    return this.requireConfiguredAi();
+  }
+
+  /**
+   * The configured client, or `InferenceUnavailableError('unconfigured')`
+   * (#4757; before, a plain `Error` "does not have an AI client
+   * configured").
+   */
+  private requireConfiguredAi(tier?: InferenceTier): AIClient {
+    if (!this._ai) {
+      throw new InferenceUnavailableError({
+        reason: 'unconfigured',
+        ...(tier ? { tier } : {}),
+        owner: this._className,
+      });
+    }
     return this._ai;
+  }
+
+  /** This instance's resolver (instance `inference` option) and tenant. */
+  private inferenceRequestScope(): {
+    resolver: InferenceResolver | undefined;
+    tenantId: string | null | undefined;
+  } {
+    const instance = this.options.inference;
+    const resolver =
+      instance && typeof (instance as InferenceResolver).resolve === 'function'
+        ? (instance as InferenceResolver)
+        : undefined;
+    const tenantId =
+      'tenantId' in this &&
+      (this as { tenantId?: string | null }).tenantId !== undefined
+        ? ((this as { tenantId?: string | null }).tenantId ?? null)
+        : undefined;
+    return { resolver, tenantId };
+  }
+
+  /** The stored mode for an untiered call (registered resolver's `mode()`). */
+  private async resolveInferenceModeState() {
+    const { resolver, tenantId } = this.inferenceRequestScope();
+    return resolveInferenceMode(
+      {
+        className: this._className,
+        ...(tenantId !== undefined ? { tenantId } : {}),
+      },
+      resolver ? { resolver } : {},
+    );
+  }
+
+  /**
+   * Whether an AI call would run for this instance (#4757), without calling
+   * a model or recording usage. With `tier` it resolves the binding the way
+   * `getAiClient(tier)` does; without, it checks the stored mode and the
+   * configured client. A chain target counts as available (its candidates
+   * are tried at call time).
+   */
+  async getInferenceStatus(
+    options: { tier?: InferenceTierRequest } = {},
+  ): Promise<InferenceStatus> {
+    await this.ensureRuntimeServicesInitialized();
+    const configured = this._aiClientConfig;
+    if (options.tier === undefined) {
+      const state = await this.resolveInferenceModeState();
+      if (state?.unavailable) {
+        return inferenceUnavailableStatus(state.unavailable, state.mode);
+      }
+      if (!this._ai) return inferenceUnavailableStatus('unconfigured');
+      return {
+        available: true,
+        mode:
+          state && state.mode !== 'off'
+            ? state.mode
+            : inferenceModeForTarget(undefined, configured),
+      };
+    }
+    const resolution = await this.resolveInferenceTier({ tier: options.tier });
+    const tier = resolution.tierResolved;
+    if (resolution.unavailable) {
+      return inferenceUnavailableStatus(
+        resolution.unavailable,
+        resolution.mode,
+        tier,
+      );
+    }
+    const target = resolution.target ?? {};
+    if (
+      inferenceTargetKind(target) === 'single' &&
+      !inferenceTargetIdentity(target).provider &&
+      !this._ai
+    ) {
+      return inferenceUnavailableStatus('unconfigured', undefined, tier);
+    }
+    return {
+      available: true,
+      mode: inferenceModeForTarget(resolution, configured),
+      tier,
+    };
+  }
+
+  /** `true` when {@link getInferenceStatus} reports `available`. */
+  async isInferenceAvailable(
+    options: { tier?: InferenceTierRequest } = {},
+  ): Promise<boolean> {
+    return (await this.getInferenceStatus(options)).available;
   }
 
   /**
@@ -967,16 +1095,7 @@ export class SmrtClass {
   protected async resolveInferenceTier(
     request: InferenceRequest,
   ): Promise<InferenceResolution> {
-    const instance = this.options.inference;
-    const resolver =
-      instance && typeof (instance as InferenceResolver).resolve === 'function'
-        ? (instance as InferenceResolver)
-        : undefined;
-    const tenantId =
-      'tenantId' in this &&
-      (this as { tenantId?: string | null }).tenantId !== undefined
-        ? ((this as { tenantId?: string | null }).tenantId ?? null)
-        : undefined;
+    const { resolver, tenantId } = this.inferenceRequestScope();
     return resolveInferenceBinding(
       {
         className: this._className,
@@ -995,6 +1114,7 @@ export class SmrtClass {
    */
   private async getAiClientForTarget(
     target: InferenceTarget,
+    tier?: InferenceTier,
   ): Promise<AIClient> {
     if (inferenceExecutorFor(target)) {
       throw new Error(
@@ -1002,7 +1122,8 @@ export class SmrtClass {
       );
     }
     const identity = inferenceTargetIdentity(target);
-    if (Object.keys(identity).length === 0) return this.getAiClient();
+    if (Object.keys(identity).length === 0)
+      return this.requireConfiguredAi(tier);
 
     const base = this._aiClientConfig;
     if (!base && !identity.provider) {
@@ -1010,7 +1131,7 @@ export class SmrtClass {
       // refine. A model-only target keeps the injected client; callers on the
       // object operation path also send the target model per call.
       if (this._ai && !identity.baseUrl && !identity.apiKey) return this._ai;
-      if (!this._ai) return this.getAiClient();
+      if (!this._ai) return this.requireConfiguredAi(tier);
       throw new InferenceBindingError(
         `${this._className} cannot rebind an injected AI client to a new endpoint; the inference target must name a provider.`,
       );

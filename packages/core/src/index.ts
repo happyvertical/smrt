@@ -272,6 +272,8 @@ export {
   type InferenceExecutor,
   type InferenceLatency,
   type InferenceModelClient,
+  type InferenceModeRequest,
+  type InferenceModeState,
   type InferenceRequest,
   type InferenceResolution,
   type InferenceResolutionSource,
@@ -284,6 +286,7 @@ export {
   type InferenceTierRequest,
   type InferenceUsageRecord,
   inferenceExecutorFor,
+  inferenceModeForTarget,
   inferenceTargetKind,
   inferenceUsageTags,
   isInferenceTargetSource,
@@ -294,9 +297,27 @@ export {
   resolveAutoTier,
   resolveInference,
   resolveInferenceFromConfig,
+  resolveInferenceMode,
   setInferenceExecutor,
   setInferenceResolver,
 } from './inference';
+// Inference mode and the typed AI-unavailable state (#4757). Browser-safe;
+// keep this list identical in index.ts and browser.ts.
+export {
+  AI_UNAVAILABLE,
+  INFERENCE_MODES,
+  INFERENCE_UNAVAILABLE_REASONS,
+  type InferenceMode,
+  type InferenceStatus,
+  type InferenceUnavailableDetails,
+  InferenceUnavailableError,
+  type InferenceUnavailableReason,
+  inferenceUnavailableMessage,
+  inferenceUnavailableStatus,
+  isInferenceMode,
+  isInferenceUnavailableError,
+  isInferenceUnavailableReason,
+} from './inference-availability';
 export {
   INFERENCE_PRESET_IDS,
   INFERENCE_PRESETS,
@@ -304,6 +325,16 @@ export {
   isInferencePresetId,
   resolveInferencePreset,
 } from './inference-presets';
+export {
+  configuredAiProvider,
+  createInferenceStatusHandler,
+  getInferenceStatus,
+  type InferenceStatusEvent,
+  type InferenceStatusHandlerOptions,
+  type InferenceStatusOptions,
+  inferenceStatusResponse,
+  isInferenceAvailable,
+} from './inference-status';
 export {
   bindInferenceTarget,
   inferenceTargetIdentity,

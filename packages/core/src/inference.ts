@@ -17,6 +17,12 @@
 
 import { getSmrtModuleConfig } from './config/global-config.js';
 import { config as globalSignalConfig } from './config.js';
+import {
+  type InferenceMode,
+  type InferenceUnavailableReason,
+  isInferenceMode,
+  isInferenceUnavailableReason,
+} from './inference-availability.js';
 import { SmrtError } from './smrt-error.js';
 
 /** Ordered quality tiers, cheapest first. `fast` is deliberately not a tier. */
@@ -210,6 +216,30 @@ export interface InferenceResolution {
   /** The target for that tier. An empty target means the configured client. */
   target: InferenceTarget;
   via: InferenceResolutionSource;
+  /**
+   * The principal's inference mode (#4757), when the resolver knows it (a
+   * stored mode, or the answering binding's source). Absent: derived from
+   * the target by {@link inferenceModeForTarget}.
+   */
+  mode?: InferenceMode;
+  /**
+   * Set when no call may run for this tier (`off`: the principal chose mode
+   * `off`; `unconfigured`: an explicit mode with no binding of its kind;
+   * `entitlement` / `capability` are reserved for #4760 / #4758). Core
+   * throws `InferenceUnavailableError` before building any client, so
+   * nothing runs and nothing is recorded. The target is ignored.
+   */
+  unavailable?: InferenceUnavailableReason;
+}
+
+/** Input to {@link InferenceResolver.mode}: a request without a tier. */
+export type InferenceModeRequest = Omit<InferenceRequest, 'tier'>;
+
+/** Output of {@link InferenceResolver.mode}. */
+export interface InferenceModeState {
+  mode: InferenceMode;
+  /** Set when untiered calls must not run (in practice `off`). */
+  unavailable?: InferenceUnavailableReason;
 }
 
 /** Context handed to a registered resolver. */
@@ -236,6 +266,16 @@ export interface InferenceResolver {
     request: InferenceRequest,
     context: InferenceResolverContext,
   ): InferenceResolution | undefined | Promise<InferenceResolution | undefined>;
+  /**
+   * Optional (#4757): the principal's stored inference mode for calls that
+   * name no tier. Untiered calls never consult {@link resolve} (they keep
+   * the configured client); they only ask this, so a principal whose mode
+   * is `off` gets `InferenceUnavailableError` there too. Return `undefined`
+   * when no mode is stored. Resolvers without it change nothing.
+   */
+  mode?(
+    request: InferenceModeRequest,
+  ): InferenceModeState | undefined | Promise<InferenceModeState | undefined>;
 }
 
 const RESOLVER_KEY = Symbol.for('smrt.inference.resolver');
@@ -474,6 +514,19 @@ function assertResolution(
       'Inference resolver returned an invalid resolution; expected { tierResolved, target, via }.',
     );
   }
+  if (record.mode !== undefined && !isInferenceMode(record.mode)) {
+    throw new Error(
+      `Inference resolver returned an unknown mode "${String(record.mode)}".`,
+    );
+  }
+  if (
+    record.unavailable !== undefined &&
+    !isInferenceUnavailableReason(record.unavailable)
+  ) {
+    throw new Error(
+      `Inference resolver returned an unknown unavailable reason "${String(record.unavailable)}".`,
+    );
+  }
 }
 
 /** Options for {@link resolveInference}. */
@@ -514,6 +567,80 @@ export async function resolveInference(
     );
   }
   return resolved;
+}
+
+/**
+ * The stored mode for an untiered call (#4757): the registered (or given)
+ * resolver's optional `mode()`, else `undefined`. The built-in resolver has
+ * none, so unconfigured apps never pay for this. Never calls a model.
+ */
+export async function resolveInferenceMode(
+  request: InferenceModeRequest = {},
+  options: Pick<ResolveInferenceOptions, 'resolver'> = {},
+): Promise<InferenceModeState | undefined> {
+  const resolver = options.resolver ?? getInferenceResolver();
+  if (typeof resolver.mode !== 'function') return undefined;
+  const state = await resolver.mode({ ...request });
+  if (state === undefined || state === null) return undefined;
+  if (!asRecord(state) || !isInferenceMode(state.mode)) {
+    throw new Error(
+      'Inference resolver returned an invalid mode; expected { mode, unavailable? }.',
+    );
+  }
+  if (
+    state.unavailable !== undefined &&
+    !isInferenceUnavailableReason(state.unavailable)
+  ) {
+    throw new Error(
+      `Inference resolver returned an unknown unavailable reason "${String(state.unavailable)}".`,
+    );
+  }
+  return state;
+}
+
+function isLoopbackEndpoint(baseUrl: unknown): boolean {
+  if (typeof baseUrl !== 'string' || baseUrl.trim() === '') return false;
+  try {
+    const host = new URL(baseUrl).hostname.toLowerCase();
+    return (
+      host === 'localhost' ||
+      host.endsWith('.localhost') ||
+      host === '[::1]' ||
+      host === '::1' ||
+      /^127\.\d+\.\d+\.\d+$/.test(host)
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The mode a working binding reports (#4757): the resolution's own `mode`,
+ * else the target's `source` (`byo`, `local`, `hosted`), else, for app
+ * configuration and the configured client (`source: 'app'` or none),
+ * `local` for Ollama or a loopback endpoint and `hosted` otherwise (the host
+ * provides inference; `source` still says `app`). `fallback` is the
+ * configured client's options, read when the target names no provider.
+ */
+export function inferenceModeForTarget(
+  resolution: Pick<InferenceResolution, 'mode' | 'target'> | undefined,
+  fallback?: Record<string, unknown>,
+): Exclude<InferenceMode, 'off'> {
+  if (resolution?.mode && resolution.mode !== 'off') return resolution.mode;
+  const target = resolution?.target ?? {};
+  const source = target.source;
+  if (source === 'byo' || source === 'local' || source === 'hosted') {
+    return source;
+  }
+  const named = typeof target.provider === 'string' && target.provider !== '';
+  const provider = named ? target.provider : fallback?.provider;
+  const baseUrl = named
+    ? target.baseUrl
+    : (target.baseUrl ?? fallback?.baseUrl);
+  if (typeof provider === 'string' && provider.toLowerCase() === 'ollama') {
+    return 'local';
+  }
+  return isLoopbackEndpoint(baseUrl) ? 'local' : 'hosted';
 }
 
 /**
