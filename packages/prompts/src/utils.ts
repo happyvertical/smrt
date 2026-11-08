@@ -1,3 +1,8 @@
+import {
+  INFERENCE_TIERS,
+  isInferenceTier,
+  isInferenceTierRequest,
+} from '@happyvertical/smrt-core';
 import type {
   NormalizedPromptAI,
   PromptAIInput,
@@ -46,6 +51,8 @@ const AI_ROUTING_PARAM_KEYS = new Set([
   'type',
   'model',
   'defaultModel',
+  // Read from the code default only; never a tenant-editable param (#4752).
+  'minimumTier',
 ]);
 
 export function isPlainObject(
@@ -150,10 +157,16 @@ function normalizeAIInput(ai?: PromptAIInput | null): NormalizedPromptAI {
       : undefined;
   const model =
     typeof ai.model === 'string' || ai.model === null ? ai.model : undefined;
+  if (ai.minimumTier !== undefined && !isInferenceTier(ai.minimumTier)) {
+    throw new Error(
+      `Prompt ai.minimumTier must be one of ${INFERENCE_TIERS.join(', ')}; got "${String(ai.minimumTier)}".`,
+    );
+  }
 
   return {
     profile: profile ?? undefined,
     model: model ?? undefined,
+    ...(ai.minimumTier ? { minimumTier: ai.minimumTier } : {}),
     params: extractPromptParams(ai, AI_RESERVED_KEYS),
   };
 }
@@ -285,7 +298,9 @@ export function validateProfileName(
     );
   }
 
-  if (!config.profiles?.[profileName]) {
+  // Tier names (and `auto`) are reserved profile names that resolve through
+  // the core inference seam (#4750); a same-named configured profile wins.
+  if (!config.profiles?.[profileName] && !isInferenceTierRequest(profileName)) {
     throw new Error(`Prompt profile "${profileName}" is not configured`);
   }
 }
@@ -313,17 +328,22 @@ export function buildResolvedAI(
   let provider: string | undefined;
   let model = ai.model;
   let params = ai.params;
+  let tier: ResolvedPromptAI['tier'];
 
   if (ai.profile) {
     validateProfileName(ai.profile, config);
     const configuredProfile = config.profiles?.[ai.profile];
-    if (!configuredProfile) {
+    if (configuredProfile) {
+      const profileConfig = normalizeProfileConfig(configuredProfile);
+      provider = profileConfig.provider;
+      model = model ?? profileConfig.model;
+      params = mergePromptParams(profileConfig.params, params);
+    } else if (isInferenceTierRequest(ai.profile)) {
+      // Bound later through the core inference seam by `resolvePrompt()`.
+      tier = ai.profile;
+    } else {
       throw new Error(`Prompt profile "${ai.profile}" is not configured`);
     }
-    const profileConfig = normalizeProfileConfig(configuredProfile);
-    provider = profileConfig.provider;
-    model = model ?? profileConfig.model;
-    params = mergePromptParams(profileConfig.params, params);
   }
 
   if (ai.model) {
@@ -345,6 +365,7 @@ export function buildResolvedAI(
     profile: ai.profile,
     provider,
     model,
+    ...(tier ? { tier } : {}),
     ...(config.allowedModels
       ? { allowedModels: [...config.allowedModels] }
       : {}),
@@ -360,6 +381,91 @@ export function buildResolvedAI(
   }
 
   return resolved;
+}
+
+const TEMPLATE_HASH_LENGTH = 12;
+
+/**
+ * Short SHA-256 fingerprint of an effective (unrendered) prompt template: the
+ * first 12 lowercase hex characters. Recorded as the `templateHash` usage tag
+ * so an override edit starts a new usage series (#4751).
+ *
+ * Uses Web Crypto (`globalThis.crypto.subtle`), available in Node and every
+ * browser, so the package root stays free of `node:crypto`.
+ */
+export async function promptTemplateHash(template: string): Promise<string> {
+  const digest = await globalThis.crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(template),
+  );
+  let hex = '';
+  for (const byte of new Uint8Array(digest)) {
+    hex += byte.toString(16).padStart(2, '0');
+    if (hex.length >= TEMPLATE_HASH_LENGTH) break;
+  }
+  return hex.slice(0, TEMPLATE_HASH_LENGTH);
+}
+
+/** The `ai.message()` options {@link promptMessageOptions} returns. */
+export interface PromptMessageOptions extends PromptParams {
+  model?: string;
+  temperature?: number;
+  maxTokens?: number;
+  /** Tier profile (#4750); bound at call time through the inference seam. */
+  tier?: ResolvedPromptAI['tier'];
+  /** Prompt key sent with `tier` so prompt-scoped bindings apply. */
+  promptKey?: string;
+  /** Degradation floor sent with `tier` (#4752). */
+  minimumTier?: ResolvedPromptAI['minimumTier'];
+  usageTags?: Record<string, string>;
+}
+
+/** Extra call options merged by {@link promptMessageOptions}. */
+export interface PromptMessageOptionsExtra {
+  /** The caller's own usage tags; they win over the resolution's tags. */
+  usageTags?: Record<string, string>;
+}
+
+/**
+ * Turn a resolved prompt's AI settings into `ai.message()` call options:
+ * params, `model`, `temperature`, `maxTokens`, and the resolution's
+ * `usageTags` (`promptKey`, `promptLayer`, `templateHash`).
+ *
+ * Tag precedence, low to high: a `usageTags` object carried in the prompt's
+ * params (tenant-editable, so it can never mask the identity tags), the
+ * resolution's identity tags, then the caller's `extra.usageTags`.
+ */
+export function promptMessageOptions(
+  ai: ResolvedPromptAI,
+  extra: PromptMessageOptionsExtra = {},
+): PromptMessageOptions {
+  const params = ai.params || {};
+  const usageTags = {
+    ...stringTags(params.usageTags),
+    ...(ai.usageTags ?? {}),
+    ...(extra.usageTags ?? {}),
+  };
+  return {
+    ...params,
+    ...(ai.model ? { model: ai.model } : {}),
+    ...(ai.tier ? { tier: ai.tier } : {}),
+    ...(ai.tier && ai.promptKey ? { promptKey: ai.promptKey } : {}),
+    ...(ai.tier && ai.minimumTier ? { minimumTier: ai.minimumTier } : {}),
+    ...(typeof ai.temperature === 'number'
+      ? { temperature: ai.temperature }
+      : {}),
+    ...(typeof ai.maxTokens === 'number' ? { maxTokens: ai.maxTokens } : {}),
+    ...(Object.keys(usageTags).length > 0 ? { usageTags } : {}),
+  };
+}
+
+function stringTags(value: unknown): Record<string, string> {
+  if (!isPlainObject(value)) return {};
+  const tags: Record<string, string> = {};
+  for (const [key, tag] of Object.entries(value)) {
+    if (tag !== undefined && tag !== null) tags[key] = String(tag);
+  }
+  return tags;
 }
 
 export function renderPromptTemplate(

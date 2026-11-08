@@ -1,4 +1,8 @@
-import type { SmrtClassOptions } from '@happyvertical/smrt-core';
+import type {
+  InferenceTier,
+  InferenceTierRequest,
+  SmrtClassOptions,
+} from '@happyvertical/smrt-core';
 
 export type PromptParams = Record<string, unknown>;
 
@@ -15,6 +19,12 @@ export interface PromptAIInput {
   params?: PromptParams | null;
   temperature?: number;
   maxTokens?: number;
+  /**
+   * Lowest tier a tier-profile prompt may degrade to when its tier's chain
+   * fails (#4752). Code default only: config and stored overrides cannot
+   * lower it.
+   */
+  minimumTier?: InferenceTier;
   [key: string]: unknown;
 }
 
@@ -89,13 +99,58 @@ export interface PromptLayer {
 export interface NormalizedPromptAI {
   profile?: string;
   model?: string;
+  /** From the code default only (#4752). */
+  minimumTier?: InferenceTier;
   params: PromptParams;
 }
 
+/**
+ * The resolution layer that supplied a prompt's effective template, lowest to
+ * highest priority. Recorded on every AI call as the `promptLayer` usage tag.
+ */
+export type PromptSourceLayer =
+  | 'default'
+  | 'config'
+  | 'app'
+  | 'tenant'
+  | 'runtime';
+
+/**
+ * Usage tags `resolvePrompt()` attaches to a resolution. They reach
+ * `_smrt_ai_usage` through the AI SDK's per-call `usageTags`; `promptKey` is
+ * also lifted into the indexed `prompt_key` column (#4751).
+ */
+export interface PromptUsageTags {
+  /** The registered prompt key, e.g. `content.summarize.headline`. */
+  promptKey: string;
+  /** The highest layer that supplied the effective template. */
+  promptLayer: PromptSourceLayer;
+  /** First 12 hex chars of the SHA-256 of the effective (unrendered) template. */
+  templateHash: string;
+  [key: string]: string;
+}
+
 export interface ResolvedPromptAI extends PromptParams {
+  /**
+   * Prompt-run observability tags (#4751). Always set by `resolvePrompt()`;
+   * optional here so hand-built AI option objects stay assignable.
+   */
+  usageTags?: PromptUsageTags;
   profile?: string;
   provider?: string;
   model?: string;
+  /**
+   * Set when the effective profile is an inference tier name (or `auto`) with
+   * no same-named entry in `PromptPackageConfig.profiles` (#4750). The tier
+   * binds at call time through the core seam: forward `tier` and `promptKey`
+   * to object AI operations (`prepareAiOperation()`), which pick the tier
+   * client. `provider`/`model` stay unset unless the prompt names a model.
+   */
+  tier?: InferenceTierRequest;
+  /** The prompt key, set with `tier` for the call-time resolver request. */
+  promptKey?: string;
+  /** The definition's `ai.minimumTier`, set with `tier` (#4752). */
+  minimumTier?: InferenceTier;
   allowedModels?: string[];
   params: PromptParams;
   temperature?: number;
@@ -106,7 +161,7 @@ export interface ResolvedPrompt {
   key: string;
   template: string;
   text: string;
-  ai: ResolvedPromptAI;
+  ai: ResolvedPromptAI & { usageTags: PromptUsageTags };
 }
 
 export interface ResolvePromptOptions {
@@ -119,5 +174,7 @@ export interface ResolvePromptOptions {
 export interface PromptCacheValue {
   key: string;
   template: string;
+  /** The highest stored/config layer that supplied `template`. */
+  templateLayer: Exclude<PromptSourceLayer, 'runtime'>;
   ai: NormalizedPromptAI;
 }

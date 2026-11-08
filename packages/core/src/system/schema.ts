@@ -243,7 +243,11 @@ CREATE TABLE IF NOT EXISTS _smrt_ai_usage (
   class_name TEXT,
   tenant_id TEXT,
   tags TEXT,
-  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  prompt_key TEXT,
+  tier_requested TEXT,
+  tier_resolved TEXT,
+  run_id TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_smrt_ai_usage_created
@@ -263,6 +267,48 @@ CREATE INDEX IF NOT EXISTS idx_smrt_ai_usage_provider_model
 -- which the single-column indexes above can satisfy (#2375).
 CREATE INDEX IF NOT EXISTS idx_smrt_ai_usage_tenant_created
   ON _smrt_ai_usage(tenant_id, created_at);
+
+-- Prompt-run observability (#4751): prompt_key, tier_requested, tier_resolved
+-- and run_id are lifted from the promptKey / tierRequested / tierResolved /
+-- runId usage tags (tags keeps the full copy). Existing databases receive the
+-- columns from ensureAiUsageSystemTableCompatibility() before this replays.
+CREATE INDEX IF NOT EXISTS idx_smrt_ai_usage_prompt_key
+  ON _smrt_ai_usage(prompt_key, created_at);
+
+CREATE INDEX IF NOT EXISTS idx_smrt_ai_usage_run
+  ON _smrt_ai_usage(run_id);
+`;
+
+/**
+ * Outcome labels for AI usage (#4751).
+ *
+ * A run cannot rate itself, so whether an answer was any good is a label
+ * recorded later, when it is known, by `recordAiUsageOutcome()`. A label
+ * targets one usage row (`usage_id`), a whole run (`run_id`), or both. Neither
+ * is a foreign key: `pruneAiUsage()` deletes usage rows on its own schedule and
+ * must never be blocked by, or cascade into, the labels.
+ */
+export const CREATE_SMRT_AI_USAGE_OUTCOMES_TABLE = `
+CREATE TABLE IF NOT EXISTS _smrt_ai_usage_outcomes (
+  id TEXT PRIMARY KEY,
+  usage_id TEXT,
+  run_id TEXT,
+  label TEXT NOT NULL,
+  score REAL,
+  evidence TEXT,
+  actor TEXT NOT NULL,
+  tenant_id TEXT,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_smrt_ai_usage_outcomes_usage
+  ON _smrt_ai_usage_outcomes(usage_id);
+
+CREATE INDEX IF NOT EXISTS idx_smrt_ai_usage_outcomes_run
+  ON _smrt_ai_usage_outcomes(run_id);
+
+CREATE INDEX IF NOT EXISTS idx_smrt_ai_usage_outcomes_tenant_created
+  ON _smrt_ai_usage_outcomes(tenant_id, created_at);
 `;
 
 /**
@@ -1179,6 +1225,7 @@ export const ALL_SYSTEM_TABLES = [
   CREATE_SMRT_DISPATCH_TABLE,
   CREATE_SMRT_DISPATCH_SUBSCRIPTIONS_TABLE,
   CREATE_SMRT_AI_USAGE_TABLE,
+  CREATE_SMRT_AI_USAGE_OUTCOMES_TABLE,
   CREATE_SMRT_CHANGES_TABLE,
   CREATE_SMRT_SYNC_TOMBSTONES_TABLE,
 ];
@@ -1261,7 +1308,9 @@ export const RETIRED_SYSTEM_TABLES: readonly string[] = [
  *   scope key, not a tenant FK;
  * - `_smrt_ai_usage.tenant_id`: model usage writes tenant UUIDs, but the
  *   published external-agent usage API accepts any non-empty text tenant id,
- *   so converting it is a contract change tracked separately.
+ *   so converting it is a contract change tracked separately;
+ * - `_smrt_ai_usage_outcomes.tenant_id`: matches `_smrt_ai_usage.tenant_id`,
+ *   the column it is read beside, and converts with it.
  */
 export const SYSTEM_TABLE_TENANT_UUID_COLUMNS: ReadonlyArray<{
   table: string;
@@ -1348,8 +1397,12 @@ function toPostgresTenantUuid(ddl: string): string {
  * predicate (`system/retention.ts`).
  *
  * 1.12.0 adds the durable tracked-deletion ledger.
+ *
+ * 1.13.0 adds the prompt-run observability columns `prompt_key`,
+ * `tier_requested`, `tier_resolved`, `run_id` and their indexes to
+ * `_smrt_ai_usage`, and the `_smrt_ai_usage_outcomes` label table (#4751).
  */
-export const SMRT_SCHEMA_VERSION = '1.12.0';
+export const SMRT_SCHEMA_VERSION = '1.13.0';
 
 /**
  * Canonical form of the system DDL that {@link SMRT_SCHEMA_DDL_CHECKSUMS} covers.
@@ -1396,4 +1449,6 @@ export const SMRT_SCHEMA_DDL_CHECKSUMS: Readonly<Record<string, string>> =
       '98112937a3bbb3883c3db1fd5e836751f91a479c1c5da64d4410263a6581ef1f',
     '1.12.0':
       '6aa42e368e7d57191de9b0c040c289edf38a1ffa7ae0097f57188ecd5a5b8f9c',
+    '1.13.0':
+      '321c33d4616dd98575c80aa6bc766f65c4282c2341fc9566e50914a873e1065f',
   });

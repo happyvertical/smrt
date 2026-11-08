@@ -28,6 +28,7 @@ Each layer can override any subset of fields (template, profile, model, params).
 - **Stored overrides use nullable fields** so inheritance stays field-by-field — null means "use the lower layer"
 - **Provider selection is indirect** in v1: prompts select named profiles, and profiles resolve to provider/model in `smrt-config`
 - **`editable` flags are enforced on `PromptOverride.save()`** — definitions can lock specific fields against tenant override
+- **Tier names are reserved profile names** (#4750): `cheap`, `good`, `great`, `best` and `auto` need no `profiles` entry. `resolvePrompt()` only marks them (`ai.tier`, `ai.promptKey`) and never copies a binding into `provider`/`model`/`params`: the tier binds once, at call time, through core's seam (`prepareAiOperation()` / `getAiClient(tier)`) with the prompt key, so prompt and call cannot disagree. `allowedProfileNames` still applies to tier names; an explicit prompt `model` stays validated by `allowedModels` and is sent per call on the tier client. **Footgun:** a same-named `profiles` entry wins and silently opts that name out of tiers. `definePrompt({ ai: { minimumTier } })` sets the ladder floor for a tier prompt (#4752); it is read from the code default only (stripped from params at every layer), so config and tenant overrides cannot lower it, and `promptMessageOptions()` forwards it with `tier`. Forward `ai.tier` and `ai.promptKey` to object AI operations (smrt-properties' `promptMessageOptions()` does). **Known gap until #4751:** the other `promptMessageOptions` copies (content, images, ledgers, analytics, profiles, facts) do not forward `tier`, so a tier profile on their prompts runs on the configured client untagged; #4751 consolidates the copies onto `prepareAiOperation()` and call `ai.message()` through `prepareAiOperation()`.
 
 ## Generated surfaces
 
@@ -51,13 +52,29 @@ write) or `PromptOverrideCollection.setTemplateOverride()` /
 - `vitest.config.ts` runs two projects (`server` node + `smrtVitestPlugin`, `svelte` jsdom + `@sveltejs/vite-plugin-svelte` with `conditions: ['browser']`) because the browser condition would send `smrt-core` to its browser build if applied globally.
 - `PromptSettingsService.create()` builds its `PromptOverrideCollection` with the caller's `defaultListLimit`/`maxListLimit` stripped before the bulk `getOverrideMapForKeys()` enumeration read that backs `listPromptSettings()` — the #3056 hazard class in `smrt-features`'s `FeatureOverrideCollection.getOverrideMap()`, applied here proactively rather than left for a follow-up issue. A host-configured list bound must never silently drop a key's override from a management screen.
 
+## Usage tags (#4751)
+
+`resolvePrompt()` returns `ai.usageTags = { promptKey, promptLayer,
+templateHash }`: `promptLayer` is the highest layer that supplied the template
+(`default | config | app | tenant | runtime`; a params-only layer does not
+count), `templateHash` the first 12 hex chars of the SHA-256 of the unrendered
+effective template (Web Crypto, so the root stays free of `node:crypto`).
+`promptMessageOptions(ai, { usageTags? })` is the one helper that turns a
+resolution into `ai.message()` options; package copies re-export it. Tag
+precedence, low to high: a `usageTags` object in params (tenant-editable, so
+it cannot mask identity), the resolution's tags, the caller's. Every consumer
+call site must forward them (`promptMessageOptions()` or a spread of
+`resolved.ai`); core lifts `promptKey` into `_smrt_ai_usage.prompt_key`
+(`../core/agents/ai-usage.md`).
+
 ## Prompt keys are persisted identifiers
 
 Overrides are stored keyed by the exact `key` string and resolved by that
 string at runtime. **Renaming a key orphans every existing override and
-silently reverts every tenant to the registry default.** Treat a shipped key
-as immutable; a rename needs a data migration over
-`_smrt_prompt_overrides.key`, not an edit.
+silently reverts every tenant to the registry default**, and it also orphans
+the key's `_smrt_ai_usage` series: history stays under the old `prompt_key`
+and outcome labels never join the new one. Treat a shipped key as immutable;
+a rename needs a data migration over `_smrt_prompt_overrides.key`, not an edit.
 
 ## Caching
 

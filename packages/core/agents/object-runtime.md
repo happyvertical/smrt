@@ -26,7 +26,7 @@ See [audit contract](../../../docs/content/audit-trail.md).
   canonicalizing a wrapped identity. Custom embedded-CAS paths that consume
   persisted rows must use `getCanonicalPersistedRow()` so UUID identities are
   cast in the same coherent read before reuse.
-- `is(criteria)` / `do(instructions)` / `describe()`: AI operations via function calling. They inject the object's own `toPublicJSON()` (sensitive fields stripped) as a "content body" so the model reasons over the instance. Options: `includeData: false` skips injection (for callers that already curate the relevant fields into the instruction); `maxDataLength` overrides the truncation budget. Neither key is forwarded to `ai.message()`. (#1567)
+- `is(criteria)` / `do(instructions)` / `describe()`: AI operations via function calling. They inject the object's own `toPublicJSON()` (sensitive fields stripped) as a "content body" so the model reasons over the instance. Options: `includeData: false` skips injection (for callers that already curate the relevant fields into the instruction); `maxDataLength` overrides the truncation budget. Neither key is forwarded to `ai.message()`. (#1567) `tier` / `latency` pick an inference tier client and tag usage; see [inference](inference.md) (#4750).
 - `normalizePersistenceData(data)` is the synchronous final derived-column hook:
   shared save preparation passes read-only snake-case row data after the complete polymorphic
   `toJSON()` / `transformJSON()` chain and UUID coercion, then merges the returned
