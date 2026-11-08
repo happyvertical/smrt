@@ -5031,6 +5031,9 @@ export class SmrtObject extends SmrtClass {
             ? { ...resolution.target, model: callModel }
             : resolution.target,
           ai,
+          // The client was built for the bound model; its SDK answer does
+          // not describe an override.
+          { sdk: !callModel || callModel === resolution.target.model?.trim() },
         );
       } catch {
         // Detection never fails a call: an unknown answer is today's

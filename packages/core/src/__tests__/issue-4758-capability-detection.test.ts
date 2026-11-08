@@ -305,6 +305,16 @@ describe('object operations against a text-only model', () => {
     ).resolves.toEqual({ result: true, route: 'generative' });
     expect(lastCall().options).not.toHaveProperty('responseFormat');
 
+    // The bound client's SDK answer (no tools) does not describe an
+    // override: required tools stay on for the overriding model.
+    const object = note();
+    vi.spyOn(object, 'getAvailableTools').mockReturnValue([TOOL] as never);
+    await object.do('x', { tier: 'good', model: 'other-model' });
+    expect(lastCall().options.tools).toEqual([TOOL]);
+    expect(lastCall().options.usageTags).not.toHaveProperty(
+      'capabilityFallback',
+    );
+
     // And the reverse: a capable override on the small binding keeps JSON.
     replies.push('{"result": true}');
     await note().is('ok?', { tier: 'cheap', model: 'other-model' });
