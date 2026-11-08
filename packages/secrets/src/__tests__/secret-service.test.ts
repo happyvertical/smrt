@@ -796,6 +796,29 @@ describe('SecretService', () => {
       });
     });
 
+    it('records caller audit details on store and delete', async () => {
+      await withTenant({ tenantId: 'tenant-1' }, async () => {
+        await service.store('detailed', 'value-1', {
+          auditDetails: { operation: 'test.provision' },
+        });
+        await service.store('detailed', 'value-2', {
+          auditDetails: { operation: 'test.update' },
+        });
+        await service.delete('detailed', {
+          auditDetails: { operation: 'test.revoke' },
+        });
+
+        const logs = await service.getAuditLogs({ secretName: 'detailed' });
+        const byAction = Object.fromEntries(
+          logs.map((log) => [log.action, log.details]),
+        );
+        expect(byAction.create).toEqual({ operation: 'test.provision' });
+        expect(byAction.update).toEqual({ operation: 'test.update' });
+        expect(byAction.delete).toEqual({ operation: 'test.revoke' });
+        expect(JSON.stringify(logs)).not.toContain('value-');
+      });
+    });
+
     it('should log failed operations', async () => {
       await withTenant({ tenantId: 'tenant-1' }, async () => {
         // Try to retrieve non-existent secret
