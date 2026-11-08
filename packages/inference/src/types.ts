@@ -27,10 +27,15 @@ export const INFERENCE_FAILURE_CLASSES = [
 export type InferenceFailureClass = (typeof INFERENCE_FAILURE_CLASSES)[number];
 
 /**
- * A substitution reason: the failure class that moved the call on, or
- * `partial` for a candidate that streamed text and then failed.
+ * A substitution reason: the failure class that moved the call on, `partial`
+ * for a candidate that streamed text and then failed, or `unclassified` for
+ * the terminal entry of a call ended by an error that is not a routing
+ * failure (rethrown as the caller's own error).
  */
-export type InferenceSubstitutionReason = InferenceFailureClass | 'partial';
+export type InferenceSubstitutionReason =
+  | InferenceFailureClass
+  | 'partial'
+  | 'unclassified';
 
 /**
  * One step of a call's fallback trail, recorded in the `substitutions` usage

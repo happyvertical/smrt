@@ -369,6 +369,19 @@ describe('chain executor', () => {
       outcome: 'failed',
       reason: 'unclassified',
     });
+    expect(JSON.parse(h.usage[0]?.tags.substitutions as string)).toEqual([
+      { from: 'openai/a', to: null, reason: 'unclassified' },
+    ]);
+
+    const after = harness(chain('a', 'b'), {
+      a: fail(new AuthenticationError('openai')),
+      b: fail(bug),
+    });
+    await expect(after.client.message('hi')).rejects.toBe(bug);
+    expect(JSON.parse(after.usage[0]?.tags.substitutions as string)).toEqual([
+      { from: 'openai/a', to: 'openai/b', reason: 'credential' },
+      { from: 'openai/b', to: null, reason: 'unclassified' },
+    ]);
   });
 
   it('sends each candidate its own model and params, caller options winning params', async () => {
