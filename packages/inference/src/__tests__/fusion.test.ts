@@ -338,6 +338,71 @@ describe('fusions', () => {
     expect(h.result()?.seats[0]?.failure?.reason).toBe('credential');
   });
 
+  it('treats a seat setup failure (prompt read) as a dead seat, not a dead run', async () => {
+    setFusionPromptResolver(async (key) => {
+      if (key === 'p.skeptic') throw new Error('override read failed');
+      return { instructions: `instructions for ${key}` };
+    });
+    const h = harness(PAIR);
+    await expect(h.call()).resolves.toBe('from great-m');
+    expect(h.calls.map((c) => c.model).sort()).toEqual(['gpt-x', 'great-m']);
+    expect(h.calls.find((c) => c.model === 'great-m')?.text).toMatch(
+      /seat "skeptic" \(tier:cheap\) FAILED \(unclassified\): override read failed/,
+    );
+    expect(h.runs[0]).toMatchObject({
+      status: 'degraded',
+      seats: 3,
+      degradedSeats: 1,
+    });
+  });
+
+  it('treats a seat tier resolver failure as a dead seat', async () => {
+    const h = harness(
+      HANDOFF,
+      {},
+      {
+        resolveTier: async (tier) => {
+          if (tier === 'cheap') throw new Error('resolver down');
+          return resolveInferenceFromConfig(
+            { tier },
+            {
+              tiers: {
+                cheap: { model: 'cheap-m' },
+                great: { model: 'great-m' },
+              },
+            },
+          );
+        },
+      },
+    );
+    await expect(h.call()).resolves.toBe('from great-m');
+    expect(h.calls).toHaveLength(1);
+    expect(h.result()?.seats[0]?.failure).toMatchObject({
+      reason: 'unclassified',
+      message: 'resolver down',
+    });
+    expect(h.runs[0]?.status).toBe('degraded');
+  });
+
+  it('settles both pair seats before a config error ends the run', async () => {
+    const h = harness({
+      ...PAIR,
+      seats: [
+        { name: 'skeptic', prompt: 'p.skeptic', target: 'best' },
+        PAIR.seats[1],
+        PAIR.seats[2],
+      ] as InferenceFusionDefinition['seats'],
+    });
+    await expect(h.call()).rejects.toBeInstanceOf(InferenceConfigError);
+    expect(h.calls.map((c) => c.model)).toEqual(['gpt-x']);
+    expect(h.runs[0]?.status).toBe('failed');
+    expect(
+      ((h.runs[0]?.details.seats ?? []) as Array<{ status: string }>).map(
+        (s) => s.status,
+      ),
+    ).toEqual(['failed', 'ok', 'not-run']);
+  });
+
   it('throws when every seat died and keeps the run as failed', async () => {
     const h = harness(PAIR, { 'cheap-m': fail(), 'gpt-x': fail() });
     const error = await h.call().catch((caught: unknown) => caught);

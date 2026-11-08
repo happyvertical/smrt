@@ -34,7 +34,7 @@ import {
   inferenceTargetKind,
   resolveAutoTier,
 } from '@happyvertical/smrt-core';
-import { isInferenceAbort } from './classify.js';
+import { classifyInferenceFailure, isInferenceAbort } from './classify.js';
 import {
   candidateLabel,
   EXECUTOR_KINDS,
@@ -182,11 +182,27 @@ interface PromptsModule {
  * app and tenant overrides), loaded without a static edge so this entry
  * stays browser-safe and smrt-prompts stays an optional peer.
  */
+const PROMPTS_SPECIFIER = '@happyvertical/smrt-prompts';
+
+async function loadPrompts(): Promise<PromptsModule> {
+  try {
+    // Resolved from this package (its optional peer), so strict layouts
+    // (no hoisting, PnP) find the app's copy. A variable specifier keeps
+    // bundlers from following it into the browser-safe graph.
+    const specifier = PROMPTS_SPECIFIER;
+    return (await import(/* @vite-ignore */ specifier)) as PromptsModule;
+  } catch {
+    // Bundled builds: a module registered with core's
+    // registerOptionalDependency(), else core's actionable error.
+    return (await importOptionalDependency(
+      PROMPTS_SPECIFIER,
+      'Fusion seats resolve prompts through @happyvertical/smrt-prompts; install it, register it with registerOptionalDependency(), or call setFusionPromptResolver().',
+    )) as PromptsModule;
+  }
+}
+
 const defaultPromptResolver: FusionPromptResolver = async (key, options) => {
-  const prompts = (await importOptionalDependency(
-    '@happyvertical/smrt-prompts',
-    'Fusion seats resolve prompts through @happyvertical/smrt-prompts; install it, or call setFusionPromptResolver().',
-  )) as PromptsModule;
+  const prompts = await loadPrompts();
   const resolved = await prompts.resolvePrompt(key, {
     ...(options.tenantId !== undefined ? { tenantId: options.tenantId } : {}),
     ...(options.db ? { db: options.db } : {}),
@@ -496,41 +512,49 @@ class FusionRun {
     const seat = this.definition.seats[index] as InferenceFusionSeat;
     const result = this.seats[index] as FusionSeatResult;
     const started = this.options.now();
-    const prompt = await promptResolver()(seat.prompt, {
-      ...(this.context.request.tenantId !== undefined
-        ? { tenantId: this.context.request.tenantId }
-        : {}),
-      ...(this.context.db ? { db: this.context.db } : {}),
-    });
     let answered: { target: InferenceTarget; tags: Record<string, string> } = {
       target: {},
       tags: {},
     };
-    const seatContext = await this.seatContext(seat, index, (target, opts) => {
-      answered = { target, tags: opts.usageTags ?? {} };
-    });
-    const chain = createChainClient(seatContext, this.options);
-    const options: InferenceCallOptions = {
-      ...(prompt.params ?? {}),
-      ...(final ? this.finalOptions : this.transport),
-      ...(seat.temperature !== undefined
-        ? { temperature: seat.temperature }
-        : {}),
-      ...(seat.output === 'json'
-        ? { responseFormat: { type: 'json_object' } }
-        : {}),
-      history: [{ role: 'system', content: prompt.instructions }],
-      usageTags: {
-        ...this.callerTags,
-        ...(prompt.usageTags ?? {}),
-        promptKey: seat.prompt,
-        runId: this.runId,
-        fusionKey: this.key,
-        seat: result.name,
-      },
-    };
+    let options: InferenceCallOptions = {};
     result.status = 'ok';
     try {
+      // Setup failures (a prompt override read, a seat tier's resolver) kill
+      // this seat like a model failure; only config errors and aborts end
+      // the run.
+      const prompt = await promptResolver()(seat.prompt, {
+        ...(this.context.request.tenantId !== undefined
+          ? { tenantId: this.context.request.tenantId }
+          : {}),
+        ...(this.context.db ? { db: this.context.db } : {}),
+      });
+      const seatContext = await this.seatContext(
+        seat,
+        index,
+        (target, opts) => {
+          answered = { target, tags: opts.usageTags ?? {} };
+        },
+      );
+      const chain = createChainClient(seatContext, this.options);
+      options = {
+        ...(prompt.params ?? {}),
+        ...(final ? this.finalOptions : this.transport),
+        ...(seat.temperature !== undefined
+          ? { temperature: seat.temperature }
+          : {}),
+        ...(seat.output === 'json'
+          ? { responseFormat: { type: 'json_object' } }
+          : {}),
+        history: [{ role: 'system', content: prompt.instructions }],
+        usageTags: {
+          ...this.callerTags,
+          ...(prompt.usageTags ?? {}),
+          promptKey: seat.prompt,
+          runId: this.runId,
+          fusionKey: this.key,
+          seat: result.name,
+        },
+      };
       const text = await chain.message(input, options);
       const target = answered.target;
       result.model = candidateLabel({
@@ -567,7 +591,11 @@ class FusionRun {
         result.status = 'failed';
         result.failure = {
           reason:
-            error instanceof InferenceExhaustedError ? error.reason : 'aborted',
+            error instanceof InferenceExhaustedError
+              ? error.reason
+              : error instanceof InferenceConfigError
+                ? 'config'
+                : 'aborted',
           message: shortMessage(error),
         };
         throw error;
@@ -578,7 +606,7 @@ class FusionRun {
         reason:
           error instanceof InferenceExhaustedError
             ? error.reason
-            : 'unclassified',
+            : (classifyInferenceFailure(error) ?? 'unclassified'),
         message: shortMessage(error),
         ...(code ? { code } : {}),
       };
@@ -675,10 +703,17 @@ class FusionRun {
       return seat.status === 'ok' ? seatOutputText(seat) : undefined;
     }
     if (definition.mode === 'pair') {
-      const [first, second] = await Promise.all([
+      // Settle both before rethrowing a config error or abort, so the run
+      // record never misses a seat that was still spending.
+      const settled = await Promise.allSettled([
         this.runSeat(0, input, false),
         this.runSeat(1, input, false),
       ]);
+      const rejected = settled.find((entry) => entry.status === 'rejected');
+      if (rejected) throw rejected.reason;
+      const [first, second] = settled.map(
+        (entry) => (entry as PromiseFulfilledResult<FusionSeatResult>).value,
+      ) as [FusionSeatResult, FusionSeatResult];
       if (first.status !== 'ok' && second.status !== 'ok') return undefined;
       if (definition.gate) {
         this.gate = await this.runGate(definition.gate, input, [first, second]);
