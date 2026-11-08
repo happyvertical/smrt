@@ -280,6 +280,14 @@ operator applies application migrations and, when `database-rls` is selected,
 the documented s-m-r-t PostgreSQL policies. The selector validates intent; it
 does not mutate database roles or privileges during web startup.
 
+Hosted inference for `cloud` members (the paid `inference.hosted` key) is
+provisioned per user on the operator's AI gateway by `smrt-inference`
+(`provisionHostedInference()`, `smrt inference:hosted provision|revoke`, and a
+`smrt-subscriptions` entitlement-change listener); the gateway and its admin
+credentials come from `SMRT_INFERENCE_HOSTED_*`. Local installs never set
+these, so hosted inference stays off there. See
+[smrt-inference](../../packages/inference/AGENTS.md) ("Hosted provisioning").
+
 ## SvelteKit server hooks
 
 SvelteKit applications consume the profiles through

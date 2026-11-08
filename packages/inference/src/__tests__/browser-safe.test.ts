@@ -4,6 +4,8 @@
  * held by the bundle-gate browser fixture; this package has no models, so it
  * guards its own graph here. `./resolver` (#4756) is Node-only too: it reads
  * smrt-secrets and the ambient principal, and the root never imports it.
+ * `hosted.ts` (#4759) is part of `./node` (secrets, runOnce, the gateway
+ * admin client).
  */
 import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -11,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 const SRC = join(dirname(fileURLToPath(import.meta.url)), '..');
-const NODE_ENTRIES = ['node.ts', 'resolver.ts'];
+const NODE_ENTRIES = ['node.ts', 'resolver.ts', 'hosted.ts'];
 
 describe('root entry graph', () => {
   const rootFiles = readdirSync(SRC).filter(
@@ -43,7 +45,7 @@ describe('root entry graph', () => {
 
   it.each(rootFiles)('%s never reaches the Node-only entries', (name) => {
     const source = readFileSync(join(SRC, name), 'utf8');
-    expect(source).not.toMatch(/from ['"]\.\/(node|resolver)\.js['"]/);
+    expect(source).not.toMatch(/from ['"]\.\/(node|resolver|hosted)\.js['"]/);
     expect(source).not.toMatch(
       /from ['"]@happyvertical\/smrt-(secrets|tenancy|users)['"]/,
     );

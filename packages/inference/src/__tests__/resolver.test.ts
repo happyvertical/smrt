@@ -19,6 +19,10 @@ import {
   InferenceProviderConfigError,
   type InferenceSecretStore,
   inferenceProviderConfigSecretName,
+  inferenceProviderTargets,
+  invalidateUserInferenceResolvers,
+  parseInferenceProviderConfig,
+  redactInferenceProviderConfig,
   registerUserInferenceResolver,
 } from '../resolver.js';
 
@@ -400,6 +404,68 @@ describe('cache', () => {
     principal.current = undefined;
     await expect(resolver.write('tenant', tenantConfig)).rejects.toThrow(
       /tenant context/,
+    );
+  });
+});
+
+describe('hosted gateway key alias (#4759)', () => {
+  const hosted = {
+    source: 'hosted',
+    mode: 'hosted',
+    provider: 'litellm',
+    baseUrl: 'https://llm.example.test/v1',
+    apiKey: 'sk-hosted-key',
+    gatewayKeyAlias: 'smrt-t-u-g0',
+    tiers: {
+      cheap: {
+        provider: 'litellm',
+        baseUrl: 'https://llm.example.test/v1',
+        apiKey: 'sk-hosted-key',
+        model: 'small',
+      },
+    },
+  };
+
+  it('tags every tier target with the alias and redacts the key, not the alias', () => {
+    const config = parseInferenceProviderConfig(hosted);
+    const targets = inferenceProviderTargets(config);
+    expect(targets.cheap?.usageTags).toEqual({
+      gatewayKeyAlias: 'smrt-t-u-g0',
+    });
+    expect(targets.best?.usageTags).toEqual({ gatewayKeyAlias: 'smrt-t-u-g0' });
+    const redacted = redactInferenceProviderConfig(config);
+    expect(redacted.gatewayKeyAlias).toBe('smrt-t-u-g0');
+    expect(JSON.stringify(redacted)).not.toContain('sk-hosted-key');
+  });
+
+  it('refuses an alias outside a hosted config', () => {
+    expect(() =>
+      parseInferenceProviderConfig({ ...hosted, source: 'byo' }),
+    ).toThrow(InferenceProviderConfigError);
+    expect(() =>
+      parseInferenceProviderConfig({ ...hosted, gatewayKeyAlias: '' }),
+    ).toThrow(/gatewayKeyAlias/);
+  });
+
+  it('invalidates every live resolver for a writer outside them', async () => {
+    const { secrets, resolver } = setup({
+      principal: { tenantId: TENANT, userId: USER },
+    });
+    secrets.seed(TENANT, inferenceProviderConfigSecretName({ userId: USER }), {
+      ...userConfig,
+    });
+    const first = await resolver.resolveBindings();
+    expect(first.user).toBeDefined();
+    secrets.seed(TENANT, inferenceProviderConfigSecretName({ userId: USER }), {
+      ...userConfig,
+      model: 'changed-model',
+    });
+    expect((await resolver.resolveBindings()).user?.model).toBe(
+      first.user?.model,
+    );
+    invalidateUserInferenceResolvers({ tenantId: TENANT, userId: USER });
+    expect((await resolver.resolveBindings()).user?.model).toBe(
+      'changed-model',
     );
   });
 });
