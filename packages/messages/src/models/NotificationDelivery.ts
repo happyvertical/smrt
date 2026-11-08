@@ -16,7 +16,7 @@ import {
   usesEmbeddedRevisionFallback,
   withEmbeddedWriteQueue,
 } from '@happyvertical/smrt-core';
-import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy/decorators';
 
 /** Channels the notification outbox can deliver through. */
 export type NotificationDeliveryChannel = 'email';

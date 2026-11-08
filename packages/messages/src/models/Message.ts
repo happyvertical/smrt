@@ -26,7 +26,7 @@ import {
   usesEmbeddedRevisionFallback,
   withEmbeddedWriteQueue,
 } from '@happyvertical/smrt-core';
-import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy/decorators';
 import type {
   MessageOptions,
   MessageSendResult,

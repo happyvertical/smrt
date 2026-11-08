@@ -8,12 +8,8 @@
 // runs, whichever chunk the library build places it in (#3098).
 import '../__smrt-register__.js';
 import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
-import {
-  getCurrentTenant,
-  TenantScoped,
-  tenantId,
-  withTenant,
-} from '@happyvertical/smrt-tenancy';
+import { getCurrentTenant, withTenant } from '@happyvertical/smrt-tenancy';
+import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy/decorators';
 import type { AccountOptions, MessageSenderInterface } from '../types';
 
 @TenantScoped({ mode: 'optional' })

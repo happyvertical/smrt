@@ -6,7 +6,7 @@
 // runs, whichever chunk the library build places it in (#3098).
 import '../__smrt-register__.js';
 import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
-import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy/decorators';
 import type { EmailFolderOptions } from '../types';
 
 @TenantScoped({ mode: 'optional' })

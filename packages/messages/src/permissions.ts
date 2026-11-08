@@ -1,7 +1,7 @@
 import {
   type PermissionDefinition,
   registerPermissionDefinitions,
-} from '@happyvertical/smrt-users';
+} from '@happyvertical/smrt-users/permission-registry';
 
 export const SEND_MESSAGES_PERMISSION = 'messages.send';
 export const MANAGE_MESSAGE_ROUTES_PERMISSION = 'messages.manage-routes';

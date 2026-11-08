@@ -9,6 +9,7 @@ are not prerequisites for unrelated user-package work.
 
 | Module | Scope | Module doc |
 |---|---|---|
+| `src/permission-registry.ts` | portable permission metadata registration; same root/service singleton, no authority grants | [agents/permissions.md](agents/permissions.md#portable-metadata-registry-4765) |
 | `src/services/PermissionResolver.ts` | permission precedence, inherited memberships, guards, RLS, role seeding | [agents/permissions.md](agents/permissions.md) |
 | `src/services/OidcLoginService.ts`, collections and OIDC handlers | identity reconciliation, transaction boundaries, migration readiness | [agents/oidc-provisioning.md](agents/oidc-provisioning.md) |
 | `src/services/MobileAuthService.ts` | mobile handshake, bearer sessions, bootstrap extension boundary | [agents/mobile-auth.md](agents/mobile-auth.md) |
