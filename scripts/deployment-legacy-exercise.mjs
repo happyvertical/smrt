@@ -2257,12 +2257,14 @@ export async function legacyMain(env = process.env) {
     );
     const staged = await resumeAdoption('adoption helm-staged');
     assert.equal(staged.stage, 'helm-staged');
-    // Let rejections reach until(), which keeps the last reason for a timeout.
-    await until('staging HR acknowledged', async () => {
-      await adapter().observeAdopted(
-        plan,
-        await adapter().readAdoption(plan),
-        'helm-established',
+    // Read-only: the protocol's own observation (and the ownership release it
+    // performs) must run only inside adoptOrResume's journaled transition.
+    await until('staging HR acknowledged', () => {
+      const hr = get('helmrelease', 'legacy');
+      const ready = hr.status?.conditions?.find((c) => c.type === 'Ready');
+      assert.ok(
+        hr.status?.observedGeneration === hr.metadata.generation && ready?.status === 'True',
+        `HelmRelease ${JSON.stringify(hr.status?.conditions ?? [])}`,
       );
       return true;
     });
@@ -2293,9 +2295,26 @@ export async function legacyMain(env = process.env) {
     // A new adapter/process-equivalent reads Git journal afresh after staging.
     const rejectHook = join(bare, 'hooks/pre-receive');
     for (const stage of ['helm-established', 'finalized']) {
+      // Finalization requires the legacy applier retired (suspended) first.
+      if (stage === 'finalized')
+        k(['-n', 'flux-system', 'patch', 'kustomization', 'legacy-app', '--type=merge', '-p', '{"spec":{"suspend":true}}']);
       writeFileSync(rejectHook, '#!/bin/sh\nexit 1\n', { mode: 0o755 });
       const beforeCalls = fenceCalls;
-      await assert.rejects(adoptOrResume(config, adapter(), plan));
+      // Observations are point-in-time and fail closed on a transient Flux
+      // flip; this test needs the rejection to be the Git publication itself.
+      let accepted = false;
+      await until(`adoption ${stage} rejected at publication`, async () => {
+        try {
+          await adoptOrResume(config, adapter(), plan);
+        } catch (error) {
+          if (/Git publication failed/.test(error.message)) return true;
+          note(`adoption ${stage} not yet at publication: ${String(error.message).slice(0, 200)}`);
+          return false;
+        }
+        accepted = true;
+        return true;
+      });
+      assert.ok(!accepted, `adoption ${stage} accepted while publication is rejected`);
       assert.ok(fenceCalls > beforeCalls);
       const held = await adapter().readAdoption(plan);
       assert.equal(
@@ -2315,6 +2334,13 @@ export async function legacyMain(env = process.env) {
       (await resumeAdoption('adoption finalized (idempotent)')).stage,
       'finalized',
     );
+    // A resumed legacy applier blocks every normal mutable command.
+    k(['-n', 'flux-system', 'patch', 'kustomization', 'legacy-app', '--type=merge', '-p', '{"spec":{"suspend":false}}']);
+    await assert.rejects(
+      releaseCli(['apply-or-resume', configFile], () => adapter()),
+      /resumed after adoption/,
+    );
+    k(['-n', 'flux-system', 'patch', 'kustomization', 'legacy-app', '--type=merge', '-p', '{"spec":{"suspend":true}}']);
     for (const old of original) {
       const actual = get(old.kind, old.metadata.name);
       assert.equal(actual.metadata.uid, old.metadata.uid);
