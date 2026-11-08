@@ -776,6 +776,9 @@ export function createAdoptionMethods(config, command, helpers, options) {
               ? reject(new Error('Adoption Git publication failed'))
               : resolve(output.trim()),
         );
+        // Commands that never read stdin may exit first; the exit status, not
+        // an unhandled EPIPE, decides the outcome.
+        child.stdin.on('error', () => {});
         child.stdin.end(input);
       });
     try {
