@@ -14,8 +14,12 @@ Agent framework for autonomous actors with inter-agent messaging, interest-based
 `initialize()` → `validate()` → `run()` → `shutdown()`
 
 - Extend `Agent` (which extends `SmrtObject`) and implement `run()`
-- Status tracking: `idle → initializing → running → error/shutdown`
+- Status tracking: `idle → initializing → running → error/skipped/shutdown`
 - `execute()` runs the full lifecycle automatically
+- AI unavailable (`AI_UNAVAILABLE`, #4757): `execute()` ends the run
+  `skipped` with `runRecord` `{ reason, mode }`, never rethrown or retried;
+  interests stop at it; learning neither reinforces nor decays. Direct
+  `run()` (jobs) throws it with `retryable: false`.
 - Process signal handling is opt-in via `manageProcessSignals: true` and is intended for single-agent processes
 
 ## DispatchBus — Inter-Agent Communication
@@ -311,7 +315,7 @@ consuming app, not just this package's.
 | `src/agent.ts` | Base Agent class — lifecycle, dispatch, interests, config, opt-in learning trait, multi-instance identity |
 | `src/execute-as-principal.ts` | `executeAsPrincipal` / `PrincipalRun` — run agent work as a persona's bound user (#1888) |
 | `src/report-data-surface.ts` | Principal-bound report discovery, query, lifecycle, drilldown, and export tools (#2462) |
-| `src/smrt-collection-data-surface.ts` | `createSmrtCollectionDataSurfaceDefinition()` — generic registry-driven `SmrtObject` collection to `DataSurfaceDefinition` adapter, with field-policy redaction (schema overrides included), class-aware tenant scope, DNF filter/scope lowering, deny-all short-circuit, query-bound opaque cursors, and offset/cursor paging; hydrated row values are serialized to JSON scalars at the adapter boundary — a `Date`/date-only/zoneless-UTC `datetime` becomes an ISO-8601 UTC instant, a `bigint` a safe number, and a non-scalar value on a scalar descriptor its JSON string — so a populated datetime column no longer fails the whole result; callers must keep `maxPageLimit` <= the collection's own row-limit cap (#2905, follow-up #2912, #2933) |
+| `src/smrt-collection-data-surface.ts` | `createSmrtCollectionDataSurfaceDefinition()`: registry-driven collection → `DataSurfaceDefinition` adapter ([contract](agents/data-surface-discovery.md#collection-adapter-2905)) |
 | `src/delegation.ts` | `DelegationEnvelope` — immutable principal + bounded delegation depth (#1892) |
 | `src/invoke-agent.ts` | `invoke-agent` tool, worker executor, completion-dispatch convention, transports (#1892) |
 | `src/playbook-preflight.ts` | `playbooks.preflight` PrincipalTool — advisory per-step verdicts, never a grant (#2590) |
