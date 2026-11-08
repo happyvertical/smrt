@@ -694,6 +694,15 @@ test('native legacy gates bind actual UID, stop/relinquish revisions, selectors,
     source.spec.ref = { tag: 'bad ref' };
     await assert.rejects(methods.observeLegacy(plan, snapshot, 'legacy-stopped'), /reviewed branch or tag/);
     source.spec.ref = ref;
+    config.adoption.legacyFetchUrl = '/srv/mirrors/legacy.git';
+    commands.length = 0;
+    assert.ok(await methods.observeLegacy(plan, snapshot, 'legacy-stopped'));
+    assert.ok(commands.some(([tool, ...args]) => tool === 'git' && args.includes('fetch') && args.includes('/srv/mirrors/legacy.git')), 'fetches from the protected operator-reachable address');
+    for (const bad of ['relative/path', 'https://user:secret@example.test/legacy.git', 'ftp://example.test/legacy.git']) {
+      config.adoption.legacyFetchUrl = bad;
+      await assert.rejects(methods.observeLegacy(plan, snapshot, 'legacy-stopped'), /Invalid legacy fetch source/);
+    }
+    delete config.adoption.legacyFetchUrl;
     assert.ok(await methods.observeLegacy(plan, snapshot, 'relinquished'));
     const statusEntry = { manager: 'nginx-ingress-controller', subresource: 'status', fieldsType: 'FieldsV1', fieldsV1: { 'f:status': { 'f:loadBalancer': {} } } };
     ingress.metadata.managedFields.push(statusEntry);

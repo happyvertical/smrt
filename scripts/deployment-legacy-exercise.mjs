@@ -93,7 +93,7 @@ export function requireLegacyOptIn(env) {
 // git http-backend speaks smart upload-pack, not a directory/file approximation.
 export const smartGitServer = `const http=require('node:http'),{spawn}=require('node:child_process');
 http.createServer((req,res)=>{const url=new URL(req.url,'http://fixture');
-if(!/^\\/repo.git(?:\\/|$)/.test(url.pathname)||req.method!=='GET'&&req.method!=='POST'){res.writeHead(404);res.end();return;}
+if(!/^\\/(?:repo|legacy).git(?:\\/|$)/.test(url.pathname)||req.method!=='GET'&&req.method!=='POST'){res.writeHead(404);res.end();return;}
 const child=spawn('git',['-c','safe.directory=*','http-backend'],{env:{...process.env,GIT_PROJECT_ROOT:process.env.SMRT_GIT_PROJECT_ROOT||'/git',GIT_HTTP_EXPORT_ALL:'1',PATH_INFO:url.pathname,REQUEST_METHOD:req.method,QUERY_STRING:url.search.slice(1),CONTENT_TYPE:req.headers['content-type']||'',CONTENT_LENGTH:req.headers['content-length']||'',REMOTE_ADDR:'127.0.0.1'},stdio:['pipe','pipe','pipe']});
 let pending=Buffer.alloc(0),started=false;child.stdout.on('data',chunk=>{if(started){res.write(chunk);return;}pending=Buffer.concat([pending,chunk]);let at=pending.indexOf('\\r\\n\\r\\n'),sep=4;if(at<0){at=pending.indexOf('\\n\\n');sep=2;}if(at<0)return;
 let status=200;const headers={};for(const line of pending.subarray(0,at).toString().split(/\\r?\\n/)){const i=line.indexOf(':');if(i<0)continue;const k=line.slice(0,i),v=line.slice(i+1).trim();if(k.toLowerCase()==='status')status=Number(v.split(' ')[0]);else headers[k]=v;}res.writeHead(status,headers);started=true;res.write(pending.subarray(at+sep));});child.on('close',code=>{if(!started)res.writeHead(code?500:200);res.end();});child.on('error',()=>{res.writeHead(500);res.end();});child.stderr.resume();req.pipe(child.stdin);}).listen(Number(process.env.SMRT_GIT_PORT||8080),'0.0.0.0',function(){console.log('smart-git-port:'+this.address().port)});`;
@@ -531,6 +531,7 @@ export async function legacyMain(env = process.env) {
     });
   const gitRoot = join(scratch, 'git'),
     bare = join(gitRoot, 'repo.git'),
+    legacyBare = join(gitRoot, 'legacy.git'),
     repository = join(scratch, 'publisher');
   mkdirSync(gitRoot);
   const git = (...args) => exec('git', ['-C', repository, ...args]).trim();
@@ -816,8 +817,12 @@ export async function legacyMain(env = process.env) {
       'installed verified Cilium and real Flux/ingress-nginx; historical NGINX support-matrix limitation retained',
     );
     for (const name of [fixtures, namespace]) k(['create', 'namespace', name]);
+    // The legacy application lives in its own repository, as in production;
+    // only the adoption journal and HelmRelease live in the deployment repo.
     exec('git', ['init', '--bare', '--initial-branch=main', bare]);
+    exec('git', ['init', '--bare', '--initial-branch=legacy', legacyBare]);
     exec('git', ['clone', bare, repository]);
+    git('remote', 'add', 'legacy', legacyBare);
     git('config', 'user.email', 'smrt-legacy@example.invalid');
     git('config', 'user.name', 'SMRT isolated exercise');
     write('README.md', 'Synthetic disposable Git/Flux fixture only.\n');
@@ -1211,14 +1216,15 @@ export async function legacyMain(env = process.env) {
       items: legacyManifests('active'),
     });
     const originalRevision = commit('legacy application active');
-    git('push', 'origin', 'HEAD:legacy');
+    git('push', 'legacy', 'HEAD:legacy');
     const repoUrl = `http://git.${fixtures}.svc.cluster.local:8080/repo.git`;
-    const gitSource = (name, branch) =>
+    const legacyRepoUrl = `http://git.${fixtures}.svc.cluster.local:8080/legacy.git`;
+    const gitSource = (name, branch, url = repoUrl) =>
       r(
         'source.toolkit.fluxcd.io/v1',
         'GitRepository',
         name,
-        { spec: { interval: '5s', url: repoUrl, ref: { branch } } },
+        { spec: { interval: '5s', url, ref: { branch } } },
         'flux-system',
       );
     const ks = (name, source, path, prune) =>
@@ -1239,7 +1245,7 @@ export async function legacyMain(env = process.env) {
         'flux-system',
       );
     apply([
-      gitSource('legacy-source', 'legacy'),
+      gitSource('legacy-source', 'legacy', legacyRepoUrl),
       ks('legacy-app', 'legacy-source', './legacy', false),
     ]);
     await acknowledgeGit('legacy-source', 'legacy-app', originalRevision);
@@ -1360,7 +1366,7 @@ export async function legacyMain(env = process.env) {
       items: legacyManifests('maintenance'),
     });
     const maintenanceRevision = commit('reviewed legacy maintenance');
-    git('push', 'origin', 'HEAD:legacy');
+    git('push', 'legacy', 'HEAD:legacy');
     await acknowledgeGit('legacy-source', 'legacy-app', maintenanceRevision);
     await until('maintenance response', async () => {
       await assertHTTP(503);
@@ -1372,7 +1378,7 @@ export async function legacyMain(env = process.env) {
       items: legacyManifests('stopped'),
     });
     const stopRevision = commit('reviewed legacy writer stop');
-    git('push', 'origin', 'HEAD:legacy');
+    git('push', 'legacy', 'HEAD:legacy');
     await acknowledgeGit('legacy-source', 'legacy-app', stopRevision);
     await until('legacy drained and static rollout steady', () => {
       const pods = JSON.parse(
@@ -1483,7 +1489,7 @@ export async function legacyMain(env = process.env) {
       targetSource = get('gitrepository', 'target-source', 'flux-system'),
       targetKS = get('kustomization', 'target-app', 'flux-system');
     const legacy = {
-      repository: repoUrl,
+      repository: legacyRepoUrl,
       revision: originalRevision,
       maintenanceRevision,
       stopRevision,
@@ -2114,6 +2120,7 @@ export async function legacyMain(env = process.env) {
         stateFile: plan.stateFile,
         stagingFile: plan.stagingFile,
         fluxPath: 'deploy/adoption/flux',
+        legacyFetchUrl: legacyBare,
         sourceUid: targetSource.metadata.uid,
         kustomizationUid: targetKS.metadata.uid,
         snapshotSha256,
@@ -2183,7 +2190,7 @@ export async function legacyMain(env = process.env) {
       releaseCli(['apply-or-resume', configFile], () => adapter()),
       /adoption/i,
     );
-    git('push', 'origin', `${relinquishRevision}:refs/heads/legacy`);
+    git('push', 'legacy', `${relinquishRevision}:refs/heads/legacy`);
     await acknowledgeGit('legacy-source', 'legacy-app', relinquishRevision);
     assert.equal(
       get('kustomization', 'legacy-app', 'flux-system').spec.prune,

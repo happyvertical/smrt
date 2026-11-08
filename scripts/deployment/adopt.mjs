@@ -30,7 +30,7 @@ export function adoptionPath(path) {
   );
   return path;
 }
-function legacyRepositoryUrl(value) {
+export function legacyRepositoryUrl(value) {
   if (
     typeof value !== 'string' ||
     value.length > 2048 ||

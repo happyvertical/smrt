@@ -9,6 +9,7 @@ import {
   validateAdoptionPlan,
   validateAdoptionState,
   verifyNativeWriterFence,
+  legacyRepositoryUrl,
 } from './adopt.mjs';
 import { demand, hash, identity } from './release.mjs';
 const bytesHash = (value) => createHash('sha256').update(value).digest('hex');
@@ -650,17 +651,21 @@ export function createAdoptionMethods(config, command, helpers, options) {
       ref && /^refs\/(heads|tags)\/[A-Za-z0-9][A-Za-z0-9._\/-]{0,200}$/.test(ref),
       'Legacy Flux source must track a reviewed branch or tag',
     );
+    // The operator may reach the same legacy repository through another
+    // address than the cluster does (protected config). Identity stays bound
+    // by the Flux source URL and by the tracked ref containing the revision.
+    const fetchUrl = config.adoption.legacyFetchUrl ?? plan.legacy.repository;
+    demand(
+      fetchUrl === plan.legacy.repository ||
+        legacyRepositoryUrl(fetchUrl) ||
+        /^\/[A-Za-z0-9][A-Za-z0-9._\/-]{0,1023}$/.test(fetchUrl),
+      'Invalid legacy fetch source',
+    );
     const store = `${repository}/.git-smrt-legacy-${randomUUID()}`;
     const legacy = (...args) => command('git', ['-C', store, ...args]);
     try {
       await command('git', ['init', '--quiet', '--bare', store]);
-      await legacy(
-        'fetch',
-        '--quiet',
-        '--no-tags',
-        plan.legacy.repository,
-        `+${ref}:refs/smrt/legacy`,
-      );
+      await legacy('fetch', '--quiet', '--no-tags', fetchUrl, `+${ref}:refs/smrt/legacy`);
       for (const revision of [
         plan.legacy.revision,
         plan.legacy.maintenanceRevision,
