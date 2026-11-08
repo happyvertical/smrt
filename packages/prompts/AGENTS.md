@@ -28,6 +28,7 @@ Each layer can override any subset of fields (template, profile, model, params).
 - **Stored overrides use nullable fields** so inheritance stays field-by-field — null means "use the lower layer"
 - **Provider selection is indirect** in v1: prompts select named profiles, and profiles resolve to provider/model in `smrt-config`
 - **`editable` flags are enforced on `PromptOverride.save()`** — definitions can lock specific fields against tenant override
+- **Tier names are reserved profile names** (#4750): `cheap`, `good`, `great`, `best` and `auto` need no `profiles` entry. `resolvePrompt()` binds them through core's `resolveInference()` (with `promptKey` and tenant) and sets `ai.tier`, `tierResolved` and `inferenceVia`, plus the target's provider/model/params under explicit prompt values. `allowedProfileNames` still applies to tier names; `allowedModels` does not apply to a binding's model. **Footgun:** a same-named `profiles` entry wins and silently opts that name out of tiers. Forward `ai.tier` to object AI operations (smrt-properties' `promptMessageOptions()` does; #4751 consolidates the per-package copies) and call `ai.message()` through `prepareAiOperation()`.
 
 ## Generated surfaces
 
