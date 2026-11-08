@@ -151,9 +151,10 @@ describe('Property.summarize()', () => {
   });
   it('forwards a tier profile to the tier path and tags usage (#4750)', async () => {
     const { promptMessageOptions } = await import('../prompts.js');
-    expect(promptMessageOptions({ tier: 'cheap', params: {} })).toEqual({
-      tier: 'cheap',
-    });
+    expect(
+      promptMessageOptions({ tier: 'cheap', promptKey: 'k', params: {} }),
+    ).toEqual({ tier: 'cheap', promptKey: 'k' });
+    expect(promptMessageOptions({ promptKey: 'k', params: {} })).toEqual({});
 
     setConfig({
       packages: {

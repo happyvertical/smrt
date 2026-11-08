@@ -52,13 +52,17 @@ breaking v1; consumers ignore members they do not understand.
   users' keys never share a client. A target equal to the configured identity
   returns the configured client. Absent fields inherit from the configured
   client through `mergeAIConfigObjects`; another provider drops the configured
-  key, base URL and model and falls back to that provider's own key variable.
+  key, base URL and model. Endpoint and key are owned together: a target
+  `baseUrl` never inherits the configured key, a target `apiKey` never
+  inherits the configured `baseUrl`, and only a provider's default endpoint
+  falls back to that provider's own key variable.
   Failed builds are evicted. `@happyvertical/ai` stays a dynamic import
   (#2894). An injected client keeps serving model-only targets (the model
   goes per call); a target naming an endpoint must name a provider.
 - `AiOperationOptions.tier` / `latency` (and the same keys on
   `EvaluateOptions`) route `do()`, `is()`, `describe()` and `evaluate()`'s
   generative route. The typed-decision route ignores them (#3158).
+  `promptKey` rides along to the resolver and is stripped from the call.
   `prepareAiOperation()` resolves once, applies `target.params` and
   `target.model` under the caller's options, and merges `tierRequested` /
   `tierResolved` over the caller's `usageTags`; the SDK lands them in

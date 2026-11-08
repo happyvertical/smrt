@@ -287,6 +287,8 @@ export interface EvaluateOptions {
   tier?: InferenceTierRequest;
   /** Latency hint for the generative route's tier binding. */
   latency?: InferenceLatency;
+  /** Prompt key passed to the generative route's tier resolver. */
+  promptKey?: string;
   /** Abort an in-flight provider request. */
   signal?: AbortSignal;
   /** Provider request deadline in milliseconds. */

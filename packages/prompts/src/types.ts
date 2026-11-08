@@ -1,6 +1,4 @@
 import type {
-  InferenceResolutionSource,
-  InferenceTier,
   InferenceTierRequest,
   SmrtClassOptions,
 } from '@happyvertical/smrt-core';
@@ -103,14 +101,14 @@ export interface ResolvedPromptAI extends PromptParams {
   model?: string;
   /**
    * Set when the effective profile is an inference tier name (or `auto`) with
-   * no same-named entry in `PromptPackageConfig.profiles` (#4750). Forward it
-   * to object AI operations so they pick the tier client.
+   * no same-named entry in `PromptPackageConfig.profiles` (#4750). The tier
+   * binds at call time through the core seam: forward `tier` and `promptKey`
+   * to object AI operations (`prepareAiOperation()`), which pick the tier
+   * client. `provider`/`model` stay unset unless the prompt names a model.
    */
   tier?: InferenceTierRequest;
-  /** The concrete tier the core inference seam bound `tier` to. */
-  tierResolved?: InferenceTier;
-  /** Where the tier binding came from (`default` = the configured client). */
-  inferenceVia?: InferenceResolutionSource;
+  /** The prompt key, set with `tier` for the call-time resolver request. */
+  promptKey?: string;
   allowedModels?: string[];
   params: PromptParams;
   temperature?: number;

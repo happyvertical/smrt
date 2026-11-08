@@ -1010,7 +1010,21 @@ export class SmrtClass {
 
     const { onUsage: _onUsage, ...baseFields } = base ?? {};
     const merged = mergeAIConfigObjects(baseFields, identity);
-    if (!merged.apiKey) {
+    // Endpoint and credential are owned together (#3372): a target that
+    // names its own endpoint never inherits the configured key, and a target
+    // that brings its own key never inherits the configured endpoint.
+    const baseUrlOf = (config: Record<string, unknown>) =>
+      typeof config.baseUrl === 'string' ? config.baseUrl.trim() : '';
+    const movesEndpoint =
+      identity.baseUrl !== undefined &&
+      identity.baseUrl !== baseUrlOf(baseFields);
+    if (movesEndpoint && !identity.apiKey) {
+      delete merged.apiKey;
+      delete merged.apiKeyEnv;
+    }
+    if (identity.apiKey && !identity.baseUrl) delete merged.baseUrl;
+    if (!merged.apiKey && !merged.baseUrl) {
+      // Only the provider's default endpoint may use its own key variable.
       const resolved = tryResolveAIProviderConfig({
         explicit: merged as AIExplicitConfig,
         config: null,

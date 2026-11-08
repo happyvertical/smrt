@@ -151,6 +151,41 @@ describe('SmrtClass inference tiers', () => {
     expect(JSON.stringify(best.options)).not.toContain('sk-base');
   });
 
+  it('never sends the configured key to a target endpoint (same provider)', async () => {
+    process.env.OPENAI_API_KEY = 'sk-env-openai';
+    const probe = new TierProbe({
+      ai: BASE_AI,
+      inference: {
+        tiers: {
+          cheap: { baseUrl: 'https://vllm.example/v1', model: 'local' },
+          good: { provider: 'openai', baseUrl: 'https://router.example/v1' },
+          great: {
+            baseUrl: 'https://router.example/v1',
+            apiKey: 'sk-router',
+          },
+        },
+      },
+    } as never);
+    for (const tier of ['cheap', 'good'] as const) {
+      const client = (await probe.client(tier)) as unknown as FakeClient;
+      expect(client.options.baseUrl).toMatch(/example/);
+      expect(client.options.apiKey).toBeUndefined();
+      expect(JSON.stringify(client.options)).not.toMatch(/sk-base|sk-env/);
+    }
+    const great = (await probe.client('great')) as unknown as FakeClient;
+    expect(great.options).toMatchObject({ apiKey: 'sk-router' });
+  });
+
+  it('never sends a target key to the configured endpoint', async () => {
+    const probe = new TierProbe({
+      ai: { ...BASE_AI, baseUrl: 'https://proxy.internal/v1' },
+      inference: { tiers: { best: { apiKey: 'sk-user', model: 'byo' } } },
+    } as never);
+    const best = (await probe.client('best')) as unknown as FakeClient;
+    expect(best.options.apiKey).toBe('sk-user');
+    expect(best.options.baseUrl).toBeUndefined();
+  });
+
   it('separates cached clients by credential', async () => {
     let key = 'sk-u1';
     setInferenceResolver({
@@ -241,13 +276,20 @@ describe('SmrtClass inference tiers', () => {
       ai: BASE_AI,
       inference: { resolve },
     } as never);
-    await note.describe({ tier: 'great', latency: 'background' });
+    await note.describe({
+      tier: 'great',
+      latency: 'background',
+      promptKey: 'notes.describe',
+    });
     expect(resolve).toHaveBeenCalledTimes(1);
     expect(resolve.mock.calls[0][0]).toMatchObject({
       tier: 'great',
       latency: 'background',
       className: 'Issue4750Note',
+      promptKey: 'notes.describe',
     });
+    const client = await clientOf(note);
+    expect(client.message.mock.calls[0][1]).not.toHaveProperty('promptKey');
   });
 
   it('evaluate() keeps decisions separate and tiers its generative route', async () => {

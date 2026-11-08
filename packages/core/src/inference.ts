@@ -62,9 +62,12 @@ export interface InferenceTarget {
   /** Provider base URL, for OpenAI-compatible endpoints. */
   baseUrl?: string;
   /**
-   * Credential for this target. Never logged or tagged. When the target names
-   * a different provider than the configured client and omits a key, the
-   * provider's own key variable (`OPENAI_API_KEY`, ...) is used.
+   * Credential for this target. Never logged or tagged. Endpoint and key are
+   * owned together: a target naming its own `baseUrl` never inherits the
+   * configured key (give keyless local servers a placeholder key), a target
+   * with its own key never inherits the configured `baseUrl`, and a target on
+   * another provider's default endpoint without a key uses that provider's
+   * own key variable (`OPENAI_API_KEY`, ...).
    */
   apiKey?: string;
   /** Per-call defaults (temperature, maxTokens, ...); caller options win. */

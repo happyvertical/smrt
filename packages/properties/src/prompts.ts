@@ -45,6 +45,7 @@ export function promptMessageOptions(ai: ResolvedPromptAI) {
     ...(ai.params || {}),
     ...(ai.model ? { model: ai.model } : {}),
     ...(ai.tier ? { tier: ai.tier } : {}),
+    ...(ai.tier && ai.promptKey ? { promptKey: ai.promptKey } : {}),
     ...(typeof ai.temperature === 'number'
       ? { temperature: ai.temperature }
       : {}),

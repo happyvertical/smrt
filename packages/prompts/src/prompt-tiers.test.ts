@@ -49,54 +49,44 @@ describe('prompt tier profiles', () => {
     resetTenancy();
   });
 
-  it('resolves an unconfigured tier to the configured client', async () => {
+  it('marks a tier profile for call-time binding without eager provider/model', async () => {
+    config({
+      inference: {
+        tiers: { good: { provider: 'anthropic', model: 'haiku' } },
+      },
+    });
     definePrompt({
       key: 'tiers.plain',
       template: 'Hi',
-      ai: { profile: 'good' },
+      ai: { profile: 'good', params: { topP: 0.9 } },
     });
     const { ai } = await resolvePrompt('tiers.plain', { tenantId: null });
     expect(ai).toMatchObject({
       profile: 'good',
       tier: 'good',
-      tierResolved: 'good',
-      inferenceVia: 'default',
+      promptKey: 'tiers.plain',
+      params: { topP: 0.9 },
     });
+    // The binding is applied once by the object call, never copied here.
     expect(ai.provider).toBeUndefined();
     expect(ai.model).toBeUndefined();
   });
 
-  it('binds auto through config; prompt params and models win over the target', async () => {
-    config({
-      inference: {
-        defaultTier: 'cheap',
-        tiers: {
-          cheap: {
-            provider: 'anthropic',
-            model: 'haiku',
-            params: { temperature: 0.1, topP: 0.5 },
-          },
-        },
-      },
-    });
+  it('accepts auto and keeps an explicit prompt model under allowedModels', async () => {
     usePromptConfig({ allowedModels: ['gpt-4o'] });
     definePrompt({
       key: 'tiers.auto',
       template: 'Hi',
-      ai: { profile: 'auto', params: { topP: 0.9 } },
+      ai: { profile: 'auto', model: 'gpt-4o' },
     });
     const { ai } = await resolvePrompt('tiers.auto', { tenantId: null });
-    expect(ai).toMatchObject({
-      tier: 'auto',
-      tierResolved: 'cheap',
-      inferenceVia: 'config',
-      provider: 'anthropic',
-      // A binding is app config, so allowedModels does not reject it.
-      model: 'haiku',
-      temperature: 0.1,
-      topP: 0.9,
-      params: { temperature: 0.1, topP: 0.9 },
-    });
+    expect(ai).toMatchObject({ tier: 'auto', model: 'gpt-4o' });
+    await expect(
+      resolvePrompt('tiers.auto', {
+        tenantId: null,
+        override: { model: 'not-allowed' },
+      }),
+    ).rejects.toThrow('not in the allowed model list');
   });
 
   it('lets an explicit same-named profile win over the tier', async () => {
@@ -114,7 +104,7 @@ describe('prompt tier profiles', () => {
     expect(ai.tier).toBeUndefined();
   });
 
-  it('passes the prompt key and tenant to the resolver', async () => {
+  it('never calls the resolver while resolving a prompt', async () => {
     const seen: unknown[] = [];
     setInferenceResolver({
       resolve(request) {
@@ -124,9 +114,7 @@ describe('prompt tier profiles', () => {
     });
     definePrompt({ key: 'tiers.ctx', template: 'Hi', ai: { profile: 'best' } });
     await resolvePrompt('tiers.ctx', { tenantId: 'tenant-a' });
-    expect(seen).toEqual([
-      { tier: 'best', tenantId: 'tenant-a', promptKey: 'tiers.ctx' },
-    ]);
+    expect(seen).toEqual([]);
   });
 
   it('keeps allowedProfileNames authoritative for tier names', async () => {

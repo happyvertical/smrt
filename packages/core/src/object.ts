@@ -575,6 +575,12 @@ export interface AiOperationOptions extends AITextCompletionOptions {
   latency?: InferenceLatency;
 
   /**
+   * Registered prompt key, passed to the inference resolver with `tier` so
+   * prompt-scoped bindings apply. Not forwarded to `ai.message()`.
+   */
+  promptKey?: string;
+
+  /**
    * Per-call usage tags, forwarded to `ai.message()`; the SDK merges them
    * into the usage event (`_smrt_ai_usage.tags`).
    */
@@ -4886,17 +4892,25 @@ export class SmrtObject extends SmrtClass {
     T extends {
       tier?: InferenceTierRequest;
       latency?: InferenceLatency;
+      promptKey?: string;
       usageTags?: Record<string, string>;
     },
   >(
     options: T,
-  ): Promise<{ ai: AIClient; aiOptions: Omit<T, 'tier' | 'latency'> }> {
-    const { tier, latency, ...rest } = options;
+  ): Promise<{
+    ai: AIClient;
+    aiOptions: Omit<T, 'tier' | 'latency' | 'promptKey'>;
+  }> {
+    const { tier, latency, promptKey, ...rest } = options;
     if (tier === undefined) {
       return { ai: await this.getAiClient(), aiOptions: rest };
     }
-    const resolution = await this.resolveInferenceTier({ tier, latency });
-    const ai = await this.getAiClient(tier, { latency, resolution });
+    const resolution = await this.resolveInferenceTier({
+      tier,
+      latency,
+      ...(promptKey ? { promptKey } : {}),
+    });
+    const ai = await this.getAiClient(tier, { latency, promptKey, resolution });
     const { target } = resolution;
     return {
       ai,
@@ -4910,7 +4924,7 @@ export class SmrtObject extends SmrtClass {
           ...(rest.usageTags ?? {}),
           ...inferenceUsageTags(tier, resolution),
         },
-      } as Omit<T, 'tier' | 'latency'>,
+      } as Omit<T, 'tier' | 'latency' | 'promptKey'>,
     };
   }
 
