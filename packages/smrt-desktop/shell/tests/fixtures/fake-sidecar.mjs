@@ -97,8 +97,26 @@ const server = http.createServer((req, res) => {
   }
 });
 
-server.listen(Number(process.env.PORT), process.env.HOST, () => {
-  if (mode === 'crash-after-ready' && run <= failRuns) {
-    setTimeout(() => leave(1), 400);
-  }
-});
+function listen() {
+  server.listen(Number(process.env.PORT), process.env.HOST, () => {
+    if (mode === 'crash-after-ready' && run <= failRuns) {
+      setTimeout(() => leave(1), 400);
+    }
+  });
+}
+
+if (mode === 'squatted' && run <= failRuns) {
+  // Report the chosen port, then wait until the test has put a squatter on it
+  // and let it answer a probe, so the real listen() below fails with a genuine
+  // EADDRINUSE while this process is still alive.
+  mark(`port-${run}`, String(process.env.PORT));
+  const gate = path.join(stateDir, `squatter-ready-${run}`);
+  const timer = setInterval(() => {
+    if (fs.existsSync(gate)) {
+      clearInterval(timer);
+      listen();
+    }
+  }, 10);
+} else {
+  listen();
+}

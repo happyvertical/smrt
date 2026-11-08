@@ -56,6 +56,7 @@ fn emergency_kill_terminates_the_live_sidecar_and_the_supervisor_recovers() {
             },
             monitor_interval: Duration::from_millis(25),
             output_settle: Duration::from_millis(50),
+            confirm_window: Duration::from_millis(100),
             ..SupervisorConfig::default()
         },
         listener: Arc::new(|_| {}),

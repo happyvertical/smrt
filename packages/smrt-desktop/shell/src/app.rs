@@ -3,6 +3,7 @@
 //! Everything with real logic lives in the tested modules; this file wires
 //! them to Tauri and is verified by running the app, not by unit tests.
 
+use std::ffi::OsString;
 use std::io;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -309,7 +310,7 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         manifest,
         resource_dir,
         data_dir,
-        inherited_env: std::env::vars().collect(),
+        inherited_env: utf8_env(std::env::vars_os()),
         launcher: Arc::new(TauriLauncher {
             app: handle.clone(),
         }),
@@ -319,6 +320,16 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     })?;
     *locked(&handle.state::<Shell>().supervisor) = Some(supervisor);
     Ok(())
+}
+
+/// Keep only environment pairs whose name and value are both valid Unicode.
+///
+/// `std::env::vars()` panics on anything else, which on Linux is a realistic
+/// environment; a skipped pair is simply not inherited by the sidecar.
+fn utf8_env(vars: impl IntoIterator<Item = (OsString, OsString)>) -> Vec<(String, String)> {
+    vars.into_iter()
+        .filter_map(|(key, value)| Some((key.into_string().ok()?, value.into_string().ok()?)))
+        .collect()
 }
 
 /// Turn SIGTERM/SIGINT/SIGHUP into an orderly quit; a second signal while the
@@ -394,4 +405,44 @@ pub fn run() {
         RunEvent::Exit => stop_supervisor(handle),
         _ => {}
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn valid_pairs_are_kept_in_order() {
+        let kept = utf8_env([
+            (OsString::from("A"), OsString::from("1")),
+            (OsString::from("B"), OsString::from("")),
+        ]);
+        assert_eq!(
+            kept,
+            vec![
+                ("A".to_owned(), "1".to_owned()),
+                ("B".to_owned(), String::new())
+            ]
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn non_utf8_names_and_values_are_skipped_instead_of_panicking() {
+        use std::os::unix::ffi::OsStringExt;
+        let bad = || OsString::from_vec(vec![b'x', 0xff, 0xfe]);
+        let kept = utf8_env([
+            (OsString::from("GOOD"), OsString::from("yes")),
+            (bad(), OsString::from("value")),
+            (OsString::from("BAD_VALUE"), bad()),
+            (OsString::from("ALSO_GOOD"), OsString::from("ok")),
+        ]);
+        assert_eq!(
+            kept,
+            vec![
+                ("GOOD".to_owned(), "yes".to_owned()),
+                ("ALSO_GOOD".to_owned(), "ok".to_owned())
+            ]
+        );
+    }
 }

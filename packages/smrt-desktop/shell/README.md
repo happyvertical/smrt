@@ -25,7 +25,8 @@ signing secret in a URL query is deliberately not carried over.
      Inherited names that collide case-insensitively with a reserved or
      manifest name are dropped (`Port`, `host`).
 3. Polls `healthRoute` on exactly that origin (`src/health.rs`). Only after a
-   2xx does the window navigate to the origin and show.
+   2xx, a confirmation window with the child still alive, and a second 2xx
+   does the window navigate to the origin and show (see Bind-release race).
 4. Keeps the sidecar alive: unexpected exits restart with bounded backoff.
 5. Stops it on quit: SIGTERM, bounded wait, SIGKILL, wait for exit.
 
@@ -96,8 +97,21 @@ can take the port in that window. This is handled, not prevented:
 - A child that dies with `EADDRINUSE` / `address already in use` before it is
   healthy triggers an immediate relaunch on a **new** port (up to 5 times per
   streak). This does not consume the crash-restart budget.
-- A health probe that succeeds while the child has already exited is rejected,
-  so a squatter answering on the chosen port is never mistaken for the sidecar.
+- A process that grabbed the port can answer the first health probe while the
+  child is still starting and about to die of `EADDRINUSE`. So a 2xx alone is
+  not trusted: the sidecar is ready only after the first 2xx, a confirmation
+  window (`SupervisorConfig::confirm_window`, 1s by default) during which the
+  child must stay alive, a second 2xx, and a final liveness check. A child that
+  exits inside the window is classified like any other failed start (address
+  in use relaunches on a **new** port without spending the crash budget).
+  `Ready` is not published, and the window does not navigate or show, before
+  confirmation passes.
+- Residual limits: the window is a time bound, not a proof. A child that takes
+  longer than the window to fail its bind, a squatter that takes the port after
+  confirmation, or a child that keeps running without listening while a
+  squatter answers are not detected. A stock Node server fails `listen()`
+  within milliseconds, so the default leaves a wide margin. Startup becomes
+  ready roughly one window later than the first 2xx.
 - On a restart after a crash the previous port is reused when it is still
   free, which keeps the origin (and origin-scoped web storage) stable.
 

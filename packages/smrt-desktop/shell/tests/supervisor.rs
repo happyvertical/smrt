@@ -116,6 +116,7 @@ fn fast_config(recovery: RecoveryPolicy) -> SupervisorConfig {
         max_port_retries: 5,
         monitor_interval: Duration::from_millis(25),
         output_settle: Duration::from_millis(100),
+        confirm_window: Duration::from_millis(100),
         log_failure_output: false,
     }
 }
@@ -428,6 +429,121 @@ fn address_in_use_relaunches_on_a_new_port_without_spending_the_crash_budget() {
         .any(|p| matches!(p, Phase::Restarting { .. } | Phase::Failed(_))));
     assert!(h.log_text().contains("relaunching on a new port"));
     h.supervisor.shutdown();
+}
+
+/// Plain HTTP responder that answers every request 200, standing in for a
+/// non-child process that grabbed the chosen port.
+struct Squatter {
+    requests: Arc<AtomicU32>,
+    stop: Arc<std::sync::atomic::AtomicBool>,
+    handle: Option<std::thread::JoinHandle<()>>,
+}
+
+impl Squatter {
+    fn bind(port: u16) -> Self {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind(("127.0.0.1", port)).unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let requests = Arc::new(AtomicU32::new(0));
+        let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let (seen, halt) = (requests.clone(), stop.clone());
+        let handle = std::thread::spawn(move || {
+            while !halt.load(Ordering::SeqCst) {
+                match listener.accept() {
+                    Ok((mut stream, _)) => {
+                        stream.set_nonblocking(false).ok();
+                        stream
+                            .set_read_timeout(Some(Duration::from_millis(500)))
+                            .ok();
+                        let mut buffer = [0u8; 1024];
+                        let _ = stream.read(&mut buffer);
+                        seen.fetch_add(1, Ordering::SeqCst);
+                        let _ = stream.write_all(
+                            b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok",
+                        );
+                    }
+                    Err(_) => std::thread::sleep(Duration::from_millis(5)),
+                }
+            }
+        });
+        Self {
+            requests,
+            stop,
+            handle: Some(handle),
+        }
+    }
+}
+
+impl Drop for Squatter {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::SeqCst);
+        if let Some(handle) = self.handle.take() {
+            let _ = handle.join();
+        }
+    }
+}
+
+#[test]
+fn a_squatter_answering_the_first_probe_is_never_published_as_ready() {
+    let node = node_or_skip!();
+    let h = start(
+        &node,
+        Options {
+            mode: "squatted",
+            fail_runs: 1,
+            // Any budget use would turn this into Failed.
+            recovery: RecoveryPolicy {
+                max_restarts: 0,
+                ..fast_recovery()
+            },
+            config: Some(SupervisorConfig {
+                confirm_window: Duration::from_millis(1500),
+                ..fast_config(RecoveryPolicy {
+                    max_restarts: 0,
+                    ..fast_recovery()
+                })
+            }),
+            ..Options::default()
+        },
+    );
+
+    // Run 1 reports the port it was given and then waits at the gate.
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let squatted_port: u16 = loop {
+        if let Some(text) = h.state_file("port-1") {
+            break text.trim().parse().unwrap();
+        }
+        assert!(Instant::now() < deadline, "run 1 never reported its port");
+        std::thread::sleep(Duration::from_millis(10));
+    };
+    // The supervisor released the port before launching; take it, answer the
+    // supervisor's first probe, and only then let the child try to bind.
+    let squatter = Squatter::bind(squatted_port);
+    while squatter.requests.load(Ordering::SeqCst) == 0 {
+        assert!(Instant::now() < deadline, "no probe reached the squatter");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    fs::write(h.state.join("squatter-ready-1"), "").unwrap();
+
+    let (origin, port) = h.wait_ready();
+    assert_ne!(port, squatted_port);
+    assert_eq!(origin, origin_for(port));
+    assert_eq!(h.runs(), 2);
+    let squatted_origin = origin_for(squatted_port);
+    assert!(
+        !h.phases().iter().any(|p| matches!(
+            p,
+            Phase::Ready { origin, .. } if *origin == squatted_origin
+        )),
+        "the squatter's origin was published as Ready"
+    );
+    assert!(!h
+        .phases()
+        .iter()
+        .any(|p| matches!(p, Phase::Restarting { .. } | Phase::Failed(_))));
+    assert!(h.log_text().contains("relaunching on a new port"));
+    h.supervisor.shutdown();
+    drop(squatter);
 }
 
 #[test]

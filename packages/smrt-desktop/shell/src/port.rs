@@ -8,12 +8,26 @@
 //! unavoidable without handing the listening socket to the child, which a
 //! stock Node server cannot accept through `PORT`.
 //!
-//! The race is handled, not prevented: the supervisor treats an
-//! address-in-use failure before the child becomes healthy as a retryable
-//! launch failure and starts the next attempt on a new port
-//! (see [`crate::supervisor`]). A health probe that succeeds while the child
-//! has already exited is likewise rejected, so a squatter answering on the
-//! chosen port is never mistaken for the sidecar.
+//! The race is handled, not prevented, and only up to a bound:
+//!
+//! - A child that dies of an address-in-use failure before it is healthy is a
+//!   retryable launch failure; the next attempt starts on a new port without
+//!   spending the crash budget (see [`crate::supervisor`]).
+//! - A process that grabbed the port can answer the first health probe while
+//!   the child is still starting, so a 2xx alone is not trusted. The sidecar
+//!   only counts as ready after the first 2xx, a confirmation window
+//!   (`SupervisorConfig::confirm_window`, 1s by default) with the child still
+//!   alive, a second 2xx, and a final liveness check. A child that dies of
+//!   `EADDRINUSE` inside that window takes the same relaunch-on-a-new-port
+//!   path, and `Ready` (and so navigation and showing the window) is never
+//!   published for the squatter's origin.
+//!
+//! Residual limits: the window is a time bound, not a proof. A child that
+//! needs longer than the window to fail its bind, or a squatter that takes the
+//! port after the confirmation, is not caught here; a squatter that outlives a
+//! child that keeps running without listening would be probed as the sidecar.
+//! A stock Node server fails its `listen()` within milliseconds of starting, so
+//! the default leaves a wide margin for the case the window exists for.
 
 use std::io;
 use std::net::{Ipv4Addr, SocketAddr, TcpListener};

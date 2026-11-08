@@ -265,6 +265,11 @@ pub struct SupervisorConfig {
     /// Wait after an exit so trailing output reaches the tail before it is
     /// classified.
     pub output_settle: Duration,
+    /// How long the child must stay alive after the first successful probe
+    /// before the sidecar counts as ready. Closes the bind-release race: a
+    /// process that grabbed the chosen port answers the first probe while the
+    /// child is still starting and about to die of `EADDRINUSE`.
+    pub confirm_window: Duration,
     /// Log the (truncated) child output tail when a start fails. Off by
     /// default because a runtime may print one-time secrets.
     pub log_failure_output: bool,
@@ -279,6 +284,7 @@ impl Default for SupervisorConfig {
             max_port_retries: 5,
             monitor_interval: Duration::from_millis(250),
             output_settle: Duration::from_millis(150),
+            confirm_window: Duration::from_secs(1),
             log_failure_output: false,
         }
     }
@@ -700,16 +706,16 @@ impl Core {
         ));
 
         let addr = loopback_addr(port);
-        let waited = wait_until_healthy(
-            addr,
-            &self.params.manifest.health_route,
-            config.health,
-            || self.stopping() || child.try_exit().is_some(),
-        );
+        // Healthy only after a first 2xx, a confirmation window with the child
+        // still alive, and a second 2xx. Nothing is published before that.
+        let waited = self
+            .wait_healthy(child.as_mut(), addr)
+            .and_then(|()| self.confirm_window_elapsed(child.as_mut()))
+            .and_then(|()| self.wait_healthy(child.as_mut(), addr));
 
         match waited {
             Ok(()) => {
-                // A squatter on the port can answer the probe after our child
+                // Last guard: a squatter can keep answering after our child
                 // died of EADDRINUSE; only a live child counts as ready.
                 if let Some(exit) = child.try_exit() {
                     let kind = self.exit_failure(child.as_ref(), &exit);
@@ -766,6 +772,37 @@ impl Core {
             if self.sleep(config.monitor_interval) {
                 return self.finish_stop(child.as_mut());
             }
+        }
+    }
+
+    /// Probe until healthy; ends early when the child exits or shutdown is
+    /// requested.
+    fn wait_healthy(
+        &self,
+        child: &mut dyn ManagedChild,
+        addr: std::net::SocketAddr,
+    ) -> Result<(), WaitFailure> {
+        wait_until_healthy(
+            addr,
+            &self.params.manifest.health_route,
+            self.params.config.health,
+            || self.stopping() || child.try_exit().is_some(),
+        )
+    }
+
+    /// Hold for `confirm_window` while the child stays alive. `Aborted` when
+    /// the child exits or shutdown is requested inside the window.
+    fn confirm_window_elapsed(&self, child: &mut dyn ManagedChild) -> Result<(), WaitFailure> {
+        let deadline = Instant::now() + self.params.config.confirm_window;
+        loop {
+            if self.stopping() || child.try_exit().is_some() {
+                return Err(WaitFailure::Aborted);
+            }
+            let now = Instant::now();
+            if now >= deadline {
+                return Ok(());
+            }
+            thread::sleep(Duration::from_millis(10).min(deadline - now));
         }
     }
 
