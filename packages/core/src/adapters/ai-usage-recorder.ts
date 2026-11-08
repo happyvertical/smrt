@@ -357,9 +357,22 @@ export interface CreateAiUsageRecorderOptions {
 
 const AI_USAGE_SINK = Symbol.for('@happyvertical/smrt-core:aiUsageSink');
 
+/**
+ * Explicit attribution a sink carries. It travels with the sink: a pipeline
+ * that replaces the sink (see {@link unwrapAiUsageSink}) applies it instead.
+ */
+export interface AiUsageSinkAttribution {
+  /** Explicit tenant (`null` = global, skip the ambient tenant). */
+  tenantId?: string | null;
+  /** Default tags, under each event's own tags. */
+  tags?: Record<string, string>;
+}
+
 interface AiUsageSinkBrand {
   /** The caller's own `onUsage` that a chained sink wraps, if any. */
   inner?: (event: unknown) => unknown;
+  /** Explicit attribution of the sink, if any. */
+  attribution?: AiUsageSinkAttribution;
 }
 
 function brandSink<T extends (event: unknown) => unknown>(
@@ -370,12 +383,36 @@ function brandSink<T extends (event: unknown) => unknown>(
   return fn;
 }
 
+/**
+ * Mark `fn` as a SMRT usage sink carrying `attribution`.
+ *
+ * @internal Used by `SmrtClass#withAiUsage()`.
+ */
+export function brandAiUsageSink<T extends (event: unknown) => unknown>(
+  fn: T,
+  attribution: AiUsageSinkAttribution,
+): T {
+  return brandSink(fn, { attribution });
+}
+
 function sinkBrand(fn: unknown): AiUsageSinkBrand | undefined {
   return typeof fn === 'function'
     ? ((fn as unknown as Record<symbol, AiUsageSinkBrand | undefined>)[
         AI_USAGE_SINK
       ] ?? undefined)
     : undefined;
+}
+
+/**
+ * The explicit attribution of a sink `onUsage` (a recorder, a chained sink,
+ * or a `withAiUsage()` sink); `undefined` for a plain callback.
+ *
+ * @internal Used by `SmrtClass` when it replaces a sink with its own pipeline.
+ */
+export function aiUsageSinkAttribution(
+  onUsage: unknown,
+): AiUsageSinkAttribution | undefined {
+  return sinkBrand(onUsage)?.attribution;
 }
 
 /**
@@ -440,13 +477,18 @@ export function createAiUsageRecorder(
       );
     }
   };
-  return brandSink(recorder, {});
+  return brandSink(recorder, {
+    attribution: { tenantId: options.tenantId, tags: options.tags },
+  });
 }
 
 /**
  * Return a copy of `aiConfig` whose `onUsage` calls the caller's existing
  * `onUsage` first and then `recorder`. Attaching again replaces the previous
  * recorder rather than stacking a second one, so a call is recorded once.
+ * The result carries `recorder`'s explicit attribution, so a `SmrtClass`
+ * that later builds its own client from this config keeps the same tenant
+ * and tags when it replaces the sink.
  */
 export function attachAiUsageRecorder<T extends object>(
   aiConfig: T,
@@ -462,6 +504,9 @@ export function attachAiUsageRecorder<T extends object>(
   };
   return {
     ...aiConfig,
-    onUsage: brandSink(onUsage, { inner }),
+    onUsage: brandSink(onUsage, {
+      inner,
+      attribution: sinkBrand(recorder)?.attribution,
+    }),
   };
 }
