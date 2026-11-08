@@ -5,7 +5,7 @@
  * STI framework auto-filters to Email instances.
  */
 
-import { queryGlobal, queryWithGlobals } from '@happyvertical/smrt-tenancy';
+import { queryGlobal, queryWithGlobals } from '../host.js';
 import { Email } from '../models/Email';
 import type { EmailSearchFilters } from '../types';
 import { MessageCollection } from './MessageCollection';

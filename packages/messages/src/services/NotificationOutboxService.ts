@@ -2,15 +2,16 @@ import {
   isUniqueViolationError,
   type SmrtClassOptions,
 } from '@happyvertical/smrt-core';
-import {
-  normalizeIdentityEmail,
-  ProfileCollection,
-} from '@happyvertical/smrt-profiles';
-import { withSystemContext, withTenant } from '@happyvertical/smrt-tenancy';
 import { AccountCollection } from '../collections/AccountCollection.js';
 import { EmailCollection } from '../collections/EmailCollection.js';
 import { MessageCollection } from '../collections/MessageCollection.js';
 import { NotificationDeliveryCollection } from '../collections/NotificationDeliveryCollection.js';
+import {
+  normalizeIdentityEmail,
+  readNotificationProfile,
+  withSystemContext,
+  withTenant,
+} from '../host.js';
 import { assertNotificationProfileRecipientSchema } from '../migrations/profileRecipients.js';
 import { EmailAccount } from '../models/EmailAccount.js';
 import type { Message } from '../models/Message.js';
@@ -905,9 +906,10 @@ export class NotificationOutboxService {
     request: NotificationProfileRecipientRequest,
   ): Promise<NotificationRecipient> {
     const db = (await this.collection()).db;
-    const profile = await (await ProfileCollection.create({ db })).get(
-      { id: request.recipientProfileId, tenantId: request.tenantId },
-      { cache: false },
+    const profile = await readNotificationProfile(
+      db,
+      request.tenantId,
+      request.recipientProfileId,
     );
     const resolved = await this.options.resolveProfileRecipient?.(request);
     const address = profile?.email ? normalizeIdentityEmail(profile.email) : '';

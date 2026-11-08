@@ -1,7 +1,11 @@
 /** Package-private durable protection and one-use provider authority. Never exported from the package root. */
-import { AsyncLocalStorage } from 'node:async_hooks';
-import { createHash } from 'node:crypto';
+
 import { ObjectRegistry, type SmrtSaveOptions } from '@happyvertical/smrt-core';
+import {
+  canonicalNotificationMessageId as canonicalMessageId,
+  createHandoffContext,
+  notificationSha256,
+} from './host.js';
 import type { Message } from './models/Message.js';
 import { assertNotificationRecipientIdentity } from './notification-recipient-identity.js';
 import type { NotificationTransportRequest } from './services/NotificationOutboxService.js';
@@ -42,7 +46,7 @@ function column(key: string): string {
   return key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
 }
 function hash(value: unknown): string {
-  return createHash('sha256').update(JSON.stringify(value)).digest('hex');
+  return notificationSha256(JSON.stringify(value));
 }
 function marker(value: unknown): Row | null {
   try {
@@ -111,7 +115,7 @@ function attachmentsDigest(
         contentType: file.contentType || 'application/octet-stream',
         contentId: file.contentId ?? null,
         contentDisposition: file.contentDisposition ?? 'attachment',
-        digest: createHash('sha256').update(file.content).digest('hex'),
+        digest: notificationSha256(file.content),
       };
     }),
   );
@@ -225,16 +229,6 @@ async function association(
     ? ((await message.db.get('messages', { id })) as Row | null)
     : null;
   return { delivery, stored };
-}
-function canonicalMessageId(deliveryId: string): string {
-  const bytes = createHash('sha256')
-    .update(`smrt-messages:notification-delivery:${deliveryId}`)
-    .digest()
-    .subarray(0, 16);
-  bytes[6] = ((bytes[6] ?? 0) & 0x0f) | 0x50;
-  bytes[8] = ((bytes[8] ?? 0) & 0x3f) | 0x80;
-  const hex = bytes.toString('hex');
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 function canonical(message: Message, delivery: Row): void {
   if (message.id !== canonicalMessageId(String(delivery.id)))
@@ -352,7 +346,7 @@ interface Scope {
   envelope: string;
   now: () => Date;
 }
-const authority = new AsyncLocalStorage<Scope>();
+const authority = createHandoffContext<Scope>();
 function deliveryDigest(delivery: Row): string {
   assertNotificationRecipientIdentity({
     recipientKind: delivery.recipient_kind ?? 'user',

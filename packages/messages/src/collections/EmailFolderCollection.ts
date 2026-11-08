@@ -3,7 +3,7 @@
  */
 
 import { SmrtCollection } from '@happyvertical/smrt-core';
-import { queryGlobal, queryWithGlobals } from '@happyvertical/smrt-tenancy';
+import { queryGlobal, queryWithGlobals } from '../host.js';
 import { EmailFolder } from '../models/EmailFolder';
 import type { EmailFolderSearchFilters } from '../types';
 

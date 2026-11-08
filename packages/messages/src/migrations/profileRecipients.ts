@@ -1,9 +1,10 @@
 import { detectEngine } from '@happyvertical/smrt-core';
 /** Explicit maintenance migration for typed email contact identities. No runtime DDL. */
+import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
 import {
+  assertNotificationMaintenanceHost,
   buildSqliteRebuildStatements,
-  type DatabaseInterface,
-} from '@happyvertical/smrt-core/migrations';
+} from '../host.js';
 
 export type NotificationProfileRecipientEngine = 'postgres' | 'sqlite';
 export interface NotificationProfileRecipientPlan {
@@ -209,6 +210,7 @@ export async function planNotificationProfileRecipients(
   db: Pick<DatabaseInterface, 'query'>,
   engine: NotificationProfileRecipientEngine,
 ): Promise<NotificationProfileRecipientPlan> {
+  assertNotificationMaintenanceHost();
   const state = await inspect(db, engine);
   const result: NotificationProfileRecipientPlan = {
     engine,
@@ -391,6 +393,7 @@ export async function migrateNotificationProfileRecipients(
   db: DatabaseInterface,
   engine: NotificationProfileRecipientEngine,
 ): Promise<NotificationProfileRecipientPlan> {
+  assertNotificationMaintenanceHost();
   if (!db.transaction)
     throw new Error('Notification profile migration requires transactions.');
   let result: NotificationProfileRecipientPlan | undefined;

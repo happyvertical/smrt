@@ -246,3 +246,17 @@ through its own SDK, remains responsible for that code's authority and behavior.
 ## Typed external contacts
 
 Protected email also accepts exactly one `recipientProfileId` instead of a User. See [profile recipients](profile-recipients.md) for reserved profile policy identity, current Profile/host relationship checks, explicit schema plan/apply prerequisites and compatibility evidence. No auth account is fabricated.
+
+## Browser/server boundary (#4747)
+
+Protected notifications add no Node-only imports to the browser graph. Existing
+package/dependency browser-capability declarations still apply. Protected canonical
+handoff and schema maintenance require the server host: private SHA-256, strict
+binding comparison, async-local scope, Core migration rebuild operations and
+public Profile lookup/normalization live behind stable package
+`host.js` / `host.browser.js` entries, following Core's
+existing browser-map pattern. The browser counterpart never mints or inherits
+handoff authority and throws before protected operations or maintenance; it does
+not install a global context, skip durable guards or approximate hashing. Public
+server APIs and canonical persisted association/lease/one-use checks are unchanged.
+The owning dist browser bundle gate must remain green without a ratchet waiver.

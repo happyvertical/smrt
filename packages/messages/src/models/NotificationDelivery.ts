@@ -1,8 +1,8 @@
-import { isDeepStrictEqual } from 'node:util';
 import type {
   SmrtObjectOptions,
   SmrtSaveOptions,
 } from '@happyvertical/smrt-core';
+import { isDeepStrictEqual } from '../host.js';
 import { assertNotificationRecipientIdentity } from '../notification-recipient-identity.js';
 // Register the package manifest before this module's @smrt() decorator
 // runs, whichever chunk the library build places it in (#3098).
