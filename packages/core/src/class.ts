@@ -81,6 +81,10 @@ import {
   mergeInferenceConfigs,
   resolveInference as resolveInferenceBinding,
 } from './inference.js';
+import {
+  bindInferenceTarget,
+  inferenceTargetIdentity,
+} from './inference-target.js';
 import { noteNativeDuckDbHandle } from './native-duckdb.js';
 import {
   applyPostgresRuntimeTimeouts,
@@ -997,13 +1001,7 @@ export class SmrtClass {
         `${this._className}: a chain inference target cannot be bound to one client; run it through getAiClient(tier).`,
       );
     }
-    const identity: Record<string, string> = {};
-    for (const key of ['provider', 'model', 'baseUrl', 'apiKey'] as const) {
-      const value = target[key];
-      if (typeof value === 'string' && value.trim() !== '') {
-        identity[key] = value.trim();
-      }
-    }
+    const identity = inferenceTargetIdentity(target);
     if (Object.keys(identity).length === 0) return this.getAiClient();
 
     const base = this._aiClientConfig;
@@ -1018,53 +1016,7 @@ export class SmrtClass {
       );
     }
 
-    const { onUsage: _onUsage, ...baseFields } = base ?? {};
-    const merged = mergeAIConfigObjects(baseFields, identity);
-    // Endpoint and credential are owned together (#3372) and travel as an
-    // explicit pair. `getAI()` and provider SDKs refill an unset key or
-    // endpoint from their own environment (`HAVE_AI_*`, `OPENAI_API_KEY`,
-    // `OPENAI_BASE_URL`, ...), so deleting an inherited field is not enough:
-    // an unbound pair fails closed here, before SDK construction.
-    const text = (config: Record<string, unknown>, key: string) =>
-      typeof config[key] === 'string' ? (config[key] as string).trim() : '';
-    const provider = text(merged, 'provider');
-    const sameProvider =
-      provider.toLowerCase() === text(baseFields, 'provider').toLowerCase();
-    const keepsBaseEndpoint =
-      sameProvider && identity.baseUrl === text(baseFields, 'baseUrl');
-    if (identity.baseUrl && !identity.apiKey && !keepsBaseEndpoint) {
-      throw new InferenceBindingError(
-        `${this._className}: an inference target that names its own baseUrl must carry its own apiKey (use a placeholder such as 'smrt-local' for a keyless local server); a configured or environment key is never sent to another endpoint.`,
-      );
-    }
-    if (identity.apiKey && !identity.baseUrl) {
-      throw new InferenceBindingError(
-        `${this._className}: an inference target that brings its own apiKey must name its baseUrl; a target key is never sent to an inherited or environment endpoint.`,
-      );
-    }
-    if (!sameProvider && !identity.baseUrl) {
-      // Another provider's default endpoint with that provider's own key
-      // variable. The SDK-wide `HAVE_AI_*` fallbacks belong to the configured
-      // client and would redirect or replace that key.
-      const env = typeof process !== 'undefined' ? process.env : undefined;
-      for (const name of ['HAVE_AI_BASE_URL', 'HAVE_AI_API_KEY']) {
-        if (env?.[name]?.trim()) {
-          throw new InferenceBindingError(
-            `${this._className}: an inference target on another provider must name its baseUrl and apiKey while ${name} is set.`,
-          );
-        }
-      }
-      const resolved = tryResolveAIProviderConfig({
-        explicit: merged as AIExplicitConfig,
-        config: null,
-        prefixes: [],
-        autoDetect: false,
-        requireProvider: false,
-        providerKeyEnvFallback: true,
-      });
-      if (!merged.apiKey && resolved?.apiKey) merged.apiKey = resolved.apiKey;
-    }
-    const tierConfig = withAIAliases(merged);
+    const tierConfig = bindInferenceTarget(base, target, this._className);
     const field = (config: Record<string, unknown> | undefined, key: string) =>
       typeof config?.[key] === 'string' ? (config[key] as string) : '';
 

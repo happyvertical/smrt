@@ -126,6 +126,34 @@ export interface InferenceTarget {
   alias?: string;
   /** `kind: 'candidates'`: an inline ordered chain. */
   candidates?: InferenceCandidate[];
+  /**
+   * Where the binding came from, for usage visibility (#4756): a user's own
+   * key (`byo`), a local server (`local`), managed inference (`hosted`), or
+   * the app's configuration (`app`). Recorded as the `source` usage tag;
+   * never part of the client identity.
+   */
+  source?: InferenceTargetSource;
+}
+
+/** Binding origins recorded as the `source` usage tag (#4756). */
+export const INFERENCE_TARGET_SOURCES = [
+  'byo',
+  'local',
+  'hosted',
+  'app',
+] as const;
+
+/** One of {@link INFERENCE_TARGET_SOURCES}. */
+export type InferenceTargetSource = (typeof INFERENCE_TARGET_SOURCES)[number];
+
+/** True for a known {@link InferenceTargetSource}. */
+export function isInferenceTargetSource(
+  value: unknown,
+): value is InferenceTargetSource {
+  return (
+    typeof value === 'string' &&
+    (INFERENCE_TARGET_SOURCES as readonly string[]).includes(value)
+  );
 }
 
 /**
@@ -488,12 +516,20 @@ export async function resolveInference(
   return resolved;
 }
 
-/** `usageTags` recorded for a call through the tier path. */
+/**
+ * `usageTags` recorded for a call through the tier path: the requested and
+ * resolved tier, plus the binding's `source` when the target names one.
+ */
 export function inferenceUsageTags(
   tierRequested: InferenceTierRequest,
   resolution: InferenceResolution,
 ): Record<string, string> {
-  return { tierRequested, tierResolved: resolution.tierResolved };
+  const source = resolution.target?.source;
+  return {
+    tierRequested,
+    tierResolved: resolution.tierResolved,
+    ...(isInferenceTargetSource(source) ? { source } : {}),
+  };
 }
 
 /** Per-call options a chain client receives (the `ai.message()` options). */
