@@ -50,6 +50,26 @@ import { createInferenceResolver } from './register.js';
 
 export * from './provider-config.js';
 
+/** `invalidate()` of every live resolver this process created. */
+const liveResolvers = new Set<WeakRef<UserInferenceResolver['invalidate']>>();
+
+/**
+ * Drop cached configs in every user resolver this process created (all, one
+ * tenant, or one user). Writers outside a resolver (hosted provisioning,
+ * #4759) call this after storing a config; other processes see the change
+ * when their cache entry expires (`ttlMs`, 30 s by default).
+ */
+export function invalidateUserInferenceResolvers(scope?: {
+  tenantId?: string;
+  userId?: string;
+}): void {
+  for (const ref of [...liveResolvers]) {
+    const invalidate = ref.deref();
+    if (invalidate) invalidate(scope);
+    else liveResolvers.delete(ref);
+  }
+}
+
 /** Default cache lifetime of decrypted configs, per `(tenantId, userId)`. */
 export const USER_INFERENCE_CACHE_TTL_MS = 30_000;
 
@@ -372,6 +392,8 @@ export function createUserInferenceResolver(
     return principal;
   };
 
+  liveResolvers.add(new WeakRef(invalidate));
+
   return {
     async resolve(
       request: InferenceRequest,
@@ -528,7 +550,8 @@ export function createUserInferenceResolver(
       if (mode === null) delete next.mode;
       else next.mode = parseInferenceProviderConfig({ mode }).mode;
       const empty = Object.keys(next).every(
-        (key) => key === 'version' || key === 'source',
+        (key) =>
+          key === 'version' || key === 'source' || key === 'gatewayKeyAlias',
       );
       await inTenant(principal, async () => {
         if (empty) {

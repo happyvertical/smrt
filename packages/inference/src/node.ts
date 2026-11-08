@@ -758,4 +758,5 @@ export function formatInferenceDoctorReport(
   return lines;
 }
 
+export * from './hosted.js';
 export type { InferenceConfigIssue } from './types.js';

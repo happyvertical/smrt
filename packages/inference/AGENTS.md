@@ -18,7 +18,8 @@ panel with layered binding storage (#4754).
   the bundle-gate browser fixture also builds it (the package has a model).
 - `./node`: `checkInferenceBindings()`, `probeInferenceCandidate()`,
   `inferenceProbeUrl()`, `formatInferenceDoctorReport()`; the CLI's
-  `doctor --ai` and #4754's test connection call these.
+  `doctor --ai` and #4754's test connection call these. Also hosted
+  provisioning (`src/hosted.ts`, #4759).
 - `./resolver` (Node-only, #4756): `createUserInferenceResolver()` and
   `registerUserInferenceResolver()` over smrt-secrets / tenancy / users. The
   root re-exports only the browser-safe stored-config shape
@@ -48,8 +49,10 @@ order), `fallback`, the app `inference` block, then the configured client
   (`category`), via `SecretService.store()` / `retrieve()` only, with
   `context = tenantId`. Names: `inference.provider-config:user:<userId>` and
   `inference.provider-config:tenant`. The value is
-  `{ provider, baseUrl, model, apiKey, preset, params, source?, mode?, tiers? }`;
-  hosted (#4759) writes the same type with `source: 'hosted'`.
+  `{ provider, baseUrl, model, apiKey, preset, params, source?, mode?,
+  gatewayKeyAlias?, tiers? }`; hosted (#4759) writes the same type with
+  `source: 'hosted'` and `gatewayKeyAlias` (refused on any other source;
+  every target of the config carries it as `usageTags`).
   `parseInferenceProviderConfig()` requires every binding to be
   self-contained (`baseUrl` and `apiKey`, `'smrt-local'` for keyless local
   servers, or a preset that supplies the endpoint), so a stored binding never
@@ -92,6 +95,69 @@ order), `fallback`, the app `inference` block, then the configured client
   shape the settings panel reads; `redact: false` is server-only.
 - Raw `getAI()` sites take the binding through core's
   `resolveInferenceTarget()` (see [core inference.md](../core/agents/inference.md)).
+
+## Hosted provisioning (`src/hosted.ts`, #4759)
+
+`provisionHostedInference({ db, tenantId, userId, budget })`,
+`revokeHostedInference({ db, tenantId, userId })`, or one
+`createHostedInferenceProvisioner({ db, secrets?, gateway?, admin?, actor? })`
+(`provision`, `revoke`, `syncBudget`, `status`, `listActive`, `revokeTenant`,
+`syncTenantBudget`).
+
+- **Gateway.** Admin calls go through `ai.admin` (`AIAdminInterface`) of the
+  `bifrost` / `litellm` provider of `@happyvertical/ai`; never reimplement
+  gateway administration here. The SDK has `createProject` and
+  `createVirtualKey` only: `updateVirtualKey` / `deleteVirtualKey` are
+  feature-detected on `HostedGatewayAdmin` (happyvertical/sdk#1494). Without
+  them budget sync returns `unsupported` (state keeps the old budget so a
+  later sync retries) and revoke returns `gateway: 'unsupported'`, still
+  removing the key locally and auditing `manualGatewayRevocation` with the
+  key's id and alias. A failing delete call changes nothing (retry).
+- **Config, read once from the environment** (`getHostedGatewayConfig()`;
+  unset provider = hosted off): `SMRT_INFERENCE_HOSTED_PROVIDER`
+  (`bifrost|litellm`), `_BASE_URL` (the OpenAI-compatible endpoint keys are
+  used against), `_ADMIN_URL`, `_ADMIN_KEY` (LiteLLM master key, required for
+  litellm; or a Bifrost admin key), `_ADMIN_USER` / `_ADMIN_PASSWORD`
+  (Bifrost Basic auth), `_MODEL`, `_<TIER>_MODEL`, `_MODELS` (comma list the
+  key may use; default the binding's models), `_KEY_DURATION`. Errors name
+  missing fields, never values.
+- **Storage** (smrt-secrets, `context = tenantId`): the key lives only in
+  the user's `inference.provider-config:user:<id>` (`source: 'hosted'`,
+  `mode: 'hosted'`, `gatewayKeyAlias`, a binding per configured tier);
+  `inference.hosted:user:<id>` (category `inference.hosted`) holds status,
+  generation, key id and alias, budget and the user's prior config;
+  `inference.hosted:project` the tenant's gateway project (created once
+  through `runOnce()`, LiteLLM id `smrt-<tenantId>`). Every write passes
+  `auditDetails.operation` (`inference.hosted.provision|revoke|budget|project`)
+  to `SecretAuditLog`.
+- **Idempotency.** An active grant whose binding is still the stored one is
+  returned (`created: false`), its budget synced when it differs. The create
+  path runs under `runOnce()` keyed by `(tenantId, userId, generation)`;
+  revoke advances the generation (alias `smrt-<tenant>-<user>-g<n>`), so
+  re-provisioning mints a new key. A user who replaced the hosted binding
+  keeps their config: re-provisioning retires the stale key first.
+- **Revoke** restores the prior config when it holds a binding or a mode,
+  else writes `{ mode: 'off' }`; a config the user replaced is kept.
+- **Budget** is integer micro-dollars (`{ limitMicros, window? }`, `day |
+  week | month | year`, default month), converted to the gateway's USD
+  `maxLimit` and `1d|7d|30d|365d` only at the admin call. #4760's spend gate
+  is the authoritative pre-call check; the gateway budget is defense in depth.
+- **Entitlement hook.** `createHostedInferenceEntitlementListener({
+  provisioner, users, budgetFor?, defaultBudget? })` structurally matches
+  smrt-subscriptions' `EntitlementChangeListener` (register it with
+  `registerEntitlementChangeListener()`; the host wraps its webhook write in
+  `trackEntitlementChange()`). Gain of `inference.hosted` provisions
+  `users(tenantId)` (membership is the host's; later joiners are provisioned
+  by calling `provision()`), loss revokes every active grant, a changed grant
+  syncs budgets. The plan's budget is the grant's `metadata.budget`
+  (`{ limitMicros, window }`). Per-user failures are thrown together after
+  all users were tried.
+- **Keys.** Never in results, errors (gateway failures carry only the
+  operation and error code), audit details, `runOnce()` results or logs.
+  Usage rows carry `source: hosted` and `gatewayKeyAlias` (from
+  `InferenceTarget.usageTags`). Other processes see a new binding after the
+  resolver cache expires; this process is invalidated through
+  `invalidateUserInferenceResolvers()`.
 
 ## Config
 

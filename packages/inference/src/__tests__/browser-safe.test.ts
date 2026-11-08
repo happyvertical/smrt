@@ -6,6 +6,8 @@
  * `./server` and `./resolver` (#4756: smrt-secrets and the ambient principal)
  * are the Node-only subpaths. The graph is walked from each entry, so a new
  * module is covered as soon as an entry reaches it.
+ * `hosted.ts` (#4759) is part of `./node` (secrets, runOnce, the gateway
+ * admin client).
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -40,6 +42,7 @@ describe.each(['index.ts', 'models.ts'])('%s import graph', (entry) => {
     expect(files).not.toContain('node.ts');
     expect(files).not.toContain('server.ts');
     expect(files).not.toContain('resolver.ts');
+    expect(files).not.toContain('hosted.ts');
   });
 
   it.each(
@@ -55,6 +58,7 @@ describe.each(['index.ts', 'models.ts'])('%s import graph', (entry) => {
 
   it.each(files)('%s never reaches the Node-only stores', (name) => {
     const source = readFileSync(join(SRC, name), 'utf8');
+    expect(source).not.toMatch(/from ['"]\.\/(node|resolver|hosted)\.js['"]/);
     expect(source).not.toMatch(
       /from ['"]@happyvertical\/smrt-(secrets|tenancy|users)['"]/,
     );

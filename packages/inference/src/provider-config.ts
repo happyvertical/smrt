@@ -71,6 +71,12 @@ export interface InferenceProviderConfig extends InferenceProviderBinding {
    * hold only a mode (no binding, no key).
    */
   mode?: InferenceMode;
+  /**
+   * Hosted inference (#4759): the gateway virtual key's alias, a non-secret
+   * handle recorded as the `gatewayKeyAlias` usage tag on every call this
+   * config answers. Only valid with `source: 'hosted'`; never the key.
+   */
+  gatewayKeyAlias?: string;
   tiers?: Partial<Record<InferenceTier, InferenceProviderBinding>>;
 }
 
@@ -86,6 +92,7 @@ export interface RedactedInferenceProviderConfig
   version?: 1;
   source?: InferenceProviderConfigSource;
   mode?: InferenceMode;
+  gatewayKeyAlias?: string;
   tiers?: Partial<Record<InferenceTier, RedactedInferenceProviderBinding>>;
 }
 
@@ -271,7 +278,8 @@ export function parseInferenceProviderConfig(
             key !== 'tiers' &&
             key !== 'source' &&
             key !== 'version' &&
-            key !== 'mode',
+            key !== 'mode' &&
+            key !== 'gatewayKeyAlias',
         ),
       ),
       'config',
@@ -303,6 +311,18 @@ export function parseInferenceProviderConfig(
       issues.push(`mode must be one of ${INFERENCE_MODES.join(', ')}`);
     }
   }
+  if (raw.gatewayKeyAlias !== undefined) {
+    const alias = text(raw.gatewayKeyAlias);
+    if (!alias || alias.length > 200) {
+      issues.push(
+        'gatewayKeyAlias must be a non-empty string of at most 200 characters',
+      );
+    } else if (config.source !== 'hosted') {
+      issues.push("gatewayKeyAlias needs source 'hosted'");
+    } else {
+      config.gatewayKeyAlias = alias;
+    }
+  }
   if (raw.tiers !== undefined) {
     if (!isRecord(raw.tiers)) {
       issues.push('tiers must be an object');
@@ -331,6 +351,7 @@ export function parseInferenceProviderConfig(
         'source',
         'version',
         'mode',
+        'gatewayKeyAlias',
       ].includes(known)
     ) {
       issues.push(`config.${known} is not a provider config field`);
@@ -398,6 +419,11 @@ function bindingToTarget(
   binding: InferenceProviderBinding,
 ): InferenceTarget {
   const source = inferenceProviderSource(config, binding);
+  // Hosted keys are tagged by alias (never the key) so metering can join
+  // usage rows to the gateway's own key ledger (#4759).
+  const usageTags = config.gatewayKeyAlias
+    ? { usageTags: { gatewayKeyAlias: config.gatewayKeyAlias } }
+    : {};
   if (binding.preset && isInferencePresetId(binding.preset)) {
     return {
       provider: 'openai',
@@ -408,6 +434,7 @@ function bindingToTarget(
         ? { params: safeParams(binding.params) }
         : {}),
       source,
+      ...usageTags,
     };
   }
   return {
@@ -419,6 +446,7 @@ function bindingToTarget(
       ? { params: safeParams(binding.params) }
       : {}),
     source,
+    ...usageTags,
   };
 }
 
@@ -469,12 +497,13 @@ function redactBinding(
 export function redactInferenceProviderConfig(
   config: InferenceProviderConfig,
 ): RedactedInferenceProviderConfig {
-  const { tiers, version, source, mode, ...binding } = config;
+  const { tiers, version, source, mode, gatewayKeyAlias, ...binding } = config;
   const redacted: RedactedInferenceProviderConfig = {
     ...redactBinding(binding),
     ...(version ? { version } : {}),
     ...(source ? { source } : {}),
     ...(mode ? { mode } : {}),
+    ...(gatewayKeyAlias ? { gatewayKeyAlias } : {}),
   };
   if (tiers) {
     redacted.tiers = {};
@@ -497,6 +526,7 @@ export function redactInferenceTarget(
     ...(target.latency ? { latency: target.latency } : {}),
     ...(target.source ? { source: target.source } : {}),
     ...(params ? { params } : {}),
+    ...(target.usageTags ? { usageTags: { ...target.usageTags } } : {}),
     hasApiKey: !!target.apiKey && target.apiKey !== KEYLESS_PLACEHOLDER,
   };
 }
