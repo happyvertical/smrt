@@ -1724,6 +1724,24 @@ export async function legacyMain(env = process.env) {
       namespace,
     );
     apply([policy, binding, network]);
+    const unknownPod = r(
+      'v1',
+      'Pod',
+      'unknown',
+      {
+        spec: {
+          restartPolicy: 'Never',
+          containers: [
+            {
+              name: 'x',
+              image: legacyImages.postgres,
+              command: ['sleep', '60'],
+            },
+          ],
+        },
+      },
+      namespace,
+    );
     await until('VAP accepted', () => {
       const p = JSON.parse(
         k([
@@ -1734,10 +1752,22 @@ export async function legacyMain(env = process.env) {
           'json',
         ]),
       );
-      return (
-        p.status?.observedGeneration === p.metadata.generation &&
-        !p.status?.typeChecking?.expressionWarnings?.length
-      );
+      if (
+        p.status?.observedGeneration !== p.metadata.generation ||
+        p.status?.typeChecking?.expressionWarnings?.length
+      )
+        return false;
+      // Type checking precedes enforcement: the API server's admission plugin
+      // syncs policies and bindings separately. Accept only an observed denial
+      // by this exact policy (server dry-run; admin is not the reconciler).
+      try {
+        k(['create', '--dry-run=server', '-f', '-'], unknownPod);
+        return false;
+      } catch (error) {
+        return String(error.stderr).includes(
+          `ValidatingAdmissionPolicy '${policy.metadata.name}'`,
+        );
+      }
     });
     const denial = (object) => {
       let denied = false;
@@ -1748,26 +1778,7 @@ export async function legacyMain(env = process.env) {
       }
       assert.ok(denied, 'actual unsafe fixture request must be denied');
     };
-    denial(
-      r(
-        'v1',
-        'Pod',
-        'unknown',
-        {
-          spec: {
-            restartPolicy: 'Never',
-            containers: [
-              {
-                name: 'x',
-                image: legacyImages.postgres,
-                command: ['sleep', '60'],
-              },
-            ],
-          },
-        },
-        namespace,
-      ),
-    );
+    denial(unknownPod);
     const forged = r(
       'v1',
       'Pod',
