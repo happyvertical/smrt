@@ -200,6 +200,7 @@ Status legend:
 | [`smrt-approvals`](./packages/approvals/README.md) | Experimental | Revision-bound, single-use approvals with quorum, expiry, and an append-only decision ledger. |
 | [`smrt-playbooks`](./packages/playbooks/README.md) | Preview | Layered playbook registry, overrides, and plan resolution. |
 | [`smrt-prompts`](./packages/prompts/README.md) | Stable | Typed prompt registry and tenant-aware overrides. |
+| [`smrt-inference`](./packages/inference/README.md) | Preview | Inference alias chains with classified, recorded fallback, ladder degradation, and `smrt doctor --ai`. |
 | [`smrt-projects`](./packages/projects/README.md) | Preview | Provider-neutral projects, repositories, issues, and delivery work. |
 | [`smrt-support`](./packages/support/README.md) | Preview | Support Case intake, lifecycle, routing, targets, and service time. |
 | [`smrt-timesheets`](./packages/timesheets/README.md) | Preview | Shared time entries, approval and correction, and immutable charge/compensation snapshots. |

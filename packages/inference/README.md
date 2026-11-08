@@ -1,6 +1,6 @@
 # @happyvertical/smrt-inference
 
-Fallback for SMRT inference tiers. Bind a tier to an ordered chain of models
+Fallback for s-m-r-t inference tiers. Bind a tier to an ordered chain of models
 (an alias) and a call that hits a quota, a bad key or a renamed model moves to
 the next model instead of failing. Every move is recorded on the call's usage
 row, and `smrt doctor --ai` checks the bindings before you need them.
