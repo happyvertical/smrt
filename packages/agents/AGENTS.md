@@ -61,6 +61,13 @@ async run() { for (const { type, data } of await this.interesting()) { ... } }
   `withAiUsage()`, and `resolveAgentAIOptions({ db })` attaches a usage
   recorder, so per-call `getAI(...)` clients write `_smrt_ai_usage` for the
   run's tenant. See core [ai-usage](../core/agents/ai-usage.md).
+- **Stored inference bindings (#4756)**: without an explicit `apiKey` or
+  `apiKeySecretName`, `resolveAgentAIClientOptions()` asks core's
+  `resolveInferenceTarget({ appBindings: false })`; a stored per-user /
+  per-tenant binding (smrt-inference `./resolver`) replaces the provider and
+  its `source` / tier tags ride on the usage rows. App `inference` tier
+  bindings never replace an agent's own `ai`; a named secret keeps the
+  secret path.
 - **UI slots**: `static uiSlots` declares admin panels (id, label, icon, order,
   `scope`, optional versioned `settingsSchema`). Without a registered custom
   component, `AgentSettingsForm` renders that schema.
