@@ -40,7 +40,10 @@ A candidate is exactly one of provider/model, preset/model, or alias.
 key only travels with its own endpoint); a named variable that is unset skips
 the candidate as `credential`. `findInferenceConfigIssues()` /
 `validateInferenceConfig()` name every offender by path: empty alias, unknown
-alias (tier or nested), cycle, key without endpoint, unknown preset.
+alias (tier or nested), cycle, key without endpoint, unknown preset. The
+executor also validates every resolved target it runs (a resolver's chains
+never pass through config), and a candidate key is never dropped: without
+its own `baseUrl` core's pair rule refuses it.
 
 ## Executor (`src/executor.ts`)
 
@@ -50,16 +53,19 @@ alias (tier or nested), cycle, key without endpoint, unknown preset.
   transient | refusal`, from error class names, `code`, `retryable` and HTTP
   status across `cause` / `error` / `context.originalError`, never message
   text. The SDK maps 5xx and other HTTP failures to `API_ERROR` /
-  `UNKNOWN_ERROR` without a status; those count as `transient`. Aborts and
-  unclassified errors stop the walk and are rethrown (an unclassified one is
-  still recorded).
+  `UNKNOWN_ERROR` without a status or cause (happyvertical/sdk#1493); those
+  count as `transient`. A definitive client error that survives in the chain
+  (other 4xx, `invalid_request_error`, context length) is not a routing
+  failure. Aborts and unclassified errors stop the walk and are rethrown (an
+  unclassified one is still recorded).
 - `transient` retries the same candidate once after 200–500 ms of jitter;
   every class then advances. A `refusal` finish reason with nothing streamed
   also advances; finish callbacks are replayed only for the kept answer.
 - Streamed text is never extended: a candidate that emitted text and then
   failed ends the walk with a `partial` substitution and
   `InferenceExhaustedError` (`reason: 'partial'`, `partialText`), unless
-  `allowPartial` returns the text.
+  `allowPartial` returns the text. A `stream()` consumer that stops reading
+  aborts the provider stream (internal signal merged with the caller's).
 - Ladder: when a tier's chain is spent and `degrade !== false`, resolve the
   next lower tier through `context.resolveTier()`, stopping below
   `minimumTier`. Never up. Steps already tried (same identity) are skipped,
