@@ -10,7 +10,7 @@
 import type { AIMessage, AITool, AIToolCall } from '@happyvertical/ai';
 import { error, isHttpError, json, type RequestHandler } from '@sveltejs/kit';
 import { dev } from '$app/environment';
-import { resolveDevAIConfig } from '../dev-ai.js';
+import { devAIClientOptions, resolveDevAIConfig } from '../dev-ai.js';
 import { isLocalDevCharacterRequest } from '../dev-character-persistence/config.js';
 import {
   DEV_CHARACTER_CONVERSATION_SECTIONS,
@@ -202,13 +202,10 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 
   try {
     const { getAI } = await import('@happyvertical/ai');
-    const ai = await getAI({
-      type: config.provider,
-      provider: config.provider,
-      apiKey: config.apiKey,
-      baseUrl: config.baseUrl,
-      defaultModel: config.model,
-    } as never);
+    const options = await devAIClientOptions(config);
+    const model =
+      typeof options.model === 'string' ? options.model : config.model;
+    const ai = await getAI(options as never);
     const response = await ai.chat(
       [
         {
@@ -219,7 +216,7 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
         ...messages,
       ],
       {
-        model: config.model,
+        model,
         maxTokens: 700,
         temperature: 0.3,
         tools,
@@ -235,9 +232,7 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
       error(502, 'Character conversation provider returned no response.');
     const result: DevCharacterConversationResponse = {
       content: content || 'I have a proposal ready for your review.',
-      ...(response.model || config.model
-        ? { model: response.model ?? config.model }
-        : {}),
+      ...(response.model || model ? { model: response.model ?? model } : {}),
       ...(calls[0] ? { proposal: proposalFromCall(calls[0]) } : {}),
     };
     return json(result, { headers: { 'cache-control': 'no-store' } });

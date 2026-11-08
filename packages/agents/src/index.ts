@@ -95,6 +95,8 @@ export { Agent, type AgentOptions } from './agent.js';
 export {
   type AgentAIOptions,
   type AgentAISecretFallback,
+  type ResolvedAgentAIConfig,
+  resolveAgentAIClientOptions,
   resolveAgentAIOptions,
 } from './ai-config.js';
 export { AgentConfig, AgentConfigCollection } from './config.js';

@@ -486,6 +486,7 @@ describe('reportAiUsage', () => {
         runId: 'run-1',
         substitutions: '[{"from":"a","to":"b","reason":"quota"}]',
         fusionKey: 'pair.review',
+        source: 'byo',
       },
     });
     await persist({
@@ -601,6 +602,14 @@ describe('reportAiUsage', () => {
     await expect(reportAiUsage(db, { by: ['nope' as never] })).rejects.toThrow(
       /unknown dimension/,
     );
+  });
+
+  it('groups by binding source from the source tag (#4756)', async () => {
+    const report = await reportAiUsage(db, { by: ['source'] });
+    expect(report.buckets.find((b) => b.key.source === 'byo')).toMatchObject({
+      calls: 1,
+    });
+    expect(report.buckets.find((b) => b.key.source === null)?.calls).toBe(4);
   });
 
   it('never counts a run label on another tenant reusing the run id later', async () => {

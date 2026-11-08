@@ -24,7 +24,10 @@ import {
   TenantScoped,
   tenantId,
 } from '@happyvertical/smrt-tenancy';
-import { type AgentAIOptions, resolveAgentAIOptions } from './ai-config.js';
+import {
+  type AgentAIOptions,
+  resolveAgentAIClientOptions,
+} from './ai-config.js';
 import { AgentConfig } from './config.js';
 import {
   instanceScopedSubscriber,
@@ -383,6 +386,15 @@ export abstract class Agent extends SmrtObject {
    * Signal handlers for graceful shutdown
    */
   private signalHandlers: Map<NodeJS.Signals, () => void> = new Map();
+  /**
+   * The `ai` options as configured, before `initialize()` bound secrets or
+   * an inference binding into `options.ai`. Every `initialize()` (so every
+   * `execute()`) resolves from this, so a rotated or removed tenant key is
+   * not kept from an earlier run (#4756).
+   */
+  #configuredAi: { value: AgentAIOptions | undefined } | undefined;
+  /** What `initialize()` last wrote to `options.ai` (to spot a caller's change). */
+  #boundAi: unknown;
 
   /**
    * Cached DispatchBus instance for inter-agent communication
@@ -1032,22 +1044,55 @@ export abstract class Agent extends SmrtObject {
       (this.config as Record<string, unknown>).ai !== null
         ? ((this.config as Record<string, unknown>).ai as AgentAIOptions)
         : undefined;
-    const configuredAi =
-      ((this.options as AgentOptions).ai as AgentAIOptions | undefined) ??
-      fileAiConfig;
+    if (
+      this.#configuredAi &&
+      (this.options as AgentOptions).ai !== this.#boundAi
+    ) {
+      // The caller replaced `options.ai` since the last initialize().
+      this.#configuredAi = undefined;
+    }
+    this.#configuredAi ??= {
+      value:
+        ((this.options as AgentOptions).ai as AgentAIOptions | undefined) ??
+        fileAiConfig,
+    };
+    const configuredAi = this.#configuredAi.value;
+    let bindingTags: Record<string, string> | undefined;
     if (configuredAi && this._db) {
-      const resolvedAi = await resolveAgentAIOptions({
+      // Usage is wired below through this instance's own pipeline.
+      const { options: resolvedAi, tags } = await resolveAgentAIClientOptions({
         aiConfig: configuredAi,
         db: this._db,
         tenantId:
           getCurrentTenant()?.tenantId ||
           (typeof this.tenantId === 'string' ? this.tenantId : undefined),
       });
+      bindingTags = tags;
       if (resolvedAi) {
         (this.options as AgentOptions).ai = resolvedAi as AIClientOptions &
           Record<string, unknown>;
       }
     }
+
+    // A subclass that builds its own client per call
+    // (`getAI(this.options.ai)`) records usage through this agent's pipeline;
+    // the agent's own `this.ai` client drops the sink and records once
+    // (#3077). A client object passed as `ai` (tests) is left alone.
+    const agentAi = (this.options as AgentOptions).ai as
+      | Record<string, unknown>
+      | undefined;
+    if (
+      agentAi &&
+      typeof agentAi === 'object' &&
+      typeof agentAi.message !== 'function' &&
+      typeof agentAi.embed !== 'function'
+    ) {
+      (this.options as AgentOptions).ai = this.withAiUsage(
+        agentAi,
+        bindingTags ? { tags: bindingTags } : {},
+      ) as AIClientOptions & Record<string, unknown>;
+    }
+    this.#boundAi = (this.options as AgentOptions).ai;
 
     if ((this.options as AgentOptions).manageProcessSignals) {
       this.setupSignalHandlers();

@@ -66,8 +66,9 @@ together. The kitchen defends against browsers, not against other users on the s
 
 `ai.ts` loads `smrt.config.*` (from `dir` if it exists, else the cwd) and resolves the provider
 with smrt-config's `tryResolveConfiguredAIProvider` (config `ai` block, `SMRT_AI_*`, then a
-provider key variable such as `OPENAI_API_KEY`), then builds it with `getAI` from
-`@happyvertical/ai`. Calls are `chat([system, ...messages], { temperature: 0 })`. With no provider
+provider key variable such as `OPENAI_API_KEY`), passes it through core's
+`resolveInferenceTarget()` (a registered binding or the app `inference` block wins; #4756, usage
+recorder attached), then builds it with `getAI` from `@happyvertical/ai`. Calls are `chat([system, ...messages], { temperature: 0 })`. With no provider
 the config is served in `browser` mode and the terminal says so.
 
 ## Finding the planner
