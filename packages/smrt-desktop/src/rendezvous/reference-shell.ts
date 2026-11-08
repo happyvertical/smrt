@@ -202,6 +202,8 @@ export interface ReferenceShellOptions<
   readonly codec?: ControlCodec<Req, Res>;
   readonly fs?: DesktopFs;
   readonly currentUid?: number;
+  /** Passed to the control server (time a peer has to deliver its request). */
+  readonly requestReadTimeoutMs?: number;
 }
 
 export interface ReferenceShell<
@@ -282,6 +284,9 @@ export async function startReferenceShell<
     {
       ...(options.codec === undefined ? {} : { codec: options.codec }),
       ...('currentUid' in options ? { currentUid: options.currentUid } : {}),
+      ...(options.requestReadTimeoutMs === undefined
+        ? {}
+        : { requestReadTimeoutMs: options.requestReadTimeoutMs }),
     },
   );
   const unsubscribe = supervisor.onChange(() => {

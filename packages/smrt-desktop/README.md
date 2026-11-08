@@ -338,8 +338,17 @@ shipped with the plugin). The function:
 Options `platform`, `env`, `homeDirectory`, `currentUid` and `fs` are test
 seams. A consumer that spawns anything from the result should still re-run its
 own checks right before the spawn: the walk narrows but cannot close the window
-between verification and use, only the owner (or root) can alter a path it
-accepted.
+between verification and use.
+
+Residual risk: the ownership and write-permission checks run on `installRoot`
+and everything below it. The directories above `installRoot` are only checked
+for symlinks, not for ownership or write permission, and the usual macOS
+location is not owner-only (`/Applications` is `root:admin`, mode 0775). A
+member of the `admin` group, or any process running as one, can therefore
+rename or replace the install between locate and spawn. The walk does not
+defend against a writer of an ancestor directory. A direct-parent
+"group-writable and not sticky" rejection was considered and not added,
+because it would reject the default `/Applications` install on a normal Mac.
 
 ### Private state directory
 
@@ -475,6 +484,11 @@ its peer's uid or SID, and a client cannot learn who owns the listening end. So
 - the reference server refuses to listen unless the socket's directory is a
   real directory owned by the user with mode 0700, never replaces an existing
   path, and chmods the socket 0600, so only the same OS user can connect;
+- a same-user process is not excluded by any of this (see "Same-user
+  processes" in the residual risks): it can read the 0600 `instance.json`
+  (nonce, origin and endpoint), reach the owner-only channel and speak the
+  protocol. The nonce proves the *server* is the recorded instance; it does
+  not authenticate the *caller*;
 - the client, before connecting, requires the recorded socket's directory to
   be a real 0700 directory owned by the user and the socket itself to be a
   socket (not a symlink) owned by the user with no group or other permission
@@ -796,7 +810,9 @@ The bridge side (`--credential-fd` in app-cli) is out of scope here: it needs
 only `parseHandoffFrame`/`HandoffFrameDecoder` (or the 30 lines duplicated),
 and when `--credential-fd` is present it must ignore `<PREFIX>_TOKEN`,
 `<PREFIX>_SERVER_URL` and config files, pin the origin from the frame and keep
-refusing redirects.
+refusing redirects. It must also mark fd 3 close-on-exec (`FD_CLOEXEC`) as soon
+as it has read the frame, or never spawn child processes while fd 3 is open;
+otherwise a child inherits the descriptor and the unread or refresh channel.
 
 #### SecretString rules
 
@@ -838,14 +854,14 @@ so; those parts are not claimed closed by this package.
 
 | # | Threat | Mitigation | Closing test(s) |
 | --- | --- | --- | --- |
-| T1 | Same-user malware reads the keychain item | The shell stores the item in the OS secret store (macOS: created by the signed shell, `WhenUnlockedThisDeviceOnly`, non-synchronizable; Windows/Linux have no same-user boundary: residual). Scopes and lifetime are bounded by the owner. Custody touches only `mcp-credential.<uuid>` names. | `credentials/custody.test.ts`: `T1: custody only touches mcp-credential.<uuid> item names`. Item attributes are asserted in the shell's macOS test (follow-up). |
+| T1 | Same-user malware reads the keychain item | The shell stores the item in the OS secret store (macOS: created by the signed shell, `WhenUnlockedThisDeviceOnly`, non-synchronizable). This does not stop a same-user process: it can read `instance.json`, connect to the owner-only channel and call `acquire-credential`, and the shell itself reads the keychain on its behalf, so no keychain ACL prompt applies. Windows/Linux likewise have no same-user boundary. Residual (see "Same-user processes"); revoke/rotate is the recovery. Scopes and lifetime are bounded by the owner. Custody touches only `mcp-credential.<uuid>` names. | `credentials/custody.test.ts`: `T1: custody only touches mcp-credential.<uuid> item names`. Item attributes are asserted in the shell's macOS test (follow-up). |
 | T2 | Another OS user | Private directory 0700, files 0600, readers validate `fstat` (owner, mode); control-channel peer uid/SID check and pipe DACL are the shell's and contract (b)'s. | `credentials/slot-record.test.ts`: `T2: readSlotRecord rejects a foreign-owned, group-readable or symlinked record`. Peer-credential rejection is a Rust test (follow-up). |
-| T3 | Token in argv / `ps` | The bearer is never an argument (`--credential-fd=3` only); the spawn helper refuses a command, argument or cwd that contains it. | `credentials/bridge-spawn.test.ts`: `T3: argv and env passed to the spawner never contain the token`; `T3/T4: refuses to spawn when the token is in argv, env or command`; `T3: ps shows no token in the child command line` (real child). |
+| T3 | Token in argv / `ps` | The bearer is never an argument (`--credential-fd=3` only); the spawn helper refuses a command, argument or cwd that contains it. | `credentials/bridge-spawn.test.ts`: `T3: argv and env passed to the spawner never contain the token`; `T3/T4: refuses to spawn when the token is in argv, env, command or cwd`; `T3: ps shows no token in the child command line` (real child). |
 | T4 | Token in the environment (`/proc/<pid>/environ`) | The child environment is exactly what the launcher passes, never inherited; the bridge in fd mode ignores `<PREFIX>_TOKEN`. | `credentials/bridge-spawn.test.ts`: `T4: the child environment as the OS reports it holds no token` (`/proc/<pid>/environ` on Linux, `ps eww` on macOS, real child with a real fd 3 pipe); `delivers the initial frame over fd 3 and keeps the token out of argv and env`; `credentials/end-to-end.test.ts`: `hands the minted token from the shell to the bridge over fd 3 and nowhere else`. |
 | T5 | Crash dumps and logs | The token lives in a `SecretString` until the three reveal sites; diagnostics are fixed text; buffers are zeroed. | `credentials/leak.test.ts`: `T5: SecretString is not serialized by JSON, inspect, String, template, structuredClone or console`; `T5: errors built with secrets in their context do not retain them`; `T5: every credential error message is fixed, value-free text`; the describe `T5/T11: every exported parser and handler, fed token-bearing invalid input`; `reveal() is called only by custody serialization, the wire encoders and the secret guard`. |
 | T6 | Webview XSS reaching the IPC command | No command returns a token; the helper never stores, logs or builds URLs from the body; the shell checks the webview origin equals the current ready origin, the slot id, and the body (follow-up). XSS in this origin already holds the session cookie and can mint itself, so the IPC path grants nothing new. | `webview/webview.test.ts`: `T6: touches no storage, cookie, console, URL or location API`; `T6: has no path to those APIs in its source or its import closure`; `mints with a same-origin POST and passes the RAW response text only to the put command`. Origin/slot/body rejection is a Rust test (follow-up). |
 | T7 | Replay after rotation | Server: only the latest write verifies (`app-runtime/src/local-mcp-tokens.test.ts`: `mints, rotates, expires and revokes a private owner slot without colliding with operator tokens`). Custody replaces atomically and the handler reads it on every call; the pipe delivers the new bearer on refresh. | `credentials/control-handler.test.ts`: `T7: after rotation the handler returns only the latest bearer`; `credentials/bridge-spawn.test.ts`: `T7: a refresh request after a simulated 401 delivers the rotated token`; `credentials/custody.test.ts`: `replaces atomically: a later put wins and old bytes are gone`; over a real socket, `credentials/end-to-end.test.ts`: `yields only the latest token after a rotation`. |
-| T8 | Confused deputy via the control channel | `acquire-credential` is bound to the current `instanceNonce` and `origin` and refuses before touching custody; one request per connection and the peer check are contract (b)'s and the shell's. | `credentials/control-handler.test.ts`: `T8: wrong nonce or origin yields instance_mismatch without touching custody`; over a real socket, `credentials/end-to-end.test.ts`: `answers a wrong instance nonce or origin with instance_mismatch`. Foreign peer is a Rust test (follow-up). |
+| T8 | Confused deputy via the control channel | `acquire-credential` is bound to the current `instanceNonce` and `origin` and refuses before touching custody. This defeats a stale or wrong-instance caller, not a same-user one: the nonce and origin are readable by any process of the same OS user (0600 `instance.json`), so they do not bound that caller. One request per connection is enforced; the peer check is the shell's, and today it is uid/SID only (see "Same-user processes"). | `credentials/control-handler.test.ts`: `T8: wrong nonce or origin yields instance_mismatch without touching custody`; over a real socket, `credentials/end-to-end.test.ts`: `answers a wrong instance nonce or origin with instance_mismatch`. Foreign peer is a Rust test (follow-up). |
 | T9 | TOCTOU on state files | Readers open `O_NOFOLLOW` and validate the descriptor; writers use temp (`O_EXCL`) plus rename; clients never repair or delete. | `credentials/slot-record.test.ts`: `T9: a symlink swapped in for the record is never followed or repaired`; `persists the slot before the first request can be made` (write order); the stage-1 `internal/private-file.test.ts`. |
 | T10 | Windows named-pipe squatting | Random pipe name published in the private directory, `FILE_FLAG_FIRST_PIPE_INSTANCE`, DACL: contract (b) and the shell. This contract only guarantees that the provider opens no endpoint of its own. | `credentials/provider.test.ts`: `T10: talks only through the injected send and never opens an endpoint itself`. Name grammar belongs to contract (b)'s tests; the "second `CreateNamedPipe` fails" test is a Windows Rust test (follow-up). Residual: a Node client cannot query the server pid/SID. |
 | T11 | Token in error messages | Code-only errors; parsers never echo input; the webview helper replaces every `fetch`/`invoke` rejection with a fixed code and does not chain it. | `credentials/mint-response.test.ts`: `T11: never echoes the body or the token in any failure`; `webview/webview.test.ts`: `T11: a token-bearing malformed body yields a fixed-code error without the token`; `credentials/leak.test.ts`: `the webview helper maps token-bearing failures to fixed codes` and the `T5/T11` describe. |
@@ -864,11 +880,23 @@ so; those parts are not claimed closed by this package.
   token with the session cookie. The stronger option (design D1-B: the shell
   mints natively with the webview cookie so the token never enters JS) is not
   implemented.
-- **Same-user processes.** On macOS the keychain ACL prompts for other
-  binaries; on Windows and Linux any same-user process can read the OS store
-  entry, and `ptrace`/`task_for_pid` (restricted by Yama and the hardened
-  runtime, not eliminated) can read the launcher or bridge memory. The fd 3
-  pipe removes the bearer from `argv`, `environ` and children, not from memory.
+- **Same-user processes.** Any process of the same OS user can read the 0600
+  `instance.json` (instance nonce, origin, control endpoint), connect to the
+  owner-only control channel and call `acquire-credential`. The shell reads the
+  keychain itself, so the macOS keychain ACL never prompts for that caller, and
+  the nonce is not a secret against it. On Windows and Linux any same-user
+  process can additionally read the OS store entry directly, and
+  `ptrace`/`task_for_pid` (restricted by Yama and the hardened runtime, not
+  eliminated) can read the launcher or bridge memory. The recovery is
+  revoke/rotate of the slot (a rotation invalidates a token a stranger
+  obtained). Follow-up (optional, Rust shell): verify the peer's code identity
+  before reading custody (macOS audit token plus `SecCode` validation against
+  the bundled binaries; on Windows the peer image path), which would let the
+  shell refuse unrelated same-user callers. Until then this is a stated
+  residual risk. The fd 3 pipe removes the bearer from `argv` and `environ`;
+  it removes it from child processes only if the bridge marks fd 3
+  close-on-exec (or never spawns children while it is open). It never removes
+  it from memory.
 - **Memory.** JavaScript strings cannot be zeroed; `SecretString` limits
   accidental serialization, not memory inspection or a heap snapshot.
 - **The control channel** relies on peer-uid/SID checks in the shell. The

@@ -218,6 +218,72 @@ posixOnly('control transport over a unix socket', () => {
     expect(calls).toBe(1);
   });
 
+  it('does not drop a long poll that outlives the request read timeout', async () => {
+    await serve(
+      () =>
+        new Promise<typeof ready>((resolve) =>
+          setTimeout(() => resolve(ready), 300),
+        ),
+      { requestReadTimeoutMs: 80 },
+    );
+    const answer = await sendControlRequest(
+      endpoint,
+      { v: 1, op: 'status' },
+      { timeoutMs: 2000 },
+    );
+    expect(answer).toEqual(ready);
+  });
+
+  it('runs the handler once even when trailing bytes arrive in separate writes', async () => {
+    let calls = 0;
+    await serve(
+      async () => {
+        calls++;
+        await new Promise((resolve) => setTimeout(resolve, 150));
+        return ready;
+      },
+      { requestReadTimeoutMs: 80 },
+    );
+    const text = await new Promise<string>((resolve, reject) => {
+      const socket = createConnection({ path: endpoint.path });
+      const chunks: Buffer[] = [];
+      socket.on('data', (c: Buffer) => chunks.push(c));
+      socket.on('error', reject);
+      socket.on('close', () => resolve(Buffer.concat(chunks).toString()));
+      socket.on('connect', () => {
+        socket.write('{"v":1,"op":"status"}\n');
+        let sent = 0;
+        const timer = setInterval(() => {
+          if (++sent > 20 || socket.destroyed) return clearInterval(timer);
+          socket.write('x');
+        }, 5);
+      });
+    });
+    expect(text.split('\n').filter(Boolean)).toHaveLength(1);
+    expect(calls).toBe(1);
+  });
+
+  it('still caps a request line that never ends', async () => {
+    let calls = 0;
+    await serve(() => {
+      calls++;
+      return ready;
+    });
+    const text = await new Promise<string>((resolve, reject) => {
+      const socket = createConnection({ path: endpoint.path });
+      const chunks: Buffer[] = [];
+      socket.on('data', (c: Buffer) => chunks.push(c));
+      socket.on('error', () => undefined);
+      socket.on('close', () => resolve(Buffer.concat(chunks).toString()));
+      socket.on('connect', () => {
+        for (let i = 0; i < 40; i++) socket.write(Buffer.alloc(512, 0x78));
+      });
+      setTimeout(() => reject(new Error('not closed')), 3000);
+    });
+    expect(JSON.parse(text)).toEqual({ v: 1, ok: false, code: 'too_large' });
+    expect(calls).toBe(0);
+  });
+
   it('answers internal, without the thrown text, when the handler throws', async () => {
     await serve(() => {
       throw new Error(`boom ${SECRET}`);

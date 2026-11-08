@@ -341,7 +341,7 @@ export async function serveControlChannel<
       }
     };
 
-    socket.on('data', (chunk: Buffer) => {
+    const onData = (chunk: Buffer) => {
       if (answered || buffered.length > MAX_CONTROL_MESSAGE_BYTES + 1) return;
       buffered = Buffer.concat([buffered, chunk]);
       const newline = buffered.indexOf(0x0a);
@@ -351,6 +351,12 @@ export async function serveControlChannel<
         }
         return;
       }
+      // A complete request line has arrived: the read window is over. The
+      // timer only guards the delivery of the line, never the handler, which
+      // may legitimately run a long poll (`ensure-ready`). Dispatch happens
+      // exactly once; later bytes are not buffered or re-parsed.
+      clearTimeout(readTimer);
+      socket.off('data', onData);
       let line: string;
       try {
         line = new TextDecoder('utf-8', { fatal: true }).decode(
@@ -360,8 +366,10 @@ export async function serveControlChannel<
         respond(errorResponse('bad_request'));
         return;
       }
+      buffered = Buffer.alloc(0);
       void serve(line);
-    });
+    };
+    socket.on('data', onData);
   });
 
   await new Promise<void>((resolve, reject) => {

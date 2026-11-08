@@ -63,6 +63,11 @@ export const nodeFs: DesktopFs = {
 /** `open` flags. `O_NOFOLLOW` is absent on Windows, where it is a no-op. */
 export const O_RDONLY = constants.O_RDONLY;
 export const O_NOFOLLOW = constants.O_NOFOLLOW ?? 0;
+/**
+ * Keeps `open` from blocking on a FIFO planted at a record path. It has no
+ * effect on regular files; the post-open `fstat` still rejects non-files.
+ */
+export const O_NONBLOCK = constants.O_NONBLOCK ?? 0;
 export const O_WRONLY_CREATE_EXCL =
   constants.O_WRONLY |
   constants.O_CREAT |

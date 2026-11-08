@@ -584,6 +584,9 @@ export function createFileRendezvous(
 
       let started = false;
       let waiting = false;
+      // Set once a nonce-verified `starting` has been seen in this call. From
+      // then on a dropped long poll is not evidence that nobody serves.
+      let sawLive = false;
       let delay = pollIntervalMs;
       for (;;) {
         throwIfAborted(signal);
@@ -603,6 +606,7 @@ export function createFileRendezvous(
             return toResult(seen) as EnsureReadyResult;
           case 'starting': {
             waiting = true;
+            sawLive = true;
             // A server that answers `starting` at once must not be spun on.
             const elapsed = clock.now() - asked;
             if (elapsed < pollIntervalMs) {
@@ -617,6 +621,19 @@ export function createFileRendezvous(
             break;
           }
           default: {
+            if (waiting && sawLive) {
+              // The long poll was dropped or failed after a live instance was
+              // verified: look again with `status` (bounded by the deadline
+              // and the abort signal) before concluding anything. Only a
+              // status that also finds no listener may lead to a launch,
+              // never a second shell while the first may still be starting.
+              waiting = false;
+              await clock.sleep(
+                Math.min(pollIntervalMs, Math.max(0, deadline - clock.now())),
+                signal,
+              );
+              break;
+            }
             waiting = false;
             if (!started) {
               if (!start) return frozen({ state: 'not_running' });
