@@ -132,7 +132,8 @@ await contract.do('Summarize this contract', { tier: 'best' }); // unchanged cal
   The chosen label at `minConfidence` or above skips the remaining stage,
   recorded `skipped`; the answer is then seat 0's output (`pair`: the first
   live one) or the draft. No decision client (`unavailable`) or a decision
-  error runs the stage. Its usage row has `seat: 'gate'`.
+  error runs the stage. Its usage row has `seat: 'gate'`, a reserved seat
+  name.
 - **Failure semantics.** A dead seat never aborts a `pair`: the merge seat
   is told which seat failed and why (class and message). A dead merge or
   handoff answer seat falls back to the first live output, recorded

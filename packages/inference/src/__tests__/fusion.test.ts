@@ -660,6 +660,16 @@ describe('fusion definitions', () => {
     ]);
   });
 
+  it('reserves the gate seat name', () => {
+    expect(() =>
+      defineFusion({
+        key: 'g',
+        mode: 'single',
+        seats: [{ name: 'gate', prompt: 'p.draft', target: 'good' }],
+      }),
+    ).toThrow(/fusions\.g\.seats\[0\]\.name "gate" is reserved/);
+  });
+
   it('registers code fusions; config wins over a registered one', async () => {
     defineFusion({ key: 'review', ...HANDOFF });
     expect(() => defineFusion({ key: 'review', ...HANDOFF })).not.toThrow();
