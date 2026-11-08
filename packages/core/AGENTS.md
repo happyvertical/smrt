@@ -31,7 +31,7 @@ and repository rules.
 | `src/recipe.ts`, `../scanner/src/recipes.ts` | `SmrtRecipe`: declared user-facing units (models, nav, `requires`, curation `options`) collected into manifest and knowledge `recipes` (#3590) | [agents/recipes.md](agents/recipes.md) |
 | `src/cookbook/` | Cookbook v1 document: browser-safe validate/migrate, JSON Schema (`./cookbook`, `./cookbook/v1.schema.json`; #3748) | [agents/cookbook.md](agents/cookbook.md) |
 | `src/cookbook/engine/` | Headless cookbook command engine: typed commands, idempotent retries, atomic batches, receipts, tool schemas (`./cookbook/engine`; #3753) | [agents/cookbook-engine.md](agents/cookbook-engine.md) |
-| `src/inference.ts`, `getAiClient(tier?)` | Inference tiers (`cheap`…`best`, `auto`), `inference` config, `setInferenceResolver()` seam, per-tier clients and usage tags (#4750) | [agents/inference.md](agents/inference.md) |
+| `src/inference.ts`, `getAiClient(tier?)` | Inference tiers (`cheap`…`best`, `auto`), `inference` config, `setInferenceResolver()` / `setInferenceExecutor()` seams, per-tier clients and usage tags (#4750, #4752) | [agents/inference.md](agents/inference.md) |
 | `src/browser.ts`, `src/host.ts`, `src/host.browser.ts` | Browser entry that builds and evaluates without Node-only modules: host seam, `package.json#browser` swaps, `pnpm test:browser` (#2838) | [agents/browser-entry.md](agents/browser-entry.md) |
 
 ## Cross-module invariants

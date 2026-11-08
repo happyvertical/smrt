@@ -56,11 +56,15 @@ import {
   getInferenceConfig as getProcessInferenceConfig,
   type InferenceConfig,
   type InferenceLatency,
+  type InferenceModelClient,
   type InferenceRequest,
   type InferenceResolution,
   type InferenceResolver,
   type InferenceTarget,
+  type InferenceTier,
   type InferenceTierRequest,
+  type InferenceUsageRecord,
+  inferenceExecutorFor,
   mergeInferenceConfigs,
   resolveInference as resolveInferenceBinding,
 } from './inference.js';
@@ -940,6 +944,11 @@ export class SmrtClass {
    * `(provider, model, baseUrl)`; a tier with no binding (the unconfigured
    * default) returns the configured client. Pass `options.resolution` to reuse
    * a resolution the caller already made, so the resolver runs once per call.
+   *
+   * A chain target (`alias`, `candidates`; #4752) returns the registered
+   * executor's client, which walks the chain per call; `minimumTier` and
+   * `allowPartial` reach it. Without a registered executor a chain target
+   * throws rather than falling back to the configured client.
    */
   protected async getAiClient(
     tier?: InferenceTierRequest,
@@ -947,18 +956,37 @@ export class SmrtClass {
       latency?: InferenceLatency;
       promptKey?: string;
       resolution?: InferenceResolution;
+      minimumTier?: InferenceTier;
+      allowPartial?: boolean;
     } = {},
   ): Promise<AIClient> {
     await this.ensureRuntimeServicesInitialized();
 
     if (tier !== undefined) {
+      const request: InferenceRequest = {
+        tier,
+        ...(options.latency ? { latency: options.latency } : {}),
+        ...(options.promptKey ? { promptKey: options.promptKey } : {}),
+      };
       const resolution =
-        options.resolution ??
-        (await this.resolveInferenceTier({
-          tier,
-          latency: options.latency,
-          promptKey: options.promptKey,
-        }));
+        options.resolution ?? (await this.resolveInferenceTier(request));
+      const executor = inferenceExecutorFor(resolution.target);
+      if (executor) {
+        return executor.createClient({
+          request,
+          resolution,
+          config: this.getInferenceConfig(),
+          ...(options.minimumTier ? { minimumTier: options.minimumTier } : {}),
+          ...(options.allowPartial ? { allowPartial: true } : {}),
+          clientFor: async (target) =>
+            (await this.getAiClientForTarget(
+              target,
+            )) as unknown as InferenceModelClient,
+          resolveTier: (next) =>
+            this.resolveInferenceTier({ ...request, tier: next }),
+          recordUsage: (record) => this.recordInferenceUsage(record),
+        }) as unknown as AIClient;
+      }
       return this.getAiClientForTarget(resolution.target);
     }
 
@@ -1024,6 +1052,11 @@ export class SmrtClass {
   private async getAiClientForTarget(
     target: InferenceTarget,
   ): Promise<AIClient> {
+    if (inferenceExecutorFor(target)) {
+      throw new Error(
+        `${this._className}: a chain inference target cannot be bound to one client; run it through getAiClient(tier).`,
+      );
+    }
     const identity: Record<string, string> = {};
     for (const key of ['provider', 'model', 'baseUrl', 'apiKey'] as const) {
       const value = target[key];
@@ -1143,6 +1176,45 @@ export class SmrtClass {
       }
     });
     return pending;
+  }
+
+  /**
+   * Record a zero-token usage row for an inference call that never answered
+   * (#4752), through the same handlers SDK usage events reach. The executor
+   * calls this once per exhausted call; it is not a second writer.
+   */
+  private async recordInferenceUsage(
+    record: InferenceUsageRecord,
+  ): Promise<void> {
+    const usageConfig =
+      this._aiUsageResolvedConfig ?? this.mergeAiUsageConfig(config.toJSON());
+    await this.handleAiUsageCallback(
+      {
+        // The configured client's identity fills an absent provider/model;
+        // 'unknown' keeps the row when there is none, so an exhausted call
+        // is never indistinguishable from an unlogged one.
+        provider:
+          record.provider ??
+          firstString(
+            this._aiClientConfig?.provider,
+            this._aiClientConfig?.type,
+          ) ??
+          'unknown',
+        model:
+          record.model ??
+          firstString(
+            this._aiClientConfig?.model,
+            this._aiClientConfig?.defaultModel,
+          ) ??
+          'unknown',
+        operation: record.operation,
+        usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+        duration: record.duration ?? 0,
+        tags: record.tags,
+      },
+      this._aiClientConfig ?? {},
+      usageConfig,
+    );
   }
 
   /**
