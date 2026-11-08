@@ -993,6 +993,11 @@ export class SmrtClass {
         owner: this._className,
       });
     }
+    // An explicit stored mode (byo/local/hosted) is the principal's choice of
+    // where inference runs: untiered calls take it through `auto` rather than
+    // the configured client, so a `local` or keyless `byo` choice never runs
+    // on the app's provider.
+    if (modeState) return this.getAiClient('auto', options);
     return this.requireConfiguredAi();
   }
 
@@ -1012,26 +1017,45 @@ export class SmrtClass {
     return this._ai;
   }
 
+  /**
+   * `null` when this instance's AI client serves more than one user (a
+   * long-lived agent): resolutions and mode checks then skip every user's
+   * stored binding and mode (#4756, #4757). Default `undefined`: the
+   * ambient principal's user applies.
+   */
+  protected inferenceUserScope(): null | undefined {
+    return undefined;
+  }
+
   /** This instance's resolver (instance `inference` option) and tenant. */
   private inferenceRequestScope(): {
     resolver: InferenceResolver | undefined;
     tenantId: string | null | undefined;
+    userId: null | undefined;
   } {
     const instance = this.options.inference;
     const resolver =
       instance && typeof (instance as InferenceResolver).resolve === 'function'
         ? (instance as InferenceResolver)
         : undefined;
-    return { resolver, tenantId: this.currentTenantId() };
+    return {
+      resolver,
+      tenantId: this.currentTenantId(),
+      userId: this.inferenceUserScope(),
+    };
   }
 
-  /** The stored mode for an untiered call (registered resolver's `mode()`). */
-  private async resolveInferenceModeState() {
-    const { resolver, tenantId } = this.inferenceRequestScope();
+  /**
+   * The stored mode for an untiered call (registered resolver's `mode()`).
+   * A non-`off` result means untiered calls route through `auto`.
+   */
+  protected async resolveInferenceModeState() {
+    const { resolver, tenantId, userId } = this.inferenceRequestScope();
     return resolveInferenceMode(
       {
         className: this._className,
         ...(tenantId !== undefined ? { tenantId } : {}),
+        ...(userId === null ? { userId: null } : {}),
       },
       resolver ? { resolver } : {},
     );
@@ -1054,13 +1078,17 @@ export class SmrtClass {
       if (state?.unavailable) {
         return inferenceUnavailableStatus(state.unavailable, state.mode);
       }
+      if (state) {
+        // An explicit mode routes untiered calls through `auto`.
+        const { tier: _tier, ...routed } = await this.getInferenceStatus({
+          tier: 'auto',
+        });
+        return routed;
+      }
       if (!this._ai) return inferenceUnavailableStatus('unconfigured');
       return {
         available: true,
-        mode:
-          state && state.mode !== 'off'
-            ? state.mode
-            : inferenceModeForTarget(undefined, configured),
+        mode: inferenceModeForTarget(undefined, configured),
       };
     }
     const resolution = await this.resolveInferenceTier({ tier: options.tier });
@@ -1098,7 +1126,8 @@ export class SmrtClass {
    * Pick the generation client for an AI operation and strip the tier keys.
    *
    * Without `tier` this is exactly `getAiClient()` and the options pass
-   * through untouched. With `tier` the binding is resolved once; the target's
+   * through untouched, unless an explicit stored mode (#4757) routes the
+   * call through `auto`. With `tier` the binding is resolved once; the target's
    * `params` and `model` become per-call defaults under the caller's options,
    * and `tierRequested` / `tierResolved` are merged over the caller's
    * `usageTags`. Subclasses that call `ai.message()` themselves (prompt
@@ -1125,10 +1154,24 @@ export class SmrtClass {
       'tier' | 'latency' | 'promptKey' | 'minimumTier' | 'allowPartial'
     >;
   }> {
-    const { tier, latency, promptKey, minimumTier, allowPartial, ...rest } =
-      options;
+    const {
+      tier: requestedTier,
+      latency,
+      promptKey,
+      minimumTier,
+      allowPartial,
+      ...rest
+    } = options;
+    let tier = requestedTier;
     if (tier === undefined) {
-      return { ai: await this.getAiClient(), aiOptions: rest };
+      // An explicit stored mode (#4757) routes untiered calls through `auto`
+      // so the chosen binding answers with its model, params and tags; an
+      // unavailable mode throws from getAiClient().
+      const modeState = await this.resolveInferenceModeState();
+      if (!modeState || modeState.unavailable) {
+        return { ai: await this.getAiClient(), aiOptions: rest };
+      }
+      tier = 'auto';
     }
     const resolution = await this.resolveInferenceTier({
       tier,
@@ -1190,11 +1233,12 @@ export class SmrtClass {
   protected async resolveInferenceTier(
     request: InferenceRequest,
   ): Promise<InferenceResolution> {
-    const { resolver, tenantId } = this.inferenceRequestScope();
+    const { resolver, tenantId, userId } = this.inferenceRequestScope();
     return resolveInferenceBinding(
       {
         className: this._className,
         ...(tenantId !== undefined ? { tenantId } : {}),
+        ...(userId === null ? { userId: null } : {}),
         ...request,
       },
       { resolver, config: this.getInferenceConfig() },

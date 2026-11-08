@@ -274,6 +274,114 @@ describe('#4757 typed AI-unavailable state', () => {
       expect(error.tier).toBe('good');
     });
 
+    it('routes untiered calls of an explicit mode through auto, never the configured client', async () => {
+      // Explicit `byo` with no key: tiered and untiered calls are both
+      // unconfigured, and the probe says so (review round 1).
+      let bound = false;
+      const requests: unknown[] = [];
+      setInferenceResolver({
+        resolve(request) {
+          requests.push(request);
+          const tierResolved = request.tier === 'auto' ? 'good' : request.tier;
+          return bound
+            ? {
+                tierResolved,
+                via: 'resolver',
+                mode: 'byo',
+                target: {
+                  provider: 'openai',
+                  baseUrl: 'https://byo.example/v1',
+                  apiKey: 'sk-user',
+                  model: 'user-model',
+                  source: 'byo',
+                },
+              }
+            : {
+                tierResolved,
+                target: {},
+                via: 'resolver',
+                mode: 'off',
+                unavailable: 'unconfigured',
+              };
+        },
+        mode: () => ({ mode: 'byo' }),
+      });
+      const note = new Issue4757Note({ ai: BASE_AI } as never);
+      await expectUnavailable(note.do('hi'), 'unconfigured');
+      await expectUnavailable(note.describe(), 'unconfigured');
+      expect(await note.getInferenceStatus()).toEqual({
+        available: false,
+        mode: 'off',
+        reason: 'unconfigured',
+      });
+      expect(await getInferenceStatus({ configured: BASE_AI })).toEqual({
+        available: false,
+        mode: 'off',
+        reason: 'unconfigured',
+      });
+
+      // With the key stored, untiered calls run on the chosen binding with
+      // its model and tier tags, not on the configured client.
+      bound = true;
+      await expect(note.do('hi')).resolves.toBe('{"result": true}');
+      const built = getAIMock.mock.calls.map(
+        ([options]) => (options as Record<string, unknown>).baseUrl,
+      );
+      expect(built).toContain('https://byo.example/v1');
+      const byoClient = await getAIMock.mock.results.at(-1)?.value;
+      expect(byoClient.message).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          model: 'user-model',
+          usageTags: expect.objectContaining({
+            tierRequested: 'auto',
+            source: 'byo',
+          }),
+        }),
+      );
+      expect(JSON.stringify(byoClient.message.mock.calls)).not.toContain(
+        '"tier"',
+      );
+      expect(await note.getInferenceStatus()).toEqual({
+        available: true,
+        mode: 'byo',
+      });
+      expect(requests.length).toBeGreaterThan(0);
+    });
+
+    it('a shared-client scope sends userId null to mode() and resolve()', async () => {
+      class SharedNote extends Issue4757Note {
+        protected override inferenceUserScope(): null {
+          return null;
+        }
+      }
+      const seen: unknown[] = [];
+      setInferenceResolver({
+        resolve(request) {
+          seen.push(['resolve', request.userId]);
+          return undefined;
+        },
+        mode(request) {
+          seen.push(['mode', request.userId]);
+          return request.userId === null
+            ? undefined
+            : { mode: 'off', unavailable: 'off' };
+        },
+      });
+      const note = new SharedNote({ ai: BASE_AI } as never);
+      await expect(note.do('hi')).resolves.toBe('{"result": true}');
+      await expect(note.do('hi', { tier: 'good' })).resolves.toBe(
+        '{"result": true}',
+      );
+      expect(seen).toContainEqual(['mode', null]);
+      expect(seen).toContainEqual(['resolve', null]);
+      // The default scope still reads the ambient user's mode.
+      await expectUnavailable(
+        new Issue4757Note({ ai: BASE_AI } as never).do('hi'),
+        'off',
+      );
+    });
+
     it('leaves untiered calls alone for resolvers without mode()', async () => {
       setInferenceResolver({ resolve: () => undefined });
       expect(await resolveInferenceMode({})).toBeUndefined();

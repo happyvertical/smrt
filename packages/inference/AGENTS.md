@@ -81,6 +81,8 @@ order), `fallback`, the app `inference` block, then the configured client
   `byo` / `local` / `hosted` bind only a stored binding of that `source`
   (user, then tenant), else `unavailable: 'unconfigured'`, never app config.
   No mode: the order above, reporting the binding's source as `mode`.
+  `mode()` returns an explicit mode, which core uses to route untiered calls
+  through `auto` (so they bind the same way).
   `setMode(level, mode | null)` keeps the binding (deletes a config left
   empty) and invalidates; `write()` replaces the whole config, mode
   included. `resolveBindings()` adds `mode: { mode, layer }`. The #4752

@@ -5,7 +5,7 @@ description: "Chat rooms, DMs, threads, and agent conversations for the SMRT fra
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-08T19:04:56Z"
+  at: "2026-11-08T22:59:11Z"
 audience: "internal"
 evidence_level: "source-inspected"
 source_revision: "sha256:78fa8f078b95f9a5979d9848ebb14bd46289ef2fa788f178c56203fa8978b5ea"

@@ -93,8 +93,9 @@ export function configuredAiProvider():
 /**
  * Whether an AI call would run, and why not (#4757). With `tier` the binding
  * is resolved through the registered resolver exactly as a tier call would;
- * without, the resolver's optional `mode()` and the configured client
- * decide. Never calls a model; records nothing.
+ * without, the resolver's optional `mode()` decides first (`off` is
+ * unavailable, an explicit mode is probed as `auto`), then the configured
+ * client. Never calls a model; records nothing.
  */
 export async function getInferenceStatus(
   options: InferenceStatusOptions = {},
@@ -114,13 +115,18 @@ export async function getInferenceStatus(
     if (state?.unavailable) {
       return inferenceUnavailableStatus(state.unavailable, state.mode);
     }
+    if (state) {
+      // An explicit stored mode routes untiered calls through `auto`.
+      const { tier: _tier, ...routed } = await getInferenceStatus({
+        ...options,
+        tier: 'auto',
+      });
+      return routed;
+    }
     if (!configured) return inferenceUnavailableStatus('unconfigured');
     return {
       available: true,
-      mode:
-        state && state.mode !== 'off'
-          ? state.mode
-          : inferenceModeForTarget(undefined, configured),
+      mode: inferenceModeForTarget(undefined, configured),
     };
   }
   const resolution = await resolveInference(

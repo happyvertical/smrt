@@ -1424,6 +1424,15 @@ export abstract class Agent extends SmrtObject {
   }
 
   /**
+   * An agent's AI client outlives one user's request, so its tier calls and
+   * mode checks use only the tenant's stored binding and mode, never the
+   * ambient user's (#4756, #4757).
+   */
+  protected override inferenceUserScope(): null {
+    return null;
+  }
+
+  /**
    * The outcome of the last {@link execute} on this instance: `completed`,
    * `skipped` (AI unavailable, with `reason` and `mode`, #4757) or `error`.
    * `null` before the first run. In memory only.
