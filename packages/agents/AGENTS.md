@@ -19,7 +19,8 @@ Agent framework for autonomous actors with inter-agent messaging, interest-based
 - AI unavailable (`AI_UNAVAILABLE`, #4757): `execute()` ends the run
   `skipped` with `runRecord` `{ reason, mode }`, never rethrown or retried;
   interests stop at it; learning neither reinforces nor decays. Direct
-  `run()` (jobs) throws it with `retryable: false`.
+  `run()` (jobs) throws it with `retryable: false`. Agents read only the
+  tenant's mode and binding (`inferenceUserScope()` is `null`).
 - Process signal handling is opt-in via `manageProcessSignals: true` and is intended for single-agent processes
 
 ## DispatchBus — Inter-Agent Communication

@@ -268,10 +268,12 @@ export interface InferenceResolver {
   ): InferenceResolution | undefined | Promise<InferenceResolution | undefined>;
   /**
    * Optional (#4757): the principal's stored inference mode for calls that
-   * name no tier. Untiered calls never consult {@link resolve} (they keep
-   * the configured client); they only ask this, so a principal whose mode
-   * is `off` gets `InferenceUnavailableError` there too. Return `undefined`
-   * when no mode is stored. Resolvers without it change nothing.
+   * name no tier. Untiered calls ask only this: `undefined` (no stored mode)
+   * keeps the configured client without consulting {@link resolve};
+   * `unavailable` throws `InferenceUnavailableError`; any other mode is the
+   * principal's explicit choice and routes the call through `auto`, so it
+   * runs on the chosen binding or reports `unconfigured`, never on the app's
+   * configured client. Resolvers without it change nothing.
    */
   mode?(
     request: InferenceModeRequest,

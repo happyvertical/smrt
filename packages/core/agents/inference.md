@@ -152,8 +152,14 @@ and `capability` for capability detection (#4758); nothing raises them yet.
   `unavailable` (validated). `InferenceResolver.mode?(request)` is optional
   and is the only resolver call an untiered call makes
   (`resolveInferenceMode()`): it returns `{ mode, unavailable? }` when a mode
-  is stored, so mode `off` stops untiered calls too; resolvers without it
-  (the built-in one) keep the parity contract. The per-user resolver stores
+  is stored. `unavailable` stops untiered calls too; any other stored mode is
+  the principal's explicit choice and routes untiered calls (`getAiClient()`,
+  `prepareAiOperation()`, the untiered probe) through `auto`, so a `local` or
+  keyless `byo` choice never runs on the app's configured client. No stored
+  mode, or a resolver without `mode()` (the built-in one), keeps the parity
+  contract. `SmrtClass.inferenceUserScope()` returns `null` for instances
+  whose client serves many users (`Agent`): their tier resolutions and mode
+  checks send `userId: null`, so only the tenant layer applies. The per-user resolver stores
   the mode beside the provider config ([smrt-inference](../../inference/AGENTS.md)).
 - **Reported mode.** `inferenceModeForTarget()`: the resolution's `mode`, else
   the target `source` (`byo | local | hosted`), else for app config and the

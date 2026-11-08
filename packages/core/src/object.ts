@@ -4921,10 +4921,24 @@ export class SmrtObject extends SmrtClass {
       'tier' | 'latency' | 'promptKey' | 'minimumTier' | 'allowPartial'
     >;
   }> {
-    const { tier, latency, promptKey, minimumTier, allowPartial, ...rest } =
-      options;
+    const {
+      tier: requestedTier,
+      latency,
+      promptKey,
+      minimumTier,
+      allowPartial,
+      ...rest
+    } = options;
+    let tier = requestedTier;
     if (tier === undefined) {
-      return { ai: await this.getAiClient(), aiOptions: rest };
+      // An explicit stored mode (#4757) routes untiered calls through `auto`
+      // so the chosen binding answers with its model, params and tags; an
+      // unavailable mode throws from getAiClient().
+      const modeState = await this.resolveInferenceModeState();
+      if (!modeState || modeState.unavailable) {
+        return { ai: await this.getAiClient(), aiOptions: rest };
+      }
+      tier = 'auto';
     }
     const resolution = await this.resolveInferenceTier({
       tier,

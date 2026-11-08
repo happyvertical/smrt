@@ -5,6 +5,7 @@
  * takes effect on the next call through the cache invalidation (#4756).
  */
 import {
+  getInferenceStatus,
   InferenceUnavailableError,
   resolveInference,
   resolveInferenceMode,
@@ -196,6 +197,26 @@ describe('stored inference mode', () => {
     await resolver.setMode('user', 'off');
     await resolver.setMode('user', null);
     expect(secrets.rows.has(USER_NAME)).toBe(false);
+  });
+
+  it('an explicit mode without its binding leaves untiered probes unconfigured', async () => {
+    const { resolver } = setup();
+    registerUserInferenceResolver(resolver);
+    registerInference();
+    await resolver.setMode('user', 'byo');
+    // The app has a configured provider, but a keyless `byo` choice never
+    // runs on it: untiered calls route through `auto` (core #4757).
+    const configured = { provider: 'openai', baseUrl: 'https://app.example' };
+    expect(await getInferenceStatus({ configured })).toEqual({
+      available: false,
+      mode: 'off',
+      reason: 'unconfigured',
+    });
+    await resolver.write('user', { ...byoBinding, mode: 'byo' });
+    expect(await getInferenceStatus({ configured })).toEqual({
+      available: true,
+      mode: 'byo',
+    });
   });
 
   it('the validating wrapper forwards mode() only when the base has it', async () => {

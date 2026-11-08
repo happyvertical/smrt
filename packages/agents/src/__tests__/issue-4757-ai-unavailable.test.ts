@@ -101,6 +101,27 @@ describe('#4757 agents skip when AI is unavailable', () => {
     expect(agent.attempts).toBe(0);
   });
 
+  it("an agent ignores the invoking user's mode and uses the tenant's", async () => {
+    setInferenceResolver({
+      resolve: () => undefined,
+      // The ambient user turned AI off; the tenant did not.
+      mode: (request) =>
+        request.userId === null
+          ? undefined
+          : { mode: 'off', unavailable: 'off' },
+    });
+    const message = vi.fn(async () => 'summary');
+    const agent = new Issue4757SummaryAgent({
+      name: 'tenant-scope',
+      db,
+      ai: { embed: () => {}, message },
+    } as never);
+    await agent.execute();
+    expect(agent.status).toBe('idle');
+    expect(agent.runRecord?.status).toBe('completed');
+    expect(message).toHaveBeenCalledTimes(1);
+  });
+
   it('still records and rethrows other errors as error', async () => {
     const agent = new Issue4757SummaryAgent({ name: 'broken', db } as never);
     agent.run = async () => {
