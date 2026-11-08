@@ -274,6 +274,12 @@ export {
   releaseInvoiceRetention,
 } from './invoice-retention.js';
 export {
+  bindInvoiceLineSource,
+  type InvoiceSourceBindingHandler,
+  registerInvoiceSourceBinding,
+  unbindInvoiceLineSource,
+} from './invoice-source-binding.js';
+export {
   type InvoiceEditorStorageEngine,
   type InvoiceEditorStorageMigrationResult,
   type InvoiceEditorStoragePreflight,

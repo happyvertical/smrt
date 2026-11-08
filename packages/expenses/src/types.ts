@@ -136,6 +136,8 @@ export interface ExpenseReimbursementPosition {
 
 /** Constructor options for {@link Expense}. */
 export interface ExpenseOptions extends SmrtObjectOptions {
+  /** Hydration only: set through reviewAllocation. */
+  activeAllocationRevisionId?: string | null;
   /** Hydration only; ordinary writes are rejected by the owning command guard. */
   supplierPayableJson?: string | null;
   tenantId?: string | null;

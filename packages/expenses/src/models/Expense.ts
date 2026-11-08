@@ -1,3 +1,4 @@
+import { allocationHeads } from '../allocation-internal.js';
 /**
  * Expense — a cost someone incurred, against a cost object, with a review
  * state and optional reimbursement and commitment links.
@@ -340,8 +341,18 @@ export class Expense extends SmrtObject {
   @field({ type: 'text', readonly: true })
   reimbursementReference: string = '';
 
+  /** Active immutable allocation; changed only by the reviewed command. */
+  @foreignKey('ExpenseAllocationRevision', {
+    nullable: true,
+    onDelete: 'RESTRICT',
+  })
+  @field({ readonly: true })
+  activeAllocationRevisionId: string | null = null;
+
   constructor(options: ExpenseOptions = {}) {
     super(options);
+    if (options.activeAllocationRevisionId !== undefined)
+      this.activeAllocationRevisionId = options.activeAllocationRevisionId;
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.costObjectType !== undefined)
       this.costObjectType = options.costObjectType;
@@ -674,6 +685,40 @@ export class Expense extends SmrtObject {
         `Expense ${this.id}: its tenant cannot change after it is recorded.`,
       );
     }
+    const storedAllocation = asNullableString(
+      persisted?.active_allocation_revision_id,
+    );
+    if (
+      storedAllocation &&
+      persisted &&
+      Boolean(persisted.reimbursable) !== this.reimbursable
+    )
+      throw new ExpenseError(
+        'EXPENSE_INVALID',
+        'Allocated source reimbursement eligibility is frozen.',
+      );
+    if (
+      storedAllocation !== this.activeAllocationRevisionId &&
+      !(
+        allocationHeads.has(this) &&
+        allocationHeads.get(this) === this.activeAllocationRevisionId
+      )
+    )
+      throw new ExpenseError(
+        'EXPENSE_INVALID',
+        'Allocation head is command-owned.',
+      );
+    if (
+      storedAllocation &&
+      persisted &&
+      (String(persisted.review_status) !== this.reviewStatus ||
+        String(persisted.duplicate_of_id ?? '') !==
+          String(this.duplicateOfId ?? ''))
+    )
+      throw new ExpenseError(
+        'EXPENSE_INVALID',
+        'Allocated source review cannot change; supersede its allocation instead.',
+      );
     await this.assertSupplierPayable(persisted);
     this.assertReviewFields(persisted);
     this.assertReviewedLock(persisted);
@@ -882,6 +927,11 @@ export class Expense extends SmrtObject {
           String(effectiveTenant(this.tenantId) ?? '')
       )
         payableInvalid('owned source is required.');
+      if (row?.active_allocation_revision_id)
+        throw new ExpenseError(
+          'EXPENSE_INVALID',
+          'Allocated source evidence cannot be deleted.',
+        );
       if (row?.supplier_payable_json)
         payableInvalid('supplier authority cannot be deleted.');
       const parentId = asNullableString(row?.refund_of_id);

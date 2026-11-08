@@ -269,6 +269,10 @@ export class InvoiceLineItem extends SmrtObject {
    */
   sourceId: string = '';
 
+  /** Command-owned pointer to the source package's existing reservation. */
+  @field({ type: 'text', nullable: true, readonly: true })
+  sourceReservationId: string | null = null;
+
   /**
    * Service period start (for time-based billing)
    */
@@ -335,6 +339,8 @@ export class InvoiceLineItem extends SmrtObject {
     if (options.amount !== undefined) this.amount = options.amount;
     if (options.sourceType !== undefined) this.sourceType = options.sourceType;
     if (options.sourceId !== undefined) this.sourceId = options.sourceId;
+    if (options.sourceReservationId !== undefined)
+      this.sourceReservationId = options.sourceReservationId;
     if (options.periodStart !== undefined)
       this.periodStart = options.periodStart;
     if (options.periodEnd !== undefined) this.periodEnd = options.periodEnd;

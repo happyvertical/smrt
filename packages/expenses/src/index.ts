@@ -60,8 +60,35 @@ export {
   type ReviewedExpenseTaxFactsOptions,
 } from './collections/ExpenseCollection.js';
 export { ExpenseReceiptCollection } from './collections/ExpenseReceiptCollection.js';
+export {
+  bindExpenseAllocationPortion,
+  EXPENSE_ALLOCATION_INVOICE_SOURCE,
+  type ExpenseAllocationAuthority,
+  type ExpenseAllocationAuthorizationContext,
+  type ExpenseAllocationBillingAuthority,
+  type ExpenseAllocationIdentity,
+  type ExpenseAllocationPortionPosition,
+  type ExpenseAllocationResult,
+  type ExpenseAllocationTarget,
+  getExpenseAllocationPortionPosition,
+  type ReserveExpenseAllocationInput,
+  type ReviewExpenseAllocationInput,
+  releaseExpenseAllocationPortion,
+  reserveExpenseAllocationPortion,
+  resolveExpenseAllocationPortion,
+  reviewExpenseAllocation,
+  type WithdrawExpenseAllocationInput,
+  type WithdrawExpenseAllocationResult,
+  withdrawExpenseAllocation,
+} from './expense-allocation.js';
 export { Expense } from './models/Expense.js';
+export {
+  ExpenseAllocationBilling,
+  ExpenseAllocationPortion,
+  ExpenseAllocationRevision,
+} from './models/ExpenseAllocation.js';
 export { ExpenseReceipt } from './models/ExpenseReceipt.js';
+export { EXPENSE_ALLOCATION_PERMISSION_DEFINITIONS } from './permissions.js';
 export { ExpensesRecipe } from './recipes.js';
 export type {
   CompleteSupplierPayableBasisInput,
