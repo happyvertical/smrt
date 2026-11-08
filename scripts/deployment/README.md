@@ -254,8 +254,9 @@ unowned, so they must be Flux's own apply metadata
 reviewed by the relinquished identity; anything else blocks, and the orphan set's
 identity (`none` when empty) is written as
 `smrt.happyvertical.com/adoption-orphaned-fields` on the object in the same
-patch and journaled from there, so a publication that fails after the release
-still records it on resume. A legacy manager seen at `finalized` or later means the
+patch (as field manager `smrt-adoption`, which may own exactly that annotation
+and nothing else) and journaled from there, so a publication that fails after
+the release still records it on resume. A legacy manager seen at `finalized` or later means the
 legacy applier wrote again and blocks. The legacy Kustomization must keep
 reconciling, unsuspended, through `helm-established`; finalization requires it
 suspended (the platform's reviewed retirement step), and every normal mutable

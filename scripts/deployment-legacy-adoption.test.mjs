@@ -802,7 +802,12 @@ test('native legacy gates bind actual UID, stop/relinquish revisions, selectors,
         assert.match(record, /^([a-f0-9]{64}|none)$/);
         released.push([o.kind, manager]);
         if (releaseWorks) {
-          o.metadata.managedFields = o.metadata.managedFields.filter((e) => e.manager !== manager);
+          // Server-faithful: the update attributes the changed annotation to
+          // the request's field manager (verified on kind v1.34.3).
+          o.metadata.managedFields = [
+            ...o.metadata.managedFields.filter((e) => e.manager !== manager),
+            { manager: 'smrt-adoption', operation: 'Update', fieldsType: 'FieldsV1', fieldsV1: { 'f:metadata': { 'f:annotations': { 'f:smrt.happyvertical.com/adoption-orphaned-fields': {} } } } },
+          ];
           o.metadata.annotations = { ...o.metadata.annotations, 'smrt.happyvertical.com/adoption-orphaned-fields': record };
         }
       },
@@ -840,6 +845,16 @@ test('native legacy gates bind actual UID, stop/relinquish revisions, selectors,
     await assert.rejects(counting.observeAdopted(plan, adopted, 'finalized'), /returned after establishment/);
     assert.equal(released.length, 2, 'nothing is released after establishment');
     delete ks.spec.suspend;
+    for (const entry of [
+      { manager: 'kubectl-patch', operation: 'Update', fieldsType: 'FieldsV1', fieldsV1: { 'f:metadata': { 'f:annotations': { 'f:smrt.happyvertical.com/adoption-orphaned-fields': {} } } } },
+      { manager: 'smrt-adoption', operation: 'Update', fieldsType: 'FieldsV1', fieldsV1: { 'f:metadata': { 'f:annotations': { 'f:smrt.happyvertical.com/adoption-orphaned-fields': {}, 'f:other': {} } } } },
+      { manager: 'smrt-adoption', operation: 'Update', fieldsType: 'FieldsV1', fieldsV1: { 'f:data': { 'f:a': {} } } },
+      { manager: 'smrt-adoption', operation: 'Apply', fieldsType: 'FieldsV1', fieldsV1: { 'f:metadata': { 'f:annotations': { 'f:smrt.happyvertical.com/adoption-orphaned-fields': {} } } } },
+    ]) {
+      reset(entry);
+      await assert.rejects(counting.observeAdopted(plan, adopted, 'helm-established'), /Unreviewed adopted resource field manager/, `record manager owning more than its annotation: ${JSON.stringify(entry).slice(0, 80)}`);
+    }
+    assert.equal(released.length, 2);
     reset({ manager: 'kubectl-edit', operation: 'Update', fieldsType: 'FieldsV1', fieldsV1: { 'f:spec': { 'f:replicas': {} } } });
     await assert.rejects(counting.observeAdopted(plan, adopted, 'helm-established'), /Unreviewed adopted resource field manager/);
     assert.equal(released.length, 2, 'a foreign manager blocks before any release');

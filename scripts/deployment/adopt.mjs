@@ -9,6 +9,9 @@ export const adoptionStages = [
   'finalized',
 ];
 export const adoptionAnnotation = 'smrt.happyvertical.com/adoption-';
+// The release patch's own field manager and the one annotation it may own.
+export const adoptionRecordManager = 'smrt-adoption';
+export const orphanedFieldsAnnotation = `${adoptionAnnotation}orphaned-fields`;
 const sha = (v) => typeof v === 'string' && /^[a-f0-9]{64}$/.test(v);
 const revision = (v) => typeof v === 'string' && /^[a-f0-9]{40}$/.test(v);
 const text = (v) =>

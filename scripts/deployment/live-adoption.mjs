@@ -3,6 +3,8 @@ import { createHash, randomUUID } from 'node:crypto';
 import { readFile, rm } from 'node:fs/promises';
 import {
   adoptionAnnotation,
+  adoptionRecordManager,
+  orphanedFieldsAnnotation,
   adoptionPath,
   adoptionStages,
   adoptionDocument,
@@ -135,11 +137,22 @@ const reviewedOrphan = ([root, group, key]) =>
   (root === 'f:metadata' &&
     ['f:labels', 'f:annotations'].includes(group) &&
     fluxApplyMetadata.includes(key));
+// The release patch's own entry: the reviewed record manager owning exactly the
+// orphaned-fields annotation and nothing else.
+const recordOnlyEntry = (entry) =>
+  entry.manager === adoptionRecordManager &&
+  entry.operation === 'Update' &&
+  !entry.subresource &&
+  entry.fieldsType === 'FieldsV1' &&
+  JSON.stringify(entry.fieldsV1) ===
+    JSON.stringify({
+      'f:metadata': { 'f:annotations': { [`f:${orphanedFieldsAnnotation}`]: {} } },
+    });
 const specManagers = (kind, managedFields) =>
   [
     ...new Set(
       (managedFields ?? [])
-        .filter((entry) => !statusOnlyEntry(kind, entry))
+        .filter((entry) => !statusOnlyEntry(kind, entry) && !recordOnlyEntry(entry))
         .map((entry) => entry.manager),
     ),
   ].sort();
@@ -606,7 +619,7 @@ export function createAdoptionMethods(config, command, helpers, options) {
         managers: specManagers(actual.kind, actual.metadata.managedFields),
         orphanedFieldsIdentity:
           orphaned.get(actual.metadata.uid) ??
-          actual.metadata.annotations?.[`${adoptionAnnotation}orphaned-fields`] ??
+          actual.metadata.annotations?.[orphanedFieldsAnnotation] ??
           null,
       };
     });
@@ -809,7 +822,8 @@ export function createAdoptionMethods(config, command, helpers, options) {
           !actual.metadata.managedFields?.some(
             (entry) =>
               !allowed(r).includes(entry.manager) &&
-              !statusOnlyEntry(actual.kind, entry),
+              !statusOnlyEntry(actual.kind, entry) &&
+              !recordOnlyEntry(entry),
           ),
           establishing
             ? 'Unreviewed adopted resource field manager'

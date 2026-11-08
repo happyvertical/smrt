@@ -2723,7 +2723,7 @@ test('legacy manager release drops only that manager, as the reconciler, bound t
   o.metadata.annotations = { 'meta.helm.sh/release-name': 'legacy' };
   const record = 'd'.repeat(64);
   const args = legacyManagerRelease(o, 'kustomize-controller', doc, 'test', record);
-  assert.deepEqual(args.slice(0, 8), [
+  assert.deepEqual(args.slice(0, 9), [
     '--namespace',
     'test',
     '--as=system:serviceaccount:test:reconciler',
@@ -2731,10 +2731,11 @@ test('legacy manager release drops only that manager, as the reconciler, bound t
     '--as-group=system:serviceaccounts:test',
     '--as-group=system:authenticated',
     'patch',
+    '--field-manager=smrt-adoption',
     '--type=json',
   ]);
   assert.equal(args.at(-1), 'configmap/legacy-maintenance');
-  assert.deepEqual(JSON.parse(args[9]), [
+  assert.deepEqual(JSON.parse(args[10]), [
     { op: 'test', path: '/metadata/uid', value: 'cm-uid' },
     { op: 'test', path: '/metadata/resourceVersion', value: '42' },
     { op: 'replace', path: '/metadata/managedFields', value: [helm, status] },
@@ -2742,7 +2743,7 @@ test('legacy manager release drops only that manager, as the reconciler, bound t
   ]);
   const bare = structuredClone(o);
   delete bare.metadata.annotations;
-  assert.deepEqual(JSON.parse(legacyManagerRelease(bare, 'kustomize-controller', doc, 'test', 'none')[9]).at(-1), {
+  assert.deepEqual(JSON.parse(legacyManagerRelease(bare, 'kustomize-controller', doc, 'test', 'none')[10]).at(-1), {
     op: 'add',
     path: '/metadata/annotations',
     value: { 'smrt.happyvertical.com/adoption-orphaned-fields': 'none' },

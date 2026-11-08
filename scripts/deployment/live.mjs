@@ -1,4 +1,4 @@
-import { adoptionAnnotation } from './adopt.mjs';
+import { adoptionAnnotation, adoptionRecordManager, orphanedFieldsAnnotation } from './adopt.mjs';
 import { execFile } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
@@ -447,7 +447,7 @@ export function legacyManagerRelease(
   );
   // Journaled evidence must survive a failed publication: record what the
   // release left unowned on the object itself, in the same atomic patch.
-  const key = `${adoptionAnnotation}orphaned-fields`;
+  const key = orphanedFieldsAnnotation;
   const record = o.metadata.annotations
     ? {
         op: 'add',
@@ -467,6 +467,9 @@ export function legacyManagerRelease(
     `--as-group=system:serviceaccounts:${namespace}`,
     '--as-group=system:authenticated',
     'patch',
+    // A non-apply update attributes the changed annotation to the request's
+    // field manager; pin a reviewed one instead of kubectl's default.
+    `--field-manager=${adoptionRecordManager}`,
     '--type=json',
     '-p',
     JSON.stringify([
