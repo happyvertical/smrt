@@ -49,8 +49,8 @@ function fixture() {
     releaseId: 'release-1',
     namespace: 'test',
     releaseName: 'app',
-    canonicalFile: 'apps/release.json',
-    stagingFile: 'apps/adoption.json',
+    canonicalFile: 'apps/release.yaml',
+    stagingFile: 'apps/adoption.yaml',
     stateFile: 'proof/adoption.json',
     legacy: {
       repository: 'https://example.test/repo',
@@ -186,6 +186,8 @@ test('explicit adoption rejects bootstrap, malformed schema, unsafe paths and fo
     (p) => (p.targetIdentity = 'f'.repeat(64)),
     (p) => (p.extra = true),
     (p) => (p.stagingFile = p.canonicalFile),
+    (p) => (p.canonicalFile = 'apps/release.json'),
+    (p) => (p.stagingFile = 'apps/adoption.json'),
     (p) => (p.snapshot.file = '../secret'),
     (p) => (p.stateFile = '/tmp/state'),
     (p) =>

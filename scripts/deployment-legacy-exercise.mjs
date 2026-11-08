@@ -1142,6 +1142,15 @@ export async function legacyMain(env = process.env) {
                 },
               }));
           }
+          if (o.kind === 'CronJob' && o.metadata.name === 'legacy-monitor') {
+            // Real legacy schedules predate the chart instance label, so the
+            // Jobs and Pods they ran carry none (#4481 review thread).
+            for (const meta of [
+              o.spec.jobTemplate.metadata,
+              o.spec.jobTemplate.spec.template.metadata,
+            ])
+              if (meta?.labels) delete meta.labels['app.kubernetes.io/instance'];
+          }
           if (o.kind === 'Deployment' && o.metadata.name === 'legacy-site') {
             o.spec.template.metadata.labels = { app: 'legacy-site' };
             if (phase !== 'stopped')
@@ -1162,7 +1171,7 @@ export async function legacyMain(env = process.env) {
             },
           };
         });
-    write('legacy/resources.json', {
+    write('legacy/resources.yaml', {
       apiVersion: 'v1',
       kind: 'List',
       items: legacyManifests('active'),
@@ -1211,6 +1220,16 @@ export async function legacyMain(env = process.env) {
         `deployment/legacy-${name}`,
         '--timeout=240s',
       ]);
+    // Native terminal CronJob history: kubectl sets the single CronJob
+    // controller owner exactly as the CronJob controller would.
+    k(['-n', namespace, 'create', 'job', '--from=cronjob/legacy-monitor', 'legacy-monitor-history']);
+    k(['-n', namespace, 'wait', '--for=condition=complete', 'job/legacy-monitor-history', '--timeout=240s']);
+    const historyJob = get('job', 'legacy-monitor-history');
+    assert.ok(!Object.hasOwn(historyJob.metadata.labels ?? {}, 'app.kubernetes.io/instance'), 'legacy history Job must lack the instance label');
+    const historyPods = () => JSON.parse(k(['-n', namespace, 'get', 'pods', '-l', 'job-name=legacy-monitor-history', '-o', 'json'])).items;
+    await until('legacy history Pod terminal', () => historyPods().length === 1 && historyPods()[0].status?.phase === 'Succeeded');
+    assert.ok(!Object.hasOwn(historyPods()[0].metadata.labels ?? {}, 'app.kubernetes.io/instance'), 'legacy history Pod must lack the instance label');
+    const historyUids = [historyJob.metadata.uid, historyPods()[0].metadata.uid];
     const ingressTlsPort=await forward('legacy-ingress-ingress-nginx-controller',443,'ingress-nginx');
     const tlsOptions={trustedCa:[readFileSync(join(tlsDir,'ca.crt'),'utf8')],endpoint:async(host,port)=>{assert.ok(['app.legacy.invalid','www.legacy.invalid'].includes(host));assert.equal(port,443);return{host:'127.0.0.1',port:ingressTlsPort};}};
     const publicRequest = async (url, options = {}) => {
@@ -1301,7 +1320,7 @@ export async function legacyMain(env = process.env) {
     const original = legacyManifests('active').map((o) =>
       get(o.kind, o.metadata.name),
     );
-    write('legacy/resources.json', {
+    write('legacy/resources.yaml', {
       apiVersion: 'v1',
       kind: 'List',
       items: legacyManifests('maintenance'),
@@ -1313,7 +1332,7 @@ export async function legacyMain(env = process.env) {
       await assertHTTP(503);
       return true;
     });
-    write('legacy/resources.json', {
+    write('legacy/resources.yaml', {
       apiVersion: 'v1',
       kind: 'List',
       items: legacyManifests('stopped'),
@@ -1324,7 +1343,7 @@ export async function legacyMain(env = process.env) {
     await until('legacy drained and static rollout steady', () => {
       const pods = JSON.parse(
         k(['-n', namespace, 'get', 'pods', '-o', 'json']),
-      ).items;
+      ).items.filter((p) => !historyUids.includes(p.metadata.uid));
       return (
         pods.length === 2 &&
         pods.every(
@@ -1347,7 +1366,7 @@ export async function legacyMain(env = process.env) {
       "ALTER ROLE legacy NOLOGIN; SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE usename='legacy';",
     );
     const stopped = original.map((o) => get(o.kind, o.metadata.name));
-    write('legacy/resources.json', {
+    write('legacy/resources.yaml', {
       apiVersion: 'v1',
       kind: 'List',
       items: [],
@@ -1613,8 +1632,8 @@ export async function legacyMain(env = process.env) {
       releaseId: values.release.id,
       namespace,
       releaseName: 'legacy',
-      canonicalFile: 'deploy/adoption/flux/release.json',
-      stagingFile: 'deploy/adoption/flux/staging.json',
+      canonicalFile: 'deploy/adoption/flux/release.yaml',
+      stagingFile: 'deploy/adoption/flux/staging.yaml',
       stateFile: 'proof/state.json',
       legacy,
       snapshot: { file: 'proof/snapshot.json', sha256: snapshotSha256 },
@@ -2238,6 +2257,14 @@ export async function legacyMain(env = process.env) {
         hash(old.spec?.selector ?? {}),
       );
     }
+    assert.deepEqual(
+      [get('job', 'legacy-monitor-history'), historyPods()[0]].map((o) => [
+        o.metadata.uid,
+        Object.hasOwn(o.metadata.labels ?? {}, 'app.kubernetes.io/instance'),
+      ]),
+      historyUids.map((uid) => [uid, false]),
+      'unlabelled terminal legacy CronJob history retained through adoption',
+    );
     writeFileSync(
       join(evidence, 'final-adoption-state.json'),
       JSON.stringify((await adapter().readAdoption(plan)).state, null, 2),

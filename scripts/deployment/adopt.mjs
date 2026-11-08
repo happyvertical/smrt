@@ -94,6 +94,14 @@ export function validateAdoptionPlan(plan) {
     adoptionPath,
   );
   demand(new Set(paths).size === paths.length, 'Duplicate adoption Git paths');
+  // Flux's generated kustomization only collects .yaml/.yml files; any other
+  // extension is silently skipped, so a staged HelmRelease would never apply.
+  demand(
+    [plan.canonicalFile, plan.stagingFile].every((path) =>
+      /\.ya?ml$/.test(path),
+    ),
+    'Adoption canonical and staging files must use a .yaml or .yml extension',
+  );
   demand(
     keys(plan.legacy, [
       'repository',

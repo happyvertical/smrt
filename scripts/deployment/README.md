@@ -127,6 +127,9 @@ The strict `smrt.happyvertical.com/legacy-adoption-v1` plan has these exact fiel
 
 - `adoptionId`, `releaseId`, `namespace`, `releaseName` identify the handover.
 - `canonicalFile`, `stagingFile`, `stateFile` are distinct tracked-relative paths.
+  `canonicalFile` and `stagingFile` must end in `.yaml` or `.yml`: Flux's
+  auto-generated kustomization skips every other extension. Their content may be
+  JSON, which is valid YAML.
 - `legacy` contains repository URL, full 40-hex `revision`,
   `maintenanceRevision`, `stopRevision`, `relinquishRevision`, and `source` and
   `kustomization` references, each with exact `namespace`, `name`, `uid`.
@@ -166,7 +169,7 @@ Add this protected configuration alongside the ordinary release configuration:
 {
   "adoption": {
     "stateFile": "adoption/proof/state.json",
-    "stagingFile": "deploy/adoption/flux/pending.json",
+    "stagingFile": "deploy/adoption/flux/pending.yaml",
     "fluxPath": "deploy/adoption/flux",
     "sourceUid": "ACTUAL_NEW_GITREPOSITORY_UID",
     "kustomizationUid": "ACTUAL_NEW_KUSTOMIZATION_UID",
