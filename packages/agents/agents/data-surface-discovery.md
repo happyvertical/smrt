@@ -51,3 +51,7 @@ An alias beside its canonical key stays in place and fails as an unsupported
 key; the error names the canonical key. Beside `request` at the top level an
 alias is `DATA_QUERY_ARGUMENTS_UNEXPECTED` ("move limit inside request"). The
 request schema's property descriptions name the aliases.
+
+## Collection adapter (#2905)
+
+`src/smrt-collection-data-surface.ts`: `createSmrtCollectionDataSurfaceDefinition()` — generic registry-driven `SmrtObject` collection to `DataSurfaceDefinition` adapter, with field-policy redaction (schema overrides included), class-aware tenant scope, DNF filter/scope lowering, deny-all short-circuit, query-bound opaque cursors, and offset/cursor paging; hydrated row values are serialized to JSON scalars at the adapter boundary — a `Date`/date-only/zoneless-UTC `datetime` becomes an ISO-8601 UTC instant, a `bigint` a safe number, and a non-scalar value on a scalar descriptor its JSON string — so a populated datetime column no longer fails the whole result; callers must keep `maxPageLimit` <= the collection's own row-limit cap (#2905, follow-up #2912, #2933)

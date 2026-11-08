@@ -1,0 +1,61 @@
+import { SmrtError } from '@happyvertical/smrt-core/smrt-error';
+import type {
+  InferenceConfigIssue,
+  InferenceSubstitution,
+  InferenceSubstitutionReason,
+} from './types.js';
+
+/** An `inference` config block that cannot bind (`INFERENCE_CONFIG_INVALID`). */
+export class InferenceConfigError extends SmrtError {
+  readonly issues: InferenceConfigIssue[];
+
+  constructor(issues: InferenceConfigIssue[]) {
+    super(
+      `Invalid inference config: ${issues.map((issue) => issue.message).join('; ')}`,
+      'INFERENCE_CONFIG_INVALID',
+      'configuration',
+      { issues },
+    );
+    this.issues = issues;
+  }
+}
+
+/**
+ * A chain call that never produced a complete answer
+ * (`INFERENCE_EXHAUSTED`): every candidate failed, or one streamed text and
+ * then failed without `allowPartial`. `cause` is the last provider error.
+ */
+export class InferenceExhaustedError extends SmrtError {
+  /** The failure that ended the walk. */
+  readonly reason: InferenceSubstitutionReason | 'unclassified';
+  /** The full fallback trail, ending with `to: null`. */
+  readonly substitutions: InferenceSubstitution[];
+  /** Text already streamed to the caller, for a `partial` ending. */
+  readonly partialText?: string;
+
+  constructor(input: {
+    reason: InferenceSubstitutionReason | 'unclassified';
+    substitutions: InferenceSubstitution[];
+    tierRequested: string;
+    partialText?: string;
+    cause?: unknown;
+  }) {
+    const last = input.substitutions.at(-1);
+    super(
+      input.reason === 'partial'
+        ? `Inference candidate ${last?.from ?? 'unknown'} failed after streaming; no other candidate may extend its reply.`
+        : `No inference candidate answered tier "${input.tierRequested}" (last failure: ${input.reason}).`,
+      'INFERENCE_EXHAUSTED',
+      'ai',
+      {
+        reason: input.reason,
+        tierRequested: input.tierRequested,
+        substitutions: input.substitutions,
+      },
+      input.cause instanceof Error ? input.cause : undefined,
+    );
+    this.reason = input.reason;
+    this.substitutions = input.substitutions;
+    if (input.partialText !== undefined) this.partialText = input.partialText;
+  }
+}

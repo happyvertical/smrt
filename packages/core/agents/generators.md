@@ -142,6 +142,16 @@ requested path rather than a hardcoded `index.js`.
 Generated code also has to be valid in an ES module: `arguments` is not a legal
 binding name there, however convenient it reads.
 
+## Inference status route (#4757)
+
+`GET {basePath}/_inference[?tier=<tier>]` (`src/generators/inference-status-route.ts`)
+on the runtime `APIGenerator` returns the ambient principal's `InferenceStatus`
+(`{ available, mode, reason?, tier? }`, never a key), runs
+`authMiddleware('_inference', 'status')` when one is configured, and refuses
+non-`GET` with 405. SvelteKit apps serve the same body from their own
+`+server.ts` with `createInferenceStatusHandler()`; no route file is
+generated. Contract: [inference.md](inference.md#inference-mode-and-ai_unavailable-4757).
+
 ## Browser-plane playbook preflight route (#2590)
 
 `GET {basePath}/_preflight?key=<playbook key>` (`src/generators/preflight-route.ts`)

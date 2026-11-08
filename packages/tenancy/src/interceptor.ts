@@ -20,6 +20,7 @@ import {
   type QueryInterceptResult,
   type QueryOptions,
   resolveGetStringFilter,
+  setAiUsageTenantResolver,
   setDispatchTenantResolver,
   setTenantEntryPointRunner,
   setTenantScopedClassResolver,
@@ -875,6 +876,10 @@ export function enableTenancy(options: TenantInterceptorOptions = {}): void {
   // classes, which record their config only in the tenancy registry.
   setTenantScopedClassResolver((className) => isTenantScopedClass(className));
 
+  // Attribute AI usage from per-call clients to the ambient tenant when the
+  // caller and the instance name none (#3077).
+  setAiUsageTenantResolver(() => getTenantId());
+
   setTenancyEnabled(true);
 }
 
@@ -914,6 +919,8 @@ export function disableTenancy(): void {
   setTenantEntryPointRunner(undefined);
   // Clear the tenant-scoped-class resolver (#1782).
   setTenantScopedClassResolver(undefined);
+  // Clear the AI usage ambient-tenant resolver (#3077).
+  setAiUsageTenantResolver(undefined);
   registeredInterceptor = null;
   setTenancyEnabled(false);
 }

@@ -95,6 +95,8 @@ export { Agent, type AgentOptions } from './agent.js';
 export {
   type AgentAIOptions,
   type AgentAISecretFallback,
+  type ResolvedAgentAIConfig,
+  resolveAgentAIClientOptions,
   resolveAgentAIOptions,
 } from './ai-config.js';
 export { AgentConfig, AgentConfigCollection } from './config.js';
@@ -318,7 +320,7 @@ export {
   TenantAgentCollection,
   type TenantAgentStatus,
 } from './tenant-agent.js';
-export type { AgentStatusType } from './types.js';
+export type { AgentRunRecord, AgentStatusType } from './types.js';
 // UI types and registry for admin panels
 export {
   type AdminPanelBaseProps,

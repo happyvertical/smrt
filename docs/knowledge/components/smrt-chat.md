@@ -5,10 +5,10 @@ description: "Chat rooms, DMs, threads, and agent conversations for the SMRT fra
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T15:48:19Z"
+  at: "2026-11-08T19:39:45Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:6d305ee403a1fc43b71f10a8be7764a9a48be5d3617ddd315b2c0c0ea14d73ac"
+source_revision: "sha256:e706cb0eb1de31561988d9be5785c5b7d052b7573cf16173581bf765c44343d3"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/chat/package.json"
@@ -17,21 +17,24 @@ sources:
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/chat/AGENTS.md"
     title: "@happyvertical/smrt-chat packages/chat/AGENTS.md"
   - id: "agents-2"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/chat/agents/ai-unavailable.md"
+    title: "@happyvertical/smrt-chat packages/chat/agents/ai-unavailable.md"
+  - id: "agents-3"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/chat/agents/assistant-questions.md"
     title: "@happyvertical/smrt-chat packages/chat/agents/assistant-questions.md"
-  - id: "agents-3"
+  - id: "agents-4"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/chat/agents/dev-workbench.md"
     title: "@happyvertical/smrt-chat packages/chat/agents/dev-workbench.md"
-  - id: "agents-4"
+  - id: "agents-5"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/chat/agents/overview-tools.md"
     title: "@happyvertical/smrt-chat packages/chat/agents/overview-tools.md"
-  - id: "agents-5"
+  - id: "agents-6"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/chat/agents/recipes.md"
     title: "@happyvertical/smrt-chat packages/chat/agents/recipes.md"
-  - id: "agents-6"
+  - id: "agents-7"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/chat/agents/token-streaming.md"
     title: "@happyvertical/smrt-chat packages/chat/agents/token-streaming.md"
-  - id: "agents-7"
+  - id: "agents-8"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/chat/agents/tool-loop.md"
     title: "@happyvertical/smrt-chat packages/chat/agents/tool-loop.md"
 ---
@@ -42,12 +45,13 @@ sources:
 
 - Directory: `packages/chat`
 - Private: no
-- Object source: `domain-artifact`
+- Object source: `scanner`
 - Evidence level: `source-inspected`
 
 ## Documentation
 
 - `packages/chat/AGENTS.md`
+- `packages/chat/agents/ai-unavailable.md`
 - `packages/chat/agents/assistant-questions.md`
 - `packages/chat/agents/dev-workbench.md`
 - `packages/chat/agents/overview-tools.md`
@@ -99,40 +103,28 @@ sources:
 ## Models
 
 - `AgentSession` (collection `agentsessions`, extends `SmrtObject`)
-- `AgentSessionCollection` (collection `agentsessions`, extends `SmrtCollection`)
 - `ChatMessage` (collection `chatmessages`, extends `SmrtObject`)
-- `ChatMessageCollection` (collection `chatmessages`, extends `SmrtCollection`)
 - `ChatParticipant` (collection `chatparticipants`, extends `SmrtObject`)
-- `ChatParticipantCollection` (collection `chatparticipants`, extends `SmrtCollection`)
 - `ChatReaction` (collection `chatreactions`, extends `SmrtObject`)
-- `ChatReactionCollection` (collection `chatreactions`, extends `SmrtCollection`)
 - `ChatRoom` (collection `chatrooms`, extends `SmrtObject`)
-- `ChatRoomCollection` (collection `chatrooms`, extends `SmrtCollection`)
 - `ChatThread` (collection `chatthreads`, extends `SmrtObject`)
-- `ChatThreadCollection` (collection `chatthreads`, extends `SmrtCollection`)
 - `VoiceGatewayTurn` (collection `voicegatewayturns`, extends `SmrtObject`)
-- `VoiceGatewayTurnCollection` (collection `voicegatewayturns`, extends `SmrtCollection`)
 - `VoiceSession` (collection `voicesessions`, extends `SmrtObject`)
-- `VoiceSessionCollection` (collection `voicesessions`, extends `SmrtCollection`)
 
 ## MCP tools
 
-- `agentsession_get`: get on `@happyvertical/smrt-chat:AgentSession`
-- `agentsession_list`: list on `@happyvertical/smrt-chat:AgentSession`
-- `chatmessage_get`: get on `@happyvertical/smrt-chat:ChatMessage`
-- `chatmessage_list`: list on `@happyvertical/smrt-chat:ChatMessage`
-- `chatparticipant_get`: get on `@happyvertical/smrt-chat:ChatParticipant`
-- `chatparticipant_list`: list on `@happyvertical/smrt-chat:ChatParticipant`
-- `chatreaction_list`: list on `@happyvertical/smrt-chat:ChatReaction`
-- `chatroom_get`: get on `@happyvertical/smrt-chat:ChatRoom`
-- `chatroom_list`: list on `@happyvertical/smrt-chat:ChatRoom`
-- `chatthread_get`: get on `@happyvertical/smrt-chat:ChatThread`
-- `chatthread_list`: list on `@happyvertical/smrt-chat:ChatThread`
-- `voicegatewayturn_get`: get on `@happyvertical/smrt-chat:VoiceGatewayTurn`
-- `voicegatewayturn_list`: list on `@happyvertical/smrt-chat:VoiceGatewayTurn`
-- `voicesession_get`: get on `@happyvertical/smrt-chat:VoiceSession`
-- `voicesession_list`: list on `@happyvertical/smrt-chat:VoiceSession`
-
-## Agent intents
-
-- `chatdev.stage_draft_subject`: Stage a subject line into the dev workbench draft form. The value is a proposal: a human reviews and applies it. (`src/routes/chat-dev.intents.ts`)
+- `get_agentsessions`: get on `@happyvertical/smrt-chat:AgentSession`
+- `get_chatmessages`: get on `@happyvertical/smrt-chat:ChatMessage`
+- `get_chatparticipants`: get on `@happyvertical/smrt-chat:ChatParticipant`
+- `get_chatrooms`: get on `@happyvertical/smrt-chat:ChatRoom`
+- `get_chatthreads`: get on `@happyvertical/smrt-chat:ChatThread`
+- `get_voicegatewayturns`: get on `@happyvertical/smrt-chat:VoiceGatewayTurn`
+- `get_voicesessions`: get on `@happyvertical/smrt-chat:VoiceSession`
+- `list_agentsessions`: list on `@happyvertical/smrt-chat:AgentSession`
+- `list_chatmessages`: list on `@happyvertical/smrt-chat:ChatMessage`
+- `list_chatparticipants`: list on `@happyvertical/smrt-chat:ChatParticipant`
+- `list_chatreactions`: list on `@happyvertical/smrt-chat:ChatReaction`
+- `list_chatrooms`: list on `@happyvertical/smrt-chat:ChatRoom`
+- `list_chatthreads`: list on `@happyvertical/smrt-chat:ChatThread`
+- `list_voicegatewayturns`: list on `@happyvertical/smrt-chat:VoiceGatewayTurn`
+- `list_voicesessions`: list on `@happyvertical/smrt-chat:VoiceSession`

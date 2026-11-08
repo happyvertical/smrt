@@ -5,10 +5,10 @@ description: "Distributed memory and knowledge management with provenance tracki
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-08T18:33:46Z"
+  at: "2026-11-08T19:39:45Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:460a057b5429a63c6d56979a7d593fbf84ee5130e1db5f727d52cfa02ed30674"
+source_revision: "sha256:763ac0c60c494cda65b1f4383d0e2c5e43e1fc747cb997df3e39d3951ca88f3f"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/facts/package.json"
@@ -24,7 +24,7 @@ sources:
 
 - Directory: `packages/facts`
 - Private: no
-- Object source: `domain-artifact`
+- Object source: `scanner`
 - Evidence level: `source-inspected`
 
 ## Documentation
@@ -55,36 +55,36 @@ sources:
 ## Models
 
 - `Fact` (collection `facts`, extends `SmrtObject`, STI table)
-- `FactCollection` (collection `facts`, extends `SmrtCollection`)
 - `FactContent` (collection `factcontents`, extends `SmrtObject`)
-- `FactContentCollection` (collection `factcontents`, extends `SmrtJunction`)
+- `FactContentCollection` (collection `factcontentcollections`, extends `SmrtJunction`)
 - `FactEvidence` (collection `factevidences`, extends `SmrtObject`)
-- `FactEvidenceCollection` (collection `factevidences`, extends `SmrtCollection`)
 - `FactSource` (collection `factsources`, extends `SmrtObject`, STI table)
-- `FactSourceCollection` (collection `factsources`, extends `SmrtCollection`)
 - `FactSubject` (collection `factsubjects`, extends `SmrtObject`)
-- `FactSubjectCollection` (collection `factsubjects`, extends `SmrtCollection`)
 - `FactTag` (collection `facttags`, extends `SmrtObject`)
-- `FactTagCollection` (collection `facttags`, extends `SmrtCollection`)
 
 ## MCP tools
 
-- `fact_create`: create on `@happyvertical/smrt-facts:Fact`
-- `fact_get`: get on `@happyvertical/smrt-facts:Fact`
-- `fact_list`: list on `@happyvertical/smrt-facts:Fact`
-- `fact_update`: update on `@happyvertical/smrt-facts:Fact`
-- `factcontent_create`: create on `@happyvertical/smrt-facts:FactContent`
-- `factcontent_get`: get on `@happyvertical/smrt-facts:FactContent`
-- `factcontent_list`: list on `@happyvertical/smrt-facts:FactContent`
-- `factevidence_create`: create on `@happyvertical/smrt-facts:FactEvidence`
-- `factevidence_get`: get on `@happyvertical/smrt-facts:FactEvidence`
-- `factevidence_list`: list on `@happyvertical/smrt-facts:FactEvidence`
-- `factsource_create`: create on `@happyvertical/smrt-facts:FactSource`
-- `factsource_get`: get on `@happyvertical/smrt-facts:FactSource`
-- `factsource_list`: list on `@happyvertical/smrt-facts:FactSource`
-- `factsubject_create`: create on `@happyvertical/smrt-facts:FactSubject`
-- `factsubject_get`: get on `@happyvertical/smrt-facts:FactSubject`
-- `factsubject_list`: list on `@happyvertical/smrt-facts:FactSubject`
-- `facttag_create`: create on `@happyvertical/smrt-facts:FactTag`
-- `facttag_get`: get on `@happyvertical/smrt-facts:FactTag`
-- `facttag_list`: list on `@happyvertical/smrt-facts:FactTag`
+- `create_factcontentcollections`: create on `@happyvertical/smrt-facts:FactContentCollection`
+- `create_factcontents`: create on `@happyvertical/smrt-facts:FactContent`
+- `create_factevidences`: create on `@happyvertical/smrt-facts:FactEvidence`
+- `create_facts`: create on `@happyvertical/smrt-facts:Fact`
+- `create_factsources`: create on `@happyvertical/smrt-facts:FactSource`
+- `create_factsubjects`: create on `@happyvertical/smrt-facts:FactSubject`
+- `create_facttags`: create on `@happyvertical/smrt-facts:FactTag`
+- `delete_factcontentcollections`: delete on `@happyvertical/smrt-facts:FactContentCollection`
+- `get_factcontentcollections`: get on `@happyvertical/smrt-facts:FactContentCollection`
+- `get_factcontents`: get on `@happyvertical/smrt-facts:FactContent`
+- `get_factevidences`: get on `@happyvertical/smrt-facts:FactEvidence`
+- `get_facts`: get on `@happyvertical/smrt-facts:Fact`
+- `get_factsources`: get on `@happyvertical/smrt-facts:FactSource`
+- `get_factsubjects`: get on `@happyvertical/smrt-facts:FactSubject`
+- `get_facttags`: get on `@happyvertical/smrt-facts:FactTag`
+- `list_factcontentcollections`: list on `@happyvertical/smrt-facts:FactContentCollection`
+- `list_factcontents`: list on `@happyvertical/smrt-facts:FactContent`
+- `list_factevidences`: list on `@happyvertical/smrt-facts:FactEvidence`
+- `list_facts`: list on `@happyvertical/smrt-facts:Fact`
+- `list_factsources`: list on `@happyvertical/smrt-facts:FactSource`
+- `list_factsubjects`: list on `@happyvertical/smrt-facts:FactSubject`
+- `list_facttags`: list on `@happyvertical/smrt-facts:FactTag`
+- `update_factcontentcollections`: update on `@happyvertical/smrt-facts:FactContentCollection`
+- `update_facts`: update on `@happyvertical/smrt-facts:Fact`

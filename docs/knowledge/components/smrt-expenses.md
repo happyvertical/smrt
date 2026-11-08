@@ -5,10 +5,10 @@ description: "Expense records for the SMRT framework - reviewed costs against a 
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T15:48:19Z"
+  at: "2026-11-08T19:39:45Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:9095edc13cec5089ffaba796c3b70c145f155381183dd2c5729521f77914abf0"
+source_revision: "sha256:538df12874f607c24effe210a50d8e6da73b5c872de25dae19aec4f8cf849d5a"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/expenses/package.json"
@@ -30,7 +30,7 @@ sources:
 
 - Directory: `packages/expenses`
 - Private: no
-- Object source: `domain-artifact`
+- Object source: `scanner`
 - Evidence level: `source-inspected`
 
 ## Documentation
@@ -62,6 +62,6 @@ sources:
 ## Models
 
 - `Expense` (collection `expenses`, extends `SmrtObject`)
-- `ExpenseCollection` (collection `expenses`, extends `SmrtCollection`)
+- `ExpenseCollection` (collection `expensecollections`, extends `SmrtCollection`)
 - `ExpenseReceipt` (collection `expensereceipts`, extends `SmrtObject`)
-- `ExpenseReceiptCollection` (collection `expensereceipts`, extends `SmrtJunction`)
+- `ExpenseReceiptCollection` (collection `expensereceiptcollections`, extends `SmrtJunction`)

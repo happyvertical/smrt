@@ -1,6 +1,9 @@
 import { getAI } from '@happyvertical/ai';
 import { clearCache, setConfig } from '@happyvertical/smrt-config';
-import { getTestDatabase } from '@happyvertical/smrt-core';
+import {
+  getTestDatabase,
+  setInferenceResolver,
+} from '@happyvertical/smrt-core';
 import {
   clearPromptCache,
   PromptOverrideCollection,
@@ -131,6 +134,54 @@ describe('Issue prompt integration', () => {
       '- alice: Please add analytics instrumentation.',
     );
     expect(promptText).toContain('- bob: Clarify the rollout plan.');
+  });
+
+  it('takes a stored inference binding over the prompt provider (#4756)', async () => {
+    await overrides.create({
+      key: issueIncorporateFeedbackPrompt.key,
+      tenantId: null,
+      template: 'Spec:\n{body}\n{comments}',
+      profile: 'deep',
+    });
+    setInferenceResolver({
+      resolve: (request) => ({
+        tierResolved: request.tier === 'auto' ? 'good' : request.tier,
+        target: {
+          provider: 'openai',
+          baseUrl: 'https://openrouter.ai/api/v1',
+          apiKey: 'sk-user-binding',
+          model: 'user/model',
+          source: 'byo',
+        },
+        via: 'resolver',
+      }),
+    });
+    try {
+      const issue = new Issue({ db, tenantId: null, body: 'Body' });
+      vi.spyOn(issue, 'getComments').mockResolvedValue([
+        { author: 'a', body: 'x', createdAt: new Date() },
+      ] as any);
+      const messageSpy = vi.fn(async () => 'Updated');
+      vi.mocked(getAI).mockResolvedValue({ message: messageSpy } as any);
+
+      await issue.incorporateFeedback();
+
+      expect(getAI).toHaveBeenCalledWith(
+        expect.objectContaining({
+          provider: 'openai',
+          baseUrl: 'https://openrouter.ai/api/v1',
+          apiKey: 'sk-user-binding',
+          model: 'user/model',
+          onUsage: expect.any(Function),
+        }),
+      );
+      expect(messageSpy).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ model: 'user/model' }),
+      );
+    } finally {
+      setInferenceResolver(undefined);
+    }
   });
 
   it('keeps an explicitly injected AI client as the highest-precedence runtime override', async () => {

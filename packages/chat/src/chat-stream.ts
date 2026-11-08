@@ -33,6 +33,8 @@ import type {
   PrincipalTool,
 } from '@happyvertical/smrt-agents';
 import type { SmrtClassOptions } from '@happyvertical/smrt-core';
+import { chatUnavailableBody } from './ai-unavailable.js';
+import type { ChatUnavailableStatus } from './client.js';
 import type { AgentSession } from './models/AgentSession.js';
 import type { ChatMessage } from './models/ChatMessage.js';
 import {
@@ -114,7 +116,14 @@ export type ChatStreamEvent =
   | { type: 'emotion'; name: string }
   | { type: 'control'; command: ChatStreamControlCommand }
   | { type: 'done'; message: ChatStreamMessage }
-  | { type: 'error'; error: string };
+  | {
+      type: 'error';
+      error: string;
+      /** `ai_unavailable` when AI is off or not set up (#4757). */
+      code?: string;
+      /** Core's `InferenceStatus` for an `ai_unavailable` error. */
+      unavailable?: ChatUnavailableStatus;
+    };
 
 /** The JSON body of a streaming request. */
 export interface ChatStreamRequestBody {
@@ -205,6 +214,23 @@ export interface RunChatConversationStreamOptions {
   context: ChatStreamContext;
   /** The conversation so far; the last user message is this turn's prompt. */
   messages: ChatStreamMessage[];
+}
+
+/**
+ * The in-band `error` event for a failed turn; an `AI_UNAVAILABLE` error
+ * (#4757) carries `code: 'ai_unavailable'` and the status, no stack.
+ */
+function streamErrorEvent(error: unknown): ChatStreamEvent {
+  const unavailable = chatUnavailableBody(error);
+  if (unavailable) {
+    return {
+      type: 'error',
+      error: unavailable.error,
+      code: unavailable.code,
+      unavailable: unavailable.unavailable as ChatUnavailableStatus,
+    };
+  }
+  return { type: 'error', error: toErrorMessage(error) };
 }
 
 /** Base error carrying an HTTP status + code for the handler to render. */
@@ -336,7 +362,7 @@ async function* streamPersonaConversation(
       });
       emit({ type: 'done', message: resolvePersonaDoneMessage(turn) });
     } catch (error) {
-      emit({ type: 'error', error: toErrorMessage(error) });
+      emit(streamErrorEvent(error));
     } finally {
       finished = true;
       wake();
@@ -405,12 +431,9 @@ async function* streamPlainConversation(
         }
       }
     } catch (error) {
-      yield {
-        type: 'error',
-        error: isModelTimeoutError(error)
-          ? CHAT_STREAM_TIMEOUT_ERROR
-          : toErrorMessage(error),
-      };
+      yield isModelTimeoutError(error)
+        ? { type: 'error', error: CHAT_STREAM_TIMEOUT_ERROR }
+        : streamErrorEvent(error);
       return;
     }
     if (content.trim()) break;
@@ -521,6 +544,11 @@ export function createChatStreamHandler(
     try {
       context = await options.authorize(request, body);
     } catch (error) {
+      // AI off / not set up (#4757): a structured 503, never a 500.
+      const unavailable = chatUnavailableBody(error);
+      if (unavailable) {
+        return jsonResponse(unavailable, 503, cors(request));
+      }
       const status = error instanceof ChatStreamError ? error.status : 500;
       const code =
         error instanceof ChatStreamError ? error.code : 'chat_stream_error';
@@ -610,12 +638,7 @@ function sseBody(
         closed = true;
         stopHeartbeat();
         controller.enqueue(
-          encoder.encode(
-            encodeChatStreamEvent({
-              type: 'error',
-              error: toErrorMessage(error),
-            }),
-          ),
+          encoder.encode(encodeChatStreamEvent(streamErrorEvent(error))),
         );
         controller.close();
       }

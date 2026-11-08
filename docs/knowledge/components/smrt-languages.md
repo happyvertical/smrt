@@ -5,10 +5,10 @@ description: "Code-first language strings with config + tenant overrides and AI 
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-08T08:52:15Z"
+  at: "2026-11-08T19:39:45Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:b96c06893e47b251d531646b9d2c2dd9147eccca865cf1800b790bdb21d78aa5"
+source_revision: "sha256:d7569adcbc2800a2632c4168d851b886560c4dbd04d2b852f4f6ef1aac17623c"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/languages/package.json"
@@ -24,7 +24,7 @@ sources:
 
 - Directory: `packages/languages`
 - Private: no
-- Object source: `domain-artifact`
+- Object source: `scanner`
 - Evidence level: `source-inspected`
 
 ## Documentation
@@ -59,5 +59,4 @@ sources:
 ## Models
 
 - `LanguageOverride` (collection `languageoverrides`, extends `SmrtObject`)
-- `LanguageOverrideCollection` (collection `languageoverrides`, extends `SmrtCollection`)
 - `LanguageTranslationTask` (collection `languagetranslationtasks`, extends `SmrtObject`)

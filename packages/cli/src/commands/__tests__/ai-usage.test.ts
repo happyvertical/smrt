@@ -27,10 +27,11 @@ describe('parseUsageDimensions', () => {
       'model',
       'tier',
     ]);
-    expect(parseUsageDimensions('class,tenant,fusion')).toEqual([
+    expect(parseUsageDimensions('class,tenant,fusion,source')).toEqual([
       'class',
       'tenant',
       'fusion',
+      'source',
     ]);
   });
 
