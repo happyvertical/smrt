@@ -62,7 +62,10 @@ effective template (Web Crypto, so the root stays free of `node:crypto`).
 `promptMessageOptions(ai, { usageTags? })` is the one helper that turns a
 resolution into `ai.message()` options; package copies re-export it. Tag
 precedence, low to high: a `usageTags` object in params (tenant-editable, so
-it cannot mask identity), the resolution's tags, the caller's. Every consumer
+reserved tags — identity, `runId`, tier, `substitutions`, `fusionKey` — are
+dropped from it), the resolution's tags, the caller's. Params never carry
+`tier`, `latency` or `promptKey` either: tier routing comes only from the
+validated profile. Every consumer
 call site must forward them (`promptMessageOptions()` or a spread of
 `resolved.ai`); core lifts `promptKey` into `_smrt_ai_usage.prompt_key`
 (`../core/agents/ai-usage.md`).

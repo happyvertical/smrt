@@ -50,7 +50,10 @@ itself, so labels are recorded when the verdict is known. Rules:
 
 `reportAiUsage(db, { by, since, until, tenantId })` groups by `prompt`, `model`,
 `tier`, `class`, `tenant`, `fusion`. It reads bounded keyset pages and
-aggregates in memory so the median and tag dimensions stay portable. A filter
+aggregates in memory so the median and tag dimensions stay portable. Pages
+are keyed on `id` within the `created_at` window: correct, but on very large
+windows each page rescans the window; keyset on `(created_at, id)` is a
+follow-up that needs per-engine timestamp round-tripping. A filter
 selects what is totalled, never what is accounted for:
 
 - NULL dimension values are their own bucket (`(unattributed)` in the CLI);

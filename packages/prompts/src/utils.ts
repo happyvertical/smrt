@@ -50,6 +50,11 @@ const AI_ROUTING_PARAM_KEYS = new Set([
   'type',
   'model',
   'defaultModel',
+  // Inference tier routing (#4750) comes only from the validated profile;
+  // a (tenant-editable) params layer can never pick or spoof it.
+  'tier',
+  'latency',
+  'promptKey',
 ]);
 
 export function isPlainObject(
@@ -434,17 +439,23 @@ export interface PromptMessageOptionsExtra {
  * `SmrtObject.prepareAiOperation()` so the tier keys never reach a provider.
  *
  * Tag precedence, low to high: a `usageTags` object carried in the prompt's
- * params (tenant-editable, so it can never mask the identity tags), the
- * resolution's identity tags, then the caller's `extra.usageTags`.
+ * params (tenant-editable: reserved tags such as runId or tier tags are
+ * dropped from it), the resolution's identity tags, then `extra.usageTags`.
  */
 export function promptMessageOptions(
   ai: ResolvedPromptAI,
   extra: PromptMessageOptionsExtra = {},
 ): PromptMessageOptions {
-  const params = ai.params || {};
+  // Tier routing keys never ride in on params, even for a hand-built object.
+  const {
+    tier: _tier,
+    latency: _latency,
+    promptKey: _promptKey,
+    ...params
+  } = ai.params || {};
   const routeTier = extra.routeTier !== false;
   const usageTags = {
-    ...stringTags(params.usageTags),
+    ...paramUsageTags(params.usageTags),
     ...(ai.usageTags ?? {}),
     ...(extra.usageTags ?? {}),
   };
@@ -463,10 +474,30 @@ export function promptMessageOptions(
   };
 }
 
-function stringTags(value: unknown): Record<string, string> {
+/**
+ * Usage tags that feed indexed columns, tenant checks or report accounting
+ * (#4751, #4750, #4752, #4753). A tenant-editable params layer must never
+ * set them: a forged `runId` could make another tenant's run look shared and
+ * block its outcome labels, and forged tier or substitution tags would skew
+ * the report. Only the resolution and the calling code may set these.
+ */
+const RESERVED_USAGE_TAGS = new Set([
+  'promptKey',
+  'promptLayer',
+  'templateHash',
+  'runId',
+  'tierRequested',
+  'tierResolved',
+  'substitutions',
+  'fusionKey',
+]);
+
+/** Free-form tags from params, minus the reserved ones. */
+function paramUsageTags(value: unknown): Record<string, string> {
   if (!isPlainObject(value)) return {};
   const tags: Record<string, string> = {};
   for (const [key, tag] of Object.entries(value)) {
+    if (RESERVED_USAGE_TAGS.has(key)) continue;
     if (tag !== undefined && tag !== null) tags[key] = String(tag);
   }
   return tags;

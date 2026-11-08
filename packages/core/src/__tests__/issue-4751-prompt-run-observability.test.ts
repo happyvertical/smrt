@@ -400,6 +400,23 @@ describe('recordAiUsageOutcome / listAiUsageOutcomes', () => {
     ).rejects.toThrow(/score/);
   });
 
+  it('treats an empty tenant filter as a tenant, never as no filter', async () => {
+    await recordAiUsageOutcome(db, {
+      usageId: 'seed-t1',
+      label: 'a',
+      actor: 'x',
+    });
+    await recordAiUsageOutcome(db, {
+      usageId: 'seed-t3',
+      label: 'b',
+      actor: 'x',
+    });
+    expect(await listAiUsageOutcomes(db, { tenantId: '' })).toEqual([]);
+    const report = await reportAiUsage(db, { tenantId: '' });
+    expect(report.totals.calls).toBe(0);
+    expect(report.totals.outcomes).toEqual({});
+  });
+
   it('keeps the label after retention prunes its usage row', async () => {
     await recordAiUsageOutcome(db, {
       usageId: 'seed-t2',

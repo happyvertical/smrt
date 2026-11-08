@@ -205,6 +205,23 @@ describe('prompt usage tags (#4751)', () => {
     });
   });
 
+  it('drops reserved tags from params-carried usageTags', () => {
+    const options = promptMessageOptions({
+      params: {
+        usageTags: {
+          runId: 'victim-run',
+          tierRequested: 'best',
+          tierResolved: 'best',
+          substitutions: '[]',
+          fusionKey: 'forged',
+          promptLayer: 'forged',
+          source: 'params',
+        },
+      },
+    });
+    expect(options.usageTags).toEqual({ source: 'params' });
+  });
+
   it('forwards tier and promptKey for a tier profile unless routeTier is false', async () => {
     definePrompt({
       key: 'tags.tier',
@@ -223,6 +240,34 @@ describe('prompt usage tags (#4751)', () => {
     expect(direct).not.toHaveProperty('tier');
     expect(direct).not.toHaveProperty('promptKey');
     expect(direct.usageTags?.promptKey).toBe('tags.tier');
+  });
+
+  it('never takes tier routing keys from params', async () => {
+    definePrompt({
+      key: 'tags.params-tier',
+      template: 'P',
+      ai: { params: { tier: 'best', latency: 'interactive', promptKey: 'x' } },
+      editable: EDITABLE,
+    });
+    await overrides.create({
+      key: 'tags.params-tier',
+      tenantId: null,
+      params: { tier: 'great', promptKey: 'injected', topP: 0.5 },
+    });
+
+    const resolved = await resolvePrompt('tags.params-tier', { db });
+    expect(resolved.ai.params).toEqual({ topP: 0.5 });
+    expect(resolved.ai.tier).toBeUndefined();
+
+    for (const routeTier of [true, false]) {
+      const options = promptMessageOptions(
+        { params: { tier: 'great', latency: 'interactive', promptKey: 'p' } },
+        { routeTier },
+      );
+      expect(options).not.toHaveProperty('tier');
+      expect(options).not.toHaveProperty('latency');
+      expect(options).not.toHaveProperty('promptKey');
+    }
   });
 
   it('omits usageTags for a hand-built AI object with none', () => {

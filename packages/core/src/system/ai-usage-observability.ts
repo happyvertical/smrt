@@ -344,8 +344,12 @@ export async function listAiUsageOutcomes(
   if (options.usageId) add('usage_id = ?', options.usageId);
   if (options.runId) add('run_id = ?', options.runId);
   if (options.label) add('label = ?', options.label);
+  // Every supplied string filters, '' included: a falsy check would drop the
+  // predicate and return every tenant's labels.
   if (options.tenantId === null) conditions.push('tenant_id IS NULL');
-  else if (options.tenantId) add('tenant_id = ?', options.tenantId);
+  else if (options.tenantId !== undefined) {
+    add('tenant_id = ?', options.tenantId);
+  }
   if (options.since) add('created_at >= ?', options.since.toISOString());
   if (options.until) add('created_at <= ?', options.until.toISOString());
   params.push(options.limit ?? 100);
@@ -619,7 +623,7 @@ export async function reportAiUsage(
     const conditions: string[] = [];
     const params: unknown[] = [];
     if (options.tenantId === null) conditions.push('tenant_id IS NULL');
-    else if (options.tenantId) {
+    else if (options.tenantId !== undefined) {
       params.push(options.tenantId);
       conditions.push(`tenant_id = $${params.length}`);
     }
