@@ -17,6 +17,7 @@
 
 import { getSmrtModuleConfig } from './config/global-config.js';
 import { config as globalSignalConfig } from './config.js';
+import type { DecisionRequest, DecisionResult } from './decisions.js';
 import { SmrtError } from './smrt-error.js';
 
 /** Ordered quality tiers, cheapest first. `fast` is deliberately not a tier. */
@@ -41,10 +42,69 @@ export const DEFAULT_INFERENCE_TIER: InferenceTier = 'good';
  * Target shapes. `single` (the default when `kind` is omitted) is one
  * provider and model. `alias` names an entry of `inference.aliases`, and
  * `candidates` is an inline ordered chain; both are run by the registered
- * {@link InferenceExecutor} (`@happyvertical/smrt-inference`, #4752). Later
- * children add further kinds (`fusion`, #4753).
+ * {@link InferenceExecutor} (`@happyvertical/smrt-inference`, #4752).
+ * `fusion` names a consumer-defined fusion (#4753) run by the same executor.
  */
-export type InferenceTargetKind = 'single' | 'alias' | 'candidates';
+export type InferenceTargetKind = 'single' | 'alias' | 'candidates' | 'fusion';
+
+/**
+ * Fusion modes (#4753). Modes are code, fusions are config: v1 ships exactly
+ * these three, each with a fixed, documented number of model calls.
+ *
+ * - `single`: one seat (1 call).
+ * - `pair`: the first two seats in parallel, then the third seat merges both
+ *   outputs, labelled by seat and model (3 calls).
+ * - `handoff`: the first seat drafts, the second receives the draft and
+ *   answers (2 calls).
+ */
+export const INFERENCE_FUSION_MODES = ['single', 'pair', 'handoff'] as const;
+
+export type InferenceFusionMode = (typeof INFERENCE_FUSION_MODES)[number];
+
+/** One seat of a fusion: a registered prompt key run on a target. */
+export interface InferenceFusionSeat {
+  /**
+   * Seat name, recorded as the `seat` usage tag and the run record's persona.
+   * Default: the prompt key. Unique within a fusion.
+   */
+  name?: string;
+  /**
+   * A prompt key registered with smrt-prompts `definePrompt()`. Its resolved
+   * template (code default, config, app and tenant overrides) is the seat's
+   * instructions, so tenant overrides of a seat need no new mechanism.
+   */
+  prompt: string;
+  /**
+   * A tier name (resolved through the same resolver, so per-user bindings
+   * apply), or a target: `{ alias }`, `{ candidates }` or an inline
+   * `{ provider, model }`. Never another fusion.
+   */
+  target: InferenceTierRequest | InferenceTarget;
+  temperature?: number;
+  /** `json` asks for a JSON object and parses it; default `text`. */
+  output?: 'text' | 'json';
+}
+
+/**
+ * A decision gate (#4753) evaluated through the instance's typed-decision
+ * client (the `evaluate()` path). When the answer is `sufficientWhen.choice`
+ * with at least `minConfidence`, the remaining stage is skipped and recorded
+ * as `skipped`.
+ */
+export interface InferenceFusionGate {
+  /** What the outputs so far must satisfy for the remaining stage to be skipped. */
+  criteria: string;
+  sufficientWhen: { choice: string; minConfidence: number };
+}
+
+/** A consumer-defined fusion (`inference.fusions.<key>` or `defineFusion()`). */
+export interface InferenceFusionDefinition {
+  mode: InferenceFusionMode;
+  seats: InferenceFusionSeat[];
+  /** `pair` and `handoff` only. */
+  gate?: InferenceFusionGate;
+  description?: string;
+}
 
 /**
  * One entry of an ordered fallback chain (#4752).
@@ -126,6 +186,8 @@ export interface InferenceTarget {
   alias?: string;
   /** `kind: 'candidates'`: an inline ordered chain. */
   candidates?: InferenceCandidate[];
+  /** `kind: 'fusion'`: the fusion key to run (#4753). */
+  fusion?: string;
 }
 
 /**
@@ -141,6 +203,7 @@ export function inferenceTargetKind(
   if (typeof kind === 'string' && kind !== '') return kind;
   if (typeof target.alias === 'string') return 'alias';
   if (Array.isArray(target.candidates)) return 'candidates';
+  if (typeof target.fusion === 'string') return 'fusion';
   return 'single';
 }
 
@@ -160,6 +223,11 @@ export interface InferenceConfig {
    * (#4752). Default `true`; a call's `minimumTier` stops the walk.
    */
   degrade?: boolean;
+  /**
+   * Consumer-defined fusions by key (#4753), app-level only. Each fusion is
+   * replaced whole by the highest layer defining it. SMRT ships none.
+   */
+  fusions?: Record<string, InferenceFusionDefinition>;
 }
 
 /** Input to an {@link InferenceResolver}. */
@@ -346,6 +414,14 @@ export function mergeInferenceConfigs(
         merged.aliases[name] = alias as InferenceAlias;
       }
     }
+    const fusions = asRecord(record.fusions);
+    if (fusions) {
+      for (const [name, fusion] of Object.entries(fusions)) {
+        if (fusion === undefined) continue;
+        merged.fusions ??= {};
+        merged.fusions[name] = fusion as InferenceFusionDefinition;
+      }
+    }
     const tiers = asRecord(record.tiers);
     if (tiers) {
       for (const [tier, target] of Object.entries(tiers)) {
@@ -399,6 +475,14 @@ export function assertInferenceConfig(
   for (const [name, alias] of Object.entries(value.aliases ?? {})) {
     if (!asRecord(alias)) {
       throw new Error(`inference.aliases.${name} must be an object.`);
+    }
+  }
+  if (value.fusions !== undefined && !asRecord(value.fusions)) {
+    throw new Error('inference.fusions must be an object of named fusions.');
+  }
+  for (const [name, fusion] of Object.entries(value.fusions ?? {})) {
+    if (!asRecord(fusion)) {
+      throw new Error(`inference.fusions.${name} must be an object.`);
     }
   }
 }
@@ -521,6 +605,46 @@ export interface InferenceUsageRecord {
   tags: Record<string, string>;
 }
 
+/**
+ * A usage event observed for one run (#4753): the normalized event core
+ * hands its usage handlers, minus everything but identity and totals.
+ */
+export interface InferenceUsageObservation {
+  provider: string;
+  model: string;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  estimatedCost?: number;
+  duration: number;
+  tags: Record<string, string>;
+}
+
+/** Outcome of a multi-call run (`_smrt_ai_runs.status`). */
+export type InferenceRunStatus = 'ok' | 'degraded' | 'failed';
+
+/**
+ * One multi-call run (a fusion, #4753) for `_smrt_ai_runs`. Core adds the
+ * instance's tenant and class when it writes the row.
+ */
+export interface InferenceRunRecord {
+  /** The run id every seat's usage row carries as its `runId` tag. */
+  id: string;
+  fusionKey: string;
+  mode: string;
+  /** The entry call's prompt key, when the caller sent one. */
+  promptKey?: string;
+  /** Seats that ran (skipped and never-reached seats excluded). */
+  seats: number;
+  /** Seats that died or answered through a substitution. */
+  degradedSeats: number;
+  status: InferenceRunStatus;
+  /** Wall time of the run in ms. */
+  duration: number;
+  /** Per-seat persona, target, model, usage, substitutions; gate result. */
+  details: Record<string, unknown>;
+}
+
 /** What core hands an {@link InferenceExecutor} for one call. */
 export interface InferenceExecutionContext {
   /** The tier request as the caller made it. */
@@ -538,13 +662,46 @@ export interface InferenceExecutionContext {
    * rules and wired into the instance's usage pipeline.
    */
   clientFor(target: InferenceTarget): Promise<InferenceModelClient>;
-  /** Resolve another tier through the same seam (ladder degradation). */
-  resolveTier(tier: InferenceTier): Promise<InferenceResolution>;
+  /**
+   * Resolve another tier through the same seam (ladder degradation, fusion
+   * seats). `promptKey` replaces the request's for a fusion seat's prompt.
+   */
+  resolveTier(
+    tier: InferenceTier,
+    overrides?: { promptKey?: string },
+  ): Promise<InferenceResolution>;
   /**
    * Record a zero-token usage row through the instance's existing usage
    * pipeline: the row for a call whose every candidate failed.
    */
   recordUsage(record: InferenceUsageRecord): Promise<void>;
+  /**
+   * The instance database, for executors that read stored state such as
+   * app and tenant prompt overrides (fusion seats, #4753). Never written.
+   */
+  db?: unknown;
+  /**
+   * Ask the instance's typed-decision client (the `evaluate()` path, #3159)
+   * one batch of questions, recording its usage with `usageTags`. Resolves
+   * `undefined` when no decision client is configured. Used by fusion gates.
+   */
+  decide?(
+    request: DecisionRequest,
+    options?: { usageTags?: Record<string, string>; signal?: AbortSignal },
+  ): Promise<DecisionResult | undefined>;
+  /**
+   * Persist a run record into `_smrt_ai_runs` when usage persistence is on;
+   * a no-op otherwise. Never throws for a write failure (logged instead).
+   */
+  recordRun?(record: InferenceRunRecord): Promise<void>;
+  /**
+   * Observe the usage events whose `runId` tag is `runId` until the
+   * returned function is called (per-seat usage in the run record).
+   */
+  observeUsage?(
+    runId: string,
+    listener: (event: InferenceUsageObservation) => void,
+  ): () => void;
 }
 
 /**
