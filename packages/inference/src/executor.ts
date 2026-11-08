@@ -1,0 +1,481 @@
+/**
+ * The chain executor (#4752): runs `alias` and `candidates` tier targets.
+ *
+ * Per call it expands the resolved target into ordered candidates and tries
+ * them in turn. A failure is classified (`classify.ts`); `transient` retries
+ * the same candidate once after a jittered delay, every class then advances.
+ * When a tier's chain is spent and `inference.degrade !== false`, the walk
+ * moves down the ladder (never up), stopping at `minimumTier`. Each move is
+ * a substitution `{ from, to, reason }` carried in the answering call's
+ * `substitutions` usage tag with `tierResolved` set to the tier that
+ * answered; a call that never answered records one zero-token row through
+ * core's usage pipeline and throws {@link InferenceExhaustedError}.
+ *
+ * Text already streamed to the caller is never extended by another
+ * candidate: a candidate that emitted text and then failed ends the walk
+ * with a `partial` substitution (the caller gets the error unless
+ * `allowPartial`).
+ *
+ * The executor imports no SDK: it drives the clients core builds through
+ * `context.clientFor()`, so tests run it with fake clients.
+ */
+import {
+  compareInferenceTiers,
+  INFERENCE_TIERS,
+  type InferenceCallOptions,
+  type InferenceExecutionContext,
+  type InferenceExecutor,
+  type InferenceModelClient,
+  type InferenceTier,
+} from '@happyvertical/smrt-core';
+import { classifyInferenceFailure, isInferenceAbort } from './classify.js';
+import { CHAIN_KINDS, type ChainStep, expandTarget } from './config.js';
+import { InferenceExhaustedError } from './errors.js';
+import type {
+  InferenceFailureClass,
+  InferenceSubstitution,
+  InferenceSubstitutionReason,
+} from './types.js';
+
+/** Test seams for the executor; production uses the defaults. */
+export interface ChainExecutorOptions {
+  /** Delay before the one transient retry. Default 200–500 ms, jittered. */
+  retryDelayMs?: () => number;
+  /** Sleep implementation. */
+  sleep?: (ms: number) => Promise<void>;
+  /** Clock for the failure row's duration. */
+  now?: () => number;
+}
+
+type Outcome<T> =
+  | { ok: true; value: T }
+  | {
+      ok: false;
+      cls: InferenceFailureClass | undefined;
+      error: unknown;
+      emitted: string;
+    };
+
+/** A refusal that arrived as a finish reason, not an error. */
+class RefusalSignal extends Error {
+  readonly code = 'CONTENT_FILTERED';
+}
+
+const REFUSAL_FINISH = new Set(['refusal', 'content_filter']);
+
+function lowerTier(tier: InferenceTier): InferenceTier | undefined {
+  const index = INFERENCE_TIERS.indexOf(tier);
+  return index > 0 ? INFERENCE_TIERS[index - 1] : undefined;
+}
+
+function defaultSleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+type Invoke<T> = (
+  client: InferenceModelClient,
+  options: InferenceCallOptions,
+  emit: (chunk: string) => void,
+) => Promise<T>;
+
+function method(
+  client: InferenceModelClient,
+  name: string,
+): (...args: unknown[]) => unknown {
+  const fn = client[name];
+  if (typeof fn !== 'function') {
+    throw new TypeError(`Inference client does not implement ${name}().`);
+  }
+  return (fn as (...args: unknown[]) => unknown).bind(client);
+}
+
+class ChainCall {
+  private readonly started: number;
+  private readonly substitutions: InferenceSubstitution[] = [];
+  private lastStep: ChainStep | undefined;
+
+  constructor(
+    private readonly context: InferenceExecutionContext,
+    private readonly options: Required<ChainExecutorOptions>,
+    private readonly operation: string,
+    private readonly callerOptions: InferenceCallOptions,
+  ) {
+    this.started = options.now();
+  }
+
+  private get tierRequested(): string {
+    return (
+      this.callerOptions.usageTags?.tierRequested ?? this.context.request.tier
+    );
+  }
+
+  private callOptions(
+    step: ChainStep,
+    emit: (chunk: string) => void,
+    finish: { reason?: string; replay: Array<() => void> },
+  ): InferenceCallOptions {
+    const {
+      usageTags: callerTags,
+      onProgress,
+      onFinishReason,
+      onRefusal,
+      ...rest
+    } = this.callerOptions as InferenceCallOptions & {
+      onProgress?: (chunk: string) => void;
+      onFinishReason?: (reason: string) => void;
+      onRefusal?: (refusal: unknown) => void;
+    };
+    const model =
+      typeof step.target.model === 'string' ? step.target.model : undefined;
+    return {
+      ...(step.params ?? {}),
+      ...rest,
+      // A candidate names its own model; a caller model cannot follow the
+      // call onto another provider.
+      ...(model ? { model } : {}),
+      usageTags: {
+        ...(callerTags ?? {}),
+        tierRequested: this.tierRequested,
+        tierResolved: step.tier,
+        ...(this.substitutions.length > 0
+          ? { substitutions: JSON.stringify(this.substitutions) }
+          : {}),
+      },
+      ...(onProgress
+        ? {
+            onProgress: (chunk: string) => {
+              emit(chunk);
+              onProgress(chunk);
+            },
+          }
+        : {}),
+      // Finish callbacks are held until this candidate's answer is kept, so
+      // a refused candidate the walk skips never reaches the caller.
+      onFinishReason: (reason: string) => {
+        finish.reason = reason;
+        if (onFinishReason) finish.replay.push(() => onFinishReason(reason));
+      },
+      ...(onRefusal
+        ? {
+            onRefusal: (refusal: unknown) => {
+              finish.replay.push(() => onRefusal(refusal));
+            },
+          }
+        : {}),
+    };
+  }
+
+  private async attemptOnce<T>(
+    step: ChainStep,
+    invoke: Invoke<T>,
+    isRefusal: ((value: T) => boolean) | undefined,
+  ): Promise<Outcome<T>> {
+    let emitted = '';
+    const emit = (chunk: string) => {
+      emitted += chunk;
+    };
+    const finish: { reason?: string; replay: Array<() => void> } = {
+      replay: [],
+    };
+    try {
+      const client = await this.context.clientFor(step.target);
+      const value = await invoke(
+        client,
+        this.callOptions(step, emit, finish),
+        emit,
+      );
+      const refused =
+        (finish.reason !== undefined && REFUSAL_FINISH.has(finish.reason)) ||
+        (isRefusal?.(value) ?? false);
+      if (refused && emitted === '') {
+        return {
+          ok: false,
+          cls: 'refusal',
+          error: new RefusalSignal(`${step.label} declined the request`),
+          emitted,
+        };
+      }
+      for (const replay of finish.replay) replay();
+      return { ok: true, value };
+    } catch (error) {
+      return {
+        ok: false,
+        cls: classifyInferenceFailure(error),
+        error,
+        emitted,
+      };
+    }
+  }
+
+  private async attempt<T>(
+    step: ChainStep,
+    invoke: Invoke<T>,
+    isRefusal: ((value: T) => boolean) | undefined,
+  ): Promise<Outcome<T>> {
+    const first = await this.attemptOnce(step, invoke, isRefusal);
+    if (first.ok || first.cls !== 'transient' || first.emitted !== '') {
+      return first;
+    }
+    await this.options.sleep(this.options.retryDelayMs());
+    return this.attemptOnce(step, invoke, isRefusal);
+  }
+
+  private async recordFailure(
+    outcome: 'failed' | 'partial',
+    reason: InferenceSubstitutionReason | 'unclassified',
+  ): Promise<void> {
+    const step = this.lastStep;
+    try {
+      await this.context.recordUsage({
+        ...(typeof step?.target.provider === 'string'
+          ? { provider: step.target.provider }
+          : {}),
+        ...(typeof step?.target.model === 'string'
+          ? { model: step.target.model }
+          : {}),
+        operation: this.operation,
+        duration: Math.max(0, this.options.now() - this.started),
+        tags: {
+          ...(this.callerOptions.usageTags ?? {}),
+          tierRequested: this.tierRequested,
+          outcome,
+          reason,
+          substitutions: JSON.stringify(this.substitutions),
+        },
+      });
+    } catch {
+      // Recording must never mask the call's own failure.
+    }
+  }
+
+  async run<T>(
+    invoke: Invoke<T>,
+    isRefusal?: (value: T) => boolean,
+    partialValue?: (text: string) => T,
+  ): Promise<T> {
+    const { context } = this;
+    const attempted = new Set<string>();
+    let pending:
+      | { label: string; reason: InferenceFailureClass; error?: unknown }
+      | undefined;
+    let tier = context.resolution.tierResolved;
+    let steps = expandTarget(context.resolution.target, tier, context.config);
+
+    for (;;) {
+      for (const step of steps) {
+        if (attempted.has(step.identity)) continue;
+        attempted.add(step.identity);
+        if (pending) {
+          this.substitutions.push({
+            from: pending.label,
+            to: step.label,
+            reason: pending.reason,
+          });
+        }
+        pending = undefined;
+        this.lastStep = step;
+        if (step.unavailable) {
+          pending = { label: step.label, reason: step.unavailable };
+          continue;
+        }
+
+        const outcome = await this.attempt(step, invoke, isRefusal);
+        if (outcome.ok) return outcome.value;
+
+        if (outcome.emitted !== '') {
+          this.substitutions.push({
+            from: step.label,
+            to: null,
+            reason: 'partial',
+          });
+          await this.recordFailure('partial', outcome.cls ?? 'unclassified');
+          if (context.allowPartial && partialValue) {
+            return partialValue(outcome.emitted);
+          }
+          throw new InferenceExhaustedError({
+            reason: 'partial',
+            substitutions: [...this.substitutions],
+            tierRequested: this.tierRequested,
+            partialText: outcome.emitted,
+            cause: outcome.error,
+          });
+        }
+        if (outcome.cls === undefined) {
+          // Not a routing failure: a caller abort records nothing (nothing
+          // ran to completion by choice); anything else is recorded and
+          // rethrown as the caller's own error.
+          if (!isInferenceAbort(outcome.error)) {
+            await this.recordFailure('failed', 'unclassified');
+          }
+          throw outcome.error;
+        }
+        pending = {
+          label: step.label,
+          reason: outcome.cls,
+          error: outcome.error,
+        };
+      }
+
+      if (context.config?.degrade === false) break;
+      const next = lowerTier(tier);
+      if (!next) break;
+      if (
+        context.minimumTier &&
+        compareInferenceTiers(next, context.minimumTier) < 0
+      ) {
+        break;
+      }
+      const resolution = await context.resolveTier(next);
+      tier = resolution.tierResolved;
+      steps = expandTarget(resolution.target, tier, context.config);
+    }
+
+    if (pending) {
+      this.substitutions.push({
+        from: pending.label,
+        to: null,
+        reason: pending.reason,
+      });
+    }
+    const reason = pending?.reason ?? 'unclassified';
+    await this.recordFailure('failed', reason);
+    throw new InferenceExhaustedError({
+      reason,
+      substitutions: [...this.substitutions],
+      tierRequested: this.tierRequested,
+      cause: pending?.error,
+    });
+  }
+}
+
+/** Simple unbounded async queue backing `stream()`. */
+function createChunkQueue() {
+  const chunks: string[] = [];
+  let wake: (() => void) | undefined;
+  let done = false;
+  let failure: { error: unknown } | undefined;
+  return {
+    push(chunk: string) {
+      chunks.push(chunk);
+      wake?.();
+    },
+    end(error?: { error: unknown }) {
+      done = true;
+      failure = error;
+      wake?.();
+    },
+    async *drain(): AsyncGenerator<string> {
+      for (;;) {
+        if (chunks.length > 0) {
+          yield chunks.shift() as string;
+          continue;
+        }
+        if (done) {
+          if (failure) throw failure.error;
+          return;
+        }
+        await new Promise<void>((resolve) => {
+          wake = resolve;
+        });
+        wake = undefined;
+      }
+    },
+  };
+}
+
+function isRefusalResponse(value: unknown): boolean {
+  const reason = (value as { finishReason?: unknown } | null)?.finishReason;
+  return typeof reason === 'string' && REFUSAL_FINISH.has(reason);
+}
+
+/**
+ * A client whose calls walk the chain in `context.resolution`. `message`,
+ * `chat`, `complete` and `stream` walk; `embed` uses the first candidate
+ * that can run.
+ */
+export function createChainClient(
+  context: InferenceExecutionContext,
+  options: ChainExecutorOptions = {},
+): InferenceModelClient {
+  const resolved: Required<ChainExecutorOptions> = {
+    retryDelayMs: options.retryDelayMs ?? (() => 200 + Math.random() * 300),
+    sleep: options.sleep ?? defaultSleep,
+    now: options.now ?? (() => Date.now()),
+  };
+  const call = (operation: string, callerOptions?: InferenceCallOptions) =>
+    new ChainCall(context, resolved, operation, callerOptions ?? {});
+
+  return {
+    message(text: string, callerOptions?: InferenceCallOptions) {
+      return call('message', callerOptions).run<string>(
+        (client, opts) => client.message(text, opts),
+        undefined,
+        (partial) => partial,
+      );
+    },
+    chat(messages: unknown, callerOptions?: InferenceCallOptions) {
+      return call('chat', callerOptions).run<unknown>(
+        (client, opts) =>
+          Promise.resolve(method(client, 'chat')(messages, opts)),
+        isRefusalResponse,
+      );
+    },
+    complete(prompt: string, callerOptions?: InferenceCallOptions) {
+      return call('complete', callerOptions).run<unknown>(
+        (client, opts) =>
+          Promise.resolve(method(client, 'complete')(prompt, opts)),
+        isRefusalResponse,
+      );
+    },
+    stream(messages: unknown, callerOptions?: InferenceCallOptions) {
+      const queue = createChunkQueue();
+      call('stream', callerOptions)
+        .run<void>(
+          async (client, opts, emit) => {
+            const iterable = method(client, 'stream')(
+              messages,
+              opts,
+            ) as AsyncIterable<string>;
+            for await (const chunk of iterable) {
+              emit(chunk);
+              queue.push(chunk);
+            }
+          },
+          undefined,
+          () => undefined,
+        )
+        .then(
+          () => queue.end(),
+          (error: unknown) => queue.end({ error }),
+        );
+      return queue.drain();
+    },
+    async embed(...args: unknown[]) {
+      const steps = expandTarget(
+        context.resolution.target,
+        context.resolution.tierResolved,
+        context.config,
+      );
+      const step = steps.find((candidate) => !candidate.unavailable);
+      if (!step) {
+        throw new InferenceExhaustedError({
+          reason: steps[0]?.unavailable ?? 'unclassified',
+          substitutions: [],
+          tierRequested: context.request.tier,
+        });
+      }
+      const client = await context.clientFor(step.target);
+      return method(client, 'embed')(...args);
+    },
+  };
+}
+
+/** The executor registered into core's seam for `alias` / `candidates`. */
+export function createChainExecutor(
+  options: ChainExecutorOptions = {},
+): InferenceExecutor {
+  return {
+    kinds: CHAIN_KINDS,
+    createClient: (context) => createChainClient(context, options),
+  };
+}
