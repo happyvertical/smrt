@@ -831,7 +831,10 @@ export function createAdoptionMethods(config, command, helpers, options) {
       );
     const stale = pairs.filter(legacyOwned);
     if (stale.length) {
-      await observeWriterFence(plan, snapshot, stage);
+      verifyNativeWriterFence(await observeWriterFence(plan, snapshot, stage), {
+        ...plan.fenceContract,
+        namespace: plan.namespace,
+      });
       for (const [r, actual] of stale) {
         const helm = ownedLeaves(actual, 'helm-controller');
         const leaves = [...ownedLeaves(actual, r.legacyManager)]
@@ -978,7 +981,10 @@ export function createAdoptionMethods(config, command, helpers, options) {
       // Publication boundary: the fence observed before the gate may have aged
       // past its window during the fetch and history checks; refresh it here,
       // as the ordinary release CAS does, before anything becomes durable.
-      await observeWriterFence(plan, snapshot, state.stage);
+      verifyNativeWriterFence(
+        await observeWriterFence(plan, snapshot, state.stage),
+        { ...plan.fenceContract, namespace: plan.namespace },
+      );
       await git('push', 'origin', `${revision}:refs/heads/${branch}`);
       return { stage: state.stage, revision };
     } finally {

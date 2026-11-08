@@ -417,12 +417,12 @@ test('native Git CAS atomically renames staging, rejects superseded file history
     await git('push', 'origin', 'main');
     const { plan } = fixture();
     const fluxPath = plan.canonicalFile.slice(0, plan.canonicalFile.lastIndexOf('/'));
-    let fences = 0;
+    let fences = 0, staleFence = false;
     const methods = createAdoptionMethods(
       { repository, branch: 'main', adoption: { fluxPath } },
       command,
       {},
-      { adoptionFenceObserver: async () => { fences++; return fence(plan); } },
+      { adoptionFenceObserver: async () => { fences++; return staleFence ? { ...fence(plan), observedAt: Date.now() - 60000 } : fence(plan); } },
     );
     const adapter = unitAdapter(plan);
     // Produce valid protocol journals while exercising publication against a real local bare remote.
@@ -462,9 +462,15 @@ test('native Git CAS atomically renames staging, rejects superseded file history
     snapshot = await methods.readAdoption(plan);
     await adoptOrResume(fixture().config, adapter, plan);
     const final = adapter.snapshot();
+    const beforeFinal = await git('rev-parse', 'origin/main');
+    staleFence = true;
+    await assert.rejects(() => methods.casAdoption(snapshot, plan, final.state, final.canonical), /fence/i);
+    await git('fetch', 'origin');
+    assert.equal(await git('rev-parse', 'origin/main'), beforeFinal, 'an unverified fence at the publication boundary pushes nothing');
+    staleFence = false;
     await methods.casAdoption(snapshot, plan, final.state, final.canonical);
     const published = await methods.readAdoption(plan);
-    assert.equal(fences, 6, 'every publication refreshes the writer fence at its boundary');
+    assert.equal(fences, 7, 'every publication refreshes and verifies the writer fence at its boundary');
     assert.equal(published.staging, null);
     assert.ok(published.canonical);
     assert.equal(
@@ -790,16 +796,30 @@ test('native legacy gates bind actual UID, stop/relinquish revisions, selectors,
       acknowledge: async () => {},
       provePhase: async () => ({ bindings: sha }),
       helmOwner: (o) => assert.ok(o.metadata.managedFields.some((e) => e.manager === 'helm-controller')),
-      releaseLegacyManager: async (o, manager, document) => {
+      releaseLegacyManager: async (o, manager, document, record) => {
         assert.equal(document, adopted.canonical);
         assert.ok(fences > 0, 'fence observed before any release');
+        assert.match(record, /^([a-f0-9]{64}|none)$/);
         released.push([o.kind, manager]);
-        if (releaseWorks) o.metadata.managedFields = o.metadata.managedFields.filter((e) => e.manager !== manager);
+        if (releaseWorks) {
+          o.metadata.managedFields = o.metadata.managedFields.filter((e) => e.manager !== manager);
+          o.metadata.annotations = { ...o.metadata.annotations, 'smrt.happyvertical.com/adoption-orphaned-fields': record };
+        }
       },
     });
+    let staleFence = false;
     const counting = createAdoptionMethods(config, async () => '', helpers, {
-      adoptionFenceObserver: async () => { fences++; return fence(plan); },
+      adoptionFenceObserver: async () => {
+        fences++;
+        return staleFence ? { ...fence(plan), observedAt: Date.now() - 60000 } : fence(plan);
+      },
     });
+    reset();
+    staleFence = true;
+    await assert.rejects(counting.observeAdopted(plan, adopted, 'helm-established'), /fence/i);
+    assert.equal(released.length, 0, 'an unverified fence blocks the release');
+    staleFence = false;
+    fences = 0;
     reset();
     const established = await counting.observeAdopted(plan, adopted, 'helm-established');
     assert.deepEqual(released, [['Deployment', 'kustomize-controller'], ['Ingress', 'kustomize-controller']]);
