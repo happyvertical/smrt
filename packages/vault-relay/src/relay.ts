@@ -714,7 +714,24 @@ export class VaultRelay {
       sha256: digest,
       objectId,
     });
-    if (!added) {
+    if (added) {
+      // On PostgreSQL the insert's pending check takes no lock, so a removal
+      // can commit while the insert is in flight and miss this row. Re-check:
+      // either the remover saw the row, or this check sees the upload gone
+      // and cleans up, so the object is never left outside quota.
+      const parent = await this.store.getByUpload(
+        device.accountId,
+        record.uploadId,
+      );
+      if (!parent) {
+        if (
+          await this.store.deleteChunkAttempt(record.uploadId, index, objectId)
+        ) {
+          await this.deleteObject(key, device.handle);
+        }
+        throw new RelayError(404, 'no_upload');
+      }
+    } else {
       await this.deleteObject(key, device.handle);
       const existing = await this.store.getChunk(record.uploadId, index);
       const current = await this.store.getByUpload(

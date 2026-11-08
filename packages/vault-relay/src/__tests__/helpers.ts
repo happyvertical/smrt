@@ -84,6 +84,8 @@ export async function createHarness(
     entitlements?: VaultRelayEntitlements;
     /** Wrap the filesystem store, e.g. to interleave a concurrent request. */
     wrapObjects?: (store: VaultObjectStore) => VaultObjectStore;
+    /** Build the metadata store, e.g. a subclass that injects a race. */
+    createStore?: (db: DatabaseInterface) => VaultRelayStore;
   } = {},
 ): Promise<Harness> {
   const db = await getDatabase({ type: 'sqlite', url: ':memory:' });
@@ -95,7 +97,7 @@ export async function createHarness(
   );
   const clock = { now: Date.UTC(2026, 10, 8, 12, 0, 0) };
   const relay = new VaultRelay({
-    store: new VaultRelayStore(db),
+    store: options.createStore?.(db) ?? new VaultRelayStore(db),
     objects: (options.wrapObjects ?? ((store) => store))(
       new FilesystemObjectStore(storeRoot),
     ),

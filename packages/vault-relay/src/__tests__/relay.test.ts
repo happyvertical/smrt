@@ -671,6 +671,45 @@ describe('concurrent writes', () => {
     }
   });
 
+  it('cleans up a chunk recorded while a concurrent removal missed it', async () => {
+    // Simulates PostgreSQL READ COMMITTED: the remover deletes the upload and
+    // lists chunk rows before this insert commits, so it never sees the row.
+    class RacingStore extends VaultRelayStore {
+      override async addChunk(
+        ...args: Parameters<VaultRelayStore['addChunk']>
+      ): Promise<boolean> {
+        const added = await super.addChunk(...args);
+        const [accountId, uploadId] = args;
+        await this.deleteSnapshotRow(accountId, uploadId, 'pending');
+        return added;
+      }
+    }
+    const local = await createHarness({
+      createStore: (db) => new RacingStore(db),
+    });
+    try {
+      const device = newDevice('acct-a', 'device-a1');
+      await registerDevice(local, device);
+      const blob = randomBytes(100);
+      const uploadId = await begin(local, device, 1, blob);
+      const put = await local.relay.handle(
+        signed(local, device, 'PUT', `/v1/uploads/${uploadId}/chunks/0`, {
+          body: blob,
+        }),
+      );
+      expect(put.status).toBe(404);
+      const files = await readdir(local.storeRoot, {
+        recursive: true,
+        withFileTypes: true,
+      });
+      expect(files.filter((entry) => entry.isFile())).toEqual([]);
+      const rows = await local.db.query('SELECT * FROM vault_relay_chunks');
+      expect(rows.rows).toEqual([]);
+    } finally {
+      await local.close();
+    }
+  });
+
   it('never replaces a chunk once stored; an identical retry is idempotent', async () => {
     const blob = randomBytes(100);
     const uploadId = await begin(h, a1, 1, blob);

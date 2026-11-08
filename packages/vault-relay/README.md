@@ -97,7 +97,7 @@ Served on a separate listener, which must stay cluster-internal, and only when
 | `PUT /admin/v1/accounts/:account/devices/:device` | Register a device key: `{ publicKey }` (raw 32-byte Ed25519 key, base64url). Idempotent for the same key. A revoked id, or a different key under an existing id, is `409`. |
 | `DELETE /admin/v1/accounts/:account/devices/:device` | Revoke a device. Effective on its next request. |
 | `GET /admin/v1/accounts/:account` | Usage, snapshot sizes and dates, device states. Never content. |
-| `POST /admin/v1/accounts/:account/reconcile` | Recompute quota counters from snapshot rows. |
+| `POST /admin/v1/accounts/:account/reconcile` | Recompute quota counters from snapshot rows. Run it while the account is quiet: a reconcile racing an upload can under-count until the next reconcile. |
 | `POST /admin/v1/sweep` | Expire abandoned uploads and old nonces (also runs every minute). |
 
 The same hooks are available in-process: `relay.registerDevice()`,

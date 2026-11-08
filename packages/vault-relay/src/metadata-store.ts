@@ -595,6 +595,23 @@ export class VaultRelayStore {
     return found.rows[0] ? chunkFromRow(found.rows[0]) : null;
   }
 
+  /** Delete one recorded chunk attempt; `true` when this call removed it. */
+  async deleteChunkAttempt(
+    uploadId: string,
+    index: number,
+    objectId: string,
+  ): Promise<boolean> {
+    const deleted = await this.db.query(
+      `DELETE FROM vault_relay_chunks
+        WHERE upload_id = ? AND chunk_index = ? AND object_id = ?
+        RETURNING chunk_index`,
+      uploadId,
+      index,
+      objectId,
+    );
+    return deleted.rows.length === 1;
+  }
+
   /** Delete every chunk row of an upload; returns the removed rows. */
   async deleteChunks(uploadId: string): Promise<ChunkRecord[]> {
     const deleted = await this.db.query(
