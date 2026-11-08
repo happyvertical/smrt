@@ -99,14 +99,11 @@ static/legal 200 throughout. The static pod also has no token/credential env.
 
 ## Explicit remaining qualification limits
 
-- Public Ingress HTTPS SAN/leaf checks, immutable reference rotation and correlated
-  rollback are authored through the public TLS CLI. A temporary Cilium deny rule
-  prevents only the ingress controller's API watches while allowing its backend
-  traffic, so a valid new reference can be acknowledged by Flux/Helm while the
-  controller serves its cached prior leaf. The runner must correlate that actual
-  TLS mismatch, restore exact prior references and preserve every native runtime
-  UID/Pod template. This scenario is **unqualified until the actual job succeeds**;
-  no local helper test substitutes for that evidence.
+- Immutable versioned Ingress TLS reference rotation and its negative cases are
+  **not exercised**. The fixture routes are served over HTTPS through ingress-nginx
+  with a disposable CA, but neither that nor native PostgreSQL TLS replaces the
+  missing public rotation requirement. Do not claim adoption ready for production
+  until separate real evidence covers public TLS rotation and its negative cases.
 - The fixture's migration ledger and finite admission policy demonstrate the
   exercise only; downstream durable application phase semantics and the owning
   platform's complete controller/credential fence still need their own evidence.
@@ -127,7 +124,6 @@ PostgreSQL's registry config confirms `PG_MAJOR=17`, `PG_VERSION=17.4`.
 - [helm-controller 1.3.0 public API](https://github.com/fluxcd/helm-controller/blob/v1.3.0/api/v2/helmrelease_types.go)
 - [Official Flux 2.8.8 manifest](https://github.com/fluxcd/flux2/releases/download/v2.8.8/install.yaml)
 - [Cilium Kind installation](https://docs.cilium.io/en/stable/installation/kind/)
-- [Cilium deny precedence](https://docs.cilium.io/en/stable/security/policy/deny/)
 - [Cilium Kubernetes compatibility](https://docs.cilium.io/en/stable/network/kubernetes/compatibility/)
 - [Official Cilium chart index](https://helm.cilium.io/index.yaml)
 - [Official ingress-nginx chart index](https://kubernetes.github.io/ingress-nginx/index.yaml)
