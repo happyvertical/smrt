@@ -6,12 +6,25 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Mock the AI client so the translation job is deterministic — no network,
 // no API key, just the canned Spanish translation.
+const { translationMessage, PROMPT_USAGE_TAGS } = vi.hoisted(() => ({
+  translationMessage: vi.fn(
+    async (_prompt: string, _options?: Record<string, unknown>) =>
+      '{"translation": "Hola, {name}"}',
+  ),
+  // What resolvePrompt() attaches (#4751); the job must forward them.
+  PROMPT_USAGE_TAGS: {
+    promptKey: 'smrt-languages.translation',
+    promptLayer: 'default',
+    templateHash: '0123456789ab',
+  },
+}));
+
 vi.mock('@happyvertical/ai', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@happyvertical/ai')>();
   return {
     ...actual,
     getAI: vi.fn(async () => ({
-      message: vi.fn(async () => '{"translation": "Hola, {name}"}'),
+      message: translationMessage,
     })),
   };
 });
@@ -31,7 +44,12 @@ vi.mock('@happyvertical/smrt-prompts', async (importOriginal) => {
       key: 'smrt-languages.translation',
       template: 'translate {template} to {targetLocale}',
       text: 'translate Hello, {name} to es',
-      ai: { profile: undefined, model: undefined, params: {} },
+      ai: {
+        profile: undefined,
+        model: undefined,
+        params: {},
+        usageTags: PROMPT_USAGE_TAGS,
+      },
     })),
   };
 });
@@ -50,6 +68,7 @@ describe('@happyvertical/smrt-languages — miss → enqueue → run → resolve
   let db: DatabaseInterface;
 
   beforeEach(async () => {
+    translationMessage.mockClear();
     setupTestTenancy();
     LanguageRegistry.clear();
     clearLanguageCache();
@@ -122,6 +141,11 @@ describe('@happyvertical/smrt-languages — miss → enqueue → run → resolve
       targetLocale: 'es',
     });
     expect(result.template).toBe('Hola, {name}');
+    // The resolved prompt's usage tags reach ai.message() (#4751).
+    expect(translationMessage).toHaveBeenCalledTimes(1);
+    expect(translationMessage.mock.calls[0][1]).toMatchObject({
+      usageTags: PROMPT_USAGE_TAGS,
+    });
 
     // The translation job should have written an app-level override.
     const written = await overrides.getAppOverride(

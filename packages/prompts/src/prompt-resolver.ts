@@ -9,7 +9,9 @@ import { PromptOverrideCollection } from './collections/PromptOverrideCollection
 import { PromptRegistry } from './prompt-registry.js';
 import type {
   PromptCacheValue,
+  PromptLayer,
   PromptPackageConfig,
+  PromptSourceLayer,
   ResolvedPrompt,
   ResolvePromptOptions,
 } from './types.js';
@@ -17,8 +19,14 @@ import {
   buildResolvedAI,
   mergePromptLayers,
   normalizePromptLayer,
+  promptTemplateHash,
   renderPromptTemplate,
 } from './utils.js';
+
+/** True when `layer` sets the template (null and undefined inherit). */
+function suppliesTemplate(layer: PromptLayer | null | undefined): boolean {
+  return layer?.template !== undefined && layer.template !== null;
+}
 
 function getPromptConfig(): PromptPackageConfig {
   return getPackageConfig<PromptPackageConfig>('prompts', {
@@ -61,32 +69,45 @@ async function loadPromptBase(
   const loadedAtGeneration = getPromptCacheGeneration(key, cacheDb);
 
   const config = getPromptConfig();
-  const layers = [
+  // Each layer is named so the resolution can report which one supplied the
+  // effective template (the `promptLayer` usage tag, #4751).
+  const layers: Array<{
+    name: PromptCacheValue['templateLayer'];
+    layer: PromptLayer;
+  }> = [
     {
-      template: definition.template,
-      profile: definition.ai.profile ?? null,
-      model: definition.ai.model ?? null,
-      params: definition.ai.params,
+      name: 'default',
+      layer: {
+        template: definition.template,
+        profile: definition.ai.profile ?? null,
+        model: definition.ai.model ?? null,
+        params: definition.ai.params,
+      },
     },
-    normalizePromptLayer(config.prompts?.[key]),
+    { name: 'config', layer: normalizePromptLayer(config.prompts?.[key]) },
   ];
 
   if (collection) {
     const stored = await collection.getResolutionLayers(key, tenantId);
 
     if (stored.app) {
-      layers.push(stored.app.toPromptLayer());
+      layers.push({ name: 'app', layer: stored.app.toPromptLayer() });
     }
 
     if (stored.tenant) {
-      layers.push(stored.tenant.toPromptLayer());
+      layers.push({ name: 'tenant', layer: stored.tenant.toPromptLayer() });
     }
   }
 
-  const merged = mergePromptLayers(...layers);
+  const merged = mergePromptLayers(...layers.map(({ layer }) => layer));
+  let templateLayer: PromptCacheValue['templateLayer'] = 'default';
+  for (const { name, layer } of layers) {
+    if (suppliesTemplate(layer)) templateLayer = name;
+  }
   const value: PromptCacheValue = {
     key,
     template: merged.template,
+    templateLayer,
     ai: merged.ai,
   };
 
@@ -111,10 +132,22 @@ export async function resolvePrompt(
     runtimeOverride,
   );
 
+  const promptLayer: PromptSourceLayer = suppliesTemplate(runtimeOverride)
+    ? 'runtime'
+    : base.templateLayer;
+  const ai = buildResolvedAI(merged.ai, config);
+
   return {
     key,
     template: merged.template,
     text: renderPromptTemplate(merged.template, options.variables),
-    ai: buildResolvedAI(merged.ai, config),
+    ai: {
+      ...ai,
+      usageTags: {
+        promptKey: key,
+        promptLayer,
+        templateHash: await promptTemplateHash(merged.template),
+      },
+    },
   };
 }
