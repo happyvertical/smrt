@@ -9,6 +9,7 @@
  * package's own integration tests; here we focus on Property-level behavior.
  */
 
+import { clearCache, setConfig } from '@happyvertical/smrt-config';
 import { clearPromptCache } from '@happyvertical/smrt-prompts';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Property } from '../models/Property.js';
@@ -147,5 +148,32 @@ describe('Property.summarize()', () => {
       temperature: 0.42,
       maxTokens: 256,
     });
+  });
+  it('forwards a tier profile to the tier path and tags usage (#4750)', async () => {
+    const { promptMessageOptions } = await import('../prompts.js');
+    expect(promptMessageOptions({ tier: 'cheap', params: {} })).toEqual({
+      tier: 'cheap',
+    });
+
+    setConfig({
+      packages: {
+        prompts: {
+          prompts: {
+            [smrtPropertiesSummarizePrompt.key]: { ai: { profile: 'auto' } },
+          },
+        },
+      },
+    });
+    try {
+      clearPromptCache();
+      await makeProperty().summarize();
+      const [, options] = aiMessageMock.mock.calls[0];
+      expect(options).toEqual({
+        usageTags: { tierRequested: 'auto', tierResolved: 'good' },
+      });
+    } finally {
+      clearCache();
+      clearPromptCache();
+    }
   });
 });

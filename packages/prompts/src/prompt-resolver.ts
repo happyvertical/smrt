@@ -1,4 +1,5 @@
 import { getPackageConfig } from '@happyvertical/smrt-config';
+import { resolveInference } from '@happyvertical/smrt-core';
 import { getTenantId } from '@happyvertical/smrt-tenancy';
 import {
   getCachedPromptBase,
@@ -11,11 +12,13 @@ import type {
   PromptCacheValue,
   PromptPackageConfig,
   ResolvedPrompt,
+  ResolvedPromptAI,
   ResolvePromptOptions,
 } from './types.js';
 import {
   buildResolvedAI,
   mergePromptLayers,
+  mergePromptParams,
   normalizePromptLayer,
   renderPromptTemplate,
 } from './utils.js';
@@ -111,10 +114,53 @@ export async function resolvePrompt(
     runtimeOverride,
   );
 
+  const ai = buildResolvedAI(merged.ai, config);
+  if (ai.tier) {
+    await bindPromptTier(ai, key, options);
+  }
+
   return {
     key,
     template: merged.template,
     text: renderPromptTemplate(merged.template, options.variables),
-    ai: buildResolvedAI(merged.ai, config),
+    ai,
   };
+}
+
+/**
+ * Bind a tier profile through the core inference seam (#4750). The target's
+ * provider, model and params fill the resolved AI; an explicit prompt model
+ * and prompt params still win. Resolver-supplied models are app bindings, so
+ * `allowedModels` (a cap on prompt overrides) does not apply to them.
+ */
+async function bindPromptTier(
+  ai: ResolvedPromptAI,
+  key: string,
+  options: ResolvePromptOptions,
+): Promise<void> {
+  const tier = ai.tier;
+  if (!tier) return;
+  const tenantId =
+    options.tenantId !== undefined ? options.tenantId : (getTenantId() ?? null);
+  const resolution = await resolveInference({
+    tier,
+    tenantId,
+    promptKey: key,
+  });
+  const { target } = resolution;
+  ai.tierResolved = resolution.tierResolved;
+  ai.inferenceVia = resolution.via;
+  if (target.provider) ai.provider = target.provider;
+  if (!ai.model && target.model) ai.model = target.model;
+  if (target.params) {
+    const params = mergePromptParams(target.params, ai.params);
+    ai.params = params;
+    for (const [name, value] of Object.entries(params)) {
+      if (!(name in ai)) ai[name] = value;
+    }
+    if (typeof params.temperature === 'number') {
+      ai.temperature = params.temperature;
+    }
+    if (typeof params.maxTokens === 'number') ai.maxTokens = params.maxTokens;
+  }
 }
