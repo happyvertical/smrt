@@ -605,6 +605,32 @@ describe('fusions', () => {
     expect(h.result()?.seats[0]?.json).toEqual({ ok: true });
   });
 
+  it('runs a JSON seat in text on a model without JSON mode (#4758)', async () => {
+    const h = harness(
+      {
+        mode: 'single',
+        seats: [{ prompt: 'p.draft', target: 'cheap', output: 'json' }],
+      },
+      { 'cheap-m': () => 'draft in prose' },
+      {
+        capabilitiesFor: async () => ({
+          json: false,
+          tools: false,
+          vision: false,
+          source: 'assumed',
+        }),
+      },
+    );
+    await expect(h.call()).resolves.toBe('draft in prose');
+    // Not skipped as missing-capability: the seat runs without JSON mode and
+    // keeps its text on the raw recovery path.
+    expect(h.calls).toHaveLength(1);
+    expect(h.calls[0]?.options).not.toHaveProperty('responseFormat');
+    expect(h.calls[0]?.options).not.toHaveProperty('capabilityFallback');
+    expect(h.calls[0]?.options.usageTags?.capabilityFallback).toBe('json→text');
+    expect(h.result()?.seats[0]?.raw).toBe('draft in prose');
+  });
+
   it('refuses a tier seat that resolves to another fusion', async () => {
     const h = harness({
       mode: 'single',

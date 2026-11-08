@@ -20,6 +20,7 @@
  */
 import {
   type InferenceCallOptions,
+  type InferenceCapabilityFallbackOption,
   type InferenceExecutionContext,
   type InferenceExecutor,
   type InferenceFusionDefinition,
@@ -536,14 +537,26 @@ class FusionRun {
         },
       );
       const chain = createChainClient(seatContext, this.options);
+      const passed = final ? this.finalOptions : this.transport;
       options = {
         ...(prompt.params ?? {}),
-        ...(final ? this.finalOptions : this.transport),
+        ...passed,
         ...(seat.temperature !== undefined
           ? { temperature: seat.temperature }
           : {}),
+        // A JSON seat on a candidate without JSON mode runs in text and
+        // takes the raw recovery path below (#4758), instead of skipping
+        // the candidate.
         ...(seat.output === 'json'
-          ? { responseFormat: { type: 'json_object' } }
+          ? {
+              responseFormat: { type: 'json_object' },
+              capabilityFallback: {
+                ...((passed.capabilityFallback as
+                  | InferenceCapabilityFallbackOption
+                  | undefined) ?? {}),
+                json: 'text',
+              },
+            }
           : {}),
         history: [{ role: 'system', content: prompt.instructions }],
         usageTags: {

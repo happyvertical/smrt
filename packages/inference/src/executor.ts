@@ -16,6 +16,13 @@
  * with a `partial` substitution (the caller gets the error unless
  * `allowPartial`).
  *
+ * Before calling a candidate the walk checks its capabilities (#4758,
+ * `context.capabilitiesFor()`) against the request: JSON mode for a
+ * `responseFormat`, tool calling for `tools`. A mismatch the caller permits
+ * a fallback for (`capabilityFallback`) runs the candidate without the
+ * feature, tagged `capabilityFallback`; any other mismatch is a
+ * `missing-capability` substitution and the walk advances without a call.
+ *
  * The executor imports no SDK: it drives the clients core builds through
  * `context.clientFor()`, so tests run it with fake clients.
  */
@@ -23,6 +30,7 @@ import {
   compareInferenceTiers,
   INFERENCE_TIERS,
   type InferenceCallOptions,
+  type InferenceCapabilityFallbackOption,
   type InferenceExecutionContext,
   type InferenceModelClient,
   type InferenceTarget,
@@ -64,6 +72,40 @@ type Outcome<T> =
 /** A refusal that arrived as a finish reason, not an error. */
 class RefusalSignal extends Error {
   readonly code = 'CONTENT_FILTERED';
+}
+
+/** A candidate skipped before its call for a missing capability (#4758). */
+class MissingCapabilitySignal extends Error {
+  readonly code = 'MISSING_CAPABILITY';
+  constructor(
+    label: string,
+    readonly missing: string[],
+    readonly source: string,
+  ) {
+    super(`${label} lacks ${missing.join(' and ')} (capabilities: ${source})`);
+    this.name = 'MissingCapabilitySignal';
+  }
+}
+
+/** How one candidate's call is reshaped for its capabilities. */
+interface CapabilityAdjustment {
+  dropJson?: boolean;
+  dropTools?: boolean;
+  /** `capabilityFallback` tag values. */
+  fallbacks: string[];
+}
+
+type CapabilityFit =
+  | { ok: true; adjust?: CapabilityAdjustment }
+  | { ok: false; error: MissingCapabilitySignal };
+
+function wantsJson(options: InferenceCallOptions): boolean {
+  const type = (options.responseFormat as { type?: unknown } | undefined)?.type;
+  return type === 'json_object' || type === 'json_schema';
+}
+
+function wantsTools(options: InferenceCallOptions): boolean {
+  return Array.isArray(options.tools) && options.tools.length > 0;
 }
 
 const REFUSAL_FINISH = new Set(['refusal', 'content_filter']);
@@ -114,22 +156,77 @@ class ChainCall {
     );
   }
 
+  /**
+   * Check a candidate's capabilities against the request before calling it
+   * (#4758). Without a detector (older core) or a requirement, it fits.
+   */
+  private async capabilityFit(step: ChainStep): Promise<CapabilityFit> {
+    const json = wantsJson(this.callerOptions);
+    const tools = wantsTools(this.callerOptions);
+    if ((!json && !tools) || !this.context.capabilitiesFor) return { ok: true };
+    let capabilities: Awaited<
+      ReturnType<NonNullable<InferenceExecutionContext['capabilitiesFor']>>
+    >;
+    try {
+      capabilities = await this.context.capabilitiesFor(step.target);
+    } catch {
+      // Detection never decides a failure: the call itself will surface a
+      // real problem (an unbound key, an unreachable endpoint), classified.
+      return { ok: true };
+    }
+    const fallback: InferenceCapabilityFallbackOption =
+      this.callerOptions.capabilityFallback ?? {};
+    const adjust: CapabilityAdjustment = { fallbacks: [] };
+    const missing: string[] = [];
+    if (json && !capabilities.json) {
+      if (fallback.json === 'text') {
+        adjust.dropJson = true;
+        adjust.fallbacks.push('json→text');
+      } else missing.push('json');
+    }
+    if (tools && !capabilities.tools) {
+      if (fallback.tools === 'drop') {
+        adjust.dropTools = true;
+        adjust.fallbacks.push('tools→none');
+      } else missing.push('tools');
+    }
+    if (missing.length > 0) {
+      return {
+        ok: false,
+        error: new MissingCapabilitySignal(
+          step.label,
+          missing,
+          capabilities.source,
+        ),
+      };
+    }
+    return adjust.fallbacks.length > 0 ? { ok: true, adjust } : { ok: true };
+  }
+
   private callOptions(
     step: ChainStep,
     emit: (chunk: string) => void,
     finish: { reason?: string; replay: Array<() => void> },
+    adjust?: CapabilityAdjustment,
   ): InferenceCallOptions {
     const {
       usageTags: callerTags,
       onProgress,
       onFinishReason,
       onRefusal,
-      ...rest
+      // Executor-only: never reaches a provider.
+      capabilityFallback: _capabilityFallback,
+      ...shaped
     } = this.callerOptions as InferenceCallOptions & {
       onProgress?: (chunk: string) => void;
       onFinishReason?: (reason: string) => void;
       onRefusal?: (refusal: unknown) => void;
     };
+    const { responseFormat: _responseFormat, tools: _tools, ...rest } = shaped;
+    if (!adjust?.dropJson && shaped.responseFormat !== undefined) {
+      rest.responseFormat = shaped.responseFormat;
+    }
+    if (!adjust?.dropTools && 'tools' in shaped) rest.tools = shaped.tools;
     const model =
       typeof step.target.model === 'string' ? step.target.model : undefined;
     return {
@@ -144,6 +241,9 @@ class ChainCall {
         tierResolved: step.tier,
         ...(this.substitutions.length > 0
           ? { substitutions: JSON.stringify(this.substitutions) }
+          : {}),
+        ...(adjust && adjust.fallbacks.length > 0
+          ? { capabilityFallback: adjust.fallbacks.join(',') }
           : {}),
       },
       ...(onProgress
@@ -174,6 +274,7 @@ class ChainCall {
     step: ChainStep,
     invoke: Invoke<T>,
     isRefusal: ((value: T) => boolean) | undefined,
+    adjust?: CapabilityAdjustment,
   ): Promise<Outcome<T>> {
     let emitted = '';
     const emit = (chunk: string) => {
@@ -186,7 +287,7 @@ class ChainCall {
       const client = await this.context.clientFor(step.target);
       const value = await invoke(
         client,
-        this.callOptions(step, emit, finish),
+        this.callOptions(step, emit, finish, adjust),
         emit,
       );
       const refused =
@@ -216,13 +317,14 @@ class ChainCall {
     step: ChainStep,
     invoke: Invoke<T>,
     isRefusal: ((value: T) => boolean) | undefined,
+    adjust?: CapabilityAdjustment,
   ): Promise<Outcome<T>> {
-    const first = await this.attemptOnce(step, invoke, isRefusal);
+    const first = await this.attemptOnce(step, invoke, isRefusal, adjust);
     if (first.ok || first.cls !== 'transient' || first.emitted !== '') {
       return first;
     }
     await this.options.sleep(this.options.retryDelayMs());
-    return this.attemptOnce(step, invoke, isRefusal);
+    return this.attemptOnce(step, invoke, isRefusal, adjust);
   }
 
   private async recordFailure(
@@ -287,8 +389,18 @@ class ChainCall {
           pending = { label: step.label, reason: step.unavailable };
           continue;
         }
+        const fit = await this.capabilityFit(step);
+        if (!fit.ok) {
+          // Skipped before the call: no model ran for this candidate.
+          pending = {
+            label: step.label,
+            reason: 'missing-capability',
+            error: fit.error,
+          };
+          continue;
+        }
 
-        const outcome = await this.attempt(step, invoke, isRefusal);
+        const outcome = await this.attempt(step, invoke, isRefusal, fit.adjust);
         if (outcome.ok) return outcome.value;
 
         if (outcome.emitted !== '') {

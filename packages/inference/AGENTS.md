@@ -105,7 +105,7 @@ its own `baseUrl` core's pair rule refuses it.
 - Free of SDK imports: it drives the clients core builds through
   `context.clientFor(target)`; tests use fake clients.
 - Failure classes (`classify.ts`): `quota | credential | missing-model |
-  transient | refusal`, from error class names, `code`, `retryable` and HTTP
+  transient | refusal | missing-capability`, from error class names, `code`, `retryable` and HTTP
   status across `cause` / `error` / `context.originalError`, never message
   text. The SDK maps 5xx and other HTTP failures to `API_ERROR` /
   `UNKNOWN_ERROR` without a status or cause (happyvertical/sdk#1493); those
@@ -133,9 +133,19 @@ its own `baseUrl` core's pair rule refuses it.
   `context.recordUsage()` (core's usage handlers; no second writer) with
   `outcome: failed | partial`, `reason` and the full trail ending `to: null`,
   then throws `InferenceExhaustedError` (`INFERENCE_EXHAUSTED`).
-- Add a class (#4758 `missing-capability`) to `INFERENCE_FAILURE_CLASSES`
-  and a kind to `EXECUTOR_KINDS` (`createChainExecutor()` in `fusion.ts`
-  dispatches on it); consumers ignore kinds they do not run.
+- Capabilities (#4758): before calling a candidate, a call that sends
+  `responseFormat` (JSON) or `tools` checks `context.capabilitiesFor(target)`
+  (core's detection, [inference.md](../core/agents/inference.md)). A
+  mismatch the caller's `capabilityFallback` option permits (`json: 'text'`,
+  `tools: 'drop'`) runs the candidate without the feature, tagged
+  `capabilityFallback`; any other is a `missing-capability` substitution and
+  the walk advances with no model call. The option never reaches a provider.
+  Core's `InferenceUnavailableError` (`reason: 'capability'`) also classifies
+  as `missing-capability`. No detector (older core) or no requirement: no
+  check. Context limits are core's (single targets only).
+- Add a class to `INFERENCE_FAILURE_CLASSES` and a kind to `EXECUTOR_KINDS`
+  (`createChainExecutor()` in `fusion.ts` dispatches on it); consumers
+  ignore kinds they do not run.
 
 ## Fusions
 
@@ -201,7 +211,9 @@ await contract.do('Summarize this contract', { tier: 'best' }); // unchanged cal
   (`partial`) rethrows, after both `pair` seats have settled.
 - **JSON**: `output: 'json'` sends `responseFormat: json_object` and parses;
   a seat whose text does not parse keeps it under `raw` (with `parseError`)
-  in `FusionSeatResult` and hands the raw text on, labelled.
+  in `FusionSeatResult` and hands the raw text on, labelled. A candidate
+  without JSON mode runs the seat in text on that recovery path
+  (`capabilityFallback: { json: 'text' }`, #4758) instead of being skipped.
 - **Caller options**: generation options (`responseFormat`, `tools`,
   `onProgress`, …) reach the final seat only; `signal` / `timeout` reach every
   seat; `history` is the seat's instructions. `onFusionResult(result)`
@@ -236,7 +248,12 @@ alias resolvable, cycle-free. `probe` GETs `/models` (OpenAI-compatible,
 Anthropic, Gemini) or Ollama `/api/tags` with a 3 s timeout, sending the key
 only to its own endpoint. A binding errors when its config is invalid or no
 candidate can answer; one bad candidate in a working chain warns. Keys never
-appear in the report.
+appear in the report. With `probe` each candidate also reports its
+capabilities and their source (#4758, `formatInferenceCapabilities()`): the
+listing's context length, `supported_parameters` and input modalities
+(`inferenceCapabilitiesFromModelListing()`) are the `probe` layer; the SDK
+`provider` layer only through the `sdkCapabilities` option (the doctor builds
+no SDK clients).
 
 ## Validation
 
