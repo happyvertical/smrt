@@ -56,7 +56,8 @@ its own `baseUrl` core's pair rule refuses it.
   `UNKNOWN_ERROR` without a status or cause (happyvertical/sdk#1493); those
   count as `transient`. A definitive client error that survives in the chain
   (other 4xx, `invalid_request_error`, context length) is not a routing
-  failure. Aborts and unclassified errors stop the walk and are rethrown (an
+  failure. Core's typed bind refusal (`INFERENCE_TARGET_UNBOUND`: pair rule,
+  `HAVE_AI_*`) is `credential` and advances. Aborts and unclassified errors stop the walk and are rethrown (an
   unclassified one is still recorded).
 - `transient` retries the same candidate once after 200–500 ms of jitter;
   every class then advances. A `refusal` finish reason with nothing streamed

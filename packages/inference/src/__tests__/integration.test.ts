@@ -128,6 +128,8 @@ describe('smrt-inference registered into core', () => {
       usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
       tags: { tierRequested: 'great', outcome: 'failed', reason: 'credential' },
     });
+    // Nothing answered: no tierResolved, so tier_resolved stays NULL.
+    expect(events[0]?.tags).not.toHaveProperty('tierResolved');
     const trail = JSON.parse(
       (events[0] as { tags: Record<string, string> }).tags.substitutions,
     );

@@ -183,6 +183,17 @@ function checkCandidateOffline(
       fail('brings its own key without a baseUrl');
     }
   }
+  const sdkWide = ['HAVE_AI_BASE_URL', 'HAVE_AI_API_KEY'].find((name) =>
+    text(options.env[name]),
+  );
+  if (sdkWide && provider && !preset && !text(candidate.baseUrl)) {
+    // Core refuses another provider's default endpoint while the SDK-wide
+    // fallbacks are set; only the configured provider passes.
+    problems.push(
+      `${sdkWide} is set: core refuses this candidate unless ${provider} is the configured provider (give it a baseUrl and apiKeyEnv)`,
+    );
+    statuses.push('warn');
+  }
   return { label, status: worst(statuses), problems };
 }
 
@@ -261,8 +272,21 @@ export async function probeInferenceCandidate(
       method: 'GET',
       headers: request.headers,
       signal: controller.signal,
+      // A redirect would carry the key's header to another host.
+      redirect: 'manual',
     });
     const durationMs = Date.now() - started;
+    if (
+      response.type === 'opaqueredirect' ||
+      (response.status >= 300 && response.status < 400)
+    ) {
+      return {
+        reachable: false,
+        status: response.status || undefined,
+        durationMs,
+        detail: `${where} redirected (not followed: the key stays with its own endpoint)`,
+      };
+    }
     if (response.ok) {
       return {
         reachable: true,

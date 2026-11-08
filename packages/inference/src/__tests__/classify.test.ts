@@ -10,6 +10,7 @@ import {
   ModelNotFoundError,
   RateLimitError,
 } from '@happyvertical/ai';
+import { InferenceBindingError } from '@happyvertical/smrt-core';
 import { describe, expect, it } from 'vitest';
 import { classifyInferenceFailure, isInferenceAbort } from '../classify.js';
 
@@ -21,6 +22,11 @@ describe('classifyInferenceFailure', () => {
   const table: Array<[string, unknown, string | undefined]> = [
     ['AuthenticationError', new AuthenticationError('openai'), 'credential'],
     ['HTTP 401', httpError(401), 'credential'],
+    [
+      'core bind refusal (pair rule, HAVE_AI_*)',
+      new InferenceBindingError('refused'),
+      'credential',
+    ],
     ['HTTP 403', httpError(403), 'credential'],
     [
       'ModelNotFoundError',
