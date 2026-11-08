@@ -18,7 +18,13 @@ import type {
   ChatOptions,
 } from '@happyvertical/ai';
 import { clearRuntimeConfig, setConfig } from '@happyvertical/smrt-config';
-import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  field,
+  SmrtObject,
+  setInferenceResolver,
+  smrt,
+} from '@happyvertical/smrt-core';
+import { getCurrentTenant } from '@happyvertical/smrt-tenancy';
 import {
   MembershipCollection,
   PermissionCollection,
@@ -442,11 +448,62 @@ describe('mountAssistantRoutes defaults (#3414)', () => {
         provider: 'openai',
         apiKey: 'k-config-test',
         defaultModel: 'gpt-test',
+        // The #3077 recorder (#4756).
+        onUsage: expect.any(Function),
       });
       const done = seen.find((e) => e.type === 'done');
       expect(done).toMatchObject({
         message: expect.objectContaining({ content: 'From config.' }),
       });
+    });
+
+    it('applies the principal stored inference binding over the config (#4756)', async () => {
+      setConfig({
+        ai: {
+          provider: 'openai',
+          model: 'gpt-test',
+          apiKeyEnv: 'OPENAI_API_KEY',
+        },
+      });
+      process.env.OPENAI_API_KEY = 'k-config-test';
+      const seenPrincipal: unknown[] = [];
+      setInferenceResolver({
+        resolve: async (request) => {
+          seenPrincipal.push(getCurrentTenant());
+          return {
+            tierResolved: request.tier === 'auto' ? 'good' : request.tier,
+            target: {
+              provider: 'openai',
+              baseUrl: 'https://openrouter.ai/api/v1',
+              apiKey: 'sk-user-binding',
+              model: 'user/model',
+              source: 'byo',
+            },
+            via: 'resolver',
+          };
+        },
+      });
+      try {
+        getAI.mockResolvedValue(scriptedAI([text('From binding.')]));
+        const routes = mountAssistantRoutes({ db, audit: () => {} });
+        const threadId = await createThread(routes, ownerA);
+        await events(await send(routes, threadId, ownerA, 'b1'));
+        expect(getAI).toHaveBeenCalledWith(
+          expect.objectContaining({
+            provider: 'openai',
+            baseUrl: 'https://openrouter.ai/api/v1',
+            apiKey: 'sk-user-binding',
+            model: 'user/model',
+            onUsage: expect.any(Function),
+          }),
+        );
+        expect(seenPrincipal[0]).toMatchObject({
+          tenantId: ownerA.tenantId,
+          userId: ownerA.user.id,
+        });
+      } finally {
+        setInferenceResolver(undefined);
+      }
     });
 
     it('answers 503 with the clear, secret-free error when nothing is configured', async () => {

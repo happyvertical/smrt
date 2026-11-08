@@ -203,7 +203,13 @@ dock from one `[...path]` route; `createAssistantHttp{Transport,ActionClient}`
 `resolvePrincipal`; threads only from the actor's keyed session room in that
 tenant (else 404). `allowedTools` is fail-closed; without `tools` it offers
 those manifest ops (an unprovided name is an error, #3414). `ai` defaults to
-the config `ai` block. Pass `runtime`: a turn never keeps the RLS request tx
+the principal's stored inference binding (#4756: core
+`resolveInferenceTarget()` under the route principal's tenancy context) over
+the config `ai` block, with the #3077 recorder (usage handlers only: the
+turn's request db does not outlive it). The dev text routes take the same
+binding through `routes/api/dev-ai.ts` `devAIClientOptions()` (no principal:
+tenant-less bindings only); the photo-setup route stays on the dev provider
+(vision input). Pass `runtime`: a turn never keeps the RLS request tx
 (own `runAsPrincipal` tx). `clientRequestId` makes the row id a UUIDv5
 (`clientRequestMessageId`): the PK is the retry reservation. See
 [docs](../../docs/assistant-dock.md).
