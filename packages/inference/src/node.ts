@@ -9,6 +9,13 @@
  *
  * The same functions back the settings panel's test-connection action
  * (#4754): `probeInferenceCandidate()` tests one candidate.
+ *
+ * With `probe`, each candidate also reports its capabilities (#4758) and
+ * their source: the model listing's evidence (context length, supported
+ * parameters, input modalities) is the `probe` layer under core's preset
+ * table and over its model heuristic. The SDK's `getCapabilities()` is the
+ * call-time `provider` layer; the doctor builds no SDK clients, so it reads
+ * that layer only through `sdkCapabilities`.
  */
 import { AI_PROVIDER_TYPES } from '@happyvertical/ai';
 import {
@@ -18,13 +25,20 @@ import {
 import {
   assertInferenceConfig,
   getInferenceConfig,
+  INFERENCE_PRESET_CAPABILITIES,
   INFERENCE_PRESETS,
   INFERENCE_TIERS,
   type InferenceCandidate,
+  type InferenceCapabilities,
+  type InferenceCapabilityEvidence,
   type InferenceConfig,
   type InferenceTarget,
+  inferenceCapabilitiesFromSdk,
+  inferenceCapabilityHeuristic,
+  inferencePresetFor,
   inferenceTargetKind,
   isInferencePresetId,
+  resolveInferenceCapabilities,
 } from '@happyvertical/smrt-core';
 import { candidateLabel, findInferenceConfigIssues } from './config.js';
 import type { InferenceConfigIssue } from './types.js';
@@ -42,6 +56,11 @@ export interface InferenceProbeResult {
   durationMs: number;
   /** Short, key-free explanation. */
   detail: string;
+  /**
+   * What the model listing says about the candidate's model (#4758), when
+   * the endpoint answered and listed it with capability fields.
+   */
+  capabilities?: InferenceCapabilityEvidence;
 }
 
 /** One candidate of a binding. */
@@ -50,6 +69,8 @@ export interface InferenceDoctorCandidate {
   status: InferenceDoctorStatus;
   problems: string[];
   probe?: InferenceProbeResult;
+  /** With `probe`: the candidate's capabilities and their source (#4758). */
+  capabilities?: InferenceCapabilities;
 }
 
 /** One tier or alias binding. */
@@ -86,6 +107,14 @@ export interface CheckInferenceBindingsOptions {
   fetch?: typeof fetch;
   /** Recognized provider names. Default the AI SDK's provider list. */
   providers?: readonly string[];
+  /**
+   * The SDK `getCapabilities()` answer for a candidate (the `provider`
+   * layer, #4758), when the host can supply one. Default: none; the doctor
+   * builds no SDK clients.
+   */
+  sdkCapabilities?: (
+    candidate: InferenceCandidate,
+  ) => unknown | Promise<unknown>;
 }
 
 const DEFAULT_PROBE_TIMEOUT_MS = 3000;
@@ -248,6 +277,95 @@ function probeRequest(
   return undefined;
 }
 
+function positive(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0
+    ? Math.floor(value)
+    : undefined;
+}
+
+/**
+ * Capability evidence for `model` from a list endpoint's body (#4758):
+ * OpenAI-compatible `data[]` entries (OpenRouter `context_length`,
+ * `supported_parameters`, `architecture.input_modalities`; LM Studio
+ * `max_context_length`; llama.cpp `meta.n_ctx_train`) and Gemini
+ * `models[].inputTokenLimit`. Unknown shapes give nothing.
+ */
+export function inferenceCapabilitiesFromModelListing(
+  body: unknown,
+  model: string | undefined,
+): InferenceCapabilityEvidence | undefined {
+  if (!model || !body || typeof body !== 'object') return undefined;
+  const record = body as { data?: unknown; models?: unknown };
+  const list = Array.isArray(record.data)
+    ? record.data
+    : Array.isArray(record.models)
+      ? record.models
+      : [];
+  const entry = list.find((item) => {
+    const row = item as { id?: unknown; name?: unknown };
+    return (
+      row?.id === model ||
+      row?.name === model ||
+      row?.name === `models/${model}`
+    );
+  }) as Record<string, unknown> | undefined;
+  if (!entry) return undefined;
+  const out: InferenceCapabilityEvidence = {};
+  const meta = entry.meta as Record<string, unknown> | undefined;
+  const topProvider = entry.top_provider as Record<string, unknown> | undefined;
+  const maxContext =
+    positive(entry.context_length) ??
+    positive(entry.max_context_length) ??
+    positive(topProvider?.context_length) ??
+    positive(meta?.n_ctx_train) ??
+    positive(entry.inputTokenLimit);
+  if (maxContext !== undefined) out.maxContext = maxContext;
+  if (Array.isArray(entry.supported_parameters)) {
+    const params = entry.supported_parameters;
+    out.tools = params.includes('tools');
+    out.json =
+      params.includes('response_format') ||
+      params.includes('structured_outputs');
+  }
+  const architecture = entry.architecture as
+    | Record<string, unknown>
+    | undefined;
+  if (Array.isArray(architecture?.input_modalities)) {
+    out.vision = architecture.input_modalities.includes('image');
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+/**
+ * A candidate's capabilities from every layer the doctor can see (#4758):
+ * the host's SDK answer (when given), the preset table, the probe's
+ * evidence, the model heuristic, then assumed.
+ */
+export async function inferenceCandidateCapabilities(
+  candidate: InferenceCandidate,
+  options: {
+    probe?: InferenceCapabilityEvidence;
+    sdkCapabilities?: CheckInferenceBindingsOptions['sdkCapabilities'];
+  } = {},
+): Promise<InferenceCapabilities> {
+  const preset = inferencePresetFor(candidate);
+  let sdk: unknown;
+  // The SDK answer describes the provider's own endpoint only.
+  if (options.sdkCapabilities && !text(candidate.baseUrl) && !preset) {
+    try {
+      sdk = await options.sdkCapabilities(candidate);
+    } catch {
+      sdk = undefined;
+    }
+  }
+  return resolveInferenceCapabilities({
+    provider: inferenceCapabilitiesFromSdk(sdk),
+    preset: preset ? INFERENCE_PRESET_CAPABILITIES[preset] : undefined,
+    probe: options.probe,
+    heuristic: inferenceCapabilityHeuristic(candidate),
+  });
+}
+
 /**
  * The URL {@link probeInferenceCandidate} would call for a candidate, or
  * `undefined` when no cheap probe is known. Key-free; the settings key rule
@@ -331,11 +449,21 @@ export async function probeInferenceCandidate(
       };
     }
     if (response.ok) {
+      let capabilities: InferenceCapabilityEvidence | undefined;
+      try {
+        capabilities = inferenceCapabilitiesFromModelListing(
+          await response.json(),
+          text(candidate.model),
+        );
+      } catch {
+        // A listing that is not JSON still proves reachability.
+      }
       return {
         reachable: true,
         status: response.status,
         durationMs,
         detail: `${where} answered ${response.status}`,
+        ...(capabilities ? { capabilities } : {}),
       };
     }
     const why =
@@ -454,6 +582,10 @@ export async function checkInferenceBindings(
           checked.status = 'error';
           checked.problems.push(checked.probe.detail);
         }
+        checked.capabilities = await inferenceCandidateCapabilities(candidate, {
+          probe: checked.probe.capabilities,
+          sdkCapabilities: options.sdkCapabilities,
+        });
       }
       out.push(checked);
     }
@@ -576,6 +708,14 @@ export async function checkInferenceBindings(
   };
 }
 
+/** One line describing capabilities, e.g. `json no, tools yes, … (preset)`. */
+export function formatInferenceCapabilities(
+  capabilities: InferenceCapabilities,
+): string {
+  const flag = (value: boolean) => (value ? 'yes' : 'no');
+  return `json ${flag(capabilities.json)}, tools ${flag(capabilities.tools)}, vision ${flag(capabilities.vision)}, context ${capabilities.maxContext ?? 'unknown'} (source: ${capabilities.source})`;
+}
+
 const ICON: Record<InferenceDoctorStatus, string> = {
   ok: '✅',
   warn: '⚠️ ',
@@ -604,6 +744,11 @@ export function formatInferenceDoctorReport(
           : ` (${candidate.probe.detail}, ${candidate.probe.durationMs} ms)`
         : '';
       lines.push(`     ${ICON[candidate.status]} ${candidate.label}${probe}`);
+      if (candidate.capabilities) {
+        lines.push(
+          `         capabilities: ${formatInferenceCapabilities(candidate.capabilities)}`,
+        );
+      }
       for (const problem of candidate.problems) {
         if (candidate.probe && problem === candidate.probe.detail) continue;
         lines.push(`         ${problem}`);

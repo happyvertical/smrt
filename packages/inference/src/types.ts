@@ -13,8 +13,10 @@
  * - `missing-model`: the provider does not know the model.
  * - `transient`: timeout, network, 5xx, or a short rate limit; retried once.
  * - `refusal`: the provider's safety system or the model declined.
- *
- * Later children add classes here (#4758's `missing-capability`).
+ * - `missing-capability`: the candidate lacks a capability the request
+ *   needs (JSON mode, tools) and the caller permitted no fallback (#4758).
+ *   Detected before the call, so no model ran; core's typed capability
+ *   refusal classifies the same way.
  */
 export const INFERENCE_FAILURE_CLASSES = [
   'quota',
@@ -22,6 +24,7 @@ export const INFERENCE_FAILURE_CLASSES = [
   'missing-model',
   'transient',
   'refusal',
+  'missing-capability',
 ] as const;
 
 export type InferenceFailureClass = (typeof INFERENCE_FAILURE_CLASSES)[number];

@@ -200,6 +200,17 @@ export function isInferenceAbort(error: unknown): boolean {
 export function classifyInferenceFailure(
   error: unknown,
 ): InferenceFailureClass | undefined {
+  // Core's typed capability refusal (#4758): the candidate cannot run the
+  // request's shape (required tools, an oversized prompt). Advance.
+  const unavailable = error as { code?: unknown; reason?: unknown } | null;
+  if (
+    unavailable &&
+    typeof unavailable === 'object' &&
+    unavailable.code === 'AI_UNAVAILABLE' &&
+    unavailable.reason === 'capability'
+  ) {
+    return 'missing-capability';
+  }
   const facts = collectFacts(error);
   const { names, codes, statuses } = facts;
 
