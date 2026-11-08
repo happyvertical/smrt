@@ -167,6 +167,21 @@ describe('expandTarget', () => {
     );
   });
 
+  it('never drops a key: a key without its own baseUrl stays on the target', () => {
+    process.env[KEY_ENV] = 'sk-secret';
+    const [step] = expandTarget(
+      { candidates: [{ provider: 'openai', model: 'm', apiKeyEnv: KEY_ENV }] },
+      'good',
+      undefined,
+    );
+    // Core's pair rule then refuses it instead of using the configured key.
+    expect(step?.target).toEqual({
+      provider: 'openai',
+      model: 'm',
+      apiKey: 'sk-secret',
+    });
+  });
+
   it('marks a candidate whose key variable is unset as a credential failure', () => {
     const steps = expandTarget({ alias: 'frontier' }, 'great', config);
     expect(steps[2]?.unavailable).toBe('credential');

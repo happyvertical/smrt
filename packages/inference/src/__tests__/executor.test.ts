@@ -395,6 +395,55 @@ describe('chain executor', () => {
     });
   });
 
+  it('stops the provider stream when the consumer breaks out', async () => {
+    const config = chain('a');
+    let returned = false;
+    let produced = 0;
+    let signal: AbortSignal | undefined;
+    const client = createChainClient(
+      {
+        request: { tier: 'great' },
+        resolution: resolveInferenceFromConfig({ tier: 'great' }, config),
+        config,
+        clientFor: async () => ({
+          message: async () => '',
+          stream: (_messages: unknown, options: { signal?: AbortSignal }) => {
+            signal = options.signal;
+            return {
+              [Symbol.asyncIterator]() {
+                return {
+                  next: async () => {
+                    produced++;
+                    await new Promise((resolve) => setTimeout(resolve, 1));
+                    return { value: `c${produced}`, done: false };
+                  },
+                  return: async () => {
+                    returned = true;
+                    return { value: undefined, done: true };
+                  },
+                };
+              },
+            };
+          },
+        }),
+        resolveTier: async (tier) =>
+          resolveInferenceFromConfig({ tier }, config),
+        recordUsage: async () => {},
+      },
+      { sleep: async () => {}, retryDelayMs: () => 0 },
+    );
+    const stream = (client.stream as (m: unknown) => AsyncIterable<string>)([]);
+    for await (const chunk of stream) {
+      expect(chunk).toBe('c1');
+      break;
+    }
+    expect(signal?.aborted).toBe(true);
+    await vi.waitFor(() => expect(returned).toBe(true));
+    const after = produced;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(produced).toBe(after);
+  });
+
   it('streams: advances before the first chunk, never after', async () => {
     const chunksOf = (...chunks: string[]) =>
       async function* () {
@@ -471,6 +520,46 @@ describe('chain executor', () => {
         {},
       ),
     ).toThrow(/brings its own key without a baseUrl/);
+  });
+
+  it('validates resolver-sourced chains, not only the config block', async () => {
+    const h = harness(
+      {},
+      {},
+      {
+        resolution: {
+          tierResolved: 'great',
+          via: 'resolver',
+          target: {
+            candidates: [{ provider: 'openai', model: 'm', apiKey: 'sk-user' }],
+          },
+        },
+      },
+    );
+    await expect(h.client.message('hi')).rejects.toThrow(
+      /resolution\.great\.candidates\[0\] brings its own key without a baseUrl/,
+    );
+    expect(h.calls).toEqual([]);
+  });
+
+  it('validates a degraded tier resolved by a resolver', async () => {
+    const config: InferenceConfig = {
+      tiers: { great: { candidates: [{ provider: 'openai', model: 'a' }] } },
+    };
+    const h = harness(
+      config,
+      { a: fail(new AuthenticationError('openai')) },
+      {
+        resolveTier: async (tier) => ({
+          tierResolved: tier,
+          via: 'resolver',
+          target: { alias: 'missing' },
+        }),
+      },
+    );
+    await expect(h.client.message('hi')).rejects.toThrow(
+      /resolution\.good points at unknown alias "missing"/,
+    );
   });
 
   it('keeps a recordUsage failure from masking the call error', async () => {

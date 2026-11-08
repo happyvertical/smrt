@@ -12,8 +12,10 @@
  * provider error as `cause`, `ModelNotFoundError` MODEL_NOT_FOUND,
  * `ContentFilterError` CONTENT_FILTERED, AI_TIMEOUT, AI_ABORTED). It maps
  * other HTTP failures (5xx, 400) to `API_ERROR` / `UNKNOWN_ERROR` without the
- * status; those classify as `transient` so a route outage still advances,
- * bounded by one retry per candidate.
+ * status or cause; those classify as `transient` so a route outage still
+ * advances, bounded by one retry per candidate. When a status survives in the
+ * chain, a client error (other 4xx, `invalid_request_error`, context length)
+ * stops the walk instead.
  */
 import type { InferenceFailureClass } from './types.js';
 
@@ -90,6 +92,18 @@ const TRANSIENT_NAMES = new Set([
   'InternalServerError',
 ]);
 const TRANSIENT_STATUSES = new Set([408, 409, 425, 500, 502, 503, 504, 529]);
+
+/**
+ * Client errors a provider answers the same way on every route (bad
+ * parameters, oversized input): never a routing failure. Statuses the
+ * taxonomy names are decided before this check.
+ */
+const REQUEST_ERROR_CODES = new Set([
+  'invalid_request_error',
+  'CONTEXT_LENGTH_EXCEEDED',
+  'context_length_exceeded',
+  'INVALID_INPUT',
+]);
 
 const ABORT_CODES = new Set(['AI_ABORTED', 'ABORT_ERR']);
 const ABORT_NAMES = new Set(['AbortError']);
@@ -224,6 +238,12 @@ export function classifyInferenceFailure(
   for (const status of statuses) {
     if (TRANSIENT_STATUSES.has(status)) return 'transient';
   }
+  // A definitive client error stops the walk: every candidate would refuse
+  // the same request, so advancing only fans the prompt out (#4752 review).
+  for (const status of statuses) {
+    if (status >= 400 && status < 500) return undefined;
+  }
+  if (hasAny(codes, REQUEST_ERROR_CODES)) return undefined;
   if (
     hasAny(codes, TRANSIENT_CODES) ||
     hasAny(names, TRANSIENT_NAMES) ||
