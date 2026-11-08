@@ -31,7 +31,7 @@ smrt db:rollback             # Roll back migrations by executing their recorded 
 smrt db:rollback --mark-only # Record-only flip; schema untouched
 smrt db:prune                # Prune framework system tables to their retention windows
 smrt db:prune --dry-run      # Same predicates, counted rather than deleted
-smrt ai:usage [--by prompt,model,tier,class,tenant,fusion] [--since 7d] [--tenant <id>] [--json] # ../core/agents/ai-usage.md
+smrt ai:usage [--by prompt,model,tier,class,tenant,fusion,source] [--since 7d] [--tenant <id>] [--json] # ../core/agents/ai-usage.md
 smrt docs:agents             # Generate .agents/smrt-framework.md
 smrt docs:claude             # Deprecated alias writing .claude/smrt-framework.md
 smrt dev:knowledge-*         # Deterministic agent knowledge index/check/diff
