@@ -1019,6 +1019,11 @@ export function createLiveAdapter(
           '-o',
           'json',
         ]);
+        // helm-controller always forces conflicts on server-side apply. Only a
+        // reviewed legacy resource for this adoption (UID, prune disabled and
+        // legacy manager proven below; unreviewed managers are rejected by the
+        // relinquished observation in the same transition) is dry-run that way.
+        let forceReviewedLegacy = false;
         if (existingResource.trim()) {
           const metadata = JSON.parse(existingResource).metadata;
           demand(
@@ -1036,14 +1041,17 @@ export function createLiveAdapter(
               r.name === resource.metadata.name &&
               r.namespace === namespace,
           );
-          demand(
-            (legacy &&
+          forceReviewedLegacy = Boolean(
+            legacy &&
               metadata.uid === legacy.uid &&
               metadata.annotations?.['kustomize.toolkit.fluxcd.io/prune'] ===
                 'disabled' &&
               metadata.managedFields?.some(
                 (entry) => entry.manager === legacy.legacyManager,
-              )) ||
+              ),
+          );
+          demand(
+            forceReviewedLegacy ||
               metadata.managedFields?.some(
                 (entry) =>
                   entry.manager === 'helm-controller' &&
@@ -1075,8 +1083,10 @@ export function createLiveAdapter(
               'apply',
               '--server-side',
               '--dry-run=server',
-              // Same established reconciler manager, dry run only; never force field ownership.
+              // Same established reconciler manager, dry run only. Ordinary
+              // resources never force, so a foreign co-owner surfaces here.
               '--field-manager=helm-controller',
+              ...(forceReviewedLegacy ? ['--force-conflicts'] : []),
               '-o',
               'json',
               '-f',

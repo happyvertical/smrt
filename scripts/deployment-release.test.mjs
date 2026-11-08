@@ -565,6 +565,9 @@ test('full inventory preflight impersonates reconciler and rejects permission/ad
       'dormant-parent-unknown', 'dormant-child', 'dormant-namespace',
       'dormant-parent-delete',
       'legacy-labels',
+      'reviewed-cm',
+      'reviewed-cm-uid',
+      'reviewed-cm-prune',
       'legacy-forged-owner',
       'legacy-unknown',
       'ordinary-legacy-labels',
@@ -590,7 +593,8 @@ test('full inventory preflight impersonates reconciler and rejects permission/ad
       const legacyPod={apiVersion:'v1',kind:'Pod',metadata:{namespace:'test',name:'legacy-site-pod',uid:'legacy-pod',labels:{app:'legacy-site'},ownerReferences:[{apiVersion:'apps/v1',kind:'ReplicaSet',name:'legacy-site-rs',uid:'legacy-rs',controller:failure!=='legacy-forged-owner'}]},spec:structuredClone(legacySpec.template.spec)};
       const legacyObjects=[legacyDeployment,legacyRS,legacyPod];
       if(failure==='legacy-unknown')legacyObjects.push({...structuredClone(legacyDeployment),metadata:{...legacyDeployment.metadata,name:'unknown',uid:'unknown'}});
-      const adoptionContext=failure?.startsWith('legacy-')?{resources:[{apiVersion:'apps/v1',kind:'Deployment',namespace:'test',name:'legacy-site',uid:'legacy-deploy',normalizedSpecIdentity:hash(legacySpec),selector:legacySpec.selector}]}:undefined;
+      const reviewedLegacy=failure?.startsWith('reviewed-cm');
+      const adoptionContext=reviewedLegacy?{resources:[{apiVersion:'v1',kind:'ConfigMap',namespace:'test',name:'example-inventory',uid:'legacy-cm',legacyManager:'kustomize-controller'}]}:failure?.startsWith('legacy-')?{resources:[{apiVersion:'apps/v1',kind:'Deployment',namespace:'test',name:'legacy-site',uid:'legacy-deploy',normalizedSpecIdentity:hash(legacySpec),selector:legacySpec.selector}]}:undefined;
       const dormant = failure?.startsWith('dormant-');
       if (dormant) {
         legacyDeployment.metadata.name='example-web';legacyDeployment.metadata.labels['app.kubernetes.io/instance']='example';
@@ -623,6 +627,19 @@ test('full inventory preflight impersonates reconciler and rejects permission/ad
         if (args.includes('--ignore-not-found')) {
           if (failure === 'ownership')
             return JSON.stringify({ metadata: { name: 'example-inventory' } });
+          if (reviewedLegacy && args.includes('configmap/example-inventory'))
+            return JSON.stringify({
+              metadata: {
+                uid: failure === 'reviewed-cm-uid' ? 'forged' : 'legacy-cm',
+                labels: { 'app.kubernetes.io/managed-by': 'Helm' },
+                annotations: {
+                  'meta.helm.sh/release-name': 'example',
+                  'meta.helm.sh/release-namespace': 'test',
+                  ...(failure === 'reviewed-cm-prune' ? {} : { 'kustomize.toolkit.fluxcd.io/prune': 'disabled' }),
+                },
+                managedFields: [{ manager: 'kustomize-controller', operation: 'Apply', fieldsType: 'FieldsV1', fieldsV1: { 'f:data': {} } }],
+              },
+            });
           if (['foreign-manager', 'owned'].includes(failure))
             return JSON.stringify({
               metadata: {
@@ -703,7 +720,7 @@ test('full inventory preflight impersonates reconciler and rejects permission/ad
         return JSON.stringify({ metadata: {} });
       };
       const adapter = createLiveAdapter(config, command);
-      if (failure && !['owned','legacy-labels','dormant-history'].includes(failure))
+      if (failure && !['owned','legacy-labels','dormant-history','reviewed-cm'].includes(failure))
         await assert.rejects(
           adapter.preflight(doc, adoptionContext),
           (error) =>
@@ -733,10 +750,17 @@ test('full inventory preflight impersonates reconciler and rejects permission/ad
         assert.ok(
           call.args.includes('--as=system:serviceaccount:test:reconciler') || call.args.includes('--as=system:serviceaccount:test:observer'),
         );
+      if (failure === 'reviewed-cm')
+        assert.ok(calls.some((c) => c.args.includes('--force-conflicts')));
       for (const call of calls.filter((c) => c.args.includes('apply'))) {
         assert.ok(call.args.includes('--dry-run=server'));
         assert.ok(call.args.includes('--field-manager=helm-controller'));
-        assert.ok(!call.args.includes('--force-conflicts'));
+        // Only the reviewed legacy resource is dry-run as helm-controller
+        // actually applies (forced); everything else must surface conflicts.
+        assert.equal(
+          call.args.includes('--force-conflicts'),
+          failure === 'reviewed-cm' && call.input.includes('example-inventory'),
+        );
       }
     }
   } finally {
