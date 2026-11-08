@@ -62,13 +62,14 @@ export interface InferenceTarget {
   /** Provider base URL, for OpenAI-compatible endpoints. */
   baseUrl?: string;
   /**
-   * Credential for this target. Never logged or tagged. Endpoint and key are
-   * owned together and an unbound pair fails closed: a target naming its own
-   * `baseUrl` must carry its own key (a placeholder such as `'smrt-local'`
-   * for keyless local servers), a target with its own key never inherits the
-   * configured `baseUrl` and must name one while `<PROVIDER>_BASE_URL` is
-   * set, and a target on another provider's default endpoint without a key
-   * uses that provider's own key variable (`OPENAI_API_KEY`, ...).
+   * Credential for this target. Never logged or tagged. Endpoint and key
+   * travel as an explicit pair and an unbound pair fails closed: a target
+   * naming its own `baseUrl` must carry its own key (a placeholder such as
+   * `'smrt-local'` for keyless local servers), and a target with its own key
+   * must name its `baseUrl`. A target on another provider with neither uses
+   * that provider's default endpoint and own key variable
+   * (`OPENAI_API_KEY`, ...), and is refused while the SDK-wide
+   * `HAVE_AI_BASE_URL` / `HAVE_AI_API_KEY` fallbacks are set.
    */
   apiKey?: string;
   /** Per-call defaults (temperature, maxTokens, ...); caller options win. */

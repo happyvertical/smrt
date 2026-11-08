@@ -1010,33 +1010,40 @@ export class SmrtClass {
 
     const { onUsage: _onUsage, ...baseFields } = base ?? {};
     const merged = mergeAIConfigObjects(baseFields, identity);
-    // Endpoint and credential are owned together (#3372). Provider SDKs fall
-    // back to their own environment (`OPENAI_API_KEY`, `OPENAI_BASE_URL`, ...)
-    // for an unset key or endpoint, so an unbound pair fails closed here
-    // instead of being left for the SDK to fill in.
+    // Endpoint and credential are owned together (#3372) and travel as an
+    // explicit pair. `getAI()` and provider SDKs refill an unset key or
+    // endpoint from their own environment (`HAVE_AI_*`, `OPENAI_API_KEY`,
+    // `OPENAI_BASE_URL`, ...), so deleting an inherited field is not enough:
+    // an unbound pair fails closed here, before SDK construction.
     const text = (config: Record<string, unknown>, key: string) =>
       typeof config[key] === 'string' ? (config[key] as string).trim() : '';
     const provider = text(merged, 'provider');
+    const sameProvider =
+      provider.toLowerCase() === text(baseFields, 'provider').toLowerCase();
     const keepsBaseEndpoint =
-      provider.toLowerCase() === text(baseFields, 'provider').toLowerCase() &&
-      identity.baseUrl === text(baseFields, 'baseUrl');
+      sameProvider && identity.baseUrl === text(baseFields, 'baseUrl');
     if (identity.baseUrl && !identity.apiKey && !keepsBaseEndpoint) {
       throw new Error(
-        `${this._className}: an inference target that names its own baseUrl must carry its own apiKey (use a placeholder such as 'smrt-local' for a keyless local server); the configured or environment key is never sent to another endpoint.`,
+        `${this._className}: an inference target that names its own baseUrl must carry its own apiKey (use a placeholder such as 'smrt-local' for a keyless local server); a configured or environment key is never sent to another endpoint.`,
       );
     }
     if (identity.apiKey && !identity.baseUrl) {
-      delete merged.baseUrl;
-      const endpointEnv = `${provider.toUpperCase().replace(/[^A-Z0-9]+/g, '_')}_BASE_URL`;
-      const env = typeof process !== 'undefined' ? process.env : undefined;
-      if (provider && env?.[endpointEnv]?.trim()) {
-        throw new Error(
-          `${this._className}: an inference target that brings its own apiKey must name its baseUrl while ${endpointEnv} is set; its key is never sent to an inherited endpoint.`,
-        );
-      }
+      throw new Error(
+        `${this._className}: an inference target that brings its own apiKey must name its baseUrl; a target key is never sent to an inherited or environment endpoint.`,
+      );
     }
-    if (!merged.apiKey && !merged.baseUrl) {
-      // Only the provider's default endpoint may use its own key variable.
+    if (!sameProvider && !identity.baseUrl) {
+      // Another provider's default endpoint with that provider's own key
+      // variable. The SDK-wide `HAVE_AI_*` fallbacks belong to the configured
+      // client and would redirect or replace that key.
+      const env = typeof process !== 'undefined' ? process.env : undefined;
+      for (const name of ['HAVE_AI_BASE_URL', 'HAVE_AI_API_KEY']) {
+        if (env?.[name]?.trim()) {
+          throw new Error(
+            `${this._className}: an inference target on another provider must name its baseUrl and apiKey while ${name} is set.`,
+          );
+        }
+      }
       const resolved = tryResolveAIProviderConfig({
         explicit: merged as AIExplicitConfig,
         config: null,
@@ -1045,7 +1052,7 @@ export class SmrtClass {
         requireProvider: false,
         providerKeyEnvFallback: true,
       });
-      if (resolved?.apiKey) merged.apiKey = resolved.apiKey;
+      if (!merged.apiKey && resolved?.apiKey) merged.apiKey = resolved.apiKey;
     }
     const tierConfig = withAIAliases(merged);
     const field = (config: Record<string, unknown> | undefined, key: string) =>

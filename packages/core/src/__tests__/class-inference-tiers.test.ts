@@ -44,6 +44,8 @@ const ENV_KEYS = [
   'OPENAI_API_KEY',
   'ANTHROPIC_API_KEY',
   'OPENAI_BASE_URL',
+  'HAVE_AI_BASE_URL',
+  'HAVE_AI_API_KEY',
   'SMRT_INFERENCE_DEFAULT_TIER',
 ];
 
@@ -180,36 +182,43 @@ describe('SmrtClass inference tiers', () => {
     expect(great.options).toMatchObject({ apiKey: 'sk-router' });
   });
 
-  it('never sends a target key to the configured endpoint', async () => {
+  it('sends a target key only with its own explicit endpoint', async () => {
     const probe = new TierProbe({
       ai: { ...BASE_AI, baseUrl: 'https://proxy.internal/v1' },
-      inference: { tiers: { best: { apiKey: 'sk-user', model: 'byo' } } },
-    } as never);
-    const best = (await probe.client('best')) as unknown as FakeClient;
-    expect(best.options.apiKey).toBe('sk-user');
-    expect(best.options.baseUrl).toBeUndefined();
-  });
-
-  it('refuses a target key when the provider endpoint variable would redirect it', async () => {
-    process.env.OPENAI_BASE_URL = 'https://operator-proxy.example/v1';
-    const probe = new TierProbe({
-      ai: BASE_AI,
       inference: {
         tiers: {
           best: { apiKey: 'sk-user', model: 'byo' },
-          great: {
-            apiKey: 'sk-user',
-            baseUrl: 'https://api.openai.com/v1',
-          },
+          great: { apiKey: 'sk-user', baseUrl: 'https://api.openai.com/v1' },
         },
       },
     } as never);
-    await expect(probe.client('best')).rejects.toThrow(/OPENAI_BASE_URL/);
+    await probe.client();
+    getAIMock.mockClear();
+    // getAI()/the provider SDK would fill an unset endpoint from HAVE_AI_* or
+    // OPENAI_BASE_URL: a key without its endpoint fails closed first.
+    await expect(probe.client('best')).rejects.toThrow(/must name its baseUrl/);
+    expect(getAIMock).not.toHaveBeenCalled();
     const great = (await probe.client('great')) as unknown as FakeClient;
     expect(great.options).toMatchObject({
       apiKey: 'sk-user',
       baseUrl: 'https://api.openai.com/v1',
     });
+  });
+
+  it('refuses SDK-wide HAVE_AI_* fallbacks for another provider', async () => {
+    process.env.ANTHROPIC_API_KEY = 'sk-anthropic';
+    for (const name of ['HAVE_AI_BASE_URL', 'HAVE_AI_API_KEY']) {
+      process.env[name] = 'operator-value';
+      try {
+        const probe = new TierProbe({
+          ai: BASE_AI,
+          inference: { tiers: { best: { provider: 'anthropic' } } },
+        } as never);
+        await expect(probe.client('best')).rejects.toThrow(name);
+      } finally {
+        delete process.env[name];
+      }
+    }
   });
 
   it('keeps a target on the configured endpoint with the configured key', async () => {
@@ -232,7 +241,12 @@ describe('SmrtClass inference tiers', () => {
     setInferenceResolver({
       resolve: (request) => ({
         tierResolved: request.tier === 'auto' ? 'good' : request.tier,
-        target: { provider: 'openai', model: 'byo', apiKey: key },
+        target: {
+          provider: 'openai',
+          model: 'byo',
+          baseUrl: 'https://api.openai.com/v1',
+          apiKey: key,
+        },
         via: 'resolver',
       }),
     });
