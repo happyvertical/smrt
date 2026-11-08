@@ -39,7 +39,8 @@ export function isInferenceMode(value: unknown): value is InferenceMode {
  * - `off`: the user or tenant chose mode `off`.
  * - `unconfigured`: no provider anywhere (no stored binding, no app config,
  *   no configured client), or an explicit mode with no binding of its kind.
- * - `entitlement`: reserved for the hosted spend/entitlement gate (#4760).
+ * - `entitlement`: the hosted gate (#4760) refused a `source: hosted` call:
+ *   the operator kill switch, no entitled subscription, or a spend cap.
  * - `capability`: reserved for capability detection (#4758): the bound
  *   model cannot do what the call needs (JSON mode, tools).
  */
@@ -82,6 +83,34 @@ export interface InferenceStatus {
   reason?: InferenceUnavailableReason;
   /** The concrete tier probed (`auto` resolved), when a tier was asked for. */
   tier?: StatusTier;
+  /**
+   * With `reason: 'entitlement'` (#4760): which gate policy refused the
+   * call, and when a spend cap lifts (ISO 8601). Never a cap or spend
+   * amount: those stay on the error.
+   */
+  policy?: string;
+  resetsAt?: string;
+}
+
+/**
+ * What the hosted gate (#4760) refused, carried by an `entitlement`
+ * {@link InferenceUnavailableError} so a UI can say why and when it lifts.
+ * Amounts are integer micro-dollars (1 USD = 1,000,000).
+ */
+export interface InferenceEntitlementDetails {
+  /**
+   * The refusing policy: `kill-switch`, `subscription`, `tenant-cap`,
+   * `user-cap`, `no-tenant` or `gate-error` (the gate failed: fail closed).
+   */
+  policy: string;
+  /** The cap in micro-dollars, for a spend cap. */
+  cap?: number;
+  /** Metered spend in the cap's window, in micro-dollars. */
+  spend?: number;
+  /** When the cap's window resets (ISO 8601); absent when nothing resets. */
+  resetsAt?: string;
+  /** For `kill-switch`: the scope whose switch is off. */
+  disabledBy?: 'global' | 'tenant';
 }
 
 /** Details carried by {@link InferenceUnavailableError}. */
@@ -106,11 +135,14 @@ export interface InferenceUnavailableDetails {
    * and `tier` always win.
    */
   context?: Record<string, unknown>;
+  /** For `entitlement`: the gate's policy, cap, spend and reset (#4760). */
+  entitlement?: InferenceEntitlementDetails;
 }
 
 /** A short, user-safe sentence for each reason (no stack, no config). */
 export function inferenceUnavailableMessage(
   reason: InferenceUnavailableReason,
+  policy?: string,
 ): string {
   switch (reason) {
     case 'off':
@@ -118,6 +150,13 @@ export function inferenceUnavailableMessage(
     case 'unconfigured':
       return 'AI is not set up: no AI provider is configured.';
     case 'entitlement':
+      if (policy === 'kill-switch') return 'Hosted AI is paused.';
+      if (policy === 'tenant-cap' || policy === 'user-cap') {
+        return 'The hosted AI spending limit has been reached.';
+      }
+      if (policy === 'gate-error') {
+        return 'Hosted AI is unavailable: its spending limit could not be checked.';
+      }
       return 'AI is not included in the current plan.';
     case 'capability':
       return 'The configured AI model cannot do this.';
@@ -134,6 +173,11 @@ export class InferenceUnavailableError extends SmrtError {
   readonly reason: InferenceUnavailableReason;
   readonly mode: InferenceMode;
   readonly tier?: StatusTier;
+  /**
+   * For `entitlement` (#4760): the refusing gate policy, and for a spend cap
+   * the cap and spend (integer micro-dollars) and when it lifts.
+   */
+  readonly entitlement?: InferenceEntitlementDetails;
   /** Read by the jobs runner: never retried. */
   readonly retryable = false;
 
@@ -143,8 +187,12 @@ export class InferenceUnavailableError extends SmrtError {
         ? 'off'
         : (details.mode ?? 'off');
     const prefix = details.owner ? `${details.owner}: ` : '';
+    const entitlement =
+      details.reason === 'entitlement' && details.entitlement
+        ? Object.freeze({ ...details.entitlement })
+        : undefined;
     super(
-      `${prefix}${details.message ?? inferenceUnavailableMessage(details.reason)}`,
+      `${prefix}${details.message ?? inferenceUnavailableMessage(details.reason, entitlement?.policy)}`,
       AI_UNAVAILABLE,
       'configuration',
       {
@@ -152,16 +200,23 @@ export class InferenceUnavailableError extends SmrtError {
         reason: details.reason,
         mode,
         ...(details.tier ? { tier: details.tier } : {}),
+        ...(entitlement ? { entitlement } : {}),
       },
     );
     this.reason = details.reason;
     this.mode = mode;
     if (details.tier) this.tier = details.tier;
+    if (entitlement) this.entitlement = entitlement;
   }
 
   /** The {@link InferenceStatus} this error reports. */
   toStatus(): InferenceStatus {
-    return inferenceUnavailableStatus(this.reason, this.mode, this.tier);
+    return inferenceUnavailableStatus(
+      this.reason,
+      this.mode,
+      this.tier,
+      this.entitlement,
+    );
   }
 }
 
@@ -170,6 +225,7 @@ export function inferenceUnavailableStatus(
   reason: InferenceUnavailableReason,
   mode?: InferenceMode,
   tier?: StatusTier,
+  entitlement?: InferenceEntitlementDetails,
 ): InferenceStatus {
   return {
     available: false,
@@ -177,6 +233,12 @@ export function inferenceUnavailableStatus(
       reason === 'off' || reason === 'unconfigured' ? 'off' : (mode ?? 'off'),
     reason,
     ...(tier ? { tier } : {}),
+    ...(reason === 'entitlement' && entitlement
+      ? {
+          policy: entitlement.policy,
+          ...(entitlement.resetsAt ? { resetsAt: entitlement.resetsAt } : {}),
+        }
+      : {}),
   };
 }
 

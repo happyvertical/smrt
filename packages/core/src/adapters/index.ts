@@ -21,14 +21,18 @@ export {
 export type {
   AiUsageRecorder,
   AiUsageTenantResolver,
+  AiUsageUserResolver,
   CreateAiUsageRecorderOptions,
 } from './ai-usage-recorder.js';
 export {
+  AI_USAGE_USER_TAG,
   attachAiUsageRecorder,
   createAiUsageRecorder,
   getAiUsageTenantResolver,
+  getAiUsageUserResolver,
   resolveAiUsageTenantId,
   setAiUsageTenantResolver,
+  setAiUsageUserResolver,
 } from './ai-usage-recorder.js';
 export {
   DEFAULT_AI_COST_RATES,

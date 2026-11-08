@@ -41,6 +41,11 @@ import {
   detectInferenceCapabilities,
   type InferenceCapabilities,
 } from './inference-capabilities.js';
+import {
+  enforceInferenceGate,
+  inferenceGateRequest,
+  isHostedInferenceTarget,
+} from './inference-gate.js';
 
 const IDENTITY_FIELDS = ['provider', 'model', 'baseUrl', 'apiKey'] as const;
 
@@ -275,6 +280,32 @@ export async function resolveInferenceTarget(
     if (options.base?.onUsage !== undefined) {
       clientOptions.onUsage = options.base.onUsage;
     }
+  }
+  // A bound hosted target passes the hosted gate (#4760) before any options
+  // are returned: a block records its zero-usage audit row through the same
+  // recorder the call would have used (persisted when `usage.db` is given;
+  // handlers only otherwise), then throws `reason: 'entitlement'`.
+  if (bound && isHostedInferenceTarget(target)) {
+    const owner = options.owner ?? options.className;
+    await enforceInferenceGate(inferenceGateRequest(request, resolution), {
+      resolution,
+      ...(owner ? { owner } : {}),
+      record: (row) =>
+        createAiUsageRecorder({
+          ...(options.usage?.db ? { db: options.usage.db } : {}),
+          className: options.usage?.className ?? options.className,
+          ...(options.usage?.tenantId !== undefined
+            ? { tenantId: options.usage.tenantId }
+            : options.tenantId !== undefined
+              ? { tenantId: options.tenantId }
+              : {}),
+          tags: { ...(options.usage?.tags ?? {}) },
+          aiConfig: clientOptions,
+        })({
+          ...row,
+          usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+        }),
+    });
   }
   // An unbound site runs its own config: no tier answered it, so only the
   // origin is recorded.
