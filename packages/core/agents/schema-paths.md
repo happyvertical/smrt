@@ -631,6 +631,9 @@ additionally needs an `addColumnIfMissing()` entry in `system/compatibility.ts`
 (`CREATE TABLE IF NOT EXISTS` is a no-op on an existing table).
 `system-schema-evolution.test.ts` enforces both, and asserts a legacy database
 upgrades to exactly the shape a fresh install gets.
+Bootstrap-table columns go in `ensureBootstrapSystemTableCompatibility()`,
+which runs before the replay so its indexes find them: `_smrt_ai_usage`'s
+#4751 columns are the model (`agents/ai-usage.md`).
 
 `_smrt_jobs` / `_smrt_job_events` are dual-owned: `db:migrate` creates them,
 the compatibility pass reshapes them. On a fresh install bootstrap runs first,
