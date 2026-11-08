@@ -119,6 +119,16 @@ test('finite admission policy binds actor, command, credential and volume envelo
   assert.ok(expressions.includes('!has(v.projected)'));
   assert.ok(expressions.includes("['runtime-v2','migration-v1']"));
   assert.equal(policy.spec.failurePolicy, 'Fail');
+  // The legacy Flux applier is admitted for drift dry-runs of reviewed names
+  // only; it never gains a real write or a Job.
+  const identity = policy.spec.validations[0].expression;
+  const applier = "request.userInfo.username == 'system:serviceaccount:flux-system:kustomize-controller'";
+  assert.equal(identity.split(applier).length, 2);
+  assert.ok(
+    identity.includes(
+      `(request.dryRun && ${applier} && request.resource.resource != 'jobs' && ["legacy-web"].exists(n,n == object.metadata.name))`,
+    ),
+  );
 });
 
 test('smart HTTP fixture actually clones the same publisher bare Git object database', async () => {

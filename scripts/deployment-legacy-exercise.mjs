@@ -325,6 +325,11 @@ export function legacyAdmissionPolicy(namespace, allowedNames, commands) {
     'system:kube-controller-manager',
   ];
   const reconciler = `system:serviceaccount:${namespace}:reconciler`;
+  // The reviewed legacy Flux Kustomization applies as kustomize-controller and
+  // must stay Ready on its stop revision until relinquishment. Flux dry-runs
+  // every object to detect drift; permit only that dry-run, so an unchanged
+  // revision reconciles while any real legacy write is still denied.
+  const legacyApplier = 'system:serviceaccount:flux-system:kustomize-controller';
   const actor = `(${JSON.stringify(controllerActors)}.exists(a,a == request.userInfo.username))`;
   const podSpec =
     "(request.resource.resource == 'pods' ? object.spec : (request.resource.resource == 'cronjobs' ? object.spec.jobTemplate.spec.template.spec : object.spec.template.spec))";
@@ -359,7 +364,7 @@ export function legacyAdmissionPolicy(namespace, allowedNames, commands) {
       },
       validations: [
         {
-          expression: `request.namespace != '${namespace}' || (request.resource.resource == 'pods' ? ((request.dryRun && request.userInfo.username == '${reconciler}') || (${actor} && has(object.metadata.ownerReferences) && object.metadata.ownerReferences.size() == 1)) : (request.userInfo.username == '${reconciler}' && (${JSON.stringify(allowedNames)}.exists(n,n == object.metadata.name) || (request.resource.resource == 'jobs' && object.metadata.name.startsWith('legacy-migration-')))))`,
+          expression: `request.namespace != '${namespace}' || (request.resource.resource == 'pods' ? ((request.dryRun && request.userInfo.username == '${reconciler}') || (${actor} && has(object.metadata.ownerReferences) && object.metadata.ownerReferences.size() == 1)) : ((request.userInfo.username == '${reconciler}' && (${JSON.stringify(allowedNames)}.exists(n,n == object.metadata.name) || (request.resource.resource == 'jobs' && object.metadata.name.startsWith('legacy-migration-')))) || (request.dryRun && request.userInfo.username == '${legacyApplier}' && request.resource.resource != 'jobs' && ${JSON.stringify(allowedNames)}.exists(n,n == object.metadata.name))))`,
           message: 'finite fixture workload/controller identities required',
         },
         {
