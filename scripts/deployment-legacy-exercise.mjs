@@ -1369,6 +1369,29 @@ export async function legacyMain(env = process.env) {
     const original = legacyManifests('active').map((o) =>
       get(o.kind, o.metadata.name),
     );
+    // A careful platform lands maintenance in two reviewed legacy commits:
+    // first the responder itself (ingress still on the app), then the ingress
+    // switch once the responder has endpoints, so the ingress never answers
+    // its own 503 for a backend that is not ready yet.
+    const activeIngresses = new Map(
+      legacyManifests('active')
+        .filter((o) => o.kind === 'Ingress')
+        .map((o) => [o.metadata.name, o]),
+    );
+    write('legacy/resources.yaml', {
+      apiVersion: 'v1',
+      kind: 'List',
+      items: legacyManifests('maintenance').map((o) =>
+        o.kind === 'Ingress' ? activeIngresses.get(o.metadata.name) : o,
+      ),
+    });
+    const maintenancePrepared = commit('reviewed legacy maintenance responder');
+    git('push', 'legacy', 'HEAD:legacy');
+    await acknowledgeGit('legacy-source', 'legacy-app', maintenancePrepared);
+    await until('legacy maintenance responder ready', () => {
+      const status = get('deployment', 'legacy-maintenance').status ?? {};
+      return (status.availableReplicas ?? 0) >= 1;
+    });
     write('legacy/resources.yaml', {
       apiVersion: 'v1',
       kind: 'List',
