@@ -14,6 +14,7 @@ import {
   legacyRuntime,
   requireLegacyOptIn,
   smartGitServer,
+  tcpProbe,
 } from './deployment-legacy-exercise.mjs';
 import { isContinuousStatic, validateRuntime } from './deployment/release.mjs';
 const execute = promisify(execFile);
@@ -221,4 +222,22 @@ test('static credential probe accepts Kubernetes endpoint metadata but rejects c
     'KUBERNETES_TOKEN',
   ])
     assert.equal(hasStaticCredentialName(name), true);
+});
+
+test('TCP probe uses busybox tools and maps busybox timeout to 124', async () => {
+  const argv = tcpProbe('10.96.0.1', 443);
+  // Host and port are positional arguments, never interpolated into the script.
+  assert.deepEqual(argv.slice(0, 2), ['sh', '-c']);
+  assert.deepEqual(argv.slice(3), ['10.96.0.1', '443']);
+  assert.ok(!argv[2].includes('bash') && !argv[2].includes('/dev/tcp'));
+  const run = (script, ...args) =>
+    new Promise((resolve) => {
+      const child = spawn('sh', ['-c', script, ...args], { stdio: 'ignore' });
+      child.on('close', (code) => resolve(code));
+    });
+  // Stand-ins for busybox results: 143 (killed) must map to 124, others pass.
+  for (const [status, expected] of [[0, 0], [1, 1], [143, 124]]) {
+    const script = argv[2].replace('timeout 3 nc -z "$0" "$1"', `(exit ${status})`);
+    assert.equal(await run(script, ...argv.slice(3)), expected);
+  }
 });

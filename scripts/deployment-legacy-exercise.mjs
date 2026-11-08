@@ -48,6 +48,16 @@ export const legacyArtifacts = Object.freeze({
     sha256: 'a9f371489a6c18042508c0b5c2ea669deaad7ccc08f37efc4522e336edda1c20',
   },
 });
+// The pinned nginx image is Alpine: no bash or /dev/tcp. Busybox `timeout`
+// exits 143 (SIGTERM) where GNU exits 124, so map it back: 0 = connected,
+// 124 = connect hung (dropped by policy), anything else = refused or error.
+export const tcpProbe = (host, port) => [
+  'sh',
+  '-c',
+  'timeout 3 nc -z "$0" "$1"; s=$?; if [ "$s" -eq 143 ]; then exit 124; fi; exit "$s"',
+  String(host),
+  String(port),
+];
 export const legacyImages = Object.freeze({
   node: 'docker.io/library/node@sha256:5feabe6cffeab0160ea9c8a29dd9f0bbf26b1028bbe40ed6dd80dbdfb5d99aa4',
   nginx:
@@ -1697,11 +1707,7 @@ export async function legacyMain(env = process.env) {
         'exec',
         sitePodBefore.metadata.name,
         '--',
-        'timeout',
-        '3',
-        'bash',
-        '-c',
-        `exec 3<>/dev/tcp/${host}/${port}`,
+        ...tcpProbe(host, port),
       ]);
     }
     const network = r(
@@ -1853,11 +1859,7 @@ export async function legacyMain(env = process.env) {
               'exec',
               sitePodBefore.metadata.name,
               '--',
-              'timeout',
-              '3',
-              'bash',
-              '-c',
-              `exec 3<>/dev/tcp/${host}/${port}`,
+              ...tcpProbe(host, port),
             ]);
           } catch (error) {
             timedOut = String(error.stderr).includes('exit code 124');
@@ -2325,11 +2327,7 @@ export async function legacyMain(env = process.env) {
           'exec',
           sitePod.metadata.name,
           '--',
-          'timeout',
-          '3',
-          'bash',
-          '-c',
-          `exec 3<>/dev/tcp/${host}/${port}`,
+          ...tcpProbe(host, port),
         ]);
       } catch (error) {
         timedOut = String(error.stderr).includes('exit code 124');
