@@ -6,6 +6,7 @@ import test from 'node:test';
 import {
   adoptionStages,
   adoptOrResume,
+  allowedManagers,
   planAdoption,
   validateAdoptionPlan,
   verifyAdoptionGate,
@@ -99,7 +100,9 @@ function native(plan, stage) {
         uid: 'workload-uid',
         specIdentity: sha,
         selectorIdentity: sha,
-        managers: ['kustomize-controller'],
+        legacyManager: 'kustomize-controller',
+        managers: [adoptionStages.indexOf(stage) >= 4 ? 'helm-controller' : 'kustomize-controller'],
+        orphanedFieldsIdentity: null,
       },
     ],
     flux: {
@@ -717,10 +720,14 @@ test('native legacy gates bind actual UID, stop/relinquish revisions, selectors,
       );
       object[key] = before;
     }
-    // Helm establishment releases only the reviewed legacy manager, once.
-    const helmEntry = { manager: 'helm-controller', operation: 'Apply', fieldsType: 'FieldsV1', fieldsV1: { 'f:spec': {} } };
-    for (const o of [actual, ingress])
-      o.metadata.managedFields = [{ manager: 'kustomize-controller' }, helmEntry, ...o.metadata.managedFields.filter((e) => e.subresource)];
+    // Helm establishment: stage allowlist, fresh fence, one release, bounded
+    // orphans; afterwards a returning legacy manager blocks.
+    const helmEntry = { manager: 'helm-controller', operation: 'Apply', fieldsType: 'FieldsV1', fieldsV1: { 'f:spec': { 'f:replicas': {} }, 'f:metadata': { 'f:labels': { 'f:app.kubernetes.io/managed-by': {} } } } };
+    const legacyEntry = { manager: 'kustomize-controller', operation: 'Apply', fieldsType: 'FieldsV1', fieldsV1: { 'f:spec': { 'f:replicas': {}, 'f:paused': {} }, 'f:metadata': { 'f:labels': { 'f:kustomize.toolkit.fluxcd.io/name': {}, 'f:kustomize.toolkit.fluxcd.io/namespace': {} }, 'f:annotations': { 'f:kustomize.toolkit.fluxcd.io/prune': {} } } } };
+    const reset = (...extra) => {
+      for (const o of [actual, ingress])
+        o.metadata.managedFields = [structuredClone(legacyEntry), helmEntry, ...extra, ...(o === ingress ? [statusEntry] : [])];
+    };
     const adopted = {
       ...snapshot,
       canonical: {
@@ -734,29 +741,49 @@ test('native legacy gates bind actual UID, stop/relinquish revisions, selectors,
       },
     };
     const released = [];
-    let releaseWorks = true;
+    let releaseWorks = true, fences = 0;
     Object.assign(helpers, {
       acknowledge: async () => {},
       provePhase: async () => ({ bindings: sha }),
       helmOwner: (o) => assert.ok(o.metadata.managedFields.some((e) => e.manager === 'helm-controller')),
       releaseLegacyManager: async (o, manager, document) => {
         assert.equal(document, adopted.canonical);
+        assert.ok(fences > 0, 'fence observed before any release');
         released.push([o.kind, manager]);
-        if (releaseWorks)
-          o.metadata.managedFields = o.metadata.managedFields.filter((e) => e.manager !== manager);
+        if (releaseWorks) o.metadata.managedFields = o.metadata.managedFields.filter((e) => e.manager !== manager);
       },
     });
-    assert.ok(await methods.observeAdopted(plan, adopted, 'helm-established'));
+    const counting = createAdoptionMethods(config, async () => '', helpers, {
+      adoptionFenceObserver: async () => { fences++; return fence(plan); },
+    });
+    reset();
+    const established = await counting.observeAdopted(plan, adopted, 'helm-established');
     assert.deepEqual(released, [['Deployment', 'kustomize-controller'], ['Ingress', 'kustomize-controller']]);
+    assert.equal(fences, 1);
+    assert.deepEqual(established.resources.map((r) => [r.legacyManager, r.managers, typeof r.orphanedFieldsIdentity]), [['kustomize-controller', ['helm-controller'], 'string'], ['kustomize-controller', ['helm-controller'], 'string']], 'status managers excluded; reviewed orphans recorded by identity');
     assert.ok(ingress.metadata.managedFields.includes(statusEntry), 'other managers are preserved');
-    assert.ok(await methods.observeAdopted(plan, adopted, 'finalized'));
+    const again = await counting.observeAdopted(plan, adopted, 'helm-established');
     assert.equal(released.length, 2, 'an already released resource is not patched again');
-    actual.metadata.managedFields.unshift({ manager: 'kustomize-controller' });
+    assert.equal(fences, 1, 'no fence needed without a release');
+    assert.deepEqual(again.resources.map((r) => r.orphanedFieldsIdentity), [null, null]);
+    assert.ok(await counting.observeAdopted(plan, adopted, 'finalized'));
+    actual.metadata.managedFields.unshift(structuredClone(legacyEntry));
+    await assert.rejects(counting.observeAdopted(plan, adopted, 'finalized'), /returned after establishment/);
+    assert.equal(released.length, 2, 'nothing is released after establishment');
+    reset({ manager: 'kubectl-edit', operation: 'Update', fieldsType: 'FieldsV1', fieldsV1: { 'f:spec': { 'f:replicas': {} } } });
+    await assert.rejects(counting.observeAdopted(plan, adopted, 'helm-established'), /Unreviewed adopted resource field manager/);
+    assert.equal(released.length, 2, 'a foreign manager blocks before any release');
+    reset();
+    actual.metadata.managedFields[0].fieldsV1['f:metadata']['f:labels']['f:team'] = {};
+    await assert.rejects(counting.observeAdopted(plan, adopted, 'helm-established'), /unreviewed fields outside the Helm render/);
+    assert.equal(released.length, 2);
+    reset();
     releaseWorks = false;
-    await assert.rejects(methods.observeAdopted(plan, adopted, 'finalized'), /legacy field manager not released/);
+    await assert.rejects(counting.observeAdopted(plan, adopted, 'helm-established'), /legacy field manager not released/);
+    reset();
     helpers.releaseLegacyManager = async () => { throw new Error('Legacy field manager release failed'); };
-    await assert.rejects(methods.observeAdopted(plan, adopted, 'finalized'), /release failed/);
-    actual.metadata.managedFields.shift();
+    await assert.rejects(counting.observeAdopted(plan, adopted, 'helm-established'), /release failed/);
+    for (const o of [actual, ingress]) o.metadata.managedFields = o === ingress ? [{ manager: 'kustomize-controller' }, statusEntry] : [{ manager: 'kustomize-controller' }];
     const before = snapshot.raw[plan.qualification.file];
     snapshot.raw[plan.qualification.file] = '{"passed":true}';
     await assert.rejects(
@@ -945,4 +972,30 @@ test('qualified legacy ancestry accepts actual legacy labels and rejects unknown
       verifyKnownLegacyWorkloads(bad, saved, verifyPodEnvelope),
     );
   }
+});
+
+test('adoption gate admits only stage-appropriate spec managers', () => {
+  const { plan } = fixture();
+  for (const [stage, managers, ok] of [
+    ['planned', ['kustomize-controller'], true],
+    ['helm-staged', ['kustomize-controller', 'kube-controller-manager'], true],
+    ['helm-staged', ['helm-controller'], false],
+    ['helm-established', ['helm-controller'], true],
+    ['helm-established', ['kustomize-controller'], false],
+    ['finalized', ['helm-controller', 'kube-scheduler'], true],
+    ['finalized', ['kustomize-controller'], false],
+    ['finalized', ['kubectl-edit'], false],
+  ]) {
+    const observation = native(plan, stage);
+    observation.resources[0].managers = managers;
+    observation.inventoryIdentity = hash(observation.resources);
+    const run = () => verifyAdoptionGate(plan, stage, observation, fence(plan));
+    if (ok) assert.ok(run(), `${stage} ${managers}`);
+    else assert.throws(run, /safe native adoption observation/, `${stage} ${managers}`);
+  }
+  assert.deepEqual(allowedManagers('planned', { legacyManager: 'legacy-applier' }), ['kube-controller-manager', 'kube-scheduler', 'legacy-applier']);
+  const observation = native(plan, 'finalized');
+  observation.resources[0].orphanedFieldsIdentity = 'not-a-sha';
+  observation.inventoryIdentity = hash(observation.resources);
+  assert.throws(() => verifyAdoptionGate(plan, 'finalized', observation, fence(plan)), /safe native adoption observation/);
 });

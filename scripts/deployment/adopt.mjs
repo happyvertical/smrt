@@ -238,6 +238,17 @@ export function verifyNativeWriterFence(fence, contract, now = Date.now()) {
   return hash(fence);
 }
 
+// Spec-affecting field managers an observation may list, by stage: the
+// reviewed legacy applier until Helm establishes; helm-controller from then on.
+// Native controllers write status through their own subresource managers.
+export const allowedManagers = (stage, resource) => [
+  'kube-controller-manager',
+  'kube-scheduler',
+  ...(adoptionStages.indexOf(stage) >= adoptionStages.indexOf('helm-established')
+    ? ['helm-controller']
+    : [resource.legacyManager]),
+];
+
 export function verifyAdoptionGate(
   plan,
   stage,
@@ -273,13 +284,17 @@ export function verifyAdoptionGate(
             'uid',
             'specIdentity',
             'selectorIdentity',
+            'legacyManager',
             'managers',
+            'orphanedFieldsIdentity',
           ]) &&
-          [r.apiVersion, r.kind, r.namespace, r.name, r.uid].every(text) &&
+          [r.apiVersion, r.kind, r.namespace, r.name, r.uid, r.legacyManager].every(text) &&
           [r.specIdentity, r.selectorIdentity].every(sha) &&
+          (r.orphanedFieldsIdentity === null || sha(r.orphanedFieldsIdentity)) &&
           Array.isArray(r.managers) &&
           r.managers.length <= 32 &&
-          r.managers.every(text),
+          r.managers.every(text) &&
+          r.managers.every((manager) => allowedManagers(stage, r).includes(manager)),
       ) &&
       keys(observation.flux, [
         'legacySourceUid',

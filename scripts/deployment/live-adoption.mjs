@@ -96,6 +96,53 @@ export function verifyKnownLegacyWorkloads(all, saved, verifyPod) {
     'Unknown or unsupported legacy writer controller',
   );
 }
+// Native status-subresource ownership cannot own specification fields.
+const statusOnlyEntry = (kind, entry) =>
+  ['Ingress', 'Service', 'Deployment', 'CronJob', 'Job', 'ReplicaSet', 'Pod'].includes(kind) &&
+  entry.subresource === 'status' &&
+  entry.fieldsType === 'FieldsV1' &&
+  entry.fieldsV1 &&
+  typeof entry.fieldsV1 === 'object' &&
+  !Array.isArray(entry.fieldsV1) &&
+  Object.keys(entry.fieldsV1).length === 1 &&
+  Object.hasOwn(entry.fieldsV1, 'f:status') &&
+  entry.fieldsV1['f:status'] !== null &&
+  typeof entry.fieldsV1['f:status'] === 'object' &&
+  !Array.isArray(entry.fieldsV1['f:status']);
+// Leaf paths of a FieldsV1 set, as segment arrays ("." marks the parent itself).
+const fieldLeaves = (fields, prefix = []) =>
+  Object.entries(fields ?? {}).flatMap(([key, value]) =>
+    value && typeof value === 'object' && Object.keys(value).length
+      ? fieldLeaves(value, [...prefix, key])
+      : [[...prefix, key]],
+  );
+const ownedLeaves = (object, manager) =>
+  new Set(
+    (object.metadata.managedFields ?? [])
+      .filter((entry) => entry.manager === manager && !entry.subresource)
+      .flatMap((entry) => fieldLeaves(entry.fieldsV1))
+      .map((path) => JSON.stringify(path)),
+  );
+// Fields only the legacy manager owned stay on the object unowned after its
+// release. Only Flux's own apply metadata, or spec/data leaves reviewed by the
+// relinquished spec identity, may be left that way.
+const fluxApplyMetadata = ['name', 'namespace', 'prune'].map(
+  (key) => `f:kustomize.toolkit.fluxcd.io/${key}`,
+);
+const reviewedOrphan = ([root, group, key]) =>
+  ['f:spec', 'f:data'].includes(root) ||
+  (root === 'f:metadata' &&
+    ['f:labels', 'f:annotations'].includes(group) &&
+    fluxApplyMetadata.includes(key));
+const specManagers = (kind, managedFields) =>
+  [
+    ...new Set(
+      (managedFields ?? [])
+        .filter((entry) => !statusOnlyEntry(kind, entry))
+        .map((entry) => entry.manager),
+    ),
+  ].sort();
+
 export function createAdoptionMethods(config, command, helpers, options) {
   const { repository, branch, namespace } = config;
   const git = (...args) => command('git', ['-C', repository, ...args]);
@@ -179,7 +226,7 @@ export function createAdoptionMethods(config, command, helpers, options) {
         'ls-tree',
         '-r',
         '--name-only',
-        snapshot.revision,
+        revision,
         '--',
         fluxPath,
       )
@@ -533,6 +580,7 @@ export function createAdoptionMethods(config, command, helpers, options) {
     all,
     legacyRevision,
     bindings,
+    orphaned = new Map(),
   ) {
     const resources = saved.resources.map((r) => {
       const actual = all.find((o) => resourceKey(o) === resourceKey(r));
@@ -544,11 +592,9 @@ export function createAdoptionMethods(config, command, helpers, options) {
         uid: actual.metadata.uid,
         specIdentity: hash(actual.spec ?? actual.data ?? {}),
         selectorIdentity: hash(actual.spec?.selector ?? {}),
-        managers: [
-          ...new Set(
-            (actual.metadata.managedFields ?? []).map((f) => f.manager),
-          ),
-        ].sort(),
+        legacyManager: r.legacyManager,
+        managers: specManagers(actual.kind, actual.metadata.managedFields),
+        orphanedFieldsIdentity: orphaned.get(actual.metadata.uid) ?? null,
       };
     });
     return {
@@ -610,20 +656,6 @@ export function createAdoptionMethods(config, command, helpers, options) {
             ),
           'Legacy inventory remains managed or reviewed Helm metadata missing',
         );
-        // Native status-subresource ownership cannot own specification fields.
-        // Preserve the reviewed legacy spec manager and refuse mixed field sets.
-        const statusOnly = (entry) =>
-          ['Ingress', 'Service', 'Deployment', 'CronJob', 'Job', 'ReplicaSet', 'Pod'].includes(actual.kind) &&
-          entry.subresource === 'status' &&
-          entry.fieldsType === 'FieldsV1' &&
-          entry.fieldsV1 &&
-          typeof entry.fieldsV1 === 'object' &&
-          !Array.isArray(entry.fieldsV1) &&
-          Object.keys(entry.fieldsV1).length === 1 &&
-          Object.hasOwn(entry.fieldsV1, 'f:status') &&
-          entry.fieldsV1['f:status'] !== null &&
-          typeof entry.fieldsV1['f:status'] === 'object' &&
-          !Array.isArray(entry.fieldsV1['f:status']);
         demand(
           actual.metadata.managedFields?.some(
             (entry) => entry.manager === r.legacyManager && !entry.subresource,
@@ -635,7 +667,7 @@ export function createAdoptionMethods(config, command, helpers, options) {
                   'kube-controller-manager',
                   'kube-scheduler',
                   'helm-controller',
-                ].includes(entry.manager) && !statusOnly(entry),
+                ].includes(entry.manager) && !statusOnlyEntry(actual.kind, entry),
             ),
           'Unreviewed legacy resource field manager',
         );
@@ -683,6 +715,17 @@ export function createAdoptionMethods(config, command, helpers, options) {
     );
     await helpers.acknowledge(document, snapshot.revision);
     const evidence = await helpers.provePhase(document, snapshot.revision);
+    const establishing = stage === 'helm-established';
+    const allowed = (r) => [
+      'helm-controller',
+      'kube-controller-manager',
+      'kube-scheduler',
+      ...(establishing ? [r.legacyManager] : []),
+    ];
+    // Read-only: every adopted resource is the reviewed object, Helm-owned,
+    // and carries no field manager outside the stage allowlist. The reviewed
+    // legacy manager is tolerated only while establishing; afterwards its
+    // return means the legacy applier wrote again, and that blocks.
     const adopted = (all) =>
       saved.resources.map((r) => {
         const actual = all.find((o) => resourceKey(o) === resourceKey(r));
@@ -692,27 +735,55 @@ export function createAdoptionMethods(config, command, helpers, options) {
           'Adopted resource UID/selector changed',
         );
         helpers.helmOwner(actual, plan.releaseName, namespace);
+        demand(
+          !actual.metadata.managedFields?.some(
+            (entry) =>
+              !allowed(r).includes(entry.manager) &&
+              !statusOnlyEntry(actual.kind, entry),
+          ),
+          establishing
+            ? 'Unreviewed adopted resource field manager'
+            : 'Legacy field manager returned after establishment',
+        );
         return [r, actual];
       });
     let all = await helpers.namespaceInventory();
-    // Helm's forced establishment leaves fields whose values already matched
-    // co-owned by the reviewed legacy manager, so the first ordinary phase
-    // changing one would conflict. Release only that manager's entries; the
-    // values stay, and each patch is bound to the observed UID/resourceVersion.
-    const legacyOwned = ([r, actual]) =>
-      actual.metadata.managedFields?.some(
-        (entry) => entry.manager === r.legacyManager,
-      );
-    const stale = adopted(all).filter(legacyOwned);
-    for (const [r, actual] of stale)
-      await helpers.releaseLegacyManager(actual, r.legacyManager, document);
-    if (stale.length) all = await helpers.namespaceInventory();
-    demand(
-      !adopted(all).some(legacyOwned),
-      'Reviewed legacy field manager not released after Helm establishment',
-    );
+    let pairs = adopted(all);
     await helpers.verifyStopped(document, all);
     await helpers.acknowledge(document, snapshot.revision);
+    // Act, once, while establishing: Helm's forced apply leaves fields whose
+    // values already matched co-owned by the legacy manager, so the first
+    // ordinary phase changing one would conflict. Release only that manager's
+    // entries, after every read-only check and a fresh fence, bound to the
+    // observed UID/resourceVersion; values and other managers are kept. Leaves
+    // left unowned must be Flux apply metadata or reviewed spec/data fields.
+    const orphaned = new Map();
+    const legacyOwned = ([r, actual]) =>
+      actual.metadata.managedFields?.some(
+        (entry) => entry.manager === r.legacyManager && !entry.subresource,
+      );
+    const stale = pairs.filter(legacyOwned);
+    if (stale.length) {
+      await observeWriterFence(plan, snapshot, stage);
+      for (const [r, actual] of stale) {
+        const helm = ownedLeaves(actual, 'helm-controller');
+        const leaves = [...ownedLeaves(actual, r.legacyManager)]
+          .filter((leaf) => !helm.has(leaf))
+          .sort();
+        demand(
+          leaves.every((leaf) => reviewedOrphan(JSON.parse(leaf))),
+          'Legacy manager owns unreviewed fields outside the Helm render',
+        );
+        orphaned.set(actual.metadata.uid, leaves.length ? hash(leaves) : null);
+        await helpers.releaseLegacyManager(actual, r.legacyManager, document);
+      }
+      all = await helpers.namespaceInventory();
+      pairs = adopted(all);
+      demand(
+        !pairs.some(legacyOwned),
+        'Reviewed legacy field manager not released after Helm establishment',
+      );
+    }
     return safeNative(
       plan,
       snapshot,
@@ -721,6 +792,7 @@ export function createAdoptionMethods(config, command, helpers, options) {
       all,
       plan.legacy.relinquishRevision,
       evidence.bindings,
+      orphaned,
     );
   }
   async function casAdoption(snapshot, plan, state, document) {
@@ -746,6 +818,7 @@ export function createAdoptionMethods(config, command, helpers, options) {
             `${snapshot.revision}..${latest.revision}`,
             '--',
             ...Object.keys(snapshot.raw),
+            adoptionPath(config.adoption.fluxPath),
           )
         ).trim(),
         'Adoption CAS superseded protected history',

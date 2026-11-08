@@ -226,14 +226,26 @@ Staging preflight allows the exact approved legacy UID/manager state only and
 renders/admission-dry-runs all phases. Other SSA conflicts remain fatal; no force,
 Helm broad take-ownership, delete/recreate or automatic restart is enabled. It
 publishes the stopped candidate with `smrt.happyvertical.com/adoption-{id,plan,
-status:pending,origin}`. Canonical remains absent. Establishment requires exact
+status:pending,origin}`. Canonical remains absent. Every journal publication
+re-checks the dedicated Flux directory, and the directory's own history, on the
+exact revision it builds on, so an interleaved commit cannot carry unreviewed
+manifests into the handover. Establishment requires exact
 Flux acknowledgement, normal Helm values/storage and established helm-controller
 ownership, preserved UIDs/selectors, stopped writers, static health and fresh
-fences. Helm's forced apply leaves fields whose values already matched co-owned
-by the reviewed legacy manager, so establishment then removes only that
-manager's `managedFields` entries, as the release reconciler, with a JSON patch
-bound to each resource's observed UID and `resourceVersion`. Values are kept,
-other managers are untouched, and later ordinary phases dry-run without force.
+fences. After establishment every adopted resource may carry only
+`helm-controller` and the native controllers' spec managers (status-subresource
+managers aside); any other manager blocks, and the reviewed legacy manager is
+tolerated only during the `helm-staged` to `helm-established` transition. In that
+transition, because Helm's forced apply leaves fields whose values already
+matched co-owned by the legacy manager, the runner releases that manager once:
+after every read-only check and a fresh writer fence, as the release reconciler,
+with a JSON patch bound to each resource's observed UID and `resourceVersion`.
+Values and other managers are kept. Leaves the legacy manager alone owned stay
+unowned, so they must be Flux's own apply metadata
+(`kustomize.toolkit.fluxcd.io/{name,namespace,prune}`) or spec/data fields
+reviewed by the relinquished identity; anything else blocks, and the orphan set's
+identity is journaled. A legacy manager seen at `finalized` or later means the
+legacy applier wrote again and blocks.
 Finalization atomically renames staging to canonical with status `complete`,
 `adoption-proof` (observation identity) and `adoption-state` (journal identity).
 Actual binding-version annotations are pinned. Resume after finalization
