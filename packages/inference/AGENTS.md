@@ -102,7 +102,9 @@ order), `fallback`, the app `inference` block, then the configured client
 `revokeHostedInference({ db, tenantId, userId })`, or one
 `createHostedInferenceProvisioner({ db, secrets?, gateway?, admin?, actor? })`
 (`provision`, `revoke`, `syncBudget`, `status`, `listActive`, `listKnown`,
-`revokeTenant`, `syncTenantBudget`, `reconcileTenant`).
+`revokeTenant`, `syncTenantBudget`, `reconcileTenant`,
+`acknowledgeGatewayRevocation` to drop an owed deletion an operator did by
+hand).
 
 - **Gateway.** Admin calls go through `ai.admin` (`AIAdminInterface`) of the
   `bifrost` / `litellm` provider of `@happyvertical/ai`; never reimplement
@@ -126,7 +128,10 @@ order), `fallback`, the app `inference` block, then the configured client
   key may use; default the binding's models), `_KEY_DURATION`,
   `_ADMIN_TIMEOUT_MS` (deadline per admin call, default 30 s, also passed as
   the SDK `timeout`; a call past it is a failure, so a stalled gateway never
-  holds the lifecycle lock; a timed-out create records its alias as owed).
+  holds the lifecycle lock). A create that fails ambiguously (timeout,
+  transport reset, 5xx, unclassified; anything but a credential, quota,
+  missing-model or refusal answer per `classifyInferenceFailure`) records
+  its alias as owed, since the gateway may have minted the key.
   Errors name missing fields, never values.
 - **Storage** (smrt-secrets, `context = tenantId`): the key lives only in
   the user's `inference.provider-config:user:<id>` (`source: 'hosted'`,
@@ -175,7 +180,9 @@ order), `fallback`, the app `inference` block, then the configured client
   reconciles the tenant to the change's `after` snapshot through
   `createHostedInferenceReconciler()`: entitled provisions `users(tenantId)`
   (membership is the host's; exclude users an operator revoked) unless
-  they opted out, and syncs budgets; not entitled revokes every grant; both
+  they opted out, and re-applies budgets even when the stored one matches
+  (a timed-out update that landed late is overwritten); not entitled revokes
+  every grant; both
   retry owed deletions (also for active grants: they are old keys). The
   plan's budget is the grant's `metadata.budget` (`{ limitMicros, window }`).
   A replayed webhook diffs to "no change", so hosts also call the reconciler
