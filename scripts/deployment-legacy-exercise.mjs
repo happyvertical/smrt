@@ -2477,8 +2477,19 @@ export async function legacyMain(env = process.env) {
         'previously reachable static TCP probe must time out under Cilium',
       );
     }
+    // CLI commands observe point-in-time Flux state and fail closed on a
+    // periodic reconcile flip; success paths re-run like an operator would,
+    // bounded, reporting the last reason.
+    const operatorCli = async (description, args) => {
+      let result;
+      await until(description, async () => {
+        result = await releaseCli(args, () => adapter());
+        return true;
+      });
+      return result;
+    };
     for (const phase of ['migrate', 'verify', 'active']) {
-      await releaseCli(['apply-or-resume', configFile], () => adapter());
+      await operatorCli(`ordinary ${phase} apply-or-resume`, ['apply-or-resume', configFile]);
       const saved = await adapter().read();
       assert.equal(saved.document.spec.values.release.phase, phase);
       await until(`ordinary ${phase} acknowledgement`, async () => {
@@ -2496,17 +2507,7 @@ export async function legacyMain(env = process.env) {
     });
     assert.equal(sql('SELECT count(*) FROM fixture_effects'), '1');
     const tlsPlans = [];
-    // TLS commands observe point-in-time Flux state and fail closed on a
-    // periodic reconcile flip; success paths re-run like an operator would,
-    // bounded, reporting the last reason.
-    const tlsCli = async (description, args) => {
-      let result;
-      await until(description, async () => {
-        result = await releaseCli(args, () => adapter());
-        return true;
-      });
-      return result;
-    };
+    const tlsCli = operatorCli;
     const runTlsPlan = async (version, id) => {
       const refsFile = join(scratch, `tls-refs-${version}.json`),
         reviewed = join(scratch, `tls-plan-${version}.json`);
