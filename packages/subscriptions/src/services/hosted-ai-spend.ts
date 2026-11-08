@@ -19,7 +19,7 @@
  * Spend is read from `_smrt_ai_usage.estimated_cost` (USD, summed and
  * rounded to micro-dollars) for rows of the tenant in the threshold's
  * window whose `tags` record `source: hosted` (and, for the per-user cap,
- * the `userId` tag). Blocked rows (`operation: 'blocked'`) and
+ * the `userId` tag), matched as case-sensitive exact JSON fragments. Blocked rows (`operation: 'blocked'`) and
  * external-agent measurements never count. Rows without a cost rate add
  * nothing; give hosted models a cost rate.
  *
@@ -28,6 +28,7 @@
  * meter has no hosted or per-user meter).
  */
 
+import { usesPostgresDialect } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import type {
   PlanThreshold,
@@ -62,9 +63,10 @@ export interface HostedAiSpendEvaluation {
   spend: number;
   window: UsageWindow;
   /**
-   * When the cap lifts: the calendar window's end, or for a `rolling`
-   * window the moment the oldest counted spend leaves it (null when nothing
-   * is counted yet).
+   * When the cap lifts: the calendar window's end; for a blocked `rolling`
+   * cap, the moment enough counted spend has left the 30-day window to bring
+   * the total below the cap (null when no expiry can, e.g. a 0 cap, or the
+   * cap is not blocked).
    */
   resetsAt: Date | null;
   state: 'ok' | 'warn' | 'blocked';
@@ -90,18 +92,28 @@ export interface HostedAiSpendDecision {
 export interface HostedAiSpendSummary {
   /** Integer micro-dollars. */
   spend: number;
-  /** Oldest counted row in the window, if any. */
-  oldestAt: Date | null;
+}
+
+/** The scope of one spend read. */
+export interface HostedAiSpendScope {
+  tenantId: string;
+  /** Only this user's rows (the `userId` tag); omitted: the whole tenant. */
+  userId?: string;
+  window: UsageWindow;
 }
 
 /** Reads hosted spend; the default reads `_smrt_ai_usage`. */
 export interface HostedAiSpendReader {
-  summarize(options: {
-    tenantId: string;
-    /** Only this user's rows (the `userId` tag); omitted: the whole tenant. */
-    userId?: string;
-    window: UsageWindow;
-  }): Promise<HostedAiSpendSummary>;
+  summarize(options: HostedAiSpendScope): Promise<HostedAiSpendSummary>;
+  /**
+   * For a rolling window: the earliest moment the counted rows, expiring
+   * oldest first after `windowMs`, bring the scope's spend below `cap`;
+   * null when no expiry can. Optional: without it a blocked rolling cap
+   * reports no reset time.
+   */
+  liftsAt?(
+    options: HostedAiSpendScope & { cap: number; windowMs: number },
+  ): Promise<Date | null>;
 }
 
 /** A plan cap the gate cannot evaluate: the caller must fail closed. */
@@ -131,63 +143,95 @@ function dateOf(value: unknown): Date | null {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
-/** Escape a literal for `LIKE ... ESCAPE '!'`. */
-function likeLiteral(text: string): string {
-  return text.replace(/[!%_]/g, (match) => `!${match}`);
+/**
+ * The exact fragment one tag leaves in `_smrt_ai_usage.tags` as
+ * `JSON.stringify` writes it (core's persistence handler): `"key":"value"`.
+ * The value is JSON-encoded, so a quote inside it cannot end the match
+ * early, and the closing quote anchors it, so `u1` never matches `u10`.
+ */
+export function hostedAiTagFragment(key: string, value: string): string {
+  return `${JSON.stringify(key)}:${JSON.stringify(value)}`;
 }
 
 /**
- * The `LIKE` pattern matching one tag as `JSON.stringify` writes it into
- * `_smrt_ai_usage.tags` (core's persistence handler): `"key":"value"`.
- * The value is JSON-encoded first, so quotes inside it cannot end the match
- * early; the closing quote anchors the value, so `u1` never matches `u10`.
+ * A case-sensitive substring test: `LIKE` folds ASCII case on SQLite, which
+ * would merge users `Alice` and `alice`.
  */
-export function hostedAiTagPattern(key: string, value: string): string {
-  return `%${likeLiteral(`${JSON.stringify(key)}:${JSON.stringify(value)}`)}%`;
+function containsSql(db: DatabaseInterface): string {
+  return usesPostgresDialect(db) ? 'strpos(tags, ?) > 0' : 'instr(tags, ?) > 0';
+}
+
+function scopeSql(
+  db: DatabaseInterface,
+  { tenantId, userId, window }: HostedAiSpendScope,
+): { where: string; params: unknown[] } {
+  const contains = containsSql(db);
+  const params: unknown[] = [
+    tenantId,
+    window.start.toISOString(),
+    window.end.toISOString(),
+    hostedAiTagFragment('source', 'hosted'),
+  ];
+  let where = `tenant_id = ?
+            AND created_at >= ?
+            AND created_at < ?
+            AND operation <> 'blocked'
+            AND NOT (operation = 'external-agent' AND id LIKE 'external-agent:%')
+            AND ${contains}`;
+  if (userId !== undefined) {
+    params.push(hostedAiTagFragment('userId', userId));
+    where += `\n            AND ${contains}`;
+  }
+  return { where, params };
 }
 
 /**
  * The default {@link HostedAiSpendReader}: one aggregate query over
  * `_smrt_ai_usage` by `tenant_id` and `created_at` (served by
  * `idx_smrt_ai_usage_tenant_created`), filtered on the `source` and
- * `userId` tags. A tag pattern can only over-count (a row whose tags
- * contain the fragment elsewhere), never miss a row core wrote, so the
- * error is always toward the cap.
+ * `userId` tag fragments (`strpos` on PostgreSQL, `instr` on SQLite and
+ * DuckDB). A fragment can only over-count (a row whose tags contain it
+ * elsewhere), never miss a row core wrote, so the error is always toward
+ * the cap.
  */
 export function createHostedAiSpendReader(
   db: DatabaseInterface,
 ): HostedAiSpendReader {
   return {
-    async summarize({ tenantId, userId, window }) {
-      const params: unknown[] = [
-        tenantId,
-        window.start.toISOString(),
-        window.end.toISOString(),
-        hostedAiTagPattern('source', 'hosted'),
-      ];
-      let userClause = '';
-      if (userId !== undefined) {
-        params.push(hostedAiTagPattern('userId', userId));
-        userClause = "AND tags LIKE ? ESCAPE '!'";
-      }
+    async summarize(scope) {
+      const { where, params } = scopeSql(db, scope);
       const result = await db.query(
-        `SELECT COALESCE(SUM(estimated_cost), 0) AS cost,
-                MIN(created_at) AS oldest_at
+        `SELECT COALESCE(SUM(estimated_cost), 0) AS cost
            FROM _smrt_ai_usage
-          WHERE tenant_id = ?
-            AND created_at >= ?
-            AND created_at < ?
-            AND operation <> 'blocked'
-            AND NOT (operation = 'external-agent' AND id LIKE 'external-agent:%')
-            AND tags LIKE ? ESCAPE '!'
-            ${userClause}`,
+          WHERE ${where}`,
         ...params,
       );
       const row = rows(result)[0] ?? {};
-      return {
-        spend: Math.round(numberOf(row.cost) * MICROS_PER_USD),
-        oldestAt: dateOf(row.oldest_at),
-      };
+      return { spend: Math.round(numberOf(row.cost) * MICROS_PER_USD) };
+    },
+    async liftsAt({ cap, windowMs, ...scope }) {
+      const { where, params } = scopeSql(db, scope);
+      const result = await db.query(
+        `SELECT created_at, estimated_cost
+           FROM _smrt_ai_usage
+          WHERE ${where}
+            AND estimated_cost IS NOT NULL
+          ORDER BY created_at ASC`,
+        ...params,
+      );
+      const counted = rows(result).map((row) => ({
+        at: dateOf(row.created_at),
+        micros: Math.round(numberOf(row.estimated_cost) * MICROS_PER_USD),
+      }));
+      let remaining = counted.reduce((sum, row) => sum + row.micros, 0);
+      for (const row of counted) {
+        if (remaining < cap) break;
+        remaining -= row.micros;
+        if (remaining < cap) {
+          return row.at ? new Date(row.at.getTime() + windowMs) : null;
+        }
+      }
+      return null;
     },
   };
 }
@@ -242,12 +286,9 @@ export function evaluateHostedAiSpendThreshold(
   let state: HostedAiSpendEvaluation['state'] = 'ok';
   if (threshold.enforcement === 'block' && over) state = 'blocked';
   else if (threshold.enforcement !== 'observe' && nearing) state = 'warn';
-  const resetsAt =
-    threshold.window === 'rolling'
-      ? summary.oldestAt
-        ? new Date(summary.oldestAt.getTime() + ROLLING_WINDOW_MS)
-        : null
-      : window.end;
+  // A rolling cap's reset is computed from the rows by the evaluator, and
+  // only when it blocks (`HostedAiSpendReader.liftsAt`).
+  const resetsAt = threshold.window === 'rolling' ? null : window.end;
   return { policy, threshold, cap, spend, window, resetsAt, state };
 }
 
@@ -393,17 +434,30 @@ export class HostedAiSpendEvaluator {
     const evaluations = await Promise.all(
       caps.map(async ({ policy, threshold }) => {
         const window = getWindowForThreshold(threshold.window, now);
-        const summary = await this.options.spend.summarize({
+        const scope = {
           tenantId: input.tenantId,
           ...(policy === 'user-cap' ? { userId: input.userId } : {}),
           window,
-        });
-        return evaluateHostedAiSpendThreshold(
+        };
+        const summary = await this.options.spend.summarize(scope);
+        const evaluation = evaluateHostedAiSpendThreshold(
           policy,
           threshold,
           summary,
           window,
         );
+        if (
+          evaluation.state === 'blocked' &&
+          threshold.window === 'rolling' &&
+          this.options.spend.liftsAt
+        ) {
+          evaluation.resetsAt = await this.options.spend.liftsAt({
+            ...scope,
+            cap: evaluation.cap,
+            windowMs: ROLLING_WINDOW_MS,
+          });
+        }
+        return evaluation;
       }),
     );
     return decideHostedAiSpend(evaluations, plan);

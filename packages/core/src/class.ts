@@ -962,8 +962,10 @@ export class SmrtClass {
           owner: this._className,
         });
       }
-      // A single hosted target passes the gate before its client is built;
-      // a chain's hosted candidates pass it in `clientFor`, per attempt.
+      // A hosted target (single, or a chain stamped hosted as a whole)
+      // passes the gate before its client is built; a hosted target the
+      // executor reaches later (a ladder step's resolution) passes it in
+      // `clientFor`, per attempt.
       await this.enforceHostedInferenceGate(request, resolution);
       const executor = inferenceExecutorFor(resolution.target);
       if (executor) {

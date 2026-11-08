@@ -69,7 +69,7 @@ Tag-only keys read by the report: `promptLayer` and `templateHash` (prompts),
 origin `byo | local | hosted | app`, #4756). `userId` (#4760) and the hosted
 gate's audit tags (`reason`, `policy`, `cap`, `spend`, `resetsAt`,
 `disabledBy` on `operation: 'blocked'` rows) stay in `tags`; smrt-subscriptions
-meters `source`/`userId` with an exact-fragment `LIKE` on `tags`. Indexes:
+meters `source`/`userId` with a case-sensitive exact-fragment match on `tags`. Indexes:
 `idx_smrt_ai_usage_prompt_key (prompt_key, created_at)`, `idx_smrt_ai_usage_run (run_id)`.
 The tier filters of `listAiUsage()` have no index on purpose: four-value
 columns, always read with a time window that `idx_smrt_ai_usage_created` serves.

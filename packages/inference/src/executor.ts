@@ -238,6 +238,11 @@ class ChainCall {
       ...(model ? { model } : {}),
       usageTags: {
         ...(callerTags ?? {}),
+        // The candidate's own binding origin wins over the chain's (#4760):
+        // a hosted candidate's spend must meter as hosted.
+        ...(typeof step.target.source === 'string' && step.target.source
+          ? { source: step.target.source }
+          : {}),
         tierRequested: this.tierRequested,
         tierResolved: step.tier,
         ...(this.substitutions.length > 0

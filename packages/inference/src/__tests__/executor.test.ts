@@ -361,6 +361,25 @@ describe('chain executor', () => {
     expect(h.usage).toEqual([]);
   });
 
+  it("tags a step's own source over the chain's (#4760)", async () => {
+    const h = harness(
+      {
+        tiers: {
+          great: { candidates: [{ provider: 'openai', model: 'a' }] },
+          good: { provider: 'openai', model: 'g', source: 'hosted' },
+        },
+      },
+      { a: fail(new AuthenticationError('openai')) },
+    );
+    await expect(
+      h.client.message('hi', { usageTags: { source: 'app' } }),
+    ).resolves.toBe('answer from g');
+    const sources = h.calls.map((call) => call.options.usageTags?.source);
+    // The chain's own candidate keeps the chain's tag; the degraded hosted
+    // binding meters as hosted.
+    expect(sources).toEqual(['app', 'hosted']);
+  });
+
   it('stops on a hosted-gate block and records nothing more (#4760)', async () => {
     const blocked = new InferenceUnavailableError({
       reason: 'entitlement',

@@ -106,7 +106,7 @@ describe('hosted AI spend gate on PostgreSQL (#4760)', () => {
         ).resolves.toMatchObject({ spend: 750_000 });
         await expect(
           reader.summarize({ tenantId, userId: 'u%1', window }),
-        ).resolves.toMatchObject({ spend: 0, oldestAt: null });
+        ).resolves.toMatchObject({ spend: 0 });
 
         const plans = await SubscriptionPlanCollection.create({ db });
         const plan = await plans.create({

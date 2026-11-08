@@ -100,18 +100,24 @@ window, amount and enforcement come from the plan (pinned version included):
   a 0 cap blocks every hosted call. A malformed hosted cap (fractional or
   negative limit, unknown window/enforcement) throws
   `HostedAiSpendPolicyError` (the gate fails closed); it never reads as "no
-  cap".
+  cap". `resolvePlanThresholds()` returns thresholds unfiltered for this
+  reason (the models' `getThresholds()` drop invalid entries) and throws on
+  non-array JSON.
 - Spend: `createHostedAiSpendReader(db)` sums `_smrt_ai_usage.estimated_cost`
   (USD, rounded to micro-dollars) by `tenant_id` and `created_at` in the
   cap's window for rows whose `tags` hold `"source":"hosted"` (and
-  `"userId":"<id>"` for the per-user cap), as exact JSON fragments with
-  `LIKE … ESCAPE '!'` (`hostedAiTagPattern()`); errors only over-count.
+  `"userId":"<id>"` for the per-user cap), as exact, case-sensitive JSON
+  fragments (`hostedAiTagFragment()`; `strpos` on the PostgreSQL dialect,
+  `instr` elsewhere, never `LIKE`, which folds ASCII case on SQLite and
+  would merge `Alice` and `alice`); errors only over-count.
   `operation: 'blocked'` rows and external-agent measurements never count;
   uncosted rows add nothing (give hosted models a cost rate). The `userId`
   tag exists only while the hosted gate's ambient-user resolver is
   registered.
-- `resetsAt`: the calendar window's end; for `rolling` (30 days) the oldest
-  counted row plus 30 days. A blocked decision names the blocking cap that
+- `resetsAt`: the calendar window's end; for a blocked `rolling` cap (30
+  days), `HostedAiSpendReader.liftsAt()` expires the counted rows oldest
+  first and returns when the total first drops below the cap (null when it
+  never can, e.g. a 0 cap). A blocked decision names the blocking cap that
   lifts last.
 - `HostedAiSpendEvaluator` (`create({ db })`): plan thresholds via
   `SubscriptionResolver.resolvePlanThresholds()` (entitled terms, no usage
@@ -119,7 +125,8 @@ window, amount and enforcement come from the plan (pinned version included):
   `invalidate()`), spend read fresh per call; per-user caps only with a
   user. Errors propagate. smrt-inference's `./gate` consumes it.
 - `resolveEntitlements()` / the tenant usage meter report these keys with
-  quantity 0: only the evaluator meters them. `SpendingPolicy` rows stay the
+  quantity 0: only the evaluator meters them. The meter's AI summary (and so
+  `ai.requests`) skips `operation: 'blocked'` rows. `SpendingPolicy` rows stay the
   billed-charge (cents) policy; hosted AI caps are plan terms because the
   issue's window and amount come from the plan.
 
