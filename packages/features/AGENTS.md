@@ -28,6 +28,21 @@ Code-first feature flag system with global and tenant-hierarchy resolution.
 - **Standard paid keys** (`standard-features.ts`): `FEATURE_SYNC_DEVICES`, `FEATURE_BACKUP_VAULT`, `FEATURE_CLOUD_HOSTED`, `FEATURE_INFERENCE_HOSTED`, `FEATURE_PLUGINS_REMOTE` (also `STANDARD_FEATURE_KEYS`, `STANDARD_FEATURES`); all `metadata.paid: true`, default off, seeded lazily (no import side effect). Gates import the constants, never string literals; plans grant the same strings.
 - **Gates** (`require-feature.ts`): `requireFeature(key, { resolver, tenantId, grantSource? })` throws `FeatureUnavailableError` (`status` 403, `.code`, `.denial`, `.toResponse()`) for services; `featureGateResponse()` returns `null` or the JSON denial `Response` (`featureDenialResponse()`) for SvelteKit routes; `checkFeature()` returns `{ allowed, featureKey, denial? }`. `FeatureGateDenial` is a union discriminated by `code`, sharing `featureKey`, `label`, `paid`, `tenantId`, `message`: `feature_upgrade_required` (`FEATURE_UPGRADE_REQUIRED_CODE`) adds `grantingPlan`; `feature_disabled` (`FEATURE_DISABLED_CODE`) adds `disabledBy` and names no plan. The gate answers `feature_disabled` when `explain()` reports a global or tenant DISABLE decided the state (no upgrade could help) and never calls `findGrantingPlan()` then; otherwise a failing plan lookup only nulls `grantingPlan`. Never a bare 403. Semantics are "feature present", not identity: callers authenticate and authorize the principal and pass the tenant they verified.
 
+## Kill switches (#4760)
+
+`src/kill-switch.ts`: `readKillSwitch()` / `setKillSwitch()` /
+`KillSwitchService` store DISABLE rows in `_smrt_feature_overrides` but
+read them as an incident lever, not a flag: a global DISABLE wins over
+everything, then the tenant's own DISABLE; ENABLE/INHERIT rows are
+ignored, so "on" means no DISABLE row and enabling deletes it. Tenant rows
+are written lower-cased and read in either spelling; enabling clears every
+spelling. Reads are uncached. Kill-switch keys have no definition (so
+`FeatureResolver` refuses them and `FeatureSettingsService` never lists
+them). Keys belong to their consumer: `inference.hosted.enabled` is
+smrt-inference's `HOSTED_INFERENCE_KILL_SWITCH`. `KillSwitchService.set()`
+writes without an authorizer (the CLI's database credentials are the
+authorization); admin UIs write through `FeatureOverrideService`.
+
 ## Conventions
 
 - Declare features in `@smrt({ features: { drafts: { defaultEnabled: false } } })`. Keys are `<qualifiedClassName>#<localId>`, e.g. `@your/app:Invoice#drafts`.
