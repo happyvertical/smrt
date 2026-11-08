@@ -158,6 +158,15 @@ export interface ResolveInferenceTargetOptions {
     tenantId?: string | null;
     tags?: Record<string, string>;
   };
+  /**
+   * Whether an app-config binding (the `inference` block; `source: 'app'`, or
+   * the built-in resolution) may replace `base`. Default `true`. Sites whose
+   * `base` is their own explicit config (an agent's `ai`, a prompt's model)
+   * pass `false`: only a stored user/tenant/hosted binding (a resolver
+   * resolution whose source is not `app`) overrides them, so apps that
+   * predate tier bindings keep their per-site config.
+   */
+  appBindings?: boolean;
   /** Names the caller in binding errors. Default `className` or `getAI`. */
   owner?: string;
 }
@@ -173,9 +182,12 @@ export interface ResolvedInferenceTarget {
   resolution: InferenceResolution;
   /** True when the target's provider/model/endpoint/key shaped `options`. */
   bound: boolean;
-  /** The binding origin, when the resolution names one. */
+  /** The binding origin; `app` when the site kept its own options. */
   source?: InferenceTargetSource;
-  /** `tierRequested`, `tierResolved` and `source`; also on the recorder. */
+  /**
+   * Bound: `tierRequested`, `tierResolved` and the target's `source`.
+   * Unbound: `{ source: 'app' }` only. Also set on the recorder.
+   */
   usageTags: Record<string, string>;
 }
 
@@ -206,7 +218,10 @@ export async function resolveInferenceTarget(
   const target = resolution.target ?? {};
   const single = inferenceTargetKind(target) === 'single';
   const identity = single ? inferenceTargetIdentity(target) : {};
-  const bound = Object.keys(identity).length > 0;
+  const stored = resolution.via === 'resolver' && target.source !== 'app';
+  const bound =
+    Object.keys(identity).length > 0 &&
+    (options.appBindings !== false || stored);
   let clientOptions: Record<string, unknown> | undefined = options.base
     ? { ...options.base }
     : undefined;
@@ -227,10 +242,16 @@ export async function resolveInferenceTarget(
       clientOptions.onUsage = options.base.onUsage;
     }
   }
-  const usageTags = inferenceUsageTags(tier, resolution);
-  const source = isInferenceTargetSource(target.source)
-    ? target.source
-    : undefined;
+  // An unbound site runs its own config: no tier answered it, so only the
+  // origin is recorded.
+  const source: InferenceTargetSource | undefined = bound
+    ? isInferenceTargetSource(target.source)
+      ? target.source
+      : undefined
+    : 'app';
+  const usageTags = bound
+    ? inferenceUsageTags(tier, resolution)
+    : { source: 'app' };
   if (clientOptions && options.usage) {
     const usage = options.usage;
     clientOptions = attachAiUsageRecorder(

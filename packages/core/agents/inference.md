@@ -117,8 +117,40 @@ events back for per-seat totals. Seat usage rows carry `runId` (lifted to
   `_smrt_ai_usage.tags`. Subclasses that call `ai.message()` themselves use
   `prepareAiOperation()` so `tier` never reaches the provider.
 - Prompts: see `packages/prompts/AGENTS.md` (tier profile names).
+- Untiered calls (`getAiClient()`, `do()` without `tier`) keep the configured
+  client and never consult the resolver (the parity contract); a per-user
+  binding reaches objects through `tier` (`auto` included).
 
-Tests: `src/__tests__/inference-tiers.test.ts`,
+## Raw clients and binding source (#4756)
+
+`src/inference-target.ts`. `bindInferenceTarget(base, target, owner)` is the
+one implementation of the pair rules above; `getAiClientForTarget()` uses it.
+`resolveInferenceTarget({ tier = 'auto', base, tenantId, className,
+promptKey, appBindings, usage })` resolves through the registered resolver
+and returns `{ options, resolution, bound, source, usageTags }` for a site
+that calls `getAI()` itself: `base` unchanged when the tier is unbound or the
+target is a chain (raw clients cannot run one), else the target bound over
+`base` (the caller's `onUsage` kept). `appBindings: false` lets only a
+resolver resolution whose `source` is not `app` replace `base`: sites whose
+`base` is their own explicit config (agent `ai`, a prompt's model) keep it
+against app tier bindings. `usage` attaches the #3077 recorder with
+`usageTags`: tier tags plus `source` when bound, only `{ source: 'app' }`
+when not. Per-call `model` options must follow the bound model.
+
+`InferenceTarget.source` (`INFERENCE_TARGET_SOURCES`: `byo | local | hosted
+| app`) is never identity; `inferenceUsageTags()` adds it as the `source` tag,
+so tier calls record it too. The per-user resolver lives in
+[smrt-inference `./resolver`](../../inference/AGENTS.md). Converted raw
+sites: agents (`resolveAgentAIClientOptions`), chat (assistant default
+factory, dev text routes), languages (translation job), projects
+(`Issue.incorporateFeedback` provider path), images (`ImageCategorizer`
+generated route), cli (`smrt kitchen`). Left: image generation (content
+thumbnails, images editor/deriver; tiers bind text models), ingestion vision
+(a host-pinned provider identity in a child process), images typed decisions
+and the dev photo-setup route (vision / decision providers).
+
+Tests: `src/__tests__/issue-4756-inference-target.test.ts`,
+`src/__tests__/inference-tiers.test.ts`,
 `src/__tests__/class-inference-tiers.test.ts`,
 `src/__tests__/inference-executor-seam.test.ts`,
 `src/__tests__/issue-4753-ai-runs.test.ts`.

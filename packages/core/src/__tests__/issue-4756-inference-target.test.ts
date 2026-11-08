@@ -40,10 +40,8 @@ describe('#4756 resolveInferenceTarget', () => {
     const resolved = await resolveInferenceTarget({ base: BASE });
     expect(resolved.bound).toBe(false);
     expect(resolved.options).toEqual(BASE);
-    expect(resolved.usageTags).toEqual({
-      tierRequested: 'auto',
-      tierResolved: 'good',
-    });
+    expect(resolved.usageTags).toEqual({ source: 'app' });
+    expect(resolved.source).toBe('app');
   });
 
   it('binds a registered target over the base, dropping the base key', async () => {
@@ -87,6 +85,34 @@ describe('#4756 resolveInferenceTarget', () => {
     expect(() =>
       bindInferenceTarget(BASE, { provider: 'openai', apiKey: 'k' }, 'Site'),
     ).toThrow(/must name its baseUrl/);
+  });
+
+  it('keeps explicit site options against app bindings when appBindings is false', async () => {
+    setInferenceResolver(
+      resolverFor({ provider: 'openai', model: 'app-model', source: 'app' }),
+    );
+    const kept = await resolveInferenceTarget({
+      base: BASE,
+      appBindings: false,
+    });
+    expect(kept).toMatchObject({ bound: false, options: BASE });
+    const applied = await resolveInferenceTarget({ base: BASE });
+    expect(applied.bound).toBe(true);
+
+    setInferenceResolver(
+      resolverFor({
+        provider: 'openai',
+        model: 'user-model',
+        baseUrl: 'https://u.example/v1',
+        apiKey: 'sk-u',
+        source: 'byo',
+      }),
+    );
+    const user = await resolveInferenceTarget({
+      base: BASE,
+      appBindings: false,
+    });
+    expect(user).toMatchObject({ bound: true, source: 'byo' });
   });
 
   it('leaves a chain target to getAiClient(tier) and keeps the base', async () => {

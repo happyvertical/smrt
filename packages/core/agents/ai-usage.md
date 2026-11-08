@@ -38,7 +38,8 @@ present and `persist` is on, plus `usage.handlers`; instances also keep an
   guesses: with no source the row is global.
 - smrt-agents: `resolveAgentAIOptions()` attaches a recorder when given a db,
   and `Agent.initialize()` wires `options.ai` through `withAiUsage()`. Other raw
-  `getAI()` sites are converted under #4756.
+  `getAI()` sites attach it through `resolveInferenceTarget({ usage })` or
+  `withAiUsage()` (#4756; list in [inference.md](inference.md)).
 - Cost rates: `aiCostRateKeys()` tries `provider:model`, `model`, then for a
   gateway id (`openai/gpt-4.1-mini`) `openai:gpt-4.1-mini` and `gpt-4.1-mini`,
   one leading segment at a time. Rate lookups use own keys only. The
@@ -58,7 +59,8 @@ indexed TEXT columns (`AI_USAGE_TAG_COLUMNS`); `tags` always keeps the full map.
 | `runId` | `run_id` | multi-call runs, e.g. fusions (#4753) |
 
 Tag-only keys read by the report: `promptLayer` and `templateHash` (prompts),
-`substitutions` (JSON array, #4752), `fusionKey` (#4753). Indexes:
+`substitutions` (JSON array, #4752), `fusionKey` (#4753), `source` (binding
+origin `byo | local | hosted | app`, #4756). Indexes:
 `idx_smrt_ai_usage_prompt_key (prompt_key, created_at)`, `idx_smrt_ai_usage_run (run_id)`.
 The tier filters of `listAiUsage()` have no index on purpose: four-value
 columns, always read with a time window that `idx_smrt_ai_usage_created` serves.
@@ -118,7 +120,7 @@ itself, so labels are recorded when the verdict is known. Rules:
 ## Report (`smrt ai:usage`)
 
 `reportAiUsage(db, { by, since, until, tenantId })` groups by `prompt`, `model`,
-`tier`, `class`, `tenant`, `fusion`. It reads bounded keyset pages and
+`tier`, `class`, `tenant`, `fusion`, `source`. It reads bounded keyset pages and
 aggregates in memory so the median and tag dimensions stay portable. Pages
 are keyed on `id` within the `created_at` window: correct, but on very large
 windows each page rescans the window; keyset on `(created_at, id)` is a
