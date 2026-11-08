@@ -297,6 +297,12 @@ export interface EvaluateOptions {
   minimumTier?: InferenceTier;
   /** Keep a chain candidate's streamed text on a mid-stream failure (#4752). */
   allowPartial?: boolean;
+  /**
+   * Tool route only: `'optional'` runs without the registered tools when the
+   * bound model cannot call them; `'required'` (default) throws
+   * `InferenceUnavailableError` (`reason: 'capability'`, #4758).
+   */
+  toolUse?: 'required' | 'optional';
   /** Abort an in-flight provider request. */
   signal?: AbortSignal;
   /** Provider request deadline in milliseconds. */

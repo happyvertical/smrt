@@ -24,6 +24,7 @@ import {
   isInferenceMode,
   isInferenceUnavailableReason,
 } from './inference-availability.js';
+import type { InferenceCapabilities } from './inference-capabilities.js';
 import { SmrtError } from './smrt-error.js';
 
 /** Ordered quality tiers, cheapest first. `fast` is deliberately not a tier. */
@@ -284,6 +285,14 @@ export interface InferenceResolution {
   /** The target for that tier. An empty target means the configured client. */
   target: InferenceTarget;
   via: InferenceResolutionSource;
+  /**
+   * What the bound model can do (#4758). Core fills it when it binds a
+   * `single` target for an object AI operation (see
+   * `inference-capabilities.ts` for the resolution order); a resolver need
+   * not set it. Absent for chain targets: the executor checks each
+   * candidate instead.
+   */
+  capabilities?: InferenceCapabilities;
   /**
    * The principal's inference mode (#4757), when the resolver knows it (a
    * stored mode, or the answering binding's source). Absent: derived from
@@ -745,9 +754,28 @@ export function inferenceUsageTags(
   };
 }
 
+/**
+ * How an executor may degrade a call for a candidate that lacks a
+ * capability (#4758), sent as the `capabilityFallback` call option. Core
+ * sets it only on calls to executor-run targets; executors strip it before
+ * a provider sees the options.
+ *
+ * - `json: 'text'`: drop `responseFormat` and let the caller parse text
+ *   (core's `is()` / `evaluate()` text verdict, fusion seats' raw recovery).
+ * - `tools: 'drop'`: run without `tools` (the caller marked them optional).
+ *
+ * Without a permitted fallback a missing capability is `missing-capability`
+ * and the walk advances to the next candidate without calling the model.
+ */
+export interface InferenceCapabilityFallbackOption {
+  json?: 'text';
+  tools?: 'drop';
+}
+
 /** Per-call options a chain client receives (the `ai.message()` options). */
 export type InferenceCallOptions = Record<string, unknown> & {
   usageTags?: Record<string, string>;
+  capabilityFallback?: InferenceCapabilityFallbackOption;
 };
 
 /**
@@ -840,6 +868,14 @@ export interface InferenceExecutionContext {
    * pipeline: the row for a call whose every candidate failed.
    */
   recordUsage(record: InferenceUsageRecord): Promise<void>;
+  /**
+   * Capabilities of one `single` target (#4758), detected the way core
+   * detects them for its own calls (the client's `getCapabilities()`, then
+   * presets, then the model heuristic, then assumed). Builds the client;
+   * never calls a model. Absent on older cores: treat every candidate as
+   * capable.
+   */
+  capabilitiesFor?(target: InferenceTarget): Promise<InferenceCapabilities>;
   /**
    * The instance database, for executors that read stored state such as
    * app and tenant prompt overrides (fusion seats, #4753). Never written.

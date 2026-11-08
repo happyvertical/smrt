@@ -95,6 +95,17 @@ export interface InferenceUnavailableDetails {
   tier?: StatusTier;
   /** Names the caller (a class, a route) in the message. Never a secret. */
   owner?: string;
+  /**
+   * A specific user-safe sentence replacing the reason's default (#4758
+   * names the missing capability and the fix). Never a secret or config.
+   */
+  message?: string;
+  /**
+   * Extra non-secret details merged into `SmrtError.details` (#4758:
+   * `capability`, `operation`, `source`, `maxContext`). `reason`, `mode`
+   * and `tier` always win.
+   */
+  context?: Record<string, unknown>;
 }
 
 /** A short, user-safe sentence for each reason (no stack, no config). */
@@ -133,10 +144,11 @@ export class InferenceUnavailableError extends SmrtError {
         : (details.mode ?? 'off');
     const prefix = details.owner ? `${details.owner}: ` : '';
     super(
-      `${prefix}${inferenceUnavailableMessage(details.reason)}`,
+      `${prefix}${details.message ?? inferenceUnavailableMessage(details.reason)}`,
       AI_UNAVAILABLE,
       'configuration',
       {
+        ...(details.context ?? {}),
         reason: details.reason,
         mode,
         ...(details.tier ? { tier: details.tier } : {}),

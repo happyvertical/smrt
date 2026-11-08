@@ -95,10 +95,16 @@ import {
   inferenceUnavailableStatus,
 } from './inference-availability.js';
 import {
+  ASSUMED_INFERENCE_CAPABILITIES,
+  detectInferenceCapabilities,
+  type InferenceCapabilities,
+} from './inference-capabilities.js';
+import {
   bindInferenceTarget,
   inferenceTargetIdentity,
 } from './inference-target.js';
 import { noteNativeDuckDbHandle } from './native-duckdb.js';
+import type { AiToolUse } from './object.js';
 import {
   applyPostgresRuntimeTimeouts,
   resolveRuntimePoolDbid,
@@ -461,6 +467,11 @@ export class SmrtClass {
 
   /** Tier clients keyed by resolved `[provider, model, baseUrl]`, then key. */
   private _tierAiClients = new Map<string, Map<string, Promise<AIClient>>>();
+  /** `getCapabilities()` answers per client (#4758). */
+  private readonly _aiCapabilityAnswers = new WeakMap<
+    object,
+    Promise<unknown>
+  >();
 
   /**
    * Filesystem adapter for file operations
@@ -971,6 +982,8 @@ export class SmrtClass {
               tier: next,
             }),
           recordUsage: (record) => this.recordInferenceUsage(record),
+          capabilitiesFor: (target) =>
+            this.detectInferenceTargetCapabilities(target),
           ...(this._db ? { db: this._db } : {}),
           decide: (decisionRequest, decisionOptions) =>
             this.decideForInference(decisionRequest, decisionOptions),
@@ -1144,6 +1157,7 @@ export class SmrtClass {
       usageTags?: Record<string, string>;
       minimumTier?: InferenceTier;
       allowPartial?: boolean;
+      toolUse?: AiToolUse;
     },
   >(
     options: T,
@@ -1151,8 +1165,23 @@ export class SmrtClass {
     ai: AIClient;
     aiOptions: Omit<
       T,
-      'tier' | 'latency' | 'promptKey' | 'minimumTier' | 'allowPartial'
+      | 'tier'
+      | 'latency'
+      | 'promptKey'
+      | 'minimumTier'
+      | 'allowPartial'
+      | 'toolUse'
     >;
+    /**
+     * The bound model's capabilities (#4758), for a tier call on a `single`
+     * target; absent without `tier` (untiered calls are unchanged) and for
+     * chain targets (the executor checks each candidate).
+     */
+    capabilities?: InferenceCapabilities;
+    /** True when a registered executor runs the target (chains, fusions). */
+    executorRun?: boolean;
+    /** The caller's `toolUse` (`AiOperationOptions.toolUse`). */
+    toolUse?: AiToolUse;
   }> {
     const {
       tier: requestedTier,
@@ -1160,6 +1189,7 @@ export class SmrtClass {
       promptKey,
       minimumTier,
       allowPartial,
+      toolUse,
       ...rest
     } = options;
     let tier = requestedTier;
@@ -1169,7 +1199,11 @@ export class SmrtClass {
       // unavailable mode throws from getAiClient().
       const modeState = await this.resolveInferenceModeState();
       if (!modeState || modeState.unavailable) {
-        return { ai: await this.getAiClient(), aiOptions: rest };
+        return {
+          ai: await this.getAiClient(),
+          aiOptions: rest,
+          ...(toolUse ? { toolUse } : {}),
+        };
       }
       tier = 'auto';
     }
@@ -1187,12 +1221,25 @@ export class SmrtClass {
     });
     // A chain target carries no model or params of its own: each candidate
     // applies its own inside the executor (#4752).
-    const target =
-      inferenceTargetKind(resolution.target) === 'single'
-        ? resolution.target
-        : {};
+    const single = inferenceTargetKind(resolution.target) === 'single';
+    const target = single ? resolution.target : {};
+    let capabilities: InferenceCapabilities | undefined;
+    if (single) {
+      try {
+        capabilities = await this.detectInferenceTargetCapabilities(
+          resolution.target,
+          ai,
+        );
+      } catch {
+        // Detection never fails a call: an unknown answer is today's
+        // behavior.
+        capabilities = { ...ASSUMED_INFERENCE_CAPABILITIES };
+      }
+    }
     return {
       ai,
+      ...(capabilities ? { capabilities } : { executorRun: true }),
+      ...(toolUse ? { toolUse } : {}),
       aiOptions: {
         ...(target.params ?? {}),
         ...(typeof target.model === 'string' && target.model.trim() !== ''
@@ -1205,7 +1252,12 @@ export class SmrtClass {
         },
       } as Omit<
         T,
-        'tier' | 'latency' | 'promptKey' | 'minimumTier' | 'allowPartial'
+        | 'tier'
+        | 'latency'
+        | 'promptKey'
+        | 'minimumTier'
+        | 'allowPartial'
+        | 'toolUse'
       >,
     };
   }
@@ -1243,6 +1295,61 @@ export class SmrtClass {
       },
       { resolver, config: this.getInferenceConfig() },
     );
+  }
+
+  /**
+   * Capabilities of one `single` tier target (#4758): the client's
+   * `getCapabilities()` (cached per client), then the preset table, then the
+   * model-name heuristic, then assumed; see `inference-capabilities.ts`.
+   * Builds the target's client when `client` is not given; never calls a
+   * model.
+   */
+  protected async detectInferenceTargetCapabilities(
+    target: InferenceTarget,
+    client?: AIClient,
+  ): Promise<InferenceCapabilities> {
+    const ai = client ?? (await this.getAiClientForTarget(target));
+    const identity = inferenceTargetIdentity(target);
+    const base = this._aiClientConfig;
+    // The effective identity the client was built for: the target bound over
+    // the configured client under the pair rules (the configured client
+    // itself for an empty target).
+    const bound: Record<string, unknown> =
+      Object.keys(identity).length === 0
+        ? (base ?? {})
+        : base || identity.provider
+          ? bindInferenceTarget(base, target, this._className)
+          : identity;
+    const read = (key: string) =>
+      typeof bound[key] === 'string' && (bound[key] as string).trim() !== ''
+        ? (bound[key] as string).trim()
+        : undefined;
+    return detectInferenceCapabilities(
+      {
+        provider: read('provider') ?? read('type'),
+        model: identity.model ?? read('model') ?? read('defaultModel'),
+        baseUrl: read('baseUrl'),
+      },
+      await this.sdkCapabilities(ai),
+    );
+  }
+
+  /** A client's `getCapabilities()` answer, once per client; never throws. */
+  private sdkCapabilities(ai: AIClient): Promise<unknown> {
+    const key = ai as unknown as object;
+    let pending = this._aiCapabilityAnswers.get(key);
+    if (!pending) {
+      const getCapabilities = (ai as { getCapabilities?: unknown })
+        .getCapabilities;
+      pending =
+        typeof getCapabilities === 'function'
+          ? Promise.resolve()
+              .then(() => (getCapabilities as () => Promise<unknown>).call(ai))
+              .catch(() => undefined)
+          : Promise.resolve(undefined);
+      this._aiCapabilityAnswers.set(key, pending);
+    }
+    return pending;
   }
 
   /**
