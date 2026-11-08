@@ -15,6 +15,7 @@ import type {
   DecisionValue,
 } from '@happyvertical/ai';
 import type { AiTokenUsage } from '@happyvertical/smrt-types';
+import type { InferenceLatency, InferenceTierRequest } from './inference.js';
 
 export type {
   DecisionAnswer,
@@ -279,6 +280,13 @@ export interface EvaluateOptions {
   model?: string;
   /** Model for an explicit generative fallback or tool route. */
   generativeModel?: string;
+  /**
+   * Inference tier for the generative route only (fallback or tool route).
+   * The typed-decision route ignores it (#3158: decisions stay separate).
+   */
+  tier?: InferenceTierRequest;
+  /** Latency hint for the generative route's tier binding. */
+  latency?: InferenceLatency;
   /** Abort an in-flight provider request. */
   signal?: AbortSignal;
   /** Provider request deadline in milliseconds. */

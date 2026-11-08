@@ -250,6 +250,36 @@ export {
 // Code generators (tree-shakeable)
 export * from './generators/index';
 export { type HierarchyView, SmrtHierarchical } from './hierarchical';
+// Inference tiers and the binding resolver seam (#4750). Browser-safe; keep
+// this list identical in index.ts and browser.ts.
+export {
+  assertInferenceConfig,
+  builtInInferenceResolver,
+  compareInferenceTiers,
+  DEFAULT_INFERENCE_TIER,
+  getInferenceConfig,
+  getInferenceResolver,
+  INFERENCE_TIERS,
+  type InferenceConfig,
+  type InferenceLatency,
+  type InferenceRequest,
+  type InferenceResolution,
+  type InferenceResolutionSource,
+  type InferenceResolver,
+  type InferenceResolverContext,
+  type InferenceTarget,
+  type InferenceTier,
+  type InferenceTierRequest,
+  inferenceUsageTags,
+  isInferenceTier,
+  isInferenceTierRequest,
+  mergeInferenceConfigs,
+  type ResolveInferenceOptions,
+  resolveAutoTier,
+  resolveInference,
+  resolveInferenceFromConfig,
+  setInferenceResolver,
+} from './inference';
 // Global interceptors system (for tenancy, soft-delete, audit logging, etc.)
 export * from './interceptors';
 export {
