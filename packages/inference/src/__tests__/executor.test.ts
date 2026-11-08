@@ -456,6 +456,23 @@ describe('chain executor', () => {
     expect(after.calls).toEqual(['a']);
   });
 
+  it('refuses an invalid chain config even without the validating resolver', () => {
+    expect(() =>
+      harness(
+        {
+          tiers: {
+            great: {
+              candidates: [
+                { provider: 'anthropic', model: 'a', apiKeyEnv: 'SOME_KEY' },
+              ],
+            },
+          },
+        },
+        {},
+      ),
+    ).toThrow(/brings its own key without a baseUrl/);
+  });
+
   it('keeps a recordUsage failure from masking the call error', async () => {
     const h = harness(
       chain('a'),
