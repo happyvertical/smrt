@@ -5,10 +5,10 @@ description: "Digital property and zone management models for SMRT framework"
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T15:48:19Z"
+  at: "2026-11-08T08:47:12Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:b15cf1b44ab9e5f6a156d54e0339c80bb5f4a2a5f45c7e9efc85c44efd4f2da5"
+source_revision: "sha256:94a16946748aba9c645a34208782cfa21d7912e655df9574806a21b5f546626b"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/properties/package.json"

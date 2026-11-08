@@ -22,6 +22,7 @@ Profile name: {profileName}
 Profile description: {profileDescription}
 
 Return only the bio text, with no commentary or surrounding quotation marks.`,
+  ai: { profile: 'good' },
   editable: {
     template: true,
     profile: true,

@@ -1,7 +1,8 @@
 # Inference tiers and the binding resolver seam (#4750)
 
 Source: `src/inference.ts`, `SmrtClass.getAiClient(tier?)` in `src/class.ts`,
-`SmrtObject.prepareAiOperation()` in `src/object.ts`. Epic: #4749.
+`SmrtClass.prepareAiOperation()` (objects and collections) in `src/class.ts`.
+Epic: #4749.
 
 ## Vocabulary
 

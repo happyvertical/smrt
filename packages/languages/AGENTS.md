@@ -54,6 +54,10 @@ The translation job:
   lowercase-language / uppercase-region on persistence.
 - The translation prompt itself is registered with `smrt-prompts` under
   `smrt-languages.translation` so ops can tune wording without redeploying.
+  Tier `good`, latency `background` (#4755 rule, `../prompts/AGENTS.md`). The
+  job builds its own `getAI()` client, so the tier is declared but not bound
+  there until it moves onto the shared usage path (#3077); it drops the tier
+  keys before the call.
 - `context` column on `_smrt_language_overrides` is set to `tenantId` or
   `'__app__'` so the `(key, locale, context)` upsert key remains unique even
   with nullable `tenantId`.

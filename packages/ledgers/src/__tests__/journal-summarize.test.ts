@@ -143,6 +143,8 @@ describe('Journal.summarize()', () => {
         promptKey: 'smrtLedgers.journal.summarize',
         promptLayer: 'default',
         templateHash: expect.stringMatching(/^[0-9a-f]{12}$/),
+        tierRequested: 'good',
+        tierResolved: 'good',
       },
     });
   });

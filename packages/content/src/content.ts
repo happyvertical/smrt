@@ -1625,11 +1625,12 @@ export class Content
         );
 
         try {
+          // A tier profile (#4750) selects the tier client and tags usage.
+          const { ai: callAi, aiOptions } = await this.prepareAiOperation(
+            promptMessageOptions(resolvedPrompt.ai),
+          );
           const proposedBody = (
-            await ai.message(
-              resolvedPrompt.text,
-              promptMessageOptions(resolvedPrompt.ai, { routeTier: false }),
-            )
+            await callAi.message(resolvedPrompt.text, aiOptions)
           ).trim();
           if (proposedBody) {
             body = proposedBody;
@@ -3922,10 +3923,11 @@ export class Content
       throw new Error('AI client is not configured for content reviews');
     }
 
-    const rawResponse = await ai.message(
-      resolvedPrompt.text,
-      promptMessageOptions(resolvedPrompt.ai, { routeTier: false }),
+    // A tier profile (#4750) selects the tier client and tags the usage row.
+    const { ai: reviewAi, aiOptions } = await this.prepareAiOperation(
+      promptMessageOptions(resolvedPrompt.ai),
     );
+    const rawResponse = await reviewAi.message(resolvedPrompt.text, aiOptions);
     const result = parseContentReviewResponse(rawResponse);
     const persistReview = async (content: Content) => {
       if (options.expectedUpdatedAt !== undefined) {

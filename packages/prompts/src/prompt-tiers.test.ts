@@ -15,6 +15,7 @@ import { clearPromptCache } from './cache.js';
 import { PromptOverrideCollection } from './collections/PromptOverrideCollection.js';
 import { definePrompt, PromptRegistry } from './prompt-registry.js';
 import { resolvePrompt } from './prompt-resolver.js';
+import { promptMessageOptions } from './utils.js';
 
 const EDITABLE = { template: true, profile: true, model: true, params: true };
 
@@ -117,16 +118,66 @@ describe('prompt tier profiles', () => {
     expect(seen).toEqual([]);
   });
 
-  it('keeps allowedProfileNames authoritative for tier names', async () => {
+  it('applies allowedProfileNames to chosen tiers, not to a code-default tier (#4755)', async () => {
     usePromptConfig({ allowedProfileNames: ['deep'] });
     definePrompt({
       key: 'tiers.denied',
       template: 'Hi',
       ai: { profile: 'cheap' },
+      editable: EDITABLE,
+    });
+    // The framework's own declaration never breaks an app's allow-list.
+    const { ai } = await resolvePrompt('tiers.denied', { tenantId: null });
+    expect(ai.tier).toBe('cheap');
+    // A tier selected by an override layer is still a choice the list governs,
+    // including one that re-selects the code default's own tier.
+    for (const profile of ['best', 'cheap']) {
+      await expect(
+        resolvePrompt('tiers.denied', {
+          tenantId: null,
+          override: { profile },
+        }),
+      ).rejects.toThrow('not in the allowed profile list');
+    }
+    clearPromptCache();
+    clearCache();
+    usePromptConfig({
+      allowedProfileNames: ['deep'],
+      prompts: { 'tiers.denied': { profile: 'cheap' } },
     });
     await expect(
       resolvePrompt('tiers.denied', { tenantId: null }),
     ).rejects.toThrow('not in the allowed profile list');
+  });
+
+  it('forwards tier, promptKey and a valid latency; params cannot carry them', async () => {
+    definePrompt({
+      key: 'tiers.options',
+      template: 'Hi',
+      ai: {
+        profile: 'good',
+        latency: 'interactive',
+        params: { tier: 'best', promptKey: 'spoofed' },
+      },
+    });
+    const { ai } = await resolvePrompt('tiers.options', { tenantId: null });
+    expect(ai.params).not.toHaveProperty('tier');
+    expect(ai.params).not.toHaveProperty('promptKey');
+    expect(promptMessageOptions(ai)).toMatchObject({
+      tier: 'good',
+      promptKey: 'tiers.options',
+      latency: 'interactive',
+    });
+
+    definePrompt({
+      key: 'tiers.badLatency',
+      template: 'Hi',
+      ai: { latency: 'soon' as never },
+    });
+    const bad = await resolvePrompt('tiers.badLatency', { tenantId: null });
+    const options = promptMessageOptions(bad.ai);
+    expect(options).not.toHaveProperty('latency');
+    expect(options).not.toHaveProperty('tier');
   });
 
   it('accepts a stored tier profile override but still rejects unknown names', async () => {

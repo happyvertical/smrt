@@ -115,6 +115,8 @@ describe('AnalyticsProperty.analyzePerformance()', () => {
         promptKey: 'smrtAnalytics.property.analyzePerformance',
         promptLayer: 'default',
         templateHash: expect.stringMatching(/^[0-9a-f]{12}$/),
+        tierRequested: 'good',
+        tierResolved: 'good',
       },
     });
   });

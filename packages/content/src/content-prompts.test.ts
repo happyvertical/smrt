@@ -106,6 +106,8 @@ describe('content prompt definitions', () => {
       promptKey: 'smrtContent.applyCorrection',
       promptLayer: 'default',
       templateHash: expect.stringMatching(/^[0-9a-f]{12}$/),
+      tierRequested: 'great',
+      tierResolved: 'great',
     });
   });
 });

@@ -1,4 +1,5 @@
 import {
+  type InferenceLatency,
   type InferenceTierRequest,
   isInferenceTierRequest,
 } from '@happyvertical/smrt-core';
@@ -44,6 +45,9 @@ const AI_RESERVED_KEYS = new Set([
   'maxTokens',
 ]);
 
+// `tier` and `promptKey` come only from the resolution (an effective tier
+// profile), never from tenant-editable params, so `allowedProfileNames`
+// cannot be bypassed through params (#4755).
 const AI_ROUTING_PARAM_KEYS = new Set([
   'profile',
   'provider',
@@ -160,9 +164,15 @@ function normalizeAIInput(ai?: PromptAIInput | null): NormalizedPromptAI {
   const model =
     typeof ai.model === 'string' || ai.model === null ? ai.model : undefined;
 
+  const latency =
+    ai.latency === 'interactive' || ai.latency === 'background'
+      ? ai.latency
+      : undefined;
+
   return {
     profile: profile ?? undefined,
     model: model ?? undefined,
+    ...(latency ? { latency } : {}),
     params: extractPromptParams(ai, AI_RESERVED_KEYS),
   };
 }
@@ -320,6 +330,13 @@ export function validateModelName(
 export function buildResolvedAI(
   ai: NormalizedPromptAI,
   config: PromptPackageConfig,
+  options: {
+    /**
+     * The registered code default's profile (`definePrompt({ ai })`), passed
+     * only when no config, stored or runtime layer set a profile.
+     */
+    defaultProfile?: string;
+  } = {},
 ): ResolvedPromptAI {
   let provider: string | undefined;
   let model = ai.model;
@@ -327,7 +344,14 @@ export function buildResolvedAI(
   let tier: ResolvedPromptAI['tier'];
 
   if (ai.profile) {
-    validateProfileName(ai.profile, config);
+    // `allowedProfileNames` limits what config and stored overrides may
+    // select. A tier the code default itself declares (#4755) is not such a
+    // choice, so an app's allow-list cannot break framework prompts.
+    const codeDefaultTier =
+      ai.profile === options.defaultProfile &&
+      !config.profiles?.[ai.profile] &&
+      isInferenceTierRequest(ai.profile);
+    if (!codeDefaultTier) validateProfileName(ai.profile, config);
     const configuredProfile = config.profiles?.[ai.profile];
     if (configuredProfile) {
       const profileConfig = normalizeProfileConfig(configuredProfile);
@@ -413,6 +437,8 @@ export interface PromptMessageOptions extends PromptParams {
   tier?: InferenceTierRequest;
   /** Set with `tier`: the prompt key for the call-time resolver request. */
   promptKey?: string;
+  /** Set with `tier`: the code default's `ai.latency` hint (#4755). */
+  latency?: InferenceLatency;
   temperature?: number;
   maxTokens?: number;
   usageTags?: Record<string, string>;
@@ -468,6 +494,7 @@ export function promptMessageOptions(
     ...(routeTier && ai.tier && ai.promptKey
       ? { promptKey: ai.promptKey }
       : {}),
+    ...(routeTier && ai.tier && ai.latency ? { latency: ai.latency } : {}),
     ...(typeof ai.temperature === 'number'
       ? { temperature: ai.temperature }
       : {}),

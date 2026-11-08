@@ -30,6 +30,8 @@ import { smrtImagesGenerateAltTextPrompt } from '@happyvertical/smrt-images';
 // key: 'smrtImages.image.generateAltText'
 ```
 
+Tier (#4755 rule, `../prompts/AGENTS.md`): `good` (a description). The call binds it through `prepareAiOperation()`.
+
 Only non-PII metadata fields are passed to the AI provider: `name`, `description`. Source URIs, internal foreign-key fields (`parentId`, `tenantId`), and the extensible `metadata` blob are intentionally excluded — source URIs may embed signed/private bucket paths and `metadata` may contain EXIF GPS data or tenant-private configuration.
 
 ## UI Registry

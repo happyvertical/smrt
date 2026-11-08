@@ -330,6 +330,8 @@ describe('Content governance', () => {
         promptKey: 'smrtContent.review',
         promptLayer: 'default',
         templateHash: expect.stringMatching(/^[0-9a-f]{12}$/),
+        tierRequested: 'great',
+        tierResolved: 'great',
       });
       expect(review).toMatchObject({ kind, status: 'passed' });
       expect(await db.list('content_reviews', { kind })).toHaveLength(1);

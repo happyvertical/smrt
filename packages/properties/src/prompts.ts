@@ -26,6 +26,7 @@ Description: {propertyDescription}
 Status: {propertyStatus}
 Total zones: {totalZones}
 Top-level zones: {topLevelZones}`,
+  ai: { profile: 'good' },
   editable: {
     template: true,
     profile: true,

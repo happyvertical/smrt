@@ -5,10 +5,10 @@ description: "Profile management system with relationships, metadata, and recipr
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T15:48:19Z"
+  at: "2026-11-08T08:43:50Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:43610e4cf0341925cc2646e15a1fde394e3de7280744db713fb46a5f0043872c"
+source_revision: "sha256:5329256a4d988d1d82ed155f7b1841cbd396e592b816979293703886db9ae1c7"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/profiles/package.json"

@@ -154,6 +154,8 @@ describe('AnalyticsReport.analyzeResults()', () => {
         promptKey: 'smrtAnalytics.report.analyzeResults',
         promptLayer: 'default',
         templateHash: expect.stringMatching(/^[0-9a-f]{12}$/),
+        tierRequested: 'good',
+        tierResolved: 'good',
       },
     });
   });
@@ -207,6 +209,8 @@ describe('AnalyticsReport.hasPositiveTrends()', () => {
         promptKey: 'smrtAnalytics.report.hasPositiveTrends',
         promptLayer: 'default',
         templateHash: expect.stringMatching(/^[0-9a-f]{12}$/),
+        tierRequested: 'cheap',
+        tierResolved: 'cheap',
       },
     });
   });

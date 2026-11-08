@@ -1,8 +1,4 @@
-import type {
-  AIClient,
-  AITextCompletionOptions,
-  AITool,
-} from '@happyvertical/ai';
+import type { AITextCompletionOptions, AITool } from '@happyvertical/ai';
 import { createLogger } from '@happyvertical/logger';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import {
@@ -57,11 +53,7 @@ import {
   ValidationError,
 } from './errors';
 import { buildWhere } from './host.js';
-import {
-  type InferenceLatency,
-  type InferenceTierRequest,
-  inferenceUsageTags,
-} from './inference';
+import type { InferenceLatency, InferenceTierRequest } from './inference';
 import {
   type BulkMutationEntry,
   createInterceptorContext,
@@ -4877,57 +4869,6 @@ export class SmrtObject extends SmrtClass {
    *   truncation budget
    * @returns The content-body section (with a trailing newline) or `''`
    */
-  /**
-   * Pick the generation client for an AI operation and strip the tier keys.
-   *
-   * Without `tier` this is exactly `getAiClient()` and the options pass
-   * through untouched. With `tier` the binding is resolved once; the target's
-   * `params` and `model` become per-call defaults under the caller's options,
-   * and `tierRequested` / `tierResolved` are merged over the caller's
-   * `usageTags`. Subclasses that call `ai.message()` themselves (prompt
-   * helpers forwarding a resolved prompt's `tier`) use this too, so `tier`
-   * never reaches the provider as an unknown option.
-   */
-  protected async prepareAiOperation<
-    T extends {
-      tier?: InferenceTierRequest;
-      latency?: InferenceLatency;
-      promptKey?: string;
-      usageTags?: Record<string, string>;
-    },
-  >(
-    options: T,
-  ): Promise<{
-    ai: AIClient;
-    aiOptions: Omit<T, 'tier' | 'latency' | 'promptKey'>;
-  }> {
-    const { tier, latency, promptKey, ...rest } = options;
-    if (tier === undefined) {
-      return { ai: await this.getAiClient(), aiOptions: rest };
-    }
-    const resolution = await this.resolveInferenceTier({
-      tier,
-      latency,
-      ...(promptKey ? { promptKey } : {}),
-    });
-    const ai = await this.getAiClient(tier, { latency, promptKey, resolution });
-    const { target } = resolution;
-    return {
-      ai,
-      aiOptions: {
-        ...(target.params ?? {}),
-        ...(typeof target.model === 'string' && target.model.trim() !== ''
-          ? { model: target.model.trim() }
-          : {}),
-        ...rest,
-        usageTags: {
-          ...(rest.usageTags ?? {}),
-          ...inferenceUsageTags(tier, resolution),
-        },
-      } as Omit<T, 'tier' | 'latency' | 'promptKey'>,
-    };
-  }
-
   private buildAiContentSection(
     includeData: boolean | undefined,
     maxLength?: number,

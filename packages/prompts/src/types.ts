@@ -1,4 +1,5 @@
 import type {
+  InferenceLatency,
   InferenceTierRequest,
   SmrtClassOptions,
 } from '@happyvertical/smrt-core';
@@ -13,7 +14,17 @@ export interface PromptEditableConfig {
 }
 
 export interface PromptAIInput {
+  /**
+   * A configured profile name or an inference tier (`cheap`…`best`, `auto`;
+   * #4750). Framework prompts declare a tier by the #4755 sweep rule.
+   */
   profile?: string | null;
+  /**
+   * Latency hint for a tier binding (`interactive` on request paths,
+   * `background` for jobs; #4755). Declared by the code default only: it is
+   * a property of the call site, so config and overrides cannot change it.
+   */
+  latency?: InferenceLatency;
   model?: string | null;
   params?: PromptParams | null;
   temperature?: number;
@@ -92,6 +103,8 @@ export interface PromptLayer {
 export interface NormalizedPromptAI {
   profile?: string;
   model?: string;
+  /** Code-declared latency hint; only a registered definition carries it. */
+  latency?: InferenceLatency;
   params: PromptParams;
 }
 
@@ -140,6 +153,8 @@ export interface ResolvedPromptAI extends PromptParams {
   tier?: InferenceTierRequest;
   /** The prompt key, set with `tier` for the call-time resolver request. */
   promptKey?: string;
+  /** Set with `tier`: the code default's latency hint (#4755). */
+  latency?: InferenceLatency;
   allowedModels?: string[];
   params: PromptParams;
   temperature?: number;
@@ -165,5 +180,11 @@ export interface PromptCacheValue {
   template: string;
   /** The highest stored/config layer that supplied `template`. */
   templateLayer: Exclude<PromptSourceLayer, 'runtime'>;
+  /**
+   * The highest stored/config layer that supplied `ai.profile`. Only a
+   * profile the code default supplied is exempt from `allowedProfileNames`
+   * (#4755).
+   */
+  profileLayer: Exclude<PromptSourceLayer, 'runtime'>;
   ai: NormalizedPromptAI;
 }

@@ -5,10 +5,10 @@ description: "Distributed memory and knowledge management with provenance tracki
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T15:48:19Z"
+  at: "2026-11-08T18:33:46Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:74aa5926b3f3a4f9c58fb4641535c987ef2d5dd2cd7bf41c00e7d80a24adc8fe"
+source_revision: "sha256:460a057b5429a63c6d56979a7d593fbf84ee5130e1db5f727d52cfa02ed30674"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/facts/package.json"

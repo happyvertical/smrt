@@ -16,9 +16,7 @@ Instructions:
 3. Maintain the original structure and formatting where possible
 4. Mark any conflicting feedback that needs resolution
 5. Return ONLY the updated specification text, no additional commentary`,
-  ai: {
-    temperature: 0.2,
-  },
+  ai: { profile: 'great', temperature: 0.2 },
   editable: {
     template: true,
     profile: true,
