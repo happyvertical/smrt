@@ -27,14 +27,14 @@ export class InferenceConfigError extends SmrtError {
  */
 export class InferenceExhaustedError extends SmrtError {
   /** The failure that ended the walk. */
-  readonly reason: InferenceSubstitutionReason | 'unclassified';
+  readonly reason: InferenceSubstitutionReason;
   /** The full fallback trail, ending with `to: null`. */
   readonly substitutions: InferenceSubstitution[];
   /** Text already streamed to the caller, for a `partial` ending. */
   readonly partialText?: string;
 
   constructor(input: {
-    reason: InferenceSubstitutionReason | 'unclassified';
+    reason: InferenceSubstitutionReason;
     substitutions: InferenceSubstitution[];
     tierRequested: string;
     partialText?: string;

@@ -316,6 +316,12 @@ class ChainCall {
           // ran to completion by choice); anything else is recorded and
           // rethrown as the caller's own error.
           if (!isInferenceAbort(outcome.error)) {
+            // The trail always ends with `to: null` on a failure row.
+            this.substitutions.push({
+              from: step.label,
+              to: null,
+              reason: 'unclassified',
+            });
             await this.recordFailure('failed', 'unclassified');
           }
           throw outcome.error;

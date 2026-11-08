@@ -76,7 +76,7 @@ its own `baseUrl` core's pair rule refuses it.
   `{ from, to, reason }`, labels `provider/model`, `preset:<id>/model`,
   `default`). A call that never answered records one zero-token row through
   `context.recordUsage()` (core's usage handlers; no second writer) with
-  `outcome: failed | partial`, `reason` and the full trail ending `to: null`,
+  `outcome: failed | partial`, `reason` and the full trail ending `to: null` (reason `unclassified` when a non-routing error ended it),
   then throws `InferenceExhaustedError` (`INFERENCE_EXHAUSTED`).
 - Add a class (#4758 `missing-capability`) to `INFERENCE_FAILURE_CLASSES` and
   a kind (#4753 `fusion`) to the executor's `kinds`; consumers ignore kinds
