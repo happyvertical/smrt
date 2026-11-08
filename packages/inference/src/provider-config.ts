@@ -154,14 +154,20 @@ function parseBinding(
   } else if (Object.keys(binding).length > 0 && !binding.provider) {
     issues.push(`${path}.provider is required`);
   }
-  // Core's pair rule: a key only travels with its own endpoint.
-  if (binding.apiKey && !binding.baseUrl && !binding.preset) {
-    issues.push(`${path}.baseUrl is required with apiKey`);
-  }
-  if (binding.baseUrl && !binding.apiKey && !binding.preset) {
-    issues.push(
-      `${path}.apiKey is required with baseUrl (a placeholder such as 'smrt-local' for a keyless local server)`,
-    );
+  // A stored binding is self-contained: its own endpoint and its own key
+  // (core's pair rule), so it never borrows the server's environment
+  // credentials (`OPENAI_API_KEY`, `HAVE_AI_*`, ...) for another provider.
+  if (binding.provider && !binding.preset) {
+    if (!binding.baseUrl) {
+      issues.push(
+        `${path}.baseUrl is required (a stored binding names its own endpoint)`,
+      );
+    }
+    if (!binding.apiKey) {
+      issues.push(
+        `${path}.apiKey is required (a placeholder such as 'smrt-local' for a keyless local server)`,
+      );
+    }
   }
   return binding;
 }
