@@ -378,6 +378,8 @@ interface DbMigrateOptions {
 interface DoctorOptions {
   fix?: boolean;
   db?: boolean;
+  ai?: boolean;
+  probe?: boolean;
   verbose?: boolean;
   'generation-snapshot'?: string;
   'generation-snapshot-sha256'?: string;
@@ -3252,6 +3254,18 @@ export default testManifest;
           'Compare the live database to the expected schema shape (incl. _smrt_* system tables)',
         default: false,
       },
+      ai: {
+        type: 'boolean',
+        description:
+          'Check every inference tier and alias binding offline (provider, key variable, model, alias, cycles)',
+        default: false,
+      },
+      probe: {
+        type: 'boolean',
+        description:
+          "With --ai, call each candidate's list endpoint with a short timeout",
+        default: false,
+      },
       verbose: {
         type: 'boolean',
         description: 'Show recommendations and informational findings',
@@ -3903,6 +3917,30 @@ export default testManifest;
           } else {
             passed.push('Deprecated qualified-name references');
           }
+        }
+        console.log();
+      }
+
+      // ========== Inference Bindings (opt-in, #4752) ==========
+      // Offline unless --probe. An unresolvable binding is an issue (non-zero
+      // exit); a chain that still resolves past a bad candidate warns.
+      if (options.ai) {
+        console.log('🧠 Inference Bindings\n');
+        try {
+          const { runInferenceDoctorSection } = await import('./doctor-ai.js');
+          const section = await runInferenceDoctorSection({
+            probe: options.probe === true,
+          });
+          for (const line of section.lines) console.log(line);
+          issues.push(...section.issues);
+          warnings.push(...section.warnings);
+          passed.push(...section.passed);
+        } catch (error) {
+          check(
+            'Inference bindings',
+            false,
+            `inference check failed: ${error instanceof Error ? error.message : String(error)}`,
+          );
         }
         console.log();
       }

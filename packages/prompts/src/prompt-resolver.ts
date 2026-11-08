@@ -141,6 +141,9 @@ export async function resolvePrompt(
     // (`SmrtObject.prepareAiOperation()` / `getAiClient(tier)`), with this
     // key so prompt-scoped bindings apply (#4750).
     ai.promptKey = key;
+    // The degradation floor is the code default's alone (#4752).
+    const minimumTier = PromptRegistry.get(key)?.ai.minimumTier;
+    if (minimumTier) ai.minimumTier = minimumTier;
   }
 
   return {

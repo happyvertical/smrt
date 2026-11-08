@@ -203,7 +203,8 @@ dock from one `[...path]` route; `createAssistantHttp{Transport,ActionClient}`
 `resolvePrincipal`; threads only from the actor's keyed session room in that
 tenant (else 404). `allowedTools` is fail-closed; without `tools` it offers
 those manifest ops (an unprovided name is an error, #3414). `ai` defaults to
-the config `ai` block. Pass `runtime`: a turn never keeps the RLS request tx
+the principal's stored inference binding over the config `ai` block (#4756,
+[core inference.md](../core/agents/inference.md#raw-clients-and-binding-source-4756)). Pass `runtime`: a turn never keeps the RLS request tx
 (own `runAsPrincipal` tx). `clientRequestId` makes the row id a UUIDv5
 (`clientRequestMessageId`): the PK is the retry reservation. See
 [docs](../../docs/assistant-dock.md).

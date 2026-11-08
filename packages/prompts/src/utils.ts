@@ -1,5 +1,7 @@
 import {
   type InferenceTierRequest,
+  INFERENCE_TIERS,
+  isInferenceTier,
   isInferenceTierRequest,
 } from '@happyvertical/smrt-core';
 import type {
@@ -55,6 +57,8 @@ const AI_ROUTING_PARAM_KEYS = new Set([
   'tier',
   'latency',
   'promptKey',
+  // Read from the code default only; never a tenant-editable param (#4752).
+  'minimumTier',
 ]);
 
 export function isPlainObject(
@@ -159,10 +163,16 @@ function normalizeAIInput(ai?: PromptAIInput | null): NormalizedPromptAI {
       : undefined;
   const model =
     typeof ai.model === 'string' || ai.model === null ? ai.model : undefined;
+  if (ai.minimumTier !== undefined && !isInferenceTier(ai.minimumTier)) {
+    throw new Error(
+      `Prompt ai.minimumTier must be one of ${INFERENCE_TIERS.join(', ')}; got "${String(ai.minimumTier)}".`,
+    );
+  }
 
   return {
     profile: profile ?? undefined,
     model: model ?? undefined,
+    ...(ai.minimumTier ? { minimumTier: ai.minimumTier } : {}),
     params: extractPromptParams(ai, AI_RESERVED_KEYS),
   };
 }
@@ -415,6 +425,8 @@ export interface PromptMessageOptions extends PromptParams {
   promptKey?: string;
   temperature?: number;
   maxTokens?: number;
+  /** Degradation floor sent with `tier` (#4752). */
+  minimumTier?: ResolvedPromptAI['minimumTier'];
   usageTags?: Record<string, string>;
 }
 
@@ -467,6 +479,9 @@ export function promptMessageOptions(
     ...(routeTier && ai.tier ? { tier: ai.tier } : {}),
     ...(routeTier && ai.tier && ai.promptKey
       ? { promptKey: ai.promptKey }
+      : {}),
+    ...(routeTier && ai.tier && ai.minimumTier
+      ? { minimumTier: ai.minimumTier }
       : {}),
     ...(typeof ai.temperature === 'number'
       ? { temperature: ai.temperature }

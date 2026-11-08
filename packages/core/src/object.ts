@@ -59,7 +59,9 @@ import {
 import { buildWhere } from './host.js';
 import {
   type InferenceLatency,
+  type InferenceTier,
   type InferenceTierRequest,
+  inferenceTargetKind,
   inferenceUsageTags,
 } from './inference';
 import {
@@ -585,6 +587,19 @@ export interface AiOperationOptions extends AITextCompletionOptions {
    * into the usage event (`_smrt_ai_usage.tags`).
    */
   usageTags?: Record<string, string>;
+
+  /**
+   * Lowest tier a chain tier may degrade to when all its candidates fail
+   * (#4752). Prompts set it from `ai.minimumTier`. Not forwarded to
+   * `ai.message()`.
+   */
+  minimumTier?: InferenceTier;
+
+  /**
+   * Return the text a chain candidate already streamed when it fails
+   * mid-stream, instead of throwing (#4752). Not forwarded to `ai.message()`.
+   */
+  allowPartial?: boolean;
 }
 
 /**
@@ -4894,14 +4909,20 @@ export class SmrtObject extends SmrtClass {
       latency?: InferenceLatency;
       promptKey?: string;
       usageTags?: Record<string, string>;
+      minimumTier?: InferenceTier;
+      allowPartial?: boolean;
     },
   >(
     options: T,
   ): Promise<{
     ai: AIClient;
-    aiOptions: Omit<T, 'tier' | 'latency' | 'promptKey'>;
+    aiOptions: Omit<
+      T,
+      'tier' | 'latency' | 'promptKey' | 'minimumTier' | 'allowPartial'
+    >;
   }> {
-    const { tier, latency, promptKey, ...rest } = options;
+    const { tier, latency, promptKey, minimumTier, allowPartial, ...rest } =
+      options;
     if (tier === undefined) {
       return { ai: await this.getAiClient(), aiOptions: rest };
     }
@@ -4910,8 +4931,19 @@ export class SmrtObject extends SmrtClass {
       latency,
       ...(promptKey ? { promptKey } : {}),
     });
-    const ai = await this.getAiClient(tier, { latency, promptKey, resolution });
-    const { target } = resolution;
+    const ai = await this.getAiClient(tier, {
+      latency,
+      promptKey,
+      resolution,
+      ...(minimumTier ? { minimumTier } : {}),
+      ...(allowPartial ? { allowPartial } : {}),
+    });
+    // A chain target carries no model or params of its own: each candidate
+    // applies its own inside the executor.
+    const target =
+      inferenceTargetKind(resolution.target) === 'single'
+        ? resolution.target
+        : {};
     return {
       ai,
       aiOptions: {
@@ -4924,7 +4956,10 @@ export class SmrtObject extends SmrtClass {
           ...(rest.usageTags ?? {}),
           ...inferenceUsageTags(tier, resolution),
         },
-      } as Omit<T, 'tier' | 'latency' | 'promptKey'>,
+      } as Omit<
+        T,
+        'tier' | 'latency' | 'promptKey' | 'minimumTier' | 'allowPartial'
+      >,
     };
   }
 
