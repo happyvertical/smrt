@@ -896,10 +896,17 @@ export async function legacyMain(env = process.env) {
       '-subj',
       '/CN=Untrusted disposable CA',
     ]);
-    exec('openssl',['req','-newkey','rsa:2048','-nodes','-keyout',join(tlsDir,'ingress-v1.key'),'-out',join(tlsDir,'ingress-v1.csr'),'-subj','/CN=app.legacy.invalid']);
-    writeFileSync(join(tlsDir,'ingress.ext'),'subjectAltName=DNS:app.legacy.invalid,DNS:www.legacy.invalid\nextendedKeyUsage=serverAuth\n');
-    exec('openssl',['x509','-req','-in',join(tlsDir,'ingress-v1.csr'),'-CA',join(tlsDir,'ca.crt'),'-CAkey',join(tlsDir,'ca.key'),'-CAcreateserial','-out',join(tlsDir,'ingress-v1.crt'),'-days','1','-extfile',join(tlsDir,'ingress.ext')]);
-    const ingressSecrets=['web','site'].map((route)=>r('v1','Secret',`${route}-tls-v1`,{immutable:true,type:'kubernetes.io/tls',data:{'tls.crt':readFileSync(join(tlsDir,'ingress-v1.crt')).toString('base64'),'tls.key':readFileSync(join(tlsDir,'ingress-v1.key')).toString('base64')}},namespace));
+    const ingressSecrets=[];
+    for(const version of [1,2,3]){
+      const prefix=`ingress-v${version}`;
+      exec('openssl',['req','-newkey','rsa:2048','-nodes','-keyout',join(tlsDir,`${prefix}.key`),'-out',join(tlsDir,`${prefix}.csr`),'-subj','/CN=app.legacy.invalid']);
+      writeFileSync(join(tlsDir,'ingress.ext'),'subjectAltName=DNS:app.legacy.invalid,DNS:www.legacy.invalid\nextendedKeyUsage=serverAuth\n');
+      exec('openssl',['x509','-req','-in',join(tlsDir,`${prefix}.csr`),'-CA',join(tlsDir,'ca.crt'),'-CAkey',join(tlsDir,'ca.key'),'-CAcreateserial','-out',join(tlsDir,`${prefix}.crt`),'-days','1','-extfile',join(tlsDir,'ingress.ext')]);
+      for(const route of ['web','site'])ingressSecrets.push(r('v1','Secret',`${route}-tls-v${version}`,{immutable:true,type:'kubernetes.io/tls',data:{'tls.crt':readFileSync(join(tlsDir,`${prefix}.crt`)).toString('base64'),'tls.key':readFileSync(join(tlsDir,`${prefix}.key`)).toString('base64')}},namespace));
+    }
+    const invalidTls=(name,cert,key)=>r('v1','Secret',name,{immutable:true,type:'kubernetes.io/tls',data:{'tls.crt':readFileSync(cert).toString('base64'),'tls.key':readFileSync(key).toString('base64')}},namespace);
+    exec('openssl',['x509','-req','-in',join(tlsDir,'ingress-v2.csr'),'-CA',join(tlsDir,'wrong-ca.crt'),'-CAkey',join(tlsDir,'wrong.key'),'-CAcreateserial','-out',join(tlsDir,'untrusted.crt'),'-days','1','-extfile',join(tlsDir,'ingress.ext')]);
+    ingressSecrets.push(invalidTls('wrong-san-tls',join(tlsDir,'server.crt'),join(tlsDir,'server.key')),invalidTls('wrong-key-tls',join(tlsDir,'ingress-v2.crt'),join(tlsDir,'ingress-v1.key')),invalidTls('wrong-ca-tls',join(tlsDir,'untrusted.crt'),join(tlsDir,'ingress-v2.key')));
     const tlsSecret = r('v1', 'Secret', 'postgres-tls-v1', {
       immutable: true,
       type: 'Opaque',
@@ -1273,7 +1280,7 @@ export async function legacyMain(env = process.env) {
     assert.ok(!Object.hasOwn(historyPods()[0].metadata.labels ?? {}, 'app.kubernetes.io/instance'), 'legacy history Pod must lack the instance label');
     const historyUids = [historyJob.metadata.uid, historyPods()[0].metadata.uid];
     const ingressTlsPort=await forward('legacy-ingress-ingress-nginx-controller',443,'ingress-nginx');
-    const ingressCa=[readFileSync(join(tlsDir,'ca.crt'),'utf8')];
+    const tlsOptions={trustedCa:[readFileSync(join(tlsDir,'ca.crt'),'utf8')],endpoint:async(host,port)=>{assert.ok(['app.legacy.invalid','www.legacy.invalid'].includes(host));assert.equal(port,443);return{host:'127.0.0.1',port:ingressTlsPort};}};
     const publicRequest = async (url, options = {}) => {
       const parsed=new URL(url);
       if (parsed.hostname.endsWith('.svc.cluster.local')) {
@@ -1296,7 +1303,7 @@ export async function legacyMain(env = process.env) {
       assert.equal(parsed.protocol,'https:');
       return new Promise((resolve,reject)=>{
         let responseStarted=false;
-        const request=httpsRequest({hostname:'127.0.0.1',port:ingressTlsPort,servername:parsed.hostname,ca:ingressCa,method:options.method??'GET',path:parsed.pathname+parsed.search,headers:{host:parsed.hostname},rejectUnauthorized:true},response=>{
+        const request=httpsRequest({hostname:'127.0.0.1',port:ingressTlsPort,servername:parsed.hostname,ca:tlsOptions.trustedCa,method:options.method??'GET',path:parsed.pathname+parsed.search,headers:{host:parsed.hostname},rejectUnauthorized:true},response=>{
           responseStarted=true;response.on('error',reject);
           let body='';response.setEncoding('utf8');response.on('data',chunk=>{body+=chunk;});response.on('end',()=>resolve(new Response(body,{status:response.statusCode,headers:response.headers})));
         });request.setTimeout(10000,()=>request.destroy(new Error('fixture HTTPS timeout')));request.on('error',error=>{if(!responseStarted)reject(error);});request.end(options.body);
@@ -2131,7 +2138,7 @@ export async function legacyMain(env = process.env) {
     };
     const adapter = () =>
       createLiveAdapter(config, nativeCommand, publicRequest, {
-        adoptionFenceObserver: observeWriterFence,
+        adoptionFenceObserver: observeWriterFence,tls:tlsOptions,
       });
     const configFile = join(scratch, 'config.json'),
       planFile = join(scratch, 'plan.json');
@@ -2144,7 +2151,7 @@ export async function legacyMain(env = process.env) {
       planAdoption(
         wrongUidConfig,
         createLiveAdapter(wrongUidConfig, nativeCommand, publicRequest, {
-          adoptionFenceObserver: observeWriterFence,
+          adoptionFenceObserver: observeWriterFence,tls:tlsOptions,
         }),
         plan,
       ),
@@ -2155,7 +2162,7 @@ export async function legacyMain(env = process.env) {
     await assert.rejects(
       adoptOrResume(
         config,
-        createLiveAdapter(config, nativeCommand, publicRequest),
+        createLiveAdapter(config, nativeCommand, publicRequest,{tls:tlsOptions}),
         plan,
       ),
     );
@@ -2167,7 +2174,7 @@ export async function legacyMain(env = process.env) {
       adoptOrResume(
         config,
         createLiveAdapter(config, nativeCommand, publicRequest, {
-          adoptionFenceObserver: stale,
+          adoptionFenceObserver: stale,tls:tlsOptions,
         }),
         plan,
       ),
@@ -2455,6 +2462,207 @@ export async function legacyMain(env = process.env) {
       return true;
     });
     assert.equal(sql('SELECT count(*) FROM fixture_effects'), '1');
+    const tlsPlans = [];
+    const runTlsPlan = async (version, id) => {
+      const refsFile = join(scratch, `tls-refs-${version}.json`),
+        reviewed = join(scratch, `tls-plan-${version}.json`);
+      writeFileSync(
+        refsFile,
+        JSON.stringify([
+          { name: 'legacy-web', tlsSecretName: `web-tls-v${version}` },
+          { name: 'legacy-site', tlsSecretName: `site-tls-v${version}` },
+        ]),
+      );
+      const result = await releaseCli(
+        ['tls-plan', configFile, refsFile, id],
+        () => adapter(),
+      );
+      writeFileSync(reviewed, JSON.stringify(result));
+      tlsPlans.push(result);
+      return reviewed;
+    };
+    const runtimeBeforeTls = JSON.parse(
+      k(['-n', namespace, 'get', 'deployments,cronjobs', '-o', 'json']),
+    )
+      .items.map((o) => ({
+        kind: o.kind,
+        name: o.metadata.name,
+        uid: o.metadata.uid,
+        template: hash(
+          o.kind === 'CronJob'
+            ? o.spec.jobTemplate.spec.template
+            : o.spec.template,
+        ),
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    const firstTls = await runTlsPlan(2, 'tls-positive');
+    await releaseCli(['tls-apply-or-resume', configFile, firstTls], () =>
+      adapter(),
+    );
+    await until('real Ingress immutable TLS rotation acknowledged', async () =>
+      Boolean(
+        (
+          await releaseCli(['tls-apply-or-resume', configFile, firstTls], () =>
+            adapter(),
+          )
+        ).complete,
+      ),
+    );
+    const rotated = await adapter().read();
+    assert.equal(
+      rotated.document.spec.values.ingress.tlsSecretName,
+      'web-tls-v2',
+    );
+    // Trusted CI re-associates the unchanged already-executed runtime wrapper
+    // with the now natively verified current TLS configuration for the next plan.
+    const rotatedValues = rotated.document.spec.values;
+    validation.configurationIdentity = hash({
+      maintenance: rotatedValues.maintenance,
+      bindings: rotatedValues.bindings,
+      ingress: rotatedValues.ingress,
+    });
+    writeFileSync(validationFile, JSON.stringify(validation));
+    config.validationEvidence.sha256 = digest(readFileSync(validationFile));
+    writeFileSync(configFile, JSON.stringify(config));
+    for (const invalid of ['wrong-san-tls', 'wrong-key-tls', 'wrong-ca-tls']) {
+      const refs = join(scratch, `${invalid}.json`),
+        reviewed = join(scratch, `${invalid}-plan.json`);
+      writeFileSync(
+        refs,
+        JSON.stringify([{ name: 'legacy-web', tlsSecretName: invalid }]),
+      );
+      const rejectedPlan = await releaseCli(
+        ['tls-plan', configFile, refs, invalid],
+        () => adapter(),
+      );
+      writeFileSync(reviewed, JSON.stringify(rejectedPlan));
+      const beforeRejected = await adapter().read();
+      await assert.rejects(
+        releaseCli(['tls-apply-or-resume', configFile, reviewed], () =>
+          adapter(),
+        ),
+        (error) => error.code === 'TLS_BINDING',
+      );
+      assert.equal(
+        (await adapter().read()).revision,
+        beforeRejected.revision,
+        'invalid native TLS material cannot publish a reference',
+      );
+    }
+    const watchFault = r(
+      'cilium.io/v2',
+      'CiliumNetworkPolicy',
+      'tls-watch-cache-fault',
+      {
+        spec: {
+          endpointSelector: {
+            matchLabels: {
+              'app.kubernetes.io/instance': 'legacy-ingress',
+              'app.kubernetes.io/component': 'controller',
+            },
+          },
+          egress: [{ toEntities: ['all'] }],
+          egressDeny: [{ toEntities: ['kube-apiserver'] }],
+        },
+      },
+      'ingress-nginx',
+    );
+    apply([watchFault]);
+    try {
+      const failedTls = await runTlsPlan(3, 'tls-correlated-failure');
+      await releaseCli(['tls-apply-or-resume', configFile, failedTls], () =>
+        adapter(),
+      );
+      await until(
+        'real stale served TLS certificate correlated to exact new Ingress refs',
+        async () => {
+          const result = await releaseCli(
+            ['tls-apply-or-resume', configFile, failedTls],
+            () => adapter(),
+          );
+          return result.evidence?.failureCode === 'TLS_CORRELATED_FAILURE';
+        },
+      );
+      await releaseCli(['tls-rollback', configFile, failedTls], () => adapter());
+      await until(
+        'correlated TLS rollback restored retained immutable reference',
+        async () =>
+          Boolean(
+            (
+              await releaseCli(
+                ['tls-apply-or-resume', configFile, failedTls],
+                () => adapter(),
+              )
+            ).complete,
+          ),
+      );
+      const restored = await adapter().read();
+      assert.equal(
+        restored.document.spec.values.ingress.tlsSecretName,
+        'web-tls-v2',
+      );
+      assert.equal(
+        restored.document.spec.values.ingress.additionalRoutes[0].tlsSecretName,
+        'site-tls-v2',
+      );
+      const runtimeAfterTls = JSON.parse(
+        k(['-n', namespace, 'get', 'deployments,cronjobs', '-o', 'json']),
+      )
+        .items.map((o) => ({
+          kind: o.kind,
+          name: o.metadata.name,
+          uid: o.metadata.uid,
+          template: hash(
+            o.kind === 'CronJob'
+              ? o.spec.jobTemplate.spec.template
+              : o.spec.template,
+          ),
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+      assert.deepEqual(
+        runtimeAfterTls,
+        runtimeBeforeTls,
+        'TLS rotation and rollback preserve exact native runtime Pod templates and controller UIDs',
+      );
+      assert.deepEqual(
+        restored.document.spec.values.release,
+        rotated.document.spec.values.release,
+        'TLS changes do not manufacture a runtime phase/attempt',
+      );
+      writeFileSync(
+        join(evidence, 'tls-rotation-rollback.json'),
+        JSON.stringify(
+          {
+            plans: tlsPlans.map((p) => ({
+              id: p.id,
+              identity: hash(p),
+              before: p.before,
+              after: p.after,
+            })),
+            transition: JSON.parse(
+              restored.document.metadata.annotations[
+                'smrt.happyvertical.com/tls-transition'
+              ],
+            ),
+            runtimeBeforeTls,
+            runtimeAfterTls,
+          },
+          null,
+          2,
+        ),
+      );
+    } finally {
+      k([
+        '-n',
+        'ingress-nginx',
+        'delete',
+        'ciliumnetworkpolicy',
+        'tls-watch-cache-fault',
+        '--ignore-not-found',
+      ]);
+    }
+    await assertHTTP(200);
+    note('real CLI immutable HTTPS reference rotation and correlated TLS rollback preserved native Pod templates');
     writeFileSync(
       join(evidence, 'active-release.json'),
       JSON.stringify((await adapter().read()).document, null, 2),
@@ -2523,7 +2731,7 @@ export async function legacyMain(env = process.env) {
           },
           limitations: [
             'Historical ingress-nginx4.11.3 outside documented Kubernetes support matrix',
-            'Immutable versioned Ingress TLS reference rotation not exercised',
+            'Native HTTPS TLS rotation/rollback is an empirical historical-controller compatibility exercise',
             'Finite fixture policy is not general production platform fencing qualification',
           ],
         },
