@@ -1,4 +1,7 @@
-import { isInferenceTierRequest } from '@happyvertical/smrt-core';
+import {
+  type InferenceTierRequest,
+  isInferenceTierRequest,
+} from '@happyvertical/smrt-core';
 import type {
   NormalizedPromptAI,
   PromptAIInput,
@@ -369,6 +372,88 @@ export function buildResolvedAI(
   }
 
   return resolved;
+}
+
+const TEMPLATE_HASH_LENGTH = 12;
+
+/**
+ * Short SHA-256 fingerprint of an effective (unrendered) prompt template: the
+ * first 12 lowercase hex characters. Recorded as the `templateHash` usage tag
+ * so an override edit starts a new usage series (#4751).
+ *
+ * Uses Web Crypto (`globalThis.crypto.subtle`), available in Node and every
+ * browser, so the package root stays free of `node:crypto`.
+ */
+export async function promptTemplateHash(template: string): Promise<string> {
+  const digest = await globalThis.crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(template),
+  );
+  let hex = '';
+  for (const byte of new Uint8Array(digest)) {
+    hex += byte.toString(16).padStart(2, '0');
+    if (hex.length >= TEMPLATE_HASH_LENGTH) break;
+  }
+  return hex.slice(0, TEMPLATE_HASH_LENGTH);
+}
+
+/** The `ai.message()` options {@link promptMessageOptions} returns. */
+export interface PromptMessageOptions extends PromptParams {
+  model?: string;
+  temperature?: number;
+  maxTokens?: number;
+  /** Inference tier (#4750); `SmrtObject.do()` selects the tier client. */
+  tier?: InferenceTierRequest;
+  /** Prompt key sent with `tier` for the call-time resolver request. */
+  promptKey?: string;
+  usageTags?: Record<string, string>;
+}
+
+/** Extra call options merged by {@link promptMessageOptions}. */
+export interface PromptMessageOptionsExtra {
+  /** The caller's own usage tags; they win over the resolution's tags. */
+  usageTags?: Record<string, string>;
+}
+
+/**
+ * Turn a resolved prompt's AI settings into `ai.message()` call options:
+ * params, `model`, `temperature`, `maxTokens`, and the resolution's
+ * `usageTags` (`promptKey`, `promptLayer`, `templateHash`).
+ *
+ * Tag precedence, low to high: a `usageTags` object carried in the prompt's
+ * params (tenant-editable, so it can never mask the identity tags), the
+ * resolution's identity tags, then the caller's `extra.usageTags`.
+ */
+export function promptMessageOptions(
+  ai: ResolvedPromptAI,
+  extra: PromptMessageOptionsExtra = {},
+): PromptMessageOptions {
+  const params = ai.params || {};
+  const usageTags = {
+    ...stringTags(params.usageTags),
+    ...(ai.usageTags ?? {}),
+    ...(extra.usageTags ?? {}),
+  };
+  return {
+    ...params,
+    ...(ai.model ? { model: ai.model } : {}),
+    ...(ai.tier ? { tier: ai.tier } : {}),
+    ...(ai.tier && ai.promptKey ? { promptKey: ai.promptKey } : {}),
+    ...(typeof ai.temperature === 'number'
+      ? { temperature: ai.temperature }
+      : {}),
+    ...(typeof ai.maxTokens === 'number' ? { maxTokens: ai.maxTokens } : {}),
+    ...(Object.keys(usageTags).length > 0 ? { usageTags } : {}),
+  };
+}
+
+function stringTags(value: unknown): Record<string, string> {
+  if (!isPlainObject(value)) return {};
+  const tags: Record<string, string> = {};
+  for (const [key, tag] of Object.entries(value)) {
+    if (tag !== undefined && tag !== null) tags[key] = String(tag);
+  }
+  return tags;
 }
 
 export function renderPromptTemplate(

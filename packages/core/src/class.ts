@@ -112,6 +112,10 @@ type AiUsageFilterOptions = Pick<
   | 'operation'
   | 'className'
   | 'tenantId'
+  | 'promptKey'
+  | 'runId'
+  | 'tierRequested'
+  | 'tierResolved'
 >;
 
 interface AiUsageWhereClause {
@@ -270,6 +274,16 @@ function parseAiUsageTags(value: unknown): Record<string, string> | undefined {
   }
 }
 
+/** Spread helper: `{ [name]: value }` for a non-null column, else `{}`. */
+function optionalAiUsageColumn<K extends string>(
+  name: K,
+  value: unknown,
+): Partial<Record<K, string>> {
+  return value === null || value === undefined
+    ? {}
+    : ({ [name]: String(value) } as Record<K, string>);
+}
+
 function normalizeAiUsageTimestamp(value: unknown): Date {
   if (value instanceof Date) {
     return value;
@@ -338,6 +352,29 @@ function buildAiUsageWhereClause(
   } else if (options.tenantId) {
     conditions.push(`tenant_id = $${nextParamIndex++}`);
     params.push(options.tenantId);
+  }
+
+  // Prompt-run observability columns (#4751).
+  if (options.promptKey === null) {
+    conditions.push(`prompt_key IS NULL`);
+  } else if (options.promptKey) {
+    conditions.push(`prompt_key = $${nextParamIndex++}`);
+    params.push(options.promptKey);
+  }
+
+  if (options.runId) {
+    conditions.push(`run_id = $${nextParamIndex++}`);
+    params.push(options.runId);
+  }
+
+  if (options.tierRequested) {
+    conditions.push(`tier_requested = $${nextParamIndex++}`);
+    params.push(options.tierRequested);
+  }
+
+  if (options.tierResolved) {
+    conditions.push(`tier_resolved = $${nextParamIndex++}`);
+    params.push(options.tierResolved);
   }
 
   return {
@@ -1698,6 +1735,10 @@ export class SmrtClass {
           : (row.tenant_id as string | null),
       tags: parseAiUsageTags(row.tags),
       timestamp: normalizeAiUsageTimestamp(row.created_at),
+      ...optionalAiUsageColumn('promptKey', row.prompt_key),
+      ...optionalAiUsageColumn('tierRequested', row.tier_requested),
+      ...optionalAiUsageColumn('tierResolved', row.tier_resolved),
+      ...optionalAiUsageColumn('runId', row.run_id),
     }));
   }
 
@@ -1726,7 +1767,11 @@ export class SmrtClass {
               ? `COALESCE(tenant_id, 'global')`
               : groupBy === 'operation'
                 ? `operation`
-                : `substr(CAST(created_at AS TEXT), 1, 10)`;
+                : groupBy === 'prompt'
+                  ? `COALESCE(prompt_key, 'unattributed')`
+                  : groupBy === 'tier'
+                    ? `COALESCE(tier_resolved, tier_requested, 'untiered')`
+                    : `substr(CAST(created_at AS TEXT), 1, 10)`;
 
     const { conditions, params } = buildAiUsageWhereClause(options);
 

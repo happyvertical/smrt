@@ -95,7 +95,38 @@ export interface NormalizedPromptAI {
   params: PromptParams;
 }
 
+/**
+ * The resolution layer that supplied a prompt's effective template, lowest to
+ * highest priority. Recorded on every AI call as the `promptLayer` usage tag.
+ */
+export type PromptSourceLayer =
+  | 'default'
+  | 'config'
+  | 'app'
+  | 'tenant'
+  | 'runtime';
+
+/**
+ * Usage tags `resolvePrompt()` attaches to a resolution. They reach
+ * `_smrt_ai_usage` through the AI SDK's per-call `usageTags`; `promptKey` is
+ * also lifted into the indexed `prompt_key` column (#4751).
+ */
+export interface PromptUsageTags {
+  /** The registered prompt key, e.g. `content.summarize.headline`. */
+  promptKey: string;
+  /** The highest layer that supplied the effective template. */
+  promptLayer: PromptSourceLayer;
+  /** First 12 hex chars of the SHA-256 of the effective (unrendered) template. */
+  templateHash: string;
+  [key: string]: string;
+}
+
 export interface ResolvedPromptAI extends PromptParams {
+  /**
+   * Prompt-run observability tags (#4751). Always set by `resolvePrompt()`;
+   * optional here so hand-built AI option objects stay assignable.
+   */
+  usageTags?: PromptUsageTags;
   profile?: string;
   provider?: string;
   model?: string;
@@ -119,7 +150,7 @@ export interface ResolvedPrompt {
   key: string;
   template: string;
   text: string;
-  ai: ResolvedPromptAI;
+  ai: ResolvedPromptAI & { usageTags: PromptUsageTags };
 }
 
 export interface ResolvePromptOptions {
@@ -132,5 +163,7 @@ export interface ResolvePromptOptions {
 export interface PromptCacheValue {
   key: string;
   template: string;
+  /** The highest stored/config layer that supplied `template`. */
+  templateLayer: Exclude<PromptSourceLayer, 'runtime'>;
   ai: NormalizedPromptAI;
 }
