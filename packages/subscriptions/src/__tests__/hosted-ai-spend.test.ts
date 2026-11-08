@@ -522,6 +522,43 @@ describe('hosted spend gate end to end (#4760)', () => {
     expect(Math.abs(resetsAt - (now + 20 * day))).toBeLessThan(5_000);
   });
 
+  it('rounds the rolling lift like the spend it lifts (fractional micro-dollars)', async () => {
+    const day = 24 * 60 * 60 * 1000;
+    const now = Date.now();
+    const at = (daysAgo: number) => new Date(now - daysAgo * day).toISOString();
+    for (const daysAgo of [9, 8, 7]) {
+      await usageRow({
+        cost: 0.0000004,
+        tags: { source: 'hosted', userId },
+        at: at(daysAgo),
+      });
+    }
+    const reader = createHostedAiSpendReader(db);
+    const scope = {
+      tenantId,
+      userId,
+      window: { start: new Date(now - 30 * day), end: new Date(now + day) },
+    };
+    // 1.2 micro-dollars rounds to 1: at the cap of 1.
+    await expect(reader.summarize(scope)).resolves.toEqual({ spend: 1 });
+    // Expiring the oldest leaves 0.8 (rounds to 1, still at the cap);
+    // expiring the second leaves 0.4 (rounds to 0): it lifts then.
+    const lifts = await reader.liftsAt?.({
+      ...scope,
+      cap: 1,
+      windowMs: 30 * day,
+    });
+    expect(Math.abs((lifts?.getTime() ?? 0) - (now + 22 * day))).toBeLessThan(
+      5_000,
+    );
+    await expect(
+      reader.liftsAt?.({ ...scope, cap: 0, windowMs: 30 * day }),
+    ).resolves.toBeNull();
+    await expect(
+      reader.liftsAt?.({ ...scope, cap: 5, windowMs: 30 * day }),
+    ).resolves.toBeNull();
+  });
+
   it('fails closed on a malformed cap in the pinned plan version', async () => {
     await subscribe([
       cap(AI_HOSTED_USER_SPEND_METRIC, 1_000_000, { window: 'hour' as never }),

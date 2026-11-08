@@ -115,9 +115,10 @@ window, amount and enforcement come from the plan (pinned version included):
   tag exists only while the hosted gate's ambient-user resolver is
   registered.
 - `resetsAt`: the calendar window's end; for a blocked `rolling` cap (30
-  days), `HostedAiSpendReader.liftsAt()` expires the counted rows oldest
-  first and returns when the total first drops below the cap (null when it
-  never can, e.g. a 0 cap). A blocked decision names the blocking cap that
+  days), `HostedAiSpendReader.liftsAt()`: one window-function query (newest
+  first running `SUM(estimated_cost)`, rounded as `summarize()` rounds)
+  returns the row whose expiry first brings the total below the cap, plus
+  30 days (null for a 0 cap). A blocked decision names the blocking cap that
   lifts last.
 - `HostedAiSpendEvaluator` (`create({ db })`): plan thresholds via
   `SubscriptionResolver.resolvePlanThresholds()` (entitled terms, no usage

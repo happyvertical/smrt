@@ -210,28 +210,34 @@ export function createHostedAiSpendReader(
       return { spend: Math.round(numberOf(row.cost) * MICROS_PER_USD) };
     },
     async liftsAt({ cap, windowMs, ...scope }) {
+      // Nothing lifts a 0 cap: spend can never drop below it.
+      if (cap <= 0) return null;
       const { where, params } = scopeSql(db, scope);
+      // Rows expire oldest first, so the cap lifts when the newest row whose
+      // newest-first running total reaches the cap leaves the window. The
+      // running total is the raw USD sum, compared with the same rounding
+      // `summarize()` applies (Math.round(x) >= cap <=> x >= cap - 0.5); the
+      // database computes it, so only that one row is returned.
       const result = await db.query(
-        `SELECT created_at, estimated_cost
-           FROM _smrt_ai_usage
-          WHERE ${where}
-            AND estimated_cost IS NOT NULL
-          ORDER BY created_at ASC`,
+        `SELECT created_at
+           FROM (
+             SELECT created_at, id,
+                    SUM(estimated_cost) OVER (
+                      ORDER BY created_at DESC, id DESC
+                      ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+                    ) AS running
+               FROM _smrt_ai_usage
+              WHERE ${where}
+                AND estimated_cost IS NOT NULL
+           ) counted
+          WHERE running * ${MICROS_PER_USD} >= ?
+          ORDER BY created_at DESC, id DESC
+          LIMIT 1`,
         ...params,
+        cap - 0.5,
       );
-      const counted = rows(result).map((row) => ({
-        at: dateOf(row.created_at),
-        micros: Math.round(numberOf(row.estimated_cost) * MICROS_PER_USD),
-      }));
-      let remaining = counted.reduce((sum, row) => sum + row.micros, 0);
-      for (const row of counted) {
-        if (remaining < cap) break;
-        remaining -= row.micros;
-        if (remaining < cap) {
-          return row.at ? new Date(row.at.getTime() + windowMs) : null;
-        }
-      }
-      return null;
+      const at = dateOf(rows(result)[0]?.created_at);
+      return at ? new Date(at.getTime() + windowMs) : null;
     },
   };
 }
