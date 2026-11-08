@@ -36,6 +36,7 @@ import {
   isInferenceTargetSource,
   resolveInference,
 } from './inference.js';
+import { InferenceUnavailableError } from './inference-availability.js';
 
 const IDENTITY_FIELDS = ['provider', 'model', 'baseUrl', 'apiKey'] as const;
 
@@ -206,6 +207,10 @@ export interface ResolvedInferenceTarget {
  * A chain target (`alias`, `candidates`) cannot run on one raw client: the
  * site keeps `base` and `bound` is false, as before tier bindings existed.
  * Sites that want chains build their client through `getAiClient(tier)`.
+ *
+ * Throws `InferenceUnavailableError` (`AI_UNAVAILABLE`, #4757) when the
+ * resolution is unavailable (the principal's mode is `off`, ...), before any
+ * options are built, so the raw site records nothing.
  */
 export async function resolveInferenceTarget(
   options: ResolveInferenceTargetOptions = {},
@@ -223,6 +228,16 @@ export async function resolveInferenceTarget(
     request,
     options.resolver ? { resolver: options.resolver } : {},
   );
+  if (resolution.unavailable) {
+    throw new InferenceUnavailableError({
+      reason: resolution.unavailable,
+      ...(resolution.mode ? { mode: resolution.mode } : {}),
+      tier: resolution.tierResolved,
+      ...(options.owner || options.className
+        ? { owner: options.owner ?? options.className }
+        : {}),
+    });
+  }
   const target = resolution.target ?? {};
   const single = inferenceTargetKind(target) === 'single';
   const identity = single ? inferenceTargetIdentity(target) : {};

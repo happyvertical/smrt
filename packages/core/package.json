@@ -168,6 +168,11 @@
       "import": "./dist/smrt-error.js",
       "default": "./dist/smrt-error.js"
     },
+    "./inference-availability": {
+      "types": "./dist/inference-availability.d.ts",
+      "import": "./dist/inference-availability.js",
+      "default": "./dist/inference-availability.js"
+    },
     "./utils/import-workspace-module": {
       "types": "./dist/utils/import-workspace-module.d.ts",
       "import": "./dist/utils/import-workspace-module.js",

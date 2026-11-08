@@ -152,7 +152,59 @@ thumbnails, images editor/deriver; tiers bind text models), ingestion vision
 (a host-pinned provider identity in a child process), images typed decisions
 and the dev photo-setup route (vision / decision providers).
 
-Tests: `src/__tests__/issue-4756-inference-target.test.ts`,
+## Inference mode and `AI_UNAVAILABLE` (#4757)
+
+`src/inference-availability.ts` (browser-safe, also `./inference-availability`):
+`InferenceMode = 'byo' | 'local' | 'hosted' | 'off'`, `InferenceStatus =
+{ available, mode, reason?, tier? }` (never a key, endpoint or model), and
+`InferenceUnavailableError` (`SmrtError` code `AI_UNAVAILABLE`, category
+`configuration`, `retryable: false`, `reason: off | unconfigured |
+entitlement | capability`; `isInferenceUnavailableError()` matches by code
+across core copies). `entitlement` is reserved for the hosted gate (#4760)
+and `capability` for capability detection (#4758); nothing raises them yet.
+`off` and `unconfigured` always report mode `off`.
+
+- **Where it is thrown.** `getAiClient()`, before any client is built, so
+  `is()`, `do()`, `describe()` and `evaluate()`'s generative route throw it
+  (the typed-decision route is untouched, #3158). `is()` never turns it into
+  `false`. A tier call throws the resolution's `unavailable` reason; a tier
+  or untiered call with no provider anywhere (empty target, no configured
+  client) throws `unconfigured` (formerly a plain `Error` "does not have an
+  AI client configured"). `resolveInferenceTarget()` throws a resolution's
+  `unavailable` for raw `getAI()` sites. Nothing ran, so nothing reaches
+  `_smrt_ai_usage` or the usage handlers.
+- **Resolver contract.** `InferenceResolution` gains optional `mode` and
+  `unavailable` (validated). `InferenceResolver.mode?(request)` is optional
+  and is the only resolver call an untiered call makes
+  (`resolveInferenceMode()`): it returns `{ mode, unavailable? }` when a mode
+  is stored, so mode `off` stops untiered calls too; resolvers without it
+  (the built-in one) keep the parity contract. The per-user resolver stores
+  the mode beside the provider config ([smrt-inference](../../inference/AGENTS.md)).
+- **Reported mode.** `inferenceModeForTarget()`: the resolution's `mode`, else
+  the target `source` (`byo | local | hosted`), else for app config and the
+  configured client `local` (Ollama or a loopback endpoint) or `hosted`
+  (`source` stays `app`).
+- **Probes.** `getInferenceStatus({ tier?, tenantId?, userId: null?,
+  className?, resolver?, configured? })` / `isInferenceAvailable()`
+  (`src/inference-status.ts`), and the instance methods
+  `getInferenceStatus({ tier? })` / `isInferenceAvailable()` on `SmrtClass`,
+  resolve exactly as a call would without calling a model or recording
+  usage. A chain target counts as available.
+- **Endpoints.** `createInferenceStatusHandler({ tier?, tierParam?, run? })`
+  is a SvelteKit `GET` (`export const GET = createInferenceStatusHandler()`):
+  `?tier=` (400 when unknown), `cache-control: no-store`, a resolver failure
+  is a bare 500. `run(event, probe)` enters the host's principal context when
+  its handle hook has not. The generated REST surface serves the same body at
+  `GET {basePath}/_inference` (`generators/inference-status-route.ts`),
+  running `authMiddleware('_inference', 'status')` when configured.
+- **Feature flags.** To gate UI with smrt-features, map the status in the
+  host's flag evaluation (for example a flag whose resolver returns
+  `(await getInferenceStatus()).available`); SMRT ships no AI flag.
+- **Consumers.** Agents end the run `skipped` (agents AGENTS); chat answers a
+  structured `ai_unavailable` 503 (chat AGENTS).
+
+Tests: `src/__tests__/issue-4757-inference-unavailable.test.ts`,
+`src/__tests__/issue-4756-inference-target.test.ts`,
 `src/__tests__/inference-tiers.test.ts`,
 `src/__tests__/class-inference-tiers.test.ts`,
 `src/__tests__/inference-executor-seam.test.ts`,
