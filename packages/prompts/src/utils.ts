@@ -1,6 +1,6 @@
 import {
-  type InferenceTierRequest,
   INFERENCE_TIERS,
+  type InferenceTierRequest,
   isInferenceTier,
   isInferenceTierRequest,
 } from '@happyvertical/smrt-core';
