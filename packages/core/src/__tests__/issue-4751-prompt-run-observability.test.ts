@@ -586,6 +586,47 @@ describe('reportAiUsage', () => {
     );
   });
 
+  it('never counts a run label on another tenant reusing the run id later', async () => {
+    // run-1 is labelled while it belongs only to tenant-a; tenant-b then
+    // records usage under the same free-form run id.
+    await persist({
+      id: 'seed-b-run',
+      tenantId: 'tenant-b',
+      tags: { promptKey: 'k.b', runId: 'run-1' },
+    });
+
+    const report = await reportAiUsage(db, {
+      by: ['tenant'],
+      since: new Date('2026-10-15T00:00:00Z'),
+    });
+    const byTenant = Object.fromEntries(
+      report.buckets.map((b) => [String(b.key.tenant), b.outcomes]),
+    );
+    expect(byTenant['tenant-a']).toEqual({ accepted: 1, edited: 1 });
+    expect(byTenant['tenant-b']).toEqual({ rejected: 1 });
+    expect(report.totals.outcomes).toEqual({
+      accepted: 1,
+      edited: 1,
+      rejected: 1,
+    });
+  });
+
+  it('counts labels named like Object.prototype members as plain labels', async () => {
+    for (const label of ['constructor', 'toString', '__proto__']) {
+      await recordAiUsageOutcome(db, { usageId: 'seed-3', label, actor: 'u' });
+      await recordAiUsageOutcome(db, { usageId: 'seed-3', label, actor: 'u' });
+    }
+    const report = await reportAiUsage(db, {
+      since: new Date('2026-10-15T00:00:00Z'),
+    });
+    const parsed = JSON.parse(JSON.stringify(report.totals.outcomes));
+    expect(parsed).toMatchObject({ constructor: 2, toString: 2 });
+    expect(
+      Object.getOwnPropertyDescriptor(report.totals.outcomes, '__proto__')
+        ?.value,
+    ).toBe(2);
+  });
+
   it('pages through more rows than one keyset page', async () => {
     for (let i = 0; i < 1005; i++) {
       await db.query(

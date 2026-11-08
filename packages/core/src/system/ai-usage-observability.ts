@@ -506,11 +506,18 @@ function emptyAccumulator(): StatsAccumulator {
       uncostedCalls: 0,
       p50DurationMs: null,
       substitutions: 0,
-      outcomes: {},
+      // Null prototype: labels are free text, and `constructor` or
+      // `__proto__` must count like any other label.
+      outcomes: Object.create(null) as Record<string, number>,
     },
     durations: [],
     runIds: new Set(),
   };
+}
+
+function countOutcome(outcomes: Record<string, number>, label: string): void {
+  outcomes[label] =
+    (Object.hasOwn(outcomes, label) ? (outcomes[label] ?? 0) : 0) + 1;
 }
 
 function lowerMedian(values: number[]): number | null {
@@ -600,8 +607,12 @@ export async function reportAiUsage(
   const tenantMatches = (tenant: string | null) =>
     !tenantFiltered || tenant === options.tenantId;
 
-  // Outcome labels in scope, indexed by the target they judge. Labels are far
-  // fewer than usage rows, so only rows they target are remembered below.
+  // Outcome labels in scope, indexed by (tenant, target) so a label only ever
+  // counts on rows of its own tenant, the rule listAiUsageOutcomes() applies:
+  // a run id is a free-form tag another tenant can reuse after the label was
+  // recorded. Labels are far fewer than usage rows.
+  const targetKey = (tenant: string | null, id: string) =>
+    JSON.stringify([tenant, id]);
   const outcomesByUsage = new Map<string, string[]>();
   const outcomesByRun = new Map<string, string[]>();
   {
@@ -614,24 +625,23 @@ export async function reportAiUsage(
     }
     const rows = getRows(
       await db.query(
-        `SELECT usage_id, run_id, label FROM _smrt_ai_usage_outcomes
+        `SELECT usage_id, run_id, label, tenant_id FROM _smrt_ai_usage_outcomes
           ${conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''}`,
         ...params,
       ),
     );
     for (const row of rows) {
       const label = String(row.label);
+      const tenant = nullableString(row.tenant_id);
       const usageId = nullableString(row.usage_id);
       const runId = nullableString(row.run_id);
       // A label naming both judges the usage row; the run id is context.
-      if (usageId) {
-        outcomesByUsage.set(usageId, [
-          ...(outcomesByUsage.get(usageId) ?? []),
-          label,
-        ]);
-      } else if (runId) {
-        outcomesByRun.set(runId, [...(outcomesByRun.get(runId) ?? []), label]);
-      }
+      const [map, key] = usageId
+        ? [outcomesByUsage, targetKey(tenant, usageId)]
+        : runId
+          ? [outcomesByRun, targetKey(tenant, runId)]
+          : [null, ''];
+      if (map) map.set(key, [...(map.get(key) ?? []), label]);
     }
   }
 
@@ -697,9 +707,11 @@ export async function reportAiUsage(
         unattributedCalls++;
       }
 
-      const usageLabels = outcomesByUsage.get(id) ?? [];
+      const rowTenant = nullableString(row.tenant_id);
+      const usageLabels = outcomesByUsage.get(targetKey(rowTenant, id)) ?? [];
       const runId = nullableString(row.run_id);
-      const runLabels = runId ? (outcomesByRun.get(runId) ?? []) : [];
+      const runKey = runId ? targetKey(rowTenant, runId) : null;
+      const runLabels = runKey ? (outcomesByRun.get(runKey) ?? []) : [];
 
       for (const acc of [totals, bucket.acc]) {
         const stats = acc.stats;
@@ -716,18 +728,14 @@ export async function reportAiUsage(
         }
         acc.durations.push(Number(row.duration ?? 0));
         if (hasSubstitution(tags)) stats.substitutions++;
-        for (const label of usageLabels) {
-          stats.outcomes[label] = (stats.outcomes[label] ?? 0) + 1;
-        }
+        for (const label of usageLabels) countOutcome(stats.outcomes, label);
         // A run label counts once per bucket containing the run, and once in
         // the totals, however many rows the run has.
-        if (runId && runLabels.length > 0) {
-          const seenKey = `${acc === totals ? '*' : bucketId}\u0000${runId}`;
+        if (runKey && runLabels.length > 0) {
+          const seenKey = `${acc === totals ? '*' : bucketId}\u0000${runKey}`;
           if (!runLabelsCounted.has(seenKey)) {
             runLabelsCounted.add(seenKey);
-            for (const label of runLabels) {
-              stats.outcomes[label] = (stats.outcomes[label] ?? 0) + 1;
-            }
+            for (const label of runLabels) countOutcome(stats.outcomes, label);
           }
         }
       }
