@@ -116,15 +116,17 @@ packaging tool and runtime being launched.
 
 Three files and one channel describe an installed desktop product to the rest
 of the machine. This package defines the files for the installed product
-itself (below). The supervisor rendezvous (`instance.json` and the owner-only
-control channel) and the native credential handoff are separate contracts with
-their own sections.
+itself (below), then the supervisor rendezvous (`instance.json` and the
+owner-only control channel). The native credential handoff is a separate
+contract with its own section.
 
 | Artifact | Written by | Read by | Contains |
 | --- | --- | --- | --- |
 | `sidecar-manifest.json` | bundler | supervisor, `locateInstallation` | what to run (see above) |
 | `smrt-bundle.json` | bundler | `locateInstallation`, launcher, plugin generator | identity and resource-relative layout |
 | `installation.json` | desktop shell, at every start | `locateInstallation` | absolute paths the shell runs from |
+| `instance.json` | desktop shell, on every phase change | `createFileRendezvous` | the running instance: nonce, control endpoint, state, origin |
+| control channel | desktop shell (server) | `createFileRendezvous`, launcher | `status`, `ensure-ready` (owner-only socket or pipe) |
 
 `smrt-bundle.json` is static trusted package content (same trust class as the
 sidecar manifest, sealed by the bundle's code signature). `installation.json`
@@ -141,7 +143,8 @@ diagnostic on every failure.
 ### Errors
 
 Parsers and `locateInstallation` throw `DesktopContractError` with a `code`
-from a closed union (`InstallErrorCode` for this contract). The `message` is
+from a closed union (`InstallErrorCode` for this contract, `RendezvousErrorCode`
+for the rendezvous). The `message` is
 fixed text keyed by the code: it never contains a path, origin, pid or secret,
 so a caught error is safe to log. When a document field was the cause, `field`
 names the schema field (for example `bridge.entry`), never the value.
@@ -158,6 +161,9 @@ The older sidecar manifest parser predates this type and still throws plain
 | `sidecar_mismatch` | the bundle manifest and the sidecar manifest disagree on the Node executable |
 | `invalid_environment`, `unsupported_platform` | `resolveAppLocalDataDir` could not derive a location |
 | `invalid_secret` | `SecretString` was given an unusable value |
+| `invalid_control_message`, `control_message_too_large`, `unsupported_op` | a control-channel message violated the protocol (see below) |
+| `invalid_endpoint`, `untrusted_endpoint` | a control endpoint is malformed, or its directory failed the trust checks |
+| `control_unreachable`, `control_timeout`, `control_aborted`, `control_server_failed` | control-channel transport outcomes |
 
 ### SecretString
 
@@ -367,6 +373,212 @@ lexical (the path rules above), existence and file kind, and reparse-point
 (symlink or junction) rejection; custody relies on the default ACLs of
 `%LOCALAPPDATA%`. Real ACL and SID verification belongs in the native shell.
 This is a documented residual risk, not a guarantee.
+
+### Supervisor rendezvous
+
+A launcher that needs the app running asks `createFileRendezvous` for the
+supervisor's state instead of guessing from pids or ports.
+
+```ts
+import {
+  createFileRendezvous,
+  locateInstallation,
+} from '@happyvertical/smrt-desktop';
+
+const rendezvous = createFileRendezvous({
+  locate: () => locateInstallation({ productId, bundleId }),
+});
+const result = await rendezvous.ensureReady({ timeoutMs: 60_000 });
+if (result.state === 'ready') connectTo(result.origin);
+```
+
+**Authority is the control channel, not a file.** The shell serves an
+owner-only channel (a Unix domain socket on macOS and Linux, a named pipe on
+Windows) and publishes `instance.json` in the private state directory as a
+pointer and a cache. A client trusts an instance only after the channel
+answers `status` with the `instanceNonce` recorded in `instance.json`. It
+never infers liveness from the pid or from a file existing, so a stale record
+left by a crash, a recycled pid or a record written by someone else cannot
+make a dead instance look alive.
+
+**Instance record v1** (`instance.json`, written atomically by the shell with
+the private-file rules above; fixture `examples/instance.json`):
+
+| Field | Meaning |
+| --- | --- |
+| `version` | `1` |
+| `productId`, `bundleId` | identity; must equal the installation's |
+| `instanceNonce` | 32 lowercase hex characters, new for every shell process |
+| `pid` | the shell process id; diagnostic only, never used for liveness |
+| `shellVersion` | semantic version of the shell binary |
+| `startedAt`, `updatedAt` | ISO-8601 UTC; process start and last phase change |
+| `control` | `{kind:'unix', path}` or `{kind:'pipe', name}` |
+| `state` | `starting`, `ready` or `failed` |
+| `origin` | present if and only if `ready`; exactly `http://127.0.0.1:<1..65535>` (no `localhost`, no IPv6, no path, userinfo or leading zeros) |
+| `failure` | present if and only if `failed`; a shell failure code |
+
+The shell rewrites it on every phase change (`ready` only after the
+supervisor's confirmation window). On orderly quit it removes the socket and
+leaves the record, because deleting it would race a newly starting shell: the
+next client finds the endpoint gone, treats the record as stale and starts the
+shell. Clients never write, rename or delete the record, a socket, a lease or
+a lock.
+
+**Endpoint names are unguessable, not well known.** The socket or pipe name
+contains 128 random bits chosen per shell start and is published only inside
+the 0700 private directory (`deriveControlEndpoint`): POSIX
+`<directory>/c-<32 hex>.sock`, Windows
+`\\.\pipe\smrt-<16 hex of sha256(bundleId)>-<32 hex>`. There is no name an
+attacker could squat in advance. `sun_path` is 104 bytes on macOS, so the
+private state directory under `~/Library/Application Support` is normally too
+long for the socket: the shell places it in a short per-user 0700 directory
+(the per-user temp directory on macOS, `$XDG_RUNTIME_DIR` on Linux) and names
+that path in the record. A client accepts any directory that passes the checks
+below, so this is the shell's choice.
+
+**Control protocol v1.** One UTF-8 JSON object per line (`\n`-terminated), at
+most 4096 bytes excluding the terminator, closed schema, duplicate keys
+rejected, unknown `v` or `op` rejected, one request per connection (the server
+closes after its answer). This contract defines two operations; the credential
+handoff adds a third without changing the codec, because operations are data
+(`ControlOpSpec`), a codec is built from a list of them (`createControlCodec`),
+and handlers register in an open registry (`createControlHandlerRegistry`).
+
+| Request | Answer |
+| --- | --- |
+| `{"v":1,"op":"status"}` | the current state, immediately |
+| `{"v":1,"op":"ensure-ready","timeoutMs":N}` | the state once `ready` or `failed`, or `starting` after `N` ms (1 to 600000) |
+
+Success answers are `{"v":1,"ok":true,"state":"ready","instanceNonce":"...",
+"productId":"...","origin":"http://127.0.0.1:N"}`, the same with
+`"state":"starting"` (no origin), or `"state":"failed","code":"<failure code>"`.
+Refusals are `{"v":1,"ok":false,"code":"unsupported_version" |
+"unsupported_op" | "bad_request" | "too_large" | "forbidden" | "internal"}`.
+No answer carries a bearer or any secret.
+
+**Peer identity.** The real check belongs to the Rust shell: it reads the
+peer's credentials before it reads a byte (`SO_PEERCRED` on Linux,
+`getpeereid` on macOS, `GetNamedPipeClientProcessId` plus the token user SID on
+Windows), creates the Windows pipe with `FILE_FLAG_FIRST_PIPE_INSTANCE`,
+`PIPE_REJECT_REMOTE_CLIENTS` and a current-user-only DACL, and creates the
+socket with mode 0600. Node can do none of this: a `net.Socket` cannot report
+its peer's uid or SID, and a client cannot learn who owns the listening end. So
+`sendControlRequest` and the TypeScript reference server
+(`serveControlChannel`) perform no peer verification. What they do instead:
+
+- the reference server refuses to listen unless the socket's directory is a
+  real directory owned by the user with mode 0700, never replaces an existing
+  path, and chmods the socket 0600, so only the same OS user can connect;
+- the client, before connecting, requires the recorded socket's directory to
+  be a real 0700 directory owned by the user and the socket itself to be a
+  socket (not a symlink) owned by the user with no group or other permission
+  bits, and requires the peer to prove it is the recorded instance by echoing
+  the `instanceNonce`;
+- on Windows the TypeScript checks are the pipe name grammar and the nonce;
+  ACL and SID verification live in the shell (finding F8, residual risk).
+
+**Result type.** `status()` and `ensureReady()` resolve with a closed union
+(`RendezvousResult`):
+
+| `state` | Meaning |
+| --- | --- |
+| `ready` | the channel proved the recorded instance and reported `ready`; carries `origin`, `instanceNonce`, `productId` |
+| `starting` | `status()` only: the instance is up and not ready yet |
+| `failed` | the instance or this client failed; carries a `code` (below) |
+| `not_installed` | `locate()` found no installed product |
+| `not_running` | no live instance (`status()`, or `ensureReady({start:false})`) |
+| `untrusted_state` | the installation, record, directory, socket or peer failed a custody or protocol check; nothing was started |
+| `timeout` | not ready within the budget |
+
+Cancelling with the `AbortSignal` rejects with the signal's reason. A result
+never contains a bearer, a pid or a path.
+
+**Failure codes** (`RendezvousFailureCode`, closed). The Rust supervisor today
+reports `Failed(String)`, free text for the tray. A client must not branch on
+it, so the channel and `instance.json` carry a code. The Rust follow-up adds a
+`FailureCode` enum with these exact wire names; until then
+`failureCodeFromSupervisorMessage` maps the current texts for Node-based shells
+and test doubles:
+
+| Code | Reported by | Meaning (current supervisor text it replaces) |
+| --- | --- | --- |
+| `lease_held` | shell | another live process holds the runtime writer lease or operation lock ("...writer lease or operation lock") |
+| `restart_exhausted` | shell | restart budget spent ("gave up after N restarts"); only the tray Restart recovers |
+| `sidecar_missing` | shell | the sidecar could not be launched ("could not start the sidecar") |
+| `health_failed` | shell | never healthy, or the health route redirects ("did not become healthy", "health route redirects") |
+| `port_unavailable` | shell | no loopback port could be selected or bound ("port was taken", "could not select a loopback port") |
+| `stop_unconfirmed` | shell | the previous child's exit could not be confirmed ("could not be stopped") |
+| `internal_error` | shell | the supervisor itself failed ("internal supervisor error") |
+| `unknown` | shell | anything else |
+| `launch_failed` | client | the client could not start the shell binary |
+| `instance_mismatch` | client | the channel answered for another instance or product than recorded, or the record and channel disagree on state or origin (after one re-read) |
+| `identity_mismatch` | client | the installed product's identity differs from the record (benign after an update until the app restarts) |
+| `unsupported_contract` | client | a record or channel speaks a contract version this client rejects |
+
+**`ensureReady({ timeoutMs = 60000, start = true, signal })`:**
+
+1. `locate()` the installation (contract a). `not_installed` and the locate
+   errors map to the results above.
+2. Read `instance.json` with the private-file rules. Absent: go to step 5.
+3. Vet the endpoint (directory, socket type, owner, mode). Failure:
+   `untrusted_state`. An untrusted record means someone tampered with the
+   private directory, so no second shell is started on top of it.
+4. Ask `status`. No listener (missing, refused, no answer) means the record is
+   stale: go to step 5. A nonce, product or origin disagreement is re-read
+   once, then `instance_mismatch`. `ready` is returned. `failed(code)` is
+   returned and never retried: a live shell that failed is not a reason to
+   start another. `starting` waits with `ensure-ready` for the remaining
+   budget.
+5. With `start: false`: `not_running`. Otherwise spawn the shell executable
+   once with `--smrt-background` (no shell, detached, ignored stdio, hidden
+   window, `cwd` the install root, environment limited to an allowlist such as
+   `HOME`, `LOCALAPPDATA`, `XDG_*`, `DBUS_SESSION_BUS_ADDRESS`, `DISPLAY`;
+   never the launcher's environment wholesale), then poll with backoff until
+   `ready`, `failed`, `untrusted_state`, the budget (`timeout`) or the signal.
+
+**One writer.** A client only reads, talks to the channel and spawns the shell
+binary. Racing launchers may each spawn the shell: the single-instance plugin
+forwards the second start to the first and exits; if the plugin cannot run
+(for example Linux without a D-Bus session bus) the second shell's sidecar
+fails `lease_held` against the runtime writer lease and that shell ends
+`failed` without writing the record. The runtime lease, not this contract, is
+the backstop, and a shell must not write `instance.json` unless it holds the
+single-instance lock. Within one `createFileRendezvous` object concurrent calls
+share a single in-flight spawn.
+
+**What a client must never do:** delete or "repair" `instance.json`, a socket,
+`writer.lease` or `operation.lock`; retry a `failed(lease_held)`; infer
+liveness from a pid; or put anything from the channel into a log line beyond
+the closed result states.
+
+**Test double for the launcher.** The reference server is exported:
+`createReferenceSupervisor` (a pure `starting` / `ready` / `failed` state
+machine), `createReferenceRegistry`, `startReferenceShell` (binds a fresh
+endpoint, serves `status` and `ensure-ready`, republishes `instance.json` on
+every phase change and leaves it on `close()`), and `serveControlChannel` with a
+handler registry. It models the Rust shell's observable behavior, not its
+peer checks or its single-instance lock.
+
+### Mapping to `LauncherProvider`
+
+<!-- TODO(#4796, contract c): add the credential parts of this mapping
+(`acquireCredential` via the control channel and the fd 3 handoff) once the
+credential handoff contract is integrated. Only the rendezvous half is
+documented here. -->
+
+`connectInstance` maps a `RendezvousResult` from
+`createFileRendezvous(...).ensureReady()`:
+
+| Result | `LauncherProvider` outcome |
+| --- | --- |
+| `ready` | `{ origin }`; keep `instanceNonce` for the credential request |
+| `not_installed` | `missing_install` |
+| `failed` with `unsupported_contract` | `unsupported_contract` |
+| every other `failed`, `not_running`, `untrusted_state`, `timeout` | `stale_instance` |
+
+`unexpected_endpoint` cannot arise from a `ready` result: the origin grammar
+(`http://127.0.0.1:<port>`) is enforced by the record and protocol parsers, and
+a violation surfaces as `untrusted_state`.
 
 ### Versioning
 

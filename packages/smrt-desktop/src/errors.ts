@@ -36,13 +36,36 @@ const INSTALL_ERROR_MESSAGES = {
   unsupported_platform: 'Desktop platform is not supported',
 } as const;
 
+/**
+ * Contract (b): the supervisor rendezvous (`instance.json` and the control
+ * channel). Document-level failures reuse the shared `invalid_json`,
+ * `duplicate_keys`, `invalid_document`, `invalid_field` and
+ * `unsupported_contract` codes above.
+ */
+const RENDEZVOUS_ERROR_MESSAGES = {
+  invalid_control_message:
+    'Control channel message must be a single JSON object with exactly the documented fields',
+  control_message_too_large: 'Control channel message exceeds the size limit',
+  unsupported_op: 'Control channel operation is not supported',
+  invalid_endpoint: 'Control channel endpoint is not valid',
+  untrusted_endpoint: 'Control channel endpoint failed the trust checks',
+  control_unreachable: 'Control channel could not be reached',
+  control_timeout: 'Control channel did not answer in time',
+  control_aborted: 'Control channel request was aborted',
+  control_server_failed: 'Control channel server could not be started',
+} as const;
+
 const ERROR_MESSAGES = {
   ...COMMON_ERROR_MESSAGES,
   ...INSTALL_ERROR_MESSAGES,
+  ...RENDEZVOUS_ERROR_MESSAGES,
 } as const;
 
 /** Closed set of codes for contract (a), the installed-product bundle. */
 export type InstallErrorCode = keyof typeof INSTALL_ERROR_MESSAGES;
+
+/** Closed set of codes for contract (b), the supervisor rendezvous. */
+export type RendezvousErrorCode = keyof typeof RENDEZVOUS_ERROR_MESSAGES;
 
 /** Every code a `DesktopContractError` can carry. */
 export type DesktopContractErrorCode = keyof typeof ERROR_MESSAGES;
