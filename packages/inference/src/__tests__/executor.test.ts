@@ -9,6 +9,7 @@ import {
   RateLimitError,
 } from '@happyvertical/ai';
 import {
+  InferenceBindingError,
   type InferenceCallOptions,
   type InferenceConfig,
   type InferenceExecutionContext,
@@ -560,6 +561,75 @@ describe('chain executor', () => {
     await expect(h.client.message('hi')).rejects.toThrow(
       /resolution\.good points at unknown alias "missing"/,
     );
+  });
+
+  it('advances past a candidate core refuses to bind', async () => {
+    const config = chain('a', 'b');
+    const calls: string[] = [];
+    const client = createChainClient(
+      {
+        request: { tier: 'great' },
+        resolution: resolveInferenceFromConfig({ tier: 'great' }, config),
+        config,
+        clientFor: async (target) => {
+          if (target.model === 'a') {
+            throw new InferenceBindingError('HAVE_AI_API_KEY is set');
+          }
+          return {
+            message: async () => {
+              calls.push(String(target.model));
+              return 'ok';
+            },
+          };
+        },
+        resolveTier: async (tier) =>
+          resolveInferenceFromConfig({ tier }, config),
+        recordUsage: async () => {},
+      },
+      { sleep: async () => {} },
+    );
+    await expect(client.message('hi')).resolves.toBe('ok');
+    expect(calls).toEqual(['b']);
+  });
+
+  it('tries the same route again with a different literal key', async () => {
+    const keys: unknown[] = [];
+    const h = harness(
+      {},
+      {},
+      {
+        resolution: {
+          tierResolved: 'great',
+          via: 'resolver',
+          target: {
+            candidates: [
+              {
+                provider: 'openai',
+                model: 'm',
+                baseUrl: 'https://x.example/v1',
+                apiKey: 'sk-one',
+              },
+              {
+                provider: 'openai',
+                model: 'm',
+                baseUrl: 'https://x.example/v1',
+                apiKey: 'sk-two',
+              },
+            ],
+          },
+        },
+        clientFor: async (target) => ({
+          message: async () => {
+            keys.push(target.apiKey);
+            if (target.apiKey === 'sk-one')
+              throw new AuthenticationError('openai');
+            return 'second key answered';
+          },
+        }),
+      },
+    );
+    await expect(h.client.message('hi')).resolves.toBe('second key answered');
+    expect(keys).toEqual(['sk-one', 'sk-two']);
   });
 
   it('keeps a recordUsage failure from masking the call error', async () => {

@@ -58,7 +58,8 @@ configured client. `getAiClient(tier)` hands the executor an
 `minimumTier`, `allowPartial`, `clientFor(target)` (a `single` client with
 the pair rules and the usage pipeline), `resolveTier(tier)`, and
 `recordUsage()` (a zero-token row through the same usage handlers, for a call
-nothing answered). `AiOperationOptions.minimumTier` / `allowPartial` are
+nothing answered). Pair-rule refusals throw `InferenceBindingError`
+(`INFERENCE_TARGET_UNBOUND`) so an executor classifies them by code. `AiOperationOptions.minimumTier` / `allowPartial` are
 stripped before `ai.message()`; `prepareAiOperation()` applies a target's
 `model`/`params` only for `single` targets. Later kinds (`fusion`, #4753)
 register into the same seam; consumers ignore members they do not

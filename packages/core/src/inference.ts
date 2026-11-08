@@ -17,6 +17,7 @@
 
 import { getSmrtModuleConfig } from './config/global-config.js';
 import { config as globalSignalConfig } from './config.js';
+import { SmrtError } from './smrt-error.js';
 
 /** Ordered quality tiers, cheapest first. `fast` is deliberately not a tier. */
 export const INFERENCE_TIERS = ['cheap', 'good', 'great', 'best'] as const;
@@ -606,4 +607,19 @@ export function inferenceExecutorFor(
     );
   }
   return executor;
+}
+
+/** Code of {@link InferenceBindingError}. */
+export const INFERENCE_TARGET_UNBOUND = 'INFERENCE_TARGET_UNBOUND';
+
+/**
+ * A tier target core refuses to bind before any request is sent: an unbound
+ * endpoint/key pair, another provider while `HAVE_AI_*` is set, or an
+ * injected client asked for a new endpoint. Typed so a chain executor can
+ * classify it (as `credential`) without reading the message (#4752).
+ */
+export class InferenceBindingError extends SmrtError {
+  constructor(message: string) {
+    super(message, INFERENCE_TARGET_UNBOUND, 'configuration');
+  }
 }

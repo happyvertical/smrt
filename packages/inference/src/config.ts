@@ -348,13 +348,8 @@ export function candidateToStep(
       label,
       target,
       ...(params ? { params } : {}),
-      identity: JSON.stringify([
-        'preset',
-        preset,
-        model,
-        target.baseUrl,
-        keyEnv,
-      ]),
+      // Call-local only, never logged: two keys are two routes.
+      identity: JSON.stringify(['preset', preset, model, target.baseUrl, key]),
       ...(missingKey || presetNeedsKey
         ? { unavailable: 'credential' as const }
         : {}),
@@ -376,7 +371,8 @@ export function candidateToStep(
     label,
     target,
     ...(params ? { params } : {}),
-    identity: JSON.stringify([provider, model, baseUrl, keyEnv]),
+    // Call-local only, never logged: two keys are two routes.
+    identity: JSON.stringify([provider, model, baseUrl, key ?? keyEnv]),
     ...(missingKey ? { unavailable: 'credential' as const } : {}),
     ...(alias ? { alias } : {}),
   };
