@@ -234,10 +234,13 @@ describe('NotificationOutboxService', () => {
       );
       const outbox = service({ transport, principal });
       const reads = vi.spyOn(NotificationDeliveryCollection.prototype, 'list');
+      const discoverySql = vi.spyOn(db, 'query');
       await expect(
         outbox.dispatchDue({ tenantIds: [tenantA, tenantB] }),
       ).rejects.toThrow(NotificationOutboxDeniedError);
       expect(reads).not.toHaveBeenCalled();
+      expect(discoverySql).not.toHaveBeenCalled();
+      discoverySql.mockRestore();
       expect((await reload(own.delivery)).attempts).toBe(0);
       expect((await reload(foreign.delivery)).attempts).toBe(0);
       const denied = service({
@@ -816,6 +819,28 @@ describe('NotificationOutboxService', () => {
       const rows = await deliveriesIn(tenantA);
       expect(rows.map((row) => row.status)).toEqual(['sent', 'sent']);
       for (const row of rows) expect(await messagesFor(row)).toHaveLength(1);
+    });
+
+    it('attempts each delivery only once per sweep even when a zero-delay retry moves to a later page', async () => {
+      const transport = fakeTransport(() => ({
+        status: 'rejected',
+        error: 'Definite refusal',
+        retryable: true,
+      }));
+      const outbox = service({ transport, retryDelayMs: () => 0 });
+      const { delivery } = await outbox.enqueueEmail(
+        input({ notBefore: new Date(clock.getTime() - 1000) }),
+      );
+      const report = await outbox.dispatchDue({
+        tenantIds: [tenantA],
+        limit: 2,
+      });
+      expect(report.leased).toBe(1);
+      expect(transport.calls).toHaveLength(1);
+      expect(await reload(delivery)).toMatchObject({
+        status: 'pending',
+        attempts: 1,
+      });
     });
 
     it('retries provider failures with backoff, then fails for good', async () => {

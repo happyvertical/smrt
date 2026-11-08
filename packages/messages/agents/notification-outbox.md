@@ -260,3 +260,26 @@ handoff authority and throws before protected operations or maintenance; it does
 not install a global context, skip durable guards or approximate hashing. Public
 server APIs and canonical persisted association/lease/one-use checks are unchanged.
 The owning dist browser bundle gate must remain green without a ratchet waiver.
+
+## Blocked-prefix liveness and final-write protection
+
+The dispatch limit bounds acquired leases, rather than blocked diagnostics.
+Discovery walks bounded pages ordered by physical due/lease timestamp and UUID,
+recovering expired leases before pending rows. Its cursor captures timestamp text
+in the database before hydration, preserving PostgreSQL microseconds. A blocked
+policy or Profile cannot repeatedly fill the first page and starve eligible mail
+in its own tenant or another authorized scope. Explicit delivery selectors and
+pre-discovery tenant authorization apply to every page. Repeated identical
+blocked errors do not rewrite the row; no backoff, cancellation or lease is added,
+so a currently authorized configured host can deliver immediately.
+
+Public delivery saves bind their checked snapshot through Core's mandatory
+`CollectionInterceptor.writeGuard` at the final persistence operation. An ordinary
+save cannot adopt a protected natural identity inserted after its initial lookup.
+Protected saves bind tenant, typed recipient, source, policy/binding, content and
+lifecycle version/transition; a concurrent transition wins without being undone.
+The private per-instance snapshot exists only during the save, and concurrent
+saves of one instance are refused. Existing revision/sync options, ordinary
+natural-key upsert and identical protected clones keep their normal contracts.
+SQLite uses Core's existing serialized compare/write; PostgreSQL places the
+mandatory predicate on its final UPDATE. No runtime schema or provider changes.

@@ -457,6 +457,11 @@ export class ScheduleRunner extends EventEmitter {
       db,
       String(schedule.id),
       schedule.tenant_id == null ? null : String(schedule.tenant_id),
+      {
+        objectType: String(schedule.agent_type),
+        objectId: schedule.agent_id == null ? null : String(schedule.agent_id),
+        method: String(schedule.method || 'run'),
+      },
     );
   }
 

@@ -109,7 +109,21 @@ delayed-retry and running occurrences count toward `maxConcurrent`, including
 values greater than 1. Full capacity denies without resetting attempts, changing
 status or reassigning the key. A later retry can proceed once a slot is free.
 Running/completed jobs cannot be retried. Missing/foreign/malformed persisted
-schedule associations fail closed.
+canonical occurrence associations fail closed.
+
+`_scheduleId` alone is compatibility metadata shared by independent producers,
+not an AgentSchedule discriminator. Persisted `_scheduledFor` or
+`_scheduleAdmission` marks a canonical agent occurrence and requires its
+same-tenant schedule even if that schedule's target was later reconfigured.
+A legacy job without those markers occupies agent capacity only when its stored
+execution type/object ID/method matches the actual same-tenant AgentSchedule.
+Other producer metadata neither requires an agent table nor changes an unrelated
+schedule, including a coincident ID. Table availability is checked portably on
+the caller executor before SQL, without catching a missing-table error inside
+an already-aborted PostgreSQL transaction. Admission/reconciliation count marked
+prior occurrences across target reconfiguration and matching legacy agent jobs,
+not unrelated producers' same-named metadata. Retry rechecks the canonical stored
+arguments, tenant, target and association after its locks before lifecycle writes.
 
 The transition changes lifecycle fields only, then hydrates the authoritative
 row/revision back into the model, including keyed retries. It preserves the exact

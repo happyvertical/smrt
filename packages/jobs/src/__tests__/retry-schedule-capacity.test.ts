@@ -248,6 +248,130 @@ for (const type of ['sqlite', 'duckdb'] as const) {
       await Promise.allSettled([old.retry(), poll()]);
       expect(await active()).toHaveLength(1);
     });
+    it.each([
+      1, 2,
+    ])('counts matching legacy agent jobs at cap%s without occurrence markers', async (cap) => {
+      const { jobs, old, fresh, active } = await fixture({ cap });
+      const legacy: SmrtJob[] = [];
+      for (let index = 0; index < cap; index++)
+        legacy.push(
+          await jobs.enqueueJob({
+            tenantId: tenant,
+            objectType: old.objectType,
+            objectId: old.objectId,
+            method: old.method,
+            args: { _scheduleId: scheduleId, legacy: index },
+          }),
+        );
+      await expect(old.retry()).rejects.toThrow(/capacity/i);
+      expect((await fresh(old))?.status).toBe('cancelled');
+      await legacy[0].cancel();
+      await old.retry();
+      expect((await active()).length).toBe(cap);
+      expect(verifyScheduleAdmission(old, signer)).toBe(true);
+    });
+    it.each([
+      { objectType: 'UnrelatedTarget', objectId: null, method: 'run' },
+      { objectType: 'Probe', objectId: 'other-object', method: 'run' },
+      { objectType: 'Probe', objectId: null, method: 'otherMethod' },
+    ])('does not count unrelated legacy metadata as this agent target: %j', async (target) => {
+      const { jobs, old, active } = await fixture();
+      await jobs.enqueueJob({
+        tenantId: tenant,
+        ...target,
+        args: { _scheduleId: scheduleId },
+      });
+      await old.retry();
+      expect((await active()).length).toBe(2);
+      expect(verifyScheduleAdmission(old, signer)).toBe(true);
+    });
+    it('keeps canonical earlier occurrences occupying a schedule after its target is retargeted', async () => {
+      const { jobs, old, poll, next, active } = await fixture();
+      await old.retry();
+      await db.query(
+        "UPDATE _smrt_agent_schedules SET agent_type='DifferentAgent', method='otherRun', next_run='2026-01-02T00:00:00.000Z'",
+      );
+      await poll();
+      expect((await active()).map((job) => job.id)).toEqual([old.id]);
+      await old.cancel();
+      const newer = await next();
+      expect(newer.objectType).toBe('DifferentAgent');
+      await expect(old.retry()).rejects.toThrow(/capacity/i);
+      await newer.cancel();
+      await old.retry();
+      expect(old.objectType).toBe('Probe');
+      expect(old.method).toBe('run');
+      expect(verifyScheduleAdmission(old, signer)).toBe(true);
+      expect((await jobs.get({ id: old.id }, { cache: false }))?.args).toEqual(
+        old.args,
+      );
+    });
+    it.each([
+      'table',
+      'row',
+    ])('fails closed when a genuine marked occurrence loses its canonical schedule %s', async (missing) => {
+      const { old, fresh } = await fixture();
+      if (missing === 'table')
+        await db.query('DROP TABLE _smrt_agent_schedules');
+      else await db.query('DELETE FROM _smrt_agent_schedules');
+      await expect(old.retry()).rejects.toThrow(/association is unavailable/);
+      expect((await fresh(old))?.status).toBe('cancelled');
+    });
+    it.each([
+      'target',
+      'arguments',
+      'association',
+    ])('rejects persisted %s changes between the initial read and the final job lock', async (changed) => {
+      const { old, fresh } = await fixture({ keyed: true });
+      if (!db.transaction) throw new Error('transaction support required');
+      const original = JSON.stringify(old.args);
+      const transaction = db.transaction.bind(db);
+      db.transaction = async (work) =>
+        transaction(async (tx) => {
+          let injected = false;
+          return work(
+            new Proxy(tx, {
+              get(target, key) {
+                if (key === 'query')
+                  return async (sql: string, ...params: unknown[]) => {
+                    if (
+                      !injected &&
+                      /^\s*UPDATE _smrt_jobs SET id = id/.test(sql)
+                    ) {
+                      injected = true;
+                      // Synthetic concurrent business-target/args write, never a job lifecycle change.
+                      if (changed === 'target')
+                        await target.query(
+                          'UPDATE _smrt_jobs SET object_type = ? WHERE id = ?',
+                          'DifferentAgent',
+                          old.id,
+                        );
+                      else
+                        await target.query(
+                          'UPDATE _smrt_jobs SET args = ? WHERE id = ?',
+                          JSON.stringify({
+                            ...old.args,
+                            ...(changed === 'arguments'
+                              ? { consent: { projectId: 'changed' } }
+                              : { _scheduleId: 'changed-association' }),
+                          }),
+                          old.id,
+                        );
+                    }
+                    return target.query(sql, ...params);
+                  };
+                const value = Reflect.get(target, key);
+                return typeof value === 'function' ? value.bind(target) : value;
+              },
+            }),
+          );
+        });
+      await expect(old.retry()).rejects.toThrow(/association changed/);
+      const stored = await fresh(old);
+      expect(stored?.status).toBe('cancelled');
+      expect(stored?.objectType).toBe('Probe');
+      expect(JSON.stringify(stored?.args)).toBe(original);
+    });
     it('joins the caller transaction without nesting and rolls back lifecycle/capacity/key changes', async () => {
       const { old, fresh } = await fixture({ keyed: true });
       if (!db.transaction) throw new Error('transaction support required');

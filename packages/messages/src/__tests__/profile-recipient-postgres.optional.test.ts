@@ -34,7 +34,18 @@ describePostgres(
         name: `profile_${crypto.randomUUID().replaceAll('-', '')}`,
         postgresSafe: false,
       });
-      return { db };
+      const { getDatabase } =
+        await vi.importActual<typeof import('@happyvertical/sql')>(
+          '@happyvertical/sql',
+        );
+      const raceDb = scratch.track(
+        await getDatabase({
+          type: 'postgres',
+          url: scratch.url(),
+          cache: false,
+        }),
+      );
+      return { db, raceDb };
     }, 'postgres');
   },
 );

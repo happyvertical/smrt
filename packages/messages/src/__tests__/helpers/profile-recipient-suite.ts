@@ -1,13 +1,15 @@
+import { GlobalInterceptors } from '@happyvertical/smrt-core';
 import { Profile, ProfileType } from '@happyvertical/smrt-profiles';
 import { withTenant } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NotificationDeliveryCollection } from '../../collections/NotificationDeliveryCollection.js';
 import {
   assertNotificationProfileRecipientSchema,
   migrateNotificationProfileRecipients,
   planNotificationProfileRecipients,
 } from '../../migrations/profileRecipients.js';
+import { Email } from '../../models/Email.js';
 import { EmailAccount } from '../../models/EmailAccount.js';
 import { NotificationDelivery } from '../../models/NotificationDelivery.js';
 import { messagingPrincipalFromPermissions } from '../../permissions.js';
@@ -15,6 +17,8 @@ import {
   type NotificationEmailInput,
   type NotificationOutboxOptions,
   NotificationOutboxService,
+  notificationDeliveryCorrelationId,
+  notificationDeliveryMessageId,
 } from '../../services/NotificationOutboxService.js';
 
 const tenant = crypto.randomUUID(),
@@ -24,12 +28,16 @@ const policy = 'profile:test.contact-pdf.v1';
 export function defineProfileRecipientSuite(
   createDatabase: () => Promise<{
     db: DatabaseInterface;
+    raceDb?: DatabaseInterface;
     cleanup?: () => Promise<void>;
   }>,
   engine: 'sqlite' | 'postgres',
 ) {
   describe('typed external contact notification recipients', () => {
-    let db: DatabaseInterface, contact: Profile, sender: string;
+    let db: DatabaseInterface,
+      raceDb: DatabaseInterface,
+      contact: Profile,
+      sender: string;
     let cleanup: (() => Promise<void>) | undefined;
     const calls: string[] = [];
     let allowed = true;
@@ -114,6 +122,7 @@ export function defineProfileRecipientSuite(
     beforeEach(async () => {
       const context = await createDatabase();
       db = context.db;
+      raceDb = context.raceDb ?? db;
       cleanup = context.cleanup;
       contact = await profile();
       sender = await withTenant({ tenantId: tenant }, async () => {
@@ -170,6 +179,180 @@ export function defineProfileRecipientSuite(
       });
       expect(calls).toEqual([a.delivery.id]);
     });
+    it.each([
+      ['pending', 'same'],
+      ['pending', 'system'],
+      ['pending', 'explicit'],
+      ['expired', 'same'],
+      ['expired', 'system'],
+      ['expired', 'explicit'],
+    ] as const)('pages past a blocked %s prefix in %s tenant discovery without consuming the lease limit', async (phase, scope) => {
+      await migrateNotificationProfileRecipients(db, engine);
+      const now = new Date('2026-11-05T12:00:00.000Z');
+      const owner = service({ principal: undefined, now: () => now });
+      const blocked: NotificationDelivery[] = [];
+      for (let i = 0; i < 5; i++) {
+        const { delivery } = await owner.enqueueEmail(
+          input({
+            sourceRef: `blocked-prefix:${i}`,
+            notBefore: new Date(now.getTime() - 1000),
+          }),
+        );
+        if (phase === 'expired') {
+          await withTenant({ tenantId: tenant }, () =>
+            delivery.transition({
+              status: 'sending',
+              attempts: 1,
+              leaseToken: crypto.randomUUID(),
+              leaseExpiresAt: new Date(now.getTime() - 1000),
+            }),
+          );
+        }
+        // Equal and distinct sub-ms physical values must survive cursor capture.
+        // Both dialects execute this; PG stores the full six-digit fraction.
+        const column =
+          phase === 'expired' ? 'lease_expires_at' : 'next_attempt_at';
+        await db.query(
+          `UPDATE "${delivery.tableName}" SET ${column}=? WHERE id=? AND tenant_id=?`,
+          i < 3 ? '2026-11-05T11:59:59.000123Z' : '2026-11-05T11:59:59.000789Z',
+          delivery.id,
+          tenant,
+        );
+        blocked.push(delivery);
+      }
+      const ordinaryTenant = scope === 'same' ? tenant : other;
+      let ordinarySender = sender;
+      if (ordinaryTenant === other) {
+        ordinarySender = await withTenant({ tenantId: other }, async () => {
+          const account = new EmailAccount({
+            db,
+            tenantId: other,
+            name: 'Other fixture',
+            providerType: 'smtp',
+            isActive: true,
+          });
+          await account.initialize();
+          await account.save();
+          return account.id!;
+        });
+      }
+      const ordinary = await service({
+        principal: undefined,
+        now: () => now,
+        resolveSenderAccountId: () => ordinarySender,
+      }).enqueueEmail(
+        input({
+          tenantId: ordinaryTenant,
+          recipientProfileId: undefined,
+          recipientUserId: user,
+          kind: 'ordinary',
+          requiredDispatchPolicy: undefined,
+          dispatchPolicyBinding: undefined,
+          sourceRef: 'after-blocked-prefix',
+        }),
+      );
+      const unconfigured = service({
+        principal: undefined,
+        now: () => now,
+        dispatchPolicies: {},
+      });
+      const report = await unconfigured.dispatchDue({
+        limit: 2,
+        ...(scope === 'system'
+          ? {}
+          : { tenantIds: scope === 'same' ? [tenant] : [tenant, other] }),
+      });
+      expect(report.leased).toBe(1);
+      expect(
+        report.outcomes
+          .filter((row) => row.outcome === 'blocked')
+          .map((row) => row.deliveryId)
+          .sort(),
+      ).toEqual(blocked.map((row) => row.id!).sort());
+      expect(calls).toEqual([ordinary.delivery.id]);
+      const collection = await NotificationDeliveryCollection.create({ db });
+      const snapshots = await withTenant({ tenantId: tenant }, () =>
+        collection.list({ where: { tenantId: tenant } }),
+      );
+      for (const row of snapshots.filter((row) =>
+        blocked.some((b) => b.id === row.id),
+      )) {
+        expect(row.attempts).toBe(phase === 'expired' ? 1 : 0);
+        expect(row.status).toBe(phase === 'expired' ? 'sending' : 'pending');
+        expect(row.handedOffAt).toBeNull();
+      }
+      // Explicit IDs keep detectable blocked outcomes, but no identical diagnostic write.
+      const repeat = await unconfigured.dispatchDue({
+        tenantIds: [tenant],
+        deliveryIds: blocked.map((row) => row.id!),
+        limit: 2,
+      });
+      expect(repeat.leased).toBe(0);
+      expect(repeat.outcomes).toHaveLength(blocked.length);
+      const repeated = await withTenant({ tenantId: tenant }, () =>
+        collection.list({ where: { tenantId: tenant } }),
+      );
+      expect(repeated.map((row) => [row.id, row.stateVersion]).sort()).toEqual(
+        snapshots.map((row) => [row.id, row.stateVersion]).sort(),
+      );
+      // No backoff/cancellation: a host with current authority can deliver immediately.
+      await owner.dispatchDue({
+        tenantIds: [tenant],
+        deliveryIds: [blocked[0].id!],
+        limit: 1,
+      });
+      expect(calls).toEqual([ordinary.delivery.id, blocked[0].id]);
+    });
+
+    it('pages past revoked Profile recipients and reauthorizes after authority returns', async () => {
+      await migrateNotificationProfileRecipients(db, engine);
+      const owner = service();
+      const blocked: NotificationDelivery[] = [];
+      for (let i = 0; i < 5; i++)
+        blocked.push(
+          (
+            await owner.enqueueEmail(
+              input({
+                sourceRef: `revoked-prefix:${i}`,
+                notBefore: new Date(1),
+              }),
+            )
+          ).delivery,
+        );
+      const ordinary = await owner.enqueueEmail(
+        input({
+          recipientProfileId: undefined,
+          recipientUserId: user,
+          kind: 'ordinary',
+          requiredDispatchPolicy: undefined,
+          dispatchPolicyBinding: undefined,
+          sourceRef: 'ordinary-after-revocation',
+        }),
+      );
+      allowed = false;
+      const report = await owner.dispatchDue({ tenantIds: [tenant], limit: 2 });
+      expect(report.leased).toBe(1);
+      expect(
+        report.outcomes.filter((row) => row.outcome === 'blocked'),
+      ).toHaveLength(5);
+      expect(calls).toEqual([ordinary.delivery.id]);
+      const rows = await withTenant({ tenantId: tenant }, async () =>
+        (await NotificationDeliveryCollection.create({ db })).list({
+          where: { id: blocked.map((row) => row.id!) },
+        }),
+      );
+      expect(
+        rows.every((row) => row.attempts === 0 && row.messageId === null),
+      ).toBe(true);
+      allowed = true;
+      await owner.dispatchDue({
+        tenantIds: [tenant],
+        deliveryIds: [blocked[0].id!],
+        limit: 1,
+      });
+      expect(calls).toEqual([ordinary.delivery.id, blocked[0].id]);
+    });
+
     it('does not require profile maintenance for legacy user enqueue, including concurrent replay', async () => {
       const outbox = service();
       const value = input({
@@ -259,6 +442,316 @@ export function defineProfileRecipientSuite(
       expect(rows[0].delivery.id).toBe(rows[1].delivery.id);
       expect(rows[2].delivery.id).not.toBe(rows[0].delivery.id);
     });
+    it('refuses ordinary late natural-key adoption after a second executor inserts protected intent', async () => {
+      const sourceRef = 'race:protected-late-insert';
+      const approved = new NotificationDelivery({
+        db: raceDb,
+        id: crypto.randomUUID(),
+        tenantId: tenant,
+        recipientUserId: user,
+        sourceRef,
+        kind: 'protected:fixture.user-pdf',
+        requiredDispatchPolicy: 'fixture.user-pdf',
+        dispatchPolicyBinding: '{"version":1,"digest":"approved"}',
+        subject: 'Approved immutable PDF',
+        textBody: 'Approved body',
+        href: 'https://local.example.test/invoice/one',
+        recipientAddress: 'approved@example.test',
+        accountId: sender,
+      });
+      const ordinary = new NotificationDelivery({
+        db,
+        id: crypto.randomUUID(),
+        tenantId: tenant,
+        recipientUserId: user,
+        sourceRef,
+        kind: 'ordinary',
+        subject: 'Unapproved body',
+        textBody: 'Unapproved',
+        href: 'https://local.example.test/other',
+        recipientAddress: 'unapproved@example.test',
+        accountId: sender,
+      });
+      expect(raceDb).not.toBe(db);
+      await withTenant({ tenantId: tenant }, async () => {
+        await approved.initialize();
+        await ordinary.initialize();
+      });
+      const originalQuery = db.query.bind(db);
+      let inserted = false;
+      const spy = vi
+        .spyOn(db, 'query')
+        .mockImplementation(async (sql, ...params) => {
+          const result = await originalQuery(sql, ...params);
+          if (
+            !inserted &&
+            sql.startsWith(
+              'SELECT * FROM notification_deliveries WHERE tenant_id=',
+            )
+          ) {
+            inserted = true;
+            await withTenant({ tenantId: tenant }, async () => {
+              await approved.save();
+              await approved.transition({
+                status: 'uncertain',
+                attempts: 3,
+                messageId: null,
+                lastError: 'Preserve provider uncertainty',
+                handedOffAt: new Date('2026-11-05T12:00:00Z'),
+              });
+            });
+            // Prove this is a committed second executor on the SAME database,
+            // not another isolated schema-template instance from Vitest's factory.
+            expect(
+              (
+                await originalQuery(
+                  'SELECT id FROM notification_deliveries WHERE id=?',
+                  approved.id,
+                )
+              ).rows,
+            ).toHaveLength(1);
+          }
+          return result;
+        });
+      let saveError: unknown;
+      try {
+        await withTenant({ tenantId: tenant }, () => ordinary.save()).catch(
+          (error) => {
+            saveError = error;
+          },
+        );
+      } finally {
+        spy.mockRestore();
+      }
+      expect(inserted).toBe(true);
+      expect(approved.id).not.toBeNull();
+      const stored = await withTenant({ tenantId: tenant }, async () =>
+        (await NotificationDeliveryCollection.create({ db })).get(approved.id!),
+      );
+      expect(stored).toMatchObject({
+        id: approved.id,
+        kind: approved.kind,
+        requiredDispatchPolicy: approved.requiredDispatchPolicy,
+        recipientAddress: 'approved@example.test',
+        subject: 'Approved immutable PDF',
+        status: 'uncertain',
+        attempts: 3,
+        stateVersion: 1,
+        lastError: 'Preserve provider uncertainty',
+      });
+      const binding =
+        typeof stored!.dispatchPolicyBinding === 'string'
+          ? JSON.parse(stored!.dispatchPolicyBinding)
+          : stored!.dispatchPolicyBinding;
+      expect(binding).toEqual({ version: 1, digest: 'approved' });
+      expect(saveError).toBeInstanceOf(Error);
+      expect(ordinary.id).not.toBe(approved.id);
+      expect(
+        (
+          await service({
+            principal: undefined,
+            dispatchPolicies: {},
+          }).dispatchDue({ tenantIds: [tenant], deliveryIds: [approved.id!] })
+        ).leased,
+      ).toBe(0);
+      const canonical = new Email({
+        db,
+        tenantId: tenant,
+        id: await notificationDeliveryMessageId(approved.id!),
+        correlationId: notificationDeliveryCorrelationId(approved.id!),
+        accountId: sender,
+        subject: 'Unapproved bypass',
+        toAddresses: JSON.stringify([{ address: 'unapproved@example.test' }]),
+      });
+      await withTenant({ tenantId: tenant }, () => canonical.initialize());
+      const refused = await withTenant({ tenantId: tenant }, () =>
+        canonical.send(),
+      );
+      expect(refused.success).toBe(false);
+      expect(refused.error).toMatch(/Protected notification/);
+      expect(calls).toEqual([]);
+    });
+
+    it('binds the protected lifecycle at the final write after a concurrent transition', async () => {
+      await migrateNotificationProfileRecipients(db, engine);
+      const { delivery } = await service().enqueueEmail(input());
+      const stale = await withTenant({ tenantId: tenant }, async () =>
+        (await NotificationDeliveryCollection.create({ db })).get(delivery.id!),
+      );
+      const contender = await withTenant({ tenantId: tenant }, async () =>
+        (await NotificationDeliveryCollection.create({ db: raceDb })).get(
+          delivery.id!,
+        ),
+      );
+      expect(stale).not.toBeNull();
+      expect(contender).not.toBeNull();
+      const initialState = (
+        await db.query(
+          'SELECT state_version FROM notification_deliveries WHERE id=?',
+          delivery.id,
+        )
+      ).rows[0].state_version;
+      let advanced = false;
+      let finalFilter: Record<string, unknown> | undefined;
+      const advance = async () => {
+        advanced = true;
+        await withTenant({ tenantId: tenant }, () =>
+          contender!.transition({
+            status: 'uncertain',
+            attempts: 4,
+            lastError: 'Concurrent handoff outcome unknown',
+            handedOffAt: new Date(),
+          }),
+        );
+      };
+      const originalGuard =
+        GlobalInterceptors.executeWriteGuard.bind(GlobalInterceptors);
+      const guardSpy = vi
+        .spyOn(GlobalInterceptors, 'executeWriteGuard')
+        .mockImplementation((instance, context) => {
+          const guard = originalGuard(instance, context);
+          if (instance === stale) finalFilter = guard;
+          return guard;
+        });
+      const originalQuery = db.query.bind(db);
+      const querySpy = vi
+        .spyOn(db, 'query')
+        .mockImplementation(async (sql, ...params) => {
+          const result = await originalQuery(sql, ...params);
+          // Embedded writes serialize their final compare/write; advance before
+          // entering that queue. PG instead proves the actual final UPDATE below.
+          if (
+            engine === 'sqlite' &&
+            !advanced &&
+            sql.startsWith('SELECT tenant_id, required_dispatch_policy')
+          )
+            await advance();
+          return result;
+        });
+      const originalUpdate = db.update.bind(db);
+      const updateSpy = vi
+        .spyOn(db, 'update')
+        .mockImplementation(async (table, filter, values) => {
+          if (
+            engine === 'postgres' &&
+            !advanced &&
+            table === stale!.tableName
+          ) {
+            finalFilter = filter as Record<string, unknown>;
+            await advance();
+          }
+          return originalUpdate(table, filter, values);
+        });
+      try {
+        await expect(
+          withTenant({ tenantId: tenant }, () => stale!.save()),
+        ).rejects.toThrow();
+      } finally {
+        updateSpy.mockRestore();
+        querySpy.mockRestore();
+        guardSpy.mockRestore();
+      }
+      expect(advanced).toBe(true);
+      expect(finalFilter).toMatchObject({
+        required_dispatch_policy: policy,
+        transition_id: '',
+      });
+      expect(finalFilter?.state_version).toBe(initialState);
+      expect(finalFilter).toHaveProperty('dispatch_policy_binding');
+      const stored = await withTenant({ tenantId: tenant }, async () =>
+        (await NotificationDeliveryCollection.create({ db })).get(delivery.id!),
+      );
+      expect(stored).toMatchObject({
+        requiredDispatchPolicy: policy,
+        recipientProfileId: contact.id,
+        status: 'uncertain',
+        attempts: 4,
+        stateVersion: 1,
+        lastError: 'Concurrent handoff outcome unknown',
+      });
+      expect(calls).toEqual([]);
+    });
+
+    it('preserves Core missing-schema failure before querying a first raw delivery', async () => {
+      const row = new NotificationDelivery({
+        db,
+        tenantId: tenant,
+        recipientUserId: user,
+        sourceRef: 'first-raw-delivery',
+        kind: 'ordinary',
+        subject: 'First',
+        textBody: 'Text',
+        href: 'https://local.example.test',
+        recipientAddress: 'user@example.test',
+        accountId: sender,
+      });
+      await withTenant({ tenantId: tenant }, () => row.initialize());
+      await db.query(`DROP TABLE "${row.tableName}"`);
+      const queries = vi.spyOn(db, 'query');
+      try {
+        await expect(
+          withTenant({ tenantId: tenant }, () => row.save()),
+        ).rejects.toMatchObject({ code: 'DB_SCHEMA_MISSING' });
+        expect(
+          queries.mock.calls.some(([sql]) =>
+            sql.startsWith(
+              'SELECT * FROM notification_deliveries WHERE tenant_id=',
+            ),
+          ),
+        ).toBe(false);
+        expect(row.subject).toBe('First');
+      } finally {
+        queries.mockRestore();
+      }
+    });
+
+    it('preserves safe ordinary natural-key adoption of a legacy NULL policy', async () => {
+      const value = input({
+        recipientProfileId: undefined,
+        recipientUserId: user,
+        kind: 'ordinary',
+        requiredDispatchPolicy: undefined,
+        dispatchPolicyBinding: undefined,
+        sourceRef: 'legacy-null-policy',
+      });
+      const { delivery } = await service().enqueueEmail(value);
+      await db.query(
+        `UPDATE "${delivery.tableName}" SET required_dispatch_policy=NULL WHERE id=? AND tenant_id=?`,
+        delivery.id,
+        tenant,
+      );
+      const copy = new NotificationDelivery({
+        db,
+        tenantId: tenant,
+        recipientUserId: user,
+        sourceRef: value.sourceRef,
+        kind: 'ordinary',
+        subject: 'Updated ordinary',
+        textBody: 'Text',
+        href: 'https://local.example.test',
+        recipientAddress: 'user@example.test',
+        accountId: sender,
+      });
+      await withTenant({ tenantId: tenant }, async () => {
+        await copy.initialize();
+        await copy.save();
+      });
+      expect(copy.id).toBe(delivery.id);
+      expect(copy.subject).toBe('Updated ordinary');
+      expect(calls).toEqual([]);
+    });
+
+    it('rejects concurrent saves of the same instance without replacing its private snapshot', async () => {
+      await migrateNotificationProfileRecipients(db, engine);
+      const { delivery } = await service().enqueueEmail(input());
+      await withTenant({ tenantId: tenant }, async () => {
+        const first = delivery.save();
+        await expect(delivery.save()).rejects.toThrow('Concurrent saves');
+        await first;
+      });
+      expect(calls).toEqual([]);
+    });
+
     it('raw saves retain user natural upsert and prohibit profile identity downgrade', async () => {
       await migrateNotificationProfileRecipients(db, engine);
       const outbox = service();

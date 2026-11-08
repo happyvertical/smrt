@@ -4,6 +4,7 @@ import {
   detectEngine,
   ensureJobsSystemTableCompatibility,
   field,
+  ObjectRegistry,
   SmrtCollection,
   SmrtObject,
   type SmrtSaveOptions,
@@ -274,7 +275,9 @@ export class SmrtJob extends SmrtObject {
     const initial = await readRetryJob(executor, this.id);
     assertRetryTenant(initial.tenant_id);
     assertRetryStatus(initial.status);
-    const scheduleId = persistedScheduleId(initial.args);
+    const association = persistedScheduleAssociation(initial.args);
+    const originalArguments = JSON.stringify(persistedArguments(initial.args));
+    const originalTarget = persistedJobTarget(initial);
     const dedupeKey = persistedDedupeKey(initial.dedupe_key);
     const tenant = initial.tenant_id;
     const tenantPredicate =
@@ -286,20 +289,9 @@ export class SmrtJob extends SmrtObject {
     ): Promise<Record<string, unknown>> => {
       // All paths acquire schedule -> dedupe slot -> job. Completion's job
       // transaction commits before its separate schedule callback acquires a row.
-      let capacity: number | null = null;
-      if (scheduleId) {
-        const schedule = await tx.query(
-          `UPDATE _smrt_agent_schedules SET running_count = running_count
-           WHERE id = ? AND ${tenantPredicate} RETURNING max_concurrent`,
-          scheduleId,
-          ...tenantValues,
-        );
-        if (schedule.rows.length !== 1)
-          throw new Error('Scheduled retry association is unavailable');
-        capacity = Number(schedule.rows[0].max_concurrent ?? 1);
-        if (!Number.isSafeInteger(capacity) || capacity < 1)
-          throw new Error('Scheduled retry capacity is invalid');
-      }
+      const schedule = association
+        ? await lockRetrySchedule(tx, association, initial)
+        : null;
       let slotKey: string | null = null;
       let slotJobId: unknown;
       if (dedupeKey !== null) {
@@ -324,7 +316,12 @@ export class SmrtJob extends SmrtObject {
       assertRetryTenant(current.tenant_id);
       if (
         current.tenant_id !== tenant ||
-        persistedScheduleId(current.args) !== scheduleId ||
+        JSON.stringify(persistedScheduleAssociation(current.args)) !==
+          JSON.stringify(association) ||
+        JSON.stringify(persistedArguments(current.args)) !==
+          originalArguments ||
+        JSON.stringify(persistedJobTarget(current)) !==
+          JSON.stringify(originalTarget) ||
         persistedDedupeKey(current.dedupe_key) !== dedupeKey
       ) {
         throw new Error(
@@ -332,10 +329,16 @@ export class SmrtJob extends SmrtObject {
         );
       }
       assertRetryStatus(current.status);
-      const occupied = scheduleId
-        ? await countScheduleJobs(tx, scheduleId, tenant, current.id)
+      const occupied = schedule
+        ? await countScheduleJobs(
+            tx,
+            schedule.id,
+            tenant,
+            schedule.target,
+            current.id,
+          )
         : 0;
-      if (capacity !== null && occupied >= capacity)
+      if (schedule && occupied >= schedule.capacity)
         throw new Error('Scheduled retry capacity is full');
       if (
         slotKey &&
@@ -367,11 +370,11 @@ export class SmrtJob extends SmrtObject {
           current.id,
           slotKey,
         );
-      if (scheduleId)
+      if (schedule)
         await tx.query(
           `UPDATE _smrt_agent_schedules SET running_count = ? WHERE id = ? AND ${tenantPredicate}`,
           occupied + 1,
-          scheduleId,
+          schedule.id,
           ...tenantValues,
         );
       return retried.rows[0];
@@ -1082,30 +1085,147 @@ function persistedArguments(value: unknown): Record<string, unknown> {
   return args as Record<string, unknown>;
 }
 
-function persistedScheduleId(value: unknown): string | null {
+interface PersistedScheduleAssociation {
+  id: string;
+  canonicalOccurrence: boolean;
+}
+function persistedScheduleAssociation(
+  value: unknown,
+): PersistedScheduleAssociation | null {
   const args = persistedArguments(value);
-  if (!Object.hasOwn(args, '_scheduleId')) return null;
+  const canonicalOccurrence =
+    Object.hasOwn(args, '_scheduledFor') ||
+    Object.hasOwn(args, '_scheduleAdmission');
+  if (!Object.hasOwn(args, '_scheduleId')) {
+    if (canonicalOccurrence)
+      throw new Error('Invalid persisted schedule association');
+    return null;
+  }
   if (typeof args._scheduleId !== 'string' || !args._scheduleId.trim())
     throw new Error('Invalid persisted schedule association');
-  return args._scheduleId;
+  return { id: args._scheduleId, canonicalOccurrence };
 }
 
-/** @internal Count the same canonical pending/running schedule slots for admission and retry. */
+/** @internal Execution target of an AgentSchedule, independent of caller metadata names. */
+export interface ScheduleJobTarget {
+  objectType: string;
+  objectId: string | null;
+  method: string;
+}
+function persistedJobTarget(row: Record<string, unknown>): ScheduleJobTarget {
+  if (
+    typeof row.object_type !== 'string' ||
+    typeof row.method !== 'string' ||
+    (row.object_id !== null && typeof row.object_id !== 'string')
+  )
+    throw new Error('Invalid persisted retry target');
+  return {
+    objectType: row.object_type,
+    objectId: row.object_id as string | null,
+    method: row.method,
+  };
+}
+function scheduleJobTarget(row: Record<string, unknown>): ScheduleJobTarget {
+  return {
+    objectType: String(row.agent_type ?? ''),
+    objectId: row.agent_id == null ? null : String(row.agent_id),
+    method: String(row.method || 'run'),
+  };
+}
+function sameScheduleTarget(
+  left: ScheduleJobTarget,
+  right: ScheduleJobTarget,
+): boolean {
+  const canonical = (name: string) =>
+    ObjectRegistry.getClass(name)?.qualifiedName || name;
+  return (
+    canonical(left.objectType) === canonical(right.objectType) &&
+    left.objectId === right.objectId &&
+    left.method === right.method
+  );
+}
+async function lockRetrySchedule(
+  tx: DatabaseInterface,
+  association: PersistedScheduleAssociation,
+  job: RetryJobRow,
+): Promise<{ id: string; capacity: number; target: ScheduleJobTarget } | null> {
+  // _scheduleId predates AgentSchedule admission and is also ordinary producer
+  // metadata. Do not issue missing-table SQL and then continue an aborted PG tx.
+  if (!(await tx.tableExists('_smrt_agent_schedules'))) {
+    if (association.canonicalOccurrence)
+      throw new Error('Scheduled retry association is unavailable');
+    return null;
+  }
+  const predicate =
+    job.tenant_id === null ? 'tenant_id IS NULL' : 'tenant_id = ?';
+  const tenants = job.tenant_id === null ? [] : [job.tenant_id];
+  const columns =
+    'CAST(id AS VARCHAR) AS id, agent_type, CAST(agent_id AS VARCHAR) AS agent_id, method, max_concurrent';
+  // Cast the read identity so unrelated producers' opaque metadata never causes
+  // an invalid-UUID error merely because an AgentSchedule table is installed.
+  const candidate = (
+    await tx.query(
+      `SELECT ${columns} FROM _smrt_agent_schedules WHERE CAST(id AS VARCHAR) = ? AND ${predicate}`,
+      association.id,
+      ...tenants,
+    )
+  ).rows[0];
+  if (
+    !candidate ||
+    (!association.canonicalOccurrence &&
+      !sameScheduleTarget(
+        persistedJobTarget(job),
+        scheduleJobTarget(candidate),
+      ))
+  ) {
+    if (association.canonicalOccurrence)
+      throw new Error('Scheduled retry association is unavailable');
+    return null;
+  }
+  const locked = (
+    await tx.query(
+      `UPDATE _smrt_agent_schedules SET running_count = running_count
+     WHERE id = ? AND ${predicate} RETURNING ${columns}`,
+      candidate.id,
+      ...tenants,
+    )
+  ).rows[0];
+  if (
+    !locked ||
+    (!association.canonicalOccurrence &&
+      !sameScheduleTarget(persistedJobTarget(job), scheduleJobTarget(locked)))
+  )
+    throw new Error(
+      'Scheduled retry association changed; retry from current state',
+    );
+  const capacity = Number(locked.max_concurrent ?? 1);
+  if (!Number.isSafeInteger(capacity) || capacity < 1)
+    throw new Error('Scheduled retry capacity is invalid');
+  return { id: String(locked.id), capacity, target: scheduleJobTarget(locked) };
+}
+
+/** @internal Count canonical occurrences and matching legacy target slots for admission/retry. */
 export async function countScheduleJobs(
   db: DatabaseInterface,
   scheduleId: string,
   tenant: string | null,
+  target: ScheduleJobTarget,
   excludeJobId?: string,
 ): Promise<number> {
   const result = await db.query(
-    `SELECT args FROM _smrt_jobs WHERE status IN ('pending', 'running')
+    `SELECT args, object_type, CAST(object_id AS VARCHAR) AS object_id, method FROM _smrt_jobs WHERE status IN ('pending', 'running')
      AND ${tenant === null ? 'tenant_id IS NULL' : 'tenant_id = ?'}${excludeJobId ? ' AND id <> ?' : ''}`,
     ...(tenant === null ? [] : [tenant]),
     ...(excludeJobId ? [excludeJobId] : []),
   );
   return result.rows.filter((row) => {
     try {
-      return persistedScheduleId(row.args) === scheduleId;
+      const association = persistedScheduleAssociation(row.args);
+      return (
+        association?.id === scheduleId &&
+        (association.canonicalOccurrence ||
+          sameScheduleTarget(persistedJobTarget(row), target))
+      );
     } catch {
       return false;
     }

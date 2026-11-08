@@ -701,8 +701,7 @@ export class NotificationOutboxService {
     }
     const report: NotificationDispatchReport = { leased: 0, outcomes: [] };
     if (tenantIds?.length === 0 || deliveryIds?.length === 0) return report;
-    const candidates = await this.findDue(tenantIds, limit, deliveryIds);
-    for (const candidate of candidates) {
+    for await (const candidate of this.findDue(tenantIds, limit, deliveryIds)) {
       if (report.leased >= limit) break;
       this.authorize(candidate.tenantId);
       if (
@@ -711,12 +710,12 @@ export class NotificationOutboxService {
         (candidate.requiredDispatchPolicy &&
           !this.dispatchPolicy(candidate.requiredDispatchPolicy))
       ) {
-        await withTenant({ tenantId: candidate.tenantId }, () =>
-          candidate.transition({
-            lastError:
-              'Blocked: required notification dispatch policy is unavailable.',
-          }),
-        );
+        const lastError =
+          'Blocked: required notification dispatch policy is unavailable.';
+        if (candidate.lastError !== lastError)
+          await withTenant({ tenantId: candidate.tenantId }, () =>
+            candidate.transition({ lastError }),
+          );
         report.outcomes.push({
           deliveryId: candidate.id as string,
           tenantId: candidate.tenantId,
@@ -729,9 +728,11 @@ export class NotificationOutboxService {
           this.validateProfileDelivery(candidate),
         );
       } catch (cause) {
-        await withTenant({ tenantId: candidate.tenantId }, () =>
-          candidate.transition({ lastError: `Blocked: ${errorText(cause)}` }),
-        );
+        const lastError = `Blocked: ${errorText(cause)}`;
+        if (candidate.lastError !== lastError)
+          await withTenant({ tenantId: candidate.tenantId }, () =>
+            candidate.transition({ lastError }),
+          );
         report.outcomes.push({
           deliveryId: candidate.id as string,
           tenantId: candidate.tenantId,
@@ -964,51 +965,99 @@ export class NotificationOutboxService {
       : undefined;
   }
 
-  private async findDue(
+  private async *findDue(
     tenantIds: readonly string[] | undefined,
     limit: number,
     deliveryIds?: readonly string[],
-  ): Promise<NotificationDelivery[]> {
+  ): AsyncGenerator<NotificationDelivery> {
     const now = this.now();
-    const read = async (tenantFilter: { tenantId?: string }) => {
-      const deliveries = await this.collection();
-      const [due, expired] = await Promise.all([
-        deliveries.list({
-          where: {
-            ...tenantFilter,
-            ...(deliveryIds ? { id: [...deliveryIds] } : {}),
-            status: 'pending',
-            'nextAttemptAt <=': now,
-          },
-          orderBy: 'nextAttemptAt ASC',
-          limit,
-        }),
-        deliveries.list({
-          where: {
-            ...tenantFilter,
-            ...(deliveryIds ? { id: [...deliveryIds] } : {}),
-            status: 'sending',
-            'leaseExpiresAt <=': now,
-          },
-          orderBy: 'leaseExpiresAt ASC',
-          limit,
-        }),
-      ]);
-      return [...expired, ...due];
-    };
-
-    const rows =
-      tenantIds === undefined
-        ? await withSystemContext(() => read({}))
-        : (
-            await Promise.all(
-              [...new Set(tenantIds.filter(Boolean))].map((tenantId) =>
-                withTenant({ tenantId }, () => read({ tenantId })),
-              ),
+    const visited = new Set<string>();
+    // Each page is bounded; a blocked prefix cannot consume the lease budget.
+    // Expired leases precede pending rows, including across explicit scopes.
+    for (const phase of [
+      { status: 'sending', column: 'lease_expires_at' },
+      { status: 'pending', column: 'next_attempt_at' },
+    ] as const) {
+      for (const tenantId of tenantIds ?? [undefined]) {
+        let cursor: { id: string; cursor_at: string } | undefined;
+        for (;;) {
+          const read = async () => {
+            const deliveries = await this.collection();
+            const table = `"${deliveries.tableName.replaceAll('"', '""')}"`;
+            const conditions = ['status = ?', `${phase.column} <= ?`];
+            const values: unknown[] = [phase.status, now.toISOString()];
+            if (tenantId !== undefined) {
+              conditions.push('tenant_id = ?');
+              values.push(tenantId);
+            }
+            if (deliveryIds) {
+              conditions.push(
+                `id IN (${deliveryIds.map(() => '?').join(',')})`,
+              );
+              values.push(...deliveryIds);
+            }
+            if (cursor) {
+              conditions.push(
+                `(${phase.column} > ? OR (${phase.column} = ? AND id > ?))`,
+              );
+              values.push(cursor.cursor_at, cursor.cursor_at, cursor.id);
+            }
+            // Capture the cursor in this same query, before hydration or writes.
+            // PostgreSQL Date hydration loses microseconds; CAST preserves the
+            // physical timestamp so equal/sub-ms rows cannot repeat forever.
+            const result = await deliveries.db.query(
+              `SELECT id, CAST(${phase.column} AS TEXT) AS cursor_at FROM ${table}
+               WHERE ${conditions.join(' AND ')}
+               ORDER BY ${phase.column} ASC, id ASC LIMIT ?`,
+              ...values,
+              limit,
+            );
+            const positions = result.rows as Array<{
+              id: string;
+              cursor_at: string;
+            }>;
+            if (
+              positions.some(
+                (row) =>
+                  typeof row.id !== 'string' ||
+                  !UUID_PATTERN.test(row.id) ||
+                  typeof row.cursor_at !== 'string' ||
+                  !row.cursor_at,
+              )
             )
-          ).flat();
-    // Recover lapsed leases first, then oldest due.
-    return rows.slice(0, limit * 2);
+              throw new Error('Invalid notification dispatch cursor.');
+            if (!positions.length) return { positions, rows: [] };
+            const rows = await deliveries.list({
+              where: {
+                ...(tenantId === undefined ? {} : { tenantId }),
+                id: positions.map((row) => row.id),
+              },
+              limit: positions.length,
+            });
+            const byId = new Map(rows.map((row) => [row.id, row]));
+            return {
+              positions,
+              rows: positions.flatMap((row) => {
+                const delivery = byId.get(row.id);
+                return delivery ? [delivery] : [];
+              }),
+            };
+          };
+          const page =
+            tenantId === undefined
+              ? await withSystemContext(read)
+              : await withTenant({ tenantId }, read);
+          if (!page.positions.length) break;
+          cursor = page.positions[page.positions.length - 1];
+          for (const row of page.rows) {
+            if (!row.id || visited.has(row.id)) continue;
+            visited.add(row.id);
+            yield row;
+          }
+          if (page.positions.length < limit) break;
+        }
+      }
+    }
   }
 
   /** Lease one candidate and carry it to an outcome; null when not leased. */
