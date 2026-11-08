@@ -519,7 +519,13 @@ describe('mountAssistantRoutes defaults (#3414)', () => {
       const response = await send(routes, threadId, ownerA, 'u1');
       expect(response.status).toBe(503);
       const raw = await response.text();
-      expect(JSON.parse(raw)).toMatchObject({ code: 'assistant_unavailable' });
+      // #4757: a structured unavailable answer, not a generic failure.
+      expect(JSON.parse(raw)).toEqual({
+        type: 'unavailable',
+        code: 'ai_unavailable',
+        error: 'AI is not set up: no AI provider is configured.',
+        unavailable: { available: false, mode: 'off', reason: 'unconfigured' },
+      });
       expect(raw).not.toContain(secret);
       expect(getAI).not.toHaveBeenCalled();
       expect(errors).toHaveLength(1);
@@ -528,6 +534,55 @@ describe('mountAssistantRoutes defaults (#3414)', () => {
       expect(error.message).toMatch(/smrt\.config\.ts/);
       expect(error.message).not.toContain(secret);
       expect(await storedMessages(routes, threadId, ownerA)).toEqual([]);
+    });
+
+    it('answers a structured unavailable message when the principal turned AI off (#4757)', async () => {
+      setConfig({
+        ai: {
+          provider: 'openai',
+          model: 'gpt-test',
+          apiKeyEnv: 'OPENAI_API_KEY',
+        },
+      });
+      process.env.OPENAI_API_KEY = 'k-config-test';
+      setInferenceResolver({
+        resolve: (request) => ({
+          tierResolved: request.tier === 'auto' ? 'good' : request.tier,
+          target: {},
+          via: 'resolver',
+          mode: 'off',
+          unavailable: 'off',
+        }),
+      });
+      try {
+        const errors: unknown[] = [];
+        const routes = mountAssistantRoutes({
+          db,
+          onError: (error) => errors.push(error),
+        });
+        const threadId = await createThread(routes, ownerA);
+        const response = await send(routes, threadId, ownerA, 'off1');
+        expect(response.status).toBe(503);
+        const raw = await response.text();
+        expect(JSON.parse(raw)).toEqual({
+          type: 'unavailable',
+          code: 'ai_unavailable',
+          error: 'AI is turned off.',
+          unavailable: {
+            available: false,
+            mode: 'off',
+            reason: 'off',
+            tier: 'good',
+          },
+        });
+        expect(raw).not.toMatch(/stack|k-config-test/);
+        // (getAI still builds model objects' configured clients at init;
+        // the refused turn itself stores nothing below.)
+        expect(errors).toEqual([]);
+        expect(await storedMessages(routes, threadId, ownerA)).toEqual([]);
+      } finally {
+        setInferenceResolver(undefined);
+      }
     });
 
     it('treats an explicitly empty ai as a mount error, not a fallback', () => {

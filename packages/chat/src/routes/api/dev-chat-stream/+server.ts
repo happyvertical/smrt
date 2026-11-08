@@ -12,6 +12,7 @@
  */
 
 import type { AIInterface, AIMessage } from '@happyvertical/ai';
+import { isInferenceUnavailableError } from '@happyvertical/smrt-core/inference-availability';
 import type { RequestHandler } from '@sveltejs/kit';
 import {
   type ChatStreamContext,
@@ -61,7 +62,9 @@ async function resolveAI(): Promise<AIInterface> {
     return (await getAI(
       (await devAIClientOptions(config)) as never,
     )) as AIInterface;
-  } catch {
+  } catch (error) {
+    // AI off (#4757) reaches the handler, which answers a structured 503.
+    if (isInferenceUnavailableError(error)) throw error;
     return localStreamAI();
   }
 }

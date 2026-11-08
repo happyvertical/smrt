@@ -10,6 +10,7 @@
 import type { AIMessage, AITool, AIToolCall } from '@happyvertical/ai';
 import { error, isHttpError, json, type RequestHandler } from '@sveltejs/kit';
 import { dev } from '$app/environment';
+import { chatUnavailableBody } from '../../../ai-unavailable.js';
 import { devAIClientOptions, resolveDevAIConfig } from '../dev-ai.js';
 import { isLocalDevCharacterRequest } from '../dev-character-persistence/config.js';
 import {
@@ -239,6 +240,14 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
   } catch (cause) {
     if (request.signal.aborted) error(499, 'Conversation cancelled.');
     if (isHttpError(cause)) throw cause;
+    // AI off (#4757): a structured answer with the reason, no stack.
+    const unavailable = chatUnavailableBody(cause);
+    if (unavailable) {
+      return json(unavailable, {
+        status: 503,
+        headers: { 'cache-control': 'no-store' },
+      });
+    }
     error(502, 'Character conversation provider failed.');
   }
 };
