@@ -155,23 +155,11 @@ export function createAdoptionMethods(config, command, helpers, options) {
       state: parse(plan.stateFile),
     };
   }
-  async function qualifyAdoption(plan, snapshot) {
-    demand(
-      config.adoption?.snapshotSha256 === plan.snapshot.sha256 &&
-        config.adoption?.qualificationSha256 === plan.qualification.sha256 &&
-        config.chartSource?.digest === plan.chartOciDigest,
-      'Adoption artifacts must be bound by protected configuration',
-    );
-    for (const artifact of [plan.snapshot, plan.qualification])
-      demand(
-        snapshot.raw[artifact.file] &&
-          bytesHash(snapshot.raw[artifact.file]) === artifact.sha256,
-        'Protected adoption artifact content mismatch',
-      );
-    demand(
-      bytesHash(await readFile(config.chart)) === plan.chartArtifactSha256,
-      'Adoption chart package identity mismatch',
-    );
+  // The dedicated Flux directory may hold only this adoption's canonical or
+  // staging file. Checked on the qualifying snapshot and again on the exact
+  // revision a CAS commit builds on, so an interleaved commit cannot publish
+  // unreviewed manifests under the target Kustomization.
+  async function verifyFluxDirectory(plan, revision) {
     const fluxPath = adoptionPath(config.adoption.fluxPath);
     demand(
       [plan.canonicalFile, plan.stagingFile].every(
@@ -211,9 +199,29 @@ export function createAdoptionMethods(config, command, helpers, options) {
       'Kustomization',
     ])
       demand(
-        !(await fileAt(snapshot.revision, `${fluxPath}/${name}`)),
+        !(await fileAt(revision, `${fluxPath}/${name}`)),
         'Adoption requires Flux auto-generated directory resources; explicit resource lists cannot rename atomically',
       );
+  }
+  async function qualifyAdoption(plan, snapshot) {
+    demand(
+      config.adoption?.snapshotSha256 === plan.snapshot.sha256 &&
+        config.adoption?.qualificationSha256 === plan.qualification.sha256 &&
+        config.chartSource?.digest === plan.chartOciDigest,
+      'Adoption artifacts must be bound by protected configuration',
+    );
+    for (const artifact of [plan.snapshot, plan.qualification])
+      demand(
+        snapshot.raw[artifact.file] &&
+          bytesHash(snapshot.raw[artifact.file]) === artifact.sha256,
+        'Protected adoption artifact content mismatch',
+      );
+    demand(
+      bytesHash(await readFile(config.chart)) === plan.chartArtifactSha256,
+      'Adoption chart package identity mismatch',
+    );
+    const fluxPath = adoptionPath(config.adoption.fluxPath);
+    await verifyFluxDirectory(plan, snapshot.revision);
     const ks = await helpers.get(
       'kustomization',
       config.kustomization.name,
@@ -728,6 +736,7 @@ export function createAdoptionMethods(config, command, helpers, options) {
       snapshot.revision,
       latest.revision,
     );
+    await verifyFluxDirectory(plan, latest.revision);
     if (snapshot.revision !== latest.revision)
       demand(
         !(

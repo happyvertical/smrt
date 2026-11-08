@@ -413,8 +413,9 @@ test('native Git CAS atomically renames staging, rejects superseded file history
     await git('remote', 'add', 'origin', remote);
     await git('push', 'origin', 'main');
     const { plan } = fixture();
+    const fluxPath = plan.canonicalFile.slice(0, plan.canonicalFile.lastIndexOf('/'));
     const methods = createAdoptionMethods(
-      { repository, branch: 'main' },
+      { repository, branch: 'main', adoption: { fluxPath } },
       command,
       {},
       {},
@@ -480,6 +481,18 @@ test('native Git CAS atomically renames staging, rejects superseded file history
     await assert.rejects(
       () => methods.casAdoption(published, plan, final.state, final.canonical),
       /superseded protected history/,
+    );
+    // A racer adding a manifest under the dedicated Flux directory, outside the
+    // proof files, is caught on the exact revision the CAS would build on.
+    await git('reset', '--hard', published.revision);
+    await git('push', '--force', 'origin', 'main');
+    await writeFile(join(repository, fluxPath, 'stray.yaml'), 'kind: ConfigMap\n');
+    await git('add', '.');
+    await git('commit', '-m', 'racer adds manifest');
+    await git('push', 'origin', 'main');
+    await assert.rejects(
+      () => methods.casAdoption(published, plan, final.state, final.canonical),
+      /contains unreviewed resources/,
     );
   } finally {
     await rm(dir, { recursive: true, force: true });
