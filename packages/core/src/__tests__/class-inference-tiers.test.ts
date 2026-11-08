@@ -23,6 +23,9 @@ class TierProbe extends SmrtClass {
   async client(...args: Parameters<SmrtClass['getAiClient']>) {
     return this.getAiClient(...args);
   }
+  async prepare(options: Record<string, unknown>) {
+    return this.prepareAiOperation(options);
+  }
 }
 
 @smrt()
@@ -95,6 +98,31 @@ describe('SmrtClass inference tiers', () => {
       expect(await probe.client(tier)).toBe(base);
     }
     expect(getAIMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('prepareAiOperation() is available to non-object classes (collections, #4755)', async () => {
+    const probe = new TierProbe({
+      ai: BASE_AI,
+      inference: { tiers: { cheap: { model: 'mini' } } },
+    } as never);
+    const plain = await probe.prepare({ temperature: 0.2 });
+    expect(plain.ai).toBe(await probe.client());
+    expect(plain.aiOptions).toEqual({ temperature: 0.2 });
+
+    const tiered = await probe.prepare({
+      tier: 'cheap',
+      latency: 'background',
+      promptKey: 'probe.prompt',
+      usageTags: { promptKey: 'probe.prompt' },
+    });
+    expect(tiered.aiOptions).toEqual({
+      model: 'mini',
+      usageTags: {
+        promptKey: 'probe.prompt',
+        tierRequested: 'cheap',
+        tierResolved: 'cheap',
+      },
+    });
   });
 
   it('keeps an injected client for unbound tiers and model-only targets', async () => {
