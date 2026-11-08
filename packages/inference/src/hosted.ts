@@ -434,7 +434,19 @@ export interface HostedInferenceState {
    * leaves them alone; only an explicit `provision()` re-provisions.
    */
   optedOut?: boolean;
+  /**
+   * Set when a budget update failed or timed out (it may still land on the
+   * gateway); budget syncs re-apply the stored budget while it is set.
+   */
+  budgetSyncUncertainAt?: string;
 }
+
+/**
+ * How long after an uncertain budget update a confirmed one must come
+ * before the uncertainty is cleared (a late landing is overwritten by the
+ * re-applies in between).
+ */
+export const HOSTED_BUDGET_UNCERTAIN_WINDOW_MS = 15 * 60_000;
 
 /** What provisioning and revocation return: never the key. */
 export interface HostedInferenceDescriptor {
@@ -1502,22 +1514,25 @@ export function createHostedInferenceProvisioner(
   };
 
   /**
-   * Sync one grant's gateway budget (lock held). `force` re-applies it even
-   * when the stored budget matches: reconcile uses it, so a timed-out update
-   * that landed late on the gateway is overwritten on the next run.
+   * Sync one grant's gateway budget (lock held). Unchanged budgets are not
+   * re-sent (a gateway update may restart the spend window), except while
+   * an earlier update's outcome is uncertain (`budgetSyncUncertainAt`: it
+   * failed or timed out and may still land): then the stored budget is
+   * re-applied, until a confirmed update at least
+   * {@link HOSTED_BUDGET_UNCERTAIN_WINDOW_MS} after the uncertain one.
    */
   const syncLocked = async (
     tenantId: string,
     userId: string,
     budget: Required<HostedInferenceBudget>,
     secrets: HostedSecretStore,
-    force = false,
   ): Promise<SyncHostedBudgetResult> => {
     const state = await readState(secrets, userId);
     if (state?.status !== 'active') {
       return { ...describeState(tenantId, userId, state), sync: 'none' };
     }
-    if (!force && sameBudget(state.budget, budget)) {
+    const uncertainAt = state.budgetSyncUncertainAt;
+    if (!uncertainAt && sameBudget(state.budget, budget)) {
       return { ...describeState(tenantId, userId, state), sync: 'unchanged' };
     }
     const admin = await getAdmin(gatewayConfig());
@@ -1534,13 +1549,31 @@ export function createHostedInferenceProvisioner(
         'updateVirtualKey',
       );
     } catch (error) {
+      // The update may still land later: re-apply on the next sync.
+      await writeState(
+        secrets,
+        userId,
+        { ...state, budgetSyncUncertainAt: now().toISOString() },
+        {
+          operation: 'inference.hosted.budget-uncertain',
+          keyAlias: state.keyAlias,
+          keyId: state.keyId,
+        },
+      );
       throw gatewayFailure('updateVirtualKey', error);
     }
-    if (sameBudget(state.budget, budget)) {
-      // A forced re-apply of the stored budget: nothing to record.
-      return { ...describeState(tenantId, userId, state), sync: 'updated' };
+    const settled =
+      !uncertainAt ||
+      now().getTime() - Date.parse(uncertainAt) >=
+        HOSTED_BUDGET_UNCERTAIN_WINDOW_MS;
+    const { budgetSyncUncertainAt: _settled, ...rest } = state;
+    const next: HostedInferenceState = {
+      ...(settled ? rest : state),
+      budget,
+    };
+    if (sameBudget(state.budget, budget) && !(settled && uncertainAt)) {
+      return { ...describeState(tenantId, userId, next), sync: 'updated' };
     }
-    const next = { ...state, budget };
     await writeState(secrets, userId, next, {
       operation: 'inference.hosted.budget',
       keyAlias: state.keyAlias,
@@ -1634,9 +1667,7 @@ export function createHostedInferenceProvisioner(
         );
         return;
       }
-      result.synced.push(
-        await syncLocked(tenantId, userId, budget, secrets, true),
-      );
+      result.synced.push(await syncLocked(tenantId, userId, budget, secrets));
       return;
     }
     result.provisioned.push(
@@ -1871,7 +1902,7 @@ export function createHostedInferenceProvisioner(
                 if (wanted.has(userId) || state.status !== 'active') continue;
                 await attempt(userId, async () => {
                   result.synced.push(
-                    await syncLocked(tenantId, userId, budget, secrets, true),
+                    await syncLocked(tenantId, userId, budget, secrets),
                   );
                 });
               }

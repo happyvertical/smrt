@@ -166,6 +166,10 @@ hand).
   week | month | year`, default month), converted to the gateway's USD
   `maxLimit` and `1d|7d|30d|365d` only at the admin call. #4760's spend gate
   is the authoritative pre-call check; the gateway budget is defense in depth.
+  An unchanged budget is never re-sent (a gateway update may restart the
+  spend window); after a failed or timed-out update (`budgetSyncUncertainAt`,
+  it may still land) syncs re-apply the stored budget until a confirmed
+  update 15 minutes later.
 - **Entitlement hook.** `createHostedInferenceEntitlementListener({
   provisioner, users, budgetFor?, defaultBudget? })` structurally matches
   smrt-subscriptions' `EntitlementChangeListener` (register it with
@@ -174,9 +178,7 @@ hand).
   reconciles the tenant to the change's `after` snapshot through
   `createHostedInferenceReconciler()`: entitled provisions `users(tenantId)`
   (membership is the host's; exclude users an operator revoked) unless
-  they opted out, and re-applies budgets even when the stored one matches
-  (a timed-out update that landed late is overwritten); not entitled revokes
-  every grant; both
+  they opted out, and syncs budgets; not entitled revokes every grant; both
   retry owed deletions (also for active grants: they are old keys). The
   plan's budget is the grant's `metadata.budget` (`{ limitMicros, window }`).
   A replayed webhook diffs to "no change", so hosts also call the reconciler
