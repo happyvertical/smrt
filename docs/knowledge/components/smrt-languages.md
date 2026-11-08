@@ -5,10 +5,10 @@ description: "Code-first language strings with config + tenant overrides and AI 
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T15:48:19Z"
+  at: "2026-11-08T08:52:15Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:dbc6b319ffec00b378d4a85d12b66d0a8979ea959989394c8a852d3bf56cfcac"
+source_revision: "sha256:b96c06893e47b251d531646b9d2c2dd9147eccca865cf1800b790bdb21d78aa5"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/languages/package.json"
