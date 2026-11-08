@@ -45,6 +45,12 @@ export function createInferenceResolver(
       return base ? base.resolve(request, context) : undefined;
     },
   };
+  // Forward the optional #4757 mode hook only when the base has one, so a
+  // resolver without it keeps untiered calls free of resolver work.
+  if (base && typeof base.mode === 'function') {
+    const mode = base.mode.bind(base);
+    resolver.mode = (request) => mode(request);
+  }
   resolver[OWN_RESOLVER] = true;
   return resolver;
 }

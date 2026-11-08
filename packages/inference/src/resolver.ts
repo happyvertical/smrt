@@ -11,8 +11,17 @@
  *   4. unbound: the configured client (`SMRT_AI_*` / the process `ai` block).
  * Every resolution carries `target.source` (`byo | local | hosted | app`),
  * which core records as the `source` usage tag.
+ *
+ * Inference mode (#4757): a stored config may carry `mode`. The user's mode,
+ * else the tenant's, applies: `off` answers every tier (and untiered calls,
+ * through `mode()`) as unavailable; `byo` / `local` / `hosted` bind only a
+ * stored binding of that source (user, then tenant) and report
+ * `unconfigured` when there is none, never falling through to app config.
  */
 import {
+  type InferenceMode,
+  type InferenceModeRequest,
+  type InferenceModeState,
   type InferenceRequest,
   type InferenceResolution,
   type InferenceResolver,
@@ -102,6 +111,15 @@ interface Layers {
   tenant?: InferenceProviderConfig;
 }
 
+/** The explicit mode that applies: the user's, else the tenant's. */
+function explicitMode(
+  layers: Layers,
+): { mode: InferenceMode; layer: 'user' | 'tenant' } | undefined {
+  if (layers.user?.mode) return { mode: layers.user.mode, layer: 'user' };
+  if (layers.tenant?.mode) return { mode: layers.tenant.mode, layer: 'tenant' };
+  return undefined;
+}
+
 /** One tier of {@link InferenceBindingMap}. */
 export type InferenceBindingEntry = (
   | InferenceTarget
@@ -117,6 +135,8 @@ export interface InferenceBindingMap {
   /** The stored configs themselves, redacted unless `redact: false`. */
   user?: InferenceProviderConfig | RedactedInferenceProviderConfig;
   tenant?: InferenceProviderConfig | RedactedInferenceProviderConfig;
+  /** The explicit mode that applies (#4757) and the layer that set it. */
+  mode?: { mode: InferenceMode; layer: 'user' | 'tenant' };
 }
 
 /** The scope a config is written to. */
@@ -139,6 +159,18 @@ export interface UserInferenceResolver extends InferenceResolver {
   write(level: InferenceConfigLevel, config: unknown): Promise<void>;
   /** Delete the stored config at `level` for the current principal. */
   remove(level: InferenceConfigLevel): Promise<boolean>;
+  /**
+   * Set (or with `null` clear) the stored mode at `level` (#4757), keeping
+   * the stored binding. Works without a key: a mode-only config is valid.
+   * A config left with neither binding nor mode is deleted. Invalidates the
+   * cache, so the next call sees it.
+   */
+  setMode(
+    level: InferenceConfigLevel,
+    mode: InferenceMode | null,
+  ): Promise<void>;
+  /** The explicit stored mode for untiered calls (core's `mode()` hook). */
+  mode(request: InferenceModeRequest): Promise<InferenceModeState | undefined>;
   /**
    * Drop cached configs: all, one tenant's (every user), or one
    * `(tenantId, userId)`. Call after writing a config elsewhere.
@@ -352,10 +384,48 @@ export function createUserInferenceResolver(
       const { tenantId, userId } = identityFor(request);
       if (tenantId) {
         const layers = await getLayers(tenantId, userId);
-        const target =
-          inferenceProviderTargets(layers.user)[tierResolved] ??
-          inferenceProviderTargets(layers.tenant)[tierResolved];
-        if (target) return { tierResolved, target, via: 'resolver' };
+        const chosen = explicitMode(layers);
+        if (chosen?.mode === 'off') {
+          return {
+            tierResolved,
+            target: {},
+            via: 'resolver',
+            mode: 'off',
+            unavailable: 'off',
+          };
+        }
+        const candidates = [
+          inferenceProviderTargets(layers.user)[tierResolved],
+          inferenceProviderTargets(layers.tenant)[tierResolved],
+        ];
+        if (chosen) {
+          // An explicit mode binds only its own kind of stored binding.
+          const target = candidates.find(
+            (entry) => entry?.source === chosen.mode,
+          );
+          if (target) {
+            return { tierResolved, target, via: 'resolver', mode: chosen.mode };
+          }
+          return {
+            tierResolved,
+            target: {},
+            via: 'resolver',
+            mode: 'off',
+            unavailable: 'unconfigured',
+          };
+        }
+        const target = candidates.find(Boolean);
+        if (target) {
+          const source = target.source;
+          return {
+            tierResolved,
+            target,
+            via: 'resolver',
+            ...(source === 'byo' || source === 'local' || source === 'hosted'
+              ? { mode: source }
+              : {}),
+          };
+        }
       }
       const fallen =
         (await options.fallback?.resolve(request, context)) ??
@@ -368,6 +438,16 @@ export function createUserInferenceResolver(
           source: isInferenceTargetSource(source) ? source : 'app',
         },
       };
+    },
+
+    async mode(request) {
+      const { tenantId, userId } = identityFor(request);
+      if (!tenantId) return undefined;
+      const chosen = explicitMode(await getLayers(tenantId, userId));
+      if (!chosen) return undefined;
+      return chosen.mode === 'off'
+        ? { mode: 'off', unavailable: 'off' }
+        : { mode: chosen.mode };
     },
 
     async resolveBindings(bindingOptions = {}) {
@@ -394,6 +474,8 @@ export function createUserInferenceResolver(
           };
         }
       }
+      const chosen = explicitMode(layers);
+      if (chosen) map.mode = chosen;
       return map;
     },
 
@@ -430,6 +512,43 @@ export function createUserInferenceResolver(
           : { tenantId: principal.tenantId },
       );
       return removed;
+    },
+
+    async setMode(level, mode) {
+      const principal = writeScope(level);
+      const secrets = await getSecrets();
+      const name = inferenceProviderConfigSecretName(
+        level === 'user' ? { userId: principal.userId } : {},
+      );
+      // Read fresh (not the cache) so a concurrent binding write is kept.
+      const current = await inTenant(principal, () =>
+        readConfig(secrets, name),
+      );
+      const next: InferenceProviderConfig = { ...(current ?? {}) };
+      if (mode === null) delete next.mode;
+      else next.mode = parseInferenceProviderConfig({ mode }).mode;
+      const empty = Object.keys(next).every(
+        (key) => key === 'version' || key === 'source',
+      );
+      await inTenant(principal, async () => {
+        if (empty) {
+          if (current) await secrets.delete(name);
+          return;
+        }
+        await secrets.store(
+          name,
+          JSON.stringify(parseInferenceProviderConfig(next)),
+          {
+            category: INFERENCE_PROVIDER_CONFIG_SECRET_TYPE,
+            description: `Inference provider config (${level})`,
+          },
+        );
+      });
+      invalidate(
+        level === 'user'
+          ? { tenantId: principal.tenantId, userId: principal.userId }
+          : { tenantId: principal.tenantId },
+      );
     },
 
     invalidate,
