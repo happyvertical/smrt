@@ -8,6 +8,7 @@
  * module is covered as soon as an entry reaches it.
  * `hosted.ts` (#4759) is part of `./node` (secrets, runOnce, the gateway
  * admin client).
+ * `./gate` (#4760) builds on `./resolver`'s principal and is Node-only too.
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -43,6 +44,7 @@ describe.each(['index.ts', 'models.ts'])('%s import graph', (entry) => {
     expect(files).not.toContain('server.ts');
     expect(files).not.toContain('resolver.ts');
     expect(files).not.toContain('hosted.ts');
+    expect(files).not.toContain('gate.ts');
   });
 
   it.each(
@@ -58,7 +60,9 @@ describe.each(['index.ts', 'models.ts'])('%s import graph', (entry) => {
 
   it.each(files)('%s never reaches the Node-only stores', (name) => {
     const source = readFileSync(join(SRC, name), 'utf8');
-    expect(source).not.toMatch(/from ['"]\.\/(node|resolver|hosted)\.js['"]/);
+    expect(source).not.toMatch(
+      /from ['"]\.\/(node|resolver|hosted|gate)\.js['"]/,
+    );
     expect(source).not.toMatch(
       /from ['"]@happyvertical\/smrt-(secrets|tenancy|users)['"]/,
     );

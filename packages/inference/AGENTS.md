@@ -29,6 +29,8 @@ panel with layered binding storage (#4754).
   generated consumer registration imports it from here.
 - `./server` (Node-only): settings service, override service, override
   resolver, key rule, preference kind (#4754). `./svelte`: the panel.
+- `./gate` (Node-only, #4760): the hosted spend gate and kill switch
+  (below). `browser-safe.test.ts` keeps it off the root graph.
 
 ## Per-user and per-tenant bindings (`src/resolver.ts`, #4756)
 
@@ -198,6 +200,48 @@ hand).
   resolver cache expires; this process is invalidated through
   `invalidateUserInferenceResolvers()`.
 
+## Hosted gate (`src/gate.ts`, #4760)
+
+`createHostedInferenceGate({ killSwitch, spend, principal?,
+requireSubscription?, onWarning? })` is core's `InferenceGate` (seam:
+[core inference.md](../core/agents/inference.md), "Hosted gate");
+`registerHostedInferenceGate(gate | options)` installs it and the
+principal's user as the `userId` usage tag. Host wiring:
+
+```ts
+registerHostedInferenceGate({
+  killSwitch: new KillSwitchService({ db }),          // smrt-features
+  spend: await HostedAiSpendEvaluator.create({ db }), // smrt-subscriptions
+});
+```
+
+Both stores are structural: smrt-features and smrt-subscriptions build with
+the CLI, which depends on this package, so a dependency on either is a turbo
+cycle. Checks, in order, on every `source: hosted` call:
+
+1. **Kill switch** `inference.hosted.enabled` (`HOSTED_INFERENCE_KILL_SWITCH`):
+   global DISABLE, then the tenant's DISABLE, blocks (`policy:
+   'kill-switch'`, `disabledBy`). Uncached, no model call: **the incident
+   lever** (`smrt inference:hosted disable [--tenant <id>]`; programmatic
+   `setHostedInferenceEnabled(store, { enabled, tenantId? })`,
+   `getHostedInferenceSwitch()`). Stored as smrt-features override rows
+   with kill-switch semantics, not as a flag: a tenant ENABLE can never
+   lift a global DISABLE, and `inference.hosted` (the plan key) stays a pure
+   entitlement. Hosts with an admin UI write the same DISABLE rows through
+   `FeatureOverrideService` and their authorizer.
+2. **Tenant**: request tenant, else the principal's; none blocks (`no-tenant`).
+3. **Entitlement**: no entitled subscription blocks (`subscription`) unless
+   `requireSubscription: false`.
+4. **Spend**: the plan's tenant and per-user caps (smrt-subscriptions
+   AGENTS, "Hosted AI spend caps"): `blocked` blocks with `cap`, `spend`
+   (micro-dollars) and `resetsAt`; `warn` returns `warn` and calls
+   `onWarning` (errors swallowed). The user is the principal's, only in its
+   own tenant, and none for `userId: null` (agents).
+
+Any thrown error propagates and core blocks with `gate-error`. The plan
+check does not test the `inference.hosted` feature key: provisioning the
+hosted binding (#4759) is where entitlement to hosted is granted.
+
 ## Config
 
 ```ts
@@ -243,7 +287,9 @@ its own `baseUrl` core's pair rule refuses it.
 - Streamed text is never extended: a candidate that emitted text and then
   failed ends the walk with a `partial` substitution and
   `InferenceExhaustedError` (`reason: 'partial'`, `partialText`), unless
-  `allowPartial` returns the text. A `stream()` consumer that stops reading
+  `allowPartial` returns the text. A hosted-gate block (`AI_UNAVAILABLE`
+  from `clientFor()`, #4760) stops the walk and records nothing (core wrote
+  the `blocked` row). A `stream()` consumer that stops reading
   aborts the provider stream (internal signal merged with the caller's).
 - Ladder: when a tier's chain is spent and `degrade !== false`, resolve the
   next lower tier through `context.resolveTier()`, stopping below
