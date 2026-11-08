@@ -31,7 +31,7 @@ principals, tenancy, and authorization to the owning services.
 ## Models
 
 All seven models expose only generated REST/MCP `list`/`get`; structural tests
-check the registry for accidental mutating operations. Writes go through
+check the registry for mutating operations. Writes go through
 membership/owner-checked `ChatService` or the binding-checked voice adapter.
 
 `ChatService` is a closed facade. Its collections and security-sensitive
@@ -208,6 +208,9 @@ the principal's stored inference binding over the config `ai` block (#4756,
 (own `runAsPrincipal` tx). `clientRequestId` makes the row id a UUIDv5
 (`clientRequestMessageId`): the PK is the retry reservation. See
 [docs](../../docs/assistant-dock.md).
+
+AI off / not set up (#4757): routes answer a structured `ai_unavailable` 503;
+dock `aiSettingsHref` ([agents/ai-unavailable.md](agents/ai-unavailable.md)).
 
 #4505: `messageFormat="markdown"` / `renderMessage` ([docs](../../docs/assistant-dock.md));
 `collapseRecoveredFailures` ([tool-loop](agents/tool-loop.md#failed-calls-are-persisted-4383)).

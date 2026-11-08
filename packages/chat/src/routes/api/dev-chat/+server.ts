@@ -1,5 +1,6 @@
 import type { AIMessage, ChatOptions } from '@happyvertical/ai';
 import { json, type RequestHandler } from '@sveltejs/kit';
+import { chatUnavailableBody } from '../../../ai-unavailable.js';
 import {
   type DevAIConfig,
   devAIClientOptions,
@@ -154,6 +155,9 @@ export const POST: RequestHandler = async ({ request }) => {
         configured: true,
       });
     } catch (error) {
+      // AI off (#4757): a structured answer, not the local fallback.
+      const unavailable = chatUnavailableBody(error);
+      if (unavailable) return json(unavailable, { status: 503 });
       return json({
         mode: 'local' satisfies DevChatMode,
         provider: aiConfig.provider,

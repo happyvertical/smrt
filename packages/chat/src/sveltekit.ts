@@ -67,6 +67,7 @@ import {
   getCurrentSessionPermissionContext,
   getRequestScopedDatabase,
 } from '@happyvertical/smrt-users';
+import { chatUnavailableBody, chatUnconfiguredBody } from './ai-unavailable.js';
 import {
   ASSISTANT_TURN_GENERIC_ERROR,
   type AssistantContinuationStore,
@@ -419,6 +420,8 @@ export class AssistantRouteError extends Error {
     readonly status: number,
     readonly code: string,
     message: string,
+    /** Extra user-safe body fields (the #4757 `unavailable` answer). */
+    readonly body?: Record<string, unknown>,
   ) {
     super(message);
     this.name = 'AssistantRouteError';
@@ -540,7 +543,30 @@ function json(
 }
 
 function errorResponse(error: AssistantRouteError): Response {
-  return json({ error: error.message, code: error.code }, error.status);
+  return json(
+    { ...(error.body ?? {}), error: error.message, code: error.code },
+    error.status,
+  );
+}
+
+/**
+ * The structured 503 for unavailable AI (#4757): core's
+ * `InferenceUnavailableError`, or smrt-config's "no provider" error from the
+ * default factory (`unconfigured`). `undefined` for anything else.
+ */
+function unavailableRouteError(
+  error: unknown,
+): AssistantRouteError | undefined {
+  const body =
+    chatUnavailableBody(error) ??
+    (error instanceof AIProviderNotConfiguredError
+      ? chatUnconfiguredBody()
+      : undefined);
+  if (!body) return undefined;
+  return new AssistantRouteError(503, body.code, body.error, {
+    type: body.type,
+    unavailable: body.unavailable,
+  });
 }
 
 const notFound = () =>
@@ -1049,6 +1075,15 @@ export function mountAssistantRoutes(
       }
       return ai;
     } catch (error) {
+      // AI off / not set up is a state, not a fault (#4757): answer it
+      // structured. A chosen mode `off` is not logged; the default
+      // factory's "no provider" error still reaches `onError` (it names
+      // the config the operator must add).
+      const unavailable = unavailableRouteError(error);
+      if (unavailable) {
+        if (error instanceof AIProviderNotConfiguredError) safeLog(error);
+        throw unavailable;
+      }
       safeLog(error);
       throw new AssistantRouteError(
         503,
