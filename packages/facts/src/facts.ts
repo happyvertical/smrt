@@ -14,6 +14,7 @@ import {
 import {
   type PromptConfigOverrideInput,
   promptMessageOptions,
+  type ResolvedPromptAI,
   resolvePrompt,
 } from '@happyvertical/smrt-prompts';
 import {
@@ -209,6 +210,32 @@ function asMessageCapableAi(ai: unknown): MessageCapableAi | null {
 
 export class FactCollection extends SmrtCollection<Fact> {
   static readonly _itemClass = Fact;
+
+  /**
+   * The message client and call options for a resolved prompt. A message-only
+   * client injected as `options.ai` is used as is: a tier cannot rebind it, so
+   * the tier keys are dropped. Otherwise `prepareAiOperation()` binds the
+   * prompt's tier and tags the usage row (#4755).
+   */
+  private async preparePromptCall(
+    promptAi: ResolvedPromptAI,
+  ): Promise<{ ai: MessageCapableAi; aiOptions: Record<string, unknown> }> {
+    const directAi = asMessageCapableAi(this.options.ai);
+    if (directAi) {
+      return {
+        ai: directAi,
+        aiOptions: promptMessageOptions(promptAi, { routeTier: false }),
+      };
+    }
+    const prepared = await this.prepareAiOperation(
+      promptMessageOptions(promptAi),
+    );
+    return {
+      ai: prepared.ai as unknown as MessageCapableAi,
+      aiOptions: prepared.aiOptions,
+    };
+  }
+
   private readonly reconciliationQueues = new Map<string, Promise<void>>();
 
   /**
@@ -1094,18 +1121,14 @@ export class FactCollection extends SmrtCollection<Fact> {
       },
     );
 
-    const directAi = asMessageCapableAi(this.options.ai);
-    const ai = directAi || (await this.getAiClient());
+    const { ai, aiOptions } = await this.preparePromptCall(resolvedPrompt.ai);
     if (typeof ai.message !== 'function') {
       throw new Error(
         'AI fact extraction requires an AI client with a message() method',
       );
     }
 
-    const response = await ai.message(
-      resolvedPrompt.text,
-      promptMessageOptions(resolvedPrompt.ai, { routeTier: false }),
-    );
+    const response = await ai.message(resolvedPrompt.text, aiOptions);
     return parseFactExtractionResponse(response).slice(0, maxFacts);
   }
 
@@ -1149,18 +1172,14 @@ export class FactCollection extends SmrtCollection<Fact> {
       },
     );
 
-    const directAi = asMessageCapableAi(this.options.ai);
-    const ai = directAi || (await this.getAiClient());
+    const { ai, aiOptions } = await this.preparePromptCall(resolvedPrompt.ai);
     if (typeof ai.message !== 'function') {
       throw new Error(
         'AI article claim extraction requires an AI client with a message() method',
       );
     }
 
-    const response = await ai.message(
-      resolvedPrompt.text,
-      promptMessageOptions(resolvedPrompt.ai, { routeTier: false }),
-    );
+    const response = await ai.message(resolvedPrompt.text, aiOptions);
     return parseFactExtractionResponse(response).slice(0, maxFacts);
   }
 
@@ -1205,18 +1224,14 @@ export class FactCollection extends SmrtCollection<Fact> {
       },
     );
 
-    const directAi = asMessageCapableAi(this.options.ai);
-    const ai = directAi || (await this.getAiClient());
+    const { ai, aiOptions } = await this.preparePromptCall(resolvedPrompt.ai);
     if (typeof ai.message !== 'function') {
       throw new Error(
         'AI claim support assessment requires an AI client with a message() method',
       );
     }
 
-    const response = await ai.message(
-      resolvedPrompt.text,
-      promptMessageOptions(resolvedPrompt.ai, { routeTier: false }),
-    );
+    const response = await ai.message(resolvedPrompt.text, aiOptions);
     return parseClaimSupportResponse(response);
   }
 
@@ -1276,10 +1291,11 @@ export class FactCollection extends SmrtCollection<Fact> {
       // No typed-decision client is the explicit legacy route. Keep its
       // successful-text parsing behavior: only a response containing
       // "branch" branches; every other successful response merges.
-      const response = await this.ai.message(
-        resolvedPrompt.text,
-        promptMessageOptions(resolvedPrompt.ai, { routeTier: false }),
+      // A tier profile (#4750) selects the tier client and tags the usage row.
+      const { ai, aiOptions } = await this.prepareAiOperation(
+        promptMessageOptions(resolvedPrompt.ai),
       );
+      const response = await ai.message(resolvedPrompt.text, aiOptions);
       const normalized = response.trim().toLowerCase();
       if (normalized.includes('branch')) {
         return 'branch';

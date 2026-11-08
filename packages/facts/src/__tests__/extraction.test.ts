@@ -242,6 +242,11 @@ describe('prompt-run usage tags reach the AI call (#4751)', () => {
     );
 
     expect(decision).toBe('merge');
-    expect(calls[0]?.usageTags).toEqual(defaultTags('smrtFacts.reconcile'));
+    // The legacy text route binds the prompt's tier (#4755).
+    expect(calls[0]?.usageTags).toEqual({
+      ...defaultTags('smrtFacts.reconcile'),
+      tierRequested: 'great',
+      tierResolved: 'great',
+    });
   });
 });
