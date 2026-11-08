@@ -1,5 +1,20 @@
 # @happyvertical/smrt-core
 
+## 0.60.14
+
+### Patch Changes
+
+- ### Features
+  
+  - prepare fresh vault key generations (#4744) (app-runtime)
+  
+  ### Other Changes
+  
+  - docs: document remote assistant connector authorization (#4733) (mcp)
+- @happyvertical/smrt-config@0.60.14
+  - @happyvertical/smrt-scanner@0.60.14
+  - @happyvertical/smrt-types@0.60.14
+
 ## 0.60.13
 
 ### Patch Changes

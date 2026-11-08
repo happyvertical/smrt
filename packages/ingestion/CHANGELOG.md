@@ -1,5 +1,19 @@
 # @happyvertical/smrt-ingestion
 
+## 0.60.14
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.60.14
+  - @happyvertical/smrt-agents@0.60.14
+  - @happyvertical/smrt-assets@0.60.14
+  - @happyvertical/smrt-jobs@0.60.14
+  - @happyvertical/smrt-playbooks@0.60.14
+  - @happyvertical/smrt-tenancy@0.60.14
+  - @happyvertical/smrt-ui@0.60.14
+  - @happyvertical/smrt-types@0.60.14
+
 ## 0.60.13
 
 ### Patch Changes
