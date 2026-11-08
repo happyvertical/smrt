@@ -14,6 +14,7 @@ Body:
 {contentBody}
 
 {reviewPrompt}`,
+  ai: { profile: 'great' },
   editable: {
     template: true,
     profile: true,
@@ -39,6 +40,7 @@ Incorrect text to fix:
 
 Corrected text to incorporate:
 {correctedText}`,
+  ai: { profile: 'great' },
   editable: {
     template: true,
     profile: true,

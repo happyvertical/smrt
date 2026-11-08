@@ -195,6 +195,18 @@ import {
 } from '@happyvertical/smrt-content';
 ```
 
+Tiers (#4755 rule, `../prompts/AGENTS.md`):
+
+| Key | Call | Tier |
+|-----|------|------|
+| `smrtContent.review` | `runReviewAction()` (persisted review) | `great` |
+| `smrtContent.applyCorrection` | `issueCorrection()` body rewrite | `great` |
+| `content.chat.contentEditorInteraction` | chat turn, applied to the editor | `great`, `interactive`; the session's explicit model wins (per-call `getAI()` client, tier not bound) |
+| `content.chat.contentEditorSession` | system prompt only, no call | none |
+| `smrtContent.thumbnail.aiGenerate` | image generation | none (tier keys are dropped) |
+
+The review and correction calls bind the tier through `prepareAiOperation()`.
+
 `smrtContent.thumbnail.aiGenerate` powers the AI image-generation prompt used by `ThumbnailGenerator` (strategy `'ai-generate'`). Variables substituted into the template: `style`, `title`, `styleHint`, `descriptionClause`. Internal foreign-key fields (`id`, `tenantId`) and the freeform `metadata` blob are intentionally excluded — `metadata` may carry tenant-private configuration or coordinates unrelated to the visual prompt.
 
 ## Gotchas
