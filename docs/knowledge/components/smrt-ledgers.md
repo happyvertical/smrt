@@ -5,10 +5,10 @@ description: "Double-entry accounting ledger for the SMRT framework"
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T15:48:19Z"
+  at: "2026-11-08T08:43:50Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:6c8210c3beff6d17697bc4a19be00169e54d6fee2c04612da8f75bd87ebdcd44"
+source_revision: "sha256:878d4b24e297a7d957516c553d8c729e6aa8496e63c5a45b21737fe57a18c8f2"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/ledgers/package.json"

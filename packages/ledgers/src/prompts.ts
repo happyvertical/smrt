@@ -35,6 +35,7 @@ Status: {journalStatus}
 Total: {journalTotal}
 Entries: {entryCount}
 Balanced: {journalBalanced}`,
+  ai: { profile: 'good' },
   editable: {
     template: true,
     profile: true,
