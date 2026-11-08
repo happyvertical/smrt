@@ -8,6 +8,7 @@ CLI with lazy-loaded commands, manifest discovery, and class introspection.
 smrt introspect              # Discover SMRT objects in project
 smrt doctor                  # Umbrella diagnostics; can verify a generation snapshot
 smrt doctor --db             # Add the live-schema parity section (see below)
+smrt doctor --ai [--probe]   # Inference tier/alias bindings, offline unless --probe (src/commands/doctor-ai.ts; ../inference/AGENTS.md); unresolvable binding exits 1
 smrt db:status               # Pending schema changes + failed migration classification (+ tenant natural-key findings: a missing tenant-led unique exits 1, a surviving legacy global unique warns until `db:migrate --drop-legacy-natural-key`: src/commands/tenant-natural-keys.ts)
 smrt db:status --parity      # Same, plus live-schema parity (see below)
 smrt db:orphans              # agents/db-orphans.md
