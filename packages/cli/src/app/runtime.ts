@@ -17,6 +17,7 @@ import {
   prepareApplicationStateRoot,
   resolveApplicationId,
 } from './identity.js';
+import type { SnapshotKeyProvider } from './snapshot-framing.js';
 
 /** Output sinks. Each call receives complete text including the newline. */
 export interface AppCommandIo {
@@ -76,6 +77,12 @@ export interface AppCommandDependencies {
   sleep(milliseconds: number): Promise<void>;
   /** Signal a process (`start` cleanup). */
   signal(pid: number, signal: NodeJS.Signals): void;
+  /**
+   * Vault key custody for `backup --encrypted` / `export --encrypted`
+   * (#4797). Supplied by the embedding host or the vault key lifecycle;
+   * absent means encrypted snapshots fail closed.
+   */
+  snapshotKeys?: SnapshotKeyProvider;
 }
 
 /** Per-invocation context. */

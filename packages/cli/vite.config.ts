@@ -64,6 +64,7 @@ export default defineConfig({
         '@happyvertical/smrt-types',
         '@happyvertical/sql',
         '@happyvertical/utils',
+        /^@happyvertical\/encryption(?:\/|$)/,
 
         // External dependencies to externalize
         /^@modelcontextprotocol\//,
