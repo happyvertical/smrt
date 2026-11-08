@@ -261,6 +261,7 @@ export {
   getInferenceExecutor,
   getInferenceResolver,
   INFERENCE_FUSION_MODES,
+  INFERENCE_TARGET_SOURCES,
   INFERENCE_TARGET_UNBOUND,
   INFERENCE_TIERS,
   type InferenceAlias,
@@ -285,6 +286,7 @@ export {
   type InferenceRunStatus,
   type InferenceTarget,
   type InferenceTargetKind,
+  type InferenceTargetSource,
   type InferenceTier,
   type InferenceTierRequest,
   type InferenceUsageObservation,
@@ -292,6 +294,7 @@ export {
   inferenceExecutorFor,
   inferenceTargetKind,
   inferenceUsageTags,
+  isInferenceTargetSource,
   isInferenceTier,
   isInferenceTierRequest,
   mergeInferenceConfigs,
@@ -309,6 +312,13 @@ export {
   isInferencePresetId,
   resolveInferencePreset,
 } from './inference-presets';
+export {
+  bindInferenceTarget,
+  inferenceTargetIdentity,
+  type ResolvedInferenceTarget,
+  type ResolveInferenceTargetOptions,
+  resolveInferenceTarget,
+} from './inference-target';
 // Global interceptors system (for tenancy, soft-delete, audit logging, etc.)
 export * from './interceptors';
 export {
