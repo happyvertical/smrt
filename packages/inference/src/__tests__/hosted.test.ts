@@ -509,6 +509,83 @@ describe('hosted inference provisioning (#4759)', () => {
     ).resolves.toMatchObject({ created: true });
   });
 
+  it('rolls the state back and discards the key when storing the binding fails', async () => {
+    await writeByo(ALICE);
+    const configName = inferenceProviderConfigSecretName({ userId: ALICE });
+    let failNext = true;
+    const flaky = {
+      retrieve: (name: string) => secrets.retrieve(name),
+      list: (options?: { category?: string }) => secrets.list(options),
+      delete: (
+        name: string,
+        options?: { auditDetails?: Record<string, unknown> },
+      ) => secrets.delete(name, options),
+      store: (
+        name: string,
+        value: string,
+        options?: Parameters<SecretService['store']>[2],
+      ) => {
+        if (name === configName && failNext) {
+          failNext = false;
+          return Promise.reject(new Error('disk full'));
+        }
+        return secrets.store(name, value, options);
+      },
+    };
+    const p = createHostedInferenceProvisioner({
+      db,
+      secrets: flaky,
+      gateway: GATEWAY,
+      admin,
+    });
+    await expect(
+      p.provision({
+        tenantId: TENANT,
+        userId: ALICE,
+        budget: { limitMicros: 1_000_000 },
+      }),
+    ).rejects.toThrow('disk full');
+    expect(admin.deleted).toEqual(['key-id-1']);
+    expect((await userConfig(ALICE)).apiKey).toBe('sk-byo-alice');
+    await expect(
+      p.status({ tenantId: TENANT, userId: ALICE }),
+    ).resolves.toMatchObject({ status: 'none' });
+
+    // The retry provisions and still keeps the BYO config as the prior.
+    await expect(
+      p.provision({
+        tenantId: TENANT,
+        userId: ALICE,
+        budget: { limitMicros: 1_000_000 },
+      }),
+    ).resolves.toMatchObject({ created: true });
+    await p.revoke({ tenantId: TENANT, userId: ALICE });
+    expect((await userConfig(ALICE)).apiKey).toBe('sk-byo-alice');
+  });
+
+  it('refuses to report a replayed grant whose state was removed out of band', async () => {
+    const p = provisioner();
+    await p.provision({
+      tenantId: TENANT,
+      userId: ALICE,
+      budget: { limitMicros: 1_000_000 },
+    });
+    await withTenant({ tenantId: TENANT }, async () => {
+      await secrets.delete(hostedInferenceStateSecretName(ALICE));
+      await secrets.delete(
+        inferenceProviderConfigSecretName({ userId: ALICE }),
+      );
+    });
+    await expect(
+      p.provision({
+        tenantId: TENANT,
+        userId: ALICE,
+        budget: { limitMicros: 1_000_000 },
+      }),
+    ).rejects.toMatchObject({ code: 'HOSTED_STATE_INVALID' });
+    expect(admin.keys).toHaveLength(1);
+  });
+
   it('never puts key material in results, audit rows, claims or logs', async () => {
     await writeByo(ALICE);
     const logs = [

@@ -1017,6 +1017,7 @@ export function createHostedInferenceProvisioner(
           state = await readState(secrets, userId);
         }
         const generation = state?.generation ?? 0;
+        let rollback: (() => Promise<unknown>) | undefined;
         const admin = await getAdmin(gateway);
         const projectId = await ensureProject(
           tenantId,
@@ -1107,6 +1108,24 @@ export function createHostedInferenceProvisioner(
               );
             } catch (error) {
               await discard();
+              // Put the previous state back so the user's prior config is
+              // not lost and the next attempt starts from it. Runs after the
+              // claim's transaction has rolled back: a delete inside it
+              // would wait on that transaction on single-connection
+              // adapters.
+              const previous = state;
+              rollback = () =>
+                previous
+                  ? writeState(secrets, userId, previous, {
+                      operation: 'inference.hosted.provision-rollback',
+                      keyAlias,
+                    })
+                  : secrets.delete(hostedInferenceStateSecretName(userId), {
+                      auditDetails: {
+                        operation: 'inference.hosted.provision-rollback',
+                        keyAlias,
+                      },
+                    });
               throw error;
             }
             const created: ProvisionHostedInferenceResult = {
@@ -1114,6 +1133,29 @@ export function createHostedInferenceProvisioner(
               created: true,
             };
             return created;
+          },
+        ).then(
+          async (provisioned) => {
+            // A replayed claim must describe what is stored. It does not when
+            // the state was removed out of band (claims outlive it for the
+            // retention window): refuse rather than report a grant that
+            // does not exist.
+            const stored = await readUserConfig(secrets, userId);
+            if (
+              stored?.source !== 'hosted' ||
+              stored.gatewayKeyAlias !== provisioned.keyAlias
+            ) {
+              throw new HostedInferenceError(
+                'Hosted inference state for this user was removed outside provisioning; revoke the gateway key named in the audit log and provision again after the run-once claim expires.',
+                'HOSTED_STATE_INVALID',
+                { tenantId, userId, keyAlias: provisioned.keyAlias },
+              );
+            }
+            return provisioned;
+          },
+          async (error: unknown) => {
+            if (rollback) await rollback().catch(() => undefined);
+            throw error;
           },
         );
       });
