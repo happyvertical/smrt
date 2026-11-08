@@ -1,3 +1,14 @@
+{{- define "smrt.maintenanceConf" -}}
+server {
+  listen {{ .Values.maintenance.port }};
+  location = /ready { return 200 'ready'; }
+  location / {
+    add_header X-Smrt-Release {{ .Values.release.id }} always;
+    add_header X-Smrt-Sequence {{ .Values.release.sequence }} always;
+    return 503 {{ .Values.maintenance.http.body | quote }};
+  }
+}
+{{ end -}}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -5,16 +16,9 @@ metadata:
   labels:
 {{ include "smrt.labels" . | indent 4 }}
 data:
-  default.conf: |
-    server {
-      listen {{ .Values.maintenance.port }};
-      location = /ready { return 200 'ready'; }
-      location / {
-        add_header X-Smrt-Release {{ .Values.release.id }} always;
-        add_header X-Smrt-Sequence {{ .Values.release.sequence }} always;
-        return 503 {{ .Values.maintenance.http.body | quote }};
-      }
-    }
+  # A block scalar ending its document loses the final newline in Helm's
+  # post-render path (Flux always post-renders), so emit a quoted string.
+  default.conf: {{ include "smrt.maintenanceConf" . | toJson }}
 ---
 apiVersion: apps/v1
 kind: Deployment

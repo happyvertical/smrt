@@ -429,3 +429,19 @@ test('TLS reference rotation and correlated rollback keep every rendered Pod tem
   assert.equal(resource(documents(rotated.spec.values),'Ingress',values.ingress.name??'fixture').spec.tls[0].secretName,'tls-v2');assert.equal(resource(documents(rollback.spec.values),'Ingress',values.ingress.name??'fixture').spec.tls[0].secretName,'tls-v1');
   assert.deepEqual(rotated.spec.values.release,values.release);assert.equal(hash(rotated.spec.values.target),hash(values.target));
 });
+
+test('rendered ConfigMap data uses no YAML block scalars', () => {
+  // helm-controller v1.5.5 (Helm 4.2.0) always post-renders and re-serializes a
+  // block scalar ending its document as `|-`, dropping the final newline, so
+  // live data drifts from the exact render. Quoted strings are position-safe.
+  for (const values of [fixture(), fixture('work'), legacyExerciseValues('a'.repeat(64), 'fixtures')]) {
+    const configMaps = parseAllDocuments(render(values)).filter((document) => document.toJSON()?.kind === 'ConfigMap');
+    assert.ok(configMaps.length > 0);
+    for (const document of configMaps)
+      for (const pair of document.get('data', true)?.items ?? [])
+        assert.ok(
+          !['BLOCK_LITERAL', 'BLOCK_FOLDED'].includes(pair.value?.type),
+          `${document.toJSON().metadata.name} data.${pair.key} is a block scalar`,
+        );
+  }
+});
