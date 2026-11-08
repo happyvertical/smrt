@@ -24,14 +24,12 @@ import {
   INFERENCE_TIERS,
   type InferenceCallOptions,
   type InferenceExecutionContext,
-  type InferenceExecutor,
   type InferenceModelClient,
   type InferenceTarget,
   type InferenceTier,
 } from '@happyvertical/smrt-core';
 import { classifyInferenceFailure, isInferenceAbort } from './classify.js';
 import {
-  CHAIN_KINDS,
   type ChainStep,
   expandTarget,
   validateInferenceConfig,
@@ -530,15 +528,5 @@ export function createChainClient(
       const client = await context.clientFor(step.target);
       return method(client, 'embed')(...args);
     },
-  };
-}
-
-/** The executor registered into core's seam for `alias` / `candidates`. */
-export function createChainExecutor(
-  options: ChainExecutorOptions = {},
-): InferenceExecutor {
-  return {
-    kinds: CHAIN_KINDS,
-    createClient: (context) => createChainClient(context, options),
   };
 }

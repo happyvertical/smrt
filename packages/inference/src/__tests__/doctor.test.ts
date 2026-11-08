@@ -86,6 +86,43 @@ describe('checkInferenceBindings (offline)', () => {
     });
   });
 
+  it('checks fusion tiers and fusion structure without the app prompts (#4753)', async () => {
+    const report = await checkInferenceBindings({
+      config: {
+        tiers: { best: { fusion: 'review' }, great: { fusion: 'ghost' } },
+        fusions: {
+          review: {
+            mode: 'handoff',
+            description: 'draft then review',
+            seats: [
+              { name: 'a', prompt: 'unloaded.prompt', target: 'cheap' },
+              { name: 'b', prompt: 'unloaded.prompt', target: 'great' },
+            ],
+          },
+          broken: { mode: 'pair', seats: [] },
+        },
+      },
+      env,
+    });
+    const bindings = byBinding(report);
+    expect(bindings['tier:best']).toMatchObject({
+      status: 'ok',
+      target: 'fusion review',
+    });
+    expect(bindings['tier:great']).toMatchObject({
+      status: 'error',
+      problems: [expect.stringContaining('unknown fusion "ghost"')],
+    });
+    expect(bindings['fusion:review']).toMatchObject({
+      status: 'ok',
+      target: 'handoff, 2 seat(s) — draft then review',
+    });
+    expect(bindings['fusion:broken']).toMatchObject({
+      status: 'error',
+      problems: [expect.stringContaining('exactly 3 seat(s)')],
+    });
+  });
+
   it('fails a cycle and an empty alias', async () => {
     const report = await checkInferenceBindings({
       config: {

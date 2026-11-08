@@ -85,7 +85,11 @@ describe('smrt-inference registered into core', () => {
 
   it('registers on import', () => {
     expect(isInferenceRegistered()).toBe(true);
-    expect(getInferenceExecutor()?.kinds).toEqual(['alias', 'candidates']);
+    expect(getInferenceExecutor()?.kinds).toEqual([
+      'alias',
+      'candidates',
+      'fusion',
+    ]);
   });
 
   it('walks an alias on quota and tags the answering call', async () => {

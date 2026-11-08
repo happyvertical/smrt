@@ -3,13 +3,13 @@
 Binding behavior for core's inference tiers (epic #4749). Core owns the names
 and the seam ([core inference.md](../core/agents/inference.md)); this package
 owns alias chains, classified fallback, ladder degradation and
-`smrt doctor --ai` (#4752). Fusions (#4753) and the settings panel (#4754)
-build on the executor and the doctor here.
+`smrt doctor --ai` (#4752), and the fusion interpreter (#4753). The
+settings panel (#4754) builds on the executor and the doctor here.
 
 ## Entries
 
 - Root (browser-safe): importing it calls `registerInference()`, which sets
-  the chain executor (`setInferenceExecutor()`) and a validating resolver
+  the executor (`alias`, `candidates`, `fusion`) and a validating resolver
   (`setInferenceResolver()`). The resolver binds nothing: it validates chain
   config, then defers to a resolver registered earlier (#4666 per-user
   bindings) or to core's built-in config resolution. No aliases and no chain
@@ -78,13 +78,97 @@ its own `baseUrl` core's pair rule refuses it.
   `context.recordUsage()` (core's usage handlers; no second writer) with
   `outcome: failed | partial`, `reason` and the full trail ending `to: null` (reason `unclassified` when a non-routing error ended it),
   then throws `InferenceExhaustedError` (`INFERENCE_EXHAUSTED`).
-- Add a class (#4758 `missing-capability`) to `INFERENCE_FAILURE_CLASSES` and
-  a kind (#4753 `fusion`) to the executor's `kinds`; consumers ignore kinds
-  they do not run.
+- Add a class (#4758 `missing-capability`) to `INFERENCE_FAILURE_CLASSES`
+  and a kind to `EXECUTOR_KINDS` (`createChainExecutor()` in `fusion.ts`
+  dispatches on it); consumers ignore kinds they do not run.
+
+## Fusions
+
+`src/fusion.ts` runs `{ fusion: '<key>' }` tier targets. SMRT ships the
+interpreter and the vocabulary, never a fusion: modes are code, fusions are
+config. A fusion comes from `inference.fusions.<key>` (app config, wins) or
+`defineFusion({ key, mode, seats, gate?, description? })` (process registry
+on `globalThis`). A seat is `{ name?, prompt, target, temperature?, output? }`:
+`prompt` is a smrt-prompts key whose resolved template (code default,
+config, app and tenant overrides, read through `context.db`) is the seat's
+system message, so tenant overrides of a seat need nothing new; `target` is
+a tier (resolved through the same resolver with the seat's prompt key, so
+per-user bindings apply), `{ alias }`, `{ candidates }` or an inline
+`{ provider, model }`, never a fusion. Each seat runs through
+`createChainClient()`, so chains, classified fallback and (tier seats only)
+the ladder apply per seat. `name` defaults to the prompt key and must be
+unique.
+
+Example (a consumer's code; SMRT does not ship it):
+
+```ts
+definePrompt({ key: 'contracts.skeptic', template: 'List the risks…' });
+definePrompt({ key: 'contracts.advocate', template: 'List the benefits…' });
+definePrompt({ key: 'contracts.synthesis', template: 'Weigh both reviews…' });
+config({ inference: {
+  tiers: { best: { fusion: 'contract-review' } },
+  fusions: { 'contract-review': {
+    mode: 'pair',
+    seats: [
+      { name: 'skeptic', prompt: 'contracts.skeptic', target: 'good' },
+      { name: 'advocate', prompt: 'contracts.advocate', target: { alias: 'frontier' } },
+      { name: 'synthesis', prompt: 'contracts.synthesis', target: 'great' },
+    ],
+    gate: { criteria: 'Both reviews agree on every material risk.',
+            sufficientWhen: { choice: 'agree', minConfidence: 0.85 } },
+  } },
+} });
+await contract.do('Summarize this contract', { tier: 'best' }); // unchanged caller
+```
+
+- **Modes and call counts** (model calls; a seat's fallback candidates are
+  substitutions of that seat, not extra seats): `single` 1 (one seat);
+  `pair` 3 (seats 0 and 1 in parallel, then seat 2 merges both outputs,
+  labelled by seat and model); `handoff` 2 (seat 0 drafts, seat 1 receives
+  the draft and answers). A mode that adds a call is a bug.
+- **Gate** (`pair`, `handoff`): one choice question through
+  `context.decide()` (core's typed-decision client, the `evaluate()` path)
+  over the outputs so far, labels `sufficientWhen.choice` and `continue`.
+  The chosen label at `minConfidence` or above skips the remaining stage,
+  recorded `skipped`; the answer is then seat 0's output (`pair`: the first
+  live one) or the draft. No decision client (`unavailable`) or a decision
+  error runs the stage. Its usage row has `seat: 'gate'`.
+- **Failure semantics.** A dead seat never aborts a `pair`: the merge seat
+  is told which seat failed and why (class and message). A dead merge or
+  handoff answer seat falls back to the first live output, recorded
+  `degraded`; the handoff answer seat is told when the draft died. A run
+  whose seats all died throws `InferenceFusionError`
+  (`INFERENCE_FUSION_FAILED`, `result` holds every seat) with the run
+  recorded `failed`, never an empty answer. A config error, a caller abort,
+  or a final seat that already streamed text (`partial`) rethrows.
+- **JSON**: `output: 'json'` sends `responseFormat: json_object` and parses;
+  a seat whose text does not parse keeps it under `raw` (with `parseError`)
+  in `FusionSeatResult` and hands the raw text on, labelled.
+- **Caller options**: generation options (`responseFormat`, `tools`,
+  `onProgress`, …) reach the final seat only; `signal` / `timeout` reach every
+  seat; `history` is the seat's instructions. `onFusionResult(result)`
+  receives the structured `FusionRunResult`. Only `message()` runs a fusion.
+- **Record**: every seat's usage row carries `runId`, `fusionKey`, `seat`
+  and the seat's prompt tags; `context.recordRun()` writes one
+  `_smrt_ai_runs` row (`ok | degraded | failed`; a seat is degraded when it
+  died or answered through a substitution) with identities and totals only
+  (`../core/agents/ai-usage.md`). `smrt ai:usage --by fusion` totals runs.
+- **Validation**: `findInferenceConfigIssues()` names structural offenders
+  by path (`fusion-invalid`, `fusion-unknown`, `fusion-nested`); an
+  unregistered seat prompt key is a load error (`fusion-prompt-unknown`) from
+  `validateInferenceConfig()`, the resolver, the executor and
+  `defineFusion()`, but not the doctor (it runs without the app's prompts).
+- Seat prompts resolve through `@happyvertical/smrt-prompts` (optional peer,
+  imported with `importOptionalDependency()` so the root stays browser-safe);
+  `setFusionPromptResolver()` replaces it.
+- **Tenant-level fusions are deferred** to #4754's allow-list: a fusion
+  multiplies hosted model spend per call, so a tenant must not be able to
+  define or rebind one until bindings have a tenant allow-list. v1 reads
+  fusions from app config and code only.
 
 ## Doctor (`src/node.ts`)
 
-Per tier and alias: provider recognized (AI SDK provider list or preset id),
+Per tier, alias and fusion (structure only): provider recognized (AI SDK provider list or preset id),
 key variable present (a provider's default variable only warns: a
 same-provider target inherits the configured key), model named (warns),
 alias resolvable, cycle-free. `probe` GETs `/models` (OpenAI-compatible,
