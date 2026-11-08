@@ -604,7 +604,10 @@ export function createAdoptionMethods(config, command, helpers, options) {
         selectorIdentity: hash(actual.spec?.selector ?? {}),
         legacyManager: r.legacyManager,
         managers: specManagers(actual.kind, actual.metadata.managedFields),
-        orphanedFieldsIdentity: orphaned.get(actual.metadata.uid) ?? null,
+        orphanedFieldsIdentity:
+          orphaned.get(actual.metadata.uid) ??
+          actual.metadata.annotations?.[`${adoptionAnnotation}orphaned-fields`] ??
+          null,
       };
     });
     return {
@@ -844,8 +847,11 @@ export function createAdoptionMethods(config, command, helpers, options) {
           leaves.every((leaf) => reviewedOrphan(JSON.parse(leaf))),
           'Legacy manager owns unreviewed fields outside the Helm render',
         );
-        orphaned.set(actual.metadata.uid, leaves.length ? hash(leaves) : null);
-        await helpers.releaseLegacyManager(actual, r.legacyManager, document);
+        // Recorded on the object in the same patch, so a failed publication
+        // and resume still journal what was left unowned.
+        const record = leaves.length ? hash(leaves) : 'none';
+        orphaned.set(actual.metadata.uid, record);
+        await helpers.releaseLegacyManager(actual, r.legacyManager, document, record);
       }
       all = await helpers.namespaceInventory();
       pairs = adopted(all);

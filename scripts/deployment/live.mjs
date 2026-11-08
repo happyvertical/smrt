@@ -1,3 +1,4 @@
+import { adoptionAnnotation } from './adopt.mjs';
 import { execFile } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
@@ -418,7 +419,13 @@ export async function run(command, args, input) {
 // kubectl arguments that drop only the reviewed legacy manager's managedFields
 // entries, as the release reconciler identity. Values are kept; a changed UID
 // or resourceVersion fails the JSON patch test instead of releasing.
-export function legacyManagerRelease(o, manager, document, namespace) {
+export function legacyManagerRelease(
+  o,
+  manager,
+  document,
+  namespace,
+  orphanedFieldsIdentity,
+) {
   const kept = (o.metadata.managedFields ?? []).filter(
     (entry) => entry.manager !== manager,
   );
@@ -433,6 +440,25 @@ export function legacyManagerRelease(o, manager, document, namespace) {
     /^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$/.test(account ?? ''),
     'HelmRelease must declare reconciler serviceAccountName',
   );
+  demand(
+    orphanedFieldsIdentity === 'none' ||
+      /^[a-f0-9]{64}$/.test(orphanedFieldsIdentity ?? ''),
+    'Orphaned field record must be a digest or none',
+  );
+  // Journaled evidence must survive a failed publication: record what the
+  // release left unowned on the object itself, in the same atomic patch.
+  const key = `${adoptionAnnotation}orphaned-fields`;
+  const record = o.metadata.annotations
+    ? {
+        op: 'add',
+        path: `/metadata/annotations/${key.replaceAll('~', '~0').replaceAll('/', '~1')}`,
+        value: orphanedFieldsIdentity,
+      }
+    : {
+        op: 'add',
+        path: '/metadata/annotations',
+        value: { [key]: orphanedFieldsIdentity },
+      };
   return [
     '--namespace',
     namespace,
@@ -451,6 +477,7 @@ export function legacyManagerRelease(o, manager, document, namespace) {
         value: o.metadata.resourceVersion,
       },
       { op: 'replace', path: '/metadata/managedFields', value: kept },
+      record,
     ]),
     `${o.kind.toLowerCase()}/${o.metadata.name}`,
   ];
@@ -1760,8 +1787,8 @@ export function createLiveAdapter(
             true,
           );
       },
-      releaseLegacyManager: async (o, manager, document) => {
-        const args = legacyManagerRelease(o, manager, document, namespace);
+      releaseLegacyManager: async (o, manager, document, orphanedFieldsIdentity) => {
+        const args = legacyManagerRelease(o, manager, document, namespace, orphanedFieldsIdentity);
         try {
           await command('kubectl', args);
         } catch {

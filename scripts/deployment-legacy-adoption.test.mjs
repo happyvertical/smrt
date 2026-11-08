@@ -829,7 +829,9 @@ test('native legacy gates bind actual UID, stop/relinquish revisions, selectors,
     const again = await counting.observeAdopted(plan, adopted, 'helm-established');
     assert.equal(released.length, 2, 'an already released resource is not patched again');
     assert.equal(fences, 1, 'no fence needed without a release');
-    assert.deepEqual(again.resources.map((r) => r.orphanedFieldsIdentity), [null, null]);
+    assert.deepEqual(again.resources.map((r) => r.orphanedFieldsIdentity), established.resources.map((r) => r.orphanedFieldsIdentity), 'the recorded orphan identity survives a failed publication and resume');
+    for (const o of [actual, ingress]) delete o.metadata.annotations['smrt.happyvertical.com/adoption-orphaned-fields'];
+    assert.deepEqual((await counting.observeAdopted(plan, adopted, 'helm-established')).resources.map((r) => r.orphanedFieldsIdentity), [null, null], 'no record means no release happened here');
     await assert.rejects(counting.observeAdopted(plan, adopted, 'finalized'), /must be suspended before finalization/);
     ks.spec.suspend = true;
     await assert.rejects(counting.observeAdopted(plan, adopted, 'helm-established'), /must not be suspended before finalization/);

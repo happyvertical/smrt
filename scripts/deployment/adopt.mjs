@@ -290,7 +290,9 @@ export function verifyAdoptionGate(
           ]) &&
           [r.apiVersion, r.kind, r.namespace, r.name, r.uid, r.legacyManager].every(text) &&
           [r.specIdentity, r.selectorIdentity].every(sha) &&
-          (r.orphanedFieldsIdentity === null || sha(r.orphanedFieldsIdentity)) &&
+          (r.orphanedFieldsIdentity === null ||
+            r.orphanedFieldsIdentity === 'none' ||
+            sha(r.orphanedFieldsIdentity)) &&
           Array.isArray(r.managers) &&
           r.managers.length <= 32 &&
           r.managers.every(text) &&
