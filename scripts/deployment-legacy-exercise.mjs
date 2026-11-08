@@ -2208,17 +2208,14 @@ export async function legacyMain(env = process.env) {
     );
     const staged = await adoptOrResume(config, adapter(), plan);
     assert.equal(staged.stage, 'helm-staged');
+    // Let rejections reach until(), which keeps the last reason for a timeout.
     await until('staging HR acknowledged', async () => {
-      try {
-        await adapter().observeAdopted(
-          plan,
-          await adapter().readAdoption(plan),
-          'helm-established',
-        );
-        return true;
-      } catch {
-        return false;
-      }
+      await adapter().observeAdopted(
+        plan,
+        await adapter().readAdoption(plan),
+        'helm-established',
+      );
+      return true;
     });
     const stagedUid = get('helmrelease', 'legacy').metadata.uid;
     assert.equal(
