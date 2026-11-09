@@ -37,6 +37,23 @@ token to JS). Tokens are `SecretString`s; `reveal()` is allowed only in
 `custody.ts`, `control-handler.ts` and `handoff-frame.ts` (a test enforces it).
 Every threat in the README table must keep a test with the named title.
 
+The runtime bundler lives in `src/bundler` behind the Node-only
+`./bundler` entry (the root entry and `./webview` must never import it; a test
+enforces it). `runBundle(plan, seams)` in `run.ts` is the pipeline; every
+external effect (filesystem, pnpm, Node download, measurement, environment) is
+a seam so tests run offline with a fake installer (`testing/run-fixtures.ts`).
+Errors are `BundleError` with the one closed exit-code table in `errors.ts`
+(`bundleExitCode`); messages are fixed text and never carry a path, package
+name or child output. The report (`report.ts`) is closed and canonical with no
+timestamps; keep `smrt desktop bundle`, the README bundler section and the
+`B1`-`B14` threat table in step: a test checks that every closing-test title
+exists. The feature catalog is in `product-config.ts`; a package a compiled
+model imports at run time (such as `@oxc-project/runtime`) must never be in it.
+The CLI command (`packages/cli/src/commands/desktop.ts`) stays a thin wrapper.
+`e2e.test.ts` (real pnpm, nodejs.org, a real start) runs only with
+`SMRT_DESKTOP_BUNDLE_E2E=1`. The Node pins are unverified against the release
+signature until `scripts/update-node-pins.mjs` is run with `gpg`.
+
 Keep the package free of runtime dependencies and use Node built-ins only.
 
 From this directory, run `npm run build`, `npm run typecheck`, and
