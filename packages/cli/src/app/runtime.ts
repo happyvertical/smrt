@@ -11,6 +11,7 @@ import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type * as AppRuntime from '@happyvertical/smrt-app-runtime';
 import type { ResolvedApplicationRuntime } from '@happyvertical/smrt-config';
+import type { BackupTargetDependencies } from './backup-command.js';
 import { AppCommandError, errorCode } from './errors.js';
 import {
   assertExternalArtifactPath,
@@ -83,6 +84,11 @@ export interface AppCommandDependencies {
    * absent means encrypted snapshots fail closed.
    */
   snapshotKeys?: SnapshotKeyProvider;
+  /**
+   * Credential custody, device entitlement and transport for backup targets
+   * (#4804). Absent means Drive and vault targets fail closed.
+   */
+  backup?: BackupTargetDependencies;
 }
 
 /** Per-invocation context. */

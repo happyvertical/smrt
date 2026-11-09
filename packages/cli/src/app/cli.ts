@@ -7,6 +7,7 @@
  */
 
 import { resolve } from 'node:path';
+import { runBackupsCommand } from './backup-command.js';
 import { ApplicationStartError, boundedTail, redactSecrets } from './errors.js';
 import { runInstallationOperation } from './installation.js';
 import {
@@ -45,8 +46,10 @@ export const APP_COMMANDS: Readonly<Record<string, string>> = Object.freeze({
   stop: 'Local: stop the managed application process',
   doctor: 'Report runtime, storage, provider, and migration findings (default)',
   open: 'Open the application or pending owner onboarding in a browser',
-  'backup [--encrypted] [destination]':
-    'Local: copy the private data root to a new directory (or one encrypted snapshot file)',
+  'backup [--encrypted [--target <name>]] [destination]':
+    'Local: copy the private data root to a new directory, one encrypted snapshot file, or a backup target',
+  'backups [targets|list|prune]':
+    'Local: configure backup targets, list their snapshots, apply retention',
   'export [--encrypted] [path]':
     'Write a logical, asset-aware export bundle (optionally as an encrypted snapshot)',
   'import <path>': 'Import a logical export bundle into an empty application',
@@ -140,6 +143,7 @@ const ENV_FILE_OPERATIONS = new Set<string>([
   'migrate',
   'token',
   'installation',
+  'backups',
   'dev',
   'build',
   'vite',
@@ -174,7 +178,9 @@ export async function runAppCommand(
   }
   // `dev`/`build`/`vite` forward `--help` to Vite; `token` and `installation` have their own usage.
   if (
-    !['dev', 'build', 'vite', 'token', 'installation'].includes(operation) &&
+    !['dev', 'build', 'vite', 'token', 'installation', 'backups'].includes(
+      operation,
+    ) &&
     args.some((arg) => arg === '--help' || arg === '-h')
   ) {
     io.stdout(renderAppHelp());
@@ -216,6 +222,7 @@ export async function runAppCommand(
     if (operation === 'migrate') return await prepareMigration(context, args);
     if (operation === 'worker') return await runWorker(context, args);
     if (operation === 'token') return await runTokenOperation(context, args);
+    if (operation === 'backups') return await runBackupsCommand(context, args);
     if (operation === 'installation') {
       return await runInstallationOperation(context, args);
     }

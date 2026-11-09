@@ -36,6 +36,7 @@
   },
   "devDependencies": {
     "@happyvertical/encryption": "catalog:",
+    "@happyvertical/smrt-cli": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-vitest": "workspace:*",
     "@types/node": "24.13.6",
