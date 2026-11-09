@@ -376,6 +376,12 @@ describe('pnpm configuration that would load code', () => {
     expect(findUnsafeWorkspaceConfig(GENERATED_WORKSPACE_YAML)).toEqual([]);
     expect(findUnsafeWorkspaceConfig('')).toEqual([]);
     expect(findUnsafeWorkspaceConfig('# only a comment\r\n')).toEqual([]);
+    // pnpm 11 `allowBuilds`, and column-0 block sequences under an allowed key.
+    expect(
+      findUnsafeWorkspaceConfig(
+        "packages:\n- 'apps/*'\nallowBuilds:\n  esbuild: true\nonlyBuiltDependencies:\n- esbuild\n",
+      ),
+    ).toEqual([]);
   });
 
   it.each([
@@ -405,6 +411,16 @@ describe('pnpm configuration that would load code', () => {
       'flow mapping root',
     ],
     ['a sequence root', '- overrides\n', 'sequence root'],
+    [
+      'a path escape in a column-0 list entry',
+      "packages:\n- '../outside/*'\n",
+      'packages (path outside the directory)',
+    ],
+    [
+      'a non-registry override in a column-0 list entry',
+      'overrides:\n- link:../x\n',
+      'overrides (non-registry specifier)',
+    ],
     ['an indented root', '  storeDir: /x\n  overrides: {}\n', 'indented root'],
     ['a tab', 'overrides:\n\ta: 1.0.0\n', 'tab character'],
     ['an anchor key', '&k overrides: {}\n', 'anchor, alias or tag'],
