@@ -34,6 +34,7 @@ import {
   type InstallationCustodyRecord,
   initializeLocalApplicationRuntime,
   inspectInstallationCustody,
+  installationCustodyHint,
   installationCustodyResolutions,
   LocalRuntimeError,
   openLocalMcpTokenStore,
@@ -254,6 +255,46 @@ describe('installation custody classification', () => {
   });
 });
 
+describe('installation custody hints', () => {
+  const commands = {
+    restore: 'restore --origin-retired',
+    'recover-seed': 'recover-seed <seed-file>',
+    reseed: 'reseed --confirm-destroy-seed',
+  } as const;
+  const statuses = [
+    'in-custody',
+    'unrecorded',
+    'arrived',
+    'diverged',
+    'data-record-missing',
+    'retired',
+    'seed-mismatch',
+    'seed-missing',
+    'record-invalid',
+  ] as const;
+
+  it.each(
+    statuses,
+  )('names exactly the commands that resolve %s, with their required flags', (status) => {
+    const hint = installationCustodyHint(status);
+    const resolutions = installationCustodyResolutions(status);
+    if (resolutions.length === 0) {
+      expect(hint).toBe('');
+      return;
+    }
+    for (const [resolution, command] of Object.entries(commands)) {
+      const named = hint.includes(command);
+      expect(
+        named,
+        `${status}: "${command}" ${named ? 'is named but does not resolve it' : 'resolves it but is not named'}`,
+      ).toBe(resolutions.includes(resolution as never));
+    }
+    // A confirmation flag is never dropped from a destructive command.
+    expect(hint).not.toMatch(/installation reseed"/);
+    expect(hint).not.toMatch(/installation restore"/);
+  });
+});
+
 describe('installation custody', () => {
   it('establishes custody on first run and keeps it across restarts', async () => {
     const { at } = await machine('first-run');
@@ -344,10 +385,20 @@ describe('installation custody', () => {
       await rm(origin.dataDirectory, { recursive: true, force: true });
       const arrivedRecord = await readFile(dataRecordOf(destination), 'utf8');
 
-      await expect(boot(destination)).rejects.toMatchObject({
+      const arrived = await boot(destination).catch((error: unknown) => error);
+      expect(arrived).toMatchObject({
         code: 'installation_unverified',
         message: expect.stringContaining('(arrived)'),
       });
+      expect((arrived as LocalRuntimeError).message).toContain(
+        'restore --origin-retired',
+      );
+      expect((arrived as LocalRuntimeError).message).toContain(
+        'reseed --confirm-destroy-seed',
+      );
+      expect((arrived as LocalRuntimeError).message).not.toContain(
+        'recover-seed',
+      );
       // Refusal changed nothing: no state record, record bytes untouched.
       await expect(stat(stateRecordOf(destination))).rejects.toMatchObject({
         code: 'ENOENT',
@@ -460,6 +511,9 @@ describe('installation custody', () => {
         code: 'installation_unverified',
         message: expect.stringContaining('(retired)'),
       });
+      await expect(boot(origin)).rejects.toThrow(
+        /This location was retired\. Bring it back with "smrt app installation restore --origin-retired"/,
+      );
       // Reviving a retired origin is an explicit restore and bumps the epoch.
       expect(
         await restoreInstallation({ ...origin, originRetired: true }),
@@ -600,9 +654,14 @@ describe('installation custody', () => {
       });
       await rm(seedOf(options));
 
-      await expect(boot(options)).rejects.toMatchObject({
-        code: 'installation_seed_missing',
-      });
+      const missing = await boot(options).catch((error: unknown) => error);
+      expect(missing).toMatchObject({ code: 'installation_seed_missing' });
+      expect((missing as LocalRuntimeError).message).toContain(
+        'recover-seed <seed-file>',
+      );
+      expect((missing as LocalRuntimeError).message).not.toContain(
+        'restore --origin-retired',
+      );
       // Not silently recreated, and the refusal did not touch the database.
       await expect(stat(seedOf(options))).rejects.toMatchObject({
         code: 'ENOENT',
@@ -765,10 +824,17 @@ describe('installation custody', () => {
         mode: 0o600,
       });
 
-      await expect(boot(options)).rejects.toMatchObject({
+      const refusal = await boot(options).catch((error: unknown) => error);
+      expect(refusal).toMatchObject({
         code: 'installation_unverified',
         message: expect.stringContaining('(seed-mismatch)'),
       });
+      // The hint must not send the operator to a command that then refuses.
+      const mismatch = (refusal as LocalRuntimeError).message;
+      expect(mismatch).toContain('recover-seed <seed-file>');
+      expect(mismatch).toContain('reseed --confirm-destroy-seed');
+      expect(mismatch).not.toContain('restore --origin-retired');
+      expect(mismatch).not.toContain('state root');
       expect(await inspectInstallationCustody(options)).toMatchObject({
         status: 'seed-mismatch',
         resolutions: ['recover-seed', 'reseed'],

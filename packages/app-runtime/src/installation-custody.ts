@@ -213,6 +213,36 @@ export function installationCustodyResolutions(
   }
 }
 
+const RESTORE_COMMAND = '"smrt app installation restore --origin-retired"';
+const RESEED_COMMAND = '"smrt app installation reseed --confirm-destroy-seed"';
+const RECOVER_COMMAND = '"smrt app installation recover-seed <seed-file>"';
+
+/**
+ * What the operator can do about a refused `status`, naming only commands that
+ * will actually accept it (see {@link installationCustodyResolutions}): a
+ * substituted seed is not something `restore` resolves, so it points at
+ * `recover-seed` or `reseed` instead.
+ */
+export function installationCustodyHint(
+  status: InstallationCustodyStatus,
+): string {
+  switch (status) {
+    case 'in-custody':
+    case 'unrecorded':
+      return '';
+    case 'seed-mismatch':
+      return `The seed in this data root is not the one this installation was recorded with, and "restore" refuses a substituted seed. Put the original seed back with ${RECOVER_COMMAND} (the backup must derive the recorded installation), or accept a new independent installation with ${RESEED_COMMAND}.`;
+    case 'seed-missing':
+      return `The seed is gone. Restore it from a backup with ${RECOVER_COMMAND}, or accept a new independent installation with ${RESEED_COMMAND}.`;
+    case 'retired':
+      return `This location was retired. Bring it back with ${RESTORE_COMMAND} once no other location runs this installation, or make it an independent installation with ${RESEED_COMMAND}.`;
+    case 'record-invalid':
+      return `A custody record is malformed, a link or not private. If this is the same installation, moved or restored with its origin stopped or deleted, rewrite the records with ${RESTORE_COMMAND}; for an independent copy use ${RESEED_COMMAND}.`;
+    default:
+      return `If this is the same installation, moved or restored with its origin stopped or deleted, declare it with ${RESTORE_COMMAND}; for an independent copy whose origin stays active use ${RESEED_COMMAND}.`;
+  }
+}
+
 /** Secret-free report of one installation's custody. */
 export interface InstallationCustodyReport {
   readonly schemaVersion: 1;

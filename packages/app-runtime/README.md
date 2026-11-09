@@ -205,7 +205,9 @@ code in `LocalRuntimeError`:
 | Record malformed, extended, oversized, a link or not private | `record-invalid` | `installation_unverified` |
 | Seed file missing although the bootstrap table or the data root's custody record shows one existed | `seed-missing` | `installation_seed_missing`; the seed is **not** recreated |
 
-A refusal changes nothing and never reaches the database schema or tokens. Only
+A refusal changes nothing and never reaches the database schema or tokens, and
+its hint names only the declarations that accept that status (a `seed-mismatch`
+is pointed at `recover-seed` or `reseed`, never at `restore`, which refuses it). Only
 a seed this very run created counts as new; a seed that already existed, even
 beside an empty database, is judged like any arrival. The data record is the
 authority on which installation a seed belongs to, so a seed that disagrees with
