@@ -63,6 +63,7 @@ import {
 import { deriveLocalInstallationIdentity } from './local-installation-identity.js';
 import {
   type ApplicationStateRootOptions,
+  type ApplicationStateRootSource,
   prepareApplicationStateRoot,
 } from './state-root.js';
 import { acquireWriterLease } from './writer-lease.js';
@@ -162,6 +163,38 @@ export function assessInstallationCustody(
       : 'diverged';
   }
   return dataRecord ? 'arrived' : 'data-record-missing';
+}
+
+/** Where this location's custody record lives, for operator messages. */
+export interface InstallationStateRootNote {
+  readonly stateRoot: string;
+  readonly source: ApplicationStateRootSource;
+  /** Testable platform override. */
+  readonly platformName?: NodeJS.Platform | string;
+}
+
+/**
+ * Sentence telling the operator which state root holds this location's
+ * custody record and what must persist. The record is what makes a restart of
+ * a persisted data root attributable: when the state root lives under a home
+ * directory that is recreated on every start (a container with an ephemeral
+ * filesystem and a persistent data volume), the first start after the
+ * environment is rebuilt looks like an unverified arrival and the process
+ * cannot start without an operator declaration.
+ */
+export function describeInstallationStateRoot(
+  note: InstallationStateRootNote,
+): string {
+  const where = `This location's custody record is in the state root ${note.stateRoot}`;
+  const platformName = note.platformName ?? process.platform;
+  if (note.source === 'xdg-state-home') {
+    return `${where} (from XDG_STATE_HOME); it must persist as long as the data root does.`;
+  }
+  const home =
+    platformName === 'darwin' || platformName === 'win32'
+      ? 'a persistent user profile'
+      : 'a persistent XDG_STATE_HOME outside the data root';
+  return `${where}, which is derived from ${note.source === 'local-app-data' ? 'LOCALAPPDATA' : 'the home directory'}. If this process runs where that directory is recreated on restart (for example a container with a persistent data volume but an ephemeral home), the record is lost and every restart looks like an unverified arrival; run it with ${home}.`;
 }
 
 /** Declarations that resolve `status` (empty when none is needed). */

@@ -241,6 +241,28 @@ only way forward is `reseed`, whose effects are the table above. The runtime
 refuses to quietly mint a replacement because that would silently change every
 derived identity and token key.
 
+**Containers and ephemeral homes.** The location's record lives in the state
+root, `$XDG_STATE_HOME` (else `$HOME/.local/state`) plus
+`/.<appId>-<hash of the data directory>-state`, on Linux; on macOS it is under
+`~/Library/Application Support` and on Windows under `%LOCALAPPDATA%`, and
+`XDG_STATE_HOME` is ignored there. A deployment that persists the data volume
+but recreates `HOME` on every start loses that record: the first start
+establishes custody, and the next start after the environment is rebuilt finds
+a data root that arrived from nowhere (`arrived`) and refuses with
+`installation_unverified`, with no way out except an operator running
+`smrt app installation` by hand (a headless assertion is tracked separately in
+#4823; it is deliberately not added here). So:
+
+- **Set `XDG_STATE_HOME` to an absolute path on the same persistent volume as
+  the data root** (outside the source tree and outside the data root itself) for
+  every container that runs the local profile. Never leave it to `HOME` or
+  `/tmp`. This is required, not a tuning option.
+- Hosted deployments should keep the self-hosted runtime profile, which does not
+  use the local runtime and does not read these records; no manifest should set
+  the profile to `local` just to reuse the local runtime in a container.
+- The refusal message names the state root and says whether it was derived from
+  the home directory, so the cause is visible in the logs.
+
 **Limits.** This is a local, cooperative control. A byte-identical clone of
 both the data root and the state root (a VM or home-directory image), a copy
 made before the records existed, and two operators who each assert `restore`

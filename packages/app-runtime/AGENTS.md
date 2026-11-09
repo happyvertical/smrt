@@ -93,7 +93,9 @@ Application infrastructure composition for the validated runtime profiles in
   identities and seed-keyed tokens change), `recover-seed` or `retire`
   (`smrt app installation`). A fresh seed always establishes custody; a
   pre-existing seed never does. Record and seed reads use `O_NOFOLLOW`, owner
-  and mode checks; writes are atomic. Decision and limits: README.
+  and mode checks; writes are atomic. The state root must persist with the
+  data volume (Linux containers: `XDG_STATE_HOME` on that volume, never `HOME`
+  or `/tmp`); the refusal names it. Decision and limits: README.
 - Background jobs and application-defined paid capabilities are default-off.
 - The embedded runner reuses `TaskRunner`; it is not a second job contract.
 
