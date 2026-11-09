@@ -42,7 +42,10 @@ import {
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runAppCommand } from '../cli.js';
-import { AppCommandError } from '../errors.js';
+import {
+  AppCommandError,
+  WINDOWS_OPERATOR_COPY_UNSUPPORTED_MESSAGE,
+} from '../errors.js';
 import {
   prepareApplicationStateRoot,
   resolveApplicationStateRoot,
@@ -1386,6 +1389,65 @@ describe('smrt app backup', () => {
     process.env.SMRT_APP_ID = 'other-app';
     expect(await fixture.run(['backup', join(fixture.root, 'b2')])).toBe(1);
     expect(existsSync(join(fixture.root, 'b2'))).toBe(false);
+  });
+});
+
+describe('smrt app operator copies on Windows (smrt#4837 C1)', () => {
+  const onWindows = { platform: () => 'win32' as const };
+
+  function snapshot(directory: string): string[] {
+    const entries: string[] = [];
+    const walk = (current: string) => {
+      for (const name of readdirSync(current).sort()) {
+        const path = join(current, name);
+        entries.push(path);
+        if (lstatSync(path).isDirectory()) walk(path);
+      }
+    };
+    if (existsSync(directory)) walk(directory);
+    return entries;
+  }
+
+  it.each([
+    ['backup', 'backup-out'],
+    ['export', 'export-out.json'],
+    ['import', 'import-in.json'],
+  ] as const)('refuses %s before touching any state or destination', async (operation, name) => {
+    const fixture = makeFixture();
+    await fixture.run(['setup']);
+    const target = join(fixture.root, 'outside', name);
+    writeFileSync(join(fixture.root, 'placeholder'), '');
+    const beforeData = snapshot(fixture.data);
+    const beforeState = snapshot(fixture.stateRoot());
+    const beforeRoot = snapshot(fixture.root);
+
+    expect(await fixture.run([operation, target], onWindows)).toBe(1);
+    const envelope = fixture.stderrJson();
+    expect(envelope.message).toBe(WINDOWS_OPERATOR_COPY_UNSUPPORTED_MESSAGE);
+    expect(envelope.message).not.toContain(fixture.root);
+    expect(existsSync(target)).toBe(false);
+    expect(existsSync(join(fixture.root, 'outside'))).toBe(false);
+    expect(snapshot(fixture.data)).toEqual(beforeData);
+    expect(snapshot(fixture.stateRoot())).toEqual(beforeState);
+    expect(snapshot(fixture.root)).toEqual(beforeRoot);
+  });
+
+  it('refuses before creating a missing state root, and still delegates deployed backups', async () => {
+    const fixture = makeFixture();
+    expect(
+      await fixture.run(['backup', join(fixture.root, 'b')], onWindows),
+    ).toBe(1);
+    expect(fixture.stderrJson().message).toBe(
+      WINDOWS_OPERATOR_COPY_UNSUPPORTED_MESSAGE,
+    );
+    expect(existsSync(fixture.stateRoot())).toBe(false);
+    expect(existsSync(fixture.data)).toBe(false);
+
+    fixture.setProfile('self-hosted');
+    expect(await fixture.run(['backup'], onWindows)).toBe(1);
+    expect(fixture.stderrJson().message).toBe(
+      'This scaffold delegates deployed backups to the selected operator or managed provider.',
+    );
   });
 });
 

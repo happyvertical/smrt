@@ -30,6 +30,24 @@ export class AppCommandError extends Error {
   }
 }
 
+/** Fixed, value-free message of {@link WindowsOperatorCopyUnsupportedError}. */
+export const WINDOWS_OPERATOR_COPY_UNSUPPORTED_MESSAGE =
+  'smrt app backup, export, and import are not available on Windows yet: directory and file modes are not enforced there, so a copy of the application data would inherit the destination folder permissions instead of being private (smrt#4837). Nothing was copied or created.';
+
+/**
+ * Refusal of an operator copy (`backup`, `export`, `import`) on Windows, until
+ * a destination custody rule exists. Raised before any lock, state root, or
+ * destination is created.
+ */
+export class WindowsOperatorCopyUnsupportedError extends Error {
+  readonly code = 'windows_operator_copy_unsupported';
+
+  constructor() {
+    super(WINDOWS_OPERATOR_COPY_UNSUPPORTED_MESSAGE);
+    this.name = 'WindowsOperatorCopyUnsupportedError';
+  }
+}
+
 /**
  * A `smrt app start` whose web process never proved readiness. Carries the
  * already-redacted, bounded tail of that process's output and the private

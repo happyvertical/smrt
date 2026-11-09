@@ -26,6 +26,7 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs';
+import { platform } from 'node:os';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
@@ -41,6 +42,7 @@ import {
   boundedTail,
   errorCode,
   redactSecrets,
+  WindowsOperatorCopyUnsupportedError,
 } from './errors.js';
 import {
   assertExternalArtifactPath,
@@ -887,6 +889,21 @@ function snapshotReport(snapshot: EncryptedSnapshotSummary) {
   return report;
 }
 
+/**
+ * Refuse every operator copy that writes data-root contents outside the data
+ * root (`backup`, `export`, `import`) on Windows. Their privacy relies on
+ * POSIX modes, which Windows ignores, so a copy would inherit the destination
+ * parent's ACL. Runs before the state root, operation lock, or destination is
+ * touched, and only for the local profile.
+ */
+async function refuseWindowsOperatorCopy(context: AppContext): Promise<void> {
+  const host = context.deps.platform?.() ?? platform();
+  if (host !== 'win32') return;
+  const runtime = await context.deps.resolveRuntime(context.sourceRoot);
+  if (runtime.profile !== 'local') return;
+  throw new WindowsOperatorCopyUnsupportedError();
+}
+
 async function backup(context: AppContext, args: string[]): Promise<void> {
   const { value: targetName, rest } = extractOption(args, '--target');
   const { encrypted, positional } = snapshotArguments('backup', rest);
@@ -1207,10 +1224,12 @@ export async function runApplicationOperation(
       );
       return 0;
     case 'backup':
+      await refuseWindowsOperatorCopy(context);
       await backup(context, args);
       return 0;
     case 'export':
     case 'import':
+      await refuseWindowsOperatorCopy(context);
       await withOperationLock(preparedStateRoot(context), operation, (lock) =>
         portability(context, operation, args, lock),
       );

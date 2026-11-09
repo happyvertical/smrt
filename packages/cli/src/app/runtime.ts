@@ -95,6 +95,8 @@ export interface AppCommandDependencies {
    * `restore-latest` (#4805). Absent means restore-latest fails closed.
    */
   vaultRestore?: VaultRestoreProvider;
+  /** Host platform for the operator-copy gate; defaults to `os.platform()`. */
+  platform?(): NodeJS.Platform;
 }
 
 /** Per-invocation context. */
