@@ -14,7 +14,6 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { shipPackageKnowledge } from '../../../scripts/ship-knowledge-pages.mjs';
 import { verifyProductionManifest } from './verify-production-manifest.js';
 
 function run(script) {
@@ -52,6 +51,3 @@ if (runningInCi && hasReusableBuildArtifacts()) {
 
 // Validate both newly generated and reused CI artifacts before packaging.
 verifyProductionManifest(resolve('dist/manifest.json'));
-
-// build:fresh empties dist/, so re-ship the committed OKF page (#4689).
-shipPackageKnowledge(process.cwd());
