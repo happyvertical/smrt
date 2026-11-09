@@ -16,7 +16,7 @@ use tauri::{AppHandle, Manager, RunEvent, WindowEvent, Wry};
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
 
-use crate::env::resolve_data_dir;
+use crate::env::{resolve_data_dir, window_url};
 use crate::log::Logger;
 use crate::manifest::{read_manifest_file, MANIFEST_FILE_NAME};
 use crate::process::{
@@ -168,8 +168,10 @@ fn status_text(text: &str) -> String {
 }
 
 /// Update tray text and (on first ready) point the window at the sidecar.
-/// Safe to call from any thread.
-fn publish(app: &AppHandle, status: String, retryable: bool, ready_origin: Option<String>) {
+/// `ready_url` is the origin plus the manifest's owner route; the route
+/// answers with a redirect that carries the one-time owner link to the
+/// webview, so this process never sees that link. Safe to call from any thread.
+fn publish(app: &AppHandle, status: String, retryable: bool, ready_url: Option<String>) {
     let handle = app.clone();
     let _ = app.run_on_main_thread(move || {
         let wrapper = handle.state::<Wrapper>();
@@ -178,11 +180,11 @@ fn publish(app: &AppHandle, status: String, retryable: bool, ready_origin: Optio
             let _ = ui.retry.set_enabled(retryable);
             let _ = ui.tray.set_tooltip(Some(&status));
         }
-        let Some(origin) = ready_origin else { return };
+        let Some(target) = ready_url else { return };
         let Some(window) = handle.get_webview_window(MAIN_WINDOW) else {
             return;
         };
-        if let Ok(url) = origin.parse() {
+        if let Ok(url) = target.parse() {
             let _ = window.navigate(url);
         }
         // Only the first ready state raises the window; later restarts must
@@ -193,14 +195,22 @@ fn publish(app: &AppHandle, status: String, retryable: bool, ready_origin: Optio
     });
 }
 
-fn on_phase(app: &AppHandle, logger: &Logger, phase: &Phase) {
+fn on_phase(app: &AppHandle, logger: &Logger, owner_route: Option<&str>, phase: &Phase) {
     logger.info(&format!("phase: {}", phase.status_line()));
-    let (retryable, origin) = match phase {
+    let (retryable, target) = match phase {
         Phase::Failed(_) => (true, None),
-        Phase::Ready { origin, .. } => (false, Some(origin.clone())),
+        Phase::Ready { origin, .. } => {
+            // Origin and route only: the redirect's Location (which carries the
+            // owner token) is never read here, so it cannot reach the log.
+            logger.info(&format!(
+                "window origin={origin} route={}",
+                owner_route.unwrap_or("/")
+            ));
+            (false, Some(window_url(origin, owner_route)))
+        }
         _ => (false, None),
     };
-    publish(app, status_text(&phase.status_line()), retryable, origin);
+    publish(app, status_text(&phase.status_line()), retryable, target);
 }
 
 fn build_tray(app: &AppHandle) -> tauri::Result<TrayUi> {
@@ -303,6 +313,7 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
+    let owner_route = manifest.owner_claim_route.clone();
     let config = SupervisorConfig {
         log_failure_output: std::env::var_os(LOG_OUTPUT_ENV).is_some_and(|v| v == "1"),
         ..SupervisorConfig::default()
@@ -319,7 +330,9 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         }),
         logger,
         config,
-        listener: Arc::new(move |phase| on_phase(&listener_app, &listener_log, phase)),
+        listener: Arc::new(move |phase| {
+            on_phase(&listener_app, &listener_log, owner_route.as_deref(), phase)
+        }),
     })?;
     *locked(&handle.state::<Wrapper>().supervisor) = Some(supervisor);
     Ok(())

@@ -893,6 +893,8 @@ export const GET = createRuntimeHealthHandler(runtime);
 export const GET = createRuntimeDiagnosticsHandler({ runtime, toolNames });
 // src/routes/setup/+page.server.ts
 export const { load, actions } = createOwnerSetupPage(runtime);
+// src/routes/api/_runtime/owner-link/+server.ts (desktop apps)
+export const GET = createOwnerLinkHandler(runtime);
 // src/routes/+layout.server.ts
 export const load = createSessionLayoutLoad();
 // src/routes/sign-out/+server.ts
@@ -918,6 +920,31 @@ runtime removes the `smrt app setup` / `recover` hand-off files
 `runtime.applicationStateRoot()`, so `pnpm app:open` stops offering the spent
 invitation; failed claims leave them untouched. `onOwnerClaimed` remains for
 extra app cleanup and `removeOnboardingHandoff: false` opts out.
+
+#### Desktop owner link
+
+A desktop app opens its window on a fixed route, `OWNER_LINK_ROUTE`
+(`/api/_runtime/owner-link`, the sidecar manifest's `ownerClaimRoute`), instead
+of the bare origin. `createOwnerLinkHandler(runtime)` answers a `GET` there with
+a `302` to `/setup?token=<one-time token>` while the local owner is unclaimed
+and to `/` otherwise (claimed, deployed profile, nothing issuable). It is the
+existing machinery, not a second sign-in: the token is the invitation this
+process's startup issued (the same one `onBootstrapInvitation` receives), or,
+when that plaintext is gone because the app restarted before the claim or the
+invitation expired, a rotated one (`rotateBootstrapInvitation()`, as
+`smrt app recover`). The owner then claims through the usual `/setup` page and
+`claimOwner()`, which stays the single-use gate; a spent link fails there.
+
+The route answers only a request from this device addressed to the app's own
+origin: a loopback peer address, a loopback `Host` equal to the URL's host, no
+foreign `Origin`, no `Sec-Fetch-Site: cross-site` or `same-site`; anything else
+is a `403` with an empty body. Responses have an empty body, `Cache-Control:
+no-store` and `Referrer-Policy: no-referrer`; the token is only in `Location`,
+which the desktop wrapper's webview follows and the wrapper never reads or logs.
+Any process on the device that can reach the loopback port can ask for the link,
+which is the same trust as the `onboarding.json` file's owner; the claim is still
+first-come and single-use. `runtime.ownerSetupLocation()` is the underlying
+method; never log or serialize its result.
 
 Password-based applications should pass `{ requirePassword: true }` to
 `createOwnerSetupPage` and include a password field in their setup form. The

@@ -10,6 +10,14 @@ Owner sign-in is app-runtime's loopback onboarding URL and `claimOwner()`, and
 local MCP credentials are app-runtime's token store (`openLocalMcpTokenStore`);
 this package does not duplicate either.
 
+## Generic example app
+
+[`examples/generic-app`](examples/generic-app/README.md) is the first app
+packaged with this package: a generic s-m-r-t app built from the repository's own
+SvelteKit template with a placeholder identity (`Generic SMRT App`,
+`invalid.example.generic-smrt-app`), used to prove the desktop path end to end
+(first-run schema, the owner link, unsigned launch on each OS).
+
 ## Node 26 and adapter-node example
 
 This [manifest](examples/node26-sidecar.json) describes a stock Node 26 sidecar
@@ -62,9 +70,12 @@ const sidecar = parseSidecarManifest(
   references, backslashes, percent escapes, queries and fragments are invalid.
   The probe stays on the selected loopback origin and rejects redirects.
 - `ownerClaimRoute` (optional) is the path on the supervisor-selected origin
-  where the local runtime's owner setup lives. It follows exactly the
-  `healthRoute` grammar and loopback rules. The manifest only declares it;
-  claim tokens and their handling belong to the supervisor and runtime.
+  the wrapper opens its window on (origin plus this path, never an absolute
+  URL). It follows exactly the `healthRoute` grammar and loopback rules. A
+  s-m-r-t app declares app-runtime's `/api/_runtime/owner-link`
+  (`createOwnerLinkHandler`), which redirects to the one-time `/setup?token=`
+  page while the owner is unclaimed and to `/` afterwards. The wrapper never
+  sees or logs the token; claiming it belongs to the runtime.
 - `dataDirectory` is a portable path relative to Tauri's stable
   `app_local_data_dir` (the per-app, machine-local OS data root; see
   [Data root and roaming](#data-root-and-roaming)). The supervisor supplies its

@@ -454,6 +454,17 @@ export interface SmrtSvelteKitRuntime {
   ): Promise<SmrtRuntimeMcpPrincipalMapping | null>;
   /** The local runtime. Rejects outside the `local` profile. */
   localRuntime(): Promise<LocalApplicationRuntime>;
+  /**
+   * Where the desktop wrapper sends the owner: `/setup?token=<one-time token>`
+   * while the local owner is unclaimed, `/` otherwise (claimed, deployed, or no
+   * invitation can be issued). The token is the invitation this process's
+   * startup issued, or a freshly rotated one when that is gone (a restart, or
+   * it expired); it is only ever returned here, so mount it solely behind
+   * `createOwnerLinkHandler`, which answers it as a loopback-only redirect.
+   * Never log or serialize the result. Single use stays enforced by
+   * `claimOwner()`.
+   */
+  ownerSetupLocation(): Promise<string>;
   /** The deployed runtime. Rejects in the `local` profile. */
   deployedRuntime(): Promise<DeployedApplicationRuntime>;
   /** Liveness body for the health route (awaits startup). */
@@ -501,6 +512,8 @@ export interface SmrtSvelteKitRuntimeSeams {
 }
 
 const DEFAULT_SESSION_TTL_SECONDS = 7 * 24 * 60 * 60;
+/** The owner-setup page `ownerSetupLocation()` sends the one-time token to. */
+const OWNER_SETUP_PATH = '/setup';
 
 /**
  * Compose runtime startup, tenant selection, the signed session, and
@@ -642,6 +655,8 @@ export function composeSmrtSvelteKitRuntime(
         ((context: WriterLeaseContext) => defaultWriterLease(context, env)));
 
   let localPromise: Promise<LocalApplicationRuntime> | undefined;
+  // The plaintext of the invitation this process issued; memory only.
+  let startupInvitation: LocalOwnerBootstrapInvitation | undefined;
   let localLease: WriterLease | undefined;
   const localRuntime = async (): Promise<LocalApplicationRuntime> => {
     const runtime = await resolvedRuntime();
@@ -697,6 +712,7 @@ export function composeSmrtSvelteKitRuntime(
     })
       .then(({ runtime: initialized, bootstrap }) => {
         if (bootstrap) {
+          startupInvitation = bootstrap;
           try {
             options.onBootstrapInvitation?.(bootstrap, { bindHost });
           } catch {
@@ -720,6 +736,28 @@ export function composeSmrtSvelteKitRuntime(
         throw error;
       });
     return localPromise;
+  };
+
+  const ownerSetupLocation = async (): Promise<string> => {
+    const resolved = await resolvedRuntime();
+    if (resolved.profile !== 'local') return '/';
+    try {
+      const local = await localRuntime();
+      const status = (await local.diagnostics()).bootstrap.status;
+      if (status === 'claimed') {
+        startupInvitation = undefined;
+        return '/';
+      }
+      let invitation = startupInvitation;
+      if (!invitation || status !== 'available') {
+        invitation = await local.rotateBootstrapInvitation();
+        startupInvitation = invitation;
+      }
+      return `${OWNER_SETUP_PATH}?token=${encodeURIComponent(invitation.token)}`;
+    } catch {
+      // Claimed in the meantime or not issuable: the home page is the answer.
+      return '/';
+    }
   };
 
   let deployedPromise: Promise<DeployedApplicationRuntime> | undefined;
@@ -1240,6 +1278,7 @@ export function composeSmrtSvelteKitRuntime(
     verifyLocalMcpToken,
     resolveMcpPrincipal,
     localRuntime,
+    ownerSetupLocation,
     deployedRuntime,
     health,
     readDiagnostics,

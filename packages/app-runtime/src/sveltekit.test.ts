@@ -58,6 +58,7 @@ import {
 import {
   authorizedTenantLocalsHandle,
   composeHandles,
+  createOwnerLinkHandler,
   createOwnerSetupPage,
   createRuntimeDiagnosticsHandler,
   createRuntimeHealthHandler,
@@ -68,6 +69,7 @@ import {
   DEFAULT_OWNER_SETUP_MESSAGES,
   isLoopbackAddress,
   isLoopbackHostname,
+  OWNER_LINK_ROUTE,
   RUNTIME_DIAGNOSTICS_READ_PERMISSION,
   selectTenantSlug,
 } from './sveltekit.js';
@@ -2022,5 +2024,201 @@ describe('F2: downstream failures run application code once', () => {
     expect(calls).toBe(0);
     expect(event.locals.user ?? null).toBeNull();
     expect(event.locals.tenantContext).toBeUndefined();
+  });
+});
+
+describe('desktop owner link', () => {
+  const LINK_URL = `http://127.0.0.1:5173${OWNER_LINK_ROUTE}`;
+
+  function linkEvent(
+    headers: Record<string, string> = {},
+    clientAddress = '127.0.0.1',
+    url = LINK_URL,
+  ) {
+    return testEvent(url, {
+      headers: { host: new URL(url).host, ...headers },
+      clientAddress,
+    });
+  }
+
+  it('is the documented fixed route', () => {
+    expect(OWNER_LINK_ROUTE).toBe('/api/_runtime/owner-link');
+  });
+
+  it('answers only a same-origin loopback request and never asks for the token otherwise', async () => {
+    const ownerSetupLocation = vi.fn(async () => '/setup?token=T');
+    const handler = createOwnerLinkHandler({ ownerSetupLocation });
+    const rejected: Array<ReturnType<typeof linkEvent>> = [
+      linkEvent({}, '10.0.0.5'),
+      linkEvent({}, '192.168.1.9'),
+      linkEvent({ host: 'evil.example' }),
+      linkEvent({ host: '127.0.0.1:9999' }),
+      linkEvent({ origin: 'https://evil.example' }),
+      linkEvent({ 'sec-fetch-site': 'cross-site' }),
+      linkEvent({ 'sec-fetch-site': 'same-site' }),
+      linkEvent(
+        {},
+        '127.0.0.1',
+        'http://203.0.113.7:5173/api/_runtime/owner-link',
+      ),
+      testEvent(LINK_URL, {
+        headers: { host: '127.0.0.1:5173' },
+        clientAddress: () => {
+          throw new Error('no peer');
+        },
+      }),
+    ];
+    for (const event of rejected) {
+      const response = await handler(event as never);
+      expect(response.status).toBe(403);
+      expect(response.headers.get('location')).toBeNull();
+      expect(await response.text()).toBe('');
+    }
+    expect(ownerSetupLocation).not.toHaveBeenCalled();
+
+    for (const headers of [
+      {},
+      { origin: 'http://127.0.0.1:5173' },
+      { 'sec-fetch-site': 'none' },
+      { 'sec-fetch-site': 'same-origin' },
+    ]) {
+      const response = await handler(linkEvent(headers) as never);
+      expect(response.status).toBe(302);
+      expect(response.headers.get('location')).toBe('/setup?token=T');
+      expect(response.headers.get('cache-control')).toBe('no-store');
+      expect(response.headers.get('referrer-policy')).toBe('no-referrer');
+      expect(await response.text()).toBe('');
+    }
+    const ipv6 = await handler(
+      linkEvent(
+        {},
+        '::1',
+        'http://localhost:5173/api/_runtime/owner-link',
+      ) as never,
+    );
+    expect(ipv6.status).toBe(302);
+  });
+
+  it('falls back to / when the runtime cannot answer', async () => {
+    const handler = createOwnerLinkHandler({
+      ownerSetupLocation: async () => {
+        throw new Error('secret-token-material');
+      },
+    });
+    const response = await handler(linkEvent() as never);
+    expect(response.status).toBe(302);
+    expect(response.headers.get('location')).toBe('/');
+    expect(await response.text()).toBe('');
+  });
+
+  it('redirects to the startup invitation once, leaks it nowhere else, and goes to / after the claim', async () => {
+    const onBootstrapInvitation = vi.fn();
+    const spies = (['log', 'info', 'warn', 'error', 'debug'] as const).map(
+      (method) => vi.spyOn(console, method).mockImplementation(() => {}),
+    );
+    try {
+      const { runtime } = await localRuntime('owner-link', {
+        onBootstrapInvitation,
+      });
+      await runtime.init();
+      const token = onBootstrapInvitation.mock.calls[0]?.[0].token as string;
+      expect(token).toBeTruthy();
+      const handler = createOwnerLinkHandler(runtime);
+
+      const first = await handler(linkEvent() as never);
+      expect(first.status).toBe(302);
+      expect(first.headers.get('location')).toBe(
+        `/setup?token=${encodeURIComponent(token)}`,
+      );
+      expect(await first.text()).toBe('');
+      expect(
+        [...first.headers].filter(
+          ([name, value]) => name !== 'location' && value.includes(token),
+        ),
+      ).toEqual([]);
+      // The same invitation is handed out again (a window reload) rather than
+      // rotated: the startup token stays the one claim.
+      const again = await handler(linkEvent() as never);
+      expect(again.headers.get('location')).toBe(first.headers.get('location'));
+
+      // The redirect leads to the real setup page, which claims once.
+      const page = createOwnerSetupPage(runtime);
+      const loaded = await page.load(
+        testEvent(`http://127.0.0.1:5173${first.headers.get('location')}`),
+      );
+      expect(loaded).toMatchObject({ available: true, token, link: 'ready' });
+      const claim = await runAction(
+        page,
+        testEvent(SETUP_URL, {
+          form: { token, name: 'Owner', email: 'owner@example.com' },
+        }),
+      );
+      expect(claim.redirect?.status).toBe(303);
+      const replay = await runAction(
+        page,
+        testEvent(SETUP_URL, {
+          form: { token, name: 'Other', email: 'other@example.com' },
+        }),
+      );
+      expect(replay.failure?.status).toBe(400);
+
+      const claimed = await handler(linkEvent() as never);
+      expect(claimed.status).toBe(302);
+      expect(claimed.headers.get('location')).toBe('/');
+
+      for (const spy of spies) {
+        expect(JSON.stringify(spy.mock.calls)).not.toContain(token);
+      }
+    } finally {
+      for (const spy of spies) spy.mockRestore();
+    }
+  });
+
+  it('rotates to a fresh invitation when the startup one expired, and the old one stops working', async () => {
+    let clock = new Date('2030-01-01T00:00:00.000Z');
+    const onBootstrapInvitation = vi.fn();
+    const { runtime } = await localRuntime('owner-link-expired', {
+      bootstrapTtlSeconds: 60,
+      now: () => clock,
+      onBootstrapInvitation,
+    });
+    await runtime.init();
+    const first = onBootstrapInvitation.mock.calls[0]?.[0].token as string;
+    const handler = createOwnerLinkHandler(runtime);
+    clock = new Date(clock.getTime() + 120_000);
+
+    const response = await handler(linkEvent() as never);
+    const location = response.headers.get('location') ?? '';
+    expect(location.startsWith('/setup?token=')).toBe(true);
+    const fresh = decodeURIComponent(location.slice('/setup?token='.length));
+    expect(fresh).not.toBe(first);
+
+    const page = createOwnerSetupPage(runtime);
+    const stale = await runAction(
+      page,
+      testEvent(SETUP_URL, {
+        form: { token: first, name: 'Owner', email: 'owner@example.com' },
+      }),
+    );
+    expect(stale.failure?.status).toBe(400);
+    const claim = await runAction(
+      page,
+      testEvent(SETUP_URL, {
+        form: { token: fresh, name: 'Owner', email: 'owner@example.com' },
+      }),
+    );
+    expect(claim.redirect?.status).toBe(303);
+  });
+
+  it('answers / outside the local profile', async () => {
+    const runtime = createSmrtSvelteKitRuntime({
+      runtime: resolveApplicationRuntime({ profile: 'self-hosted' }),
+      env: { NODE_ENV: 'development' },
+    });
+    const response = await createOwnerLinkHandler(runtime)(
+      linkEvent() as never,
+    );
+    expect(response.status).toBe(302);
+    expect(response.headers.get('location')).toBe('/');
   });
 });

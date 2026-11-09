@@ -27,7 +27,9 @@ signing secret in a URL query is deliberately not carried over.
      manifest name are dropped (`Port`, `host`).
 3. Polls `healthRoute` on exactly that origin (`src/health.rs`). Only after a
    2xx, a confirmation window with the child still alive, and a second 2xx
-   does the window navigate to the origin and show (see Bind-release race).
+   does the window navigate to the origin plus the manifest's `ownerClaimRoute`
+   (the bare origin when none is declared) and show (see Bind-release race and
+   Owner link).
 4. Keeps the sidecar alive: unexpected exits restart with bounded backoff.
 5. Stops it on quit: SIGTERM, bounded wait, SIGKILL, wait for exit.
 
@@ -54,7 +56,7 @@ directory writer lease or operation lock; gave up after 5 restarts`.
 | `uncaughtException` logged | Supervisor thread panics kill the sidecar and surface `Failed`; a main-thread panic hook kills the sidecar |
 | Health wait accepted any status below 500 and followed redirects | Only 2xx is healthy; any 3xx fails immediately and is never followed |
 | Fixed ports | Ephemeral loopback port per launch, preferring the previous port on restart |
-| Signing secret in URL query | Not carried over; owner handoff is a later slice |
+| Signing secret in URL query | Not carried over; the owner link is a redirect the webview follows (see Owner link) |
 | No crash recovery | Bounded exponential backoff with a retry cap |
 
 Also: SIGTERM, SIGINT and SIGHUP (unix) are turned into the same orderly quit
@@ -116,12 +118,29 @@ can take the port in that window. This is handled, not prevented:
 - On a restart after a crash the previous port is reused when it is still
   free, which keeps the origin (and origin-scoped web storage) stable.
 
+## Owner link
+
+The window does not open on the bare origin when the manifest declares
+`ownerClaimRoute`: it opens on `<origin><ownerClaimRoute>` (`window_url` in
+`env.rs`; the route is only ever appended to the origin the supervisor selected,
+never an absolute URL, and a value that is not a plain absolute path is
+ignored). A generic s-m-r-t app declares `/api/_runtime/owner-link`, which
+app-runtime serves (`createOwnerLinkHandler`) as a loopback-only `302` to its
+existing one-time `/setup?token=...` page while the owner is unclaimed, and to
+`/` afterwards. The wrapper never requests that route itself: the webview
+follows the redirect, so the token is never in the wrapper's memory, argv,
+environment or log. The log line is `window origin=<origin> route=<route>`; the
+`Location` header is never read. The owner then claims through app-runtime's
+`/setup` page and `claimOwner()`; the wrapper holds no credential. After a
+sidecar restart the window is navigated to the same route again, which hands out
+a fresh invitation if the owner is still unclaimed.
+
 ## Modules
 
 | File | Role |
 | --- | --- |
 | `manifest.rs` | Strict v1 parser: closed schema, duplicate keys rejected (custom serde visitors), portable-path / route / env grammars. Values are never echoed in errors. |
-| `env.rs` | Child environment and reserved-value precedence; data directory resolution. |
+| `env.rs` | Child environment and reserved-value precedence; data directory resolution; the window URL (origin plus owner route). |
 | `port.rs` | Port reservation, restart preference, address-in-use detection. |
 | `health.rs` | Loopback-only HTTP probe. `ureq` 3 with default features off: blocking, plain HTTP, no TLS stack, no async runtime. Redirects, environment proxies and compression are disabled; the target is a loopback `SocketAddr`, never a hostname. |
 | `shutdown.rs` | Graceful -> forced stop with confirmation. Windows has no portable SIGTERM for a console-less child: the graceful step is a best-effort `taskkill` close request, then `taskkill /T /F`. |
@@ -577,11 +596,26 @@ cargo test --locked
   for changes under `packages/smrt-desktop/wrapper/` only. It is path filtered
   and is not a required check. The build and release workflow is described
   under Release pipeline.
+- `.github/workflows/desktop-launch.yml` (path filtered, not required, not part
+  of the `Verify build` legs) is the launch smoke for the generic example app
+  (`../examples/generic-app`, smrt#4835). Job `Bundle generic app` builds the
+  app from the repository's template and bundles it for the three desktop
+  targets (`scripts/build-generic-app.mjs`); `Launch generic app (macos |
+  windows | linux)` compiles the wrapper without a product (`cargo build
+  --locked`) and runs `scripts/launch-smoke.mjs` against that bundle from an
+  empty data directory: ready origin in the log, window opened on origin plus
+  `ownerClaimRoute`, health 200, data directory created, the owner link
+  redirecting to `/setup?token=` (and `403` for a foreign `Host`), no token in
+  the wrapper log, an orderly quit and no sidecar left. The Windows leg cannot
+  pass until the local runtime can open its database there (smrt#4837), and the
+  Linux leg is unproven; both are `continue-on-error`. The unsigned wrapper is
+  the cargo build, not an installer: signed installers are the release path.
 - `node --test scripts/*.test.mjs` covers the release preflight (closed Tauri
   fragment, tree walk, committed Node pin), the environment guard (offline
   fixtures of the GitHub API), the minisign verification (keys generated in the
   test), the release asset and feed assembly, and the workflow-structure test
-  that keeps the signing secrets out of every build step.
+  that keeps the signing secrets out of every build step, plus the pure parts of
+  the launch smoke and the generic app build.
 
 Manual smoke run: in a debug build the resource directory is the executable directory, so put a
 `sidecar-manifest.json`, the sidecar script and a symlink named like the
@@ -591,12 +625,9 @@ manifest's `executable` (pointing at a `node` binary) in
 
 ## Deferred to later slices (clean seams only)
 
-- **Owner sign-in.** `ownerClaimRoute` is parsed and validated but unused.
-  Sign-in is app-runtime's loopback onboarding URL and `claimOwner()`: the
-  wrapper's job is to open its window on that URL (#4835), not to carry a
-  credential of its own. The seam is `publish()` in `app.rs`: the URL passed to
-  `window.navigate` is the only place this would change, and it must not put
-  secrets in the URL query.
+- **Owner sign-in** is done (see Owner link): the window opens on
+  `ownerClaimRoute`, and sign-in stays app-runtime's loopback onboarding URL and
+  `claimOwner()`; the wrapper carries no credential (#4835).
 - **Bundling the Node binary** is done by `smrt desktop bundle`. Signing,
   notarisation and releases are described under Release pipeline and are
   blocked on owner inputs.

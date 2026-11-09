@@ -33,6 +33,26 @@ pub fn origin_for(port: u16) -> String {
     format!("http://127.0.0.1:{port}")
 }
 
+/// The address the window opens on: the selected loopback `origin` with the
+/// manifest's `ownerClaimRoute` appended, or the bare origin when there is none.
+///
+/// The route is only ever a path on the origin. The manifest parser already
+/// requires one leading slash and rejects `//host`, backslashes, schemes, queries
+/// and fragments; a value that is not a plain absolute path is dropped here as
+/// well, so a manifest can never move the window to another host.
+pub fn window_url(origin: &str, owner_claim_route: Option<&str>) -> String {
+    match owner_claim_route {
+        Some(route)
+            if route.starts_with('/')
+                && !route.starts_with("//")
+                && !route.contains(['\\', '?', '#', ':', '@']) =>
+        {
+            format!("{origin}{route}")
+        }
+        _ => origin.to_owned(),
+    }
+}
+
 /// Why the data directory could not be resolved.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DataDirError {
@@ -129,6 +149,46 @@ mod tests {
             .iter()
             .map(|(k, v)| ((*k).into(), (*v).into()))
             .collect()
+    }
+
+    #[test]
+    fn the_window_opens_on_the_origin_when_no_owner_route_is_declared() {
+        assert_eq!(
+            window_url("http://127.0.0.1:4321", None),
+            "http://127.0.0.1:4321"
+        );
+    }
+
+    #[test]
+    fn the_owner_route_is_appended_to_the_origin() {
+        assert_eq!(
+            window_url("http://127.0.0.1:4321", Some("/api/_runtime/owner-link")),
+            "http://127.0.0.1:4321/api/_runtime/owner-link"
+        );
+        assert_eq!(
+            window_url("http://127.0.0.1:4321", Some("/")),
+            "http://127.0.0.1:4321/"
+        );
+    }
+
+    #[test]
+    fn an_owner_route_is_never_an_absolute_url_or_another_host() {
+        for route in [
+            "https://evil.example/x",
+            "//evil.example/x",
+            "evil.example/x",
+            "/x?token=1",
+            "/x#frag",
+            "/\\evil.example",
+            "/@evil.example",
+            "",
+        ] {
+            assert_eq!(
+                window_url("http://127.0.0.1:4321", Some(route)),
+                "http://127.0.0.1:4321",
+                "{route}"
+            );
+        }
     }
 
     #[test]

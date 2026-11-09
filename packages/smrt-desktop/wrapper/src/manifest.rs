@@ -99,7 +99,9 @@ pub struct SidecarManifest {
     pub data_directory: String,
     /// Extra child environment, in manifest order.
     pub env: Vec<(String, String)>,
-    /// Parsed and validated only; owner claim handoff is a later slice.
+    /// Path on the selected origin the window opens on (appended to the origin,
+    /// never an absolute URL). The runtime answers it with a redirect to its
+    /// loopback owner setup link while the owner is unclaimed, `/` after.
     pub owner_claim_route: Option<String>,
 }
 

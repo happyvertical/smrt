@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "productId": "generic-smrt-app",
+  "bundleId": "invalid.example.generic-smrt-app",
+  "displayName": "Generic SMRT App",
+  "bridge": { "envPrefix": "GENERIC_SMRT_APP", "mcpPath": "/mcp" },
+  "sidecar": {
+    "healthRoute": "/api/_runtime/health",
+    "ownerClaimRoute": "/api/_runtime/owner-link",
+    "dataDirectory": "runtime"
+  },
+  "acknowledgedDynamicImports": [
+    { "from": "@happyvertical/ai", "specifier": "@anthropic-ai/sdk" },
+    { "from": "@happyvertical/ai", "specifier": "@google/genai" },
+    { "from": "@happyvertical/ai", "specifier": "openai" },
+    { "from": "@happyvertical/sql", "specifier": "@duckdb/node-api" },
+    { "from": "@happyvertical/smrt-core", "specifier": "tsx" },
+    { "from": "@happyvertical/smrt-core", "specifier": "oxc-transform" }
+  ]
+}
