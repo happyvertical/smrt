@@ -995,6 +995,63 @@ describe('segmentation and imports', () => {
     expect(existsSync(join(base, 'README.md'))).toBe(false);
   });
 
+  it('does not let a reference to a package root keep its tests, docs and fixtures, so a fixture key is pruned instead of failing the bundle', async () => {
+    const pem = `-----BEGIN ${'RSA'} PRIVATE KEY-----\nMIIB\n`;
+    for (const reference of [
+      "const root = path.resolve(__dirname, '..');",
+      "const root = join(__dirname, '..');",
+      "const root = new URL('./', import.meta.url);",
+      "const root = new URL('../', import.meta.url);",
+      "const names = readdirSync('../');",
+    ]) {
+      const item = fixture({
+        packages: [
+          {
+            name: 'a',
+            files: {
+              'index.js': "import './lib/x.js';\nexport default 1;\n",
+              'lib/x.js': `${reference}\nexport default root;\n`,
+              'test/fixtures/key.pem': pem,
+              'test/fixtures/.env.test': 'TOKEN=abc\n',
+              'docs/guide.md': '# docs\n',
+              'types/shape.d.ts': 'export {};\n',
+            },
+          },
+          { name: 'googleapis', files: { 'index.js': '' } },
+        ],
+      });
+      await runBundle(await item.plan(), item.seams());
+      const base = join(item.outDir, 'resources/app/node_modules/a');
+      expect(existsSync(join(base, 'lib/x.js')), reference).toBe(true);
+      expect(existsSync(join(base, 'test')), reference).toBe(false);
+      expect(existsSync(join(base, 'docs')), reference).toBe(false);
+      expect(existsSync(join(base, 'types/shape.d.ts')), reference).toBe(false);
+    }
+  });
+
+  it('keeps everything under an explicit asset directory a reached module names', async () => {
+    const item = fixture({
+      packages: [
+        {
+          name: 'a',
+          files: {
+            'index.js':
+              "import { readdirSync } from 'node:fs';\nexport default readdirSync(new URL('./assets/', import.meta.url));\n",
+            'assets/deep/readme.md': '# needed at run time\n',
+            'assets/schema.d.ts': 'export {};\n',
+            'docs/other.md': '# not needed\n',
+          },
+        },
+        { name: 'googleapis', files: { 'index.js': '' } },
+      ],
+    });
+    await runBundle(await item.plan(), item.seams());
+    const base = join(item.outDir, 'resources/app/node_modules/a');
+    expect(existsSync(join(base, 'assets/deep/readme.md'))).toBe(true);
+    expect(existsSync(join(base, 'assets/schema.d.ts'))).toBe(true);
+    expect(existsSync(join(base, 'docs/other.md'))).toBe(false);
+  });
+
   it('fails when a reached file imports a relative path that is not in the bundle', async () => {
     const item = fixture({
       packages: [

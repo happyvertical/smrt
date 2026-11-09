@@ -16,6 +16,7 @@ import {
 import {
   assertNoMissingRelativeImports,
   extractAssetRefs,
+  isAssetDirectoryRef,
   resolvePackageEntry,
   scanReachable,
 } from './reach.js';
@@ -361,6 +362,42 @@ describe('files a reached module refers to', () => {
       'a/test/setup.js',
       'a/views/page.html',
     ]);
+  });
+
+  it('protects a directory a module names, but only an explicit asset directory with its contents', async () => {
+    pkg('a', {
+      'index.js': [
+        "const root = path.resolve(__dirname, '..');",
+        "const here = new URL('./', import.meta.url);",
+        "const all = readdirSync('./');",
+        "const assets = new URL('./static/', import.meta.url);",
+        '',
+      ].join('\n'),
+      'static/a.txt': 'a',
+      'test/fixtures/key.pem': 'k',
+    });
+    const report = await scan(['a'], []);
+    const rel = (paths: readonly string[]) =>
+      paths.map((path) => path.slice(modules.length + 1));
+    expect(rel(report.protectedPaths)).toContain('a/static');
+    expect(rel(report.protectedSubtrees)).toEqual(['a/static']);
+  });
+
+  it('classifies a trailing-slash literal as an asset directory only when it names one', () => {
+    for (const asset of ['./assets/', './a/b/', '../data/']) {
+      expect(isAssetDirectoryRef(asset), asset).toBe(true);
+    }
+    for (const other of [
+      './',
+      '../',
+      './..',
+      '../../',
+      './a',
+      './a.txt',
+      '.',
+    ]) {
+      expect(isAssetDirectoryRef(other), other).toBe(false);
+    }
   });
 
   it('does not protect what only an unreached file refers to', async () => {

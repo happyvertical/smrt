@@ -39,6 +39,11 @@ export interface MeasureChild {
    * until a job object is used); a missing method means "assume none".
    */
   alive?(): boolean | Promise<boolean>;
+  /**
+   * Remove the process-level handlers that kill the child if the CLI itself
+   * dies. `stopMeasuredProcess` calls it once the child is stopped.
+   */
+  release?(): void;
 }
 
 export interface SpawnRequest {
@@ -157,20 +162,24 @@ export async function stopMeasuredProcess(
   };
 
   try {
-    await child.kill('SIGTERM');
-  } catch {
-    // Already gone.
-  }
-  await waitUntil(settled, graceMs);
-  if (!(await settled())) {
     try {
-      await child.kill('SIGKILL');
+      await child.kill('SIGTERM');
     } catch {
       // Already gone.
     }
-    await waitUntil(settled, SURVIVOR_GRACE_MS);
+    await waitUntil(settled, graceMs);
+    if (!(await settled())) {
+      try {
+        await child.kill('SIGKILL');
+      } catch {
+        // Already gone.
+      }
+      await waitUntil(settled, SURVIVOR_GRACE_MS);
+    }
+    if (await alive()) throw new BundleError('measured_process_survived');
+  } finally {
+    child.release?.();
   }
-  if (await alive()) throw new BundleError('measured_process_survived');
 }
 
 /** One start: spawn to first 2xx, in milliseconds. */

@@ -5,7 +5,7 @@
  * `child_process`, `http` and `net`.
  */
 
-import { execFile, spawn } from 'node:child_process';
+import { execFile, spawn, spawnSync } from 'node:child_process';
 import { promises as fsp, readFileSync } from 'node:fs';
 import { request as httpRequest } from 'node:http';
 import { createServer } from 'node:net';
@@ -103,34 +103,90 @@ interface ProcessRow {
   readonly stat: string;
 }
 
+const PS_ARGS = ['-A', '-o', 'pid=,ppid=,pgid=,stat='];
+
+function parseProcessRows(stdout: string): ProcessRow[] | undefined {
+  const rows: ProcessRow[] = [];
+  for (const line of stdout.split('\n')) {
+    const match = /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\S+)/.exec(line);
+    if (match !== null) {
+      rows.push({
+        pid: Number(match[1]),
+        ppid: Number(match[2]),
+        pgid: Number(match[3]),
+        stat: match[4] as string,
+      });
+    }
+  }
+  return rows.length === 0 ? undefined : rows;
+}
+
 /** The process table (`ps -A -o pid=,ppid=,pgid=,stat=`), or `undefined`. */
 function processTable(): Promise<ProcessRow[] | undefined> {
   return new Promise((resolve) => {
     execFile(
       'ps',
-      ['-A', '-o', 'pid=,ppid=,pgid=,stat='],
+      PS_ARGS,
       { timeout: 5000, maxBuffer: 16 * 1024 * 1024, windowsHide: true },
       (error, stdout) => {
-        if (error !== null) {
-          resolve(undefined);
-          return;
-        }
-        const rows: ProcessRow[] = [];
-        for (const line of stdout.split('\n')) {
-          const match = /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\S+)/.exec(line);
-          if (match !== null) {
-            rows.push({
-              pid: Number(match[1]),
-              ppid: Number(match[2]),
-              pgid: Number(match[3]),
-              stat: match[4] as string,
-            });
-          }
-        }
-        resolve(rows.length === 0 ? undefined : rows);
+        resolve(error === null ? parseProcessRows(stdout) : undefined);
       },
     );
   });
+}
+
+/** The same table, synchronously: for `exit` and signal handlers only. */
+function processTableSync(): ProcessRow[] | undefined {
+  try {
+    const result = spawnSync('ps', PS_ARGS, {
+      encoding: 'utf8',
+      timeout: 2000,
+      maxBuffer: 16 * 1024 * 1024,
+      windowsHide: true,
+    });
+    return result.status === 0 ? parseProcessRows(result.stdout) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * While a measured child is alive, make the CLI's own death take it down too.
+ *
+ * The child leads its own session/group (`detached`), so a terminal Ctrl+C or
+ * a SIGTERM aimed at the CLI no longer reaches it, and the `finally` that
+ * would stop it never runs when the process is killed. `cleanup` therefore
+ * runs synchronously from `exit`, `SIGINT` and `SIGTERM`. After a signal the
+ * default behaviour is restored: unless another listener still handles that
+ * signal, the process exits with `128 + signal`, as it would have without us.
+ * The returned function removes the handlers (idempotent).
+ */
+function killOnProcessExit(cleanup: () => void): () => void {
+  const signals = [
+    ['SIGINT', 2],
+    ['SIGTERM', 15],
+  ] as const;
+  const onExit = (): void => cleanup();
+  const listeners = signals.map(([name, number]) => {
+    const listener = (): void => {
+      cleanup();
+      release();
+      if (process.listenerCount(name) === 0) process.exit(128 + number);
+    };
+    return [name, listener] as const;
+  });
+  let released = false;
+  function release(): void {
+    if (released) return;
+    released = true;
+    process.removeListener('exit', onExit);
+    for (const [name, listener] of listeners) {
+      process.removeListener(name, listener);
+    }
+  }
+  process.once('exit', onExit);
+  for (const [name, listener] of listeners) process.once(name, listener);
+  return release;
 }
 
 /** Every process below `root` in the parent chain (not `root` itself). */
@@ -198,11 +254,15 @@ export function spawnMeasuredChild(
   });
   const pid = child.pid;
   if (!posix || pid === undefined) {
+    const release = killOnProcessExit(() => {
+      child.kill('SIGKILL');
+    });
     return {
       kill: (signal) => {
         child.kill(signal);
       },
       exit,
+      release,
     };
   }
   const known = new Set<number>();
@@ -225,12 +285,22 @@ export function spawnMeasuredChild(
       }
     }
   };
+  const release = killOnProcessExit(() => {
+    // The descendants must be read while the tree is intact: once the group
+    // is dead its children are re-parented and no longer lead back to `pid`.
+    const rows = processTableSync();
+    if (rows !== undefined) {
+      for (const descendant of descendantsOf(rows, pid)) known.add(descendant);
+    }
+    signal('SIGKILL');
+  });
   return {
     async kill(name) {
       await refresh();
       signal(name);
     },
     exit,
+    release,
     async alive() {
       const rows = await processTable();
       if (rows === undefined) {

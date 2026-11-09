@@ -491,38 +491,59 @@ export interface PruneOptions {
   readonly removedDirs?: ReadonlySet<string>;
   /**
    * `node_modules`-relative paths (files or directories, forward slashes) a
-   * reached module refers to. Pruning keeps each of them, anything below a
-   * protected directory, and the directories on the way. It does not override
-   * `removedDirs`, a foreign-platform native directory or the secret
-   * deny-list.
+   * reached module refers to. Pruning keeps each of them and the directories
+   * on the way, but NOT the contents of a protected directory: a literal such
+   * as `resolve(__dirname, '..')` names a package root, not its tests, docs
+   * and fixtures. It does not override `removedDirs`, a foreign-platform
+   * native directory or the secret deny-list.
    */
   readonly protectedPaths?: ReadonlySet<string>;
+  /**
+   * Explicit asset directories (`new URL('./assets/', import.meta.url)`)
+   * whose whole contents are kept, with the directories on the way. Same
+   * limits as `protectedPaths`.
+   */
+  readonly protectedSubtrees?: ReadonlySet<string>;
   readonly secrets?: SecretFilterOptions;
 }
 
-const protectedAncestors = new WeakMap<ReadonlySet<string>, Set<string>>();
+const protectedAncestors = new WeakMap<PruneOptions, Set<string>>();
 
-/** True when `rel` is protected, below a protected directory, or on the way to one. */
-function isProtectedPath(
-  rel: string,
-  protectedPaths: ReadonlySet<string> | undefined,
-): boolean {
-  if (protectedPaths === undefined || protectedPaths.size === 0) return false;
-  if (protectedPaths.has(rel)) return true;
-  const segments = rel.split('/');
-  for (let length = segments.length - 1; length > 0; length -= 1) {
-    if (protectedPaths.has(segments.slice(0, length).join('/'))) return true;
+/**
+ * True when `rel` is itself protected, is inside an explicit asset directory,
+ * or is a directory on the way to a protected path. A protected directory
+ * does not protect what is inside it (only an asset directory does).
+ */
+function isProtectedPath(rel: string, options: PruneOptions): boolean {
+  const { protectedPaths, protectedSubtrees } = options;
+  if (
+    (protectedPaths === undefined || protectedPaths.size === 0) &&
+    (protectedSubtrees === undefined || protectedSubtrees.size === 0)
+  ) {
+    return false;
   }
-  let ancestors = protectedAncestors.get(protectedPaths);
+  if (protectedPaths?.has(rel) === true) return true;
+  if (protectedSubtrees !== undefined && protectedSubtrees.size > 0) {
+    const segments = rel.split('/');
+    for (let length = segments.length; length > 0; length -= 1) {
+      if (protectedSubtrees.has(segments.slice(0, length).join('/'))) {
+        return true;
+      }
+    }
+  }
+  let ancestors = protectedAncestors.get(options);
   if (ancestors === undefined) {
     ancestors = new Set();
-    for (const path of protectedPaths) {
+    for (const path of [
+      ...(protectedPaths ?? []),
+      ...(protectedSubtrees ?? []),
+    ]) {
       const parts = path.split('/');
       for (let length = 1; length < parts.length; length += 1) {
         ancestors.add(parts.slice(0, length).join('/'));
       }
     }
-    protectedAncestors.set(protectedPaths, ancestors);
+    protectedAncestors.set(options, ancestors);
   }
   return ancestors.has(rel);
 }
@@ -569,7 +590,7 @@ export function classifyPrune(
     }
     const entries = options.entryPaths?.get(packageDir);
     if (referenced(entries, inner)) return undefined;
-    if (isProtectedPath(entry.rel, options.protectedPaths)) return undefined;
+    if (isProtectedPath(entry.rel, options)) return undefined;
     if (lower === '__tests__') return 'tests';
     if (lower === '.github') return 'ci';
     if (inner.length === 1) {
@@ -585,7 +606,7 @@ export function classifyPrune(
   // A file a reached module refers to is code or data the package needs at
   // run time, whatever its name. (`exports` also lists `types` conditions, so
   // an entry path alone does not protect a file.)
-  if (isProtectedPath(entry.rel, options.protectedPaths)) return undefined;
+  if (isProtectedPath(entry.rel, options)) return undefined;
   if (lower === '.ds_store') return 'os-junk';
   if (lower.endsWith('.map')) {
     return options.keepSourceMaps === true ? undefined : 'source-map';
