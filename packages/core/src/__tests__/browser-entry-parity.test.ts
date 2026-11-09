@@ -179,6 +179,11 @@ const NODE_ONLY_GROUPS: ReadonlyArray<{
   },
   {
     reason:
+      'Run-time model registration for a Node host (an app worker): registers into the process registry and plans DDL through the Node-only schema strategies (#4871)',
+    names: ['planRuntimeModelDDL', 'registerRuntimeModel', 'runtimeModelEntry'],
+  },
+  {
+    reason:
       'Test-database helper; belongs behind `@happyvertical/smrt-core/testing`',
     names: ['getTestDatabase'],
   },
