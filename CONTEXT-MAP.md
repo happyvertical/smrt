@@ -16,3 +16,5 @@ SMRT is a multi-context monorepo. Use this map to find the package-level contrac
 | Admin Shell | `smrt-svelte` workspace and shell surfaces | Root `CONTEXT.md` |
 
 For cross-context work, read every affected row. System-wide decisions belong in root `docs/adr/`; context-local decisions should live beside the relevant context.
+
+Before adding a helper, util, or integration, read [`docs/knowledge/intents/index.md`](docs/knowledge/intents/index.md); before extending a package run `smrt-dev-mcp review --directory <pkg> --format summary` (or `build-context` with `task: architecture`). A capability belongs in smrt or the SDK, not a downstream helper: file an issue instead of a local shim.

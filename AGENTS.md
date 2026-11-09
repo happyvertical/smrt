@@ -60,15 +60,15 @@ use [CONTEXT-MAP.md](CONTEXT-MAP.md) for cross-package orientation.
 
 ## Validation
 
-Use Node/pnpm versions from `package.json`. Install with `pnpm install`, then
-`pnpm build`. Package checks first, then root checks:
+Use Node/pnpm versions from `package.json`.
+`pnpm install`, then `pnpm build`. Package checks first, then root checks:
 `pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm format-check`,
 `pnpm knowledge:check --strict --format markdown`, `pnpm audit:policy`, and
-`pnpm check:node-roots` (built model roots load under plain Node, #4219;
-allow-list in its root `package.json` script).
+`pnpm check:node-roots` (model roots load under plain Node, #4219;
+allow-list in its script).
 `pnpm lint`/`pnpm format-check` run Biome directly (`biome ci`, CI-pinned,
-#2710) plus the `--smrt-*` gate (#3822), not through Turbo; no package defines
-its own `lint`/`format-check` script.
+#2710) plus the `--smrt-*` gate (#3822), not through Turbo; packages define no
+own script.
 [TESTING_STANDARD.md](TESTING_STANDARD.md) defines package release gates.
 
 SMRT tests require `smrtVitestPlugin()`. Restart Vitest after adding decorated
@@ -106,20 +106,23 @@ use named `$props()` interfaces to avoid recursive inline intersections.
 ## Documentation and skills
 
 `AGENTS.md` is canonical; `CLAUDE.md` stays exactly `@AGENTS.md`. Keep instructions
-focused on source locations, non-obvious invariants, validation, and links.
+to source locations, non-obvious invariants, validation, and links.
 Remove stale/redundant prose; move detailed current contracts into linked
 `agents/<module>.md` references. Do not add AGENTS below a package root: ancestry
 is additive. `pnpm check:agents-chain` checks the 32 KB cap.
 
-[WORKFLOW.md](WORKFLOW.md) routes to shared lifecycle skills. This project's
-GitHub tracker uses `implement`, `claim-issue`, `review-cycle`, `ship`, and
-`resolve`; Work/buzz variants require an explicitly selected Work tracker.
+[WORKFLOW.md](WORKFLOW.md) routes to shared lifecycle skills. The GitHub tracker
+uses `implement`, `claim-issue`, `review-cycle`, `ship`, `resolve`; Work/buzz
+variants need a selected Work tracker.
 
-`smrt knowledge:review-context` / `knowledge:architecture-context` provide
-scoped summaries; read the selected references on demand. Runtime manifests
-remain separate from `.smrt/smrt-knowledge.json` / `dist/smrt-knowledge.json`
-agent artifacts. `smrt docs:agents` exports snapshots to consumer projects.
-Knowledge freshness is enforced by CI/hooks and artifact consumers; `smrt doctor`
-is diagnostic, not an enforcement prerequisite. See
-[standards](docs/content/standards.md) for artifact vocabulary, including
-**generation snapshot** for the proposed immutable provenance bundle.
+Before adding a helper, util, or integration, read the
+[intent index](docs/knowledge/intents/index.md); before extending a package, run
+`smrt-dev-mcp review --directory <pkg> --format summary` (or `build-context`
+`task: architecture`). Capabilities belong in smrt or the SDK, not downstream
+helpers: file an issue, no local shim.
+
+`smrt knowledge:review-context` / `knowledge:architecture-context` give scoped
+summaries. Runtime manifests are separate from `smrt-knowledge.json` agent
+artifacts. `smrt docs:agents` exports snapshots
+to consumers. CI/hooks enforce freshness; `smrt doctor` is diagnostic only. Vocabulary (**generation snapshot**):
+[standards](docs/content/standards.md).
