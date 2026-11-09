@@ -22,6 +22,7 @@ import {
   runApplicationOperation,
   START_OUTPUT_TAIL_BYTES,
 } from './operations.js';
+import { runRestoreLatestOperation } from './restore-latest.js';
 import {
   type AppCommandDependencies,
   type AppCommandIo,
@@ -56,6 +57,8 @@ export const APP_COMMANDS: Readonly<Record<string, string>> = Object.freeze({
     'Local: issue, list, or revoke a scoped bearer token for a local MCP client',
   'installation [status|restore|reseed|recover-seed|retire]':
     'Local: declare a restored move, an independent copy, or a recovered seed',
+  'restore-latest [--discard-local] [--replace-installation] [--origin-retired] [--recover]':
+    "Local: replace the data root with the vault account's latest snapshot",
   'worker [task|schedule]': 'Deployed: run the task or schedule worker',
   'dev [...vite args]': "Run the application's Vite dev server",
   'build [...vite args]':
@@ -140,6 +143,7 @@ const ENV_FILE_OPERATIONS = new Set<string>([
   'migrate',
   'token',
   'installation',
+  'restore-latest',
   'dev',
   'build',
   'vite',
@@ -218,6 +222,9 @@ export async function runAppCommand(
     if (operation === 'token') return await runTokenOperation(context, args);
     if (operation === 'installation') {
       return await runInstallationOperation(context, args);
+    }
+    if (operation === 'restore-latest') {
+      return await runRestoreLatestOperation(context, args);
     }
     if (!(APP_OPERATIONS as readonly string[]).includes(operation)) {
       throw new Error(`Unknown app operation: ${operation}`);

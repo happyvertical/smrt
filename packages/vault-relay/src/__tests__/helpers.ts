@@ -6,6 +6,7 @@ import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
 import { exportDevicePublicKey, signRelayRequest } from '../auth.js';
 import type { VaultRelayPolicyInput } from '../config.js';
 import { sha256Hex } from '../encoding.js';
+import { migrateVaultRelayLeasesV1 } from '../lease-store.js';
 import { migrateVaultRelayV1, VaultRelayStore } from '../metadata-store.js';
 import {
   FilesystemObjectStore,
@@ -64,7 +65,12 @@ export function stubEntitlements(
 export const DEFAULT_POLICY: VaultRelayPolicyInput = {
   quota: { maxBytes: 1_000_000, maxSnapshots: 4 },
   retention: { keepLast: 3, keepWithinMs: 0 },
-  limits: { maxChunkBytes: 4096, uploadTtlMs: 60_000, maxClockSkewMs: 30_000 },
+  limits: {
+    maxChunkBytes: 4096,
+    uploadTtlMs: 60_000,
+    maxClockSkewMs: 30_000,
+    leaseTtlMs: 30_000,
+  },
 };
 
 export interface Harness {
@@ -90,6 +96,7 @@ export async function createHarness(
 ): Promise<Harness> {
   const db = await getDatabase({ type: 'sqlite', url: ':memory:' });
   await migrateVaultRelayV1(db);
+  await migrateVaultRelayLeasesV1(db);
   const storeRoot = await mkdtemp(join(tmpdir(), 'vault-relay-'));
   const logger = captureLogger();
   const entitlements = stubEntitlements(
@@ -220,9 +227,63 @@ export function adminRequest(
   });
 }
 
+/** Account lease state as `GET /v1/lease` reports it. */
+export interface LeaseStatusBody {
+  holder: string | null;
+  expiresAt: string | null;
+  headSequence: number;
+  latestCommittedSequence: number;
+  headIsHole: boolean;
+}
+
+export async function leaseStatus(
+  harness: Harness,
+  device: TestDevice,
+): Promise<LeaseStatusBody> {
+  const response = await harness.relay.handle(
+    signed(harness, device, 'GET', '/v1/lease'),
+  );
+  return (await response.json()) as LeaseStatusBody;
+}
+
+export function acquireRequest(
+  harness: Harness,
+  device: TestDevice,
+  baseSequence: number,
+  extra: Record<string, unknown> = {},
+): Request {
+  return signed(harness, device, 'POST', '/v1/lease/acquire', {
+    body: JSON.stringify({ baseSequence, ...extra }),
+  });
+}
+
+/**
+ * Acquire the lease as a device that is at the account's head (as if it had
+ * just restored latest) and return the fencing token.
+ */
+export async function leaseToken(
+  harness: Harness,
+  device: TestDevice,
+): Promise<number> {
+  const status = await leaseStatus(harness, device);
+  const base = status.headIsHole
+    ? status.latestCommittedSequence
+    : status.headSequence;
+  const response = await harness.relay.handle(
+    acquireRequest(harness, device, base),
+  );
+  if (response.status !== 200) {
+    throw new Error(
+      `lease refused: ${response.status} ${await response.text()}`,
+    );
+  }
+  return ((await response.json()) as { fencingToken: number }).fencingToken;
+}
+
 /**
  * Upload `blob` as `sequence` in `chunkSize` pieces and commit it. Returns the
- * commit response.
+ * commit response. Without `fencingToken` the device first takes the lease
+ * at the head.
  */
 export async function uploadSnapshot(
   harness: Harness,
@@ -230,10 +291,13 @@ export async function uploadSnapshot(
   sequence: number,
   blob: Uint8Array,
   chunkSize = 4096,
+  fencingToken?: number,
 ): Promise<Response> {
+  const token = fencingToken ?? (await leaseToken(harness, device));
   const begin = await harness.relay.handle(
     signed(harness, device, 'POST', '/v1/uploads', {
       body: JSON.stringify({
+        fencingToken: token,
         sequence,
         byteSize: blob.length,
         chunkSize,

@@ -10,6 +10,7 @@ import {
   createHarness,
   downloadSnapshot,
   type Harness,
+  leaseToken,
   newDevice,
   registerDevice,
   signed,
@@ -195,6 +196,7 @@ describe('cross-account isolation', () => {
     const begin = await h.relay.handle(
       signed(h, a1, 'POST', '/v1/uploads', {
         body: JSON.stringify({
+          fencingToken: await leaseToken(h, a1),
           sequence: 1,
           byteSize: 4,
           chunkSize: 4,
@@ -225,6 +227,7 @@ describe('quotas and request bounds', () => {
     const response = await h.relay.handle(
       signed(h, a1, 'POST', '/v1/uploads', {
         body: JSON.stringify({
+          fencingToken: await leaseToken(h, a1),
           sequence: 1,
           byteSize: 1_000_001,
           chunkSize: 4096,
@@ -237,10 +240,12 @@ describe('quotas and request bounds', () => {
   });
 
   it('counts pending uploads against the byte quota', async () => {
+    const fencingToken = await leaseToken(h, a1);
     const begin = (sequence: number) =>
       h.relay.handle(
         signed(h, a1, 'POST', '/v1/uploads', {
           body: JSON.stringify({
+            fencingToken,
             sequence,
             byteSize: 600_000,
             chunkSize: 4096,
@@ -281,6 +286,7 @@ describe('quotas and request bounds', () => {
     const response = await h.relay.handle(
       signed(h, a1, 'POST', '/v1/uploads', {
         body: JSON.stringify({
+          fencingToken: await leaseToken(h, a1),
           sequence: 1,
           byteSize: 10_000,
           chunkSize: 4097,
@@ -296,6 +302,7 @@ describe('quotas and request bounds', () => {
     const begin = await h.relay.handle(
       signed(h, a1, 'POST', '/v1/uploads', {
         body: JSON.stringify({
+          fencingToken: await leaseToken(h, a1),
           sequence: 1,
           byteSize: 100,
           chunkSize: 100,
@@ -371,6 +378,7 @@ describe('atomic publish and sequences', () => {
     const response = await h.relay.handle(
       signed(h, device, 'POST', '/v1/uploads', {
         body: JSON.stringify({
+          fencingToken: await leaseToken(h, device),
           sequence,
           byteSize: blob.length,
           chunkSize: 4096,
@@ -417,6 +425,7 @@ describe('atomic publish and sequences', () => {
     const response = await h.relay.handle(
       signed(h, a1, 'POST', '/v1/uploads', {
         body: JSON.stringify({
+          fencingToken: await leaseToken(h, a1),
           sequence: 1,
           byteSize: 100,
           chunkSize: 100,
@@ -441,22 +450,31 @@ describe('atomic publish and sequences', () => {
   it('refuses to overwrite or roll back a sequence', async () => {
     expect((await uploadSnapshot(h, a1, 5, randomBytes(10))).status).toBe(201);
     for (const sequence of [5, 3]) {
-      const response = await uploadSnapshot(h, a2, sequence, randomBytes(10));
+      const response = await uploadSnapshot(h, a1, sequence, randomBytes(10));
       expect(response.status).toBe(409);
       expect(await errorCode(response)).toBe('stale_sequence');
     }
-    // Deleting the latest does not lower the high-water mark.
+    // The head is never deleted (#4805).
+    const head = await h.relay.handle(
+      signed(h, a1, 'DELETE', '/v1/snapshots/5'),
+    );
+    expect(head.status).toBe(409);
+    expect(await errorCode(head)).toBe('head_snapshot');
+    expect((await uploadSnapshot(h, a1, 6, randomBytes(10))).status).toBe(201);
+    // Deleting an older snapshot does not lower the high-water mark.
     expect(
       (await h.relay.handle(signed(h, a1, 'DELETE', '/v1/snapshots/5'))).status,
     ).toBe(204);
     const again = await uploadSnapshot(h, a1, 5, randomBytes(10));
     expect(again.status).toBe(409);
-    expect((await uploadSnapshot(h, a1, 6, randomBytes(10))).status).toBe(201);
+    expect((await uploadSnapshot(h, a1, 7, randomBytes(10))).status).toBe(201);
   });
 
   it('refuses a duplicate pending sequence and a stale commit after a newer publish', async () => {
     const older = randomBytes(10);
     const { body: first } = await beginUpload(a1, 7, older);
+    // a1's lease lapses (its upload has not); a2 takes over at the head.
+    h.clock.now += 31_000;
     const { response: dup } = await beginUpload(a2, 7, randomBytes(10));
     expect(dup.status).toBe(409);
     expect(await errorCode(dup)).toBe('sequence_exists');
@@ -471,7 +489,7 @@ describe('atomic publish and sequences', () => {
       signed(h, a1, 'POST', `/v1/uploads/${first.uploadId}/commit`),
     );
     expect(stale.status).toBe(409);
-    expect(await errorCode(stale)).toBe('stale_sequence');
+    expect(await errorCode(stale)).toBe('must_restore_first');
     const latest = await h.relay.handle(
       signed(h, a1, 'GET', '/v1/snapshots/latest'),
     );
@@ -522,6 +540,7 @@ describe('retention and expiry', () => {
     await h.relay.handle(
       signed(h, a1, 'POST', '/v1/uploads', {
         body: JSON.stringify({
+          fencingToken: await leaseToken(h, a1),
           sequence: 1,
           byteSize: 900_000,
           chunkSize: 4096,
@@ -538,12 +557,17 @@ describe('retention and expiry', () => {
 
   it('removes chunk objects when a snapshot is deleted', async () => {
     await uploadSnapshot(h, a1, 1, randomBytes(9000));
-    await h.relay.handle(signed(h, a1, 'DELETE', '/v1/snapshots/1'));
+    await uploadSnapshot(h, a1, 2, randomBytes(10));
+    const removed = await h.relay.handle(
+      signed(h, a1, 'DELETE', '/v1/snapshots/1'),
+    );
+    expect(removed.status).toBe(204);
     const files = await readdir(h.storeRoot, {
       recursive: true,
       withFileTypes: true,
     });
-    expect(files.filter((entry) => entry.isFile())).toEqual([]);
+    // Only the one chunk of snapshot 2 remains.
+    expect(files.filter((entry) => entry.isFile())).toHaveLength(1);
   });
 });
 
@@ -613,6 +637,7 @@ describe('concurrent writes', () => {
     const response = await harness.relay.handle(
       signed(harness, device, 'POST', '/v1/uploads', {
         body: JSON.stringify({
+          fencingToken: await leaseToken(harness, device),
           sequence,
           byteSize: blob.length,
           chunkSize: 4096,
@@ -763,6 +788,7 @@ describe('concurrent writes', () => {
 
   it('refuses to re-create a published and deleted sequence at the store', async () => {
     expect((await uploadSnapshot(h, a1, 3, randomBytes(10))).status).toBe(201);
+    expect((await uploadSnapshot(h, a1, 4, randomBytes(10))).status).toBe(201);
     await h.relay.handle(signed(h, a1, 'DELETE', '/v1/snapshots/3'));
     const store = new VaultRelayStore(h.db);
     const created = await store.createPending({
@@ -778,6 +804,6 @@ describe('concurrent writes', () => {
     });
     expect(created).toBe(false);
     const view = await h.relay.operatorView('acct-a');
-    expect(view.usage).toMatchObject({ usedBytes: 0, usedSnapshots: 0 });
+    expect(view.usage).toMatchObject({ usedBytes: 10, usedSnapshots: 1 });
   });
 });

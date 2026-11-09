@@ -15,6 +15,7 @@ template's scripts so an app's `package.json` scripts become one-liners.
 | `scripts/smrt-web.mjs` | `bin/smrt-web.mjs` (spawned by `start`) |
 | — (new, #3413) | `smrt app token [create] --scopes … [--expires 30d] [--label …]`, `token list`, `token revoke <id>` |
 | — (new, #4704) | `smrt app installation [status]`, `restore --origin-retired`, `reseed`, `recover-seed <file> [--unverified]`, `retire` |
+| — (new, #4805) | `smrt app restore-latest [--discard-local] [--replace-installation] [--origin-retired] [--recover]` |
 | helper modules | `@happyvertical/smrt-cli/app` (side-effect-free subpath) |
 
 ## Source
@@ -91,6 +92,21 @@ config loading; `bin/smrt.js` imports `dist/` in-process so SIGTERM reaches
   README). `status` is read-only; the rest take the operation lock and refuse
   while a writer is active. Output is secret-free JSON with explicit identity
   and token effects.
+- **`restore-latest`** (`restore-latest.ts`, local only, #4805): under
+  `operation.lock` and the writer lease (so no web process or second SQLite
+  connection is open, smrt#3379) it settles an interrupted swap and removes
+  plaintext restore leftovers, refuses pending local writes (or a live root
+  with no recorded vault position) without `--discard-local` (then keeps the
+  previous root) and any latest sequence below the location's highest seen,
+  takes the
+  relay lease at the target, decrypts into a sibling candidate, checks SQLite
+  integrity and the carried installation (`--replace-installation` for a
+  different one), swaps under the app-runtime journal and records the new
+  vault position. Custody moves (`restoreInstallation`) only with
+  `--origin-retired`; otherwise it stays pending and the app refuses to start
+  until declared. `--recover` only settles a swap. Collaborators
+  come from `deps.vaultRestore` (account, lease client, snapshot source from
+  the relay client) and `deps.snapshotKeys`; without them it fails closed.
 - **`token`** (`tokens.ts`, local only): parses every argument before touching
   state, opens `openLocalMcpTokenStore` (validated custody, uncached
   connection, no writer lease, so it runs beside `app:start`), and serializes

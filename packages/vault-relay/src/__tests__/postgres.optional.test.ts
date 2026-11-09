@@ -10,12 +10,19 @@ import { join } from 'node:path';
 import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { sha256Hex } from '../encoding.js';
+import {
+  migrateVaultRelayLeasesV1,
+  VaultRelayLeaseStore,
+} from '../lease-store.js';
 import { migrateVaultRelayV1, VaultRelayStore } from '../metadata-store.js';
 import { FilesystemObjectStore } from '../object-store.js';
 import { VaultRelay } from '../relay.js';
 import {
+  acquireRequest,
   captureLogger,
   type Harness,
+  leaseStatus,
+  leaseToken,
   newDevice,
   signed,
   stubEntitlements,
@@ -37,8 +44,10 @@ describe.skipIf(!url)('vault relay on PostgreSQL', () => {
       cache: false,
     });
     await migrateVaultRelayV1(db);
+    await migrateVaultRelayLeasesV1(db);
     // Idempotent: a second run is a no-op.
     await migrateVaultRelayV1(db);
+    await migrateVaultRelayLeasesV1(db);
     root = await mkdtemp(join(tmpdir(), 'vault-relay-pg-'));
     const clock = { now: Date.now() };
     const logger = captureLogger();
@@ -109,6 +118,7 @@ describe.skipIf(!url)('vault relay on PostgreSQL', () => {
     const tooBig = await h.relay.handle(
       signed(h, device, 'POST', '/v1/uploads', {
         body: JSON.stringify({
+          fencingToken: await leaseToken(h, device),
           sequence: 9,
           byteSize: 95_000,
           chunkSize: 4096,
@@ -122,6 +132,7 @@ describe.skipIf(!url)('vault relay on PostgreSQL', () => {
     const pending = await h.relay.handle(
       signed(h, device, 'POST', '/v1/uploads', {
         body: JSON.stringify({
+          fencingToken: await leaseToken(h, device),
           sequence: 10,
           byteSize: 100,
           chunkSize: 100,
@@ -147,5 +158,102 @@ describe.skipIf(!url)('vault relay on PostgreSQL', () => {
       signed(h, device, 'GET', '/v1/snapshots'),
     );
     expect(revoked.status).toBe(401);
+  });
+
+  it('runs the primary-writer lease statements on PostgreSQL', async () => {
+    const d2 = newDevice(account, 'device-2');
+    const d3 = newDevice(account, 'device-3');
+    for (const device of [d2, d3]) {
+      await h.relay.registerDevice(account, device.deviceId, device.publicKey);
+    }
+    const head = (await leaseStatus(h, d2)).headSequence;
+    const acquire = async (device: typeof d2, base: number) => {
+      const response = await h.relay.handle(acquireRequest(h, device, base));
+      return {
+        status: response.status,
+        body: (await response.json()) as Record<string, unknown>,
+      };
+    };
+    // Concurrent acquires from two devices: exactly one wins the row.
+    const raced = await Promise.all([acquire(d2, head), acquire(d3, head)]);
+    expect(raced.map((r) => r.status).sort()).toEqual([200, 409]);
+    const winner = raced[0].status === 200 ? d2 : d3;
+    const loser = winner === d2 ? d3 : d2;
+    const token = (raced[0].status === 200 ? raced[0] : raced[1]).body
+      .fencingToken as number;
+
+    const next = head + 10;
+    expect(
+      (await uploadSnapshot(h, winner, next, randomBytes(10), 4096, token))
+        .status,
+    ).toBe(201);
+    // Begin under the lease, then lose it to the other device.
+    const blob = randomBytes(10);
+    const begun = await h.relay.handle(
+      signed(h, winner, 'POST', '/v1/uploads', {
+        body: JSON.stringify({
+          fencingToken: token,
+          sequence: next + 1,
+          byteSize: blob.length,
+          chunkSize: 4096,
+          sha256: sha256Hex(blob),
+        }),
+      }),
+    );
+    const { uploadId } = (await begun.json()) as { uploadId: string };
+    await h.relay.handle(
+      signed(h, winner, 'PUT', `/v1/uploads/${uploadId}/chunks/0`, {
+        body: blob,
+      }),
+    );
+    h.clock.now += 301_000;
+    expect((await acquire(loser, head)).body.error).toBe('must_restore_first');
+    expect((await acquire(loser, next)).status).toBe(200);
+    const stale = await h.relay.handle(
+      signed(h, winner, 'POST', `/v1/uploads/${uploadId}/commit`),
+    );
+    expect(stale.status).toBe(409);
+    expect(((await stale.json()) as { error: string }).error).toBe(
+      'must_restore_first',
+    );
+    // The head is never deleted.
+    const removeHead = await h.relay.handle(
+      signed(h, loser, 'DELETE', `/v1/snapshots/${next}`),
+    );
+    expect(removeHead.status).toBe(409);
+
+    // A hole: the head advanced, then its upload expired.
+    const t = (await acquire(loser, next)).body.fencingToken as number;
+    const holeBlob = randomBytes(10);
+    const hole = await h.relay.handle(
+      signed(h, loser, 'POST', '/v1/uploads', {
+        body: JSON.stringify({
+          fencingToken: t,
+          sequence: next + 5,
+          byteSize: holeBlob.length,
+          chunkSize: 4096,
+          sha256: sha256Hex(holeBlob),
+        }),
+      }),
+    );
+    const holeId = ((await hole.json()) as { uploadId: string }).uploadId;
+    expect(
+      await new VaultRelayLeaseStore(db).advanceHead(
+        account,
+        loser.deviceId,
+        holeId,
+        t,
+        next + 5,
+        h.clock.now,
+      ),
+    ).toBe(true);
+    h.clock.now += 25 * 60 * 60 * 1000;
+    await h.relay.sweepExpired();
+    expect(await leaseStatus(h, winner)).toMatchObject({
+      headSequence: next + 5,
+      latestCommittedSequence: next,
+      headIsHole: true,
+    });
+    expect((await acquire(winner, next)).status).toBe(200);
   });
 });

@@ -637,6 +637,49 @@ async function withInstallationExclusive<T>(
   }
 }
 
+/** Installation carried by one data root, judged from that root alone. */
+export interface DataRootInstallation {
+  /** Derived from the root's seed; `null` when the seed is absent. */
+  readonly installationId: string | null;
+  /**
+   * `consistent`: seed and data custody record agree. `unrecorded`: a seed
+   * without a record (an installation older than custody records). `empty`:
+   * neither exists. Anything else must not be restored into place.
+   */
+  readonly status:
+    | 'consistent'
+    | 'unrecorded'
+    | 'empty'
+    | 'seed-missing'
+    | 'seed-mismatch'
+    | 'record-invalid';
+}
+
+/**
+ * Read-only check of a data root's own seed and custody record, without any
+ * state root (#4805: verifying a restore candidate before it is swapped in).
+ * Throws when the seed exists but cannot be read safely.
+ */
+export function inspectDataRootInstallation(
+  secretsDirectory: string,
+): DataRootInstallation {
+  const record = readRecord(join(secretsDirectory, INSTALLATION_CUSTODY_FILE));
+  const installationId = installationIdOf(readSeed(seedPath(secretsDirectory)));
+  if (installationId === null) {
+    return {
+      installationId,
+      status: record === null ? 'empty' : 'seed-missing',
+    };
+  }
+  if (record === 'invalid') return { installationId, status: 'record-invalid' };
+  if (record === null) return { installationId, status: 'unrecorded' };
+  return {
+    installationId,
+    status:
+      record.installationId === installationId ? 'consistent' : 'seed-mismatch',
+  };
+}
+
 /** Report the custody status of an initialized local installation. Read-only. */
 export async function inspectInstallationCustody(
   options: InstallationCustodyOptions,

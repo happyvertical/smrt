@@ -18,6 +18,7 @@ import { loadServerConfig } from '../server.js';
 import {
   createHarness,
   type Harness,
+  leaseToken,
   newDevice,
   registerDevice,
   signed,
@@ -222,7 +223,9 @@ describe('Node HTTP adapter', () => {
     );
     const { port } = server.address() as AddressInfo;
     try {
+      const fencingToken = await leaseToken(h, device);
       const body = JSON.stringify({
+        fencingToken,
         sequence: 1,
         byteSize: 5,
         chunkSize: 5,
@@ -261,9 +264,12 @@ describe('Node HTTP adapter', () => {
         method: 'DELETE',
         headers: remove.headers,
       });
-      expect(removed.status).toBe(204);
+      // The head snapshot is never deleted (#4805); the transport still
+      // carried the bodiless DELETE intact.
+      expect(removed.status).toBe(409);
 
       const second = JSON.stringify({
+        fencingToken,
         sequence: 2,
         byteSize: 5,
         chunkSize: 5,
