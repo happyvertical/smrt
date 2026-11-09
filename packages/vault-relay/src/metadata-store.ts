@@ -571,6 +571,35 @@ export class VaultRelayStore {
     return deleted.rows[0] ? snapshotFromRow(deleted.rows[0]) : null;
   }
 
+  /**
+   * Delete a committed snapshot row only while another committed snapshot of
+   * the account remains, in one statement. Returns the row when this call
+   * removed it, `null` when it is gone or is the account's last committed
+   * snapshot. Two devices deleting the final two snapshots at the same
+   * instant can still both pass on PostgreSQL (each sees the other), which
+   * the device API accepts as a residual risk; retention never goes through
+   * here and always keeps at least one.
+   */
+  async deleteCommittedUnlessLast(
+    accountId: string,
+    uploadId: string,
+  ): Promise<SnapshotRecord | null> {
+    const deleted = await this.db.query(
+      `DELETE FROM vault_relay_snapshots
+        WHERE account_id = ? AND upload_id = ? AND status = 'committed'
+          AND EXISTS (
+            SELECT 1 FROM vault_relay_snapshots AS other
+             WHERE other.account_id = ? AND other.status = 'committed'
+               AND other.upload_id <> ?)
+        RETURNING ${SNAPSHOT_COLUMNS}`,
+      accountId,
+      uploadId,
+      accountId,
+      uploadId,
+    );
+    return deleted.rows[0] ? snapshotFromRow(deleted.rows[0]) : null;
+  }
+
   // Chunks -----------------------------------------------------------------
 
   /**

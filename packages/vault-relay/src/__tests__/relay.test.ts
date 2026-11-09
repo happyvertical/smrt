@@ -440,6 +440,7 @@ describe('atomic publish and sequences', () => {
   });
 
   it('refuses to overwrite or roll back a sequence', async () => {
+    expect((await uploadSnapshot(h, a1, 4, randomBytes(10))).status).toBe(201);
     expect((await uploadSnapshot(h, a1, 5, randomBytes(10))).status).toBe(201);
     for (const sequence of [5, 3]) {
       const response = await uploadSnapshot(h, a2, sequence, randomBytes(10));
@@ -749,6 +750,133 @@ describe('sequence step cap and high-water reset', () => {
   });
 });
 
+describe('device deletes', () => {
+  const del = (device: TestDevice, sequence: number) =>
+    h.relay.handle(signed(h, device, 'DELETE', `/v1/snapshots/${sequence}`));
+
+  it('refuses to delete the last committed snapshot and audits the attempt', async () => {
+    const blob = randomBytes(150);
+    expect((await uploadSnapshot(h, a1, 4, blob)).status).toBe(201);
+    h.logger.lines.length = 0;
+
+    const refused = await del(a2, 4);
+    expect(refused.status).toBe(409);
+    expect(await refused.json()).toEqual({
+      error: 'last_snapshot',
+      sequence: 4,
+    });
+    // Still listed, downloadable, and counted.
+    expect(Buffer.from(await downloadSnapshot(h, a1, 4))).toEqual(blob);
+    expect((await h.relay.operatorView('acct-a')).usage).toMatchObject({
+      usedBytes: 150,
+      usedSnapshots: 1,
+    });
+    const audit = h.logger.lines.filter(
+      (line) => line.event === 'snapshot_delete_refused',
+    );
+    expect(audit).toHaveLength(1);
+    expect(audit[0]).toMatchObject({
+      level: 'warn',
+      fields: {
+        device: 'device-a2',
+        sequence: 4,
+        reason: 'last_committed',
+      },
+    });
+    expect(JSON.stringify(h.logger.lines)).not.toContain('acct-a');
+  });
+
+  it('deletes an older snapshot, audits it, then protects the one that remains', async () => {
+    for (const sequence of [1, 2]) {
+      expect(
+        (await uploadSnapshot(h, a1, sequence, randomBytes(20))).status,
+      ).toBe(201);
+    }
+    h.logger.lines.length = 0;
+    expect((await del(a1, 1)).status).toBe(204);
+    expect(
+      h.logger.lines.filter((line) => line.event === 'snapshot_deleted'),
+    ).toEqual([
+      expect.objectContaining({
+        level: 'info',
+        fields: expect.objectContaining({ device: 'device-a1', sequence: 1 }),
+      }),
+    ]);
+    const last = await del(a1, 2);
+    expect(last.status).toBe(409);
+    expect(await errorCode(last)).toBe('last_snapshot');
+    expect(
+      (await h.relay.operatorView('acct-a')).snapshots.map((s) => s.sequence),
+    ).toEqual([2]);
+    // A missing snapshot is still a plain 404, with no refusal audit.
+    h.logger.lines.length = 0;
+    expect((await del(a1, 1)).status).toBe(404);
+    expect(
+      h.logger.lines.some((line) => line.event === 'snapshot_delete_refused'),
+    ).toBe(false);
+  });
+
+  it('lets the newest go while an older one remains, but never the last', async () => {
+    for (const sequence of [1, 2]) {
+      await uploadSnapshot(h, a1, sequence, randomBytes(20));
+    }
+    expect((await del(a1, 2)).status).toBe(204);
+    expect((await del(a1, 1)).status).toBe(409);
+    const latest = await h.relay.handle(
+      signed(h, a1, 'GET', '/v1/snapshots/latest'),
+    );
+    expect(((await latest.json()) as { sequence: number }).sequence).toBe(1);
+  });
+
+  it('judges each account separately and does not count pending uploads', async () => {
+    await uploadSnapshot(h, a1, 1, randomBytes(20));
+    await uploadSnapshot(h, b1, 1, randomBytes(20));
+    // A pending upload of the same account is not a restorable snapshot.
+    const begin = await h.relay.handle(
+      signed(h, a1, 'POST', '/v1/uploads', {
+        body: JSON.stringify({
+          sequence: 2,
+          byteSize: 10,
+          chunkSize: 4096,
+          sha256: sha256Hex('x'),
+        }),
+      }),
+    );
+    expect(begin.status).toBe(201);
+    expect((await del(a1, 1)).status).toBe(409);
+    expect((await del(b1, 1)).status).toBe(409);
+    // Another account's snapshots never count as "another" one.
+    const store = new VaultRelayStore(h.db);
+    const first = await store.latestCommitted('acct-a');
+    expect(
+      await store.deleteCommittedUnlessLast(
+        'acct-a',
+        first?.uploadId as string,
+      ),
+    ).toBeNull();
+    expect(await store.latestCommitted('acct-a')).not.toBeNull();
+  });
+
+  it('leaves operator recovery and retention able to remove snapshots', async () => {
+    for (const sequence of [1, 2, 3, 4, 5]) {
+      h.clock.now += 1000;
+      await uploadSnapshot(h, a1, sequence, randomBytes(20));
+    }
+    // Retention keeps three and never touches the last committed snapshot.
+    expect(
+      (await h.relay.operatorView('acct-a')).snapshots.map((s) => s.sequence),
+    ).toEqual([5, 4, 3]);
+    const reset = await h.relay.handleAdmin(
+      adminRequest('POST', '/admin/v1/accounts/acct-a/high-water', {
+        highWaterSequence: 2,
+        removeSnapshotsAbove: true,
+      }),
+    );
+    expect(reset.status).toBe(200);
+    expect((await h.relay.operatorView('acct-a')).snapshots).toEqual([]);
+  });
+});
+
 describe('retention and expiry', () => {
   it('keeps the newest snapshots and frees quota for pruned ones', async () => {
     for (let sequence = 1; sequence <= 5; sequence++) {
@@ -808,12 +936,21 @@ describe('retention and expiry', () => {
 
   it('removes chunk objects when a snapshot is deleted', async () => {
     await uploadSnapshot(h, a1, 1, randomBytes(9000));
-    await h.relay.handle(signed(h, a1, 'DELETE', '/v1/snapshots/1'));
+    // A second snapshot keeps the first deletable (the last one is not).
+    await uploadSnapshot(h, a1, 2, randomBytes(100));
+    expect(
+      (await h.relay.handle(signed(h, a1, 'DELETE', '/v1/snapshots/1'))).status,
+    ).toBe(204);
     const files = await readdir(h.storeRoot, {
       recursive: true,
       withFileTypes: true,
     });
-    expect(files.filter((entry) => entry.isFile())).toEqual([]);
+    // Only the single chunk of the 100-byte snapshot is left.
+    expect(files.filter((entry) => entry.isFile())).toHaveLength(1);
+    expect((await h.relay.operatorView('acct-a')).usage).toMatchObject({
+      usedBytes: 100,
+      usedSnapshots: 1,
+    });
   });
 });
 
@@ -1032,6 +1169,7 @@ describe('concurrent writes', () => {
   });
 
   it('refuses to re-create a published and deleted sequence at the store', async () => {
+    expect((await uploadSnapshot(h, a1, 2, randomBytes(10))).status).toBe(201);
     expect((await uploadSnapshot(h, a1, 3, randomBytes(10))).status).toBe(201);
     await h.relay.handle(signed(h, a1, 'DELETE', '/v1/snapshots/3'));
     const store = new VaultRelayStore(h.db);
@@ -1048,6 +1186,6 @@ describe('concurrent writes', () => {
     });
     expect(created).toBe(false);
     const view = await h.relay.operatorView('acct-a');
-    expect(view.usage).toMatchObject({ usedBytes: 0, usedSnapshots: 0 });
+    expect(view.usage).toMatchObject({ usedBytes: 10, usedSnapshots: 1 });
   });
 });

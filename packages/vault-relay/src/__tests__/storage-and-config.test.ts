@@ -287,7 +287,9 @@ describe('Node HTTP adapter', () => {
         method: 'DELETE',
         headers: remove.headers,
       });
-      expect(removed.status).toBe(204);
+      // The only committed snapshot is not removable from the device API.
+      expect(removed.status).toBe(409);
+      expect(await removed.json()).toMatchObject({ error: 'last_snapshot' });
 
       const second = JSON.stringify({
         sequence: 2,

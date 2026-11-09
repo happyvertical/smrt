@@ -554,8 +554,7 @@ export class VaultRelay {
         );
         if (!record) throw new RelayError(404, 'no_snapshot');
         if (request.method.toUpperCase() === 'DELETE') {
-          await this.removeSnapshot(record, device.handle, 'committed');
-          return json(204, null);
+          return this.deleteSnapshotForDevice(record, device);
         }
         return json(200, snapshotView(record));
       }
@@ -834,6 +833,46 @@ export class VaultRelay {
     );
   }
 
+  /**
+   * Device-initiated delete. The account's last committed snapshot is never
+   * removable from the device API: a compromised or mistaken device would
+   * otherwise erase the only restorable copy. The refusal and every removal
+   * are audited by device and sequence; the operator can still act through
+   * the admin listener.
+   */
+  private async deleteSnapshotForDevice(
+    record: SnapshotRecord,
+    device: AuthenticatedDevice,
+  ): Promise<Response> {
+    const removed = await this.store.deleteCommittedUnlessLast(
+      record.accountId,
+      record.uploadId,
+    );
+    if (!removed) {
+      const stillThere = await this.store.getCommitted(
+        record.accountId,
+        record.sequence,
+      );
+      if (!stillThere) throw new RelayError(404, 'no_snapshot');
+      this.logger.warn('snapshot_delete_refused', {
+        account: device.handle,
+        device: device.deviceId,
+        sequence: record.sequence,
+        reason: 'last_committed',
+      });
+      throw new RelayError(409, 'last_snapshot', {
+        sequence: record.sequence,
+      });
+    }
+    await this.discardRemoved(removed, device.handle);
+    this.logger.info('snapshot_deleted', {
+      account: device.handle,
+      device: device.deviceId,
+      sequence: removed.sequence,
+    });
+    return json(204, null);
+  }
+
   private async downloadChunk(
     device: AuthenticatedDevice,
     sequence: number,
@@ -883,7 +922,15 @@ export class VaultRelay {
       status,
     );
     if (!removed) return;
-    await this.store.release(record.accountId, removed.byteSize);
+    await this.discardRemoved(removed, handle);
+  }
+
+  /** Counters, chunk rows and objects of a snapshot row already deleted. */
+  private async discardRemoved(
+    removed: SnapshotRecord,
+    handle: string,
+  ): Promise<void> {
+    await this.store.release(removed.accountId, removed.byteSize);
     const chunks = await this.store.deleteChunks(removed.uploadId);
     for (const chunk of chunks) {
       await this.deleteObject(

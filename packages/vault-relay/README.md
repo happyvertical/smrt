@@ -31,7 +31,7 @@ ciphertext; responses are JSON unless noted.
 | `GET /v1/snapshots/latest` | The newest committed snapshot. |
 | `GET /v1/snapshots/:sequence` | Metadata of one committed snapshot. |
 | `GET /v1/snapshots/:sequence/chunks/:index` | Chunk bytes (`application/octet-stream`, `x-vault-chunk-sha256`). |
-| `DELETE /v1/snapshots/:sequence` | Delete a committed snapshot. The sequence stays used. |
+| `DELETE /v1/snapshots/:sequence` | Delete a committed snapshot. The sequence stays used. The account's last committed snapshot is refused with `409 last_snapshot`; delete only while another committed snapshot remains. |
 | `GET /healthz`, `GET /readyz` | Liveness, and readiness (schema present, object store reachable). No authentication. |
 
 Rules the relay enforces:
@@ -53,6 +53,15 @@ Rules the relay enforces:
 - **Quotas count pending uploads.** Bytes and snapshot count are reserved when
   an upload begins (`413 quota_exceeded`) and released on abort, expiry,
   deletion, and retention.
+- **The last snapshot stays.** A device cannot delete the only committed
+  snapshot of its account (`409 last_snapshot`), so a compromised or mistaken
+  device cannot erase the one restorable copy. Both the refusal
+  (`snapshot_delete_refused`) and every successful device delete
+  (`snapshot_deleted`) are logged with the hashed account handle, the device id
+  and the sequence. The operator can still remove snapshots through the admin
+  high-water reset. Two devices deleting the final two snapshots in the same
+  instant can both pass on PostgreSQL (each sees the other); retention always
+  keeps at least one.
 - **Retention** runs after each commit: the newest `keepLast` committed
   snapshots are kept, plus any committed within the age window. Snapshots
   inside the window count against the snapshot quota, so choose
@@ -196,6 +205,7 @@ horizontally: every security check is a conditional database statement.
 | Revoked device, or another account's device | Device lookup by (account, device), active only; ids never reused | `relay.test.ts` authentication |
 | Cross-account access | Every query scoped by the authenticated account; uploads looked up by (account, upload) | `relay.test.ts` cross-account isolation |
 | Quota or size abuse | Atomic conditional reservation; declared length checked before buffering; chunk cap | `relay.test.ts` quotas and request bounds |
+| A device erasing the only restorable snapshot | Conditional delete only while another committed snapshot exists; refusal and removals audited by device and sequence | `relay.test.ts` device deletes |
 | Partial upload becoming latest | Pending status; commit verifies every chunk and the whole digest | `relay.test.ts` atomic publish |
 | Sequence rollback or overwrite | Account high-water mark advanced conditionally; unique (account, sequence) | `relay.test.ts` atomic publish |
 | One commit pins the high-water mark out of reach, so every later upload is stale | Step cap at begin and inside the advance statement; operator reset on the admin listener, audited | `relay.test.ts` sequence step cap and high-water reset |
