@@ -14,6 +14,7 @@ template's scripts so an app's `package.json` scripts become one-liners.
 | `smrt-mcp-apps.mjs validate-if-present && …smrt-vite.mjs build` | `smrt app build [vite args]` |
 | `scripts/smrt-web.mjs` | `bin/smrt-web.mjs` (spawned by `start`) |
 | — (new, #3413) | `smrt app token [create] --scopes … [--expires 30d] [--label …]`, `token list`, `token revoke <id>` |
+| — (new, #4704) | `smrt app installation [status]`, `restore --origin-retired`, `reseed`, `recover-seed <file> [--unverified]`, `retire` |
 | helper modules | `@happyvertical/smrt-cli/app` (side-effect-free subpath) |
 
 ## Source
@@ -85,6 +86,11 @@ config loading; `bin/smrt.js` imports `dist/` in-process so SIGTERM reaches
   keeps the configured port until `open` rewrites it. `smrt app <op> --help`
   prints usage for every operation except `dev`/`build`/`vite` (Vite's help)
   and `token` (its own).
+- **`installation`** (`installation.ts`, local only): declares a restored move,
+  an independent copy, or a recovered seed (#4704; decision in the app-runtime
+  README). `status` is read-only; the rest take the operation lock and refuse
+  while a writer is active. Output is secret-free JSON with explicit identity
+  and token effects.
 - **`token`** (`tokens.ts`, local only): parses every argument before touching
   state, opens `openLocalMcpTokenStore` (validated custody, uncached
   connection, no writer lease, so it runs beside `app:start`), and serializes

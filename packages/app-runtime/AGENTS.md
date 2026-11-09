@@ -50,7 +50,8 @@ Application infrastructure composition for the validated runtime profiles in
   creation uses `TenantService` with the local ownership policy and a trusted
   reserved identity. Default tenant and owner graph IDs derive from the
   protected per-install application secret. Preserve that file when restoring
-  the same installation.
+  the same installation. A missing seed in an initialized root fails closed
+  (`installation_seed_missing`) and is never regenerated.
 - Bootstrap is loopback-only. Only an HMAC of the short-lived token is stored.
   A token that cannot claim fails a read-only preflight before role/catalog
   seeding (#3323); the claim transaction's conditional UPDATE stays the
@@ -84,6 +85,15 @@ Application infrastructure composition for the validated runtime profiles in
   atomic hash replacement and terminal revocation. See the desktop protocol in
   [README.md](README.md). The operator store opens an
   uncached connection and takes no writer lease (revocation is per request).
+- Installation custody (`installation-custody.ts`, #4704): the data root's
+  `secrets/installation.json` travels with copies; the state root's
+  `installation.json` stays at the location; matching `activationId`s mean
+  in custody. Unattributable arrivals fail closed (`installation_unverified`)
+  until `restore` (asserts origin retired; epoch +1), `reseed` (new seed,
+  identities and seed-keyed tokens change), `recover-seed` or `retire`
+  (`smrt app installation`). A fresh seed always establishes custody; a
+  pre-existing seed never does. Record and seed reads use `O_NOFOLLOW`, owner
+  and mode checks; writes are atomic. Decision and limits: README.
 - Background jobs and application-defined paid capabilities are default-off.
 - The embedded runner reuses `TaskRunner`; it is not a second job contract.
 
@@ -190,6 +200,8 @@ Application infrastructure composition for the validated runtime profiles in
   `createProviderReadinessProbe` (`SMRT_*_READINESS_MODULE`, resolved from the
   app root with Node's own ESM rules). File names, record formats, and
   messages are a cross-process contract; never change them unilaterally.
+  `installation.json` joins `writer.lease` and `operation.lock` in the state
+  root; the writer lease record is unchanged.
 - Tests that hook `node:fs` interleavings must live in this package: from a
   consumer the package is an externalized dependency a mock cannot reach.
 
