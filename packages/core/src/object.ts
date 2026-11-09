@@ -2108,6 +2108,11 @@ export class SmrtObject extends SmrtClass {
         values.push({ field, value });
       } else if (typeof value === 'number' || typeof value === 'bigint') {
         values.push({ field, value: String(value) });
+      } else if (value instanceof Date) {
+        // Unquoted, as a date appears in a prompt or a parsed JSON leaf.
+        if (!Number.isNaN(value.getTime())) {
+          values.push({ field, value: value.toISOString() });
+        }
       } else if (value && typeof value === 'object') {
         try {
           values.push({ field, value: JSON.stringify(value) });

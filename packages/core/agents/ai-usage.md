@@ -207,9 +207,10 @@ a call for prompt tuning; usage rows stay metadata-only.
   (`[REDACTED:<field>]`; values under 4 characters only as whole tokens),
   `[REDACTED]` for values under credential-named keys; strings that hold
   JSON (tool arguments, JSON-mode answers) are parsed so field masks, exact
-  numbers (bare JSON numbers matched by their digits, so every number equal
-  to an all-digit sensitive value is masked), keys and whole serialized
-  values apply inside them; smrt-config
+  numbers (a long all-digit value also by its parsed double, so a 19-digit
+  number `JSON.parse` rounds still matches), keys and whole serialized
+  values (matched before their members) apply inside them; Date fields are
+  masked as their ISO string; smrt-config
   `redactSecretValues()` token shapes, binary as `[binary]`. Errors are stored by message after the same
   redaction.
 - **Row.** `request` `{ messages, options }` (model, temperature, tool

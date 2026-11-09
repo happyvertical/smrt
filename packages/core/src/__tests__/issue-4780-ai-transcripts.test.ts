@@ -626,6 +626,46 @@ describe('AI call transcripts (#4780)', () => {
       });
     });
 
+    it('masks a sensitive object even when a member is another sensitive value', () => {
+      const pinned = { pin: 123, token: 'opaque-token-77' };
+      const [message] = redactAiTranscriptMessages(
+        [{ role: 'tool', content: JSON.stringify({ echoed: pinned }) }],
+        {
+          sensitive: [
+            { field: 'pin', value: '123' },
+            { field: 'creds', value: JSON.stringify(pinned) },
+          ],
+        },
+      );
+      const text = String(message?.content);
+      expect(text).not.toContain('opaque-token-77');
+      expect(JSON.parse(text)).toEqual({ echoed: '[REDACTED:creds]' });
+    });
+
+    it('masks a sensitive Date as its ISO string', async () => {
+      enable();
+      const account = new Issue4780Account({ ai: BASE_AI, db } as never);
+      await (
+        account as unknown as { initialize(): Promise<unknown> }
+      ).initialize();
+      // A Date-valued sensitive field (assigned at runtime for the test).
+      Object.assign(account, {
+        accountSecret: new Date('2000-01-02T00:00:00Z'),
+      });
+      const values = (
+        account as unknown as {
+          aiTranscriptSensitiveValues(): Array<{
+            field: string;
+            value: string;
+          }>;
+        }
+      ).aiTranscriptSensitiveValues();
+      expect(values).toContainEqual({
+        field: 'accountSecret',
+        value: '2000-01-02T00:00:00.000Z',
+      });
+    });
+
     it('masks credential fields inside serialized tool arguments', async () => {
       enable();
       const ai = (await (await probe()).client()) as unknown as {

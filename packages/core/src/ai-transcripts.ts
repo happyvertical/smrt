@@ -197,8 +197,16 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-/** One exact value to mask: its pattern, its mask and the raw value. */
-type Replacement = [pattern: RegExp, mask: string, raw: string];
+/**
+ * One exact value to mask: its pattern, its mask, the raw value and, for a
+ * serialized object or array, its {@link nodeShape}.
+ */
+type Replacement = [
+  pattern: RegExp,
+  mask: string,
+  raw: string,
+  shape: string | null,
+];
 
 function redactString(
   value: string,
@@ -224,33 +232,6 @@ function parseEmbeddedJson(value: string): unknown {
   }
 }
 
-/**
- * Before JSON text is parsed, a bare JSON number equal to an all-digit
- * secret or sensitive value is replaced by its quoted mask: `JSON.parse`
- * would round one past 2^53 (a 19-digit card number) and the exact leaf
- * match would miss it. Quoted strings are left to the leaf pass.
- */
-function maskBareNumbers(
-  value: string,
-  replacements: ReadonlyArray<Replacement>,
-): string {
-  const digits = new Map<string, string>();
-  for (const [, mask, raw] of replacements) {
-    if (/^\d+$/.test(raw) && !digits.has(raw)) digits.set(raw, mask);
-  }
-  if (digits.size === 0) return value;
-  // A JSON-aware scan: complete quoted strings are matched first and kept
-  // as they are (the leaf pass handles them), so only bare number tokens
-  // outside strings can be replaced.
-  return value.replace(
-    /"(?:[^"\\]|\\.)*"|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/g,
-    (token) => {
-      const mask = token.startsWith('"') ? undefined : digits.get(token);
-      return mask === undefined ? token : JSON.stringify(mask);
-    },
-  );
-}
-
 /** An object's ordered keys or an array's length: a cheap match key. */
 function nodeShape(value: object): string {
   return Array.isArray(value)
@@ -258,24 +239,19 @@ function nodeShape(value: object): string {
     : `{${Object.keys(value).join('\u0000')}`;
 }
 
-const blobShapes = new Map<string, string | null>();
-
-/** {@link nodeShape} of a serialized sensitive value; `null` for scalars. */
+/**
+ * {@link nodeShape} of a serialized sensitive value; `null` for scalars.
+ * Computed once per redaction call and kept on its replacement entry, never
+ * in a process-wide cache (sensitive values are not retained).
+ */
 function blobShape(raw: string): string | null {
   if (!(raw.startsWith('{') || raw.startsWith('['))) return null;
-  let shape = blobShapes.get(raw);
-  if (shape === undefined) {
-    try {
-      const parsed = JSON.parse(raw);
-      shape = parsed && typeof parsed === 'object' ? nodeShape(parsed) : null;
-    } catch {
-      shape = null;
-    }
-    // Bounded: sensitive values come from the calling objects of a process.
-    if (blobShapes.size > 1000) blobShapes.clear();
-    blobShapes.set(raw, shape);
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? nodeShape(parsed) : null;
+  } catch {
+    return null;
   }
-  return shape;
 }
 
 function redactValue(
@@ -284,11 +260,7 @@ function redactValue(
   seen: WeakSet<object>,
 ): unknown {
   if (typeof value === 'string') {
-    // Masked numbers first; if that ever leaves invalid JSON, the original
-    // is parsed instead so field-based masking still applies.
-    const embedded =
-      parseEmbeddedJson(maskBareNumbers(value, replacements)) ??
-      parseEmbeddedJson(value);
+    const embedded = parseEmbeddedJson(value);
     if (embedded !== undefined) {
       // Field-aware pass over the parsed tree (leaves, numbers, keys), then
       // the serialized values (an object-valued sensitive field echoed
@@ -307,8 +279,17 @@ function redactValue(
   if (typeof value === 'number' || typeof value === 'bigint') {
     // A sensitive or secret value that is a number in structured content
     // (`{"pin":4821}`) is masked when it equals the value exactly.
+    // `JSON.parse` rounds a number past 2^53 (a 19-digit card number); an
+    // all-digit value parsed the same way rounds identically, so comparing
+    // the doubles still matches it (and anything rounding to it: fail safe).
     const raw = String(value);
-    const match = replacements.find(([, , exact]) => exact === raw);
+    const match = replacements.find(
+      ([, , exact]) =>
+        exact === raw ||
+        (typeof value === 'number' &&
+          /^\d{16,}$/.test(exact) &&
+          Number(exact) === value),
+    );
     return match ? match[1] : value;
   }
   if (!value || typeof value !== 'object') return value;
@@ -320,7 +301,7 @@ function redactValue(
   // ordered keys) equals a sensitive value's, so deep payloads stay linear.
   const shape = nodeShape(value);
   const candidates = replacements.filter(
-    (replacement) => blobShape(replacement[2]) === shape,
+    (replacement) => replacement[3] === shape,
   );
   if (candidates.length > 0) {
     let serialized: string | undefined;
@@ -373,7 +354,12 @@ export function redactAiTranscriptMessages(
       value.length >= MIN_SENSITIVE_VALUE_LENGTH
         ? escapeRegExp(value)
         : `(?<![\\p{L}\\p{N}])${escapeRegExp(value)}(?![\\p{L}\\p{N}])`;
-    replacements.push([new RegExp(pattern, 'gu'), mask, value]);
+    replacements.push([
+      new RegExp(pattern, 'gu'),
+      mask,
+      value,
+      blobShape(value),
+    ]);
   };
   for (const secret of values.secrets ?? []) add(secret, '[REDACTED]');
   // Longest first, so a value containing another is masked whole.
