@@ -126,6 +126,8 @@ function hintFor(s: FieldSpec): string {
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .sh-sr {
     position: absolute;
     width: 1px;
@@ -134,4 +136,5 @@ function hintFor(s: FieldSpec): string {
     clip-path: inset(50%);
     white-space: nowrap;
   }
+}
 </style>

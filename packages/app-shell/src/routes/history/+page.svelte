@@ -118,6 +118,8 @@ async function undo() {
 </ConfirmDialog>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .row {
     display: flex;
     flex-wrap: wrap;
@@ -144,4 +146,5 @@ async function undo() {
     clip-path: inset(50%);
     white-space: nowrap;
   }
+}
 </style>

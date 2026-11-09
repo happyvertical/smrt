@@ -42,7 +42,7 @@
   gap: 0.4rem;
   min-height: var(--smrt-control-target-min, 2.5rem);
   padding: 0 var(--smrt-spacing-lg, 1rem);
-  border: 1px solid var(--smrt-color-outline, #888);
+  border: 1px solid var(--smrt-color-outline);
   border-radius: var(--smrt-radius-md, 0.5rem);
   background: var(--smrt-color-surface, transparent);
   color: var(--smrt-color-on-surface, inherit);
@@ -65,17 +65,17 @@
   cursor: not-allowed;
 }
 .sh-btn-primary {
-  background: var(--smrt-color-primary, #36c);
-  border-color: var(--smrt-color-primary, #36c);
-  color: var(--smrt-color-on-primary, #fff);
+  background: var(--smrt-color-primary);
+  border-color: var(--smrt-color-primary);
+  color: var(--smrt-color-on-primary);
 }
 .sh-btn-primary:hover:not(:disabled) {
-  background: var(--smrt-color-primary, #36c);
+  background: var(--smrt-color-primary);
   filter: brightness(1.1);
 }
 .sh-btn-danger {
-  border-color: var(--smrt-color-error, #c33);
-  color: var(--smrt-color-error, #c33);
+  border-color: var(--smrt-color-error);
+  color: var(--smrt-color-error);
 }
 .sh-btn-small {
   min-height: 2rem;
@@ -83,11 +83,11 @@
   font-size: 0.875rem;
 }
 .sh-link {
-  color: var(--smrt-color-primary, #36c);
+  color: var(--smrt-color-primary);
 }
 .sh-card {
   padding: var(--smrt-spacing-lg, 1rem);
-  border: 1px solid var(--smrt-color-outline-variant, #8885);
+  border: 1px solid var(--smrt-color-outline-variant);
   border-radius: var(--smrt-radius-lg, 0.75rem);
   background: var(--smrt-color-surface-container-low, transparent);
 }
@@ -101,7 +101,7 @@
 .sh-empty {
   padding: var(--smrt-spacing-2xl, 2rem) var(--smrt-spacing-lg, 1rem);
   text-align: center;
-  border: 1px dashed var(--smrt-color-outline-variant, #8887);
+  border: 1px dashed var(--smrt-color-outline-variant);
   border-radius: var(--smrt-radius-lg, 0.75rem);
 }
 .sh-alert {
@@ -111,16 +111,16 @@
   background: var(--smrt-color-surface-container, rgb(128 128 128 / 0.12));
 }
 .sh-alert-error {
-  background: var(--smrt-color-error-container, #fdd);
-  color: var(--smrt-color-on-error-container, #400);
+  background: var(--smrt-color-error-container);
+  color: var(--smrt-color-on-error-container);
 }
 .sh-alert-warn {
-  background: var(--smrt-color-warning-container, #ffe9b5);
-  color: var(--smrt-color-on-warning-container, #3a2a00);
+  background: var(--smrt-color-warning-container);
+  color: var(--smrt-color-on-warning-container);
 }
 .sh-alert-ok {
-  background: var(--smrt-color-success-container, #cfe9cf);
-  color: var(--smrt-color-on-success-container, #0a2a0a);
+  background: var(--smrt-color-success-container);
+  color: var(--smrt-color-on-success-container);
 }
 .sh-field {
   display: flex;
@@ -133,13 +133,13 @@
   font-weight: 600;
 }
 .sh-req {
-  color: var(--smrt-color-error, #c33);
+  color: var(--smrt-color-error);
 }
 .sh-input {
   width: 100%;
   min-height: var(--smrt-control-target-min, 2.5rem);
   padding: 0.4rem 0.6rem;
-  border: 1px solid var(--smrt-color-outline, #888);
+  border: 1px solid var(--smrt-color-outline);
   border-radius: var(--smrt-radius-md, 0.5rem);
   background: var(--smrt-color-surface, transparent);
   color: var(--smrt-color-on-surface, inherit);
@@ -150,7 +150,7 @@ textarea.sh-input {
   resize: vertical;
 }
 .sh-input[aria-invalid='true'] {
-  border-color: var(--smrt-color-error, #c33);
+  border-color: var(--smrt-color-error);
 }
 .sh-check {
   display: inline-flex;
@@ -164,7 +164,7 @@ textarea.sh-input {
 }
 .sh-error {
   margin: 0;
-  color: var(--smrt-color-error, #c33);
+  color: var(--smrt-color-error);
   font-size: 0.875rem;
 }
 .sh-hint {
@@ -174,7 +174,7 @@ textarea.sh-input {
 }
 .sh-tablewrap {
   overflow-x: auto;
-  border: 1px solid var(--smrt-color-outline-variant, #8885);
+  border: 1px solid var(--smrt-color-outline-variant);
   border-radius: var(--smrt-radius-lg, 0.75rem);
 }
 .sh-table {
@@ -186,7 +186,7 @@ textarea.sh-input {
   padding: 0.6rem 0.75rem;
   text-align: start;
   vertical-align: top;
-  border-block-end: 1px solid var(--smrt-color-outline-variant, #8885);
+  border-block-end: 1px solid var(--smrt-color-outline-variant);
 }
 .sh-table tbody tr:last-child td {
   border-block-end: 0;
@@ -212,7 +212,7 @@ textarea.sh-input {
   display: block;
   height: 100%;
   padding: var(--smrt-spacing-lg, 1rem);
-  border: 1px solid var(--smrt-color-outline-variant, #8885);
+  border: 1px solid var(--smrt-color-outline-variant);
   border-radius: var(--smrt-radius-lg, 0.75rem);
   background: var(--smrt-color-surface-container-low, transparent);
   color: inherit;
@@ -240,23 +240,23 @@ textarea.sh-input {
 .sh-badge {
   display: inline-block;
   padding: 0.1rem 0.5rem;
-  border-radius: var(--smrt-radius-full, 999px);
+  border-radius: var(--smrt-radius-full);
   background: var(--smrt-color-secondary-container, rgb(128 128 128 / 0.2));
   color: var(--smrt-color-on-secondary-container, inherit);
   font-size: 0.75rem;
   font-weight: 600;
 }
 .sh-badge-warn {
-  background: var(--smrt-color-warning-container, #ffe9b5);
-  color: var(--smrt-color-on-warning-container, #3a2a00);
+  background: var(--smrt-color-warning-container);
+  color: var(--smrt-color-on-warning-container);
 }
 .sh-badge-ok {
-  background: var(--smrt-color-success-container, #cfe9cf);
-  color: var(--smrt-color-on-success-container, #0a2a0a);
+  background: var(--smrt-color-success-container);
+  color: var(--smrt-color-on-success-container);
 }
 .sh-badge-bad {
-  background: var(--smrt-color-error-container, #fdd);
-  color: var(--smrt-color-on-error-container, #400);
+  background: var(--smrt-color-error-container);
+  color: var(--smrt-color-on-error-container);
 }
 .sh-list {
   margin: 0;
@@ -269,7 +269,7 @@ textarea.sh-input {
 .sh-dialog {
   max-width: min(28rem, calc(100vw - 2rem));
   padding: var(--smrt-spacing-lg, 1rem);
-  border: 1px solid var(--smrt-color-outline, #888);
+  border: 1px solid var(--smrt-color-outline);
   border-radius: var(--smrt-radius-lg, 0.75rem);
   background: var(--smrt-color-surface, Canvas);
   color: var(--smrt-color-on-surface, CanvasText);

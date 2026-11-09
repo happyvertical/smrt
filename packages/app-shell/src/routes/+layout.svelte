@@ -63,6 +63,8 @@ onMount(() => () => live.stop());
 </AppShell>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .sr-only {
     position: absolute;
     width: 1px;
@@ -81,10 +83,11 @@ onMount(() => () => live.stop());
     transform: translateX(-50%);
     margin: 0;
     padding: var(--smrt-spacing-xs, 0.25rem) var(--smrt-spacing-md, 0.75rem);
-    border-radius: var(--smrt-radius-full, 999px);
-    background: var(--smrt-color-inverse-surface, #333);
-    color: var(--smrt-color-inverse-on-surface, #fff);
+    border-radius: var(--smrt-radius-full);
+    background: var(--smrt-color-inverse-surface);
+    color: var(--smrt-color-inverse-on-surface);
     font-size: 0.8125rem;
     z-index: 50;
   }
+}
 </style>

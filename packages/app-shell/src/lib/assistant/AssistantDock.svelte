@@ -354,6 +354,8 @@ onDestroy(() => controller?.abort());
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .dock {
     position: fixed;
     inset-inline-end: var(--smrt-spacing-lg, 1rem);
@@ -366,9 +368,9 @@ onDestroy(() => controller?.abort());
     flex-direction: column;
     inline-size: min(26rem, calc(100vw - 2 * var(--smrt-spacing-lg, 1rem)));
     max-block-size: min(40rem, 75dvh);
-    border: 1px solid var(--smrt-color-outline-variant, #888);
+    border: 1px solid var(--smrt-color-outline-variant);
     border-radius: var(--smrt-radius-lg, 0.75rem);
-    background: var(--smrt-color-surface, #fff);
+    background: var(--smrt-color-surface);
     color: var(--smrt-color-on-surface, inherit);
     box-shadow: 0 8px 28px rgb(0 0 0 / 0.25);
     overflow: hidden;
@@ -379,7 +381,7 @@ onDestroy(() => controller?.abort());
     justify-content: space-between;
     gap: var(--smrt-spacing-sm, 0.5rem);
     padding: var(--smrt-spacing-sm, 0.5rem) var(--smrt-spacing-md, 0.75rem);
-    border-block-end: 1px solid var(--smrt-color-outline-variant, #888);
+    border-block-end: 1px solid var(--smrt-color-outline-variant);
   }
   .bar h2 {
     margin: 0;
@@ -423,12 +425,12 @@ onDestroy(() => controller?.abort());
     margin: 0;
     align-self: flex-start;
     padding: 0.125rem var(--smrt-spacing-sm, 0.5rem);
-    border: 1px solid var(--smrt-color-outline-variant, #888);
-    border-radius: var(--smrt-radius-full, 999px);
+    border: 1px solid var(--smrt-color-outline-variant);
+    border-radius: var(--smrt-radius-full);
     font-size: 0.8125rem;
   }
   .chip.err {
-    border-color: var(--smrt-color-error, #b3261e);
+    border-color: var(--smrt-color-error);
   }
   .sum {
     max-inline-size: 16rem;
@@ -447,7 +449,7 @@ onDestroy(() => controller?.abort());
     gap: var(--smrt-spacing-sm, 0.5rem);
     align-items: flex-end;
     padding: var(--smrt-spacing-sm, 0.5rem) var(--smrt-spacing-md, 0.75rem);
-    border-block-start: 1px solid var(--smrt-color-outline-variant, #888);
+    border-block-start: 1px solid var(--smrt-color-outline-variant);
   }
   .compose textarea {
     flex: 1;
@@ -469,7 +471,7 @@ onDestroy(() => controller?.abort());
   @media (max-width: 40rem) {
     .dock {
       inset-inline: 0;
-      inset-block-end: var(--smrt-tab-bar-height, 4rem);
+      inset-block-end: 4rem;
       max-inline-size: none;
       padding: var(--smrt-spacing-sm, 0.5rem);
     }
@@ -482,4 +484,5 @@ onDestroy(() => controller?.abort());
       max-block-size: 70dvh;
     }
   }
+}
 </style>

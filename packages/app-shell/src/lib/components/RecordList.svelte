@@ -147,6 +147,8 @@ async function confirmDelete() {
 </ConfirmDialog>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .methods {
     margin-block-start: var(--smrt-spacing-xl, 1.5rem);
   }
@@ -158,4 +160,5 @@ async function confirmDelete() {
     clip-path: inset(50%);
     white-space: nowrap;
   }
+}
 </style>

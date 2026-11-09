@@ -101,10 +101,13 @@ async function run(event: SubmitEvent) {
 </form>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .method {
     margin-block-start: var(--smrt-spacing-md, 0.75rem);
   }
   .label {
     margin: 0;
   }
+}
 </style>

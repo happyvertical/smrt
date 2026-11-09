@@ -72,6 +72,8 @@ const who = $derived(
 </div>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .sr-only {
     position: absolute;
     width: 1px;
@@ -83,4 +85,5 @@ const who = $derived(
   .sh-tile span {
     display: block;
   }
+}
 </style>

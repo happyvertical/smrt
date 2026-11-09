@@ -81,6 +81,8 @@ const badge = $derived(
 </article>
 
 <style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.theme {
   .top {
     display: flex;
     flex-wrap: wrap;
@@ -106,4 +108,5 @@ const badge = $derived(
     clip-path: inset(50%);
     white-space: nowrap;
   }
+}
 </style>
