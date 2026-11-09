@@ -56,9 +56,11 @@ import {
 } from '@happyvertical/smrt-users';
 import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
 import {
+  describeInstallationStateRoot,
   enforceInstallationCustody,
   INSTALLATION_CUSTODY_FILE,
   type InstallationCustodyReport,
+  type InstallationStateRootNote,
   stateRootOptions,
 } from './installation-custody.js';
 import {
@@ -70,7 +72,10 @@ import {
   ensureLocalMcpTokenTable,
   type LocalMcpTokenStore,
 } from './local-mcp-tokens.js';
-import { prepareApplicationStateRoot } from './state-root.js';
+import {
+  applicationStateRootSource,
+  prepareApplicationStateRoot,
+} from './state-root.js';
 
 export * from './application-identity.js';
 export * from './deployed-runtime.js';
@@ -1621,15 +1626,20 @@ async function prepareLocalFilesystem(
       canonicalSourceRoot,
     ),
   );
+  const stateOptions = stateRootOptions(options);
+  const stateRoot = prepareApplicationStateRoot(stateOptions);
   const enforcement = enforceInstallationCustody({
     secretsDirectory: paths.secrets,
-    stateRoot: prepareApplicationStateRoot(stateRootOptions(options)),
+    stateRoot,
     installationId: identity.deviceId,
     seedIsNew,
     initialized,
   });
   if (enforcement.kind === 'refused') {
-    throw installationUnverified(enforcement.report);
+    throw installationUnverified(enforcement.report, {
+      stateRoot,
+      source: applicationStateRootSource(stateOptions),
+    });
   }
   return identity;
 }
@@ -1659,10 +1669,16 @@ const INSTALLATION_SEED_MISSING_MESSAGE =
 
 function installationUnverified(
   report: InstallationCustodyReport,
+  stateRoot: InstallationStateRootNote,
 ): LocalRuntimeError {
+  // Only statuses that concern this location's own record can be caused by a
+  // state root that was lost; a seed problem cannot.
+  const location = report.resolutions.includes('restore')
+    ? ` ${describeInstallationStateRoot(stateRoot)}`
+    : '';
   return new LocalRuntimeError(
     'installation_unverified',
-    `This data root is not in this location's custody (${report.status}); nothing was changed. Run "smrt app installation status", then declare it a move with "restore --origin-retired" or an independent copy with "reseed".`,
+    `This data root is not in this location's custody (${report.status}); nothing was changed. Run "smrt app installation status", then declare it a move with "restore --origin-retired" or an independent copy with "reseed".${location}`,
   );
 }
 

@@ -28,7 +28,9 @@ import {
 } from '@happyvertical/smrt-users';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  applicationStateRootSource,
   assessInstallationCustody,
+  describeInstallationStateRoot,
   type InstallationCustodyRecord,
   initializeLocalApplicationRuntime,
   inspectInstallationCustody,
@@ -1014,4 +1016,161 @@ describe('installation custody', () => {
     ).rejects.toBeInstanceOf(LocalRuntimeError);
     expect(migrations).toBe(0);
   });
+});
+
+/**
+ * A container that persists the data volume but recreates HOME hits `arrived`
+ * on the second start (the location's record died with the old home). The fix
+ * is operational: put the state root on a persistent path (XDG_STATE_HOME on
+ * Linux). The refusal names the state root so the operator can see why.
+ */
+describe('state root persistence', () => {
+  const linux = { platformName: 'linux', homeDirectory: '/home/run' };
+
+  it('derives the state root from XDG_STATE_HOME when set, else from HOME', async () => {
+    const { at } = await machine('state-root-source');
+    const options = await at('data');
+    const persistent = { XDG_STATE_HOME: '/data/state' };
+    expect(
+      applicationStateRootSource({ ...options, ...linux, environment: {} }),
+    ).toBe('home-directory');
+    expect(
+      applicationStateRootSource({
+        ...options,
+        ...linux,
+        environment: persistent,
+      }),
+    ).toBe('xdg-state-home');
+    // XDG_STATE_HOME is ignored off Linux, so the docs say so.
+    expect(
+      applicationStateRootSource({
+        ...options,
+        platformName: 'darwin',
+        environment: persistent,
+      }),
+    ).toBe('home-directory');
+    expect(
+      applicationStateRootSource({
+        ...options,
+        platformName: 'win32',
+        environment: { LOCALAPPDATA: 'C:\\Users\\x\\AppData\\Local' },
+      }),
+    ).toBe('local-app-data');
+
+    // The lockout mechanism: a recreated home moves the state root, while a
+    // persistent XDG_STATE_HOME keeps it where it was.
+    const at1 = resolveApplicationStateRoot({
+      ...options,
+      ...linux,
+      environment: {},
+    });
+    const at2 = resolveApplicationStateRoot({
+      ...options,
+      platformName: 'linux',
+      homeDirectory: '/home/run-2',
+      environment: {},
+    });
+    expect(at1).not.toBe(at2);
+    const persisted = (home: string) =>
+      resolveApplicationStateRoot({
+        ...options,
+        platformName: 'linux',
+        homeDirectory: home,
+        environment: persistent,
+      });
+    expect(persisted('/home/run')).toBe(persisted('/home/run-2'));
+    expect(persisted('/home/run').startsWith('/data/state/')).toBe(true);
+  });
+
+  it('names the state root and what to persist in the refusal text', () => {
+    const fromHome = describeInstallationStateRoot({
+      stateRoot: '/home/run/.local/state/.app-abc-state',
+      source: 'home-directory',
+      platformName: 'linux',
+    });
+    expect(fromHome).toContain('/home/run/.local/state/.app-abc-state');
+    expect(fromHome).toContain('derived from the home directory');
+    expect(fromHome).toContain('XDG_STATE_HOME');
+    expect(fromHome).toContain('persistent data volume');
+    const fromXdg = describeInstallationStateRoot({
+      stateRoot: '/data/state/.app-abc-state',
+      source: 'xdg-state-home',
+      platformName: 'linux',
+    });
+    expect(fromXdg).toContain('from XDG_STATE_HOME');
+    expect(fromXdg).toContain('must persist');
+    // Off Linux there is no XDG_STATE_HOME to recommend.
+    const mac = describeInstallationStateRoot({
+      stateRoot: '/Users/x/Library/Application Support/.app-abc-state',
+      source: 'home-directory',
+      platformName: 'darwin',
+    });
+    expect(mac).not.toContain('XDG_STATE_HOME');
+    expect(mac).toContain('persistent user profile');
+  });
+
+  it('refuses a recreated home with the state root in the message, and keeps custody when it persists', async () => {
+    const { at, root } = await machine('recreated-home');
+    const savedHome = process.env.HOME;
+    const savedXdg = process.env.XDG_STATE_HOME;
+    const homes = ['home-1', 'home-2', 'home-3'].map((name) =>
+      join(root, name),
+    );
+    try {
+      // Without a persistent state root: the second start is refused.
+      const lost = await at('lost');
+      process.env.HOME = homes[0];
+      delete process.env.XDG_STATE_HOME;
+      await mkdir(homes[0], { recursive: true });
+      await stop(await boot(lost));
+      process.env.HOME = homes[1];
+      await mkdir(homes[1], { recursive: true });
+      const refusal = await boot(lost).catch((error: unknown) => error);
+      expect(refusal).toBeInstanceOf(LocalRuntimeError);
+      expect((refusal as LocalRuntimeError).code).toBe(
+        'installation_unverified',
+      );
+      expect((refusal as LocalRuntimeError).message).toContain('(arrived)');
+      expect((refusal as LocalRuntimeError).message).toContain(
+        resolveApplicationStateRoot(stateRootOptions(lost)),
+      );
+      expect((refusal as LocalRuntimeError).message).toContain(
+        'derived from the home directory',
+      );
+    } finally {
+      if (savedHome === undefined) delete process.env.HOME;
+      else process.env.HOME = savedHome;
+      if (savedXdg === undefined) delete process.env.XDG_STATE_HOME;
+      else process.env.XDG_STATE_HOME = savedXdg;
+    }
+  });
+
+  it.skipIf(process.platform !== 'linux')(
+    'survives a recreated home when XDG_STATE_HOME is a persistent path',
+    async () => {
+      const { at, root } = await machine('persistent-xdg');
+      const savedHome = process.env.HOME;
+      const savedXdg = process.env.XDG_STATE_HOME;
+      try {
+        const persistent = join(root, 'volume-state');
+        await mkdir(persistent, { recursive: true });
+        process.env.XDG_STATE_HOME = persistent;
+        const options = await at('kept');
+        for (const name of ['home-1', 'home-2', 'home-3']) {
+          const home = join(root, name);
+          await mkdir(home, { recursive: true });
+          process.env.HOME = home;
+          await stop(await boot(options));
+        }
+        expect(await inspectInstallationCustody(options)).toMatchObject({
+          status: 'in-custody',
+        });
+      } finally {
+        if (savedHome === undefined) delete process.env.HOME;
+        else process.env.HOME = savedHome;
+        if (savedXdg === undefined) delete process.env.XDG_STATE_HOME;
+        else process.env.XDG_STATE_HOME = savedXdg;
+      }
+    },
+  );
 });
