@@ -11,6 +11,7 @@
 import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { resolveApplicationRuntime } from '@happyvertical/smrt-config';
 import * as sql from '@happyvertical/sql';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { runWithCustodyContext } from './custody-context.js';
@@ -33,6 +34,7 @@ import {
   prepareLocalFilesystem,
   validateApplicationSecret,
 } from './local-custody.js';
+import { composeSmrtSvelteKitRuntime } from './sveltekit/runtime.js';
 import {
   FakeWindowsMachine,
   OTHER_SID,
@@ -1388,6 +1390,53 @@ describe('database acquisition is refused with a named error (D8)', () => {
       onWindows(machine, () =>
         initializeLocalApplicationRuntime(windowsOptions()),
       ),
+    ).rejects.toBeInstanceOf(WindowsDatabaseAcquisitionUnsupportedError);
+    expect(machine.operations).toEqual([]);
+    expect(workers.created).toHaveLength(0);
+  });
+
+  it('refuses the SvelteKit localRuntime() before the writer lease creates a state root (C2)', async () => {
+    const machine = FakeWindowsMachine.standard();
+    const getDatabase = vi.spyOn(sql, 'getDatabase');
+    const acquireWriterLease = vi.fn();
+    const initializeLocal = vi.fn();
+    const runtime = composeSmrtSvelteKitRuntime(
+      {
+        appId: 'myapp',
+        dataDirectory: ROOT,
+        sourceRoot: SOURCE,
+        runtime: resolveApplicationRuntime({ profile: 'local' }),
+        env: { ...ENV, NODE_ENV: 'development' },
+        acquireWriterLease,
+      },
+      { initializeLocal: initializeLocal as never },
+    );
+    const refusal = await onWindows(machine, () =>
+      runtime.localRuntime(),
+    ).catch((error: unknown) => error);
+    expect(refusal).toBeInstanceOf(WindowsDatabaseAcquisitionUnsupportedError);
+    expect(acquireWriterLease).not.toHaveBeenCalled();
+    expect(initializeLocal).not.toHaveBeenCalled();
+    expect(machine.operations).toEqual([]);
+    expect(machine.inspections).toEqual([]);
+    expect(workers.created).toHaveLength(0);
+    expect(getDatabase).not.toHaveBeenCalled();
+  });
+
+  it('refuses the default SvelteKit writer lease path without creating the state root (C2)', async () => {
+    const machine = FakeWindowsMachine.standard();
+    const runtime = composeSmrtSvelteKitRuntime(
+      {
+        appId: 'myapp',
+        dataDirectory: ROOT,
+        sourceRoot: SOURCE,
+        runtime: resolveApplicationRuntime({ profile: 'local' }),
+        env: { ...ENV, NODE_ENV: 'development' },
+      },
+      { initializeLocal: vi.fn() as never },
+    );
+    await expect(
+      onWindows(machine, () => runtime.localRuntime()),
     ).rejects.toBeInstanceOf(WindowsDatabaseAcquisitionUnsupportedError);
     expect(machine.operations).toEqual([]);
     expect(workers.created).toHaveLength(0);

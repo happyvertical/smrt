@@ -144,14 +144,25 @@ SQLite database does not.** `prepareLocalDatabaseStorage()`,
 `initializeLocalApplicationRuntime()`, `openLocalMcpTokenStore()` and the
 acquisition inside the runtime throw `WindowsDatabaseAcquisitionUnsupportedError`
 (a `LocalRuntimeError` with `code: 'invalid_configuration'`,
-`reason: 'windows_secure_sqlite_unsupported'`) after the read-only preflight and
-**before any directory or file is created**. The SDK's secure SQLite path
+`reason: 'windows_secure_sqlite_unsupported'`) **before any directory or file is
+created** (the read-only preflight may run first; it creates nothing). The
+SvelteKit runtime's `localRuntime()` makes the same call first, ahead of the
+writer lease, so it does not create the `%LOCALAPPDATA%` state directory, marker
+or `writer.lease` either. The SDK's secure SQLite path
 (`@happyvertical/sql` `secureFile`) refuses `win32` and has no way for the
 caller to supply a Windows verifier; the runtime does not route around it with
-another driver. The gate is a single call (`refuseWindowsDatabaseAcquisition`)
-to remove once the SDK ships that API. Because the gate sits before the lease,
-the Windows lease is not reachable from the public entry points until then; it
-is exercised directly by the tests.
+another driver. The gate is a single call (`refuseWindowsDatabaseAcquisition`).
+Because the gate sits before the lease, the Windows lease is not reachable from
+the public entry points until then; it is exercised directly by the tests.
+
+**Removing that gate is not the only step.** Read-only validation
+(`validateLocalDatabaseStorage()`) passes on Windows, so the `smrt app backup`,
+`export` and `import` commands, which copy the application secret and database
+into a destination whose privacy relies on POSIX modes that Windows ignores
+(the copy would inherit the destination folder's ACL), refuse on Windows with
+`WindowsOperatorCopyUnsupportedError` until the destination gets the same
+custody rule as the data root. Lift that refusal together with the database
+gate, not before.
 
 **The rule.** A path is in Windows custody only when all of this holds:
 
