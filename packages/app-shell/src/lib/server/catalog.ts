@@ -132,8 +132,8 @@ const BUILDER_SCHEMAS: Record<
     props: { field: FIELD_NAME_SCHEMA, definition: FIELD_DEF_SCHEMA },
   },
   app_changefieldtype: {
-    description: `Change a field's type (needs the owner's approval). The new type is exactly one of: ${TYPES_TEXT}.`,
-    props: { field: FIELD_NAME_SCHEMA, to: FIELD_DEF_SCHEMA },
+    description: `Change a field's type (needs the owner's approval). Pass the new field as "definition", like {"type":"integer"}; its type is exactly one of: ${TYPES_TEXT}.`,
+    props: { field: FIELD_NAME_SCHEMA, definition: FIELD_DEF_SCHEMA },
   },
 };
 

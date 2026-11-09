@@ -4,7 +4,12 @@ import {
   SmrtObject,
   smrt,
 } from '@happyvertical/smrt-core';
-import type { Command, FieldDef, MethodDef } from '../../engine/index.ts';
+import {
+  type Command,
+  EngineError,
+  type FieldDef,
+  type MethodDef,
+} from '../../engine/index.ts';
 import { type BuilderResult, runCommand } from '../server/builder.ts';
 import { getHost } from '../server/host.ts';
 import { assertOwner } from '../server/owner.ts';
@@ -19,26 +24,41 @@ import { assertOwner } from '../server/owner.ts';
 // method (defense in depth: the generated routes also check the grant, but a
 // member role may hold it).
 
-/** A JSON object argument that may arrive as a JSON string (MCP clients). */
-function obj(value: unknown, what: string): Record<string, unknown> {
+/**
+ * A JSON object argument that may arrive as a JSON string (MCP clients). A
+ * wrong shape is a 400 that says what to send, never a server error.
+ */
+function obj(
+  value: unknown,
+  what: string,
+  example = '{...}',
+): Record<string, unknown> {
   let v = value;
   if (typeof v === 'string') {
     try {
       v = JSON.parse(v);
     } catch {
-      throw new Error(`${what} must be a JSON object`);
+      throw new EngineError(
+        `${what} must be an object like ${example}`,
+        'invalid',
+      );
     }
   }
   if (!v || typeof v !== 'object' || Array.isArray(v))
-    throw new Error(`${what} must be an object`);
+    throw new EngineError(
+      `${what} must be an object like ${example}`,
+      'invalid',
+    );
   return v as Record<string, unknown>;
 }
 
 function str(value: unknown, what: string): string {
   if (typeof value !== 'string' || !value)
-    throw new Error(`${what} must be a non-empty string`);
+    throw new EngineError(`${what} must be a non-empty string`, 'invalid');
   return value;
 }
+
+const FIELD_EXAMPLE = "{type: 'integer'}";
 
 async function run(command: Command): Promise<BuilderResult> {
   const owner = await assertOwner();
@@ -159,7 +179,12 @@ export class App extends SmrtObject {
       ...(label ? { label: str(label, 'label') } : {}),
       ...(fields === undefined
         ? {}
-        : { fields: obj(fields, 'fields') as Record<string, FieldDef> }),
+        : {
+            fields: obj(fields, 'fields', "{title: {type: 'text'}}") as Record<
+              string,
+              FieldDef
+            >,
+          }),
     });
   }
 
@@ -169,7 +194,11 @@ export class App extends SmrtObject {
       type: 'addField',
       model: str(model, 'model'),
       field: str(field, 'field'),
-      definition: obj(definition, 'definition') as unknown as FieldDef,
+      definition: obj(
+        definition,
+        'definition',
+        FIELD_EXAMPLE,
+      ) as unknown as FieldDef,
     });
   }
 
@@ -202,12 +231,16 @@ export class App extends SmrtObject {
   }
 
   /** Change a field's type (risky: needs the owner's approval). */
-  static async changeFieldType(model: string, field: string, to: FieldDef) {
+  static async changeFieldType(
+    model: string,
+    field: string,
+    definition: FieldDef,
+  ) {
     return run({
       type: 'changeFieldType',
       model: str(model, 'model'),
       field: str(field, 'field'),
-      to: obj(to, 'to') as unknown as FieldDef,
+      to: obj(definition, 'definition', FIELD_EXAMPLE) as unknown as FieldDef,
     });
   }
 
@@ -222,7 +255,11 @@ export class App extends SmrtObject {
       type: 'addMethod',
       model: str(model, 'model'),
       name: str(name, 'name'),
-      method: obj(method, 'method') as unknown as MethodDef,
+      method: obj(
+        method,
+        'method',
+        "{description: '...', code: 'return 1;'}",
+      ) as unknown as MethodDef,
     });
   }
 
@@ -260,7 +297,11 @@ export class App extends SmrtObject {
   static async importTemplate(data: Record<string, unknown>) {
     return run({
       type: 'importTemplate',
-      data: obj(data, 'data') as unknown as Command extends {
+      data: obj(
+        data,
+        'data',
+        '{format: 1, definition: {...}}',
+      ) as unknown as Command extends {
         type: 'importTemplate';
         data: infer T;
       }

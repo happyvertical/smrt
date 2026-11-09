@@ -28,7 +28,12 @@ const OPERATIONS: Record<string, (b: Body) => Promise<unknown>> = {
     App.renameField(b.model as string, b.from as string, b.to as string),
   removeField: (b) => App.removeField(b.model as string, b.field as string),
   changeFieldType: (b) =>
-    App.changeFieldType(b.model as string, b.field as string, b.to as never),
+    // `definition` is the documented name (as for addField); `to` is the older one.
+    App.changeFieldType(
+      b.model as string,
+      b.field as string,
+      (b.definition ?? b.to) as never,
+    ),
   removeModel: (b) => App.removeModel(b.model as string),
   addMethod: (b) =>
     App.addMethod(b.model as string, b.name as string, b.method as never),

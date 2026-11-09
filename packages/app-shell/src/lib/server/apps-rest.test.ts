@@ -102,6 +102,39 @@ describe('risky builder operations over REST answer 202 and apply nothing', () =
   });
 });
 
+describe('REST and MCP agree on the parameter names', () => {
+  it('changeFieldType takes `definition` (the documented name) and still accepts `to`', async () => {
+    for (const body of [
+      { model: 'Chore', field: 'points', definition: { type: 'integer' } },
+      { model: 'Chore', field: 'points', to: { type: 'integer' } },
+    ]) {
+      const res = await rest(h.owner, 'changeFieldType', body);
+      expect(res.status).toBe(202);
+    }
+  });
+
+  it('a wrong-shaped body is a 400 that says what to send, never a 500', async () => {
+    const bad = await rest(h.owner, 'changeFieldType', {
+      model: 'Chore',
+      field: 'points',
+      foo: { type: 'integer' },
+    });
+    expect(bad.status).toBe(400);
+    expect(((await bad.json()) as { error: string }).error).toBe(
+      "definition must be an object like {type: 'integer'}",
+    );
+    const noModel = await rest(h.owner, 'removeField', { field: 'points' });
+    expect(noModel.status).toBe(400);
+    expect(JSON.stringify(await noModel.json())).toContain('model must be');
+    const text = await rest(h.owner, 'addField', {
+      model: 'Chore',
+      field: 'x',
+      definition: 'text',
+    });
+    expect(text.status).toBe(400);
+  });
+});
+
 describe('the rest of the REST path', () => {
   it('a safe operation answers 200 with the result', async () => {
     const res = await rest(h.owner, 'addField', {

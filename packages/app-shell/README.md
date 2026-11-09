@@ -34,6 +34,29 @@ the app's state folder, not the data folder). If the link is lost, stop the
 server and run `smrt app recover` for a new one. Setup is loopback only and
 single use. Health: `GET /api/_runtime/health`.
 
+## Builder operations (MCP tools and `POST /api/apps/<operation>`)
+
+The same names and parameters on both surfaces. A wrong-shaped argument is a
+400 that says what to send (never a 500); a risky operation answers 202
+`pending_approval` (REST) or returns it as the tool result (MCP).
+
+| Operation (tool) | Parameters |
+|---|---|
+| `defineModel` (`app_definemodel`) | `name`, `fields?` (`{ fieldName: FieldDef }`), `label?` |
+| `addField` (`app_addfield`) | `model`, `field`, `definition` (a FieldDef) |
+| `changeFieldType` (`app_changefieldtype`) | `model`, `field`, `definition` (a FieldDef; REST also accepts the older `to`) |
+| `hideField`, `removeField` | `model`, `field` |
+| `renameField` | `model`, `from`, `to` |
+| `removeModel` | `model` |
+| `addMethod` | `model`, `name`, `method` (`{ description, code, params? }`) |
+| `enableRecipe` | `recipe` |
+| `cleanUp` | `keep?` |
+| `importTemplate`, `exportTemplate` | `data`, `includeRecords?` |
+
+A FieldDef is `{ type, label?, required?, choices?, ref? }`; `type` is one of
+text, number, integer, boolean, date, money, choice, reference, json. Field names
+are camelCase (`dueDate`).
+
 ## Contracts for the UI and the assistant
 
 Every route needs the owner's session cookie (401 signed out, 403 not the
