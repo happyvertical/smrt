@@ -138,6 +138,7 @@ describe('TaskRunner idle polling (#2820)', () => {
       workerCollection: object;
       db: object;
       activeJobs: Map<string, unknown>;
+      prepareTerminalOutcomeStorage(): Promise<void>;
       recoverStaleJobs(): Promise<void>;
       processJob(job: { id: string }): Promise<void>;
     };
@@ -153,6 +154,10 @@ describe('TaskRunner idle polling (#2820)', () => {
       expireWorker: vi.fn().mockResolvedValue(undefined),
     };
     internal.db = { config: { type: 'duckdb' } };
+    // The stand-in database has no storage to prepare (#4735).
+    internal.prepareTerminalOutcomeStorage = vi
+      .fn()
+      .mockResolvedValue(undefined);
     internal.recoverStaleJobs = vi.fn().mockResolvedValue(undefined);
     const processJob = vi.fn().mockResolvedValue(undefined);
     internal.processJob = processJob;

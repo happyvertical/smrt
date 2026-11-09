@@ -1622,14 +1622,20 @@ export function discoverSTISiblingsSync(
       // Check if this entry uses the same collection (table)
       if (entry.collection === collection) {
         const className = entry.className || key;
-        // Use case-insensitive check to prevent registering both 'praeco' and 'Praeco'
-        const lowerClassName = className.toLowerCase();
+        const packageName = entry.packageName || manifest.packageName;
+        // Case-insensitive, so 'praeco' and 'Praeco' are one class. Qualified
+        // by package when known: two packages can declare one simple name on
+        // one collection (smrt-ledgers and smrt-messages `Account`), and the
+        // caller must see both to load a family with its own base (#4735).
+        const lowerClassName = packageName
+          ? `${packageName}:${className}`.toLowerCase()
+          : className.toLowerCase();
         if (!foundClasses.has(lowerClassName)) {
           foundClasses.add(lowerClassName);
           siblings.push({
             className,
             entry,
-            packageName: entry.packageName || manifest.packageName,
+            packageName,
           });
           debugLog(
             `[manifest-loader] Found STI sibling: ${className} (collection: ${collection}) from ${source}`,

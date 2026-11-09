@@ -7,7 +7,17 @@ import { SmrtJobEvent, type SmrtJobTerminalStatus } from './smrt-job-event.js';
 
 const terminalStorageReady = new WeakMap<object, Promise<void>>();
 
-async function ensureTerminalOutcomeStorage(
+/**
+ * Prepare, once per database, the storage every terminal transition writes.
+ *
+ * Preparing it builds the registry's merged schemas, so it can fail for a
+ * reason unrelated to jobs (two unrelated classes claiming one table, #4735).
+ * `TaskRunner.start()` calls this before it claims anything, so that failure
+ * stops the runner at startup instead of stranding every claimed job; later
+ * transitions reuse the cached readiness and no longer depend on models that
+ * register after start.
+ */
+export async function ensureTerminalOutcomeStorage(
   db: DatabaseInterface,
 ): Promise<void> {
   const key = db as object;
