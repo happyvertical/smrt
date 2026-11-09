@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-desktop-launcher",
-  "version": "0.60.14",
+  "version": "0.60.15",
   "description": "Launcher core for SMRT desktop assistant plugins: injected provider, fixed diagnostics and stdio lifecycle",
   "author": "HappyVertical",
   "license": "MIT",
