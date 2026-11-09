@@ -4,7 +4,7 @@ The versioned sidecar manifest and the runtime bundler for s-m-r-t desktop
 apps. The bundler (`smrt desktop bundle`) writes the sidecar manifest; the Tauri
 wrapper (`wrapper/`) reads it before launching the packaged executable. The
 root and bundler use only Node built-ins; the optional `./launcher` entry needs
-`@happyvertical/smrt-app-runtime` (an optional peer dependency).
+`@happyvertical/smrt-app-runtime` (a regular dependency).
 
 Owner sign-in is app-runtime's loopback onboarding URL and `claimOwner()`, and
 local MCP credentials are app-runtime's token store (`openLocalMcpTokenStore`);

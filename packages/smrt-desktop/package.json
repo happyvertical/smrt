@@ -40,16 +40,10 @@
     "build:fresh": "npm run clean && npm run build && npm run verify:pack",
     "prepack": "node ../../scripts/prepack-package.js"
   },
-  "peerDependencies": {
+  "dependencies": {
     "@happyvertical/smrt-app-runtime": "workspace:*"
   },
-  "peerDependenciesMeta": {
-    "@happyvertical/smrt-app-runtime": {
-      "optional": true
-    }
-  },
   "devDependencies": {
-    "@happyvertical/smrt-app-runtime": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
     "@types/node": "24.13.6",
     "typescript": "6.0.3",

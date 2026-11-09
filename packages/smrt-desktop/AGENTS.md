@@ -57,7 +57,8 @@ a path, origin, token or provider message; the probe is `node:http` to literal
 lists the codes: keep it in step with the table.
 
 Keep the root and bundler free of runtime dependencies (Node built-ins only);
-`@happyvertical/smrt-app-runtime` is an optional peer used only by `./launcher`.
+`@happyvertical/smrt-app-runtime` is a regular dependency (never a peer: the
+repo forbids inter-smrt peers) used only by `./launcher`.
 
 From this directory, run `npm run build`, `npm run typecheck`, and
 `smrt test src`.

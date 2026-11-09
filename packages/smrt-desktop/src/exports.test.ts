@@ -37,12 +37,12 @@ describe('the package subpaths', () => {
     ]);
   });
 
-  it('keeps app-runtime an optional peer that only the launcher imports', () => {
+  it('depends on app-runtime (never as a peer) but only the launcher imports it', () => {
     const manifest = JSON.parse(read('package.json'));
-    expect(manifest.dependencies).toBeUndefined();
-    expect(manifest.peerDependenciesMeta).toEqual({
-      '@happyvertical/smrt-app-runtime': { optional: true },
+    expect(manifest.dependencies).toEqual({
+      '@happyvertical/smrt-app-runtime': 'workspace:*',
     });
+    expect(manifest.peerDependencies).toBeUndefined();
     expect(read('src/index.ts')).not.toMatch(/launcher|app-runtime/);
   });
 

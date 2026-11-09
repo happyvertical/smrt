@@ -5,10 +5,10 @@ description: "Versioned sidecar manifest, the runtime bundler and the assistant-
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-09T19:47:33Z"
+  at: "2026-11-09T20:51:43Z"
 audience: "internal"
 evidence_level: "manifest-described"
-source_revision: "sha256:d2aafa97d27b588243abca976a07df312af5aa50ef0d7bbdacd6a3fe161918e2"
+source_revision: "sha256:0e9cd8556af92d56771b6ff87261c3b50b4c91c95dac6c5aaeebd425267e0773"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/smrt-desktop/package.json"
