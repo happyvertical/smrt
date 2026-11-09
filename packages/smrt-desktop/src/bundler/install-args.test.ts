@@ -574,6 +574,57 @@ describe('stageNpmrc', () => {
     expect(staged.text).not.toContain('NOT-A-REAL-TOKEN');
   });
 
+  it('fails on a registry that is plain http to a remote host, without echoing the URL', () => {
+    for (const line of [
+      'registry=http://registry.example.com/',
+      '@acme:registry=http://npm.acme.test/',
+      'registry=http://localhost.evil.test/',
+      'registry=http://127.0.0.1.evil.test/',
+    ]) {
+      let thrown: unknown;
+      try {
+        stageNpmrc(`${line}\n`);
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown, line).toMatchObject({
+        code: 'unsafe_install_config',
+        field: '.npmrc',
+        subjects: ['registry (plain http)'],
+      });
+      expect(String((thrown as Error).message)).not.toContain('example');
+    }
+  });
+
+  it('drops a registry whose scheme is not lower-case http(s), as before', () => {
+    expect(stageNpmrc('registry=HTTP://registry.example.com/\n')).toEqual({
+      text: '',
+      dropped: 1,
+    });
+  });
+
+  it('accepts https registries and plain http only for a loopback host', () => {
+    const staged = stageNpmrc(
+      [
+        'registry=https://registry.example.com/',
+        '@a:registry=http://localhost:4873/',
+        '@b:registry=http://127.0.0.1:4873/',
+        '@c:registry=http://[::1]:4873/',
+        '',
+      ].join('\n'),
+    );
+    expect(staged.text).toBe(
+      [
+        'registry=https://registry.example.com/',
+        '@a:registry=http://localhost:4873/',
+        '@b:registry=http://127.0.0.1:4873/',
+        '@c:registry=http://[::1]:4873/',
+        '',
+      ].join('\n'),
+    );
+    expect(staged.dropped).toBe(0);
+  });
+
   it('stages nothing for a credentials-only file', () => {
     expect(stageNpmrc('//r.example/:_authToken=x\n')).toEqual({
       text: '',
