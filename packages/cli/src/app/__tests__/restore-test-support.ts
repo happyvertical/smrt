@@ -23,13 +23,17 @@ import {
   initializeLocalApplicationRuntime,
   prepareApplicationStateRoot,
   VaultLeaseClient,
+  type VaultLeaseTimers,
   type VaultRelayResponse,
 } from '@happyvertical/smrt-app-runtime';
 import { resolveApplicationRuntime } from '@happyvertical/smrt-config';
 import { getTestDatabase } from '@happyvertical/smrt-core/testing';
 import { afterEach, beforeEach } from 'vitest';
 import { runAppCommand } from '../cli.js';
-import type { VaultRestoreProvider } from '../restore-latest.js';
+import type {
+  VaultAccountTrust,
+  VaultRestoreProvider,
+} from '../restore-latest.js';
 import { planDataRootArchive } from '../snapshot-archive.js';
 import {
   type SnapshotKeyProvider,
@@ -89,12 +93,19 @@ export function trackLock(data: string) {
 }
 
 /** One key per account; a provider only opens its own account's snapshots. */
-export function keyring(accountId: string): SnapshotKeyProvider {
+export function keyring(
+  accountId: string,
+): SnapshotKeyProvider & { advanced: bigint[] } {
   const keyId = randomBytes(16).toString('hex');
   const key = randomBytes(32);
+  const advanced: bigint[] = [];
   return {
+    advanced,
     async sealingKey() {
       throw new Error('tests seal explicitly');
+    },
+    async advanceSealingSequence(above: bigint) {
+      advanced.push(above);
     },
     async openingKey(reference) {
       if (reference.accountId !== accountId || reference.keyId !== keyId) {
@@ -103,7 +114,11 @@ export function keyring(accountId: string): SnapshotKeyProvider {
       return new Uint8Array(key);
     },
     ...{ keyId, key },
-  } as SnapshotKeyProvider & { keyId: string; key: Buffer };
+  } as SnapshotKeyProvider & {
+    keyId: string;
+    key: Buffer;
+    advanced: bigint[];
+  };
 }
 
 export interface Published {
@@ -120,6 +135,12 @@ export function fakeRelay(root: string) {
     snapshots: new Map<number, Published>(),
     latestOverride: null as number | null,
     loseLeaseOnRenew: false,
+    /** Head the lease grants report instead of the real one (a hole, or a lie). */
+    headOverride: null as number | null,
+    /** Awaited before every snapshot download, to model a slow transfer. */
+    downloadGate: null as (() => Promise<void>) | null,
+    /** Trust the provider reports; permissive by default. */
+    trust: { minimumGeneration: 1n, revokedDeviceIds: [] } as VaultAccountTrust,
     calls: [] as string[],
   };
   const latestCommitted = () => Math.max(0, ...state.snapshots.keys());
@@ -130,6 +151,17 @@ export function fakeRelay(root: string) {
       body?: Record<string, unknown>,
     ): Promise<VaultRelayResponse> {
       state.calls.push(path);
+      if (path === '/v1/lease') {
+        return {
+          status: 200,
+          body: {
+            holder: state.holder,
+            headSequence: state.headOverride ?? state.head,
+            latestCommittedSequence: latestCommitted(),
+            headIsHole: false,
+          },
+        };
+      }
       if (path === '/v1/lease/acquire') {
         if (state.holder && state.holder !== deviceId) {
           return { status: 409, body: { error: 'lease_held' } };
@@ -151,7 +183,7 @@ export function fakeRelay(root: string) {
           body: {
             fencingToken: state.token,
             ttlMs: 300_000,
-            headSequence: state.head,
+            headSequence: state.headOverride ?? state.head,
           },
         };
       }
@@ -164,7 +196,7 @@ export function fakeRelay(root: string) {
           body: {
             fencingToken: state.token,
             ttlMs: 300_000,
-            headSequence: state.head,
+            headSequence: state.headOverride ?? state.head,
           },
         };
       }
@@ -183,6 +215,7 @@ export function fakeRelay(root: string) {
       deviceId: string,
       keys: SnapshotKeyProvider & { keyId?: string; key?: Buffer },
       accountId = ACCOUNT,
+      generation = 1n,
     ) {
       const sequence = state.head + 1;
       const file = join(
@@ -199,7 +232,7 @@ export function fakeRelay(root: string) {
           accountId,
           deviceId,
           sequence: BigInt(sequence),
-          generation: 1n,
+          generation,
           keyId: keys.keyId as string,
           key: new Uint8Array(keys.key as Buffer),
         },
@@ -208,17 +241,24 @@ export function fakeRelay(root: string) {
       state.head = sequence;
       return sequence;
     },
-    provider(deviceId: string): VaultRestoreProvider {
+    provider(
+      deviceId: string,
+      timers?: VaultLeaseTimers,
+    ): VaultRestoreProvider {
       return {
         accountId: ACCOUNT,
         lease: new VaultLeaseClient(transport(deviceId)),
+        accountTrust: async () => state.trust,
+        ...(timers ? { leaseTimers: timers } : {}),
         snapshots: {
           async latest() {
             const sequence = state.latestOverride ?? latestCommitted();
             const entry = state.snapshots.get(sequence);
             return entry ? { sequence, deviceId: entry.deviceId } : null;
           },
-          async download(sequence, destination) {
+          async download(sequence, destination, options) {
+            await state.downloadGate?.();
+            options?.signal?.throwIfAborted();
             const entry = state.snapshots.get(sequence);
             if (!entry) throw new Error('no snapshot');
             const { copyFileSync, constants } = await import('node:fs');
@@ -304,7 +344,7 @@ export async function harness() {
     data: string,
     deviceId: string,
     argv: string[] = [],
-    overrides: { keys?: SnapshotKeyProvider } = {},
+    overrides: { keys?: SnapshotKeyProvider; timers?: VaultLeaseTimers } = {},
   ) => {
     use(data);
     const stdout: string[] = [];
@@ -319,7 +359,7 @@ export async function harness() {
         resolveRuntime: async () =>
           resolveApplicationRuntime({ profile: 'local' }) as never,
         snapshotKeys: overrides.keys ?? keys,
-        vaultRestore: relay.provider(deviceId),
+        vaultRestore: relay.provider(deviceId, overrides.timers),
       },
     });
     return { code, stdout: stdout.join(''), stderr: stderr.join('') };

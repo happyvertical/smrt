@@ -27,7 +27,10 @@ import {
   MIN_SNAPSHOT_CHUNK_BYTES,
   writeEncryptedSnapshot,
 } from '../snapshot-framing.js';
-import { createLifecycleSnapshotKeys } from '../snapshot-keys.js';
+import {
+  createLifecycleSnapshotKeys,
+  snapshotAccountTrustFromLifecycle,
+} from '../snapshot-keys.js';
 
 const RECOVERY_SECRET = 'synthetic recovery credential';
 const ACCOUNT = 'vault-account';
@@ -185,6 +188,49 @@ describe('lifecycle snapshot key provider', () => {
       Buffer.alloc(8),
     );
     expect(rotated).toMatchObject({ generation: '2', sequence: '2' });
+  });
+
+  it('derives the restore trust from the adopted head: revoked devices and the generation floor', async () => {
+    const laptop = await initialized();
+    await enroll(laptop, 'phone');
+    expect(await snapshotAccountTrustFromLifecycle(laptop)).toEqual({
+      minimumGeneration: 1n,
+      revokedDeviceIds: [],
+    });
+
+    // A revocation names the device at once, but the floor only moves when
+    // the rotation that excludes it publishes its effective generation.
+    await laptop.revokeDevice('phone');
+    await laptop.rotate({ recoverySecret: RECOVERY_SECRET });
+    const trust = await snapshotAccountTrustFromLifecycle(laptop);
+    expect(trust.revokedDeviceIds).toEqual(['phone']);
+    expect(trust.minimumGeneration).toBe(2n);
+
+    await expect(snapshotAccountTrustFromLifecycle(device())).rejects.toThrow(
+      'no vault account state',
+    );
+  });
+
+  it('moves the host sequence counter only when the host supplies one', async () => {
+    const lifecycle = await initialized();
+    expect(
+      createLifecycleSnapshotKeys({ lifecycle, nextSequence: () => 1n })
+        .advanceSealingSequence,
+    ).toBeUndefined();
+    let next = 1n;
+    const advance = vi.fn((above: bigint) => {
+      if (next <= above) next = above + 1n;
+    });
+    const keys = createLifecycleSnapshotKeys({
+      lifecycle,
+      nextSequence: () => next++,
+      advanceSequence: advance,
+    });
+    await keys.advanceSealingSequence?.(7n);
+    expect(advance).toHaveBeenCalledWith(7n);
+    const sealing = await keys.sealingKey();
+    expect(sealing.sequence).toBe(8n);
+    sealing.key.fill(0);
   });
 
   it('threat: fork evidence refuses to seal until a merge rotation', async () => {

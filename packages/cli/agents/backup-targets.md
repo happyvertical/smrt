@@ -107,7 +107,9 @@ because the relay needs the digest before the first byte.
     (fail safe). A failed attempt leaves `localWritesPending` set, which is
     conservative: `restore-latest` then needs `--discard-local` (the previous
     root is kept). `restoreProvider()` gives `restore-latest` its account, the
-    lease routes and the latest-snapshot download over the same transport.
+    lease routes and the latest-snapshot download over the same transport. It
+    also needs the `accountTrust` option (revoked devices and the key
+    generation floor of the adopted head); without it restore fails closed.
 
 ## Google Drive scope and limits
 

@@ -94,6 +94,14 @@ export interface SnapshotKeyProvider {
    * no such key. Ownership of the returned bytes passes to the caller.
    */
   openingKey(reference: SnapshotKeyReference): Promise<Uint8Array | undefined>;
+  /**
+   * Make every later `sealingKey()` return a sequence above `above`. Restore
+   * calls it with the relay's head after taking the restored snapshot, so the
+   * device's next backup is not refused as behind a head it just restored
+   * (#4805). Only ever raises the counter. Providers whose host does not own
+   * the counter leave it out.
+   */
+  advanceSealingSequence?(above: bigint): Promise<void>;
 }
 
 /** Failure of an encrypted snapshot integrity, format or key check. */

@@ -17,6 +17,10 @@ generation, keyId })` returns the key for any retained generation, so
 snapshots sealed before a rotation stay readable. The framing takes ownership
 of returned key bytes and zeroes them. No provider means `--encrypted` fails
 closed. Keys never appear in arguments, environment, output or errors.
+A provider whose host owns the sequence counter may add
+`advanceSealingSequence(above)` (`createLifecycleSnapshotKeys` offers it when
+given `advanceSequence`); `restore-latest` calls it with the relay head so a
+restored device's next seal is above it.
 
 The raw vault data key is never used to seal or open an envelope. Each
 operation derives one purpose subkey, `HKDF-SHA256(dataKey, salt = empty, info =

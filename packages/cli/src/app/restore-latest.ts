@@ -17,11 +17,17 @@
  *    device can publish past it while this one restores.
  * 4. Download the ciphertext beside the data root, decrypt it into a new
  *    candidate (authenticated against the trusted account and sequence), and
- *    verify SQLite integrity and the installation it carries.
+ *    verify SQLite integrity and the installation it carries. The relay lease
+ *    is renewed on a timer through the download and decrypt (the lease is
+ *    shorter than a large download) and a lost lease aborts them. The snapshot
+ *    must come from a device the adopted account head has not revoked and be
+ *    sealed at or above that head's key-generation floor.
  * 5. Swap the roots under the journal (rollback on failure) and record the
  *    new vault position. Installation custody moves here only on the
  *    operator's explicit `--origin-retired` (#4704): releasing the relay
- *    lease does not stop the origin, which may re-acquire.
+ *    lease does not stop the origin, which may re-acquire. The key provider's
+ *    sealing sequence moves above the relay head, so the next backup is not
+ *    refused as behind a head this device just restored.
  */
 
 import { lstatSync, mkdirSync, rmSync } from 'node:fs';
@@ -39,6 +45,8 @@ import {
   restoreInstallation,
   swapDataRoot,
   type VaultLeaseClient,
+  VaultLeaseError,
+  type VaultLeaseTimers,
   vaultSyncFor,
   withOperationLock,
   writeVaultSyncRecord,
@@ -47,6 +55,7 @@ import { errorCode } from './errors.js';
 import { type AppContext, preparedStateRoot } from './runtime.js';
 import {
   decryptSnapshot,
+  readSnapshotHeader,
   type SnapshotKeyProvider,
 } from './snapshot-framing.js';
 
@@ -68,8 +77,27 @@ export interface VaultSnapshotReference {
 export interface VaultSnapshotSource {
   /** Latest committed snapshot, or `null` when the account has none. */
   latest(): Promise<VaultSnapshotReference | null>;
-  /** Write that snapshot's ciphertext to `destination`, a new file. */
-  download(sequence: number, destination: string): Promise<void>;
+  /**
+   * Write that snapshot's ciphertext to `destination`, a new file. When
+   * `signal` aborts (the relay lease was lost) the download stops and rejects.
+   */
+  download(
+    sequence: number,
+    destination: string,
+    options?: { signal?: AbortSignal },
+  ): Promise<void>;
+}
+
+/**
+ * What the adopted, signed account head says about whom to believe. The relay
+ * is untrusted, so which devices are revoked and which key generations may
+ * still be accepted come from the local key lifecycle, never the relay.
+ */
+export interface VaultAccountTrust {
+  /** Lowest key generation a restored snapshot may be sealed under. */
+  minimumGeneration: bigint;
+  /** Devices the head has revoked; their snapshots are never restored. */
+  revokedDeviceIds: readonly string[];
 }
 
 /** Vault collaborators for restore-latest, supplied by the embedding host. */
@@ -78,6 +106,16 @@ export interface VaultRestoreProvider {
   accountId: string;
   lease: VaultLeaseClient;
   snapshots: VaultSnapshotSource;
+  /**
+   * Revoked devices and the key-generation floor of the adopted account head
+   * (`snapshotAccountTrustFromLifecycle` derives it from the key lifecycle).
+   * Fails closed: restore refuses when it cannot be read.
+   */
+  accountTrust(): Promise<VaultAccountTrust>;
+  /** Timer seam for lease renewal during the restore (tests, embedding). */
+  leaseTimers?: VaultLeaseTimers;
+  /** Monotonic milliseconds for renewal deadlines. Default `performance.now()`. */
+  leaseMonotonicNow?: () => number;
   /** Application schema compatibility check of the candidate root. */
   verifyCandidate?(root: string): Promise<void> | void;
 }
@@ -93,7 +131,11 @@ export class RestoreLatestError extends Error {
     | 'installation_mismatch'
     | 'location_retired'
     | 'custody_unusable'
-    | 'writer_lost';
+    | 'writer_lost'
+    | 'revoked_device'
+    | 'generation_too_old'
+    | 'account_state_unavailable'
+    | 'relay_inconsistent';
 
   constructor(code: RestoreLatestError['code'], message: string) {
     super(message);
@@ -113,7 +155,7 @@ export interface RestoreLatestOptions {
   operationInstance?: string;
   /** Required unless `recoverOnly`. */
   vault?: VaultRestoreProvider;
-  keys?: Pick<SnapshotKeyProvider, 'openingKey'>;
+  keys?: Pick<SnapshotKeyProvider, 'openingKey' | 'advanceSealingSequence'>;
   /** Replace unpublished local writes. The previous root is always kept. */
   discardLocal?: boolean;
   /** Accept a snapshot of a different installation than the live one. */
@@ -136,6 +178,11 @@ export interface RestoreLatestReport {
   sequence: number | null;
   previousRoot: string | null;
   custody: 'moved' | 'pending';
+  /**
+   * The sequence this device's next backup must exceed after the restore, or
+   * `null` when the key provider does not manage a sealing counter.
+   */
+  sealingFloor: number | null;
 }
 
 function exists(path: string): boolean {
@@ -211,6 +258,128 @@ function verifyInstallation(
   }
 }
 
+/** Furthest the relay's head may sit above its latest committed snapshot. */
+const MAX_SEQUENCE_HOLE = 1_000;
+/** Margin before a granted lease lapses, as in the lease keeper. */
+const RENEWAL_SAFETY_MARGIN_MS = 5_000;
+
+const defaultLeaseTimers: VaultLeaseTimers = {
+  set(callback, delayMs) {
+    const handle = setTimeout(callback, delayMs);
+    handle.unref?.();
+    return handle;
+  },
+  clear(handle) {
+    clearTimeout(handle as ReturnType<typeof setTimeout>);
+  },
+};
+
+/**
+ * Renews the relay lease on a timer while a long restore step runs. The relay
+ * grants minutes; a download of a large snapshot can take longer. A refused
+ * renewal (or relay failure past the lease's local deadline) aborts the step
+ * through `signal` and is rethrown by {@link check}. Transient relay errors
+ * are retried until the deadline, like the lease keeper.
+ */
+class LeaseRenewal {
+  readonly signal: AbortSignal;
+  private readonly controller = new AbortController();
+  private readonly lease: VaultLeaseClient;
+  private readonly timers: VaultLeaseTimers;
+  private readonly now: () => number;
+  private token: number;
+  private deadline: number;
+  private timer: unknown = null;
+  private inFlight: Promise<void> | null = null;
+  private failure: unknown;
+  private stopped = false;
+
+  constructor(
+    vault: VaultRestoreProvider,
+    granted: { fencingToken: number; ttlMs: number },
+    sentAt: number,
+  ) {
+    this.lease = vault.lease;
+    this.timers = vault.leaseTimers ?? defaultLeaseTimers;
+    this.now = vault.leaseMonotonicNow ?? (() => performance.now());
+    this.token = granted.fencingToken;
+    this.deadline = sentAt + granted.ttlMs - RENEWAL_SAFETY_MARGIN_MS;
+    this.signal = this.controller.signal;
+    this.schedule(granted.ttlMs);
+  }
+
+  private schedule(delayBasisMs: number, fixed = false): void {
+    if (this.stopped || this.failure !== undefined) return;
+    this.timer = this.timers.set(
+      () => {
+        this.timer = null;
+        this.inFlight = this.renew();
+      },
+      fixed ? delayBasisMs : Math.max(1_000, Math.floor(delayBasisMs / 3)),
+    );
+  }
+
+  private async renew(): Promise<void> {
+    const sentAt = this.now();
+    try {
+      const granted = await this.lease.renew(this.token);
+      this.token = granted.fencingToken;
+      this.deadline = sentAt + granted.ttlMs - RENEWAL_SAFETY_MARGIN_MS;
+      this.schedule(granted.ttlMs);
+    } catch (error) {
+      if (
+        error instanceof VaultLeaseError &&
+        error.code === 'relay_error' &&
+        this.now() < this.deadline
+      ) {
+        this.schedule(1_000, true);
+        return;
+      }
+      this.failure = error;
+      this.controller.abort();
+    }
+  }
+
+  /** Throw the renewal failure, if any, once any renewal in flight settles. */
+  async check(): Promise<void> {
+    await this.inFlight;
+    if (this.failure !== undefined) throw this.failure;
+  }
+
+  /** The fencing token to use for explicit renew and release calls. */
+  get fencingToken(): number {
+    return this.token;
+  }
+
+  async stop(): Promise<void> {
+    this.stopped = true;
+    if (this.timer !== null) this.timers.clear(this.timer);
+    this.timer = null;
+    await this.inFlight;
+  }
+}
+
+/** The sequence the next backup must exceed; bounded against a hostile head. */
+function sealingFloorFor(latest: number, head: number): number {
+  if (!Number.isSafeInteger(head) || head > latest + MAX_SEQUENCE_HOLE) {
+    throw new RestoreLatestError(
+      'relay_inconsistent',
+      `The vault relay reports its head at sequence ${head} but its latest snapshot at ${latest}; restore refuses a head that far ahead of any committed snapshot.`,
+    );
+  }
+  return Math.max(latest, head);
+}
+
+/** Raise the key provider's sealing counter; `null` when it has none. */
+async function advanceSealing(
+  keys: Pick<SnapshotKeyProvider, 'advanceSealingSequence'>,
+  floor: number,
+): Promise<number | null> {
+  if (!keys.advanceSealingSequence) return null;
+  await keys.advanceSealingSequence(BigInt(floor));
+  return floor;
+}
+
 /**
  * Restore the vault account's latest snapshot into the live data root. The
  * caller holds `operation.lock`; this takes the writer lease itself.
@@ -236,6 +405,7 @@ export async function restoreLatest(
         sequence: null,
         previousRoot: null,
         custody: 'pending',
+        sealingFloor: null,
       };
     }
     const { vault, keys } = options;
@@ -298,6 +468,18 @@ export async function restoreLatest(
       exists(liveRoot) &&
       !unpublished
     ) {
+      // Already at the latest, but a device whose sealing counter sits at or
+      // below the head would be refused on every backup, and restoring again
+      // is how it is told to recover: so move the counter here too.
+      const sealingFloor = keys.advanceSealingSequence
+        ? await advanceSealing(
+            keys,
+            sealingFloorFor(
+              latest.sequence,
+              (await vault.lease.status()).headSequence,
+            ),
+          )
+        : null;
       return {
         schemaVersion: 1,
         status: 'up-to-date',
@@ -305,18 +487,65 @@ export async function restoreLatest(
         sequence: latest.sequence,
         previousRoot: null,
         custody: 'pending',
+        sealingFloor,
       };
     }
 
+    // The relay is untrusted: who produced the snapshot and which key
+    // generation it may use are judged against the adopted signed head.
+    let trust: VaultAccountTrust;
+    try {
+      trust = await vault.accountTrust();
+      if (
+        typeof trust?.minimumGeneration !== 'bigint' ||
+        trust.minimumGeneration < 1n ||
+        !Array.isArray(trust.revokedDeviceIds)
+      ) {
+        throw new Error('invalid');
+      }
+    } catch {
+      throw new RestoreLatestError(
+        'account_state_unavailable',
+        'The vault account state (revoked devices and key generations) could not be read from this device, so the latest snapshot cannot be trusted; check "smrt app vault status".',
+      );
+    }
+    if (trust.revokedDeviceIds.includes(latest.deviceId)) {
+      throw new RestoreLatestError(
+        'revoked_device',
+        'The latest snapshot was produced by a device that has been revoked from this account, so it is not restored. A device that is still enrolled must publish a new snapshot first.',
+      );
+    }
+
+    const acquiredAt = (vault.leaseMonotonicNow ?? (() => performance.now()))();
     const grant = await vault.lease.acquire(latest.sequence);
+    let sealingFloor: number | null = null;
+    let renewal: LeaseRenewal | undefined;
     const download = dataRootSiblingPath(liveRoot, 'download');
     const candidate = dataRootSiblingPath(liveRoot, 'restore');
     let swapped = false;
     let previousRoot: string | null = null;
     try {
+      const floor = sealingFloorFor(latest.sequence, grant.headSequence);
       mkdirSync(dirname(liveRoot), { recursive: true, mode: 0o700 });
-      await vault.snapshots.download(latest.sequence, download);
-      await vault.lease.renew(grant.fencingToken);
+      renewal = new LeaseRenewal(vault, grant, acquiredAt);
+      try {
+        await vault.snapshots.download(latest.sequence, download, {
+          signal: renewal.signal,
+        });
+      } catch (error) {
+        // A lost lease aborts the download; report that, not the abort.
+        await renewal.check();
+        throw error;
+      }
+      await renewal.check();
+      await vault.lease.renew(renewal.fencingToken);
+      const header = await readSnapshotHeader(download);
+      if (header.generation < trust.minimumGeneration) {
+        throw new RestoreLatestError(
+          'generation_too_old',
+          `The latest snapshot is sealed under key generation ${header.generation}, below generation ${trust.minimumGeneration} that the adopted account head requires after a device revocation, so it is not restored. A device that is still enrolled must publish a new snapshot first.`,
+        );
+      }
       await decryptSnapshot({
         source: download,
         destination: candidate,
@@ -326,8 +555,10 @@ export async function restoreLatest(
           sequence: BigInt(latest.sequence),
         },
         keys,
+        minimumGeneration: trust.minimumGeneration,
         expectedKind: 'data-root',
       });
+      await renewal.check();
       rmSync(download, { force: true });
       verifyDatabase(candidate);
       verifyInstallation(
@@ -336,7 +567,9 @@ export async function restoreLatest(
         options.replaceInstallation === true,
       );
       await vault.verifyCandidate?.(candidate);
-      await vault.lease.renew(grant.fencingToken);
+      await renewal.check();
+      await renewal.stop();
+      await vault.lease.renew(renewal.fencingToken);
       const result = await swapDataRoot({
         stateRoot,
         liveRoot,
@@ -375,10 +608,25 @@ export async function restoreLatest(
           { cause: error },
         );
       }
+      // The restored position is now the base. Move the sealing counter past
+      // the relay head, or the next backup is refused as behind it and
+      // restoring again could not fix that. A failure here is safe (the
+      // backup is refused, not corrupted) and rerunning restore repeats this.
+      try {
+        sealingFloor = await advanceSealing(keys, floor);
+      } catch (error) {
+        throw new Error(
+          `The data root was restored to sequence ${latest.sequence}, but this device's next snapshot sequence could not be moved past the vault head; run restore-latest again before backing up.`,
+          { cause: error },
+        );
+      }
     } finally {
+      await renewal?.stop();
       rmSync(download, { force: true });
       if (!swapped) rmSync(candidate, { recursive: true, force: true });
-      await vault.lease.release(grant.fencingToken).catch(() => undefined);
+      await vault.lease
+        .release(renewal?.fencingToken ?? grant.fencingToken)
+        .catch(() => undefined);
     }
 
     let custody: RestoreLatestReport['custody'] = 'pending';
@@ -403,6 +651,7 @@ export async function restoreLatest(
       sequence: latest.sequence,
       previousRoot,
       custody,
+      sealingFloor,
     };
   } finally {
     writer.release();

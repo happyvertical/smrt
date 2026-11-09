@@ -111,7 +111,18 @@ config loading; `bin/smrt.js` imports `dist/` in-process so SIGTERM reaches
   `--origin-retired`; otherwise it stays pending and the app refuses to start
   until declared. `--recover` only settles a swap. Collaborators
   come from `deps.vaultRestore` (account, lease client, snapshot source from
-  the relay client) and `deps.snapshotKeys`; without them it fails closed.
+  the relay client, and `accountTrust()`) and `deps.snapshotKeys`; without them
+  it fails closed. The relay is untrusted, so the snapshot's producer and key
+  generation are judged by the adopted signed head (`accountTrust()`,
+  `snapshotAccountTrustFromLifecycle`): a snapshot from a revoked device, or
+  sealed below the highest effective generation of a revocation, is refused
+  (`revoked_device`, `generation_too_old`); snapshots published before the
+  rotation that revoked a device must be re-published by a remaining device to
+  be restorable. The relay lease is renewed on a timer through the download and
+  decrypt (a lost lease aborts the download), and the key provider's sealing
+  sequence is moved past the relay head (`advanceSealingSequence`, also on
+  `up-to-date`) so the next backup is not refused as behind it; the report's
+  `sealingFloor` is that sequence, `null` when the host owns no counter.
 - **`token`** (`tokens.ts`, local only): parses every argument before touching
   state, opens `openLocalMcpTokenStore` (validated custody, uncached
   connection, no writer lease, so it runs beside `app:start`), and serializes
