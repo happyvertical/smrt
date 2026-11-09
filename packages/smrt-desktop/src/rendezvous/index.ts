@@ -34,12 +34,12 @@ export type {
   ControlRequestContext,
   ControlServer,
   SendControlRequestOptions,
-  ServeControlChannelOptions,
+  ServeControlChannelForTestsOptions,
 } from './control-transport.js';
 export {
   createControlHandlerRegistry,
   sendControlRequest,
-  serveControlChannel,
+  serveControlChannelForTests,
 } from './control-transport.js';
 export type {
   ControlEndpoint,
@@ -91,16 +91,4 @@ export {
   parseInstanceRecord,
   serializeInstanceRecord,
 } from './instance-record.js';
-export type {
-  ReferenceShell,
-  ReferenceShellOptions,
-  ReferenceSnapshot,
-  ReferenceSupervisor,
-  ReferenceSupervisorOptions,
-} from './reference-shell.js';
-export {
-  createReferenceRegistry,
-  createReferenceSupervisor,
-  startReferenceShell,
-} from './reference-shell.js';
 export type { VettedEndpoint } from './vetted-endpoint.js';

@@ -24,10 +24,7 @@ import {
   CREDENTIAL_CONTROL_ERROR_CODES,
   type CredentialControlRequest,
   type CredentialControlResponse,
-  createCredentialReferenceRegistry,
   credentialControlCodec,
-  referenceControlContext,
-  registerAcquireCredential,
 } from './control-channel.js';
 import {
   createCredentialControlHandler,
@@ -37,6 +34,11 @@ import {
   createCredentialCustody,
   createMemorySecretItemStore,
 } from './custody.js';
+import {
+  createCredentialReferenceRegistry,
+  referenceControlContext,
+  registerAcquireCredential,
+} from './reference.js';
 import type { SlotRecordV1 } from './slot-record.js';
 
 const request = {

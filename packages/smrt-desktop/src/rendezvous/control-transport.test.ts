@@ -17,9 +17,10 @@ import {
   type ControlServer,
   createControlHandlerRegistry,
   sendControlRequest,
-  serveControlChannel,
+  serveControlChannelForTests,
 } from './control-transport.js';
 import { type ControlEndpoint, deriveControlEndpoint } from './endpoint.js';
+import { startReferenceShell } from './reference-shell.js';
 
 const NONCE = '0f1e2d3c4b5a69788796a5b4c3d2e1f0';
 const ORIGIN = 'http://127.0.0.1:49152';
@@ -60,6 +61,57 @@ function raw(path: string, bytes: string | Buffer): Promise<string> {
   });
 }
 
+describe('the test-double server on Windows', () => {
+  // The platform is a seam so this runs on every host: the gate comes before
+  // any listen or platform/endpoint check.
+  const pipe = deriveControlEndpoint({
+    platform: 'win32',
+    bundleId: 'com.happyvertical.smrt-notes',
+  });
+
+  it('refuses to start on win32 unless insecureForTests: true is passed', async () => {
+    expect(
+      await code(
+        serveControlChannelForTests(pipe, () => ready, { platform: 'win32' }),
+      ),
+    ).toBe('untrusted_endpoint');
+    expect(
+      await code(
+        serveControlChannelForTests(pipe, () => ready, {
+          platform: 'win32',
+          insecureForTests: false as never,
+        }),
+      ),
+    ).toBe('untrusted_endpoint');
+  });
+
+  it('refuses through startReferenceShell as well', async () => {
+    expect(
+      await code(
+        startReferenceShell({
+          shellDirectory: '/tmp',
+          productId: 'smrt-notes',
+          bundleId: 'com.happyvertical.smrt-notes',
+          platform: 'win32',
+        }),
+      ),
+    ).toBe('untrusted_endpoint');
+  });
+
+  it('passes the gate with insecureForTests: true (then fails only the host-platform check here)', async () => {
+    // On a POSIX host a pipe endpoint is invalid; on Windows it would listen.
+    // Either way the refusal is gone.
+    const result = await code(
+      serveControlChannelForTests(pipe, () => ready, {
+        platform: 'win32',
+        insecureForTests: true,
+      }),
+    );
+    expect(result).not.toBe('untrusted_endpoint');
+    if (process.platform !== 'win32') expect(result).toBe('invalid_endpoint');
+  });
+});
+
 posixOnly('control transport over a unix socket', () => {
   let dir: string;
   let endpoint: ControlEndpoint & { kind: 'unix' };
@@ -83,10 +135,14 @@ posixOnly('control transport over a unix socket', () => {
   });
 
   const serve = async (
-    handler: Parameters<typeof serveControlChannel>[1],
-    options: Parameters<typeof serveControlChannel>[2] = {},
+    handler: Parameters<typeof serveControlChannelForTests>[1],
+    options: Parameters<typeof serveControlChannelForTests>[2] = {},
   ) => {
-    const server = await serveControlChannel(endpoint, handler, options);
+    const server = await serveControlChannelForTests(
+      endpoint,
+      handler,
+      options,
+    );
     servers.push(server);
     return server;
   };
@@ -124,7 +180,7 @@ posixOnly('control transport over a unix socket', () => {
     const holder = createServer();
     await new Promise<void>((resolve) => holder.listen(endpoint.path, resolve));
     rawServers.push(holder);
-    expect(await code(serveControlChannel(endpoint, () => ready))).toBe(
+    expect(await code(serveControlChannelForTests(endpoint, () => ready))).toBe(
       'control_server_failed',
     );
     expect(existsSync(endpoint.path)).toBe(true);
@@ -132,12 +188,14 @@ posixOnly('control transport over a unix socket', () => {
 
   it('refuses to listen in a directory that is not private', async () => {
     chmodSync(dir, 0o755);
-    expect(await code(serveControlChannel(endpoint, () => ready))).toBe(
+    expect(await code(serveControlChannelForTests(endpoint, () => ready))).toBe(
       'untrusted_endpoint',
     );
     chmodSync(dir, 0o700);
     expect(
-      await code(serveControlChannel(endpoint, () => ready, { currentUid: 0 })),
+      await code(
+        serveControlChannelForTests(endpoint, () => ready, { currentUid: 0 }),
+      ),
     ).toBe(process.getuid?.() === 0 ? 'ok' : 'untrusted_endpoint');
   });
 
@@ -146,7 +204,7 @@ posixOnly('control transport over a unix socket', () => {
       kind: 'pipe',
       name: `\\\\.\\pipe\\smrt-0123456789abcdef-${NONCE}`,
     };
-    expect(await code(serveControlChannel(pipe, () => ready))).toBe(
+    expect(await code(serveControlChannelForTests(pipe, () => ready))).toBe(
       'invalid_endpoint',
     );
     expect(
@@ -556,7 +614,7 @@ posixOnly('control transport over a unix socket', () => {
   it('never puts a path in a thrown error', async () => {
     const failures = [
       sendControlRequest(endpoint, { v: 1, op: 'status' }, { timeoutMs: 100 }),
-      serveControlChannel(
+      serveControlChannelForTests(
         { ...endpoint, path: `/nonexistent-${SECRET}/c-${NONCE}.sock` },
         () => ready,
       ),

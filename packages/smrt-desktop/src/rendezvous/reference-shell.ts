@@ -16,7 +16,7 @@ import {
   type ControlHandlerRegistry,
   type ControlServer,
   createControlHandlerRegistry,
-  serveControlChannel,
+  serveControlChannelForTests,
 } from './control-transport.js';
 import { type ControlEndpoint, deriveControlEndpoint } from './endpoint.js';
 import type { ShellFailureCode } from './failure-code.js';
@@ -204,6 +204,11 @@ export interface ReferenceShellOptions<
   readonly currentUid?: number;
   /** Passed to the control server (time a peer has to deliver its request). */
   readonly requestReadTimeoutMs?: number;
+  /**
+   * Required (as `true`) on Windows, where the test double's control server
+   * has no ACL and no peer check. See `serveControlChannelForTests`.
+   */
+  readonly insecureForTests?: true;
   /** Passed to the control server (connections served at once). */
   readonly maxConnections?: number;
   /**
@@ -311,7 +316,7 @@ export async function startReferenceShell<
     throw first;
   };
 
-  const server: ControlServer = await serveControlChannel<Req, Res>(
+  const server: ControlServer = await serveControlChannelForTests<Req, Res>(
     endpoint,
     registry.handler as ControlHandler<Req, Res>,
     {
@@ -320,6 +325,8 @@ export async function startReferenceShell<
       ...(options.requestReadTimeoutMs === undefined
         ? {}
         : { requestReadTimeoutMs: options.requestReadTimeoutMs }),
+      platform,
+      ...(options.insecureForTests === true ? { insecureForTests: true } : {}),
       ...(options.maxConnections === undefined
         ? {}
         : { maxConnections: options.maxConnections }),

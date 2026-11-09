@@ -10,16 +10,12 @@ export type {
   CredentialControlCodec,
   CredentialControlRequest,
   CredentialControlResponse,
-  ReferenceCredentialRegistryOptions,
 } from './control-channel.js';
 export {
   CREDENTIAL_CONTROL_ERROR_CODES,
   createControlChannelSend,
-  createCredentialReferenceRegistry,
   credentialControlCodec,
   credentialControlOp,
-  referenceControlContext,
-  registerAcquireCredential,
 } from './control-channel.js';
 export type {
   AcquireCredentialHandler,

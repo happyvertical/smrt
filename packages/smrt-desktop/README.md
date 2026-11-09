@@ -470,8 +470,9 @@ closes after its answer). This contract defines two operations; the credential
 handoff adds a third (`acquire-credential`, see
 [Control channel: `acquire-credential`](#control-channel-acquire-credential))
 without changing `coreControlCodec`, because operations are data
-(`ControlOpSpec`), a codec is built from a list of them (`createControlCodec`),
-and handlers register in an open registry (`createControlHandlerRegistry`).
+(`ControlOpSpec`), a codec is built from a list of them (`createControlCodec`,
+from the `/testing` subpath), and handlers register in an open registry
+(`createControlHandlerRegistry`, also `/testing`).
 
 | Request | Answer |
 | --- | --- |
@@ -492,8 +493,8 @@ Windows), creates the Windows pipe with `FILE_FLAG_FIRST_PIPE_INSTANCE`,
 `PIPE_REJECT_REMOTE_CLIENTS` and a current-user-only DACL, and creates the
 socket with mode 0600. Node can do none of this: a `net.Socket` cannot report
 its peer's uid or SID, and a client cannot learn who owns the listening end. So
-`sendControlRequest` and the TypeScript reference server
-(`serveControlChannel`) perform no peer verification. What they do instead:
+`sendControlRequest` and the TypeScript test-double server
+(`serveControlChannelForTests`) perform no peer verification. What they do instead:
 
 - the reference server refuses to listen unless the socket's directory is a
   real directory owned by the user with mode 0700, never replaces an existing
@@ -624,17 +625,27 @@ share a single in-flight spawn.
 liveness from a pid; or put anything from the channel into a log line beyond
 the closed result states.
 
-**Test double for the launcher.** The reference server is exported:
-`createReferenceSupervisor` (a pure `starting` / `ready` / `failed` state
-machine), `createReferenceRegistry`, `startReferenceShell` (binds a fresh
-endpoint, serves `status` and `ensure-ready`, republishes `instance.json` on
-every phase change and leaves it on `close()`), and `serveControlChannel` with a
-handler registry. It models the Rust shell's observable behavior, not its
-peer checks or its single-instance lock.
-A failed `instance.json` write does not stop later phases from being published
+**Test doubles live in a subpath, not the root.** The reference server is a
+test double and is exported only from `@happyvertical/smrt-desktop/testing`
+(Node-only; the root and `./webview` never import it, and a test lists both
+export sets): `createReferenceSupervisor` (a pure `starting` / `ready` /
+`failed` state machine), `createReferenceRegistry`, `startReferenceShell` (binds
+a fresh endpoint, serves `status` and `ensure-ready`, republishes `instance.json`
+on every phase change and leaves it on `close()`), `serveControlChannelForTests`
+with a handler registry, and the low-level plumbing they are built from
+(`createControlCodec`, `sendControlRequest`, `deriveControlEndpoint`,
+`shellLaunchEnvironment`, `failureCodeFromSupervisorMessage`). It models the
+Rust shell's observable behavior, not its peer checks or its single-instance
+lock, and it is **not a production server**: on Windows it only listens (no pipe
+DACL, no first-instance flag, no peer SID check, so any local process could
+connect), hence `serveControlChannelForTests` and `startReferenceShell` refuse to
+start on `win32` unless `insecureForTests: true` is passed. A failed
+`instance.json` write does not stop later phases from being published
 (`startReferenceShell` takes an `onWriteError` callback, and `flush()` / `close()`
 rethrow the first failure not yet reported), so a test double never sits
-silently at `starting`.
+silently at `starting`. `sendControlRequest` connects to whatever endpoint it is
+given and vets nothing; a launcher uses `createFileRendezvous`, whose `ready`
+result carries the vetted handle.
 
 ### Native credential handoff
 
@@ -643,7 +654,12 @@ The bearer must reach the MCP bridge that an assistant host (Claude, ChatGPT)
 spawns, without ever sitting in argv, in the environment, in browser storage,
 in a log, or in a file other than the OS secret store. Everything in this
 section is exported from the package root except the webview helper, which is
-the browser-safe subpath `@happyvertical/smrt-desktop/webview`.
+the browser-safe subpath `@happyvertical/smrt-desktop/webview`, and the
+reference handler, registry and in-memory secret store, which are test doubles
+in `@happyvertical/smrt-desktop/testing` (`createCredentialControlHandler`,
+`createCredentialReferenceRegistry`, `registerAcquireCredential`,
+`referenceControlContext`, `encodeAcquireCredentialResponse`,
+`createMemorySecretItemStore`).
 
 ```text
 owner webview --fetch POST /api/local/mcp-credentials (cookie, same origin)--> sidecar
