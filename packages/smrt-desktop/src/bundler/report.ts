@@ -87,6 +87,11 @@ export interface BundleReportV1 {
     readonly packageJsonSha256: string;
     readonly lockfileSha256: string;
     readonly workspaceYamlSha256?: string;
+    /**
+     * The `.npmrc` as STAGED for the install (registry lines only), not the
+     * app's file: what pnpm was configured with.
+     */
+    readonly npmrcSha256?: string;
     readonly patchesSha256?: string;
     readonly productConfigSha256?: string;
     readonly buildTreeSha256: string;
@@ -134,6 +139,8 @@ export interface BundleReportV1 {
     readonly count: number;
     readonly bytes: number;
     readonly listSha256: string;
+    /** SHA-256 of `tauri.bundle.json`, written after the measured start. */
+    readonly tauriBundleSha256: string;
     readonly breakdown: {
       readonly nodeBinary: number;
       readonly nodeModules: number;
@@ -311,6 +318,7 @@ const SCHEMA = obj([
       ['packageJsonSha256', sha],
       ['lockfileSha256', sha],
       ['workspaceYamlSha256', sha, true],
+      ['npmrcSha256', sha, true],
       ['patchesSha256', sha, true],
       ['productConfigSha256', sha, true],
       ['buildTreeSha256', sha],
@@ -417,6 +425,7 @@ const SCHEMA = obj([
       ['count', count],
       ['bytes', count],
       ['listSha256', sha],
+      ['tauriBundleSha256', sha],
       [
         'breakdown',
         obj([

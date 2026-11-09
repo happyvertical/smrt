@@ -266,6 +266,45 @@ describe('ELF', () => {
     expect(verdict.info?.libc).toBe('musl');
   });
 
+  it('rejects a musl addon that needs the unversioned libc.so on a gnu target', async () => {
+    // No PT_INTERP: a shared object built against musl outside Alpine.
+    const musl = elf({ needed: ['libstdc++.so.6', 'libc.so'] });
+    const verdict = await verifyNativeFile(musl, LIN_X64);
+    expect(verdict).toMatchObject({ ok: false, reason: 'wrong_libc' });
+    expect(verdict.info?.libc).toBe('musl');
+  });
+
+  it('fails closed on an addon whose needed libraries name no recognised libc', async () => {
+    for (const needed of [
+      ['libfoo.so.1'],
+      ['libssl.so.3', 'libz.so.1'],
+      ['libm.so.6', 'libfoo.so.1'],
+    ]) {
+      const odd = elf({ needed });
+      const verdict = await verifyNativeFile(odd, LIN_X64);
+      expect(verdict, needed.join()).toMatchObject({
+        ok: false,
+        reason: 'wrong_libc',
+      });
+      expect(verdict.info?.libc).toBe('unknown');
+    }
+  });
+
+  it('keeps accepting addons that need only glibc companions or the GCC runtime', async () => {
+    for (const needed of [
+      ['libm.so.6'],
+      ['libstdc++.so.6', 'libgcc_s.so.1', 'libm.so.6'],
+      ['libdl.so.2', 'libpthread.so.0', 'librt.so.1'],
+      ['libc.so.6', 'libssl.so.3'],
+    ]) {
+      const addon = elf({ needed });
+      expect((await verifyNativeFile(addon, LIN_X64)).ok, needed.join()).toBe(
+        true,
+      );
+    }
+    expect((await classifyNativeFile(elf({ needed: [] })))?.libc).toBe('none');
+  });
+
   it('detects musl through the interpreter and prefers musl over glibc', async () => {
     expect(
       (

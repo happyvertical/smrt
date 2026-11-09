@@ -367,7 +367,7 @@ export const desktopCommands: Record<string, CLICommand> = {
       force: {
         type: 'boolean',
         description:
-          'Replace an existing --out (moved aside, removed after success)',
+          'Replace an earlier bundle (or an empty directory) at --out: moved aside, removed after success; any other directory is refused',
         default: false,
       },
       json: {

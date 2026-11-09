@@ -15,6 +15,7 @@ import {
   hostTriple,
   parseTargetTriple,
 } from './options.js';
+import { writeEarlierBundle } from './testing/report-fixture.js';
 import { BundleTreeError } from './tree-errors.js';
 
 const posixOnly = process.platform === 'win32' ? describe.skip : describe;
@@ -384,8 +385,26 @@ posixOnly('createBundlePlan', () => {
 
     it('refuses a non-empty directory unless forced', async () => {
       mkdirSync(out);
-      writeFileSync(join(out, 'old'), 'x');
+      writeEarlierBundle(out);
       expect(await code({})).toBe('out_dir_not_empty');
+      expect((await plan({ force: true })).force).toBe(true);
+    });
+
+    it('refuses --force on a directory that holds unrelated files', async () => {
+      mkdirSync(out);
+      writeFileSync(join(out, 'thesis.docx'), 'precious');
+      expect(await code({ force: true })).toBe('destination_exists');
+      // Looking like a bundle by name is not enough: the report must parse.
+      mkdirSync(join(out, 'resources'));
+      writeFileSync(join(out, 'bundle-report.json'), '{}');
+      rmSync(join(out, 'thesis.docx'));
+      expect(await code({ force: true })).toBe('destination_exists');
+    });
+
+    it('accepts --force on an empty directory and on an earlier bundle', async () => {
+      mkdirSync(out);
+      expect((await plan({ force: true })).force).toBe(true);
+      writeEarlierBundle(out);
       expect((await plan({ force: true })).force).toBe(true);
     });
 

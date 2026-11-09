@@ -164,6 +164,14 @@ export const SECRET_CONTENT_PATTERNS: readonly SecretPattern[] = Object.freeze([
   { id: 'anthropic-key', pattern: /\bsk-ant-[A-Za-z0-9_-]{20,}/ },
   { id: 'slack-token', pattern: /\bxox[abp]-[A-Za-z0-9-]{10,}/ },
   { id: 'aws-access-key', pattern: /\bAKIA[0-9A-Z]{16}\b/ },
+  { id: 'openai-project-key', pattern: /\bsk-proj-[A-Za-z0-9_-]{20,}/ },
+  // Legacy OpenAI keys: `sk-` then 32+ unbroken alphanumerics. A hyphen after
+  // `sk-ant` (Anthropic) or any later hyphen ends the run, and `\b` rejects
+  // words such as `task-` or `risk-`.
+  { id: 'openai-key', pattern: /\bsk-[A-Za-z0-9]{32,}/ },
+  { id: 'google-api-key', pattern: /\bAIza[0-9A-Za-z_-]{35}(?![0-9A-Za-z_-])/ },
+  { id: 'npm-token', pattern: /\bnpm_[A-Za-z0-9]{36}\b/ },
+  { id: 'stripe-live-key', pattern: /\b[rs]k_live_[A-Za-z0-9]{20,}/ },
 ]);
 
 /** Longest suffix kept between chunks so a token split across chunks matches. */

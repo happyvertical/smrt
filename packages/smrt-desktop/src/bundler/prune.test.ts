@@ -37,6 +37,12 @@ const CANARY = {
   slack: `xox${'b'}-${'1234567890-abcdef'}`,
   aws: `AKIA${'ABCDEFGHIJKLMNOP'}`,
   privateKey: `-----BEGIN ${'RSA '}PRIVATE KEY-----`,
+  openaiProject: `sk-proj-${'Ab3_'.repeat(10)}`,
+  openai: `sk-${'aB3dE6gH'.repeat(6)}`,
+  google: `AI${'za'}${'Sy0123456789abcdefghijklmnopqrstuvw'}`,
+  npm: `npm_${'a1B2c3D4e5'.repeat(3)}${'f6G7h8'}`,
+  stripeLive: `${'s'}k_live_${'Zz9Yy8Xx7Ww6Vv5Uu4Tt3'}`,
+  stripeRestricted: `${'r'}k_live_${'Zz9Yy8Xx7Ww6Vv5Uu4Tt3'}`,
 };
 
 const darwinArm64: PruneTarget = { platform: 'darwin', arch: 'arm64' };
@@ -561,6 +567,12 @@ describe('secrets in the application build', () => {
       ['slack', CANARY.slack, 'slack-token'],
       ['aws', CANARY.aws, 'aws-access-key'],
       ['private key', CANARY.privateKey, 'private-key'],
+      ['openai project', CANARY.openaiProject, 'openai-project-key'],
+      ['openai', CANARY.openai, 'openai-key'],
+      ['google api', CANARY.google, 'google-api-key'],
+      ['npm', CANARY.npm, 'npm-token'],
+      ['stripe live', CANARY.stripeLive, 'stripe-live-key'],
+      ['stripe restricted live', CANARY.stripeRestricted, 'stripe-live-key'],
     ];
 
     it.each(
@@ -624,6 +636,22 @@ describe('secrets in the application build', () => {
       expect(code).toBe('secret_content');
     });
 
+    it('finds the OpenAI, Google, npm and Stripe token shapes and reports only ids', () => {
+      const expected: [string, string][] = [
+        [CANARY.openaiProject, 'openai-project-key'],
+        [CANARY.openai, 'openai-key'],
+        [CANARY.google, 'google-api-key'],
+        [CANARY.npm, 'npm-token'],
+        [CANARY.stripeLive, 'stripe-live-key'],
+        [CANARY.stripeRestricted, 'stripe-live-key'],
+      ];
+      for (const [token, id] of expected) {
+        const ids = scanSecretContent(Buffer.from(`const k = "${token}";`));
+        expect(ids).toEqual([id]);
+        expect(JSON.stringify(ids)).not.toContain(token);
+      }
+    });
+
     it('does not flag ordinary code or look-alikes', () => {
       for (const text of [
         'const sk = "sk-ant-short"',
@@ -634,6 +662,24 @@ describe('secrets in the application build', () => {
         'github_pat_',
         'function ghp_() {}',
         'a'.repeat(100_000),
+        // Realistic non-secrets that share a prefix or a shape.
+        'sk-proj-short',
+        `task-${'a1b2c3d4'.repeat(6)}`,
+        `risk-${'f'.repeat(40)}`,
+        `sk-${'a1b2c3d4-'.repeat(6)}`,
+        `sk-${'ab'.repeat(15)}`,
+        `sha512-${'Qm9vYmFy'.repeat(10)}==`,
+        `sha1-${'0123456789abcdef'.repeat(2)}`,
+        '5f2b1c0e-8a43-4d6b-9c3e-7d1a2b3c4d5e',
+        'a'.repeat(32) + 'b'.repeat(32),
+        'AIza',
+        `AIzaSy${'a'.repeat(20)}`,
+        `npm_${'a'.repeat(20)}`,
+        `npm_${'a1B2'.repeat(10)}`,
+        'npm_config_registry',
+        `rk_live_${'a'.repeat(5)}`,
+        `sk_test_${'a1B2'.repeat(8)}`,
+        'pk_live_' + 'a1B2'.repeat(8),
       ]) {
         expect(scanSecretContent(Buffer.from(text)), text.slice(0, 30)).toEqual(
           [],

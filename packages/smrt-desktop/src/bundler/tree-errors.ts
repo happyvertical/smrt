@@ -35,6 +35,8 @@ const TREE_ERROR_MESSAGES = {
   out_dir_inside_source:
     'The output directory must not be inside or contain the application',
   out_dir_not_empty: 'The output directory exists and is not empty',
+  unsafe_install_config:
+    'The application configures pnpm to load code during the install (pnpmfile, global-pnpmfile or configDependencies)',
   invalid_package_json: 'An installed package has an invalid package.json',
   unsupported_resolution:
     'A dependency resolves from a link, file, git, workspace or URL source',
@@ -86,6 +88,7 @@ const CATEGORY: Record<TreeErrorCode, TreeErrorCategory> = {
   build_outside_app: 'invalid_input',
   out_dir_inside_source: 'invalid_input',
   out_dir_not_empty: 'invalid_input',
+  unsafe_install_config: 'invalid_input',
   invalid_package_json: 'invalid_input',
   unsupported_resolution: 'invalid_input',
   unresolved_dependency: 'invalid_input',

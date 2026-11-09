@@ -18,6 +18,11 @@ import {
   O_WRONLY_CREATE_EXCL,
 } from '../internal/fs-seam.js';
 import { asciiLower, isValidText } from '../internal/grammar.js';
+import {
+  BUNDLE_FILES_FILENAME,
+  BUNDLE_REPORT_FILENAME,
+  parseBundleReport,
+} from './report.js';
 import { BundleTreeError, toTreeError } from './tree-errors.js';
 
 /**
@@ -599,6 +604,19 @@ export async function walkTree(options: WalkOptions): Promise<WalkResult> {
         resolveInside(options.root, childSegments, platform),
       );
       const kind = classify(stats);
+      // `O_NOFOLLOW` and `lstat` cover only the last component. If an ancestor
+      // was swapped for a symlink since this directory was checked, the child
+      // `lstat` above followed it, so the directory must still be the one the
+      // walk entered.
+      const parentNow = await lstatChecked(fs, dirPath);
+      if (
+        !parentNow.isDirectory() ||
+        identityOf(parentNow) !== directoryIdentity
+      ) {
+        throw new BundleTreeError('entry_changed', {
+          subjects: [segments.join('/')],
+        });
+      }
 
       const decision = options.filter?.({
         rel,
@@ -739,9 +757,31 @@ function defaultFileMode(entry: TreeEntry): number {
   return (entry.mode & 0o111) !== 0 ? 0o755 : 0o644;
 }
 
+/**
+ * After a successful open: the path must resolve to itself, so no ancestor is
+ * a symlink (the open and the identity check both follow ancestors).
+ */
+export async function assertResolvesToItself(
+  fs: TreeFs,
+  path: string,
+  expected: string,
+  rel: string,
+): Promise<void> {
+  let real: string;
+  try {
+    real = await fs.realpath(path);
+  } catch (error) {
+    throw toTreeError(error);
+  }
+  if (real !== expected) {
+    throw new BundleTreeError('symlink_refused', { subjects: [rel] });
+  }
+}
+
 async function copyOne(
   fs: TreeFs,
   sourcePath: string,
+  expectedRealPath: string,
   destPath: string,
   entry: TreeEntry,
   mode: number,
@@ -753,6 +793,7 @@ async function copyOne(
   let dest: TreeHandle | undefined;
   try {
     source = await fs.open(sourcePath, O_RDONLY | O_NOFOLLOW | O_NONBLOCK);
+    await assertResolvesToItself(fs, sourcePath, expectedRealPath, entry.rel);
     const stats = await source.stat();
     if (
       !stats.isFile() ||
@@ -842,6 +883,14 @@ export async function copyTree(options: CopyOptions): Promise<CopyResult> {
   }
 
   const hardlinks = options.policy?.hardlinks ?? 'refuse';
+  let realSourceRoot = sourceRoot;
+  if (options.canonicalRoot === false) {
+    try {
+      realSourceRoot = await fs.realpath(sourceRoot);
+    } catch (error) {
+      throw toTreeError(error);
+    }
+  }
   const copied: CopiedFile[] = [];
   for (const entry of walk.entries) {
     const segments = entry.rel.split('/');
@@ -860,6 +909,7 @@ export async function copyTree(options: CopyOptions): Promise<CopyResult> {
       await copyOne(
         fs,
         sourcePath,
+        resolveInside(realSourceRoot, segments, platform),
         destPath,
         entry,
         mode,
@@ -1098,6 +1148,69 @@ export async function disposeStaging(
   }
 }
 
+/** Top-level names `smrt desktop bundle` writes (and so may replace). */
+const BUNDLE_TOP_LEVEL: ReadonlyMap<string, 'dir' | 'file'> = new Map([
+  ['binaries', 'dir'],
+  ['resources', 'dir'],
+  ['tauri.bundle.json', 'file'],
+  [BUNDLE_FILES_FILENAME, 'file'],
+  [BUNDLE_REPORT_FILENAME, 'file'],
+]);
+const MAX_REPORT_BYTES = 8 * 1024 * 1024;
+
+/**
+ * Whether `path` (an existing real directory) is empty or is the output of an
+ * earlier bundle run: only the names above, each of the right type and not a
+ * link, and a `bundle-report.json` that passes the strict report parser.
+ * `--force` may replace exactly that; anything else is somebody's files.
+ * Throws `destination_exists` otherwise.
+ */
+export async function assertReplaceableOutput(
+  path: string,
+  options: { fs?: TreeFs; platform?: NodeJS.Platform } = {},
+): Promise<void> {
+  const fs = options.fs ?? nodeTreeFs;
+  const platform = options.platform ?? process.platform;
+  const refuse = (): never => {
+    throw new BundleTreeError('destination_exists');
+  };
+  let names: string[];
+  try {
+    const stats = await fs.lstat(path);
+    if (stats.isSymbolicLink() || !stats.isDirectory()) return refuse();
+    names = await fs.readdir(path);
+  } catch (error) {
+    throw toTreeError(error);
+  }
+  if (names.length === 0) return;
+  if (!names.includes(BUNDLE_REPORT_FILENAME)) return refuse();
+  for (const name of names) {
+    const expected = BUNDLE_TOP_LEVEL.get(name);
+    if (expected === undefined) return refuse();
+    let stats: TreeStats;
+    try {
+      stats = await fs.lstat(resolveInside(path, [name], platform));
+    } catch (error) {
+      throw toTreeError(error);
+    }
+    if (stats.isSymbolicLink()) return refuse();
+    if (expected === 'dir' ? !stats.isDirectory() : !stats.isFile()) {
+      return refuse();
+    }
+  }
+  try {
+    parseBundleReport(
+      await readRegularText(
+        resolveInside(path, [BUNDLE_REPORT_FILENAME], platform),
+        MAX_REPORT_BYTES,
+        { fs },
+      ),
+    );
+  } catch {
+    refuse();
+  }
+}
+
 export interface PublishOptions {
   readonly fs?: TreeFs;
   readonly platform?: NodeJS.Platform;
@@ -1108,8 +1221,10 @@ export interface PublishOptions {
   readonly source?: string;
   /**
    * `empty-only` (default): an existing output must be an empty real
-   * directory. `replace`: the previous output is renamed aside, the new one
-   * renamed in, and the old one removed afterwards.
+   * directory. `replace`: an existing output that is empty or the output of an
+   * earlier bundle run (`assertReplaceableOutput`) is renamed aside, the new
+   * one renamed in, and the old one removed afterwards; any other directory is
+   * refused with `destination_exists` and left alone.
    */
   readonly existing?: 'empty-only' | 'replace';
   /** Test seam for the aside-name suffix. */
@@ -1170,6 +1285,7 @@ export async function publishStaging(
       throw new BundleTreeError('destination_exists');
     }
     if (options.existing === 'replace') {
+      await assertReplaceableOutput(finalPath, { fs, platform });
       const suffix = (
         options.randomSuffix ?? (() => randomBytes(6).toString('hex'))
       )();
@@ -1182,6 +1298,14 @@ export async function publishStaging(
         await fs.rename(finalPath, aside);
       } catch (error) {
         throw toTreeError(error);
+      }
+      // Something may have been added after the check above; what was moved
+      // aside is what gets deleted, so check it too and put it back if not.
+      try {
+        await assertReplaceableOutput(aside, { fs, platform });
+      } catch (error) {
+        await fs.rename(aside, finalPath).catch(() => undefined);
+        throw error;
       }
     } else {
       let names: string[];

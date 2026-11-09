@@ -11,6 +11,7 @@ import {
 import type { DisabledGroup } from './graph.js';
 import {
   assertRealContained,
+  assertReplaceableOutput,
   isContained,
   nodeTreeFs,
   parentPath,
@@ -439,7 +440,10 @@ export async function createBundlePlan(
     if (outStats.isSymbolicLink() || !outStats.isDirectory()) {
       throw new BundleTreeError('destination_exists');
     }
-    if (input.force !== true && (await fs.readdir(outDir)).length > 0) {
+    if (input.force === true) {
+      // `--force` replaces an earlier bundle, never arbitrary files.
+      await assertReplaceableOutput(outDir, { fs, platform });
+    } else if ((await fs.readdir(outDir)).length > 0) {
       throw new BundleTreeError('out_dir_not_empty');
     }
   }

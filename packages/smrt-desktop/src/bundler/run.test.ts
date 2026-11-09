@@ -23,6 +23,7 @@ import {
   parseBundleReport,
 } from './report.js';
 import { runBundle } from './run.js';
+import { writeEarlierBundle } from './testing/report-fixture.js';
 import {
   createFixture,
   type Fixture,
@@ -382,14 +383,13 @@ describe('failure handling', () => {
 
   it('replaces an existing bundle only with force, moving it aside first', async () => {
     const item = fixture();
-    mkdirSync(item.outDir);
-    writeFileSync(join(item.outDir, 'old.txt'), 'old');
+    writeEarlierBundle(item.outDir);
     const result = await runBundle(
       await item.plan({ force: true }),
       item.seams(),
     );
     expect(result.outDir).toBe(item.outDir);
-    expect(existsSync(join(item.outDir, 'old.txt'))).toBe(false);
+    expect(existsSync(join(item.outDir, 'resources', 'old.txt'))).toBe(false);
     expect(existsSync(join(item.outDir, 'tauri.bundle.json'))).toBe(true);
     expect(readdirSync(join(item.root, 'dist'))).toEqual(['bundle']);
   });
@@ -448,10 +448,12 @@ describe('failure handling', () => {
       '--frozen-lockfile',
       '--prod',
       '--ignore-scripts',
+      '--ignore-pnpmfile',
       '--os',
       'darwin',
       '--cpu',
       'arm64',
+      '--config.pm-on-fail=ignore',
       '--config.node-linker=hoisted',
       '--config.side-effects-cache=false',
       '--config.package-import-method=copy',
@@ -654,7 +656,10 @@ describe('secrets', () => {
   });
 
   it('never copies the app .npmrc into the output', async () => {
-    const item = fixture({ npmrc: '//registry.example/:_authToken=abc123\n' });
+    const item = fixture({
+      npmrc:
+        'registry=https://registry.example/\n//registry.example/:_authToken=abc123\n',
+    });
     await runBundle(await item.plan(), item.seams());
     expect(item.calls[0]?.hadNpmrc).toBe(true);
     const files = [...readTree(item.outDir).keys()];
@@ -675,7 +680,7 @@ describe('secrets', () => {
   it('keeps a canary token out of the output, the report and the child environment', async () => {
     const canary = 'CANARY-7f3a91c2d4e85b60';
     const item = fixture({
-      npmrc: `//registry.npmjs.org/:_authToken=${canary}-npmrc\n`,
+      npmrc: `registry=https://registry.npmjs.org/\n//registry.npmjs.org/:_authToken=${canary}-npmrc\n`,
       envFile: `SECRET=${canary}-dotenv\n`,
     });
     const env = {
@@ -688,8 +693,10 @@ describe('secrets', () => {
     };
     const result = await runBundle(await item.plan(), item.seams({ env }));
 
-    // The .npmrc reached the install directory (private registries work) ...
+    // Its registry line reached the install directory, its credentials did
+    // not ...
     expect(item.calls[0]?.hadNpmrc).toBe(true);
+    expect(item.calls[0]?.npmrc).toBe('registry=https://registry.npmjs.org/\n');
     // ... but no canary reached pnpm's environment ...
     expect(JSON.stringify(item.calls[0]?.env)).not.toContain(canary);
     expect(item.calls[0]?.env.NODE_OPTIONS).toBeUndefined();
@@ -1025,5 +1032,194 @@ describe('size budget and measurement', () => {
     expect(error.code).toBe('bundle_changed_while_measuring');
     expect(error.stage).toBe('measure');
     assertNothingLeft(item);
+  });
+});
+
+describe('pnpm configuration the app brings', () => {
+  it.each([
+    ['configDependencies', 'configDependencies:\n  hooks: 1.0.0+sha512-abc\n'],
+    ['pnpmfile', 'pnpmfile: ./hooks.cjs\n'],
+    ['globalPnpmfile', 'globalPnpmfile: ./global.cjs\n'],
+  ])('fails before any install when pnpm-workspace.yaml sets %s', async (name, yaml) => {
+    const item = fixture({ workspaceYaml: yaml });
+    const error = await failure(runBundle(await item.plan(), item.seams()));
+    expect(error.code).toBe('unsafe_install_config');
+    expect(error.exitCode).toBe(3);
+    expect(error.stage).toBe('inputs');
+    expect(error.subjects).toEqual([name]);
+    expect(item.calls).toHaveLength(0);
+    assertNothingLeft(item);
+  });
+
+  it.each([
+    'pnpmfile=./hooks.cjs',
+    'global-pnpmfile=/somewhere/global.cjs',
+  ])('fails before any install when .npmrc sets %s', async (line) => {
+    const item = fixture({ npmrc: `registry=https://r.example/\n${line}\n` });
+    const error = await failure(runBundle(await item.plan(), item.seams()));
+    expect(error.code).toBe('unsafe_install_config');
+    expect(error.exitCode).toBe(3);
+    expect(error.stage).toBe('inputs');
+    expect(JSON.stringify(error)).not.toContain('hooks.cjs');
+    expect(item.calls).toHaveLength(0);
+    assertNothingLeft(item);
+  });
+
+  it('fails when the package.json pnpm field sets a pnpmfile', async () => {
+    const item = fixture({
+      appManifest: { pnpm: { pnpmfile: './hooks.cjs' } },
+    });
+    const error = await failure(runBundle(await item.plan(), item.seams()));
+    expect(error.code).toBe('unsafe_install_config');
+    expect(item.calls).toHaveLength(0);
+  });
+
+  it('stages only registry and boolean lines of .npmrc and records their hash', async () => {
+    const canary = 'CANARY-5d2e9a7b13c4';
+    const item = fixture({
+      npmrc: [
+        'registry=https://registry.example.com/',
+        '@acme:registry=https://npm.acme.test/',
+        `//registry.example.com/:_authToken=${canary}`,
+        'script-shell=/tmp/evil.sh',
+        'auto-install-peers=false',
+        '',
+      ].join('\n'),
+    });
+    const result = await runBundle(await item.plan(), item.seams());
+    const staged = item.calls[0]?.npmrc as string;
+    expect(staged).toBe(
+      [
+        'registry=https://registry.example.com/',
+        '@acme:registry=https://npm.acme.test/',
+        'auto-install-peers=false',
+        '',
+      ].join('\n'),
+    );
+    expect(result.report.inputs.npmrcSha256).toBe(sha256(staged));
+    expect(result.warnings.join('\n')).toContain(
+      '2 .npmrc line(s) were not used',
+    );
+    expect(JSON.stringify(result)).not.toContain(canary);
+  });
+
+  it('stages no .npmrc and records no hash when nothing in it is usable', async () => {
+    const item = fixture({ npmrc: '//registry.example.com/:_authToken=abc\n' });
+    const result = await runBundle(await item.plan(), item.seams());
+    expect(item.calls[0]?.hadNpmrc).toBe(false);
+    expect(result.report.inputs.npmrcSha256).toBeUndefined();
+  });
+
+  it('passes an ordinary workspace file through unchanged and records its hash', async () => {
+    const yaml = 'overrides:\n  lodash: 4.17.21\n# pnpmfile: not used\n';
+    const item = fixture({ workspaceYaml: yaml });
+    const result = await runBundle(await item.plan(), item.seams());
+    expect(item.calls[0]?.workspace).toBe(yaml);
+    expect(result.report.inputs.workspaceYamlSha256).toBe(sha256(yaml));
+  });
+});
+
+describe('the pnpm version', () => {
+  it('stages a manifest without packageManager or devEngines', async () => {
+    const item = fixture({
+      appManifest: {
+        packageManager: 'pnpm@9.0.0',
+        devEngines: { packageManager: { name: 'pnpm', version: '9.0.0' } },
+      },
+    });
+    await runBundle(await item.plan(), item.seams());
+    expect(item.calls[0]?.manifest.packageManager).toBeUndefined();
+    expect(item.calls[0]?.manifest.devEngines).toBeUndefined();
+    expect(item.calls[0]?.manifest.name).toBe('fixture-app');
+  });
+
+  it('probes the version from an empty directory outside the install directory', async () => {
+    const item = fixture();
+    let listing: string[] | undefined;
+    let probed: string | undefined;
+    await runBundle(
+      await item.plan(),
+      item.seams({
+        pnpmVersion: async (_env, cwd) => {
+          probed = cwd;
+          listing = readdirSync(cwd);
+          return '11.25.0';
+        },
+      }),
+    );
+    expect(listing).toEqual([]);
+    expect(probed).not.toBe(item.calls[0]?.cwd);
+    expect(probed?.startsWith(item.appDir)).toBe(false);
+  });
+
+  it('warns when the host pnpm differs from the app packageManager and reports the host pnpm', async () => {
+    const item = fixture({ appManifest: { packageManager: 'pnpm@9.0.0' } });
+    const result = await runBundle(
+      await item.plan(),
+      item.seams({ pnpmVersion: async () => '11.25.0' }),
+    );
+    expect(result.report.host.pnpm).toBe('11.25.0');
+    expect(result.warnings.join('\n')).toContain(
+      "pnpm 11.25.0 differs from the app's packageManager (pnpm@9.0.0)",
+    );
+  });
+});
+
+describe('files written around the measured start', () => {
+  const measurements = {
+    nodeVersionOutput: 'v26.8.1',
+    healthRoute: '/h',
+    installed: { apparentBytes: 1, files: 1 },
+    coldStart: {
+      firstRun: { runs: 1, samplesMs: [1], medianMs: 1, maxMs: 1 },
+      warm: { runs: 1, samplesMs: [1], medianMs: 1, maxMs: 1 },
+    },
+  };
+  it('writes tauri.bundle.json and the file list only after the measured start', async () => {
+    const item = fixture();
+    let rootAtMeasure: string[] | undefined;
+    const result = await runBundle(
+      await item.plan({ measure: true }),
+      item.seams({
+        platform: 'darwin',
+        arch: 'arm64',
+        measure: async (request) => {
+          rootAtMeasure = readdirSync(request.bundleRoot).sort();
+          return measurements;
+        },
+      }),
+    );
+    expect(rootAtMeasure).toEqual(['binaries', 'resources']);
+    const tauri = readFileSync(join(item.outDir, 'tauri.bundle.json'));
+    expect(result.report.files.tauriBundleSha256).toBe(sha256(tauri));
+    const list = readFileSync(join(item.outDir, BUNDLE_FILES_FILENAME));
+    expect(result.report.files.listSha256).toBe(sha256(list));
+  });
+
+  it('fails when the measured start plants or changes a file in the bundle root', async () => {
+    for (const name of [
+      'tauri.bundle.json',
+      BUNDLE_FILES_FILENAME,
+      BUNDLE_REPORT_FILENAME,
+      'extra.txt',
+    ]) {
+      const item = fixture();
+      const error = await failure(
+        runBundle(
+          await item.plan({ measure: true }),
+          item.seams({
+            platform: 'darwin',
+            arch: 'arm64',
+            measure: async (request) => {
+              writeFileSync(join(request.bundleRoot, name), 'planted');
+              return measurements;
+            },
+          }),
+        ),
+      );
+      expect(error.code, name).toBe('bundle_changed_while_measuring');
+      expect(error.stage, name).toBe('measure');
+      assertNothingLeft(item);
+    }
   });
 });
