@@ -611,6 +611,67 @@ carries the data key ID. Derive the 32-byte wrapping key from the device secret
 with [HKDF-SHA256](https://www.rfc-editor.org/rfc/rfc5869), an empty salt, and
 ASCII `smrt-vault-device-key-v1` as the info string.
 
+## Device entitlement cache
+
+A local install learns its tier offline from a signed, time-limited snapshot of
+feature keys. The cloud/billing host signs it (Ed25519) from the account's
+resolved entitlements; the install verifies it against public keys that ship
+with the application and exposes the verified keys through `smrt-features`, so
+`requireFeature()` works unchanged. Import from
+`@happyvertical/smrt-app-runtime/device-entitlements`.
+
+```ts
+import {
+  DeviceEntitlementCache,
+  registerDeviceEntitlementGrantSource,
+} from '@happyvertical/smrt-app-runtime/device-entitlements';
+
+const entitlements = new DeviceEntitlementCache({
+  filePath: join(stateRoot, 'entitlement.json'),
+  // Public keys bundled with the app (key id -> SPKI PEM / JWK / KeyObject).
+  trustedKeys: { 'issuer-2026-11': ISSUER_PUBLIC_KEY_PEM },
+  accountId, // the signed-in account
+  deviceId, // this device
+  gracePeriodMs: 3 * 24 * 60 * 60 * 1000, // optional, default 0
+  transport: async ({ accountId, deviceId, signal }) =>
+    fetchSnapshotFromHostedEndpoint(accountId, deviceId, signal),
+});
+
+registerDeviceEntitlementGrantSource(
+  entitlements.grantSource({ tenantId: localTenantId }),
+);
+await entitlements.refresh(); // verifies and stores; keeps the old one on failure
+const status = await entitlements.status(); // { tier, state, reason?, featureKeys, ... }
+```
+
+- **Snapshot.** `{ accountId, deviceId, featureKeys, issuedAt, expiresAt, keyId }`
+  (epoch milliseconds), serialized as `{ version, keyId, payload, signature }`
+  where `payload` is base64url JSON and `signature` covers it under the domain
+  prefix `smrt-device-entitlement-v1\0`. The issuing host calls
+  `signDeviceEntitlementSnapshot(snapshot, privateKey)`; the private key never
+  ships with an install.
+- **Fail closed.** No snapshot, expired, tampered, signed by an unknown or
+  wrong key, for another account or device, issued more than `clockSkewMs`
+  (default 5 minutes, max 1 hour) in the future, longer than `maxLifetimeMs`
+  (default 90 days), older than a newer one already accepted, or unreadable:
+  the Local tier with no paid keys. Nothing throws; `status()` carries a reason
+  code. Invalid configuration (for example a non-Ed25519 or private key in
+  `trustedKeys`) throws when the cache is constructed.
+- **Grace period.** `gracePeriodMs` (default 0, max 30 days) keeps the keys on
+  after `expiresAt` for a device that cannot reach the host. The status is
+  `state: 'grace'` with `graceEndsAt`. Clock skew is tolerated on `issuedAt`
+  only; it never extends an expiry.
+- **Replay.** The newest accepted `issuedAt` is kept in `<filePath>.watermark`,
+  and both `install()` and `status()` compare against it. A user who deletes
+  or corrupts the watermark (or both files) or sets the clock back can reuse a
+  snapshot that has not expired; keep issued lifetimes short enough that this is
+  acceptable. A snapshot carries at most 64 keys of 128 characters.
+- **Trust.** The cache file and its directory are not trusted; the key set is.
+  Ship the public keys in the application, not in the data root.
+- **Refresh.** The transport is injected (the hosted endpoint is not part of
+  this package). Its result is verified like a file; a thrown, timed-out, forged
+  or replayed answer leaves the stored snapshot in place.
+
 ## Preparing a vault key generation
 
 Use `prepareVaultKeyGeneration(options)` from

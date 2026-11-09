@@ -29,6 +29,10 @@
     "./vault-key-generation": {
       "types": "./dist/vault-key-generation.d.ts",
       "import": "./dist/vault-key-generation.js"
+    },
+    "./device-entitlements": {
+      "types": "./dist/device-entitlements.d.ts",
+      "import": "./dist/device-entitlements.js"
     }
   },
   "files": [

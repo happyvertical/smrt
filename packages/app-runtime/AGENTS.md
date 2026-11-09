@@ -97,6 +97,36 @@ Application infrastructure composition for the validated runtime profiles in
 - Background jobs and application-defined paid capabilities are default-off.
 - The embedded runner reuses `TaskRunner`; it is not a second job contract.
 
+## Device entitlement cache (`./device-entitlements`, #4787)
+
+- Signed (Ed25519, `node:crypto`), time-limited snapshot of the feature keys
+  one account grants one device, so a local install knows its tier offline.
+  `signDeviceEntitlementSnapshot` runs only on the issuing cloud/billing host;
+  `verifyDeviceEntitlementSnapshot` / `DeviceEntitlementCache` run on the
+  install. Trusted public keys (`trustedKeys`, by key id, rotation = several)
+  come from application configuration, never the cache file or data root: that
+  is why a local install cannot mint its own. Signature is checked before any
+  payload field is read; signed bytes are domain-prefixed
+  (`smrt-device-entitlement-v1\0`); the payload `keyId` must equal the
+  envelope's.
+- Anything but a valid snapshot (absent, expired, tampered, wrong
+  account/device, future-dated beyond `clockSkewMs`, lifetime above
+  `maxLifetimeMs`, older than the watermark, unreadable) is the Local tier with
+  no keys. `status()` and `grantSource()` never throw; `install()`/`refresh()`
+  report a reason and keep what is stored. Invalid *configuration* (non-Ed25519
+  or private key, empty key set, out-of-range durations) throws at construction.
+- Replay: the newest accepted `issuedAt` lives in `<filePath>.watermark`; install
+  and load both compare against it. Deleting/corrupting the watermark or rolling the
+  clock back replays an unexpired snapshot; the issuer's lifetime bounds that.
+- Grace (`gracePeriodMs`, default 0, max 30 d) keeps keys on past `expiresAt`
+  (`state: 'grace'`); skew applies to `issuedAt` only, never extends expiry.
+- Features integration is structural: `cache.grantSource()` is a
+  `FeatureGrantSource` for `FeatureResolver`/`requireFeature`, or
+  `registerDeviceEntitlementGrantSource()` writes the
+  `Symbol.for('@happyvertical/smrt-features:grant-source')` slot. This package
+  must not import `smrt-features`: its dev tooling depends on `smrt-cli`, which
+  depends on this package (a cycle). The transport for `refresh()` is injected.
+
 ## Deployed profiles
 
 - `initializeDeployedApplicationRuntime()` composes only `self-hosted` and
