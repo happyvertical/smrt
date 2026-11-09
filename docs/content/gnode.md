@@ -42,22 +42,12 @@ const gnodeInfo = await WebFingerProtocol.discover('example.com');
 
 ## Documentation
 
-### High-Level Concepts
-- [Vision](./docs/vision.md) - Long-term roadmap for federated local knowledge
-- [Principles](./docs/principles.md) - Core principles (Open, Federated, Transparent, etc.)
-
-### Implementation Guides
-See the [town template](../create-gnode/templates/town/) for complete implementation documentation:
-- Architecture - Technical stack and system design
-- Deployment - Infrastructure tiers and scaling
-- Roadmap - 12-week implementation plan
-- Standards - News standards, RSS, SEO
+See the [smrt-gnode README](./packages/gnode.md) for the current package reference.
 
 ## Related Packages
 
-- [@happyvertical/smrt-core](../smrt) - Core SMRT framework
-- [@happyvertical/sql](../sql) - Database abstraction layer
-- [create-gnode](https://github.com/happyvertical/create-gnode) - CLI generator for creating gnodes
+- [@happyvertical/smrt-core](./packages/core.md) - Core SMRT framework
+- [@happyvertical/sql](https://github.com/happyvertical/sdk/tree/main/packages/sql) - Database abstraction layer
 
 ## License
 

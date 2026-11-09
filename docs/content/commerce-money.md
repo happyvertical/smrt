@@ -368,7 +368,7 @@ summary fail with `COMMERCE_DATA_NEEDS_UPGRADE` and name the command, and
 migration, then `smrt db:upgrade-commerce-money` once. Each tenant converts in
 its own transaction: stored rates become tax codes, issued documents keep every
 stored total, and drafts are recomputed. See the
-[upgrade command guide](../../packages/cli/agents/commerce-money-upgrade.md).
+[upgrade command guide](https://github.com/happyvertical/smrt/blob/main/packages/cli/agents/commerce-money-upgrade.md).
 
 ## Not part of this guide
 
@@ -376,5 +376,5 @@ This guide does not define reports or currency conversion. Contract
 persistence uses the same tenant-money runtime lock, writes Contract headers,
 line snapshots, and DocumentTax rows atomically, and freezes each persisted
 non-draft snapshot. See
-[Contract money persistence](../../packages/commerce/agents/contract-money.md)
+[Contract money persistence](https://github.com/happyvertical/smrt/blob/main/packages/commerce/agents/contract-money.md)
 for the Contract-specific lifecycle and purchase recoverability.

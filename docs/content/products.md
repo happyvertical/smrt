@@ -378,9 +378,8 @@ Here are the products under $50:
 
 ## 📚 Documentation
 
-- **[Architecture Guide](docs/ARCHITECTURE.md)** - Detailed technical architecture
-- **[Federation Guide](docs/FEDERATION_GUIDE.md)** - Module federation patterns  
-- **[Deployment Modes](docs/DEPLOYMENT_MODES.md)** - All deployment options
+- **[Products as a template](./architecture/products-as-template.md)** - Historical architecture of the original template
+- **[smrt-products README](./packages/products.md)** - Current package reference
 
 ## 🤝 Contributing
 
@@ -393,7 +392,7 @@ Here are the products under $50:
 
 ## 📄 License
 
-MIT License - see [LICENSE](LICENSE) for details.
+MIT License - see [LICENSE](https://github.com/happyvertical/smrt/blob/main/LICENSE) for details.
 
 ---
 

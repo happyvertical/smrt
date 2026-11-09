@@ -194,8 +194,8 @@ export const handle = async ({ event, resolve }) => {
 
 - [Issue #688: tenantScoped decorator](https://github.com/happyvertical/smrt/issues/688)
 - [Issue #809: Auto-populate tenantId](https://github.com/happyvertical/smrt/issues/809)
-- [RFC-001: Multi-Tenancy](../../docs/rfcs/RFC-001-multi-tenancy.md)
-- [Tenancy Package README](./README.md)
+- [RFC-001: Multi-Tenancy](../rfcs/RFC-001-multi-tenancy.md)
+- [Tenancy Package README](../packages/tenancy.md)
 
 ## FAQ
 

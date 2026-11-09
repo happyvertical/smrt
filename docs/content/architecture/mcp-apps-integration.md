@@ -2,7 +2,7 @@
 
 This standard governs the implementation under [epic #3202](https://github.com/happyvertical/smrt/issues/3202).
 M0 establishes architecture and SDK feasibility, not production integration.
-See [ADR 0002](../../adr/0002-mcp-apps-integration.md) for package ownership.
+See [ADR 0002](https://github.com/happyvertical/smrt/blob/main/docs/adr/0002-mcp-apps-integration.md) for package ownership.
 
 ## Evidence baseline
 
