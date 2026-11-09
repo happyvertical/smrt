@@ -11,17 +11,30 @@
 //   --config <tauri.conf>     the committed config carries a real updater key
 //   --inputs <dir> <bridge>   the product inputs are safe repo-relative paths
 //   --bundle <dir>            a `smrt desktop bundle` output that is complete,
-//                             unmodified and built from a gpg-verified Node pin
+//                             unmodified, has no file the digest list does not
+//                             name, no symlink, and whose Node pin matches the
+//                             COMMITTED pin record (see --node-pins)
 //   --target <triple>         with --bundle: the Rust target it must be for
+//   --node-pins <node-pins.ts>  with --bundle: the committed pin table of the
+//                             TRUSTED checkout. The bundle's own report is only
+//                             compared against it, never believed
 //   --write-overlay <file>    with --bundle: write the Tauri config overlay
-//                             (identity from the bundle, never invented)
+//                             (built from an allowlist, never copied)
+//   --stage <dir>             with --bundle: copy exactly the verified files
+//                             into <dir>/binaries and <dir>/resources
 //
 // Node built-ins only. Exit 0 = every check passed, 1 = at least one failed,
 // 2 = usage error.
 
 import { createHash } from 'node:crypto';
-import { lstatSync, readFileSync, writeFileSync } from 'node:fs';
-import { join, posix } from 'node:path';
+import {
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  writeFileSync,
+} from 'node:fs';
+import { dirname, join, posix } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 /** Names of the secrets the signing and notarization path needs. */
@@ -38,14 +51,6 @@ export const REQUIRED_SECRETS = Object.freeze([
 
 const PLACEHOLDER = /placeholder|changeme|replace-?me|example/i;
 const BUNDLE_ID = /^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$/;
-const TRIPLES = new Set([
-  'aarch64-apple-darwin',
-  'x86_64-apple-darwin',
-  'x86_64-unknown-linux-gnu',
-  'aarch64-unknown-linux-gnu',
-  'x86_64-pc-windows-msvc',
-  'aarch64-pc-windows-msvc',
-]);
 const MAX_JSON_BYTES = 8 * 1024 * 1024;
 
 function isNonEmptyString(value) {
@@ -138,13 +143,175 @@ function sha256File(path) {
   return createHash('sha256').update(readFileSync(path)).digest('hex');
 }
 
+const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const SEMVER =
+  /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
+const NODE_VERSION = /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/;
+const SHA256 = /^[0-9a-f]{64}$/;
+const FINGERPRINT = /^[0-9A-F]{40}$/;
+// A display name becomes the product name, and with it installer and .app
+// file names: no control characters and no path or shell-significant ones.
+const DISPLAY_NAME = /^[^\p{Cc}\p{Zl}\p{Zp}/\\:*?"<>|]{1,128}$/u;
+const MAX_TREE_ENTRIES = 100_000;
+
+/**
+ * How nodejs.org distributes Node per target, mirroring `TARGETS` in
+ * `packages/smrt-desktop/src/bundler/targets.ts`: the file name as it appears
+ * in the pin table, and the suffix of the Tauri sidecar file.
+ */
+const NODE_DIST = Object.freeze({
+  'aarch64-apple-darwin': { dir: 'darwin-arm64', exe: false },
+  'x86_64-apple-darwin': { dir: 'darwin-x64', exe: false },
+  'x86_64-unknown-linux-gnu': { dir: 'linux-x64', exe: false },
+  'aarch64-unknown-linux-gnu': { dir: 'linux-arm64', exe: false },
+  'x86_64-pc-windows-msvc': { dir: 'win-x64', exe: true },
+  'aarch64-pc-windows-msvc': { dir: 'win-arm64', exe: true },
+});
+
+/**
+ * The dist file name the committed pin table uses for this target and Node
+ * version, and the sidecar suffix. Own-property lookup only.
+ */
+function nodeDistFor(target, version) {
+  if (!Object.hasOwn(NODE_DIST, target)) return undefined;
+  const { dir, exe } = NODE_DIST[target];
+  return {
+    distFile: exe ? `${dir}/node.exe` : `node-v${version}-${dir}.tar.gz`,
+    exeSuffix: exe ? '.exe' : '',
+    // A bare node.exe is pinned itself, so for it the pin IS the binary digest.
+    pinnedIsBinary: exe,
+  };
+}
+
+/** Convert the generated TypeScript object literal to JSON and parse it. */
+function parseGeneratedLiteral(block, name) {
+  const match = new RegExp(
+    `^const ${name}: [A-Za-z]+ = (\\{[\\s\\S]*?\\n\\});$`,
+    'm',
+  ).exec(block);
+  if (!match) throw new Error(`${name} is not in the generated block`);
+  const json = match[1]
+    .replace(/^(\s*)([A-Za-z_][A-Za-z0-9_]*):/gm, '$1"$2":')
+    .replace(/'([^'"\\\n]*)'/g, '"$1"')
+    .replace(/,(\s*[}\]])/g, '$1');
+  return JSON.parse(json);
+}
+
+/**
+ * Read the committed Node pin table and its provenance out of
+ * `packages/smrt-desktop/src/bundler/node-pins.ts` WITHOUT executing it. The
+ * file is taken from the trusted checkout; the generated block is plain data
+ * (`scripts/update-node-pins.mjs` writes it), so a small strict parser is
+ * enough and anything unexpected throws.
+ */
+export function parseNodePins(source) {
+  const block =
+    /\/\/ BEGIN GENERATED PINS[^\n]*\n([\s\S]*?)\n\/\/ END GENERATED PINS/.exec(
+      source,
+    );
+  if (!block) throw new Error('no generated pin block');
+  const pins = parseGeneratedLiteral(block[1], 'NODE_PINS_DATA');
+  const provenance = parseGeneratedLiteral(
+    block[1],
+    'NODE_PIN_PROVENANCE_DATA',
+  );
+  for (const [version, files] of Object.entries(pins)) {
+    if (
+      !NODE_VERSION.test(version) ||
+      files === null ||
+      typeof files !== 'object'
+    ) {
+      throw new Error('malformed pin table');
+    }
+    for (const digest of Object.values(files)) {
+      if (!SHA256.test(digest)) throw new Error('malformed pin table');
+    }
+  }
+  return { pins, provenance };
+}
+
+/** True when the COMMITTED record says the release's pins are gpg-verified. */
+function committedGpgVerified(trust, version) {
+  const record = Object.hasOwn(trust.provenance ?? {}, version)
+    ? trust.provenance[version]
+    : undefined;
+  return (
+    record?.verification === 'gpg-verified' &&
+    Array.isArray(record.signerFingerprints) &&
+    record.signerFingerprints.length > 0 &&
+    record.signerFingerprints.every((fp) => FINGERPRINT.test(fp)) &&
+    SHA256.test(record.shasumsSha256)
+  );
+}
+
+/** True for a display name that is safe to become a product/file name. */
+export function isSafeDisplayName(value) {
+  return (
+    typeof value === 'string' &&
+    !isPlaceholder(value) &&
+    DISPLAY_NAME.test(value) &&
+    value === value.trim() &&
+    !value.startsWith('.')
+  );
+}
+
+/** True for a Semantic Version 2.0.0 string of sane length. */
+export function isSemver(value) {
+  return typeof value === 'string' && value.length <= 128 && SEMVER.test(value);
+}
+
+function hasExactKeys(value, keys) {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+  const own = Reflect.ownKeys(value);
+  return own.length === keys.length && keys.every((key) => own.includes(key));
+}
+
+/**
+ * Every regular file under `<bundleDir>/<root>` as a `/` relative path, found
+ * with lstat so a symlink is never followed. Anything that is not a regular
+ * file or a directory (symlink, fifo, socket, device) is a problem; names of
+ * offending entries are never echoed.
+ */
+function walkTree(bundleDir, root, problems) {
+  const found = [];
+  let entries = 0;
+  const visit = (relative) => {
+    const dir = join(bundleDir, ...relative.split('/'));
+    for (const name of readdirSync(dir)) {
+      if (++entries > MAX_TREE_ENTRIES) {
+        throw new Error('too many entries');
+      }
+      const path = `${relative}/${name}`;
+      const stat = lstatSync(join(dir, name));
+      if (stat.isDirectory()) visit(path);
+      else if (stat.isFile()) found.push(path);
+      else problems.add(`${root}/ holds a symlink or other non-regular file`);
+    }
+  };
+  const top = lstatSync(join(bundleDir, root));
+  if (!top.isDirectory()) throw new Error('not a directory');
+  visit(root);
+  return found;
+}
+
 /**
  * Verify a `smrt desktop bundle` output and return the Tauri config overlay
- * built from it. `files` is injectable for tests.
+ * built from it. `files` is injectable for tests. `trust` carries the pin
+ * record of the TRUSTED checkout (`parseNodePins`); without it nothing is
+ * accepted.
  *
- * Returns `{ problems, overlay }`; `overlay` is set only without problems.
+ * The bundle is the output of a job that runs product dependency code, so
+ * nothing in it is believed: the Tauri fragment must match a closed schema and
+ * is rebuilt from an allowlist, every file on disk must be listed with its
+ * digest (and every listed file must exist), and the Node pin is compared
+ * with the committed record rather than with the report's own claim.
+ *
+ * Returns `{ problems, overlay, verified }`; the last two are set only
+ * without problems. `verified` lists the `{ path, sha256 }` of every file.
  */
-export function checkBundle(bundleDir, target, files = {}) {
+export function checkBundle(bundleDir, target, files = {}, trust = {}) {
   const loadJson = files.readJson ?? readJson;
   const hashFile = files.sha256File ?? sha256File;
   const readText = files.readText ?? ((p) => readFileSync(p, 'utf8'));
@@ -153,7 +320,7 @@ export function checkBundle(bundleDir, target, files = {}) {
     problems.push(message);
   };
 
-  if (!TRIPLES.has(target)) {
+  if (!Object.hasOwn(NODE_DIST, target)) {
     fail('the expected target is not a supported Rust triple');
   }
 
@@ -173,24 +340,16 @@ export function checkBundle(bundleDir, target, files = {}) {
     };
   }
 
-  const pin = report?.node?.pin;
-  if (
-    pin?.verification !== 'gpg-verified' ||
-    !Array.isArray(pin.signerFingerprints) ||
-    pin.signerFingerprints.length === 0
-  ) {
-    fail(
-      'the bundle was not built from a gpg-verified Node pin (run the bundler with --require-verified-pins)',
-    );
-  }
   if (report?.target !== target) {
     fail('the bundle was built for a different target');
   }
 
   const product = report?.product ?? {};
-  const bundleId = product.bundleId;
-  const displayName = product.displayName;
+  const { productId, bundleId, displayName } = product;
   const version = product.productVersion;
+  if (!SLUG.test(productId ?? '') || productId.length > 64) {
+    fail('the product id is missing or not a slug');
+  }
   if (
     isPlaceholder(bundleId) ||
     typeof bundleId !== 'string' ||
@@ -198,39 +357,47 @@ export function checkBundle(bundleDir, target, files = {}) {
   ) {
     fail('the product bundle id is missing, invalid or a placeholder');
   }
-  if (isPlaceholder(displayName)) {
-    fail('the product display name is missing or a placeholder');
+  if (!isSafeDisplayName(displayName)) {
+    fail('the product display name is missing, unsafe or a placeholder');
   }
-  if (!isNonEmptyString(version)) {
-    fail('the product version is missing');
+  if (!isSemver(version)) {
+    fail('the product version is missing or not a semantic version');
   }
 
-  const bundle = tauriBundle?.bundle;
-  const external = bundle?.externalBin;
+  // tauri.bundle.json is closed: exactly the one sidecar and the resources
+  // directory the bundler writes. Any other key (signCommand, an NSIS
+  // template, extra files, entitlements, ...) would reach the secret-holding
+  // build, so it is refused rather than filtered.
+  const sidecarName = `binaries/${productId}-node`;
+  const external = tauriBundle?.bundle?.externalBin;
   if (
+    !hasExactKeys(tauriBundle, ['bundle']) ||
+    !hasExactKeys(tauriBundle.bundle, ['externalBin', 'resources']) ||
+    !hasExactKeys(tauriBundle.bundle.resources, ['resources/']) ||
+    tauriBundle.bundle.resources['resources/'] !== './' ||
     !Array.isArray(external) ||
     external.length !== 1 ||
-    typeof external[0] !== 'string' ||
-    !external[0].startsWith('binaries/') ||
-    !safeRelativePath(external[0]) ||
-    bundle?.resources?.['resources/'] !== './'
+    external[0] !== sidecarName
   ) {
-    fail('tauri.bundle.json does not carry the expected externalBin/resources');
+    fail(
+      'tauri.bundle.json is not exactly the expected externalBin and resources and nothing else',
+    );
   }
 
-  const seen = new Set();
+  // Digest list: well formed, no duplicates, every digest right.
+  const listed = new Map();
   for (const line of list.split('\n')) {
     if (line === '') continue;
     const match = /^([0-9a-f]{64}) {2}(.+)$/.exec(line);
     if (
       !match ||
       !safeRelativePath(match[2]) ||
-      !/^(binaries|resources)\//.test(match[2])
+      !/^(binaries|resources)\//.test(match[2]) ||
+      listed.has(match[2])
     ) {
-      fail('bundle-files.sha256 has a malformed or unsafe line');
+      fail('bundle-files.sha256 has a malformed, duplicate or unsafe line');
       break;
     }
-    seen.add(match[2]);
     let digest;
     try {
       digest = hashFile(join(bundleDir, ...match[2].split('/')));
@@ -242,29 +409,126 @@ export function checkBundle(bundleDir, target, files = {}) {
       fail('a file differs from its digest in bundle-files.sha256');
       break;
     }
+    listed.set(match[2], match[1]);
   }
-  if (seen.size === 0) fail('bundle-files.sha256 lists no files');
-  const sidecar = Array.isArray(external) ? external[0] : undefined;
+  if (listed.size === 0) fail('bundle-files.sha256 lists no files');
+
+  // The converse: nothing on disk that the list does not name. A file added
+  // after the fact, or a symlink Tauri would follow into the signed bundle,
+  // is refused. The bundle root itself is never copied beyond listed files.
+  const tree = new Set();
+  const treeProblems = new Set();
+  try {
+    for (const root of ['binaries', 'resources']) {
+      for (const path of walkTree(bundleDir, root, treeProblems))
+        tree.add(path);
+    }
+  } catch {
+    fail('binaries/ or resources/ is missing or cannot be listed');
+  }
+  for (const message of treeProblems) fail(message);
   if (
-    typeof sidecar === 'string' &&
-    ![...seen].some((path) => path.startsWith(`${sidecar}-${target}`))
+    tree.size > 0 &&
+    ([...tree].some((path) => !listed.has(path)) ||
+      [...listed.keys()].some((path) => !tree.has(path)))
   ) {
-    fail('the sidecar binary for the target is not in bundle-files.sha256');
+    fail('the files on disk are not exactly the files in bundle-files.sha256');
+  }
+
+  // The Node sidecar: compared with the COMMITTED pin record, not the report.
+  const node = report?.node;
+  const nodeVersion = node?.version;
+  const dist =
+    typeof nodeVersion === 'string' && NODE_VERSION.test(nodeVersion)
+      ? nodeDistFor(target, nodeVersion)
+      : undefined;
+  const sidecarFile = dist
+    ? `${sidecarName}-${target}${dist.exeSuffix}`
+    : undefined;
+  if (!trust.nodePins) {
+    fail('no committed Node pin record was supplied to compare against');
+  } else if (!dist) {
+    fail('the bundle names no usable Node version for this target');
+  } else {
+    const committed = Object.hasOwn(trust.nodePins.pins ?? {}, nodeVersion)
+      ? trust.nodePins.pins[nodeVersion]
+      : undefined;
+    const pinned =
+      committed && Object.hasOwn(committed, dist.distFile)
+        ? committed[dist.distFile]
+        : undefined;
+    if (!pinned) {
+      fail('the Node version or file is not in the committed pin table');
+    } else {
+      if (node.distFile !== dist.distFile || node.archiveSha256 !== pinned) {
+        fail('the bundle Node archive digest is not the committed pin');
+      }
+      if (!committedGpgVerified(trust.nodePins, nodeVersion)) {
+        fail(
+          'the committed pin record for this Node version is not gpg-verified',
+        );
+      }
+      const sidecarDigest = listed.get(sidecarFile);
+      if (sidecarDigest === undefined) {
+        fail('the sidecar binary for the target is not in bundle-files.sha256');
+      } else if (node.binarySha256 !== sidecarDigest) {
+        fail('the sidecar digest is not the digest the report records');
+      } else if (dist.pinnedIsBinary && sidecarDigest !== pinned) {
+        fail('the sidecar is not the pinned node.exe');
+      }
+    }
+  }
+  // The report's own claim stays a necessary (not sufficient) condition.
+  const reported = node?.pin;
+  if (
+    reported?.verification !== 'gpg-verified' ||
+    !Array.isArray(reported.signerFingerprints) ||
+    reported.signerFingerprints.length === 0
+  ) {
+    fail(
+      'the bundle was not built from a gpg-verified Node pin (run the bundler with --require-verified-pins)',
+    );
   }
 
   if (problems.length > 0) return { problems };
   return {
     problems,
+    verified: [...listed].map(([path, sha256]) => ({ path, sha256 })),
     overlay: {
       productName: displayName,
       identifier: bundleId,
       version,
       bundle: {
-        ...bundle,
+        externalBin: [sidecarName],
+        resources: { 'resources/': './' },
         createUpdaterArtifacts: true,
       },
     },
   };
+}
+
+/**
+ * Copy exactly the verified files into `<destDir>/binaries` and
+ * `<destDir>/resources`. Each file is read once, hashed again and written with
+ * `wx` (never over an existing path or through a symlink), so nothing that was
+ * not verified, and nothing that changed since, reaches the build.
+ */
+export function stageBundle(bundleDir, verified, destDir) {
+  for (const { path, sha256 } of verified) {
+    const from = join(bundleDir, ...path.split('/'));
+    const stat = lstatSync(from);
+    if (!stat.isFile()) throw new Error('not a regular file');
+    const bytes = readFileSync(from);
+    if (createHash('sha256').update(bytes).digest('hex') !== sha256) {
+      throw new Error('a file changed while being staged');
+    }
+    const to = join(destDir, ...path.split('/'));
+    mkdirSync(dirname(to), { recursive: true });
+    writeFileSync(to, bytes, {
+      flag: 'wx',
+      mode: stat.mode & 0o111 ? 0o755 : 0o644,
+    });
+  }
 }
 
 function parseArgs(argv) {
@@ -296,6 +560,12 @@ function parseArgs(argv) {
       case '--write-overlay':
         options.writeOverlay = value();
         break;
+      case '--node-pins':
+        options.nodePins = value();
+        break;
+      case '--stage':
+        options.stage = value();
+        break;
       default:
         throw new Error(`unknown option ${arg}`);
     }
@@ -324,8 +594,16 @@ export function main(argv, env, io = {}) {
     out('release preflight: usage error: no check selected\n');
     return 2;
   }
-  if (options.bundle && !options.target) {
-    out('release preflight: usage error: --bundle needs --target\n');
+  if (options.bundle && (!options.target || !options.nodePins)) {
+    out(
+      'release preflight: usage error: --bundle needs --target and --node-pins\n',
+    );
+    return 2;
+  }
+  if ((options.writeOverlay || options.stage) && !options.bundle) {
+    out(
+      'release preflight: usage error: --write-overlay and --stage need --bundle\n',
+    );
     return 2;
   }
 
@@ -342,10 +620,23 @@ export function main(argv, env, io = {}) {
     problems.push(...checkProductInputs(options.productDir, options.bridge));
   }
   let overlay;
+  let verified;
   if (options.bundle) {
-    const result = checkBundle(options.bundle, options.target);
+    let nodePins;
+    try {
+      nodePins = parseNodePins(readFileSync(options.nodePins, 'utf8'));
+    } catch {
+      problems.push('the committed Node pin table is unreadable');
+    }
+    const result = checkBundle(
+      options.bundle,
+      options.target,
+      {},
+      { nodePins },
+    );
     problems.push(...result.problems);
     overlay = result.overlay;
+    verified = result.verified;
   }
 
   if (problems.length > 0) {
@@ -357,14 +648,20 @@ export function main(argv, env, io = {}) {
     return 1;
   }
   if (options.writeOverlay) {
-    if (!overlay) {
-      out('release preflight: --write-overlay needs --bundle\n');
-      return 2;
-    }
     writeFileSync(
       options.writeOverlay,
       `${JSON.stringify(overlay, null, 2)}\n`,
     );
+  }
+  if (options.stage) {
+    try {
+      stageBundle(options.bundle, verified, options.stage);
+    } catch {
+      out(
+        'release preflight FAILED: the verified files could not be staged.\n',
+      );
+      return 1;
+    }
   }
   out('release preflight passed.\n');
   return 0;

@@ -5,10 +5,14 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import {
+  chmodSync,
+  existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -22,7 +26,9 @@ import {
   checkSecrets,
   checkUpdaterPubkey,
   main,
+  parseNodePins,
   REQUIRED_SECRETS,
+  stageBundle,
 } from './release-preflight.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -48,11 +54,40 @@ afterEach(() => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true });
 });
 
+const NODE_ARCHIVE = 'node-v26.8.1-darwin-arm64.tar.gz';
+const NODE_ARCHIVE_SHA = 'ab'.repeat(32);
+const NODE_BINARY = 'node-binary';
+const sha = (text) => createHash('sha256').update(text).digest('hex');
+
+/** A committed pin record in the shape `parseNodePins` returns. */
+function trustedPins(overrides = {}) {
+  return {
+    nodePins: {
+      pins: {
+        '26.8.1': {
+          [NODE_ARCHIVE]: NODE_ARCHIVE_SHA,
+          'win-x64/node.exe': sha(NODE_BINARY),
+        },
+      },
+      provenance: {
+        '26.8.1': {
+          verification: 'gpg-verified',
+          source: 'https://nodejs.org/dist/v26.8.1/SHASUMS256.txt',
+          retrieved: '2026-11-09T00:43:17Z',
+          shasumsSha256: 'cd'.repeat(32),
+          signerFingerprints: ['AB'.repeat(20)],
+        },
+      },
+      ...overrides,
+    },
+  };
+}
+
 function writeBundle(overrides = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'preflight-'));
   dirs.push(dir);
   const files = {
-    'binaries/acme-node-aarch64-apple-darwin': 'node',
+    'binaries/acme-node-aarch64-apple-darwin': NODE_BINARY,
     'resources/sidecar-manifest.json': '{}',
   };
   for (const [path, text] of Object.entries(files)) {
@@ -62,11 +97,16 @@ function writeBundle(overrides = {}) {
   const report = {
     target: TARGET,
     product: {
+      productId: 'acme',
       bundleId: 'org.acme.notes',
       displayName: 'Acme Notes',
       productVersion: '1.2.3',
     },
     node: {
+      version: '26.8.1',
+      distFile: NODE_ARCHIVE,
+      archiveSha256: NODE_ARCHIVE_SHA,
+      binarySha256: sha(NODE_BINARY),
       pin: {
         verification: 'gpg-verified',
         signerFingerprints: ['AB'.repeat(20)],
@@ -81,16 +121,18 @@ function writeBundle(overrides = {}) {
     },
   };
   const list = Object.entries(files)
-    .map(
-      ([path, text]) =>
-        `${createHash('sha256').update(text).digest('hex')}  ${path}`,
-    )
+    .map(([path, text]) => `${sha(text)}  ${path}`)
     .join('\n');
   writeFileSync(join(dir, 'bundle-report.json'), JSON.stringify(report));
   writeFileSync(join(dir, 'tauri.bundle.json'), JSON.stringify(tauriBundle));
   writeFileSync(join(dir, 'bundle-files.sha256'), `${list}\n`);
   return dir;
 }
+
+const chmodExec = (path) => chmodSync(path, 0o755);
+
+const check = (dir, trust = trustedPins(), target = TARGET) =>
+  checkBundle(dir, target, {}, trust);
 
 describe('secrets', () => {
   it('passes when every secret is present', () => {
@@ -151,7 +193,7 @@ describe('product inputs', () => {
 
 describe('bundle', () => {
   it('accepts a verified, intact bundle and builds the overlay from it', () => {
-    const { problems, overlay } = checkBundle(writeBundle(), TARGET);
+    const { problems, overlay } = check(writeBundle());
     assert.deepEqual(problems, []);
     assert.equal(overlay.productName, 'Acme Notes');
     assert.equal(overlay.identifier, 'org.acme.notes');
@@ -166,7 +208,7 @@ describe('bundle', () => {
         node: { pin: { verification: 'unverified', signerFingerprints: [] } },
       },
     });
-    const { problems, overlay } = checkBundle(dir, TARGET);
+    const { problems, overlay } = check(dir);
     assert.equal(overlay, undefined);
     assert.ok(problems.some((p) => p.includes('gpg-verified')));
   });
@@ -177,7 +219,7 @@ describe('bundle', () => {
         node: { pin: { verification: 'gpg-verified', signerFingerprints: [] } },
       },
     });
-    assert.ok(checkBundle(dir, TARGET).problems.length > 0);
+    assert.ok(check(dir).problems.length > 0);
   });
 
   it('refuses placeholder and empty product identity', () => {
@@ -197,51 +239,457 @@ describe('bundle', () => {
       { bundleId: 'org.acme.notes', displayName: '', productVersion: '1' },
       { bundleId: 'notadomain', displayName: 'A', productVersion: '1' },
     ]) {
-      const { problems } = checkBundle(
-        writeBundle({ report: { product } }),
-        TARGET,
-      );
+      product.productId = 'acme';
+      product.productVersion = '1.0.0';
+      const { problems } = check(writeBundle({ report: { product } }));
       assert.ok(problems.length > 0, JSON.stringify(product));
     }
   });
 
   it('refuses a bundle for another target', () => {
     const dir = writeBundle({ report: { target: 'x86_64-apple-darwin' } });
-    assert.ok(checkBundle(dir, TARGET).problems.length > 0);
+    assert.ok(check(dir).problems.length > 0);
   });
 
   it('refuses a file that changed after the digest list was written', () => {
     const dir = writeBundle();
     writeFileSync(join(dir, 'resources/sidecar-manifest.json'), '{"x":1}');
-    const { problems } = checkBundle(dir, TARGET);
+    const { problems } = check(dir);
     assert.ok(problems.some((p) => p.includes('differs')));
   });
 
   it('refuses a missing file, an unsafe path and a missing sidecar', () => {
     const dir = writeBundle();
     rmSync(join(dir, 'resources/sidecar-manifest.json'));
-    assert.ok(checkBundle(dir, TARGET).problems.length > 0);
+    assert.ok(check(dir).problems.length > 0);
 
     const unsafe = writeBundle();
     writeFileSync(
       join(unsafe, 'bundle-files.sha256'),
       `${'0'.repeat(64)}  resources/../../x\n`,
     );
-    assert.ok(checkBundle(unsafe, TARGET).problems.length > 0);
+    assert.ok(check(unsafe).problems.length > 0);
 
     const bare = writeBundle();
     writeFileSync(join(bare, 'bundle-files.sha256'), '');
-    assert.ok(checkBundle(bare, TARGET).problems.length > 0);
+    assert.ok(check(bare).problems.length > 0);
   });
 
   it('refuses an incomplete bundle directory and a wrong tauri fragment', () => {
-    assert.ok(
-      checkBundle(join(tmpdir(), 'no-such-bundle'), TARGET).problems.length > 0,
-    );
+    assert.ok(check(join(tmpdir(), 'no-such-bundle')).problems.length > 0);
     const dir = writeBundle({
       tauriBundle: { bundle: { externalBin: ['x'] } },
     });
-    assert.ok(checkBundle(dir, TARGET).problems.length > 0);
+    assert.ok(check(dir).problems.length > 0);
+  });
+});
+
+describe('bundle: closed tauri.bundle.json (overlay allowlist)', () => {
+  const base = () => ({
+    externalBin: ['binaries/acme-node'],
+    resources: { 'resources/': './' },
+  });
+  const refused = (tauriBundle) => {
+    const { problems, overlay } = check(writeBundle({ tauriBundle }));
+    assert.equal(overlay, undefined, JSON.stringify(tauriBundle));
+    assert.ok(
+      problems.some((p) => p.includes('tauri.bundle.json')),
+      JSON.stringify(tauriBundle),
+    );
+  };
+
+  it('refuses a Windows signCommand, an NSIS template and macOS files', () => {
+    refused({ bundle: { ...base(), windows: { signCommand: 'curl x | sh' } } });
+    refused({
+      bundle: { ...base(), windows: { nsis: { template: '!system "x"' } } },
+    });
+    refused({
+      bundle: { ...base(), macOS: { files: { 'Contents/x': '/etc/passwd' } } },
+    });
+    refused({
+      bundle: {
+        ...base(),
+        linux: { deb: { files: { '/usr/bin/x': '../../secret' } } },
+      },
+    });
+    refused({
+      bundle: {
+        ...base(),
+        macOS: { hardenedRuntime: false, entitlements: 'x' },
+      },
+    });
+  });
+
+  it('refuses extra keys at the top level and inside resources', () => {
+    refused({ ...{ bundle: base() }, build: { beforeBuildCommand: 'x' } });
+    refused({
+      bundle: { ...base(), resources: { 'resources/': './', '/etc': 'x' } },
+    });
+    refused({ bundle: { ...base(), createUpdaterArtifacts: false } });
+    refused({ bundle: { ...base(), active: true } });
+  });
+
+  it('refuses prototype keys and a changed sidecar or resources shape', () => {
+    refused(JSON.parse('{"__proto__":{"x":1},"bundle":{}}'));
+    const withProto = JSON.parse(
+      '{"bundle":{"externalBin":["binaries/acme-node"],"resources":{"resources/":"./"},"__proto__":{"a":1}}}',
+    );
+    refused(withProto);
+    refused({
+      bundle: { ...base(), externalBin: ['binaries/acme-node', 'x'] },
+    });
+    refused({ bundle: { ...base(), externalBin: ['binaries/other-node'] } });
+    refused({ bundle: { ...base(), externalBin: ['/usr/bin/node'] } });
+    refused({ bundle: { ...base(), resources: { 'resources/': '../' } } });
+    refused({ bundle: { ...base(), resources: ['resources/'] } });
+  });
+
+  it('builds the overlay from the allowlist alone', () => {
+    const { overlay } = check(writeBundle());
+    assert.deepEqual(overlay.bundle, {
+      externalBin: ['binaries/acme-node'],
+      resources: { 'resources/': './' },
+      createUpdaterArtifacts: true,
+    });
+    assert.deepEqual(Object.keys(overlay).sort(), [
+      'bundle',
+      'identifier',
+      'productName',
+      'version',
+    ]);
+  });
+
+  it('refuses unsafe product names and versions', () => {
+    for (const displayName of [
+      '../Evil',
+      'A/B',
+      ' A',
+      '.hidden',
+      'A\nB',
+      'A:B',
+    ]) {
+      const product = {
+        productId: 'acme',
+        bundleId: 'org.acme.notes',
+        displayName,
+        productVersion: '1.0.0',
+      };
+      assert.ok(
+        check(writeBundle({ report: { product } })).problems.length > 0,
+      );
+    }
+    for (const productVersion of ['1', '1.0', '../1.0.0', '1.0.0 x', '']) {
+      const product = {
+        productId: 'acme',
+        bundleId: 'org.acme.notes',
+        displayName: 'A',
+        productVersion,
+      };
+      assert.ok(
+        check(writeBundle({ report: { product } })).problems.length > 0,
+      );
+    }
+  });
+});
+
+describe('bundle: every file on disk is verified', () => {
+  const treeProblem = (dir) => {
+    const { problems, overlay } = check(dir);
+    assert.equal(overlay, undefined);
+    return problems;
+  };
+
+  it('refuses a file the digest list does not name', () => {
+    const dir = writeBundle();
+    writeFileSync(join(dir, 'resources/extra.js'), 'evil');
+    assert.ok(treeProblem(dir).some((p) => p.includes('exactly the files')));
+  });
+
+  it('refuses an unlisted file in a nested directory', () => {
+    const dir = writeBundle();
+    mkdirSync(join(dir, 'binaries/sub'));
+    writeFileSync(join(dir, 'binaries/sub/x'), 'evil');
+    assert.ok(treeProblem(dir).length > 0);
+  });
+
+  it('refuses a symlink, to a file or a directory, anywhere in the tree', () => {
+    const toFile = writeBundle();
+    symlinkSync('/etc/hosts', join(toFile, 'resources/hosts'));
+    assert.ok(treeProblem(toFile).some((p) => p.includes('symlink')));
+
+    const toDir = writeBundle();
+    symlinkSync('/etc', join(toDir, 'resources/etc'));
+    assert.ok(treeProblem(toDir).some((p) => p.includes('symlink')));
+
+    const nested = writeBundle();
+    mkdirSync(join(nested, 'resources/a'));
+    symlinkSync('../sidecar-manifest.json', join(nested, 'resources/a/b'));
+    assert.ok(treeProblem(nested).some((p) => p.includes('symlink')));
+  });
+
+  it('refuses a listed file replaced by a symlink with the same content', () => {
+    const dir = writeBundle();
+    writeFileSync(join(dir, 'resources/real.json'), '{}');
+    rmSync(join(dir, 'resources/sidecar-manifest.json'));
+    symlinkSync('real.json', join(dir, 'resources/sidecar-manifest.json'));
+    assert.ok(treeProblem(dir).length > 0);
+  });
+
+  it('refuses a symlinked binaries/ or resources/ root', () => {
+    const dir = writeBundle();
+    const real = mkdtempSync(join(tmpdir(), 'preflight-real-'));
+    dirs.push(real);
+    mkdirSync(join(real, 'resources'));
+    writeFileSync(join(real, 'resources/sidecar-manifest.json'), '{}');
+    rmSync(join(dir, 'resources'), { recursive: true });
+    symlinkSync(join(real, 'resources'), join(dir, 'resources'));
+    assert.ok(treeProblem(dir).length > 0);
+  });
+
+  it('refuses a digest-list entry that is missing on disk', () => {
+    const dir = writeBundle();
+    rmSync(join(dir, 'resources/sidecar-manifest.json'));
+    assert.ok(treeProblem(dir).length > 0);
+  });
+
+  it('refuses a duplicate digest-list line', () => {
+    const dir = writeBundle();
+    const line = `${sha('{}')}  resources/sidecar-manifest.json\n`;
+    const path = join(dir, 'bundle-files.sha256');
+    writeFileSync(path, readFileSync(path, 'utf8') + line);
+    assert.ok(treeProblem(dir).some((p) => p.includes('duplicate')));
+  });
+});
+
+describe('bundle: the Node sidecar against the committed pin', () => {
+  const nodeReport = (changes) => ({
+    node: {
+      version: '26.8.1',
+      distFile: NODE_ARCHIVE,
+      archiveSha256: NODE_ARCHIVE_SHA,
+      binarySha256: sha(NODE_BINARY),
+      pin: {
+        verification: 'gpg-verified',
+        signerFingerprints: ['AB'.repeat(20)],
+      },
+      ...changes,
+    },
+  });
+
+  it('ignores a self-attested gpg-verified claim when the committed record is not', () => {
+    const trust = trustedPins({
+      provenance: {
+        '26.8.1': {
+          verification: 'unverified',
+          source: 'x',
+          retrieved: 'x',
+          shasumsSha256: 'cd'.repeat(32),
+          signerFingerprints: [],
+        },
+      },
+    });
+    const { problems } = check(writeBundle(), trust);
+    assert.ok(problems.some((p) => p.includes('committed pin record')));
+  });
+
+  it('refuses a committed record that claims gpg without fingerprints', () => {
+    const trust = trustedPins();
+    trust.nodePins.provenance['26.8.1'].signerFingerprints = [];
+    assert.ok(check(writeBundle(), trust).problems.length > 0);
+    const bad = trustedPins();
+    bad.nodePins.provenance['26.8.1'].signerFingerprints = [
+      'not-a-fingerprint',
+    ];
+    assert.ok(check(writeBundle(), bad).problems.length > 0);
+  });
+
+  it('refuses an archive digest that is not the committed pin', () => {
+    const dir = writeBundle({
+      report: nodeReport({ archiveSha256: 'ee'.repeat(32) }),
+    });
+    assert.ok(
+      check(dir).problems.some((p) => p.includes('not the committed pin')),
+    );
+  });
+
+  it('refuses a version, dist file or target the pin table does not hold', () => {
+    for (const changes of [
+      { version: '99.0.0' },
+      { distFile: 'node-v26.8.1-darwin-x64.tar.gz' },
+      { version: '__proto__' },
+      { version: '26.8.1/../x' },
+    ]) {
+      assert.ok(
+        check(writeBundle({ report: nodeReport(changes) })).problems.length > 0,
+        JSON.stringify(changes),
+      );
+    }
+    // an empty pin table: nothing is accepted
+    assert.ok(
+      check(writeBundle(), trustedPins({ pins: {} })).problems.some((p) =>
+        p.includes('committed pin table'),
+      ),
+    );
+  });
+
+  it('refuses to run without a committed record at all', () => {
+    const { problems } = checkBundle(writeBundle(), TARGET, {}, {});
+    assert.ok(problems.some((p) => p.includes('committed Node pin record')));
+  });
+
+  it('refuses a swapped Node archive whose digests were recomputed', () => {
+    const dir = writeBundle();
+    writeFileSync(join(dir, 'binaries/acme-node-aarch64-apple-darwin'), 'evil');
+    writeFileSync(
+      join(dir, 'bundle-files.sha256'),
+      `${sha('evil')}  binaries/acme-node-aarch64-apple-darwin\n${sha('{}')}  resources/sidecar-manifest.json\n`,
+    );
+    const report = JSON.parse(
+      readFileSync(join(dir, 'bundle-report.json'), 'utf8'),
+    );
+    report.node.binarySha256 = sha('evil');
+    report.node.archiveSha256 = sha('evil');
+    writeFileSync(join(dir, 'bundle-report.json'), JSON.stringify(report));
+    assert.ok(check(dir).problems.some((p) => p.includes('committed pin')));
+  });
+
+  // KNOWN LIMIT, documented in the README: on macOS and Linux the committed
+  // table pins the .tar.gz archive, not the extracted binary, and the job
+  // that extracts it is the untrusted one. A swapped binary that keeps the
+  // genuine archive digest in its report therefore passes. Windows does not
+  // have this gap (next test). This test fails the day the gap is closed.
+  it('does not prove an extracted tar.gz binary (known limit)', () => {
+    const dir = writeBundle();
+    writeFileSync(join(dir, 'binaries/acme-node-aarch64-apple-darwin'), 'evil');
+    writeFileSync(
+      join(dir, 'bundle-files.sha256'),
+      `${sha('evil')}  binaries/acme-node-aarch64-apple-darwin\n${sha('{}')}  resources/sidecar-manifest.json\n`,
+    );
+    const report = JSON.parse(
+      readFileSync(join(dir, 'bundle-report.json'), 'utf8'),
+    );
+    report.node.binarySha256 = sha('evil');
+    writeFileSync(join(dir, 'bundle-report.json'), JSON.stringify(report));
+    assert.deepEqual(check(dir).problems, []);
+  });
+
+  it('proves the binary itself on Windows, where node.exe is the pinned file', () => {
+    const files = {
+      'binaries/acme-node-x86_64-pc-windows-msvc.exe': NODE_BINARY,
+      'resources/sidecar-manifest.json': '{}',
+    };
+    const win = (binary) => {
+      const dir = writeBundle({
+        report: {
+          target: 'x86_64-pc-windows-msvc',
+          node: {
+            version: '26.8.1',
+            distFile: 'win-x64/node.exe',
+            archiveSha256: sha(NODE_BINARY),
+            binarySha256: sha(binary),
+            pin: {
+              verification: 'gpg-verified',
+              signerFingerprints: ['AB'.repeat(20)],
+            },
+          },
+        },
+      });
+      rmSync(join(dir, 'binaries'), { recursive: true });
+      mkdirSync(join(dir, 'binaries'));
+      writeFileSync(
+        join(dir, 'binaries/acme-node-x86_64-pc-windows-msvc.exe'),
+        binary,
+      );
+      writeFileSync(
+        join(dir, 'bundle-files.sha256'),
+        `${sha(binary)}  binaries/acme-node-x86_64-pc-windows-msvc.exe\n${sha(files['resources/sidecar-manifest.json'])}  resources/sidecar-manifest.json\n`,
+      );
+      return check(dir, trustedPins(), 'x86_64-pc-windows-msvc');
+    };
+    assert.deepEqual(win(NODE_BINARY).problems, []);
+    assert.ok(win('evil').problems.some((p) => p.includes('pinned node.exe')));
+  });
+});
+
+describe('parseNodePins', () => {
+  it('reads the committed pin table and provenance', () => {
+    const source = readFileSync(
+      join(here, '..', '..', 'src', 'bundler', 'node-pins.ts'),
+      'utf8',
+    );
+    const { pins, provenance } = parseNodePins(source);
+    const versions = Object.keys(pins);
+    assert.ok(versions.length > 0);
+    for (const version of versions) {
+      assert.ok(Object.keys(pins[version]).length > 0);
+      assert.ok(provenance[version]);
+    }
+  });
+
+  it('fails closed on the committed pin record while it is unverified', () => {
+    const source = readFileSync(
+      join(here, '..', '..', 'src', 'bundler', 'node-pins.ts'),
+      'utf8',
+    );
+    const trust = { nodePins: parseNodePins(source) };
+    const verified = Object.values(trust.nodePins.provenance).some(
+      (record) => record.verification === 'gpg-verified',
+    );
+    const { problems } = check(writeBundle(), trust);
+    assert.ok(problems.length > 0);
+    assert.equal(
+      problems.some((p) => p.includes('committed pin record')),
+      !verified,
+    );
+  });
+
+  it('throws on a missing block and on anything that is not plain data', () => {
+    assert.throws(() => parseNodePins('const x = 1;'));
+    assert.throws(() =>
+      parseNodePins(
+        "// BEGIN GENERATED PINS (x)\nconst NODE_PINS_DATA: NodePinTable = {\n  '1.0.0': { 'f': fetch('x') },\n};\n// END GENERATED PINS",
+      ),
+    );
+    assert.throws(() =>
+      parseNodePins(
+        "// BEGIN GENERATED PINS (x)\nconst NODE_PINS_DATA: NodePinTable = {\n  '1.0.0': { 'f': 'nothex' },\n};\nconst NODE_PIN_PROVENANCE_DATA: NodePinProvenanceTable = {\n};\n// END GENERATED PINS",
+      ),
+    );
+  });
+});
+
+describe('stageBundle', () => {
+  it('copies exactly the verified files and keeps the executable bit', () => {
+    const dir = writeBundle();
+    const { verified } = check(dir);
+    chmodExec(join(dir, 'binaries/acme-node-aarch64-apple-darwin'));
+    writeFileSync(join(dir, 'resources/unlisted'), 'x');
+    const dest = mkdtempSync(join(tmpdir(), 'stage-'));
+    dirs.push(dest);
+    stageBundle(dir, verified, dest);
+    assert.equal(
+      readFileSync(join(dest, 'resources/sidecar-manifest.json'), 'utf8'),
+      '{}',
+    );
+    assert.equal(existsSync(join(dest, 'resources/unlisted')), false);
+    assert.ok(
+      lstatSync(join(dest, 'binaries/acme-node-aarch64-apple-darwin')).mode &
+        0o111,
+    );
+  });
+
+  it('refuses a file that changed after verification and an existing target', () => {
+    const dir = writeBundle();
+    const { verified } = check(dir);
+    const dest = mkdtempSync(join(tmpdir(), 'stage-'));
+    dirs.push(dest);
+    writeFileSync(join(dir, 'resources/sidecar-manifest.json'), '{"x":1}');
+    assert.throws(() => stageBundle(dir, verified, dest));
+
+    writeFileSync(join(dir, 'resources/sidecar-manifest.json'), '{}');
+    mkdirSync(join(dest, 'resources'));
+    writeFileSync(join(dest, 'resources/sidecar-manifest.json'), 'old');
+    assert.throws(() => stageBundle(dir, verified, dest));
   });
 });
 
@@ -272,9 +720,82 @@ describe('main', () => {
     assert.equal(run(['--config', join(tmpdir(), 'nope.json')]).code, 1);
   });
 
-  it('passes and writes the overlay for a complete input set', () => {
+  const pinsFile = () => {
+    const dir = mkdtempSync(join(tmpdir(), 'pins-'));
+    dirs.push(dir);
+    const path = join(dir, 'node-pins.ts');
+    writeFileSync(
+      path,
+      `// BEGIN GENERATED PINS (scripts/update-node-pins.mjs)
+const NODE_PINS_DATA: NodePinTable = {
+  '26.8.1': {
+    '${NODE_ARCHIVE}':
+      '${NODE_ARCHIVE_SHA}',
+  },
+};
+const NODE_PIN_PROVENANCE_DATA: NodePinProvenanceTable = {
+  '26.8.1': {
+    verification: 'gpg-verified',
+    source: 'https://nodejs.org/dist/v26.8.1/SHASUMS256.txt',
+    retrieved: '2026-11-09T00:43:17Z',
+    shasumsSha256:
+      '${'cd'.repeat(32)}',
+    signerFingerprints: [
+      '${'AB'.repeat(20)}',
+    ],
+  },
+};
+// END GENERATED PINS
+`,
+    );
+    return path;
+  };
+
+  it('needs the committed pin table with a bundle', () => {
+    assert.equal(run(['--bundle', 'x', '--target', TARGET]).code, 2);
+    assert.equal(run(['--stage', 'x']).code, 2);
+  });
+
+  it('fails closed when the committed pin table cannot be read', () => {
+    const { code, text } = run([
+      '--bundle',
+      writeBundle(),
+      '--target',
+      TARGET,
+      '--node-pins',
+      join(tmpdir(), 'no-such-pins.ts'),
+    ]);
+    assert.equal(code, 1);
+    assert.match(text, /pin table is unreadable/);
+  });
+
+  it('passes, writes the overlay and stages only verified files', () => {
     const dir = writeBundle();
+    writeFileSync(join(dir, 'resources/unlisted'), 'x');
     const overlay = join(dir, 'overlay.json');
+    const stage = mkdtempSync(join(tmpdir(), 'stage-'));
+    dirs.push(stage);
+    // the unlisted file must fail it
+    const bad = run(
+      [
+        '--bundle',
+        dir,
+        '--target',
+        TARGET,
+        '--node-pins',
+        pinsFile(),
+        '--write-overlay',
+        overlay,
+        '--stage',
+        stage,
+      ],
+      secrets(),
+    );
+    assert.equal(bad.code, 1);
+    assert.equal(existsSync(overlay), false);
+    assert.equal(existsSync(join(stage, 'resources')), false);
+
+    rmSync(join(dir, 'resources/unlisted'));
     const { code } = run(
       [
         '--secrets',
@@ -282,8 +803,12 @@ describe('main', () => {
         dir,
         '--target',
         TARGET,
+        '--node-pins',
+        pinsFile(),
         '--write-overlay',
         overlay,
+        '--stage',
+        stage,
       ],
       secrets(),
     );
@@ -291,6 +816,10 @@ describe('main', () => {
     assert.equal(
       JSON.parse(readFileSync(overlay, 'utf8')).identifier,
       'org.acme.notes',
+    );
+    assert.equal(
+      readFileSync(join(stage, 'resources/sidecar-manifest.json'), 'utf8'),
+      '{}',
     );
   });
 
@@ -304,6 +833,8 @@ describe('main', () => {
         dir,
         '--target',
         TARGET,
+        '--node-pins',
+        pinsFile(),
         '--write-overlay',
         overlay,
       ],
