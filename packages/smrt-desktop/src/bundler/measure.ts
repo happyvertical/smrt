@@ -4,10 +4,11 @@
  * "Cold start" is the wall time from `spawn()` of the bundled Node sidecar to
  * the first 2xx answer of its health route on a free loopback port. It is a
  * NEW PROCESS, not a cold OS file cache (dropping caches needs root). Two
- * series are measured: `firstRun` (a new data directory every run, a fresh
- * copy of the prepared template when one is given) and `warm` (one data
- * directory reused after an untimed priming run, a normal relaunch). Schema
- * creation is NOT included: SMRT apps never create tables at run time.
+ * series are measured: `firstRun` (a new, empty data directory every run) and `warm` (one data
+ * directory reused after an untimed priming run, a normal relaunch). Every
+ * first run starts from an EMPTY data directory, so it includes the app
+ * creating its own schema on first start (smrt#4835); the priming run of the
+ * warm series does that once, untimed.
  *
  * Everything that touches the machine is a seam (`MeasureSeams`: spawn, the
  * HTTP probe, a free port, the clock, sleeping, data directories), so the
@@ -68,8 +69,8 @@ export interface MeasureSeams {
   /** Monotonic milliseconds. */
   now(): number;
   sleep(ms: number): Promise<void>;
-  /** A fresh private directory, pre-filled from `template` when given. */
-  makeDataDir(template?: string): Promise<DataDirectory>;
+  /** A fresh, empty, private directory. */
+  makeDataDir(): Promise<DataDirectory>;
   /** Allocated bytes under a directory (`blocks * 512`); POSIX only. */
   diskUsage?(root: string): Promise<number | undefined>;
 }
@@ -85,11 +86,6 @@ export interface MeasureRequest {
   /** Sanitised base environment (no `NODE_OPTIONS`, no secrets). */
   readonly baseEnv: Readonly<Record<string, string>>;
   readonly files: { readonly count: number; readonly bytes: number };
-  /**
-   * Prepared data directory copied for every run. SMRT apps do not create
-   * their schema at run time, so this is how a measurable start gets one.
-   */
-  readonly dataTemplate?: string;
   /** Timed runs per series. Default 3. */
   readonly runs?: number;
   /** Overall time allowed for one start. Default 60 000 ms. */
@@ -258,7 +254,7 @@ export async function measureBundle(
 
   const firstRun: number[] = [];
   for (let i = 0; i < runs; i += 1) {
-    const dir = await seams.makeDataDir(request.dataTemplate);
+    const dir = await seams.makeDataDir();
     try {
       firstRun.push(await timeOneStart(request, seams, dir.path));
     } finally {
@@ -267,7 +263,7 @@ export async function measureBundle(
   }
 
   const warm: number[] = [];
-  const shared = await seams.makeDataDir(request.dataTemplate);
+  const shared = await seams.makeDataDir();
   try {
     await timeOneStart(request, seams, shared.path); // priming run, not timed
     for (let i = 0; i < runs; i += 1) {

@@ -367,15 +367,11 @@ export function createNodeMeasureSeams(): MeasureSeams {
     },
     now: () => performance.now(),
     sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
-    async makeDataDir(template?: string): Promise<DataDirectory> {
+    async makeDataDir(): Promise<DataDirectory> {
       // The runtime refuses a data path with a symlinked component, and
       // `/tmp` and `/var` are symlinks on macOS: use the real directory.
       const base = await fsp.realpath(tmpdir());
       const path = await fsp.mkdtemp(join(base, 'smrt-desktop-measure-'));
-      if (template !== undefined) {
-        await fsp.cp(template, path, { recursive: true });
-        await fsp.chmod(path, 0o700);
-      }
       return {
         path,
         dispose: () => fsp.rm(path, { recursive: true, force: true }),
@@ -428,9 +424,6 @@ export function createBundleSeams(
           sidecar: input.sidecar,
           baseEnv: buildChildEnv(input.baseEnv, {}, { platform }),
           files: input.files,
-          ...(input.dataTemplate === undefined
-            ? {}
-            : { dataTemplate: input.dataTemplate }),
         },
         createNodeMeasureSeams(),
       ),

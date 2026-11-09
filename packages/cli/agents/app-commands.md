@@ -72,7 +72,7 @@ Agent docs (#4878): `install` runs `docs:agents`, `dev` refreshes a missing or s
   `windows-local-profile-unsupported`. A new command that creates a state root
   or touches the data root must add itself to the gate and to
   `WINDOWS_LOCAL_REFUSED_OPERATIONS`.
-- **No runtime schema**: migrations run only through `smrt db:migrate`.
+- **Operator commands never create schema in-process**: `smrt app` migrates only through `smrt db:migrate` (its runtime calls leave `createSchema` off). The running app (`createSmrtSvelteKitRuntime`, local profile) creates its own schema on first start (smrt#4835, app-runtime README "First start"); deployed profiles never do.
 - **Output**: success JSON on stdout; failure is one stderr line
   `{schemaVersion:1,status:'error',code:'operation-failed',message,recovery,secretValuesIncluded:false}`
   plus `runtimeCode` when a `LocalRuntimeError` carries one

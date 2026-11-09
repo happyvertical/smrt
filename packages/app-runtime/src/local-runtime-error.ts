@@ -18,6 +18,7 @@ export type LocalRuntimeErrorCode =
   | 'owner_tenant_conflict'
   | 'owner_identity_conflict'
   | 'owner_unavailable'
+  | 'schema_creation_failed'
   | 'unsafe_public_exposure';
 
 /** Stable, secret-free local-runtime failure. */

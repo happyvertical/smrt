@@ -15,6 +15,7 @@ const { runtime, bootstrap, diagnostics } =
   await initializeLocalApplicationRuntime({
     appId: 'my-app',
     sourceRoot: process.cwd(),
+    createSchema: true, // create the framework schema on first start
     prepareDatabase: runApplicationMigrations,
   });
 
@@ -22,16 +23,68 @@ const { runtime, bootstrap, diagnostics } =
 // returned once and only its HMAC is persisted.
 ```
 
-Application migrations run through the explicit `prepareDatabase` hook while
-the runtime holds the root lease. A rejected migration is normalized into a
-`LocalRuntimeError` with the stable `migration_failed` code and the fixed,
-secret-free message exported as `MIGRATION_FAILED_MESSAGE`: "The application
-migration step failed; run pnpm app:setup and inspect the private migration
-logs." The migration driver's own text — a likely carrier of a connection
-string, credential, path, or environment value — is never surfaced; it is kept
-as a non-enumerable `cause` for private logs. Startup releases the database
-handle and the initialization lease, so the same application root and data
-directory remain retryable once the migration is fixed.
+### First start: the app sets up its own database
+
+With `createSchema: true` (the default of `createSmrtSvelteKitRuntime`; off by
+default for a direct `initializeLocalApplicationRuntime` call, so operator
+tooling that migrates through `smrt db:migrate` is unchanged), the local
+runtime creates the schema on the first start of an empty data directory
+instead of exiting with `DB_SCHEMA_MISSING` (smrt#4835). It happens after
+custody has passed and inside the initialization lock, so two starts cannot
+race (the SvelteKit runtime also holds the writer lease), and it uses the
+framework's own migration path (`migrateSmrtSchemas` from
+`@happyvertical/smrt-core/migrations`, recorded in `_smrt_schema_migrations`),
+not a second schema creator. A second start finds nothing to apply. Upgrades
+take the same path on every start. Deployed profiles (`self-hosted`, `cloud`)
+never create schema: they keep failing with `DB_SCHEMA_MISSING` and migrate
+through `smrt db:migrate`.
+
+```ts
+export const runtime = createSmrtSvelteKitRuntime({
+  // Runs on EVERY start, after the framework schema, inside the same lock and
+  // transaction. Must be idempotent; use it to seed or add the app's own steps.
+  prepareDatabase: async (db, { firstRun, paths, migrateSchemas }) => {
+    await db.query('CREATE TABLE IF NOT EXISTS notes (id TEXT PRIMARY KEY)');
+    if (firstRun) await seedWelcomeNote(db);
+  },
+});
+```
+
+`prepareDatabase(db, context)`: `context.db` is the same handle as `db` (on a
+first run, the transaction handle), `context.profile`, `context.paths` (the
+resolved local paths, `null` on a deployed profile), `context.firstRun` (true
+only on the start that found no framework schema and no earlier runtime
+initialization) and `context.migrateSchemas()` (the framework runner bound to
+`db`; creates missing tables, and reshaping an existing table remains
+`smrt db:migrate`). A hook that only needs the database may take `(db)`.
+
+**Atomicity.** On a first run the framework step and `prepareDatabase` run in
+ONE transaction. If either fails the transaction rolls back and, because this
+attempt created the database file, the file and its `-wal`/`-shm`/`-journal`
+side files are removed: no half-created database is left, and the same data
+directory is retried as a first run. The private data directory, root marker
+and application secret the attempt created stay (they hold no application
+data and a retry reuses them). A crash mid-run is rolled back by SQLite on
+the next open. On later starts (an upgrade) the framework batch is a single
+atomic DDL transaction on the database, so a failed batch changes no table;
+`prepareDatabase` then runs in its own transaction and rolls back on failure.
+A failed upgrade batch leaves a `failed` row in `_smrt_schema_migrations`, as
+`smrt db:migrate` does; a framework upgrade that already committed is kept if
+the application's step then fails.
+
+**Failure codes.** Both surface as `LocalRuntimeError` with fixed, path-free,
+SQL-free text; the original error is a non-enumerable `cause` for private logs.
+
+| Code | When | Message constant |
+| --- | --- | --- |
+| `schema_creation_failed` | the framework step (creation or upgrade) failed | `SCHEMA_CREATION_FAILED_MESSAGE` |
+| `migration_failed` | the application's `prepareDatabase` rejected | `MIGRATION_FAILED_MESSAGE` |
+
+Startup fails, the process exits non-zero, and the code and message are in the
+process output (the error is thrown from `init`), which is what the desktop
+wrapper reads on a failed sidecar start. Startup releases the database handle,
+the initialization lease and the writer lease, so the same application root and
+data directory remain retryable once the cause is fixed.
 
 The path resolver selects the current user's OS application-data directory
 (`~/Library/Application Support` on macOS, `%LOCALAPPDATA%` on Windows, or
@@ -779,7 +832,9 @@ the root entry never imports it.
 import { createSmrtSvelteKitRuntime } from '@happyvertical/smrt-app-runtime/sveltekit';
 
 export const runtime = createSmrtSvelteKitRuntime({
-  prepareDatabase: runApplicationMigrations, // optional, idempotent
+  // Optional, idempotent, runs on every start after the framework schema:
+  // `(db, { firstRun, paths, migrateSchemas })`. See "First start".
+  prepareDatabase: runApplicationMigrations,
 });
 export const { handle, init } = runtime;
 ```

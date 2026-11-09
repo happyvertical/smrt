@@ -1281,6 +1281,38 @@ describe('local SvelteKit runtime', () => {
     await runHandle(runtime.handle, testEvent('http://127.0.0.1/'));
   });
 
+  it.each([
+    [undefined, true],
+    [true, true],
+    [false, false],
+  ] as const)('forwards createSchema %s to the local runtime as %s', async (option, expected) => {
+    const initializeLocal = vi.fn(async () => {
+      throw new Error('stop after capturing the options');
+    });
+    const prepareDatabase = vi.fn(async () => undefined);
+    const runtime = composeSmrtSvelteKitRuntime(
+      {
+        appId: 'schema-app',
+        runtime: LOCAL,
+        env: { NODE_ENV: 'development' },
+        acquireWriterLease: false,
+        enableTenancy: false,
+        prepareDatabase,
+        ...(option === undefined ? {} : { createSchema: option }),
+      },
+      { initializeLocal: initializeLocal as never },
+    );
+    await expect(Promise.resolve(runtime.init())).rejects.toThrow(
+      'stop after capturing',
+    );
+    const call = (initializeLocal.mock.calls[0] as unknown[])[0] as {
+      createSchema: boolean;
+      prepareDatabase: unknown;
+    };
+    expect(call.createSchema).toBe(expected);
+    expect(call.prepareDatabase).toBe(prepareDatabase);
+  });
+
   it('requires a loopback bind host for local production startup', async () => {
     const release = vi.fn();
     const missingHost = await localRuntime('nohost', {
@@ -1418,6 +1450,58 @@ describe('local SvelteKit runtime', () => {
 describe('deployed SvelteKit runtime', () => {
   const SELF_HOSTED = resolveApplicationRuntime({ profile: 'self-hosted' });
   const CLOUD = resolveApplicationRuntime({ profile: 'cloud' });
+
+  it('never creates schema on a deployed profile and hands prepareDatabase a deployed context', async () => {
+    const initializeLocal = vi.fn();
+    const initializeDeployed = vi.fn(async () => {
+      throw new Error('stop after capturing the options');
+    });
+    const seen: unknown[] = [];
+    const runtime = composeSmrtSvelteKitRuntime(
+      {
+        appId: 'deployed-app',
+        runtime: CLOUD,
+        env: { DATABASE_URL: 'postgres://u:p@db.example/app' },
+        providerReadiness: () => async () => undefined,
+        enableTenancy: false,
+        createSchema: true,
+        prepareDatabase: async (db, context) => {
+          seen.push({ db, context });
+        },
+      },
+      {
+        initializeLocal: initializeLocal as never,
+        initializeDeployed: initializeDeployed as never,
+      },
+    );
+    await expect(Promise.resolve(runtime.init())).rejects.toThrow(
+      'stop after capturing',
+    );
+    expect(initializeLocal).not.toHaveBeenCalled();
+    const options = (initializeDeployed.mock.calls[0] as unknown[])[0] as {
+      createSchema?: unknown;
+      prepareDatabase: (db: unknown) => Promise<void>;
+    };
+    expect(options.createSchema).toBeUndefined();
+    const db = { query: vi.fn() };
+    await options.prepareDatabase(db);
+    const { context } = seen[0] as {
+      context: {
+        db: unknown;
+        profile: string;
+        paths: unknown;
+        firstRun: boolean;
+        migrateSchemas: () => Promise<unknown>;
+      };
+    };
+    expect(context).toMatchObject({
+      db,
+      profile: 'cloud',
+      paths: null,
+      firstRun: false,
+    });
+    await expect(context.migrateSchemas()).rejects.toThrow('smrt db:migrate');
+  });
 
   function deployedStub(runtime: ResolvedApplicationRuntime) {
     return {

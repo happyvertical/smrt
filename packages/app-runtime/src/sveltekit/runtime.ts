@@ -84,6 +84,7 @@ import {
   validateApplicationId,
 } from '../index.js';
 import { refuseWindowsDatabaseAcquisition } from '../local-custody.js';
+import type { PrepareDatabaseContext } from '../local-schema.js';
 import { publishLocalOrigin } from '../origin-file.js';
 import {
   deepFrozenPlainCopy,
@@ -204,10 +205,31 @@ export interface SmrtSvelteKitRuntimeOptions {
     | ResolvedApplicationRuntime
     | (() => ResolvedApplicationRuntime | Promise<ResolvedApplicationRuntime>);
   /**
-   * Explicit, idempotent application migration hook, run during `init`.
-   * The runtime never synthesizes application tables itself.
+   * Create and upgrade the framework schema before serving (local profile
+   * only, default `true`, smrt#4835). On an empty data directory the runtime
+   * creates the database through the framework migration path inside the
+   * initialization lock and writer lease, then serves; a failure rolls back,
+   * removes a database this start created, and fails startup with
+   * `schema_creation_failed`. Deployed profiles never create schema: they
+   * keep failing with `DB_SCHEMA_MISSING` and migrate through `smrt db:migrate`.
+   * Pass `false` to migrate only through `smrt app setup` / `smrt db:migrate`.
    */
-  readonly prepareDatabase?: (db: DatabaseInterface) => Promise<void>;
+  readonly createSchema?: boolean;
+  /**
+   * The application's own database step (seeding, its own tables), run during
+   * `init` on EVERY start, after the framework schema and in the same lock and
+   * transaction, so it must be idempotent. `context.firstRun` is true only on
+   * the start that found an empty database; `context.migrateSchemas()` is the
+   * framework migration runner. A failure rolls the framework schema back too
+   * and fails startup with `migration_failed`. The runtime never synthesizes
+   * application model tables itself. A step that needs only the database may
+   * take `(db)`. Deployed profiles call it with `profile` set to the deployed
+   * profile, no `paths`, `firstRun` false and a `migrateSchemas` that rejects.
+   */
+  readonly prepareDatabase?: (
+    db: DatabaseInterface,
+    context: PrepareDatabaseContext,
+  ) => Promise<void>;
   /**
    * Local HTTP bind host. Defaults to `HOST`, or `127.0.0.1` when
    * `NODE_ENV=development`. Local production startup without one fails.
@@ -445,6 +467,32 @@ export interface SmrtSvelteKitRuntime {
   ): Promise<RuntimeDiagnostics>;
 }
 
+/**
+ * Adapt the application's `prepareDatabase` to a deployed profile: the same
+ * hook, but never a first run and never a schema creator (smrt#4835).
+ */
+function deployedPrepareDatabase(
+  profile: DeployedApplicationRuntimeProfile,
+  prepareDatabase: NonNullable<SmrtSvelteKitRuntimeOptions['prepareDatabase']>,
+): (db: DatabaseInterface) => Promise<void> {
+  return (db) =>
+    prepareDatabase(
+      db,
+      Object.freeze({
+        db,
+        profile,
+        paths: null,
+        firstRun: false,
+        migrateSchemas: () =>
+          Promise.reject(
+            new Error(
+              'The framework schema is created only by the local profile; run smrt db:migrate.',
+            ),
+          ),
+      }),
+    );
+}
+
 /** @internal Test and composition seams; not part of the public entry. */
 export interface SmrtSvelteKitRuntimeSeams {
   readonly initializeLocal?: typeof initializeLocalApplicationRuntime;
@@ -643,6 +691,7 @@ export function composeSmrtSvelteKitRuntime(
       sessionTtlSeconds: options.sessionTtlSeconds,
       ownerTenant: options.ownerTenant,
       passwordPolicy: options.passwordPolicy,
+      createSchema: options.createSchema ?? true,
       prepareDatabase: options.prepareDatabase,
       now: options.now,
     })
@@ -733,7 +782,9 @@ export function composeSmrtSvelteKitRuntime(
           provider: runtime.providers.secrets.provider,
         }),
       },
-      prepareDatabase: options.prepareDatabase,
+      prepareDatabase: options.prepareDatabase
+        ? deployedPrepareDatabase(profile, options.prepareDatabase)
+        : undefined,
     });
     return deployedPromise;
   };

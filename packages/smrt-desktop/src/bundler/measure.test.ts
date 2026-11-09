@@ -36,7 +36,7 @@ interface Harness {
   dataDirs: string[];
   disposed: string[];
   urls: string[];
-  templates: (string | undefined)[];
+  templateArguments: unknown[][];
 }
 
 /**
@@ -58,7 +58,7 @@ function harness(options: {
   const dataDirs: string[] = [];
   const disposed: string[] = [];
   const urls: string[] = [];
-  const templates: (string | undefined)[] = [];
+  const templateArguments: unknown[][] = [];
   const statusQueue = [...(options.statuses ?? [])];
   const seams: MeasureSeams = {
     spawn(req) {
@@ -100,10 +100,10 @@ function harness(options: {
     async sleep(ms) {
       clock += ms;
     },
-    async makeDataDir(template) {
+    async makeDataDir(...args: unknown[]) {
       const path = `/tmp/data-${dataDirs.length}`;
       dataDirs.push(path);
-      templates.push(template);
+      templateArguments.push(args);
       return {
         path,
         dispose: async () => {
@@ -113,7 +113,7 @@ function harness(options: {
     },
     diskUsage: async () => 4096,
   };
-  return { seams, spawns, kills, dataDirs, disposed, urls, templates };
+  return { seams, spawns, kills, dataDirs, disposed, urls, templateArguments };
 }
 
 describe('statistics', () => {
@@ -178,13 +178,11 @@ describe('measureBundle', () => {
     expect(h.spawns).toHaveLength(3 + 1 + 3);
   });
 
-  it('copies the prepared data template for every directory', async () => {
+  it('starts every directory empty, so a first run includes schema creation', async () => {
     const h = harness({ bootMs: 5 });
-    await measureBundle({ ...request, dataTemplate: '/prepared' }, h.seams);
-    expect(h.templates).toEqual(Array(4).fill('/prepared'));
-    const bare = harness({ bootMs: 5 });
-    await measureBundle(request, bare.seams);
-    expect(bare.templates).toEqual(Array(4).fill(undefined));
+    await measureBundle(request, h.seams);
+    // 3 first-run directories + the shared warm one: none is pre-filled.
+    expect(h.templateArguments).toEqual(Array(4).fill([]));
   });
 
   it('starts the sidecar the way the wrapper does', async () => {

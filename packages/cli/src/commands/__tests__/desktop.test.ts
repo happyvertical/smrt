@@ -151,7 +151,6 @@ describe('desktop bundle option parsing', () => {
       features: 'images, ai-providers',
       'max-size': '350',
       measure: true,
-      'measure-data': 'prepared',
       offline: true,
       'keep-sourcemaps': true,
       'require-verified-pins': true,
@@ -182,7 +181,6 @@ describe('desktop bundle option parsing', () => {
         requireVerifiedPins: true,
         force: true,
         measure: true,
-        measureDataDir: 'prepared',
       },
     });
   });
@@ -378,7 +376,6 @@ describe('desktop bundle command definition', () => {
         'keep-sourcemaps',
         'max-size',
         'measure',
-        'measure-data',
         'node-archive',
         'node-cache',
         'node-version',

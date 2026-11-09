@@ -30,7 +30,6 @@ export interface DesktopBundleCliOptions {
   features?: string;
   'max-size'?: string | number;
   measure?: boolean;
-  'measure-data'?: string;
   offline?: boolean;
   'keep-sourcemaps'?: boolean;
   'require-verified-pins'?: boolean;
@@ -149,7 +148,6 @@ export function parseDesktopBundleOptions(
     ...optional('force', flag('force')),
     ...optional('requireVerifiedPins', flag('require-verified-pins')),
     ...optional('measure', flag('measure')),
-    ...optional('measureDataDir', text(options, 'measure-data')),
   };
   return { input, json: flag('json') === true };
 }
@@ -347,13 +345,8 @@ export const desktopCommands: Record<string, CLICommand> = {
       measure: {
         type: 'boolean',
         description:
-          'Start the bundled app on this machine and record installed size and cold start (host target only)',
+          'Start the bundled app on this machine from an empty data directory (it creates its own schema) and record installed size and cold start (host target only)',
         default: false,
-      },
-      'measure-data': {
-        type: 'string',
-        description:
-          'With --measure: a migrated data directory copied for each run (prepare it with SMRT_APP_ID=<id> SMRT_DATA_DIR=<dir> smrt app migrate; SMRT apps never create their schema at run time)',
       },
       offline: {
         type: 'boolean',

@@ -60,13 +60,26 @@ Application infrastructure composition for the validated runtime profiles in
   unverified on a real runner. `windows-custody.test.ts` runs anywhere;
   `windows-custody.win32.test.ts` runs only in the advisory
   `app-runtime-windows.yml` job.
-- Application migrations are explicit through `prepareDatabase`; runtime never
-  creates application model tables implicitly. A rejected `prepareDatabase` is
-  normalized into `LocalRuntimeError` with the stable `migration_failed` code
-  and the fixed recovery message `MIGRATION_FAILED_MESSAGE` ("run pnpm
-  app:setup and inspect the private migration logs"). The caller's error text
-  is never surfaced — it is retained only as a non-enumerable `cause` for
-  private logs — and the same application root stays retryable.
+- First start (smrt#4835, `src/local-schema.ts`): with `createSchema` the
+  local runtime creates its schema before serving, inside the initialization
+  lock (plus the web writer lease), via the framework's `migrateSmrtSchemas`
+  (the `smrt db:migrate` path; never a second creator). The SvelteKit runtime
+  defaults it on; direct `initializeLocalApplicationRuntime` defaults off so
+  operator tooling (`smrt app setup` spawns `db:migrate`) is unchanged. Local
+  only; deployed profiles keep `DB_SCHEMA_MISSING`. First run (no tracker or
+  bootstrap table): framework step and `prepareDatabase` share ONE
+  transaction; failure rolls back and removes a database file the attempt
+  created (secret and root marker stay). Later starts: the framework batch is
+  one atomic DDL transaction on the database (a transaction handle has no
+  `getTableSchema`), then `prepareDatabase` in its own transaction.
+- `prepareDatabase(db, context)` is the app hook the desktop shell builds on;
+  keep name and shape. It runs on EVERY start after the framework step
+  (idempotent). `context`: `db`, `profile`, `paths` (null deployed), `firstRun`,
+  `migrateSchemas()`; `(db)` callers still work. Its rejection is
+  `migration_failed`; a framework-step failure is `schema_creation_failed`.
+  Both are fixed text, cause only as non-enumerable `cause`, root retryable.
+  Tests of creation set `SMRT_VITEST_AUTO_SCHEMA=0` (the shared setup
+  otherwise pre-creates every registered table).
 - Standalone migration commands must call `prepareLocalDatabaseStorage()`
   before opening SQLite so custody is established without creating schema or
   bootstrap records.

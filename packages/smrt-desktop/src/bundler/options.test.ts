@@ -197,13 +197,6 @@ posixOnly('createBundlePlan', () => {
     });
   });
 
-  it('resolves the prepared measurement data directory', async () => {
-    const result = await plan({ measure: true, measureDataDir: 'prepared' });
-    expect(result.measureDataDir).toBe(join(process.cwd(), 'prepared'));
-    expect((await plan({})).measureDataDir).toBeUndefined();
-    expect(await field({ measureDataDir: '' })).toBe('measureData');
-  });
-
   it('resolves the bridge file to an absolute path', async () => {
     const result = await plan({ bridgeFile: 'bridge.mjs' });
     expect(result.bridgeFile).toBe(join(process.cwd(), 'bridge.mjs'));

@@ -156,8 +156,6 @@ export interface MeasureInput {
   readonly sidecar: SidecarManifestV1;
   /** Sanitised base environment for the sidecar. */
   readonly baseEnv: Readonly<Record<string, string>>;
-  /** Prepared data directory to copy for each run (absolute), if any. */
-  readonly dataTemplate?: string;
   readonly files: { readonly count: number; readonly bytes: number };
 }
 
@@ -1363,9 +1361,6 @@ export async function runBundle(
           resourcesDir,
           sidecar,
           baseEnv: childEnv,
-          ...(plan.measureDataDir === undefined
-            ? {}
-            : { dataTemplate: plan.measureDataDir }),
           files: { count: report.files.count, bytes: report.files.bytes },
         });
         // The start may have written into the bundle; refuse a changed bundle.

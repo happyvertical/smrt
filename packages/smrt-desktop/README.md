@@ -227,7 +227,7 @@ canonical report (or a failure document), so it pipes cleanly.
 | `--require-verified-pins` | the release and signing path: refuse a Node pin whose provenance is not `gpg-verified` (`node_pin_unverified`, exit 4) before any work; without it an unverified pin only warns (see Node pin provenance) |
 | `--features <a,b>` | feature groups to keep in addition to the configuration's defaults |
 | `--max-size <MiB>` | installed-size budget; exceeding it exits 6 and publishes nothing, but still prints the report |
-| `--measure`, `--measure-data <dir>` | start the bundle on this machine and record installed size and cold start (host target only); this **runs the app's dependency code**, see Measuring runs the app |
+| `--measure` | start the bundle on this machine, from an empty data directory (the app creates its own schema on first start), and record installed size and cold start (host target only); this **runs the app's dependency code**, see Measuring runs the app |
 | `--offline` | `pnpm install --offline` and no Node download (needs the pnpm store and the Node cache) |
 | `--keep-sourcemaps`, `--force`, `--json` | keep `*.map`; replace an earlier bundle (or empty directory) at `--out`; JSON on stdout |
 
@@ -620,13 +620,19 @@ report is the list to sign.
 
 ### Known gaps found while bundling a real app
 
-- **No first-run schema.** s-m-r-t apps never create tables at run time
-  (`smrt db:migrate` does), so a sidecar started on an empty data directory
-  exits with `DB_SCHEMA_MISSING`. The desktop wrapper needs a prepare step
-  before the first start, or the runtime needs a supported way to migrate
-  itself. `--measure-data` works around it for measurement only: prepare a
-  directory with `SMRT_APP_ID=<id> SMRT_DATA_DIR=<dir> smrt app migrate` in
-  the app checkout.
+- **First-run schema (smrt#4835, resolved).** The local runtime creates the
+  app's schema itself on the first start of an empty data directory, inside
+  the initialization lock and writer lease, through the framework migration
+  path (`migrateSmrtSchemas`), and then serves. Upgrades take the same path.
+  The wrapper needs no prepare step. A failure rolls the database back (a
+  database that start created is removed) and exits non-zero with
+  `schema_creation_failed` (the framework step) or `migration_failed` (the
+  app's own `prepareDatabase` step) in the sidecar's output, so the wrapper
+  sees an ordinary startup failure with a stable, path-free code; see
+  `@happyvertical/smrt-app-runtime` "First start". Deployed profiles still
+  fail with `DB_SCHEMA_MISSING`. `--measure` therefore starts from an empty
+  data directory and its first-run series includes schema creation; there is
+  no pre-migrated directory to prepare.
 - **App identity.** The runtime reads the application id from `package.json`
   in its working directory unless `SMRT_APP_ID` is set; the bundler sets it.
 - **Dependency hygiene** drives the size more than any bundler setting; see
@@ -634,16 +640,20 @@ report is the list to sign.
 
 ### Bundle size and cold start
 
-Measured with `smrt desktop bundle --measure --measure-data <migrated dir>`
-on a real app. "Cold start" is the wall time from `spawn()` of the bundled
+Measured with `smrt desktop bundle --measure` on a real app. "Cold start" is the wall time from `spawn()` of the bundled
 Node binary (working directory `resources/`, environment from the written
 sidecar manifest through `buildSidecarEnv`, a free loopback port) to the first
 2xx answer of `GET /api/_runtime/health` (polled every 20 ms, 500 ms per
 request, no redirects). Three timed runs per series; the child is stopped
-between runs. `firstRun` copies the prepared data directory for every run;
-`warm` reuses one directory after an untimed priming start. It is a **new
-process, not a cold OS file cache** (dropping caches needs root), and it does
-not include schema creation. Compressed installer size is item 4's number.
+between runs. `firstRun` starts every run from a new, empty data directory,
+so it includes the app creating its schema; `warm` reuses one directory after
+an untimed priming start (which creates the schema once). It is a **new
+process, not a cold OS file cache** (dropping caches needs root). Compressed
+installer size is item 4's number.
+
+The row below was recorded before smrt#4835, on a pre-migrated data
+directory, so its first-run column excludes schema creation. Record a new row
+(first-run now includes it) the next time the bundle is measured.
 
 | Date (UTC) | Product | Target | Node | Machine | Features | Installed (apparent / on disk) | Files | First run median / max | Warm median / max |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -673,7 +683,6 @@ part; the largest kept packages (`du`, on disk) are `@happyvertical/*` (24.0 MiB
 and `@aws-sdk` (5.4 MiB).
 
 Reproduce: build the app (`pnpm install && pnpm build`), write
-`smrt-desktop.json` as above, create the bridge file, prepare the data
-directory, then run the `smrt desktop bundle` command with
-`--measure --measure-data <dir>` and read `measurements` in
-`bundle-report.json`. Per-OS rows from the CI matrix are item 4's.
+`smrt-desktop.json` as above, create the bridge file, then run the
+`smrt desktop bundle` command with `--measure` (no data directory to prepare)
+and read `measurements` in `bundle-report.json`. Per-OS rows from the CI matrix are item 4's.

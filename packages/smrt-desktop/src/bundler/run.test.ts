@@ -1312,18 +1312,16 @@ describe('size budget and measurement', () => {
     expect(written.measurements).toEqual(measurements);
   });
 
-  it('hands the prepared data directory to the measurement', async () => {
+  it('measures from an empty data directory, with no prepared template', async () => {
     const item = fixture();
-    const template = join(item.root, 'prepared-data');
-    mkdirSync(template);
-    let seen: string | undefined;
+    let seen: Record<string, unknown> | undefined;
     await runBundle(
-      await item.plan({ measure: true, measureDataDir: template }),
+      await item.plan({ measure: true }),
       item.seams({
         platform: 'darwin',
         arch: 'arm64',
         measure: async (request) => {
-          seen = request.dataTemplate;
+          seen = { ...request };
           return {
             nodeVersionOutput: 'v26.8.1',
             healthRoute: '/h',
@@ -1336,7 +1334,8 @@ describe('size budget and measurement', () => {
         },
       }),
     );
-    expect(seen).toBe(template);
+    expect(seen).toBeDefined();
+    expect(seen).not.toHaveProperty('dataTemplate');
   });
 
   it('refuses to measure a cross target', async () => {
