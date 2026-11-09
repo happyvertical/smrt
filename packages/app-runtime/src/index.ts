@@ -467,13 +467,20 @@ export async function openLocalCloudLinkIdentity(
     resolve(options.sourceRoot ?? process.cwd()),
   );
   const retiredFor = options.retiredInstallationId;
+  const unverified = (report: InstallationCustodyReport) => {
+    const stateOptions = stateRootOptions(options);
+    return installationUnverified(report, {
+      stateRoot: prepareApplicationStateRoot(stateOptions),
+      source: applicationStateRootSource(stateOptions),
+    });
+  };
   const custodyUsable = (report: InstallationCustodyReport) =>
     report.status === 'in-custody' ||
     (retiredFor !== undefined &&
       report.status === 'retired' &&
       report.installationId === retiredFor);
   const report = await inspectInstallationCustody(options);
-  if (!custodyUsable(report)) throw installationUnverified(report);
+  if (!custodyUsable(report)) throw unverified(report);
   const readIdentity = async () => {
     const secret = await validateApplicationSecret(
       paths.applicationSecret,
@@ -486,7 +493,7 @@ export async function openLocalCloudLinkIdentity(
   };
   const { identity, keys } = await readIdentity();
   if (identity.deviceId !== report.installationId) {
-    throw installationUnverified(report);
+    throw unverified(report);
   }
   const identities: CloudLinkIdentities = Object.freeze({
     tenantId: identity.tenantId,
@@ -527,7 +534,7 @@ export async function openLocalCloudLinkIdentity(
         !custodyUsable(custody) ||
         custody.installationId !== identity.deviceId
       ) {
-        throw installationUnverified(custody);
+        throw unverified(custody);
       }
       const current = await readIdentity();
       if (current.keys.publicKey !== linkPublicKey) {
