@@ -149,12 +149,18 @@ describe('step-up', () => {
     expect(() => requireRecentAuthentication(ctx)).not.toThrow();
   });
 
-  it('does not count a terminal or device session as a fresh authentication', async () => {
+  it('does not count a terminal, oidc, magic-link or device session as a fresh authentication', async () => {
     const terminal = await sessionService.createSession(ownerId, tenantId, {
       authMethod: 'terminal',
     });
+    const oidc = await sessionService.createSession(ownerId, tenantId, {
+      authMethod: 'oidc',
+    });
+    const magic = await sessionService.createSession(ownerId, tenantId, {
+      authMethod: 'magic-link',
+    });
     const none = await sessionService.createSession(ownerId, tenantId);
-    for (const id of [terminal, none]) {
+    for (const id of [terminal, oidc, magic, none]) {
       const ctx = await context(id);
       expect(ctx.reauthenticatedAt).toBeNull();
       expect(() => requireRecentAuthentication(ctx)).toThrow(

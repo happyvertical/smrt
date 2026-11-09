@@ -1165,17 +1165,47 @@ const ctx = await sessionService.loadSessionContext(sessionId);
 requireRecentAuthentication(ctx, { maxAgeSeconds: 300 });
 ```
 
-- The proof is server-side session state. An interactive sign-in (`password`,
-  `passkey`, `oidc`, `magic-link`) counts at mint; `terminal`, `pin`, `mobile`
-  and host-defined sessions do not. `ctx.reauthenticatedAt` is derived from the
-  stored row.
-- To refresh it on an existing session, the page asks for the password and the
-  host calls `(await passwordAuth.service()).stepUp({ sessionId, password,
-  ipAddress })`. It uses the sign-in limiter and constant-work verification,
+- The proof is server-side session state. A password or passkey sign-in counts
+  at mint; `oidc`, `magic-link`, `terminal`, `pin`, `mobile` and host-defined
+  sessions do not (an OIDC login can complete silently from the provider's
+  existing browser session, and a magic link from the device's own mail app,
+  so an unlocked stolen device could mint either). `ctx.reauthenticatedAt` is
+  derived from the stored row.
+- The rule: **an existing session never counts as fresh by itself; a
+  deliberate fresh authentication with any supported method does.** Every
+  method below stamps the EXISTING session (no new session, no user switch),
   refuses layered/PIN and ceilinged sessions, and answers every refusal with
-  one `PasswordCredentialError`. A passkey owner re-authenticates with a fresh
-  passkey sign-in and the host uses the new session: there is no separate
-  passkey step-up ceremony.
+  one error that does not say which check failed, so a person who signs in
+  only with Google/OIDC or only by email link can still step up.
+  - **Password**: the page asks for the password and the host calls
+    `(await passwordAuth.service()).stepUp({ sessionId, password, ipAddress })`.
+    It uses the sign-in limiter and constant-work verification; every refusal
+    is one `PasswordCredentialError`.
+  - **Passkey**: re-authenticate with a fresh passkey sign-in and use the new
+    session; there is no separate passkey step-up ceremony.
+  - **OIDC**: `const { url } = await oidc.beginStepUp({ sessionId })`, redirect
+    the person to `url`, then on the callback
+    `await oidc.completeStepUp({ sessionId, callbackUrl })`. The request sets
+    `prompt=login` and `max_age=0`. The transaction (state, nonce, PKCE
+    verifier) is held on the session server-side as its one pending intent
+    (`data.oidcStepUpIntent`, one at a time, dies with the session); the
+    callback takes it, so it works once. The ID token is verified as at
+    sign-in, and must also carry `auth_time` that is within the step-up window
+    (default 300 s, `stepUpWindowSeconds`), not before the intent started and
+    not in the future. The returned issuer+subject must be an existing OIDC
+    identity of the session's own user: it never creates a user or switches
+    one. A provider that does not emit `auth_time`, or ignores
+    `prompt`/`max_age`, is refused, so confirm yours returns `auth_time`. Use a
+    `redirectUri` registered with the provider for step-up (it must not be
+    handled as a sign-in callback). Refusals are `StepUpRequiredError`.
+  - **Magic link**: `const { token, email } = await links.requestStepUp({
+    sessionId })` issues a link of purpose `step_up`, bound to that session and
+    its user, valid for at most 300 s and once; email it to `email` (the
+    user's own address). When the person opens it, the host calls
+    `await links.consumeStepUp({ token, sessionId })` with the SAME session
+    cookie. A sign-in link cannot step up and a step-up link cannot sign in
+    (`verify()`/`inspect()` refuse it); another session or user, an expired or
+    reused link, or a changed account email are all `StepUpRequiredError`.
 - The stamp (`SESSION_DATA_KEYS.reauthenticatedAt`) is never client input
   (`setSessionData` refuses it), is not moved by refresh, activity or
   `extend()`, is carried unchanged across tenant-switch rotation, and dies

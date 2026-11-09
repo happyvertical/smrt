@@ -390,6 +390,60 @@ export class SessionCollection extends SmrtCollection<Session> {
   }
 
   /**
+   * Record the OIDC step-up intent of a live session (#4841): the transaction
+   * a re-authentication the session itself started must come back with. Only
+   * one intent is pending per session; a new one replaces the old. Returns
+   * false when the session is unknown, not live, or not `userId`'s.
+   */
+  async recordStepUpIntent(
+    sessionId: string,
+    intent: Record<string, unknown>,
+    options: { userId?: string } = {},
+  ): Promise<boolean> {
+    const session = await this.findValidSession(sessionId);
+    if (!session) return false;
+    if (options.userId !== undefined && session.userId !== options.userId) {
+      return false;
+    }
+    session.setData(SESSION_DATA_KEYS.oidcStepUpIntent, intent);
+    await session.save();
+    return true;
+  }
+
+  /**
+   * Take (read and remove) the pending OIDC step-up intent, so it can be used
+   * once. Returns null when there is none, the session is not live or not
+   * `userId`'s, or the removal lost a write race (the other writer holds the
+   * intent). Never retries: a contested intent is a refused one.
+   */
+  async takeStepUpIntent(
+    sessionId: string,
+    options: { userId?: string } = {},
+  ): Promise<Record<string, unknown> | null> {
+    const session = await this.findValidSession(sessionId);
+    if (!session) return null;
+    if (options.userId !== undefined && session.userId !== options.userId) {
+      return null;
+    }
+    const raw = session.data?.[SESSION_DATA_KEYS.oidcStepUpIntent];
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+    session.removeData(SESSION_DATA_KEYS.oidcStepUpIntent);
+    try {
+      await session.save();
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        'code' in error &&
+        error.code === 'RUNTIME_REVISION_CONFLICT'
+      ) {
+        return null;
+      }
+      throw error;
+    }
+    return raw as Record<string, unknown>;
+  }
+
+  /**
    * Set custom session data
    */
   async setSessionData(
@@ -402,6 +456,7 @@ export class SessionCollection extends SmrtCollection<Session> {
     if (
       key === SESSION_DATA_KEYS.authenticatedAt ||
       key === SESSION_DATA_KEYS.reauthenticatedAt ||
+      key === SESSION_DATA_KEYS.oidcStepUpIntent ||
       key === SESSION_DATA_KEYS.passkeyCredentialId
     ) {
       return false;

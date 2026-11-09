@@ -86,6 +86,8 @@ export {
   type MagicLinkResult,
   MagicLinkService,
   type MagicLinkServiceOptions,
+  type MagicLinkStepUpRequest,
+  type MagicLinkStepUpResult,
   type MagicLinkVerifyResult,
 } from './MagicLinkService.js';
 export {
@@ -136,6 +138,8 @@ export {
   type OidcProviderMetadata,
   type OidcProviderResolution,
   type OidcProviderResolutionOptions,
+  type OidcStepUpResult,
+  type OidcStepUpStart,
   type OidcTokenEndpointAuthMethod,
   type OidcTokenSet,
   type OidcTransaction,

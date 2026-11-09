@@ -801,12 +801,7 @@ export class PasswordCredentialService {
       typeof input.sessionId === 'string' ? input.sessionId.trim() : '';
     if (!sessionId) throw new PasswordCredentialError();
     const session = await this.sessionRows.findValidSession(sessionId);
-    if (
-      !session ||
-      session.isLayered() ||
-      session.authMethod === 'pin' ||
-      session.getPermissionCeiling() !== null
-    ) {
+    if (!session?.isStepUpEligible()) {
       throw new PasswordCredentialError();
     }
     const user = await this.users.get(session.userId);

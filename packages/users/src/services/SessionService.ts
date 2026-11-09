@@ -112,6 +112,14 @@ export interface SwitchTenantResult {
   rotated: boolean;
 }
 
+/** Session data without a pending OIDC step-up intent (it is per session id). */
+function withoutStepUpIntent(
+  data: Record<string, unknown> | undefined,
+): Record<string, unknown> {
+  const { [SESSION_DATA_KEYS.oidcStepUpIntent]: _intent, ...rest } = data ?? {};
+  return rest;
+}
+
 /**
  * Options for SessionService
  */
@@ -505,7 +513,7 @@ export class SessionService {
       // it stays stale), or consumers that require a recent sign-in would
       // see a brand new `created_at`.
       data: {
-        ...session.data,
+        ...withoutStepUpIntent(session.data),
         [SESSION_DATA_KEYS.authenticatedAt]:
           session.data?.[SESSION_DATA_KEYS.authenticatedAt] ??
           (session.created_at instanceof Date

@@ -45,15 +45,16 @@ export type SessionAuthMethod =
 
 /**
  * Sign-in methods whose mint counts as a fresh authentication for step-up
- * (#4841): the person proved a credential interactively. `terminal` approval
- * (any holder of a stale session can mint one), `pin`, `mobile` and
- * host-defined methods never count.
+ * (#4841): the person proved a password or a passkey right now. `oidc` and
+ * `magic-link` do not count: an identity provider's existing browser login or
+ * the device's own mail app completes them without the person present, so an
+ * unlocked stolen device could mint one. `terminal` approval (any holder of a
+ * stale session can mint one), `pin`, `mobile` and host-defined methods never
+ * count either.
  */
 export const STEP_UP_SIGN_IN_AUTH_METHODS: readonly string[] = Object.freeze([
   'password',
   'passkey',
-  'oidc',
-  'magic-link',
 ]);
 
 /**
@@ -100,6 +101,16 @@ export const SESSION_DATA_KEYS = {
    * and gone with the session. See {@link Session.getReauthenticatedAt}.
    */
   reauthenticatedAt: 'reauthenticatedAt',
+  /**
+   * The pending OIDC step-up intent of this session: the authorization
+   * transaction (state, nonce, PKCE verifier) of a re-authentication the
+   * session itself started, with its expiry. Written only by
+   * `SessionCollection.recordStepUpIntent`, consumed (removed) by
+   * `SessionCollection.takeStepUpIntent` on the callback, so it is single use
+   * and dies with the session. Never from client input (`setSessionData`
+   * refuses it).
+   */
+  oidcStepUpIntent: 'oidcStepUpIntent',
   /**
    * Row id of the passkey (`users_passkey_credentials`) a session was signed
    * in with. Set only by `PasskeyCredentialService` at mint; it decides which
@@ -293,6 +304,19 @@ export class Session extends SmrtObject {
   /** True when this session is layered on another one. */
   isLayered(): boolean {
     return this.parentSessionId !== null && this.parentSessionId !== '';
+  }
+
+  /**
+   * Whether this session may step up (#4841) at all: a first-class session,
+   * not a layered or PIN one, with no permission ceiling. Every step-up method
+   * (password, OIDC, magic link) requires it.
+   */
+  isStepUpEligible(): boolean {
+    return (
+      !this.isLayered() &&
+      this.authMethod !== 'pin' &&
+      this.getPermissionCeiling() === null
+    );
   }
 
   /**

@@ -35,6 +35,10 @@ export interface OidcTestServer {
   issuer: string;
   /** Nonce stamped into subsequently issued ID tokens. */
   setNonce: (value: string) => void;
+  /** `auth_time` (epoch seconds) stamped into subsequent ID tokens; unset omits it. */
+  setAuthTime: (value: number | undefined) => void;
+  /** `sub` of subsequently issued ID tokens (default `dex-user-123`). */
+  setSubject: (value: string) => void;
   tokenRequests: Array<{ authorization?: string; params: URLSearchParams }>;
   userinfoRequests: Array<{ authorization?: string }>;
 }
@@ -222,6 +226,8 @@ export async function startOidcServer(
 
   let issuer = '';
   let nonce = '';
+  let authTime: number | undefined;
+  let subject = 'dex-user-123';
   const tokenRequests: Array<{
     authorization?: string;
     params: URLSearchParams;
@@ -282,6 +288,9 @@ export async function startOidcServer(
       if (options.authorizedParty) {
         idTokenClaims.azp = options.authorizedParty;
       }
+      if (authTime !== undefined) {
+        idTokenClaims.auth_time = authTime;
+      }
 
       const idToken = await new SignJWT(idTokenClaims)
         .setProtectedHeader({ alg: 'RS256', kid: 'test-key' })
@@ -289,7 +298,7 @@ export async function startOidcServer(
         .setExpirationTime('5m')
         .setIssuedAt()
         .setIssuer(issuer)
-        .setSubject('dex-user-123')
+        .setSubject(subject)
         .sign(privateKey);
 
       sendJson(response, 200, {
@@ -335,6 +344,12 @@ export async function startOidcServer(
     issuer,
     setNonce: (value: string) => {
       nonce = value;
+    },
+    setAuthTime: (value: number | undefined) => {
+      authTime = value;
+    },
+    setSubject: (value: string) => {
+      subject = value;
     },
     tokenRequests,
     userinfoRequests,

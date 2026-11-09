@@ -340,6 +340,16 @@ describe('vault account admin actions', () => {
     });
   });
 
+  it('refuses a pinned new account id that belongs to another tenant, audited, without touching the relay', async () => {
+    const h = harness({ 'foreign-account': 'other-tenant' });
+    await expect(
+      provision(h, session(), { newAccountId: () => 'foreign-account' }),
+    ).rejects.toMatchObject({ code: 'not_owner' });
+    expect(h.relay.registerDevice).not.toHaveBeenCalled();
+    expect(h.deps.directory.linkAccount).not.toHaveBeenCalled();
+    expect(h.entries.map((e) => e.outcome)).toEqual(['denied']);
+  });
+
   it('mints a fresh account id by default', async () => {
     const h = harness();
     const result = await provisionRestartAccount({

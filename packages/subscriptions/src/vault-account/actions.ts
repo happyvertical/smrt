@@ -104,7 +104,7 @@ class Gate {
    */
   async authorize(
     accounts: readonly string[],
-    validate?: () => void | Promise<void>,
+    validate?: (tenantId: string) => void | Promise<void>,
   ): Promise<string> {
     const session = this.session;
     const isOwner = this.deps.isOwner ?? isTenantOwnerSession;
@@ -148,7 +148,13 @@ class Gate {
 
     // Malformed input from an authorized caller: refused, not audited as
     // authorized, and still before any relay call.
-    await validate?.();
+    try {
+      await validate?.(tenantId);
+    } catch (error) {
+      // A foreign account named by the caller is a denied attempt: audited.
+      if (error instanceof NotOwnerError) return this.deny(error);
+      throw error;
+    }
 
     // Audit before acting: if the record cannot be written, nothing happens.
     try {
@@ -260,7 +266,7 @@ export async function provisionRestartAccount(
     subject,
   );
   let accountId = '';
-  const tenantId = await gate.authorize([oldAccount], async () => {
+  const tenantId = await gate.authorize([oldAccount], async (tenantId) => {
     if (!IDENTIFIER.test(deviceId)) throw invalid('deviceId');
     if (typeof devicePublicKey !== 'string' || !devicePublicKey) {
       throw invalid('devicePublicKey');
@@ -270,6 +276,17 @@ export async function provisionRestartAccount(
       throw invalid('newAccountId');
     }
     subject.newAccountId = accountId;
+    // A pinned or retried id must not name another tenant's account: linking
+    // it and registering a device key there would take over that backup line.
+    let owningTenant: string | null;
+    try {
+      owningTenant = await input.directory.tenantForAccount(accountId);
+    } catch {
+      owningTenant = null;
+    }
+    if (owningTenant !== null && owningTenant !== tenantId) {
+      throw new NotOwnerError();
+    }
   });
   const device = await gate.perform(async () => {
     await input.directory.linkAccount(tenantId, accountId);
