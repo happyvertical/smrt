@@ -35,6 +35,7 @@ interface Harness {
   dataDirs: string[];
   disposed: string[];
   urls: string[];
+  templates: (string | undefined)[];
 }
 
 /**
@@ -56,6 +57,7 @@ function harness(options: {
   const dataDirs: string[] = [];
   const disposed: string[] = [];
   const urls: string[] = [];
+  const templates: (string | undefined)[] = [];
   const statusQueue = [...(options.statuses ?? [])];
   const seams: MeasureSeams = {
     spawn(req) {
@@ -97,9 +99,10 @@ function harness(options: {
     async sleep(ms) {
       clock += ms;
     },
-    async makeDataDir() {
+    async makeDataDir(template) {
       const path = `/tmp/data-${dataDirs.length}`;
       dataDirs.push(path);
+      templates.push(template);
       return {
         path,
         dispose: async () => {
@@ -109,7 +112,7 @@ function harness(options: {
     },
     diskUsage: async () => 4096,
   };
-  return { seams, spawns, kills, dataDirs, disposed, urls };
+  return { seams, spawns, kills, dataDirs, disposed, urls, templates };
 }
 
 describe('statistics', () => {
@@ -172,6 +175,15 @@ describe('measureBundle', () => {
     expect(new Set(dataDirsPassed.slice(0, 3)).size).toBe(3);
     expect(new Set(dataDirsPassed.slice(3)).size).toBe(1);
     expect(h.spawns).toHaveLength(3 + 1 + 3);
+  });
+
+  it('copies the prepared data template for every directory', async () => {
+    const h = harness({ bootMs: 5 });
+    await measureBundle({ ...request, dataTemplate: '/prepared' }, h.seams);
+    expect(h.templates).toEqual(Array(4).fill('/prepared'));
+    const bare = harness({ bootMs: 5 });
+    await measureBundle(request, bare.seams);
+    expect(bare.templates).toEqual(Array(4).fill(undefined));
   });
 
   it('starts the sidecar the way the shell does', async () => {

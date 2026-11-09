@@ -80,8 +80,14 @@ export const FEATURE_CATALOG: Readonly<Record<string, FeatureDefinition>> =
         'lightningcss*',
         'typescript',
         'tsx',
+        // Compile-time only. `@oxc-project/runtime` is NOT here: it holds the
+        // decorator helpers that compiled SMRT models import at run time.
         'oxc-*',
-        '@oxc-*/*',
+        '@oxc-parser/*',
+        '@oxc-transform/*',
+        '@oxc-resolver/*',
+        '@oxc-minify/*',
+        '@oxc-project/types',
         '@types/*',
       ],
       enableable: false,
@@ -116,8 +122,23 @@ export const FEATURE_CATALOG: Readonly<Record<string, FeatureDefinition>> =
       enableable: true,
     },
     'ai-providers': {
-      description: 'Cloud AI provider SDKs',
+      description: 'All cloud AI provider SDKs (the three below together)',
       packages: ['@google/genai', 'openai', '@anthropic-ai/sdk'],
+      enableable: true,
+    },
+    'ai-anthropic': {
+      description: 'Anthropic SDK (Claude), one of ai-providers',
+      packages: ['@anthropic-ai/sdk'],
+      enableable: true,
+    },
+    'ai-openai': {
+      description: 'OpenAI SDK, one of ai-providers',
+      packages: ['openai'],
+      enableable: true,
+    },
+    'ai-google': {
+      description: 'Google Gemini SDK, one of ai-providers',
+      packages: ['@google/genai'],
       enableable: true,
     },
     ocr: {
@@ -527,13 +548,22 @@ export function resolveFeatures(
       throw new BundleTreeError('invalid_option', { field: 'features' });
     }
   }
+  // A pattern that an enabled feature keeps is never removed by another
+  // feature that lists it too (`ai-anthropic` inside `ai-providers`).
+  const kept = new Set<string>();
+  for (const name of enabled) {
+    for (const pattern of definitions.get(name)?.packages ?? []) {
+      kept.add(pattern);
+    }
+  }
   const disabled: DisabledGroup[] = [...definitions]
     .filter(([name]) => !enabled.includes(name))
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
     .map(([name, definition]) => ({
       label: `feature:${name}`,
-      patterns: definition.packages,
-    }));
+      patterns: definition.packages.filter((pattern) => !kept.has(pattern)),
+    }))
+    .filter((group) => group.patterns.length > 0);
   if (config.exclude.length > 0) {
     disabled.push({ label: 'exclude', patterns: config.exclude });
   }

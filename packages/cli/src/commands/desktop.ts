@@ -30,6 +30,7 @@ export interface DesktopBundleCliOptions {
   features?: string;
   'max-size'?: string | number;
   measure?: boolean;
+  'measure-data'?: string;
   offline?: boolean;
   'keep-sourcemaps'?: boolean;
   force?: boolean;
@@ -146,12 +147,13 @@ export function parseDesktopBundleOptions(
     ...optional('offline', flag('offline')),
     ...optional('force', flag('force')),
     ...optional('measure', flag('measure')),
+    ...optional('measureDataDir', text(options, 'measure-data')),
   };
   return { input, json: flag('json') === true };
 }
 
 function formatBytes(bytes: number): string {
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MiB`;
 }
 
 /**
@@ -338,13 +340,18 @@ export const desktopCommands: Record<string, CLICommand> = {
       'max-size': {
         type: 'string',
         description:
-          'Installed size budget in MB; exceeding it exits 6 and publishes nothing',
+          'Installed size budget in MiB (1024 x 1024 bytes); exceeding it exits 6 and publishes nothing',
       },
       measure: {
         type: 'boolean',
         description:
           'Start the bundled app on this machine and record installed size and cold start (host target only)',
         default: false,
+      },
+      'measure-data': {
+        type: 'string',
+        description:
+          'With --measure: a migrated data directory copied for each run (prepare it with SMRT_APP_ID=<id> SMRT_DATA_DIR=<dir> smrt app migrate; SMRT apps never create their schema at run time)',
       },
       offline: {
         type: 'boolean',
