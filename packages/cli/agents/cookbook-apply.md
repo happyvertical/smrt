@@ -73,6 +73,10 @@ object that is not in its package's manifest, or a policy field the object lacks
   config file and adds packages without rewriting anything else.
 - `--dry-run` prints the plan (no writes; a remote template is still fetched to a temp dir).
   `--no-install` skips `<pm> install` (pnpm, or npm/yarn by lockfile). `--json` prints the plan.
+- **Agent docs** (#4878): after a non-dry-run apply (new or `--into`) the handler runs the
+  `docs:agents` refresh at the project (after the install). Stderr only, so `--json` on stdout stays
+  intact; it never fails the command. With `--no-install` nothing is installed yet: one hint, run
+  `smrt docs:agents` after installing. See [`docs-agents.md`](docs-agents.md).
 - Next steps printed: install if skipped, then the project's `app:setup` and `app:doctor` scripts
   (else `npx smrt app setup` / `npx smrt doctor`).
 

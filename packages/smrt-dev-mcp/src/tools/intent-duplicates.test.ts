@@ -154,6 +154,36 @@ describe('duplicate detection fixtures', () => {
     );
   });
 
+  it('flags a hand-written home-directory token store', async () => {
+    for (const intentIndexPath of [fixtureIndex, monorepoIndex]) {
+      const result = await review({
+        directory: join(fixtures, 'consumer-hand-rolled-credentials'),
+        intentIndexPath,
+      });
+      // Writing a file also trips the separate storage-bypass heuristic.
+      const found = result.findings.filter(
+        (finding) => finding.area === 'duplicate-detection',
+      );
+      expect(found).toHaveLength(1);
+      expect(found[0]).toMatchObject({
+        area: 'duplicate-detection',
+        code: 'hand-rolled-local-credentials-and-owner-signin',
+        intentPage: '/intents/local-credentials-and-owner-signin.md',
+        componentPages: [
+          '/components/smrt-app-runtime.md',
+          '/components/smrt-users.md',
+        ],
+      });
+      // The token file path and the fixed `expiresIn` lifetime.
+      expect(
+        found[0].evidence.map((item) => [item.filePath, item.line]),
+      ).toEqual([
+        ['src/token-store.ts', 5],
+        ['src/token-store.ts', 9],
+      ]);
+    }
+  });
+
   it('produces no findings for a clean consumer', async () => {
     const result = await review({
       directory: join(fixtures, 'consumer-clean'),

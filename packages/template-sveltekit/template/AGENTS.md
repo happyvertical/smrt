@@ -1,5 +1,18 @@
 # s-m-r-t SvelteKit app
 
+<!-- smrt:agents:begin -->
+## smrt framework
+
+- Framework reference: `.agents/smrt-framework.md`
+- Intent index: `.agents/smrt-knowledge/intents/index.md`
+- Before adding infrastructure, utility or integration code, read the intent index.
+- If smrt has the home package but lacks the behaviour, or lacks it entirely, file an issue on happyvertical/smrt and mark any local shim temporary: framework first, no glue.
+- Refresh this block and the references: `smrt docs:agents`.
+- Check for duplicated capability: `smrt-dev-mcp review --directory . --format summary`.
+
+_Generated; edit outside the markers only. Text between them is replaced on refresh._
+<!-- smrt:agents:end -->
+
 This project uses s-m-r-t objects to generate REST routes, CLI commands, MCP
 tools, WebMCP definitions, and agent/developer knowledge artifacts.
 

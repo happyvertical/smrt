@@ -71,11 +71,8 @@ allow-list in its root `package.json` script).
 its own `lint`/`format-check` script.
 [TESTING_STANDARD.md](TESTING_STANDARD.md) defines package release gates.
 
-SMRT tests require `smrtVitestPlugin()`. Restart Vitest after adding decorated
-classes. Rebuild core after scanner/schema-generator edits: the Vite plugin
-consumes deterministic `dist/` artifacts. Vite 8 requires Oxc legacy decorators
-(see core guidance). Svelte subpaths require `svelte-check`, not just `tsc`;
-use named `$props()` interfaces to avoid recursive inline intersections.
+Test and build gotchas (Vitest plugin, Oxc decorators, `svelte-check`):
+[agents/root-gotchas.md](agents/root-gotchas.md).
 
 ## Cross-package invariants
 
@@ -114,6 +111,11 @@ is additive. `pnpm check:agents-chain` checks the 32 KB cap.
 [WORKFLOW.md](WORKFLOW.md) routes to shared lifecycle skills. This project's
 GitHub tracker uses `implement`, `claim-issue`, `review-cycle`, `ship`, and
 `resolve`; Work/buzz variants require an explicitly selected Work tracker.
+
+Before adding a helper, read the [intent index](docs/knowledge/intents/index.md) and run
+`smrt-dev-mcp review --directory <pkg> --format summary`. A capability belongs in its
+owning package or the SDK, never a downstream helper: add it there or file a
+framework issue.
 
 `smrt knowledge:review-context` / `knowledge:architecture-context` provide
 scoped summaries; read the selected references on demand. Runtime manifests

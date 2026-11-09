@@ -14,8 +14,11 @@
     "workflow:caelus": "node -e \"console.error('workflow:caelus requires @happyvertical/caelus to ship a CLI bin (tracked upstream). For now invoke the workflow from a script that imports the package directly.'); process.exit(1)\"",
     "workflow:praeco": "node -e \"console.error('workflow:praeco requires @happyvertical/praeco to ship a CLI bin (tracked upstream). For now invoke the workflow from a script that imports the package directly.'); process.exit(1)\"",
     "validate:json": "tsx scripts/validate-json.ts",
-    "validate:slugs": "tsx scripts/validate-slugs.ts"
+    "validate:slugs": "tsx scripts/validate-slugs.ts",
+    "docs:agents": "smrt docs:agents"
   },
-  "devDependencies": {},
+  "devDependencies": {
+    "@happyvertical/smrt-cli": "^0.60.15"
+  },
   "dependencies": {}
 }

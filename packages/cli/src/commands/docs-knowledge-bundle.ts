@@ -43,6 +43,8 @@ import {
 export interface BundlePackage {
   name: string;
   version: string;
+  /** Every distinct installed version, ascending, when workspace members differ. */
+  versions?: string[];
   directory?: string;
   /** Identity the package was discovered under; `name` must equal it when set. */
   specifier?: string;
@@ -327,7 +329,14 @@ export function exportKnowledgeBundle(options: {
       concept,
       stampPackageVersion(readFileSync(source, 'utf8'), pkg.version),
     );
-    manifestPackages.push({ name: pkg.name, version: pkg.version, concept });
+    manifestPackages.push({
+      name: pkg.name,
+      version: pkg.version,
+      ...(pkg.versions && pkg.versions.length > 1
+        ? { versions: pkg.versions }
+        : {}),
+      concept,
+    });
   }
 
   const intentSlugs: string[] = [];
@@ -362,6 +371,11 @@ export function exportKnowledgeBundle(options: {
   const hash = createHash('sha256');
   for (const concept of [...pages.keys()].sort()) {
     hash.update(`${concept}\0${pages.get(concept)}\0`);
+  }
+  for (const entry of manifestPackages) {
+    if (entry.versions) {
+      hash.update(`${entry.name}\0${entry.versions.join(',')}\0`);
+    }
   }
   const contentHash = `sha256:${hash.digest('hex')}`;
 

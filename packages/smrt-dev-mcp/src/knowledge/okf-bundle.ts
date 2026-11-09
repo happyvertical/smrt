@@ -48,8 +48,17 @@ export const OKF_BUNDLE_MAX_AGE_DAYS = 90;
 export interface OkfBundlePackage {
   /** Full package name, e.g. `@happyvertical/smrt-jobs`. */
   name: string;
-  /** Installed version at export time; equals the page's `package_version`. */
+  /**
+   * Installed version at export time; equals the page's `package_version`. In a
+   * pnpm workspace consumer where members install different versions of one
+   * package, this is the highest and the exported page is that version's.
+   */
   version: string;
+  /**
+   * Every distinct installed version, ascending. Present only when a workspace
+   * has version skew (more than one); absent for the common single-version case.
+   */
+  versions?: string[];
   /** Concept ID of the exported page, e.g. `/components/smrt-jobs.md`. */
   concept: string;
 }
@@ -117,31 +126,94 @@ export function readOkfBundleManifest(
   return parsed;
 }
 
-function installedVersion(rootDir: string, name: string): string | undefined {
-  const path = join(rootDir, 'node_modules', name, 'package.json');
-  if (!existsSync(path)) return undefined;
-  try {
-    const version = JSON.parse(readFileSync(path, 'utf8')).version;
-    return typeof version === 'string' ? version : undefined;
-  } catch {
-    return undefined;
+/**
+ * Orders two semver strings (`1.2.3`, `1.2.3-beta.1`): numeric core first, a
+ * prerelease sorts below its release, prerelease identifiers compare per semver.
+ * Unparseable input falls back to a plain string compare, so the order is total
+ * and deterministic.
+ */
+export function compareVersions(a: string, b: string): number {
+  const parse = (value: string) => {
+    const match = /^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+.*)?$/.exec(
+      value,
+    );
+    return match
+      ? {
+          core: [Number(match[1]), Number(match[2]), Number(match[3])],
+          pre: match[4]?.split('.') ?? [],
+        }
+      : null;
+  };
+  const left = parse(a);
+  const right = parse(b);
+  if (!left || !right) return a < b ? -1 : a > b ? 1 : 0;
+  for (let i = 0; i < 3; i++) {
+    if (left.core[i] !== right.core[i]) return left.core[i] - right.core[i];
   }
+  if (left.pre.length === 0 || right.pre.length === 0) {
+    return right.pre.length - left.pre.length;
+  }
+  for (let i = 0; i < Math.max(left.pre.length, right.pre.length); i++) {
+    const l = left.pre[i];
+    const r = right.pre[i];
+    if (l === undefined) return -1;
+    if (r === undefined) return 1;
+    if (l === r) continue;
+    const lNum = /^\d+$/.test(l);
+    const rNum = /^\d+$/.test(r);
+    if (lNum && rNum) return Number(l) - Number(r);
+    if (lNum !== rNum) return lNum ? -1 : 1;
+    return l < r ? -1 : 1;
+  }
+  return 0;
+}
+
+/** Every distinct installed version of `name` across `installRoots`, ascending. */
+function installedVersions(installRoots: string[], name: string): string[] {
+  const found = new Set<string>();
+  for (const rootDir of installRoots) {
+    const path = join(rootDir, 'node_modules', name, 'package.json');
+    if (!existsSync(path)) continue;
+    try {
+      const version = JSON.parse(readFileSync(path, 'utf8')).version;
+      if (typeof version === 'string') found.add(version);
+    } catch {
+      // An unreadable manifest is not an installed package.
+    }
+  }
+  return [...found].sort(compareVersions);
 }
 
 /** Installed `@happyvertical/*` packages whose published artifact ships a page. */
-function installedPackagesShippingPages(rootDir: string): string[] {
-  const scopeDir = join(rootDir, 'node_modules', '@happyvertical');
-  if (!existsSync(scopeDir)) return [];
-  return readdirSync(scopeDir)
-    .filter((entry) =>
-      existsSync(join(scopeDir, entry, 'dist', OKF_SHIPPED_COMPONENT_PAGE)),
-    )
-    .map((entry) => `@happyvertical/${entry}`);
+function installedPackagesShippingPages(installRoots: string[]): string[] {
+  const names = new Set<string>();
+  for (const rootDir of installRoots) {
+    const scopeDir = join(rootDir, 'node_modules', '@happyvertical');
+    if (!existsSync(scopeDir)) continue;
+    for (const entry of readdirSync(scopeDir)) {
+      if (existsSync(join(scopeDir, entry, 'dist', OKF_SHIPPED_COMPONENT_PAGE)))
+        names.add(`@happyvertical/${entry}`);
+    }
+  }
+  return [...names].sort();
 }
 
 export interface OkfBundleFreshnessOptions {
   now?: Date;
   maxAgeDays?: number;
+  /**
+   * Directories whose `node_modules` count as installed. Defaults to `rootDir`;
+   * a pnpm workspace consumer passes the root plus every member, matching what
+   * `docs:agents` exported.
+   */
+  installRoots?: string[];
+  /**
+   * Project-relative directories whose bundle is judged. Defaults to every
+   * {@link OKF_BUNDLE_PARENT_DIRS} entry; a caller that only writes one (the
+   * `docs:agents` lifecycle refresh writes `.agents`) passes it so a stale
+   * legacy bundle it never touches cannot keep the project looking stale.
+   */
+  parentDirs?: readonly string[];
 }
 
 /**
@@ -157,9 +229,10 @@ export function checkOkfBundleFreshness(
 ): KnowledgeIssue[] {
   const now = options.now ?? new Date();
   const maxAgeDays = options.maxAgeDays ?? OKF_BUNDLE_MAX_AGE_DAYS;
+  const installRoots = options.installRoots ?? [rootDir];
   const issues: KnowledgeIssue[] = [];
 
-  for (const parent of OKF_BUNDLE_PARENT_DIRS) {
+  for (const parent of options.parentDirs ?? OKF_BUNDLE_PARENT_DIRS) {
     const bundleDir = join(rootDir, parent, OKF_BUNDLE_DIR_NAME);
     const where = relative(rootDir, bundleDir);
     let manifest: OkfBundleManifest | null;
@@ -225,12 +298,30 @@ export function checkOkfBundleFreshness(
         });
         continue;
       }
-      const installed = installedVersion(rootDir, entry.name);
+      const all = installedVersions(installRoots, entry.name);
+      const installed = all.at(-1);
+      // With skew the manifest records every installed version; a change in a
+      // lower one (not the highest) must still be noticed.
+      const recorded = entry.versions;
+      const skewDrift =
+        installed !== undefined &&
+        (recorded
+          ? recorded.length !== all.length ||
+            recorded.some((version, i) => version !== all[i])
+          : all.length > 1);
       if (installed === undefined) {
         issues.push({
           severity: 'error',
           code: 'stale-okf-bundle',
           message: `Exported OKF page for ${entry.name} (${stamped}) but the package is no longer installed. Rerun \`smrt docs:agents\`.`,
+          file: pageFile,
+          packageName: entry.name,
+        });
+      } else if (skewDrift && installed === stamped) {
+        issues.push({
+          severity: 'error',
+          code: 'stale-okf-bundle',
+          message: `Exported OKF bundle for ${entry.name} recorded ${recorded ? recorded.join(', ') : entry.version} but ${all.join(', ')} are installed. Rerun \`smrt docs:agents\`.`,
           file: pageFile,
           packageName: entry.name,
         });
@@ -245,7 +336,7 @@ export function checkOkfBundleFreshness(
       }
     }
 
-    for (const name of installedPackagesShippingPages(rootDir)) {
+    for (const name of installedPackagesShippingPages(installRoots)) {
       if (exported.has(name)) continue;
       issues.push({
         severity: 'error',

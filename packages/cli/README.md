@@ -191,6 +191,25 @@ local source paths remain current.
 catalog before hand-rolling infrastructure. Pass `--no-install-skills` to skip
 it. A copy you edited (the generated marker removed) is never overwritten.
 
+In a pnpm monorepo, run `smrt docs:agents` at the workspace root (or from any
+member): packages are collected from every member's `node_modules`, and the
+framework file, knowledge bundle and skills are written at the root. A package
+installed at different versions is listed once with each version. Pass `--here`
+to document only the current directory.
+
+`docs:agents` also keeps a short block between `<!-- smrt:agents:begin -->` and
+`<!-- smrt:agents:end -->` in the root `AGENTS.md` (created when absent, with a
+`CLAUDE.md` importing it only when that is absent too), pointing agents at the
+intent index and the framework reference. Only the text between the markers is
+ever rewritten; a damaged marker pair is refused with a warning. Pass
+`--no-agents-block` to skip it; `--dry-run` prints it on stderr.
+
+The export stays current without anyone remembering it: `smrt app install`
+refreshes it, `smrt app dev` refreshes a missing or stale bundle (skipped when
+`CI` is set or `SMRT_AGENT_DOCS=off`), `smrt app build` only prints a warning
+and writes nothing, and `smrt doctor` has an "Agent knowledge" section. Agent
+docs never fail or change the exit status of those commands.
+
 Review and architecture prompt bundles include package guidance and modules
 matched by file or focus hints. Add `--complete` to either context command to
 include every module for the selected packages. These commands still build the

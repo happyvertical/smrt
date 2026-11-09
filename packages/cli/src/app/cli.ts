@@ -7,6 +7,7 @@
  */
 
 import { resolve } from 'node:path';
+import { refreshAgentDocsOnDev, warnAgentDocsOnBuild } from './agent-docs.js';
 import { runBackupsCommand } from './backup-command.js';
 import { ApplicationStartError, boundedTail, redactSecrets } from './errors.js';
 import { runInstallationOperation } from './installation.js';
@@ -203,8 +204,19 @@ export async function runAppCommand(
       if (operation === 'build') {
         const status = await validateMcpAppsIfPresent(context);
         if (status !== 0) return status;
+        await warnAgentDocsOnBuild(
+          sourceRoot,
+          io,
+          options.dependencies?.agentDocs,
+        );
+      } else if (operation === 'dev') {
+        await refreshAgentDocsOnDev(
+          sourceRoot,
+          io,
+          options.dependencies?.agentDocs,
+        );
       }
-      return launchVite(
+      return (options.dependencies?.launchVite ?? launchVite)(
         context,
         operation === 'vite'
           ? args

@@ -32,6 +32,8 @@ without depending on the CLI); `./app` re-exports them unchanged. `main()` dispa
 config loading; `bin/smrt.js` imports `dist/` in-process so SIGTERM reaches
 `smrt app worker`.
 
+Agent docs (#4878): `install` runs `docs:agents`, `dev` refreshes a missing or stale bundle (not under `CI` or `SMRT_AGENT_DOCS=off`), `build` only warns on stderr; none can fail or change the exit status of the operation (`agents/docs-agents.md`).
+
 ## Contracts that must not drift
 
 - **Profile**: `resolveConfiguredRuntime` and app-runtime's SvelteKit entry

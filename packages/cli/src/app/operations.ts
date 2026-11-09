@@ -35,6 +35,7 @@ import {
   withOperationLock,
 } from '@happyvertical/smrt-app-runtime';
 import type { ResolvedApplicationRuntime } from '@happyvertical/smrt-config';
+import { refreshAgentDocsOnInstall } from './agent-docs.js';
 import { backupToTarget, extractOption } from './backup-command.js';
 import {
   ApplicationStartError,
@@ -1201,6 +1202,11 @@ export async function runApplicationOperation(
   switch (operation) {
     case 'install': {
       await assertLocalOperation(context, 'app:install');
+      await refreshAgentDocsOnInstall(
+        context.sourceRoot,
+        context.io,
+        context.deps.agentDocs,
+      );
       await withOperationLock(
         preparedStateRoot(context),
         'install',

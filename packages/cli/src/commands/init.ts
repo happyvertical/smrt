@@ -8,6 +8,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { CLICommand } from '../cli-generator.js';
+import { refreshScaffoldedProject } from './scaffold-agent-docs.js';
 
 /**
  * Parsed option bag for the init handler. The CLI parser produces
@@ -475,6 +476,9 @@ export const initCommands: Record<string, CLICommand> = {
           console.log(`   • ${file}`);
         }
       }
+
+      // A project that already has smrt installed starts aware (#4878).
+      await refreshScaffoldedProject(cwd);
 
       // Next steps
       console.log('\n📋 Next steps:\n');

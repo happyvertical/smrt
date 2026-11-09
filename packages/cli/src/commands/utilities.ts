@@ -3835,6 +3835,26 @@ export default testManifest;
         console.log();
       }
 
+      // ========== Agent Knowledge (#4878) ==========
+      // Warning-level and read-only; skipped when no smrt package is installed.
+      try {
+        const { runAgentKnowledgeDoctorSection } = await import(
+          './doctor-agent-knowledge.js'
+        );
+        const section = runAgentKnowledgeDoctorSection(cwd);
+        if (section.applies) {
+          console.log('📚 Agent Knowledge\n');
+          for (const line of section.lines) console.log(line);
+          warnings.push(...section.warnings);
+          passed.push(...section.passed);
+          console.log();
+        }
+      } catch (error) {
+        warnings.push(
+          `agent knowledge check skipped: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+
       // ========== Live Database Parity (opt-in) ==========
       // Off by default because it opens a connection and issues catalog
       // queries; `--db` is what turns doctor's database section from "a URL is
