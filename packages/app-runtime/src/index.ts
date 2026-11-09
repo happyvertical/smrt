@@ -61,6 +61,7 @@ import {
   INSTALLATION_CUSTODY_FILE,
   type InstallationCustodyReport,
   type InstallationStateRootNote,
+  installationCustodyHint,
   stateRootOptions,
 } from './installation-custody.js';
 import {
@@ -1611,7 +1612,7 @@ async function prepareLocalFilesystem(
   ) {
     throw new LocalRuntimeError(
       'installation_seed_missing',
-      INSTALLATION_SEED_MISSING_MESSAGE,
+      installationSeedMissingMessage(),
     );
   }
   // Only a seed this call itself published is new; one that appears between
@@ -1664,8 +1665,10 @@ async function pathExists(path: string): Promise<boolean> {
   }
 }
 
-const INSTALLATION_SEED_MISSING_MESSAGE =
-  'The installation seed is missing from an initialized data root; nothing was changed. Restore it from a backup with "smrt app installation recover-seed <file>", or accept new identities with "smrt app installation reseed --confirm-destroy-seed".';
+// A function, not a constant: installation-custody.ts and this module import
+// each other, and a top-level call could run before that module's constants.
+const installationSeedMissingMessage = () =>
+  `The installation seed is missing from an initialized data root; nothing was changed. ${installationCustodyHint('seed-missing')}`;
 
 function installationUnverified(
   report: InstallationCustodyReport,
@@ -1678,7 +1681,7 @@ function installationUnverified(
     : '';
   return new LocalRuntimeError(
     'installation_unverified',
-    `This data root is not in this location's custody (${report.status}); nothing was changed. Run "smrt app installation status", then declare it a move with "restore --origin-retired" or an independent copy with "reseed --confirm-destroy-seed".${location}`,
+    `This data root is not in this location's custody (${report.status}); nothing was changed. Run "smrt app installation status". ${installationCustodyHint(report.status)}${location}`,
   );
 }
 
