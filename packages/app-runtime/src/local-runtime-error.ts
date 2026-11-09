@@ -37,3 +37,25 @@ export function unsafeFilesystemEntry(message: string, cause?: unknown) {
     Object.defineProperty(error, 'cause', { value: cause });
   return error;
 }
+
+/** Fixed, secret-free message of {@link WindowsDatabaseAcquisitionUnsupportedError}. */
+export const WINDOWS_DATABASE_ACQUISITION_UNSUPPORTED_MESSAGE =
+  'Secure local database acquisition is not supported on Windows yet: @happyvertical/sql has no caller-supplied Windows custody verifier for its secure SQLite path (smrt#4837). No files or directories were created.';
+
+/**
+ * Raised, before anything is created, when a local runtime would have to open
+ * its SQLite database on Windows. The Windows custody rule is implemented for
+ * the leases, the operator state root, and read-only validation; opening the
+ * database stays refused until the SDK accepts a Windows verifier.
+ */
+export class WindowsDatabaseAcquisitionUnsupportedError extends LocalRuntimeError {
+  readonly reason = 'windows_secure_sqlite_unsupported' as const;
+
+  constructor() {
+    super(
+      'invalid_configuration',
+      WINDOWS_DATABASE_ACQUISITION_UNSUPPORTED_MESSAGE,
+    );
+    this.name = 'WindowsDatabaseAcquisitionUnsupportedError';
+  }
+}

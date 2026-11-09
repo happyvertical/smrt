@@ -49,6 +49,7 @@ import {
 import {
   LocalRuntimeError,
   unsafeFilesystemEntry,
+  WindowsDatabaseAcquisitionUnsupportedError,
 } from './local-runtime-error.js';
 import {
   applicationStateRootSource,
@@ -314,6 +315,7 @@ export async function acquireLocalDatabase(
   canonicalSourceRoot: string;
   db: DatabaseInterface;
 }> {
+  refuseWindowsDatabaseAcquisition();
   requireNoFollowSupport();
   const canonicalSourceRoot = await realpath(sourceRoot);
   const createdDirectories = await ensureSafeDirectoryTree(
@@ -429,6 +431,7 @@ export async function prepareLocalFilesystem(
   db: DatabaseInterface,
   options: ResolveLocalRuntimePathsOptions,
 ): Promise<LocalInstallationIdentity> {
+  refuseWindowsDatabaseAcquisition();
   await ensureSafeDirectoryTree(paths.assets, canonicalSourceRoot);
   await ensureSafeDirectoryTree(paths.secrets, canonicalSourceRoot);
   // The bootstrap table is created only after the seed exists, and the data
@@ -1299,6 +1302,7 @@ export async function validateApplicationSecret(
   path: string,
   canonicalSourceRoot: string,
 ): Promise<string> {
+  refuseWindowsDatabaseAcquisition();
   await validateExistingPathChain(path, canonicalSourceRoot, 'file');
   const file = await openSafeFile(
     path,
@@ -1636,6 +1640,18 @@ export async function validateLocalStorageCustody(
 
 function isWindowsCustody(): boolean {
   return custodyContext().platform === 'win32';
+}
+
+/**
+ * Secure SQLite acquisition is not available on Windows yet: the SDK's secure
+ * file path (`@happyvertical/sql`) refuses `win32` and exposes no way for the
+ * caller to supply a Windows verifier. Refused with a named error before any
+ * file or directory is created, so no half-built root is left behind. The
+ * leases, state root, and read-only validation do work on Windows.
+ */
+export function refuseWindowsDatabaseAcquisition(): void {
+  if (isWindowsCustody())
+    throw new WindowsDatabaseAcquisitionUnsupportedError();
 }
 
 /**

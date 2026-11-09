@@ -1360,3 +1360,87 @@ describe('operator state root on Windows', () => {
     });
   });
 });
+
+describe('database acquisition is refused with a named error (D8)', () => {
+  it('refuses before the lease creates a single directory or file', async () => {
+    const machine = FakeWindowsMachine.standard();
+    const getDatabase = vi.spyOn(sql, 'getDatabase');
+    const refusal = await onWindows(machine, () =>
+      prepareLocalDatabaseStorage(windowsOptions()),
+    ).catch((error: unknown) => error);
+    expect(refusal).toBeInstanceOf(WindowsDatabaseAcquisitionUnsupportedError);
+    expect(refusal).toBeInstanceOf(LocalRuntimeError);
+    const named = refusal as WindowsDatabaseAcquisitionUnsupportedError;
+    expect(named.name).toBe('WindowsDatabaseAcquisitionUnsupportedError');
+    expect(named.reason).toBe('windows_secure_sqlite_unsupported');
+    expect(named.message).toBe(
+      WINDOWS_DATABASE_ACQUISITION_UNSUPPORTED_MESSAGE,
+    );
+    expect(named.message).toContain('smrt#4837');
+    expect(machine.operations).toEqual([]);
+    expect(workers.created).toHaveLength(0);
+    expect(getDatabase).not.toHaveBeenCalled();
+  });
+
+  it('refuses initializeLocalApplicationRuntime the same way', async () => {
+    const machine = FakeWindowsMachine.standard();
+    await expect(
+      onWindows(machine, () =>
+        initializeLocalApplicationRuntime(windowsOptions()),
+      ),
+    ).rejects.toBeInstanceOf(WindowsDatabaseAcquisitionUnsupportedError);
+    expect(machine.operations).toEqual([]);
+    expect(workers.created).toHaveLength(0);
+  });
+
+  it('refuses acquireLocalDatabase before any filesystem access', async () => {
+    const machine = FakeWindowsMachine.standard();
+    const getDatabase = vi.spyOn(sql, 'getDatabase');
+    const rt = machine.runtime();
+    const touched = vi.fn();
+    const spy = new Proxy(rt, {
+      get: (target, key, receiver) => {
+        touched(key);
+        return Reflect.get(target, key, receiver);
+      },
+    });
+    const paths = resolveLocalRuntimePaths(windowsOptions());
+    await expect(
+      runWithCustodyContext({ platform: 'win32', windows: spy }, () =>
+        acquireLocalDatabase(paths, SOURCE, 'myapp'),
+      ),
+    ).rejects.toBeInstanceOf(WindowsDatabaseAcquisitionUnsupportedError);
+    expect(touched).not.toHaveBeenCalled();
+    expect(machine.operations).toEqual([]);
+    expect(getDatabase).not.toHaveBeenCalled();
+  });
+
+  it('refuses secret handling and filesystem preparation before touching disk', async () => {
+    const machine = FakeWindowsMachine.standard();
+    const paths = resolveLocalRuntimePaths(windowsOptions());
+    await expect(
+      onWindows(machine, () =>
+        validateApplicationSecret(paths.applicationSecret, SOURCE),
+      ),
+    ).rejects.toBeInstanceOf(WindowsDatabaseAcquisitionUnsupportedError);
+    await expect(
+      onWindows(machine, () => prepareLocalFilesystem(paths, SOURCE)),
+    ).rejects.toBeInstanceOf(WindowsDatabaseAcquisitionUnsupportedError);
+    expect(machine.operations).toEqual([]);
+    expect(machine.inspections).toEqual([]);
+    // POSIX code given a Windows path would create it relative to the cwd.
+    expect(existsSync(paths.assets)).toBe(false);
+    expect(existsSync(paths.secrets)).toBe(false);
+  });
+
+  it('refuses to open the token store, after validating the stored root', async () => {
+    const machine = FakeWindowsMachine.standard();
+    storedRoot(machine);
+    const getDatabase = vi.spyOn(sql, 'getDatabase');
+    await expect(
+      onWindows(machine, () => openLocalMcpTokenStore(windowsOptions())),
+    ).rejects.toBeInstanceOf(WindowsDatabaseAcquisitionUnsupportedError);
+    expect(getDatabase).not.toHaveBeenCalled();
+    expect(machine.inspections).toHaveLength(1);
+  });
+});

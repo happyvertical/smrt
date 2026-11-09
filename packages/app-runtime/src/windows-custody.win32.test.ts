@@ -27,7 +27,12 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { prepareApplicationStateRoot, processExists } from './index.js';
+import {
+  prepareApplicationStateRoot,
+  prepareLocalDatabaseStorage,
+  processExists,
+  WindowsDatabaseAcquisitionUnsupportedError,
+} from './index.js';
 import { acquireInitializationLock } from './local-custody.js';
 import {
   createNodeWindowsRuntime,
@@ -212,6 +217,18 @@ describe.runIf(onWindows)('real Windows machine', () => {
     const stateRoot = prepareApplicationStateRoot(options);
     created.push(stateRoot);
     expect(prepareApplicationStateRoot(options)).toBe(stateRoot);
+  });
+
+  it('reaches the SDK gate with the read-only preflight done and nothing created', async () => {
+    const dataDirectory = unique();
+    await expect(
+      prepareLocalDatabaseStorage({
+        appId: 'win32-custody-test',
+        dataDirectory,
+        sourceRoot: process.cwd(),
+      }),
+    ).rejects.toBeInstanceOf(WindowsDatabaseAcquisitionUnsupportedError);
+    expect(existsSync(dataDirectory)).toBe(false);
   });
 
   it('recognises live and dead processes', () => {
