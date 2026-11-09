@@ -2095,7 +2095,7 @@ function registerUntracked(
     // Register any siblings that aren't already registered
     // Only load siblings from DIFFERENT packages to avoid collisions with local classes
     for (const sibling of orderStiSiblingsBaseFirst(siblings)) {
-      if (!isStiSiblingRegistered(sibling, siblings)) {
+      if (shouldLoadStiSibling(sibling, siblings, packageName)) {
         // Skip siblings from the same package - they will be registered by their own decorators
         if (
           sibling.packageName &&
@@ -2186,24 +2186,40 @@ function isStiBaseOfDiscoveredSibling(
 }
 
 /**
- * Whether an STI sibling is already registered.
+ * Whether sibling auto-loading should register `sibling` from its manifest.
  *
- * By simple name, case-insensitively, as before: a same-named registration
- * stands for the sibling ('Praeco' for 'praeco', a child that replaced its
- * same-named parent, one class described under two package names). The
- * exception is a base that discovered siblings of its own package extend.
- * There a same-named class of ANOTHER package is a different class, and
- * treating it as the base loaded the subclasses without it: smrt-ledgers'
- * `Account` hid smrt-messages' `Account`, and `getAllSchemasAsDefinitions()`
- * then threw "Table 'accounts' is claimed by unrelated classes" (#4735).
+ * "Already registered" stays a simple-name, case-insensitive test: a
+ * same-named registration stands for the sibling ('Praeco' for 'praeco', a
+ * child that replaced its same-named parent, one class described under two
+ * package names). Two exceptions keep packages that share a class name on one
+ * collection apart (smrt-ledgers and smrt-messages `Account`, #4735):
+ *
+ * - A base that discovered siblings of its own package extend is looked up in
+ *   that package. Another package's same-named class is not that base, and
+ *   taking it for the base loaded the subclasses without it.
+ * - A class whose name the REGISTERING package declares on this collection
+ *   itself is that package's own class, registered by its own decorators. The
+ *   other package's same-named class is not its sibling and is not loaded.
  */
-function isStiSiblingRegistered(
+function shouldLoadStiSibling(
   sibling: DiscoveredStiSibling,
   siblings: readonly DiscoveredStiSibling[],
+  registeringPackage: string | undefined,
 ): boolean {
-  return isStiBaseOfDiscoveredSibling(sibling, siblings)
-    ? hasClassForPackage(sibling.className, sibling.packageName)
-    : hasClassCaseInsensitive(sibling.className);
+  if (isStiBaseOfDiscoveredSibling(sibling, siblings)) {
+    return !hasClassForPackage(sibling.className, sibling.packageName);
+  }
+  if (hasClassCaseInsensitive(sibling.className)) return false;
+  const lowerName = sibling.className.toLowerCase();
+  return !(
+    registeringPackage &&
+    sibling.packageName !== registeringPackage &&
+    siblings.some(
+      (other) =>
+        other.packageName === registeringPackage &&
+        other.className.toLowerCase() === lowerName,
+    )
+  );
 }
 
 /** Bases before the subclasses that extend them; otherwise discovery order. */
@@ -3034,7 +3050,7 @@ function registerFromManifestUntracked(
     // Register any siblings that aren't already registered
     // Only load siblings from DIFFERENT packages to avoid collisions with local classes
     for (const sibling of orderStiSiblingsBaseFirst(siblings)) {
-      if (!isStiSiblingRegistered(sibling, siblings)) {
+      if (shouldLoadStiSibling(sibling, siblings, packageName)) {
         // Skip siblings from the same package - they will be registered by their own decorators
         if (
           sibling.packageName &&

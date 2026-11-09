@@ -100,6 +100,24 @@ describe('messages Account family beside the ledgers Account (#4735)', () => {
     expect(ObjectRegistry.getSTIBase(SUBCLASSES[0])).toBe(MESSAGES_ACCOUNT);
   });
 
+  it('does not load the ledgers Account as a sibling of a messages class', async () => {
+    // No ledgers class is registered. A messages subclass arriving from its
+    // manifest must not drag the ledgers `Account` in on its own: that stub
+    // has a foreign key to `ledgers`, which nothing here creates, and
+    // PostgreSQL rejects the schema sync.
+    expect(await ObjectRegistry.tryLoadFromExternalPackage(SUBCLASSES[0])).toBe(
+      true,
+    );
+
+    expect(
+      [...ObjectRegistry.getAllClasses().keys()].filter((name) =>
+        name.startsWith('@happyvertical/smrt-ledgers:'),
+      ),
+    ).toEqual([]);
+    expect(ObjectRegistry.getClass(MESSAGES_ACCOUNT)).toBeDefined();
+    expect(ObjectRegistry.getSTIBase(SUBCLASSES[0])).toBe(MESSAGES_ACCOUNT);
+  });
+
   it.each([
     ['ledgers first', [ledgerManifestPath, messagesManifestPath]],
     ['messages first', [messagesManifestPath, ledgerManifestPath]],
