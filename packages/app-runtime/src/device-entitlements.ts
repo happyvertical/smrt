@@ -29,6 +29,7 @@ import {
   sign,
   verify,
 } from 'node:crypto';
+import { withOperationLock } from './operation-lock.js';
 import {
   readPrivateFileBounded,
   writePrivateFileAtomic,
@@ -461,7 +462,13 @@ function resolvePolicy(
 function verifyWithPolicy(
   input: unknown,
   policy: ResolvedPolicy,
-): DeviceEntitlementVerification {
+):
+  | DeviceEntitlementVerification
+  | {
+      ok: false;
+      reason: 'expired';
+      snapshot: Readonly<DeviceEntitlementSnapshot>;
+    } {
   const envelope = parseEnvelope(input);
   if (!envelope) return { ok: false, reason: 'malformed' };
 
@@ -505,7 +512,7 @@ function verifyWithPolicy(
   }
   if (now > snapshot.expiresAt) {
     if (now > snapshot.expiresAt + policy.gracePeriodMs) {
-      return { ok: false, reason: 'expired' };
+      return { ok: false, reason: 'expired', snapshot };
     }
     return { ok: true, state: 'grace', snapshot };
   }
@@ -524,13 +531,14 @@ function verifyWithPolicy(
  * a validly signed but older snapshot (for example one issued before an
  * entitlement lapsed) still verifies here. Callers that accept a snapshot
  * must go through the cache store's `install()`, which also enforces
- * monotonic `issuedAt` against the snapshot already held.
+ * the persistent replay and clock watermarks.
  */
 export function verifyDeviceEntitlementSnapshot(
   envelope: unknown,
   options: DeviceEntitlementVerifyOptions,
 ): DeviceEntitlementVerification {
-  return verifyWithPolicy(envelope, resolvePolicy(options));
+  const result = verifyWithPolicy(envelope, resolvePolicy(options));
+  return result.ok ? result : { ok: false, reason: result.reason };
 }
 
 // ---------------------------------------------------------------------------
@@ -560,7 +568,8 @@ export interface DeviceEntitlementCacheOptions
   extends DeviceEntitlementVerifyOptions {
   /**
    * Cache file. Keep it in the application's private data root. The sibling
-   * `<filePath>.watermark` records the newest accepted `issuedAt`.
+   * `<filePath>.watermark` records the newest accepted `issuedAt` and observed
+   * clock time; `<filePath>.lock/operation.lock` serializes participating processes.
    */
   filePath: string;
   transport?: DeviceEntitlementTransport;
@@ -581,7 +590,9 @@ export interface DeviceEntitlementRefreshResult
   reason?: DeviceEntitlementInstallResult['reason'] | 'transport_failed';
 }
 
-type Watermark = { kind: 'ok'; issuedAt: number } | { kind: 'corrupt' };
+type Watermark =
+  | { kind: 'ok'; issuedAt: number; observedAt?: number }
+  | { kind: 'corrupt' };
 
 /**
  * Verifier plus file-backed cache of the newest accepted snapshot.
@@ -590,9 +601,12 @@ type Watermark = { kind: 'ok'; issuedAt: number } | { kind: 'corrupt' };
  * cancellation) must not displace a newer one. The newest accepted `issuedAt`
  * is kept in a sibling watermark file and every load and install compares
  * against it, so swapping an old backup over the cache file fails too. A user
- * who deletes both files, or rolls the system clock back, can still replay a
- * snapshot that has not expired; that is inherent to offline verification and
- * is bounded by the snapshot lifetime the issuer chooses.
+ * who deletes or corrupts the watermark can still replay a snapshot that has
+ * not expired; that offline limit is bounded by the issuer lifetime. While the
+ * watermark survives, clock rollback fails closed against its observedAt.
+ * The private parent directory must be shared by all participating processes;
+ * this is not protection against an owner rewriting that directory or against
+ * older application versions that do not take the entitlement lock.
  */
 export class DeviceEntitlementCache {
   readonly #policy: ResolvedPolicy;
@@ -622,12 +636,14 @@ export class DeviceEntitlementCache {
    * Current entitlement, re-evaluated against the clock on every call. Never
    * throws: any failure is reported as the Local tier with a reason.
    */
-  async status(): Promise<DeviceEntitlementStatus> {
-    try {
-      return await this.#evaluate();
-    } catch {
-      return local('invalid', 'unreadable');
-    }
+  status(): Promise<DeviceEntitlementStatus> {
+    return this.#serialize(async () => {
+      try {
+        return await this.#locked(() => this.#safeEvaluate());
+      } catch {
+        return local('invalid', 'unreadable');
+      }
+    });
   }
 
   /**
@@ -637,7 +653,17 @@ export class DeviceEntitlementCache {
   install(
     envelope: DeviceEntitlementEnvelope | string,
   ): Promise<DeviceEntitlementInstallResult> {
-    return this.#serialize(() => this.#install(envelope));
+    return this.#serialize(async () => {
+      try {
+        return await this.#locked(() => this.#install(envelope));
+      } catch {
+        return {
+          accepted: false,
+          reason: 'storage_failed' as const,
+          status: local('invalid', 'unreadable'),
+        };
+      }
+    });
   }
 
   /**
@@ -709,6 +735,14 @@ export class DeviceEntitlementCache {
     return run;
   }
 
+  async #locked<T>(task: () => Promise<T>): Promise<T> {
+    return withOperationLock(
+      `${this.#filePath}.lock`,
+      'device-entitlements',
+      task,
+    );
+  }
+
   async #readWatermark(): Promise<Watermark | null> {
     const text = await readPrivateFileBounded(
       this.#watermarkPath,
@@ -719,13 +753,21 @@ export class DeviceEntitlementCache {
       const value = JSON.parse(text) as {
         version?: unknown;
         issuedAt?: unknown;
+        observedAt?: unknown;
       };
       if (
         value?.version === DEVICE_ENTITLEMENT_FORMAT_VERSION &&
         typeof value.issuedAt === 'number' &&
-        Number.isSafeInteger(value.issuedAt)
+        Number.isSafeInteger(value.issuedAt) &&
+        (value.observedAt === undefined ||
+          (typeof value.observedAt === 'number' &&
+            Number.isSafeInteger(value.observedAt)))
       ) {
-        return { kind: 'ok', issuedAt: value.issuedAt };
+        return {
+          kind: 'ok',
+          issuedAt: value.issuedAt,
+          observedAt: value.observedAt as number | undefined,
+        };
       }
     } catch {
       // fall through
@@ -734,42 +776,83 @@ export class DeviceEntitlementCache {
   }
 
   async #evaluate(): Promise<DeviceEntitlementStatus> {
-    // Watermark first: an install landing between the two reads then shows a
-    // newer file against an older watermark (accepted), never the reverse.
     const watermark = await this.#readWatermark();
     const text = await readPrivateFileBounded(this.#filePath, MAX_FILE_BYTES);
     if (text === null) return LOCAL_ABSENT;
-    const verification = verifyWithPolicy(text, this.#policy);
-    if (!verification.ok) {
-      return local(
-        verification.reason === 'expired' ? 'expired' : 'invalid',
-        verification.reason,
-      );
+    const now = this.#policy.now();
+    if (!Number.isSafeInteger(now)) return local('invalid', 'unreadable');
+    const verification = verifyWithPolicy(text, {
+      ...this.#policy,
+      now: () => now,
+    });
+    if (!verification.ok && verification.reason !== 'expired') {
+      return local('invalid', verification.reason);
     }
     if (watermark?.kind === 'corrupt') return local('invalid', 'unreadable');
-    const { snapshot } = verification;
+    // Expired metadata has passed the same signature, identity and lifetime checks.
+    const snapshot =
+      'snapshot' in verification ? verification.snapshot : undefined;
+    if (!snapshot) return local('expired', 'expired');
     if (watermark && snapshot.issuedAt < watermark.issuedAt) {
       return local('invalid', 'replayed');
     }
-    return {
-      tier: 'entitled',
-      state: verification.state,
-      featureKeys: snapshot.featureKeys,
+    const dates = {
       issuedAt: snapshot.issuedAt,
       expiresAt: snapshot.expiresAt,
       graceEndsAt: snapshot.expiresAt + this.#policy.gracePeriodMs,
     };
+    if (watermark?.observedAt !== undefined && now < watermark.observedAt) {
+      return { ...local('expired', 'expired'), ...dates };
+    }
+    if (
+      !watermark ||
+      watermark.observedAt !== now ||
+      watermark.issuedAt < snapshot.issuedAt
+    ) {
+      await this.#writeWatermark(snapshot.issuedAt, now);
+    }
+    if (!verification.ok) return { ...local('expired', 'expired'), ...dates };
+    return {
+      tier: 'entitled',
+      state: verification.state,
+      featureKeys: snapshot.featureKeys,
+      ...dates,
+    };
+  }
+
+  async #safeEvaluate(): Promise<DeviceEntitlementStatus> {
+    try {
+      return await this.#evaluate();
+    } catch {
+      return local('invalid', 'unreadable');
+    }
+  }
+
+  async #writeWatermark(issuedAt: number, observedAt: number): Promise<void> {
+    await writePrivateFileAtomic(
+      this.#watermarkPath,
+      JSON.stringify({
+        version: DEVICE_ENTITLEMENT_FORMAT_VERSION,
+        issuedAt,
+        observedAt,
+      }),
+      { createParent: true },
+    );
   }
 
   async #install(
     offered: DeviceEntitlementEnvelope | string,
   ): Promise<DeviceEntitlementInstallResult> {
-    const verification = verifyWithPolicy(offered, this.#policy);
+    const now = this.#policy.now();
+    const verification = verifyWithPolicy(offered, {
+      ...this.#policy,
+      now: () => now,
+    });
     if (!verification.ok) {
       return {
         accepted: false,
         reason: verification.reason,
-        status: await this.status(),
+        status: await this.#safeEvaluate(),
       };
     }
     try {
@@ -777,6 +860,18 @@ export class DeviceEntitlementCache {
       const watermark = await this.#readWatermark();
       // A corrupt watermark is repaired by the next valid install.
       const floor = watermark?.kind === 'ok' ? watermark.issuedAt : -Infinity;
+      if (
+        !Number.isSafeInteger(now) ||
+        (watermark?.kind === 'ok' &&
+          watermark.observedAt !== undefined &&
+          now < watermark.observedAt)
+      ) {
+        return {
+          accepted: false,
+          reason: 'expired',
+          status: await this.#safeEvaluate(),
+        };
+      }
       const serialized =
         typeof offered === 'string' ? offered : JSON.stringify(offered);
       if (Buffer.byteLength(serialized) > MAX_FILE_BYTES) {
@@ -786,7 +881,7 @@ export class DeviceEntitlementCache {
         return {
           accepted: false,
           reason: 'replayed',
-          status: await this.status(),
+          status: await this.#safeEvaluate(),
         };
       }
       if (snapshot.issuedAt === floor) {
@@ -795,32 +890,34 @@ export class DeviceEntitlementCache {
           MAX_FILE_BYTES,
         ).catch(() => null);
         if (current !== null && !sameEnvelope(current, serialized)) {
-          return {
-            accepted: false,
-            reason: 'replayed',
-            status: await this.status(),
-          };
+          const held = verifyWithPolicy(current, {
+            ...this.#policy,
+            now: () => now,
+          });
+          if (
+            !('snapshot' in held) ||
+            held.snapshot.issuedAt >= snapshot.issuedAt
+          ) {
+            return {
+              accepted: false,
+              reason: 'replayed',
+              status: await this.#safeEvaluate(),
+            };
+          }
         }
       }
-      // Snapshot first, watermark second: a crash between the two can only
-      // leave a watermark that is one install behind, never ahead.
+      // Persist the floor first. If snapshot replacement fails or the process
+      // dies, an older file fails closed; retrying this snapshot repairs it.
+      await this.#writeWatermark(Math.max(floor, snapshot.issuedAt), now);
       await writePrivateFileAtomic(this.#filePath, serialized, {
         createParent: true,
       });
-      await writePrivateFileAtomic(
-        this.#watermarkPath,
-        JSON.stringify({
-          version: DEVICE_ENTITLEMENT_FORMAT_VERSION,
-          issuedAt: Math.max(floor, snapshot.issuedAt),
-        }),
-        { createParent: true },
-      );
-      return { accepted: true, status: await this.status() };
+      return { accepted: true, status: await this.#safeEvaluate() };
     } catch {
       return {
         accepted: false,
         reason: 'storage_failed',
-        status: await this.status(),
+        status: await this.#safeEvaluate(),
       };
     }
   }
