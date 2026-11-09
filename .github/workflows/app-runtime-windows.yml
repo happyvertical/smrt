@@ -126,7 +126,13 @@ jobs:
       # generator through its exported function until core fixes the entry
       # check (tracked on the Windows follow-up issue). Core's dependencies
       # must be built first because the generator imports from source.
+      # Package scripts in this monorepo are POSIX shell (VAR=x cmd, cp -r) and
+      # pnpm runs them through cmd.exe on Windows. Run the build steps' package
+      # scripts under the Git Bash that ships on the runner instead. Applied to
+      # the build steps only; the install step keeps pnpm's default shell.
       - name: Build core's dependencies
+        env:
+          NPM_CONFIG_SCRIPT_SHELL: 'C:\Program Files\Git\bin\bash.exe'
         run: pnpm turbo run build --filter="@happyvertical/smrt-core^..."
 
       - name: Generate the core manifest (Windows entry-check workaround)
@@ -134,9 +140,13 @@ jobs:
         run: node -e "import('./scripts/generate-manifest.js').then((m) => m.generateManifest())"
 
       - name: Build the dependency closure
+        env:
+          NPM_CONFIG_SCRIPT_SHELL: 'C:\Program Files\Git\bin\bash.exe'
         run: pnpm turbo run build --filter="@happyvertical/smrt-app-runtime^..."
 
       - name: Restore the core test manifest
+        env:
+          NPM_CONFIG_SCRIPT_SHELL: 'C:\Program Files\Git\bin\bash.exe'
         run: pnpm turbo run generate:test --filter='@happyvertical/smrt-core'
 
       - name: Windows custody tests
