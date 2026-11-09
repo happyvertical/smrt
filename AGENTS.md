@@ -92,7 +92,10 @@ Test and build gotchas (Vitest plugin, Oxc decorators, `svelte-check`):
   Asset ownership uses noun-specific joins; generic associations are provenance.
 - Use public registry/database/collection APIs; add an owning-package API rather
   than reaching into private state. JSON fields use guarded string get/set helpers.
-- Runtime schema, migrations and the int4/int8 flow: [agents/root-gotchas.md](agents/root-gotchas.md).
+- Runtime checks table existence only and never creates application schema.
+  Use migrations and `smrt doctor --db` / `db:status --parity`. Existing int4
+  deployments require the maintenance-window `db:migrate-int8` flow; normal
+  parity intentionally treats int4/int8 as equivalent. See CLI guidance.
 - Release automation generates changesets; never author them manually. Dependency
   overrides target the advisory range; ignored GHSAs also need an
   `audit-policy.json` record. Validate with `pnpm audit:policy`.
@@ -109,12 +112,10 @@ is additive. `pnpm check:agents-chain` checks the 32 KB cap.
 GitHub tracker uses `implement`, `claim-issue`, `review-cycle`, `ship`, and
 `resolve`; Work/buzz variants require an explicitly selected Work tracker.
 
-Before adding a helper, util, or integration, read the
-[intent index](docs/knowledge/intents/index.md); before extending a package, run
-`smrt-dev-mcp review --directory <pkg> --format summary` (or `build-context`
-`task: architecture`). A capability belongs in its owning smrt package or the
-SDK, never as a helper in a downstream package: add it there (see Fix it here),
-or file a framework issue when it cannot ship in this branch.
+Before adding a helper, read the [intent index](docs/knowledge/intents/index.md) and run
+`smrt-dev-mcp review --directory <pkg> --format summary`. A capability belongs in its
+owning package or the SDK, never a downstream helper: add it there or file a
+framework issue.
 
 `smrt knowledge:review-context` / `knowledge:architecture-context` provide
 scoped summaries; read the selected references on demand. Runtime manifests

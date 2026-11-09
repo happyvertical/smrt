@@ -17,4 +17,4 @@ SMRT is a multi-context monorepo. Use this map to find the package-level contrac
 
 For cross-context work, read every affected row. System-wide decisions belong in root `docs/adr/`; context-local decisions should live beside the relevant context.
 
-Before adding a helper, util, or integration, read [`docs/knowledge/intents/index.md`](docs/knowledge/intents/index.md); before extending a package run `smrt-dev-mcp review --directory <pkg> --format summary` (or `build-context` with `task: architecture`). A capability belongs in its owning smrt package or the SDK, never as a helper in a downstream package: add it there (see Fix it here in `AGENTS.md`), or file a framework issue when it cannot ship in this branch.
+Before adding a helper, read the [intent index](docs/knowledge/intents/index.md) and run `smrt-dev-mcp review --directory <pkg> --format summary`. A capability belongs in its owning package or the SDK, never a downstream helper: add it there or file a framework issue.
