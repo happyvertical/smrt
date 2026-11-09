@@ -427,6 +427,41 @@ describe('smrt app restore-latest', () => {
       }
     });
 
+    it('binds the restore to the offered sequence and producing device (never optional)', async () => {
+      // A2 made both optional at snapshot open; the relay path must pass them.
+      const h = await harness();
+      const laptop = join(h.root, 'laptop');
+      await h.boot(laptop, 'v1');
+      await h.relay.publish(laptop, 'device-laptop', h.keys);
+      await h.boot(join(h.root, 'newer'), 'v2');
+      await h.relay.publish(join(h.root, 'newer'), 'device-laptop', h.keys);
+      // Rollback: the relay offers sequence 2 but serves the older file.
+      const older = h.relay.state.snapshots.get(1);
+      const offered = h.relay.state.snapshots.get(2);
+      if (!older || !offered) throw new Error('setup');
+      offered.file = older.file;
+      const desktop = join(h.root, 'desktop');
+      const rolledBack = await h.run(desktop, 'device-desktop');
+      expect(rolledBack.code).toBe(1);
+      expect(rolledBack.stderr).toContain('sequence does not match');
+      expect(existsSync(desktop)).toBe(false);
+      expect(siblings(h.root, desktop)).toEqual([]);
+
+      // Device substitution: a genuine snapshot, credited to another device.
+      const honest = await harness();
+      const source = join(honest.root, 'source');
+      await honest.boot(source, 'v1');
+      await honest.relay.publish(source, 'device-laptop', honest.keys);
+      const entry = honest.relay.state.snapshots.get(1);
+      if (!entry) throw new Error('setup');
+      entry.deviceId = 'device-someone-else';
+      const target = join(honest.root, 'desktop');
+      const swapped = await honest.run(target, 'device-desktop');
+      expect(swapped.code).toBe(1);
+      expect(swapped.stderr).toContain('device does not match');
+      expect(existsSync(target)).toBe(false);
+    });
+
     it('refuses while a revocation still waits for its rotation, whoever the snapshot names', async () => {
       const h = await harness();
       const laptop = join(h.root, 'laptop');
