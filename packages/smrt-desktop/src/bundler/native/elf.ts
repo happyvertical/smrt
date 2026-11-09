@@ -53,7 +53,12 @@ const MAX_PROGRAM_HEADERS = 64;
 const MAX_DYNAMIC_ENTRIES = 512;
 const MAX_INTERP_BYTES = 4096;
 const MAX_NEEDED_NAME = 256;
-const MAX_STRTAB_BYTES = 1024 * 1024;
+// Only `DT_NEEDED` names are read from the string table (each at most
+// MAX_NEEDED_NAME bytes, inside the reader's own budget), so this is a sanity
+// bound on the declared size, not a read size. The official Node 26 linux-x64
+// binary declares 2,694,159 bytes (it exports its whole N-API and V8 surface),
+// so the bound must be generous.
+const MAX_STRTAB_BYTES = 256 * 1024 * 1024;
 
 /** True when `head` begins with the ELF magic. */
 export function hasElfMagic(head: Uint8Array): boolean {

@@ -1,3 +1,4 @@
+export { BillingCheckoutSession } from './BillingCheckoutSession.js';
 export type {
   PricingStrategy,
   SpendingBasis,

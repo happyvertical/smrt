@@ -25,6 +25,7 @@ import {
   randomBytes,
   timingSafeEqual,
 } from 'node:crypto';
+import { closeSync, fsyncSync, openSync } from 'node:fs';
 import type { FileHandle } from 'node:fs/promises';
 import { link, lstat, mkdir, open, rename, rm, unlink } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
@@ -415,6 +416,33 @@ async function publishFile(
       throw new Error(`${label} already exists: ${destination}`);
     }
     throw error;
+  }
+  syncDirectory(dirname(destination));
+}
+
+/**
+ * Flush a directory entry (a rename or link) to disk. Platforms that cannot
+ * open or sync a directory report one of a few "not supported" codes; those
+ * are the only errors swallowed.
+ */
+function syncDirectory(path: string): void {
+  let fd: number | undefined;
+  try {
+    fd = openSync(path, 'r');
+    fsyncSync(fd);
+  } catch (error) {
+    const code = errorCode(error);
+    if (
+      code !== 'EINVAL' &&
+      code !== 'ENOTSUP' &&
+      code !== 'EISDIR' &&
+      code !== 'EPERM' &&
+      code !== 'EACCES'
+    ) {
+      throw error;
+    }
+  } finally {
+    if (fd !== undefined) closeSync(fd);
   }
 }
 
@@ -952,6 +980,7 @@ export async function decryptSnapshot(
       digest = await extractDataRootArchive(remaining(), staging);
       await assertAbsent(destination);
       await rename(staging, destination);
+      syncDirectory(dirname(destination));
     } else {
       const handle = await open(staging, 'wx', 0o600);
       staged = true;

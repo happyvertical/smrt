@@ -28,6 +28,9 @@ serde_json = "1"
 # Loopback HTTP/1.1 health probe. No default features: no TLS stack, no
 # gzip/json extras. Redirects and proxies are disabled at call time.
 ureq = { version = "3", default-features = false }
+# Per-launch owner-link secret from the OS random source (already in the tree
+# through tauri-utils).
+getrandom = "0.3"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

@@ -312,6 +312,11 @@ const WORKSPACE_ALLOWED_KEYS: ReadonlySet<string> = new Set([
   'dedupePeerDependents',
   'excludeLinksFromLockfile',
   'strictPeerDependencies',
+  // pnpm's own supply-chain setting: it only NARROWS the release-age delay for
+  // the package versions it names (a list of `name@version || version`
+  // strings), loads no code and has no path or URL, and the bundle install
+  // uses the app's frozen lockfile anyway. Ordinary apps carry it.
+  'minimumReleaseAgeExclude',
 ]);
 /** Keys whose content names dependency specifiers, which must be registry ones. */
 const WORKSPACE_SPEC_KEYS: ReadonlySet<string> = new Set([

@@ -145,6 +145,33 @@ are not prerequisites for unrelated user-package work.
   server-set (`setSessionData` refuses it). State-changing handlers require
   `application/json` (415). Challenge rows are reaped only 10 minutes past expiry
   (clock skew).
+- Step-up (#4841, `src/step-up.ts`, subpath `./step-up`): `requireRecentAuthentication`
+  decides on `SessionContext.reauthenticatedAt`, derived from the stored row:
+  `data.reauthenticatedAt` (server-set through `SessionCollection.markReauthenticated`
+  only after a deliberate fresh authentication; `setSessionData` refuses it;
+  extend/activity never move it) or the sign-in time of a password or passkey
+  session only (`STEP_UP_SIGN_IN_AUTH_METHODS` = `password`, `passkey`; an OIDC
+  or magic-link SIGN-IN, `terminal`, `pin`, `mobile` never count: an unlocked
+  stolen device can complete them without the person). Rule: an EXISTING
+  session never counts as fresh by itself; a DELIBERATE fresh authentication
+  with any supported method does, so an OIDC-only or magic-link-only owner can
+  still step up. Methods, all stamping the EXISTING session (never minting one),
+  all refusing layered/PIN/ceilinged sessions (`Session.isStepUpEligible`):
+  `PasswordCredentialService.stepUp` (limiter-guarded password check);
+  `OidcLoginService.beginStepUp`/`completeStepUp` (authorization request with
+  `prompt=login` + `max_age=0`; the transaction is stored on the session as
+  `data.oidcStepUpIntent`, taken at the callback so it is single use; the ID
+  token must verify as at sign-in AND carry `auth_time` inside the window, not
+  before the intent started, not future; its issuer+subject must be an existing
+  `OidcIdentity` of the session user's own profile; a provider that omits
+  `auth_time` or ignores `prompt`/`max_age` is refused);
+  `MagicLinkService.requestStepUp`/`consumeStepUp` (token claim `purpose:
+  step_up` + session digest + user id, TTL <= 300 s, single use; `verify` and
+  `inspect` refuse it so it cannot sign in; `consumeStepUp` refuses a link
+  without that purpose). Every step-up refusal is one `StepUpRequiredError`
+  (`step_up_required`) that does not say which check failed. A passkey owner
+  re-authenticates with a fresh passkey sign-in. Keep the entry free of
+  side-effect imports.
 - A layered session whose tenant differs from its parent's never loads (null
   is allowed: narrower). Limiter rows carry `retain_until`; retention must
   not fall back to a process-wide horizon.

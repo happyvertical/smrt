@@ -31,7 +31,9 @@ timestamps; keep `smrt desktop bundle`, the README bundler section and the
 exists. The feature catalog is in `product-config.ts`; a package a compiled
 model imports at run time (such as `@oxc-project/runtime`) must never be in it.
 The CLI command (`packages/cli/src/commands/desktop.ts`) stays a thin wrapper.
-`e2e.test.ts` (real pnpm, nodejs.org, a real start) runs only with
+`--measure` starts the sidecar on an EMPTY data directory (smrt#4835: the app
+creates its own schema on first start); never reintroduce a pre-migrated
+template. `e2e.test.ts` (real pnpm, nodejs.org, a real start) runs only with
 `SMRT_DESKTOP_BUNDLE_E2E=1`. The Node pins are unverified against the release
 signature until `scripts/update-node-pins.mjs` is run with `gpg`; each pin's
 provenance is recorded in the report and `--require-verified-pins` refuses an
@@ -44,7 +46,19 @@ secret, a real updater key, a gpg-verified Node pin and a non-placeholder
 product identity. Never add a default, fallback or generated value for any of
 them; the owner inputs still missing are listed in `wrapper/README.md`.
 
-Keep the package free of runtime dependencies and use Node built-ins only.
+The plugin launcher lives in `src/launcher` behind the Node-only `./launcher`
+entry (the root must never import it; `exports.test.ts` enforces that). It is a
+thin client of app-runtime: the `origin.json` reader (`readOriginFile`) and
+`openLocalMcpTokenStore(...).issue({ holder })`; do not add a provider
+interface, control channel, credential store or helper around either. Failure
+classes and exit codes (`LAUNCHER_FAILURES`) are fixed text that never carries
+a path, origin, token or provider message; the probe is `node:http` to literal
+127.0.0.1 and must never become `fetch`. The README "Plugin launcher" section
+lists the codes: keep it in step with the table.
+
+Keep the root and bundler free of runtime dependencies (Node built-ins only);
+`@happyvertical/smrt-app-runtime` is a regular dependency (never a peer: the
+repo forbids inter-smrt peers) used only by `./launcher`.
 
 From this directory, run `npm run build`, `npm run typecheck`, and
 `smrt test src`.

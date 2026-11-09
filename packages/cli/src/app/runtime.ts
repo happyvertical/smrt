@@ -13,12 +13,7 @@ import type * as AppRuntime from '@happyvertical/smrt-app-runtime';
 import type { ResolvedApplicationRuntime } from '@happyvertical/smrt-config';
 import type { AgentDocsHooks } from './agent-docs.js';
 import type { BackupTargetDependencies } from './backup-command.js';
-import {
-  AppCommandError,
-  errorCode,
-  WindowsLocalProfileUnsupportedError,
-  type WindowsLocalRefusedOperation,
-} from './errors.js';
+import { AppCommandError, errorCode } from './errors.js';
 import {
   assertExternalArtifactPath,
   prepareApplicationStateRoot,
@@ -285,24 +280,6 @@ export function resolveContextApplicationId(sourceRoot: string): string {
 /** Host platform of this invocation (the `deps.platform` seam, else `os`). */
 export function hostPlatform(context: AppContext): NodeJS.Platform {
   return context.deps.platform?.() ?? platform();
-}
-
-/**
- * Early Windows gate (smrt#4837): refuse a local-profile command BEFORE it
- * creates a state root, takes `operation.lock` or `writer.lease`, runs the
- * build, or touches the data root. The local runtime cannot open its SQLite
- * database on Windows, so every such command would otherwise do real work and
- * then fail at the database. Deployed profiles are not gated: they never open
- * the local SQLite database. Reads only the configuration; creates nothing.
- */
-export async function refuseWindowsLocalProfile(
-  context: AppContext,
-  operation: WindowsLocalRefusedOperation,
-): Promise<void> {
-  if (hostPlatform(context) !== 'win32') return;
-  const runtime = await context.deps.resolveRuntime(context.sourceRoot);
-  if (runtime.profile !== 'local') return;
-  throw new WindowsLocalProfileUnsupportedError(operation);
 }
 
 /** Create or verify the private state root for this invocation. */

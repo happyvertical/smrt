@@ -1082,6 +1082,19 @@ describe('shared cloud target planner', () => {
     );
   });
 
+  it('keeps a __proto__ key in a JSON column instead of dropping it (#4827)', () => {
+    // The owner id inside forces a rewrite, so the object is rebuilt.
+    const meta = `{"__proto__":{"a":1},"x":2,"by":"${local.ownerId}"}`;
+    const planned = plan(localBundle({ notes: [note({ meta })] }));
+    const row = planned.bundle.tables.find((t) => t.name === 'notes')?.rows[0];
+    const parsed = JSON.parse(String(row?.meta)) as Record<string, unknown>;
+    expect(Object.keys(parsed).sort()).toEqual(['__proto__', 'by', 'x']);
+    expect(Object.hasOwn(parsed, '__proto__')).toBe(true);
+    expect(Object.getPrototypeOf(parsed)).toBe(Object.prototype);
+    expect(parsed.x).toBe(2);
+    expect(parsed.by).not.toBe(local.ownerId);
+  });
+
   it('refuses locators inside text, keeps binary values, never adopts a carried row', () => {
     expectRefused(
       () =>

@@ -184,7 +184,7 @@ impl Harness {
         match self.supervisor.wait_for(Duration::from_secs(20), |p| {
             matches!(p, Phase::Ready { .. } | Phase::Failed(_))
         }) {
-            Some(Phase::Ready { origin, port }) => (origin, port),
+            Some(Phase::Ready { origin, port, .. }) => (origin, port),
             other => panic!("expected Ready, got {other:?}\n{}", self.log_text()),
         }
     }
@@ -271,6 +271,10 @@ fn reserved_env_wins_and_the_launch_shape_is_exact() {
                 ("ORIGIN".into(), "https://attacker.example".into()),
                 ("SMRT_DATA_DIR".into(), "/etc".into()),
                 ("host".into(), "lowercase".into()),
+                (
+                    "SMRT_DESKTOP_OWNER_LINK_SECRET".into(),
+                    "inherited-secret".into(),
+                ),
                 ("INHERITED_MARKER".into(), "kept".into()),
             ],
             ..Options::default()
@@ -286,6 +290,21 @@ fn reserved_env_wins_and_the_launch_shape_is_exact() {
     assert_eq!(seen["SMRT_DATA_DIR"], h.data.to_str().unwrap());
     assert_eq!(seen["CUSTOM"], "from-manifest");
     assert_eq!(seen["INHERITED_MARKER"], "kept");
+    // The launch secret reaches only the sidecar, is the one carried by the
+    // Ready phase, is 32 random bytes of hex, and never reaches the log.
+    let secret = h
+        .phases()
+        .iter()
+        .find_map(|p| match p {
+            Phase::Ready { launch_secret, .. } => Some(launch_secret.clone()),
+            _ => None,
+        })
+        .expect("ready phase");
+    assert_eq!(seen["OWNER_LINK_SECRET"], secret.expose());
+    assert_eq!(secret.expose().len(), 64);
+    assert_ne!(seen["OWNER_LINK_SECRET"], "inherited-secret");
+    assert!(!h.log_text().contains(secret.expose()));
+    assert!(!format!("{:?}", h.phases()).contains(secret.expose()));
     assert!(
         seen["lowerHost"].is_null(),
         "shadowing inherited names are dropped"
@@ -629,7 +648,7 @@ fn a_crashed_sidecar_is_restarted_on_the_same_origin_and_never_overlaps() {
     let (final_origin, _) = match h.supervisor.wait_for(Duration::from_secs(10), |p| {
         matches!(p, Phase::Ready { .. })
     }) {
-        Some(Phase::Ready { origin, port }) => (origin, port),
+        Some(Phase::Ready { origin, port, .. }) => (origin, port),
         other => panic!("{other:?}"),
     };
     assert_eq!(h.runs(), 3);

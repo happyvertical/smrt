@@ -370,12 +370,25 @@ describe('pnpm configuration that would load code', () => {
       'dedupePeerDependents: false',
       'excludeLinksFromLockfile: false',
       'strictPeerDependencies: false',
+      'minimumReleaseAgeExclude:',
+      "- '@happyvertical/sql@0.111.7 || 0.111.8'",
       '',
     ].join('\n');
     expect(findUnsafeWorkspaceConfig(yaml)).toEqual([]);
     expect(findUnsafeWorkspaceConfig(GENERATED_WORKSPACE_YAML)).toEqual([]);
     expect(findUnsafeWorkspaceConfig('')).toEqual([]);
     expect(findUnsafeWorkspaceConfig('# only a comment\r\n')).toEqual([]);
+    // `minimumReleaseAgeExclude` as pnpm writes it (a column-0 sequence), and
+    // its sibling `minimumReleaseAge`, which is NOT staged: a bare scalar the
+    // bundle install does not need.
+    expect(
+      findUnsafeWorkspaceConfig(
+        "minimumReleaseAgeExclude:\n- '@happyvertical/ai@0.111.7 || 0.111.8'\n",
+      ),
+    ).toEqual([]);
+    expect(findUnsafeWorkspaceConfig('minimumReleaseAge: 1440\n')).not.toEqual(
+      [],
+    );
     // pnpm 11 `allowBuilds`, and column-0 block sequences under an allowed key.
     expect(
       findUnsafeWorkspaceConfig(

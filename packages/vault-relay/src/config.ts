@@ -28,6 +28,15 @@ export const DEFAULT_LEASE_TTL_MS = 5 * 60 * 1000;
 /** Bounds of the configured lease lifetime. */
 export const MIN_CONFIGURED_LEASE_TTL_MS = 30 * 1000;
 export const MAX_CONFIGURED_LEASE_TTL_MS = 60 * 60 * 1000;
+/**
+ * Default time a lapsed account's snapshots stay restorable, measured from the
+ * moment the relay first observed the `backup.vault` entitlement as lapsed
+ * (#4819). An owner decision (90 days), configurable per deployment.
+ */
+export const DEFAULT_LAPSE_RETENTION_DAYS = 90;
+/** Upper bound of the configured lapse window (ten years). */
+export const MAX_LAPSE_RETENTION_DAYS = 3650;
+const DAY_MS = 24 * 60 * 60 * 1000;
 /** Upper bound of a JSON request body (begin upload, device registration). */
 export const MAX_JSON_BODY_BYTES = 4096;
 
@@ -43,6 +52,14 @@ export interface VaultRelayRetention {
   keepLast: number;
   /** Also keep committed snapshots younger than this many milliseconds. */
   keepWithinMs: number;
+  /**
+   * Days a lapsed account stays restorable (list, latest, download, abort)
+   * after the lapse is first observed; afterwards the operator sweep may
+   * delete its snapshots. Default 90.
+   */
+  lapseRetentionDays: number;
+  /** `lapseRetentionDays` in milliseconds. */
+  lapseRetentionMs: number;
 }
 
 export interface VaultRelayLimits {
@@ -63,7 +80,10 @@ export interface VaultRelayPolicy {
 
 export interface VaultRelayPolicyInput {
   quota: VaultRelayQuota;
-  retention: VaultRelayRetention;
+  retention: Omit<
+    VaultRelayRetention,
+    'lapseRetentionDays' | 'lapseRetentionMs'
+  > & { lapseRetentionDays?: number };
   limits?: Partial<VaultRelayLimits>;
 }
 
@@ -79,6 +99,22 @@ function nonNegativeInteger(value: number, name: string): number {
     throw new Error(`vault relay: ${name} must be a non-negative integer`);
   }
   return value;
+}
+
+function lapseRetention(days: number | undefined): {
+  lapseRetentionDays: number;
+  lapseRetentionMs: number;
+} {
+  const lapseRetentionDays = positiveInteger(
+    days ?? DEFAULT_LAPSE_RETENTION_DAYS,
+    'retention.lapseRetentionDays',
+  );
+  if (lapseRetentionDays > MAX_LAPSE_RETENTION_DAYS) {
+    throw new Error(
+      `vault relay: retention.lapseRetentionDays may not exceed ${MAX_LAPSE_RETENTION_DAYS}`,
+    );
+  }
+  return { lapseRetentionDays, lapseRetentionMs: lapseRetentionDays * DAY_MS };
 }
 
 /**
@@ -99,6 +135,7 @@ export function resolvePolicy(input: VaultRelayPolicyInput): VaultRelayPolicy {
       input.retention.keepWithinMs,
       'retention.keepWithinMs',
     ),
+    ...lapseRetention(input.retention.lapseRetentionDays),
   };
   if (retention.keepLast >= quota.maxSnapshots) {
     throw new Error(

@@ -3,11 +3,20 @@
 The versioned sidecar manifest and the runtime bundler for s-m-r-t desktop
 apps. The bundler (`smrt desktop bundle`) writes the sidecar manifest; the Tauri
 wrapper (`wrapper/`) reads it before launching the packaged executable. The
-package has no runtime dependencies and uses only Node built-ins.
+root and bundler use only Node built-ins; the optional `./launcher` entry needs
+`@happyvertical/smrt-app-runtime` (a regular dependency).
 
 Owner sign-in is app-runtime's loopback onboarding URL and `claimOwner()`, and
 local MCP credentials are app-runtime's token store (`openLocalMcpTokenStore`);
 this package does not duplicate either.
+
+## Generic example app
+
+[`examples/generic-app`](examples/generic-app/README.md) is the first app
+packaged with this package: a generic s-m-r-t app built from the repository's own
+SvelteKit template with a placeholder identity (`Generic SMRT App`,
+`invalid.example.generic-smrt-app`), used to prove the desktop path end to end
+(first-run schema, the owner link, unsigned launch on each OS).
 
 ## Node 26 and adapter-node example
 
@@ -61,9 +70,14 @@ const sidecar = parseSidecarManifest(
   references, backslashes, percent escapes, queries and fragments are invalid.
   The probe stays on the selected loopback origin and rejects redirects.
 - `ownerClaimRoute` (optional) is the path on the supervisor-selected origin
-  where the local runtime's owner setup lives. It follows exactly the
-  `healthRoute` grammar and loopback rules. The manifest only declares it;
-  claim tokens and their handling belong to the supervisor and runtime.
+  the wrapper opens its window on (origin plus this path, never an absolute
+  URL). It follows exactly the `healthRoute` grammar and loopback rules. A
+  s-m-r-t app declares app-runtime's `/api/_runtime/owner-link`
+  (`createOwnerLinkHandler`), which redirects to the one-time `/setup?token=`
+  page while the owner is unclaimed and to `/` afterwards, but only for a
+  request that carries the per-launch `?launch=<secret>` the wrapper adds (403
+  otherwise). The wrapper never sees or logs the token; claiming it belongs to
+  the runtime.
 - `dataDirectory` is a portable path relative to Tauri's stable
   `app_local_data_dir` (the per-app, machine-local OS data root; see
   [Data root and roaming](#data-root-and-roaming)). The supervisor supplies its
@@ -105,15 +119,21 @@ change on Windows leaves its old directory behind in the roaming profile.
 
 ### Supervisor-supplied environment
 
-`HOST`, `PORT`, `ORIGIN` and `SMRT_DATA_DIR` are exported as
-`RESERVED_ENV_KEYS`. The supervisor sets `HOST=127.0.0.1`, `PORT` to the
-selected port, `ORIGIN=http://127.0.0.1:<port>` and `SMRT_DATA_DIR` to the
-absolute resolved data directory. A manifest `env` naming any of them, in any
+`HOST`, `PORT`, `ORIGIN`, `SMRT_DATA_DIR` and
+`SMRT_DESKTOP_OWNER_LINK_SECRET` are exported as `RESERVED_ENV_KEYS`. The
+supervisor sets `HOST=127.0.0.1`, `PORT` to the selected port,
+`ORIGIN=http://127.0.0.1:<port>`, `SMRT_DATA_DIR` to the absolute resolved data
+directory and `SMRT_DESKTOP_OWNER_LINK_SECRET` to a fresh per-launch secret
+(32 bytes from the OS random source as 64 lowercase hex characters, drawn on
+every sidecar start, passed only in the sidecar's environment and in the
+window's first URL as `?launch=`, never logged); the owner link route answers
+403 without it. A manifest `env` naming any of them, in any
 letter case, is rejected at parse time with a value-free diagnostic.
 `buildSidecarEnv(manifest, { port, dataDirectory }, baseEnv)` composes the
 final environment: it drops reserved names from `baseEnv` (case-insensitively),
 layers the manifest `env`, then applies the reserved values last so they always
-win. `port` must be an integer from 1 to 65535 and `dataDirectory` a nonempty
+win (the secret only when the optional `ownerLinkSecret` is supplied; the Rust
+wrapper always supplies one). `port` must be an integer from 1 to 65535 and `dataDirectory` a nonempty
 absolute path (POSIX, `C:\`, or UNC form, checked lexically); otherwise it
 throws a fixed diagnostic. Variables of `baseEnv` with value `undefined` are
 omitted.
@@ -144,6 +164,50 @@ Each artifact carries `version: 1`. A parser accepts a declared set of
 versions; an unknown one is `unsupported_contract`. An incompatible change is a
 new integer, never a silent reinterpretation. Optional additions within v1 are
 not made: unknown fields are errors, so every addition is a version decision.
+## Plugin launcher
+
+`@happyvertical/smrt-desktop/launcher` (Node only) is the command an assistant
+plugin runs to talk to the app's local MCP endpoint. `runLauncher(options)`
+resolves with an exit code; set `process.exitCode` from it.
+
+1. Reads the running app's `origin.json` from its state root with app-runtime's
+   `readOriginFile` and requires exactly `http://127.0.0.1:<port>` (see the
+   app-runtime README, "Origin file"). The file is written when the supervisor's
+   `ORIGIN` is set, removed on a clean exit, and ignored when its `pid` is gone.
+2. Probes `GET <origin><healthRoute>` over a literal `127.0.0.1` connection of
+   its own (`node:http`, not `fetch`: an environment proxy never sees it; no
+   redirects; 2xx required; 5 s).
+3. Only then takes a token with app-runtime's
+   `openLocalMcpTokenStore(...).issue({ holder: 'plugin-launcher:<productId>', scopes })`.
+   A holder has one active token, so each launch rotates the previous one and
+   two launchers of one product at the same time revoke each other.
+4. Spawns the app's bundled Node (an absolute path, no `PATH`, no shell, inside
+   `resourceRoot` after `realpath`) running the bundled `smrt-mcp-bridge` with
+   `--env-prefix --mcp-path [--name --version]`, working directory
+   `resourceRoot`, and an environment of exactly `<P>_SERVER_URL`, `<P>_TOKEN`
+   and `<P>_CLI_CONFIG` (the null device). The token is never in argv, files or
+   logs.
+5. Forwards stdin to the bridge and its stdout and stderr back, with the token
+   (even split across chunks) replaced by `[REDACTED]`. When stdin closes the
+   bridge gets a grace period, then SIGTERM, then SIGKILL. The launcher exits
+   with the bridge's status.
+
+A failure writes one fixed line to stderr, `smrt-desktop-launcher: <code>: <text>`,
+with no path, origin, token or provider message, and one exit code:
+
+| Code | Exit | Meaning |
+| --- | --- | --- |
+| `origin_unavailable` | 10 | no origin file, or stale, or not exact loopback |
+| `unhealthy` | 11 | the health route did not answer 2xx |
+| `token_unavailable` | 12 | the token store refused or failed |
+| `bridge_start_failed` | 13 | the bundled Node could not be started |
+| `bridge_exited` | 14 | the bridge exited non-zero by itself |
+| `invalid_options` | 15 | a malformed option, or a binary outside `resourceRoot` |
+
+A signal ends the bridge and exits `128 + signal`. `appId`, `dataDirectory` and
+`sourceRoot` must be the values the app itself runs with (they select the state
+root and the token store). `issueToken` is a test seam, not for production use.
+
 ## Runtime bundler
 
 `smrt desktop bundle` (the Node-only `@happyvertical/smrt-desktop/bundler`
@@ -182,7 +246,7 @@ canonical report (or a failure document), so it pipes cleanly.
 | `--require-verified-pins` | the release and signing path: refuse a Node pin whose provenance is not `gpg-verified` (`node_pin_unverified`, exit 4) before any work; without it an unverified pin only warns (see Node pin provenance) |
 | `--features <a,b>` | feature groups to keep in addition to the configuration's defaults |
 | `--max-size <MiB>` | installed-size budget; exceeding it exits 6 and publishes nothing, but still prints the report |
-| `--measure`, `--measure-data <dir>` | start the bundle on this machine and record installed size and cold start (host target only); this **runs the app's dependency code**, see Measuring runs the app |
+| `--measure` | start the bundle on this machine, from an empty data directory (the app creates its own schema on first start), and record installed size and cold start (host target only); this **runs the app's dependency code**, see Measuring runs the app |
 | `--offline` | `pnpm install --offline` and no Node download (needs the pnpm store and the Node cache) |
 | `--keep-sourcemaps`, `--force`, `--json` | keep `*.map`; replace an earlier bundle (or empty directory) at `--out`; JSON on stdout |
 
@@ -575,13 +639,19 @@ report is the list to sign.
 
 ### Known gaps found while bundling a real app
 
-- **No first-run schema.** s-m-r-t apps never create tables at run time
-  (`smrt db:migrate` does), so a sidecar started on an empty data directory
-  exits with `DB_SCHEMA_MISSING`. The desktop wrapper needs a prepare step
-  before the first start, or the runtime needs a supported way to migrate
-  itself. `--measure-data` works around it for measurement only: prepare a
-  directory with `SMRT_APP_ID=<id> SMRT_DATA_DIR=<dir> smrt app migrate` in
-  the app checkout.
+- **First-run schema (smrt#4835, resolved).** The local runtime creates the
+  app's schema itself on the first start of an empty data directory, inside
+  the initialization lock and writer lease, through the framework migration
+  path (`migrateSmrtSchemas`), and then serves. Upgrades take the same path.
+  The wrapper needs no prepare step. A failure rolls the database back (a
+  database that start created is removed) and exits non-zero with
+  `schema_creation_failed` (the framework step) or `migration_failed` (the
+  app's own `prepareDatabase` step) in the sidecar's output, so the wrapper
+  sees an ordinary startup failure with a stable, path-free code; see
+  `@happyvertical/smrt-app-runtime` "First start". Deployed profiles still
+  fail with `DB_SCHEMA_MISSING`. `--measure` therefore starts from an empty
+  data directory and its first-run series includes schema creation; there is
+  no pre-migrated directory to prepare.
 - **App identity.** The runtime reads the application id from `package.json`
   in its working directory unless `SMRT_APP_ID` is set; the bundler sets it.
 - **Dependency hygiene** drives the size more than any bundler setting; see
@@ -589,16 +659,20 @@ report is the list to sign.
 
 ### Bundle size and cold start
 
-Measured with `smrt desktop bundle --measure --measure-data <migrated dir>`
-on a real app. "Cold start" is the wall time from `spawn()` of the bundled
+Measured with `smrt desktop bundle --measure` on a real app. "Cold start" is the wall time from `spawn()` of the bundled
 Node binary (working directory `resources/`, environment from the written
 sidecar manifest through `buildSidecarEnv`, a free loopback port) to the first
 2xx answer of `GET /api/_runtime/health` (polled every 20 ms, 500 ms per
 request, no redirects). Three timed runs per series; the child is stopped
-between runs. `firstRun` copies the prepared data directory for every run;
-`warm` reuses one directory after an untimed priming start. It is a **new
-process, not a cold OS file cache** (dropping caches needs root), and it does
-not include schema creation. Compressed installer size is item 4's number.
+between runs. `firstRun` starts every run from a new, empty data directory,
+so it includes the app creating its schema; `warm` reuses one directory after
+an untimed priming start (which creates the schema once). It is a **new
+process, not a cold OS file cache** (dropping caches needs root). Compressed
+installer size is item 4's number.
+
+The row below was recorded before smrt#4835, on a pre-migrated data
+directory, so its first-run column excludes schema creation. Record a new row
+(first-run now includes it) the next time the bundle is measured.
 
 | Date (UTC) | Product | Target | Node | Machine | Features | Installed (apparent / on disk) | Files | First run median / max | Warm median / max |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -628,7 +702,6 @@ part; the largest kept packages (`du`, on disk) are `@happyvertical/*` (24.0 MiB
 and `@aws-sdk` (5.4 MiB).
 
 Reproduce: build the app (`pnpm install && pnpm build`), write
-`smrt-desktop.json` as above, create the bridge file, prepare the data
-directory, then run the `smrt desktop bundle` command with
-`--measure --measure-data <dir>` and read `measurements` in
-`bundle-report.json`. Per-OS rows from the CI matrix are item 4's.
+`smrt-desktop.json` as above, create the bridge file, then run the
+`smrt desktop bundle` command with `--measure` (no data directory to prepare)
+and read `measurements` in `bundle-report.json`. Per-OS rows from the CI matrix are item 4's.

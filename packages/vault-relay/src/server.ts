@@ -104,6 +104,14 @@ export function loadServerConfig(
         keepLast: integer(env, 'VAULT_RELAY_RETENTION_KEEP_LAST'),
         keepWithinMs:
           integer(env, 'VAULT_RELAY_RETENTION_KEEP_WITHIN_DAYS') * DAY_MS,
+        ...(env.VAULT_RELAY_LAPSE_RETENTION_DAYS
+          ? {
+              lapseRetentionDays: integer(
+                env,
+                'VAULT_RELAY_LAPSE_RETENTION_DAYS',
+              ),
+            }
+          : {}),
       },
       limits: {
         ...(env.VAULT_RELAY_MAX_CHUNK_BYTES

@@ -13,7 +13,7 @@ template's scripts so an app's `package.json` scripts become one-liners.
 | `node --env-file-if-exists=.env scripts/smrt-vite.mjs <args>` | `smrt app vite <args>` (`smrt app dev …` = `vite dev …` plus `--host 127.0.0.1` / `--port $PORT` unless given: `devServerArguments`) |
 | `smrt-mcp-apps.mjs validate-if-present && …smrt-vite.mjs build` | `smrt app build [vite args]` |
 | `scripts/smrt-web.mjs` | `bin/smrt-web.mjs` (spawned by `start`) |
-| — (new, #3413) | `smrt app token [create] --scopes … [--expires 30d] [--label …]`, `token list`, `token revoke <id>` |
+| — (new, #3413) | `smrt app token [create] --scopes … [--expires 30d] [--label …] [--holder …]`, `token list`, `token revoke <id>`, `token revoke-holder <holder>` |
 | — (new, #4804) | `smrt app backup --encrypted --target <name>`, `backups targets [add\|remove]`, `backups list`, `backups prune` |
 | — (new, #4704) | `smrt app installation [status]`, `restore --origin-retired`, `reseed --confirm-destroy-seed`, `recover-seed <file> [--unverified]`, `retire` |
 | — (new, #4805) | `smrt app restore-latest [--discard-local] [--replace-installation] [--origin-retired] [--recover]` |
@@ -60,19 +60,16 @@ Agent docs (#4878): `install` runs `docs:agents`, `dev` refreshes a missing or s
   `prepareDatabase` that runs `smrt db:migrate`; `migrate` calls
   `prepareLocalDatabaseStorage`; `doctor`/`backup`/`export`/`import` call
   `validateLocalDatabaseStorage`, which never creates or repairs storage.
-- **Windows local profile** (smrt#4837): `refuseWindowsLocalProfile`
-  (`runtime.ts`, the `deps.platform` seam) runs first in `install`, `setup`,
-  `recover`, `start`, `stop`, `open` (`runApplicationOperation`), `migrate`
-  (`prepareMigration`, after usage validation) and `token`
-  (`runTokenOperation`, after argument validation), and
-  `refuseWindowsOperatorCopy` first in `backup`/`export`/`import`. Both resolve
-  the runtime (config only) and refuse for the local profile before any state
-  root, lock, lease, build or data-root access; deployed profiles pass through.
-  `doctor` stays read-only and, instead of running `db:status`, reports
-  `windows-local-profile-unsupported`. A new command that creates a state root
-  or touches the data root must add itself to the gate and to
-  `WINDOWS_LOCAL_REFUSED_OPERATIONS`.
-- **No runtime schema**: migrations run only through `smrt db:migrate`.
+- **Windows** (smrt#4837): the local profile runs on Windows (the database
+  opens through the SDK's `windowsCustody.verify`, see app-runtime). Only
+  `refuseWindowsOperatorCopy` remains, first in `backup`/`export`/`import`, for
+  the local profile: those copies' destination has no Windows custody rule yet
+  (modes are ignored, the copy would inherit the destination's ACL). It
+  resolves the runtime (config only) and refuses before any state root, lock,
+  lease or destination access; deployed profiles pass through. Lift it only
+  with a destination rule, and then also pass `windowsCustody` in
+  `portability.ts` `withDatabase` (it opens `secureFile` without it today).
+- **Operator commands never create schema in-process**: `smrt app` migrates only through `smrt db:migrate` (its runtime calls leave `createSchema` off). The running app (`createSmrtSvelteKitRuntime`, local profile) creates its own schema on first start (smrt#4835, app-runtime README "First start"); deployed profiles never do.
 - **Output**: success JSON on stdout; failure is one stderr line
   `{schemaVersion:1,status:'error',code:'operation-failed',message,recovery,secretValuesIncluded:false}`
   plus `runtimeCode` when a `LocalRuntimeError` carries one
@@ -104,7 +101,7 @@ Agent docs (#4878): `install` runs `docs:agents`, `dev` refreshes a missing or s
   and `token` (its own).
 - **`installation`** (`installation.ts`, local only): declares a restored move,
   an independent copy, or a recovered seed (#4704; decision in the app-runtime
-  README). `status` is read-only; the rest take the operation lock and refuse
+  README). `status` is read-only and exits 0 only for `in-custody` or `unrecorded` (1 otherwise, JSON still printed); the rest take the operation lock and refuse
   while a writer is active. Output is secret-free JSON with explicit identity
   and token effects.
 - **`restore-latest`** (`restore-latest.ts`, local only, #4805): under
@@ -145,7 +142,9 @@ Agent docs (#4878): `install` runs `docs:agents`, `dev` refreshes a missing or s
   connection, no writer lease, so it runs beside `app:start`), and serializes
   create/revoke under `operation.lock`. Only the `issued` document carries
   the token (`secretValuesIncluded: true`); list/revoke/error output never
-  does.
+  does. No `--expires` issues a renewable token (30 d window slides on use);
+  `--expires` a fixed one; `--holder` rotates that holder's token (#4874).
+  `list` shows `holder`, `renewable`, `lastUsedAt`.
 - **Artifacts**: backup/export/import paths go through
   `assertExternalArtifactPath` (real path of nearest existing ancestor, never
   in or over the checkout). Backup refuses an existing destination; export
@@ -154,6 +153,26 @@ Agent docs (#4878): `install` runs `docs:agents`, `dev` refreshes a missing or s
   target; deployed import requires `SMRT_MAINTENANCE_MODE=true`.
   Local relative asset locators resolve against the approved asset root during
   export and stay relative after import. Legacy file URLs import as file URLs.
+- **Vault restart and rotation** (#4838, `vault-restart.ts`, API only; no
+  `smrt app` subcommand, the host supplies the collaborators):
+  `restartVault({ from, to, deviceId, recoverySecret, stateRoot, lifecycle,
+  hostConfig, lease, publish, backup })` sequences the key lifecycle
+  (`restartAccount`), the host's `publish`, `vault-sync.json`
+  (`switchVaultAccount`), the host config (`followAccount`) and the first
+  backup as idempotent steps, deciding each from the stores themselves, and
+  returns `{ state: complete | resumed | mismatch | backup_failed, stores,
+  steps, backupAfterRotation, repairable }`. A step failure is reported, not
+  thrown; call again to resume. A store on an account that is neither `from`
+  nor `to` is a non-repairable mismatch and nothing runs. `inspectVaultRestart`
+  is the read-only form. `rotateVaultKeys` is `lifecycle.rotate` followed
+  immediately by the host's `publish` and `backup`: restore refuses snapshots
+  from the older generation until a new one is published, so a failed backup
+  is the loud `backup_failed` state with `backupAfterRotation: 'failed'`.
+  Reports hold ids, step names, codes and redacted messages, never the secret
+  or a key. `createPreviousAccountSnapshotKeys(lifecycle)` (`snapshot-keys.ts`)
+  is the read-only rescue reader for the parked account: `openingKey` only,
+  for `decryptSnapshot`, refusing once `discardPreviousAccount()` ran.
+  Contract: app-runtime README "Restarting when the recovery secret is lost".
 - **Encrypted snapshots** (#4797): `backup --encrypted` streams the data root
   and `export --encrypted` the logical bundle into one HVSF v1 file (0600,
   published with `link()`, only ciphertext on disk). Keys come only from the

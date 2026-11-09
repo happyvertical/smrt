@@ -31,6 +31,7 @@ import { pathToFileURL } from 'node:url';
 import {
   acquireWriterLease,
   createProviderReadinessProbe,
+  ensurePrivateDirectorySync,
   type OperationLock,
   withOperationLock,
 } from '@happyvertical/smrt-app-runtime';
@@ -64,7 +65,6 @@ import {
   type AppContext,
   hostPlatform,
   preparedStateRoot,
-  refuseWindowsLocalProfile,
   runtimeEnvironment,
   webLauncherPath,
 } from './runtime.js';
@@ -117,10 +117,6 @@ function printOnboardingUrl(context: AppContext, url: string | null): void {
   );
 }
 
-function ensurePrivateDirectory(path: string): void {
-  mkdirSync(path, { recursive: true, mode: 0o700 });
-}
-
 function nearestExistingAncestor(path: string): string {
   let candidate = path;
   while (!existsSync(candidate)) {
@@ -167,7 +163,7 @@ function saveOnboardingLaunch(context: AppContext, url: string): void {
 }
 
 function saveOnboardingUrl(context: AppContext, url: string): void {
-  ensurePrivateDirectory(preparedStateRoot(context));
+  ensurePrivateDirectorySync(preparedStateRoot(context));
   saveOnboardingLaunch(context, url);
   writePrivateAtomic(
     onboardingPath(context),
@@ -415,7 +411,7 @@ async function start(
     });
     return existing.pid;
   }
-  ensurePrivateDirectory(preparedStateRoot(context));
+  ensurePrivateDirectorySync(preparedStateRoot(context));
   const instance = randomBytes(16).toString('hex');
   const childEnv: NodeJS.ProcessEnv = {
     ...env,
@@ -768,22 +764,7 @@ async function doctor(context: AppContext): Promise<number> {
       });
     }
 
-    // `smrt db:status` would open (and could create) the local SQLite file,
-    // which the Windows custody rule does not yet cover: report instead.
-    const windowsLocal =
-      runtime.profile === 'local' && hostPlatform(context) === 'win32';
-    if (windowsLocal) {
-      findings.push({
-        code: 'windows-local-profile-unsupported',
-        severity: 'error',
-        message:
-          'The local runtime cannot open its SQLite database on Windows yet (smrt#4837); migration status was not read.',
-        recovery:
-          'Use a non-Windows host for the local profile, or select the self-hosted or cloud profile.',
-      });
-    }
-
-    if (canInspectMigrations && !windowsLocal) {
+    if (canInspectMigrations) {
       try {
         const status = context.deps.runSmrt(['db:status', '--json'], {
           env: runtimeEnvironment(context, runtime).env,
@@ -997,7 +978,7 @@ async function backup(context: AppContext, args: string[]): Promise<void> {
             'Backup destination must remain outside local storage.',
           );
         }
-        ensurePrivateDirectory(dirname(destination));
+        ensurePrivateDirectorySync(dirname(destination));
         if (snapshotKeys) {
           if (existsSync(destination)) {
             throw new Error(
@@ -1186,19 +1167,8 @@ export async function runApplicationOperation(
   operation: AppOperation,
   args: string[],
 ): Promise<number> {
-  // Windows local profile: refuse before any state root, lock, lease, build or
-  // data-root access (smrt#4837). `doctor` is read-only and stays; the copies
-  // have their own, more specific refusal below.
-  if (
-    operation === 'install' ||
-    operation === 'setup' ||
-    operation === 'recover' ||
-    operation === 'start' ||
-    operation === 'stop' ||
-    operation === 'open'
-  ) {
-    await refuseWindowsLocalProfile(context, operation);
-  }
+  // The copies (`backup`, `export`, `import`) refuse the local profile on
+  // Windows for their destination custody (`refuseWindowsOperatorCopy`).
   switch (operation) {
     case 'install': {
       await assertLocalOperation(context, 'app:install');

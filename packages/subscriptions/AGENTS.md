@@ -180,7 +180,26 @@ environment names are in the README. Invariants:
   base handle deadlocks single-connection SQLite. Never claim before applying.
 - **Trust comes from our own state.** Checkout metadata is HMAC-signed
   (`smrt_sig`, `signing.ts`) and an unsigned or foreign-signed session never
-  links a tenant or plan. A provider subscription or customer id links to one
+  links a tenant or plan.
+- **Checkout is bound to a recorded session (#4814)**, `checkout-sessions.ts`
+  and `models/BillingCheckoutSession.ts` (`_smrt_billing_checkout_sessions`,
+  no API surface; a root export because the manifest advertises it).
+  `createCheckout` records the session id
+  before returning the URL and signs `smrt_exp`; the completion (inside the
+  `runOnce` transaction, after the PostgreSQL `checkout:<id>` lock) checks, in
+  order: record exists, status is not `completed` / `needs_reconciliation`
+  (no-op `ignored`), record tenant equals the signed tenant, `smrt_exp` is
+  well-formed, event time is not after the signed or recorded expiry. A
+  missing, mismatched or expired record never links and never drops: the row
+  becomes `needs_reconciliation` (outcome `needs_reconciliation`, error log).
+  Only `applied` marks a record `completed`. `reconcileCheckout()` (link) and
+  `dismissCheckout()` (terminal `dismissed`, for a payment that is not the
+  tenant's) are the only ways out and are operator-only; reconcile never skips
+  the apply-time conflict checks. The list shows `customerId`,
+  `targetTenantId` and `claimedTenantHasOwnSession`, is paged, and has a count.
+  The expiry is deterministic per idempotency window so a repeated click sends
+  identical provider parameters. Change the table shape only with owner
+  approval. A provider subscription or customer id links to one
   tenant; a conflicting event is ignored with a reason code, not merged.
   Verification accepts the signing secret plus `metadataVerificationSecrets`
   (rotation); a purpose-matching session that fails them logs at error.
@@ -206,6 +225,19 @@ environment names are in the README. Invariants:
   codes only, errors pass through `safeErrorMessage()`. `readBillingEnv` keeps
   secrets non-enumerable. Add a named test per new threat in
   `__tests__/billing-host.test.ts`.
+
+## Vault account restart and supersede (#4841)
+
+`src/vault-account/`. `supersedeVaultAccount`, `unsupersedeVaultAccount` and
+`provisionRestartAccount` take injected ports (`VaultRelayAdminPort`,
+`VaultAccountDirectory`, an audit sink); no HTTP server or relay is needed.
+Order is load-bearing: owner of the tenant and of both accounts (`not_owner`),
+then `requireRecentAuthentication` from `smrt-users/step-up`
+(`step_up_required`, default 300 s), then the `authorized` audit record, then
+exactly one relay call, then the outcome record. Refusals are audited and never
+reach the relay; a member never learns about the step-up. Audit entries carry
+ids and codes only (no session id, key, token or message text). Import only the
+`@happyvertical/smrt-users/step-up` subpath, never the package root.
 
 ## Notes
 

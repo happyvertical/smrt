@@ -12,7 +12,6 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { resolveApplicationRuntime } from '@happyvertical/smrt-config';
-import * as sql from '@happyvertical/sql';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { runWithCustodyContext } from './custody-context.js';
 import {
@@ -24,15 +23,15 @@ import {
   resolveApplicationStateRoot,
   resolveLocalRuntimePaths,
   validateLocalDatabaseStorage,
-  WINDOWS_DATABASE_ACQUISITION_UNSUPPORTED_MESSAGE,
-  WindowsDatabaseAcquisitionUnsupportedError,
 } from './index.js';
 import {
   acquireInitializationLock,
   acquireLocalDatabase,
+  ensureApplicationSecret,
   preflightLocalApplicationRoot,
   prepareLocalFilesystem,
   validateApplicationSecret,
+  windowsSecureFileCustody,
 } from './local-custody.js';
 import { composeSmrtSvelteKitRuntime } from './sveltekit/runtime.js';
 import {
@@ -50,6 +49,7 @@ import {
   parseInspectorOutput,
 } from './windows-acl-inspector.js';
 import {
+  createWindowsDatabaseVerifier,
   preparePrivateWindowsTree,
   verifyWindowsFile,
   windowsCanonicalIdentity,
@@ -58,8 +58,23 @@ import {
   isWindowsReservedName,
   validateWindowsApplicationId,
   validateWindowsPath,
+  windowsPathComponents,
 } from './windows-paths.js';
 import { assertWindowsSecurityPolicy, parseSddl } from './windows-sddl.js';
+
+const sqlMock = vi.hoisted(() => ({
+  getDatabase: undefined as unknown as ReturnType<typeof vi.fn>,
+}));
+
+vi.mock('@happyvertical/sql', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@happyvertical/sql')>();
+  const { vi: vitest } = await import('vitest');
+  sqlMock.getDatabase = vitest.fn();
+  return {
+    ...actual,
+    getDatabase: (...args: unknown[]) => sqlMock.getDatabase(...args),
+  };
+});
 
 const workers = vi.hoisted(() => ({
   created: [] as Array<{
@@ -128,6 +143,7 @@ function policy(
 
 afterEach(() => {
   workers.created.length = 0;
+  sqlMock.getDatabase.mockReset();
   vi.restoreAllMocks();
 });
 
@@ -1428,50 +1444,198 @@ describe('operator state root on Windows', () => {
   });
 });
 
-describe('database acquisition is refused with a named error (D8)', () => {
-  it('refuses before the lease creates a single directory or file', async () => {
+const DATABASE = `${ROOT}\\application.sqlite`;
+const FINAL_MARKER = `${ROOT}\\.smrt-local-runtime-myapp`;
+const PENDING_MARKER = `${FINAL_MARKER}.pending`;
+
+type SecureFileArgument = {
+  secureFile: {
+    driver: string;
+    custody: string;
+    root: string;
+    windowsCustody?: { verify: (paths: readonly string[]) => Promise<void> };
+  };
+  cache?: boolean;
+};
+
+/**
+ * Stand in for `@happyvertical/sql`'s secure SQLite open on win32: run the
+ * caller's `verify` over the root-to-parent chain, create the database file
+ * the way the SDK does (exclusive create, inheriting the parent's DACL), then
+ * run `verify` again with the leaf appended. Records what it was given.
+ */
+function fakeSdkOpen(
+  machine: FakeWindowsMachine,
+  hooks: { beforeVerify?: () => void } = {},
+) {
+  const opened: SecureFileArgument[] = [];
+  const close = vi.fn(async () => undefined);
+  sqlMock.getDatabase.mockImplementation(async (config: SecureFileArgument) => {
+    opened.push(config);
+    const verify = config.secureFile.windowsCustody?.verify;
+    if (!verify) throw new Error('windowsCustody.verify was not passed.');
+    const chain = windowsPathComponents(ROOT);
+    hooks.beforeVerify?.();
+    await verify(chain);
+    if (!machine.node(DATABASE)) {
+      machine.runtime().openFile(DATABASE, 'create').close();
+    }
+    await verify([...chain, DATABASE]);
+    return { close };
+  });
+  return { opened, close };
+}
+
+describe('database acquisition works through windowsCustody.verify', () => {
+  it('passes the verifier to the SDK and promotes the markers', async () => {
     const machine = FakeWindowsMachine.standard();
-    const getDatabase = vi.spyOn(sql, 'getDatabase');
-    const refusal = await onWindows(machine, () =>
+    const { opened, close } = fakeSdkOpen(machine);
+    const paths = await onWindows(machine, () =>
       prepareLocalDatabaseStorage(windowsOptions()),
-    ).catch((error: unknown) => error);
-    expect(refusal).toBeInstanceOf(WindowsDatabaseAcquisitionUnsupportedError);
-    expect(refusal).toBeInstanceOf(LocalRuntimeError);
-    const named = refusal as WindowsDatabaseAcquisitionUnsupportedError;
-    expect(named.name).toBe('WindowsDatabaseAcquisitionUnsupportedError');
-    expect(named.reason).toBe('windows_secure_sqlite_unsupported');
-    expect(named.message).toBe(
-      WINDOWS_DATABASE_ACQUISITION_UNSUPPORTED_MESSAGE,
     );
-    expect(named.message).toContain('smrt#4837');
-    // The runtime cannot know what its caller created first (the smrt app
-    // commands used to build and lock before reaching it), so it must not
-    // claim that nothing exists on disk.
-    expect(named.message).not.toMatch(/No files or directories were created/);
-    expect(named.message).toContain('refused before it created or opened');
-    expect(named.message).toContain('calling program prepared earlier');
-    expect(named.message).toContain('self-hosted and cloud profiles');
-    expect(machine.operations).toEqual([]);
-    expect(workers.created).toHaveLength(0);
-    expect(getDatabase).not.toHaveBeenCalled();
+    expect(paths.database).toBe(DATABASE);
+    expect(opened).toHaveLength(1);
+    expect(opened[0]?.secureFile).toMatchObject({
+      driver: 'node:sqlite',
+      custody: 'trusted-parent',
+      root: ROOT,
+    });
+    expect(typeof opened[0]?.secureFile.windowsCustody?.verify).toBe(
+      'function',
+    );
+    expect(close).toHaveBeenCalledTimes(1);
+    // The data root was created private, the pending marker promoted.
+    expect(machine.exists(ROOT)).toBe(true);
+    expect(machine.exists(FINAL_MARKER)).toBe(true);
+    expect(machine.exists(PENDING_MARKER)).toBe(false);
+    expect(machine.locks.map((lock) => lock.path)).toContain(ROOT);
+    // The rule saw the database file itself (the second verify pass).
+    expect(machine.inspections.some((paths) => paths.includes(DATABASE))).toBe(
+      true,
+    );
   });
 
-  it('refuses initializeLocalApplicationRuntime the same way', async () => {
+  it('applies the unchanged custodied rule to the chain and the file', async () => {
     const machine = FakeWindowsMachine.standard();
+    const verify = createWindowsDatabaseVerifier(machine.runtime(), {
+      custodyRoot: ROOT,
+      database: DATABASE,
+    });
+    const rt = machine.runtime();
+    preparePrivateWindowsTree(rt, { directory: ROOT });
+    const chain = windowsPathComponents(ROOT);
+    expect(() => verify(chain)).not.toThrow();
+    rt.openFile(DATABASE, 'create').close();
+    expect(() => verify([...chain, DATABASE])).not.toThrow();
+    // A second hard link on the database is refused, not reported false.
+    machine.at(DATABASE).nlink = 2n;
+    expect(() => verify([...chain, DATABASE])).toThrow(/exactly one link/);
+    machine.at(DATABASE).nlink = 1n;
+    // Another principal's access on the database is refused.
+    machine.at(DATABASE).sddl = SDDL.readable;
+    expect(() => verify([...chain, DATABASE])).toThrow(LocalRuntimeError);
+    machine.at(DATABASE).sddl = SDDL.userPrivate();
+    // A reparse point on the root is refused.
+    machine.at(ROOT).attributes = 0x10 | 0x400;
+    expect(() => verify(chain)).toThrow(/reparse point/);
+  });
+
+  it('refuses a chain that is not the database chain', () => {
+    const machine = FakeWindowsMachine.standard();
+    const rt = machine.runtime();
+    preparePrivateWindowsTree(rt, { directory: ROOT });
+    const verify = createWindowsDatabaseVerifier(rt, {
+      custodyRoot: ROOT,
+      database: DATABASE,
+    });
+    const chain = windowsPathComponents(ROOT);
+    const message = /unexpected path chain/;
+    expect(() => verify([])).toThrow(message);
+    expect(() => verify(chain.slice(0, -1))).toThrow(message);
+    expect(() => verify([...chain.slice(0, -1), `${LOCAL}\\Other`])).toThrow(
+      message,
+    );
+    expect(() => verify([...chain, `${ROOT}\\other.sqlite`])).toThrow(message);
+    expect(() => verify([...chain, DATABASE, DATABASE])).toThrow(message);
+    // Case differences are the same NTFS path.
+    expect(() => verify(chain.map((p) => p.toUpperCase()))).not.toThrow();
+  });
+
+  it('throws before data is read when the rule fails, and cleans up', async () => {
+    const machine = FakeWindowsMachine.standard();
+    const { opened, close } = fakeSdkOpen(machine, {
+      // Access is widened between the data root's creation and the open.
+      beforeVerify: () => {
+        machine.at(ROOT).sddl = SDDL.readable;
+      },
+    });
     await expect(
-      onWindows(machine, () =>
-        initializeLocalApplicationRuntime(windowsOptions()),
-      ),
-    ).rejects.toBeInstanceOf(WindowsDatabaseAcquisitionUnsupportedError);
-    expect(machine.operations).toEqual([]);
-    expect(workers.created).toHaveLength(0);
+      onWindows(machine, () => prepareLocalDatabaseStorage(windowsOptions())),
+    ).rejects.toBeInstanceOf(LocalRuntimeError);
+    expect(opened).toHaveLength(1);
+    // No database was handed back, so nothing could be read or closed.
+    expect(close).not.toHaveBeenCalled();
+    expect(machine.exists(DATABASE)).toBe(false);
+    // The directory and marker this attempt created are removed again.
+    expect(machine.exists(PENDING_MARKER)).toBe(false);
+    expect(machine.exists(ROOT)).toBe(false);
   });
 
-  it('refuses the SvelteKit localRuntime() before the writer lease creates a state root (C2)', async () => {
+  it('refuses an unsafe existing data root before the SDK is called', async () => {
     const machine = FakeWindowsMachine.standard();
-    const getDatabase = vi.spyOn(sql, 'getDatabase');
+    machine.dir(ROOT, SDDL.readable);
+    const { opened } = fakeSdkOpen(machine);
+    await expect(
+      onWindows(machine, () => prepareLocalDatabaseStorage(windowsOptions())),
+    ).rejects.toBeInstanceOf(LocalRuntimeError);
+    expect(opened).toHaveLength(0);
+  });
+
+  it('opens the token store with the verifier after validating the root', async () => {
+    const machine = FakeWindowsMachine.standard();
+    storedRoot(machine);
+    sqlMock.getDatabase.mockRejectedValue(new Error('stop after the call'));
+    await expect(
+      onWindows(machine, () => openLocalMcpTokenStore(windowsOptions())),
+    ).rejects.toThrow('stop after the call');
+    expect(machine.inspections).toHaveLength(1);
+    const config = sqlMock.getDatabase.mock.calls[0]?.[0] as SecureFileArgument;
+    expect(config.cache).toBe(false);
+    expect(config.secureFile.root).toBe(ROOT);
+    expect(typeof config.secureFile.windowsCustody?.verify).toBe('function');
+  });
+
+  it('wires the verifier into the SvelteKit runtime database config only on win32', () => {
+    const machine = FakeWindowsMachine.standard();
+    const paths = { root: ROOT, database: DATABASE };
+    const onWin = runWithCustodyContext(
+      { platform: 'win32', windows: machine.runtime() },
+      () => windowsSecureFileCustody(paths),
+    );
+    expect(typeof onWin.windowsCustody?.verify).toBe('function');
+    for (const name of ['linux', 'darwin'] as const) {
+      const other = runWithCustodyContext(
+        { platform: name, windows: machine.runtime() },
+        () => windowsSecureFileCustody(paths),
+      );
+      expect(other).toEqual({});
+      expect('windowsCustody' in other).toBe(false);
+    }
+  });
+
+  it('no longer refuses initializeLocalApplicationRuntime or localRuntime()', async () => {
+    const machine = FakeWindowsMachine.standard();
+    const { opened } = fakeSdkOpen(machine);
+    // The pipeline runs past acquisition (the first thing it does that the
+    // old refusal blocked); what follows needs the real installation files.
+    await onWindows(machine, () =>
+      initializeLocalApplicationRuntime(windowsOptions()),
+    ).catch(() => undefined);
+    expect(opened).toHaveLength(1);
+
+    const machine2 = FakeWindowsMachine.standard();
     const acquireWriterLease = vi.fn();
-    const initializeLocal = vi.fn();
+    const initializeLocal = vi.fn().mockRejectedValue(new Error('stop'));
     const runtime = composeSmrtSvelteKitRuntime(
       {
         appId: 'myapp',
@@ -1483,85 +1647,93 @@ describe('database acquisition is refused with a named error (D8)', () => {
       },
       { initializeLocal: initializeLocal as never },
     );
-    const refusal = await onWindows(machine, () =>
-      runtime.localRuntime(),
-    ).catch((error: unknown) => error);
-    expect(refusal).toBeInstanceOf(WindowsDatabaseAcquisitionUnsupportedError);
-    expect(acquireWriterLease).not.toHaveBeenCalled();
-    expect(initializeLocal).not.toHaveBeenCalled();
-    expect(machine.operations).toEqual([]);
-    expect(machine.inspections).toEqual([]);
-    expect(workers.created).toHaveLength(0);
-    expect(getDatabase).not.toHaveBeenCalled();
+    await expect(
+      onWindows(machine2, () => runtime.localRuntime()),
+    ).rejects.toThrow('stop');
+    expect(acquireWriterLease).toHaveBeenCalledTimes(1);
+    expect(initializeLocal).toHaveBeenCalledTimes(1);
   });
+});
 
-  it('refuses the default SvelteKit writer lease path without creating the state root (C2)', async () => {
+describe('application secret and filesystem preparation on Windows', () => {
+  const SECRETS = `${ROOT}\\secrets`;
+  const SECRET = `${SECRETS}\\application.secret`;
+
+  function preparedRoot() {
     const machine = FakeWindowsMachine.standard();
-    const runtime = composeSmrtSvelteKitRuntime(
-      {
-        appId: 'myapp',
-        dataDirectory: ROOT,
-        sourceRoot: SOURCE,
-        runtime: resolveApplicationRuntime({ profile: 'local' }),
-        env: { ...ENV, NODE_ENV: 'development' },
-      },
-      { initializeLocal: vi.fn() as never },
+    preparePrivateWindowsTree(machine.runtime(), { directory: SECRETS });
+    return machine;
+  }
+
+  it('creates the secret through a temporary file and a hard link', async () => {
+    const machine = preparedRoot();
+    const created = await onWindows(machine, () =>
+      ensureApplicationSecret(SECRET, SOURCE),
     );
-    await expect(
-      onWindows(machine, () => runtime.localRuntime()),
-    ).rejects.toBeInstanceOf(WindowsDatabaseAcquisitionUnsupportedError);
-    expect(machine.operations).toEqual([]);
-    expect(workers.created).toHaveLength(0);
+    expect(created).toBe(true);
+    const secret = await onWindows(machine, () =>
+      validateApplicationSecret(SECRET, SOURCE),
+    );
+    expect(secret).toMatch(/^[A-Za-z0-9_-]{43}\n$/);
+    // One name left: the temporary file is gone and the link count is back.
+    expect(machine.at(SECRET).nlink).toBe(1n);
+    expect(
+      machine.operations.filter((op) => op.startsWith('unlink')),
+    ).toHaveLength(1);
+    // A second call keeps the existing secret and reports it was not new.
+    const again = await onWindows(machine, () =>
+      ensureApplicationSecret(SECRET, SOURCE),
+    );
+    expect(again).toBe(false);
+    expect(
+      await onWindows(machine, () => validateApplicationSecret(SECRET, SOURCE)),
+    ).toBe(secret);
   });
 
-  it('refuses acquireLocalDatabase before any filesystem access', async () => {
-    const machine = FakeWindowsMachine.standard();
-    const getDatabase = vi.spyOn(sql, 'getDatabase');
-    const rt = machine.runtime();
-    const touched = vi.fn();
-    const spy = new Proxy(rt, {
-      get: (target, key, receiver) => {
-        touched(key);
-        return Reflect.get(target, key, receiver);
+  it.each([
+    [
+      'a second hard link',
+      (m: FakeWindowsMachine) => (m.at(SECRET).nlink = 2n),
+    ],
+    [
+      'another principal with access',
+      (m: FakeWindowsMachine) => (m.at(SECRET).sddl = SDDL.readable),
+    ],
+    [
+      'a truncated value',
+      (m: FakeWindowsMachine) => {
+        m.at(SECRET).content = 'short\n';
+        m.at(SECRET).size = 44n;
       },
-    });
-    const paths = resolveLocalRuntimePaths(windowsOptions());
+    ],
+  ])('refuses a secret with %s', async (_name, damage) => {
+    const machine = preparedRoot();
+    await onWindows(machine, () => ensureApplicationSecret(SECRET, SOURCE));
+    damage(machine);
     await expect(
-      runWithCustodyContext({ platform: 'win32', windows: spy }, () =>
-        acquireLocalDatabase(paths, SOURCE, 'myapp'),
-      ),
-    ).rejects.toBeInstanceOf(WindowsDatabaseAcquisitionUnsupportedError);
-    expect(touched).not.toHaveBeenCalled();
-    expect(machine.operations).toEqual([]);
-    expect(getDatabase).not.toHaveBeenCalled();
+      onWindows(machine, () => validateApplicationSecret(SECRET, SOURCE)),
+    ).rejects.toBeInstanceOf(LocalRuntimeError);
   });
 
-  it('refuses secret handling and filesystem preparation before touching disk', async () => {
-    const machine = FakeWindowsMachine.standard();
-    const paths = resolveLocalRuntimePaths(windowsOptions());
+  it('refuses a missing secret as missing', async () => {
+    const machine = preparedRoot();
     await expect(
-      onWindows(machine, () =>
-        validateApplicationSecret(paths.applicationSecret, SOURCE),
-      ),
-    ).rejects.toBeInstanceOf(WindowsDatabaseAcquisitionUnsupportedError);
-    await expect(
-      onWindows(machine, () => prepareLocalFilesystem(paths, SOURCE)),
-    ).rejects.toBeInstanceOf(WindowsDatabaseAcquisitionUnsupportedError);
-    expect(machine.operations).toEqual([]);
-    expect(machine.inspections).toEqual([]);
-    // POSIX code given a Windows path would create it relative to the cwd.
-    expect(existsSync(paths.assets)).toBe(false);
-    expect(existsSync(paths.secrets)).toBe(false);
+      onWindows(machine, () => validateApplicationSecret(SECRET, SOURCE)),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
-  it('refuses to open the token store, after validating the stored root', async () => {
+  it('prepares the assets and secrets directories privately', async () => {
     const machine = FakeWindowsMachine.standard();
-    storedRoot(machine);
-    const getDatabase = vi.spyOn(sql, 'getDatabase');
-    await expect(
-      onWindows(machine, () => openLocalMcpTokenStore(windowsOptions())),
-    ).rejects.toBeInstanceOf(WindowsDatabaseAcquisitionUnsupportedError);
-    expect(getDatabase).not.toHaveBeenCalled();
-    expect(machine.inspections).toHaveLength(1);
+    preparePrivateWindowsTree(machine.runtime(), { directory: ROOT });
+    const paths = resolveLocalRuntimePaths(windowsOptions());
+    // The directories are made before anything touches the real filesystem.
+    await onWindows(machine, () =>
+      prepareLocalFilesystem(paths, SOURCE, {} as never, windowsOptions()),
+    ).catch(() => undefined);
+    expect(machine.exists(paths.assets)).toBe(true);
+    expect(machine.exists(paths.secrets)).toBe(true);
+    expect(machine.locks.map((lock) => lock.path)).toEqual(
+      expect.arrayContaining([paths.assets, paths.secrets]),
+    );
   });
 });

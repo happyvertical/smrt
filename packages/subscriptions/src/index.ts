@@ -28,6 +28,7 @@ export {
   type BillingProviderPort,
   type BillingProviderWebhookEvent,
   type BillingSubscriptionState,
+  type BillingUnreconciledCheckout,
   type BillingUrls,
   type BillingWebhookOutcome,
   type BillingWebhookResponse,
@@ -65,6 +66,7 @@ export type {
 export {
   BillingAdjustment,
   BillingAdjustmentCollection,
+  BillingCheckoutSession,
   ClientCharge,
   ClientChargeCollection,
   CreditGrant,
@@ -219,3 +221,27 @@ export {
   normalizeSubscriber,
   subscriberToColumns,
 } from './utils.js';
+// Hosted vault-account admin surface: owner-gated, step-up-gated supersede,
+// un-supersede and restart provisioning (#4841)
+export {
+  createVaultRelayAdminClient,
+  NOT_OWNER_CODE,
+  NotOwnerError,
+  type ProvisionRestartAccountInput,
+  type ProvisionRestartAccountResult,
+  provisionRestartAccount,
+  StepUpRequiredError,
+  type SupersedeVaultAccountInput,
+  supersedeVaultAccount,
+  type UnsupersedeVaultAccountInput,
+  unsupersedeVaultAccount,
+  type VaultAccountAction,
+  type VaultAccountAdminDeps,
+  VaultAccountAdminError,
+  type VaultAccountAuditEntry,
+  type VaultAccountAuditSink,
+  type VaultAccountDenial,
+  type VaultAccountDirectory,
+  type VaultRelayAdminClientOptions,
+  type VaultRelayAdminPort,
+} from './vault-account/index.js';

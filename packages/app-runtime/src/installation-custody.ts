@@ -41,17 +41,12 @@ import { randomBytes } from 'node:crypto';
 import {
   closeSync,
   constants,
-  fchmodSync,
   fstatSync,
-  fsyncSync,
   openSync,
   readFileSync,
   readSync,
-  renameSync,
-  rmSync,
-  writeSync,
 } from 'node:fs';
-import { basename, dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { errorCode } from './error-code.js';
 import {
   openLocalMcpTokenStore,
@@ -61,6 +56,11 @@ import {
   withLocalInitializationLock,
 } from './index.js';
 import { deriveLocalInstallationIdentity } from './local-installation-identity.js';
+import {
+  assertPrivateDirectorySync,
+  isPrivateFileStat,
+  writePrivateFileAtomicSync,
+} from './private-files.js';
 import {
   type ApplicationStateRootOptions,
   type ApplicationStateRootSource,
@@ -323,10 +323,6 @@ export interface RecoverInstallationSeedOptions
   allowUnverified?: boolean;
 }
 
-function currentUid(): number | undefined {
-  return process.getuid?.();
-}
-
 function stateRootFor(options: InstallationCustodyOptions): string {
   return prepareApplicationStateRoot(stateRootOptions(options));
 }
@@ -344,19 +340,6 @@ export function stateRootOptions(
     dataDirectory: options.dataDirectory,
     sourceRoot: options.sourceRoot,
   };
-}
-
-function isPrivateFile(
-  details: { isFile(): boolean; uid: number; mode: number; size: number },
-  maxBytes: number,
-): boolean {
-  const uid = currentUid();
-  return (
-    details.isFile() &&
-    (uid === undefined || details.uid === uid) &&
-    (details.mode & 0o077) === 0 &&
-    details.size <= maxBytes
-  );
 }
 
 function parseRecord(contents: string): InstallationCustodyRecord | null {
@@ -418,7 +401,7 @@ function readRecord(
   try {
     descriptor = openSync(path, constants.O_RDONLY | NO_FOLLOW);
     const details = fstatSync(descriptor);
-    if (!isPrivateFile(details, MAX_RECORD_BYTES)) return 'invalid';
+    if (!isPrivateFileStat(details, MAX_RECORD_BYTES)) return 'invalid';
     return parseRecord(readFileSync(descriptor, 'utf8')) ?? 'invalid';
   } catch (error) {
     // A missing record is absence; a link (ELOOP) or anything else is not.
@@ -428,43 +411,8 @@ function readRecord(
   }
 }
 
-/** Atomic private write: a reader sees the old or the new file, never a mix. */
-function writeFileAtomic(path: string, contents: string): void {
-  const temporary = join(
-    dirname(path),
-    `.${basename(path)}.tmp-${randomBytes(8).toString('hex')}`,
-  );
-  let descriptor: number | undefined;
-  try {
-    descriptor = openSync(
-      temporary,
-      constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | NO_FOLLOW,
-      0o600,
-    );
-    writeSync(descriptor, contents);
-    fsyncSync(descriptor);
-    closeSync(descriptor);
-    descriptor = undefined;
-    renameSync(temporary, path);
-  } catch (error) {
-    if (descriptor !== undefined) closeSync(descriptor);
-    rmSync(temporary, { force: true });
-    throw error;
-  }
-  try {
-    const directory = openSync(dirname(path), constants.O_RDONLY);
-    try {
-      fsyncSync(directory);
-    } finally {
-      closeSync(directory);
-    }
-  } catch {
-    // Directory fsync is best effort (not supported on every platform).
-  }
-}
-
 function writeRecord(path: string, record: InstallationCustodyRecord): void {
-  writeFileAtomic(path, `${JSON.stringify(record)}\n`);
+  writePrivateFileAtomicSync(path, `${JSON.stringify(record)}\n`);
 }
 
 /**
@@ -477,10 +425,13 @@ function readSeed(path: string, lenientMode = false): string | null {
   try {
     descriptor = openSync(path, constants.O_RDONLY | NO_FOLLOW);
     const details = fstatSync(descriptor);
-    const modeOk = lenientMode
-      ? (details.mode & 0o077) === 0
-      : (details.mode & 0o777) === 0o600;
-    if (!isPrivateFile(details, 64) || !modeOk || details.size !== 44) {
+    // Windows reports synthetic modes: its privacy is the directory's DACL.
+    const modeOk =
+      process.platform === 'win32' ||
+      (lenientMode
+        ? (details.mode & 0o077) === 0
+        : (details.mode & 0o777) === 0o600);
+    if (!isPrivateFileStat(details, 64) || !modeOk || details.size !== 44) {
       throw new Error(
         'The installation seed must be a complete current-user-owned private file; for a backup copy, chmod 600 it first.',
       );
@@ -516,24 +467,12 @@ function readSeed(path: string, lenientMode = false): string | null {
  * (`smrt app backup` uses one) arrives with group/other access.
  */
 function assertPrivateDirectory(path: string): void {
-  let descriptor: number | undefined;
   try {
-    descriptor = openSync(
-      path,
-      constants.O_RDONLY | constants.O_DIRECTORY | NO_FOLLOW,
-    );
-    const details = fstatSync(descriptor);
-    const uid = currentUid();
-    if (!details.isDirectory() || (uid !== undefined && details.uid !== uid)) {
-      throw new Error('not a current-user directory');
-    }
-    if ((details.mode & 0o077) !== 0) fchmodSync(descriptor, 0o700);
+    assertPrivateDirectorySync(path);
   } catch {
     throw new Error(
       'The installation secrets directory must be a real current-user directory.',
     );
-  } finally {
-    if (descriptor !== undefined) closeSync(descriptor);
   }
 }
 
@@ -883,7 +822,7 @@ export async function reseedInstallation(
       await store.close();
     }
     const seed = `${randomBytes(32).toString('base64url')}\n`;
-    writeFileAtomic(seedPath(paths.secrets), seed);
+    writePrivateFileAtomicSync(seedPath(paths.secrets), seed);
     const installationId = installationIdOf(seed) as string;
     activate(before, newRecord(installationId, 1, previousInstallationId));
     return outcome(
@@ -934,7 +873,20 @@ export async function recoverInstallationSeed(
         'The backup seed does not belong to this installation; nothing was changed.',
       );
     }
-    writeFileAtomic(seedPath(paths.secrets), backup);
+    const target = seedPath(paths.secrets);
+    // A mismatched seed may be the only copy of another installation's key:
+    // keep it beside the original (private, never overwritten) before the
+    // recovered one replaces it.
+    let replaced: string | null = null;
+    try {
+      replaced = readSeed(target, true);
+    } catch {
+      replaced = null;
+    }
+    if (replaced !== null && replaced !== backup) {
+      writePrivateFileAtomicSync(`${target}.replaced-${Date.now()}`, replaced);
+    }
+    writePrivateFileAtomicSync(target, backup);
     return outcome(
       'recover-seed',
       reportBefore,

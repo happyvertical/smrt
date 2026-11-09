@@ -30,13 +30,23 @@ import {
   withTenant,
 } from '@happyvertical/smrt-tenancy';
 import { TenantSubscriptionCollection } from '../collections/TenantSubscriptionCollection.js';
+import { BillingCheckoutSessionCollection } from '../models/BillingCheckoutSession.js';
 import type { TenantSubscription } from '../models/TenantSubscription.js';
 import {
   type AppliedOutcome,
-  applyCheckoutCompleted,
   applySubscriptionEvent,
   isHeldSubscription,
 } from './apply.js';
+import {
+  CHECKOUT_SESSION_TTL_MS,
+  completeBoundCheckout,
+  dismissFlaggedCheckout,
+  loadFlaggedCheckout,
+  METADATA_EXPIRY_KEY,
+  parseReconcileContext,
+  reconcileFlaggedCheckout,
+  recordCheckoutSession,
+} from './checkout-sessions.js';
 import {
   assertBillingUrl,
   assertWebhookTolerance,
@@ -64,6 +74,7 @@ import {
   BillingHostError,
   type BillingHostOptions,
   type BillingPortalResult,
+  type BillingUnreconciledCheckout,
   type BillingWebhookResponse,
 } from './types.js';
 
@@ -293,6 +304,11 @@ export function createBillingHost(options: BillingHostOptions): BillingHost {
 
     const customerExternalId = current?.stripeCustomerId || undefined;
     const bucket = Math.floor(Date.now() / CHECKOUT_KEY_WINDOW_MS);
+    // Same for every request in one idempotency window, so a repeated click
+    // sends the provider identical parameters. Signed with the metadata.
+    const expiresAt = new Date(
+      (bucket + 1) * CHECKOUT_KEY_WINDOW_MS + CHECKOUT_SESSION_TTL_MS,
+    );
     const idempotencyKey = `smrt-sub-checkout:${(
       await sha256Hex(
         [
@@ -305,8 +321,9 @@ export function createBillingHost(options: BillingHostOptions): BillingHost {
       )
     ).slice(0, 48)}`;
 
+    let session: { externalId: string; url: string | null };
     try {
-      const session = await provider.billing.createCheckoutSession({
+      session = await provider.billing.createCheckoutSession({
         mode: 'subscription',
         successUrl: urls.successUrl,
         cancelUrl: urls.cancelUrl,
@@ -326,6 +343,9 @@ export function createBillingHost(options: BillingHostOptions): BillingHost {
             // customer: copied metadata cannot be reused for another price
             // or another customer's subscription.
             smrt_price_id: priceId,
+            [METADATA_EXPIRY_KEY]: String(
+              Math.floor(expiresAt.getTime() / 1000),
+            ),
             ...(customerExternalId
               ? { smrt_customer_id: customerExternalId }
               : {}),
@@ -335,7 +355,6 @@ export function createBillingHost(options: BillingHostOptions): BillingHost {
         idempotencyKey,
       });
       if (!session.url) throw new Error('Checkout returned no URL.');
-      return { url: session.url, sessionId: session.externalId };
     } catch (error) {
       logger?.error?.('billing.checkout.provider_error', {
         tenantId,
@@ -343,6 +362,16 @@ export function createBillingHost(options: BillingHostOptions): BillingHost {
       });
       throw new BillingHostError('provider_error');
     }
+    // Record the session before the buyer gets its URL: a failure here
+    // propagates, so no session is ever sold that completion cannot match.
+    await withSystemContext(() =>
+      recordCheckoutSession(db, {
+        sessionId: session.externalId,
+        tenantId,
+        expiresAt,
+      }),
+    );
+    return { url: session.url, sessionId: session.externalId };
   }
 
   // -------------------------------------------------------------------------
@@ -541,11 +570,20 @@ export function createBillingHost(options: BillingHostOptions): BillingHost {
           });
           return ignoredResponse('checkout_binding_mismatch');
         }
+        // Create the table on the base handle, outside the transaction.
+        await BillingCheckoutSessionCollection.create({ db });
         work = (tx) =>
-          applyCheckoutCompleted(
+          completeBoundCheckout(
             { db: tx, postgres, tenantPlans, prices, logger },
+            {
+              sessionId: checkout.sessionId,
+              tenantId,
+              planId,
+              exp: metadata[METADATA_EXPIRY_KEY],
+              eventId,
+              eventTime: event.timestamp,
+            },
             { ...facts, observedAt },
-            { tenantId, planId, checkoutSessionId: checkout.sessionId },
             snapshot,
           );
       }
@@ -588,6 +626,142 @@ export function createBillingHost(options: BillingHostOptions): BillingHost {
         body: { received: false, error: 'processing_failed' },
       };
     }
+  }
+
+  // -------------------------------------------------------------------------
+  // Operator reconciliation of paid sessions that could not be bound (#4814)
+  // -------------------------------------------------------------------------
+
+  async function listCheckoutsNeedingReconciliation(options?: {
+    limit?: number;
+    offset?: number;
+  }): Promise<BillingUnreconciledCheckout[]> {
+    const limit = Math.min(
+      Math.max(Math.trunc(Number(options?.limit ?? 200)) || 200, 1),
+      1000,
+    );
+    const offset = Math.max(Math.trunc(Number(options?.offset ?? 0)) || 0, 0);
+    return withSystemContext(async () => {
+      const sessions = await BillingCheckoutSessionCollection.create({ db });
+      const rows = await sessions.list({
+        where: { status: 'needs_reconciliation' },
+        orderBy: 'created_at ASC',
+        limit,
+        offset,
+      });
+      const result: BillingUnreconciledCheckout[] = [];
+      for (const row of rows) {
+        const flagged = parseReconcileContext(row);
+        const claimed = flagged?.claimedTenantId ?? '';
+        let hasOwn = false;
+        if (claimed) {
+          for (const status of ['pending', 'completed'] as const) {
+            const own = await sessions.list({
+              where: { targetTenantId: claimed, status },
+              limit: 1,
+            });
+            if (own.length > 0) hasOwn = true;
+          }
+        }
+        result.push({
+          sessionId: row.sessionId,
+          reason: row.reason,
+          claimedTenantId: claimed,
+          subscriptionId: flagged?.subscriptionId ?? '',
+          customerId: flagged?.customerId ?? '',
+          targetTenantId: row.targetTenantId,
+          claimedTenantHasOwnSession: hasOwn,
+          eventId: flagged?.eventId ?? '',
+          flaggedAt: new Date(row.updated_at ?? row.created_at ?? Date.now()),
+        });
+      }
+      return result;
+    });
+  }
+
+  async function countCheckoutsNeedingReconciliation(): Promise<number> {
+    return withSystemContext(async () => {
+      const sessions = await BillingCheckoutSessionCollection.create({ db });
+      return sessions.count({ where: { status: 'needs_reconciliation' } });
+    });
+  }
+
+  async function dismissCheckout(input: {
+    sessionId: string;
+    operatorId: string;
+    reason: string;
+  }): Promise<void> {
+    const { sessionId, operatorId, reason } = input ?? {};
+    if (
+      typeof sessionId !== 'string' ||
+      !REF_PATTERN.test(sessionId) ||
+      typeof operatorId !== 'string' ||
+      !/^\S{1,128}$/.test(operatorId) ||
+      typeof reason !== 'string' ||
+      reason.trim().length === 0 ||
+      reason.length > 200
+    ) {
+      throw new BillingHostError('invalid_request');
+    }
+    await withSystemContext(async () => {
+      const done = await db.transaction?.((tx) =>
+        dismissFlaggedCheckout(
+          { db: tx, postgres, tenantPlans, prices, logger },
+          { sessionId, operatorId, reason: reason.trim() },
+        ),
+      );
+      if (!done) throw new BillingHostError('checkout_not_reconcilable');
+    });
+  }
+
+  async function reconcileCheckout(input: {
+    sessionId: string;
+    tenantId: string;
+    planId?: string;
+    operatorId: string;
+  }): Promise<{ outcome: 'applied' | 'ignored'; reason?: string }> {
+    const { sessionId, tenantId, planId, operatorId } = input ?? {};
+    if (
+      typeof sessionId !== 'string' ||
+      !REF_PATTERN.test(sessionId) ||
+      typeof tenantId !== 'string' ||
+      !REF_PATTERN.test(tenantId) ||
+      (planId !== undefined &&
+        (typeof planId !== 'string' || !REF_PATTERN.test(planId))) ||
+      typeof operatorId !== 'string' ||
+      !/^\S{1,128}$/.test(operatorId)
+    ) {
+      throw new BillingHostError('invalid_request');
+    }
+    return withSystemContext(async () => {
+      const loaded = await loadFlaggedCheckout(db, sessionId);
+      if (!loaded) throw new BillingHostError('checkout_not_reconcilable');
+      let snapshot: ReturnType<typeof subscriptionSnapshotFromState>;
+      try {
+        snapshot = subscriptionSnapshotFromState(
+          await provider.billing.retrieveSubscriptionStatus(
+            loaded.flagged.subscriptionId,
+          ),
+        );
+      } catch (error) {
+        logger?.error?.('billing.reconcile.provider_error', {
+          sessionId,
+          message: safeErrorMessage(error),
+        });
+        throw new BillingHostError('provider_error');
+      }
+      const outcome = await db.transaction?.((tx) =>
+        reconcileFlaggedCheckout(
+          { db: tx, postgres, tenantPlans, prices, logger },
+          { sessionId, tenantId, planId, operatorId, snapshot },
+        ),
+      );
+      if (!outcome) throw new BillingHostError('checkout_not_reconcilable');
+      return {
+        outcome: outcome.action === 'applied' ? 'applied' : 'ignored',
+        ...(outcome.reason ? { reason: outcome.reason } : {}),
+      };
+    });
   }
 
   // -------------------------------------------------------------------------
@@ -712,5 +886,14 @@ export function createBillingHost(options: BillingHostOptions): BillingHost {
     },
   };
 
-  return { createCheckout, createPortalLink, handleWebhook, handlers };
+  return {
+    createCheckout,
+    createPortalLink,
+    listCheckoutsNeedingReconciliation,
+    countCheckoutsNeedingReconciliation,
+    dismissCheckout,
+    reconcileCheckout,
+    handleWebhook,
+    handlers,
+  };
 }

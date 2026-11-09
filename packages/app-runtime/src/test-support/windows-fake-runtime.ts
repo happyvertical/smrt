@@ -28,6 +28,9 @@ export const SDDL = {
   /** Owner `BUILTIN\Administrators`, as an elevated admin creates objects. */
   adminOwned: (user = USER_SID) =>
     `O:BAG:SYD:PAI(A;OICIID;FA;;;SY)(A;OICIID;FA;;;BA)(A;OICIID;FA;;;${user})`,
+  /** What `icacls /inheritance:r /grant:r` of the three SIDs leaves behind. */
+  locked: (user = USER_SID) =>
+    `O:${user}G:${user}D:P(A;OICI;FA;;;${user})(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)`,
   /** `C:\` itself. */
   driveRoot:
     'O:SYG:SYD:PAI(A;OICIIO;SDGXGWGR;;;AU)(A;;0x1200a9;;;BU)(A;OICIIO;GXGR;;;BU)(A;;FA;;;SY)(A;OICIIO;GA;;;SY)(A;;FA;;;BA)(A;OICIIO;GA;;;BA)(A;;LC;;;AU)(A;;DC;;;AU)',
@@ -85,6 +88,15 @@ export class FakeWindowsMachine {
   readonly volumes = new Map<string, FakeVolume>();
   readonly operations: string[] = [];
   readonly inspections: string[][] = [];
+  /** Every `lockDirectory` call, kept apart from `operations`. */
+  readonly locks: Array<{ path: string; userSid: string }> = [];
+  /**
+   * `record` (default) only records a lock, leaving the inherited DACL in
+   * place; `apply` replaces it the way icacls does (protected, three entries).
+   */
+  lockMode: 'record' | 'apply' = 'record';
+  /** Makes `lockDirectory` throw. */
+  lockFailure: Error | undefined;
   userSid = USER_SID;
   env: NodeJS.ProcessEnv = {
     SystemRoot: 'C:\\Windows',
@@ -196,6 +208,15 @@ export class FakeWindowsMachine {
           childSddl: parent.childSddl,
         });
       },
+      lockDirectory: (path, userSid) => {
+        this.locks.push({ path, userSid });
+        if (this.lockFailure) throw this.lockFailure;
+        if (this.lockMode === 'apply') {
+          const node = find(path);
+          node.sddl = SDDL.locked(userSid);
+          node.childSddl = SDDL.locked(userSid);
+        }
+      },
       rmdir: (path) => {
         this.operations.push(`rmdir ${path}`);
         const node = find(path);
@@ -211,8 +232,29 @@ export class FakeWindowsMachine {
       },
       unlink: (path) => {
         this.operations.push(`unlink ${path}`);
-        find(path);
+        const node = find(path);
         this.nodes.delete(this.key(path));
+        // Dropping one name of a hard-linked file leaves one fewer link on the
+        // surviving name(s).
+        for (const other of this.nodes.values()) {
+          if (other.ino === node.ino && other.kind === 'file') {
+            other.nlink = node.nlink - 1n;
+          }
+        }
+      },
+      link: (existing, path) => {
+        this.operations.push(`link ${existing} ${path}`);
+        const source = find(existing);
+        if (this.node(path)) throw eexist(path);
+        const parent = parentOf(path);
+        // A hard link is the same file: one identity and one more link, with
+        // the content as of the link (the tests write before they link).
+        source.nlink += 1n;
+        this.nodes.set(this.key(path), {
+          ...source,
+          path,
+          childSddl: parent.childSddl,
+        });
       },
       readdir: (path) => {
         find(path);
@@ -236,6 +278,11 @@ export class FakeWindowsMachine {
         return {
           stat: () => this.statsOf(node, node.handleIno ?? node.ino),
           readUtf8: () => node.content ?? '',
+          writeUtf8: (contents) => {
+            this.operations.push(`write ${path}`);
+            node.content = contents;
+            node.size = BigInt(Buffer.byteLength(contents));
+          },
           close: () => undefined,
         };
       },

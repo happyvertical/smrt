@@ -152,6 +152,8 @@ describe('smrt app installation', () => {
     cpSync(origin, moved, { recursive: true });
     chmodSync(moved, 0o700);
     const arrived = await run(moved, ['status']);
+    // Anything but in-custody/unrecorded exits non-zero (#4822).
+    expect(arrived.code).toBe(1);
     expect(JSON.parse(arrived.stdout)).toMatchObject({
       status: 'arrived',
       resolutions: ['restore', 'reseed'],

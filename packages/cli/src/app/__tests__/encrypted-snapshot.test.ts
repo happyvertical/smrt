@@ -40,6 +40,25 @@ import {
   writeEncryptedSnapshot,
 } from '../snapshot-framing.js';
 
+// Records what `fsyncSync` was asked to flush; behaviour is unchanged.
+const synced = vi.hoisted(() => ({
+  files: [] as number[],
+  directories: [] as number[],
+}));
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>();
+  return {
+    ...actual,
+    fsyncSync(fd: number) {
+      const details = actual.fstatSync(fd);
+      (details.isDirectory() ? synced.directories : synced.files).push(
+        details.ino,
+      );
+      return actual.fsyncSync(fd);
+    },
+  };
+});
+
 const roots: string[] = [];
 afterEach(() => {
   for (const root of roots.splice(0)) {
@@ -209,6 +228,7 @@ describe('encrypted snapshot framing', () => {
     });
     expect(restored.digest).toBe(written.digest);
     expect(readFileSync(destination).equals(plaintext)).toBe(true);
+    expect(synced.directories).toContain(statSync(join(root, 'restored')).ino);
     expect(statSync(destination).mode & 0o777).toBe(0o600);
     expect(leftovers(join(root, 'restored'))).toEqual([]);
   });
@@ -233,6 +253,8 @@ describe('encrypted snapshot framing', () => {
     });
 
     const candidate = join(root, 'candidate');
+    synced.files.length = 0;
+    synced.directories.length = 0;
     await decryptSnapshot({
       source,
       destination: candidate,
@@ -240,6 +262,11 @@ describe('encrypted snapshot framing', () => {
       keys: ring,
     });
     expect(statSync(candidate).mode & 0o777).toBe(0o700);
+    // Restored files and the directory entry they hang from are durable.
+    for (const path of ['app.sqlite', 'assets/nested/a.bin', 'assets/empty']) {
+      expect(synced.files).toContain(statSync(join(candidate, path)).ino);
+    }
+    expect(synced.directories).toContain(statSync(root).ino);
     for (const path of ['app.sqlite', 'assets/nested/a.bin', 'assets/empty']) {
       expect(readFileSync(join(candidate, path))).toEqual(
         readFileSync(join(data, path)),

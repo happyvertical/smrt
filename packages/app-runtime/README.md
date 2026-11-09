@@ -15,6 +15,7 @@ const { runtime, bootstrap, diagnostics } =
   await initializeLocalApplicationRuntime({
     appId: 'my-app',
     sourceRoot: process.cwd(),
+    createSchema: true, // create the framework schema on first start
     prepareDatabase: runApplicationMigrations,
   });
 
@@ -22,24 +23,76 @@ const { runtime, bootstrap, diagnostics } =
 // returned once and only its HMAC is persisted.
 ```
 
-Application migrations run through the explicit `prepareDatabase` hook while
-the runtime holds the root lease. A rejected migration is normalized into a
-`LocalRuntimeError` with the stable `migration_failed` code and the fixed,
-secret-free message exported as `MIGRATION_FAILED_MESSAGE`: "The application
-migration step failed; run pnpm app:setup and inspect the private migration
-logs." The migration driver's own text — a likely carrier of a connection
-string, credential, path, or environment value — is never surfaced; it is kept
-as a non-enumerable `cause` for private logs. Startup releases the database
-handle and the initialization lease, so the same application root and data
-directory remain retryable once the migration is fixed.
+### First start: the app sets up its own database
+
+With `createSchema: true` (the default of `createSmrtSvelteKitRuntime`; off by
+default for a direct `initializeLocalApplicationRuntime` call, so operator
+tooling that migrates through `smrt db:migrate` is unchanged), the local
+runtime creates the schema on the first start of an empty data directory
+instead of exiting with `DB_SCHEMA_MISSING` (smrt#4835). It happens after
+custody has passed and inside the initialization lock, so two starts cannot
+race (the SvelteKit runtime also holds the writer lease), and it uses the
+framework's own migration path (`migrateSmrtSchemas` from
+`@happyvertical/smrt-core/migrations`, recorded in `_smrt_schema_migrations`),
+not a second schema creator. A second start finds nothing to apply. Upgrades
+take the same path on every start. Deployed profiles (`self-hosted`, `cloud`)
+never create schema: they keep failing with `DB_SCHEMA_MISSING` and migrate
+through `smrt db:migrate`.
+
+```ts
+export const runtime = createSmrtSvelteKitRuntime({
+  // Runs on EVERY start, after the framework schema, inside the same lock and
+  // transaction. Must be idempotent; use it to seed or add the app's own steps.
+  prepareDatabase: async (db, { firstRun, paths, migrateSchemas }) => {
+    await db.query('CREATE TABLE IF NOT EXISTS notes (id TEXT PRIMARY KEY)');
+    if (firstRun) await seedWelcomeNote(db);
+  },
+});
+```
+
+`prepareDatabase(db, context)`: `context.db` is the same handle as `db` (on a
+first run, the transaction handle), `context.profile`, `context.paths` (the
+resolved local paths, `null` on a deployed profile), `context.firstRun` (true
+only on the start that found no framework schema and no earlier runtime
+initialization) and `context.migrateSchemas()` (the framework runner bound to
+`db`; creates missing tables, and reshaping an existing table remains
+`smrt db:migrate`). A hook that only needs the database may take `(db)`.
+
+**Atomicity.** On a first run the framework step and `prepareDatabase` run in
+ONE transaction. If either fails the transaction rolls back and, because this
+attempt created the database file, the file and its `-wal`/`-shm`/`-journal`
+side files are removed: no half-created database is left, and the same data
+directory is retried as a first run. The private data directory, root marker
+and application secret the attempt created stay (they hold no application
+data and a retry reuses them). A crash mid-run is rolled back by SQLite on
+the next open. On later starts (an upgrade) the framework batch is a single
+atomic DDL transaction on the database, so a failed batch changes no table;
+`prepareDatabase` then runs in its own transaction and rolls back on failure.
+A failed upgrade batch leaves a `failed` row in `_smrt_schema_migrations`, as
+`smrt db:migrate` does; a framework upgrade that already committed is kept if
+the application's step then fails.
+
+**Failure codes.** Both surface as `LocalRuntimeError` with fixed, path-free,
+SQL-free text; the original error is a non-enumerable `cause` for private logs.
+
+| Code | When | Message constant |
+| --- | --- | --- |
+| `schema_creation_failed` | the framework step (creation or upgrade) failed | `SCHEMA_CREATION_FAILED_MESSAGE` |
+| `migration_failed` | the application's `prepareDatabase` rejected | `MIGRATION_FAILED_MESSAGE` |
+
+Startup fails, the process exits non-zero, and the code and message are in the
+process output (the error is thrown from `init`), which is what the desktop
+wrapper reads on a failed sidecar start. Startup releases the database handle,
+the initialization lease and the writer lease, so the same application root and
+data directory remain retryable once the cause is fixed.
 
 The path resolver selects the current user's OS application-data directory
 (`~/Library/Application Support` on macOS, `%LOCALAPPDATA%` on Windows, or
 `$XDG_DATA_HOME` / `~/.local/share` on Linux). On macOS and Linux, secure
 initialization requires Node to expose nonzero `O_NOFOLLOW` and `O_DIRECTORY`
 filesystem flags and fails closed without them. Windows has its own custody
-rule (see [Windows](#windows)); opening the database there is still refused
-until `@happyvertical/sql` supports it. The data root contains a mode-0600
+rule (see [Windows](#windows)); the database opens there through
+`@happyvertical/sql`'s `windowsCustody.verify`. The data root contains a mode-0600
 SQLite database, a user-owned asset directory, and generated mode-0600
 application secret material. The root must be a dedicated application
 directory: placing it inside the source checkout or choosing an ancestor is
@@ -139,46 +192,46 @@ with an in-memory machine and, separately, on a real runner.
 
 **Status.** The initialization lease, the operator state root
 (`prepareApplicationStateRoot`, writer lease, operation lock), the read-only
-preflight and `validateLocalDatabaseStorage()` work on Windows. **Opening the
-SQLite database does not.** `prepareLocalDatabaseStorage()`,
+preflight, `validateLocalDatabaseStorage()` and **database acquisition** work
+on Windows. `prepareLocalDatabaseStorage()`,
 `initializeLocalApplicationRuntime()`, `openLocalMcpTokenStore()` and the
-acquisition inside the runtime throw `WindowsDatabaseAcquisitionUnsupportedError`
-(a `LocalRuntimeError` with `code: 'invalid_configuration'`,
-`reason: 'windows_secure_sqlite_unsupported'`) **before any directory or file is
-created** (the read-only preflight may run first; it creates nothing). The
-SvelteKit runtime's `localRuntime()` makes the same call first, ahead of the
-writer lease, so it does not create the `%LOCALAPPDATA%` state directory, marker
-or `writer.lease` either. The SDK's secure SQLite path
-(`@happyvertical/sql` `secureFile`) refuses `win32` and has no way for the
-caller to supply a Windows verifier; the runtime does not route around it with
-another driver. The gate is a single call (`refuseWindowsDatabaseAcquisition`).
-Because the gate sits before the lease, the Windows lease is not reachable from
-the public entry points until then; it is exercised directly by the tests.
+SvelteKit runtime open SQLite through `@happyvertical/sql` (>= 0.111.8,
+sdk#1498) with `secureFile: { driver: 'node:sqlite', custody: 'trusted-parent',
+root, windowsCustody: { verify } }`. Node cannot read NTFS ACLs, so the SDK
+owns only the structural walk (lexical containment, no links, canonical
+`realpath`, regular leaf with one link, stable leaf identity) and hands the
+trust decision to the caller: `verify(paths)` receives the drive-root-to-parent
+chain and, when the file exists, the database file last. It runs before and
+after the SDK creates a missing file, and again for an existing file after its
+identity is recorded; if it throws, the SDK refuses and removes a file it just
+created. The runtime's `verify`
+(`createWindowsDatabaseVerifier()`, `windows-custody.ts`) accepts only the
+database's own chain (anything else throws), then applies the **unchanged**
+rule below: W3/W4/W6 on every component (custodied from the data root down,
+ancestors under the looser ancestor rule) and on the database file, plus W5
+(regular file, one link). It throws a `LocalRuntimeError`; it never returns a
+verdict. The SDK wraps that failure as `Secure SQLite Windows custody
+verification failed` (the original message is kept in `originalError`).
+`windowsSecureFileCustody()` adds the option only when the custody platform is
+`win32`, so the options a macOS or Linux host passes are unchanged.
 
-The runtime can promise only what it does itself: it creates and opens nothing
-before it refuses, but a caller may already have created files of its own. The
-`smrt app` commands used to (`setup` and `install` created the state root,
-marker and `operation.lock`, took `writer.lease` and ran a full `pnpm build`;
-`migrate` created the state root). They now refuse the **local profile on
-Windows first**, before any of that: `install`, `setup`, `recover`, `start`,
-`stop`, `open`, `migrate`, `token` (`WindowsLocalProfileUnsupportedError`) and
-`backup`, `export`, `import` (`WindowsOperatorCopyUnsupportedError`). Still
-available on Windows: `help`, `doctor` (read-only; it reports
-`windows-local-profile-unsupported` and does not run `db:status`), `build`,
-`dev`, `vite`, `worker` (deployed only), and the self-hosted and cloud
-profiles: `setup`, `migrate`, `export` and `import` run for them, and a
-deployed `export` or `import` writes to the operator's chosen path with no
-mode guarantee, because Windows ignores modes (deployed `backup` is delegated
-to the operator and throws on every host).
+The rest of the Windows acquisition uses the same rule in place of
+`O_NOFOLLOW`, uid and mode bits: `acquireLocalDatabase()` prepares the data
+root with `preparePrivateWindowsTree()` (directories it creates are locked and
+re-inspected, or removed again), keeps the pending/final root markers,
+and `prepareLocalFilesystem()` does the same for `assets` and `secrets`. The
+application secret is written to a temporary file and published with an
+exclusive hard link (so a crash leaves no partial secret), then read back
+through the identity-checked handle with one link and the custodied ACL. There
+is no mode to repair; the DACL is the guarantee.
 
-**Removing that gate is not the only step.** Read-only validation
-(`validateLocalDatabaseStorage()`) passes on Windows, so the `smrt app backup`,
-`export` and `import` commands, which copy the application secret and database
-into a destination whose privacy relies on POSIX modes that Windows ignores
-(the copy would inherit the destination folder's ACL), refuse on Windows with
-`WindowsOperatorCopyUnsupportedError` until the destination gets the same
-custody rule as the data root. Lift that refusal together with the database
-gate, not before.
+The `smrt app` local-profile commands are no longer refused on Windows. The
+`backup`, `export` and `import` copies still are
+(`WindowsOperatorCopyUnsupportedError`): their refusal is about the
+**destination**, not the database, because they copy the application secret and
+database into a destination whose privacy relies on POSIX modes that Windows
+ignores (the copy would inherit the destination folder's ACL). Lift that
+refusal only with a destination custody rule for the copy.
 
 **The rule.** A path is in Windows custody only when all of this holds:
 
@@ -242,17 +295,54 @@ gate, not before.
      `WRITE_OWNER`, `FILE_DELETE_CHILD`, `GENERIC_ALL` or `GENERIC_WRITE`;
      creating siblings (`FILE_ADD_FILE`, `FILE_ADD_SUBDIRECTORY`) is tolerated,
      because it cannot replace our child.
-   - *Creation:* every component the runtime creates is re-inspected afterwards
-     under the custodied rule (its DACL was inherited from a parent the runtime
-     does not control). On failure exactly the components that attempt created
-     are removed and the call fails closed; pre-existing components are never
-     removed. This is how `C:\smrt-data` and `D:\apps\x` are refused.
+   - *Creation and locking (smrt#4843):* when the runtime creates the private
+     directory itself (the data directory, the lease directory, the state
+     root) it locks it at once instead of keeping whatever the parent grants:
+     inheritance is disabled and the DACL is replaced with exactly three allow
+     entries, each full control with object and container inheritance, for the
+     current user, `SYSTEM` (`S-1-5-18`) and `Administrators`
+     (`S-1-5-32-544`). Only a directory this call created is ever locked, never
+     one that already existed and never an ancestor such as `AppData\Local`.
+     The lock is
+     `<SystemRoot>\System32\icacls.exe <path> /inheritance:r /grant:r
+     *<userSid>:(OI)(CI)F *S-1-5-18:(OI)(CI)F *S-1-5-32-544:(OI)(CI)F`: an
+     absolute executable, a fixed argv array in which the path is exactly one
+     element (no shell, no string-built command, SIDs rather than localised
+     names), the same allow-listed environment as the inspector (no `PATH`),
+     10 s and 64 KiB bounds, and `shell: false`. A non-zero exit, a timeout or
+     a missing or blocked `icacls.exe` removes the new directory and fails
+     closed. The current user's SID comes from the inspector's answer for the
+     existing chain. Nothing is written into the directory until it is locked,
+     and one that was swapped for a link or another object around the lock is
+     refused. **Residual race:** creating and locking are two steps, so the new
+     (empty) directory briefly has the DACL it inherited; a principal that
+     inherits access can list or open it in that window, and Windows offers no
+     way to create a directory with a DACL in a single call from Node. Nothing
+     sensitive exists in it yet.
+   - *Verification:* every component the runtime creates is then re-inspected
+     under the custodied rule (the lock does not replace the check). On failure
+     exactly the components that attempt created are removed and the call
+     fails closed; pre-existing components are never removed. Every directory
+     the call creates is locked (intermediate ones too); only components that
+     already existed keep what they inherited and must satisfy the rule as they
+     are.
+   - *Pre-existing directories:* verified, never re-permissioned. One that
+     fails the rule is refused with an error that names the extra principal
+     (its SID, plus a name when it is a well-known one such as Everyone,
+     Authenticated Users or `BUILTIN\Users`; the inspector does not translate
+     other SIDs, so run `icacls <directory>` to see who it is) and says how to
+     fix it: move the data directory somewhere only you, SYSTEM and
+     Administrators can access, or remove that access yourself. For example,
+     `Local runtime path lacks Windows custody (custodied): C:\...\MyApp:
+     access is granted to S-1-5-21-...-1003. The runtime never changes the
+     permissions of an existing directory. Move the data directory ...`.
    - *Volume:* a local fixed disk (`Win32_LogicalDisk.DriveType` 3) formatted
      NTFS. FAT32, exFAT, network, removable and RAM drives have no usable ACLs.
      ReFS is refused for now (its 128-bit file ids are not handled).
 7. **Explicit roots.** An explicitly configured root that already exists must
-   already satisfy W6. The runtime only verifies; it never edits an ACL. To
-   create a private root outside `%LOCALAPPDATA%`, run (substituting the path):
+   already satisfy W6. The runtime only verifies an existing directory; it never
+   edits its ACL (it only locks directories it creates, see *Creation and
+   locking*). To prepare a private root by hand, run (substituting the path):
 
    ```bat
    mkdir D:\Apps\MyApp
@@ -286,7 +376,7 @@ behaviour is involved, `src/windows-custody.win32.test.ts` (Windows runner only)
 |---|--------|-----------|---------------|
 | WT1 | Another local user reads or replaces the database, secret, markers, leases or state | W6 custodied rule; default root under the user profile | `W6 policy (WT1 other users, WT3 inherited access)` (foreign owner, Everyone, Users, Interactive, Authenticated Users, a domain admin, another local user, NULL/absent DACL, conditional/object/callback/audit ACEs); `refuses an existing root owned by another user before creating anything (WT1)`; `refuses a lease directory planted by another user (WT1, WT2)`; `rejects a database explicitly shared with Users` |
 | WT2 | A junction, symlink or mount point planted in a shared parent at a missing component | W3, W4, post-create W6 | `refuses a symbolic link or junction at an ancestor and at the leaf (WT2)`; `refuses a reparse point that lstat cannot see as a link (WT2, WT7)`; `refuses a directory planted by another user at a missing component, and leaves it alone (WT2)`; real: `refuses a junction at an ancestor and at the root (WT2)` |
-| WT3 | A root created under a parent whose inheritable ACL grants others access (`C:\`, `D:\`) | post-create re-inspection under the custodied rule, with rollback | `removes a root created under C:\ whose inherited ACL admits other users`; `never removes a directory it did not create`; `holds a directory it created to the custodied rule even above the root`; `creates a file and removes it again when its inherited ACL is wrong`; `refuses a lease beside a root whose parent would expose it (WT3)`; `refuses a state base whose inherited ACL admits other users (WT3)`; real: `refuses a directory under C:\ ...` |
+| WT3 | A root created under a parent whose inheritable ACL grants others access (`C:\`, `D:\`, or a profile that inherits a third-party group) | the new root is locked (inheritance off, three-principal DACL; smrt#4843), then re-inspected under the custodied rule, with rollback; an existing one is refused by name | `removes a root created under C:\ whose inherited ACL admits other users`; `never removes a directory it did not create`; `a created directory is locked (smrt#4843)` and `a pre-existing directory that fails the rule is refused by name` (`src/windows-acl-lock.test.ts`); `holds a directory it created to the custodied rule even above the root`; `creates a file and removes it again when its inherited ACL is wrong`; `refuses a lease beside a root whose parent would expose it (WT3)`; `refuses a state base whose inherited ACL admits other users (WT3)`; real: `refuses a directory under C:\ ...` |
 | WT4 | Hard-link games on the database, secret, markers or lease | `nlink === 1` and handle identity (W5) | `refuses a file with a second hard link (WT4, W5)`; `refuses a handle that is not the file lstat saw, even when the ids round to one number (W5)`; `rejects a database with a second hard link`; `refuses a state marker with a second hard link`; `refuses a path that was swapped while its ACL was being read (TOCTOU)` |
 | WT5 | 8.3 aliases, case variants, alternate data streams, trailing dot or space, device names, `\\?\`, UNC, WSL | W1 and W4 | `W1 lexical rule (WT5: aliases, devices, streams)` (every form listed); `appId against Windows device names (WT5)`; `refuses a path that resolves through an 8.3 short name (WT7)`; `refuses a case variant of an existing directory (WT5, D6)`; `refuses to lease through a case variant of an existing parent (D6)`; real: `refuses an 8.3 short-name spelling of a long directory (WT5)` |
 | WT6 | Roaming profile or folder redirection | W2: `LOCALAPPDATA` only | `data root base (WT6: roaming profile)` (missing, empty, APPDATA only, relative, share, device path); `puts the state beside the data under LOCALAPPDATA, never the home directory` |
@@ -297,10 +387,10 @@ behaviour is involved, `src/windows-custody.win32.test.ts` (Windows runner only)
 | L2 | A Windows process also takes a legacy `/tmp` lease | none exists on Windows | `takes exactly one beside-data lease, never a legacy /tmp lease` |
 | S1 | Case variants of one data directory get two state roots and so two writer leases | state-root identity hashes the case-folded root on Windows | `gives case variants of one data directory one state root (one lock domain)` |
 | S2 | The state root silently skips its owner checks when no identity is known | the check now throws on every platform | `throws instead of skipping the owner checks when no uid is known` |
-| G1 | A half-built root left behind on a platform that cannot finish | database acquisition is refused with a named error before any directory is created | `refuses before the lease creates a single directory or file`; `refuses initializeLocalApplicationRuntime the same way`; `refuses acquireLocalDatabase before any filesystem access`; `refuses to open the token store, after validating the stored root` |
+| G1 | A half-built root left behind when acquisition fails midway on Windows | the marker pair and every directory created by the attempt are rolled back; the SDK removes a database leaf it created when its second custody pass fails | `rolls back the markers and directories when the database custody check fails` |
 
 Out of scope, as on POSIX: hostile code already running as the same user, and
-Administrators or SYSTEM (trusted like uid 0). Setting or repairing ACLs,
+Administrators or SYSTEM (trusted like uid 0). Repairing the ACL of an existing directory,
 encrypting the database at rest, network shares, and Linux-in-WSL data roots on
 DrvFs/9p (POSIX uid and mode there are synthesized) are not handled here.
 
@@ -322,7 +412,10 @@ trusted principal (<trustee>)`, the custody tests fail, and the first real run
 prints the true descriptors to correct the rule. The failure mode is a refusal
 (fail closed), never an acceptance.
 
-Also unverified until the real-Windows tests have run: how
+Also unverified until the real-Windows tests have run: that `icacls.exe` with
+the argv above produces a descriptor the inspector accepts (expected
+`D:P(A;OICI;FA;;;<user>)(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)`), on a stock profile and
+on one whose `AppData\Local` inherits a third-party group; how
 libuv reports non-symlink reparse tags and `nlink`; `realpath.native` on 8.3,
 `subst` and mapped drives; `fs.open` on a directory; the default DACLs of `C:\`,
 `C:\Users`, a secondary volume root and `%LOCALAPPDATA%` (the SDDL fixtures
@@ -340,8 +433,10 @@ is accepted; and whether the monorepo installs and Vitest runs on
 - *D4* The PowerShell cost is accepted: fixed argv, paths in the environment,
   fail closed, no "unverified" opt-out.
 - *D7* ReFS, and any volume without ACL support, is refused.
-- *D8* #4837 stays open: Windows database acquisition is refused with a named
-  error until `@happyvertical/sql` accepts a caller-supplied Windows verifier.
+- *D8* Windows database acquisition was refused with a named error until
+  `@happyvertical/sql` accepted a caller-supplied Windows verifier (sdk#1498,
+  0.111.8); it now runs through `windowsCustody.verify` with the rule unchanged.
+  Unverified on a real Windows machine until one green `windows-latest` run.
 - *D9* The `app-runtime-windows` workflow is added but is not a required check.
 - *D10* The trusted-account set is exactly the current user, `SYSTEM` and
   `BUILTIN\Administrators` (plus `TrustedInstaller` for ancestors). A corporate
@@ -610,6 +705,56 @@ Both halves are exported from this package; the migration itself is
 
 Not yet provided: hosted HTTP routes, a durable hosted link store, unlinking.
 
+### Local MCP tokens
+
+`openLocalMcpTokenStore()` (and `smrt app token`) issue owner-bound, scoped
+bearer tokens; only a domain-separated HMAC keyed by the installation secret is
+stored. Credentials renew themselves instead of expiring on a short clock:
+
+- **Renewable by default.** A token issued without `expiresInSeconds` has a
+  30-day window. Each successful `verify()` slides the expiry to now + 30 days,
+  written at most once an hour per token (`lastUsedAt` shows the last slide), so
+  verification stays cheap. A token unused for the whole window lapses. Sliding
+  never revives an expired or revoked token and never shortens an expiry.
+- **Fixed on request.** `expiresInSeconds` (60 s to 365 d) makes a
+  fixed-lifetime token that never slides. `list()` reports `renewable`.
+- **One token per holder.** `issue({ holder })` (a short printable id) rotates:
+  the holder's previous token is revoked in the same transaction that stores the
+  new one, so exactly one is valid and a failed rotation keeps the old one.
+  The old value cannot be returned (only its HMAC exists); the caller receives
+  the new one. A partial unique index backs this up. Tokens without a holder
+  behave as before.
+- **Revoke with the holder.** `revokeHolder(holder)` (`'revoked'` | `'none'`,
+  idempotent; `smrt app token revoke-holder <holder>`) is for whatever removes
+  a device or client; this package has no local device-removal path to call it
+  from.
+- **Reseeding.** The hash key derives from the installation seed, so
+  `reseedInstallation` invalidates every token (and revokes the active ones).
+- **Upgrade.** Tables from earlier releases gain the `holder`, `sliding` and
+  `last_used_at` columns on open; their rows have no holder and stay fixed.
+
+```text
+smrt app token --scopes notes.read --holder laptop   # renewable, rotates laptop
+smrt app token --scopes notes.read --expires 7d      # fixed lifetime
+smrt app token list | revoke <id> | revoke-holder <holder>
+```
+
+### Origin file
+
+When the desktop supervisor starts the app it sets `ORIGIN=http://127.0.0.1:<port>`.
+If `ORIGIN` is exactly that form, `createSmrtSvelteKitRuntime()` writes
+`origin.json` (`{ version: 1, origin, pid, startedAt }`, mode 0600, nothing
+secret) to the application state root once local startup succeeds, and removes
+it when the process exits or receives SIGTERM or SIGINT (best effort, so a crash
+leaves a stale file). It lives in the state root, not the data root: it is
+per location and a backup or copy of the data root does not carry it. Any other
+`ORIGIN` writes nothing. `readOriginFile(stateRoot)` returns the record or
+`null` (absent, unreadable, not owner-private, malformed, not an exact loopback
+origin, or its `pid` is gone) and never throws; a reader must still probe the
+origin. `writeOriginFile`, `removeOriginFile` and `parseLoopbackOrigin` are
+exported from the root. The assistant-plugin launcher
+(`@happyvertical/smrt-desktop/launcher`) is the reader.
+
 ### Local desktop MCP credentials
 
 A desktop product can mount this opt-in SvelteKit route in
@@ -689,7 +834,9 @@ the root entry never imports it.
 import { createSmrtSvelteKitRuntime } from '@happyvertical/smrt-app-runtime/sveltekit';
 
 export const runtime = createSmrtSvelteKitRuntime({
-  prepareDatabase: runApplicationMigrations, // optional, idempotent
+  // Optional, idempotent, runs on every start after the framework schema:
+  // `(db, { firstRun, paths, migrateSchemas })`. See "First start".
+  prepareDatabase: runApplicationMigrations,
 });
 export const { handle, init } = runtime;
 ```
@@ -748,6 +895,8 @@ export const GET = createRuntimeHealthHandler(runtime);
 export const GET = createRuntimeDiagnosticsHandler({ runtime, toolNames });
 // src/routes/setup/+page.server.ts
 export const { load, actions } = createOwnerSetupPage(runtime);
+// src/routes/api/_runtime/owner-link/+server.ts (desktop apps)
+export const GET = createOwnerLinkHandler(runtime);
 // src/routes/+layout.server.ts
 export const load = createSessionLayoutLoad();
 // src/routes/sign-out/+server.ts
@@ -773,6 +922,44 @@ runtime removes the `smrt app setup` / `recover` hand-off files
 `runtime.applicationStateRoot()`, so `pnpm app:open` stops offering the spent
 invitation; failed claims leave them untouched. `onOwnerClaimed` remains for
 extra app cleanup and `removeOnboardingHandoff: false` opts out.
+
+#### Desktop owner link
+
+A desktop app opens its window on a fixed route, `OWNER_LINK_ROUTE`
+(`/api/_runtime/owner-link`, the sidecar manifest's `ownerClaimRoute`), instead
+of the bare origin. `createOwnerLinkHandler(runtime)` answers a `GET` there with
+a `302` to `/setup?token=<one-time token>` while the local owner is unclaimed
+and to `/` otherwise (claimed, deployed profile, nothing issuable). It is the
+existing machinery, not a second sign-in: the token is the invitation this
+process's startup issued (the same one `onBootstrapInvitation` receives), or,
+when that plaintext is gone because the app restarted before the claim or the
+invitation expired, a rotated one (`rotateBootstrapInvitation()`, as
+`smrt app recover`). The owner then claims through the usual `/setup` page and
+`claimOwner()`, which stays the single-use gate; a spent link fails there.
+
+The route requires a per-launch secret. The desktop wrapper draws 32 random
+bytes from the OS on every sidecar start, passes them only in the sidecar's
+environment as `SMRT_DESKTOP_OWNER_LINK_SECRET` (a name a sidecar manifest
+cannot set) and opens its window on `OWNER_LINK_ROUTE?launch=<secret>`. The
+handler compares the `launch` query value with the variable in constant time
+(both sides are hashed with SHA-256 first, so lengths do not leak) and answers
+`403` with an empty body for a missing, empty or wrong value. With no secret
+configured, which is the case whenever the app is not running under the
+wrapper, it answers `403` to every request, so the route is never open by
+default. Pass `createOwnerLinkHandler(runtime, { launchSecret })` to supply the
+secret explicitly (tests). Another process or OS user on the machine can reach
+the loopback port but does not hold the secret, so it cannot fetch the link and
+claim ownership first.
+
+On top of the secret the route still answers only a request from this device
+addressed to the app's own origin: a loopback peer address, a loopback `Host`
+equal to the URL's host, no foreign `Origin`, no `Sec-Fetch-Site: cross-site` or
+`same-site`; anything else is a `403` with an empty body. Responses have an
+empty body, `Cache-Control: no-store` and `Referrer-Policy: no-referrer`; the
+token is only in `Location`, which the desktop wrapper's webview follows and the
+wrapper never reads or logs. The secret and the query string are never logged
+or echoed, and the runtime writes no access log. `runtime.ownerSetupLocation()`
+is the underlying method; never log or serialize its result.
 
 Password-based applications should pass `{ requirePassword: true }` to
 `createOwnerSetupPage` and include a password field in their setup form. The
@@ -1424,10 +1611,50 @@ includes supersession. Until it has run, the relay's `/readyz` reports
 
 The relay never tells a client which account to follow: `account_superseded`
 is a stop signal, and the host's trusted configuration decides the account.
-The parked keys are a local undo and a hold for a manual rescue; this release
-has no API that opens a parked account's data (follow-up), and the old
+The parked keys are a local undo and a hold for a manual rescue, and the old
 account's snapshots stay on the relay, readable by explicit sequence, until
 the operator deletes them.
+
+**One call for steps 2 and 3.** `restartVault` from
+`@happyvertical/smrt-cli/app` (#4838) runs the working device's part: it reads
+the three stores a restart touches (the key lifecycle, `vault-sync.json`, the
+host's followed-account config), runs only the missing steps in this order,
+and returns a report. Order: `restartAccount`, the host's `publish`,
+`switchVaultAccount`, the host's `followAccount`, then the first backup. The
+host config flips after the sync position on purpose: until it does, a backup
+still targets the old account while the keys are on the new one, and it is
+refused (`account_mismatch`) before anything is sealed. The report's `state`
+is `complete` (all steps done, or found done: calling again is a no-op),
+`resumed` (an earlier call stopped part way and this one finished it),
+`mismatch` (a step failed and the stores disagree: call again; or, with
+`repairable: false`, a store follows an account that is neither the old nor
+the new one, nothing was changed and a person must look) or `backup_failed`.
+`inspectVaultRestart` reads the same state without changing anything, for a
+host that checks at startup. The new recovery secret is only needed while
+something is outstanding, and no report carries it or any key.
+
+**Back up immediately after every rotation** (#4834, strict rule kept):
+snapshots sealed under the older generation are refused on restore until an
+enrolled device publishes a new one, so the window between a key change and
+the first backup is the window in which losing the last device loses the
+history. The restart's last step is that backup, and a rotation goes through
+`rotateVaultKeys` (same module), which publishes and backs up at once. Both
+report `backupAfterRotation: 'done' | 'failed' | 'skipped'`; a failed backup
+is the distinct state `backup_failed`, never a quiet success, and the host
+must keep retrying until it clears. The backup counts only once
+`vault-sync.json` records the published sequence.
+
+**Rescuing the old account by hand.** While the account is parked,
+`openPreviousReadingKey({ accountId, generation, keyId })` opens one of its
+data keys as a reading key bound to the old account id (`purpose: 'read'`,
+`key` not enumerable so it does not survive JSON or a spread). It writes
+nothing and cannot seal. It refuses with `no_previous_account` when nothing is
+parked or after `discardPreviousAccount()`, `account_mismatch` for any other
+account id (including the current one) and `key_missing` for a key the parked
+account did not hold. In the CLI package `createPreviousAccountSnapshotKeys`
+wraps it as the opening-key side of the snapshot seam, for `decryptSnapshot`
+on a snapshot fetched by hand from the old account. There is no `smrt app`
+subcommand for it yet.
 
 What a restart cannot do: it does not recover the old account's data from the
 relay (the data lives on the working device and is backed up afresh), it does

@@ -22,6 +22,8 @@ export const VAULT_RELAY_TABLES = [
   'vault_relay_snapshots',
   'vault_relay_chunks',
   'vault_relay_supersessions',
+  'vault_relay_lapses',
+  'vault_relay_audit',
 ] as const;
 
 const SCHEMA_V1 = [
@@ -79,6 +81,29 @@ const SCHEMA_V1 = [
     superseded_by TEXT NOT NULL,
     superseded_at BIGINT NOT NULL
   )`,
+  // Lapse bookkeeping (#4819). New tables rather than a new column on
+  // vault_relay_accounts, so the migration is a plain CREATE IF NOT EXISTS on
+  // SQLite and PostgreSQL and needs no ALTER on a live table.
+  `CREATE TABLE IF NOT EXISTS vault_relay_lapses (
+    account_id TEXT PRIMARY KEY,
+    lapsed_at BIGINT NOT NULL,
+    swept_at BIGINT
+  )`,
+  `CREATE INDEX IF NOT EXISTS vault_relay_lapses_due
+    ON vault_relay_lapses (swept_at, lapsed_at)`,
+  // Append-only operator audit trail. Code only ever INSERTs into it.
+  `CREATE TABLE IF NOT EXISTS vault_relay_audit (
+    audit_id TEXT PRIMARY KEY,
+    occurred_at BIGINT NOT NULL,
+    action TEXT NOT NULL,
+    operator TEXT NOT NULL,
+    account_handle TEXT NOT NULL,
+    snapshots BIGINT NOT NULL DEFAULT 0,
+    bytes BIGINT NOT NULL DEFAULT 0,
+    detail TEXT
+  )`,
+  `CREATE INDEX IF NOT EXISTS vault_relay_audit_at
+    ON vault_relay_audit (occurred_at)`,
 ];
 
 /**
@@ -147,7 +172,41 @@ export interface SupersessionRecord {
   supersededAt: number;
 }
 
+/**
+ * When the relay first observed an account's `backup.vault` entitlement as
+ * lapsed (#4819); `sweptAt` is set once the operator sweep deleted its data.
+ */
+export interface LapseRecord {
+  accountId: string;
+  lapsedAt: number;
+  sweptAt: number | null;
+}
+
+/** One append-only operator audit record. */
+export interface AuditEntry {
+  id: string;
+  at: number;
+  action: string;
+  operator: string;
+  /** Hashed account handle, never the account id. */
+  accountHandle: string;
+  snapshots: number;
+  bytes: number;
+  detail: string | null;
+}
+
 type Row = Record<string, unknown>;
+
+function lapseFromRow(row: Row): LapseRecord {
+  return {
+    accountId: String(row.account_id),
+    lapsedAt: toSafeInteger(row.lapsed_at, 'lapsed_at'),
+    sweptAt:
+      row.swept_at === null || row.swept_at === undefined
+        ? null
+        : toSafeInteger(row.swept_at, 'swept_at'),
+  };
+}
 
 function deviceFromRow(row: Row): DeviceRecord {
   return {
@@ -376,6 +435,143 @@ export class VaultRelayStore {
       accountId,
     );
     return toSafeInteger(found.rows[0]?.active ?? 0, 'active');
+  }
+
+  // Lapse and audit (#4819) -------------------------------------------------
+
+  async getLapse(accountId: string): Promise<LapseRecord | null> {
+    const found = await this.db.query(
+      `SELECT account_id, lapsed_at, swept_at
+         FROM vault_relay_lapses WHERE account_id = ?`,
+      accountId,
+    );
+    return found.rows[0] ? lapseFromRow(found.rows[0]) : null;
+  }
+
+  /**
+   * Record the first observation of a lapse. One conditional insert: a lapse
+   * already recorded keeps its original time, so the window never slides.
+   */
+  async recordLapse(accountId: string, now: number): Promise<LapseRecord> {
+    await this.db.query(
+      `INSERT INTO vault_relay_lapses (account_id, lapsed_at, swept_at)
+       VALUES (?, ?, NULL)
+       ON CONFLICT (account_id) DO NOTHING`,
+      accountId,
+      now,
+    );
+    return (
+      (await this.getLapse(accountId)) ?? {
+        accountId,
+        lapsedAt: now,
+        sweptAt: null,
+      }
+    );
+  }
+
+  /** Forget a lapse (the entitlement is active again); `true` if one existed. */
+  async clearLapse(accountId: string): Promise<boolean> {
+    const removed = await this.db.query(
+      `DELETE FROM vault_relay_lapses WHERE account_id = ?
+        RETURNING account_id`,
+      accountId,
+    );
+    return removed.rows.length === 1;
+  }
+
+  /** Mark a lapse swept, once; `false` when it was swept or cleared. */
+  async markLapseSwept(accountId: string, now: number): Promise<boolean> {
+    const updated = await this.db.query(
+      `UPDATE vault_relay_lapses SET swept_at = ?
+        WHERE account_id = ? AND swept_at IS NULL
+        RETURNING account_id`,
+      now,
+      accountId,
+    );
+    return updated.rows.length === 1;
+  }
+
+  /** Unswept lapses recorded at or before `cutoff`, oldest first. */
+  async listDueLapses(cutoff: number, limit: number): Promise<LapseRecord[]> {
+    const found = await this.db.query(
+      `SELECT account_id, lapsed_at, swept_at FROM vault_relay_lapses
+        WHERE swept_at IS NULL AND lapsed_at <= ?
+        ORDER BY lapsed_at, account_id LIMIT ?`,
+      cutoff,
+      limit,
+    );
+    return found.rows.map(lapseFromRow);
+  }
+
+  /** True when the account holds at least one committed snapshot. */
+  async hasCommitted(accountId: string): Promise<boolean> {
+    const found = await this.db.query(
+      `SELECT 1 AS present FROM vault_relay_snapshots
+        WHERE account_id = ? AND status = 'committed' LIMIT 1`,
+      accountId,
+    );
+    return found.rows.length > 0;
+  }
+
+  /**
+   * Accounts above `afterAccountId` (ordered) that hold a committed snapshot
+   * and have no lapse record: the candidates for the sweep's discovery pass.
+   */
+  async listUnrecordedAccounts(
+    afterAccountId: string,
+    limit: number,
+  ): Promise<string[]> {
+    const found = await this.db.query(
+      `SELECT s.account_id FROM vault_relay_snapshots AS s
+        WHERE s.status = 'committed' AND s.account_id > ?
+          AND NOT EXISTS (
+            SELECT 1 FROM vault_relay_lapses AS l
+             WHERE l.account_id = s.account_id)
+        GROUP BY s.account_id
+        ORDER BY s.account_id LIMIT ?`,
+      afterAccountId,
+      limit,
+    );
+    return found.rows.map((row) => String(row.account_id));
+  }
+
+  /** Append an audit record. The audit table is never updated or deleted. */
+  async appendAudit(entry: AuditEntry): Promise<void> {
+    await this.db.query(
+      `INSERT INTO vault_relay_audit
+         (audit_id, occurred_at, action, operator, account_handle, snapshots, bytes, detail)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      entry.id,
+      entry.at,
+      entry.action,
+      entry.operator,
+      entry.accountHandle,
+      entry.snapshots,
+      entry.bytes,
+      entry.detail,
+    );
+  }
+
+  /** Newest audit records first. */
+  async listAudit(limit: number): Promise<AuditEntry[]> {
+    const found = await this.db.query(
+      `SELECT audit_id, occurred_at, action, operator, account_handle, snapshots, bytes, detail
+         FROM vault_relay_audit ORDER BY occurred_at DESC, audit_id LIMIT ?`,
+      limit,
+    );
+    return found.rows.map((row) => ({
+      id: String(row.audit_id),
+      at: toSafeInteger(row.occurred_at, 'occurred_at'),
+      action: String(row.action),
+      operator: String(row.operator),
+      accountHandle: String(row.account_handle),
+      snapshots: toSafeInteger(row.snapshots, 'snapshots'),
+      bytes: toSafeInteger(row.bytes, 'bytes'),
+      detail:
+        row.detail === null || row.detail === undefined
+          ? null
+          : String(row.detail),
+    }));
   }
 
   // Nonces --------------------------------------------------------------

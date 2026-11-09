@@ -268,7 +268,7 @@ Status legend:
 | [`smrt-playground`](./packages/smrt-playground/README.md) | Preview | Package playground discovery, runtime, and host components. |
 | [`smrt-playground-host`](./packages/smrt-playground/host/README.md) | Internal | Private SvelteKit end-to-end test host for the playground runtime. |
 | [`smrt-planner`](./packages/planner/README.md) | Preview | Mountable app planner: pick recipes from every package's manifest, lay out the app, and export a cookbook; ships the static planner app and its MCP widget. |
-| [`smrt-desktop`](./packages/smrt-desktop/README.md) | Preview | Versioned sidecar manifest and runtime bundler for packaged desktop apps; the Tauri wrapper lives in `wrapper/`. |
+| [`smrt-desktop`](./packages/smrt-desktop/README.md) | Preview | Versioned sidecar manifest, runtime bundler and assistant-plugin launcher for packaged desktop apps; the Tauri wrapper lives in `wrapper/`. |
 | [`smrt-mobile-contract`](./packages/smrt-mobile-contract/README.md) | Preview | Manifest-to-Kotlin/Swift contract generation. |
 | [`smrt-mobile`](./packages/smrt-mobile/README.md) | Preview | Kotlin Multiplatform offline, sync, auth, and platform seams. |
 | [`smrt-android`](./packages/smrt-android/README.md) | Internal | Android Compose foundation and native adapters. |

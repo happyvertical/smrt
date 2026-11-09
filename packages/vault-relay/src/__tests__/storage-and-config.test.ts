@@ -197,6 +197,27 @@ describe('policy and environment configuration', () => {
     ).toThrow('maxSequenceJump');
   });
 
+  it('reads the lapse retention window, defaulting to 90 days (#4819)', () => {
+    expect(resolvePolicy(loadServerConfig(env).policy)).toMatchObject({
+      retention: { lapseRetentionDays: 90, lapseRetentionMs: 90 * 86_400_000 },
+    });
+    const configured = loadServerConfig({
+      ...env,
+      VAULT_RELAY_LAPSE_RETENTION_DAYS: '30',
+    }).policy;
+    expect(resolvePolicy(configured).retention.lapseRetentionMs).toBe(
+      30 * 86_400_000,
+    );
+    for (const bad of ['0', '3651', '1.5', 'abc']) {
+      expect(() =>
+        resolvePolicy(
+          loadServerConfig({ ...env, VAULT_RELAY_LAPSE_RETENTION_DAYS: bad })
+            .policy,
+        ),
+      ).toThrow();
+    }
+  });
+
   it('reads a complete environment', () => {
     const config = loadServerConfig(env);
     expect(config.policy.retention.keepWithinMs).toBe(30 * 86_400_000);

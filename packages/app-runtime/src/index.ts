@@ -4,12 +4,12 @@
  * This Node-only subpath owns the small amount of operational composition that
  * does not belong in a generated application: user-owned paths, restrictive
  * local secret material, SQLite tuning, owner bootstrap, and an optional
- * embedded job runner. Domain schema preparation remains an explicit startup
- * step supplied by the application migration layer.
+ * embedded job runner. With `createSchema` the runtime creates the framework
+ * schema on first start (smrt#4835, `local-schema.ts`); the application's own
+ * schema work stays an explicit `prepareDatabase` step.
  */
 
 import { createHash, createHmac, randomBytes } from 'node:crypto';
-import { realpath } from 'node:fs/promises';
 import { homedir, platform } from 'node:os';
 import { parse, resolve, win32 } from 'node:path';
 import {
@@ -58,6 +58,7 @@ import {
   acquireInitializationLock,
   acquireLocalDatabase,
   BOOTSTRAP_TABLE,
+  canonicalLocalSourceRoot,
   closeDatabaseAfterFailure,
   DATABASE_FILE_NAME,
   defaultApplicationDataRoot,
@@ -66,11 +67,11 @@ import {
   preflightLocalApplicationRoot,
   prepareLocalFilesystem,
   preservePrimaryFailure,
-  refuseWindowsDatabaseAcquisition,
   SECRET_FILE_NAME,
   sameFilesystemPath,
   validateApplicationSecret,
   validateLocalStorageCustody,
+  windowsSecureFileCustody,
 } from './local-custody.js';
 import {
   deriveLocalInstallationIdentity,
@@ -82,6 +83,13 @@ import {
   type LocalMcpTokenStore,
 } from './local-mcp-tokens.js';
 import { LocalRuntimeError } from './local-runtime-error.js';
+import {
+  databaseFileExists,
+  discardCreatedDatabase,
+  type LocalPrepareDatabase,
+  LocalSchemaStepFailure,
+  prepareLocalSchema,
+} from './local-schema.js';
 import {
   applicationStateRootSource,
   prepareApplicationStateRoot,
@@ -117,10 +125,24 @@ export {
 export {
   LocalRuntimeError,
   type LocalRuntimeErrorCode,
-  WINDOWS_DATABASE_ACQUISITION_UNSUPPORTED_MESSAGE,
-  WindowsDatabaseAcquisitionUnsupportedError,
 } from './local-runtime-error.js';
+export {
+  type LocalPrepareDatabase,
+  type LocalPrepareDatabaseContext,
+  MIGRATION_FAILED_MESSAGE,
+  type PrepareDatabaseContext,
+  SCHEMA_CREATION_FAILED_MESSAGE,
+} from './local-schema.js';
 export * from './operation-lock.js';
+export {
+  ORIGIN_FILE,
+  type OriginRecord,
+  parseLoopbackOrigin,
+  readOriginFile,
+  removeOriginFile,
+  writeOriginFile,
+} from './origin-file.js';
+export * from './private-files.js';
 export * from './provider-readiness.js';
 export * from './runtime-diagnostics.js';
 export * from './stale-reclaim.js';
@@ -167,10 +189,25 @@ export interface LocalApplicationRuntimeOptions
   /** Actual HTTP bind host. Owner bootstrap refuses non-loopback values. */
   bindHost?: string;
   /**
-   * Explicit application migration/schema hook, invoked before identity access.
-   * It must be idempotent; runtime code never synthesizes application tables.
+   * Create and upgrade the framework schema when this process starts, inside
+   * the initialization lock and one transaction (smrt#4835). On an empty data
+   * directory the database is created, migrated, and only then served; a
+   * failure rolls back, removes a database this attempt created, and throws
+   * `schema_creation_failed`. Default `false` here so operator tooling that
+   * migrates through another path (`smrt app setup` spawns `smrt db:migrate`)
+   * is unchanged; the SvelteKit runtime enables it. Local profile only.
    */
-  prepareDatabase?: (db: DatabaseInterface) => Promise<void>;
+  createSchema?: boolean;
+  /**
+   * The application's own database step, run on EVERY start after the
+   * framework schema and inside the same lock and transaction (when
+   * {@link LocalApplicationRuntimeOptions.createSchema} is on, so a failure
+   * rolls both back). It must be idempotent; runtime code never synthesizes
+   * application model tables itself. `context.firstRun` is true only on the
+   * start that found an empty database. A step that needs only the database
+   * may take `(db)`. A rejection surfaces as `migration_failed`.
+   */
+  prepareDatabase?: LocalPrepareDatabase;
   /** Local profile provider overrides (only validated local combinations survive). */
   providers?: RuntimeProviderOverrides;
   /** Short-lived bootstrap token lifetime. Range: 1..900 seconds. */
@@ -237,9 +274,6 @@ export async function prepareLocalDatabaseStorage(
   const sourceRoot = resolveSourceRoot(options);
   const appId = validateApplicationId(options.appId);
   await preflightLocalApplicationRoot(paths.root, sourceRoot, appId);
-  // Windows custody is implemented, but the SDK cannot yet open SQLite there:
-  // refuse (named error) before the lease creates a single directory.
-  refuseWindowsDatabaseAcquisition();
   const initializationLock = await acquireInitializationLock(paths.root);
   let db: DatabaseInterface | undefined;
   let failure: unknown;
@@ -308,8 +342,9 @@ export async function openLocalMcpTokenStore(
   options: OpenLocalMcpTokenStoreOptions,
 ): Promise<OpenedLocalMcpTokenStore> {
   const paths = await validateLocalDatabaseStorage(options);
-  refuseWindowsDatabaseAcquisition();
-  const canonicalSourceRoot = await realpath(resolveSourceRoot(options));
+  const canonicalSourceRoot = await canonicalLocalSourceRoot(
+    resolveSourceRoot(options),
+  );
   // Uncached: `close()` must never close a connection another caller in
   // this process (for example the web runtime) shares.
   const db = await getDatabase({
@@ -320,6 +355,7 @@ export async function openLocalMcpTokenStore(
       driver: 'node:sqlite',
       custody: 'trusted-parent',
       root: paths.root,
+      ...windowsSecureFileCustody(paths),
     },
   });
   try {
@@ -338,6 +374,7 @@ export async function openLocalMcpTokenStore(
     issue: store.issue,
     list: store.list,
     revoke: store.revoke,
+    revokeHolder: store.revokeHolder,
     verify: store.verify,
     close: async () => {
       await db.close?.();
@@ -394,8 +431,8 @@ export async function openLocalCloudLinkIdentity(
   options: OpenLocalCloudLinkIdentityOptions,
 ): Promise<LocalCloudLinkIdentity> {
   const paths = await validateLocalDatabaseStorage(options);
-  const canonicalSourceRoot = await realpath(
-    resolve(options.sourceRoot ?? process.cwd()),
+  const canonicalSourceRoot = await canonicalLocalSourceRoot(
+    resolveSourceRoot(options),
   );
   const retiredFor = options.retiredInstallationId;
   const unverified = (report: InstallationCustodyReport) => {
@@ -571,17 +608,6 @@ export interface LocalRuntimeDiagnostics {
   readonly secretValuesIncluded: false;
 }
 
-/**
- * Fixed, secret-free surface for a failed application migration.
- *
- * A migration driver message is a likely carrier of a connection string,
- * credential, filesystem path, or environment value, so the caller's text is
- * never surfaced. The original error is retained as a non-enumerable `cause`
- * for private logs only.
- */
-export const MIGRATION_FAILED_MESSAGE =
-  'The application migration step failed; run pnpm app:setup and inspect the private migration logs.';
-
 interface BootstrapRow {
   expires_at?: unknown;
   consumed_at?: unknown;
@@ -707,14 +733,16 @@ export async function initializeLocalApplicationRuntime(
   const sourceRoot = resolveSourceRoot(options);
   const appId = validateApplicationId(options.appId);
   await preflightLocalApplicationRoot(paths.root, sourceRoot, appId);
-  refuseWindowsDatabaseAcquisition();
   const initializationLock = await acquireInitializationLock(paths.root);
   let db: DatabaseInterface | undefined;
   let initialization: LocalRuntimeInitialization | undefined;
   let initializationFailure: unknown;
   let initializationFailed = false;
+  let discardCreatedDatabaseOnFailure = false;
   try {
     await preflightLocalApplicationRoot(paths.root, sourceRoot, appId);
+    // Under the lock, so nobody else creates it between this and the open.
+    const databaseExisted = await databaseFileExists(paths.database);
     const acquired = await acquireLocalDatabase(paths, sourceRoot, appId);
     db = acquired.db;
     const { canonicalSourceRoot } = acquired;
@@ -727,9 +755,19 @@ export async function initializeLocalApplicationRuntime(
     setDatabaseSyncDeviceId(db, identity.deviceId);
     await tuneLocalSqlite(db);
     try {
-      await options.prepareDatabase?.(db);
-    } catch (migrationFailure) {
-      throw migrationFailed(migrationFailure);
+      await prepareLocalSchema({
+        db,
+        paths,
+        appId,
+        createSchema: options.createSchema === true,
+        prepareDatabase: options.prepareDatabase,
+      });
+    } catch (stepFailure) {
+      if (!(stepFailure instanceof LocalSchemaStepFailure)) throw stepFailure;
+      // The transaction rolled back. A database this attempt created holds
+      // nothing worth keeping, so it is removed once the handle is closed.
+      discardCreatedDatabaseOnFailure = stepFailure.discard && !databaseExisted;
+      throw stepFailure.error;
     }
     await ensureBootstrapTable(db);
     await ensureLocalMcpTokenTable(db);
@@ -761,6 +799,18 @@ export async function initializeLocalApplicationRuntime(
       ? await closeDatabaseAfterFailure(db, error)
       : error;
     db = undefined;
+    if (discardCreatedDatabaseOnFailure) {
+      try {
+        await discardCreatedDatabase(paths.database);
+      } catch (discardError) {
+        initializationFailure = preservePrimaryFailure(
+          initializationFailure,
+          discardError,
+          'databaseDiscardError',
+          'Local runtime schema creation and database cleanup both failed.',
+        );
+      }
+    }
   }
 
   try {
@@ -1408,18 +1458,6 @@ async function tuneLocalSqlite(db: DatabaseInterface): Promise<void> {
   await db.query('PRAGMA journal_mode = WAL');
   await db.query('PRAGMA synchronous = FULL');
   await db.query('PRAGMA busy_timeout = 5000');
-}
-
-function migrationFailed(cause: unknown): LocalRuntimeError {
-  const failure = new LocalRuntimeError(
-    'migration_failed',
-    MIGRATION_FAILED_MESSAGE,
-  );
-  Object.defineProperty(failure, 'cause', {
-    value: cause,
-    configurable: true,
-  });
-  return failure;
 }
 
 function validateBootstrapTtl(value: number): number {

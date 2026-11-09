@@ -12,6 +12,16 @@ service storing encrypted snapshot blobs per account. See
   skew, active device of that account, Ed25519, then nonce), `backup.vault`
   entitlement via `requireFeature`, then the body digest and handler. Keep
   authentication failures a single uniform `401`.
+- **Lapsed entitlement** (#4819, `gateEntitlement`): only the write routes
+  (`isWriteRoute`: begin, chunk upload, commit, device delete) are refused,
+  `402 entitlement_lapsed`; list, latest, download, abort and the lease routes
+  stay open until `lapseRetentionDays` (default 90) after the lapse the relay
+  first recorded (`vault_relay_lapses`), then `410 retention_expired`. Lapsed
+  means upgrade-required denial of an account with committed snapshots; never
+  entitled or operator-disabled stays `403`. Deletion is only the admin
+  `lapse-sweep` (`sweepLapsedAccounts`), audited in the append-only
+  `vault_relay_audit`; no device route deletes lapsed data. Do not slide the
+  recorded time.
 - **Security properties are single conditional SQL statements** in
   `metadata-store.ts` (quota reservation, high-water advance, publish, nonce
   insert), portable across SQLite and PostgreSQL. Do not split them into
@@ -31,7 +41,7 @@ service storing encrypted snapshot blobs per account. See
   id>`, a fresh object id per write) and checked by `assertObjectKey`; never
   build one from a client string or overwrite a recorded object. Removal of a
   pending upload is conditional on `status = 'pending'`.
-- **Schema** comes from `migrateVaultRelayV1` and `migrateVaultRelayLeasesV1` in the deployment migration
+- **Schema** (including the lapse and audit tables) comes from `migrateVaultRelayV1` and `migrateVaultRelayLeasesV1` in the deployment migration
   step; request handling only checks table existence. No `@smrt()` models, so
   nothing gains generated REST, CLI, or MCP surfaces.
 - **Owner inputs** (quotas, retention, bucket, databases, domain, namespace)

@@ -30,6 +30,7 @@ export const RESERVED_ENV_KEYS = [
   'PORT',
   'ORIGIN',
   'SMRT_DATA_DIR',
+  'SMRT_DESKTOP_OWNER_LINK_SECRET',
 ] as const;
 
 const requiredKeys = [
@@ -206,7 +207,16 @@ function isAbsoluteDirectory(value: unknown): value is string {
  */
 export function buildSidecarEnv(
   manifest: Pick<SidecarManifestV1, 'env'>,
-  supplied: { readonly port: number; readonly dataDirectory: string },
+  supplied: {
+    readonly port: number;
+    readonly dataDirectory: string;
+    /**
+     * The per-launch owner-link secret. The Rust wrapper generates and sets it;
+     * pass one only for a test harness. Without it the variable is absent and
+     * the app's owner link answers 403.
+     */
+    readonly ownerLinkSecret?: string;
+  },
   base: Readonly<Record<string, string | undefined>>,
 ): Record<string, string> {
   const { port, dataDirectory } = supplied;
@@ -232,5 +242,8 @@ export function buildSidecarEnv(
   env.set('PORT', String(port));
   env.set('ORIGIN', `http://127.0.0.1:${port}`);
   env.set('SMRT_DATA_DIR', dataDirectory);
+  if (supplied.ownerLinkSecret !== undefined) {
+    env.set('SMRT_DESKTOP_OWNER_LINK_SECRET', supplied.ownerLinkSecret);
+  }
   return Object.fromEntries(env);
 }

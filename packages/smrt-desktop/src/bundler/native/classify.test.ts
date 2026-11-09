@@ -259,6 +259,41 @@ describe('ELF', () => {
     ).toMatchObject({ ok: false, reason: 'wrong_machine' });
   });
 
+  it('accepts an official-Node-shaped linux executable with a 2.7 MB .dynstr', async () => {
+    // Node 26.8.1 linux-x64: ET_EXEC, PT_INTERP /lib64/ld-linux-x86-64.so.2,
+    // glibc DT_NEEDED entries, DT_STRSZ 2,694,159. A 1 MiB cap on the declared
+    // size rejected every official Node binary as malformed.
+    const node = elf({
+      type: 2,
+      interp: '/lib64/ld-linux-x86-64.so.2',
+      needed: [
+        'libdl.so.2',
+        'libstdc++.so.6',
+        'libm.so.6',
+        'libgcc_s.so.1',
+        'libpthread.so.0',
+        'libc.so.6',
+      ],
+      strtabPadding: 2_694_159 - 200,
+    });
+    const verdict = await verifyNativeFile(node, LIN_X64, {
+      requireNative: true,
+      expectKind: 'executable',
+    });
+    expect(verdict).toMatchObject({ ok: true });
+  });
+
+  it('still rejects an absurd declared string table size', async () => {
+    const huge = elf({
+      type: 2,
+      interp: '/lib64/ld-linux-x86-64.so.2',
+      needed: ['libc.so.6'],
+      strtabPadding: 300 * 1024 * 1024,
+    });
+    const verdict = await verifyNativeFile(huge, LIN_X64);
+    expect(verdict).toMatchObject({ ok: false });
+  });
+
   it('rejects a musl addon on a gnu target (DT_NEEDED)', async () => {
     const musl = elf({ needed: ['libc.musl-x86_64.so.1'] });
     const verdict = await verifyNativeFile(musl, LIN_X64);

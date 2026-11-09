@@ -1150,6 +1150,72 @@ What the app must do:
 
 Passkeys/WebAuthn are a separate credential: see "Passkey sign-in" below.
 
+### Step-up (recent authentication) for sensitive actions
+
+A signed-in session is not proof the person is at the keyboard now. For an
+action that must not ride on an old or unlocked session (replacing a vault
+account, #4841), require a recent authentication:
+
+```ts
+import { requireRecentAuthentication } from '@happyvertical/smrt-users/step-up';
+
+const ctx = await sessionService.loadSessionContext(sessionId);
+// throws StepUpRequiredError (code 'step_up_required') unless the person
+// proved a credential within the last 5 minutes (maxAgeSeconds, max 1 hour)
+requireRecentAuthentication(ctx, { maxAgeSeconds: 300 });
+```
+
+- The proof is server-side session state. A password or passkey sign-in counts
+  at mint; `oidc`, `magic-link`, `terminal`, `pin`, `mobile` and host-defined
+  sessions do not (an OIDC login can complete silently from the provider's
+  existing browser session, and a magic link from the device's own mail app,
+  so an unlocked stolen device could mint either). `ctx.reauthenticatedAt` is
+  derived from the stored row.
+- The rule: **an existing session never counts as fresh by itself; a
+  deliberate fresh authentication with any supported method does.** Every
+  method below stamps the EXISTING session (no new session, no user switch),
+  refuses layered/PIN and ceilinged sessions, and answers every refusal with
+  one error that does not say which check failed, so a person who signs in
+  only with Google/OIDC or only by email link can still step up.
+  - **Password**: the page asks for the password and the host calls
+    `(await passwordAuth.service()).stepUp({ sessionId, password, ipAddress })`.
+    It uses the sign-in limiter and constant-work verification; every refusal
+    is one `PasswordCredentialError`.
+  - **Passkey**: re-authenticate with a fresh passkey sign-in and use the new
+    session; there is no separate passkey step-up ceremony.
+  - **OIDC**: `const { url } = await oidc.beginStepUp({ sessionId })`, redirect
+    the person to `url`, then on the callback
+    `await oidc.completeStepUp({ sessionId, callbackUrl })`. The request sets
+    `prompt=login` and `max_age=0`. The transaction (state, nonce, PKCE
+    verifier) is held on the session server-side as its one pending intent
+    (`data.oidcStepUpIntent`, one at a time, dies with the session); the
+    callback takes it, so it works once. The ID token is verified as at
+    sign-in, and must also carry `auth_time` that is within the step-up window
+    (default 300 s, `stepUpWindowSeconds`), not before the intent started and
+    not in the future. The returned issuer+subject must be an existing OIDC
+    identity of the session's own user: it never creates a user or switches
+    one. A provider that does not emit `auth_time`, or ignores
+    `prompt`/`max_age`, is refused, so confirm yours returns `auth_time`. Use a
+    `redirectUri` registered with the provider for step-up (it must not be
+    handled as a sign-in callback). Refusals are `StepUpRequiredError`.
+  - **Magic link**: `const { token, email } = await links.requestStepUp({
+    sessionId })` issues a link of purpose `step_up`, bound to that session and
+    its user, valid for at most 300 s and once; email it to `email` (the
+    user's own address). When the person opens it, the host calls
+    `await links.consumeStepUp({ token, sessionId })` with the SAME session
+    cookie. A sign-in link cannot step up and a step-up link cannot sign in
+    (`verify()`/`inspect()` refuse it); another session or user, an expired or
+    reused link, or a changed account email are all `StepUpRequiredError`.
+- The stamp (`SESSION_DATA_KEYS.reauthenticatedAt`) is never client input
+  (`setSessionData` refuses it), is not moved by refresh, activity or
+  `extend()`, is carried unchanged across tenant-switch rotation, and dies
+  with the session.
+- `isTenantOwnerSession(ctx)` is the matching owner test: a direct active
+  `owner` membership on a first-class session (not a member, `terminal`/`pin`
+  device, layered, ceilinged or inherited one).
+- The `@happyvertical/smrt-users/step-up` entry has no side effects and can be
+  imported by packages that must not load the whole identity module.
+
 ### Passkey sign-in
 
 `PasskeyCredentialService` (#3275) gives an app passkey (WebAuthn) sign-in for

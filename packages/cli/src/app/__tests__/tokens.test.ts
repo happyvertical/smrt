@@ -190,6 +190,54 @@ describe('smrt app token', () => {
     await runtime.db.close?.();
   });
 
+  it('shows renewable vs fixed and holder, rotates by holder, and revokes a holder', async () => {
+    const { runtime, run } = await ownedApplication();
+    const fixed = JSON.parse(
+      (await run(['--scopes', 'notes.read', '--expires', '1d'])).stdout,
+    );
+    expect(fixed).toMatchObject({ renewable: false, holder: null });
+    const first = JSON.parse(
+      (await run(['--scopes', 'notes.read', '--holder', 'laptop'])).stdout,
+    );
+    expect(first).toMatchObject({ renewable: true, holder: 'laptop' });
+    const second = JSON.parse(
+      (await run(['--scopes', 'notes.read', '--holder=laptop'])).stdout,
+    );
+    expect(await runtime.mcpTokens?.verify(String(first.token))).toBeNull();
+    expect(
+      await runtime.mcpTokens?.verify(String(second.token)),
+    ).not.toBeNull();
+
+    const listed = JSON.parse((await run(['list'])).stdout);
+    expect(
+      listed.tokens.map(
+        (token: Record<string, unknown>) =>
+          `${token.holder}:${token.renewable}:${token.status}`,
+      ),
+    ).toEqual(
+      expect.arrayContaining([
+        'null:false:active',
+        'laptop:true:active',
+        'laptop:true:revoked',
+      ]),
+    );
+    expect(listed.tokens[0]).toHaveProperty('lastUsedAt');
+    expect(JSON.stringify(listed)).not.toContain('smrt_mcp_');
+
+    const gone = await run(['revoke-holder', 'laptop']);
+    expect(gone.code).toBe(0);
+    expect(JSON.parse(gone.stdout)).toMatchObject({
+      status: 'revoked',
+      holder: 'laptop',
+      secretValuesIncluded: false,
+    });
+    expect(await runtime.mcpTokens?.verify(String(second.token))).toBeNull();
+    expect(
+      JSON.parse((await run(['revoke-holder', 'laptop'])).stdout),
+    ).toMatchObject({ status: 'none' });
+    await runtime.db.close?.();
+  });
+
   it('refuses scopes the owner does not hold with a stable code and no token', async () => {
     const { runtime, run } = await ownedApplication();
     const failed = await run(['create', '--scopes=notes.read,notes.delete']);
@@ -214,6 +262,8 @@ describe('smrt app token', () => {
     [['--scopes', 'a', '--bogus', '1'], 'Unknown token option'],
     [['list', 'extra'], 'takes no arguments'],
     [['revoke'], 'exactly one token id'],
+    [['revoke-holder'], 'exactly one holder'],
+    [['--scopes', 'a', '--holder', 'x', '--holder', 'y'], 'more than once'],
     [['rotate'], 'Unknown token operation'],
   ])('rejects usage %j before touching state', async (argv, message) => {
     const { runtime, run } = await ownedApplication();

@@ -141,6 +141,10 @@ function inventoryViolations(overrides = {}) {
     ['desktop-release.yml:verify-build', (value) => value === DESKTOP_MATRIX_RUNS_ON],
     ['desktop-release.yml:release-build', (value) => value === DESKTOP_MATRIX_RUNS_ON],
     ['desktop-release.yml:release', (value) => value === DESKTOP_SIGNING_RUNS_ON],
+    // desktop-launch.yml (smrt#4835): the launch smoke runs the wrapper on
+    // each OS; its `bundle` job is a plain ubuntu-latest job. The matrix values
+    // are checked in the desktop-launch test below.
+    ['desktop-launch.yml:launch', (value) => value === DESKTOP_MATRIX_RUNS_ON],
   ]);
   const results = workflowFiles.map((file) => runnerDeclarations(file, overrides[file]));
   const declarations = results.flatMap((result) => result.declarations);
@@ -312,6 +316,97 @@ function desktopRunnerViolations(text) {
 
 const desktopWorkflow = () =>
   readFileSync(path.join(workflowsDir, 'desktop-release.yml'), 'utf8');
+
+const DESKTOP_LAUNCH_JOBS = Object.freeze({
+  bundle: 'ubuntu-latest',
+  launch: DESKTOP_MATRIX_RUNS_ON,
+});
+const DESKTOP_LAUNCH_MATRIX_KEYS = ['label', 'runner', 'target', 'binary', 'experimental'];
+
+/** Violations of the rules for desktop-launch.yml (exact jobs, hosted runners only). */
+function desktopLaunchViolations(text) {
+  const violations = [];
+  const doc = parseDocument(text, { uniqueKeys: true, merge: false });
+  for (const error of [...doc.errors, ...doc.warnings]) {
+    violations.push(`desktop-launch.yml is not plain YAML: ${error.message.split('\n')[0]}`);
+  }
+  visit(doc, {
+    Node(_key, node) {
+      if (isAlias(node) || node.anchor || node.tag) {
+        violations.push('desktop-launch.yml uses an alias, anchor or tag');
+      }
+    },
+  });
+  const jobs = doc.toJS({ maxAliasCount: -1 })?.jobs ?? {};
+  for (const id of Object.keys(jobs)) {
+    if (!(id in DESKTOP_LAUNCH_JOBS)) violations.push(`desktop-launch.yml: unexpected job ${id}`);
+  }
+  for (const [id, expected] of Object.entries(DESKTOP_LAUNCH_JOBS)) {
+    if (jobs[id]?.['runs-on'] !== expected) {
+      violations.push(`desktop-launch.yml: job ${id} runs-on is ${JSON.stringify(jobs[id]?.['runs-on'])}`);
+    }
+  }
+  const matrix = doc.getIn(['jobs', 'launch', 'strategy', 'matrix'], true);
+  if (!isMap(matrix) || matrix.flow || matrix.items.map((pair) => pair.key?.value).join() !== 'include') {
+    return [...violations, 'launch: the matrix must be a block mapping that is exactly an include list'];
+  }
+  const include = matrix.get('include', true);
+  if (!isSeq(include) || include.flow) return [...violations, 'launch: include must be a block list'];
+  const runners = [];
+  for (const item of include.items) {
+    if (!isMap(item) || item.flow) {
+      violations.push('launch: a matrix entry is not a block mapping');
+      continue;
+    }
+    for (const pair of item.items) {
+      const key = pair.key?.value;
+      if (!DESKTOP_LAUNCH_MATRIX_KEYS.includes(key)) {
+        violations.push(`launch: a matrix entry has the unexpected key ${String(key)}`);
+      } else if (key === 'runner') {
+        if (!isScalar(pair.value) || pair.value.type !== 'PLAIN') {
+          violations.push('launch: runner of a matrix entry is not a plain scalar');
+        } else if (!DESKTOP_HOSTED_RUNNERS.includes(String(pair.value.value))) {
+          violations.push(`launch: runner ${pair.value.value} is not allowed`);
+        } else {
+          runners.push(String(pair.value.value));
+        }
+      }
+    }
+  }
+  if (runners.length < 3) violations.push('launch: the matrix needs its three runners');
+  if (/self-hosted|DESKTOP_MACOS_SIGNING_RUNNER/i.test(JSON.stringify(doc.toJS({ maxAliasCount: -1 })))) {
+    violations.push('desktop-launch.yml names a self-hosted runner or the signing-runner variable');
+  }
+  return violations;
+}
+
+test('desktop-launch jobs and matrix runners come from the explicit list', () => {
+  const text = readFileSync(path.join(workflowsDir, 'desktop-launch.yml'), 'utf8');
+  assert.deepEqual(desktopLaunchViolations(text), []);
+  const mutate = (from, to) => {
+    assert.equal(text.split(from).length, 2, `anchor must occur once: ${from}`);
+    return text.replace(from, to);
+  };
+  for (const runner of ['self-hosted', 'macos-latest', '[self-hosted, macOS]']) {
+    assert.ok(
+      desktopLaunchViolations(mutate('runner: macos-15\n', `runner: ${runner}\n`)).length > 0,
+      runner,
+    );
+  }
+  assert.ok(
+    desktopLaunchViolations(
+      mutate('    runs-on: ${{ matrix.runner }}\n', '    runs-on: [self-hosted, macOS]\n'),
+    ).length > 0,
+  );
+  assert.ok(
+    desktopLaunchViolations(mutate('    name: Bundle generic app (${{ matrix.target }})\n    runs-on: ubuntu-latest', '    name: Bundle generic app (${{ matrix.target }})\n    runs-on: macos-15')).length > 0,
+  );
+  assert.ok(
+    desktopLaunchViolations(`${text}\n  extra:\n    runs-on: ubuntu-latest\n    steps: []\n`).some((v) =>
+      v.includes('unexpected job extra'),
+    ),
+  );
+});
 
 test('desktop-release matrix runners come from the explicit list', () => {
   assert.deepEqual(desktopRunnerViolations(desktopWorkflow()), []);

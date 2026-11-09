@@ -44,6 +44,20 @@ export type SessionAuthMethod =
   | (string & {});
 
 /**
+ * Sign-in methods whose mint counts as a fresh authentication for step-up
+ * (#4841): the person proved a password or a passkey right now. `oidc` and
+ * `magic-link` do not count: an identity provider's existing browser login or
+ * the device's own mail app completes them without the person present, so an
+ * unlocked stolen device could mint one. `terminal` approval (any holder of a
+ * stale session can mint one), `pin`, `mobile` and host-defined methods never
+ * count either.
+ */
+export const STEP_UP_SIGN_IN_AUTH_METHODS: readonly string[] = Object.freeze([
+  'password',
+  'passkey',
+]);
+
+/**
  * Default session TTL: 7 days in seconds
  */
 export const DEFAULT_SESSION_TTL = 7 * 24 * 60 * 60;
@@ -78,6 +92,25 @@ export const SESSION_DATA_KEYS = {
    * {@link Session.getAuthenticatedAt}.
    */
   authenticatedAt: 'authenticatedAt',
+  /**
+   * ISO timestamp of the last step-up: a fresh password check made on this
+   * already-signed-in session (#4841). Written only by
+   * `SessionCollection.markReauthenticated` after the credential was verified;
+   * never from client input (`setSessionData` refuses it), never moved by
+   * `extend()`/activity, carried forward unchanged by tenant-switch rotation
+   * and gone with the session. See {@link Session.getReauthenticatedAt}.
+   */
+  reauthenticatedAt: 'reauthenticatedAt',
+  /**
+   * The pending OIDC step-up intent of this session: the authorization
+   * transaction (state, nonce, PKCE verifier) of a re-authentication the
+   * session itself started, with its expiry. Written only by
+   * `SessionCollection.recordStepUpIntent`, consumed (removed) by
+   * `SessionCollection.takeStepUpIntent` on the callback, so it is single use
+   * and dies with the session. Never from client input (`setSessionData`
+   * refuses it).
+   */
+  oidcStepUpIntent: 'oidcStepUpIntent',
   /**
    * Row id of the passkey (`users_passkey_credentials`) a session was signed
    * in with. Set only by `PasskeyCredentialService` at mint; it decides which
@@ -274,6 +307,19 @@ export class Session extends SmrtObject {
   }
 
   /**
+   * Whether this session may step up (#4841) at all: a first-class session,
+   * not a layered or PIN one, with no permission ceiling. Every step-up method
+   * (password, OIDC, magic link) requires it.
+   */
+  isStepUpEligible(): boolean {
+    return (
+      !this.isLayered() &&
+      this.authMethod !== 'pin' &&
+      this.getPermissionCeiling() === null
+    );
+  }
+
+  /**
    * Absolute expiry cap (`data.absoluteExpiresAt`), or null when the session
    * has none. An unreadable value fails closed as "already passed".
    */
@@ -317,6 +363,32 @@ export class Session extends SmrtObject {
     return created instanceof Date && !Number.isNaN(created.getTime())
       ? created
       : null;
+  }
+
+  /**
+   * When the person last proved a credential on this session (#4841): the
+   * newer of the step-up stamp (`data.reauthenticatedAt`) and the sign-in time
+   * ({@link Session.getAuthenticatedAt}), the latter counting only for an
+   * interactive sign-in method in {@link STEP_UP_SIGN_IN_AUTH_METHODS}. A
+   * `terminal`, `pin`, `mobile` or host-defined session proves nothing about
+   * the person at mint. A present but malformed step-up stamp returns null
+   * (fail closed, even if the sign-in time is fresh).
+   */
+  getReauthenticatedAt(): Date | null {
+    const raw = this.data?.[SESSION_DATA_KEYS.reauthenticatedAt];
+    let stepUp: Date | null = null;
+    if (raw !== undefined && raw !== null) {
+      const at = typeof raw === 'string' ? new Date(raw) : null;
+      if (!at || Number.isNaN(at.getTime())) return null;
+      stepUp = at;
+    }
+    const signIn =
+      typeof this.authMethod === 'string' &&
+      STEP_UP_SIGN_IN_AUTH_METHODS.includes(this.authMethod)
+        ? this.getAuthenticatedAt()
+        : null;
+    if (stepUp && signIn) return stepUp > signIn ? stepUp : signIn;
+    return stepUp ?? signIn;
   }
 
   /**

@@ -119,13 +119,6 @@ export interface BundleOptionsInput {
   readonly offline?: boolean;
   readonly force?: boolean;
   readonly measure?: boolean;
-  /**
-   * A prepared (migrated) data directory that `--measure` copies for every
-   * run. SMRT apps never create their own schema at run time, so a fresh
-   * directory would not start: prepare one with
-   * `SMRT_APP_ID=<id> SMRT_DATA_DIR=<dir> smrt app migrate`.
-   */
-  readonly measureDataDir?: string;
   /** Default `fail` (design O5). */
   readonly secretContentPolicy?: SecretContentPolicy;
   /**
@@ -188,8 +181,6 @@ export interface BundlePlan {
   readonly offline: boolean;
   readonly force: boolean;
   readonly measure: boolean;
-  /** Absolute path of the prepared data directory `--measure` copies. */
-  readonly measureDataDir?: string;
   readonly secretContentPolicy: SecretContentPolicy;
   /** Refuse a Node pin that is not gpg-verified (release and signing path). */
   readonly requireVerifiedPins: boolean;
@@ -384,10 +375,6 @@ export async function createBundlePlan(
       ? undefined
       : resolvePath(input.nodeCache, 'nodeCache');
 
-  const measureDataDir =
-    input.measureDataDir === undefined
-      ? undefined
-      : resolvePath(input.measureDataDir, 'measureData');
   const bridgeFile =
     input.bridgeFile === undefined
       ? undefined
@@ -504,7 +491,6 @@ export async function createBundlePlan(
     offline: input.offline === true,
     force: input.force === true,
     measure: input.measure === true,
-    ...(measureDataDir === undefined ? {} : { measureDataDir }),
     secretContentPolicy,
     requireVerifiedPins: input.requireVerifiedPins === true,
   };

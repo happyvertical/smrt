@@ -691,6 +691,49 @@ describe('sequence step cap and high-water reset', () => {
     expect(JSON.stringify(h.logger.lines)).not.toContain('acct-a');
   });
 
+  it('audits the removed snapshots even when the reset then reports high_water_changed (#4833)', async () => {
+    class ChangedStore extends VaultRelayStore {
+      override async resetHighWater(): Promise<boolean> {
+        return false;
+      }
+    }
+    const g = await createHarness({
+      createStore: (db) => new ChangedStore(db),
+    });
+    try {
+      const device = newDevice('acct-a', 'device-a1');
+      await registerDevice(g, device);
+      for (const sequence of [1, 2]) {
+        expect(
+          (await uploadSnapshot(g, device, sequence, randomBytes(10))).status,
+        ).toBe(201);
+      }
+      g.logger.lines.length = 0;
+      const response = await g.relay.handleAdmin(
+        adminRequest('POST', '/admin/v1/accounts/acct-a/high-water', {
+          highWaterSequence: 0,
+          removeSnapshotsAbove: true,
+        }),
+      );
+      expect(response.status).toBe(409);
+      expect(await errorCode(response)).toBe('high_water_changed');
+      const audit = g.logger.lines.filter(
+        (line) => line.event === 'high_water_reset_removed',
+      );
+      expect(audit).toHaveLength(1);
+      expect(audit[0]).toMatchObject({
+        level: 'warn',
+        fields: { removed: 2, removedSequences: '2,1' },
+      });
+      expect(JSON.stringify(g.logger.lines)).not.toContain('acct-a');
+      expect(
+        g.logger.lines.some((line) => line.event === 'high_water_reset'),
+      ).toBe(false);
+    } finally {
+      await g.close();
+    }
+  });
+
   it('resets to a mark that keeps the snapshots at or below it', async () => {
     for (const sequence of [5, 6, 7]) {
       expect(

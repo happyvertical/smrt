@@ -31,12 +31,12 @@ import {
   prepareApplicationStateRoot,
   prepareLocalDatabaseStorage,
   processExists,
-  WindowsDatabaseAcquisitionUnsupportedError,
 } from './index.js';
 import { acquireInitializationLock } from './local-custody.js';
 import {
   createNodeWindowsRuntime,
   preparePrivateWindowsTree,
+  validateExistingWindowsFile,
   walkWindowsChain,
 } from './windows-custody.js';
 
@@ -88,13 +88,24 @@ describe.runIf(onWindows)('real Windows machine', () => {
     ).toEqual([]);
   });
 
-  it('refuses a directory under C:\\ (it inherits Authenticated Users: Modify) and removes it', () => {
+  it('refuses a pre-existing directory under C:\\ (it inherits Authenticated Users: Modify) and names the principal', () => {
     const directory = `C:\\smrt-test-${randomBytes(6).toString('hex')}`;
     created.push(directory);
+    mkdirSync(directory);
     expect(() => preparePrivateWindowsTree(rt, { directory })).toThrow(
-      /lacks Windows custody/,
+      /lacks Windows custody.*access is granted to/,
     );
-    expect(existsSync(directory)).toBe(false);
+    // Never removed and never re-permissioned: it was not the runtime's.
+    expect(existsSync(directory)).toBe(true);
+  });
+
+  it('locks and accepts a directory it creates under C:\\, which would otherwise inherit Authenticated Users: Modify', () => {
+    const directory = `C:\\smrt-test-${randomBytes(6).toString('hex')}`;
+    created.push(directory);
+    const result = preparePrivateWindowsTree(rt, { directory });
+    expect(result.createdDirectories).toEqual([directory]);
+    // Verified again, now as an existing directory: still accepted.
+    expect(() => preparePrivateWindowsTree(rt, { directory })).not.toThrow();
   });
 
   it('refuses a directory that was later opened to the Users group', () => {
@@ -221,16 +232,39 @@ describe.runIf(onWindows)('real Windows machine', () => {
     expect(prepareApplicationStateRoot(options)).toBe(stateRoot);
   });
 
-  it('reaches the SDK gate with the read-only preflight done and nothing created', async () => {
+  it('opens the secure database through windowsCustody.verify, marks the root, and reopens it', async () => {
+    const leases = () =>
+      readdirSync(localAppData).filter((name) =>
+        name.startsWith('.smrt-lease-'),
+      );
+    const before = new Set(leases());
     const dataDirectory = unique();
-    await expect(
-      prepareLocalDatabaseStorage({
-        appId: 'win32-custody-test',
-        dataDirectory,
-        sourceRoot: process.cwd(),
-      }),
-    ).rejects.toBeInstanceOf(WindowsDatabaseAcquisitionUnsupportedError);
-    expect(existsSync(dataDirectory)).toBe(false);
+    const options = {
+      appId: 'win32-custody-test',
+      dataDirectory,
+      sourceRoot: process.cwd(),
+    };
+    try {
+      const paths = await prepareLocalDatabaseStorage(options);
+      expect(existsSync(paths.database)).toBe(true);
+      const entries = readdirSync(dataDirectory);
+      expect(entries).toContain('.smrt-local-runtime-win32-custody-test');
+      expect(entries).not.toContain(
+        '.smrt-local-runtime-win32-custody-test.pending',
+      );
+      // Idempotent: the same root opens again under the same rule.
+      await prepareLocalDatabaseStorage(options);
+      // The database file passes the custodied rule on its own.
+      expect(() =>
+        validateExistingWindowsFile(rt, paths.database, {
+          custodyRoot: dataDirectory,
+        }),
+      ).not.toThrow();
+    } finally {
+      for (const name of leases()) {
+        if (!before.has(name)) created.push(join(localAppData, name));
+      }
+    }
   });
 
   it('recognises live and dead processes', () => {

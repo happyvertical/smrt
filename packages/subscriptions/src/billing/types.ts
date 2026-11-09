@@ -164,6 +164,7 @@ export type BillingHostErrorCode =
   | 'price_unconfigured'
   | 'already_subscribed'
   | 'no_billing_account'
+  | 'checkout_not_reconcilable'
   | 'provider_error';
 
 const STATUS_BY_CODE: Record<BillingHostErrorCode, number> = {
@@ -174,6 +175,7 @@ const STATUS_BY_CODE: Record<BillingHostErrorCode, number> = {
   plan_not_purchasable: 409,
   already_subscribed: 409,
   no_billing_account: 409,
+  checkout_not_reconcilable: 409,
   price_unconfigured: 503,
   provider_error: 502,
 };
@@ -188,6 +190,7 @@ const MESSAGE_BY_CODE: Record<BillingHostErrorCode, string> = {
   already_subscribed:
     'This workspace already has a subscription. Use the billing portal to change it.',
   no_billing_account: 'This workspace has no billing account yet.',
+  checkout_not_reconcilable: 'That checkout cannot be reconciled.',
   provider_error: 'The billing provider could not complete the request.',
 };
 
@@ -217,7 +220,42 @@ export interface BillingPortalResult {
   url: string;
 }
 
-export type BillingWebhookOutcome = 'applied' | 'ignored' | 'duplicate';
+export type BillingWebhookOutcome =
+  | 'applied'
+  | 'ignored'
+  | 'duplicate'
+  /**
+   * A paid first-purchase Checkout could not be tied to a session this host
+   * created. It was not linked and not discarded: it is stored for an
+   * operator (`listCheckoutsNeedingReconciliation`, `reconcileCheckout`).
+   */
+  | 'needs_reconciliation';
+
+/** A paid Checkout session waiting for an operator. Ids and codes only. */
+export interface BillingUnreconciledCheckout {
+  sessionId: string;
+  /** `session_record_missing`, `session_record_mismatch` or `session_expired`. */
+  reason: string;
+  /** The tenant the signed metadata named (not trusted). */
+  claimedTenantId: string;
+  subscriptionId: string;
+  /**
+   * The provider customer that paid. Confirm it is the claimed tenant's own
+   * customer before reconciling: it is the one value that decides who gets
+   * control of the tenant's billing portal.
+   */
+  customerId: string;
+  /** The tenant the host recorded the session for (empty when no record). */
+  targetTenantId: string;
+  /**
+   * True when the claimed tenant has its own pending or completed session
+   * recorded by this host, which suggests the flagged payment is a copy of
+   * that tenant's signed metadata rather than the tenant's purchase.
+   */
+  claimedTenantHasOwnSession: boolean;
+  eventId: string;
+  flaggedAt: Date;
+}
 
 export interface BillingWebhookResponse {
   status: number;
@@ -234,6 +272,43 @@ export interface BillingHost {
     input: { planKey?: string; planId?: string },
   ): Promise<BillingCheckoutResult>;
   createPortalLink(auth: BillingAuth): Promise<BillingPortalResult>;
+  /** Paid Checkout sessions flagged `needs_reconciliation`, oldest first. */
+  listCheckoutsNeedingReconciliation(options?: {
+    /** Page size, 1..1000 (default 200). */
+    limit?: number;
+    offset?: number;
+  }): Promise<BillingUnreconciledCheckout[]>;
+  /** How many paid sessions are flagged, so a page is never mistaken for all. */
+  countCheckoutsNeedingReconciliation(): Promise<number>;
+  /**
+   * Operator-only (same rules as `reconcileCheckout`): close a flagged session
+   * on purpose WITHOUT linking it (for example a payment from another
+   * integration on the same account). Terminal state `dismissed`, logged with
+   * the operator id and reason; throws `checkout_not_reconcilable` when the
+   * session is not flagged.
+   */
+  dismissCheckout(input: {
+    sessionId: string;
+    operatorId: string;
+    reason: string;
+  }): Promise<void>;
+  /**
+   * Operator-only, called by host code that has already authenticated and
+   * authorised an operator (never wired to a request handler). Links a flagged
+   * paid session to `tenantId` on purpose, once: the subscription is re-read
+   * from the provider and must be the one recorded when the session was
+   * flagged. `planId` defaults to the plan the signed metadata named. Throws
+   * `checkout_not_reconcilable` when the session is not flagged (or was
+   * already reconciled); otherwise reports whether the link was `applied` or
+   * `ignored` with a reason (for example `already_subscribed`).
+   */
+  reconcileCheckout(input: {
+    sessionId: string;
+    tenantId: string;
+    planId?: string;
+    /** Who is acting; recorded in the audit log. */
+    operatorId: string;
+  }): Promise<{ outcome: 'applied' | 'ignored'; reason?: string }>;
   handleWebhook(input: {
     payload: string;
     signature: string | null;

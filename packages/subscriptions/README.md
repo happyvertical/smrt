@@ -455,18 +455,48 @@ and subscribe it to `checkout.session.completed` and
   sets `tenantPlans: 'allow'`, so a tenant that can write plan rows cannot buy
   entitlements it defined itself or shadow a plan key; set `allow` only when
   tenants cannot write `SubscriptionPlan`. `canPurchasePlan` adds host policy.
-  The session metadata is HMAC-signed and bound to the server price and, when
-  known, the billing customer, so another integration on the same Stripe
-  account cannot forge metadata for a tenant, and signed metadata cannot be
-  reused for a different price or another customer's subscription. Known gap:
-  when the tenant has no billing customer yet, the signed metadata is not
-  bound to the one session the host created and does not expire. A party that
-  can read it and create its own Checkout session on the same Stripe account
-  (a strong precondition) could pay it and so link the tenant to a billing
-  customer the tenant does not control: the portal then opens that customer,
-  later checkouts reuse it, and a payment the tenant makes concurrently can
-  end up as an untracked second subscription. Binding to a recorded session
-  id is tracked separately.
+  The session metadata is HMAC-signed and bound to the server price, an
+  expiry and, when known, the billing customer, so another integration on the
+  same Stripe account cannot forge metadata for a tenant, and signed metadata
+  cannot be reused for a different price or another customer's subscription.
+- **First purchases are bound to the session the host created (#4814).** The
+  host records each Checkout session id (table
+  `_smrt_billing_checkout_sessions`: session id, tenant, expiry, status
+  `pending`, `completed` or `needs_reconciliation`) before it returns the
+  buyer's URL, and signs an expiry (`smrt_exp`, 25 hours, so a Stripe session's
+  24 hours plus an hour) into the metadata. A paid session links a tenant only
+  when, in order: the signature verifies, a record exists for exactly that
+  session id, it is still `pending`, it names the same tenant as the signed
+  metadata, and the event time (not the delivery time, so late webhook retries
+  of an in-time payment still count) is before the signed and recorded expiry.
+  Metadata copied onto another integration's session is therefore never
+  linked, however it is paid. A completed session is single use: a second
+  completion with the same session id changes nothing.
+- **A paid session that cannot be bound is kept, not dropped.** If the record
+  is missing, expired or names another tenant, the tenant is not linked, the
+  event is claimed (no provider retry loop) and the session is stored as
+  `needs_reconciliation` with a reason code (`session_record_missing`,
+  `session_expired`, `session_record_mismatch`). The webhook answers 200 with
+  `outcome: 'needs_reconciliation'` and logs
+  `billing.checkout.needs_reconciliation` at error level (ids and codes only).
+  A genuine buyer whose record was lost, or a session that was in flight when
+  this binding was deployed (it has no record), lands here. An operator lists
+  them with `host.listCheckoutsNeedingReconciliation()` and links one on
+  purpose with `host.reconcileCheckout({ sessionId, tenantId, operatorId })`:
+  server-side only (authenticate and authorise the operator first; it is not a
+  request handler), it re-reads the subscription from the provider, requires
+  it to be the subscription and customer recorded when the session was
+  flagged, applies the same tenant/customer conflict checks as a normal
+  completion, links once, and logs `billing.checkout.reconciled` with the
+  operator id. Each listed row carries the paying `customerId`, the tenant the
+  host recorded the session for (`targetTenantId`) and
+  `claimedTenantHasOwnSession` (true suggests a copy of that tenant's signed
+  metadata): confirm the customer is the tenant's own before linking. Treat a
+  flagged session you did not expect as another integration's payment and close
+  it with `host.dismissCheckout({ sessionId, operatorId, reason })` (terminal
+  `dismissed`, logged with the operator id and reason), so it leaves the list.
+  The list is paged (`{ limit, offset }`, default 200) and
+  `host.countCheckoutsNeedingReconciliation()` gives the total.
 - **Webhook** verifies the signature on the raw body with a bounded timestamp
   tolerance, then claims the event id durably in the same transaction as the
   subscription write (`runOnce`, `_smrt_run_once_claims`). A replay is a 2xx
@@ -498,6 +528,33 @@ concurrent duplicate of an event being applied answers
 owner's input; this module only maps them. No schema change is needed: event
 claims use core's `_smrt_run_once_claims`, retained for its pruning window
 (30 days by default), far longer than Stripe's three-day retry horizon.
+
+## Hosted vault-account restart and supersede (#4841)
+
+The hosted account layer (the service that holds the vault relay's admin
+token) replaces a family's vault account after a restart. That is a takeover
+of the backup line if done by the wrong person, so every action here is gated:
+
+- `supersedeVaultAccount`, `unsupersedeVaultAccount` (relay admin `PUT` and
+  `DELETE .../superseded-by`) and `provisionRestartAccount` (a fresh account
+  linked to the tenant plus the working device's relay signing key, step 1 of
+  the restart in the app-runtime README).
+- Each requires the caller to be the tenant **owner** (`NotOwnerError`, code
+  `not_owner`: a member, a device-only or layered session, no session, or an
+  account of another tenant) **and** a **step-up**: the owner re-authenticated
+  with a fresh password or passkey within `stepUpMaxAgeSeconds` (default 300;
+  `StepUpRequiredError`, code `step_up_required`). A signed-in session or an
+  unlocked device is not enough. See `smrt-users` "Step-up".
+- The relay is called only after both checks pass, exactly once. Every attempt
+  is written to your `audit` sink (`denied` with the reason code, `authorized`
+  before the call, then `succeeded` or `failed`); records hold ids, codes and
+  times, never a password, session id, token or key. If the `authorized`
+  record cannot be written, nothing is done.
+- Collaborators are injected: `session` (from `loadSessionContext`), `relay`
+  (`VaultRelayAdminPort`; `createVaultRelayAdminClient({ baseUrl, adminToken })`
+  speaks the admin HTTP API, and a `VaultRelay` instance fits in-process),
+  `directory` (which tenant owns an account, and linking a new one so
+  `backup.vault` resolves), and `audit`.
 
 ## Svelte entry point
 

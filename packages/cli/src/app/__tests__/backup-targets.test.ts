@@ -790,6 +790,65 @@ describe('vault relay target', () => {
     });
   });
 
+  describe('subscription lapse (#4819)', () => {
+    const lapsed = () =>
+      json(402, {
+        error: 'entitlement_lapsed',
+        restoreAvailableUntil: '2027-02-07T00:00:00.000Z',
+      });
+
+    it.each([
+      ['begin', 'POST /v1/uploads'],
+      ['a chunk upload', 'PUT /v1/uploads/:id/chunks/0'],
+      ['commit', 'POST /v1/uploads/:id/commit'],
+    ])('maps a relay refusal of %s to a distinct renew message', async (_n, route) => {
+      const root = tempRoot(roots);
+      const relay = relayWithSigner();
+      relay.relay.fail.set(route, lapsed);
+      const error = await failure(
+        make(relay).put((await seal(root, 1n)).request()),
+      );
+      expect(error.code).toBe('subscription_lapsed');
+      expect(error.message).toMatch(/renew/i);
+      expect(error.message).not.toMatch(/upgrade/i);
+      expect(relay.relay.snapshots.size).toBe(0);
+    });
+
+    it('keeps list and download working for a device whose plan lapsed', async () => {
+      const root = tempRoot(roots);
+      const relay = relayWithSigner();
+      const one = await seal(root, 1n);
+      await make(relay).put(one.request());
+      // Same account, cached entitlement gone, relay refusing new uploads.
+      const target = make(relay, { entitlements: unentitled });
+      relay.relay.fail.set('POST /v1/uploads', lapsed);
+      expect((await target.list()).map((o) => o.sequence)).toEqual([1n]);
+      expect((await collect(target.get('1'))).equals(one.bytes)).toBe(true);
+      const restore = await target.restoreProvider();
+      expect(restore).toBeDefined();
+    });
+
+    it('reports the end of the retention window as its own code', async () => {
+      const relay = relayWithSigner();
+      relay.relay.fail.set('GET /v1/snapshots', () =>
+        json(410, { error: 'retention_expired' }),
+      );
+      const error = await failure(make(relay).list());
+      expect(error.code).toBe('retention_expired');
+      expect(error.message).toMatch(/retention/i);
+    });
+
+    it('reports it on the lease route too, not as a generic failure', async () => {
+      const relay = relayWithSigner();
+      relay.relay.fail.set('POST /v1/lease/acquire', () =>
+        json(410, { error: 'retention_expired' }),
+      );
+      expect((await failure(make(relay).preflight())).code).toBe(
+        'retention_expired',
+      );
+    });
+  });
+
   describe('partial uploads', () => {
     it('aborts the upload when the stream breaks, leaving nothing published', async () => {
       const root = tempRoot(roots);

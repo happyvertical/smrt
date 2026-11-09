@@ -1,0 +1,232 @@
+# =============================================================================
+# Desktop launch smoke: the generic app on macOS, Windows and Linux (smrt#4835)
+# =============================================================================
+# Proves, from an EMPTY data directory, that the reusable Tauri wrapper starts
+# a generic s-m-r-t app built from this repository's own SvelteKit template:
+# the app creates its schema on first start, its health route answers, the
+# window is pointed at the loopback owner link, and a quit leaves no sidecar
+# process behind. Everything is UNSIGNED: `contents: read`, no secrets, no
+# environment, nothing is uploaded except the short-lived bundle hand-off
+# between the two jobs below.
+#
+# This is deliberately its own workflow and its own jobs. It is NOT part of the
+# required `Verify build` legs of desktop-release.yml, which stay exactly as
+# they are, and none of these jobs is a required check.
+#
+#   bundle   Linux. Builds the workspace packages the template needs, serves
+#            them from a throwaway loopback registry (the bundler accepts only
+#            registry packages), builds the generic app and cross-bundles it
+#            with `smrt desktop bundle` for the three targets.
+#   launch   one leg per OS. Compiles the wrapper without a product and runs
+#            it against that target's bundle (wrapper/scripts/launch-smoke.mjs).
+#
+# The wrapper is the plain cargo (debug) build: a non-installed Tauri build
+# finds the sidecar and the resources next to its executable, so no installer
+# is built here. Signed installers are the release path in desktop-release.yml.
+# =============================================================================
+
+name: Desktop launch
+
+on:
+  pull_request:
+    paths:
+      - 'packages/smrt-desktop/**'
+      - 'packages/app-runtime/**'
+      - 'packages/template-sveltekit/**'
+      - 'packages/cli/**'
+      - 'packages/app-cli/**'
+      - '.github/workflows/desktop-launch.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'packages/smrt-desktop/**'
+      - 'packages/app-runtime/**'
+      - 'packages/template-sveltekit/**'
+      - 'packages/cli/**'
+      - 'packages/app-cli/**'
+      - '.github/workflows/desktop-launch.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-launch-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: '0'
+  WRAPPER_DIR: packages/smrt-desktop/wrapper
+  # Same exact toolchains as desktop-release.yml.
+  RUST_TOOLCHAIN: 1.95.0
+  NODE_VERSION: 24.11.1
+
+jobs:
+  # One leg per target, so a bundling failure for one platform cannot skip the
+  # launch legs of the others. All legs run on Linux and cross-bundle (the
+  # build script is POSIX-only).
+  bundle:
+    name: Bundle generic app (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - aarch64-apple-darwin
+          - x86_64-pc-windows-msvc
+          - x86_64-unknown-linux-gnu
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Setup environment
+        uses: ./.github/actions/setup-environment
+        with:
+          setup-playwright: 'false'
+
+      - name: Test the launch scripts
+        run: |
+          node --test \
+            "$WRAPPER_DIR/scripts/launch-smoke.test.mjs" \
+            "$WRAPPER_DIR/scripts/build-generic-app.test.mjs"
+
+      # The template, the CLI and the MCP bridge need their workspace
+      # dependencies built before the packages are packed.
+      - name: Build the packages the generic app needs
+        run: pnpm turbo run build --filter='@happyvertical/smrt-template-sveltekit...'
+
+      # Builds the generic app from the repository's own template against a
+      # loopback registry that serves this commit's workspace packages, then
+      # bundles it for this leg's target. The registry is stopped when it
+      # finishes.
+      - name: Build and bundle the generic app
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          node "$WRAPPER_DIR/scripts/build-generic-app.mjs" \
+            --out "$RUNNER_TEMP/generic-app" \
+            --targets "$TARGET"
+
+      # Directories, not archives, like the release path: upload-artifact
+      # stores file contents only and drops permission bits (launch-smoke.mjs
+      # restores the executable bit).
+      - name: Upload the bundle
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: generic-app-bundle-${{ matrix.target }}
+          path: ${{ runner.temp }}/generic-app/bundle/${{ matrix.target }}
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+
+  launch:
+    name: Launch generic app (${{ matrix.label }})
+    needs: bundle
+    # Run whenever the bundle legs finished, even if another target's leg
+    # failed: this leg downloads only its own target's bundle and fails on its
+    # own if that one is missing.
+    if: ${{ !cancelled() }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    # Not required, and a leg that is known not to pass yet must not turn the
+    # run red: see `experimental` in the matrix.
+    continue-on-error: ${{ matrix.experimental }}
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Verified by running it on a macOS arm64 machine.
+          - label: macos
+            runner: macos-15
+            target: aarch64-apple-darwin
+            binary: smrt-desktop-wrapper
+            experimental: false
+          # Not yet proven green. The local runtime used to refuse to open its
+          # SQLite database on Windows (smrt#4837); it now opens it through
+          # @happyvertical/sql's windowsCustody.verify (sdk#1498), so the
+          # known cause is gone, but nothing here was run on a Windows
+          # machine. Keep `experimental` until one green run is recorded,
+          # then set it to false. The Windows quit is also forced (taskkill),
+          # as a GUI process has no portable graceful signal.
+          - label: windows
+            runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            binary: smrt-desktop-wrapper.exe
+            experimental: true
+          # Not run by the author (written on macOS): needs xvfb-run and the
+          # webkit2gtk packages below. Expected to work, unproven.
+          - label: linux
+            runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            binary: smrt-desktop-wrapper
+            experimental: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Install Tauri Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config xvfb \
+            libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
+            librsvg2-dev libssl-dev libxdo-dev patchelf
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Set up Rust
+        run: |
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal
+          rustup default "$RUST_TOOLCHAIN"
+          rustc --version
+          cargo --version
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: packages/smrt-desktop/wrapper
+
+      # The wrapper without a product (no externalBin, no resources), exactly
+      # as the verify-build legs compile it, but the plain cargo profile that
+      # looks for the sidecar next to its executable.
+      - name: Build the wrapper without a product (unsigned)
+        working-directory: packages/smrt-desktop/wrapper
+        run: cargo build --locked
+
+      - name: Download the bundle
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: generic-app-bundle-${{ matrix.target }}
+          path: ${{ runner.temp }}/generic-app-bundle
+
+      - name: Launch the wrapper against the bundle
+        env:
+          TARGET: ${{ matrix.target }}
+          BINARY: ${{ matrix.binary }}
+        run: |
+          args=(
+            --wrapper "$WRAPPER_DIR/target/debug/$BINARY"
+            --bundle "$RUNNER_TEMP/generic-app-bundle"
+            --triple "$TARGET"
+          )
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            xvfb-run -a node "$WRAPPER_DIR/scripts/launch-smoke.mjs" "${args[@]}"
+          else
+            node "$WRAPPER_DIR/scripts/launch-smoke.mjs" "${args[@]}"
+          fi

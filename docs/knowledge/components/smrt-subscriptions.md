@@ -5,10 +5,10 @@ description: "Tenant subscriptions, entitlement resolution, usage thresholds, an
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-09T03:10:45Z"
+  at: "2026-11-09T23:09:38Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:c878a8f484fc9305e5783cb9494dacd2b0be5a585b12d6e97fbeafa100b59633"
+source_revision: "sha256:48d3599db9578e435280b3dd42751090babf37fc1f9fc84da681314f14dc5579"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/subscriptions/package.json"
@@ -37,6 +37,7 @@ sources:
 - [smrt-features](/components/smrt-features.md)
 - [smrt-tenancy](/components/smrt-tenancy.md)
 - [smrt-ui](/components/smrt-ui.md)
+- [smrt-users](/components/smrt-users.md)
 - [smrt-vitest](/components/smrt-vitest.md)
 
 ## SDK dependencies
@@ -54,6 +55,8 @@ sources:
 
 - `BillingAdjustment` (collection `billingadjustments`, extends `SmrtObject`)
 - `BillingAdjustmentCollection` (collection `billingadjustments`, extends `SmrtCollection`)
+- `BillingCheckoutSession` (collection `billingcheckoutsessions`, extends `SmrtObject`)
+- `BillingCheckoutSessionCollection` (collection `billingcheckoutsessions`, extends `SmrtCollection`)
 - `ClientCharge` (collection `clientcharges`, extends `SmrtObject`)
 - `ClientChargeCollection` (collection `clientcharges`, extends `SmrtCollection`)
 - `CreditGrant` (collection `creditgrants`, extends `SmrtObject`)

@@ -16,6 +16,10 @@ import {
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { lockBillingKeys } from '../billing/apply.js';
 import {
+  METADATA_EXPIRY_KEY,
+  recordCheckoutSession,
+} from '../billing/checkout-sessions.js';
+import {
   type BillingHost,
   BillingHostError,
   type BillingHostOptions,
@@ -26,6 +30,7 @@ import {
 } from '../billing/index.js';
 import { SubscriptionPlanCollection } from '../collections/SubscriptionPlanCollection.js';
 import { TenantSubscriptionCollection } from '../collections/TenantSubscriptionCollection.js';
+import { BillingCheckoutSessionCollection } from '../models/BillingCheckoutSession.js';
 import { TenantSubscription } from '../models/TenantSubscription.js';
 import { SubscriptionResolver } from '../services/subscription-resolver.js';
 import {
@@ -1240,6 +1245,383 @@ describe('webhook', () => {
     });
   });
 
+  describe('threat: first-purchase metadata not bound to a host session (#4814)', () => {
+    const records = (w: World) =>
+      withSystemContext(async () =>
+        (await BillingCheckoutSessionCollection.create({ db: w.db })).list({
+          where: {},
+        }),
+      );
+    const recordOf = async (w: World, sessionId: string) =>
+      (await records(w)).find((row) => row.sessionId === sessionId);
+    /** Run a real checkout and return its session id and signed metadata. */
+    const open = async (w: World, tenantId: string, planKey = 'pro') => {
+      const before = w.stripe.requests.length;
+      const checkout = await w.host.createCheckout({ tenantId }, { planKey });
+      const metadata = Object.fromEntries(
+        Object.entries(w.stripe.requests[before]?.params ?? {})
+          .filter(([key]) => key.startsWith('metadata['))
+          .map(([key, value]) => [key.slice(9, -1), value]),
+      );
+      return { checkout, metadata };
+    };
+    const complete = (
+      w: World,
+      event: string,
+      created: number,
+      session: { id: string; sub: string; customer: string },
+      metadata: Record<string, string>,
+    ) => {
+      w.stripe.setSubscription(
+        w.sub(session.sub, session.customer, 'price_pro'),
+      );
+      return w.deliver(
+        checkoutCompletedEvent(event, created, {
+          id: session.id,
+          customer: session.customer,
+          subscription: session.sub,
+          metadata,
+        }),
+      );
+    };
+
+    it('records the session it creates, with the signed expiry, once per window', async () => {
+      const w = await world();
+      const { checkout, metadata } = await open(w, NORTH);
+      const again = await open(w, NORTH);
+      expect(again.checkout.sessionId).toBe(checkout.sessionId);
+      expect(again.metadata).toEqual(metadata);
+      const rows = await records(w);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({
+        sessionId: checkout.sessionId,
+        targetTenantId: NORTH,
+        status: 'pending',
+      });
+      expect(rows[0]?.expiresAt.getTime()).toBe(
+        Number(metadata[METADATA_EXPIRY_KEY]) * 1000,
+      );
+    });
+
+    it('refuses metadata copied onto a session the host never created, keeps the paid event for an operator, and links nothing', async () => {
+      const w = await world();
+      const { metadata } = await open(w, NORTH);
+      // Valid signature, but another integration's own session and customer.
+      const evil = await complete(
+        w,
+        'evt_evil',
+        BASE + 1,
+        { id: 'cs_evil', sub: 'sub_evil', customer: 'cus_evil' },
+        metadata,
+      );
+      expect(evil.status).toBe(200);
+      expect(evil.body.outcome).toBe('needs_reconciliation');
+      expect(await w.rowFor(NORTH)).toBeNull();
+      expect(await w.featureKeys(NORTH)).toEqual([]);
+      const flagged = await recordOf(w, 'cs_evil');
+      expect(flagged).toMatchObject({
+        status: 'needs_reconciliation',
+        reason: 'session_record_missing',
+        targetTenantId: '',
+      });
+      // The operator sees the paying customer and whether the claimed tenant
+      // has its own session, which is what tells a copy from a lost record.
+      const listed = await w.host.listCheckoutsNeedingReconciliation();
+      expect(listed[0]).toMatchObject({
+        customerId: 'cus_evil',
+        targetTenantId: '',
+        claimedTenantHasOwnSession: true,
+      });
+      expect(await w.host.countCheckoutsNeedingReconciliation()).toBe(1);
+      expect(
+        await w.host.listCheckoutsNeedingReconciliation({
+          limit: 1,
+          offset: 1,
+        }),
+      ).toEqual([]);
+      expect(await w.host.listCheckoutsNeedingReconciliation()).toMatchObject([
+        {
+          sessionId: 'cs_evil',
+          reason: 'session_record_missing',
+          claimedTenantId: NORTH,
+          subscriptionId: 'sub_evil',
+          eventId: 'evt_evil',
+        },
+      ]);
+      const alert = w.logs.find(
+        (l) => l.message === 'billing.checkout.needs_reconciliation',
+      );
+      expect(alert?.level).toBe('error');
+      expect(alert?.fields).toMatchObject({
+        eventId: 'evt_evil',
+        sessionId: 'cs_evil',
+        reason: 'session_record_missing',
+      });
+      expectNoSecrets(w);
+      // The event is claimed (not discarded and not retried); a redelivery
+      // is a duplicate no-op.
+      const redelivery = await w.deliver(
+        checkoutCompletedEvent('evt_evil', BASE + 1, {
+          id: 'cs_evil',
+          customer: 'cus_evil',
+          subscription: 'sub_evil',
+          metadata,
+        }),
+      );
+      expect(redelivery.body.outcome).toBe('duplicate');
+      expect(await w.rowFor(NORTH)).toBeNull();
+    });
+
+    it('lets an operator dismiss a flagged session without linking it, once, and it leaves the list', async () => {
+      const w = await world();
+      const { metadata } = await open(w, NORTH);
+      await complete(
+        w,
+        'evt_evil',
+        BASE + 1,
+        { id: 'cs_evil', sub: 'sub_evil', customer: 'cus_evil' },
+        metadata,
+      );
+      const input = {
+        sessionId: 'cs_evil',
+        operatorId: 'operator-1',
+        reason: 'payment from another integration on the account',
+      };
+      for (const bad of [
+        { ...input, operatorId: '' },
+        { ...input, reason: '   ' },
+        { ...input, sessionId: '' },
+      ]) {
+        expect((await refusal(() => w.host.dismissCheckout(bad))).code).toBe(
+          'invalid_request',
+        );
+      }
+      await w.host.dismissCheckout(input);
+      expect((await recordOf(w, 'cs_evil'))?.status).toBe('dismissed');
+      expect(await w.host.listCheckoutsNeedingReconciliation()).toEqual([]);
+      expect(await w.host.countCheckoutsNeedingReconciliation()).toBe(0);
+      expect(await w.rowFor(NORTH)).toBeNull();
+      // Terminal: neither a second dismissal nor a reconcile can revive it.
+      expect((await refusal(() => w.host.dismissCheckout(input))).code).toBe(
+        'checkout_not_reconcilable',
+      );
+      expect(
+        (
+          await refusal(() =>
+            w.host.reconcileCheckout({
+              sessionId: 'cs_evil',
+              tenantId: NORTH,
+              operatorId: 'operator-1',
+            }),
+          )
+        ).code,
+      ).toBe('checkout_not_reconcilable');
+    });
+
+    it('happy path: the recorded session links the tenant once and is then completed', async () => {
+      const w = await world();
+      const bought = await w.buy(NORTH, 'pro', {
+        sub: 'sub_n',
+        customer: 'cus_n',
+        event: 'evt_1',
+      });
+      expect(bought.result.body.outcome).toBe('applied');
+      expect((await w.rowFor(NORTH))?.stripeCustomerId).toBe('cus_n');
+      expect(await w.featureKeys(NORTH)).toContain('backup.vault');
+      const row = await recordOf(w, bought.checkout.sessionId);
+      expect(row?.status).toBe('completed');
+      expect(row?.completedAt).toBeTruthy();
+    });
+
+    it('a completed session is single use: a second completion neither relinks nor flags', async () => {
+      const w = await world();
+      const first = await w.buy(NORTH, 'pro', {
+        sub: 'sub_n',
+        customer: 'cus_n',
+        event: 'evt_1',
+      });
+      const again = await complete(
+        w,
+        'evt_again',
+        BASE + 500,
+        { id: first.checkout.sessionId, sub: 'sub_2', customer: 'cus_2' },
+        first.metadata,
+      );
+      expect(again.body).toMatchObject({
+        outcome: 'ignored',
+      });
+      const row = await w.rowFor(NORTH);
+      expect(row?.stripeSubscriptionId).toBe('sub_n');
+      expect(row?.stripeCustomerId).toBe('cus_n');
+      expect((await recordOf(w, first.checkout.sessionId))?.status).toBe(
+        'completed',
+      );
+      expect(await w.host.listCheckoutsNeedingReconciliation()).toEqual([]);
+      expect(
+        w.logs.some(
+          (l) =>
+            l.message === 'billing.checkout.not_relinked' &&
+            l.fields?.reason === 'session_already_completed',
+        ),
+      ).toBe(true);
+    });
+
+    it('refuses a completion dated after the signed expiry, whatever the delivery time', async () => {
+      const w = await world();
+      const { checkout, metadata } = await open(w, NORTH);
+      const exp = Number(metadata[METADATA_EXPIRY_KEY]);
+      const late = await complete(
+        w,
+        'evt_late',
+        exp + 10,
+        { id: checkout.sessionId, sub: 'sub_n', customer: 'cus_n' },
+        metadata,
+      );
+      expect(late.body.outcome).toBe('needs_reconciliation');
+      expect(await w.rowFor(NORTH)).toBeNull();
+      expect((await recordOf(w, checkout.sessionId))?.reason).toBe(
+        'session_expired',
+      );
+      // An expiry edited into the metadata breaks the signature instead.
+      const other = await open(w, SOUTH);
+      const tampered = await complete(
+        w,
+        'evt_tamper',
+        BASE + 1,
+        { id: other.checkout.sessionId, sub: 'sub_s', customer: 'cus_s' },
+        { ...other.metadata, smrt_exp: String(exp + 10 * DAY) },
+      );
+      expect(tampered.body.outcome).toBe('ignored');
+      expect(await w.rowFor(SOUTH)).toBeNull();
+    });
+
+    it('a payment completed before the expiry still links when the webhook is retried late', async () => {
+      const w = await world();
+      const { checkout, metadata } = await open(w, NORTH);
+      // Event time is in time; only the retry is late (the signature
+      // tolerance is on the delivery, not the event).
+      const result = await complete(
+        w,
+        'evt_ok',
+        Number(metadata[METADATA_EXPIRY_KEY]) - 60,
+        { id: checkout.sessionId, sub: 'sub_n', customer: 'cus_n' },
+        metadata,
+      );
+      expect(result.body.outcome).toBe('applied');
+    });
+
+    it('refuses a session recorded for another tenant than the signed metadata names', async () => {
+      const w = await world();
+      const north = await open(w, NORTH);
+      const south = await open(w, SOUTH);
+      const result = await complete(
+        w,
+        'evt_x',
+        BASE + 1,
+        { id: south.checkout.sessionId, sub: 'sub_n', customer: 'cus_n' },
+        north.metadata,
+      );
+      expect(result.body.outcome).toBe('needs_reconciliation');
+      expect(await w.rowFor(NORTH)).toBeNull();
+      expect(await w.rowFor(SOUTH)).toBeNull();
+      expect((await recordOf(w, south.checkout.sessionId))?.reason).toBe(
+        'session_record_mismatch',
+      );
+    });
+
+    it('a lost record is reconciled by an operator, once, on purpose', async () => {
+      const w = await world();
+      const { checkout, metadata } = await open(w, NORTH);
+      await withSystemContext(async () => {
+        const sessions = await BillingCheckoutSessionCollection.create({
+          db: w.db,
+        });
+        await (await sessions.get({ sessionId: checkout.sessionId }))?.delete();
+      });
+      const paid = await complete(
+        w,
+        'evt_lost',
+        BASE + 1,
+        { id: checkout.sessionId, sub: 'sub_n', customer: 'cus_n' },
+        metadata,
+      );
+      expect(paid.body.outcome).toBe('needs_reconciliation');
+      expect(await w.rowFor(NORTH)).toBeNull();
+
+      const input = {
+        sessionId: checkout.sessionId,
+        tenantId: NORTH,
+        operatorId: 'operator-1',
+      };
+      // Bad input and unknown sessions are refused before anything is read.
+      expect(
+        (
+          await refusal(() =>
+            w.host.reconcileCheckout({ ...input, operatorId: '' }),
+          )
+        ).code,
+      ).toBe('invalid_request');
+      expect(
+        (
+          await refusal(() =>
+            w.host.reconcileCheckout({ ...input, sessionId: 'cs_unknown' }),
+          )
+        ).code,
+      ).toBe('checkout_not_reconcilable');
+
+      expect(await w.host.reconcileCheckout(input)).toEqual({
+        outcome: 'applied',
+      });
+      const row = await w.rowFor(NORTH);
+      expect(row).toMatchObject({
+        stripeSubscriptionId: 'sub_n',
+        stripeCustomerId: 'cus_n',
+        stripeCheckoutSessionId: checkout.sessionId,
+      });
+      expect(await w.featureKeys(NORTH)).toContain('backup.vault');
+      expect(await w.host.listCheckoutsNeedingReconciliation()).toEqual([]);
+      const audit = w.logs.find(
+        (l) => l.message === 'billing.checkout.reconciled',
+      );
+      expect(audit?.fields).toMatchObject({
+        sessionId: checkout.sessionId,
+        tenantId: NORTH,
+        operatorId: 'operator-1',
+      });
+      expectNoSecrets(w);
+      // Single use: a second reconcile is refused.
+      expect((await refusal(() => w.host.reconcileCheckout(input))).code).toBe(
+        'checkout_not_reconcilable',
+      );
+    });
+
+    it('reconcile re-reads the provider and refuses a subscription that changed customer', async () => {
+      const w = await world();
+      const { metadata } = await open(w, NORTH);
+      await complete(
+        w,
+        'evt_evil',
+        BASE + 1,
+        { id: 'cs_evil', sub: 'sub_evil', customer: 'cus_evil' },
+        metadata,
+      );
+      w.stripe.setSubscription(w.sub('sub_evil', 'cus_other', 'price_pro'));
+      const result = await w.host.reconcileCheckout({
+        sessionId: 'cs_evil',
+        tenantId: NORTH,
+        operatorId: 'operator-1',
+      });
+      expect(result).toEqual({
+        outcome: 'ignored',
+        reason: 'checkout_subscription_mismatch',
+      });
+      expect(await w.rowFor(NORTH)).toBeNull();
+      expect((await recordOf(w, 'cs_evil'))?.status).toBe(
+        'needs_reconciliation',
+      );
+    });
+  });
+
   describe('threat: a tenant that writes its own plan rows', () => {
     it('cannot sell itself entitlements it defined by reusing a price or shadowing a plan key', async () => {
       const w = await world();
@@ -1400,6 +1782,11 @@ describe('webhook', () => {
           .filter(([key]) => key.startsWith('metadata['))
           .map(([key, value]) => [key.slice(9, -1), value]),
       );
+      await recordCheckoutSession(w.db, {
+        sessionId: 'cs_2',
+        tenantId: NORTH,
+        expiresAt: new Date(Number(metadata[METADATA_EXPIRY_KEY]) * 1000),
+      });
       w.stripe.setSubscription(w.sub('sub_second', 'cus_n', 'price_pro'));
       const result = await w.deliver(
         checkoutCompletedEvent('evt_2', BASE + 200, {
@@ -1798,10 +2185,7 @@ describe('webhook', () => {
       const w = await world();
       // A session created before the hold, completed after it.
       const mark = w.stripe.requests.length;
-      const early = await w.host.createCheckout(
-        { tenantId: NORTH },
-        { planKey: 'pro' },
-      );
+      await w.host.createCheckout({ tenantId: NORTH }, { planKey: 'pro' });
       const earlyParams =
         w.stripe.requests
           .slice(mark)
@@ -1812,6 +2196,13 @@ describe('webhook', () => {
           .filter(([key]) => key.startsWith('metadata['))
           .map(([key, value]) => [key.slice(9, -1), value]),
       );
+      // The provider keys one session per idempotency window, so a second,
+      // distinct session the host created is recorded directly.
+      await recordCheckoutSession(w.db, {
+        sessionId: 'cs_early',
+        tenantId: NORTH,
+        expiresAt: new Date(Number(earlyMetadata[METADATA_EXPIRY_KEY]) * 1000),
+      });
       const { subscription } = await w.buy(NORTH, 'pro', {
         sub: 'sub_n',
         customer: 'cus_n',
@@ -1838,7 +2229,7 @@ describe('webhook', () => {
       w.stripe.setSubscription(w.sub('sub_2', 'cus_n', 'price_pro'));
       const late = await w.deliver(
         checkoutCompletedEvent('evt_late', BASE + 200, {
-          id: early.sessionId,
+          id: 'cs_early',
           customer: 'cus_n',
           subscription: 'sub_2',
           metadata: earlyMetadata,

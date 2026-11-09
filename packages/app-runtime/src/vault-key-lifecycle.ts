@@ -97,7 +97,8 @@ export type VaultKeyLifecycleErrorCode =
   | 'confirmation_rejected'
   | 'request_expired'
   | 'restart_pending'
-  | 'restart_incomplete';
+  | 'restart_incomplete'
+  | 'no_previous_account';
 
 const ERROR_MESSAGES: Record<VaultKeyLifecycleErrorCode, string> = {
   not_initialized: 'Vault keys are not initialized on this device',
@@ -121,6 +122,7 @@ const ERROR_MESSAGES: Record<VaultKeyLifecycleErrorCode, string> = {
     'A previous vault account is still held on this device; discard it first',
   restart_incomplete:
     'The vault restart on this device has not finished; finish it first',
+  no_previous_account: 'No previous vault account is held on this device',
 };
 
 /** Lifecycle failure with a stable code; messages never carry key material. */
@@ -385,6 +387,20 @@ export interface VaultKeyLifecycle {
    * once the new account has a published backup. Idempotent.
    */
   discardPreviousAccount(): Promise<void>;
+  /**
+   * Read-only rescue of the parked previous account (#4838): open one of its
+   * data keys for decrypting that account's snapshots by hand, while
+   * `discardPreviousAccount` has not run. `accountId` must be the parked
+   * account (`account_mismatch` otherwise, also for the current account).
+   * Refuses with `no_previous_account` when nothing is parked or after the
+   * discard, and `key_missing` for a key the parked account did not hold.
+   * It writes nothing and never seals: the returned key is a reading key
+   * bound to the old account, and its `key` is not enumerable, so it does not
+   * survive JSON or spread. Zero `key` when done with it.
+   */
+  openPreviousReadingKey(
+    input: VaultKeyReference & { accountId: string },
+  ): Promise<VaultReadingKey>;
   /** Show the request (QR) and the device code on the new device. */
   createEnrollmentRequest(input: {
     accountId: string;
@@ -839,11 +855,16 @@ function applyHead(
   const next: VaultDeviceRegistry = { ...registry };
   if (head.sequence > local.sequence && containsState(head, local)) {
     next.head = head;
-    next.pendingRevocations = registry.pendingRevocations.filter(
-      (entry) =>
-        !head.revokedDevices.some((device) => sameDevice(device, entry)) &&
-        head.devices.some((device) => sameDevice(device, entry)),
-    );
+    // A head with a new authority record means another device rotated the
+    // secret, so an earlier proof no longer covers the current secret.
+    const rotated = head.authorityRecordDigest !== local.authorityRecordDigest;
+    next.pendingRevocations = registry.pendingRevocations
+      .filter(
+        (entry) =>
+          !head.revokedDevices.some((device) => sameDevice(device, entry)) &&
+          head.devices.some((device) => sameDevice(device, entry)),
+      )
+      .map((entry) => (rotated ? { ...entry, provenAt: null } : entry));
     if (registry.conflict && containsState(head, registry.conflict)) {
       next.conflict = null;
     }
@@ -1610,6 +1631,42 @@ export function createVaultKeyLifecycle({
         await store.delete(PREVIOUS_AUTHORITY_ITEM);
         await store.delete(PREVIOUS_DEVICE_SECRET_ITEM);
         await store.delete(PREVIOUS_REGISTRY_ITEM);
+      }),
+
+    openPreviousReadingKey: (input) =>
+      serial(async () => {
+        const record = plainRecord(input);
+        const entry = reference(record);
+        const accountId = identifier(record.accountId);
+        const previous = await readPrevious();
+        if (previous === null) fail('no_previous_account');
+        if (previous.accountId !== accountId) fail('account_mismatch');
+        if (!previous.keys.some((held) => sameReference(held, entry))) {
+          fail('key_missing');
+        }
+        const held = await store.get(PREVIOUS_DEVICE_SECRET_ITEM);
+        if (held === null || held.length !== KEY_BYTES) fail('invalid_state');
+        const secret = new Uint8Array(held);
+        try {
+          const reading = {
+            purpose: 'read' as const,
+            accountId: previous.accountId,
+            generation: entry.generation,
+            keyId: entry.keyId,
+          };
+          const key = openOwnKey(
+            previous,
+            secret,
+            entry,
+            await requireItem(keyItem(entry)),
+          );
+          return Object.defineProperty(reading, 'key', {
+            value: key,
+            enumerable: false,
+          }) as VaultReadingKey;
+        } finally {
+          secret.fill(0);
+        }
       }),
 
     createEnrollmentRequest: (input) =>

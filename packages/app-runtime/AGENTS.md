@@ -37,28 +37,50 @@ Application infrastructure composition for the validated runtime profiles in
   (fixed-argv PowerShell, paths in the environment, ASCII JSON out, every
   failure a refusal; no "unverified" mode), `windows-custody.ts` (synchronous
   chain walk, creation with post-create re-inspection and rollback, bigint
-  identity). Default root is `%LOCALAPPDATA%` only, never APPDATA or home.
+  identity). `windows-acl-lock.ts` (smrt#4843): a directory the runtime itself
+  creates (every component the call creates, intermediate ones included;
+  never one that already existed) is
+  locked at once through `WindowsCustodyRuntime.lockDirectory` (fixed-argv
+  `icacls.exe /inheritance:r /grant:r *user/SY/BA (OI)(CI)F`, path one argv
+  element) and then verified by the unchanged rule; a lock failure removes it.
+  The create-then-lock race is documented as a residual in the README; a
+  pre-existing directory is never re-permissioned and its refusal names the
+  extra principal. The fake machine's `lockMode` defaults to `record` so older
+  tests keep the inherited DACL; use `apply` to model icacls. Default root is `%LOCALAPPDATA%` only, never APPDATA or home.
   Everything runs through `WindowsCustodyRuntime`; tests inject
   `test-support/windows-fake-runtime.ts` with `runWithCustodyContext`
   (`custody-context.ts`), never a public option. SQLite acquisition on Windows
-  throws `WindowsDatabaseAcquisitionUnsupportedError` before any directory is
-  created (`refuseWindowsDatabaseAcquisition`; remove it when `@happyvertical/sql`
-  takes a caller-supplied Windows verifier; that error cannot promise what its
-  caller created first, so `smrt app` refuses the local profile on Windows
-  before it creates anything, see `packages/cli`). Lease, state root and
-  `validateLocalDatabaseStorage` work. SDDL writes the built-in RID-500
+  runs through the SDK's `secureFile.windowsCustody.verify`
+  (`createWindowsDatabaseVerifier`, `windowsSecureFileCustody`; every place
+  that opens the secure database spreads it into `secureFile`); it throws, the
+  rule is unchanged. `smrt app backup|export|import` stay refused on Windows
+  for destination custody (packages/cli). Lease, state root,
+  `validateLocalDatabaseStorage` and acquisition work. SDDL writes the built-in RID-500
   Administrator as `LA`: it is trusted (`ALIAS:LA`) only when the current
   user's SID is a machine `S-1-5-21-…-500` SID (`trustedPrincipals`);
   unverified on a real runner. `windows-custody.test.ts` runs anywhere;
   `windows-custody.win32.test.ts` runs only in the advisory
   `app-runtime-windows.yml` job.
-- Application migrations are explicit through `prepareDatabase`; runtime never
-  creates application model tables implicitly. A rejected `prepareDatabase` is
-  normalized into `LocalRuntimeError` with the stable `migration_failed` code
-  and the fixed recovery message `MIGRATION_FAILED_MESSAGE` ("run pnpm
-  app:setup and inspect the private migration logs"). The caller's error text
-  is never surfaced — it is retained only as a non-enumerable `cause` for
-  private logs — and the same application root stays retryable.
+- First start (smrt#4835, `src/local-schema.ts`): with `createSchema` the
+  local runtime creates its schema before serving, inside the initialization
+  lock (plus the web writer lease), via the framework's `migrateSmrtSchemas`
+  (the `smrt db:migrate` path; never a second creator). The SvelteKit runtime
+  defaults it on; direct `initializeLocalApplicationRuntime` defaults off so
+  operator tooling (`smrt app setup` spawns `db:migrate`) is unchanged. Local
+  only; deployed profiles keep `DB_SCHEMA_MISSING`. First run (no tracker or
+  bootstrap table): framework step and `prepareDatabase` share ONE
+  transaction; failure rolls back and removes a database file the attempt
+  created (secret and root marker stay). Later starts: the framework batch is
+  one atomic DDL transaction on the database (a transaction handle has no
+  `getTableSchema`), then `prepareDatabase` in its own transaction.
+- `prepareDatabase(db, context)` is the app hook the desktop shell builds on;
+  keep name and shape. It runs on EVERY start after the framework step
+  (idempotent). `context`: `db`, `profile`, `paths` (null deployed), `firstRun`,
+  `migrateSchemas()`; `(db)` callers still work. Its rejection is
+  `migration_failed`; a framework-step failure is `schema_creation_failed`.
+  Both are fixed text, cause only as non-enumerable `cause`, root retryable.
+  Tests of creation set `SMRT_VITEST_AUTO_SCHEMA=0` (the shared setup
+  otherwise pre-creates every registered table).
 - Standalone migration commands must call `prepareLocalDatabaseStorage()`
   before opening SQLite so custody is established without creating schema or
   bootstrap records.
@@ -82,7 +104,15 @@ Application infrastructure composition for the validated runtime profiles in
   seeding (#3323); the claim transaction's conditional UPDATE stays the
   authority for single use, expiry, and concurrency.
 - Local MCP tokens (`mcpTokens`, `openLocalMcpTokenStore`, `smrt app token`):
-  owner-bound, scoped, expiring (default 30 d, max 365 d), revocable. Only a
+  owner-bound, scoped, revocable. No `expiresInSeconds` = renewable: 30 d window
+  slid by `verify()` (conditional UPDATE, at most hourly via `last_used_at`;
+  never revives expired/revoked, never shortens, best effort); explicit TTL
+  (60 s..365 d) = fixed, never slides. Optional `holder`: `issue` rotates in one
+  transaction (revoke old + insert new; partial unique index backstop);
+  `revokeHolder` for device removal (no local caller exists). NULL
+  holder/sliding on old rows = no holder, fixed; `ensureLocalMcpTokenTable`
+  adds columns idempotently. Reseed changes the HMAC key, voiding all tokens.
+  Only a
   domain-separated HMAC (application secret) is stored, in the runtime-owned
   `_smrt_local_mcp_tokens` system table (created like the bootstrap table;
   never application schema). Issue refuses scopes the owner lacks; verify
@@ -121,6 +151,12 @@ Application infrastructure composition for the validated runtime profiles in
   and mode checks; writes are atomic. The state root must persist with the
   data volume (Linux containers: `XDG_STATE_HOME` on that volume, never `HOME`
   or `/tmp`); the refusal names it. Decision and limits: README.
+- `origin.json` (`origin-file.ts`, #4729): the local web process records its
+  exact `http://127.0.0.1:<port>` (from `ORIGIN`, set by the desktop
+  supervisor; anything else writes nothing) in the state root, per location and
+  not in backups, removes it on exit/SIGTERM/SIGINT. `readOriginFile` is the
+  only reader contract: `null` unless private, exact and the pid is alive; the
+  reader still probes. It holds no secret; keep it that way.
 - Background jobs and application-defined paid capabilities are default-off.
 - The embedded runner reuses `TaskRunner`; it is not a second job contract.
 
@@ -262,6 +298,12 @@ Application infrastructure composition for the validated runtime profiles in
   only during a restore, `data-root-swap.json`: while that journal exists
   `acquireWriterLease` refuses every writer except `dataRootSwapRecovery`
   (#4805; README "Vault primary writer and restore-latest").
+- A vault restart is orchestrated by `restartVault` in
+  `@happyvertical/smrt-cli/app` (README "Restarting when the recovery secret is
+  lost"); it adds no state, only sequencing over `restartAccount`,
+  `switchVaultAccount` and `vault-sync.json`. The parked account is read only
+  through `openPreviousReadingKey`: it never seals, never writes, and refuses
+  once `discardPreviousAccount` has run (#4838).
 - Tests that hook `node:fs` interleavings must live in this package: from a
   consumer the package is an externalized dependency a mock cannot reach.
 

@@ -38,7 +38,7 @@ use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
-use crate::env::{build_child_env, origin_for, SupervisorEnv};
+use crate::env::{build_child_env, origin_for, LaunchSecret, SupervisorEnv};
 use crate::health::{loopback_addr, wait_until_healthy, HealthConfig, ProbeOutcome, WaitFailure};
 use crate::log::Logger;
 use crate::manifest::SidecarManifest;
@@ -60,6 +60,9 @@ pub enum Phase {
         origin: String,
         /// The selected port.
         port: u16,
+        /// This launch's secret, exported to the sidecar and carried in the
+        /// window's first URL. `Debug` redacts it.
+        launch_secret: LaunchSecret,
     },
     /// The previous child is gone; the next attempt starts after `retry_in`.
     Restarting {
@@ -674,9 +677,18 @@ impl Core {
         let Some(data_dir) = self.params.data_dir.to_str() else {
             return AttemptEnd::SpawnFailed("the data directory path is not valid Unicode".into());
         };
+        let launch_secret = match LaunchSecret::generate() {
+            Ok(secret) => secret,
+            Err(_) => {
+                return AttemptEnd::SpawnFailed(
+                    "could not generate the launch secret (OS random source)".into(),
+                )
+            }
+        };
         let supervisor_env = SupervisorEnv {
             port,
             data_dir: data_dir.to_owned(),
+            launch_secret: launch_secret.clone(),
         };
         let plan = LaunchPlan {
             program: self.params.manifest.executable.clone(),
@@ -754,7 +766,11 @@ impl Core {
             ready_after.as_millis()
         ));
         let ready_at = Instant::now();
-        self.set_phase(Phase::Ready { origin, port });
+        self.set_phase(Phase::Ready {
+            origin,
+            port,
+            launch_secret,
+        });
 
         loop {
             if self.stopping() {
@@ -940,7 +956,8 @@ mod tests {
         assert_eq!(
             Phase::Ready {
                 origin: "http://127.0.0.1:1".into(),
-                port: 1
+                port: 1,
+                launch_secret: LaunchSecret::from_bytes(&[0; 32]),
             }
             .status_line(),
             "Running"

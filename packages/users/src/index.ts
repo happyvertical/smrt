@@ -192,6 +192,7 @@ export {
   SESSION_DATA_KEYS,
   Session,
   type SessionAuthMethod,
+  STEP_UP_SIGN_IN_AUTH_METHODS,
   Tenant,
   TenantIntegration,
   type TenantIntegrationCheckSummary,
@@ -348,6 +349,8 @@ export {
   type MagicLinkResult,
   MagicLinkService,
   type MagicLinkServiceOptions,
+  type MagicLinkStepUpRequest,
+  type MagicLinkStepUpResult,
   type MagicLinkVerifyResult,
   MobileAuthError,
   type MobileAuthErrorCode,
@@ -372,6 +375,8 @@ export {
   type OidcProviderMetadata,
   type OidcProviderResolution,
   type OidcProviderResolutionOptions,
+  type OidcStepUpResult,
+  type OidcStepUpStart,
   type OidcTokenEndpointAuthMethod,
   type OidcTokenSet,
   type OidcTransaction,
@@ -417,6 +422,8 @@ export {
   type PasswordRecoveryProofContext,
   type PasswordSignInInput,
   type PasswordSignInResult,
+  type PasswordStepUpInput,
+  type PasswordStepUpResult,
   type PermissionCatalog,
   PermissionCatalogService,
   type PermissionCatalogSource,
@@ -506,6 +513,17 @@ export {
   TenantInvitationService,
   type TenantInvitationServiceOptions,
 } from './services/TenantInvitationService.js';
+// Step-up (recent authentication) check (#4841)
+export {
+  DEFAULT_STEP_UP_MAX_AGE_SECONDS,
+  isTenantOwnerSession,
+  type RequireRecentAuthenticationOptions,
+  requireRecentAuthentication,
+  STEP_UP_MAX_AGE_CEILING_SECONDS,
+  STEP_UP_REQUIRED_CODE,
+  StepUpRequiredError,
+  type StepUpSession,
+} from './step-up.js';
 // Types
 export {
   AccessRequestStatus,
