@@ -5,7 +5,7 @@ description: "Developer CLI for SMRT framework - introspection, testing, and pro
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-09T03:33:37Z"
+  at: "2026-11-09T04:05:18Z"
 audience: "internal"
 evidence_level: "source-inspected"
 source_revision: "sha256:b65bcae93c98fea748d04f2c392feb25308d7113aa024f9b5286e4857cd5b015"
