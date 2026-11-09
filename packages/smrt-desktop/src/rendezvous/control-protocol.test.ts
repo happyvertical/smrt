@@ -253,6 +253,31 @@ describe('control responses', () => {
     ).toMatchObject({ state: 'failed', code: 'unknown' });
   });
 
+  it('encodes strictly: a failed answer with a code outside the list is refused, not rewritten', () => {
+    const failed = {
+      v: 1,
+      ok: true,
+      state: 'failed',
+      instanceNonce: ready.instanceNonce,
+      productId: ready.productId,
+    };
+    // Reading normalizes (a newer shell); writing never does.
+    expect(
+      parseControlResponse(
+        'status',
+        JSON.stringify({ ...failed, code: 'future_code' }),
+      ),
+    ).toMatchObject({ code: 'unknown' });
+    expect(
+      code(() =>
+        encodeControlResponse({ ...failed, code: 'future_code' } as never),
+      ),
+    ).toBe('invalid_control_message');
+    expect(
+      encodeControlResponse({ ...failed, code: 'port_unavailable' } as never),
+    ).toContain('"code":"port_unavailable"');
+  });
+
   it('still rejects malformed error and failure codes', () => {
     for (const bad of [
       5,

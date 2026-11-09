@@ -8,6 +8,7 @@ import {
 } from '../internal/strict-json.js';
 import {
   isForwardCompatibleCode,
+  isShellFailureCode,
   normalizeShellFailureCode,
   type ShellFailureCode,
 } from './failure-code.js';
@@ -144,7 +145,12 @@ type Fields = Readonly<Record<string, unknown>>;
 export interface ControlOpSpec<Req extends object, Ok extends object> {
   readonly op: string;
   parseRequest(fields: Fields): Req;
-  parseResponse(fields: Fields): Ok;
+  /**
+   * `strict` is set when a server encodes an answer (never when a client
+   * reads one): a value outside the closed lists is then rejected instead of
+   * normalized.
+   */
+  parseResponse(fields: Fields, options?: { readonly strict?: boolean }): Ok;
 }
 
 /** @experimental */
@@ -223,8 +229,10 @@ export function createControlCodec<
   };
 
   // `lenient` is for reading what a peer sent: an unrecognised error code
-  // reads as `internal`. Encoding is strict: a server never emits a code that
-  // is not in its own list.
+  // reads as `internal` and an unrecognised failure code in a state answer
+  // as `unknown`. Encoding is strict for both: a server never emits a code
+  // that is not in its own list, and an op's `parseResponse` receives
+  // `strict` so it can enforce that for its own fields.
   const parseWith = (op: string, line: string, lenient: boolean): Res => {
     const spec = byOp.get(op);
     if (spec === undefined) throw new DesktopContractError('unsupported_op');
@@ -245,7 +253,7 @@ export function createControlCodec<
       if (code === undefined) throw invalidMessage('code');
       return deepFreeze({ v: 1, ok: false, code } as unknown as Res);
     }
-    return deepFreeze(spec.parseResponse(fields));
+    return deepFreeze(spec.parseResponse(fields, { strict: !lenient }));
   };
   const parseResponse = (op: string, line: string): Res =>
     parseWith(op, line, true);
@@ -321,8 +329,16 @@ function identityFields(fields: Fields): {
   return { instanceNonce: fields.instanceNonce, productId: fields.productId };
 }
 
-/** An unrecognised (newer) shell code reads as `unknown`; junk is rejected. */
-function failureCodeField(value: unknown): ShellFailureCode {
+/**
+ * An unrecognised (newer) shell code reads as `unknown`; junk is rejected.
+ * When encoding (`strict`), a code outside `SHELL_FAILURE_CODES` is rejected
+ * too, so a server cannot silently rewrite what it meant to say.
+ */
+function failureCodeField(value: unknown, strict = false): ShellFailureCode {
+  if (strict) {
+    if (!isShellFailureCode(value)) throw invalidMessage('code');
+    return value;
+  }
   const code = normalizeShellFailureCode(value);
   if (code === undefined) throw invalidMessage('code');
   return code;
@@ -335,6 +351,7 @@ function failureCodeField(value: unknown): ShellFailureCode {
  */
 export function parseInstanceStateResponse(
   fields: Fields,
+  options: { readonly strict?: boolean } = {},
 ): InstanceStateResponse {
   const base = ['v', 'ok', 'state', 'instanceNonce', 'productId'];
   const { instanceNonce, productId } = identityFields(fields);
@@ -361,7 +378,7 @@ export function parseInstanceStateResponse(
         state: 'failed',
         instanceNonce,
         productId,
-        code: failureCodeField(fields.code),
+        code: failureCodeField(fields.code, options.strict === true),
       };
     default:
       throw invalidMessage('state');

@@ -686,7 +686,9 @@ export function createFileRendezvous(
       // then on a dropped long poll is not evidence that nobody serves.
       let sawLive = false;
       // The last look found a holder that gave no usable answer: running out
-      // of budget then reports that, not a plain timeout.
+      // of budget then reports that, not a plain timeout, unless this call
+      // already saw a nonce-verified `starting` (the instance was alive and
+      // booting, so the budget simply ran out: `timeout`).
       let lastUnresponsive = false;
       let delay = pollIntervalMs;
       for (;;) {
@@ -694,7 +696,7 @@ export function createFileRendezvous(
         const remaining = deadline - clock.now();
         if (remaining <= 0) {
           return frozen({
-            state: lastUnresponsive ? 'unresponsive' : 'timeout',
+            state: lastUnresponsive && !sawLive ? 'unresponsive' : 'timeout',
           });
         }
 

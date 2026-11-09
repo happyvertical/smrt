@@ -45,6 +45,12 @@ const DEFAULT_MAX_CONNECTIONS = 16;
  * `connect(2)` errors that prove nothing is listening at the address: the
  * name is gone or nobody holds it. Anything else, and every failure after a
  * successful connect, says something was there and the outcome is unknown.
+ *
+ * Platform limit: on macOS/BSD a unix `connect()` to a live socket whose
+ * accept queue is full also returns `ECONNREFUSED` (Linux returns `EAGAIN`,
+ * which is not in this set). A live but wedged macOS shell can therefore be
+ * read as stale and a second shell spawned; the runtime writer lease is then
+ * the only exclusion (the second shell fails `lease_held` and writes nothing).
  */
 const NO_LISTENER_CODES = new Set(['ENOENT', 'ENOTDIR', 'ECONNREFUSED']);
 
