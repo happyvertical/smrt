@@ -13,6 +13,7 @@ import {
   normalizeDefaultTier,
   normalizeFusionDefinition,
   normalizeTierTarget,
+  normalizeTranscriptSettings,
   parseInferenceBinding,
 } from '../settings/targets.js';
 
@@ -137,6 +138,8 @@ export class InferenceOverride extends SmrtObject {
         return normalizeTierTarget(this.binding, raw);
       case 'default-tier':
         return normalizeDefaultTier(this.binding, raw);
+      case 'transcripts':
+        return normalizeTranscriptSettings(this.binding, raw);
       case 'alias':
         return normalizeAliasDefinition(this.binding, raw);
       case 'fusion':
@@ -168,6 +171,13 @@ export class InferenceOverride extends SmrtObject {
         throw new InferenceBindingValueError(
           this.binding,
           'aliases and fusions are defined at the app scope only',
+        );
+      }
+      // Tenants cannot override transcripts (owner decision, #4781).
+      if (parsed.kind === 'transcripts') {
+        throw new InferenceBindingValueError(
+          this.binding,
+          'the transcript setting is app scope only',
         );
       }
       if (this.tenantAllowList !== null) {

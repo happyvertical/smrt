@@ -6,6 +6,7 @@
  * Pure and browser-safe: no `node:`, no SDK, no smrt-config.
  */
 import {
+  assertInferenceTranscriptsConfig,
   INFERENCE_TIERS,
   type InferenceAlias,
   type InferenceCandidate,
@@ -22,17 +23,29 @@ export type InferenceMode = (typeof INFERENCE_MODES)[number];
 /** Binding id of `auto`'s default tier. */
 export const DEFAULT_TIER_BINDING = 'default-tier';
 
+/**
+ * Binding id of the app's transcript setting (#4781). App scope only:
+ * tenants cannot override transcripts (owner decision 2026-11-08).
+ */
+export const TRANSCRIPTS_BINDING = 'transcripts';
+
 /** A binding id stored in `_smrt_inference_overrides.binding`. */
 export type InferenceBindingId =
   | `tier:${InferenceTier}`
   | typeof DEFAULT_TIER_BINDING
+  | typeof TRANSCRIPTS_BINDING
   | `alias:${string}`
   | `fusion:${string}`;
 
 /** `inference.aliases` / fusion names: what a binding id may carry after its prefix. */
 export const INFERENCE_BINDING_NAME_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/i;
 
-export type InferenceBindingKind = 'tier' | 'default-tier' | 'alias' | 'fusion';
+export type InferenceBindingKind =
+  | 'tier'
+  | 'default-tier'
+  | 'transcripts'
+  | 'alias'
+  | 'fusion';
 
 /** A parsed binding id. */
 export interface ParsedInferenceBinding {
@@ -59,6 +72,7 @@ export function parseInferenceBinding(
 ): ParsedInferenceBinding | null {
   if (typeof binding !== 'string') return null;
   if (binding === DEFAULT_TIER_BINDING) return { kind: 'default-tier' };
+  if (binding === TRANSCRIPTS_BINDING) return { kind: 'transcripts' };
   const match = /^(tier|alias|fusion):(.+)$/.exec(binding);
   if (!match) return null;
   const [, kind, name] = match as unknown as [string, string, string];
@@ -320,6 +334,57 @@ export function normalizeDefaultTier(
     );
   }
   return tier;
+}
+
+/** The stored transcript setting (#4781): core's app settings layer. */
+export interface InferenceTranscriptSettingsValue {
+  enabled?: boolean;
+  /** Success capture rate, 0..1. */
+  sample?: number;
+  /** Per-row byte cap. */
+  maxBytes?: number;
+}
+
+const TRANSCRIPT_SETTING_MEMBERS = new Set(['enabled', 'sample', 'maxBytes']);
+
+/**
+ * `transcripts` stores `{ enabled?, sample?, maxBytes? }`, validated by
+ * core's `assertInferenceTranscriptsConfig()`. Per-prompt sampling stays in
+ * config; any other member is refused.
+ */
+export function normalizeTranscriptSettings(
+  binding: string,
+  value: unknown,
+): InferenceTranscriptSettingsValue | null {
+  if (value === null || value === undefined) return null;
+  if (!isRecord(value)) {
+    throw new InferenceBindingValueError(
+      binding,
+      'the transcript setting must be an object',
+    );
+  }
+  const extra = Object.keys(value).filter(
+    (member) => !TRANSCRIPT_SETTING_MEMBERS.has(member),
+  );
+  if (extra.length > 0) {
+    throw new InferenceBindingValueError(
+      binding,
+      `the transcript setting carries enabled, sample and maxBytes only (got ${extra.join(', ')})`,
+    );
+  }
+  try {
+    assertInferenceTranscriptsConfig(value);
+  } catch (error) {
+    throw new InferenceBindingValueError(
+      binding,
+      error instanceof Error ? error.message : String(error),
+    );
+  }
+  const out: InferenceTranscriptSettingsValue = {};
+  if (value.enabled !== undefined) out.enabled = value.enabled as boolean;
+  if (value.sample !== undefined) out.sample = value.sample as number;
+  if (value.maxBytes !== undefined) out.maxBytes = value.maxBytes as number;
+  return Object.keys(out).length > 0 ? out : null;
 }
 
 /**

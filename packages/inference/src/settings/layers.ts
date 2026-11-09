@@ -10,6 +10,7 @@ import {
   type InferenceFusionDefinition,
   type InferenceTarget,
   type InferenceTier,
+  type InferenceTranscriptsConfig,
   mergeInferenceConfigs,
 } from '@happyvertical/smrt-core';
 import {
@@ -75,6 +76,10 @@ function layerFromRows(
         break;
       case 'default-tier':
         layer.defaultTier = value as InferenceTier;
+        break;
+      case 'transcripts':
+        // App rows only: the tenant layer keeps tier and default-tier rows.
+        layer.transcripts = value as InferenceTranscriptsConfig;
         break;
       case 'alias':
         layer.aliases ??= {};
