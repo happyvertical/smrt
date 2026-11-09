@@ -36,7 +36,13 @@ describe('prepareShellSchema', () => {
     const created = await prepareShellSchema(db);
     const have = await tables(db);
     expect(have).toEqual(
-      expect.arrayContaining(['apps', 'app_versions', 'approvals']),
+      expect.arrayContaining([
+        'apps',
+        'app_versions',
+        'approvals',
+        'assistant_threads',
+        'assistant_messages',
+      ]),
     );
     const wanted = Object.values(
       ObjectRegistry.getAllSchemasAsDefinitions(),

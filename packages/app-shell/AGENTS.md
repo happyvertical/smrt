@@ -21,6 +21,7 @@ SvelteKit or `src/lib`). README has the route and JSON contracts.
 | `src/lib/server/builder.ts` | `runCommand`/`runAppTool`/`runRest`/`requestRecordDelete`: execute or turn into an Approval. |
 | `src/lib/server/catalog.ts`, `policy.ts`, `mcp-server.ts` | Merged tool catalog, the one policy, the `/mcp` server. |
 | `src/lib/server/http.ts`, `events.ts` | Route plumbing; in-process event bus for SSE. |
+| `src/lib/server/assistant/`, `src/lib/assistant/` | Assistant: turn loop, hold, config, routes (`mountAssistantRoutes`), thread store; dock UI, pure reducer/stream parser, `guidance/system.md`. |
 | `src/routes/` | `/api/shell/*`, `/api/app/[...path]`, `/api/events`, `/mcp`, `/setup`, health. UI pages are placeholders. |
 
 ## Invariants
@@ -69,6 +70,15 @@ SvelteKit or `src/lib`). README has the route and JSON contracts.
   `tools/list` is sent with `ttlMs: 0`.
 - Never log request bodies, tokens or definitions; `errorResponse` returns
   messages only, 500s are generic.
+
+- **Assistant.** Same policy as `/mcp` (`toolsFor`/`callTool`). No tool
+  decides approvals (`approval_decide` is not in the catalog, and
+  `ASSISTANT_DENIED_TOOLS` repeats it): only the signed-in owner does, in the UI. A risky call is held (`holdForUser`) on its Approval; only the
+  owner's `Approval.decide` applies it. The loop is bounded (`DEFAULT_LIMITS`),
+  serial, aborts on disconnect. API key only: `config.ts` refuses
+  `claude-cli`/`chatgpt-plan`; never spawn a CLI. Model errors are never
+  forwarded or logged beyond class/code (SDK messages can echo keys). Tests use
+  a stub through `modelFactory`.
 
 ## Tests and build
 

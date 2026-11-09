@@ -4,6 +4,7 @@ import type { ShellNavItem } from '@happyvertical/smrt-svelte/workspace';
 import { onMount } from 'svelte';
 import { page } from '$app/state';
 import '$lib/ui/ui.css';
+import AssistantDock from '$lib/assistant/AssistantDock.svelte';
 import { LiveUpdates } from '$lib/ui/live.svelte';
 import { buildMenu } from '$lib/ui/menu';
 import { signOut } from '$lib/ui/sign-out';
@@ -56,7 +57,9 @@ onMount(() => () => live.stop());
   {#if isOwner && live.status === 'reconnecting'}
     <p class="live-note" role="status">Reconnecting to your app…</p>
   {/if}
-  <!-- assistant-dock -->
+  {#if isOwner}
+    <AssistantDock />
+  {/if}
 </AppShell>
 
 <style>

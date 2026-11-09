@@ -69,4 +69,26 @@ describe('approval gate invariants', () => {
     for (const [f, t] of custom)
       expect(/ownerOf\(|createShellMcpServer\(/.test(t), f).toBe(true);
   });
+
+  it('every assistant route is a one-line delegate, and each handler checks the owner', () => {
+    const routes = files.filter(([f]) =>
+      /^routes\/api\/assistant\/.*\+server\.ts$/.test(f),
+    );
+    expect(routes.length).toBe(4);
+    for (const [f, t] of routes)
+      expect(t, f).toMatch(/assistantRoutes\.(status|threads|thread|turn)\(/);
+    const impl = files.find(([f]) => f === 'lib/server/assistant/routes.ts');
+    expect((impl?.[1].match(/await ownerOf\(event\)/g) ?? []).length).toBe(4);
+  });
+
+  it('the assistant never decides approvals or reads a login', () => {
+    for (const [f, t] of files.filter(([f]) =>
+      f.startsWith('lib/server/assistant/'),
+    )) {
+      if (f.endsWith('turn.ts'))
+        // only the deny list may name it
+        expect(t.match(/'approval_decide'/g)?.length ?? 0).toBe(1);
+      else expect(t, f).not.toMatch(/'approval_decide'|decideApproval/);
+    }
+  });
 });

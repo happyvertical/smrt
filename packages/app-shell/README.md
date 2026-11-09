@@ -52,7 +52,9 @@ REST (`POST /api/apps/<op>`) and MCP tools (`app_definemodel`, `app_addfield`,
 `app_hidefield`, `app_renamefield`, `app_removefield`, `app_changefieldtype`,
 `app_removemodel`, `app_addmethod`, `app_enablerecipe`, `app_undo`,
 `app_cleanup`, `app_exporttemplate`, `app_importtemplate`, `app_describe`,
-`app_history`), plus `approval_pending` and `approval_decide`. The risky ones
+`app_history`), plus `approval_pending`. There is no tool to decide an approval: only the
+owner, signed in, decides in the UI, so no model-driven client (the assistant
+or an outside MCP client) can approve its own call. The risky ones
 (`addMethod`, `removeField`, `removeModel`, `changeFieldType`, `cleanUp`, an
 `importTemplate` carrying code) return `PendingApproval` instead of applying.
 
@@ -64,3 +66,68 @@ REST (`POST /api/apps/<op>`) and MCP tools (`app_definemodel`, `app_addfield`,
 - `authorizeCall(principal, name): Promise<CatalogTool>`: throws `PolicyError` (`status` 401 no principal, 403 not the owner or unknown tool).
 - `callTool(principal, name, args)`: authorize and run. A risky call returns a `PendingApproval`.
 - `Principal = { id, tenantId, scopes? }`; get one from the request with `principalFromLocals(locals)` (`owner.ts`).
+
+## The assistant
+
+The dock (`src/lib/assistant/AssistantDock.svelte`, mounted for the owner in
+the layout) talks to `mountAssistantRoutes` (`src/lib/server/assistant/`).
+Owner session required on all of them (401/403); the POST is same-origin.
+
+| Route | Body | Response |
+|---|---|---|
+| `GET /api/assistant/status` | | `{ configured: boolean, code?, message? }`; never a key, provider or endpoint. `code` is `assistant_not_configured` (no API key), `assistant_provider_refused` (subscription provider configured) or `ai_unavailable` (inference off) |
+| `GET /api/assistant/threads` | | `{ threads: { id, title, updatedAt }[] }` newest first |
+| `GET /api/assistant/threads/<id>` | | `{ thread, messages: ThreadMessage[] }`; 404 for a missing or foreign thread |
+| `POST /api/assistant/turn` | `{ message, threadId? }` | `text/event-stream`, `event: turn`, JSON `TurnEvent` (below). **503** `{ type: 'unavailable', configured: false, code, error }` when the assistant cannot run; 409 while another turn is running |
+
+`TurnEvent` (`src/lib/assistant/events.ts`): `thread {threadId}`, `text {delta}`,
+`tool_call {id,name,args}`, `tool_result {id,name,ok,summary}`,
+`approval_required {id,name,approvalId,summary,preview}`,
+`approval_decided {id,approvalId,status}`, `error {code,message}`,
+`done {stop}` (`complete | max_steps | max_tokens | timeout | aborted | waiting | error`).
+Closing the request (the dock's Stop button, a closed tab) aborts the model
+call, the running tool and any wait.
+
+- **Tools.** The model is offered `toolsFor(owner)` (builder tools plus the
+  app's generated tools); each call is checked against
+  a fresh list and then goes through `callTool` (the same policy as `/mcp`).
+  Non-owners get no tools and no assistant. Calls run one at a time, in order.
+- **Risky calls.** A risky call returns a `PendingApproval`; the turn emits
+  `approval_required` and is held (`holdForUser`) until the owner decides it
+  (the dock's card POSTs `/api/shell/approvals/<id>`, so it goes through
+  `Approval.decide`). The model is then told approved, denied or failed. If the
+  wait times out or the client leaves, the model is told it is waiting, the
+  turn ends as `waiting`/`aborted`, and the Approval stays pending, unapplied.
+  The assistant has no way to set the engine's `approved` flag.
+- **Engine.** `@happyvertical/ai` through core's inference tiers
+  (`resolveInferenceTarget`, tier `good`, override `SMRT_APP_SHELL_ASSISTANT_TIER`).
+  The key comes from the `ai` block of `smrt.config.ts`, `SMRT_AI_*` or the
+  provider's own variable (`ANTHROPIC_API_KEY`), read only server side, never
+  logged or sent to the browser, until bring-your-own (#4666) lands. Subscription
+  providers (`claude-cli`, `chatgpt-plan`) are refused. With no key,
+  status/turn answer the typed not-configured state and the dock shows it.
+- **Bounds** (`DEFAULT_LIMITS` in `turn.ts`): 8 model rounds, 2048 output
+  tokens per call, 60 000 tokens per turn, 4 calls per round, 60 s per model
+  call, 180 s of model/tool time per turn, 15 min per approval wait.
+- **Guidance.** `src/lib/assistant/guidance/system.md` (bundled with `?raw`).
+- **Threads** persist in shell.db (`assistant_threads`, `assistant_messages`).
+- **Tests** inject a stub model (`modelFactory` option, `test-helpers.ts`).
+
+## First-run schema
+
+`prepareShellSchema(db)` (`src/lib/server/schema.ts`) creates the tables of every
+registered shell model (and the smrt-users, tenancy and profiles tables the
+runtime needs) when missing, so an empty data directory boots without
+`DB_SCHEMA_MISSING`. It is passed to app-runtime's existing `prepareDatabase`
+option. Dependency: the first-run schema hook of smrt#4835 is pending; the
+shell will switch to it in `smrt.ts` when it lands.
+
+## Develop
+
+```
+pnpm --filter @happyvertical/smrt-app-shell test
+pnpm --filter @happyvertical/smrt-app-shell build
+pnpm --filter @happyvertical/smrt-app-shell typecheck
+```
+
+See [AGENTS.md](AGENTS.md) for the invariants and [src/engine/AGENTS.md](src/engine/AGENTS.md) for the engine.

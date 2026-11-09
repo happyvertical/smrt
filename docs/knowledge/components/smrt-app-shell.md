@@ -5,10 +5,10 @@ description: "A smrt app that builds and runs a person's own smrt app from defin
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-09T17:53:54Z"
+  at: "2026-11-09T17:55:02Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:87ff0fcbe34b26e9735ee3d53b9cbb91304702ea7310595fb132b08a75d9717e"
+source_revision: "sha256:487843bc3735cfc05ff5eec37a211cba3a3ac2b3b60ec15148fbdf0e56e690c3"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/package.json"
@@ -67,6 +67,10 @@ sources:
 - `AppVersionCollection` (collection `appversions`, extends `SmrtCollection`)
 - `Approval` (collection `approvals`, extends `SmrtObject`)
 - `ApprovalCollection` (collection `approvals`, extends `SmrtCollection`)
+- `AssistantMessage` (collection `assistantmessages`, extends `SmrtObject`)
+- `AssistantMessageCollection` (collection `assistantmessages`, extends `SmrtCollection`)
+- `AssistantThread` (collection `assistantthreads`, extends `SmrtObject`)
+- `AssistantThreadCollection` (collection `assistantthreads`, extends `SmrtCollection`)
 
 ## MCP tools
 

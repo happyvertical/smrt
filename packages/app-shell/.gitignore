@@ -9,6 +9,7 @@ src/routes/api/**/+server.ts
 !src/routes/api/app/[[]...path]/+server.ts
 !src/routes/api/events/+server.ts
 !src/routes/api/shell/**/+server.ts
+!src/routes/api/assistant/**/+server.ts
 src/lib/server/smrt-register.ts
 src/lib/types/smrt-generated/
 src/types/smrt-generated/
