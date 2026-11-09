@@ -148,7 +148,7 @@ export async function runInferenceHosted(
     if (result.budgetSync) log(`  budget sync: ${String(result.budgetSync)}`);
     if (result.budgetSync === 'unsupported') {
       log(
-        '  The installed @happyvertical/ai cannot update key budgets (happyvertical/sdk#1494); the spend gate (#4760) still applies.',
+        '  The gateway returned no key id for this grant, so its budget cannot be updated; the spend gate (#4760) still applies. Revoke and provision again to mint a key with an id.',
       );
     }
   } else if (!result.revoked) {
@@ -157,9 +157,14 @@ export async function runInferenceHosted(
     log(`Revoked hosted inference for user ${userId} in tenant ${tenantId}`);
     log(`  gateway key: ${String(result.gateway)}`);
     log(`  user config: ${String(result.restored)}`);
+    if (result.gateway === 'failed') {
+      log(
+        '  The gateway delete failed; the key is recorded as owed and the next revoke or reconcile retries it. SMRT no longer holds or uses the key.',
+      );
+    }
     if (result.gateway === 'unsupported') {
       log(
-        `  Revoke key ${String(result.keyId ?? result.keyAlias)} on the gateway by hand: the installed @happyvertical/ai has no delete call (happyvertical/sdk#1494). SMRT no longer holds or uses the key.`,
+        `  Revoke key ${String(result.keyId ?? result.keyAlias)} on the gateway by hand (no gateway admin is configured, or the key has no id), then call acknowledgeGatewayRevocation(). SMRT no longer holds or uses the key.`,
       );
     }
   }

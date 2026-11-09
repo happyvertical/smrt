@@ -111,6 +111,29 @@ describe('runInferenceHosted', () => {
     expect(lines.join('\n')).toMatch(/by hand.*key-id-1|key-id-1.*by hand/);
   });
 
+  it('says a failed gateway delete is owed and retried', async () => {
+    const provisioner = fakeProvisioner();
+    vi.mocked(provisioner.revoke).mockResolvedValueOnce({
+      tenantId: 't1',
+      userId: 'u1',
+      status: 'revoked',
+      generation: 1,
+      keyId: 'key-id-1',
+      keyAlias: 'smrt-t1-u1-g0',
+      revoked: true,
+      gateway: 'failed',
+      restored: 'prior',
+    });
+    const lines: string[] = [];
+    await runInferenceHosted(
+      'revoke',
+      { tenant: 't1', user: 'u1', json: false },
+      { provisioner, log: (line) => lines.push(line) },
+    );
+    expect(lines.join('\n')).toContain('owed');
+    expect(lines.join('\n')).not.toContain('by hand');
+  });
+
   it('prints JSON without any key value', async () => {
     const provisioner = fakeProvisioner();
     const lines: string[] = [];
