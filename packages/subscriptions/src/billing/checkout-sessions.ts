@@ -284,3 +284,28 @@ export async function reconcileFlaggedCheckout(
   }
   return outcome;
 }
+
+/**
+ * Operator action, inside one transaction (`ctx.db`): close a flagged session
+ * without linking it. The row is re-read under the lock, so a session is
+ * dismissed or reconciled at most once, whichever comes first.
+ */
+export async function dismissFlaggedCheckout(
+  ctx: ApplyContext,
+  input: { sessionId: string; operatorId: string; reason: string },
+): Promise<boolean> {
+  await lockBillingKeys(ctx, [`checkout:${input.sessionId}`]);
+  const loaded = await loadFlaggedCheckout(ctx.db, input.sessionId);
+  if (!loaded) return false;
+  loaded.record.status = 'dismissed';
+  loaded.record.reason = 'dismissed';
+  loaded.record.completedAt = new Date();
+  await loaded.record.save();
+  ctx.logger?.warn?.('billing.checkout.dismissed', {
+    sessionId: input.sessionId,
+    operatorId: input.operatorId,
+    reason: input.reason,
+    subscriptionId: loaded.flagged.subscriptionId,
+  });
+  return true;
+}

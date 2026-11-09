@@ -5,10 +5,10 @@ description: "Tenant subscriptions, entitlement resolution, usage thresholds, an
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-09T19:54:46Z"
+  at: "2026-11-09T20:14:11Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:dc0bac2b82e862454ed240dded77c0e65691d987f7c25cfeaa94275424095bd1"
+source_revision: "sha256:e4a9600dc1bf81de52d1a94146362bacc7a493af89e916e978e6ff026186e021"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/subscriptions/package.json"

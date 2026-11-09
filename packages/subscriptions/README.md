@@ -488,8 +488,15 @@ and subscribe it to `checkout.session.completed` and
   it to be the subscription and customer recorded when the session was
   flagged, applies the same tenant/customer conflict checks as a normal
   completion, links once, and logs `billing.checkout.reconciled` with the
-  operator id. Treat a flagged session you did not expect as another
-  integration's payment and leave it unreconciled.
+  operator id. Each listed row carries the paying `customerId`, the tenant the
+  host recorded the session for (`targetTenantId`) and
+  `claimedTenantHasOwnSession` (true suggests a copy of that tenant's signed
+  metadata): confirm the customer is the tenant's own before linking. Treat a
+  flagged session you did not expect as another integration's payment and close
+  it with `host.dismissCheckout({ sessionId, operatorId, reason })` (terminal
+  `dismissed`, logged with the operator id and reason), so it leaves the list.
+  The list is paged (`{ limit, offset }`, default 200) and
+  `host.countCheckoutsNeedingReconciliation()` gives the total.
 - **Webhook** verifies the signature on the raw body with a bounded timestamp
   tolerance, then claims the event id durably in the same transaction as the
   subscription write (`runOnce`, `_smrt_run_once_claims`). A replay is a 2xx

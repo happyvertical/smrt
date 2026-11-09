@@ -17,7 +17,8 @@ import {
 export type BillingCheckoutSessionStatus =
   | 'pending'
   | 'completed'
-  | 'needs_reconciliation';
+  | 'needs_reconciliation'
+  | 'dismissed';
 
 /**
  * One Checkout session created by the billing host, recorded when the host

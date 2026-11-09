@@ -1324,6 +1324,21 @@ describe('webhook', () => {
         reason: 'session_record_missing',
         targetTenantId: '',
       });
+      // The operator sees the paying customer and whether the claimed tenant
+      // has its own session, which is what tells a copy from a lost record.
+      const listed = await w.host.listCheckoutsNeedingReconciliation();
+      expect(listed[0]).toMatchObject({
+        customerId: 'cus_evil',
+        targetTenantId: '',
+        claimedTenantHasOwnSession: true,
+      });
+      expect(await w.host.countCheckoutsNeedingReconciliation()).toBe(1);
+      expect(
+        await w.host.listCheckoutsNeedingReconciliation({
+          limit: 1,
+          offset: 1,
+        }),
+      ).toEqual([]);
       expect(await w.host.listCheckoutsNeedingReconciliation()).toMatchObject([
         {
           sessionId: 'cs_evil',
@@ -1355,6 +1370,52 @@ describe('webhook', () => {
       );
       expect(redelivery.body.outcome).toBe('duplicate');
       expect(await w.rowFor(NORTH)).toBeNull();
+    });
+
+    it('lets an operator dismiss a flagged session without linking it, once, and it leaves the list', async () => {
+      const w = await world();
+      const { metadata } = await open(w, NORTH);
+      await complete(
+        w,
+        'evt_evil',
+        BASE + 1,
+        { id: 'cs_evil', sub: 'sub_evil', customer: 'cus_evil' },
+        metadata,
+      );
+      const input = {
+        sessionId: 'cs_evil',
+        operatorId: 'operator-1',
+        reason: 'payment from another integration on the account',
+      };
+      for (const bad of [
+        { ...input, operatorId: '' },
+        { ...input, reason: '   ' },
+        { ...input, sessionId: '' },
+      ]) {
+        expect((await refusal(() => w.host.dismissCheckout(bad))).code).toBe(
+          'invalid_request',
+        );
+      }
+      await w.host.dismissCheckout(input);
+      expect((await recordOf(w, 'cs_evil'))?.status).toBe('dismissed');
+      expect(await w.host.listCheckoutsNeedingReconciliation()).toEqual([]);
+      expect(await w.host.countCheckoutsNeedingReconciliation()).toBe(0);
+      expect(await w.rowFor(NORTH)).toBeNull();
+      // Terminal: neither a second dismissal nor a reconcile can revive it.
+      expect((await refusal(() => w.host.dismissCheckout(input))).code).toBe(
+        'checkout_not_reconcilable',
+      );
+      expect(
+        (
+          await refusal(() =>
+            w.host.reconcileCheckout({
+              sessionId: 'cs_evil',
+              tenantId: NORTH,
+              operatorId: 'operator-1',
+            }),
+          )
+        ).code,
+      ).toBe('checkout_not_reconcilable');
     });
 
     it('happy path: the recorded session links the tenant once and is then completed', async () => {

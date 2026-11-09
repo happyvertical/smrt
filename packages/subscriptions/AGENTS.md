@@ -191,8 +191,11 @@ environment names are in the README. Invariants:
   well-formed, event time is not after the signed or recorded expiry. A
   missing, mismatched or expired record never links and never drops: the row
   becomes `needs_reconciliation` (outcome `needs_reconciliation`, error log).
-  Only `applied` marks a record `completed`. `reconcileCheckout()` is the only
-  way out and is operator-only: it never skips the apply-time conflict checks.
+  Only `applied` marks a record `completed`. `reconcileCheckout()` (link) and
+  `dismissCheckout()` (terminal `dismissed`, for a payment that is not the
+  tenant's) are the only ways out and are operator-only; reconcile never skips
+  the apply-time conflict checks. The list shows `customerId`,
+  `targetTenantId` and `claimedTenantHasOwnSession`, is paged, and has a count.
   The expiry is deterministic per idempotency window so a repeated click sends
   identical provider parameters. Change the table shape only with owner
   approval. A provider subscription or customer id links to one

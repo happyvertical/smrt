@@ -239,6 +239,20 @@ export interface BillingUnreconciledCheckout {
   /** The tenant the signed metadata named (not trusted). */
   claimedTenantId: string;
   subscriptionId: string;
+  /**
+   * The provider customer that paid. Confirm it is the claimed tenant's own
+   * customer before reconciling: it is the one value that decides who gets
+   * control of the tenant's billing portal.
+   */
+  customerId: string;
+  /** The tenant the host recorded the session for (empty when no record). */
+  targetTenantId: string;
+  /**
+   * True when the claimed tenant has its own pending or completed session
+   * recorded by this host, which suggests the flagged payment is a copy of
+   * that tenant's signed metadata rather than the tenant's purchase.
+   */
+  claimedTenantHasOwnSession: boolean;
   eventId: string;
   flaggedAt: Date;
 }
@@ -259,7 +273,25 @@ export interface BillingHost {
   ): Promise<BillingCheckoutResult>;
   createPortalLink(auth: BillingAuth): Promise<BillingPortalResult>;
   /** Paid Checkout sessions flagged `needs_reconciliation`, oldest first. */
-  listCheckoutsNeedingReconciliation(): Promise<BillingUnreconciledCheckout[]>;
+  listCheckoutsNeedingReconciliation(options?: {
+    /** Page size, 1..1000 (default 200). */
+    limit?: number;
+    offset?: number;
+  }): Promise<BillingUnreconciledCheckout[]>;
+  /** How many paid sessions are flagged, so a page is never mistaken for all. */
+  countCheckoutsNeedingReconciliation(): Promise<number>;
+  /**
+   * Operator-only (same rules as `reconcileCheckout`): close a flagged session
+   * on purpose WITHOUT linking it (for example a payment from another
+   * integration on the same account). Terminal state `dismissed`, logged with
+   * the operator id and reason; throws `checkout_not_reconcilable` when the
+   * session is not flagged.
+   */
+  dismissCheckout(input: {
+    sessionId: string;
+    operatorId: string;
+    reason: string;
+  }): Promise<void>;
   /**
    * Operator-only, called by host code that has already authenticated and
    * authorised an operator (never wired to a request handler). Links a flagged
