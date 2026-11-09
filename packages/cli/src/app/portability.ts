@@ -111,7 +111,8 @@ export interface PortabilityContext {
   ) => Promise<DatabaseInterface>;
 }
 
-function quoteIdentifier(value: string): string {
+/** Quote a manifest identifier, rejecting anything unsafe. */
+export function quoteIdentifier(value: string): string {
   if (!SAFE_IDENTIFIER.test(value)) {
     throw new Error(
       'The generated manifest contains an unsafe SQL identifier.',
@@ -120,7 +121,10 @@ function quoteIdentifier(value: string): string {
   return `"${value}"`;
 }
 
-function containsNonPortableRows(table: ManifestTable): boolean {
+/** True when a table's rows are never carried in a logical bundle. */
+export function containsNonPortableRows(
+  table: Pick<ManifestTable, 'name' | 'columns'>,
+): boolean {
   return (
     NON_PORTABLE_TABLE_PATTERN.test(table.name) ||
     table.columns.some((column) => NON_PORTABLE_COLUMN_PATTERN.test(column))
@@ -554,7 +558,8 @@ async function inspectImportTarget(
   return 'dirty';
 }
 
-function canonicalValue(value: unknown): string | null {
+/** Engine-neutral comparison form of one exported value. */
+export function canonicalValue(value: unknown): string | null {
   if (value === null || value === undefined) return null;
   if (typeof value === 'boolean') return value ? '1' : '0';
   if (typeof value === 'number' || typeof value === 'bigint') {
