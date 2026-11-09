@@ -160,6 +160,16 @@ reports `json` / `jsonMode` / a `json_object` operation.
   `capabilitiesFor(target)` let the executor check each candidate; the verdict
   parse accepts a text answer.
 
+## Transcripts (#4780)
+
+`inference.transcripts` (app level only) turns on opt-in call transcripts.
+While on, `getAiClient()`, the `ai` getter and `prepareAiOperation()` hand
+out clients wrapped by `withAiTranscripts()` (a `callId` usage tag per call;
+`transcript: boolean` on `AiOperationOptions` / `EvaluateOptions`, stripped
+before the provider), and `resolveInferenceTarget({ transcript })` results
+carry `instrument(client)` for raw sites. Off, nothing changes: same client
+identity, same options. Contract: [ai-usage.md](ai-usage.md#transcripts-_smrt_ai_transcripts-4780).
+
 ## Raw clients and binding source (#4756)
 
 `src/inference-target.ts`. `bindInferenceTarget(base, target, owner)` is the

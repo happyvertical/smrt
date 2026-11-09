@@ -1068,7 +1068,8 @@ export async function ensureDeferredSystemTableCompatibility(
 }
 
 /**
- * Prompt-run observability columns on `_smrt_ai_usage` (#4751).
+ * Prompt-run observability columns on `_smrt_ai_usage` (#4751) and the
+ * `call_id` columns on `_smrt_ai_usage` / `_smrt_ai_usage_outcomes` (#4780).
  *
  * Nullable TEXT, populated from usage tags by `AiUsagePersistenceHandler`;
  * existing rows keep NULL (no backfill: `tags` still holds the full copy).
@@ -1089,8 +1090,21 @@ export async function ensureAiUsageSystemTableCompatibility(
     'tier_requested',
     'tier_resolved',
     'run_id',
+    // AI call transcripts (#4780).
+    'call_id',
   ]) {
     await addColumnIfMissing(db, '_smrt_ai_usage', column, 'TEXT', typeHint);
+  }
+  // `_smrt_ai_usage_outcomes` (#4751) gains `call_id` with #4780; a 1.13.0 or
+  // 1.14.0 install has the table without it.
+  if (await tableExists(db, '_smrt_ai_usage_outcomes', typeHint)) {
+    await addColumnIfMissing(
+      db,
+      '_smrt_ai_usage_outcomes',
+      'call_id',
+      'TEXT',
+      typeHint,
+    );
   }
 }
 

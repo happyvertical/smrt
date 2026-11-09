@@ -23,6 +23,7 @@ import {
   SmrtObject,
   setInferenceResolver,
   smrt,
+  config as smrtConfig,
 } from '@happyvertical/smrt-core';
 import { getCurrentTenant } from '@happyvertical/smrt-tenancy';
 import {
@@ -455,6 +456,43 @@ describe('mountAssistantRoutes defaults (#3414)', () => {
       expect(done).toMatchObject({
         message: expect.objectContaining({ content: 'From config.' }),
       });
+    });
+
+    it('never stores chat turns as AI transcripts (#4780)', async () => {
+      setConfig({
+        ai: {
+          provider: 'openai',
+          model: 'gpt-test',
+          apiKeyEnv: 'OPENAI_API_KEY',
+        },
+      });
+      process.env.OPENAI_API_KEY = 'k-config-test';
+      // Every success sampled: a wrapped client would mint a callId.
+      smrtConfig({
+        inference: { transcripts: { enabled: true, sample: 1 } },
+      } as never);
+      try {
+        const seenOptions: unknown[] = [];
+        const ai = scriptedAI([
+          (_messages, options) => {
+            seenOptions.push(options);
+            return { content: 'Stored by chat only.', finishReason: 'stop' };
+          },
+        ]);
+        getAI.mockResolvedValue(ai);
+        const routes = mountAssistantRoutes({ db, audit: () => {} });
+        const threadId = await createThread(routes, ownerA);
+        await events(await send(routes, threadId, ownerA, 't1'));
+        expect(seenOptions).toHaveLength(1);
+        // The factory passes `transcript: false`: the client is used as built,
+        // so no call id and no transcript capture.
+        expect(
+          (seenOptions[0] as { usageTags?: Record<string, string> } | undefined)
+            ?.usageTags?.callId,
+        ).toBeUndefined();
+      } finally {
+        smrtConfig.reset();
+      }
     });
 
     it('applies the principal stored inference binding over the config (#4756)', async () => {

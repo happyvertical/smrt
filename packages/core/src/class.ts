@@ -42,6 +42,15 @@ import {
   unwrapAiUsageSink,
 } from './adapters/ai-usage-recorder.js';
 import { estimateAiUsageCost } from './adapters/cost-rates.js';
+import {
+  type AiTranscriptContext,
+  aiTranscriptsEnabled,
+  captureAiTranscriptCall,
+  noteAiTranscriptRun,
+  observeAiTranscriptUsage,
+  unwrapAiTranscriptClient,
+  withAiTranscripts,
+} from './ai-transcripts.js';
 import { registerChangeFeedWriter } from './change-feed.js';
 import {
   getSmrtModuleConfig,
@@ -473,6 +482,10 @@ export class SmrtClass {
 
   /** Tier clients keyed by resolved `[provider, model, baseUrl]`, then key. */
   private _tierAiClients = new Map<string, Map<string, Promise<AIClient>>>();
+  /** Transcript wrappers (#4780) per raw client, built while enabled. */
+  private readonly _aiTranscriptClients = new WeakMap<object, unknown>();
+  /** Tier-target keys this instance built clients with, masked (#4780). */
+  private readonly _aiTranscriptKeys = new Set<string>();
   /** `getCapabilities()` answers per client (#4758). */
   private readonly _aiCapabilityAnswers = new WeakMap<
     object,
@@ -854,6 +867,10 @@ export class SmrtClass {
             const existingOnUsage = unwrapAiUsageSink(configuredOnUsage);
             const sinkAttribution = aiUsageSinkAttribution(configuredOnUsage);
             aiConfig.onUsage = async (event: unknown) => {
+              // Transcript capture (#4780) reads the raw event synchronously,
+              // before the caller's (possibly async) callback, so the call
+              // knows its substitutions and run before it resolves.
+              observeAiTranscriptUsage(event);
               // Record even when the caller's callback throws; its error
               // still propagates (#3077).
               try {
@@ -944,6 +961,22 @@ export class SmrtClass {
       allowPartial?: boolean;
     } = {},
   ): Promise<AIClient> {
+    // While the app stores transcripts (#4780) the returned client carries a
+    // `callId` per call and captures content; otherwise it is returned as is.
+    return this.transcriptClient(await this.resolveAiClient(tier, options));
+  }
+
+  /** {@link getAiClient} without the transcript wrapper. */
+  private async resolveAiClient(
+    tier?: InferenceTierRequest,
+    options: {
+      latency?: InferenceLatency;
+      promptKey?: string;
+      resolution?: InferenceResolution;
+      minimumTier?: InferenceTier;
+      allowPartial?: boolean;
+    } = {},
+  ): Promise<AIClient> {
     await this.ensureRuntimeServicesInitialized();
 
     if (tier !== undefined) {
@@ -1023,8 +1056,105 @@ export class SmrtClass {
     // where inference runs: untiered calls take it through `auto` rather than
     // the configured client, so a `local` or keyless `byo` choice never runs
     // on the app's provider.
-    if (modeState) return this.getAiClient('auto', options);
+    if (modeState) return this.resolveAiClient('auto', options);
     return this.requireConfiguredAi();
+  }
+
+  /**
+   * Where this instance's transcripts go (#4780): its database, class,
+   * usage tenant, client key (masked) and `sensitive` field values (masked).
+   */
+  protected aiTranscriptContext(): AiTranscriptContext {
+    return {
+      // Read per call: `withDatabase()` rebinds the instance's database.
+      db: () => this._db ?? null,
+      className: this._className,
+      tenantId: () =>
+        resolveAiUsageTenantId(
+          this._aiSinkAttribution?.tenantId,
+          this.currentTenantId(),
+        ) ?? null,
+      ...(typeof this._aiClientConfig?.provider === 'string'
+        ? { provider: this._aiClientConfig.provider }
+        : {}),
+      ...(typeof this._aiClientConfig?.model === 'string'
+        ? { model: this._aiClientConfig.model }
+        : {}),
+      secrets: () => this.aiTranscriptSecrets(),
+      sensitive: () => this.aiTranscriptSensitiveValues(),
+    };
+  }
+
+  /** Credential values transcripts must never contain. */
+  private aiTranscriptSecrets(): string[] {
+    const secrets: string[] = [...this._aiTranscriptKeys];
+    for (const source of [
+      this._aiClientConfig,
+      this.options.ai as Record<string, unknown> | undefined,
+      this.getDecisionConfig() as Record<string, unknown> | undefined,
+    ]) {
+      const key = source?.apiKey;
+      if (typeof key === 'string' && key.trim() !== '') secrets.push(key);
+    }
+    return secrets;
+  }
+
+  /**
+   * Values of this object's `sensitive` fields, masked in transcripts
+   * (#4780). `SmrtObject` returns them; plain `SmrtClass` instances have no
+   * fields.
+   */
+  protected aiTranscriptSensitiveValues(): Array<{
+    field: string;
+    value: string;
+  }> {
+    return [];
+  }
+
+  /**
+   * `client` wrapped for transcripts while the app enables them (#4780),
+   * else unchanged. Wrappers are cached per client, so identity is stable
+   * across calls; a per-call `transcript` default or context `overrides`
+   * (a raw `getAI()` client attributed to an explicit tenant) build a fresh
+   * one. Subclasses that build their own `getAI()` client pass it here.
+   */
+  protected transcriptClient<T>(
+    client: T,
+    transcript?: boolean,
+    overrides?: Partial<AiTranscriptContext>,
+  ): T {
+    if (!client || typeof client !== 'object' || !aiTranscriptsEnabled()) {
+      return client;
+    }
+    const wrappedAlready = unwrapAiTranscriptClient(client) !== client;
+    if (transcript === undefined && !overrides && wrappedAlready) {
+      return client;
+    }
+    if (transcript !== undefined || overrides) {
+      const context = this.aiTranscriptContext();
+      const extraSecrets = overrides?.secrets;
+      return withAiTranscripts(client, {
+        ...context,
+        ...(overrides ?? {}),
+        // A site's own credentials add to the instance's, never replace them.
+        ...(extraSecrets
+          ? {
+              secrets: () => [
+                ...(context.secrets?.() ?? []),
+                ...extraSecrets(),
+              ],
+            }
+          : {}),
+        ...(transcript !== undefined ? { transcript } : {}),
+      });
+    }
+    const key = client as unknown as object;
+    let wrapped = this._aiTranscriptClients.get(key) as T | undefined;
+    if (!wrapped) {
+      wrapped = withAiTranscripts(client, this.aiTranscriptContext());
+      this._aiTranscriptClients.set(key, wrapped);
+    }
+    return wrapped;
   }
 
   /**
@@ -1228,6 +1358,7 @@ export class SmrtClass {
       minimumTier?: InferenceTier;
       allowPartial?: boolean;
       toolUse?: AiToolUse;
+      transcript?: boolean;
     },
   >(
     options: T,
@@ -1241,6 +1372,7 @@ export class SmrtClass {
       | 'minimumTier'
       | 'allowPartial'
       | 'toolUse'
+      | 'transcript'
     >;
     /**
      * The bound model's capabilities (#4758), for a tier call on a `single`
@@ -1260,6 +1392,9 @@ export class SmrtClass {
       minimumTier,
       allowPartial,
       toolUse,
+      // The transcript directive (#4780) rides on the client, never on the
+      // provider call.
+      transcript,
       ...rest
     } = options;
     let tier = requestedTier;
@@ -1270,7 +1405,7 @@ export class SmrtClass {
       const modeState = await this.resolveInferenceModeState();
       if (!modeState || modeState.unavailable) {
         return {
-          ai: await this.getAiClient(),
+          ai: this.transcriptClient(await this.getAiClient(), transcript),
           aiOptions: rest,
           ...(toolUse ? { toolUse } : {}),
         };
@@ -1282,13 +1417,18 @@ export class SmrtClass {
       latency,
       ...(promptKey ? { promptKey } : {}),
     });
-    const ai = await this.getAiClient(tier, {
-      latency,
-      promptKey,
-      resolution,
-      ...(minimumTier ? { minimumTier } : {}),
-      ...(allowPartial ? { allowPartial } : {}),
-    });
+    // `getAiClient()` stays the seam subclasses override; the per-call
+    // directive re-wraps its (already wrapped) client.
+    const ai = this.transcriptClient(
+      await this.getAiClient(tier, {
+        latency,
+        promptKey,
+        resolution,
+        ...(minimumTier ? { minimumTier } : {}),
+        ...(allowPartial ? { allowPartial } : {}),
+      }),
+      transcript,
+    );
     // A chain target carries no model or params of its own: each candidate
     // applies its own inside the executor (#4752).
     const single = inferenceTargetKind(resolution.target) === 'single';
@@ -1340,6 +1480,7 @@ export class SmrtClass {
         | 'minimumTier'
         | 'allowPartial'
         | 'toolUse'
+        | 'transcript'
       >,
     };
   }
@@ -1453,6 +1594,9 @@ export class SmrtClass {
       );
     }
     const identity = inferenceTargetIdentity(target);
+    // A bound key (a user's BYO key, a hosted gateway key) is masked in
+    // transcripts like the configured one (#4780).
+    if (identity.apiKey) this._aiTranscriptKeys.add(identity.apiKey);
     if (Object.keys(identity).length === 0)
       return this.requireConfiguredAi(tier);
 
@@ -1501,6 +1645,8 @@ export class SmrtClass {
     const usageConfig =
       this._aiUsageResolvedConfig ?? this.mergeAiUsageConfig(config.toJSON());
     tierConfig.onUsage = async (event: unknown) => {
+      // Synchronously, before the caller's callback (#4780).
+      observeAiTranscriptUsage(event);
       try {
         if (typeof userOnUsage === 'function') {
           await (userOnUsage as (usageEvent: unknown) => unknown)(event);
@@ -1571,6 +1717,9 @@ export class SmrtClass {
    * failure is logged, never thrown: it must not mask the run's own result.
    */
   private async recordInferenceRun(record: InferenceRunRecord): Promise<void> {
+    // A degraded or failed run forces the transcript of its call (#4780),
+    // whether or not usage is persisted.
+    noteAiTranscriptRun(record.id, record.status);
     const usageConfig =
       this._aiUsageResolvedConfig ?? this.mergeAiUsageConfig(config.toJSON());
     if (!usageConfig.enabled || !usageConfig.persist || !this._db) return;
@@ -1682,7 +1831,7 @@ export class SmrtClass {
    */
   protected async getOptionalAiClient(): Promise<AIClient | undefined> {
     await this.ensureRuntimeServicesInitialized();
-    return this._ai;
+    return this.transcriptClient(this._ai);
   }
 
   /**
@@ -1748,18 +1897,39 @@ export class SmrtClass {
     const decision = await this.getDecisionClient();
     if (!decision) return undefined;
 
-    const result = await executeDecision(decision, request, options);
-    await this.recordAiUsageEvent(
+    const { transcript, ...decisionOptions } = (options ?? {}) as
+      | (DecisionOptions & { transcript?: boolean })
+      | Record<string, never>;
+    // One captured call (#4780): the decision request and its answers, with
+    // the call's id on the usage row while transcripts are enabled.
+    return captureAiTranscriptCall(
+      this.aiTranscriptContext(),
       {
-        provider: result.provenance.provider,
-        model: result.provenance.model,
         operation: 'decision',
-        usage: result.usage,
-        tags: { operation: 'decision' },
+        request: [{ role: 'decision', content: request }],
+        ...(typeof transcript === 'boolean' ? { transcript } : {}),
       },
-      result.provenance,
+      async (callId) => {
+        const result = await executeDecision(
+          decision,
+          request,
+          (options === undefined && transcript === undefined
+            ? undefined
+            : decisionOptions) as DecisionOptions | undefined,
+        );
+        await this.recordAiUsageEvent(
+          {
+            provider: result.provenance.provider,
+            model: result.provenance.model,
+            operation: 'decision',
+            usage: result.usage,
+            tags: { operation: 'decision', ...(callId ? { callId } : {}) },
+          },
+          result.provenance,
+        );
+        return result;
+      },
     );
-    return result;
   }
 
   /** Resolve project, global, and instance decision options in that order. */
@@ -2242,7 +2412,7 @@ export class SmrtClass {
    * Gets the AI client instance
    */
   get ai() {
-    return this._ai;
+    return this.transcriptClient(this._ai);
   }
 
   /**
@@ -2475,6 +2645,9 @@ export class SmrtClass {
     usageConfig: ResolvedAiUsageConfig,
     overrides: AiUsageSinkAttribution = {},
   ): Promise<void> {
+    // Transcript capture (#4780) reads substitutions and run ids off the
+    // raw event first, whatever the usage config says.
+    observeAiTranscriptUsage(event);
     const observed = this._aiRunUsageListeners.size > 0;
     if (
       !usageConfig.enabled ||

@@ -383,7 +383,7 @@ describe('recordAiUsageOutcome / listAiUsageOutcomes', () => {
   it('validates its input', async () => {
     await expect(
       recordAiUsageOutcome(db, { label: 'x', actor: 'a' }),
-    ).rejects.toThrow(/usageId or runId/);
+    ).rejects.toThrow(/usageId, runId or callId/);
     await expect(
       recordAiUsageOutcome(db, { usageId: 'seed-t1', label: '  ', actor: 'a' }),
     ).rejects.toThrow(/label/);

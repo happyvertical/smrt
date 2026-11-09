@@ -307,6 +307,11 @@ export interface EvaluateOptions {
   signal?: AbortSignal;
   /** Provider request deadline in milliseconds. */
   timeout?: number;
+  /**
+   * Transcript directive for either route (#4780), only while the app
+   * enables `inference.transcripts`: `true` always stores, `false` never.
+   */
+  transcript?: boolean;
 }
 
 export function assertFiniteUnitInterval(

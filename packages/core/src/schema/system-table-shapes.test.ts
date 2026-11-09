@@ -104,6 +104,7 @@ describe('getSystemTableShapes', () => {
 
     expect([...shapes.keys()].sort()).toEqual([
       '_smrt_ai_runs',
+      '_smrt_ai_transcripts',
       '_smrt_ai_usage',
       '_smrt_ai_usage_outcomes',
       '_smrt_backfills',

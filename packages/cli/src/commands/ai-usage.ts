@@ -14,6 +14,12 @@
  * `--by fusion` also totals runs from `_smrt_ai_runs` (#4753) through
  * `reportAiRuns()`: runs per fusion with ok / degraded / failed, seats,
  * degraded seats and p50 run duration (JSON: a `runs` member).
+ *
+ * `--with-transcripts` (#4780) also lists the worst-labelled calls that have
+ * a stored transcript (optionally one `--prompt`), with their call ids for
+ * `smrt ai:transcript <callId>`. That is a transcript read: it needs
+ * `--tenant` or `--all-tenants` and writes an audit event (JSON:
+ * `transcripts`).
  */
 
 import type {
@@ -25,6 +31,12 @@ import type {
 } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import type { CLICommand } from '../cli-generator.js';
+import {
+  formatWorstLabelledTranscripts,
+  transcriptActor,
+  transcriptScope,
+  worstLabelledTranscripts,
+} from './ai-transcript.js';
 import {
   closeDatabaseConnection,
   formatDatabaseDisplayUrl,
@@ -38,6 +50,10 @@ interface AiUsageOptions {
   until?: string;
   tenant?: string;
   json?: boolean;
+  'with-transcripts'?: boolean;
+  'all-tenants'?: boolean;
+  prompt?: string;
+  actor?: string;
 }
 
 /** Kept in step with core's `AI_USAGE_REPORT_DIMENSIONS`. */
@@ -287,6 +303,26 @@ export const aiUsageCommand: CLICommand = {
       description:
         'Total only this tenant id; other tenants are counted as excluded',
     },
+    'with-transcripts': {
+      type: 'boolean',
+      description:
+        'Also list the worst-labelled calls with stored transcripts and their call ids (#4780; needs --tenant or --all-tenants; audited)',
+      default: false,
+    },
+    'all-tenants': {
+      type: 'boolean',
+      description: 'With --with-transcripts: operator read across tenants',
+      default: false,
+    },
+    prompt: {
+      type: 'string',
+      description: 'With --with-transcripts: only this prompt key',
+    },
+    actor: {
+      type: 'string',
+      description:
+        'With --with-transcripts: who reads, for the audit event (default: cli:<os user>)',
+    },
     json: {
       type: 'boolean',
       description: 'Output as JSON',
@@ -299,6 +335,13 @@ export const aiUsageCommand: CLICommand = {
 
     try {
       const by = parseUsageDimensions(options.by);
+      // Validated before any query: a transcript read is tenant content.
+      const transcriptRead = options['with-transcripts']
+        ? transcriptScope({
+            ...(options.tenant ? { tenant: options.tenant } : {}),
+            ...(options['all-tenants'] ? { 'all-tenants': true } : {}),
+          })
+        : undefined;
       const since = parseUsageTime(options.since, '--since');
       const until = parseUsageTime(options.until, '--until');
 
@@ -317,7 +360,7 @@ export const aiUsageCommand: CLICommand = {
       const { getDatabase } = await import('@happyvertical/sql');
       db = await getDatabase({ type: dbType, url: dbUrl });
 
-      const { reportAiRuns, reportAiUsage } = await import(
+      const { listAiTranscripts, reportAiRuns, reportAiUsage } = await import(
         '@happyvertical/smrt-core'
       );
       const filters = {
@@ -329,10 +372,33 @@ export const aiUsageCommand: CLICommand = {
       const runs = by.includes('fusion')
         ? await reportAiRuns(db, filters)
         : undefined;
+      const transcripts = transcriptRead
+        ? worstLabelledTranscripts(
+            await listAiTranscripts(db, {
+              ...transcriptRead,
+              actor: transcriptActor(options.actor),
+              reason: 'ai:usage --with-transcripts',
+              labelled: true,
+              ...(options.prompt ? { promptKey: options.prompt } : {}),
+              ...(since ? { since } : {}),
+              ...(until ? { until } : {}),
+              limit: 500,
+            }),
+            20,
+          )
+        : undefined;
 
       if (options.json) {
         console.log(
-          JSON.stringify(runs ? { ...report, runs } : report, null, 2),
+          JSON.stringify(
+            {
+              ...report,
+              ...(runs ? { runs } : {}),
+              ...(transcripts ? { transcripts } : {}),
+            },
+            null,
+            2,
+          ),
         );
         return;
       }
@@ -349,12 +415,22 @@ export const aiUsageCommand: CLICommand = {
         console.log('\nFusion runs (_smrt_ai_runs)\n');
         console.log(formatAiRunReport(runs));
       }
+      if (transcripts) {
+        console.log(
+          `\nWorst-labelled calls with transcripts${options.prompt ? ` (prompt ${options.prompt})` : ''}\n`,
+        );
+        console.log(formatWorstLabelledTranscripts(transcripts));
+        console.log('\n  Read one: smrt ai:transcript <call id> --tenant <id>');
+      }
       console.log();
     } catch (error) {
       const raw = error instanceof Error ? error.message : String(error);
-      const hint = /prompt_key|_smrt_ai_usage_outcomes|_smrt_ai_runs/.test(raw)
-        ? ' (system tables predate #4751/#4753: start the app once, or run `smrt db:migrate`, to upgrade them)'
-        : '';
+      const hint =
+        /prompt_key|_smrt_ai_usage_outcomes|_smrt_ai_runs|_smrt_ai_transcripts|call_id/.test(
+          raw,
+        )
+          ? ' (system tables predate #4751/#4753/#4780: start the app once, or run `smrt db:migrate`, to upgrade them)'
+          : '';
       const message = redactDatabaseUrlsInText(`${raw}${hint}`);
       if (options.json) {
         console.log(JSON.stringify({ error: message }));

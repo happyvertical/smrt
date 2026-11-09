@@ -19,6 +19,38 @@
 
 // Built-in signal adapters
 export * from './adapters/index';
+// Opt-in AI call transcripts (#4780), capture side. Browser-safe; keep this
+// list identical in index.ts and browser.ts.
+export {
+  AI_CALL_ID_TAG,
+  type AiTranscriptCaptureReason,
+  type AiTranscriptContext,
+  type AiTranscriptMessage,
+  type AiTranscriptRedactionContext,
+  type AiTranscriptRedactionValues,
+  type AiTranscriptRedactor,
+  aiTranscriptCaptureReason,
+  aiTranscriptSampleRate,
+  aiTranscriptsEnabled,
+  type CaptureAiTranscriptCallOptions,
+  captureAiTranscriptCall,
+  DEFAULT_TRANSCRIPT_MAX_BYTES,
+  DEFAULT_TRANSCRIPT_SAMPLE,
+  type FittedAiTranscript,
+  fitAiTranscript,
+  getTranscriptRedactor,
+  MIN_SENSITIVE_VALUE_LENGTH,
+  maybeWithAiTranscripts,
+  newAiCallId,
+  noteAiTranscriptRun,
+  observeAiTranscriptUsage,
+  type ResolvedAiTranscriptConfig,
+  redactAiTranscriptMessages,
+  resolveAiTranscriptConfig,
+  setTranscriptRedactor,
+  unwrapAiTranscriptClient,
+  withAiTranscripts,
+} from './ai-transcripts';
 export * from './audit.js';
 export { withAuditContext } from './audit-context.js';
 // App-side referential integrity applied by `SmrtObject.delete()` (#2371)
@@ -255,6 +287,7 @@ export { type HierarchyView, SmrtHierarchical } from './hierarchical';
 // this list identical in index.ts and browser.ts.
 export {
   assertInferenceConfig,
+  assertInferenceTranscriptsConfig,
   builtInInferenceResolver,
   compareInferenceTiers,
   DEFAULT_INFERENCE_TIER,
@@ -293,6 +326,8 @@ export {
   type InferenceTargetSource,
   type InferenceTier,
   type InferenceTierRequest,
+  type InferenceTranscriptPromptConfig,
+  type InferenceTranscriptsConfig,
   type InferenceUsageObservation,
   type InferenceUsageRecord,
   inferenceExecutorFor,
@@ -302,6 +337,7 @@ export {
   isInferenceTargetSource,
   isInferenceTier,
   isInferenceTierRequest,
+  MIN_TRANSCRIPT_MAX_BYTES,
   mergeInferenceConfigs,
   type ResolveInferenceOptions,
   resolveAutoTier,

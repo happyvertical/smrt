@@ -29,6 +29,7 @@ import type { DomainKnowledgeManifest } from '@happyvertical/smrt-types';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import type { CLICommand } from '../cli-generator.js';
 import { autoDiscoverAndLoad } from '../discovery/index.js';
+import { aiTranscriptCommand } from './ai-transcript.js';
 import { aiUsageCommand } from './ai-usage.js';
 import {
   RESET_RECIPE,
@@ -4014,6 +4015,7 @@ export default testManifest;
   'db:orphans': dbOrphansCommand,
   'db:prune': dbPruneCommand,
   'ai:usage': aiUsageCommand,
+  'ai:transcript': aiTranscriptCommand,
   'inference:hosted': inferenceHostedCommand,
   'db:permissions': dbPermissionsCommand,
 

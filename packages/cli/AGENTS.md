@@ -32,6 +32,7 @@ smrt db:rollback --mark-only # Record-only flip; schema untouched
 smrt db:prune                # Prune framework system tables to their retention windows
 smrt db:prune --dry-run      # Same predicates, counted rather than deleted
 smrt ai:usage [--by prompt,model,tier,class,tenant,fusion,source] [--since 7d] [--tenant <id>] [--json] # ../core/agents/ai-usage.md
+smrt ai:transcript <callId> --tenant <id>|--all-tenants # Audited read (#4780), ai:usage --with-transcripts
 smrt inference:hosted provision|revoke --tenant <id> --user <id> [--budget-usd 20|--budget-micros N] [--window month] [--json] # Hosted gateway keys (#4759, ../inference/AGENTS.md)
 smrt inference:hosted disable|enable|status [--tenant <id>] [--json] # Hosted AI kill switch (#4760); one group, shared map: agents/inference-hosted.md
 smrt docs:agents             # Generate .agents/smrt-framework.md

@@ -422,6 +422,7 @@ describe('runRetentionSweep (#2375)', () => {
     expect(result.tasks.map((task) => task.task)).toEqual([
       'changes',
       'ai-usage',
+      'ai-transcripts',
       'contexts',
       'dispatch',
       'run-once-claims',
@@ -602,6 +603,7 @@ describe('runRetentionSweep (#2375)', () => {
     for (const reserved of [
       'changes',
       'ai-usage',
+      'ai-transcripts',
       'contexts',
       'dispatch',
       'run-once-claims',

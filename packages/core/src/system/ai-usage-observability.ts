@@ -84,6 +84,11 @@ export interface AiUsageOutcomeInput {
   usageId?: string | null;
   /** The run (`_smrt_ai_usage.run_id`) this label judges as a whole. */
   runId?: string | null;
+  /**
+   * The call (`_smrt_ai_usage.call_id`, the transcript's `call_id`; #4780)
+   * this label judges: every usage row and the transcript of that call.
+   */
+  callId?: string | null;
   /** The verdict, e.g. `accepted`, `rejected`, `edited`. Free text. */
   label: string;
   /** Optional numeric score; any finite number, the scale is the caller's. */
@@ -106,6 +111,7 @@ export interface AiUsageOutcomeRecord {
   id: string;
   usageId: string | null;
   runId: string | null;
+  callId: string | null;
   label: string;
   score: number | null;
   evidence: string | null;
@@ -135,6 +141,7 @@ async function targetTenants(
   db: DatabaseInterface,
   usageId: string | null,
   runId: string | null,
+  callId: string | null,
 ): Promise<Set<string | null>> {
   const tenants = new Set<string | null>();
   if (usageId) {
@@ -167,11 +174,41 @@ async function targetTenants(
     }
     for (const row of rows) tenants.add(nullableString(row.tenant_id));
   }
+  if (callId) {
+    let rows = getRows(
+      await db.query(
+        'SELECT DISTINCT tenant_id FROM _smrt_ai_usage WHERE call_id = $1',
+        callId,
+      ),
+    );
+    if (rows.length === 0) {
+      // Usage persistence may be off while transcripts are on (#4780): the
+      // transcript row then names the call's tenant.
+      try {
+        rows = getRows(
+          await db.query(
+            'SELECT DISTINCT tenant_id FROM _smrt_ai_transcripts WHERE call_id = $1',
+            callId,
+          ),
+        );
+      } catch {
+        rows = [];
+      }
+    }
+    if (rows.length === 0) {
+      throw new AiUsageOutcomeTargetError(
+        'AI_USAGE_OUTCOME_UNKNOWN_TARGET',
+        `recordAiUsageOutcome: no _smrt_ai_usage or _smrt_ai_transcripts row has call_id "${callId}"`,
+      );
+    }
+    for (const row of rows) tenants.add(nullableString(row.tenant_id));
+  }
   return tenants;
 }
 
 /**
- * Record an outcome label against one usage row, one run, or both.
+ * Record an outcome label against one usage row, one run, one call (#4780),
+ * or a combination.
  *
  * The target must exist in `_smrt_ai_usage` and the label inherits (or must
  * match) its tenant, so a label can never attach one tenant's verdict to
@@ -184,8 +221,11 @@ export async function recordAiUsageOutcome(
 ): Promise<AiUsageOutcomeRecord> {
   const usageId = optionalId(input.usageId, 'usageId');
   const runId = optionalId(input.runId, 'runId');
-  if (!usageId && !runId) {
-    throw new TypeError('recordAiUsageOutcome: usageId or runId is required');
+  const callId = optionalId(input.callId, 'callId');
+  if (!usageId && !runId && !callId) {
+    throw new TypeError(
+      'recordAiUsageOutcome: usageId, runId or callId is required',
+    );
   }
   const label = requireText(input.label, 'label').trim();
   const actor = requireText(input.actor, 'actor');
@@ -203,7 +243,7 @@ export async function recordAiUsageOutcome(
         ? input.evidence
         : JSON.stringify(input.evidence);
 
-  const tenants = await targetTenants(db, usageId, runId);
+  const tenants = await targetTenants(db, usageId, runId, callId);
   let tenantId: string | null;
   if (input.tenantId !== undefined) {
     tenantId = input.tenantId;
@@ -227,6 +267,7 @@ export async function recordAiUsageOutcome(
     id: crypto.randomUUID(),
     usageId,
     runId,
+    callId,
     label,
     score,
     evidence,
@@ -237,11 +278,12 @@ export async function recordAiUsageOutcome(
 
   await db.query(
     `INSERT INTO _smrt_ai_usage_outcomes
-      (id, usage_id, run_id, label, score, evidence, actor, tenant_id, created_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      (id, usage_id, run_id, call_id, label, score, evidence, actor, tenant_id, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
     record.id,
     record.usageId,
     record.runId,
+    record.callId,
     record.label,
     record.score,
     record.evidence,
@@ -257,6 +299,7 @@ export async function recordAiUsageOutcome(
 export interface AiUsageOutcomeListOptions {
   usageId?: string;
   runId?: string;
+  callId?: string;
   label?: string;
   /** `null` selects global (tenant-less) labels; omit for every tenant. */
   tenantId?: string | null;
@@ -278,6 +321,7 @@ export interface AiUsageOutcomeUsageRow {
   tierRequested: string | null;
   tierResolved: string | null;
   runId: string | null;
+  callId: string | null;
   totalTokens: number | null;
   estimatedCost: number | null;
   duration: number;
@@ -287,8 +331,8 @@ export interface AiUsageOutcomeUsageRow {
 /** An outcome label with the usage rows it judges. */
 export interface AiUsageOutcomeWithUsage extends AiUsageOutcomeRecord {
   /**
-   * The judged rows: the `usage_id` row and/or every row of `run_id`, oldest
-   * first. Empty once retention has pruned them; the label itself survives.
+   * The judged rows: the `usage_id` row and/or every row of `run_id` or
+   * `call_id`, oldest first. Empty once retention has pruned them; the label itself survives.
    */
   usage: AiUsageOutcomeUsageRow[];
 }
@@ -298,6 +342,7 @@ function hydrateOutcome(row: Record<string, unknown>): AiUsageOutcomeRecord {
     id: String(row.id),
     usageId: nullableString(row.usage_id),
     runId: nullableString(row.run_id),
+    callId: nullableString(row.call_id),
     label: String(row.label),
     score: nullableNumber(row.score),
     evidence: nullableString(row.evidence),
@@ -319,6 +364,7 @@ function hydrateUsageRow(row: Record<string, unknown>): AiUsageOutcomeUsageRow {
     tierRequested: nullableString(row.tier_requested),
     tierResolved: nullableString(row.tier_resolved),
     runId: nullableString(row.run_id),
+    callId: nullableString(row.call_id),
     totalTokens:
       row.total_tokens === null || row.total_tokens === undefined
         ? null
@@ -344,6 +390,7 @@ export async function listAiUsageOutcomes(
   };
   if (options.usageId) add('usage_id = ?', options.usageId);
   if (options.runId) add('run_id = ?', options.runId);
+  if (options.callId) add('call_id = ?', options.callId);
   if (options.label) add('label = ?', options.label);
   // Every supplied string filters, '' included: a falsy check would drop the
   // predicate and return every tenant's labels.
@@ -357,7 +404,7 @@ export async function listAiUsageOutcomes(
 
   const outcomes = getRows(
     await db.query(
-      `SELECT id, usage_id, run_id, label, score, evidence, actor, tenant_id, created_at
+      `SELECT id, usage_id, run_id, call_id, label, score, evidence, actor, tenant_id, created_at
          FROM _smrt_ai_usage_outcomes
         ${conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''}
         ORDER BY created_at DESC, id DESC
@@ -374,6 +421,9 @@ export async function listAiUsageOutcomes(
   const runIds = [
     ...new Set(outcomes.flatMap((o) => (o.runId ? [o.runId] : []))),
   ];
+  const callIds = [
+    ...new Set(outcomes.flatMap((o) => (o.callId ? [o.callId] : []))),
+  ];
   const usageParams: unknown[] = [];
   const placeholders = (values: string[]) =>
     values
@@ -385,12 +435,15 @@ export async function listAiUsageOutcomes(
   const predicates: string[] = [];
   if (usageIds.length > 0) predicates.push(`id IN (${placeholders(usageIds)})`);
   if (runIds.length > 0) predicates.push(`run_id IN (${placeholders(runIds)})`);
+  if (callIds.length > 0) {
+    predicates.push(`call_id IN (${placeholders(callIds)})`);
+  }
 
   const usageRows = getRows(
     await db.query(
       `SELECT id, provider, model, operation, class_name, tenant_id, prompt_key,
-              tier_requested, tier_resolved, run_id, total_tokens, estimated_cost,
-              duration, created_at
+              tier_requested, tier_resolved, run_id, call_id, total_tokens,
+              estimated_cost, duration, created_at
          FROM _smrt_ai_usage
         WHERE ${predicates.join(' OR ')}
         ORDER BY created_at ASC, id ASC`,
@@ -405,7 +458,8 @@ export async function listAiUsageOutcomes(
         // A label never joins usage of another tenant.
         row.tenantId === outcome.tenantId &&
         ((outcome.usageId !== null && row.id === outcome.usageId) ||
-          (outcome.runId !== null && row.runId === outcome.runId)),
+          (outcome.runId !== null && row.runId === outcome.runId) ||
+          (outcome.callId !== null && row.callId === outcome.callId)),
     ),
   }));
 }
@@ -634,6 +688,7 @@ export async function reportAiUsage(
     JSON.stringify([tenant, id]);
   const outcomesByUsage = new Map<string, string[]>();
   const outcomesByRun = new Map<string, string[]>();
+  const outcomesByCall = new Map<string, string[]>();
   {
     const conditions: string[] = [];
     const params: unknown[] = [];
@@ -644,7 +699,7 @@ export async function reportAiUsage(
     }
     const rows = getRows(
       await db.query(
-        `SELECT usage_id, run_id, label, tenant_id FROM _smrt_ai_usage_outcomes
+        `SELECT usage_id, run_id, call_id, label, tenant_id FROM _smrt_ai_usage_outcomes
           ${conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''}`,
         ...params,
       ),
@@ -654,12 +709,16 @@ export async function reportAiUsage(
       const tenant = nullableString(row.tenant_id);
       const usageId = nullableString(row.usage_id);
       const runId = nullableString(row.run_id);
-      // A label naming both judges the usage row; the run id is context.
+      const callId = nullableString(row.call_id);
+      // A label naming several targets judges the narrowest: the usage row,
+      // else the run, else the call (#4780); the others are context.
       const [map, key] = usageId
         ? [outcomesByUsage, targetKey(tenant, usageId)]
         : runId
           ? [outcomesByRun, targetKey(tenant, runId)]
-          : [null, ''];
+          : callId
+            ? [outcomesByCall, targetKey(tenant, callId)]
+            : [null, ''];
       if (map) map.set(key, [...(map.get(key) ?? []), label]);
     }
   }
@@ -685,7 +744,7 @@ export async function reportAiUsage(
     const page = getRows(
       await db.query(
         `SELECT id, provider, model, operation, class_name, tenant_id, prompt_key,
-                tier_requested, tier_resolved, run_id, prompt_tokens,
+                tier_requested, tier_resolved, run_id, call_id, prompt_tokens,
                 completion_tokens, total_tokens, estimated_cost, duration, tags
            FROM _smrt_ai_usage
           ${conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''}
@@ -737,6 +796,9 @@ export async function reportAiUsage(
       const runId = nullableString(row.run_id);
       const runKey = runId ? targetKey(rowTenant, runId) : null;
       const runLabels = runKey ? (outcomesByRun.get(runKey) ?? []) : [];
+      const callId = nullableString(row.call_id);
+      const callKey = callId ? targetKey(rowTenant, callId) : null;
+      const callLabels = callKey ? (outcomesByCall.get(callKey) ?? []) : [];
 
       for (const acc of [totals, bucket.acc]) {
         const stats = acc.stats;
@@ -761,6 +823,17 @@ export async function reportAiUsage(
           if (!runLabelsCounted.has(seenKey)) {
             runLabelsCounted.add(seenKey);
             for (const label of runLabels) countOutcome(stats.outcomes, label);
+          }
+        }
+        // A call label (#4780) counts the same way: once per bucket holding
+        // the call, once in the totals.
+        if (callKey && callLabels.length > 0) {
+          const seenKey = `${acc === totals ? '*' : bucketId}\u0001${callKey}`;
+          if (!runLabelsCounted.has(seenKey)) {
+            runLabelsCounted.add(seenKey);
+            for (const label of callLabels) {
+              countOutcome(stats.outcomes, label);
+            }
           }
         }
       }

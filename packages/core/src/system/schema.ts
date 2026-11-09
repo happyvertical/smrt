@@ -247,7 +247,8 @@ CREATE TABLE IF NOT EXISTS _smrt_ai_usage (
   prompt_key TEXT,
   tier_requested TEXT,
   tier_resolved TEXT,
-  run_id TEXT
+  run_id TEXT,
+  call_id TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_smrt_ai_usage_created
@@ -277,6 +278,12 @@ CREATE INDEX IF NOT EXISTS idx_smrt_ai_usage_prompt_key
 
 CREATE INDEX IF NOT EXISTS idx_smrt_ai_usage_run
   ON _smrt_ai_usage(run_id);
+
+-- AI call transcripts (#4780): call_id is lifted from the callId usage tag
+-- that core mints per call while transcripts are enabled. It links the usage
+-- row to its transcript and labels.
+CREATE INDEX IF NOT EXISTS idx_smrt_ai_usage_call
+  ON _smrt_ai_usage(call_id);
 `;
 
 /**
@@ -293,6 +300,7 @@ CREATE TABLE IF NOT EXISTS _smrt_ai_usage_outcomes (
   id TEXT PRIMARY KEY,
   usage_id TEXT,
   run_id TEXT,
+  call_id TEXT,
   label TEXT NOT NULL,
   score REAL,
   evidence TEXT,
@@ -309,6 +317,9 @@ CREATE INDEX IF NOT EXISTS idx_smrt_ai_usage_outcomes_run
 
 CREATE INDEX IF NOT EXISTS idx_smrt_ai_usage_outcomes_tenant_created
   ON _smrt_ai_usage_outcomes(tenant_id, created_at);
+
+CREATE INDEX IF NOT EXISTS idx_smrt_ai_usage_outcomes_call
+  ON _smrt_ai_usage_outcomes(call_id);
 `;
 
 /**
@@ -347,6 +358,58 @@ CREATE INDEX IF NOT EXISTS idx_smrt_ai_runs_fusion_created
 
 CREATE INDEX IF NOT EXISTS idx_smrt_ai_runs_tenant_created
   ON _smrt_ai_runs(tenant_id, created_at);
+`;
+
+/**
+ * Opt-in AI call transcripts (#4780).
+ *
+ * Readable content of one AI call: the request messages, the response and
+ * the tool events, each TEXT JSON after redaction, with a per-row byte cap
+ * (`truncated` is 1 after a head-and-tail cut, 0 otherwise: system tables
+ * store flags as INTEGER, like `_smrt_schema_migrations.is_reversible`, so
+ * one binding works on every engine; `bytes` is the stored size of the three
+ * payloads). Written only when the app enables
+ * `inference.transcripts`. `call_id` is the `callId` usage tag the matching
+ * `_smrt_ai_usage` rows carry in `call_id`, and `run_id` the fusion run;
+ * neither is a foreign key, so retention prunes transcripts (30 days by
+ * default) independently of usage rows and labels. `tenant_id` is TEXT like
+ * `_smrt_ai_usage.tenant_id`. Reads are tenant-scoped by
+ * `(tenant_id, created_at)`; `prompt_key` reads by `(prompt_key, created_at)`.
+ */
+export const CREATE_SMRT_AI_TRANSCRIPTS_TABLE = `
+CREATE TABLE IF NOT EXISTS _smrt_ai_transcripts (
+  id TEXT PRIMARY KEY,
+  call_id TEXT NOT NULL,
+  run_id TEXT,
+  tenant_id TEXT,
+  prompt_key TEXT,
+  template_hash TEXT,
+  provider TEXT,
+  model TEXT,
+  operation TEXT NOT NULL,
+  class_name TEXT,
+  request TEXT,
+  response TEXT,
+  tool_events TEXT,
+  truncated INTEGER NOT NULL DEFAULT 0,
+  bytes INTEGER NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_smrt_ai_transcripts_call
+  ON _smrt_ai_transcripts(call_id);
+
+CREATE INDEX IF NOT EXISTS idx_smrt_ai_transcripts_run
+  ON _smrt_ai_transcripts(run_id);
+
+CREATE INDEX IF NOT EXISTS idx_smrt_ai_transcripts_created
+  ON _smrt_ai_transcripts(created_at);
+
+CREATE INDEX IF NOT EXISTS idx_smrt_ai_transcripts_tenant_created
+  ON _smrt_ai_transcripts(tenant_id, created_at);
+
+CREATE INDEX IF NOT EXISTS idx_smrt_ai_transcripts_prompt_created
+  ON _smrt_ai_transcripts(prompt_key, created_at);
 `;
 
 /**
@@ -1265,6 +1328,7 @@ export const ALL_SYSTEM_TABLES = [
   CREATE_SMRT_AI_USAGE_TABLE,
   CREATE_SMRT_AI_USAGE_OUTCOMES_TABLE,
   CREATE_SMRT_AI_RUNS_TABLE,
+  CREATE_SMRT_AI_TRANSCRIPTS_TABLE,
   CREATE_SMRT_CHANGES_TABLE,
   CREATE_SMRT_SYNC_TOMBSTONES_TABLE,
 ];
@@ -1348,9 +1412,9 @@ export const RETIRED_SYSTEM_TABLES: readonly string[] = [
  * - `_smrt_ai_usage.tenant_id`: model usage writes tenant UUIDs, but the
  *   published external-agent usage API accepts any non-empty text tenant id,
  *   so converting it is a contract change tracked separately;
- * - `_smrt_ai_usage_outcomes.tenant_id` and `_smrt_ai_runs.tenant_id`: match
- *   `_smrt_ai_usage.tenant_id`, the column they are read beside, and convert
- *   with it.
+ * - `_smrt_ai_usage_outcomes.tenant_id`, `_smrt_ai_runs.tenant_id` and
+ *   `_smrt_ai_transcripts.tenant_id`: match `_smrt_ai_usage.tenant_id`, the
+ *   column they are read beside, and convert with it.
  */
 export const SYSTEM_TABLE_TENANT_UUID_COLUMNS: ReadonlyArray<{
   table: string;
@@ -1443,8 +1507,11 @@ function toPostgresTenantUuid(ddl: string): string {
  * `_smrt_ai_usage`, and the `_smrt_ai_usage_outcomes` label table (#4751).
  *
  * 1.14.0 adds the `_smrt_ai_runs` fusion run table (#4753).
+ *
+ * 1.15.0 adds the `_smrt_ai_transcripts` table and the `call_id` columns
+ * (with indexes) on `_smrt_ai_usage` and `_smrt_ai_usage_outcomes` (#4780).
  */
-export const SMRT_SCHEMA_VERSION = '1.14.0';
+export const SMRT_SCHEMA_VERSION = '1.15.0';
 
 /**
  * Canonical form of the system DDL that {@link SMRT_SCHEMA_DDL_CHECKSUMS} covers.
@@ -1495,4 +1562,6 @@ export const SMRT_SCHEMA_DDL_CHECKSUMS: Readonly<Record<string, string>> =
       '321c33d4616dd98575c80aa6bc766f65c4282c2341fc9566e50914a873e1065f',
     '1.14.0':
       '4dc0c5f170ebe54ce1322bd42e42e042d8893f2b4588809c19c77f17479c15b3',
+    '1.15.0':
+      '6a1a58c1b2f137d8a1e3378f667587074dd6d1049c8d2f119427ff1232c0323b',
   });

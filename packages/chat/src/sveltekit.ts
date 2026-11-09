@@ -629,6 +629,9 @@ async function configuredAssistantAI(
         tenantId: principal.tenantId,
         className: 'AssistantRoute',
         usage: { className: 'AssistantRoute', tenantId: principal.tenantId },
+        // smrt-chat stores the conversation itself: never a second copy in
+        // `_smrt_ai_transcripts` (#4780, owner decision).
+        transcript: false,
       }),
   );
   if (!resolved.options) throw notConfigured;
