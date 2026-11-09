@@ -90,8 +90,10 @@ Consumer guide: [docs/content/inference-settings.md](../../../docs/content/infer
   executor lookup from app rows only (read with no tenant, so a tenant row
   never defines a fusion), validated against config + app rows with every
   seat prompt key (`InferenceConfigError`, paths `fusion:<name>…`), app-only
-  seat aliases inlined like tier aliases; no app row defers to `base`, then
-  config. An app row shadows a config fusion of the same name.
+  seat aliases inlined like tier aliases; an app row that exists but cannot
+  be read fails `fusion-invalid` (never its value) rather than deferring (the
+  list shows it as the app winner with that issue); no app row defers to
+  `base`, then config. An app row shadows a config fusion of the same name.
 - **Panel** (`src/svelte`): built like `PromptSettingsPanel` (presentational,
   `svelte` optional peer, prune script, two-project Vitest, `svelte-check`,
   named `$props()` interfaces, types free of core). The default view is the

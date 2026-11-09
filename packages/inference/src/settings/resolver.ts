@@ -40,8 +40,10 @@ import { getInferenceOverrideGeneration } from './cache.js';
 import {
   buildInferenceOverrideLayers,
   type InferenceOverrideRows,
+  isUnreadableFusionRow,
   mergeSettingsConfigs,
   readInferenceOverrideRows,
+  unreadableFusionIssue,
 } from './layers.js';
 import type { InferenceTenantTargetPolicy } from './override-service.js';
 import { applyStoredTranscriptSettings } from './transcripts.js';
@@ -209,7 +211,13 @@ export function createInferenceOverrideResolver(
       // App scope only: the rows are read with no tenant, so a tenant row
       // (refused on write, but possible from a foreign writer) can never
       // define or redefine a fusion.
-      const app = (await buildInferenceOverrideLayers(await rowsFor(null))).app;
+      const rows = await rowsFor(null);
+      // A row that exists but cannot be read is a load error, never a
+      // silent fall-through to a config or registry fusion of that name.
+      if (isUnreadableFusionRow(rows.appRows.get(`fusion:${key}`))) {
+        throw new InferenceConfigError([unreadableFusionIssue(key)]);
+      }
+      const app = (await buildInferenceOverrideLayers(rows)).app;
       const stored = Object.hasOwn(app.fusions ?? {}, key)
         ? app.fusions?.[key]
         : undefined;

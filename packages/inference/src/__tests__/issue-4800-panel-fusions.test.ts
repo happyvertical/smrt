@@ -351,6 +351,52 @@ describe('app-row fusions reach the executor (#4800)', () => {
     expect(calls).toHaveLength(0);
   });
 
+  it('refuses an unreadable app row instead of running a config fusion of that name', async () => {
+    config.fusions = { review: SINGLE };
+    config.tiers = { ...config.tiers, best: { fusion: 'review' } };
+    // Not JSON: written past the model by a foreign writer.
+    const now = new Date().toISOString();
+    await db.query(
+      'INSERT INTO _smrt_inference_overrides (id, slug, binding, tenant_id, context, target, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      [
+        randomUUID(),
+        'fusion-review',
+        'fusion:review',
+        null,
+        APP_INFERENCE_SCOPE_ID,
+        '{not json',
+        now,
+        now,
+      ],
+    );
+    const { instance, calls } = await note();
+    let error: unknown;
+    try {
+      await instance.do('Review', { tier: 'best' });
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toBeInstanceOf(InferenceConfigError);
+    expect((error as InferenceConfigError).issues).toEqual([
+      expect.objectContaining({
+        path: 'fusion:review',
+        code: 'fusion-invalid',
+      }),
+    ]);
+    expect(calls).toHaveLength(0);
+    expect(await listAiRuns(db)).toHaveLength(0);
+    // The panel names the same winner and the same refusal.
+    expect(await admin.listInferenceFusions()).toEqual([
+      expect.objectContaining({
+        name: 'review',
+        source: 'app',
+        definition: {},
+        shadows: ['config'],
+        issues: [expect.objectContaining({ code: 'fusion-invalid' })],
+      }),
+    ]);
+  });
+
   it('never reads a fusion from a tenant row', async () => {
     const tenantId = randomUUID();
     config.fusions = { review: SINGLE };

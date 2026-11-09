@@ -61,8 +61,10 @@ import {
 import {
   type InferenceOverrideLayers,
   type InferenceSettingsConfig,
+  isUnreadableFusionRow,
   loadInferenceOverrideLayers,
   mergeSettingsConfigs,
+  unreadableFusionIssue,
 } from './layers.js';
 import {
   type InferenceOverrideAuthorizer,
@@ -674,6 +676,22 @@ export class InferenceSettingsService {
         `fusion:${name}`,
         merged,
       );
+    }
+    // An app row that cannot be read wins the name and is refused by the
+    // executor (#4800); its stored value is never echoed.
+    for (const [binding, row] of layers.appRows) {
+      if (!binding.startsWith('fusion:') || !isUnreadableFusionRow(row)) {
+        continue;
+      }
+      const name = binding.slice('fusion:'.length);
+      put(
+        { name, source: 'app', definition: {}, editable: true },
+        undefined,
+        binding,
+        merged,
+      );
+      const entry = out.get(name);
+      if (entry) entry.issues = [unreadableFusionIssue(name)];
     }
     return [...out.values()].sort((a, b) => a.name.localeCompare(b.name));
   }
