@@ -75,9 +75,15 @@ class FakeAdmin implements HostedGatewayAdmin {
       provider: 'litellm',
     };
   }
+  async updateVirtualKey(id: string): Promise<AIVirtualKey> {
+    return { id, provider: 'litellm' };
+  }
   async deleteVirtualKey(id: string): Promise<boolean> {
     this.deleted.push(id);
     return true;
+  }
+  async listProjects(): Promise<AIAdminProject[]> {
+    return [];
   }
 }
 
