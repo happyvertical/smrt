@@ -18,10 +18,18 @@ private files) live in `src/internal`; `src/testing` is test-only.
 
 The supervisor rendezvous lives in `src/rendezvous`: the instance record
 (`instance.json`), the control-protocol codec, the node:net transport, the
-typed failure codes and `createFileRendezvous`, plus an exported reference
-server (`startReferenceShell`, `serveControlChannel`) used as a test double.
+typed failure codes and `createFileRendezvous`, plus a reference server
+(`startReferenceShell`, `serveControlChannelForTests`) that is a test double:
+it lives in `src/reference` and ships only as the Node-only
+`@happyvertical/smrt-desktop/testing` subpath, never from the root (an explicit
+export list, no `export *`; `exports.test.ts` lists both sets). On Windows it
+refuses to start without `insecureForTests: true`.
 Clients are read-only: never write, rename or delete a record, socket, lease or
-lock, and never retry `failed(lease_held)`. Node cannot verify the control
+lock, and never retry `failed(lease_held)`. A connection that was accepted and
+then dropped or left unanswered is `unresponsive`, never a stale endpoint: do
+not spawn. The credential flow takes only the vetted `endpoint` handle of a
+`ready` result (none on Windows without a shell-supplied `vetPipe`), and the
+`acquire-credential` reply must echo the `instanceNonce`. Node cannot verify the control
 channel's peer, so the real check lives in the Rust shell; keep that stated.
 Control ops are extensible (`ControlOpSpec`, `createControlCodec`, handler
 registry); the credential contract adds its `acquire-credential` op there

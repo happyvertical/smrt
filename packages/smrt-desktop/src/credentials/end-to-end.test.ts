@@ -57,7 +57,6 @@ import {
   type CredentialControlRequest,
   type CredentialControlResponse,
   createControlChannelSend,
-  createCredentialReferenceRegistry,
   credentialControlCodec,
 } from './control-channel.js';
 import {
@@ -66,6 +65,7 @@ import {
   createMemorySecretItemStore,
 } from './custody.js';
 import { createControlChannelCredentialProvider } from './provider.js';
+import { createCredentialReferenceRegistry } from './reference.js';
 import type { SlotRecordV1 } from './slot-record.js';
 
 /**

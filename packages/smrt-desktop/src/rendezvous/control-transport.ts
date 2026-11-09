@@ -52,7 +52,7 @@ function endpointAddress(endpoint: ControlEndpoint): string {
   return endpoint.kind === 'unix' ? endpoint.path : endpoint.name;
 }
 
-/** Exported for the platform check; a unix endpoint cannot exist on Windows. */
+/** A unix endpoint cannot exist on Windows, nor a pipe elsewhere. */
 function assertEndpointPlatform(endpoint: ControlEndpoint): void {
   const windows = process.platform === 'win32';
   if ((endpoint.kind === 'pipe') !== windows) {
@@ -216,7 +216,7 @@ export type ControlHandler<
 
 /**
  * A registry maps each op to its handler; its `handler` plugs into
- * `serveControlChannel`. Ops are open: a contract adds its own `register`
+ * `serveControlChannelForTests`. Ops are open: a contract adds its own `register`
  * call. An op without a handler is answered `unsupported_op`.
  */
 export interface ControlHandlerRegistry<
@@ -256,7 +256,7 @@ export function createControlHandlerRegistry<
   return registry;
 }
 
-export interface ServeControlChannelOptions<
+export interface ServeControlChannelForTestsOptions<
   Req extends { readonly op: string } = ControlRequest,
   Res extends { readonly ok: boolean } = ControlResponse,
 > {
@@ -267,6 +267,16 @@ export interface ServeControlChannelOptions<
   readonly maxConnections?: number;
   /** Test seam: the effective uid the private directory must belong to. */
   readonly currentUid?: number;
+  /**
+   * Required (as `true`) to listen on Windows. There this server only
+   * listens: no pipe DACL, no first-instance flag, no peer SID check, because
+   * Node can do none of them, so any local process could connect to it. That
+   * is acceptable for a test double and never for a shell. Without it the
+   * server refuses to start on `win32` (`untrusted_endpoint`).
+   */
+  readonly insecureForTests?: true;
+  /** Test seam for the platform check. Defaults to `process.platform`. */
+  readonly platform?: NodeJS.Platform;
 }
 
 export interface ControlServer {
@@ -280,9 +290,15 @@ function errorResponse(code: string): ControlErrorResponse {
 }
 
 /**
- * Reference control-channel server (the production server is Rust; this one
- * backs tests and any Node-based shell). It listens on `endpoint`, serves one
- * request per connection and closes.
+ * TEST DOUBLE for the control-channel server: not a production server and not
+ * a security boundary. The production server is the Rust shell. This one
+ * exists so launchers and contract tests can talk to something real over a
+ * unix socket, and it ships only in `@happyvertical/smrt-desktop/testing`.
+ * It listens on `endpoint`, serves one request per connection and closes.
+ *
+ * Windows: it refuses to start (`untrusted_endpoint`) unless the caller passes
+ * `insecureForTests: true`, because there it would only listen: no ACL, no
+ * peer SID check, no first-instance guarantee.
  *
  * Unix: the socket's parent directory must already be a real directory owned
  * by the user with mode 0700 (`untrusted_endpoint` otherwise), the path must
@@ -293,18 +309,24 @@ function errorResponse(code: string): ControlErrorResponse {
  * Rejects with `invalid_endpoint`, `untrusted_endpoint` or
  * `control_server_failed`.
  */
-export async function serveControlChannel<
+export async function serveControlChannelForTests<
   Req extends { readonly op: string } = ControlRequest,
   Res extends { readonly ok: boolean } = ControlResponse,
 >(
   endpoint: ControlEndpoint,
   handler: ControlHandler<Req, Res>,
-  options: ServeControlChannelOptions<Req, Res> = {},
+  options: ServeControlChannelForTestsOptions<Req, Res> = {},
 ): Promise<ControlServer> {
   const codec = (options.codec ?? coreControlCodec) as unknown as ControlCodec<
     Req,
     Res
   >;
+  if (
+    (options.platform ?? process.platform) === 'win32' &&
+    options.insecureForTests !== true
+  ) {
+    throw new DesktopContractError('untrusted_endpoint');
+  }
   assertEndpointPlatform(endpoint);
   if (endpoint.kind === 'unix') {
     try {

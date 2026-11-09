@@ -5,10 +5,10 @@ description: "Versioned sidecar manifest, installed-product, supervisor rendezvo
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-09T05:14:52Z"
+  at: "2026-11-09T05:19:23Z"
 audience: "internal"
 evidence_level: "manifest-described"
-source_revision: "sha256:5d689ef088d17c2821c6f103c977bba70d65215fc6bca948948c930f258dc526"
+source_revision: "sha256:c9e80b7717edeace920811de3478252eec3224136d4149eadc1a05431b19e667"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/smrt-desktop/package.json"
@@ -44,4 +44,5 @@ sources:
 - `.`
 - `./bundler`
 - `./package.json`
+- `./testing`
 - `./webview`
