@@ -644,6 +644,22 @@ smrt app token --scopes notes.read --expires 7d      # fixed lifetime
 smrt app token list | revoke <id> | revoke-holder <holder>
 ```
 
+### Origin file
+
+When the desktop supervisor starts the app it sets `ORIGIN=http://127.0.0.1:<port>`.
+If `ORIGIN` is exactly that form, `createSmrtSvelteKitRuntime()` writes
+`origin.json` (`{ version: 1, origin, pid, startedAt }`, mode 0600, nothing
+secret) to the application state root once local startup succeeds, and removes
+it when the process exits or receives SIGTERM or SIGINT (best effort, so a crash
+leaves a stale file). It lives in the state root, not the data root: it is
+per location and a backup or copy of the data root does not carry it. Any other
+`ORIGIN` writes nothing. `readOriginFile(stateRoot)` returns the record or
+`null` (absent, unreadable, not owner-private, malformed, not an exact loopback
+origin, or its `pid` is gone) and never throws; a reader must still probe the
+origin. `writeOriginFile`, `removeOriginFile` and `parseLoopbackOrigin` are
+exported from the root. The assistant-plugin launcher
+(`@happyvertical/smrt-desktop/launcher`) is the reader.
+
 ### Local desktop MCP credentials
 
 A desktop product can mount this opt-in SvelteKit route in

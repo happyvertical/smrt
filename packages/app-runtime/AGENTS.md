@@ -129,6 +129,12 @@ Application infrastructure composition for the validated runtime profiles in
   and mode checks; writes are atomic. The state root must persist with the
   data volume (Linux containers: `XDG_STATE_HOME` on that volume, never `HOME`
   or `/tmp`); the refusal names it. Decision and limits: README.
+- `origin.json` (`origin-file.ts`, #4729): the local web process records its
+  exact `http://127.0.0.1:<port>` (from `ORIGIN`, set by the desktop
+  supervisor; anything else writes nothing) in the state root, per location and
+  not in backups, removes it on exit/SIGTERM/SIGINT. `readOriginFile` is the
+  only reader contract: `null` unless private, exact and the pid is alive; the
+  reader still probes. It holds no secret; keep it that way.
 - Background jobs and application-defined paid capabilities are default-off.
 - The embedded runner reuses `TaskRunner`; it is not a second job contract.
 

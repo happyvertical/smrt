@@ -3,7 +3,8 @@
 The versioned sidecar manifest and the runtime bundler for s-m-r-t desktop
 apps. The bundler (`smrt desktop bundle`) writes the sidecar manifest; the Tauri
 wrapper (`wrapper/`) reads it before launching the packaged executable. The
-package has no runtime dependencies and uses only Node built-ins.
+root and bundler use only Node built-ins; the optional `./launcher` entry needs
+`@happyvertical/smrt-app-runtime` (an optional peer dependency).
 
 Owner sign-in is app-runtime's loopback onboarding URL and `claimOwner()`, and
 local MCP credentials are app-runtime's token store (`openLocalMcpTokenStore`);
@@ -144,6 +145,50 @@ Each artifact carries `version: 1`. A parser accepts a declared set of
 versions; an unknown one is `unsupported_contract`. An incompatible change is a
 new integer, never a silent reinterpretation. Optional additions within v1 are
 not made: unknown fields are errors, so every addition is a version decision.
+## Plugin launcher
+
+`@happyvertical/smrt-desktop/launcher` (Node only) is the command an assistant
+plugin runs to talk to the app's local MCP endpoint. `runLauncher(options)`
+resolves with an exit code; set `process.exitCode` from it.
+
+1. Reads the running app's `origin.json` from its state root with app-runtime's
+   `readOriginFile` and requires exactly `http://127.0.0.1:<port>` (see the
+   app-runtime README, "Origin file"). The file is written when the supervisor's
+   `ORIGIN` is set, removed on a clean exit, and ignored when its `pid` is gone.
+2. Probes `GET <origin><healthRoute>` over a literal `127.0.0.1` connection of
+   its own (`node:http`, not `fetch`: an environment proxy never sees it; no
+   redirects; 2xx required; 5 s).
+3. Only then takes a token with app-runtime's
+   `openLocalMcpTokenStore(...).issue({ holder: 'plugin-launcher:<productId>', scopes })`.
+   A holder has one active token, so each launch rotates the previous one and
+   two launchers of one product at the same time revoke each other.
+4. Spawns the app's bundled Node (an absolute path, no `PATH`, no shell, inside
+   `resourceRoot` after `realpath`) running the bundled `smrt-mcp-bridge` with
+   `--env-prefix --mcp-path [--name --version]`, working directory
+   `resourceRoot`, and an environment of exactly `<P>_SERVER_URL`, `<P>_TOKEN`
+   and `<P>_CLI_CONFIG` (the null device). The token is never in argv, files or
+   logs.
+5. Forwards stdin to the bridge and its stdout and stderr back, with the token
+   (even split across chunks) replaced by `[REDACTED]`. When stdin closes the
+   bridge gets a grace period, then SIGTERM, then SIGKILL. The launcher exits
+   with the bridge's status.
+
+A failure writes one fixed line to stderr, `smrt-desktop-launcher: <code>: <text>`,
+with no path, origin, token or provider message, and one exit code:
+
+| Code | Exit | Meaning |
+| --- | --- | --- |
+| `origin_unavailable` | 10 | no origin file, or stale, or not exact loopback |
+| `unhealthy` | 11 | the health route did not answer 2xx |
+| `token_unavailable` | 12 | the token store refused or failed |
+| `bridge_start_failed` | 13 | the bundled Node could not be started |
+| `bridge_exited` | 14 | the bridge exited non-zero by itself |
+| `invalid_options` | 15 | a malformed option, or a binary outside `resourceRoot` |
+
+A signal ends the bridge and exits `128 + signal`. `appId`, `dataDirectory` and
+`sourceRoot` must be the values the app itself runs with (they select the state
+root and the token store). `issueToken` is a test seam, not for production use.
+
 ## Runtime bundler
 
 `smrt desktop bundle` (the Node-only `@happyvertical/smrt-desktop/bundler`

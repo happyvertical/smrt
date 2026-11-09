@@ -45,6 +45,7 @@ import {
   ONBOARDING_HANDOFF_FILES,
   projectRuntimeDiagnostics,
   readActiveWriterLease,
+  readOriginFile,
   resolveApplicationId,
   resolveApplicationStateRoot,
   runtimeConfigurationFingerprint,
@@ -1333,6 +1334,28 @@ describe('local SvelteKit runtime', () => {
       expect(readActiveWriterLease(stateRootOf(runtime, directories))).toBe(
         null,
       );
+    });
+
+    it('records the supervisor loopback origin in the state root, only when ORIGIN is exact', async () => {
+      const origin = 'http://127.0.0.1:43112';
+      const { runtime, ...directories } = await localRuntime('origin-file', {
+        env: { NODE_ENV: 'development', ORIGIN: origin },
+      });
+      await runtime.init();
+      expect(await readOriginFile(stateRootOf(runtime, directories))).toEqual({
+        version: 1,
+        origin,
+        pid: process.pid,
+        startedAt: expect.any(String),
+      });
+
+      const other = await localRuntime('origin-file-none', {
+        env: { NODE_ENV: 'development', ORIGIN: 'http://localhost:43112' },
+      });
+      await other.runtime.init();
+      expect(
+        await readOriginFile(stateRootOf(other.runtime, other)),
+      ).toBeNull();
     });
 
     it('fails closed during a live operation unless it presents that operation instance', async () => {

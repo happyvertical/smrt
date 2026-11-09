@@ -44,7 +44,18 @@ secret, a real updater key, a gpg-verified Node pin and a non-placeholder
 product identity. Never add a default, fallback or generated value for any of
 them; the owner inputs still missing are listed in `wrapper/README.md`.
 
-Keep the package free of runtime dependencies and use Node built-ins only.
+The plugin launcher lives in `src/launcher` behind the Node-only `./launcher`
+entry (the root must never import it; `exports.test.ts` enforces that). It is a
+thin client of app-runtime: the `origin.json` reader (`readOriginFile`) and
+`openLocalMcpTokenStore(...).issue({ holder })`; do not add a provider
+interface, control channel, credential store or helper around either. Failure
+classes and exit codes (`LAUNCHER_FAILURES`) are fixed text that never carries
+a path, origin, token or provider message; the probe is `node:http` to literal
+127.0.0.1 and must never become `fetch`. The README "Plugin launcher" section
+lists the codes: keep it in step with the table.
+
+Keep the root and bundler free of runtime dependencies (Node built-ins only);
+`@happyvertical/smrt-app-runtime` is an optional peer used only by `./launcher`.
 
 From this directory, run `npm run build`, `npm run typecheck`, and
 `smrt test src`.

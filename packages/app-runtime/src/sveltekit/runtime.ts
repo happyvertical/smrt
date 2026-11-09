@@ -84,6 +84,7 @@ import {
   validateApplicationId,
 } from '../index.js';
 import { refuseWindowsDatabaseAcquisition } from '../local-custody.js';
+import { publishLocalOrigin } from '../origin-file.js';
 import {
   deepFrozenPlainCopy,
   ownValue,
@@ -653,6 +654,14 @@ export function composeSmrtSvelteKitRuntime(
             // Presentation is best effort; the invitation stays claimable.
           }
         }
+        // The desktop plugin launcher finds this instance through it.
+        publishLocalOrigin(env, () =>
+          prepareApplicationStateRoot({
+            appId: id,
+            dataDirectory,
+            sourceRoot,
+          }),
+        );
         return initialized;
       })
       .catch((error: unknown) => {
