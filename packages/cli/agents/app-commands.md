@@ -101,7 +101,7 @@ Agent docs (#4878): `install` runs `docs:agents`, `dev` refreshes a missing or s
   and `token` (its own).
 - **`installation`** (`installation.ts`, local only): declares a restored move,
   an independent copy, or a recovered seed (#4704; decision in the app-runtime
-  README). `status` is read-only; the rest take the operation lock and refuse
+  README). `status` is read-only and exits 0 only for `in-custody` or `unrecorded` (1 otherwise, JSON still printed); the rest take the operation lock and refuse
   while a writer is active. Output is secret-free JSON with explicit identity
   and token effects.
 - **`restore-latest`** (`restore-latest.ts`, local only, #4805): under

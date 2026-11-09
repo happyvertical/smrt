@@ -873,7 +873,20 @@ export async function recoverInstallationSeed(
         'The backup seed does not belong to this installation; nothing was changed.',
       );
     }
-    writePrivateFileAtomicSync(seedPath(paths.secrets), backup);
+    const target = seedPath(paths.secrets);
+    // A mismatched seed may be the only copy of another installation's key:
+    // keep it beside the original (private, never overwritten) before the
+    // recovered one replaces it.
+    let replaced: string | null = null;
+    try {
+      replaced = readSeed(target, true);
+    } catch {
+      replaced = null;
+    }
+    if (replaced !== null && replaced !== backup) {
+      writePrivateFileAtomicSync(`${target}.replaced-${Date.now()}`, replaced);
+    }
+    writePrivateFileAtomicSync(target, backup);
     return outcome(
       'recover-seed',
       reportBefore,

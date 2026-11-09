@@ -28,6 +28,7 @@ import {
 
 let stateRoot: string;
 let clock: number;
+let wallClock: number;
 let pending: Array<{ callback: () => void; at: number }>;
 let calls: Array<{ path: string; body?: Record<string, unknown> }>;
 let replies: Array<VaultRelayResponse | Error>;
@@ -63,6 +64,7 @@ function keeper(states: VaultLeaseState[] = []) {
     stateRoot,
     accountId: 'acct-a',
     monotonicNow: () => clock,
+    wallNow: () => wallClock,
     timers,
     onChange: (state) => states.push(state),
   });
@@ -78,6 +80,7 @@ async function runTimers(): Promise<void> {
 beforeEach(() => {
   stateRoot = mkdtempSync(join(realpathSync(tmpdir()), 'smrt-vault-lease-'));
   clock = 1_000;
+  wallClock = 1_700_000_000_000;
   pending = [];
   calls = [];
   replies = [];
@@ -88,6 +91,27 @@ afterEach(() => {
 });
 
 describe('VaultLeaseKeeper', () => {
+  it('loses the lease when the wall clock passes the TTL while the monotonic clock is frozen (#4826)', async () => {
+    replies.push(granted(7));
+    const lease = keeper();
+    expect(await lease.start()).toBe('held');
+    // OS sleep: monotonic time stands still, wall time moves on.
+    wallClock += 30_000;
+    expect(lease.state).toBe('lost');
+    expect(lease.fencingToken).toBeNull();
+    expect(() => lease.assertWritable()).toThrow();
+  });
+
+  it('does not extend the lease when the wall clock moves backwards (#4826)', async () => {
+    replies.push(granted(7));
+    const lease = keeper();
+    await lease.start();
+    wallClock -= 3_600_000;
+    expect(lease.state).toBe('held');
+    clock += 30_000;
+    expect(lease.state).toBe('lost');
+  });
+
   it('acquires from the local base and marks local writes pending', async () => {
     writeVaultSyncRecord(stateRoot, {
       accountId: 'acct-a',

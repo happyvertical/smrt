@@ -10,6 +10,7 @@ import {
   chmod,
   mkdir,
   mkdtemp,
+  readdir,
   readFile,
   realpath,
   rm,
@@ -720,6 +721,33 @@ describe('installation custody', () => {
       await expect(
         recoverInstallationSeed({ ...options, seedFile: wrong }),
       ).rejects.toThrow();
+    });
+
+    it('keeps a mismatched seed beside the file before replacing it (#4822)', async () => {
+      const { at, root } = await machine('keep-replaced');
+      const options = await at('data');
+      const unrelated = await at('unrelated');
+      await stop(await boot(options));
+      await stop(await boot(unrelated));
+      const original = await readFile(seedOf(options), 'utf8');
+      const backup = join(root, 'seed-backup');
+      await writeFile(backup, original, { mode: 0o600 });
+      const stranger = await readFile(seedOf(unrelated), 'utf8');
+      await writeFile(seedOf(options), stranger, { mode: 0o600 });
+      expect(await inspectInstallationCustody(options)).toMatchObject({
+        status: 'seed-mismatch',
+      });
+
+      await recoverInstallationSeed({ ...options, seedFile: backup });
+
+      expect(await readFile(seedOf(options), 'utf8')).toBe(original);
+      const kept = (await readdir(dirname(seedOf(options)))).filter((name) =>
+        name.startsWith('application.secret.replaced-'),
+      );
+      expect(kept).toHaveLength(1);
+      const keptPath = join(dirname(seedOf(options)), kept[0]);
+      expect(await readFile(keptPath, 'utf8')).toBe(stranger);
+      expect((await stat(keptPath)).mode & 0o777).toBe(0o600);
     });
 
     it('needs explicit consent to accept a seed no record can verify', async () => {

@@ -383,6 +383,36 @@ describe('cloud link protocol', () => {
   });
 });
 
+describe('completion re-checks the issuing authority (#4827)', () => {
+  it.each([
+    ['shared', { isTenantOwner: false }, 'not_tenant_owner'],
+    ['per-user', { isTenantOwner: false }, 'not_tenant_owner'],
+    ['per-user', { tenantMemberCount: 2 }, 'tenant_not_sole_member'],
+  ] as const)('refuses a %s completion after %j changed', async (target, change, code) => {
+    const { install, who, service, challenge, signature } = await link(target);
+    await expect(
+      service.completeChallenge(
+        { ...who, ...change },
+        {
+          challengeId: challenge.challengeId,
+          signature,
+          localIdentities: install.identities,
+        },
+      ),
+    ).rejects.toMatchObject({ code });
+  });
+
+  it('still lets the unchanged owner complete', async () => {
+    const { install, who, service, challenge, signature } = await link();
+    const record = await service.completeChallenge(who, {
+      challengeId: challenge.challengeId,
+      signature,
+      localIdentities: install.identities,
+    });
+    expect(record.accountId).toBe(who.accountId);
+  });
+});
+
 describe('local challenge checks', () => {
   async function issued(patch: Partial<CloudLinkPrincipal> = {}) {
     const install = installation();

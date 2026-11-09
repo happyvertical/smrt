@@ -839,6 +839,24 @@ export function createCloudLinkService(
           'The link challenge was issued to another session.',
         );
       }
+      // Re-check the authority `issueChallenge` required: a principal demoted
+      // (or a tenant that gained members) since issue must not finish within
+      // the challenge lifetime. The target is only known from the challenge.
+      if (principal.isTenantOwner !== true) {
+        fail(
+          'not_tenant_owner',
+          'Only an owner of the hosted tenant can link an installation to it.',
+        );
+      }
+      if (
+        challenge.target === 'per-user' &&
+        principal.tenantMemberCount !== 1
+      ) {
+        fail(
+          'tenant_not_sole_member',
+          'A per-user cloud database must belong to a tenant with exactly one member.',
+        );
+      }
       if (now().getTime() >= Date.parse(challenge.expiresAt)) {
         fail('challenge_expired', 'The link challenge has expired.');
       }

@@ -855,11 +855,16 @@ function applyHead(
   const next: VaultDeviceRegistry = { ...registry };
   if (head.sequence > local.sequence && containsState(head, local)) {
     next.head = head;
-    next.pendingRevocations = registry.pendingRevocations.filter(
-      (entry) =>
-        !head.revokedDevices.some((device) => sameDevice(device, entry)) &&
-        head.devices.some((device) => sameDevice(device, entry)),
-    );
+    // A head with a new authority record means another device rotated the
+    // secret, so an earlier proof no longer covers the current secret.
+    const rotated = head.authorityRecordDigest !== local.authorityRecordDigest;
+    next.pendingRevocations = registry.pendingRevocations
+      .filter(
+        (entry) =>
+          !head.revokedDevices.some((device) => sameDevice(device, entry)) &&
+          head.devices.some((device) => sameDevice(device, entry)),
+      )
+      .map((entry) => (rotated ? { ...entry, provenAt: null } : entry));
     if (registry.conflict && containsState(head, registry.conflict)) {
       next.conflict = null;
     }

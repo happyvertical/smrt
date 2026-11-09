@@ -111,8 +111,12 @@ export async function runInstallationOperation(
   };
 
   if (subcommand === 'status') {
-    printJson(context, await inspectInstallationCustody(options));
-    return 0;
+    const report = await inspectInstallationCustody(options);
+    printJson(context, report);
+    // Scripts gate on the exit code: only a healthy state is zero.
+    return report.status === 'in-custody' || report.status === 'unrecorded'
+      ? 0
+      : 1;
   }
   return withOperationLock(
     preparedStateRoot(context),

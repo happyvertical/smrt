@@ -1057,6 +1057,116 @@ describe('self-renewing local MCP tokens (#4874)', () => {
     expect(await expiryOf(second.id)).toBe(slidBefore);
   });
 
+  it('never slides a desktop slot credential (#4874)', async () => {
+    const { runtime, local, owner, store, advance, expiryOf } =
+      await storeFor('desktop-fixed');
+    const put = await store.manageDesktopCredential?.(
+      {
+        userId: owner.userId,
+        tenantId: owner.tenantId,
+        permissions: [READ],
+      },
+      {
+        id: randomUUID(),
+        action: 'put',
+        scopes: [READ],
+        expiresInSeconds: 24 * 60 * 60,
+      },
+    );
+    if (!put || put === 'slot_unavailable') throw new Error('slot not minted');
+    expect(put.renewable).toBe(false);
+    const expiry = await expiryOf(put.id);
+    advance(2 * HOUR);
+    expect(await runtime.verifyLocalMcpToken(put.token)).not.toBeNull();
+    advance(2 * HOUR);
+    expect(await runtime.verifyLocalMcpToken(put.token)).not.toBeNull();
+    expect(await expiryOf(put.id)).toBe(expiry);
+    expect(
+      (await tokenRows(local.db)).find((row) => row.id === put.id)
+        ?.last_used_at,
+    ).toBeNull();
+  });
+
+  describe('the slide write re-checks the row itself (#4874)', () => {
+    /**
+     * Run `interfere` after verify has read and accepted the row but before
+     * the slide UPDATE reaches the database.
+     */
+    async function raceSlide(
+      label: string,
+      interfere: (
+        local: Awaited<ReturnType<typeof storeFor>>['local'],
+        id: string,
+        clock: Date,
+      ) => Promise<void>,
+    ) {
+      const fixture = await storeFor(label);
+      const { runtime, local, store, advance, clock, expiryOf } = fixture;
+      const issued = await store.issue({ scopes: [READ] });
+      advance(2 * HOUR);
+      const original = local.db.query.bind(local.db);
+      let raced = false;
+      const spy = vi
+        .spyOn(local.db, 'query')
+        .mockImplementation(async (sql: string, ...params: unknown[]) => {
+          if (!raced && /SET expires_at = \?, last_used_at/u.test(sql)) {
+            raced = true;
+            await interfere(local, issued.id, clock.now);
+          }
+          return original(sql, ...params);
+        });
+      try {
+        await runtime.verifyLocalMcpToken(issued.token);
+      } finally {
+        spy.mockRestore();
+      }
+      expect(raced).toBe(true);
+      const row = (await tokenRows(local.db)).find(
+        (entry) => entry.id === issued.id,
+      );
+      return { fixture, issued, row, expiryOf };
+    }
+
+    it('does not slide a token revoked after verify read it', async () => {
+      const expected = new Date(Date.parse(T0) + WINDOW).toISOString();
+      const { fixture, issued, row } = await raceSlide(
+        'race-revoked',
+        async (local, id, at) => {
+          await local.db.query(
+            `UPDATE ${LOCAL_MCP_TOKEN_TABLE} SET revoked_at = ? WHERE id = ?`,
+            at.toISOString(),
+            id,
+          );
+        },
+      );
+      expect(row?.expires_at).toBe(expected);
+      expect(row?.last_used_at).toBeNull();
+      expect(
+        await fixture.runtime.verifyLocalMcpToken(issued.token),
+      ).toBeNull();
+    });
+
+    it('does not revive a token that expired after verify read it', async () => {
+      let lapsed = '';
+      const { fixture, issued, row } = await raceSlide(
+        'race-expired',
+        async (local, id, at) => {
+          lapsed = new Date(at.getTime() - 1000).toISOString();
+          await local.db.query(
+            `UPDATE ${LOCAL_MCP_TOKEN_TABLE} SET expires_at = ? WHERE id = ?`,
+            lapsed,
+            id,
+          );
+        },
+      );
+      expect(row?.expires_at).toBe(lapsed);
+      expect(row?.last_used_at).toBeNull();
+      expect(
+        await fixture.runtime.verifyLocalMcpToken(issued.token),
+      ).toBeNull();
+    });
+  });
+
   it('never slides a fixed-lifetime token', async () => {
     const { runtime, store, advance, expiryOf } = await storeFor('fixed');
     const issued = await store.issue({

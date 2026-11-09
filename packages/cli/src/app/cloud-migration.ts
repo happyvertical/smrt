@@ -275,7 +275,14 @@ function rewriteJson(
     const out: Record<string, unknown> = {};
     for (const [key, item] of Object.entries(value)) {
       const rewrittenKey = rewriteString(key, rules, report, false);
-      out[rewrittenKey] = rewriteJson(item, rules, report, depth + 1);
+      // defineProperty: assigning `__proto__` would set the prototype and
+      // silently drop the data.
+      Object.defineProperty(out, rewrittenKey, {
+        value: rewriteJson(item, rules, report, depth + 1),
+        enumerable: true,
+        writable: true,
+        configurable: true,
+      });
     }
     return out;
   }

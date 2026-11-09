@@ -1558,6 +1558,15 @@ export class VaultRelay {
     for (const record of above) {
       await this.removeSnapshot(record, handle, record.status);
     }
+    if (above.length > 0) {
+      // The rows are gone whether or not the mark moves below: audit them
+      // before `high_water_changed` can end the call.
+      this.logger.warn('high_water_reset_removed', {
+        account: handle,
+        removed: above.length,
+        removedSequences: above.map((record) => record.sequence).join(','),
+      });
+    }
     if (!(await this.store.resetHighWater(accountId, highWaterSequence))) {
       // A snapshot appeared above the new mark, or the mark moved: nothing
       // was reset, so the operator can look again.

@@ -13,6 +13,7 @@
 import {
   closeSync,
   fstatSync,
+  fsyncSync,
   lstatSync,
   mkdirSync,
   openSync,
@@ -301,6 +302,8 @@ export async function extractDataRootArchive(
           offset += writeSync(fd, bytes, offset, bytes.length - offset);
         }
       });
+      // Durable before the restore is reported complete.
+      fsyncSync(fd);
     } finally {
       closeSync(fd);
     }

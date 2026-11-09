@@ -204,6 +204,13 @@ export interface VaultLeaseKeeperOptions {
   accountId: string;
   /** Monotonic milliseconds; defaults to `performance.now()`. */
   monotonicNow?: () => number;
+  /**
+   * Wall-clock milliseconds; defaults to `Date.now()`. The monotonic clock
+   * pauses while the OS sleeps, so a suspended laptop would otherwise keep
+   * a lease the relay has already expired. The lease is lost when either
+   * clock passes its deadline.
+   */
+  wallNow?: () => number;
   timers?: VaultLeaseTimers;
   /** Renew after this fraction of the granted lifetime (default 1/3). */
   renewFraction?: number;
@@ -230,20 +237,28 @@ const defaultTimers: VaultLeaseTimers = {
 export class VaultLeaseKeeper {
   private readonly options: VaultLeaseKeeperOptions;
   private readonly now: () => number;
+  private readonly wallNow: () => number;
   private readonly timers: VaultLeaseTimers;
   private currentState: VaultLeaseState = 'idle';
   private token: number | null = null;
   private deadline = 0;
+  private wallDeadline = 0;
   private timer: unknown = null;
 
   constructor(options: VaultLeaseKeeperOptions) {
     this.options = options;
     this.now = options.monotonicNow ?? (() => performance.now());
+    this.wallNow = options.wallNow ?? (() => Date.now());
     this.timers = options.timers ?? defaultTimers;
   }
 
+  /** True once either clock has passed the lease deadline. */
+  private pastDeadline(): boolean {
+    return this.now() >= this.deadline || this.wallNow() >= this.wallDeadline;
+  }
+
   get state(): VaultLeaseState {
-    if (this.currentState === 'held' && this.now() >= this.deadline) {
+    if (this.currentState === 'held' && this.pastDeadline()) {
       this.transition('lost', new VaultLeaseError('vault_lease_lost'));
     }
     return this.currentState;
@@ -275,10 +290,15 @@ export class VaultLeaseKeeper {
     this.options.onChange?.(state, error);
   }
 
-  private accept(sentAt: number, granted: VaultLeaseGrant): void {
+  private accept(
+    sentAt: number,
+    wallSentAt: number,
+    granted: VaultLeaseGrant,
+  ): void {
     const margin = this.options.safetyMarginMs ?? 5_000;
     this.token = granted.fencingToken;
     this.deadline = sentAt + granted.ttlMs - margin;
+    this.wallDeadline = wallSentAt + granted.ttlMs - margin;
     this.transition('held');
     const fraction = this.options.renewFraction ?? 1 / 3;
     this.schedule(Math.max(1_000, Math.floor(granted.ttlMs * fraction)));
@@ -326,6 +346,7 @@ export class VaultLeaseKeeper {
   async start(): Promise<VaultLeaseState> {
     const sync = vaultSyncFor(this.options.stateRoot, this.options.accountId);
     const sentAt = this.now();
+    const wallSentAt = this.wallNow();
     let granted: VaultLeaseGrant;
     try {
       granted = await this.options.client.acquire(sync.baseSequence);
@@ -352,7 +373,7 @@ export class VaultLeaseKeeper {
         .catch(() => undefined);
       throw error;
     }
-    this.accept(sentAt, granted);
+    this.accept(sentAt, wallSentAt, granted);
     return this.currentState;
   }
 
@@ -362,6 +383,7 @@ export class VaultLeaseKeeper {
       return this.currentState;
     }
     const sentAt = this.now();
+    const wallSentAt = this.wallNow();
     const sentToken = this.token;
     // A response that arrives after stop() (or after the lease was replaced)
     // belongs to a lease this keeper no longer holds: it must not revive the
@@ -371,13 +393,13 @@ export class VaultLeaseKeeper {
     try {
       const granted = await this.options.client.renew(sentToken);
       if (superseded()) return this.currentState;
-      this.accept(sentAt, granted);
+      this.accept(sentAt, wallSentAt, granted);
     } catch (error) {
       if (superseded()) return this.currentState;
       if (
         error instanceof VaultLeaseError &&
         error.code === 'relay_error' &&
-        this.now() < this.deadline
+        !this.pastDeadline()
       ) {
         this.schedule(1_000);
         return this.currentState;

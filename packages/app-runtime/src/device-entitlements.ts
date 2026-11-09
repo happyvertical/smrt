@@ -519,6 +519,12 @@ function verifyWithPolicy(
  *
  * Order matters: the signature is checked against a trusted key before any
  * payload field is believed.
+ *
+ * This checks the signature, binding, and expiry only. It is not replay-safe:
+ * a validly signed but older snapshot (for example one issued before an
+ * entitlement lapsed) still verifies here. Callers that accept a snapshot
+ * must go through the cache store's `install()`, which also enforces
+ * monotonic `issuedAt` against the snapshot already held.
  */
 export function verifyDeviceEntitlementSnapshot(
   envelope: unknown,

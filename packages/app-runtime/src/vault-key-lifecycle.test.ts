@@ -1055,6 +1055,26 @@ describe('vault key lifecycle: revocation requires the recovery secret (#4818)',
     await sealingKeyId(laptop.lifecycle);
   });
 
+  it('drops the proof when another device rotated the secret (#4840)', async () => {
+    const { laptop, tablet } = await family();
+    const proven = await laptop.lifecycle.revokeDevice('phone', {
+      recoverySecret: RECOVERY_SECRET,
+    });
+    expect(proven.rotation?.secretProven).toBe(true);
+    // The tablet rotates to a new secret without revoking the phone.
+    const fromTablet = await tablet.lifecycle.rotate({
+      recoverySecret: RECOVERY_SECRET,
+      newRecoverySecret: NEW_RECOVERY_SECRET,
+    });
+    const adopted = await laptop.lifecycle.acceptDeviceGrant(
+      grantFor(fromTablet.grants, 'laptop'),
+    );
+    expect(adopted.rotation).toEqual({
+      reasons: ['revocation'],
+      secretProven: false,
+    });
+  });
+
   it('keeps no trace of the secret, only the time it was proven', async () => {
     const { laptop } = await family();
     await laptop.lifecycle.revokeDevice('phone', {
