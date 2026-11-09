@@ -249,8 +249,7 @@ the bundled `smrt-mcp-bridge` on the product's own Node, and forwards stdio
 until either side goes away.
 
 It does not find installed products or start the desktop app; the provider
-does. For the credential, `acquireTokenStoreCredential` (below) issues a
-short-lived owner token from app-runtime's local MCP token store. Native
+does. The credential is app-runtime's local MCP token store (below). Native
 executable packaging is separate.
 
 ```ts
@@ -281,37 +280,33 @@ printed.
 
 ### Credential from the local token store
 
-`acquireTokenStoreCredential` is the helper an `acquireCredential`
-implementation uses. It opens the store through the `openStore` you give it
-(normally `openLocalMcpTokenStore({ appId, dataDirectory, sourceRoot })` from
-`@happyvertical/smrt-app-runtime`, #4726), issues one token with the scopes
-you name (each must be held by the owner) and an eight hour default lifetime,
-and returns `{ token, release }`. The launcher calls `release` as soon as the
-bridge has started, while the bridge keeps using the token, so `release` only
-closes the store and does **not** revoke the token. Pick `expiresInSeconds` to
-cover the session; nothing refreshes or revokes the token at launcher exit, and
-the owner can revoke it earlier from the store (`smrt app token`).
-A store that cannot be opened, or refuses to issue, is
-`credential_unavailable`; the cause is never echoed. The store is injected, so
-this package imports nothing from app-runtime, and the helper adds no channel,
-file or keychain of its own.
+`acquireCredential` needs nothing from this package: it opens app-runtime's
+local MCP token store (`openLocalMcpTokenStore`, #4726), issues a token for the
+scopes the product's MCP route requires (each must be held by the owner), and
+returns it.
 
 ```ts
 import { openLocalMcpTokenStore } from '@happyvertical/smrt-app-runtime';
-import { acquireTokenStoreCredential } from '@happyvertical/smrt-desktop/launcher';
 
-const acquireCredential = () =>
-  acquireTokenStoreCredential({
-    openStore: () => openLocalMcpTokenStore({ appId, dataDirectory }),
-    scopes: ['mcp:use'], // whatever the product's MCP route requires
-    label: 'Desktop launcher',
-  });
+async acquireCredential() {
+  const store = await openLocalMcpTokenStore({ appId, dataDirectory });
+  try {
+    // The store's own default lifetime applies; pass expiresInSeconds only if
+    // the application specifically asks for a shorter one.
+    const { token } = await store.issue({ scopes: ['mcp:use'] });
+    return { token };
+  } finally {
+    await store.close();
+  }
+}
 ```
 
-The store opens the product's SQLite file without taking the writer lease (a
-running app is the expected case). On Windows secure SQLite acquisition is
-still refused (happyvertical/sdk#1498), so this credential path is refused
-there too.
+The launcher calls `release` as soon as the bridge starts while the bridge keeps
+using the token, so do not revoke the token there. Today nothing revokes it
+when the launcher exits and nothing renews it when it expires; user and device
+credentials that refresh automatically are a token-store feature, tracked in
+#4874 and #4729. On Windows secure SQLite acquisition is still refused
+(happyvertical/sdk#1498), so this path is refused there too.
 
 ### Launch sequence
 

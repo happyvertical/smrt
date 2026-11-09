@@ -27,8 +27,9 @@ logs or the launcher's stdout. Probes go to the literal `127.0.0.1` through
 `loopback-fetch.ts` (a dedicated `node:http` agent); never use global `fetch`
 for them, because an environment proxy would receive the bearer token. Never
 resolve an executable through `PATH`, never use a shell, and build the child
-environment from scratch. `acquireTokenStoreCredential` takes an injected
-app-runtime token store; do not import app-runtime here or add a channel.
+environment from scratch. The credential comes from app-runtime's token store
+(`openLocalMcpTokenStore().issue()`) called by the provider; do not import
+app-runtime into this package, add a credential helper or a channel here.
 
 Owner sign-in and local MCP credentials are app-runtime's (`claimOwner()`, the
 loopback onboarding URL, `openLocalMcpTokenStore`); do not rebuild them in this

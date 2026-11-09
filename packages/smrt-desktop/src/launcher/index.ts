@@ -25,8 +25,3 @@ export {
   type ProviderContext,
   type ProviderFailureCode,
 } from './provider.js';
-export {
-  acquireTokenStoreCredential,
-  type LauncherTokenStore,
-  type TokenStoreCredentialOptions,
-} from './token-store-credential.js';
