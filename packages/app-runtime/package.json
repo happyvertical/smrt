@@ -33,6 +33,18 @@
     "./device-entitlements": {
       "types": "./dist/device-entitlements.d.ts",
       "import": "./dist/device-entitlements.js"
+    },
+    "./vault-device-transfer": {
+      "types": "./dist/vault-device-transfer.d.ts",
+      "import": "./dist/vault-device-transfer.js"
+    },
+    "./vault-key-store": {
+      "types": "./dist/vault-key-store.d.ts",
+      "import": "./dist/vault-key-store.js"
+    },
+    "./vault-key-lifecycle": {
+      "types": "./dist/vault-key-lifecycle.d.ts",
+      "import": "./dist/vault-key-lifecycle.js"
     }
   },
   "files": [
