@@ -353,7 +353,6 @@ interface CaptureState {
   degradedRun: boolean;
   provider?: string;
   model?: string;
-  operation?: string;
 }
 
 interface CaptureRegistry {
@@ -417,10 +416,6 @@ export function observeAiTranscriptUsage(event: unknown): void {
     const model = text(raw.model);
     if (provider && (!state.provider || !tags.seat)) state.provider = provider;
     if (model && (!state.model || !tags.seat)) state.model = model;
-    const operation = text(raw.operation);
-    if (operation && !state.operation && !tags.seat) {
-      state.operation = operation;
-    }
   } catch {
     // Observation must never break usage handling.
   }
@@ -711,7 +706,9 @@ async function finishCapture(
     const provider = state.provider ?? context.provider;
     const model =
       state.model ?? text(call.options.model) ?? context.model ?? undefined;
-    const operation = state.operation ?? call.operation;
+    // The wrapper knows the method it captured; a usage event's operation
+    // label is the provider's (an executor's seats may differ).
+    const operation = call.operation;
     const base = {
       callId: state.callId,
       tenantId,

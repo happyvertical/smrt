@@ -48,6 +48,7 @@ import {
   captureAiTranscriptCall,
   noteAiTranscriptRun,
   observeAiTranscriptUsage,
+  unwrapAiTranscriptClient,
   withAiTranscripts,
 } from './ai-transcripts.js';
 import { registerChangeFeedWriter } from './change-feed.js';
@@ -1119,6 +1120,10 @@ export class SmrtClass {
     if (!client || typeof client !== 'object' || !aiTranscriptsEnabled()) {
       return client;
     }
+    const wrappedAlready = unwrapAiTranscriptClient(client) !== client;
+    if (transcript === undefined && !overrides && wrappedAlready) {
+      return client;
+    }
     if (transcript !== undefined || overrides) {
       return withAiTranscripts(client, {
         ...this.aiTranscriptContext(),
@@ -1383,7 +1388,7 @@ export class SmrtClass {
       const modeState = await this.resolveInferenceModeState();
       if (!modeState || modeState.unavailable) {
         return {
-          ai: this.transcriptClient(await this.resolveAiClient(), transcript),
+          ai: this.transcriptClient(await this.getAiClient(), transcript),
           aiOptions: rest,
           ...(toolUse ? { toolUse } : {}),
         };
@@ -1395,8 +1400,10 @@ export class SmrtClass {
       latency,
       ...(promptKey ? { promptKey } : {}),
     });
+    // `getAiClient()` stays the seam subclasses override; the per-call
+    // directive re-wraps its (already wrapped) client.
     const ai = this.transcriptClient(
-      await this.resolveAiClient(tier, {
+      await this.getAiClient(tier, {
         latency,
         promptKey,
         resolution,
