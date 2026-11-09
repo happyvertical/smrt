@@ -204,6 +204,12 @@ export interface ReferenceShellOptions<
   readonly currentUid?: number;
   /** Passed to the control server (time a peer has to deliver its request). */
   readonly requestReadTimeoutMs?: number;
+  /**
+   * Called with every `instance.json` write that failed. The shell keeps
+   * publishing later phases regardless; `flush()` and `close()` also rethrow
+   * the first failure not yet reported.
+   */
+  readonly onWriteError?: (error: unknown) => void;
 }
 
 export interface ReferenceShell<
@@ -215,9 +221,15 @@ export interface ReferenceShell<
   readonly registry: ControlHandlerRegistry<Req, Res>;
   /** The record as currently published. */
   record(): InstanceRecordV1;
-  /** Resolves once every pending `instance.json` write has landed. */
+  /**
+   * Resolves once every pending `instance.json` write has settled. Rejects
+   * with the first write failure not yet reported (later writes still ran).
+   */
   flush(): Promise<void>;
-  /** Stop serving and remove the socket. The record stays on disk. */
+  /**
+   * Stop serving and remove the socket. The record stays on disk. Rejects
+   * with an unreported write failure, after the server has stopped.
+   */
   close(): Promise<void>;
 }
 
@@ -269,13 +281,32 @@ export async function startReferenceShell<
     };
   };
 
+  // `writes` is the tail of the write chain and never rejects: a failed write
+  // must not poison the ones after it (each one writes the state current when
+  // it was queued, so a later write supersedes a lost one). Failures are kept
+  // for the owner instead of being swallowed: `onWriteError`, then `flush()`
+  // and `close()` rethrow the first one not yet reported.
   let writes: Promise<void> = Promise.resolve();
-  const publish = () => {
+  const failures: unknown[] = [];
+  const publish = (): Promise<void> => {
     const text = serializeInstanceRecord(build());
-    writes = writes.then(() =>
+    const attempt = writes.then(() =>
       writePrivateFileAtomic(recordPath, text, custody),
     );
-    return writes;
+    writes = attempt.catch((error: unknown) => {
+      failures.push(error);
+      try {
+        options.onWriteError?.(error);
+      } catch {
+        // A throwing observer must not break the chain either.
+      }
+    });
+    return attempt;
+  };
+  const rethrowPending = (): void => {
+    if (failures.length === 0) return;
+    const [first] = failures.splice(0);
+    throw first;
   };
 
   const server: ControlServer = await serveControlChannel<Req, Res>(
@@ -290,20 +321,33 @@ export async function startReferenceShell<
     },
   );
   const unsubscribe = supervisor.onChange(() => {
+    // Recorded in `failures`; the owner sees it through `flush()`/`close()`.
     void publish().catch(() => undefined);
   });
-  await publish();
+  try {
+    await publish();
+  } catch (error) {
+    // Do not leave a listener behind a record that was never published.
+    unsubscribe();
+    await server.close();
+    failures.length = 0;
+    throw error;
+  }
 
   return {
     supervisor,
     endpoint,
     registry,
     record: build,
-    flush: () => writes,
+    async flush() {
+      await writes;
+      rethrowPending();
+    },
     async close() {
       unsubscribe();
       await server.close();
-      await writes.catch(() => undefined);
+      await writes;
+      rethrowPending();
     },
   };
 }
