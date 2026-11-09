@@ -14,24 +14,60 @@
 #    uploads only from main or manual dispatch, short retention).
 #
 # 2. release-* (workflow_dispatch from main with `release: true` only)
-#    Signs, notarizes and publishes to the rolling `desktop-latest` release,
-#    including the updater feed `latest.json`. It FAILS CLOSED: the first job
-#    refuses to continue unless every signing secret, a real updater public
-#    key and the product inputs exist, and each target refuses a bundle that
-#    does not match the committed, gpg-verified Node pin. Nothing here
-#    generates, defaults or invents a key, certificate, identity or secret.
-#    Until the owner supplies them (see "Release pipeline" in
-#    packages/smrt-desktop/shell/README.md) this path stops at its preflight.
+#    Builds, signs, notarizes and publishes to the rolling `desktop-latest`
+#    release, including the updater feed `latest.json`. It FAILS CLOSED: the
+#    first job refuses to continue unless the `desktop-release` environment is
+#    protected, every signing secret, a real updater public key and the
+#    product inputs exist, and each target refuses a bundle that does not match
+#    the committed, gpg-verified Node pin. Nothing here generates, defaults or
+#    invents a key, certificate, identity or secret. Until the owner supplies
+#    them (see "Release pipeline" in packages/smrt-desktop/shell/README.md)
+#    this path stops at its preflight.
 #
-# The product code (the app and its dependencies) only ever runs in
-# release-bundle, which has no secrets, no environment and no cache writes.
+# SECRET CUSTODY. Compiling and signing are different JOBS, not just different
+# steps, because a build script or proc macro in the shell's Cargo.lock can
+# write anywhere on the runner (the global npm directory, ~/.cargo, a PATH
+# shim) and the next step on the same runner would run it with the key.
+#
+#   release-bundle   product code (pnpm install, the app's own build). No
+#                    environment, no secrets, `contents: read`.
+#   release-build    cargo/`tauri build --locked`, every crate build script,
+#                    on a fresh GitHub-hosted runner. No environment, NO
+#                    secrets. Produces the UNSIGNED app / installers.
+#   release          signs. Runs in the `desktop-release` environment and never
+#                    runs cargo, rustup, pnpm, or a build: it downloads the
+#                    unsigned output and uses only OS signing tools and the
+#                    pinned Tauri CLI's `tauri signer sign`. Secrets reach
+#                    only these steps, each only the ones it needs:
+#                      - import the certificate  -> APPLE_CERTIFICATE(+_PASSWORD)
+#                      - sign and notarize       -> APPLE_SIGNING_IDENTITY,
+#                                                   APPLE_ID, APPLE_PASSWORD,
+#                                                   APPLE_TEAM_ID
+#                      - sign updater payloads   -> TAURI_SIGNING_PRIVATE_KEY(+_PASSWORD)
+#                    The Tauri CLI is installed in a step with no secrets, and
+#                    an always() step removes the temporary keychain, the
+#                    certificate file and the installed tool.
+#   release-preflight, release-publish
+#                    in the environment too; the preflight sees the secrets
+#                    for presence only, the publish job none at all.
+#
+# packages/smrt-desktop/shell/scripts/desktop-release-workflow.test.mjs fails if an edit
+# mixes these: a secret in a step that builds or installs, a secret in a step
+# that is not one of the allowed signing commands, or a secret outside a step.
+#
+# What this does not do: a compromised crate in release-build can still produce
+# a malicious app, and that app is then signed. Separating the key stops its
+# exfiltration, not the use of the signing step on tampered output; the
+# committed Cargo.lock (`--locked`) and review are what bound that.
+#
 # The jobs that hold the signing secrets (release-preflight and release) and
 # the job that publishes (release-publish) all run in the `desktop-release`
-# GitHub environment. The owner restricts that environment to main and puts
-# the secrets in it; a workflow file edited on another branch or in a pull
-# request cannot reach them. The signing legs publish nothing: they upload
-# their output as workflow artifacts, and release-publish, which needs every
-# leg, writes the release and latest.json in one go.
+# GitHub environment. The owner restricts that environment to main, requires
+# reviewers and puts the secrets in it; a workflow file edited on another
+# branch or in a pull request cannot reach them. The signing legs publish
+# nothing: they upload their output as workflow artifacts, and release-publish,
+# which needs every leg, verifies every updater signature against the committed
+# public key and writes the release and latest.json in one go.
 # =============================================================================
 
 name: Desktop release
@@ -79,6 +115,10 @@ env:
   SHELL_DIR: packages/smrt-desktop/shell
   # Exact Tauri CLI release (at least two weeks old when pinned).
   TAURI_CLI_VERSION: 2.12.4
+  # Exact toolchains, never "stable" or a major line: what builds and signs
+  # does not change under the release between two runs.
+  RUST_TOOLCHAIN: 1.95.0
+  NODE_VERSION: 24.11.1
 
 jobs:
   verify-build:
@@ -122,12 +162,12 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
-          node-version: '24'
+          node-version: ${{ env.NODE_VERSION }}
 
       - name: Set up Rust
         run: |
-          rustup toolchain install stable --profile minimal
-          rustup default stable
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal
+          rustup default "$RUST_TOOLCHAIN"
           rustc --version
           cargo --version
 
@@ -136,12 +176,15 @@ jobs:
         with:
           workspaces: packages/smrt-desktop/shell
 
-      - name: Test the release preflight and the release feed
+      - name: Test the release scripts and the workflow's secret separation
         if: runner.os == 'Linux'
         run: |
           node --test \
+            "$SHELL_DIR/scripts/minisign.test.mjs" \
+            "$SHELL_DIR/scripts/release-environment.test.mjs" \
             "$SHELL_DIR/scripts/release-preflight.test.mjs" \
-            "$SHELL_DIR/scripts/release-feed.test.mjs"
+            "$SHELL_DIR/scripts/release-feed.test.mjs" \
+            "$SHELL_DIR/scripts/desktop-release-workflow.test.mjs"
 
       - name: Install the pinned Tauri CLI
         run: npm install --global --ignore-scripts "@tauri-apps/cli@${TAURI_CLI_VERSION}"
@@ -151,13 +194,10 @@ jobs:
       # compiled and linked, and `--no-bundle` stops there. A product build
       # (tauri.bundle.json from `smrt desktop bundle`) happens only in the
       # release path below. This is a compile/link smoke, not a product build.
+      # `--locked` refuses a Cargo.lock that would need to change.
       - name: Build the shell without a product (unsigned)
-        uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # action-v1.0.0
-        with:
-          projectPath: packages/smrt-desktop/shell
-          tauriScript: tauri
-          args: --no-bundle
-          uploadUpdaterJson: false
+        working-directory: packages/smrt-desktop/shell
+        run: tauri build --no-bundle -- --locked
 
       - name: Upload the unsigned shell binary (verification only)
         if: github.event_name != 'pull_request'
@@ -177,9 +217,12 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && inputs.release
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # Secrets live in this environment, not in the repository. Restricted to
-    # main with required reviewers by the owner; see the README.
+    # Secrets live in this environment, not in the repository. The owner
+    # creates it by hand, limited to main with required reviewers; see the
+    # README. The first checks below refuse to go on if that was not done.
     environment: desktop-release
+    permissions:
+      contents: read
     steps:
       - name: Require main
         env:
@@ -198,7 +241,23 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
-          node-version: '24'
+          node-version: ${{ env.NODE_VERSION }}
+
+      # Reads the environment through the API with the job's read-only token
+      # (no secret) and refuses unless it has required reviewers with
+      # self-review prevented, no admin bypass and a deployment rule of exactly
+      # the branch main. A workflow naming a missing environment creates it
+      # unprotected, so the secrets check below cannot tell. This catches the
+      # owner's mistake, not an attacker; the environment's branch rule is the
+      # real control.
+      - name: Verify the environment is protected
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          node "$SHELL_DIR/scripts/release-environment.mjs" \
+            --repo "$REPO" \
+            --environment desktop-release
 
       # Presence only. The script names what is missing and never prints a
       # value. The secrets reach this one step and no other in this job.
@@ -289,45 +348,45 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  # Builds, signs and verifies one target and uploads the result as a workflow
-  # artifact. It never publishes and holds only `contents: read`; the
-  # secrets come from the `desktop-release` environment.
-  release:
-    name: Sign and verify (${{ matrix.target }})
+  # Compiles the shell with the verified bundle. This is the job that runs
+  # every crate's build script and every proc macro in Cargo.lock, so it has
+  # NO environment, NO secrets and only `contents: read`, on a fresh
+  # GitHub-hosted runner (never the signing-runner variable). It builds cold:
+  # no cache is restored into it. It signs nothing (`--no-sign`, no updater
+  # artifacts) and hands the unsigned output to `release` as a directory.
+  release-build:
+    name: Build unsigned (${{ matrix.target }})
     needs: [release-preflight, release-bundle]
-    # macOS signing runs on the runner named by the REPOSITORY (or
-    # organization) variable DESKTOP_MACOS_SIGNING_RUNNER (a label, or a JSON
-    # array of labels for a self-hosted runner); the default is the
-    # GitHub-hosted macos-14. strategy.matrix and runs-on are evaluated before
-    # the environment is bound, so an environment variable of that name is not
-    # visible here. A self-hosted runner must be ephemeral (or wipe keychain
-    # and workspace per job) and in a runner group restricted to this
-    # repository and workflow. See the Release pipeline README.
-    runs-on: ${{ fromJSON(startsWith(matrix.runner, '[') && matrix.runner || format('["{0}"]', matrix.runner)) }}
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
-    environment: desktop-release
+    permissions:
+      contents: read
     defaults:
       run:
         shell: bash
-    # One failed leg stops the others: nothing is published unless all four
-    # succeed, so finishing the rest would only spend signing minutes.
     strategy:
       fail-fast: true
       matrix:
         include:
+          # Both macOS targets build on the hosted arm64 runner; the x64 target
+          # is cross-compiled.
           - target: aarch64-apple-darwin
-            runner: ${{ vars.DESKTOP_MACOS_SIGNING_RUNNER || 'macos-14' }}
-            bundles: app,dmg
+            runner: macos-14
+            bundles: app
+            artifact_path: packages/smrt-desktop/shell/target/aarch64-apple-darwin/release/bundle/macos
           - target: x86_64-apple-darwin
-            runner: ${{ vars.DESKTOP_MACOS_SIGNING_RUNNER || 'macos-14' }}
-            bundles: app,dmg
+            runner: macos-14
+            bundles: app
+            artifact_path: packages/smrt-desktop/shell/target/x86_64-apple-darwin/release/bundle/macos
           - target: x86_64-pc-windows-msvc
             runner: windows-latest
             bundles: nsis
+            artifact_path: packages/smrt-desktop/shell/target/x86_64-pc-windows-msvc/release/bundle/nsis/*-setup.exe
           # AppImage is excluded: the launcher does not support it in v1.
           - target: x86_64-unknown-linux-gnu
             runner: ubuntu-latest
             bundles: deb
+            artifact_path: packages/smrt-desktop/shell/target/x86_64-unknown-linux-gnu/release/bundle/deb/*.deb
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -336,8 +395,7 @@ jobs:
 
       # The bundle comes from the untrusted bundle job. It is downloaded into
       # an empty directory under RUNNER_TEMP, never into the checkout, and is
-      # never extracted from an archive: the artifact is a plain directory of
-      # files, so there is no tar member to write through a symlink.
+      # never extracted from an archive.
       - name: Prepare an empty bundle directory
         run: |
           rm -rf "$RUNNER_TEMP/desktop-bundle"
@@ -352,7 +410,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
-          node-version: '24'
+          node-version: ${{ env.NODE_VERSION }}
 
       # Re-verify the bundle after the artifact hop against the COMMITTED Node
       # pin record of this (main) checkout, never against the bundle's own
@@ -361,9 +419,10 @@ jobs:
       # binaries/, resources/ and the three metadata files, a changed,
       # unlisted or symlinked file or any extra Tauri key. The artifact drops
       # the executable bit, so staging marks everything under binaries/
-      # executable. Then writes the config overlay from an
-      # allowlist and copies exactly the verified files next to
-      # tauri.conf.json (the paths in tauri.bundle.json are relative to it).
+      # executable. Then writes the config overlay from an allowlist and
+      # copies exactly the verified files next to tauri.conf.json (the paths in
+      # tauri.bundle.json are relative to it). The signing job runs the same
+      # verification again on its own download.
       - name: Preflight the bundle, write the overlay and stage the files
         env:
           TARGET: ${{ matrix.target }}
@@ -385,74 +444,302 @@ jobs:
             libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
             librsvg2-dev libssl-dev libxdo-dev patchelf
 
-      # No rust-cache here: a restored cache is code that runs with the
-      # signing key, so this job builds cold.
+      # No rust-cache here: a restored cache is code that runs in the build.
       - name: Set up Rust
         env:
           TARGET: ${{ matrix.target }}
         run: |
-          rustup toolchain install stable --profile minimal
-          rustup default stable
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal
+          rustup default "$RUST_TOOLCHAIN"
           rustup target add "$TARGET"
+          rustc --version
+          cargo --version
 
       - name: Install the pinned Tauri CLI
         run: npm install --global --ignore-scripts "@tauri-apps/cli@${TAURI_CLI_VERSION}"
 
-      # Apple credentials reach only this step, and only on macOS. There is no
-      # tagName and no release id: this builds and publishes nothing.
-      - name: Build, sign and notarize (macOS)
+      # No secret exists in this job. `--locked` goes to cargo.
+      - name: Build the unsigned bundles
+        working-directory: packages/smrt-desktop/shell
+        env:
+          TARGET: ${{ matrix.target }}
+          BUNDLES: ${{ matrix.bundles }}
+        run: |
+          tauri build --no-sign \
+            --target "$TARGET" \
+            --config tauri.release.json \
+            --bundles "$BUNDLES" \
+            -- --locked
+
+      # A directory of files, never an archive (see the bundle job). Hidden
+      # files are included.
+      - name: Upload the unsigned output
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: desktop-unsigned-${{ matrix.target }}
+          path: ${{ matrix.artifact_path }}
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+
+  # Signs and verifies one target and uploads the result as a workflow
+  # artifact. It never publishes and holds only `contents: read`; the secrets
+  # come from the `desktop-release` environment and reach only the three
+  # signing steps named below. It runs no cargo, rustup, pnpm or build: the
+  # only tools it uses are the OS signing tools and the pinned Tauri CLI
+  # (installed in a step that has no secrets).
+  release:
+    name: Sign and verify (${{ matrix.target }})
+    needs: [release-preflight, release-bundle, release-build]
+    # macOS signing runs on the runner named by the REPOSITORY (or
+    # organization) variable DESKTOP_MACOS_SIGNING_RUNNER, default the
+    # GitHub-hosted macos-14. strategy.matrix and runs-on are evaluated before
+    # the environment is bound, so an environment variable of that name is not
+    # visible here. The variable may name ONLY a DEDICATED, EPHEMERAL runner
+    # (one job, then gone) in its own runner group limited to this repository
+    # and this workflow. It must never be a shared runner: not the one that
+    # runs other repositories' pull request builds, not a persistent
+    # workstation. Everything this job writes is also removed by the final
+    # always() step. See the Release pipeline README.
+    runs-on: ${{ fromJSON(startsWith(matrix.runner, '[') && matrix.runner || format('["{0}"]', matrix.runner)) }}
+    timeout-minutes: 90
+    environment: desktop-release
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    # One failed leg stops the others: nothing is published unless all four
+    # succeed, so finishing the rest would only spend signing minutes. The
+    # cleanup step is always() and runs in the cancelled legs too.
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            runner: ${{ vars.DESKTOP_MACOS_SIGNING_RUNNER || 'macos-14' }}
+          - target: x86_64-apple-darwin
+            runner: ${{ vars.DESKTOP_MACOS_SIGNING_RUNNER || 'macos-14' }}
+          - target: x86_64-pc-windows-msvc
+            runner: windows-latest
+            installer_dir: nsis
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-latest
+            installer_dir: deb
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      # Both downloads go into empty directories under RUNNER_TEMP, never into
+      # the checkout, and nothing is extracted from an archive. (The runner
+      # context is not available in job-level env, so the paths are exported
+      # here for the later steps.)
+      - name: Prepare empty directories
+        run: |
+          {
+            echo "UNSIGNED_DIR=$RUNNER_TEMP/desktop-unsigned"
+            echo "SIGNED_DIR=$RUNNER_TEMP/desktop-signed"
+            echo "OVERLAY_FILE=$RUNNER_TEMP/desktop-overlay.json"
+          } >> "$GITHUB_ENV"
+          rm -rf "$RUNNER_TEMP/desktop-bundle" "$RUNNER_TEMP/desktop-unsigned" "$RUNNER_TEMP/desktop-signed"
+          mkdir -p "$RUNNER_TEMP/desktop-bundle" "$RUNNER_TEMP/desktop-unsigned" "$RUNNER_TEMP/desktop-signed"
+
+      - name: Download the bundle
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: desktop-bundle-${{ matrix.target }}
+          path: ${{ runner.temp }}/desktop-bundle
+
+      - name: Download the unsigned build
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: desktop-unsigned-${{ matrix.target }}
+          path: ${{ runner.temp }}/desktop-unsigned
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      # The signing job derives the product identity itself, from the bundle,
+      # checked against the COMMITTED pin record of this (main) checkout. It
+      # never takes the name or version from the unsigned build. The name is
+      # validated (no path, shell or control characters) before it is exported.
+      - name: Re-verify the bundle and read the product identity
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          node "$SHELL_DIR/scripts/release-preflight.mjs" \
+            --config "$SHELL_DIR/tauri.conf.json" \
+            --bundle "$RUNNER_TEMP/desktop-bundle" \
+            --target "$TARGET" \
+            --node-pins packages/smrt-desktop/src/bundler/node-pins.ts \
+            --write-overlay "$OVERLAY_FILE"
+          node -e '
+            const o = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8"));
+            process.stdout.write("PRODUCT_NAME=" + o.productName + "\n");
+            process.stdout.write("PRODUCT_VERSION=" + o.version + "\n");
+          ' "$OVERLAY_FILE" >> "$GITHUB_ENV"
+
+      # Installed in a step that has no secrets; nothing is installed or
+      # downloaded afterwards. The version is exact and lifecycle scripts are
+      # off. (The Linux leg signs nothing and does not need it.)
+      - name: Install the pinned Tauri CLI
+        if: runner.os != 'Linux'
+        run: npm install --global --ignore-scripts "@tauri-apps/cli@${TAURI_CLI_VERSION}"
+
+      # SECRET STEP 1 of 3 (macOS): the certificate and its password only.
+      # Imports the .p12 into a temporary keychain that the always() step
+      # deletes. The certificate file is removed as soon as it is imported.
+      - name: Import the signing certificate (macOS)
         if: runner.os == 'macOS'
-        uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # action-v1.0.0
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          umask 077
+          keychain="$RUNNER_TEMP/desktop-signing.keychain-db"
+          cert="$RUNNER_TEMP/desktop-signing-cert.p12"
+          keychain_password="$(openssl rand -hex 24)"
+          echo "::add-mask::$keychain_password"
+          trap 'rm -f "$cert"' EXIT
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$cert"
+          security import "$cert" -k "$keychain" \
+            -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s \
+            -k "$keychain_password" "$keychain" > /dev/null
+          existing="$(security list-keychains -d user | tr -d '"')"
+          # shellcheck disable=SC2086
+          security list-keychains -d user -s "$keychain" $existing
+
+      # SECRET STEP 2 of 3 (macOS): the signing identity and notarization
+      # credentials only. Signs every Mach-O file and the app with the hardened
+      # runtime, notarizes and staples the app, builds the dmg from the stapled
+      # app, signs, notarizes and staples the dmg, and archives the stapled app
+      # for the updater. The artifact hop dropped the executable bit and
+      # flattened links, so the executable files are marked first.
+      - name: Sign and notarize (macOS)
+        if: runner.os == 'macOS'
+        env:
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        with:
-          projectPath: packages/smrt-desktop/shell
-          tauriScript: tauri
-          args: --target ${{ matrix.target }} --config tauri.release.json --bundles ${{ matrix.bundles }}
-          uploadUpdaterJson: false
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          keychain="$RUNNER_TEMP/desktop-signing.keychain-db"
+          app="$UNSIGNED_DIR/$PRODUCT_NAME.app"
+          test -d "$app" || { echo "The unsigned build has no $PRODUCT_NAME.app." >&2; exit 1; }
+          chmod -R u+rwX "$app"
+          chmod 755 "$app"/Contents/MacOS/*
 
-      - name: Build and sign (Windows and Linux)
+          sign() {
+            codesign --force --timestamp --options runtime \
+              --keychain "$keychain" --sign "$APPLE_SIGNING_IDENTITY" "$1"
+          }
+          notarize() {
+            result="$(xcrun notarytool submit "$1" \
+              --apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" \
+              --team-id "$APPLE_TEAM_ID" --wait --output-format json)" \
+              || { echo "Notarization could not be submitted." >&2; exit 1; }
+            printf '%s' "$result" | grep -Eq '"status" *: *"Accepted"' \
+              || { echo "Notarization was not accepted." >&2; exit 1; }
+          }
+
+          while IFS= read -r -d '' file; do
+            if file -b "$file" | grep -q 'Mach-O'; then sign "$file"; fi
+          done < <(find "$app/Contents" -type f -print0)
+          sign "$app"
+          codesign --verify --deep --strict --verbose=2 "$app"
+
+          zip="$RUNNER_TEMP/desktop-notarize-app.zip"
+          ditto -c -k --keepParent "$app" "$zip"
+          notarize "$zip"
+          xcrun stapler staple "$app"
+
+          arch="${TARGET%%-*}"
+          dmg_src="$RUNNER_TEMP/desktop-dmg-src"
+          mkdir -p "$dmg_src" "$SIGNED_DIR/dmg" "$SIGNED_DIR/macos"
+          ditto "$app" "$dmg_src/$PRODUCT_NAME.app"
+          ln -s /Applications "$dmg_src/Applications"
+          dmg="$SIGNED_DIR/dmg/${PRODUCT_NAME}_${PRODUCT_VERSION}_${arch}.dmg"
+          hdiutil create -volname "$PRODUCT_NAME" -srcfolder "$dmg_src" \
+            -ov -format UDZO "$dmg"
+          sign "$dmg"
+          notarize "$dmg"
+          xcrun stapler staple "$dmg"
+
+          COPYFILE_DISABLE=1 tar -czf "$SIGNED_DIR/macos/$PRODUCT_NAME.app.tar.gz" \
+            -C "$UNSIGNED_DIR" "$PRODUCT_NAME.app"
+
+      # Windows and Linux installers are copied, unchanged, to the layout the
+      # leg stager expects. (No platform code-signing certificate exists for
+      # them; the Windows installer carries the updater signature only.)
+      - name: Stage the installer (Windows and Linux)
         if: runner.os != 'macOS'
-        uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # action-v1.0.0
+        env:
+          INSTALLER_DIR: ${{ matrix.installer_dir }}
+        run: |
+          set -euo pipefail
+          test "$(find "$UNSIGNED_DIR" -maxdepth 1 -type f | wc -l)" -eq 1
+          mkdir -p "$SIGNED_DIR/$INSTALLER_DIR"
+          cp "$UNSIGNED_DIR"/* "$SIGNED_DIR/$INSTALLER_DIR/"
+
+      # SECRET STEP 3 of 3 (macOS and Windows): the updater signing key and
+      # its password only, read by `tauri signer sign` from the environment.
+      # It signs exactly one file and writes `<file>.sig` beside it. Nothing is
+      # built or installed here.
+      - name: Sign the updater payload
+        if: runner.os != 'Linux'
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        with:
-          projectPath: packages/smrt-desktop/shell
-          tauriScript: tauri
-          args: --target ${{ matrix.target }} --config tauri.release.json --bundles ${{ matrix.bundles }}
-          uploadUpdaterJson: false
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          if [ "$RUNNER_OS" = macOS ]; then
+            payloads=("$SIGNED_DIR"/macos/*.app.tar.gz)
+          else
+            payloads=("$SIGNED_DIR"/nsis/*-setup.exe)
+          fi
+          test "${#payloads[@]}" -eq 1
+          tauri signer sign "${payloads[0]}"
 
       # A build that came out unsigned or un-notarized must not stand as a
       # release. This runs BEFORE the leg is uploaded, so a failure here keeps
       # the whole release from being published.
-      - name: Verify the macOS signature and notarization ticket
+      - name: Verify the macOS signature and notarization tickets
         if: runner.os == 'macOS'
-        env:
-          TARGET: ${{ matrix.target }}
         run: |
-          app="$(find "$SHELL_DIR/target/$TARGET/release/bundle/macos" -maxdepth 1 -name '*.app' | head -n 1)"
-          test -n "$app" || { echo "No .app bundle was produced." >&2; exit 1; }
+          set -euo pipefail
+          app="$UNSIGNED_DIR/$PRODUCT_NAME.app"
           codesign --verify --deep --strict --verbose=2 "$app"
           xcrun stapler validate "$app"
+          dmg="$(find "$SIGNED_DIR/dmg" -maxdepth 1 -name '*.dmg')"
+          test -n "$dmg"
+          codesign --verify --strict --verbose=2 "$dmg"
+          xcrun stapler validate "$dmg"
 
       # Collect exactly one installer (and, where the updater can use it, one
-      # archive with its signature) under safe unique names.
+      # archive with its signature) under safe unique names. The updater
+      # signature is verified here against the public key committed in
+      # tauri.conf.json, so a private key that is not its pair stops this leg.
       - name: Stage the leg output
         env:
           TARGET: ${{ matrix.target }}
         run: |
           node "$SHELL_DIR/scripts/release-feed.mjs" leg \
             --target "$TARGET" \
-            --bundle-dir "$SHELL_DIR/target/$TARGET/release/bundle" \
-            --overlay "$SHELL_DIR/tauri.release.json" \
+            --bundle-dir "$SIGNED_DIR" \
+            --overlay "$OVERLAY_FILE" \
+            --pubkey-config "$SHELL_DIR/tauri.conf.json" \
             --out .desktop-leg
 
       - name: Upload the leg
@@ -462,6 +749,20 @@ jobs:
           path: .desktop-leg
           if-no-files-found: error
           retention-days: 1
+
+      # Removes everything this job wrote that could outlive it on a runner
+      # that is not wiped: the temporary keychain (and with it the imported
+      # certificate), any certificate file, the notarization and dmg staging,
+      # the downloaded bundles and the installed Tauri CLI. The signing key is
+      # only ever in the environment of one step; no key file is written.
+      - name: Clean up
+        if: always()
+        run: |
+          if [ "$RUNNER_OS" = macOS ]; then
+            security delete-keychain "$RUNNER_TEMP/desktop-signing.keychain-db" || true
+          fi
+          npm uninstall --global @tauri-apps/cli || true
+          rm -rf "$RUNNER_TEMP"/desktop-* .desktop-leg
 
   # The only job that can write the release. It needs every leg, so a failed
   # leg, a failed signature check or a missing artifact means nothing is
@@ -495,7 +796,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
-          node-version: '24'
+          node-version: ${{ env.NODE_VERSION }}
 
       - name: Download every leg
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -503,9 +804,12 @@ jobs:
           pattern: desktop-release-*
           path: .desktop-legs
 
-      # Refuses a missing leg, a version mismatch, a symlink or a missing
-      # signature. Writes the assets and latest.json to .desktop-publish.
-      - name: Assemble the assets and the updater feed
+      # Refuses a missing leg, a version or product-name mismatch, a symlink,
+      # a missing signature, and any updater signature that does not verify
+      # against the public key committed in tauri.conf.json (which also proves
+      # the signing key is that key's pair). Runs BEFORE anything is uploaded.
+      # Writes the assets and latest.json to .desktop-publish.
+      - name: Verify the signatures and assemble the assets and the updater feed
         env:
           REPO: ${{ github.repository }}
         run: |
@@ -514,6 +818,7 @@ jobs:
             --targets aarch64-apple-darwin,x86_64-apple-darwin,x86_64-pc-windows-msvc,x86_64-unknown-linux-gnu \
             --repo "$REPO" \
             --tag "$RELEASE_TAG" \
+            --pubkey-config "$SHELL_DIR/tauri.conf.json" \
             --out .desktop-publish
 
       - name: Publish to the rolling release

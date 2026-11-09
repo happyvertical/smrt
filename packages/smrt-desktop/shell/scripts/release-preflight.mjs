@@ -553,7 +553,11 @@ export function checkBundle(bundleDir, target, files = {}, trust = {}) {
       bundle: {
         externalBin: [sidecarName],
         resources: { 'resources/': './' },
-        createUpdaterArtifacts: true,
+        // The compile job has no signing key, and `tauri build` refuses to
+        // run with updater artifacts requested and no key. The updater
+        // archives are made and signed afterwards by `tauri signer sign` in
+        // the signing job, which is the only place the key exists.
+        createUpdaterArtifacts: false,
       },
     },
   };

@@ -197,7 +197,8 @@ describe('bundle', () => {
     assert.equal(overlay.identifier, 'org.acme.notes');
     assert.equal(overlay.version, '1.2.3');
     assert.deepEqual(overlay.bundle.externalBin, ['binaries/acme-node']);
-    assert.equal(overlay.bundle.createUpdaterArtifacts, true);
+    // the compile job holds no key, so it must not ask for updater artifacts
+    assert.equal(overlay.bundle.createUpdaterArtifacts, false);
   });
 
   it('refuses an unverified Node pin', () => {
@@ -347,7 +348,7 @@ describe('bundle: closed tauri.bundle.json (overlay allowlist)', () => {
     assert.deepEqual(overlay.bundle, {
       externalBin: ['binaries/acme-node'],
       resources: { 'resources/': './' },
-      createUpdaterArtifacts: true,
+      createUpdaterArtifacts: false,
     });
     assert.deepEqual(Object.keys(overlay).sort(), [
       'bundle',
