@@ -967,7 +967,7 @@ not made: unknown fields are errors, so every addition is a version decision.
 ## Runtime bundler
 
 `smrt desktop bundle` (the Node-only `@happyvertical/smrt-desktop/bundler`
-entry, `runBundle(plan, seams)`) turns a built SMRT app into the runtime half of
+entry, `runBundle(plan, seams)`) turns a built s-m-r-t app into the runtime half of
 a desktop bundle: a pinned Node binary for the Tauri `externalBin`, the
 adapter-node build, a pruned production `node_modules`, the MCP bridge, the
 two contract manifests above and a provenance report. It does not run the app
@@ -1170,7 +1170,7 @@ root (or an `exclude` entry). The catalog:
 | `ai-providers` = `ai-anthropic` + `ai-openai` + `ai-google` | `@anthropic-ai/sdk`, `openai`, `@google/genai` |
 | `ocr`, `pdf` | `@happyvertical/ocr`, `tesseract.js*`, `onnxruntime-*`; `@happyvertical/pdf`, `pdfjs-dist` |
 
-`@oxc-project/runtime` is deliberately **not** in the toolchain: compiled SMRT
+`@oxc-project/runtime` is deliberately **not** in the toolchain: compiled s-m-r-t
 models import its decorator helpers at run time. A product may add features
 under `features.custom`.
 
@@ -1284,7 +1284,7 @@ report is the list to sign.
 
 ### Known gaps found while bundling a real app
 
-- **No first-run schema.** SMRT apps never create tables at run time
+- **No first-run schema.** s-m-r-t apps never create tables at run time
   (`smrt db:migrate` does), so a sidecar started on an empty data directory
   exits with `DB_SCHEMA_MISSING`. The desktop shell needs a prepare step
   before the first start, or the runtime needs a supported way to migrate
