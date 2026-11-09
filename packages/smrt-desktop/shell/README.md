@@ -197,31 +197,80 @@ can write anywhere on its runner (a PATH shim, the global npm directory,
 
 | Job | Runs | Secrets |
 | --- | --- | --- |
-| `release-preflight` | environment check, then a presence check | the eight secrets, for presence only, in one step |
+| `release-preflight` | environment check (token: `contents: read` and `actions: read`, nothing else), then a presence check | the eight secrets, for presence only, in one step |
 | `release-bundle` | product `pnpm install`, `smrt app build`, `smrt desktop bundle` | none; no environment |
 | `release-build` | re-verifies the bundle, then `tauri build --no-sign --locked` on a fresh hosted runner, every crate build script | none; no environment |
 | `release` | re-verifies the bundle, then signs: `codesign`, `xcrun notarytool`, `stapler`, `hdiutil`, `tauri signer sign`; no cargo, rustup, pnpm or build | only in three steps, each only its own: certificate import (`APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`); sign and notarize (`APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID`); updater signature (`TAURI_SIGNING_PRIVATE_KEY`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`) |
 | `release-publish` | verifies every updater signature, then `gh release` | none (`contents: write` only) |
 
-The Tauri CLI is installed in a step of the signing job that has no secrets
-(exact version, `--ignore-scripts`); nothing is installed or downloaded after
-that. The last step of the signing job is `if: always()`: it deletes the
-temporary keychain (and with it the imported certificate), removes the
-downloaded and staged files and uninstalls the CLI. No key file is ever written:
-`tauri signer sign` reads the key from the environment of its one step.
+The Tauri CLI of the signing job is installed in a step that has no secrets,
+with `npm ci --ignore-scripts --prefix packages/smrt-desktop/shell/signing-tools`
+from the committed `signing-tools/package.json` and `package-lock.json`. The
+lockfile pins `@tauri-apps/cli` and every platform-specific optional package it
+has by version and sha512 integrity, all resolved from `registry.npmjs.org`;
+`npm ci` refuses a lockfile that disagrees with `package.json`, and the step
+cannot fetch anything the lockfile does not name. The signing step runs the
+binary by absolute path (`$PWD/$SHELL_DIR/signing-tools/node_modules/.bin/tauri
+signer sign`), never from `PATH`. Nothing is installed or downloaded after that.
+`signing-tools` is not a pnpm workspace package (the workspace globs do not reach
+it). To change the CLI version, edit `TAURI_CLI_VERSION` in the workflow and
+`signing-tools/package.json` to the same exact version, then run
+`npm install --package-lock-only --ignore-scripts` in `signing-tools` and review
+the lockfile diff; the workflow test fails if the three disagree, if any locked
+package lacks an integrity hash or comes from another host, or if a platform
+package is missing. The last step of the signing job is `if: always()`: it
+deletes the temporary keychain (and with it the imported certificate), removes
+the downloaded and staged files and the installed CLI. No key file is ever
+written: `tauri signer sign` reads the key from the environment of its one step.
 
-`scripts/desktop-release-workflow.test.mjs` reads the workflow and fails if a
-future edit mixes these: a secret in a step that builds or installs (cargo,
-rustup, `tauri build`, npm, pnpm, `tauri-action`), a secret outside a step, a
-secret in a step that is not one of the allowed signing commands or in one that
-should not have it, a compile or package manager inside a job that holds a
-secret, a missing `--locked`, or a floating toolchain.
+`scripts/desktop-release-workflow.test.mjs` parses the workflow with the real
+`yaml` package, so block-scalar spelling, quoting and flow style cannot change
+what is checked, and fails if a future edit mixes these. (`yaml` comes from the
+repository's `node_modules` locally; the verification build installs it with
+`npm ci --ignore-scripts` from the lockfile in `scripts/`, in a job that holds
+no secret.) What it enforces:
+
+- The file has no YAML anchor, alias, merge key or tag, and is one valid
+  document with no duplicate key.
+- Any reference to `secrets`, in any spelling (`secrets.X`, `secrets['X']`,
+  `Secrets.X`, `toJSON(secrets)`, `format(..., secrets)`, `secrets: inherit`), is
+  found. It is allowed only as the exact value of an `env` entry of the same
+  name inside a step: never at workflow or job level, in `with`, in `if`, in
+  `run` or in a name.
+- A step that holds a secret has no `uses`, no `shell` or `working-directory`,
+  only the secrets and plain env names its signing command is listed with, and
+  every logical line of its `run` is on an allow-list
+  (`scripts/desktop-release-signing-commands.mjs`: `security`, `codesign`,
+  `xcrun notarytool`/`stapler`, `hdiutil`, `ditto`, the locked `tauri signer
+  sign`, the preflight script and the shell plumbing those use, each as an
+  exact line). An unlisted line fails, whatever it runs: `bash ./x.sh`,
+  `python3`, `sh -c`, `make`, `source`. It does not model bash beyond that: a
+  new command in a signing step is a reviewed change to the allow-list file.
+- A step that builds or installs (cargo, rustup, `tauri build`, npm, pnpm,
+  `tauri-action`) holds no secret, and a job that holds a secret runs no
+  compiler or package manager other than the one locked `npm ci`, uses only the
+  SHA-pinned checkout, node and artifact actions, sets no job-level `env`, has
+  read-only permissions, and runs in the protected environment.
+- Every `cargo` and `tauri build` has `--locked`, and the Rust and Node versions
+  are exact.
+- The preflight job has exactly `contents: read` and `actions: read`.
+- The signing-tools lockfile names `@tauri-apps/cli` at the workflow's version,
+  with a sha512 integrity and a registry.npmjs.org resolution for every entry.
+
+`scripts/ci-runner-inventory.test.mjs` (root) reads the three matrix jobs the
+same way and fails on any runner that is not on the explicit list, any matrix
+axis or `exclude` besides `include`, any flow-style entry, extra key, anchor or
+alias.
 
 What this does not stop: a malicious crate that runs in `release-build` can
 still produce a malicious app, and the signing job would sign it. Separation
 keeps the key from being read, not from being used on tampered output; the
-committed `Cargo.lock`, `--locked` and review bound that. The Tauri CLI is
-pinned by version, not by an integrity-checked lockfile.
+committed `Cargo.lock`, `--locked` and review bound that. The Tauri CLI of the
+two build jobs (`verify-build`, `release-build`) is still installed with
+`npm install --global --ignore-scripts` at an exact version, so it has the
+registry's integrity check only; those jobs hold no secret, and a CLI tainted
+there would be a tainted build, which is the case the previous paragraph
+describes. Only the signing job, which holds the key, uses the lockfile.
 
 ### Fail-closed preflight
 
@@ -240,12 +289,15 @@ these hold:
    reviewer and `prevent_self_review: true`; deployment branches are "selected
    branches" (`custom_branch_policies: true`, `protected_branches: false`) and
    the rule list is exactly one entry, the branch `main` (no tag, no pattern, no
-   second branch). GitHub documents these endpoints as readable by anyone with
-   read access to the repository, so the default `contents: read` token is
-   enough and there is no extra workflow permission to grant (the API answers
-   404 both for a missing environment and for a token that cannot read it; both
-   fail the check, and the message names the permission). The check fails
-   closed; it never skips. **What it is worth:** a workflow that names an
+   second branch). GitHub's permission table for fine-grained tokens lists
+   these two endpoints under "Actions: read", and a workflow token with only
+   `contents: read` has `actions: none`, so the `release-preflight` job declares
+   `permissions: { contents: read, actions: read }` and nothing broader (the
+   workflow test pins exactly that). **This has not been proven by a real run:**
+   the permission is taken from the documentation, not observed. If GitHub
+   answers 401, 403 or 404 (it answers 404 both for a missing environment and
+   for a token that cannot read it) the check fails closed, and the message
+   names `actions: read`. The check never skips. **What it is worth:** a workflow that names an
    environment that does not exist creates it silently and unprotected, and a
    presence-only secrets check cannot tell. This check catches the *owner's*
    mistake. It is not a defence against an attacker: whoever can change this

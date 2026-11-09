@@ -44,8 +44,10 @@
 #                                                   APPLE_ID, APPLE_PASSWORD,
 #                                                   APPLE_TEAM_ID
 #                      - sign updater payloads   -> TAURI_SIGNING_PRIVATE_KEY(+_PASSWORD)
-#                    The Tauri CLI is installed in a step with no secrets, and
-#                    an always() step removes the temporary keychain, the
+#                    The Tauri CLI is installed in a step with no secrets, by
+#                    `npm ci --ignore-scripts` from the committed, integrity-
+#                    pinned shell/signing-tools lockfile, and run by absolute
+#                    path. An always() step removes the temporary keychain, the
 #                    certificate file and the installed tool.
 #   release-preflight, release-publish
 #                    in the environment too; the preflight sees the secrets
@@ -53,7 +55,9 @@
 #
 # packages/smrt-desktop/shell/scripts/desktop-release-workflow.test.mjs fails if an edit
 # mixes these: a secret in a step that builds or installs, a secret in a step
-# that is not one of the allowed signing commands, or a secret outside a step.
+# whose script is not made only of allow-listed signing commands, any
+# reference to `secrets` outside the env of such a step, or any YAML anchor,
+# alias or merge key (the lint reads the parsed file, so none can hide one).
 #
 # What this does not do: a compromised crate in release-build can still produce
 # a malicious app, and that app is then signed. Separating the key stops its
@@ -176,6 +180,12 @@ jobs:
         with:
           workspaces: packages/smrt-desktop/shell
 
+      # The workflow lint parses the YAML with the `yaml` package, installed
+      # from a committed lockfile with scripts off. This job has no secret.
+      - name: Install the lint's YAML parser (locked)
+        if: runner.os == 'Linux'
+        run: npm ci --ignore-scripts --no-audit --no-fund --registry https://registry.npmjs.org/ --prefix "$SHELL_DIR/scripts"
+
       - name: Test the release scripts and the workflow's secret separation
         if: runner.os == 'Linux'
         run: |
@@ -221,8 +231,15 @@ jobs:
     # creates it by hand, limited to main with required reviewers; see the
     # README. The first checks below refuse to go on if that was not done.
     environment: desktop-release
+    # `actions: read` is for the environment check below: GitHub's permission
+    # table for fine-grained tokens lists GET /repos/{repo}/environments/{name}
+    # and .../deployment-branch-policies under "Actions: read". With only
+    # `contents: read` the token has `actions: none`. This has not been proven
+    # by a real run; if GitHub answers 403/404 the check fails closed and names
+    # the permission. Nothing broader is needed.
     permissions:
       contents: read
+      actions: read
     steps:
       - name: Require main
         env:
@@ -584,11 +601,15 @@ jobs:
           ' "$OVERLAY_FILE" >> "$GITHUB_ENV"
 
       # Installed in a step that has no secrets; nothing is installed or
-      # downloaded afterwards. The version is exact and lifecycle scripts are
-      # off. (The Linux leg signs nothing and does not need it.)
-      - name: Install the pinned Tauri CLI
+      # downloaded afterwards. `npm ci` takes exactly what the committed
+      # signing-tools/package-lock.json says (version and sha512 integrity of
+      # the CLI and every platform package) and refuses a lockfile that
+      # disagrees with package.json; lifecycle scripts are off. The signing
+      # step runs the binary by absolute path from that directory, never from
+      # PATH. (The Linux leg signs nothing and does not need it.)
+      - name: Install the locked Tauri CLI
         if: runner.os != 'Linux'
-        run: npm install --global --ignore-scripts "@tauri-apps/cli@${TAURI_CLI_VERSION}"
+        run: npm ci --ignore-scripts --no-audit --no-fund --registry https://registry.npmjs.org/ --prefix "$SHELL_DIR/signing-tools"
 
       # SECRET STEP 1 of 3 (macOS): the certificate and its password only.
       # Imports the .p12 into a temporary keychain that the always() step
@@ -710,7 +731,7 @@ jobs:
             payloads=("$SIGNED_DIR"/nsis/*-setup.exe)
           fi
           test "${#payloads[@]}" -eq 1
-          tauri signer sign "${payloads[0]}"
+          "$PWD/$SHELL_DIR/signing-tools/node_modules/.bin/tauri" signer sign "${payloads[0]}"
 
       # A build that came out unsigned or un-notarized must not stand as a
       # release. This runs BEFORE the leg is uploaded, so a failure here keeps
@@ -753,7 +774,8 @@ jobs:
       # Removes everything this job wrote that could outlive it on a runner
       # that is not wiped: the temporary keychain (and with it the imported
       # certificate), any certificate file, the notarization and dmg staging,
-      # the downloaded bundles and the installed Tauri CLI. The signing key is
+      # the downloaded bundles and the installed Tauri CLI (the node_modules of
+      # signing-tools). The signing key is
       # only ever in the environment of one step; no key file is written.
       - name: Clean up
         if: always()
@@ -761,7 +783,7 @@ jobs:
           if [ "$RUNNER_OS" = macOS ]; then
             security delete-keychain "$RUNNER_TEMP/desktop-signing.keychain-db" || true
           fi
-          npm uninstall --global @tauri-apps/cli || true
+          rm -rf "$SHELL_DIR/signing-tools/node_modules"
           rm -rf "$RUNNER_TEMP"/desktop-* .desktop-leg
 
   # The only job that can write the release. It needs every leg, so a failed

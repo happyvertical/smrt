@@ -1,0 +1,10 @@
+{
+  "name": "smrt-desktop-signing-tools",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The Tauri CLI the desktop release signing job runs, pinned by lockfile. Installed with `npm ci --ignore-scripts` in a step that holds no secret. Not a pnpm workspace package; keep the version equal to TAURI_CLI_VERSION in .github/workflows/desktop-release.yml.",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@tauri-apps/cli": "2.12.4"
+  }
+}

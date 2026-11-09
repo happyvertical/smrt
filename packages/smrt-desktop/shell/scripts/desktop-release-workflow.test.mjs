@@ -1,6 +1,8 @@
 // Run with: node --test scripts/desktop-release-workflow.test.mjs
 // Keeps the signing secrets apart from the build. The real workflow must pass;
-// every mutation below mixes the two and must fail.
+// every mutation below mixes the two (or hides one) and must fail. The lint
+// parses the YAML with the `yaml` package: from the repository root it comes
+// from node_modules, in the verification build from `npm ci` in this directory.
 
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -8,7 +10,14 @@ import { dirname, join } from 'node:path';
 import { describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { checkWorkflow, parseWorkflow } from './desktop-release-workflow-lint.mjs';
+import {
+  checkLockfile,
+  checkWorkflow,
+  parseWorkflow,
+  SIGNING_TOOLS_INSTALL,
+  secretReferences,
+  workflowTauriCliVersion,
+} from './desktop-release-workflow-lint.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const source = readFileSync(
@@ -34,6 +43,12 @@ const fails = (text, pattern) => {
   }
 };
 
+const shellDir = join(here, '..');
+const signingTools = (name) =>
+  readFileSync(join(shellDir, 'signing-tools', name), 'utf8');
+
+const UPDATER_TAIL =
+  '          test "${#payloads[@]}" -eq 1\n          "$PWD/$SHELL_DIR/signing-tools/node_modules/.bin/tauri" signer sign "${payloads[0]}"';
 const BUILD_STEP_ENV = `        env:
           TARGET: \${{ matrix.target }}
           BUNDLES: \${{ matrix.bundles }}
@@ -61,7 +76,9 @@ describe('the real workflow', () => {
       ],
     );
     const withSecrets = jobs
-      .filter((job) => job.steps.some((s) => /secrets\./.test(s.text)))
+      .filter((job) =>
+        job.steps.some((s) => secretReferences(s.raw).length > 0),
+      )
       .map((job) => job.id);
     assert.deepEqual(withSecrets, ['release-preflight', 'release']);
     const build = jobs.find((job) => job.id === 'release-build');
@@ -75,7 +92,7 @@ describe('a secret next to a build or install fails', () => {
   it('in the step that runs tauri build / cargo', () => {
     fails(
       mutate(BUILD_STEP_ENV, BUILD_STEP_ENV.replace('        env:\n', `        env:\n${SECRET_LINE}`)),
-      /holds a secret|must be exactly one allowed/,
+      /holds a secret|allow-listed signing commands|its own env entry/,
     );
   });
 
@@ -101,8 +118,8 @@ describe('a secret next to a build or install fails', () => {
   it('in the CLI install step', () => {
     fails(
       mutate(
-        '      - name: Install the pinned Tauri CLI\n        if: runner.os != \'Linux\'\n',
-        `      - name: Install the pinned Tauri CLI\n        if: runner.os != 'Linux'\n        env:\n${SECRET_LINE}`,
+        '      - name: Install the locked Tauri CLI\n        if: runner.os != \'Linux\'\n',
+        `      - name: Install the locked Tauri CLI\n        if: runner.os != 'Linux'\n        env:\n${SECRET_LINE}`,
       ),
     );
   });
@@ -123,7 +140,7 @@ describe('a secret next to a build or install fails', () => {
   });
 });
 
-describe('a secret step must be exactly an allowed signing command', () => {
+describe('a secret step is made only of allow-listed signing commands', () => {
   it('refuses the updater key in the certificate or notarization step', () => {
     fails(
       mutate(
@@ -163,8 +180,11 @@ describe('a secret step must be exactly an allowed signing command', () => {
     ]) {
       fails(
         mutate(
-          '          test "${#payloads[@]}" -eq 1\n          tauri signer sign "${payloads[0]}"',
-          `          test "\${#payloads[@]}" -eq 1\n          ${extra}\n          tauri signer sign "\${payloads[0]}"`,
+          UPDATER_TAIL,
+          UPDATER_TAIL.replace(
+            '          "$PWD',
+            `          ${extra}\n          "$PWD`,
+          ),
         ),
         pattern,
       );
@@ -177,7 +197,7 @@ describe('a secret step must be exactly an allowed signing command', () => {
         '      - name: Stage the leg output\n        env:\n          TARGET: ${{ matrix.target }}\n',
         `      - name: Stage the leg output\n        env:\n${SECRET_LINE}          TARGET: \${{ matrix.target }}\n`,
       ),
-      /exactly one allowed signing command/,
+      /allow-listed signing commands/,
     );
   });
 
@@ -218,15 +238,17 @@ describe('a job that holds secrets compiles nothing', () => {
         afterCli,
         `      - name: Install something\n        run: npm install --global left-pad\n\n${afterCli}`,
       ),
-      /npm other than the pinned/,
+      /npm other than the locked/,
     );
-    fails(
-      mutate(
-        'npm install --global --ignore-scripts "@tauri-apps/cli@${TAURI_CLI_VERSION}"\n\n      # SECRET STEP 1',
-        'npm install --global "@tauri-apps/cli@${TAURI_CLI_VERSION}"\n\n      # SECRET STEP 1',
-      ),
-      /npm other than the pinned/,
-    );
+    // flags dropped, or the old unlocked global install put back
+    for (const replacement of [
+      'npm ci --prefix "$SHELL_DIR/signing-tools"',
+      'npm ci --ignore-scripts --prefix "$SHELL_DIR/signing-tools"',
+      'npm install --ignore-scripts --prefix "$SHELL_DIR/signing-tools"',
+      'npm install --global --ignore-scripts "@tauri-apps/cli@${TAURI_CLI_VERSION}"',
+    ]) {
+      fails(mutate(SIGNING_TOOLS_INSTALL, replacement), /npm other than the locked/);
+    }
   });
 
   it('refuses an action that is not an allowed, pinned one', () => {
@@ -261,6 +283,10 @@ describe('a job that holds secrets compiles nothing', () => {
     );
     fails(
       mutate('security delete-keychain', 'echo keychain'),
+      /always\(\) cleanup/,
+    );
+    fails(
+      mutate('rm -rf "$SHELL_DIR/signing-tools/node_modules"', 'true'),
       /always\(\) cleanup/,
     );
   });
@@ -308,5 +334,400 @@ describe('--locked and pinned toolchains', () => {
       ),
       /pinned NODE_VERSION/,
     );
+  });
+});
+
+describe('block scalars cannot hide a command (the lint reads parsed YAML)', () => {
+  const afterCli = '      - name: Import the signing certificate (macOS)\n';
+  const headers = ['|', '>', '|-', '>-', '|+', '>+', '|2', '>2', '|2-', "'cargo build --locked'"];
+
+  for (const header of headers) {
+    it(`run: ${header} in the signing job`, () => {
+      const body =
+        header.startsWith("'") ? '' : '          cargo build --locked\n';
+      const run = header.startsWith("'")
+        ? `        run: ${header}\n`
+        : `        run: ${header}\n${body}`;
+      fails(
+        mutate(
+          afterCli,
+          `      - name: Compile in the signing job\n${run}\n${afterCli}`,
+        ),
+        /compiles or runs a package manager/,
+      );
+    });
+  }
+
+  it('a block-scalar header does not hide a script in a secret step', () => {
+    for (const header of ['|-', '|+', '|2']) {
+      fails(
+        mutate(
+          UPDATER_TAIL,
+          UPDATER_TAIL.replace(
+            '          "$PWD',
+            `          bash ./x.sh\n          "$PWD`,
+          ),
+        ).replace(
+          '        run: |\n          set -euo pipefail\n          shopt',
+          `        run: ${header}\n          set -euo pipefail\n          shopt`,
+        ),
+        /not an allow-listed signing command: bash \.\/x\.sh/,
+      );
+    }
+    // folded, the lines join into one that is not listed
+    fails(
+      mutate(
+        UPDATER_TAIL,
+        UPDATER_TAIL.replace('          "$PWD', '          bash ./x.sh\n          "$PWD'),
+      ).replace(
+        '        run: |\n          set -euo pipefail\n          shopt',
+        '        run: >-\n          set -euo pipefail\n          shopt',
+      ),
+      /not an allow-listed signing command/,
+    );
+  });
+});
+
+describe('every way of naming secrets is a secret reference', () => {
+  const buildEnv = '          BUNDLES: ${{ matrix.bundles }}\n        run: |\n          tauri build --no-sign';
+  const withEnv = (line) =>
+    mutate(buildEnv, `          BUNDLES: \${{ matrix.bundles }}\n${line}\n        run: |\n          tauri build --no-sign`);
+
+  it('is found in each spelling, wherever it sits', () => {
+    for (const expression of [
+      "${{ secrets['TAURI_SIGNING_PRIVATE_KEY'] }}",
+      '${{ secrets["TAURI_SIGNING_PRIVATE_KEY"] }}',
+      '${{ Secrets.TAURI_SIGNING_PRIVATE_KEY }}',
+      '${{ SECRETS.TAURI_SIGNING_PRIVATE_KEY }}',
+      '${{ toJSON(secrets) }}',
+      '${{ toJson(secrets) }}',
+      "${{ format('{0}', secrets) }}",
+      '${{ secrets }}',
+      "${{ fromJSON(toJSON(secrets))['TAURI_SIGNING_PRIVATE_KEY'] }}",
+      'x${{ matrix.target }}${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}',
+    ]) {
+      fails(
+        withEnv(`          LEAK: ${expression}`),
+        /holds a secret|its own env entry/,
+      );
+    }
+  });
+
+  it('is found in if:, run and with:, not only in env', () => {
+    fails(
+      mutate(
+        '      - name: Upload the unsigned output\n',
+        "      - name: Gate\n        if: ${{ secrets.APPLE_ID != '' }}\n        run: echo hi\n      - name: Upload the unsigned output\n",
+      ),
+      /its own env entry/,
+    );
+    fails(
+      mutate(
+        '      - name: Upload the unsigned output\n',
+        "      - name: Gate\n        if: toJSON(secrets) != ''\n        run: echo hi\n      - name: Upload the unsigned output\n",
+      ),
+      /its own env entry/,
+    );
+    fails(
+      mutate(
+        '      - name: Upload the unsigned output\n',
+        '      - name: Inline\n        run: echo "${{ secrets.APPLE_ID }}"\n      - name: Upload the unsigned output\n',
+      ),
+      /its own env entry/,
+    );
+  });
+
+  it('is found at job level as `secrets: inherit` and as an expression', () => {
+    fails(
+      mutate(
+        '    timeout-minutes: 90\n    permissions:\n      contents: read\n    defaults:',
+        '    timeout-minutes: 90\n    secrets: inherit\n    permissions:\n      contents: read\n    defaults:',
+      ),
+      /job level/,
+    );
+    fails(
+      mutate(
+        '  CARGO_INCREMENTAL: \'0\'\n',
+        "  CARGO_INCREMENTAL: '0'\n  LEAK: ${{ toJSON(secrets) }}\n",
+      ),
+      /workflow level/,
+    );
+  });
+
+  it('must be the exact value of the env entry of the same name', () => {
+    fails(
+      mutate(
+        '          APPLE_ID: ${{ secrets.APPLE_ID }}\n          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}\n          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}\n          TARGET',
+        '          APPLE_ID: ${{ secrets.APPLE_PASSWORD }}\n          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}\n          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}\n          TARGET',
+      ),
+      /its own env entry/,
+    );
+    fails(
+      mutate(
+        '          APPLE_ID: ${{ secrets.APPLE_ID }}\n          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}\n          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}\n          TARGET',
+        "          APPLE_ID: ${{ secrets.APPLE_ID || 'x' }}\n          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}\n          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}\n          TARGET",
+      ),
+      /its own env entry/,
+    );
+  });
+
+  it('secretReferences finds what the old dotted-name pattern missed', () => {
+    assert.equal(secretReferences({ env: { A: '${{ secrets.A }}' } }).length, 1);
+    assert.equal(secretReferences({ a: "${{ secrets['A'] }}" }).length, 1);
+    assert.equal(secretReferences({ a: '${{ toJSON(secrets) }}' }).length, 1);
+    assert.equal(secretReferences({ a: '${{ format("{0}", Secrets) }}' }).length, 1);
+    assert.equal(secretReferences({ secrets: 'inherit' }).length, 1);
+    assert.equal(secretReferences({ if: 'toJSON(secrets) != 1' }).length, 1);
+    assert.equal(secretReferences({ name: 'Check secrets and keys' }).length, 0);
+    assert.equal(secretReferences({ a: '${{ github.token }}' }).length, 0);
+  });
+});
+
+describe('YAML anchors, aliases, merge keys and tags are refused', () => {
+  it('refuses an anchor on the secret env and an alias in a build step', () => {
+    fails(
+      mutate(
+        '        env:\n          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}\n          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}\n        run: |\n          set -euo pipefail\n          shopt',
+        '        env: &k\n          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}\n          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}\n        run: |\n          set -euo pipefail\n          shopt',
+      ).replace(BUILD_STEP_ENV, BUILD_STEP_ENV.replace(/        env:\n.*\n.*\n/, '        env: *k\n')),
+      /anchor|alias/,
+    );
+  });
+
+  it('refuses a lone anchor, a lone alias, a merge key and a tag', () => {
+    fails(mutate('      fail-fast: true\n      matrix:\n        include:\n          # Both macOS', '      fail-fast: &ff true\n      matrix:\n        include:\n          # Both macOS'), /anchor/);
+    fails(
+      mutate('  CARGO_INCREMENTAL: \'0\'\n', "  CARGO_INCREMENTAL: &c '0'\n").replace(
+        '  SHELL_DIR: packages/smrt-desktop/shell\n',
+        '  SHELL_DIR: packages/smrt-desktop/shell\n  COPY: *c\n',
+      ),
+      /alias/,
+    );
+    fails(
+      mutate('  CARGO_INCREMENTAL: \'0\'\n', "  CARGO_INCREMENTAL: '0'\n  <<: {X: y}\n"),
+      /merge key/,
+    );
+    fails(mutate("  CARGO_INCREMENTAL: '0'\n", '  CARGO_INCREMENTAL: !!str 0\n'), /tag/);
+  });
+
+  it('refuses a duplicate key and a second document', () => {
+    fails(mutate("  CARGO_INCREMENTAL: '0'\n", "  CARGO_INCREMENTAL: '0'\n  CARGO_INCREMENTAL: '1'\n"), /YAML/);
+    fails(`${source}\n---\nname: other\n`, /YAML/);
+  });
+});
+
+describe('a secret step runs only allow-listed commands', () => {
+  const insert = (extra) =>
+    mutate(UPDATER_TAIL, UPDATER_TAIL.replace('          "$PWD', `          ${extra}\n          "$PWD`));
+
+  it('refuses scripts, interpreters and other ways to run anything', () => {
+    for (const extra of [
+      'bash ./x.sh',
+      'sh ./x.sh',
+      'sh -c "echo hi"',
+      'python3 -c "print(1)"',
+      'perl -e 1',
+      'make',
+      'source ./x.sh',
+      '. ./x.sh',
+      'eval "$X"',
+      'env | sort',
+      'cat /etc/hosts',
+      'echo hi > "$RUNNER_TEMP/x"',
+      'echo "$TAURI_SIGNING_PRIVATE_KEY"',
+      'cat <<EOF',
+      'x=$(date)',
+    ]) {
+      fails(insert(extra), /not an allow-listed signing command/);
+    }
+  });
+
+  it('refuses a listed command with something added to it', () => {
+    fails(
+      mutate(UPDATER_TAIL, `${UPDATER_TAIL.replace('"${payloads[0]}"', '"${payloads[0]}" ; bash ./x.sh')}`),
+      /not an allow-listed signing command/,
+    );
+    fails(
+      mutate(UPDATER_TAIL, UPDATER_TAIL.replace('"${payloads[0]}"', '"${payloads[0]}" && curl x')),
+      /not an allow-listed signing command/,
+    );
+    fails(
+      mutate(
+        'security import "$cert" -k "$keychain" \\\n            -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign',
+        'security import "$cert" -k "$keychain" \\\n            -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign; bash ./x.sh',
+      ),
+      /not an allow-listed signing command/,
+    );
+  });
+
+  it('refuses a script run in the certificate import and the notarization step', () => {
+    fails(
+      mutate('          umask 077\n', '          umask 077\n          bash ./x.sh\n'),
+      /not an allow-listed signing command/,
+    );
+    fails(
+      mutate(
+        '          chmod -R u+rwX "$app"\n',
+        '          chmod -R u+rwX "$app"\n          make\n',
+      ),
+      /not an allow-listed signing command/,
+    );
+  });
+
+  it('refuses the Tauri CLI from PATH and any other binary location', () => {
+    fails(mutate(UPDATER_TAIL, UPDATER_TAIL.replace('"$PWD/$SHELL_DIR/signing-tools/node_modules/.bin/tauri"', 'tauri')));
+    fails(mutate(UPDATER_TAIL, UPDATER_TAIL.replace('"$PWD/$SHELL_DIR/signing-tools/node_modules/.bin/tauri"', '"$RUNNER_TEMP/tauri"')));
+  });
+
+  it('refuses keys that change how the script runs, and stray env', () => {
+    fails(
+      mutate(
+        '        run: |\n          set -euo pipefail\n          shopt',
+        '        shell: python {0}\n        run: |\n          set -euo pipefail\n          shopt',
+      ),
+      /may not set shell/,
+    );
+    fails(
+      mutate(
+        '        run: |\n          set -euo pipefail\n          shopt',
+        '        working-directory: /tmp\n        run: |\n          set -euo pipefail\n          shopt',
+      ),
+      /may not set working-directory/,
+    );
+    fails(
+      mutate(
+        '          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}\n        run: |\n          set -euo pipefail\n          shopt',
+        '          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}\n          BASH_ENV: /tmp/x\n        run: |\n          set -euo pipefail\n          shopt',
+      ),
+      /env BASH_ENV is not allowed/,
+    );
+    fails(
+      mutate("  CARGO_INCREMENTAL: '0'\n", "  CARGO_INCREMENTAL: '0'\n  BASH_ENV: /tmp/x\n"),
+      /workflow-level env BASH_ENV/,
+    );
+    fails(
+      mutate(
+        '    environment: desktop-release\n    permissions:\n      contents: read\n    defaults:\n      run:\n        shell: bash\n',
+        '    environment: desktop-release\n    env:\n      NODE_OPTIONS: --require /tmp/x\n    permissions:\n      contents: read\n    defaults:\n      run:\n        shell: bash\n',
+      ),
+      /job-level env/,
+    );
+  });
+});
+
+describe('the token permissions', () => {
+  const preflight = () =>
+    parseWorkflow(source).jobs.find((job) => job.id === 'release-preflight');
+  const PERMISSIONS =
+    '    permissions:\n      contents: read\n      actions: read\n    steps:\n      - name: Require main';
+
+  it('gives the environment check exactly contents: read and actions: read', () => {
+    assert.deepEqual(preflight().permissions, { contents: 'read', actions: 'read' });
+  });
+
+  it('refuses a preflight with less or more than that', () => {
+    for (const replacement of [
+      '    permissions:\n      contents: read\n    steps:\n      - name: Require main',
+      '    permissions:\n      actions: read\n    steps:\n      - name: Require main',
+      '    permissions:\n      contents: read\n      actions: write\n    steps:\n      - name: Require main',
+      '    permissions:\n      contents: write\n      actions: read\n    steps:\n      - name: Require main',
+      '    permissions:\n      contents: read\n      actions: read\n      id-token: write\n    steps:\n      - name: Require main',
+      '    permissions: read-all\n    steps:\n      - name: Require main',
+      '    steps:\n      - name: Require main',
+    ]) {
+      fails(mutate(PERMISSIONS, replacement), /exactly "contents: read" and "actions: read"/);
+    }
+  });
+
+  it('keeps every job that holds a secret read-only', () => {
+    fails(
+      mutate(
+        '    environment: desktop-release\n    permissions:\n      contents: read\n    defaults:',
+        '    environment: desktop-release\n    permissions:\n      contents: write\n    defaults:',
+      ),
+      /no explicit read-only permissions/,
+    );
+  });
+});
+
+describe('the Tauri CLI the signing job runs is locked', () => {
+  const lock = () => signingTools('package-lock.json');
+  const pkg = () => signingTools('package.json');
+  const expected = () => ({
+    name: '@tauri-apps/cli',
+    version: workflowTauriCliVersion(source),
+  });
+  const mutateJson = (text, edit) => {
+    const value = JSON.parse(text);
+    edit(value);
+    return JSON.stringify(value, null, 2);
+  };
+
+  it('installs it with npm ci from the committed directory, in a secretless step', () => {
+    const release = parseWorkflow(source).jobs.find((job) => job.id === 'release');
+    const install = release.steps.find((step) => step.run?.includes('npm '));
+    assert.equal(install.run.trim(), SIGNING_TOOLS_INSTALL);
+    assert.equal(secretReferences(install.raw).length, 0);
+    for (const step of release.steps) {
+      assert.doesNotMatch(step.run ?? '', /npm (install|i|add|exec|x)\b|--global|\bnpx\b/);
+    }
+  });
+
+  it('the committed lockfile passes: integrity, npm registry, the pinned version', () => {
+    assert.deepEqual(checkLockfile(lock(), pkg(), expected()), []);
+    assert.equal(expected().version, JSON.parse(pkg()).dependencies['@tauri-apps/cli']);
+  });
+
+  it('the parser package the verification build installs is locked too', () => {
+    assert.deepEqual(
+      checkLockfile(
+        readFileSync(join(here, 'package-lock.json'), 'utf8'),
+        readFileSync(join(here, 'package.json'), 'utf8'),
+      ),
+      [],
+    );
+  });
+
+  it('refuses a package without integrity, from another host, or unlocked', () => {
+    const cli = 'node_modules/@tauri-apps/cli-darwin-arm64';
+    const entries = (edit) => mutateJson(lock(), (l) => edit(l.packages));
+    const expectProblem = (text, pattern, pkgText = pkg()) => {
+      const problems = checkLockfile(text, pkgText, expected());
+      assert.ok(problems.some((p) => pattern.test(p)), `${pattern}: ${problems.join(' | ')}`);
+    };
+    expectProblem(entries((p) => delete p[cli].integrity), /no sha512 integrity/);
+    expectProblem(entries((p) => { p[cli].integrity = 'sha1-abc'; }), /no sha512 integrity/);
+    expectProblem(
+      entries((p) => { p[cli].resolved = 'https://example.test/cli.tgz'; }),
+      /not resolved from registry\.npmjs\.org/,
+    );
+    expectProblem(entries((p) => delete p[cli].resolved), /not resolved from/);
+    expectProblem(entries((p) => { p[cli].link = true; }), /link or bundled/);
+    expectProblem(entries((p) => delete p[cli]), /optional platform package is not locked/);
+    expectProblem(
+      entries((p) => { p['node_modules/@tauri-apps/cli'].version = '2.0.0'; }),
+      /does not lock/,
+    );
+    expectProblem(
+      lock(),
+      /not an exact version/,
+      mutateJson(pkg(), (p) => { p.dependencies['@tauri-apps/cli'] = '^2.12.4'; }),
+    );
+    expectProblem(
+      lock(),
+      /must depend on exactly/,
+      mutateJson(pkg(), (p) => { p.dependencies.left = '1.0.0'; }),
+    );
+    assert.ok(checkLockfile('not json', pkg()).length > 0);
+    assert.ok(checkLockfile('{"lockfileVersion":1}', pkg()).length > 0);
+  });
+
+  it('follows the workflow: a version bump needs a new lockfile', () => {
+    const bumped = mutate('TAURI_CLI_VERSION: 2.12.4', 'TAURI_CLI_VERSION: 2.12.5');
+    const problems = checkLockfile(lock(), pkg(), {
+      name: '@tauri-apps/cli',
+      version: workflowTauriCliVersion(bumped),
+    });
+    assert.ok(problems.length > 0);
   });
 });
