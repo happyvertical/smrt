@@ -50,9 +50,10 @@ const DEFAULT_TIMEOUT_MS = 2000;
 /**
  * Provider over an injected `send`. It validates the request before sending
  * (so a malformed nonce or origin never reaches the channel), validates the
- * reply strictly, insists the reply origin equals the requested origin (the
- * bearer is only ever bound to the origin the caller proved), and refuses an
- * already-expired bearer. A transport failure, timeout or malformed reply is
+ * reply strictly, insists the reply echoes the requested `instanceNonce` (the
+ * reply is bound to the instance `status` proved; a mismatch is
+ * `instance_mismatch`) and the requested origin (the bearer is only ever bound
+ * to the origin the caller proved), and refuses an already-expired bearer. A transport failure, timeout or malformed reply is
  * `credential_unavailable`; the underlying error is dropped, never chained.
  */
 export function createControlChannelCredentialProvider(
@@ -106,6 +107,11 @@ export function createControlChannelCredentialProvider(
       const result = parseAcquireCredentialResponse(reply);
       if (!result.ok) throw new DesktopContractError(result.code);
       const { lease } = result;
+      // The reply must come from the instance `status` proved, not merely
+      // from whatever answered on the vetted endpoint.
+      if (result.instanceNonce !== request.instanceNonce) {
+        throw new DesktopContractError('instance_mismatch');
+      }
       if (lease.origin !== request.origin) {
         throw new DesktopContractError('instance_mismatch');
       }

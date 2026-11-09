@@ -168,10 +168,12 @@ posixOnly(
         maxPollIntervalMs: 20,
       });
 
+    let lastReady: (RendezvousResult & { state: 'ready' }) | undefined;
     const ready = async () => {
       const result = await rendezvous().ensureReady({ start: false });
       results.push(result);
       if (result.state !== 'ready') throw new Error('not ready');
+      lastReady = result;
       return result;
     };
 
@@ -181,11 +183,15 @@ posixOnly(
         readFileSync(`${dir}/${INSTANCE_RECORD_FILENAME}`, 'utf8'),
       ).control;
 
-    const providerFor = () =>
-      createControlChannelCredentialProvider({
-        send: createControlChannelSend(endpoint()),
+    /** The provider over the vetted handle the rendezvous returned. */
+    const providerFor = () => {
+      const vetted = lastReady?.endpoint;
+      if (vetted === undefined) throw new Error('no vetted endpoint');
+      return createControlChannelCredentialProvider({
+        send: createControlChannelSend(vetted),
         now: () => NOW,
       });
+    };
 
     /** Run `fn`, record what it threw, and return it. */
     const caught = async (fn: () => Promise<unknown>): Promise<unknown> => {
@@ -385,7 +391,7 @@ posixOnly(
 
     it('keeps the core codec working on the same server and refuses the op to a core-only client', async () => {
       const instance = await ready();
-      expect(await rendezvous().status()).toEqual({
+      expect(await rendezvous().status()).toMatchObject({
         state: 'ready',
         origin: ORIGIN,
         instanceNonce: NONCE,
@@ -443,8 +449,33 @@ posixOnly(
         `{"v":1,"op":"acquire-credential","instanceNonce":"${instance.instanceNonce}","origin":"${instance.origin}"}\n`,
       );
       expect(success).toBe(
-        `{"v":1,"ok":true,"origin":"${ORIGIN}","token":"${CANARY_TOKEN}","expiresAt":"${FUTURE}"}\n`,
+        `{"v":1,"ok":true,"instanceNonce":"${NONCE}","origin":"${ORIGIN}","token":"${CANARY_TOKEN}","expiresAt":"${FUTURE}"}\n`,
       );
+    });
+
+    it('only takes the endpoint the rendezvous vetted: a raw endpoint or a look-alike is refused', async () => {
+      const instance = await ready();
+      expect(instance.endpoint).toBeDefined();
+      // The handle names nothing: no path, no name.
+      expect(JSON.stringify(instance)).not.toContain(dir);
+      expect(JSON.stringify(instance.endpoint)).toBe('{}');
+
+      const raw = endpoint();
+      for (const forged of [
+        raw,
+        { ...raw },
+        {},
+        Object.freeze(Object.create(null)),
+        instance.endpoint === undefined ? undefined : { ...instance.endpoint },
+        undefined,
+        null,
+        'x',
+      ]) {
+        const error = await caught(async () =>
+          createControlChannelSend(forged as never),
+        );
+        expect((error as DesktopContractError).code).toBe('invalid_endpoint');
+      }
     });
 
     it('turns an unreachable channel into credential_unavailable without echoing anything', async () => {

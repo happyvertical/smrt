@@ -25,6 +25,7 @@ const ask: AcquireOptions = { instanceNonce: NONCE, origin: ORIGIN };
 const success = (overrides: Record<string, unknown> = {}) => ({
   v: 1,
   ok: true,
+  instanceNonce: NONCE,
   origin: ORIGIN,
   token: CANARY_TOKEN,
   expiresAt: FUTURE,
@@ -65,6 +66,7 @@ describe('control-channel credential provider', () => {
   it('accepts a JSON line as the reply', async () => {
     const wire = encodeAcquireCredentialResponse({
       ok: true,
+      instanceNonce: NONCE,
       lease: {
         token: new SecretString(CANARY_TOKEN),
         origin: ORIGIN,
@@ -108,6 +110,23 @@ describe('control-channel credential provider', () => {
   it('T12: rejects a lease whose origin differs from the origin it asked about', async () => {
     const send = async () => success({ origin: 'http://127.0.0.1:4679' });
     expect(await code(provider(send).acquire(ask))).toBe('instance_mismatch');
+  });
+
+  it('binds the reply to the instance status proved: rejects a reply that echoes another nonce, or none', async () => {
+    const other = 'f'.repeat(32);
+    expect(NONCE).not.toBe(other);
+    const send = async () => success({ instanceNonce: other });
+    expect(await code(provider(send).acquire(ask))).toBe('instance_mismatch');
+    // A reply without the echo is not the documented reply at all.
+    const { instanceNonce: _omitted, ...bare } = success();
+    expect(await code(provider(async () => bare).acquire(ask))).toBe(
+      'credential_unavailable',
+    );
+    expect(
+      await code(
+        provider(async () => success({ instanceNonce: 'short' })).acquire(ask),
+      ),
+    ).toBe('credential_unavailable');
   });
 
   it('T13: only the loopback origin grammar is ever accepted in a reply', async () => {

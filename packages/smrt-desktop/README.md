@@ -447,8 +447,16 @@ a lock.
 contains 128 random bits chosen per shell start and is published only inside
 the 0700 private directory (`deriveControlEndpoint`): POSIX
 `<directory>/c-<32 hex>.sock`, Windows
-`\\.\pipe\smrt-<16 hex of sha256(bundleId)>-<32 hex>`. There is no name an
-attacker could squat in advance. `sun_path` is 104 bytes on macOS, so the
+`\\.\pipe\smrt-<16 hex of sha256(bundleId)>-<32 hex>`. A name nobody can
+predict makes a pre-created endpoint unlikely to be the recorded one; it is
+defense in depth and not a guarantee, because a same-user process can read the
+record (see the residual risks) and a name proves nothing about who listens
+behind it. **Windows pipe vetting is not implemented in TypeScript**: the
+client only checks the pipe name grammar and the instance nonce. Verifying the
+pipe's server (`GetNamedPipeServerProcessId`, the owner and the DACL, and
+`FILE_FLAG_FIRST_PIPE_INSTANCE` at creation) is the Rust shell's follow-up. Until
+a shell supplies that check (`vetPipe`, below) a Windows `ready` result carries
+no vetted endpoint handle. `sun_path` is 104 bytes on macOS, so the
 private state directory under `~/Library/Application Support` is normally too
 long for the socket: the shell places it in a short per-user 0700 directory
 (the per-user temp directory on macOS, `$XDG_RUNTIME_DIR` on Linux) and names
@@ -500,15 +508,16 @@ its peer's uid or SID, and a client cannot learn who owns the listening end. So
   socket (not a symlink) owned by the user with no group or other permission
   bits, and requires the peer to prove it is the recorded instance by echoing
   the `instanceNonce`;
-- on Windows the TypeScript checks are the pipe name grammar and the nonce;
-  ACL and SID verification live in the shell (finding F8, residual risk).
+- on Windows the TypeScript checks are the pipe name grammar and the nonce,
+  and nothing else: no owner, SID or ACL check exists in this package, and
+  `vetPipe` is the injection point for the shell's (finding F8, residual risk).
 
 **Result type.** `status()` and `ensureReady()` resolve with a closed union
 (`RendezvousResult`):
 
 | `state` | Meaning |
 | --- | --- |
-| `ready` | the channel proved the recorded instance and reported `ready`; carries `origin`, `instanceNonce`, `productId` |
+| `ready` | the channel proved the recorded instance and reported `ready`; carries `origin`, `instanceNonce`, `productId` and, when the endpoint was vetted, the opaque `endpoint` handle (below) |
 | `starting` | `status()` only: the instance is up and not ready yet |
 | `failed` | the instance or this client failed; carries a `code` (below) |
 | `not_installed` | `locate()` found no installed product |
@@ -519,6 +528,26 @@ its peer's uid or SID, and a client cannot learn who owns the listening end. So
 
 Cancelling with the `AbortSignal` rejects with the signal's reason. A result
 never contains a bearer, a pid or a path.
+
+**Vetted endpoint.** The credential flow must talk to the endpoint the
+rendezvous vetted, not to one a launcher re-derived. A `ready` result therefore
+carries `endpoint`, a `VettedEndpoint`: an opaque branded handle that only the
+vetting code can mint (a run-time registry, not just the type, so a look-alike
+object is rejected) and that serializes as `{}`, with no path or pipe name in
+it. `createControlChannelSend(endpoint)` accepts nothing else and throws
+`invalid_endpoint` for a raw `ControlEndpoint`, a copy or a missing handle. The
+handle is issued after the checks of step 3 and the nonce proof of step 4, for
+that record's endpoint only. It states what was true at that moment: the
+connect that follows is not atomic with the check, which is why the credential
+reply is also bound to the instance (the `instanceNonce` echo, below).
+
+- POSIX: issued after the private-directory, socket type, owner and mode checks.
+- Windows: **not issued by default.** The package cannot check a pipe's server
+  or DACL, so `ready` has no `endpoint` and the credential flow fails closed.
+  A shell that can check the pipe passes `vetPipe(endpoint)`; a handle is issued
+  only when it returns `true`, and `false` or a throw is `untrusted_state`. The
+  function belongs to the shell and is exercised in this package only against a
+  stub.
 
 **Failure codes** (`RendezvousFailureCode`, closed). The Rust supervisor today
 reports `Failed(String)`, free text for the tray. A client must not branch on
@@ -769,7 +798,7 @@ wiring below registers it. Checks, in order:
    malformed, or the credential is expired.
 
 `encodeAcquireCredentialResponse` / `parseAcquireCredentialResponse` are the
-wire form (`{"v":1,"ok":true,"origin":"…","token":"…","expiresAt":"…"}` or
+wire form (`{"v":1,"ok":true,"instanceNonce":"…","origin":"…","token":"…","expiresAt":"…"}` or
 `{"v":1,"ok":false,"code":"…"}`); the bearer appears in a success reply and
 nowhere else.
 
@@ -799,11 +828,15 @@ CredentialControlResponse>`. `src/credentials/end-to-end.test.ts` runs the
 whole path over a real unix socket.
 
 `createControlChannelCredentialProvider({ send })` is the launcher side. `send`
-is injected (`createControlChannelSend(endpoint)` implements it over the
-rendezvous transport and `credentialControlCodec`); the provider validates
-the nonce and origin before sending, applies a timeout (default 2 s) and the
-caller's `AbortSignal`, decodes the reply strictly, requires the reply origin
-to equal the requested origin, and refuses an expired bearer. Every transport
+is injected (`createControlChannelSend(result.endpoint)` implements it over the
+rendezvous transport and `credentialControlCodec`, and accepts only the vetted
+handle of a `ready` result); the provider validates the nonce and origin before
+sending, applies a timeout (default 2 s) and the caller's `AbortSignal`,
+decodes the reply strictly, requires the reply to **echo the requested
+`instanceNonce`** (`instance_mismatch` otherwise: the reply is bound to the
+instance `status` proved, not just to whatever answered on the endpoint),
+requires the reply origin to equal the requested origin, and refuses an
+expired bearer. Every transport
 or parse failure is `credential_unavailable` with the cause dropped.
 
 #### fd 3 frame protocol and bridge spawn
@@ -951,7 +984,7 @@ One table maps this package onto the launcher (#4791). `connectInstance` maps a
 
 | Source | Result | `LauncherProvider` outcome |
 | --- | --- | --- |
-| `ensureReady()` | `ready` | `{ origin }`; keep `instanceNonce` and `origin` for the credential request |
+| `ensureReady()` | `ready` | `{ origin }`; keep `instanceNonce`, `origin` and `endpoint` for the credential request |
 | `ensureReady()` | `not_installed` | `missing_install` |
 | `ensureReady()` | `failed` with `unsupported_contract` | `unsupported_contract` |
 | `ensureReady()` | every other `failed`, `not_running`, `untrusted_state`, `unresponsive`, `timeout` | `stale_instance` |
@@ -967,8 +1000,9 @@ a violation surfaces as `untrusted_state`.
 
 - `acquireCredential(context)` builds the provider once per instance with
   `createControlChannelCredentialProvider({ send: createControlChannelSend(endpoint) })`,
-  where `endpoint` is the `control` endpoint of the `instance.json` the
-  rendezvous vetted, and calls `provider.acquire({ instanceNonce, origin,
+  where `endpoint` is the `endpoint` handle of the `ready` result (absent on
+  Windows until the shell supplies `vetPipe`: map that to "cannot hand off the
+  credential here" rather than reading `instance.json` yourself), and calls `provider.acquire({ instanceNonce, origin,
   signal })` with the nonce and origin the rendezvous reported for the same
   instance. It returns `{ token: lease.token.reveal(), release }` **only** as
   long as #4791 still passes the bearer as `<PREFIX>_TOKEN`. Once #4729 moves

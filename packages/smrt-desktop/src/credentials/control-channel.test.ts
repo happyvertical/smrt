@@ -49,6 +49,7 @@ const request = {
 const success = (): AcquireCredentialSuccess => ({
   v: 1,
   ok: true,
+  instanceNonce: NONCE,
   lease: {
     token: new SecretString(CANARY_TOKEN),
     origin: ORIGIN,
@@ -107,7 +108,7 @@ describe('credentialControlCodec', () => {
   it('carries the token only inside the credential success body', () => {
     const line = credentialControlCodec.encodeResponse(success());
     expect(line).toBe(
-      `{"v":1,"ok":true,"origin":"${ORIGIN}","token":"${CANARY_TOKEN}","expiresAt":"${FUTURE}"}\n`,
+      `{"v":1,"ok":true,"instanceNonce":"${NONCE}","origin":"${ORIGIN}","token":"${CANARY_TOKEN}","expiresAt":"${FUTURE}"}\n`,
     );
     const parsed = credentialControlCodec.parseResponse(
       'acquire-credential',
@@ -139,20 +140,35 @@ describe('credentialControlCodec', () => {
         credentialControlCodec.parseResponse('acquire-credential', line),
       ).toEqual({ v: 1, ok: false, code });
     }
-    expect(() =>
+    // Reading is lenient (a newer peer), writing is strict.
+    expect(
       credentialControlCodec.parseResponse(
         'acquire-credential',
         '{"v":1,"ok":false,"code":"credential_rejected"}',
       ),
+    ).toEqual({ v: 1, ok: false, code: 'internal' });
+    expect(() =>
+      credentialControlCodec.encodeResponse({
+        v: 1,
+        ok: false,
+        code: 'credential_rejected',
+      }),
     ).toThrowError(
       expect.objectContaining({ code: 'invalid_control_message' }),
     );
     // The core codec does not know the credential codes.
-    expect(() =>
+    expect(
       coreControlCodec.parseResponse(
         'status',
         '{"v":1,"ok":false,"code":"credential_invalid"}',
       ),
+    ).toEqual({ v: 1, ok: false, code: 'internal' });
+    expect(() =>
+      coreControlCodec.encodeResponse({
+        v: 1,
+        ok: false,
+        code: 'credential_invalid',
+      }),
     ).toThrowError(
       expect.objectContaining({ code: 'invalid_control_message' }),
     );
@@ -160,10 +176,12 @@ describe('credentialControlCodec', () => {
 
   it('refuses success bodies that are not exactly the documented reply', async () => {
     const hostile = [
-      `{"v":1,"ok":true,"origin":"${ORIGIN}","token":"${CANARY_TOKEN}"}`,
-      `{"v":1,"ok":true,"origin":"http://localhost:4678","token":"${CANARY_TOKEN}","expiresAt":"${FUTURE}"}`,
-      `{"v":1,"ok":true,"origin":"${ORIGIN}","token":"not-a-token-${CANARY_BODY}","expiresAt":"${FUTURE}"}`,
-      `{"v":1,"ok":true,"origin":"${ORIGIN}","token":"${CANARY_TOKEN}","expiresAt":"${FUTURE}","extra":"${CANARY_BODY}"}`,
+      `{"v":1,"ok":true,"instanceNonce":"${NONCE}","origin":"${ORIGIN}","token":"${CANARY_TOKEN}"}`,
+      `{"v":1,"ok":true,"origin":"${ORIGIN}","token":"${CANARY_TOKEN}","expiresAt":"${FUTURE}"}`,
+      `{"v":1,"ok":true,"instanceNonce":"short","origin":"${ORIGIN}","token":"${CANARY_TOKEN}","expiresAt":"${FUTURE}"}`,
+      `{"v":1,"ok":true,"instanceNonce":"${NONCE}","origin":"http://localhost:4678","token":"${CANARY_TOKEN}","expiresAt":"${FUTURE}"}`,
+      `{"v":1,"ok":true,"instanceNonce":"${NONCE}","origin":"${ORIGIN}","token":"not-a-token-${CANARY_BODY}","expiresAt":"${FUTURE}"}`,
+      `{"v":1,"ok":true,"instanceNonce":"${NONCE}","origin":"${ORIGIN}","token":"${CANARY_TOKEN}","expiresAt":"${FUTURE}","extra":"${CANARY_BODY}"}`,
       `{"v":1,"ok":true,"state":"starting","token":"${CANARY_TOKEN}"}`,
     ];
     for (const line of hostile) {
@@ -276,22 +294,54 @@ describe('referenceControlContext and the registry', () => {
 });
 
 describe('parseAcquireCredentialResponse on the codec-decoded form', () => {
-  it('accepts exactly { v, ok, lease } with a SecretString bearer', () => {
+  it('accepts exactly { v, ok, instanceNonce, lease } with a SecretString bearer', () => {
     const result = parseAcquireCredentialResponse(success());
     expect(result.ok).toBe(true);
-    if (result.ok) expect(result.lease.origin).toBe(ORIGIN);
+    if (result.ok) {
+      expect(result.lease.origin).toBe(ORIGIN);
+      expect(result.instanceNonce).toBe(NONCE);
+    }
   });
 
   it('rejects a plain-string bearer, extra keys and a bad origin or expiry', async () => {
     const lease = success().lease;
     const bad: unknown[] = [
-      { v: 1, ok: true, lease: { ...lease, token: CANARY_TOKEN } },
-      { v: 1, ok: true, lease: { ...lease, extra: CANARY_BODY } },
-      { v: 1, ok: true, lease: { ...lease, origin: 'http://localhost:1' } },
-      { v: 1, ok: true, lease: { ...lease, expiresAt: 'tomorrow' } },
-      { v: 1, ok: true, lease: { ...lease, token: new SecretString('x') } },
-      { v: 1, ok: true, lease: null },
-      { v: 1, ok: true, lease, extra: CANARY_BODY },
+      {
+        v: 1,
+        ok: true,
+        instanceNonce: NONCE,
+        lease: { ...lease, token: CANARY_TOKEN },
+      },
+      {
+        v: 1,
+        ok: true,
+        instanceNonce: NONCE,
+        lease: { ...lease, extra: CANARY_BODY },
+      },
+      {
+        v: 1,
+        ok: true,
+        instanceNonce: NONCE,
+        lease: { ...lease, origin: 'http://localhost:1' },
+      },
+      {
+        v: 1,
+        ok: true,
+        instanceNonce: NONCE,
+        lease: { ...lease, expiresAt: 'tomorrow' },
+      },
+      {
+        v: 1,
+        ok: true,
+        instanceNonce: NONCE,
+        lease: { ...lease, token: new SecretString('x') },
+      },
+      { v: 1, ok: true, instanceNonce: NONCE, lease: null },
+      { v: 1, ok: true, instanceNonce: NONCE, lease, extra: CANARY_BODY },
+      // The echo is mandatory and must be a well-formed nonce.
+      { v: 1, ok: true, lease },
+      { v: 1, ok: true, instanceNonce: 'short', lease },
+      { v: 1, ok: true, instanceNonce: NONCE.toUpperCase(), lease },
     ];
     for (const input of bad) {
       const error = await thrown(() => parseAcquireCredentialResponse(input));

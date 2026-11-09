@@ -15,8 +15,11 @@ import {
   createControlHandlerRegistry,
   sendControlRequest,
 } from '../rendezvous/control-transport.js';
-import type { ControlEndpoint } from '../rendezvous/endpoint.js';
 import type { ReferenceSupervisor } from '../rendezvous/reference-shell.js';
+import {
+  resolveVettedEndpoint,
+  type VettedEndpoint,
+} from '../rendezvous/vetted-endpoint.js';
 import {
   type AcquireCredentialHandler,
   type AcquireCredentialRequest,
@@ -50,6 +53,8 @@ import type { SendAcquireRequest } from './provider.js';
 export interface AcquireCredentialSuccess {
   readonly v: 1;
   readonly ok: true;
+  /** The instance that answered; the provider checks it against `status`. */
+  readonly instanceNonce: string;
   readonly lease: CredentialLease;
 }
 
@@ -109,7 +114,12 @@ export const credentialControlOp: ControlOpSpec<
   parseResponse(fields) {
     const result = parseAcquireCredentialResponse(fields);
     if (!result.ok) throw invalidMessage();
-    return Object.freeze({ v: 1, ok: true, lease: result.lease });
+    return Object.freeze({
+      v: 1,
+      ok: true,
+      instanceNonce: result.instanceNonce,
+      lease: result.lease,
+    });
   },
 };
 
@@ -153,6 +163,7 @@ export const credentialControlCodec: CredentialControlCodec = {
     if (!isAcquireSuccess(response)) return baseCodec.encodeResponse(response);
     const line = encodeAcquireCredentialResponse({
       ok: true,
+      instanceNonce: response.instanceNonce,
       lease: response.lease,
     });
     baseCodec.parseResponse('acquire-credential', line);
@@ -177,7 +188,12 @@ export function registerAcquireCredential(
   return registry.register('acquire-credential', async (request) => {
     const result = await handler(request);
     return result.ok
-      ? { v: 1, ok: true, lease: result.lease }
+      ? {
+          v: 1,
+          ok: true,
+          instanceNonce: result.instanceNonce,
+          lease: result.lease,
+        }
       : { v: 1, ok: false, code: result.code };
   });
 }
@@ -248,17 +264,23 @@ export interface ControlChannelSendOptions {
 
 /**
  * A `SendAcquireRequest` over the rendezvous control transport, for
- * `createControlChannelCredentialProvider({ send })`. `endpoint` is the
- * `control` endpoint of the `instance.json` the rendezvous vetted (the
- * `ready` result does not carry it: re-read it from the record).
+ * `createControlChannelCredentialProvider({ send })`.
+ *
+ * `endpoint` is the `endpoint` of a `ready` rendezvous result: the handle only
+ * `createFileRendezvous` can mint, after its custody checks. Nothing else is
+ * accepted (a raw `ControlEndpoint`, a look-alike object, a missing handle),
+ * so the credential flow cannot be pointed at an endpoint nobody vetted. On
+ * Windows a `ready` result has a handle only if the shell supplied `vetPipe`.
+ * Throws `invalid_endpoint` for anything else.
  */
 export function createControlChannelSend(
-  endpoint: ControlEndpoint,
+  endpoint: VettedEndpoint,
   options: ControlChannelSendOptions = {},
 ): SendAcquireRequest {
+  const target = resolveVettedEndpoint(endpoint);
   return (request, { signal }) =>
     sendControlRequest<CredentialControlRequest, CredentialControlResponse>(
-      endpoint,
+      target,
       request,
       {
         timeoutMs: options.timeoutMs ?? 2000,

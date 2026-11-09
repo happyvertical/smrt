@@ -103,3 +103,4 @@ export {
   createReferenceSupervisor,
   startReferenceShell,
 } from './reference-shell.js';
+export type { VettedEndpoint } from './vetted-endpoint.js';
