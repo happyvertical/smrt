@@ -37,6 +37,16 @@ export class InferenceKeyOriginError extends Error {
 
 const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
 
+/**
+ * SDK base URLs for providers whose client appends its own version path
+ * (the Anthropic SDK calls `{baseURL}/v1/messages`; the probe base carries
+ * `/v1`). A stored binding names these, not the probe base.
+ */
+const SDK_DEFAULT_BASE: Readonly<Record<string, string>> = {
+  anthropic: 'https://api.anthropic.com',
+  gemini: 'https://generativelanguage.googleapis.com',
+};
+
 /** Gateways whose default endpoint is not the provider's own: they need a base URL. */
 const NEEDS_BASE_URL = new Set(['litellm', 'bifrost']);
 
@@ -173,8 +183,11 @@ export function inferenceProviderConfigFromKey(
   }
   let baseUrl = text(record.baseUrl);
   if (!baseUrl) {
-    const url = inferenceProbeUrl({ provider: record.provider });
-    baseUrl = url?.replace(/\/(?:models|api\/tags)$/, '');
+    const provider = record.provider.toLowerCase();
+    const url = inferenceProbeUrl({ provider });
+    baseUrl = Object.hasOwn(SDK_DEFAULT_BASE, provider)
+      ? SDK_DEFAULT_BASE[provider]
+      : url?.replace(/\/(?:models|api\/tags)$/, '');
   }
   if (!baseUrl || originOf(baseUrl) !== record.origin) {
     throw new InferenceKeyOriginError(

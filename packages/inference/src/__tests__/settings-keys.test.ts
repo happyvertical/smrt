@@ -105,6 +105,19 @@ describe('inferenceProviderConfigFromKey (#4754 keys into #4756 storage)', () =>
     });
     expect(parseInferenceProviderConfig(openai)).toMatchObject(openai);
 
+    // The Anthropic SDK appends /v1 itself: the stored base is host-only.
+    expect(
+      inferenceProviderConfigFromKey(
+        bindInferenceKey({ provider: 'anthropic', key: KEY }),
+        { model: 'claude-x' },
+      ),
+    ).toEqual({
+      provider: 'anthropic',
+      baseUrl: 'https://api.anthropic.com',
+      model: 'claude-x',
+      apiKey: KEY,
+    });
+
     const gateway = inferenceProviderConfigFromKey(
       bindInferenceKey({
         provider: 'litellm',
