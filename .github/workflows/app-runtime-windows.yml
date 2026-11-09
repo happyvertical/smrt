@@ -11,8 +11,17 @@
 # pull requests, and it is intentionally NOT a required status check: it is new,
 # its install and test steps have not yet been proven on windows-latest, and
 # the monorepo's native dependencies may not all install there. Promote it to a
-# required check only once it has been stable for a while. It needs no
-# secrets and starts no containers.
+# required check only once it has been stable for a while. It starts no
+# containers. Its only secret is the read-only GITHUB_TOKEN, which exists in the
+# install step alone (see below): the build and test steps run pull-request
+# code and never see it.
+#
+# Until one green run of this job is attached to the pull request or recorded
+# on smrt#4837, the Windows claims of @happyvertical/smrt-app-runtime are
+# unverified. The job runs only the app-runtime custody tests; the
+# `smrt app` Windows gate in packages/cli/src/app is covered by seam tests on
+# any host. The filter lists packages/cli/src/app because that code decides
+# which app-runtime entry points a Windows host reaches.
 # =============================================================================
 
 name: App runtime Windows
@@ -21,11 +30,13 @@ on:
   pull_request:
     paths:
       - 'packages/app-runtime/**'
+      - 'packages/cli/src/app/**'
       - '.github/workflows/app-runtime-windows.yml'
   push:
     branches: [main]
     paths:
       - 'packages/app-runtime/**'
+      - 'packages/cli/src/app/**'
       - '.github/workflows/app-runtime-windows.yml'
   workflow_dispatch:
 
@@ -63,38 +74,51 @@ jobs:
         with:
           run_install: false
 
-      - name: Configure GitHub Packages auth
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          touch "$HOME/.npmrc"
-          {
-            echo "@happyvertical:registry=https://npm.pkg.github.com"
-            echo "//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}"
-            echo "//npm.pkg.github.com/:always-auth=true"
-          } >> "$HOME/.npmrc"
-
+      # The only step that holds NODE_AUTH_TOKEN (step-level env, never job
+      # level). The user config is a throwaway file under RUNNER_TEMP that
+      # names the token by reference (`${NODE_AUTH_TOKEN}`, expanded by pnpm),
+      # so the secret is never written to disk, and a trap deletes the file
+      # when this step ends however it ends. HOME/.npmrc is not touched.
+      #
       # Filtered to the package and its dependency closure: the rest of the
       # monorepo (native addons, Playwright) is neither needed nor expected to
       # install on Windows.
       - name: Install dependencies
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: pnpm install --frozen-lockfile --filter "@happyvertical/smrt-app-runtime..."
+        run: |
+          set -euo pipefail
+          userconfig="${RUNNER_TEMP}/app-runtime-windows.npmrc"
+          trap 'rm -f "${userconfig}"' EXIT
+          # shellcheck disable=SC2016 # the token stays a reference on purpose
+          {
+            echo "@happyvertical:registry=https://npm.pkg.github.com"
+            echo '//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}'
+            echo "//npm.pkg.github.com/:always-auth=true"
+          } > "${userconfig}"
+          export NPM_CONFIG_USERCONFIG="${userconfig}"
+          pnpm install --frozen-lockfile --filter "@happyvertical/smrt-app-runtime..."
+
+      # Fails the job if the install step left a registry credential behind,
+      # before any step that runs pull-request code.
+      - name: Check no registry credential remains
+        run: |
+          set -euo pipefail
+          test -z "${NODE_AUTH_TOKEN:-}"
+          test ! -e "${RUNNER_TEMP}/app-runtime-windows.npmrc"
+          if [ -f "${HOME}/.npmrc" ] && grep -q '_authToken' "${HOME}/.npmrc"; then
+            echo 'A registry credential remains in the user .npmrc' >&2
+            exit 1
+          fi
 
       - name: Build the dependency closure
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: pnpm turbo run build --filter="@happyvertical/smrt-app-runtime^..."
 
       - name: Restore the core test manifest
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: pnpm turbo run generate:test --filter='@happyvertical/smrt-core'
 
       - name: Windows custody tests
         working-directory: packages/app-runtime
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_ENV: test
         run: pnpm exec vitest run src/windows-custody
