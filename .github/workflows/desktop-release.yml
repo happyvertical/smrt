@@ -137,7 +137,7 @@ jobs:
       matrix:
         include:
           - label: macos-arm64
-            runner: macos-14
+            runner: macos-15
             binary: smrt-desktop-shell
           - label: macos-x64
             runner: macos-15-intel
@@ -391,11 +391,11 @@ jobs:
           # Both macOS targets build on the hosted arm64 runner; the x64 target
           # is cross-compiled.
           - target: aarch64-apple-darwin
-            runner: macos-14
+            runner: macos-15
             bundles: app
             artifact_path: packages/smrt-desktop/shell/target/aarch64-apple-darwin/release/bundle/macos
           - target: x86_64-apple-darwin
-            runner: macos-14
+            runner: macos-15
             bundles: app
             artifact_path: packages/smrt-desktop/shell/target/x86_64-apple-darwin/release/bundle/macos
           - target: x86_64-pc-windows-msvc
@@ -513,7 +513,7 @@ jobs:
     needs: [release-preflight, release-bundle, release-build]
     # macOS signing runs on the runner named by the REPOSITORY (or
     # organization) variable DESKTOP_MACOS_SIGNING_RUNNER, default the
-    # GitHub-hosted macos-14. strategy.matrix and runs-on are evaluated before
+    # GitHub-hosted macos-15. strategy.matrix and runs-on are evaluated before
     # the environment is bound, so an environment variable of that name is not
     # visible here. The variable may name ONLY a DEDICATED, EPHEMERAL runner
     # (one job, then gone) in its own runner group limited to this repository
@@ -537,9 +537,9 @@ jobs:
       matrix:
         include:
           - target: aarch64-apple-darwin
-            runner: ${{ vars.DESKTOP_MACOS_SIGNING_RUNNER || 'macos-14' }}
+            runner: ${{ vars.DESKTOP_MACOS_SIGNING_RUNNER || 'macos-15' }}
           - target: x86_64-apple-darwin
-            runner: ${{ vars.DESKTOP_MACOS_SIGNING_RUNNER || 'macos-14' }}
+            runner: ${{ vars.DESKTOP_MACOS_SIGNING_RUNNER || 'macos-15' }}
           - target: x86_64-pc-windows-msvc
             runner: windows-latest
             installer_dir: nsis

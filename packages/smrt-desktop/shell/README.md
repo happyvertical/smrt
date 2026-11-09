@@ -173,7 +173,7 @@ Rust checks (fmt, clippy, tests on Ubuntu); this workflow builds.
 | Trigger | pull request or push to main that changes `packages/smrt-desktop/**` or the workflow; manual dispatch | manual dispatch from main with `release` set; nothing else reaches it |
 | Signing | none, unsigned | Apple Developer ID signing and notarization, Tauri updater signature, in a job that compiles nothing |
 | Token and secrets | `contents: read`, no secrets | secrets come from the `desktop-release` environment and reach only the preflight presence check and three named signing steps; the compile job has none; `contents: write` only in the final publish job |
-| Matrix | macOS arm64 (`macos-14`), macOS x64 (`macos-15-intel`), Windows, Linux | the same four targets |
+| Matrix | macOS arm64 (`macos-15`), macOS x64 (`macos-15-intel`), Windows, Linux | the same four targets |
 | Product | none: the shell is compiled and linked with `tauri build --no-bundle` | a bundle made by `smrt desktop bundle` for each target |
 | Output | pull requests upload nothing; main and dispatch keep the unsigned shell binary for 3 days | one publish step, after every target is built, signed and verified, to the rolling `desktop-latest` prerelease plus `latest.json` (the updater feed) |
 
@@ -411,7 +411,7 @@ toolchain.
 
 ### The macOS signing runner
 
-By default macOS signing runs on the GitHub-hosted `macos-14`, a fresh VM per
+By default macOS signing runs on the GitHub-hosted `macos-15`, a fresh VM per
 job, and nothing more is needed. The compile job always runs on a hosted
 runner; only the signing job's two macOS legs read the repository (or
 organization) variable `DESKTOP_MACOS_SIGNING_RUNNER`.
@@ -426,7 +426,7 @@ or a LaunchAgent would otherwise run in a later job that holds the signing
 secrets. The signing job also removes what it writes in an `always()` step, but
 that is a second line, not a substitute for an ephemeral runner.
 `scripts/ci-runner-inventory.test.mjs` parses the matrix of the verification,
-compile and signing jobs and fails on any runner outside `macos-14`,
+compile and signing jobs and fails on any runner outside `macos-15`,
 `macos-15-intel`, `windows-latest` and `ubuntu-latest`, on a self-hosted label
 anywhere in the workflow, and on the variable being used anywhere but the signing
 job's macOS legs; the verification build, which runs on pull requests, can never
@@ -537,7 +537,7 @@ matrix) and the signing half of #4836 are `status: blocked` on them.
    in the environment); the public half is committed as
    `plugins.updater.pubkey` in `tauri.conf.json`. Losing the private key
    strands every installed copy.
-3. **macOS signing runner decision:** hosted `macos-14` (the default, and the
+3. **macOS signing runner decision:** hosted `macos-15` (the default, and the
    recommendation), or a **dedicated ephemeral runner in its own runner group
    limited to this repository and this workflow**, named by the repository
    variable `DESKTOP_MACOS_SIGNING_RUNNER`. A shared runner, including any

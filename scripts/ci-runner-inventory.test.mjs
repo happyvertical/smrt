@@ -62,7 +62,7 @@ const DESKTOP_MATRIX_RUNS_ON = '${{ matrix.runner }}';
 const DESKTOP_SIGNING_RUNS_ON =
   "${{ fromJSON(startsWith(matrix.runner, '[') && matrix.runner || format('[\"{0}\"]', matrix.runner)) }}";
 const DESKTOP_HOSTED_RUNNERS = Object.freeze([
-  'macos-14',
+  'macos-15',
   'macos-15-intel',
   'windows-latest',
   'ubuntu-latest',
@@ -70,7 +70,7 @@ const DESKTOP_HOSTED_RUNNERS = Object.freeze([
 // The signing runner variable: documented to name a DEDICATED, EPHEMERAL runner
 // in its own runner group. Allowed on the macOS legs of the signing job only.
 const DESKTOP_SIGNING_RUNNER_EXPRESSION =
-  "${{ vars.DESKTOP_MACOS_SIGNING_RUNNER || 'macos-14' }}";
+  "${{ vars.DESKTOP_MACOS_SIGNING_RUNNER || 'macos-15' }}";
 
 // Exactly these jobs, each with exactly this runs-on. The matrix-driven ones
 // are checked value by value in desktopRunnerViolations.
@@ -342,7 +342,7 @@ test('a self-hosted or unlisted runner in a desktop-release matrix fails', () =>
     desktopRunnerViolations(
       mutate(
         'runner: macos-15-intel',
-        "runner: ${{ vars.DESKTOP_MACOS_SIGNING_RUNNER || 'macos-14' }}",
+        "runner: ${{ vars.DESKTOP_MACOS_SIGNING_RUNNER || 'macos-15' }}",
       ),
     ).length > 0,
     'the signing-runner variable must not reach verify-build',
@@ -360,7 +360,7 @@ test('a self-hosted or unlisted runner in a desktop-release matrix fails', () =>
     desktopRunnerViolations(
       mutate(
         '            runner: ubuntu-latest\n            bundles: deb',
-        "            runner: ${{ vars.DESKTOP_MACOS_SIGNING_RUNNER || 'macos-14' }}\n            bundles: deb",
+        "            runner: ${{ vars.DESKTOP_MACOS_SIGNING_RUNNER || 'macos-15' }}\n            bundles: deb",
       ),
     ).length > 0,
   );
@@ -369,7 +369,7 @@ test('a self-hosted or unlisted runner in a desktop-release matrix fails', () =>
     desktopRunnerViolations(
       mutate(
         '            runner: windows-latest\n            installer_dir: nsis',
-        "            runner: ${{ vars.DESKTOP_MACOS_SIGNING_RUNNER || 'macos-14' }}\n            installer_dir: nsis",
+        "            runner: ${{ vars.DESKTOP_MACOS_SIGNING_RUNNER || 'macos-15' }}\n            installer_dir: nsis",
       ),
     ).some((v) => v.startsWith('release: runner')),
   );
@@ -385,7 +385,7 @@ test('a self-hosted or unlisted runner in a desktop-release matrix fails', () =>
   assert.ok(
     desktopRunnerViolations(
       text.replace(
-        /\|\| 'macos-14' \}\}\n(\s+)- target: x86_64-apple-darwin/,
+        /\|\| 'macos-15' \}\}\n(\s+)- target: x86_64-apple-darwin/,
         "|| 'self-hosted' }}\n$1- target: x86_64-apple-darwin",
       ),
     ).some((v) => v.startsWith('release: runner')),
@@ -423,7 +423,7 @@ test('a matrix the reader would drop on the floor is refused, not skipped', () =
     );
     // exclude and a second include-like key
     refused(
-      mutate(anchor, anchor.replace('        include:', '        exclude:\n          - runner: macos-14\n        include:')),
+      mutate(anchor, anchor.replace('        include:', '        exclude:\n          - runner: macos-15\n        include:')),
       /exactly an include list/,
     );
     // a flow-form entry appended to the list
@@ -449,7 +449,7 @@ test('a matrix the reader would drop on the floor is refused, not skipped', () =
   refused(
     mutate(
       '            binary: smrt-desktop-shell\n    steps:',
-      '            binary: smrt-desktop-shell\n        exclude:\n          - runner: macos-14\n    steps:',
+      '            binary: smrt-desktop-shell\n        exclude:\n          - runner: macos-15\n    steps:',
     ),
     /exactly an include list/,
   );
