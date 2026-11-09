@@ -911,6 +911,9 @@ importers:
       '@happyvertical/ai':
         specifier: ^0.111.6
         version: 0.111.6(@mlc-ai/web-llm@0.2.85)(@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.6.7))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@happyvertical/encryption':
+        specifier: ^0.111.6
+        version: 0.111.6(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))(@types/node@24.13.2)(typescript@6.0.3)
       '@happyvertical/files':
         specifier: ^0.111.6
         version: 0.111.6(supports-color@10.2.2)

@@ -94,6 +94,15 @@ export interface PortabilityContext {
   paths: { root: string; assets: string } | null;
   assetRoot: string | null;
   path?: string;
+  /**
+   * Encrypted export (#4797): receives the serialized bundle and the new
+   * destination, writes an encrypted snapshot there (never plaintext), and
+   * returns secret-free details for the result.
+   */
+  sealBundle?: (
+    bundle: Buffer,
+    destination: string,
+  ) => Promise<Record<string, unknown>>;
   /** Test seam: observe import phases (`assets-staged`, …). */
   onImportPhase?: (phase: string) => Promise<void> | void;
   /** Test seam: replace the database opener. */
@@ -310,6 +319,9 @@ export interface ExportResult {
   tableCount: number;
   assetsIncluded: true;
   assetCount: number;
+  /** Present when the bundle was written as an encrypted snapshot. */
+  encrypted?: true;
+  snapshot?: Record<string, unknown>;
 }
 
 /** Write a logical export bundle without replacing an existing file. */
@@ -365,7 +377,11 @@ export async function exportApplication(
     sourceRoot: context.sourceRoot,
     path:
       context.path ||
-      join(context.stateRoot, 'exports', `${context.appId}-${Date.now()}.json`),
+      join(
+        context.stateRoot,
+        'exports',
+        `${context.appId}-${Date.now()}.json${context.sealBundle ? '.hvsnap' : ''}`,
+      ),
     label: 'Export destination',
   });
   mkdirSync(dirname(outputPath), { recursive: true, mode: 0o700 });
@@ -376,6 +392,23 @@ export async function exportApplication(
   const serialized = `${serializeExportBundle(exportedBundle)}\n`;
   if (Buffer.byteLength(serialized) > MAX_BUNDLE_BYTES) {
     throw new Error('The portability bundle exceeds the supported size limit.');
+  }
+  if (context.sealBundle) {
+    // Only ciphertext reaches disk; the framing publishes without replacing.
+    const bytes = Buffer.from(serialized);
+    try {
+      const snapshot = await context.sealBundle(bytes, outputPath);
+      return {
+        path: outputPath,
+        tableCount: exportedBundle.tables.length,
+        assetsIncluded: true,
+        assetCount: exportedBundle.assets.entries.length,
+        encrypted: true,
+        snapshot,
+      };
+    } finally {
+      bytes.fill(0);
+    }
   }
   try {
     writeFileSync(temporaryPath, serialized, { flag: 'wx', mode: 0o600 });
