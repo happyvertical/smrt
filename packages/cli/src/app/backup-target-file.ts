@@ -23,10 +23,7 @@ import {
   verifiedCiphertext,
 } from './backup-targets.js';
 import { errorCode } from './errors.js';
-import {
-  parseSnapshotHeader,
-  SNAPSHOT_HEADER_BYTES,
-} from './snapshot-framing.js';
+import { readSnapshotHeader } from './snapshot-framing.js';
 
 const PARTIAL_SUFFIX = '.partial';
 const OBJECT_ID = /^snapshot-\d{20}\.hvsnap$/;
@@ -193,19 +190,10 @@ export class FileBackupTarget implements BackupTarget {
   }
 
   async #hasHeaderFor(path: string, sequence: bigint): Promise<boolean> {
-    let handle: FileHandle | undefined;
     try {
-      handle = await open(path, 'r');
-      const header = Buffer.alloc(SNAPSHOT_HEADER_BYTES);
-      const { bytesRead } = await handle.read(header, 0, header.length, 0);
-      return (
-        bytesRead === header.length &&
-        parseSnapshotHeader(header).sequence === sequence
-      );
+      return (await readSnapshotHeader(path)).sequence === sequence;
     } catch {
       return false;
-    } finally {
-      await handle?.close().catch(() => undefined);
     }
   }
 

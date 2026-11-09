@@ -23,7 +23,26 @@ import {
   EncryptedSnapshotError,
   parseSnapshotHeader,
   SNAPSHOT_HEADER_BYTES,
+  type SnapshotHeader,
+  snapshotHeaderLength,
 } from './snapshot-framing.js';
+
+/**
+ * Parse the clear header once enough bytes are buffered: the fixed part
+ * names the device ID length, so the whole header is longer than
+ * {@link SNAPSHOT_HEADER_BYTES}. Returns `null` until it is complete and
+ * throws {@link EncryptedSnapshotError} when the bytes are not a snapshot.
+ */
+export function parseBufferedSnapshotHeader(
+  buffered: Uint8Array,
+): { header: SnapshotHeader; length: number } | null {
+  if (buffered.length < SNAPSHOT_HEADER_BYTES) return null;
+  const length = snapshotHeaderLength(
+    buffered.subarray(0, SNAPSHOT_HEADER_BYTES),
+  );
+  if (buffered.length < length) return null;
+  return { header: parseSnapshotHeader(buffered.subarray(0, length)), length };
+}
 
 /** The three supported target kinds. */
 export type BackupTargetKind = 'file' | 'gdrive' | 'vault';
@@ -228,8 +247,8 @@ function asBytes(chunk: Uint8Array): Uint8Array {
 
 /**
  * Pass `request.source` through while proving it is the declared encrypted
- * snapshot. Nothing is yielded until the first {@link SNAPSHOT_HEADER_BYTES}
- * parse as an HVSF v1 header whose sequence equals `request.sequence`, so a
+ * snapshot. Nothing is yielded until the first bytes parse as a complete
+ * HVSF v1 header (fixed part plus device ID) whose sequence equals `request.sequence`, so a
  * plaintext archive or export never reaches a target. After the last byte the
  * count and SHA-256 must match the declaration; the caller publishes only
  * after the generator finishes without throwing.
@@ -255,17 +274,19 @@ export async function* verifiedCiphertext(
   const head: Uint8Array[] = [];
   let headBytes = 0;
 
-  const validate = (): void => {
-    const header = Buffer.concat(head).subarray(0, SNAPSHOT_HEADER_BYTES);
+  /** Validate once the whole clear header is buffered; `false` if not yet. */
+  const validate = (): boolean => {
     try {
-      const parsed = parseSnapshotHeader(header);
+      const buffered = parseBufferedSnapshotHeader(Buffer.concat(head));
+      if (!buffered) return false;
+      const parsed = buffered.header;
       if (parsed.sequence !== request.sequence) {
         throw new BackupTargetError(
           'invalid_snapshot',
           'The snapshot header does not carry the declared sequence.',
         );
       }
-      if (byteSize <= SNAPSHOT_HEADER_BYTES + parsed.totalLength) {
+      if (byteSize <= buffered.length + parsed.totalLength) {
         throw new BackupTargetError(
           'invalid_snapshot',
           'The snapshot is shorter than its header requires.',
@@ -282,6 +303,7 @@ export async function* verifiedCiphertext(
       throw error;
     }
     validated = true;
+    return true;
   };
 
   for await (const raw of request.source) {
@@ -301,8 +323,7 @@ export async function* verifiedCiphertext(
     }
     head.push(chunk);
     headBytes += chunk.length;
-    if (headBytes >= SNAPSHOT_HEADER_BYTES) {
-      validate();
+    if (headBytes >= SNAPSHOT_HEADER_BYTES && validate()) {
       for (const part of head.splice(0)) yield part;
     }
   }
