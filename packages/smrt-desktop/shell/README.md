@@ -171,56 +171,122 @@ Rust checks (fmt, clippy, tests on Ubuntu); this workflow builds.
 | | PR and verification builds | Release |
 | --- | --- | --- |
 | Trigger | pull request or push to main that changes `packages/smrt-desktop/**` or the workflow; manual dispatch | manual dispatch from main with `release` set; nothing else reaches it |
-| Signing | none, unsigned | Apple Developer ID signing and notarization, Tauri updater signature |
-| Token and secrets | `contents: read`, no secrets | secrets come from the `desktop-release` environment and reach only the preflight step and the build step; `contents: write` only in the final publish job |
+| Signing | none, unsigned | Apple Developer ID signing and notarization, Tauri updater signature, in a job that compiles nothing |
+| Token and secrets | `contents: read`, no secrets | secrets come from the `desktop-release` environment and reach only the preflight presence check and three named signing steps; the compile job has none; `contents: write` only in the final publish job |
 | Matrix | macOS arm64 (`macos-14`), macOS x64 (`macos-15-intel`), Windows, Linux | the same four targets |
 | Product | none: the shell is compiled and linked with `tauri build --no-bundle` | a bundle made by `smrt desktop bundle` for each target |
-| Output | pull requests upload nothing; main and dispatch keep the unsigned shell binary for 3 days | one publish step, after every target is built and verified, to the rolling `desktop-latest` prerelease plus `latest.json` (the updater feed) |
+| Output | pull requests upload nothing; main and dispatch keep the unsigned shell binary for 3 days | one publish step, after every target is built, signed and verified, to the rolling `desktop-latest` prerelease plus `latest.json` (the updater feed) |
 
 Pull request builds are a compile and link smoke, not a product build. There is
 no product in this repository, so no `externalBin`, resources or installer are
 produced and nothing is faked. The policy (path filter, uploads only from main
 or dispatch, short retention) follows ergot's `capture-desktop-artifacts.yml`.
-`tauri-action` and the other actions are pinned by commit SHA; the Tauri CLI is
-pinned to an exact version (`TAURI_CLI_VERSION`).
+The other actions are pinned by commit SHA; the Tauri CLI (`TAURI_CLI_VERSION`),
+the Rust toolchain (`RUST_TOOLCHAIN`) and Node (`NODE_VERSION`) are pinned to
+exact versions, and every `cargo` and `tauri build` runs with `--locked`
+(`tauri build ... -- --locked`). `tauri-action` is no longer used: the shell is
+built by an explicit `tauri build`, so no third-party action ever sits in a
+step next to a secret.
+
+### Jobs and who holds which secret
+
+Compiling and signing are separate **jobs**, not only separate steps. A crate
+build script or proc macro in the shell's `Cargo.lock` runs arbitrary code and
+can write anywhere on its runner (a PATH shim, the global npm directory,
+`~/.cargo`); a later step on the same runner would then run it with the key.
+
+| Job | Runs | Secrets |
+| --- | --- | --- |
+| `release-preflight` | environment check, then a presence check | the eight secrets, for presence only, in one step |
+| `release-bundle` | product `pnpm install`, `smrt app build`, `smrt desktop bundle` | none; no environment |
+| `release-build` | re-verifies the bundle, then `tauri build --no-sign --locked` on a fresh hosted runner, every crate build script | none; no environment |
+| `release` | re-verifies the bundle, then signs: `codesign`, `xcrun notarytool`, `stapler`, `hdiutil`, `tauri signer sign`; no cargo, rustup, pnpm or build | only in three steps, each only its own: certificate import (`APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`); sign and notarize (`APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID`); updater signature (`TAURI_SIGNING_PRIVATE_KEY`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`) |
+| `release-publish` | verifies every updater signature, then `gh release` | none (`contents: write` only) |
+
+The Tauri CLI is installed in a step of the signing job that has no secrets
+(exact version, `--ignore-scripts`); nothing is installed or downloaded after
+that. The last step of the signing job is `if: always()`: it deletes the
+temporary keychain (and with it the imported certificate), removes the
+downloaded and staged files and uninstalls the CLI. No key file is ever written:
+`tauri signer sign` reads the key from the environment of its one step.
+
+`scripts/desktop-release-workflow.test.mjs` reads the workflow and fails if a
+future edit mixes these: a secret in a step that builds or installs (cargo,
+rustup, `tauri build`, npm, pnpm, `tauri-action`), a secret outside a step, a
+secret in a step that is not one of the allowed signing commands or in one that
+should not have it, a compile or package manager inside a job that holds a
+secret, a missing `--locked`, or a floating toolchain.
+
+What this does not stop: a malicious crate that runs in `release-build` can
+still produce a malicious app, and the signing job would sign it. Separation
+keeps the key from being read, not from being used on tampered output; the
+committed `Cargo.lock`, `--locked` and review bound that. The Tauri CLI is
+pinned by version, not by an integrity-checked lockfile.
 
 ### Fail-closed preflight
 
-The release path starts with `scripts/release-preflight.mjs` (tested by
-`scripts/release-preflight.test.mjs`, run by the verification build on Linux).
-It refuses, names what is missing and never prints a value, unless all of these
-exist:
+The release path starts with `scripts/release-environment.mjs` and
+`scripts/release-preflight.mjs` (tested by `scripts/release-environment.test.mjs`
+and `scripts/release-preflight.test.mjs`, run by the verification build on
+Linux). They refuse, name what is missing and never print a value, unless all of
+these hold:
 
 1. The run is on main.
-2. The Apple secrets `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`,
+2. **The `desktop-release` environment is protected.** The job reads
+   `GET /repos/{repo}/environments/desktop-release` and its
+   `deployment-branch-policies` with the job's own token and refuses unless:
+   the environment exists; admins cannot bypass its rules
+   (`can_admins_bypass: false`); a `required_reviewers` rule has at least one
+   reviewer and `prevent_self_review: true`; deployment branches are "selected
+   branches" (`custom_branch_policies: true`, `protected_branches: false`) and
+   the rule list is exactly one entry, the branch `main` (no tag, no pattern, no
+   second branch). GitHub documents these endpoints as readable by anyone with
+   read access to the repository, so the default `contents: read` token is
+   enough and there is no extra workflow permission to grant (the API answers
+   404 both for a missing environment and for a token that cannot read it; both
+   fail the check, and the message names the permission). The check fails
+   closed; it never skips. **What it is worth:** a workflow that names an
+   environment that does not exist creates it silently and unprotected, and a
+   presence-only secrets check cannot tell. This check catches the *owner's*
+   mistake. It is not a defence against an attacker: whoever can change this
+   workflow can remove the step. **The environment's own deployment branch rule,
+   which GitHub enforces before any job can read a secret, is the real
+   control.**
+3. The Apple secrets `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`,
    `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD` and `APPLE_TEAM_ID`.
-3. `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`.
-4. A real updater public key in `tauri.conf.json` (`plugins.updater.pubkey`).
+4. `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`.
+5. A real updater public key in `tauri.conf.json` (`plugins.updater.pubkey`).
    The committed value is an obviously invalid placeholder; the check requires
    the base64 minisign public key format Tauri generates.
-5. The `product_dir` and `bridge_path` dispatch inputs, as safe repo-relative
+6. The `product_dir` and `bridge_path` dispatch inputs, as safe repo-relative
    paths.
 
-Each target then checks its bundle again after the artifact hop, before any
-signing, and the checks are made in the job that holds the signing key against
-the trusted checkout (main), not against what the bundle says about itself:
+Each target's bundle is checked in `release-build` and again in `release`, the
+job that holds the key, before any signing, against the trusted checkout
+(main), not against what the bundle says about itself:
 
 - `tauri.bundle.json` must be exactly `bundle.externalBin` (one entry, the
   product-scoped `binaries/<productId>-node`) and `bundle.resources`
   (`{"resources/": "./"}`) and nothing else, at any level. The overlay handed
-  to the signing build is built from an allowlist (that sidecar, that resource
-  directory, `createUpdaterArtifacts: true`), so a `signCommand`, an NSIS
-  template, extra `files`, entitlements or any other key in the bundle cannot
-  reach it. The overlay's product name and version are also validated (safe
-  characters, semantic version).
+  to the build is built from an allowlist (that sidecar, that resource
+  directory, `createUpdaterArtifacts: false`: the compile job has no key, and
+  the updater archives are made and signed afterwards), so a `signCommand`, an
+  NSIS template, extra `files`, entitlements or any other key in the bundle
+  cannot reach it. The overlay's product name and version are also validated
+  (safe characters, semantic version). The signing job derives the product name
+  and version from its own verified copy of the bundle, never from the unsigned
+  build.
 - The bundle never travels as an archive. The bundle job uploads the bundle
   directory itself (`upload-artifact` stores file contents, follows a symlink
   and stores the target's bytes as a regular file, and drops permissions); the
-  signing job downloads it into an empty directory under `$RUNNER_TEMP`, never
-  the checkout. There is no `tar` member that could be written through an
-  earlier symlink member over trusted files (`tauri.conf.json`, the preflight
-  script, the pin table, `~/.cargo/config.toml`). Because permissions do not
-  survive, staging marks every file under `binaries/` executable.
+  build and signing jobs download it into an empty directory under
+  `$RUNNER_TEMP`, never the checkout. There is no `tar` member that could be
+  written through an earlier symlink member over trusted files
+  (`tauri.conf.json`, the preflight script, the pin table,
+  `~/.cargo/config.toml`). The unsigned build output crosses the same way, as a
+  directory of files. Because permissions do not survive, staging marks every
+  file under `binaries/` executable and the signing job marks the app's
+  executables.
 - The bundle root is listed with `lstat` before anything in it is read. It may
   hold only `binaries/` and `resources/` (real directories) and
   `tauri.bundle.json`, `bundle-report.json` and `bundle-files.sha256` (regular
@@ -266,74 +332,120 @@ holds a signing key.
 The product code (the app, its dependencies, `pnpm install`, `smrt app build`
 and the bundler) runs only in the secretless bundle job on a GitHub-hosted
 runner. That job has no environment, installs with no pnpm cache and no Turbo
-cache shim (it saves nothing a trusted run could restore), and the signing job
-restores no cargo cache either: it builds cold with the pinned Tauri toolchain.
+cache shim (it saves nothing a trusted run could restore). The compile and
+signing jobs restore no cargo cache either: they build cold with the pinned
+toolchain.
 
-macOS signing runs on the runner named by the repository (or organization)
-variable `DESKTOP_MACOS_SIGNING_RUNNER` (a runner label, or a JSON array of
-labels for a self-hosted runner), default `macos-14`. It is a repository-level
-variable because the runner is chosen before the `desktop-release` environment
-applies; see Owner setup, step 5. Both macOS targets build there; the x64
-target is cross-compiled. Nothing assumes a self-hosted runner may be used.
+### The macOS signing runner
+
+By default macOS signing runs on the GitHub-hosted `macos-14`, a fresh VM per
+job, and nothing more is needed. The compile job always runs on a hosted
+runner; only the signing job's two macOS legs read the repository (or
+organization) variable `DESKTOP_MACOS_SIGNING_RUNNER`.
+
+If that variable is set it may name **only a dedicated, ephemeral runner**: one
+that takes a single job and is destroyed, registered in **its own runner group
+that is limited to this repository and to this workflow**. It must **never** be
+a shared runner: not a self-hosted runner that also runs other repositories'
+(or this repository's) pull request builds, and not a persistent workstation.
+Whatever a job leaves in `~/.cargo`, the global npm directory, a rustup default
+or a LaunchAgent would otherwise run in a later job that holds the signing
+secrets. The signing job also removes what it writes in an `always()` step, but
+that is a second line, not a substitute for an ephemeral runner.
+`scripts/ci-runner-inventory.test.mjs` parses the matrix of the verification,
+compile and signing jobs and fails on any runner outside `macos-14`,
+`macos-15-intel`, `windows-latest` and `ubuntu-latest`, on a self-hosted label
+anywhere in the workflow, and on the variable being used anywhere but the signing
+job's macOS legs; the verification build, which runs on pull requests, can never
+reach it.
 
 ### All or nothing publishing
 
-The four signing legs publish nothing. Each builds, signs, and (macOS) runs
-`codesign --verify --deep --strict` and `xcrun stapler validate` on its `.app`,
-then stages its installer, updater archive and signature under safe names
-(`scripts/release-feed.mjs leg`) and uploads them as a one-day workflow
+The four signing legs publish nothing. Each signs, and (macOS) runs
+`codesign --verify --deep --strict` and `xcrun stapler validate` on its `.app`
+and `.dmg`, then stages its installer, updater archive and signature under safe
+names (`scripts/release-feed.mjs leg`) and uploads them as a one-day workflow
 artifact. `fail-fast` stops the other legs when one fails. The
 `release-publish` job `needs` every leg, so it runs only when all four
 succeeded; it assembles one `latest.json` and the asset set
-(`release-feed.mjs feed`: refuses a missing leg, a version mismatch, a symlink
-or a missing signature), uploads the new assets to `desktop-latest` first and
-`latest.json` last, so the feed never names an asset that is not there yet.
-Linux ships a `.deb` only; the Tauri updater cannot update a `.deb`, so the
-feed has no Linux entry (AppImage is not built in v1). Assets are named
-`<product>_<version>_<target>.<ext>` so a rebuild of the same version replaces
-the same names and a new version never overwrites the previous feed's
-targets.
+(`release-feed.mjs feed`: refuses a missing leg, a version or product-name
+mismatch, a symlink, a missing signature or a signature that does not verify),
+uploads the new assets to `desktop-latest` first and `latest.json` last, so the
+feed never names an asset that is not there yet. Linux ships a `.deb` only; the
+Tauri updater cannot update a `.deb`, so the feed has no Linux entry (AppImage
+is not built in v1). Assets are named `<product>_<version>_<target>.<ext>` so a
+rebuild of the same version replaces the same names and a new version never
+overwrites the previous feed's targets.
+
+### Updater signatures are verified against the committed key
+
+`scripts/minisign.mjs` verifies the `.sig` files Tauri's `tauri signer sign`
+writes (a base64-wrapped minisign signature: both the prehashed `ED` variant the
+Tauri CLI emits and the legacy `Ed` variant, with the trusted-comment signature)
+against `plugins.updater.pubkey` in `tauri.conf.json`, using Node's Ed25519.
+It rejects an unknown key id, a wrong key, a changed payload or trusted comment,
+truncation, extra lines or bytes and non-canonical base64. The check runs twice:
+when each signing leg stages its output (a bad key stops the leg before upload)
+and again in `release-publish`, before anything is uploaded. Because the public
+key is committed and the private key is a secret, a passing check also proves
+that `TAURI_SIGNING_PRIVATE_KEY` is the **private half of the committed public
+key**; a mismatched pair (a wrong or rotated key, a key from another product)
+fails the release instead of shipping an update no client can verify. The test
+vectors in `scripts/minisign.test.mjs` are generated in the test; no key
+material is committed.
 
 ### Owner setup (once, before the first release)
 
 The release path trusts its location. A workflow file lives on whatever branch
 a person with write access dispatches it from, and a same-repository pull
 request that edits it receives repository secrets, so the main-only check
-inside the file is not a control on its own. The gate is a GitHub environment.
-Do these in order:
+inside the file is not a control on its own. The gate is a GitHub environment,
+and the controls around it. Do these **in this order**:
 
-1. **Create the `desktop-release` environment first**, before storing any
-   secret (Settings, Environments). A workflow that names an environment that
-   does not exist creates it silently and **unprotected**; the preflight then
-   fails closed on the missing secrets, which is the backstop, not the
-   control.
-2. Under **Deployment branches and tags**, restrict it to the `main` branch
-   only. A dispatch from any other branch, or a pull request, then cannot read
-   anything in it.
-3. Add **required reviewers** (and, if wanted, prevent self-review). Expect an
-   approval prompt for the preflight, one for the signing legs and one for the
-   publish job.
-4. Store **all eight secrets in the environment, not as repository secrets**:
-   `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`,
-   `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID`, `TAURI_SIGNING_PRIVATE_KEY`
-   and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. If any of them also exists as a
-   repository or organization secret, delete that copy.
-5. If the macOS runner is not the default, set **`DESKTOP_MACOS_SIGNING_RUNNER`
-   as a repository (or organization) variable, not in the environment.** The
+1. **Create the `desktop-release` environment by hand** (Settings,
+   Environments), before storing any secret. A workflow that names an
+   environment that does not exist creates it silently and **unprotected**; the
+   preflight's environment check then fails closed, which is the backstop, not
+   the control.
+2. **Deployment branches and tags: selected branches, `main` only, no tags.**
+   Add exactly one rule, the branch `main`. A dispatch from any other branch,
+   or a pull request, then cannot read anything in the environment.
+3. **Required reviewers**, with **prevent self-review** on and **no admin
+   bypass** ("Allow administrators to bypass configured protection rules" off).
+   Expect an approval prompt for the preflight, one for the signing legs and one
+   for the publish job.
+4. **Protect `main` with a ruleset that requires review, and add a CODEOWNERS
+   file** covering `.github/workflows/**`, `.github/actions/**`,
+   `packages/smrt-desktop/shell/**` and
+   `packages/smrt-desktop/src/bundler/node-pins.ts`. This repository has no
+   CODEOWNERS file today; adding one changes review routing, so it is left to
+   the owner and not created here. These are the files that decide what runs
+   with the secrets and what is trusted as a pin.
+5. **Actions settings:** read-only default token permissions; Actions may not
+   create or approve pull requests; approval required for workflows from fork
+   pull requests; no secrets sent to workflows from fork pull requests.
+6. **Confirm none of the eight secret names exists at repository or
+   organization level** (`APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`,
+   `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID`,
+   `TAURI_SIGNING_PRIVATE_KEY`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`). Delete any
+   copy found there.
+7. **Leave `DESKTOP_MACOS_SIGNING_RUNNER` unset, or point it at a dedicated
+   ephemeral runner** (see the macOS signing runner section). It is a
+   *repository or organization variable, not an environment variable*: the
    workflow reads it in `strategy.matrix` and `runs-on`, which GitHub evaluates
    *before* the job's environment is bound, so an environment-level variable of
-   that name is invisible there and the legs would silently run on `macos-14`.
-   The variable selects the runner label for the two macOS signing legs before
-   any environment protection applies, so anyone who can edit repository
-   variables can choose where the signing key lands. A self-hosted runner
-   therefore needs these protections before it is named: it must be ephemeral
-   (or wipe the keychain and the workspace after every job), and its runner
-   group must be restricted to this repository and to this workflow. Without
-   the variable the signing legs use the GitHub-hosted `macos-14`.
-6. Commit the updater public key as `plugins.updater.pubkey` in
-   `tauri.conf.json` (see Owner inputs below).
-7. Have a maintainer run `scripts/update-node-pins.mjs` with `gpg` so the
-   committed record for the Node version is `gpg-verified`.
+   that name is invisible there. Anyone who can edit repository variables can
+   choose where the signing key lands, so restrict who can.
+8. **Restrict who can move the `desktop-latest` tag and edit releases**
+   (tag protection or a tag ruleset, and the permission to edit releases). The
+   publish job moves nothing by itself, but the rolling release is what clients
+   will read.
+9. **Generate the updater key pair offline** (`tauri signer generate`), keep
+   the private half out of the repository and the machine that runs CI, and
+   **commit the public half** as `plugins.updater.pubkey` in `tauri.conf.json`.
+10. **Run `scripts/update-node-pins.mjs` with `gpg`** so the committed record for
+    the Node version is `gpg-verified`.
+11. **Only then add the eight secrets**, in the environment.
 
 The environment is deliberately not created or populated by this repository.
 
@@ -349,14 +461,14 @@ matrix) and the signing half of #4836 are `status: blocked` on them.
 2. **Permission to generate the Tauri updater signing key** and a decision on
    where its private half lives. The private key and its password become
    `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` (also
-   in the environment); the
-   public half is committed as `plugins.updater.pubkey` in `tauri.conf.json`.
-   Losing the private key strands every installed copy.
-3. **macOS arm64 runner confirmation**: either keep GitHub-hosted `macos-14` or
-   state that the self-hosted runner used for ergot may be reused for signing
-   and set the repository variable `DESKTOP_MACOS_SIGNING_RUNNER` to it (a
-   repository or organization variable; see Owner setup, step 5, for the
-   runner protections it needs).
+   in the environment); the public half is committed as
+   `plugins.updater.pubkey` in `tauri.conf.json`. Losing the private key
+   strands every installed copy.
+3. **macOS signing runner decision:** hosted `macos-14` (the default, and the
+   recommendation), or a **dedicated ephemeral runner in its own runner group
+   limited to this repository and this workflow**, named by the repository
+   variable `DESKTOP_MACOS_SIGNING_RUNNER`. A shared runner, including any
+   self-hosted runner that runs other pull request builds, is not an option.
 4. **Product identity strings** (bundle identifier, display name) in the
    product's `smrt-desktop.json`, plus real product icons: the icons in
    `icons/` are placeholders and no product icons are supplied by the bundle.
@@ -370,31 +482,43 @@ matrix) and the signing half of #4836 are `status: blocked` on them.
 
 ### Not verified
 
-A workflow cannot be run locally. `actionlint`, `yamllint`, the preflight and
-feed unit tests and a local `tauri build --no-bundle` of the shell were run; the
-hosted runners, the `desktop-release` environment (its branch rule, reviewers
-and secret scoping), `tauri-action` building without a release, notarization,
-the `codesign` and `stapler` checks, the artifact hand-off between jobs, the
-`gh release` upload and Tauri's updater signature have not run. Known gaps for
-the first real run:
+A workflow cannot be run locally. `actionlint`, the preflight, environment,
+minisign, feed and workflow-structure unit tests and a local `tauri build
+--no-bundle` of the shell were run; the Tauri CLI's `signer sign` output was
+checked against the minisign verifier with a throwaway key. The hosted runners,
+the `desktop-release` environment (its rules, reviewers and secret scoping, and
+what the API returns for a token on a real run), the split compile and signing
+jobs, `tauri build --no-sign` with the release overlay, the artifact hand-off
+between jobs (including the unsigned `.app` surviving it), the `codesign`,
+notarization, `stapler` and `hdiutil` steps and the `gh release` upload have not
+run. Known gaps for the first real run:
 
 - The Node sidecar needs a JIT entitlement under the hardened runtime
   (`com.apple.security.cs.allow-jit`); no entitlements file is committed
-  because it cannot be tested without the certificate.
+  because it cannot be tested without the certificate, so the signing step
+  passes none.
+- The dmg is built with `hdiutil create` from the stapled app and is plain (no
+  background or icon layout); Tauri's own dmg bundler is not used because it
+  would need the signing identity in the compile job.
 - Publishing is all or nothing across the four legs, but the final step is two
   `gh release upload` calls (assets, then `latest.json`), not a transaction: a
   failure between them leaves new assets next to the previous feed, which still
   points at the previous, still present, assets. The rolling release keeps
   every version's assets until pruned.
-- The updater signature is produced by Tauri in the signing leg and copied into
-  `latest.json`; nothing in the publish job verifies it against the public key.
 - The macOS and Linux sidecar binary is not proved to be the one in the pinned
   archive (see above).
-- Tar extraction of the downloaded bundle uses the runner's `tar`; the
-  `lstat` walk afterwards is what refuses symlinks and extra files.
-- Windows installers and Linux packages carry the updater signature but no
-  platform code-signing certificate; none was requested. AppImage is not built
-  (the launcher does not support it in v1).
+- Windows installers and Linux packages carry the updater signature (Windows)
+  but no platform code-signing certificate: the Windows NSIS installer has no
+  Authenticode signature. None was requested. AppImage is not built (the
+  launcher does not support it in v1).
+- **There is no updater client and no endpoint in the shell yet.** The shell
+  has no `tauri-plugin-updater` and `tauri.conf.json` declares no `endpoints`;
+  `latest.json` and the signatures are produced and verified, but nothing reads
+  them. The feed does not compare against the live feed either: nothing checks
+  that the new version is greater than the one `latest.json` currently
+  advertises.
+- The `desktop-latest` tag is created on the first commit that publishes and
+  stays there, so the release carries no build provenance (commit, run).
 
 ## Tests
 
@@ -422,9 +546,11 @@ cargo test --locked
   for changes under `packages/smrt-desktop/shell/` only. It is path filtered
   and is not a required check. The build and release workflow is described
   under Release pipeline.
-- `node --test scripts/release-preflight.test.mjs scripts/release-feed.test.mjs`
-  covers the release preflight (closed Tauri fragment, tree walk, committed
-  Node pin) and the release asset and feed assembly.
+- `node --test scripts/*.test.mjs` covers the release preflight (closed Tauri
+  fragment, tree walk, committed Node pin), the environment guard (offline
+  fixtures of the GitHub API), the minisign verification (keys generated in the
+  test), the release asset and feed assembly, and the workflow-structure test
+  that keeps the signing secrets out of every build step.
 
 Manual smoke run: in a debug build the resource directory is the executable directory, so put a
 `sidecar-manifest.json`, the sidecar script and a symlink named like the
