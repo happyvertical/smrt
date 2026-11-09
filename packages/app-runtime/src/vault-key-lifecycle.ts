@@ -718,13 +718,22 @@ function applyHead(
     ...(registry.conflict ? [registry.conflict] : []),
     head,
   ]);
-  next.conflict = {
-    sequence:
-      registry.conflict && registry.conflict.sequence > head.sequence
-        ? registry.conflict.sequence
-        : head.sequence,
-    ...evidence,
-  };
+  const sequence =
+    registry.conflict && registry.conflict.sequence > head.sequence
+      ? registry.conflict.sequence
+      : head.sequence;
+  if (
+    registry.conflict &&
+    (evidence.generations.length > EVIDENCE_LIMITS.generations ||
+      evidence.devices.length > EVIDENCE_LIMITS.devices ||
+      evidence.revokedDevices.length > EVIDENCE_LIMITS.revokedDevices)
+  ) {
+    // Too many branches to keep: stay in conflict on the evidence already
+    // held, so sealing remains refused rather than the fork being dropped.
+    next.conflict = { ...registry.conflict, sequence };
+    return next;
+  }
+  next.conflict = { sequence, ...evidence };
   return next;
 }
 
