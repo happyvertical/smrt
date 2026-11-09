@@ -419,7 +419,8 @@ export async function listAiTranscripts(
        WHERE ${label}(o.tenant_id = t.tenant_id OR (o.tenant_id IS NULL AND t.tenant_id IS NULL))
          AND (o.call_id = t.call_id
               OR (t.run_id IS NOT NULL AND o.run_id = t.run_id)
-              OR o.usage_id IN (SELECT u.id FROM _smrt_ai_usage u WHERE u.call_id = t.call_id)))`);
+              OR o.usage_id IN (SELECT u.id FROM _smrt_ai_usage u WHERE u.call_id = t.call_id
+                AND (u.tenant_id = t.tenant_id OR (u.tenant_id IS NULL AND t.tenant_id IS NULL)))))`);
   }
   params.push(limit);
 
