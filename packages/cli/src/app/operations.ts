@@ -31,6 +31,7 @@ import { pathToFileURL } from 'node:url';
 import {
   acquireWriterLease,
   createProviderReadinessProbe,
+  ensurePrivateDirectorySync,
   type OperationLock,
   withOperationLock,
 } from '@happyvertical/smrt-app-runtime';
@@ -117,10 +118,6 @@ function printOnboardingUrl(context: AppContext, url: string | null): void {
   );
 }
 
-function ensurePrivateDirectory(path: string): void {
-  mkdirSync(path, { recursive: true, mode: 0o700 });
-}
-
 function nearestExistingAncestor(path: string): string {
   let candidate = path;
   while (!existsSync(candidate)) {
@@ -167,7 +164,7 @@ function saveOnboardingLaunch(context: AppContext, url: string): void {
 }
 
 function saveOnboardingUrl(context: AppContext, url: string): void {
-  ensurePrivateDirectory(preparedStateRoot(context));
+  ensurePrivateDirectorySync(preparedStateRoot(context));
   saveOnboardingLaunch(context, url);
   writePrivateAtomic(
     onboardingPath(context),
@@ -415,7 +412,7 @@ async function start(
     });
     return existing.pid;
   }
-  ensurePrivateDirectory(preparedStateRoot(context));
+  ensurePrivateDirectorySync(preparedStateRoot(context));
   const instance = randomBytes(16).toString('hex');
   const childEnv: NodeJS.ProcessEnv = {
     ...env,
@@ -997,7 +994,7 @@ async function backup(context: AppContext, args: string[]): Promise<void> {
             'Backup destination must remain outside local storage.',
           );
         }
-        ensurePrivateDirectory(dirname(destination));
+        ensurePrivateDirectorySync(dirname(destination));
         if (snapshotKeys) {
           if (existsSync(destination)) {
             throw new Error(

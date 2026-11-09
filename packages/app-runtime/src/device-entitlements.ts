@@ -26,20 +26,13 @@ import {
   createPublicKey,
   type JsonWebKey,
   type KeyObject,
-  randomBytes,
   sign,
   verify,
 } from 'node:crypto';
 import {
-  constants,
-  type FileHandle,
-  mkdir,
-  open,
-  rename,
-  rm,
-} from 'node:fs/promises';
-import { dirname } from 'node:path';
-import { errorCode } from './error-code.js';
+  readPrivateFileBounded,
+  writePrivateFileAtomic,
+} from './private-files.js';
 
 /** Wire/disk format version of the envelope and payload. */
 export const DEVICE_ENTITLEMENT_FORMAT_VERSION = 1;
@@ -582,41 +575,6 @@ export interface DeviceEntitlementRefreshResult
   reason?: DeviceEntitlementInstallResult['reason'] | 'transport_failed';
 }
 
-async function readBounded(path: string): Promise<string | null> {
-  let handle: FileHandle | undefined;
-  try {
-    handle = await open(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
-    const info = await handle.stat();
-    if (!info.isFile() || info.size > MAX_FILE_BYTES) {
-      throw new Error('unreadable');
-    }
-    return await handle.readFile({ encoding: 'utf8' });
-  } catch (error) {
-    if (errorCode(error) === 'ENOENT') return null;
-    throw error;
-  } finally {
-    await handle?.close();
-  }
-}
-
-async function writeAtomic(path: string, content: string): Promise<void> {
-  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-  const temporary = `${path}.${randomBytes(8).toString('hex')}.tmp`;
-  let handle: FileHandle | undefined;
-  try {
-    handle = await open(temporary, 'wx', 0o600);
-    await handle.writeFile(content, 'utf8');
-    await handle.sync();
-    await handle.close();
-    handle = undefined;
-    await rename(temporary, path);
-  } catch (error) {
-    await handle?.close().catch(() => undefined);
-    await rm(temporary, { force: true }).catch(() => undefined);
-    throw error;
-  }
-}
-
 type Watermark = { kind: 'ok'; issuedAt: number } | { kind: 'corrupt' };
 
 /**
@@ -746,7 +704,10 @@ export class DeviceEntitlementCache {
   }
 
   async #readWatermark(): Promise<Watermark | null> {
-    const text = await readBounded(this.#watermarkPath);
+    const text = await readPrivateFileBounded(
+      this.#watermarkPath,
+      MAX_FILE_BYTES,
+    );
     if (text === null) return null;
     try {
       const value = JSON.parse(text) as {
@@ -770,7 +731,7 @@ export class DeviceEntitlementCache {
     // Watermark first: an install landing between the two reads then shows a
     // newer file against an older watermark (accepted), never the reverse.
     const watermark = await this.#readWatermark();
-    const text = await readBounded(this.#filePath);
+    const text = await readPrivateFileBounded(this.#filePath, MAX_FILE_BYTES);
     if (text === null) return LOCAL_ABSENT;
     const verification = verifyWithPolicy(text, this.#policy);
     if (!verification.ok) {
@@ -823,7 +784,10 @@ export class DeviceEntitlementCache {
         };
       }
       if (snapshot.issuedAt === floor) {
-        const current = await readBounded(this.#filePath).catch(() => null);
+        const current = await readPrivateFileBounded(
+          this.#filePath,
+          MAX_FILE_BYTES,
+        ).catch(() => null);
         if (current !== null && !sameEnvelope(current, serialized)) {
           return {
             accepted: false,
@@ -834,13 +798,16 @@ export class DeviceEntitlementCache {
       }
       // Snapshot first, watermark second: a crash between the two can only
       // leave a watermark that is one install behind, never ahead.
-      await writeAtomic(this.#filePath, serialized);
-      await writeAtomic(
+      await writePrivateFileAtomic(this.#filePath, serialized, {
+        createParent: true,
+      });
+      await writePrivateFileAtomic(
         this.#watermarkPath,
         JSON.stringify({
           version: DEVICE_ENTITLEMENT_FORMAT_VERSION,
           issuedAt: Math.max(floor, snapshot.issuedAt),
         }),
+        { createParent: true },
       );
       return { accepted: true, status: await this.status() };
     } catch {

@@ -121,6 +121,7 @@ export {
   WindowsDatabaseAcquisitionUnsupportedError,
 } from './local-runtime-error.js';
 export * from './operation-lock.js';
+export * from './private-files.js';
 export * from './provider-readiness.js';
 export * from './runtime-diagnostics.js';
 export * from './stale-reclaim.js';

@@ -33,7 +33,6 @@ import {
   mkdirSync,
   openSync,
   readFileSync,
-  renameSync,
   rmSync,
   writeSync,
 } from 'node:fs';
@@ -53,6 +52,7 @@ import {
   SYSTEM_ROLE_IDS,
   SYSTEM_ROLE_SLUGS,
   stateRootOptions,
+  writePrivateFileAtomicSync,
 } from '@happyvertical/smrt-app-runtime';
 import { isLocalAssetLocator } from '@happyvertical/smrt-assets/locator';
 import type {
@@ -853,20 +853,9 @@ export interface SharedMigrationJournal {
 }
 
 function writeJsonAtomic(path: string, value: unknown): void {
-  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-  const temporary = `${path}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`;
-  try {
-    const fd = openSync(temporary, 'wx', 0o600);
-    try {
-      writeSync(fd, `${JSON.stringify(value, null, 2)}\n`);
-      fsyncSync(fd);
-    } finally {
-      closeSync(fd);
-    }
-    renameSync(temporary, path);
-  } finally {
-    rmSync(temporary, { force: true });
-  }
+  writePrivateFileAtomicSync(path, `${JSON.stringify(value, null, 2)}\n`, {
+    createParent: true,
+  });
 }
 
 function readJournal(path: string): SharedMigrationJournal | null {
