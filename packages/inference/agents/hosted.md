@@ -11,18 +11,27 @@
 hand).
 
 - **Gateway.** Admin calls go through `ai.admin` (`AIAdminInterface`) of the
-  `bifrost` / `litellm` provider of `@happyvertical/ai`; never reimplement
-  gateway administration here. The SDK has `createProject` and
-  `createVirtualKey` only: `updateVirtualKey` / `deleteVirtualKey` are
-  feature-detected on `HostedGatewayAdmin` (happyvertical/sdk#1494). Without
-  them budget sync returns `unsupported` (state keeps the old budget so a
-  later sync retries). Revoke ends local use before touching the gateway
-  (config restored, state retired with the key owed, then the delete); a
-  deletion the gateway cannot perform (`unsupported`,
-  `failed`, or a key a failed provision left) goes to the state's
-  `pendingGatewayRevocations` (id + alias, never the key), is audited with
-  `manualGatewayRevocation`, and is retried by `revoke()` /
-  `reconcileTenant()`.
+  `bifrost` / `litellm` provider of `@happyvertical/ai` >= 0.111.7
+  (happyvertical/sdk#1494); never reimplement gateway administration here.
+  `HostedGatewayAdmin` is `HOSTED_GATEWAY_ADMIN_METHODS` (`createProject`,
+  `createVirtualKey`, `updateVirtualKey`, `deleteVirtualKey`,
+  `listProjects`); a provider missing one is `HOSTED_GATEWAY_UNSUPPORTED`.
+  SMRT persists only `AIVirtualKey.id`, the non-secret handle (Bifrost id,
+  LiteLLM `token_id`; an id equal to the key is dropped). Budget sync sends
+  `updateVirtualKey(id, { budget })` only (Bifrost refuses `models` /
+  `metadata`, LiteLLM `providerConfigs`: `ADMIN_UNSUPPORTED_FIELD`);
+  `unsupported` now means the grant has no key id. Revoke ends local use
+  before touching the gateway (config restored, state retired with the key
+  owed, then `deleteVirtualKey`; `false` is `missing`, an already revoked
+  key, nothing owed). A deletion the gateway did not perform (`failed`, a
+  key a failed provision left, `unsupported`: no admin configured or no key
+  id; entries from before 0.111.7 also read `unsupported`) goes to the
+  state's `pendingGatewayRevocations` (id + alias, never the key), is
+  audited with `manualGatewayRevocation`, and is retried by `revoke()` /
+  `reconcileTenant()`; each retry that settles one writes
+  `inference.hosted.revoke-retry` with `settled: [{ keyId, keyAlias,
+  gateway }]`, closing those records. Entries without an id stay for an
+  operator (`acknowledgeGatewayRevocation`).
 - **Config, read once from the environment** (`getHostedGatewayConfig()`;
   unset provider = hosted off): `SMRT_INFERENCE_HOSTED_PROVIDER`
   (`bifrost|litellm`), `_BASE_URL` (the OpenAI-compatible endpoint keys are
@@ -43,7 +52,12 @@ hand).
   `inference.hosted:user:<id>` (category `inference.hosted`) holds status,
   generation, key id and alias, budget and the user's prior config;
   `inference.hosted:project` the tenant's gateway project (created once
-  through `runOnce()`, LiteLLM id `smrt-<tenantId>-<nonce>`). Every write passes
+  through `runOnce()`, name `smrt tenant <tenantId>`, LiteLLM id
+  `smrt-<tenantId>-<nonce>`). Without a stored record, `listProjects({
+  tenantId })` runs first and adopts the lowest-id project with that name
+  (and id prefix on LiteLLM), audited `adopted: true`, so a crash between
+  create and persist never makes a second project; a failed lookup fails
+  the provision rather than create blind. Every write passes
   `auditDetails.operation` (`inference.hosted.provision|revoke|budget|project`)
   to `SecretAuditLog`.
 - **Idempotency and ordering.** An active grant whose binding is still the

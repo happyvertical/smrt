@@ -67,8 +67,9 @@ the user resolver's `write(level, config)`; never a second secret type.
 `./node` provisions per-user gateway keys through `ai.admin` of the
 `bifrost` / `litellm` provider (`SMRT_INFERENCE_HOSTED_*`, read once), storing
 the key only in the user's `inference.provider-config` (`source: 'hosted'`).
-Budget update and key delete wait on happyvertical/sdk#1494 (feature-detected;
-revoke ends local use first and records owed deletions). `./gate`'s
+Plan changes update the key budget, revoke ends local use and then deletes the
+key (failures are owed and retried by reconcile), and the tenant project is
+looked up before one is created (`@happyvertical/ai` >= 0.111.7). `./gate`'s
 `registerHostedInferenceGate({ killSwitch, spend })` is core's
 `InferenceGate`: kill switch `inference.hosted.enabled` (a global DISABLE
 always wins), tenant, entitlement, then plan spend caps; a block throws

@@ -304,7 +304,12 @@ key on your gateway (Bifrost or LiteLLM), stored as their binding with
   `@happyvertical/smrt-inference/node`, or `smrt inference:hosted provision |
   revoke`, mints and revokes per-user gateway keys. The gateway is configured
   by `SMRT_INFERENCE_HOSTED_*`; with no provider set, hosted is off (local
-  installs).
+  installs). Needs `@happyvertical/ai` 0.111.7 or later.
+- **Key lifecycle.** A plan change updates each key's gateway budget. A
+  downgrade or revoke stops SMRT using the key first, then deletes it on
+  the gateway. A delete that fails is recorded as owed, and the next revoke
+  or reconcile retries it. The tenant's gateway project is looked up before
+  one is created, so a crash during provisioning never makes a second one.
 - **Spend caps.** Plans cap hosted spend per tenant and per user with plan
   thresholds on `ai.hosted.spend_micros` and `ai.hosted.user_spend_micros`
   (integer micro-dollars). Give hosted models a cost rate: uncosted calls add
