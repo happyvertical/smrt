@@ -109,6 +109,10 @@ const INHERITED_VARIABLES = [
   'COMPUTERNAME',
   'USERNAME',
   'USERDOMAIN',
+  // Windows PowerShell 5.1 returns nothing from `& whoami.exe` when PATHEXT is
+  // absent (observed on Windows 11 26300: empty output, no error), which made
+  // the inspector exit 1 for every path. It is a fixed list of extensions.
+  'PATHEXT',
 ] as const;
 
 /** Windows environment names are case-insensitive. */
