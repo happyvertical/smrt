@@ -280,7 +280,7 @@ async function supersededAware<T>(call: () => Promise<T>): Promise<T> {
     if (code === 'account_superseded') {
       throw new RestoreLatestError(
         'account_superseded',
-        'This vault account was replaced by a new one, so its snapshots are not restored. Follow the new vault account on this device and restore from it.',
+        'The relay reports that this vault account was replaced by a new one, so its snapshots are not restored. If a vault restart was started, follow the new vault account on this device and restore from it; otherwise nothing was changed.',
       );
     }
     throw error;

@@ -16,6 +16,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createVaultKeyLifecycle } from './vault-key-lifecycle.js';
 import type { VaultKeyStore } from './vault-key-store.js';
+import { VaultLeaseError } from './vault-lease.js';
 import {
   switchVaultAccount,
   VaultAccountSwitchError,
@@ -193,6 +194,11 @@ describe('switchVaultAccount', () => {
     });
     await follower.acceptEnrollment(grant, { confirmationCode: accountCode });
     const taken = { status: async () => relay(4, 4) };
+    const replaced = {
+      status: async () => {
+        throw new VaultLeaseError('account_superseded');
+      },
+    };
     // Without the role, a non-empty account is not adopted.
     await expect(
       switchVaultAccount({
@@ -209,9 +215,10 @@ describe('switchVaultAccount', () => {
       from: OLD,
       to: NEW,
       lease: taken,
+      fromLease: replaced,
       role: 'follower',
     });
-    // Nothing pending: the next step is a restore, not a backup baseline.
+    // Nothing was pending, so nothing is: the next step is a restore.
     expect(record).toMatchObject({
       accountId: NEW,
       baseSequence: 0,
@@ -238,9 +245,104 @@ describe('switchVaultAccount', () => {
         from: OLD,
         to: NEW,
         lease: taken,
+        fromLease: replaced,
         role: 'follower',
       }),
     ).rejects.toMatchObject({ code: 'restart_not_recorded' });
+  });
+
+  async function enrolledFollower() {
+    const restarter = await restarted();
+    const follower = createVaultKeyLifecycle({ store: memoryStore() });
+    await follower.initializeAccount({
+      accountId: OLD,
+      deviceId: 'phone',
+      recoverySecret: 'synthetic recovery credential',
+    });
+    await follower.leaveAccount({ confirmLeave: true });
+    const { request, deviceCode } = await follower.createEnrollmentRequest({
+      accountId: NEW,
+      deviceId: 'phone-b',
+    });
+    const { grant, accountCode } = await restarter.enrollDevice(request, {
+      confirmationCode: deviceCode,
+      recoverySecret: 'a replacement credential',
+    });
+    await follower.acceptEnrollment(grant, { confirmationCode: accountCode });
+    return follower;
+  }
+
+  const taken = { status: async () => relay(4, 4) };
+  const replaced = {
+    status: async () => {
+      throw new VaultLeaseError('account_superseded');
+    },
+  };
+
+  it('threat: a follower is refused while the old account is not reported as replaced', async () => {
+    follow(OLD);
+    const lifecycle = await enrolledFollower();
+    for (const fromLease of [
+      undefined,
+      // The old account still answers: nobody replaced it.
+      { status: async () => relay(5, 5) },
+      // Or the relay is down, or refuses the device for some other reason.
+      {
+        status: async () => {
+          throw new VaultLeaseError('relay_error');
+        },
+      },
+    ]) {
+      await expect(
+        switchVaultAccount({
+          stateRoot,
+          lifecycle,
+          from: OLD,
+          to: NEW,
+          lease: taken,
+          fromLease,
+          role: 'follower',
+        }),
+      ).rejects.toMatchObject({ code: 'old_account_not_replaced' });
+    }
+    expect(readVaultSyncRecord(stateRoot)?.accountId).toBe(OLD);
+  });
+
+  it('threat: a follower keeps its unpublished writes marked, so restore asks to discard them', async () => {
+    writeVaultSyncRecord(stateRoot, {
+      accountId: OLD,
+      baseSequence: 5,
+      highestSeenSequence: 7,
+      localWritesPending: true,
+    });
+    const record = await switchVaultAccount({
+      stateRoot,
+      lifecycle: await enrolledFollower(),
+      from: OLD,
+      to: NEW,
+      lease: taken,
+      fromLease: replaced,
+      role: 'follower',
+    });
+    expect(record).toMatchObject({
+      accountId: NEW,
+      baseSequence: 0,
+      highestSeenSequence: 0,
+      localWritesPending: true,
+    });
+  });
+
+  it('treats a follower with no recorded position as having unpublished writes', async () => {
+    const record = await switchVaultAccount({
+      stateRoot,
+      lifecycle: await enrolledFollower(),
+      from: OLD,
+      to: NEW,
+      lease: taken,
+      fromLease: replaced,
+      role: 'follower',
+    });
+    expect(record.localWritesPending).toBe(true);
   });
 
   it('refuses an interrupted restart, where the device holds no account yet', async () => {

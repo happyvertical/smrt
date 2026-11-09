@@ -543,8 +543,10 @@ export class VaultRelay {
    * An account the account layer replaced (#4817) takes no new writes and
    * offers no snapshot to restore-latest: its devices would publish into a
    * data line nobody follows, and a restore would hand back the old vault.
-   * What only removes state (lease status and release, aborting an upload)
-   * and reads by explicit sequence stay open. The refusal names no other
+   * Lease status answers it too: that refusal is how a device proves, before
+   * it follows the new account, that the old one was replaced. What only
+   * removes state (lease release, aborting an upload) and reads by explicit
+   * sequence stay open. The refusal names no other
    * account: the client never follows the relay to a new account.
    */
   private async refuseSuperseded(
@@ -553,7 +555,6 @@ export class VaultRelay {
     accountId: string,
   ): Promise<void> {
     const open =
-      route.name === 'lease-status' ||
       route.name === 'lease-release' ||
       route.name === 'abort' ||
       route.name === 'chunk' ||

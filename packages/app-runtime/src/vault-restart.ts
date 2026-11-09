@@ -15,7 +15,7 @@
 
 import { inspectLocationCustodyRecord } from './installation-custody.js';
 import type { VaultKeyLifecycle } from './vault-key-lifecycle.js';
-import type { VaultLeaseClient } from './vault-lease.js';
+import { type VaultLeaseClient, VaultLeaseError } from './vault-lease.js';
 import {
   readVaultSyncRecord,
   type VaultSyncRecord,
@@ -27,6 +27,7 @@ export type VaultAccountSwitchErrorCode =
   | 'restart_not_recorded'
   | 'not_following_from'
   | 'account_not_fresh'
+  | 'old_account_not_replaced'
   | 'location_retired'
   | 'custody_unusable';
 
@@ -35,6 +36,8 @@ const MESSAGES: Record<VaultAccountSwitchErrorCode, string> = {
     'The key lifecycle on this device does not show a restart from the old vault account to the new one.',
   not_following_from:
     'This installation does not follow the vault account being replaced.',
+  old_account_not_replaced:
+    'The relay did not report the old vault account as replaced, so this installation will not follow the new one yet.',
   account_not_fresh:
     'The new vault account already holds snapshots; a restarted account must start empty.',
   location_retired:
@@ -63,12 +66,21 @@ export interface SwitchVaultAccountOptions {
   /** Lease client for the NEW account. */
   lease: Pick<VaultLeaseClient, 'status'>;
   /**
+   * Lease client for the OLD account, signed as this device's old-account
+   * key. Required for the `follower` role: following is tied to the
+   * owner-authenticated admin action that replaced the old account, so the
+   * relay must answer `account_superseded` to it. Keep the old account's
+   * devices registered until every device has followed.
+   */
+  fromLease?: Pick<VaultLeaseClient, 'status'>;
+  /**
    * `restarted` (default): the device that ran `restartAccount`. The relay
    * must report the new account empty, and the next backup is a full
    * baseline. `follower`: a device that left the old account and enrolled in
-   * the new one. The new account may already hold snapshots, and nothing is
-   * marked pending, so the next step is restore-latest, never a backup over
-   * the new account.
+   * the new one. The new account may already hold snapshots and the old
+   * account must report itself replaced (`fromLease`). Pending local writes
+   * carry over, so restore-latest still asks for `--discard-local`; the next
+   * step is restore-latest, never a backup over the new account.
    */
   role?: 'restarted' | 'follower';
   /** The caller's `operation.lock` instance (the caller holds that lock). */
@@ -113,7 +125,24 @@ export async function switchVaultAccount(
     ) {
       throw new VaultAccountSwitchError('restart_not_recorded');
     }
-    if (!follower) {
+    if (follower) {
+      // Only a replaced old account lets a device follow: the replacement is
+      // an admin action behind the owner's re-authentication, and a device
+      // cannot be talked into following by the new account alone. A relay
+      // that lies can only make a device follow an account it was already
+      // enrolled in through the key lifecycle (checked above).
+      let replaced = false;
+      try {
+        await options.fromLease?.status();
+      } catch (error) {
+        replaced =
+          error instanceof VaultLeaseError &&
+          error.code === 'account_superseded';
+      }
+      if (!replaced) {
+        throw new VaultAccountSwitchError('old_account_not_replaced');
+      }
+    } else {
       const relay = await options.lease.status();
       if (relay.headSequence !== 0 || relay.latestCommittedSequence !== 0) {
         throw new VaultAccountSwitchError('account_not_fresh');
@@ -123,7 +152,12 @@ export async function switchVaultAccount(
       accountId: to,
       baseSequence: 0,
       highestSeenSequence: 0,
-      localWritesPending: !follower,
+      // A follower keeps what it had not published (no record at all counts
+      // as unpublished, as restore-latest treats it); the restarted device
+      // always owes a baseline.
+      localWritesPending: follower
+        ? (current?.localWritesPending ?? true)
+        : true,
     });
   } finally {
     writer.release();

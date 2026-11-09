@@ -55,7 +55,7 @@ export class VaultLeaseError extends Error {
             : code === 'lease_lost' || code === 'vault_lease_lost'
               ? 'This device no longer holds the vault writer lease; it is read-only until restored.'
               : code === 'account_superseded'
-                ? 'This vault account was replaced by a new one; this device can no longer back up to it.'
+                ? 'The relay reports that this vault account was replaced by a new one; this device does not back up to it.'
                 : 'The vault relay could not be reached or answered unexpectedly.',
     );
     this.name = 'VaultLeaseError';

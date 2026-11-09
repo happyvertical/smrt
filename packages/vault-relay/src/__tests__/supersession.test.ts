@@ -195,7 +195,7 @@ describe('a superseded account takes no writes and offers no restore', () => {
     expect(((await latest.json()) as { sequence: number }).sequence).toBe(1);
   });
 
-  it('keeps reads by explicit sequence, state removal and lease status open', async () => {
+  it('keeps reads by explicit sequence and state removal open, and answers lease status with the refusal', async () => {
     await publishedThenSuperseded();
     const meta = await h.relay.handle(signed(h, a1, 'GET', '/v1/snapshots/1'));
     expect(meta.status).toBe(200);
@@ -203,9 +203,10 @@ describe('a superseded account takes no writes and offers no restore', () => {
       signed(h, a1, 'GET', '/v1/snapshots/1/chunks/0'),
     );
     expect(chunk.status).toBe(200);
-    expect(
-      (await h.relay.handle(signed(h, a1, 'GET', '/v1/lease'))).status,
-    ).toBe(200);
+    // Lease status is how a device proves the old account was replaced.
+    const status = await h.relay.handle(signed(h, a1, 'GET', '/v1/lease'));
+    expect(status.status).toBe(409);
+    expect(await errorCode(status)).toBe('account_superseded');
     const release = await h.relay.handle(
       signed(h, a1, 'POST', '/v1/lease/release', {
         body: JSON.stringify({ fencingToken: 1 }),
