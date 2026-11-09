@@ -3,6 +3,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { isAlias, isMap, isScalar, isSeq, parseDocument, visit } from 'yaml';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const workflowsDir = path.join(repoRoot, '.github', 'workflows');
@@ -104,51 +105,95 @@ test('workflow runner inventory permits only explicit Ubuntu and native macOS jo
   );
 });
 
+const DESKTOP_MATRIX_JOBS = Object.freeze({
+  // job -> keys a matrix entry may have (the first is its id, `runner` required)
+  'verify-build': ['label', 'runner', 'binary'],
+  'release-build': ['target', 'runner', 'bundles', 'artifact_path'],
+  release: ['target', 'runner', 'installer_dir'],
+});
+
 /**
- * Every `runner:` value of the matrix entries of one desktop-release.yml job,
- * with the target or label of its entry. Anything but a plain include list of
- * scalar entries is reported as a problem rather than guessed at.
+ * The workflow as the `yaml` package reads it. Anchors, aliases, merge keys
+ * and tags are reported (GitHub Actions accepts all four, and each can put a
+ * runner label somewhere this test does not look), as is anything that is not
+ * one YAML document.
+ */
+function parseDesktopWorkflow(text) {
+  const problems = [];
+  const doc = parseDocument(text, { uniqueKeys: true, merge: false });
+  for (const error of [...doc.errors, ...doc.warnings]) {
+    problems.push(`desktop-release.yml is not plain YAML: ${error.message.split('\n')[0]}`);
+  }
+  visit(doc, {
+    Node(_key, node) {
+      if (isAlias(node)) problems.push('desktop-release.yml uses a YAML alias');
+      else if (node.anchor) problems.push('desktop-release.yml uses a YAML anchor');
+      if (node.tag) problems.push(`desktop-release.yml uses a YAML tag (${node.tag})`);
+    },
+    Pair(_key, pair) {
+      if (pair.key?.value === '<<') problems.push('desktop-release.yml uses a YAML merge key');
+    },
+  });
+  return { doc, problems };
+}
+
+/**
+ * Every matrix entry of one desktop-release.yml job. The matrix must be
+ * exactly `include:` (no axis, no `exclude`) of block-style mappings that have
+ * only the expected keys, and every `runner` must be a plain scalar. Anything
+ * else is reported as a problem rather than guessed at.
  */
 function desktopMatrixRunners(text, job) {
-  const lines = jobBlock(text.split('\n'), job);
-  const problems = [];
+  const { doc, problems } = parseDesktopWorkflow(text);
   const entries = [];
-  const matrixAt = lines.findIndex((line) => /^ {6}matrix:\s*$/.test(line));
-  if (matrixAt === -1 || !/^ {8}include:\s*$/.test(lines[matrixAt + 1] ?? '')) {
-    return { entries, problems: [`${job}: the matrix must be a plain include list`] };
+  const allowed = DESKTOP_MATRIX_JOBS[job];
+  const matrix = doc.getIn(['jobs', job, 'strategy', 'matrix'], true);
+  if (!isMap(matrix) || matrix.flow) {
+    return { entries, problems: [...problems, `${job}: the matrix must be a block mapping`] };
   }
-  let current;
-  for (const line of lines.slice(matrixAt + 2)) {
-    if (/^ {0,7}\S/.test(line)) break; // left the matrix
-    const first = /^ {10}- ([A-Za-z_]+):\s*(.*)$/.exec(line);
-    if (first) {
-      current = { [first[1]]: first[2] };
-      entries.push(current);
+  const strategy = doc.getIn(['jobs', job, 'strategy']);
+  if (Object.keys(strategy.toJSON()).sort().join() !== 'fail-fast,matrix') {
+    problems.push(`${job}: strategy may only have fail-fast and matrix`);
+  }
+  if (matrix.items.map((pair) => pair.key?.value).join() !== 'include') {
+    problems.push(`${job}: the matrix must be exactly an include list (no axis, exclude or other key)`);
+  }
+  const include = matrix.get('include', true);
+  if (!isSeq(include) || include.flow) {
+    return { entries, problems: [...problems, `${job}: include must be a block list`] };
+  }
+  for (const item of include.items) {
+    if (!isMap(item) || item.flow) {
+      problems.push(`${job}: a matrix entry is not a block mapping`);
       continue;
     }
-    const kv = /^ {12}([A-Za-z_]+):\s*(.*)$/.exec(line);
-    if (kv && current) current[kv[1]] = kv[2];
-  }
-  if (entries.length === 0) problems.push(`${job}: the matrix has no entries`);
-  for (const entry of entries) {
+    const entry = {};
+    for (const pair of item.items) {
+      const key = pair.key?.value;
+      if (typeof key !== 'string' || !allowed.includes(key)) {
+        problems.push(`${job}: a matrix entry has the unexpected key ${String(key)}`);
+        continue;
+      }
+      if (!isScalar(pair.value) || pair.value.type !== 'PLAIN') {
+        problems.push(`${job}: ${key} of a matrix entry is not a plain scalar`);
+        continue;
+      }
+      entry[key] = String(pair.value.value);
+    }
     if (entry.runner === undefined || entry.runner === '') {
       problems.push(`${job}: a matrix entry has no scalar runner`);
     }
+    entries.push(entry);
   }
+  if (entries.length === 0) problems.push(`${job}: the matrix has no entries`);
   return { entries, problems };
 }
 
 /** Violations of the runner rules for the three desktop-release matrix jobs. */
 function desktopRunnerViolations(text) {
   const violations = [];
-  for (const job of ['verify-build', 'release-build', 'release']) {
-    let result;
-    try {
-      result = desktopMatrixRunners(text, job);
-    } catch (error) {
-      violations.push(error.message);
-      continue;
-    }
+  for (const job of Object.keys(DESKTOP_MATRIX_JOBS)) {
+    const result = desktopMatrixRunners(text, job);
     violations.push(...result.problems);
     for (const entry of result.entries) {
       const runner = entry.runner;
@@ -163,24 +208,20 @@ function desktopRunnerViolations(text) {
       }
     }
   }
-  // The variable names a signing runner and nothing else may read it.
-  const variableUses = text
-    .split('\n')
-    .filter((line) => !line.trimStart().startsWith('#'))
-    .filter((line) => line.includes('DESKTOP_MACOS_SIGNING_RUNNER')).length;
-  const releaseBlock = jobBlock(text.split('\n'), 'release').join('\n');
-  const inRelease = releaseBlock
-    .split('\n')
-    .filter((line) => !line.trimStart().startsWith('#'))
-    .filter((line) => line.includes('DESKTOP_MACOS_SIGNING_RUNNER')).length;
-  if (variableUses !== inRelease) {
-    violations.push('DESKTOP_MACOS_SIGNING_RUNNER is read outside the release job');
+  // The variable names a signing runner and nothing else may read it: every
+  // use in the document is the runner of a darwin leg of the release matrix.
+  const { doc } = parseDesktopWorkflow(text);
+  const variable = 'DESKTOP_MACOS_SIGNING_RUNNER';
+  const uses = (JSON.stringify(doc.toJS({ maxAliasCount: -1 })).match(new RegExp(variable, 'g')) ?? []).length;
+  const allowedUses = desktopMatrixRunners(text, 'release').entries.filter(
+    (entry) =>
+      entry.runner === DESKTOP_SIGNING_RUNNER_EXPRESSION &&
+      String(entry.target ?? '').endsWith('-apple-darwin'),
+  ).length;
+  if (uses !== allowedUses) {
+    violations.push(`${variable} is read outside the macOS legs of the release matrix`);
   }
-  const noComments = text
-    .split('\n')
-    .filter((line) => !line.trimStart().startsWith('#'))
-    .join('\n');
-  if (/self-hosted/i.test(noComments)) {
+  if (/self-hosted/i.test(JSON.stringify(doc.toJS({ maxAliasCount: -1 })))) {
     violations.push('desktop-release.yml names a self-hosted runner');
   }
   return violations;
@@ -191,7 +232,7 @@ const desktopWorkflow = () =>
 
 test('desktop-release matrix runners come from the explicit list', () => {
   assert.deepEqual(desktopRunnerViolations(desktopWorkflow()), []);
-  for (const job of ['verify-build', 'release-build', 'release']) {
+  for (const job of Object.keys(DESKTOP_MATRIX_JOBS)) {
     assert.ok(
       desktopMatrixRunners(desktopWorkflow(), job).entries.length >= 4,
       `${job} must have its four matrix entries read`,
@@ -210,7 +251,7 @@ test('a self-hosted or unlisted runner in a desktop-release matrix fails', () =>
     assert.ok(
       desktopRunnerViolations(
         mutate('runner: macos-15-intel', `runner: ${runner}`),
-      ).some((v) => v.startsWith('verify-build: runner')),
+      ).length > 0,
       runner,
     );
   }
@@ -268,17 +309,107 @@ test('a self-hosted or unlisted runner in a desktop-release matrix fails', () =>
   );
 });
 
-/** The `runs-on` line of each desktop-release.yml job, comments aside. */
-function desktopRunsOn(text) {
-  const result = {};
-  let job;
-  for (const line of text.split('\n')) {
-    const header = line.match(/^  ([A-Za-z][\w-]*):\s*$/);
-    if (header) job = header[1];
-    const runs = line.match(/^    runs-on:\s*(.*)$/);
-    if (runs) result[job] = runs[1];
+test('a matrix the reader would drop on the floor is refused, not skipped', () => {
+  const text = desktopWorkflow();
+  const mutate = (from, to) => {
+    assert.equal(text.split(from).length, 2, `anchor must occur once: ${from}`);
+    return text.replace(from, to);
+  };
+  const VERIFY = '      fail-fast: false\n      matrix:\n        include:\n          - label: macos-arm64';
+  const BUILD = '      fail-fast: true\n      matrix:\n        include:\n          # Both macOS targets build on the hosted arm64 runner; the x64 target\n          # is cross-compiled.\n          - target: aarch64-apple-darwin';
+  const SIGN = '      fail-fast: true\n      matrix:\n        include:\n          - target: aarch64-apple-darwin\n            runner: ${{ vars';
+  const refused = (mutated, pattern) => {
+    const violations = desktopRunnerViolations(mutated);
+    assert.ok(violations.length > 0, 'expected the mutation to be refused');
+    if (pattern) {
+      assert.ok(
+        violations.some((v) => pattern.test(v)),
+        `${pattern}: ${violations.join(' | ')}`,
+      );
+    }
+  };
+  for (const [anchor, job] of [[VERIFY, 'verify-build'], [BUILD, 'release-build'], [SIGN, 'release']]) {
+    // an extra axis at the matrix level (8 spaces), scalar or list
+    refused(
+      mutate(anchor, anchor.replace('        include:', '        runner: [my-mac-label]\n        include:')),
+      /exactly an include list/,
+    );
+    refused(
+      mutate(anchor, anchor.replace('        include:', '        runner: my-mac-label\n        include:')),
+      /exactly an include list/,
+    );
+    // exclude and a second include-like key
+    refused(
+      mutate(anchor, anchor.replace('        include:', '        exclude:\n          - runner: macos-14\n        include:')),
+      /exactly an include list/,
+    );
+    // a flow-form entry appended to the list
+    const flow = `          - {${job === 'verify-build' ? 'label' : 'target'}: x, runner: my-label}\n`;
+    refused(
+      mutate(anchor, anchor.replace('        include:\n', `        include:\n${flow}`)),
+      /not a block mapping|my-label/,
+    );
+    // an unexpected key on an entry (a label list the reader never looked at)
+    refused(
+      mutate(anchor, anchor.replace(/(- (label|target): [^\n]*)(\n|$)/, '$1\n            labels: [self-hosted]\n')),
+      /unexpected key labels/,
+    );
   }
-  return result;
+  // an axis or exclude AFTER the include list, where a line reader stops looking
+  refused(
+    mutate(
+      '            binary: smrt-desktop-shell\n    steps:',
+      '            binary: smrt-desktop-shell\n        runner: [my-mac-label]\n    steps:',
+    ),
+    /exactly an include list/,
+  );
+  refused(
+    mutate(
+      '            binary: smrt-desktop-shell\n    steps:',
+      '            binary: smrt-desktop-shell\n        exclude:\n          - runner: macos-14\n    steps:',
+    ),
+    /exactly an include list/,
+  );
+  // include written as a flow list, the whole matrix as flow, or as an expression
+  refused(
+    mutate(VERIFY, '      fail-fast: false\n      matrix: {include: [{label: x, runner: self-hosted}]}\n      _x: 1\n      #'),
+  );
+  refused(
+    mutate(VERIFY, "      fail-fast: false\n      matrix: ${{ fromJSON(vars.MATRIX) }}\n      #"),
+    /block mapping/,
+  );
+  // anchors and aliases put a runner somewhere the reader does not look
+  refused(
+    mutate('runner: macos-15-intel', 'runner: &r self-hosted').replace(
+      'runner: windows-latest\n            binary: smrt-desktop-shell.exe',
+      'runner: *r\n            binary: smrt-desktop-shell.exe',
+    ),
+    /anchor|alias/,
+  );
+  refused(mutate('runner: macos-15-intel', 'runner: !!str macos-15-intel'), /tag/);
+  // a quoted or block scalar runner is not a plain scalar
+  refused(mutate('runner: macos-15-intel', "runner: 'macos-15-intel'"), /not a plain scalar/);
+  refused(mutate('runner: macos-15-intel', 'runner: |\n              macos-15-intel'), /not a plain scalar/);
+  // an entry with no runner
+  refused(
+    mutate('            runner: macos-15-intel\n', ''),
+    /no scalar runner/,
+  );
+  // the signing variable read anywhere else
+  refused(
+    mutate(
+      '      - name: Upload the unsigned shell binary (verification only)\n',
+      "      - name: Read\n        env:\n          R: ${{ vars.DESKTOP_MACOS_SIGNING_RUNNER }}\n        run: echo hi\n      - name: Upload the unsigned shell binary (verification only)\n",
+    ),
+    /read outside/,
+  );
+});
+
+/** The `runs-on` value of each desktop-release.yml job, as parsed. */
+function desktopRunsOn(text) {
+  const { doc } = parseDesktopWorkflow(text);
+  const jobs = doc.toJS().jobs;
+  return Object.fromEntries(Object.entries(jobs).map(([job, body]) => [job, body['runs-on']]));
 }
 
 test('the runs-on expressions of the desktop-release matrix jobs are exact', () => {
