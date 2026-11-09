@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ObjectRegistry } from '@happyvertical/smrt-core';
 import { afterAll, describe, expect, it, vi } from 'vitest';
-import '../models/index.ts';
+import '../objects/index.ts';
 import { prepareShellSchema } from './schema.ts';
 
 const dir = mkdtempSync(join(tmpdir(), 'shell-schema-'));

@@ -2,7 +2,7 @@
 // event (like routes.test.ts). The model is always a stub.
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { TurnEvent } from '../lib/assistant/events.ts';
-import { App } from '../lib/models/App.ts';
+import { App } from '../lib/objects/App.ts';
 import { mountAssistantRoutes } from '../lib/server/assistant/routes.ts';
 import { call, say, scripted } from '../lib/server/assistant/test-helpers.ts';
 import { getHost } from '../lib/server/host.ts';

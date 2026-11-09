@@ -45,7 +45,7 @@ describe('approval gate invariants', () => {
       .map(([f]) => f)
       .sort();
     expect(users).toEqual([
-      'lib/models/Approval.ts',
+      'lib/objects/Approval.ts',
       'lib/server/approvals.ts',
     ]);
   });

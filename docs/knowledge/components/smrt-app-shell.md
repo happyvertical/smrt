@@ -5,10 +5,10 @@ description: "A smrt app that builds and runs a person's own smrt app from defin
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-09T18:04:57Z"
+  at: "2026-11-09T18:23:54Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:6358ebdf07715ec58a4d2ef53d76470e35da6138f9e0df4bd7c3bae3cd8ecd8a"
+source_revision: "sha256:794a3f3ff9f82313d9606ee0f0e0c9e39443b6e547c6601332bb043d23d633a9"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/package.json"
@@ -27,7 +27,7 @@ sources:
 
 - Directory: `packages/app-shell`
 - Private: no
-- Object source: `manifest`
+- Object source: `scanner`
 - Evidence level: `source-inspected`
 
 ## Documentation
@@ -58,21 +58,14 @@ sources:
 
 - `./engine`
 - `./engine/worker`
-- `./manifest`
-- `./manifest.json`
 
 ## Models
 
 - `App` (collection `apps`, extends `SmrtObject`)
-- `AppCollection` (collection `apps`, extends `SmrtCollection`)
 - `AppVersion` (collection `appversions`, extends `SmrtObject`)
-- `AppVersionCollection` (collection `appversions`, extends `SmrtCollection`)
 - `Approval` (collection `approvals`, extends `SmrtObject`)
-- `ApprovalCollection` (collection `approvals`, extends `SmrtCollection`)
 - `AssistantMessage` (collection `assistantmessages`, extends `SmrtObject`)
-- `AssistantMessageCollection` (collection `assistantmessages`, extends `SmrtCollection`)
 - `AssistantThread` (collection `assistantthreads`, extends `SmrtObject`)
-- `AssistantThreadCollection` (collection `assistantthreads`, extends `SmrtCollection`)
 
 ## MCP tools
 

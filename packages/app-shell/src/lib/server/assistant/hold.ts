@@ -2,7 +2,7 @@
 // (through the dock's card or anywhere else that calls `Approval.decide`).
 // The turn only WAITS: the decision is made by `Approval.decide`, the one
 // place the engine's `approved` flag is set; nothing here can approve.
-import { ApprovalCollection } from '../../models/Approval.ts';
+import { ApprovalCollection } from '../../objects/Approval.ts';
 import { subscribe } from '../events.ts';
 import { getShellDb } from '../host.ts';
 

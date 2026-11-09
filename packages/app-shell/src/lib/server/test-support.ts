@@ -14,7 +14,7 @@ import {
 } from '@happyvertical/smrt-users';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { vi } from 'vitest';
-import '../models/index.ts';
+import '../objects/index.ts';
 import { configureShell, resetShell } from './host.ts';
 import { type Principal, runAs, setOwnerCheck } from './owner.ts';
 import { prepareShellSchema } from './schema.ts';

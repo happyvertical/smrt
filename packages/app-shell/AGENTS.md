@@ -11,7 +11,7 @@ SvelteKit or `src/lib`). README has the route and JSON contracts.
 | Path | What |
 |---|---|
 | `src/engine/` | `AppHost`, worker thread, migrations, QuickJS sandbox. Finished and tested on its own. |
-| `src/lib/models/` | Shell models (`objectsDir` in `vite.config.ts`): `App`, `AppVersion`, `Approval`. |
+| `src/lib/objects/` | Shell models (`objectsDir` in `vite.config.ts`): `App`, `AppVersion`, `Approval`. |
 | `src/lib/server/smrt.ts` | `createSmrtSvelteKitRuntime`, `prepareDatabase`, `configureShell`. |
 | `src/lib/server/schema.ts` | `prepareShellSchema(db)`: additive first-run schema. |
 | `src/lib/server/host.ts` | Holders: shell db, data root, the one lazily opened `AppHost`. |
@@ -87,4 +87,4 @@ and a member; it opens the real driver because the vitest setup would
 pre-create tables). `pnpm build` (tsc engine, `svelte-kit sync`, `vite build`;
 the smrt() plugin generates `src/routes/api/{apps,approvals,_changes,_events,
 _resources}`: git-ignored) and `pnpm typecheck` must pass. The `smrt()` plugin
-needs the models in `src/lib/models`, set via `objectsDir`.
+needs the models in `src/lib/objects`, set via `objectsDir`.

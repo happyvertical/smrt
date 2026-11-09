@@ -6,11 +6,11 @@ import {
   type AssistantMessage,
   AssistantMessageCollection,
   type AssistantRole,
-} from '../../models/AssistantMessage.ts';
+} from '../../objects/AssistantMessage.ts';
 import {
   type AssistantThread,
   AssistantThreadCollection,
-} from '../../models/AssistantThread.ts';
+} from '../../objects/AssistantThread.ts';
 import { getShellDb } from '../host.ts';
 
 /** Messages replayed to the model per turn (older ones stay stored). */

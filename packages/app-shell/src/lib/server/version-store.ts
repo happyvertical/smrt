@@ -3,8 +3,11 @@
 // current pointer and a copy of the current definition).
 import type { DatabaseInterface } from '@happyvertical/sql';
 import type { VersionRecord, VersionStore } from '../../engine/index.ts';
-import { type App, AppCollection } from '../models/App.ts';
-import { type AppVersion, AppVersionCollection } from '../models/AppVersion.ts';
+import { type App, AppCollection } from '../objects/App.ts';
+import {
+  type AppVersion,
+  AppVersionCollection,
+} from '../objects/AppVersion.ts';
 
 export const APP_SLUG = 'app';
 

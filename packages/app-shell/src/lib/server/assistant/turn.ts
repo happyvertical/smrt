@@ -14,7 +14,7 @@
 //    calls per step and on result size. Client disconnect aborts everything.
 import type { AIMessage, AITool, AIToolCall } from '@happyvertical/ai';
 import type { TurnEvent, TurnStop } from '../../assistant/events.ts';
-import type { AssistantThread } from '../../models/AssistantThread.ts';
+import type { AssistantThread } from '../../objects/AssistantThread.ts';
 import type { CatalogResponse, CatalogTool } from '../catalog.ts';
 import { PolicyError, type Principal } from '../owner.ts';
 import { callTool, toolsFor } from '../policy.ts';

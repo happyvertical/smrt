@@ -4,7 +4,7 @@
 // `approved: true`; nothing taken from a request body can set it.
 import { createHash } from 'node:crypto';
 import type { Command, Plan } from '../../engine/index.ts';
-import { type Approval, ApprovalCollection } from '../models/Approval.ts';
+import { type Approval, ApprovalCollection } from '../objects/Approval.ts';
 import { publish } from './events.ts';
 import { getHost, getShellDb } from './host.ts';
 

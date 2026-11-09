@@ -7,8 +7,8 @@ import {
   type McpAppServer,
 } from '@happyvertical/smrt-app-mcp';
 import { isRiskyTool } from '../../engine/index.ts';
-import { App } from '../models/App.ts';
-import { Approval } from '../models/Approval.ts';
+import { App } from '../objects/App.ts';
+import { Approval } from '../objects/Approval.ts';
 import { runAppTool } from './builder.ts';
 import { getHost, getShellDb, shellDbSync } from './host.ts';
 import { runAs } from './owner.ts';

@@ -1,7 +1,7 @@
 // The JSON routes, called as functions with a fake SvelteKit event. The owner
 // session is the only way in; the verified principal comes from `locals`.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { App } from '../lib/models/App.ts';
+import { App } from '../lib/objects/App.ts';
 import { type ShellEvent, subscribe } from '../lib/server/events.ts';
 import { getHost } from '../lib/server/host.ts';
 import { runAs } from '../lib/server/owner.ts';

@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { App } from '../models/App.ts';
-import { Approval, ApprovalCollection } from '../models/Approval.ts';
-import { AppVersionCollection } from '../models/AppVersion.ts';
+import { App } from '../objects/App.ts';
+import { Approval, ApprovalCollection } from '../objects/Approval.ts';
+import { AppVersionCollection } from '../objects/AppVersion.ts';
 import { listApprovalViews } from './approvals.ts';
 import { getHost } from './host.ts';
 import { PolicyError } from './owner.ts';

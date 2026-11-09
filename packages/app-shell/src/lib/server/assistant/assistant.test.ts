@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { TurnEvent } from '../../assistant/events.ts';
-import { ApprovalCollection } from '../../models/Approval.ts';
+import { ApprovalCollection } from '../../objects/Approval.ts';
 import { listApprovalViews } from '../approvals.ts';
 import { getHost, getShellDb } from '../host.ts';
 import { createShellMcpServer } from '../mcp-server.ts';

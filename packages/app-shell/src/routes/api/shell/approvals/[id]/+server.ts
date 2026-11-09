@@ -6,7 +6,7 @@
  * 404 unknown id, 409 already decided.
  */
 
-import { ApprovalCollection } from '$lib/models/Approval';
+import { ApprovalCollection } from '$lib/objects/Approval';
 import { getShellDb } from '$lib/server/host';
 import {
   guarded,

@@ -9,7 +9,7 @@
  */
 import { createProviderReadinessProbe } from '@happyvertical/smrt-app-runtime';
 import { createSmrtSvelteKitRuntime } from '@happyvertical/smrt-app-runtime/sveltekit';
-import '../models/index.ts';
+import '../objects/index.ts';
 import { installChangeFeedPolicy } from './change-feed.ts';
 import { configureShell } from './host.ts';
 import { prepareShellSchema } from './schema.ts';

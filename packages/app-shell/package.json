@@ -13,16 +13,13 @@
     },
     "./engine/worker": {
       "import": "./dist/engine/app-worker.js"
-    },
-    "./manifest": "./.smrt/manifest.json",
-    "./manifest.json": "./.smrt/manifest.json"
+    }
   },
   "files": [
     "build",
     "dist",
     "CLAUDE.md",
-    "AGENTS.md",
-    ".smrt/manifest.json"
+    "AGENTS.md"
   ],
   "scripts": {
     "dev": "svelte-kit sync && vite dev",
