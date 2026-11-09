@@ -5,10 +5,10 @@ description: "Developer CLI for SMRT framework - introspection, testing, and pro
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-09T11:26:27Z"
+  at: "2026-11-09T13:21:38Z"
 audience: "internal"
 evidence_level: "manifest-described"
-source_revision: "sha256:a9842487da5c7c0e52e48577e47d695310c773ea46f37f2f5787ebda20e3ffee"
+source_revision: "sha256:65aa26579bd7f1347cdf984aadb0eb9e2d859a98177aab83b0f20c42d52200ad"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/cli/package.json"
@@ -38,6 +38,7 @@ sources:
 - [smrt-assets](/components/smrt-assets.md)
 - [smrt-config](/components/smrt-config.md)
 - [smrt-core](/components/smrt-core.md)
+- [smrt-desktop](/components/smrt-desktop.md)
 - [smrt-dev-mcp](/components/smrt-dev-mcp.md)
 - [smrt-inference](/components/smrt-inference.md)
 - [smrt-ledgers](/components/smrt-ledgers.md)
