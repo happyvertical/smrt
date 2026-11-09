@@ -303,6 +303,8 @@ export interface BundleFailureDocument {
   readonly message: string;
   readonly field?: string;
   readonly subjects?: readonly string[];
+  /** Present for a size-budget failure: the report of the unpublished bundle. */
+  readonly report?: BundleReportV1;
 }
 
 export function bundleFailureDocument(error: unknown): BundleFailureDocument {
@@ -316,5 +318,6 @@ export function bundleFailureDocument(error: unknown): BundleFailureDocument {
     message: e.message,
     ...(e.field === undefined ? {} : { field: e.field }),
     ...(e.subjects.length === 0 ? {} : { subjects: e.subjects }),
+    ...(e.report === undefined ? {} : { report: e.report }),
   };
 }

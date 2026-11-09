@@ -34,6 +34,7 @@
  * environment or a child's output is written to the report or an error.
  */
 
+import { builtinModules } from 'node:module';
 import {
   assertBundleMatchesSidecar,
   type BundleManifestV1,
@@ -324,6 +325,11 @@ async function shipsPrebuiltAddon(
     return false;
   };
   return visit(root, 0);
+}
+
+/** `node:fs` or a bare built-in name such as `fs` or `fs/promises`. */
+function isNodeBuiltin(specifier: string): boolean {
+  return specifier.startsWith('node:') || builtinModules.includes(specifier);
 }
 
 function hostMatches(plan: BundlePlan, seams: BundleSeams): boolean {
@@ -819,9 +825,7 @@ export async function runBundle(
         throw new BundleError('bridge_not_self_contained');
       }
       const found = extractImports(source);
-      const foreign = found.refs.filter(
-        (ref) => !ref.specifier.startsWith('node:'),
-      );
+      const foreign = found.refs.filter((ref) => !isNodeBuiltin(ref.specifier));
       if (foreign.length > 0) {
         throw new BundleError('bridge_not_self_contained', {
           subjects: [

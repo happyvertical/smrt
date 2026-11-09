@@ -932,6 +932,9 @@ importers:
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
+      '@happyvertical/smrt-desktop':
+        specifier: workspace:*
+        version: link:../smrt-desktop
       '@happyvertical/smrt-dev-mcp':
         specifier: workspace:*
         version: link:../smrt-dev-mcp

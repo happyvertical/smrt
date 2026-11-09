@@ -15,6 +15,7 @@ export { dbPermissionsCommand } from './db-permissions.js';
 export { dbPruneCommand } from './db-prune.js';
 export { dbRollbackCommand } from './db-rollback.js';
 export { dbStatusCommand } from './db-status.js';
+export { desktopCommands } from './desktop.js';
 export { dispatchCommands } from './dispatch.js';
 export { docsCommands } from './docs-claude.js';
 // Data export command

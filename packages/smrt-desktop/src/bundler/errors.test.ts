@@ -143,5 +143,12 @@ describe('exit code table', () => {
         'pnpm-lock.yaml does not match package.json, so the frozen install was refused',
     });
     expect(bundleFailureDocument(new Error('x')).stage).toBeNull();
+    expect(document).not.toHaveProperty('report');
+    const report = { files: { bytes: 1 } } as never;
+    expect(
+      bundleFailureDocument(
+        new BundleError('size_budget_exceeded', { report }),
+      ),
+    ).toHaveProperty('report', report);
   });
 });

@@ -63,6 +63,7 @@ let _playgroundCommands: Record<string, Command> | null = null;
 let _workbenchCommands: Record<string, Command> | null = null;
 let _cookbookCommands: Record<string, Command> | null = null;
 let _kitchenCommands: Record<string, Command> | null = null;
+let _desktopCommands: Record<string, Command> | null = null;
 
 async function getGnodeCommands(): Promise<Record<string, Command>> {
   if (!_gnodeCommands) {
@@ -142,6 +143,14 @@ async function getKitchenCommands(): Promise<Record<string, Command>> {
     _kitchenCommands = kitchenCommands;
   }
   return _kitchenCommands;
+}
+
+async function getDesktopCommands(): Promise<Record<string, Command>> {
+  if (!_desktopCommands) {
+    const { desktopCommands } = await import('./commands/index.js');
+    _desktopCommands = desktopCommands;
+  }
+  return _desktopCommands;
 }
 
 async function getWorkbenchCommands(): Promise<Record<string, Command>> {
@@ -1518,6 +1527,7 @@ export class CLIGenerator {
       workbenchCommands,
       cookbookCommands,
       kitchenCommands,
+      desktopCommands,
     ] = await Promise.all([
       getGnodeCommands(),
       getGenerateCommands(),
@@ -1530,6 +1540,7 @@ export class CLIGenerator {
       getWorkbenchCommands(),
       getCookbookCommands(),
       getKitchenCommands(),
+      getDesktopCommands(),
     ]);
     const builtInCommands = {
       ...gnodeCommands,
@@ -1543,6 +1554,7 @@ export class CLIGenerator {
       ...workbenchCommands,
       ...cookbookCommands,
       ...kitchenCommands,
+      ...desktopCommands,
     };
 
     const builtInMatch = matchLeadingCommand(
@@ -1921,6 +1933,7 @@ export class CLIGenerator {
       workbenchCommands,
       cookbookCommands,
       kitchenCommands,
+      desktopCommands,
     ] = await Promise.all([
       getGnodeCommands(),
       getGenerateCommands(),
@@ -1933,6 +1946,7 @@ export class CLIGenerator {
       getWorkbenchCommands(),
       getCookbookCommands(),
       getKitchenCommands(),
+      getDesktopCommands(),
     ]);
 
     console.log('Project Setup:');
@@ -1955,6 +1969,12 @@ export class CLIGenerator {
 
     console.log('Kitchen:');
     for (const command of Object.values(kitchenCommands)) {
+      this.showCommandHelp(command);
+    }
+    console.log();
+
+    console.log('Desktop:');
+    for (const command of Object.values(desktopCommands)) {
       this.showCommandHelp(command);
     }
     console.log();
