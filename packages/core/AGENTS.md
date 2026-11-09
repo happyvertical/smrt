@@ -147,6 +147,13 @@ and repository rules.
   copy's `SmrtCollection` (#3956, `issue-3956-*.test.ts`). Consumer
   gates: `registry/__tests__/issue-3110-*.test.ts`, `issue-3109-*.test.ts`,
   `packages/bundle-gate/src/__tests__/consumer-same-name.spec.ts`.
+- A manifest-loaded STI family always includes its own base (#4735). Sibling
+  auto-loading keeps its simple-name "already registered" rule, except for a
+  base that discovered siblings of its own package extend; lazy parent loading
+  and `loadAllManifests()` use `hasClassForPackage`. Another package's
+  same-named class is never that base: smrt-ledgers' `Account` once hid
+  smrt-messages' `Account`, and `getAllSchemasAsDefinitions()` threw "claimed
+  by unrelated classes".
 - A collection class never publishes more than its model: unset surfaces
   inherit the model's, and the build rejects a collection that opens a CRUD
   write its model closes. Inherited surfaces (`inheritedExposure`) keep

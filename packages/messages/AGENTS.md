@@ -134,6 +134,10 @@ import '@happyvertical/smrt-messages/providers/all';     // all of the above
   `ledger_accounts`). Resolve by constructor or qualified name; the
   coexistence tests (`ledger-account-identity-*`, and the PostgreSQL lane
   `pnpm test:postgres`) load both packages in both orders.
+  Both declare the `accounts` collection, so registering the ledgers `Account`
+  auto-loads this family from its manifest as STI siblings. Core loads this
+  base with them and never takes the ledgers `Account` for it (#4735,
+  `ledger-account-identity-sti-siblings.test.ts`).
 - **STI `_meta_type`**: qualified format `@happyvertical/smrt-messages:Email`
 - **JSON fields**: all address/metadata fields are JSON strings with `getX()`/`setX()` helpers
 - **RFC 822 threading**: Email uses `inReplyTo`/`messageId`/`references` — manual management required

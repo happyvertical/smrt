@@ -67,6 +67,7 @@ import {
   findClassesByName,
   getCanonicalClassName,
   hasClassCaseInsensitive,
+  hasClassForPackage,
   qualifyExtendsName,
 } from './name-resolver';
 import { assertQualifiedNameAliasesAvailable } from './qualified-name-aliases';
@@ -2093,9 +2094,8 @@ function registerUntracked(
 
     // Register any siblings that aren't already registered
     // Only load siblings from DIFFERENT packages to avoid collisions with local classes
-    for (const sibling of siblings) {
-      // Use case-insensitive check to prevent registering 'Praeco' when 'praeco' exists
-      if (!hasClassCaseInsensitive(sibling.className)) {
+    for (const sibling of orderStiSiblingsBaseFirst(siblings)) {
+      if (!isStiSiblingRegistered(sibling, siblings)) {
         // Skip siblings from the same package - they will be registered by their own decorators
         if (
           sibling.packageName &&
@@ -2158,6 +2158,66 @@ function tenantScopedConfigFromFieldMetadata(
     };
   }
   return undefined;
+}
+
+type DiscoveredStiSibling = ReturnType<typeof discoverSTISiblingsSync>[number];
+
+/**
+ * True when `candidate` is the base that another discovered sibling of the
+ * SAME package extends: the class a loaded family cannot do without.
+ */
+function isStiBaseOfDiscoveredSibling(
+  candidate: DiscoveredStiSibling,
+  siblings: readonly DiscoveredStiSibling[],
+): boolean {
+  if (!candidate.packageName) return false;
+  const qualified = createQualifiedName(
+    candidate.packageName,
+    candidate.className,
+  );
+  return siblings.some(
+    (sibling) =>
+      sibling !== candidate &&
+      sibling.packageName === candidate.packageName &&
+      (sibling.entry.extendsQualified
+        ? sibling.entry.extendsQualified === qualified
+        : sibling.entry.extends === candidate.className),
+  );
+}
+
+/**
+ * Whether an STI sibling is already registered.
+ *
+ * By simple name, case-insensitively, as before: a same-named registration
+ * stands for the sibling ('Praeco' for 'praeco', a child that replaced its
+ * same-named parent, one class described under two package names). The
+ * exception is a base that discovered siblings of its own package extend.
+ * There a same-named class of ANOTHER package is a different class, and
+ * treating it as the base loaded the subclasses without it: smrt-ledgers'
+ * `Account` hid smrt-messages' `Account`, and `getAllSchemasAsDefinitions()`
+ * then threw "Table 'accounts' is claimed by unrelated classes" (#4735).
+ */
+function isStiSiblingRegistered(
+  sibling: DiscoveredStiSibling,
+  siblings: readonly DiscoveredStiSibling[],
+): boolean {
+  return isStiBaseOfDiscoveredSibling(sibling, siblings)
+    ? hasClassForPackage(sibling.className, sibling.packageName)
+    : hasClassCaseInsensitive(sibling.className);
+}
+
+/** Bases before the subclasses that extend them; otherwise discovery order. */
+function orderStiSiblingsBaseFirst(
+  siblings: readonly DiscoveredStiSibling[],
+): DiscoveredStiSibling[] {
+  return [
+    ...siblings.filter((sibling) =>
+      isStiBaseOfDiscoveredSibling(sibling, siblings),
+    ),
+    ...siblings.filter(
+      (sibling) => !isStiBaseOfDiscoveredSibling(sibling, siblings),
+    ),
+  ];
 }
 
 export function registerCollection(
@@ -2973,9 +3033,8 @@ function registerFromManifestUntracked(
 
     // Register any siblings that aren't already registered
     // Only load siblings from DIFFERENT packages to avoid collisions with local classes
-    for (const sibling of siblings) {
-      // Use case-insensitive check to prevent registering 'Praeco' when 'praeco' exists
-      if (!hasClassCaseInsensitive(sibling.className)) {
+    for (const sibling of orderStiSiblingsBaseFirst(siblings)) {
+      if (!isStiSiblingRegistered(sibling, siblings)) {
         // Skip siblings from the same package - they will be registered by their own decorators
         if (
           sibling.packageName &&

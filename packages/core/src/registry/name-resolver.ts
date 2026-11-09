@@ -143,6 +143,28 @@ export function hasClassCaseInsensitive(name: string): boolean {
 }
 
 /**
+ * True when `className` is already registered for `packageName`: that package's
+ * own class, or a registration that carries no package identity yet (an
+ * unpromoted decorator class, matched by simple name as before).
+ *
+ * A same-named class of ANOTHER package is not a registration of this one.
+ * smrt-ledgers and smrt-messages both declare `Account`; treating the first as
+ * the second registered messages' account subclasses without their base (#4735).
+ * Without a package to compare, this is `hasClassCaseInsensitive`.
+ */
+export function hasClassForPackage(
+  className: string,
+  packageName: string | undefined,
+): boolean {
+  if (!hasClassCaseInsensitive(className)) return false;
+  if (!packageName) return true;
+  return findClassesByName(className).some(
+    (registered) =>
+      !registered.packageName || registered.packageName === packageName,
+  );
+}
+
+/**
  * Helper for class lookup with qualified name support.
  *
  * Lookup priority:

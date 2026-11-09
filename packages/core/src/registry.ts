@@ -147,6 +147,7 @@ import {
   getQualifiedClassNames as _getQualifiedClassNames,
   hasClass as _hasClass,
   hasClassCaseInsensitive as _hasClassCaseInsensitive,
+  hasClassForPackage as _hasClassForPackage,
   resolveType as _resolveType,
   findClassStrict,
 } from './registry/name-resolver';
@@ -2057,7 +2058,14 @@ export class ObjectRegistry {
         }
       }
 
-      if (parentDef && !ObjectRegistry.hasClass(parentRef)) {
+      // A parent named by its simple name is checked in its own package:
+      // another package's same-named class (smrt-ledgers `Account`) must not
+      // stand in for it (#4735).
+      const parentRegistered =
+        parentInManifest && manifest.packageName
+          ? _hasClassForPackage(parentName, manifest.packageName)
+          : ObjectRegistry.hasClass(parentRef);
+      if (parentDef && !parentRegistered) {
         verboseLog(
           `[ObjectRegistry] Also registering parent class ${parentRef} for STI`,
         );
@@ -2119,7 +2127,9 @@ export class ObjectRegistry {
       // full-registry-integration.test.ts:72-76 contract.
       const source = new ExplicitPathsManifestSource(options.manifestPaths);
       for (const entry of source.entries()) {
-        if (!ObjectRegistry.hasClassCaseInsensitive(entry.className)) {
+        // Package-aware (#4735): another package's same-named class does not
+        // make this entry registered.
+        if (!_hasClassForPackage(entry.className, entry.packageName)) {
           ObjectRegistry.registerFromManifest(
             entry.className,
             entry.def,
@@ -2176,7 +2186,7 @@ export class ObjectRegistry {
           if (!entry.packageName || !seenPackages.has(entry.packageName)) {
             continue;
           }
-          if (!ObjectRegistry.hasClassCaseInsensitive(entry.className)) {
+          if (!_hasClassForPackage(entry.className, entry.packageName)) {
             ObjectRegistry.registerFromManifest(
               entry.className,
               entry.def,
