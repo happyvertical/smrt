@@ -456,7 +456,7 @@ export interface PrivateTreeOptions {
  * Create (or verify) a private directory and, optionally, one file in it.
  *
  * Existing components are verified first, before anything is created beneath
- * them. The private directory itself, when this call creates it, is locked
+ * them. Every directory this call creates is locked
  * immediately (inheritance off, explicit DACL for the current user, SYSTEM and
  * Administrators; smrt#4843). Every component this call creates is then
  * re-inspected under the *custodied* rule; on failure (including a failed
@@ -513,11 +513,10 @@ export function preparePrivateWindowsTree(
         if (errorCode(error) !== 'EEXIST') throw error;
         continue;
       }
-      // Only the private directory itself is locked (never an ancestor, and
-      // never one that already existed), before anything is written in it.
-      if (foldWindowsCase(component) === foldWindowsCase(directory)) {
-        lockCreatedDirectory(rt, component, userSid);
-      }
+      // Every directory this call creates is locked before anything is written
+      // in it, so none of them inherits access from the profile. Components
+      // that already existed are never locked or re-permissioned.
+      lockCreatedDirectory(rt, component, userSid);
     }
     const created = new Set(createdDirectories);
     if (createdFile && file !== undefined) created.add(file.path);

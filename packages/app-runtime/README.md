@@ -269,9 +269,10 @@ gate, not before.
    - *Verification:* every component the runtime creates is then re-inspected
      under the custodied rule (the lock does not replace the check). On failure
      exactly the components that attempt created are removed and the call
-     fails closed; pre-existing components are never removed. A created
-     ancestor above the private directory is not locked, so it must satisfy
-     the rule with what it inherited.
+     fails closed; pre-existing components are never removed. Every directory
+     the call creates is locked (intermediate ones too); only components that
+     already existed keep what they inherited and must satisfy the rule as they
+     are.
    - *Pre-existing directories:* verified, never re-permissioned. One that
      fails the rule is refused with an error that names the extra principal
      (its SID, plus a name when it is a well-known one such as Everyone,

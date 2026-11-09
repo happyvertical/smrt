@@ -88,13 +88,24 @@ describe.runIf(onWindows)('real Windows machine', () => {
     ).toEqual([]);
   });
 
-  it('refuses a directory under C:\\ (it inherits Authenticated Users: Modify) and removes it', () => {
+  it('refuses a pre-existing directory under C:\\ (it inherits Authenticated Users: Modify) and names the principal', () => {
     const directory = `C:\\smrt-test-${randomBytes(6).toString('hex')}`;
     created.push(directory);
+    mkdirSync(directory);
     expect(() => preparePrivateWindowsTree(rt, { directory })).toThrow(
-      /lacks Windows custody/,
+      /lacks Windows custody.*access is granted to/,
     );
-    expect(existsSync(directory)).toBe(false);
+    // Never removed and never re-permissioned: it was not the runtime's.
+    expect(existsSync(directory)).toBe(true);
+  });
+
+  it('locks and accepts a directory it creates under C:\\, which would otherwise inherit Authenticated Users: Modify', () => {
+    const directory = `C:\\smrt-test-${randomBytes(6).toString('hex')}`;
+    created.push(directory);
+    const result = preparePrivateWindowsTree(rt, { directory });
+    expect(result.createdDirectories).toEqual([directory]);
+    // Verified again, now as an existing directory: still accepted.
+    expect(() => preparePrivateWindowsTree(rt, { directory })).not.toThrow();
   });
 
   it('refuses a directory that was later opened to the Users group', () => {

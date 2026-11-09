@@ -59,15 +59,18 @@ describe('a created directory is locked (smrt#4843)', () => {
     expect(machine.exists(ROOT)).toBe(false);
   });
 
-  it('locks only the leaf, not an ancestor it also created', () => {
+  it('locks every directory it creates, ancestors included, but nothing that already existed', () => {
     const machine = FakeWindowsMachine.standard();
     machine.lockMode = 'apply';
     preparePrivateWindowsTree(machine.runtime(), {
       directory: `${LOCAL}\\Vendor\\App`,
     });
     expect(machine.locks.map((lock) => lock.path)).toEqual([
+      `${LOCAL}\\Vendor`,
       `${LOCAL}\\Vendor\\App`,
     ]);
+    // The directory that already existed (LOCAL) is never locked.
+    expect(machine.locks.map((lock) => lock.path)).not.toContain(LOCAL);
   });
 
   it('never touches a directory that already exists', () => {
