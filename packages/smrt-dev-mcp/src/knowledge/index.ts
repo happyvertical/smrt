@@ -928,7 +928,11 @@ export async function checkKnowledgeFreshnessFromIndex(
   issues.push(...findAgentSurfaceDriftIssues(authoredPackages));
   issues.push(...findKnowledgeGraphIssues(index.rootDir));
   // Exported consumer bundle (#4689): age plus drift against node_modules.
-  issues.push(...checkOkfBundleFreshness(index.rootDir));
+  issues.push(
+    ...checkOkfBundleFreshness(index.rootDir, {
+      installRoots: listConsumerWorkspaceInstallRoots(index.rootDir),
+    }),
+  );
   issues.push(...findStalePatternIssues(index.rootDir, changedFiles));
   issues.push(
     ...findNumericPrecisionIssues(index, authoredPackages, changedFiles),
@@ -2091,6 +2095,27 @@ function globToRegExp(glob: string): RegExp {
     .replaceAll(ANY_DEPTH, '.*')
     .replaceAll(ANY_SEGMENT, '[^/]*');
   return new RegExp(`^${source}$`);
+}
+
+/**
+ * Directories whose `node_modules/@happyvertical` make up a consumer's
+ * installed set: `rootDir` alone, or for a pnpm workspace root (it has
+ * `pnpm-workspace.yaml`) the root followed by every member package directory.
+ * pnpm installs per member, so the root's own `node_modules` holds none of them.
+ *
+ * The smrt repository itself (root package `@happyvertical/smrt`) is not a
+ * consumer: it resolves from `rootDir` only, as it always has.
+ */
+export function listConsumerWorkspaceInstallRoots(rootDir: string): string[] {
+  if (!existsSync(join(rootDir, 'pnpm-workspace.yaml'))) return [rootDir];
+  if (
+    objectRecord(readJson(join(rootDir, 'package.json'))).name ===
+    '@happyvertical/smrt'
+  ) {
+    return [rootDir];
+  }
+  const { dirs } = discoverProjectPackageDirs(rootDir);
+  return [rootDir, ...dirs.filter((dir) => resolve(dir) !== resolve(rootDir))];
 }
 
 function discoverProjectPackageDirs(rootDir: string): {

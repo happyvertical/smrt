@@ -191,6 +191,12 @@ local source paths remain current.
 catalog before hand-rolling infrastructure. Pass `--no-install-skills` to skip
 it. A copy you edited (the generated marker removed) is never overwritten.
 
+In a pnpm monorepo, run `smrt docs:agents` at the workspace root (or from any
+member): packages are collected from every member's `node_modules`, and the
+framework file, knowledge bundle and skills are written at the root. A package
+installed at different versions is listed once with each version. Pass `--here`
+to document only the current directory.
+
 Review and architecture prompt bundles include package guidance and modules
 matched by file or focus hints. Add `--complete` to either context command to
 include every module for the selected packages. These commands still build the

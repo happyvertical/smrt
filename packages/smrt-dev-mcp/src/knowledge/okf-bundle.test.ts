@@ -10,6 +10,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   checkOkfBundleFreshness,
+  compareVersions,
   readFrontmatterScalar,
   stampPackageVersion,
 } from './okf-bundle.js';
@@ -145,5 +146,52 @@ describe('checkOkfBundleFreshness (#4689)', () => {
       (issue) => issue.code,
     );
     expect(codes).toContain('stale-okf-bundle');
+  });
+});
+
+describe('workspace install roots', () => {
+  beforeEach(() => {
+    root = realpathSync(mkdtempSync(join(tmpdir(), 'okf-bundle-ws-')));
+  });
+  afterEach(() => rmSync(root, { recursive: true, force: true }));
+
+  it('orders semver with prereleases below their release', () => {
+    const sorted = [
+      '1.10.0',
+      '1.2.0',
+      '1.2.0-beta.2',
+      '1.2.0-beta.10',
+      '0.9.9',
+    ].sort(compareVersions);
+    expect(sorted).toEqual([
+      '0.9.9',
+      '1.2.0-beta.2',
+      '1.2.0-beta.10',
+      '1.2.0',
+      '1.10.0',
+    ]);
+  });
+
+  it('resolves the highest member version and member-only packages', () => {
+    const member = join(root, 'apps', 'a');
+    const dir = join(member, 'node_modules', '@happyvertical', 'smrt-jobs');
+    mkdirSync(join(dir, 'dist'), { recursive: true });
+    writeFileSync(
+      join(dir, 'package.json'),
+      JSON.stringify({ name: '@happyvertical/smrt-jobs', version: '1.2.0' }),
+    );
+    writeFileSync(join(dir, 'dist', 'smrt-knowledge.okf.md'), 'x');
+    bundle('1.2.0', '2026-11-04T12:00:00Z');
+
+    const rootOnly = checkOkfBundleFreshness(root, { now: NOW }).filter(
+      (issue) => issue.code === 'stale-okf-bundle',
+    );
+    expect(rootOnly).toHaveLength(1);
+
+    const withMembers = checkOkfBundleFreshness(root, {
+      now: NOW,
+      installRoots: [root, member],
+    }).filter((issue) => issue.code === 'stale-okf-bundle');
+    expect(withMembers).toEqual([]);
   });
 });

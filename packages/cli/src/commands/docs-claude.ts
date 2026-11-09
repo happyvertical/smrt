@@ -13,14 +13,19 @@ import {
   realpathSync,
   writeFileSync,
 } from 'node:fs';
-import { dirname, join, relative as relativePath } from 'node:path';
+import {
+  dirname,
+  join,
+  relative as relativePath,
+  resolve as resolvePath,
+} from 'node:path';
 import {
   checkKnowledgeGraphFreshness,
-  discoverScopedPackageDirectories,
   readAgentModuleDocs,
   readPackageAgentDoc,
   resolveAgentModuleDocPaths,
 } from '@happyvertical/smrt-core/knowledge';
+import { compareVersions } from '@happyvertical/smrt-dev-mcp/knowledge';
 import type { DomainKnowledgeModuleDoc } from '@happyvertical/smrt-types';
 import type { CLICommand } from '../cli-generator.js';
 import {
@@ -33,6 +38,12 @@ import {
   unscopedName,
 } from './docs-knowledge-bundle.js';
 import { installAgentSkills } from './docs-skills-install.js';
+import {
+  collectWorkspacePackageEntries,
+  type DocsRoot,
+  resolveDocsRoot,
+  type WorkspacePackageEntry,
+} from './docs-workspace.js';
 
 export interface PackageInfo {
   name: string;
@@ -54,6 +65,13 @@ export interface PackageInfo {
    * resolve from the consumer's `node_modules`.
    */
   specifier?: string;
+  /**
+   * Set only when pnpm workspace members install different versions of this
+   * package: every distinct version (ascending) with the install roots (relative
+   * to the docs root, `.` for the root) that hold it. `version` is then the
+   * highest, and the exported knowledge page is that version's.
+   */
+  versionLocations?: Array<{ version: string; locations: string[] }>;
 }
 
 export interface RootDocInfo {
@@ -79,6 +97,7 @@ interface DocsHandlerOptions {
   'dry-run'?: boolean;
   complete?: boolean;
   'no-install-skills'?: boolean;
+  here?: boolean;
 }
 
 function createDocsCommand(config: DocsCommandOptions): CLICommand {
@@ -105,6 +124,12 @@ function createDocsCommand(config: DocsCommandOptions): CLICommand {
           'Do not install the smrt agent skills into .claude/skills and .agents/skills (installed by default)',
         default: false,
       },
+      here: {
+        type: 'boolean',
+        description:
+          'Run in the current directory only; do not resolve a pnpm workspace root',
+        default: false,
+      },
       'dry-run': {
         type: 'boolean',
         description: 'Print to stdout without writing file',
@@ -120,19 +145,22 @@ function createDocsCommand(config: DocsCommandOptions): CLICommand {
           );
         }
 
-        const outputPath = options.output || config.defaultOutput;
+        const docsRoot = resolveDocsRoot({
+          cwd: process.cwd(),
+          here: options.here,
+        });
+        // A consumer workspace root writes its default output under the root;
+        // an explicit --output stays relative to where the command ran.
+        const outputPath = options.output
+          ? options.output
+          : docsRoot.workspace
+            ? join(docsRoot.root, config.defaultOutput)
+            : config.defaultOutput;
         const dryRun = options['dry-run'];
         const monorepoRoot = detectMonorepoRoot();
         const rootDocs = monorepoRoot ? loadRootDocs(monorepoRoot) : [];
-        const installedDirectories = discoverScopedPackageDirectories([
-          join(process.cwd(), 'node_modules', '@happyvertical'),
-        ]);
-        const packages = await discoverInstalledPackages(
-          installedDirectories,
-          options.complete,
-        );
-        const sdkPackages = discoverSdkPackages(
-          installedDirectories,
+        const { packages, sdkPackages } = await collectWorkspacePackages(
+          docsRoot,
           options.complete,
         );
 
@@ -144,17 +172,33 @@ function createDocsCommand(config: DocsCommandOptions): CLICommand {
           process.exit(1);
         }
 
+        if (docsRoot.workspace) {
+          // stdout carries the document under --dry-run, so report on stderr.
+          (dryRun ? console.error : console.log)(
+            `\n📦 pnpm workspace root: ${docsRoot.root}${
+              docsRoot.liftedFromMember
+                ? ` (resolved from ${process.cwd()}; pass --here to stay local)`
+                : ''
+            }`,
+          );
+        }
+
         // Knowledge bundle (#4689): the intent section lists only intents
         // whose home package is installed in this project.
-        const bundlePackages = packages.filter(isBundleSafePackage);
+        const bundlePackages = packages
+          .filter(isBundleSafePackage)
+          .map((pkg) => ({
+            ...pkg,
+            versions: pkg.versionLocations?.map((entry) => entry.version),
+          }));
         const installedVersions = new Map(
           bundlePackages.map((pkg) => [unscopedName(pkg.name), pkg.version]),
         );
         const intentSource = resolveIntentSource({
           monorepoRoot,
-          installedCliDirectory: installedDirectories.find(
-            (entry) => entry.name === 'smrt-cli',
-          )?.realDirectory,
+          installedCliDirectory: packages.find(
+            (pkg) => pkg.specifier === '@happyvertical/smrt-cli',
+          )?.directory,
         });
         const intentRows = intentSource ? loadIntentRows(intentSource) : [];
         const bundleDirName = 'smrt-knowledge';
@@ -247,10 +291,10 @@ function createDocsCommand(config: DocsCommandOptions): CLICommand {
         const skillResults = options['no-install-skills']
           ? []
           : installAgentSkills({
-              projectRoot: process.cwd(),
+              projectRoot: docsRoot.root,
               bundleDir: relativePath(
-                process.cwd(),
-                join(outputDir, bundleDirName),
+                resolvePath(docsRoot.root),
+                resolvePath(outputDir, bundleDirName),
               ),
               skills: isSmrtRepository(monorepoRoot)
                 ? ['smrt-catalog', 'smrt-contribute']
@@ -335,14 +379,32 @@ export const docsClaudeCommand: CLICommand = createDocsCommand({
 });
 
 /**
+ * Resolves the packages `docs:agents` documents: every installed
+ * `@happyvertical/*` package across the docs root's install roots (the cwd
+ * alone outside a pnpm workspace; the workspace root plus every member inside
+ * one). Reusable by later steps that already hold a resolved {@link DocsRoot}.
+ */
+export async function collectWorkspacePackages(
+  docsRoot: Pick<DocsRoot, 'root' | 'installRoots'>,
+  complete = false,
+): Promise<{ packages: PackageInfo[]; sdkPackages: PackageInfo[] }> {
+  const entries = collectWorkspacePackageEntries(docsRoot);
+  return {
+    packages: await discoverInstalledPackages(entries, complete, docsRoot.root),
+    sdkPackages: discoverSdkPackages(entries, complete),
+  };
+}
+
+/**
  * Discover installed @happyvertical/smrt-* packages.
  * Checks both node_modules and workspace packages directory.
  */
 async function discoverInstalledPackages(
-  installedDirectories: ReturnType<typeof discoverScopedPackageDirectories>,
+  installedDirectories: WorkspacePackageEntry[],
   complete = false,
+  root = process.cwd(),
 ): Promise<PackageInfo[]> {
-  const packages: PackageInfo[] = [];
+  const found: Array<{ pkg: PackageInfo; location: string }> = [];
   const { readdirSync } = await import('node:fs');
 
   for (const entry of installedDirectories) {
@@ -353,12 +415,13 @@ async function discoverInstalledPackages(
       complete,
       `@happyvertical/${entry.name}`,
     );
-    if (pkg) packages.push(pkg);
+    if (pkg) found.push({ pkg, location: entry.location });
   }
+  const packages = mergePackageVersions(found);
 
   if (packages.length === 0) {
-    const workspacePath = join(process.cwd(), 'packages');
-    const pnpmWorkspacePath = join(process.cwd(), 'pnpm-workspace.yaml');
+    const workspacePath = join(root, 'packages');
+    const pnpmWorkspacePath = join(root, 'pnpm-workspace.yaml');
 
     if (existsSync(workspacePath) && existsSync(pnpmWorkspacePath)) {
       const entries = readdirSync(workspacePath, { withFileTypes: true });
@@ -391,10 +454,10 @@ async function discoverInstalledPackages(
  * Discover installed @happyvertical/* SDK packages (non-smrt).
  */
 function discoverSdkPackages(
-  installedDirectories: ReturnType<typeof discoverScopedPackageDirectories>,
+  installedDirectories: WorkspacePackageEntry[],
   complete = false,
 ): PackageInfo[] {
-  const packages: PackageInfo[] = [];
+  const found: Array<{ pkg: PackageInfo; location: string }> = [];
   for (const entry of installedDirectories) {
     if (entry.name.startsWith('smrt-') || entry.name === 'smrt') continue;
     const pkg = loadPackageInfo(
@@ -403,9 +466,60 @@ function discoverSdkPackages(
       complete,
       `@happyvertical/${entry.name}`,
     );
-    if (pkg) packages.push(pkg);
+    if (pkg) found.push({ pkg, location: entry.location });
   }
-  return packages.sort((a, b) => a.name.localeCompare(b.name));
+  return mergePackageVersions(found);
+}
+
+/**
+ * Collapses one package installed in several workspace members into a single
+ * entry. Identical name+version (same specifier) dedupe; differing versions keep
+ * one entry carrying the highest version, with every version and the install
+ * roots holding it in `versionLocations`. Output is sorted by name.
+ */
+function mergePackageVersions(
+  found: Array<{ pkg: PackageInfo; location: string }>,
+): PackageInfo[] {
+  const groups = new Map<
+    string,
+    Map<string, { pkg: PackageInfo; locations: Set<string> }>
+  >();
+  for (const { pkg, location } of found) {
+    const key = `${pkg.name}\0${pkg.specifier ?? pkg.name}`;
+    const versions = groups.get(key) ?? new Map();
+    const existing = versions.get(pkg.version);
+    if (existing) existing.locations.add(location);
+    else versions.set(pkg.version, { pkg, locations: new Set([location]) });
+    groups.set(key, versions);
+  }
+
+  const merged: PackageInfo[] = [];
+  for (const versions of groups.values()) {
+    const ascending = [...versions.entries()].sort(([a], [b]) =>
+      compareVersions(a, b),
+    );
+    const primary = ascending[ascending.length - 1][1].pkg;
+    if (ascending.length > 1) {
+      primary.versionLocations = ascending.map(([version, entry]) => ({
+        version,
+        locations: [...entry.locations].sort(),
+      }));
+    }
+    merged.push(primary);
+  }
+  return merged.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * Version cell of the package tables: the plain version, or under workspace
+ * version skew `1.2.0 (apps/a), 1.3.0 (apps/b, apps/c)` (ascending versions,
+ * sorted install roots, `.` for the workspace root).
+ */
+export function formatPackageVersion(pkg: PackageInfo): string {
+  if (!pkg.versionLocations) return pkg.version;
+  return pkg.versionLocations
+    .map(({ version, locations }) => `${version} (${locations.join(', ')})`)
+    .join(', ');
 }
 
 function loadPackageInfo(
@@ -667,7 +781,7 @@ export function generateMarkdown(
   lines.push('| Package | Version |');
   lines.push('|---------|---------|');
   for (const pkg of packages) {
-    lines.push(`| ${pkg.name} | ${pkg.version} |`);
+    lines.push(`| ${pkg.name} | ${formatPackageVersion(pkg)} |`);
   }
   lines.push('');
 
@@ -677,7 +791,7 @@ export function generateMarkdown(
     lines.push('| Package | Version |');
     lines.push('|---------|---------|');
     for (const pkg of sdkPackages) {
-      lines.push(`| ${pkg.name} | ${pkg.version} |`);
+      lines.push(`| ${pkg.name} | ${formatPackageVersion(pkg)} |`);
     }
     lines.push('');
   }
