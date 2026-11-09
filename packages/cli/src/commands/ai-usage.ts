@@ -65,6 +65,7 @@ const DIMENSIONS: readonly AiUsageReportDimension[] = [
   'tenant',
   'fusion',
   'source',
+  'template',
 ];
 
 /** Rendered for a dimension a row did not carry. */
@@ -288,7 +289,7 @@ export const aiUsageCommand: CLICommand = {
     by: {
       type: 'string',
       description:
-        'Comma-separated grouping: prompt, model, tier, class, tenant, fusion, source (default: prompt); fusion also totals runs',
+        'Comma-separated grouping: prompt, model, tier, class, tenant, fusion, source, template (default: prompt); fusion also totals runs',
     },
     since: {
       type: 'string',

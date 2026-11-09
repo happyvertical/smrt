@@ -30,12 +30,9 @@ describe('parseUsageDimensions', () => {
       'model',
       'tier',
     ]);
-    expect(parseUsageDimensions('class,tenant,fusion,source')).toEqual([
-      'class',
-      'tenant',
-      'fusion',
-      'source',
-    ]);
+    expect(parseUsageDimensions('class,tenant,fusion,source,template')).toEqual(
+      ['class', 'tenant', 'fusion', 'source', 'template'],
+    );
   });
 
   it('refuses unknown dimensions by name', () => {
