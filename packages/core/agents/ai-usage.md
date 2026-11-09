@@ -205,8 +205,9 @@ a call for prompt tuning; usage rows stay metadata-only.
   site's own key passed as `transcriptClient(..., { secrets })`, which adds
   to the instance's) and the calling object's `sensitive` field values
   (`[REDACTED:<field>]`; values under 4 characters only as whole tokens),
-  `[REDACTED]` for values under credential-named keys (also inside strings
-  that hold JSON, such as serialized tool arguments), smrt-config
+  `[REDACTED]` for values under credential-named keys; strings that hold
+  JSON (tool arguments, JSON-mode answers) are parsed so field masks, exact
+  numbers, keys and whole serialized values apply inside them; smrt-config
   `redactSecretValues()` token shapes, binary as `[binary]`. Errors are stored by message after the same
   redaction.
 - **Row.** `request` `{ messages, options }` (model, temperature, tool

@@ -197,9 +197,12 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+/** One exact value to mask: its pattern, its mask and the raw value. */
+type Replacement = [pattern: RegExp, mask: string, raw: string];
+
 function redactString(
   value: string,
-  replacements: ReadonlyArray<[RegExp, string]>,
+  replacements: ReadonlyArray<Replacement>,
 ): string {
   let out = value;
   for (const [pattern, mask] of replacements) out = out.replace(pattern, mask);
@@ -223,15 +226,32 @@ function parseEmbeddedJson(value: string): unknown {
 
 function redactValue(
   value: unknown,
-  replacements: ReadonlyArray<[RegExp, string]>,
+  replacements: ReadonlyArray<Replacement>,
   seen: WeakSet<object>,
 ): unknown {
   if (typeof value === 'string') {
     const embedded = parseEmbeddedJson(value);
     if (embedded !== undefined) {
-      return JSON.stringify(redactValue(embedded, replacements, seen));
+      // Field-aware pass over the parsed tree (leaves, numbers, keys), then
+      // the serialized values (an object-valued sensitive field echoed
+      // verbatim) over the re-serialized JSON. Only those: a scalar mask on
+      // the text would cut into other numbers and break the JSON.
+      let out = JSON.stringify(redactValue(embedded, replacements, seen));
+      for (const [pattern, mask, raw] of replacements) {
+        if (raw.startsWith('{') || raw.startsWith('[')) {
+          out = out.replace(pattern, JSON.stringify(mask));
+        }
+      }
+      return out;
     }
     return redactString(value, replacements);
+  }
+  if (typeof value === 'number' || typeof value === 'bigint') {
+    // A sensitive or secret value that is a number in structured content
+    // (`{"pin":4821}`) is masked when it equals the value exactly.
+    const raw = String(value);
+    const match = replacements.find(([, , exact]) => exact === raw);
+    return match ? match[1] : value;
   }
   if (!value || typeof value !== 'object') return value;
   if (seen.has(value)) return '[Circular]';
@@ -248,7 +268,8 @@ function redactValue(
     if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
       continue;
     }
-    out[key] =
+    // Keys are text too: a secret used as a key is masked like any string.
+    out[redactString(key, replacements)] =
       SECRET_FIELD.test(key) && item !== null && item !== undefined
         ? '[REDACTED]'
         : redactValue(item, replacements, seen);
@@ -265,7 +286,7 @@ export function redactAiTranscriptMessages(
   messages: AiTranscriptMessage[],
   values: AiTranscriptRedactionValues = {},
 ): AiTranscriptMessage[] {
-  const replacements: Array<[RegExp, string]> = [];
+  const replacements: Replacement[] = [];
   const add = (raw: string, mask: string) => {
     const value = raw.trim();
     if (value === '') return;
@@ -275,7 +296,7 @@ export function redactAiTranscriptMessages(
       value.length >= MIN_SENSITIVE_VALUE_LENGTH
         ? escapeRegExp(value)
         : `(?<![\\p{L}\\p{N}])${escapeRegExp(value)}(?![\\p{L}\\p{N}])`;
-    replacements.push([new RegExp(pattern, 'gu'), mask]);
+    replacements.push([new RegExp(pattern, 'gu'), mask, value]);
   };
   for (const secret of values.secrets ?? []) add(secret, '[REDACTED]');
   // Longest first, so a value containing another is masked whole.

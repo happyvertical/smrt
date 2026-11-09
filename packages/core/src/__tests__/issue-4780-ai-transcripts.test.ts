@@ -536,6 +536,44 @@ describe('AI call transcripts (#4780)', () => {
       );
     });
 
+    it('masks sensitive numbers, keys and whole values inside JSON text', () => {
+      const creds = { user: 'svc', token: 'opaque-token-value-77' };
+      const [message] = redactAiTranscriptMessages(
+        [
+          {
+            role: 'assistant',
+            content: JSON.stringify({
+              pin: 4821,
+              cvv: 123,
+              other: 48210,
+              'opaque-key-as-key': 1,
+              echoed: creds,
+            }),
+          },
+        ],
+        {
+          secrets: ['opaque-key-as-key'],
+          sensitive: [
+            { field: 'pin', value: '4821' },
+            { field: 'cvv', value: '123' },
+            { field: 'creds', value: JSON.stringify(creds) },
+          ],
+        },
+      );
+      const text = String(message?.content);
+      expect(text).not.toContain('4821,');
+      expect(text).not.toContain(':123');
+      expect(text).not.toContain('opaque-key-as-key');
+      expect(text).not.toContain('opaque-token-value-77');
+      expect(JSON.parse(text)).toMatchObject({
+        pin: '[REDACTED:pin]',
+        cvv: '[REDACTED:cvv]',
+        other: 48210,
+        '[REDACTED]': 1,
+        echoed: '[REDACTED:creds]',
+      });
+    });
+
     it('masks credential fields inside serialized tool arguments', async () => {
       enable();
       const ai = (await (await probe()).client()) as unknown as {
