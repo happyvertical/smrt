@@ -268,6 +268,6 @@ The `smrt test` command still works but shows a deprecation warning.
 
 ## Related Documentation
 
-- [packages/vitest/AGENTS.md](../packages/vitest/AGENTS.md) - Vitest plugin details
-- [packages/core/AGENTS.md](../packages/core/AGENTS.md) - Core framework reference
-- [TESTING_STANDARD.md](../TESTING_STANDARD.md) - Testing requirements
+- [packages/vitest/AGENTS.md](https://github.com/happyvertical/smrt/blob/main/packages/vitest/AGENTS.md) - Vitest plugin details
+- [packages/core/AGENTS.md](https://github.com/happyvertical/smrt/blob/main/packages/core/AGENTS.md) - Core framework reference
+- [TESTING_STANDARD.md](https://github.com/happyvertical/smrt/blob/main/TESTING_STANDARD.md) - Testing requirements
