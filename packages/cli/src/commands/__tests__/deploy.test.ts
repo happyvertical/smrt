@@ -18,6 +18,7 @@ const digest = `ghcr.io/acme/app@sha256:${'a'.repeat(64)}`;
 const compose = `
 x-defaults: &defaults
   build: .
+  entrypoint: ["docker-entrypoint.sh"]
 x-happyvertical:
   version: 1
   preset: smrt
@@ -54,10 +55,18 @@ const inputs = {
     },
   },
   defaults: {
-    resources: { requests: { cpu: '100m' }, limits: { cpu: '1' } },
+    resources: {
+      requests: { cpu: '100m', memory: '128Mi' },
+      limits: { cpu: '1', memory: '512Mi' },
+    },
     terminationGracePeriodSeconds: 90,
   },
-  maintenance: { port: 8080 },
+  maintenance: {
+    image: `docker.io/library/nginx@sha256:${'b'.repeat(64)}`,
+    command: ['nginx', '-g', 'daemon off;'],
+    port: 8080,
+    http: { path: '/', status: 503, body: 'Maintenance' },
+  },
   ingress: { className: 'nginx' },
 };
 
@@ -135,6 +144,9 @@ describe('deploy commands', () => {
   it('honours YAML merge keys and reports invalid YAML plainly', () => {
     const result = checkComposeFile(write('compose.yaml', compose), {});
     expect(result.errors).toEqual([]);
+    expect(result.declaration?.workloads[1].entrypoint).toEqual([
+      'docker-entrypoint.sh',
+    ]);
     expect(result.declaration?.workloads.map((item) => item.name)).toEqual([
       'web',
       'worker',
@@ -178,6 +190,18 @@ describe('deploy commands', () => {
     expect(report.declaration.migrate.image).toBe(digest);
   });
 
+  it('deploy:check reports a recursive YAML alias as a problem, not a crash', async () => {
+    write(
+      'compose.yaml',
+      compose.replace('ports: ["3000:3000"]', 'ports: &ports [*ports]'),
+    );
+    await expect(
+      requireCommandHandler(deployCheckCommand)([], {}),
+    ).rejects.toThrow('exit:1');
+    expect(printed()).toContain('services.web.ports[0]');
+    expect(printed()).toContain('is not a port');
+  });
+
   it('deploy:check reports a missing file without a stack trace', async () => {
     await expect(
       requireCommandHandler(deployCheckCommand)([], {}),
@@ -196,6 +220,11 @@ describe('deploy commands', () => {
     expect(values.app).toEqual({ name: 'acme', environment: 'production' });
     expect(values.current).toBe(false);
     expect(Object.keys(values.target.workloads)).toEqual(['web', 'worker']);
+    expect(values.target.workloads.web.command).toEqual([
+      'docker-entrypoint.sh',
+      'node',
+      'build',
+    ]);
     expect(values.target.migration.image).toBe(digest);
     expect(values.ingress.host).toBe('app.example.com');
   });
@@ -227,6 +256,18 @@ describe('deploy commands', () => {
     });
     expect(failed()).toContain('Cannot render smrt-app chart values');
     expect(failed()).toContain('no `bindings.postgres`');
+
+    error.mockClear();
+    write(
+      'inputs.json',
+      JSON.stringify({ ...inputs, bindings: { postgres: {} }, env: 'X' }),
+    );
+    await run({
+      inputs: 'inputs.json',
+      image: [`web=${digest}`, `worker=${digest}`],
+    });
+    expect(failed()).toContain('`bindings.postgres` must be');
+    expect(failed()).toContain('`env` must be a list');
 
     error.mockClear();
     write('inputs.json', '{');

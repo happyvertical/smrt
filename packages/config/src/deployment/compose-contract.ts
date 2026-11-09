@@ -96,6 +96,8 @@ export type ComposeDeploymentIssueCode =
   | 'volume-not-declared'
   | 'volume-not-plain'
   | 'command-not-list'
+  | 'interpolated-value'
+  | 'merge-key-unresolved'
   | 'local-only-service';
 
 export interface ComposeDeploymentIssue {
@@ -130,7 +132,13 @@ export interface ComposeDeploymentWorkload {
    * only built locally.
    */
   image?: string;
+  /**
+   * Present only when the Compose file sets `entrypoint`; an empty list means
+   * the image's own entrypoint is ignored. Absent means the image's entrypoint
+   * runs, with `command` as its arguments, exactly as Compose does.
+   */
   entrypoint?: string[];
+  /** Present only when the Compose file sets `command`. */
   command?: string[];
   /** The ingress port. Present on the web service only. */
   port?: number;
@@ -202,6 +210,51 @@ function isStringList(value: unknown): value is string[] {
     value.length > 0 &&
     value.every((item) => typeof item === 'string' && item.length > 0)
   );
+}
+
+/**
+ * Put an arbitrary parsed value into a message without ever throwing: the
+ * document is hostile input and may hold objects with no usable `toString`,
+ * cycles built from YAML aliases, or values JSON cannot serialize.
+ */
+function describe(value: unknown): string {
+  if (typeof value === 'string') {
+    return value.length > 80 ? `${value.slice(0, 80)}…` : value;
+  }
+  if (
+    typeof value === 'number' ||
+    typeof value === 'boolean' ||
+    typeof value === 'bigint'
+  ) {
+    return `${value}`;
+  }
+  if (value === null || value === undefined) return 'an empty value';
+  if (Array.isArray(value)) return 'a list';
+  return typeof value === 'object' ? 'a mapping' : `a ${typeof value}`;
+}
+
+/**
+ * Compose substitutes `$VAR` and `${VAR}` in every string of the file,
+ * extension fields included, before it runs anything. A consumer of the
+ * declaration reads the file as written, so a carried string that contains
+ * `$` would mean one thing locally and another once deployed.
+ */
+function refuseVariables(
+  values: readonly string[],
+  path: string,
+  what: string,
+  issues: IssueCollector,
+  service?: string,
+): boolean {
+  if (!values.some((value) => value.includes('$'))) return false;
+  issues.error(
+    'interpolated-value',
+    path,
+    `${what} contains \`$\`. Compose replaces variables before it runs the stack, but the platform reads the file as written, so the two would not run the same thing.`,
+    'Write the literal value. Settings that differ between environments belong in the environment the application reads, not in this line.',
+    service,
+  );
+  return true;
 }
 
 function quoteList(values: readonly string[]): string {
@@ -299,7 +352,7 @@ function parseApplication(
       `${path}.version`,
       block.version === undefined
         ? 'The contract version is missing.'
-        : `Contract version ${JSON.stringify(block.version)} is not supported here.`,
+        : `Contract version \`${describe(block.version)}\` is not supported here.`,
       'Set `version: 1` (a number, without quotes).',
     );
   }
@@ -315,7 +368,7 @@ function parseApplication(
       `${path}.preset`,
       block.preset === undefined
         ? 'The preset is missing, so the platform does not know what kind of application this is.'
-        : `\`${String(block.preset)}\` is not a preset the platform knows.`,
+        : `\`${describe(block.preset)}\` is not a preset the platform knows.`,
       `Set \`preset\` to one of: ${quoteList(X_HAPPYVERTICAL_PRESETS)}.`,
     );
   }
@@ -331,7 +384,7 @@ function parseApplication(
       issues.error(
         'domain-invalid',
         `${path}.domain`,
-        `\`${String(block.domain)}\` is not a hostname.`,
+        `\`${describe(block.domain)}\` is not a hostname.`,
         'Write only the hostname in lowercase, for example `app.example.com`: no `https://`, no port, no path.',
       );
     }
@@ -365,7 +418,16 @@ function parseApplication(
     );
   }
   if (isStringList(migrate.command)) {
-    parsed.migrateCommand = [...migrate.command];
+    if (
+      !refuseVariables(
+        migrate.command,
+        `${path}.migrate.command`,
+        'The migration command',
+        issues,
+      )
+    ) {
+      parsed.migrateCommand = [...migrate.command];
+    }
   } else {
     issues.error(
       'migrate-invalid',
@@ -464,6 +526,17 @@ function parseHealth(
       );
       return undefined;
     }
+    if (
+      refuseVariables(
+        [health.path],
+        `${path}.path`,
+        `The health path of \`${name}\``,
+        issues,
+        name,
+      )
+    ) {
+      return undefined;
+    }
     return { path: health.path };
   }
   if (!isStringList(health.command)) {
@@ -476,6 +549,17 @@ function parseHealth(
     );
     return undefined;
   }
+  if (
+    refuseVariables(
+      health.command,
+      `${path}.command`,
+      `The health command of \`${name}\``,
+      issues,
+      name,
+    )
+  ) {
+    return undefined;
+  }
   return { command: [...health.command] };
 }
 
@@ -486,15 +570,27 @@ function parseCommand(
   issues: IssueCollector,
 ): string[] | undefined {
   if (value === undefined || value === null) return undefined;
-  if (Array.isArray(value) && value.length === 0) return undefined;
-  if (isStringList(value)) return [...value];
-  if (typeof value === 'string' && PLAIN_COMMAND.test(value.trim())) {
-    return value.trim().split(/ +/);
+  // `entrypoint: []` (or '') is meaningful in Compose: it discards the
+  // image's entrypoint. An empty `command` just leaves the image default.
+  const empty =
+    (Array.isArray(value) && value.length === 0) ||
+    (typeof value === 'string' && value.trim() === '');
+  if (empty) return field === 'entrypoint' ? [] : undefined;
+  const path = `services.${name}.${field}`;
+  const what = `The \`${field}\` of \`${name}\``;
+  if (isStringList(value)) {
+    return refuseVariables(value, path, what, issues, name)
+      ? undefined
+      : [...value];
+  }
+  if (typeof value === 'string') {
+    if (refuseVariables([value], path, what, issues, name)) return undefined;
+    if (PLAIN_COMMAND.test(value.trim())) return value.trim().split(/ +/);
   }
   issues.error(
     'command-not-list',
     `services.${name}.${field}`,
-    `The \`${field}\` of \`${name}\` uses quoting, variables or shell syntax, which Compose and the platform would read differently.`,
+    `The \`${field}\` of \`${name}\` uses quoting or shell syntax, or is not text, which Compose and the platform would read differently.`,
     `Write \`${field}\` as a list with one argument per item, for example \`["node", "build"]\`.`,
     name,
   );
@@ -518,7 +614,7 @@ function scanPortEntry(
     issues.error(
       'ingress-port-invalid',
       path,
-      `Port entry ${JSON.stringify(entry)} of \`${name}\` ${reason}.`,
+      `Port entry \`${describe(entry)}\` of \`${name}\` ${reason}.`,
       'Publish one fixed TCP port, for example `"3000:3000"`.',
       name,
     );
@@ -552,23 +648,31 @@ function scanPortEntry(
       : invalid('is not a valid port number');
   }
   if (isRecord(entry)) {
-    if (entry.mode === 'host') {
+    if (entry.mode !== undefined && entry.mode !== 'ingress') {
       issues.error(
         'host-network',
         path,
-        `Service \`${name}\` publishes a port in host mode, which binds it to the machine's own network.`,
-        'Remove `mode: host`. The platform routes traffic to the container for you.',
+        `Service \`${name}\` publishes a port in \`${describe(entry.mode)}\` mode, which binds it to the network of the machine it runs on.`,
+        'Remove the `mode` line. The platform routes traffic to the container for you.',
         name,
       );
       return undefined;
     }
     if (
       entry.protocol !== undefined &&
-      String(entry.protocol).toLowerCase() !== 'tcp'
+      !(
+        typeof entry.protocol === 'string' &&
+        entry.protocol.toLowerCase() === 'tcp'
+      )
     ) {
       return invalid('is not TCP');
     }
-    const target = Number(entry.target);
+    const target =
+      typeof entry.target === 'number'
+        ? entry.target
+        : typeof entry.target === 'string' && /^\d+$/.test(entry.target)
+          ? Number(entry.target)
+          : Number.NaN;
     return Number.isInteger(target) && target > 0 && target < 65536
       ? target
       : invalid('does not name a fixed container port in `target`');
@@ -661,6 +765,17 @@ function scanVolumes(
         return;
       }
     }
+    if (
+      refuseVariables(
+        [target],
+        path,
+        `The mount path of volume \`${source}\` in \`${name}\``,
+        issues,
+        name,
+      )
+    ) {
+      return;
+    }
     volumes.push({ name: source, target, readOnly });
   };
 
@@ -687,6 +802,15 @@ function scanVolumes(
   entries.forEach((entry, index) => {
     const path = `services.${name}.volumes[${index}]`;
     if (typeof entry === 'string') {
+      // A drive letter or a backslash is a Windows host path; splitting it
+      // on `:` would mistake the drive letter for a volume name.
+      if (/^[A-Za-z]:[\\/]/.test(entry) || entry.includes('\\')) {
+        notDeclared(
+          path,
+          `mounts \`${describe(entry)}\` from the machine it runs on (a bind mount)`,
+        );
+        return;
+      }
       const [source, target, mode] = entry.split(':');
       if (target === undefined) {
         notDeclared(path, `mounts an unnamed volume at \`${entry}\``);
@@ -706,7 +830,7 @@ function scanVolumes(
       if (type !== 'volume') {
         notDeclared(
           path,
-          `uses a \`${String(type)}\` mount, which reads from the machine it runs on`,
+          `uses a \`${describe(type)}\` mount, which reads from the machine it runs on`,
         );
         return;
       }
@@ -718,7 +842,12 @@ function scanVolumes(
         notDeclared(path, 'has a volume entry with no `target` path');
         return;
       }
-      useNamed(path, entry.source, entry.target, entry.read_only === true);
+      useNamed(
+        path,
+        entry.source,
+        entry.target,
+        entry.read_only !== undefined && entry.read_only !== false,
+      );
       return;
     }
     notDeclared(path, 'has a volume entry that is not a mount');
@@ -792,8 +921,18 @@ function checkRoleService(
     issues.error(
       'not-self-contained',
       `services.${name}.extends`,
-      `Service \`${name}\` takes part of its definition from another file with \`extends\`.`,
-      'Write the service out in this file. The platform reads this one file and nothing else.',
+      `Service \`${name}\` takes part of its definition from another service with \`extends\`, so what it runs is not written here.`,
+      'Write the service out in full. The platform reads each service as written, in this one file.',
+      name,
+    );
+  }
+
+  if (Object.hasOwn(definition, '<<')) {
+    issues.error(
+      'merge-key-unresolved',
+      `services.${name}`,
+      `Service \`${name}\` still contains a YAML merge key (\`<<\`), so the part of its definition that comes from the anchor was not read.`,
+      'Parse the file with YAML merge keys enabled, as Compose does (`smrt deploy:check` does this for you).',
       name,
     );
   }
@@ -811,7 +950,7 @@ function checkRoleService(
     issues.error(
       'privileged',
       `services.${name}.privileged`,
-      `Service \`${name}\` asks for privileged mode, which gives the container control of the machine it runs on.`,
+      `Service \`${name}\` sets \`privileged\`. Privileged mode gives a container control of the machine it runs on, and Compose accepts more spellings of "yes" than can be told apart here.`,
       'Remove the `privileged` line. The platform never runs privileged containers.',
       name,
     );
@@ -837,7 +976,14 @@ function checkRoleService(
   const command = parseCommand(name, 'command', definition.command, issues);
 
   let port: number | undefined;
-  const published = scanPorts(name, 'ports', definition.ports, issues);
+  const publishesNothing =
+    definition.ports === undefined ||
+    definition.ports === null ||
+    (Array.isArray(definition.ports) && definition.ports.length === 0);
+  const published =
+    role === 'web'
+      ? scanPorts(name, 'ports', definition.ports, issues)
+      : { ports: [], invalid: false };
   if (role === 'web') {
     const exposed =
       published.ports.length === 0 && !published.invalid
@@ -856,7 +1002,7 @@ function checkRoleService(
       );
     }
     port = ports[0];
-  } else if (published.ports.length > 0) {
+  } else if (!publishesNothing) {
     issues.error(
       'worker-publishes-port',
       `services.${name}.ports`,
@@ -1019,7 +1165,7 @@ export function validateComposeDeployment(
         issues.error(
           'binding-unknown',
           `${annotationPath}.binding`,
-          `\`${String(kind)}\` is not a platform service this contract knows.`,
+          `\`${describe(kind)}\` is not a platform service this contract knows.`,
           `Set \`binding\` to one of: ${quoteList(X_HAPPYVERTICAL_BINDINGS)}.`,
           name,
         );
@@ -1070,7 +1216,7 @@ export function validateComposeDeployment(
       issues.error(
         'role-unknown',
         `${annotationPath}.role`,
-        `\`${String(role)}\` is not a role.`,
+        `\`${describe(role)}\` is not a role.`,
         `Set \`role\` to one of: ${quoteList(X_HAPPYVERTICAL_ROLES)}.`,
         name,
       );

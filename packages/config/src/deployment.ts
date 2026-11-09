@@ -11,6 +11,7 @@ export {
   renderSmrtAppChartValues,
   SMRT_RELEASE_GUARD,
   type SmrtAppChartInputs,
+  type SmrtAppChartProbeTiming,
   type SmrtAppChartResources,
   type SmrtAppChartSecretEnv,
   type SmrtAppChartSecretRef,

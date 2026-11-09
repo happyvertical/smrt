@@ -44,10 +44,19 @@ file an application's deployment declaration. Guide:
   `declare` and `deploy`), the resolved declaration, and the plain-text
   report. Pure and browser-safe: the caller parses YAML. Every rule has an
   issue code and a test in `compose-contract.test.ts`; messages are for
-  non-experts and always carry a `fix`.
+  non-experts and always carry a `fix`. The document is untrusted: the
+  validator must never throw (format values with `describe()`, never
+  `String()`/`JSON.stringify()`), fails closed on spellings it cannot tell
+  apart, and refuses `$` in every string the declaration carries, because
+  Compose interpolates the whole file.
+- `entrypoint`/`command` keep Compose meaning in the declaration: absent
+  `entrypoint` = the image's runs; `[]` = discarded.
 - `src/deployment/chart-values.ts`: `renderSmrtAppChartValues()` renders a
   `deploy`-stage declaration plus environment-owned inputs into `smrt-app`
-  chart values. It invents no defaults for Secrets, resources or ingress.
+  chart values. It invents no defaults for Secrets, resources or ingress,
+  validates the inputs (hand-written JSON), renders `target` only (`current`
+  is passed through, never synthesized), and requires an explicit
+  `entrypoint` because the chart's `command` replaces the image's.
 - `charts/smrt-app/fixtures/starter.json` is generated from
   `packages/template-sveltekit/template/compose.yaml` by
   `scripts/compose-contract-fixture.mjs --write`; `scripts/compose-contract.test.mjs`

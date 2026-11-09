@@ -14,9 +14,13 @@ the platform services it binds in its Compose file, under `x-happyvertical`.
 `smrt deploy:chart-values` turns that declaration, image digests and an inputs
 file holding what the environment owns (release identity, Secret references,
 resources, maintenance responder, ingress class) into a values document for
-this chart. A hosting platform's `smrt` preset consumes the same declaration
-and is the runner for the same `smrt-release-v1` contract, so the two cannot
-describe an application differently. `fixtures/starter.json` is generated from
+this chart. It renders `target` only: `current` is the previous release's
+`target`, passed in unchanged, and the release runner owns it. Because this
+chart's `command` replaces the image's entrypoint, a rendered service must set
+`entrypoint` in its Compose file. A hosting platform's `smrt` preset is
+intended to be the runner for the same `smrt-release-v1` contract from the
+same declaration; it is a separate implementation and is not part of this
+chart. `fixtures/starter.json` is generated from
 `packages/template-sveltekit/template/compose.yaml` by
 `node scripts/compose-contract-fixture.mjs --write`; `scripts/compose-contract.test.mjs`
 fails when it is stale. Never edit it by hand.

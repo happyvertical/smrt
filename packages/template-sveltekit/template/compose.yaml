@@ -6,6 +6,10 @@ x-runtime-environment: &runtime-environment
 # deploys the `role` services from image digests, runs `migrate` before each
 # release, and provides its own service in place of every `binding`.
 # Check it with `pnpm exec smrt deploy:check`.
+#
+# `entrypoint` on the three application services repeats the node image's own
+# entrypoint, so Compose runs exactly what it ran before, and a rendering that
+# replaces the entrypoint (the smrt-app chart) starts the same process.
 x-happyvertical:
   version: 1
   preset: smrt
@@ -18,6 +22,7 @@ services:
     build: .
     env_file: .env.self-hosted
     environment: *runtime-environment
+    entrypoint: ["docker-entrypoint.sh"]
     command: node build
     ports:
       - "3000:3000"
@@ -32,6 +37,7 @@ services:
     build: .
     env_file: .env.self-hosted
     environment: *runtime-environment
+    entrypoint: ["docker-entrypoint.sh"]
     command: pnpm exec smrt app worker task
     depends_on:
       migrate:
@@ -44,6 +50,7 @@ services:
     build: .
     env_file: .env.self-hosted
     environment: *runtime-environment
+    entrypoint: ["docker-entrypoint.sh"]
     command: pnpm exec smrt app worker schedule
     depends_on:
       migrate:

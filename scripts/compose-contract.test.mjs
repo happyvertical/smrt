@@ -77,6 +77,27 @@ test('the generated fixture uses only fields and roles the chart schema defines'
     }
   }
   assert.equal(values.target.migration.guard, 'smrt-release-v1');
+  // A first install: the generator never invents a running release.
+  assert.equal(values.current, false);
+});
+
+test('the generated fixture starts the processes the starter Compose file starts', async () => {
+  const compose = readStarterCompose();
+  const values = JSON.parse(await renderStarterFixture());
+  for (const [name, rendered] of Object.entries(values.target.workloads)) {
+    const service = compose.services[name];
+    // Compose runs entrypoint + command; the chart runs exactly `command`.
+    assert.deepEqual(rendered.command, [...service.entrypoint, ...service.command.split(' ')], name);
+  }
+  assert.deepEqual(values.target.workloads.web.readinessProbe, {
+    httpGet: { path: compose.services.web['x-happyvertical'].health.path, port: 3000 },
+  });
+  // The worker health command starts a CLI; one second would never pass.
+  for (const name of ['worker', 'schedule-worker']) {
+    const probe = values.target.workloads[name].readinessProbe;
+    assert.deepEqual(probe.exec.command, compose.services[name]['x-happyvertical'].health.command, name);
+    assert.ok(probe.timeoutSeconds >= 30, name);
+  }
 });
 
 test('the published schema carries the id the validator names', () => {

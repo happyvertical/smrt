@@ -68,9 +68,11 @@ tools, WebMCP definitions, and agent/developer knowledge artifacts.
   `initialData`.
 - Do not enable knowledge HTTP routes in production without explicit admin auth.
 - `compose.yaml` is the deployment declaration: its `x-happyvertical` fields
-  (`role`, `health`, `binding`, top-level `migrate`) are read by hosting
-  platforms and by `smrt deploy:chart-values`. Keep them when editing services
-  and run `pnpm deploy:check` after any Compose change.
+  (`role`, `health`, `binding`, top-level `migrate`) are what a hosting
+  platform that implements the contract reads and what
+  `smrt deploy:chart-values` renders. Keep them when editing services, keep
+  `entrypoint` equal to the image's own (the chart replaces it), use no `$`
+  variables in `command`, and run `pnpm deploy:check` after any Compose change.
 - Run task and schedule workers as separate deployed processes. The worker
   imports `.smrt/runtime/register.js` (compiled by `pnpm build`) before any
   runner starts, so jobs can target this app's own `@smrt()` objects; keep that

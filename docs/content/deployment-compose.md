@@ -13,9 +13,14 @@ so one file does three jobs:
 - the same file runs the stack on a self-hosted box, or feeds the
   [`smrt-app` chart](https://github.com/happyvertical/smrt/blob/main/charts/smrt-app/README.md)
   for a self-hosted Kubernetes release;
-- a hosting platform reads the annotations, deploys the application's own
-  services from image digests, and provides its own PostgreSQL, bucket, mail
-  or AI service in place of each local stand-in.
+- a hosting platform that implements the contract reads the annotations,
+  deploys the application's own services from image digests, and provides its
+  own PostgreSQL, bucket, mail or AI service in place of each local stand-in.
+
+This page specifies the contract and what this repository ships for it: the
+schema, the validator, and the chart rendering. A hosting platform is a
+separate system; what one does with a declaration is described here as what
+the contract asks of it, not as a description of any particular platform.
 
 The contract is versioned. This page describes version 1.
 
@@ -24,7 +29,7 @@ The contract is versioned. This page describes version 1.
 | JSON Schema | [`packages/config/schemas/x-happyvertical.v1.schema.json`](https://github.com/happyvertical/smrt/blob/main/packages/config/schemas/x-happyvertical.v1.schema.json), published as `@happyvertical/smrt-config/schemas/x-happyvertical.v1.schema.json` |
 | Validator and renderer | `@happyvertical/smrt-config/deployment` |
 | Commands | `smrt deploy:check`, `smrt deploy:chart-values` |
-| Annotated example | [`packages/template-sveltekit/template/compose.yaml`](https://github.com/happyvertical/smrt/blob/main/packages/template-sveltekit/template/compose.yaml) |
+| Canonical example | [`packages/template-sveltekit/template/compose.yaml`](https://github.com/happyvertical/smrt/blob/main/packages/template-sveltekit/template/compose.yaml) |
 
 ## The declaration
 
@@ -39,6 +44,7 @@ x-happyvertical:
 services:
   web:
     build: .
+    entrypoint: ["docker-entrypoint.sh"]
     command: node build
     ports:
       - "3000:3000"
@@ -49,6 +55,7 @@ services:
 
   worker:
     build: .
+    entrypoint: ["docker-entrypoint.sh"]
     command: pnpm exec smrt app worker task
     x-happyvertical:
       role: worker
@@ -76,15 +83,23 @@ volumes:
 | `migrate.command` | yes | The command that prepares the database before a release serves traffic, as a list with one argument per item. |
 | `migrate.service` | no | The web or worker service whose image runs the migration. Defaults to the web service. |
 
+Under the `smrt` preset a release follows the `smrt-release-v1` contract in
+[Maintenance-window application deployment](./deployment.md). That places an
+obligation on `migrate.command`: it has to be the application's wrapper that
+rechecks writer quiescence, takes the migration advisory lock and uses the
+durable phase API. Declaring a command does not make it one. The template's
+`smrt db:migrate` runs the migrations and is not yet such a wrapper, which is
+one of the adoption gaps the deployment guide lists.
+
 ### Service block
 
 Every service is one of three things.
 
-| Annotation | What it is | What a platform does with it |
+| Annotation | What it is | What the contract asks of a platform |
 | --- | --- | --- |
-| `role: web` with `health` | The one service visitors reach. | Deploys it from an image digest and routes traffic to its port. |
-| `role: worker` with `health` | Something the application runs in the background. | Deploys it from an image digest. It receives no traffic. |
-| `binding: postgres`, `bucket`, `email` or `ai` | A local stand-in for a service the platform provides. | Does not run the container. It provides its own service and gives the application the credentials. |
+| `role: web` with `health` | The one service visitors reach. | Deploy it from an image digest and route traffic to its port. |
+| `role: worker` with `health` | Something the application runs in the background. | Deploy it from an image digest. It receives no traffic. |
+| `binding: postgres`, `bucket`, `email` or `ai` | A local stand-in for a service the platform provides. | Do not run the container. Provide the service and give the application its credentials. |
 | no annotation | A local helper, such as a one-shot migration job or a database admin tool. | Nothing. It runs only on your machine, and the validator lists it so that is never a surprise. |
 
 `health` says how to tell that a service is ready. It takes exactly one of:
@@ -94,12 +109,68 @@ Every service is one of three things.
 - `command`: a command list run inside the container that exits 0. Workers
   must use this form.
 
-A binding takes no `health`: the platform runs its own service. A Compose
-`healthcheck:` on the local stand-in is still useful locally and is left alone.
+A binding takes no `health`: its container is not what gets deployed. A
+Compose `healthcheck:` on the local stand-in is still useful locally and is
+left alone.
+
+`role: worker` says only that the service runs in the background. Whether a
+worker is a singleton or may be scaled, how many replicas run, and what
+resources they get are not part of version 1; whoever hosts the application
+decides them (for the chart, in the inputs file below).
 
 Environment values written in the Compose file are local values. Version 1
 does not carry them into a deployment: bindings supply their own connection
 settings, and everything else is configured where the application is hosted.
+
+## Two shapes
+
+Version 1 is written for two application shapes.
+
+**Web, workers and platform services.** The canonical example is the scaffold
+template's
+[`compose.yaml`](https://github.com/happyvertical/smrt/blob/main/packages/template-sveltekit/template/compose.yaml):
+a web service, a task worker and a schedule worker built from one image, a
+one-shot local migration job, and PostgreSQL as a `binding`. This is the shape
+the `smrt-app` chart renders, and the chart's `starter` fixture is generated
+from that file.
+
+**Local-first, one process.** An application that keeps its data in SQLite and
+runs as a single process, such as one started from `smrt-start`, declares one
+`role: web` service with a declared data volume, no worker and no binding:
+
+```yaml
+x-happyvertical:
+  version: 1
+  preset: smrt
+  migrate:
+    command: ["pnpm", "exec", "smrt", "app", "migrate"]
+
+services:
+  web:
+    build: .
+    entrypoint: ["docker-entrypoint.sh"]
+    command: ["pnpm", "exec", "smrt", "app", "start"]
+    ports:
+      - "3000:3000"
+    volumes:
+      - data:/home/node/.local/share/notes
+    x-happyvertical:
+      role: web
+      health:
+        path: /api/_runtime/health
+
+volumes:
+  data:
+```
+
+The data volume is what makes this shape storable: the declaration carries the
+volume's name and mount path, and a platform that hosts it gives the one
+replica a persistent volume there. SQLite is storage the application owns, so
+it is a declared volume and not a `binding`. The `smrt-app` chart does not
+render this shape: it binds an existing PostgreSQL database and creates no
+persistent volumes, and `smrt deploy:chart-values` says so. The commands and
+the mount path above are illustrative; `smrt-start` does not ship a Compose
+file today.
 
 ## The supported platform subset
 
@@ -112,16 +183,23 @@ Compose supports.
 | Images are deployed by digest. `build:` is never run. | CI builds and pushes once; the platform deploys exactly what was tested. A tag can move after it was tested. |
 | Only declared data volumes. | A volume must be a named volume under top-level `volumes:`. Bind mounts, unnamed volumes, `volumes_from`, and volumes that are `external` or use `driver_opts` read from a machine the file does not describe. `tmpfs` scratch space is allowed and holds no data. |
 | No `privileged`. | It gives the container control of the machine it runs on. Any value other than `false` is refused. |
-| No host networking. | `network_mode: host` and `mode: host` port publishing bind to the machine's own network. Services reach each other by service name. |
+| No host networking. | `network_mode: host`, and a published port with a `mode` other than `ingress`, bind to the network of the machine the container runs on. Services reach each other by service name. |
 | One ingress port. | Exactly one service has `role: web`, and it publishes exactly one fixed TCP container port. Workers publish none. |
 | Every `binding` keeps a local image. | The file must stay a complete working stack where no platform is providing that service. |
-| One file. | Top-level `include` and `extends` on a role service are refused: the platform reads this file and nothing else. |
-| Commands the platform can run as written. | `command` and `entrypoint` on a role service are a list, or a plain string of space-separated words. Quoting, variables and shell operators are split differently by Compose and by a container runtime. |
+| One file, read as written. | Top-level `include` and `extends` on a role service are refused, and so is an unresolved YAML merge key (`<<`): each service must be complete in this file. |
+| No variables in what is carried. | Compose replaces `$VAR` and `${VAR}` in every string before it runs the stack, including inside `x-happyvertical`. A reader of the file as written would run something else, so `$` is refused in `command`, `entrypoint`, `migrate.command`, `health` and volume mount paths. The published side of a port (`"${WEB_PORT:-3000}:3000"`) and anything outside the declaration may use variables. |
+| Commands that mean one thing. | `command` and `entrypoint` on a role service are a list, or a plain string of space-separated words. Quoting and shell operators are split differently by Compose and by a container runtime. |
+
+`entrypoint` and `command` keep their Compose meaning in the declaration. With
+no `entrypoint`, the image's own entrypoint runs and `command` is its
+arguments. With `entrypoint` set, it replaces the image's, and `entrypoint: []`
+discards it.
 
 Only what the tables above name is part of the declaration. Every other
 Compose setting on a role service (`environment`, `depends_on`, `restart`,
-`deploy`, `user`, `cap_add`, `devices`, `pid` and the rest) is neither checked
-nor carried: it keeps working locally and a platform does not see it.
+`deploy`, `networks`, `user`, `cap_add`, `devices`, `pid` and the rest) is
+neither checked nor carried: it keeps working locally and a platform does not
+see it.
 
 Version 1 binds each platform service at most once, and service names that
 carry an annotation must be lowercase letters, digits and hyphens, starting
@@ -152,7 +230,7 @@ and what to change, and exits 1 when there is a problem:
 ```text
 The deployment declaration has 1 problem.
 
-1. services.worker.privileged: Service `worker` asks for privileged mode, which gives the container control of the machine it runs on.
+1. services.worker.privileged: Service `worker` sets `privileged`. Privileged mode gives a container control of the machine it runs on, and Compose accepts more spellings of "yes" than can be told apart here.
    Fix: Remove the `privileged` line. The platform never runs privileged containers.
 
 Runs only on your machine (the platform will not run it): migrate
@@ -170,7 +248,7 @@ pnpm exec smrt deploy:check \
 and `--json` prints the result, including the resolved declaration, for
 tooling.
 
-From code, parse the YAML yourself (with merge keys enabled, as Compose does)
+From code, parse the YAML yourself, with merge keys enabled as Compose does,
 and pass the document in:
 
 ```ts
@@ -185,10 +263,12 @@ if (!result.ok) {
 }
 ```
 
-`result.declaration` is the resolved declaration: preset, domain, the
-migration, each workload with its role, image, command, port and health check,
-and each binding. A platform composes its own resources from that object and
-its own entitlements; it does not re-read the Compose file.
+The validator treats the document as untrusted: whatever its shape, it returns
+a result and does not throw. `result.declaration` is present only when there
+are no errors. It is the resolved declaration: preset, domain, the migration,
+each workload with its role, image, entrypoint, command, port, health check
+and volumes, and each binding. A consumer should work from that object and
+not re-read the Compose file, because nothing outside it has been checked.
 
 The JSON Schema checks the shape of the annotations and is enough for a tool
 that only needs to know a file is a well-formed declaration. The rules in the
@@ -201,12 +281,12 @@ renders the `smrt-release-v1` release contract described in
 [Maintenance-window application deployment](./deployment.md): workloads
 classified as writers, a retained migration Job that runs before the target
 starts, a maintenance responder, and configuration from named immutable
-Secrets. It is the rendering of this declaration for a cluster you run
-yourself. A hosting platform's `smrt` preset is the other rendering: it takes
-the same declaration and is the runner for the same release contract. Hosting
-on a platform and hosting on your own cluster therefore start from one file,
-and an application can move between them without rewriting how it is
-described.
+Secrets. `smrt deploy:chart-values` renders a declaration into values for that
+chart, for a cluster you run yourself. A hosting platform's `smrt` preset is
+intended to be the runner for the same release contract, starting from the
+same declaration, so that an application is described once whether it is
+hosted or self-hosted. The two are separate implementations: each decides for
+itself what the declaration leaves open, such as replicas and resources.
 
 The declaration says what the application is. A chart release also needs what
 the environment owns, and none of that belongs in the Compose file: the
@@ -242,7 +322,10 @@ The inputs file:
     },
     "terminationGracePeriodSeconds": 90
   },
-  "workloads": { "web": { "replicas": 2 }, "worker": { "role": "task" } },
+  "workloads": {
+    "web": { "replicas": 2 },
+    "worker": { "role": "task", "readiness": { "periodSeconds": 60, "timeoutSeconds": 30 } }
+  },
   "maintenance": {
     "image": "docker.io/library/nginx@sha256:<digest>",
     "command": ["nginx", "-g", "daemon off;"],
@@ -255,34 +338,63 @@ The inputs file:
 
 `release`, `app.environment`, `bindings`, `defaults`, `maintenance` and
 `ingress.className` are required. `app.name` defaults to the Compose file's
-top-level `name:`, and `ingress.host` to the declared `domain`. Add
-`currentImages` (digest per service) to render the running release as
-`current`; without it the values describe a first install. `env` entries may
-carry a `services` list to limit a variable to some workloads. `maintenance`
-and any further `ingress` fields are passed to the chart unchanged.
+top-level `name:`, and `ingress.host` to the declared `domain`. The inputs are
+checked before anything is rendered:
+
+- `bindings.postgres.runtime` and `.migration` must name different Secrets,
+  and no `env` entry may read the migration Secret;
+- `env` entries may carry a `services` list to limit a variable to some
+  workloads, and `workloads` is keyed by service name. Both may only name web
+  and worker services the declaration has, so a misspelled name is an error
+  and not a silently dropped setting;
+- a worker's `role` is `background` (the default, a singleton), `schedule`
+  (a singleton) or `task` (may have `replicas` above 1);
+- `readiness` sets the timing of the probe rendered from `health`. Without it
+  the Kubernetes defaults apply, including a one-second timeout, which a
+  command that starts a CLI will not meet.
+
+`maintenance` and any further `ingress` fields are passed to the chart
+unchanged, and the chart's own schema checks them when Helm renders.
+
+`current` describes the release that is running now. It is never worked out
+from the new declaration, because the running release can differ from it in
+more than its image digests. Leave it out for a first install. For a later
+release, pass the previous values document's `target` block as `current`
+unchanged; the release runner in the deployment guide does this itself and
+refuses a plan that does not preserve the running runtime.
 
 | Declaration | Chart values |
 | --- | --- |
 | `role: web` service | The one `web` workload, with `port`, `service.port` and an HTTP or exec `readinessProbe` from `health`. |
 | `role: worker` service | A `background` workload (the singleton runner) with an exec `readinessProbe`. The inputs may select `task` or `schedule` per service. |
-| `command` and `entrypoint` | The workload `command`. The chart starts every workload with an explicit command. |
-| `migrate` | `target.migration`: the image of `migrate.service`, the declared command, and the `smrt-release-v1` guard. |
+| `entrypoint` and `command` | The workload `command`: the entrypoint followed by the command. |
+| `migrate` | `target.migration`: the image of `migrate.service`, the declared command, and the `smrt-release-v1` guard declaration. |
 | `binding: postgres` | `bindings.database` and a `DATABASE_URL` Secret reference on every workload; the migration gets its own migration-only Secret. |
 | `binding: bucket` | An entry in `bindings.privateBuckets` named after the service. |
 | `binding: email`, `binding: ai` | Nothing chart-specific. Supply their settings as Secret-backed `env` entries in the inputs. |
 | `domain` | `ingress.host`, unless the inputs set one. |
 
-`deploy:chart-values` refuses to guess: a missing digest, command, hostname or
-Secret reference is reported, and a role service that mounts a data volume is
-refused because the chart binds existing databases and buckets and creates no
-persistent volumes. The rendered values document is the starting point for the
-runner described in the deployment guide; rendering it does not deploy
-anything.
+The chart starts a workload with exactly the command it is given and never
+runs the image's own entrypoint. Compose runs the image's entrypoint with
+`command` as its arguments. So that both start the same process, a service
+rendered for the chart must set `entrypoint` in the Compose file: the image's
+entrypoint written out, as the template does, or `entrypoint: []` when
+`command` is complete on its own. `smrt deploy:chart-values` refuses a service
+that leaves its entrypoint to the image.
 
-To keep the two from drifting, the chart's `starter` fixture is not written by
-hand. `charts/smrt-app/fixtures/starter.json` is generated from the annotated
-template Compose file, and the repository's tests fail when either changes
-without the other:
+`deploy:chart-values` refuses to guess: a missing digest, entrypoint,
+hostname or Secret reference is reported, and a role service that mounts a
+data volume is refused because the chart binds existing databases and buckets
+and creates no persistent volumes. The rendered values document is the
+starting point for the runner described in the deployment guide. Rendering it
+does not deploy anything, and the `guard` it carries declares a capability
+that `migrate.command` still has to implement.
+
+So that the chart and the contract do not drift apart unnoticed, the chart's
+`starter` fixture is not written by hand.
+`charts/smrt-app/fixtures/starter.json` is generated from the annotated
+template Compose file, and the repository's tests fail when the template, the
+renderer or the fixture changes without the others:
 
 ```bash
 node scripts/compose-contract-fixture.mjs --write

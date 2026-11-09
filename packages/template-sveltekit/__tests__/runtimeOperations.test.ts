@@ -128,6 +128,12 @@ describe('deployed process topology', () => {
     expect(compose.match(/^ {6}role: worker$/gm)).toHaveLength(2);
     expect(compose).toContain('path: /api/_runtime/health');
     expect(compose.match(/^ {6}binding: postgres$/gm)).toHaveLength(1);
+    // The node image's own entrypoint, stated so that a rendering which
+    // replaces the entrypoint starts the same process Compose does.
+    expect(dockerfile).toMatch(/^FROM node:[^\n]+ AS runtime$/m);
+    expect(
+      compose.match(/^ {4}entrypoint: \["docker-entrypoint\.sh"\]$/gm),
+    ).toHaveLength(3);
     expect(templatePackage.scripts['deploy:check']).toBe('smrt deploy:check');
   });
 

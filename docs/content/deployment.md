@@ -13,8 +13,9 @@ A rendered chart is not proof of a deployment, migration, or downstream adoption
 
 An application declares its workloads, migration and platform services once,
 in its Compose file, under the [compose deployment contract](./deployment-compose.md).
-This chart is the self-host rendering of that declaration; a hosting
-platform's `smrt` preset is the runner for the same `smrt-release-v1` contract.
+This chart is the self-host rendering of that declaration. A hosting
+platform's `smrt` preset is intended to be the runner for the same
+`smrt-release-v1` contract; it is a separate system and is not described here.
 
 ## Ownership and supported boundary
 

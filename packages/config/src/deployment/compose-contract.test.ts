@@ -188,6 +188,157 @@ describe('validateComposeDeployment: a valid declaration', () => {
   });
 });
 
+describe('validateComposeDeployment: the local-first shape', () => {
+  // One process, SQLite on a declared data volume, no worker, no platform
+  // service: the other shape version 1 has to express besides the
+  // web + worker + postgres stack above.
+  const localFirst = (): Doc => ({
+    name: 'notes',
+    'x-happyvertical': {
+      version: 1,
+      preset: 'smrt',
+      migrate: { command: ['pnpm', 'exec', 'smrt', 'app', 'migrate'] },
+    },
+    services: {
+      web: {
+        build: '.',
+        command: ['pnpm', 'exec', 'smrt', 'app', 'start'],
+        ports: ['3000:3000'],
+        volumes: ['data:/home/node/.local/share/notes'],
+        'x-happyvertical': {
+          role: 'web',
+          health: { path: '/api/_runtime/health' },
+        },
+      },
+    },
+    volumes: { data: null },
+  });
+
+  it('is a valid declaration with one web service and its data volume', () => {
+    const result = validateComposeDeployment(localFirst());
+    expect(result.errors).toEqual([]);
+    expect(result.warnings).toEqual([]);
+    expect(result.declaration).toMatchObject({
+      preset: 'smrt',
+      migrate: { service: 'web' },
+      workloads: [
+        {
+          name: 'web',
+          role: 'web',
+          port: 3000,
+          volumes: [
+            {
+              name: 'data',
+              target: '/home/node/.local/share/notes',
+              readOnly: false,
+            },
+          ],
+        },
+      ],
+      bindings: [],
+      localOnly: [],
+    });
+  });
+
+  it('deploys from one digest', () => {
+    const result = validateComposeDeployment(localFirst(), {
+      stage: 'deploy',
+      images: { web: digest('notes') },
+    });
+    expect(result.errors).toEqual([]);
+    expect(result.declaration?.migrate.image).toBe(digest('notes'));
+  });
+});
+
+describe('validateComposeDeployment: hostile and malformed input', () => {
+  // The document is untrusted: nothing in it may make the validator throw.
+  const unprintable = (): Record<string, unknown> => ({
+    toString: 'not a function',
+    valueOf: () => ({}),
+  });
+  const cyclic = (): unknown[] => {
+    const list: unknown[] = [];
+    list.push(list);
+    return list;
+  };
+
+  it('reports values it cannot print instead of throwing', () => {
+    const cases: Array<[(doc: Doc, value: unknown) => void, string]> = [
+      [
+        (doc, value) => (doc['x-happyvertical'].version = value),
+        'version-unsupported',
+      ],
+      [
+        (doc, value) => (doc['x-happyvertical'].preset = value),
+        'preset-unknown',
+      ],
+      [
+        (doc, value) => (doc['x-happyvertical'].domain = value),
+        'domain-invalid',
+      ],
+      [
+        (doc, value) => (doc.services.worker['x-happyvertical'].role = value),
+        'role-unknown',
+      ],
+      [
+        (doc, value) =>
+          (doc.services.database['x-happyvertical'].binding = value),
+        'binding-unknown',
+      ],
+      [
+        (doc, value) => (doc.services.web.ports = [value]),
+        'ingress-port-invalid',
+      ],
+      [
+        (doc, value) =>
+          (doc.services.web.ports = [{ target: 3000, protocol: value }]),
+        'ingress-port-invalid',
+      ],
+      [
+        (doc, value) =>
+          (doc.services.web.ports = [{ target: 3000, mode: value }]),
+        'host-network',
+      ],
+      [
+        (doc, value) =>
+          (doc.services.web.volumes = [{ type: value, target: '/data' }]),
+        'volume-not-declared',
+      ],
+    ];
+    for (const [mutate, code] of cases) {
+      for (const value of [
+        unprintable(),
+        cyclic(),
+        10n,
+        Symbol('x'),
+        () => 1,
+      ]) {
+        const result = check((doc) => mutate(doc, value));
+        expect(result.errors.map((issue) => issue.code)).toEqual([code]);
+        expect(result.declaration).toBeUndefined();
+      }
+    }
+  });
+
+  it('shortens very long values in messages', () => {
+    const result = check((doc) => {
+      doc['x-happyvertical'].preset = 'x'.repeat(5000);
+    });
+    expect(result.errors[0].message.length).toBeLessThan(200);
+  });
+
+  it('refuses a service whose YAML merge key was not resolved', () => {
+    // Parsed without merge keys, `<<` hides whatever the anchor carries.
+    const result = check((doc) => {
+      doc.services.worker['<<'] = { privileged: true };
+    });
+    expect(result.errors.map((issue) => issue.code)).toEqual([
+      'merge-key-unresolved',
+    ]);
+    expect(result.errors[0].fix).toContain('merge keys enabled');
+  });
+});
+
 describe('validateComposeDeployment: the contract block', () => {
   it('rejects a document that is not a mapping', () => {
     for (const value of [null, 'services:', [], 3]) {
@@ -533,6 +684,9 @@ describe('validateComposeDeployment: one web service, one ingress port', () => {
       ['3000:3000/udp'],
       ['3000:${APP_PORT}'],
       [{ target: 'web', published: 80 }],
+      [{ target: true }],
+      [{ target: [3000] }],
+      [{ target: '3000-3005' }],
       [{ target: 53, protocol: 'udp' }],
       [70000],
       [true],
@@ -546,12 +700,32 @@ describe('validateComposeDeployment: one web service, one ingress port', () => {
     }
   });
 
-  it('rejects a worker that publishes a port', () => {
+  it('rejects a worker that publishes anything, without port advice', () => {
+    for (const ports of [
+      ['9000:9000'],
+      ['9000-9005'],
+      [{ mode: 'host' }],
+      'x',
+    ]) {
+      expect(
+        codes((doc) => {
+          doc.services.worker.ports = ports;
+        }),
+      ).toEqual(['worker-publishes-port']);
+    }
     expect(
-      codes((doc) => {
-        doc.services.worker.ports = ['9000:9000'];
-      }),
-    ).toEqual(['worker-publishes-port']);
+      check((doc) => {
+        doc.services.worker.ports = [];
+      }).ok,
+    ).toBe(true);
+  });
+
+  it('accepts long-syntax ports with a digit-string target or ingress mode', () => {
+    expect(
+      check((doc) => {
+        doc.services.web.ports = [{ target: '8080', mode: 'ingress' }];
+      }).declaration?.workloads[0].port,
+    ).toBe(8080);
   });
 });
 
@@ -665,6 +839,9 @@ describe('validateComposeDeployment: the supported platform subset', () => {
       ['./src:/app/src'],
       ['/var/run/docker.sock:/var/run/docker.sock'],
       ['~/.aws:/root/.aws:ro'],
+      ['C:\\data:/data'],
+      ['C:/data:/data'],
+      ['..\\src:/app/src'],
       ['${DATA_DIR}:/data'],
       ['/data'],
       ['uploads:/data'],
@@ -706,7 +883,6 @@ describe('validateComposeDeployment: the supported platform subset', () => {
     for (const command of [
       'sh -c "node build"',
       'node build && echo done',
-      'node $ENTRY',
       ['node', 3],
       { run: 'node' },
     ]) {
@@ -723,13 +899,48 @@ describe('validateComposeDeployment: the supported platform subset', () => {
     ).toEqual(['command-not-list']);
   });
 
-  it('carries entrypoint and leaves an image default command unset', () => {
+  it('refuses variables in anything the declaration carries', () => {
+    // Compose substitutes `$VAR` everywhere, extension fields included; a
+    // reader of the file as written would run something else.
+    const cases: Array<(doc: Doc) => void> = [
+      (doc) => (doc.services.web.command = 'node $ENTRY'),
+      (doc) => (doc.services.web.command = ['node', '${ENTRY}']),
+      (doc) => (doc.services.web.command = ['sh', '-c', 'echo $$HOME']),
+      (doc) => (doc.services.web.entrypoint = ['${INIT:-tini}', '--']),
+      (doc) => (doc['x-happyvertical'].migrate.command = ['pnpm', '$TASK']),
+      (doc) => (doc.services.web['x-happyvertical'].health.path = '/${P}'),
+      (doc) =>
+        (doc.services.worker['x-happyvertical'].health.command = [
+          'check',
+          '$MODE',
+        ]),
+      (doc) => {
+        doc.volumes.uploads = null;
+        doc.services.worker.volumes = ['uploads:/data/${TENANT}'];
+      },
+    ];
+    for (const mutate of cases) {
+      const result = check(mutate);
+      expect(result.errors.map((issue) => issue.code)).toEqual([
+        'interpolated-value',
+      ]);
+      expect(result.declaration).toBeUndefined();
+    }
+  });
+
+  it('keeps the Compose meaning of entrypoint and command', () => {
     const result = check((doc) => {
       doc.services.web.entrypoint = ['tini', '--'];
+      doc.services.worker.entrypoint = [];
       delete doc.services.worker.command;
     });
-    expect(result.declaration?.workloads[0].entrypoint).toEqual(['tini', '--']);
-    expect(result.declaration?.workloads[1]).not.toHaveProperty('command');
+    const [web, worker] = result.declaration?.workloads ?? [];
+    expect(web.entrypoint).toEqual(['tini', '--']);
+    // An empty entrypoint discards the image's own; it is not "unset".
+    expect(worker.entrypoint).toEqual([]);
+    expect(worker).not.toHaveProperty('command');
+    // Unset means the image's entrypoint runs.
+    expect(check().declaration?.workloads[0]).not.toHaveProperty('entrypoint');
   });
 });
 

@@ -10,8 +10,8 @@
 //
 // Needs packages/config built (`pnpm turbo run build --filter=@happyvertical/smrt-config`).
 
-import { readFileSync, writeFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parse } from 'yaml';
 
 export const starterComposePath = fileURLToPath(
@@ -44,10 +44,12 @@ export const starterInputs = {
     },
     terminationGracePeriodSeconds: 90,
   },
+  // `smrt app doctor` starts the CLI and probes the providers, so the worker
+  // readiness probes get far more than the Kubernetes default of one second.
   workloads: {
     web: { replicas: 2 },
-    worker: { role: 'task' },
-    'schedule-worker': { role: 'schedule' },
+    worker: { role: 'task', readiness: { periodSeconds: 60, timeoutSeconds: 30 } },
+    'schedule-worker': { role: 'schedule', readiness: { periodSeconds: 60, timeoutSeconds: 30 } },
   },
   migration: { terminationGracePeriodSeconds: 300 },
   maintenance: {
@@ -74,7 +76,8 @@ export async function renderStarterFixture() {
   return `${JSON.stringify(renderSmrtAppChartValues(result.declaration, starterInputs), null, 2)}\n`;
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+// Compare real paths: the checkout may be reached through a symlink.
+if (process.argv[1] && pathToFileURL(realpathSync(process.argv[1])).href === import.meta.url) {
   const rendered = await renderStarterFixture();
   if (process.argv.includes('--write')) {
     writeFileSync(starterFixturePath, rendered);

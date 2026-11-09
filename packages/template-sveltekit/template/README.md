@@ -416,7 +416,10 @@ PostgreSQL. Compose ignores them, so the file runs unchanged; `pnpm
 deploy:check` validates the declaration against the supported platform subset,
 and `pnpm exec smrt deploy:chart-values` renders it for the `smrt-app` chart.
 The one-shot `migrate` service has no annotation and stays local: a platform
-runs the declared migration command inside the web image instead.
+runs the declared migration command inside the web image instead. The three
+application services set `entrypoint` to the node image's own entrypoint, which
+changes nothing for Compose and lets a rendering that replaces the entrypoint
+start the same process.
 
 The adapter-node `Dockerfile` and `compose.yaml` provide the production path.
 Compose gates the web and both workers on the one-shot, idempotent migration

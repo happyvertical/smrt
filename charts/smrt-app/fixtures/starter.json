@@ -17,6 +17,7 @@
         "writer": true,
         "image": "ghcr.io/example/starter@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "command": [
+          "docker-entrypoint.sh",
           "node",
           "build"
         ],
@@ -59,6 +60,7 @@
         "writer": true,
         "image": "ghcr.io/example/starter@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "command": [
+          "docker-entrypoint.sh",
           "pnpm",
           "exec",
           "smrt",
@@ -87,7 +89,9 @@
               "app",
               "doctor"
             ]
-          }
+          },
+          "periodSeconds": 60,
+          "timeoutSeconds": 30
         },
         "resources": {
           "requests": {
@@ -106,6 +110,7 @@
         "writer": true,
         "image": "ghcr.io/example/starter@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "command": [
+          "docker-entrypoint.sh",
           "pnpm",
           "exec",
           "smrt",
@@ -134,7 +139,9 @@
               "app",
               "doctor"
             ]
-          }
+          },
+          "periodSeconds": 60,
+          "timeoutSeconds": 30
         },
         "resources": {
           "requests": {
