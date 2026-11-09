@@ -89,6 +89,19 @@ export interface RuntimeModelDefinition {
   mcp?: string[];
 }
 
+/**
+ * The TypeScript type name the generated tool schema and argument coercion
+ * read, for a run-time field type (they know `number`, not `integer`).
+ */
+const WIRE_TYPE: Record<RuntimeFieldType, string> = {
+  text: 'string',
+  integer: 'number',
+  decimal: 'number',
+  boolean: 'boolean',
+  datetime: 'string',
+  json: 'object',
+};
+
 const CRUD = ['list', 'get', 'create', 'update', 'delete'];
 
 function pluralize(name: string): string {
@@ -181,7 +194,7 @@ export function runtimeModelEntry(
       decoratorConfig: {},
       parameters: (md.parameters ?? []).map((p) => ({
         name: p.name,
-        type: p.type,
+        type: WIRE_TYPE[p.type] ?? 'string',
         optional: p.optional ?? false,
       })),
     } as unknown as MethodDefinition;

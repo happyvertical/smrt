@@ -205,6 +205,34 @@ function isAction(v: unknown): v is ApprovalAction {
  * Decide an approval. CALL ONLY FROM `Approval.decide` (which has checked the
  * owner): this is the single place the engine's `approved: true` is set.
  */
+/** The failure text when the host RETURNED an error instead of throwing. */
+export function returnedFailure(
+  kind: string,
+  result: unknown,
+): string | undefined {
+  const r = result as
+    | {
+        isError?: boolean;
+        content?: unknown;
+        status?: number;
+        body?: string;
+      }
+    | null
+    | undefined;
+  if (kind === 'tool' && r?.isError) {
+    const first = Array.isArray(r.content)
+      ? (r.content[0] as { text?: string } | undefined)
+      : undefined;
+    return first?.text?.slice(0, 500) || 'the tool reported an error';
+  }
+  if (kind === 'rest' && typeof r?.status === 'number') {
+    if (r.status < 200 || r.status > 299) {
+      return `the request failed with status ${r.status}`;
+    }
+  }
+  return undefined;
+}
+
 export async function decideApproval(
   id: string,
   approve: boolean,
@@ -258,6 +286,9 @@ export async function decideApproval(
           { method: action.method, url: action.url, body: action.body },
           { approved: true },
         );
+      // The host reports some failures by returning them (a tool's isError,
+      // a non-2xx REST response) instead of throwing: they did not apply.
+      if (error === undefined) error = returnedFailure(action.kind, result);
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
     }

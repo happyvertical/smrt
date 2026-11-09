@@ -143,7 +143,27 @@ describe('#4871 run-time models', () => {
       name: 'Visit',
       packageName: '@test/rt4871',
       fields: { when: { type: 'datetime' } },
-      methods: { cancel: {} },
+      methods: {
+        cancel: {
+          parameters: [
+            { name: 'count', type: 'integer' },
+            { name: 'ratio', type: 'decimal' },
+            { name: 'when', type: 'datetime', optional: true },
+            { name: 'extra', type: 'json' },
+          ],
+        },
+      },
+    });
+    // The generated tool schema reads TypeScript type names, not column types.
+    expect(
+      Object.fromEntries(
+        e.methods.cancel.parameters.map((p: any) => [p.name, p.type]),
+      ),
+    ).toEqual({
+      count: 'number',
+      ratio: 'number',
+      when: 'string',
+      extra: 'object',
     });
     expect(e.decoratorConfig.conflictColumns).toEqual(['id']);
     expect(e.decoratorConfig.mcp.include).toContain('cancel');

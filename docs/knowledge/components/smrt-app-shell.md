@@ -5,10 +5,10 @@ description: "A smrt app that builds and runs a person's own smrt app from defin
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-09T18:45:10Z"
+  at: "2026-11-09T19:44:12Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:b0d578587d066518f173b4fd3794f64cc7b0d692e0e39aa22f01bfecdf7f5d02"
+source_revision: "sha256:d5a96312d8267e52bbb515a7a7d2b96487baa8198d6ec0b28cae4793ddd0262c"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/package.json"
@@ -17,8 +17,8 @@ sources:
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/AGENTS.md"
     title: "@happyvertical/smrt-app-shell packages/app-shell/AGENTS.md"
   - id: "agents-2"
-    resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/src/engine/AGENTS.md"
-    title: "@happyvertical/smrt-app-shell packages/app-shell/src/engine/AGENTS.md"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/agents/engine.md"
+    title: "@happyvertical/smrt-app-shell packages/app-shell/agents/engine.md"
 ---
 
 # @happyvertical/smrt-app-shell
@@ -27,13 +27,13 @@ sources:
 
 - Directory: `packages/app-shell`
 - Private: no
-- Object source: `scanner`
+- Object source: `manifest`
 - Evidence level: `source-inspected`
 
 ## Documentation
 
 - `packages/app-shell/AGENTS.md`
-- `packages/app-shell/src/engine/AGENTS.md`
+- `packages/app-shell/agents/engine.md`
 
 ## Framework dependencies
 
@@ -62,10 +62,15 @@ sources:
 ## Models
 
 - `App` (collection `apps`, extends `SmrtObject`)
+- `AppCollection` (collection `apps`, extends `SmrtCollection`)
 - `AppVersion` (collection `appversions`, extends `SmrtObject`)
+- `AppVersionCollection` (collection `appversions`, extends `SmrtCollection`)
 - `Approval` (collection `approvals`, extends `SmrtObject`)
+- `ApprovalCollection` (collection `approvals`, extends `SmrtCollection`)
 - `AssistantMessage` (collection `assistantmessages`, extends `SmrtObject`)
+- `AssistantMessageCollection` (collection `assistantmessages`, extends `SmrtCollection`)
 - `AssistantThread` (collection `assistantthreads`, extends `SmrtObject`)
+- `AssistantThreadCollection` (collection `assistantthreads`, extends `SmrtCollection`)
 
 ## MCP tools
 

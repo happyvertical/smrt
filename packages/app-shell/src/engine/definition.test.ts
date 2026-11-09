@@ -153,3 +153,41 @@ describe('MemoryVersionStore', () => {
     ).rejects.toThrow(/already exists/);
   });
 });
+
+describe('method parameters in the generated tool schema', () => {
+  it('declares wire types, not storage types', async () => {
+    const { toRuntimeModel, runtimeType } = await import('./definition.ts');
+    expect(runtimeType('integer')).toBe('integer');
+    const { runtimeModelEntry } = await import('@happyvertical/smrt-core');
+    const entry = runtimeModelEntry(
+      toRuntimeModel('Chore', {
+        fields: {},
+        methods: {
+          log: {
+            description: 'log',
+            code: 'return 1',
+            params: {
+              count: { type: 'integer' },
+              ratio: { type: 'number' },
+              done: { type: 'boolean' },
+              note: { type: 'text' },
+              extra: { type: 'json' },
+            },
+          },
+        },
+      } as never),
+    );
+    const types = Object.fromEntries(
+      (entry.methods.log.parameters as { name: string; type: string }[]).map(
+        (p) => [p.name, p.type],
+      ),
+    );
+    expect(types).toEqual({
+      count: 'number',
+      ratio: 'number',
+      done: 'boolean',
+      note: 'string',
+      extra: 'object',
+    });
+  });
+});

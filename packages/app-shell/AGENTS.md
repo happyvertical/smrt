@@ -3,7 +3,7 @@
 An ordinary smrt app (SvelteKit + adapter-node, app-runtime **local** profile)
 that builds and runs a person's own smrt app from a versioned JSON definition,
 for one person: the owner. Epic #4867; this package is #4872. The engine is
-documented in [src/engine/AGENTS.md](src/engine/AGENTS.md) (it must not import
+documented in [agents/engine.md](agents/engine.md) (it must not import
 SvelteKit or `src/lib`). README has the route and JSON contracts.
 
 ## Where things live
@@ -11,7 +11,7 @@ SvelteKit or `src/lib`). README has the route and JSON contracts.
 | Path | What |
 |---|---|
 | `src/engine/` | `AppHost`, worker thread, migrations, QuickJS sandbox. Finished and tested on its own. |
-| `src/lib/objects/` | Shell models (`objectsDir` in `vite.config.ts`): `App`, `AppVersion`, `Approval`. |
+| `src/lib/objects/` | Shell models (`objectsDir` in `vite.config.ts`): `App`, `AppVersion`, `Approval`, `AssistantThread`, `AssistantMessage`. |
 | `src/lib/server/smrt.ts` | `createSmrtSvelteKitRuntime`, `prepareDatabase`, `configureShell`. |
 | `src/lib/server/schema.ts` | `prepareShellSchema(db)`: additive first-run schema. |
 | `src/lib/server/host.ts` | Holders: shell db, data root, the one lazily opened `AppHost`. |

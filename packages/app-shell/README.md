@@ -130,4 +130,4 @@ pnpm --filter @happyvertical/smrt-app-shell build
 pnpm --filter @happyvertical/smrt-app-shell typecheck
 ```
 
-See [AGENTS.md](AGENTS.md) for the invariants and [src/engine/AGENTS.md](src/engine/AGENTS.md) for the engine.
+See [AGENTS.md](AGENTS.md) for the invariants and [agents/engine.md](agents/engine.md) for the engine.

@@ -19,7 +19,8 @@
     "build",
     "dist",
     "CLAUDE.md",
-    "AGENTS.md"
+    "AGENTS.md",
+    "agents"
   ],
   "scripts": {
     "dev": "svelte-kit sync && vite dev",
