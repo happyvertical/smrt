@@ -183,7 +183,8 @@ environment names are in the README. Invariants:
   links a tenant or plan.
 - **Checkout is bound to a recorded session (#4814)**, `checkout-sessions.ts`
   and `models/BillingCheckoutSession.ts` (`_smrt_billing_checkout_sessions`,
-  no API surface, not a root export). `createCheckout` records the session id
+  no API surface; a root export because the manifest advertises it).
+  `createCheckout` records the session id
   before returning the URL and signs `smrt_exp`; the completion (inside the
   `runOnce` transaction, after the PostgreSQL `checkout:<id>` lock) checks, in
   order: record exists, status is not `completed` / `needs_reconciliation`

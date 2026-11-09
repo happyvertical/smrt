@@ -66,6 +66,7 @@ export type {
 export {
   BillingAdjustment,
   BillingAdjustmentCollection,
+  BillingCheckoutSession,
   ClientCharge,
   ClientChargeCollection,
   CreditGrant,

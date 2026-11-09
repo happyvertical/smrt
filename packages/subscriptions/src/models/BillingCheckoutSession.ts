@@ -28,9 +28,10 @@ export type BillingCheckoutSessionStatus =
  * single-use nonce.
  *
  * A system table managed through `createBillingHost()`, like
- * `_smrt_price_book_assignments`; it has no generated API surface and is not
- * a root export. `tenantId` is the tenant the host created the session for
- * (`''` on a row opened for a session the host never recorded).
+ * `_smrt_price_book_assignments`; it has no generated API surface. It is a
+ * root export because the published manifest advertises it. `tenantId` is the
+ * tenant the host created the session for (`''` on a row opened for a session
+ * the host never recorded).
  */
 @smrt({
   tableName: '_smrt_billing_checkout_sessions',
