@@ -356,11 +356,23 @@ function failureOf(error: unknown): { code: string; message: string } {
 export async function applyRetention(
   target: BackupTarget,
   retention: BackupRetention | undefined,
-  options: { dryRun?: boolean; now?: number } = {},
+  options: {
+    dryRun?: boolean;
+    now?: number;
+    /** Target object ids retention must keep (the snapshot just stored). */
+    protectIds?: readonly string[];
+    /** A listing already taken after the upload, to avoid listing twice. */
+    listing?: readonly BackupObject[];
+  } = {},
 ): Promise<RetentionOutcome & { wouldRemove?: string[] }> {
   if (!retention) return { applied: false, removed: [] };
   try {
-    const plan = planRetention(await target.list(), retention, options.now);
+    const plan = planRetention(
+      options.listing ?? (await target.list()),
+      retention,
+      options.now,
+      options.protectIds,
+    );
     const ids = plan.remove.map((object) => object.id);
     if (options.dryRun)
       return { applied: false, removed: [], wouldRemove: ids };
@@ -457,7 +469,42 @@ async function backupToOpenTarget(
       sha256,
       source: readFileChunks(staged),
     });
-    const retention = await applyRetention(target, config.retention);
+    // One listing serves the ordering check and retention. A listing failure
+    // must not fail a finished upload; retention reports it the same way.
+    let listing: BackupObject[] | undefined;
+    let listError: { code: string; message: string } | undefined;
+    try {
+      listing = await target.list();
+    } catch (error) {
+      listError = failureOf(error);
+    }
+    const warnings: Array<{ code: string; message: string }> = [];
+    const highest = listing
+      ?.filter((object) => object.id !== stored.id)
+      .reduce<bigint | undefined>(
+        (max, object) =>
+          max === undefined || object.sequence > max ? object.sequence : max,
+        undefined,
+      );
+    if (highest !== undefined && stored.sequence <= highest) {
+      warnings.push({
+        code: 'sequence_not_above_target_maximum',
+        message:
+          `The snapshot just stored has sequence ${stored.sequence} but the ` +
+          `target already holds sequence ${highest}. This device's snapshot ` +
+          'counter restarted (reinstall or restore). Retention and "latest" ' +
+          'ordering rank by sequence, so this snapshot is ranked older than ' +
+          'those on the target: it was kept this time, but a later prune can ' +
+          'remove it. Restore the latest snapshot before backing up again.',
+      });
+    }
+    const retention =
+      listError && config.retention
+        ? { applied: false, removed: [], error: listError }
+        : await applyRetention(target, config.retention, {
+            protectIds: [stored.id],
+            listing,
+          });
     return {
       schemaVersion: 1,
       status: 'backed-up',
@@ -466,6 +513,7 @@ async function backupToOpenTarget(
       snapshot: snapshotReport(snapshot),
       object: objectReport(stored),
       retention,
+      ...(warnings.length > 0 ? { warnings } : {}),
     };
   } finally {
     rmSync(staged, { force: true });

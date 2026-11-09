@@ -133,24 +133,32 @@ export interface RetentionPlan {
 /**
  * Decide what retention keeps. Order is by sequence, not by clock, so a skewed
  * clock cannot make the newest snapshot look old; the newest is always kept.
+ * `protectIds` are kept regardless of rank (the object a backup just stored),
+ * so a device whose sequence restarted below the target's maximum cannot have
+ * its fresh upload removed as "oldest".
  */
 export function planRetention(
   objects: readonly BackupObject[],
   retention: BackupRetention,
   now: number = Date.now(),
+  protectIds: Iterable<string> = [],
 ): RetentionPlan {
   assertRetention(retention);
   const ordered = [...objects].sort((a, b) =>
     a.sequence === b.sequence ? 0 : a.sequence > b.sequence ? -1 : 1,
   );
   const cutoff = now - (retention.keepWithinDays ?? 0) * DAY_MS;
+  const protectedIds = new Set(protectIds);
   const keep: BackupObject[] = [];
   const remove: BackupObject[] = [];
   for (const [index, object] of ordered.entries()) {
     const recent =
       (retention.keepWithinDays ?? 0) > 0 &&
       object.createdAt.getTime() >= cutoff;
-    (index < retention.keepLast || recent ? keep : remove).push(object);
+    (index < retention.keepLast || recent || protectedIds.has(object.id)
+      ? keep
+      : remove
+    ).push(object);
   }
   return { keep, remove };
 }
