@@ -837,6 +837,26 @@ posixOnly('bridge', () => {
     assertNothingLeft(item);
   });
 
+  it('accepts bare built-in module names as well as node: specifiers', async () => {
+    const item = fixture({
+      bridge:
+        "import fs from 'fs';\nimport { join } from 'path/posix';\nimport 'node:os';\nexport { fs, join };\n",
+    });
+    await runBundle(await item.plan(), item.seams());
+    expect(
+      existsSync(join(item.outDir, 'resources/bridge/smrt-mcp-bridge.mjs')),
+    ).toBe(true);
+  });
+
+  it('rejects relative and scoped imports in the bridge too', async () => {
+    const item = fixture({
+      bridge: "import './local.js';\nimport '@scope/pkg';\n",
+    });
+    const error = await failure(runBundle(await item.plan(), item.seams()));
+    expect(error.code).toBe('bridge_not_self_contained');
+    expect(error.subjects).toEqual(['(relative import)', '@scope/pkg']);
+  });
+
   it('rejects a bridge that is a symlink', async () => {
     const item = fixture();
     const target = join(item.root, 'real-bridge.mjs');
