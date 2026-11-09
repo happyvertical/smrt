@@ -1234,6 +1234,9 @@ describe('smrt app backup', () => {
         kind: 'data-root',
         generation: '1',
         sequence: '3',
+        // The producing device is printed so a lost laptop's file can be
+        // matched to its origin on another machine.
+        deviceId: 'device-1',
         keyId: SNAPSHOT_KEY_ID,
       },
     });
@@ -1533,7 +1536,12 @@ describe('smrt app export / import', () => {
       path: bundle,
       tableCount: 2,
       encrypted: true,
-      snapshot: { kind: 'export-bundle', generation: '1', sequence: '3' },
+      snapshot: {
+        kind: 'export-bundle',
+        generation: '1',
+        sequence: '3',
+        deviceId: 'device-1',
+      },
     });
     expect(statSync(bundle).mode & 0o777).toBe(0o600);
     expect(readFileSync(bundle).includes('First')).toBe(false);

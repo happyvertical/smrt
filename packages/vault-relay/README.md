@@ -193,7 +193,9 @@ horizontally: every security check is a conditional database statement.
 | Leakage through logs, listings, or storage | Logs carry route, status, and a hashed account handle only; operator view is sizes and dates | `blind-operator.test.ts` |
 | Path traversal in object keys | Keys derived from hash, server UUID, and index; regex and containment checks | `storage-and-config.test.ts` |
 
-Residual risks: an operator can see ciphertext sizes, timing, and device ids;
+Residual risks: an operator can see ciphertext sizes, timing, and device ids
+(an HVSF snapshot also carries its producing device id, key id, generation, and
+length in a clear file header that the relay stores but never parses);
 quota counters can over-count after a crash between steps (`reconcile`
 repairs it); a crash between storing a chunk object and recording it can leave
 one unreferenced ciphertext object; a lapsed subscription blocks downloads as

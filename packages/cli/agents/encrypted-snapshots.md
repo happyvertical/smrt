@@ -18,19 +18,30 @@ snapshots sealed before a rotation stay readable. The framing takes ownership
 of returned key bytes and zeroes them. No provider means `--encrypted` fails
 closed. Keys never appear in arguments, environment, output or errors.
 
+The raw vault data key is never used to seal or open an envelope. Each
+operation derives one purpose subkey, `HKDF-SHA256(dataKey, salt = empty, info =
+"smrt-hvsf-v1", 32 bytes)` (`deriveSnapshotSubkey`), uses it for every record
+and zeroes it. An HVSF envelope therefore does not authenticate under the raw
+data key, under another HKDF label, or for any other consumer of the same data
+key; the key ID in the envelope still names the data key.
+
 ## Format
 
 ```text
-header (72 bytes, clear)
-  "HVSF" | version 1 | kind (1 data-root, 2 export-bundle) | 0x0000
+header (72 bytes fixed + device ID, clear)
+  "HVSF" | version 1 | kind (1 data-root, 2 export-bundle)
+  | device ID length u16 (1 to 255)
   generation u64 | sequence u64 | key ID (16) | snapshot ID (16, random)
   chunk size u32 | chunk count u32 | total length u64
+  producing device ID (UTF-8, no control characters)
 record × (chunk count + 1): length u32 | SDK v1 vault envelope
 ```
 
 Every envelope uses the SDK v1 envelope (`@happyvertical/encryption/
-vault-snapshot`, no compression) with context `{ accountId, deviceId,
-sequence }`. Its payload is the 72-byte header copy, record type (1 chunk,
+vault-snapshot`, no compression), sealed with the HKDF subkey above, with context `{ accountId, deviceId,
+sequence }`. Its payload is a copy of the 72-byte fixed header (which includes
+the device ID length; the device ID itself is authenticated by the envelope
+context), record type (1 chunk,
 2 manifest), record index u32, then the chunk bytes or, for the manifest,
 total length u64 and the SHA-256 of the plaintext. All chunks except the last
 are exactly the chunk size. Integers are big-endian.
@@ -44,6 +55,20 @@ backup is restorable. All writes loop until complete and the written size is
 checked before publication.
 `export-bundle` plaintext is the logical bundle JSON.
 
+## Clear header metadata
+
+Anything in the file header is readable by whoever holds the file, including a
+relay that stores it without parsing it. It is: format version, kind (data root
+or export bundle), key generation, snapshot sequence, key ID, random snapshot
+ID, chunk size, chunk count, exact plaintext length, and the **producing device
+ID**. The device ID is clear on purpose: a device lost with its laptop must not
+take the knowledge of which device produced the file with it, and a new device
+restores with only the file and the vault key. It is already visible to the
+relay as the authenticated uploader. Account ID, plaintext and keys never
+appear. `readSnapshotHeader` returns these fields without authenticating them,
+and `snapshotReport` (backup and export output) prints the device ID next to
+the sequence.
+
 ## Limits
 
 Chunk size 4 KiB to 8 MiB − 77 bytes (default 4 MiB); total plaintext at
@@ -55,7 +80,11 @@ bundle in memory under those limits.
 ## Restore and failure modes
 
 `decryptSnapshot({ source, destination, context, keys, minimumGeneration?,
-expectedKind? })` requires the trusted expected account, device and sequence.
+expectedKind? })` requires the account ID (it selects the vault key). Device ID
+and sequence are optional in `context`: omit them to restore on a new device
+from the file and the vault key alone (they are then taken from the header and
+authenticated by every envelope), or pass them, for example to enforce
+rollback protection from trusted state, and the file must match exactly.
 Before any key lookup or allocation it checks the header bounds, sequence,
 optional generation floor and kind, and that the file length equals the exact
 length the header implies. Each record must have its exact expected length,

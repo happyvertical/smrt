@@ -5,7 +5,7 @@
  * plaintext hygiene, hostile headers, fail-closed restore).
  */
 
-import { randomBytes } from 'node:crypto';
+import { hkdfSync, randomBytes } from 'node:crypto';
 import {
   lstatSync,
   mkdirSync,
@@ -21,14 +21,18 @@ import {
 import { open } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { openVaultSnapshot } from '@happyvertical/encryption/vault-snapshot';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { planDataRootArchive } from '../snapshot-archive.js';
 import {
   decryptSnapshot,
+  deriveSnapshotSubkey,
   EncryptedSnapshotError,
   MIN_SNAPSHOT_CHUNK_BYTES,
   parseSnapshotHeader,
+  readSnapshotHeader,
   SNAPSHOT_HEADER_BYTES,
+  SNAPSHOT_SUBKEY_INFO,
   type SnapshotContext,
   type SnapshotKeyProvider,
   type SnapshotKind,
@@ -125,10 +129,15 @@ async function sealBytes(
   });
 }
 
+/** Clear header length: the fixed part plus the producing device ID. */
+function headerLength(file: Buffer): number {
+  return SNAPSHOT_HEADER_BYTES + file.readUInt16BE(6);
+}
+
 /** [start, end) byte ranges of each length-prefixed record. */
 function records(file: Buffer): Array<[number, number]> {
   const ranges: Array<[number, number]> = [];
-  let position = SNAPSHOT_HEADER_BYTES;
+  let position = headerLength(file);
   while (position < file.length) {
     const end = position + 4 + file.readUInt32BE(position);
     ranges.push([position, end]);
@@ -335,6 +344,139 @@ describe('encrypted snapshot framing', () => {
       );
     });
 
+    it('seals under a purpose subkey: no envelope opens with the raw data key or another label', async () => {
+      const { ring, source, file } = await fixture();
+      const dataKey = ring.keys.get(1n)?.key as Buffer;
+      const keyId = ring.keys.get(1n)?.keyId as string;
+      const [first] = records(file);
+      const envelope = file.subarray(first[0] + 4, first[1]);
+      const openWith = (key: Uint8Array) =>
+        openVaultSnapshot(envelope, {
+          context: ring.context,
+          resolveKey: (id) => (id === keyId ? key : undefined),
+        });
+      const derive = (info: string) =>
+        new Uint8Array(hkdfSync('sha256', dataKey, Buffer.alloc(0), info, 32));
+
+      expect(SNAPSHOT_SUBKEY_INFO).toBe('smrt-hvsf-v1');
+      expect(() => openWith(new Uint8Array(dataKey))).toThrow();
+      expect(() => openWith(derive('smrt-hvsf-v2'))).toThrow();
+      expect(() => openWith(derive('smrt-other-purpose'))).toThrow();
+      // Same info with a salt is a different key too.
+      expect(() =>
+        openWith(
+          new Uint8Array(
+            hkdfSync(
+              'sha256',
+              dataKey,
+              Buffer.from('salt'),
+              'smrt-hvsf-v1',
+              32,
+            ),
+          ),
+        ),
+      ).toThrow();
+      // Positive control: the derived subkey opens it, and HVSF restores.
+      expect(openWith(derive('smrt-hvsf-v1')).length).toBeGreaterThan(0);
+      expect(deriveSnapshotSubkey(dataKey)).toEqual(derive('smrt-hvsf-v1'));
+      await expect(
+        verifySnapshot({ source, context: ring.context, keys: ring }),
+      ).resolves.toMatchObject({ format: 'hvsf-v1' });
+    });
+
+    it('restores on a new device from the file and the vault key alone', async () => {
+      const { root, ring, plaintext, source } = await fixture();
+      // A new device knows the account and holds the vault key, but neither the
+      // producing device ID nor the snapshot sequence.
+      const newDevice = keyring();
+      newDevice.keys = ring.keys;
+      newDevice.current = ring.current;
+      newDevice.context = {
+        accountId: ring.context.accountId,
+        deviceId: 'replacement-laptop',
+        sequence: 1n,
+      };
+      const header = await readSnapshotHeader(source);
+      expect(header.deviceId).toBe('device-1');
+      expect(header.sequence).toBe(7n);
+
+      const destination = join(root, 'restored.bin');
+      const restored = await decryptSnapshot({
+        source,
+        destination,
+        context: { accountId: ring.context.accountId },
+        keys: newDevice,
+      });
+      expect(restored).toMatchObject({ deviceId: 'device-1', sequence: '7' });
+      expect(readFileSync(destination).equals(plaintext)).toBe(true);
+      await expect(
+        verifySnapshot({
+          source,
+          context: { accountId: ring.context.accountId },
+          keys: newDevice,
+        }),
+      ).resolves.toMatchObject({ deviceId: 'device-1' });
+      // Another account's key still cannot open it.
+      await expectRestoreFails(ring, source, /No key is available/, {
+        context: { accountId: 'account-2' },
+      });
+    });
+
+    it('rejects an edited, truncated or hostile clear device ID', async () => {
+      const { ring, source, file } = await fixture();
+      const edit = (change: (bytes: Buffer) => void) => {
+        const bytes = Buffer.from(file);
+        change(bytes);
+        writeFileSync(source, bytes);
+      };
+      const open = { context: { accountId: ring.context.accountId } };
+      // Same-length rewrite: the envelope context authenticates the device.
+      edit((bytes) => bytes.write('device-X', SNAPSHOT_HEADER_BYTES));
+      await expectRestoreFails(ring, source, /failed authentication/, open);
+      // Length edits are caught by the header copy or the exact file length.
+      edit((bytes) => bytes.writeUInt16BE(7, 6));
+      await expectRestoreFails(
+        ring,
+        source,
+        /length does not match|header/,
+        open,
+      );
+      edit((bytes) => bytes.writeUInt16BE(0, 6));
+      await expectRestoreFails(
+        ring,
+        source,
+        /device ID length is invalid/,
+        open,
+      );
+      edit((bytes) => bytes.writeUInt16BE(256, 6));
+      await expectRestoreFails(
+        ring,
+        source,
+        /device ID length is invalid/,
+        open,
+      );
+      edit((bytes) => bytes.writeUInt8(0xff, SNAPSHOT_HEADER_BYTES));
+      await expectRestoreFails(
+        ring,
+        source,
+        /device ID is not valid UTF-8/,
+        open,
+      );
+      edit((bytes) => bytes.writeUInt8(0x1b, SNAPSHOT_HEADER_BYTES));
+      await expectRestoreFails(ring, source, /control characters/, open);
+      writeFileSync(source, file.subarray(0, SNAPSHOT_HEADER_BYTES + 3));
+      await expectRestoreFails(ring, source, /truncated/, open);
+    });
+
+    it('refuses to seal with a device ID that cannot be printed safely', async () => {
+      const root = workspace();
+      const ring = keyring('account-1', 'bad\u001b[2Jdevice');
+      await expect(
+        sealBytes(ring, join(root, 'x.hvsnap'), randomBytes(10)),
+      ).rejects.toThrow(/control characters/);
+      expect(readdirSync(root)).toEqual([]);
+    });
+
     it('detects reordered and duplicated chunks', async () => {
       const { ring, source, file } = await fixture();
       const [a, b] = records(file);
@@ -389,7 +531,7 @@ describe('encrypted snapshot framing', () => {
 
     it('rejects the wrong account, device or sequence', async () => {
       const { ring, source } = await fixture();
-      await expectRestoreFails(ring, source, /record 0 failed authentication/, {
+      await expectRestoreFails(ring, source, /device does not match/, {
         context: { ...ring.context, deviceId: 'device-2' },
       });
       await expectRestoreFails(ring, source, /No key is available/, {
@@ -500,9 +642,7 @@ describe('encrypted snapshot framing', () => {
       );
       // A record claiming 4 GiB is rejected by its exact expected length;
       // the trailing padding keeps the file size plausible.
-      hostile((bytes) =>
-        bytes.writeUInt32BE(0xffff_ffff, SNAPSHOT_HEADER_BYTES),
-      );
+      hostile((bytes) => bytes.writeUInt32BE(0xffff_ffff, headerLength(bytes)));
       await expectRestoreFails(ring, source, /record 0 has an invalid length/);
       writeFileSync(source, Buffer.concat([file, Buffer.of(0)]));
       await expectRestoreFails(ring, source, /length does not match/);
@@ -575,7 +715,7 @@ describe('encrypted snapshot framing', () => {
       expect(readdirSync(root)).toEqual([]);
     });
 
-    it('keeps plaintext, identities and keys out of the file and errors, and zeroes key copies', async () => {
+    it('keeps plaintext, the account ID and keys out of the file and errors, and zeroes key copies', async () => {
       const root = workspace();
       const ring = keyring('acct-visible-marker', 'device-visible-marker');
       const marker = Buffer.from('PLAINTEXT-MARKER-'.repeat(400));
@@ -584,7 +724,14 @@ describe('encrypted snapshot framing', () => {
       const file = readFileSync(source);
       expect(file.includes(Buffer.from('PLAINTEXT-MARKER-'))).toBe(false);
       expect(file.includes(Buffer.from('acct-visible-marker'))).toBe(false);
-      expect(file.includes(Buffer.from('device-visible-marker'))).toBe(false);
+      // The producing device ID is deliberately clear in the header so a new
+      // device can restore from the file alone; the account ID is not.
+      expect(
+        file
+          .subarray(SNAPSHOT_HEADER_BYTES, headerLength(file))
+          .toString('utf8'),
+      ).toBe('device-visible-marker');
+      expect(file.includes(Buffer.from('device-visible-marker'))).toBe(true);
       const key = ring.keys.get(1n)?.key as Buffer;
       expect(file.includes(key)).toBe(false);
 
