@@ -161,6 +161,52 @@ window, amount and enforcement come from the plan (pinned version included):
   it `currentShortfall()`, so a hook that charges asynchronously can see a
   concurrent top-up (smrt-commerce's `autoTopUpHook()`, #3139).
 
+## Billing host glue (#4786)
+
+`src/billing/` is the reusable Stripe checkout, signed idempotent webhook and
+portal wiring (`createBillingHost()`, `readBillingEnv()`); the recipe and
+environment names are in the README. Invariants:
+
+- **No direct Stripe calls.** The provider is the structural
+  `BillingProviderPort`; `StripeAccountingProvider` from
+  `@happyvertical/accounting` satisfies it (a test pins that). A missing SDK
+  capability is fixed in the SDK first. `@happyvertical/accounting` is a
+  devDependency only (tests run the real provider over a fake `fetch`).
+- **Webhook order is load-bearing:** size cap, signature header, own timestamp
+  tolerance, SDK `verify` on the raw body, parse, handled-type filter,
+  completed-claim pre-check, then (checkout only) the outside-transaction
+  provider read-back, then `runOnce` claiming the event id *and* applying it.
+  All DB access inside that transaction must use the `tx` handle; a read on the
+  base handle deadlocks single-connection SQLite. Never claim before applying.
+- **Trust comes from our own state.** Checkout metadata is HMAC-signed
+  (`smrt_sig`, `signing.ts`) and an unsigned or foreign-signed session never
+  links a tenant or plan. A provider subscription or customer id links to one
+  tenant; a conflicting event is ignored with a reason code, not merged.
+  Verification accepts the signing secret plus `metadataVerificationSecrets`
+  (rotation); a purpose-matching session that fails them logs at error.
+  A price the host cannot map that differs from the recorded one is held
+  (`incomplete`, plan and recorded price kept, `metadata.stripe.held` set so
+  checkout still refuses a second subscription) with an error log, never
+  carried over onto the previous plan.
+  Ignore (2xx, logged) for security refusals; fail (5xx) for configuration or
+  database faults so the provider retries.
+- **Only operator plans are sold by default** (`tenantPlans: 'deny'`); price
+  resolution never lets a tenant-owned plan outrank a global one. Checkout
+  metadata also signs the price and known customer, and the webhook refuses a
+  session whose read-back subscription differs. PostgreSQL events lock the
+  subscription and tenant (advisory, sorted) and re-read before deciding.
+- **Order state lives on the row** (`metadata.stripe.lastEventAt`, `terminal`);
+  a checkout read-back stamps `max(eventCreated, readAt)` so later-delivered
+  older events cannot rewind it. Cancellation caps `currentPeriodEnd` at now.
+- **Plan changes** from the provider use `replacePlanVersion({ policy:
+  'authorized', reason: 'stripe:<eventId>' })`; the provider billed the change,
+  so a mid-period downgrade is honoured and audited. Do not relax the pinning
+  rules for any other caller.
+- **No secrets out.** Responses use fixed messages; logs get ids and reason
+  codes only, errors pass through `safeErrorMessage()`. `readBillingEnv` keeps
+  secrets non-enumerable. Add a named test per new threat in
+  `__tests__/billing-host.test.ts`.
+
 ## Notes
 
 - Keep Stripe-specific fields as provider binding metadata. Runtime Stripe API

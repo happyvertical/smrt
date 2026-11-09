@@ -10,6 +10,7 @@
 import { randomBytes } from 'node:crypto';
 import {
   closeSync,
+  lstatSync,
   mkdirSync,
   openSync,
   readFileSync,
@@ -17,6 +18,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
+import { DATA_ROOT_SWAP_JOURNAL } from './data-root-swap.js';
 import { errorCode } from './error-code.js';
 import { isStaleOperationLock, processExists } from './operation-lock.js';
 import { reclaimStaleRecord } from './stale-reclaim.js';
@@ -37,6 +39,28 @@ export interface WriterLease {
 export interface AcquireWriterLeaseOptions {
   /** Instance of the operation lock this writer was started under, if any. */
   operationInstance?: string;
+  /**
+   * Only the restore path that settles an interrupted data-root swap sets
+   * this. Every other writer is refused while the swap journal exists, so
+   * nothing opens or initializes a missing or half-swapped data root.
+   */
+  dataRootSwapRecovery?: boolean;
+}
+
+function assertNoPendingSwap(
+  stateRoot: string,
+  options: AcquireWriterLeaseOptions,
+): void {
+  if (options.dataRootSwapRecovery) return;
+  try {
+    lstatSync(join(stateRoot, DATA_ROOT_SWAP_JOURNAL));
+  } catch (error) {
+    if (errorCode(error) === 'ENOENT') return;
+    throw error;
+  }
+  throw new Error(
+    'An interrupted data-root restore must be settled first: run "smrt app restore-latest --recover".',
+  );
 }
 
 function validateRecord(record: unknown): WriterLeaseRecord {
@@ -108,6 +132,7 @@ export function acquireWriterLease(
   options: AcquireWriterLeaseOptions = {},
 ): WriterLease {
   mkdirSync(stateRoot, { recursive: true, mode: 0o700 });
+  assertNoPendingSwap(stateRoot, options);
   const path = join(stateRoot, 'writer.lease');
   const active = readActiveWriterLease(stateRoot);
   if (active?.pid === process.pid) return { release() {} };
@@ -160,6 +185,14 @@ export function acquireWriterLease(
       // A missing or externally repaired lease is not ours to remove.
     }
   };
+  // Re-checked once the lease is held: a swap journalled between the first
+  // check and the lease file creation is still seen.
+  try {
+    assertNoPendingSwap(stateRoot, options);
+  } catch (error) {
+    release();
+    throw error;
+  }
   const operationPath = join(stateRoot, 'operation.lock');
   let observedOperation: string | null = null;
   try {

@@ -76,6 +76,8 @@ test('Required CI rejects a failed, cancelled, skipped or absent control-plane r
     VISUAL_RESULT: 'skipped',
     PLANNER_SELECTED: 'false',
     PLANNER_RESULT: 'skipped',
+    DOCS_SELECTED: 'false',
+    DOCS_RESULT: 'skipped',
   });
   for (const result of ['success', 'failure', 'cancelled', 'skipped', '']) {
     const run = spawnSync('bash', ['-c', script], {

@@ -38,6 +38,53 @@ export interface ApplicationStateRootOptions {
   environment?: Record<string, string | undefined>;
 }
 
+/** Where the machine-local base of a state root came from. */
+export type ApplicationStateRootSource =
+  /** `XDG_STATE_HOME`, set explicitly by the operator (Linux and others). */
+  | 'xdg-state-home'
+  /** `LOCALAPPDATA` on Windows. */
+  | 'local-app-data'
+  /** The user's home directory: it exists only as long as the home does. */
+  | 'home-directory';
+
+function stateBaseFor(options: ApplicationStateRootOptions): {
+  base: string;
+  source: ApplicationStateRootSource;
+} {
+  const platformName = options.platformName || platform();
+  const homeDirectory = options.homeDirectory || homedir();
+  const environment = options.environment || process.env;
+  if (platformName === 'darwin') {
+    return {
+      base: join(homeDirectory, 'Library', 'Application Support'),
+      source: 'home-directory',
+    };
+  }
+  if (platformName === 'win32') {
+    return environment.LOCALAPPDATA
+      ? { base: environment.LOCALAPPDATA, source: 'local-app-data' }
+      : { base: homeDirectory, source: 'home-directory' };
+  }
+  return environment.XDG_STATE_HOME
+    ? { base: environment.XDG_STATE_HOME, source: 'xdg-state-home' }
+    : {
+        base: join(homeDirectory, '.local', 'state'),
+        source: 'home-directory',
+      };
+}
+
+/**
+ * Which setting decides where this location's custody record lives. A state
+ * root derived from the home directory is lost when the home is recreated
+ * (an ephemeral container filesystem), which makes the next start of a
+ * persisted data root look like an unverified arrival.
+ */
+export function applicationStateRootSource(
+  options: ApplicationStateRootOptions,
+): ApplicationStateRootSource {
+  return stateBaseFor(options).source;
+}
+
 /**
  * State is derived from the canonical application/data identity. It is not an
  * independent override because every process and operator command must share
@@ -51,15 +98,7 @@ export function resolveApplicationStateRoot(
     dataDirectory: options.dataDirectory,
     sourceRoot: options.sourceRoot,
   });
-  const platformName = options.platformName || platform();
-  const homeDirectory = options.homeDirectory || homedir();
-  const environment = options.environment || process.env;
-  const stateBase =
-    platformName === 'darwin'
-      ? join(homeDirectory, 'Library', 'Application Support')
-      : platformName === 'win32'
-        ? environment.LOCALAPPDATA || homeDirectory
-        : environment.XDG_STATE_HOME || join(homeDirectory, '.local', 'state');
+  const stateBase = stateBaseFor(options).base;
   const dataIdentity = createHash('sha256')
     .update(resolve(paths.root))
     .digest('hex')

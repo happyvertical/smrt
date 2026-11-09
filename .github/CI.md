@@ -280,6 +280,8 @@ reason recorded next to the setting or here:
   bounded the same way as `m5-reference-gate`'s: two browser suites, one
   consumer install, the consumer canary and one generated application, each tried at most twice,
   plus one control application when the generated one fails.
+- `docs-scope` at 10 (#4846): a checkout and a paths filter, like
+  `planner-scope`.
 - `required-ci` and `test-packages-result`, which only read `needs.*.result`.
   Both finish in seconds, so failing fast is correct for a job that just
   reports other jobs' results.
@@ -392,6 +394,19 @@ fails that PR, not a release. `on-pull-request.yml`'s `planner-browser` runs
 its two browser suites when `planner-scope` sees planner or shell paths
 change, and `Required CI` treats it like the playground visual lane. The
 release-side gate is under Release artifacts.
+
+The documentation site throws on a broken internal link (#4831), so
+`on-pull-request.yml` builds it before merge (#4846). `docs-scope` selects the
+`docs-site-build` lane when a PR or merge group changes `docs/**`, a workspace
+`README.md` that `docs/scripts/copy-readmes.js` copies, `pnpm-workspace.yaml`
+or `scripts/workspaces.mjs` (its workspace discovery), adds a workspace
+manifest (a new workspace needs a README), or deletes any file (a README or
+doc may link to it). The lane runs the same `pnpm --dir docs install
+--frozen-lockfile` and `pnpm docs:site:build` as `publish.yml`'s
+`deploy-docs`, which remains the only job that uploads and deploys the site.
+`Required CI` treats it like the playground visual lane, and
+`scripts/docs-site-scope.test.mjs` pins the filter against docs and code-only
+changes.
 
 `Required CI` is the aggregate repository-validation status; the PostgreSQL
 lane's `postgres-required` is the second required context (#2659, #3068).

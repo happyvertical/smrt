@@ -50,7 +50,8 @@ Application infrastructure composition for the validated runtime profiles in
   creation uses `TenantService` with the local ownership policy and a trusted
   reserved identity. Default tenant and owner graph IDs derive from the
   protected per-install application secret. Preserve that file when restoring
-  the same installation.
+  the same installation. A missing seed in an initialized root fails closed
+  (`installation_seed_missing`) and is never regenerated.
 - Bootstrap is loopback-only. Only an HMAC of the short-lived token is stored.
   A token that cannot claim fails a read-only preflight before role/catalog
   seeding (#3323); the claim transaction's conditional UPDATE stays the
@@ -84,8 +85,49 @@ Application infrastructure composition for the validated runtime profiles in
   atomic hash replacement and terminal revocation. See the desktop protocol in
   [README.md](README.md). The operator store opens an
   uncached connection and takes no writer lease (revocation is per request).
+- Installation custody (`installation-custody.ts`, #4704): the data root's
+  `secrets/installation.json` travels with copies; the state root's
+  `installation.json` stays at the location; matching `activationId`s mean
+  in custody. Unattributable arrivals fail closed (`installation_unverified`)
+  until `restore` (asserts origin retired; epoch +1), `reseed` (new seed,
+  identities and seed-keyed tokens change; needs `confirmDestroySeed`), `recover-seed` or `retire`
+  (`smrt app installation`). A fresh seed always establishes custody; a
+  pre-existing seed never does. Record and seed reads use `O_NOFOLLOW`, owner
+  and mode checks; writes are atomic. The state root must persist with the
+  data volume (Linux containers: `XDG_STATE_HOME` on that volume, never `HOME`
+  or `/tmp`); the refusal names it. Decision and limits: README.
 - Background jobs and application-defined paid capabilities are default-off.
 - The embedded runner reuses `TaskRunner`; it is not a second job contract.
+
+## Device entitlement cache (`./device-entitlements`, #4787)
+
+- Signed (Ed25519, `node:crypto`), time-limited snapshot of the feature keys
+  one account grants one device, so a local install knows its tier offline.
+  `signDeviceEntitlementSnapshot` runs only on the issuing cloud/billing host;
+  `verifyDeviceEntitlementSnapshot` / `DeviceEntitlementCache` run on the
+  install. Trusted public keys (`trustedKeys`, by key id, rotation = several)
+  come from application configuration, never the cache file or data root: that
+  is why a local install cannot mint its own. Signature is checked before any
+  payload field is read; signed bytes are domain-prefixed
+  (`smrt-device-entitlement-v1\0`); the payload `keyId` must equal the
+  envelope's.
+- Anything but a valid snapshot (absent, expired, tampered, wrong
+  account/device, future-dated beyond `clockSkewMs`, lifetime above
+  `maxLifetimeMs`, older than the watermark, unreadable) is the Local tier with
+  no keys. `status()` and `grantSource()` never throw; `install()`/`refresh()`
+  report a reason and keep what is stored. Invalid *configuration* (non-Ed25519
+  or private key, empty key set, out-of-range durations) throws at construction.
+- Replay: the newest accepted `issuedAt` lives in `<filePath>.watermark`; install
+  and load both compare against it. Deleting/corrupting the watermark or rolling the
+  clock back replays an unexpired snapshot; the issuer's lifetime bounds that.
+- Grace (`gracePeriodMs`, default 0, max 30 d) keeps keys on past `expiresAt`
+  (`state: 'grace'`); skew applies to `issuedAt` only, never extends expiry.
+- Features integration is structural: `cache.grantSource()` is a
+  `FeatureGrantSource` for `FeatureResolver`/`requireFeature`, or
+  `registerDeviceEntitlementGrantSource()` writes the
+  `Symbol.for('@happyvertical/smrt-features:grant-source')` slot. This package
+  must not import `smrt-features`: its dev tooling depends on `smrt-cli`, which
+  depends on this package (a cycle). The transport for `refresh()` is injected.
 
 ## Deployed profiles
 
@@ -190,6 +232,11 @@ Application infrastructure composition for the validated runtime profiles in
   `createProviderReadinessProbe` (`SMRT_*_READINESS_MODULE`, resolved from the
   app root with Node's own ESM rules). File names, record formats, and
   messages are a cross-process contract; never change them unilaterally.
+  `installation.json` joins `writer.lease` and `operation.lock` in the state
+  root; the writer lease record is unchanged. So do `vault-sync.json` and,
+  only during a restore, `data-root-swap.json`: while that journal exists
+  `acquireWriterLease` refuses every writer except `dataRootSwapRecovery`
+  (#4805; README "Vault primary writer and restore-latest").
 - Tests that hook `node:fs` interleavings must live in this package: from a
   consumer the package is an externalized dependency a mock cannot reach.
 
