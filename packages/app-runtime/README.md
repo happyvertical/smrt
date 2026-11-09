@@ -697,6 +697,16 @@ const status = await entitlements.status(); // { tier, state, reason?, featureKe
   acceptable. A snapshot carries at most 64 keys of 128 characters.
 - **Trust.** The cache file and its directory are not trusted; the key set is.
   Ship the public keys in the application, not in the data root.
+- **Identity inputs must be unforgeable.** `accountId` and `deviceId` are the
+  only things that bind a snapshot to this install: a snapshot is accepted when
+  its signed account and device equal the values passed in, and nothing else
+  ties it to the machine. Take them from the installation's own identity (the
+  signed-in account, the installation seed's derived device ID or the device
+  key custody), never from a file, environment variable or setting the user or
+  another local process can edit. If a copied cache file can be paired with
+  edited identity values, it works on another machine until the snapshot
+  expires (plus any grace period) and the keys it carries stay on for that long.
+  Short issued lifetimes limit the exposure; they do not remove it.
 - **Refresh.** The transport is injected (the hosted endpoint is not part of
   this package). Its result is verified like a file; a thrown, timed-out, forged
   or replayed answer leaves the stored snapshot in place.
