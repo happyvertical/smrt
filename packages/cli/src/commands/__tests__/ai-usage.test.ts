@@ -232,6 +232,10 @@ describe('aiUsageCommand', () => {
       'since',
       'until',
       'tenant',
+      'with-transcripts',
+      'all-tenants',
+      'prompt',
+      'actor',
       'json',
     ]);
   });
