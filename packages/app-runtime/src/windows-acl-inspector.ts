@@ -157,12 +157,23 @@ export function buildInspectorEnvironment(
       return inspectorUnavailable();
     }
   }
+  const env = buildAllowListedEnvironment(parent);
+  env[CUSTODY_PATHS_VARIABLE] = paths.join('\n');
+  return env;
+}
+
+/**
+ * The fixed allow-list of inherited variables (never `PATH`), shared by every
+ * child process the Windows custody rule starts.
+ */
+export function buildAllowListedEnvironment(
+  parent: NodeJS.ProcessEnv,
+): Record<string, string> {
   const env: Record<string, string> = {};
   for (const name of INHERITED_VARIABLES) {
     const value = lookupWindowsEnvironment(parent, name);
     if (value !== undefined) env[name] = value;
   }
-  env[CUSTODY_PATHS_VARIABLE] = paths.join('\n');
   return env;
 }
 

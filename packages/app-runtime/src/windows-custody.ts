@@ -39,12 +39,19 @@ import {
 } from 'node:fs';
 import { win32 } from 'node:path';
 import { errorCode } from './error-code.js';
-import { unsafeFilesystemEntry } from './local-runtime-error.js';
+import {
+  LocalRuntimeError,
+  unsafeFilesystemEntry,
+} from './local-runtime-error.js';
 import {
   createPowerShellAclInspector,
   type WindowsAclInspector,
   type WindowsAclRecord,
 } from './windows-acl-inspector.js';
+import {
+  createIcaclsDirectoryLocker,
+  type WindowsDirectoryLocker,
+} from './windows-acl-lock.js';
 import {
   foldWindowsCase,
   isInsideWindowsPath,
@@ -77,6 +84,12 @@ export interface WindowsCustodyRuntime {
   /** Native (`GetFinalPathNameByHandleW`) real path. */
   realpath(path: string): string;
   mkdir(path: string): void;
+  /**
+   * Disable inheritance on a directory this attempt just created and replace
+   * its DACL with full control for `userSid`, SYSTEM and Administrators only
+   * (smrt#4843). Never called on a pre-existing directory.
+   */
+  lockDirectory: WindowsDirectoryLocker;
   rmdir(path: string): void;
   unlink(path: string): void;
   readdir(path: string): string[];
@@ -86,7 +99,11 @@ export interface WindowsCustodyRuntime {
 }
 
 export function createNodeWindowsRuntime(
-  options: { env?: NodeJS.ProcessEnv; inspectAcl?: WindowsAclInspector } = {},
+  options: {
+    env?: NodeJS.ProcessEnv;
+    inspectAcl?: WindowsAclInspector;
+    lockDirectory?: WindowsDirectoryLocker;
+  } = {},
 ): WindowsCustodyRuntime {
   const env = options.env ?? process.env;
   return {
@@ -94,10 +111,13 @@ export function createNodeWindowsRuntime(
     lstat: (path) => lstatSync(path, { bigint: true }),
     realpath: (path) => realpathSync.native(path),
     mkdir: (path) => {
-      // No mode argument: Windows ignores it. The new directory's DACL is
-      // inherited from its parent, which is exactly what W6 re-inspects.
+      // No mode argument: Windows ignores it. The new directory briefly has
+      // the DACL it inherited from its parent; `lockDirectory` replaces it
+      // right away and W6 then re-inspects the result.
       mkdirSync(path);
     },
+    lockDirectory:
+      options.lockDirectory ?? createIcaclsDirectoryLocker({ env }),
     rmdir: (path) => rmdirSync(path),
     unlink: (path) => unlinkSync(path),
     readdir: (path) => readdirSync(path),
@@ -392,6 +412,39 @@ function removeQuietly(action: () => void): void {
   }
 }
 
+/**
+ * Lock a directory this attempt just created (smrt#4843). The creation and the
+ * lock are two steps, so there is a short window in which the directory has
+ * the DACL it inherited; nothing is written into it before it is locked, and
+ * a directory swapped for a link or another object in that window is refused.
+ */
+function lockCreatedDirectory(
+  rt: WindowsCustodyRuntime,
+  path: string,
+  userSid: string,
+): void {
+  const before = rt.lstat(path);
+  if (before.isSymbolicLink() || !before.isDirectory()) {
+    throw unsafeFilesystemEntry(
+      `Local runtime directory changed while it was being created: ${path}`,
+    );
+  }
+  try {
+    rt.lockDirectory(path, userSid);
+  } catch (error) {
+    if (error instanceof LocalRuntimeError) throw error;
+    throw unsafeFilesystemEntry(
+      `Could not restrict the new directory to the current user, SYSTEM and Administrators: ${path}`,
+      error,
+    );
+  }
+  if (identityOf(rt.lstat(path)) !== identityOf(before)) {
+    throw unsafeFilesystemEntry(
+      `Local runtime directory changed while it was being locked: ${path}`,
+    );
+  }
+}
+
 export interface PrivateTreeOptions {
   /** The directory that must end up private (also the custody root). */
   readonly directory: string;
@@ -403,10 +456,13 @@ export interface PrivateTreeOptions {
  * Create (or verify) a private directory and, optionally, one file in it.
  *
  * Existing components are verified first, before anything is created beneath
- * them. Each component this call creates inherits its DACL from a parent we do
- * not control, so the result is re-inspected under the *custodied* rule; on
- * failure exactly the components this call created are removed and the call
- * fails closed. Pre-existing components are never removed.
+ * them. The private directory itself, when this call creates it, is locked
+ * immediately (inheritance off, explicit DACL for the current user, SYSTEM and
+ * Administrators; smrt#4843). Every component this call creates is then
+ * re-inspected under the *custodied* rule; on failure (including a failed
+ * lock) exactly the components this call created are removed and the call
+ * fails closed. Pre-existing components are never removed, never locked and
+ * never re-permissioned: one that fails the rule is refused.
  */
 export function preparePrivateWindowsTree(
   rt: WindowsCustodyRuntime,
@@ -424,7 +480,9 @@ export function preparePrivateWindowsTree(
   const target = file?.path ?? directory;
   const leafType = file === undefined ? 'directory' : 'file';
   const chain = walkWindowsChain(rt, target, leafType);
-  inspectWindowsChain(rt, chain, { custodyRoot: directory });
+  const { userSid } = inspectWindowsChain(rt, chain, {
+    custodyRoot: directory,
+  });
   if (chain.complete) {
     if (file !== undefined)
       verifyWindowsFile(rt, file.path, { size: file.size });
@@ -453,6 +511,12 @@ export function preparePrivateWindowsTree(
         // Planted or concurrently created: it is verified like any other
         // existing component below, and it is not ours to remove.
         if (errorCode(error) !== 'EEXIST') throw error;
+        continue;
+      }
+      // Only the private directory itself is locked (never an ancestor, and
+      // never one that already existed), before anything is written in it.
+      if (foldWindowsCase(component) === foldWindowsCase(directory)) {
+        lockCreatedDirectory(rt, component, userSid);
       }
     }
     const created = new Set(createdDirectories);

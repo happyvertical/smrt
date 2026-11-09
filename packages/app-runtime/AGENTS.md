@@ -37,7 +37,15 @@ Application infrastructure composition for the validated runtime profiles in
   (fixed-argv PowerShell, paths in the environment, ASCII JSON out, every
   failure a refusal; no "unverified" mode), `windows-custody.ts` (synchronous
   chain walk, creation with post-create re-inspection and rollback, bigint
-  identity). Default root is `%LOCALAPPDATA%` only, never APPDATA or home.
+  identity). `windows-acl-lock.ts` (smrt#4843): a directory the runtime itself
+  creates (the private leaf only, never an existing one or an ancestor) is
+  locked at once through `WindowsCustodyRuntime.lockDirectory` (fixed-argv
+  `icacls.exe /inheritance:r /grant:r *user/SY/BA (OI)(CI)F`, path one argv
+  element) and then verified by the unchanged rule; a lock failure removes it.
+  The create-then-lock race is documented as a residual in the README; a
+  pre-existing directory is never re-permissioned and its refusal names the
+  extra principal. The fake machine's `lockMode` defaults to `record` so older
+  tests keep the inherited DACL; use `apply` to model icacls. Default root is `%LOCALAPPDATA%` only, never APPDATA or home.
   Everything runs through `WindowsCustodyRuntime`; tests inject
   `test-support/windows-fake-runtime.ts` with `runWithCustodyContext`
   (`custody-context.ts`), never a public option. SQLite acquisition on Windows

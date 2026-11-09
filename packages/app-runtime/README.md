@@ -242,17 +242,53 @@ gate, not before.
      `WRITE_OWNER`, `FILE_DELETE_CHILD`, `GENERIC_ALL` or `GENERIC_WRITE`;
      creating siblings (`FILE_ADD_FILE`, `FILE_ADD_SUBDIRECTORY`) is tolerated,
      because it cannot replace our child.
-   - *Creation:* every component the runtime creates is re-inspected afterwards
-     under the custodied rule (its DACL was inherited from a parent the runtime
-     does not control). On failure exactly the components that attempt created
-     are removed and the call fails closed; pre-existing components are never
-     removed. This is how `C:\smrt-data` and `D:\apps\x` are refused.
+   - *Creation and locking (smrt#4843):* when the runtime creates the private
+     directory itself (the data directory, the lease directory, the state
+     root) it locks it at once instead of keeping whatever the parent grants:
+     inheritance is disabled and the DACL is replaced with exactly three allow
+     entries, each full control with object and container inheritance, for the
+     current user, `SYSTEM` (`S-1-5-18`) and `Administrators`
+     (`S-1-5-32-544`). Only a directory this call created is ever locked, never
+     one that already existed and never an ancestor such as `AppData\Local`.
+     The lock is
+     `<SystemRoot>\System32\icacls.exe <path> /inheritance:r /grant:r
+     *<userSid>:(OI)(CI)F *S-1-5-18:(OI)(CI)F *S-1-5-32-544:(OI)(CI)F`: an
+     absolute executable, a fixed argv array in which the path is exactly one
+     element (no shell, no string-built command, SIDs rather than localised
+     names), the same allow-listed environment as the inspector (no `PATH`),
+     10 s and 64 KiB bounds, and `shell: false`. A non-zero exit, a timeout or
+     a missing or blocked `icacls.exe` removes the new directory and fails
+     closed. The current user's SID comes from the inspector's answer for the
+     existing chain. Nothing is written into the directory until it is locked,
+     and one that was swapped for a link or another object around the lock is
+     refused. **Residual race:** creating and locking are two steps, so the new
+     (empty) directory briefly has the DACL it inherited; a principal that
+     inherits access can list or open it in that window, and Windows offers no
+     way to create a directory with a DACL in a single call from Node. Nothing
+     sensitive exists in it yet.
+   - *Verification:* every component the runtime creates is then re-inspected
+     under the custodied rule (the lock does not replace the check). On failure
+     exactly the components that attempt created are removed and the call
+     fails closed; pre-existing components are never removed. A created
+     ancestor above the private directory is not locked, so it must satisfy
+     the rule with what it inherited.
+   - *Pre-existing directories:* verified, never re-permissioned. One that
+     fails the rule is refused with an error that names the extra principal
+     (its SID, plus a name when it is a well-known one such as Everyone,
+     Authenticated Users or `BUILTIN\Users`; the inspector does not translate
+     other SIDs, so run `icacls <directory>` to see who it is) and says how to
+     fix it: move the data directory somewhere only you, SYSTEM and
+     Administrators can access, or remove that access yourself. For example,
+     `Local runtime path lacks Windows custody (custodied): C:\...\MyApp:
+     access is granted to S-1-5-21-...-1003. The runtime never changes the
+     permissions of an existing directory. Move the data directory ...`.
    - *Volume:* a local fixed disk (`Win32_LogicalDisk.DriveType` 3) formatted
      NTFS. FAT32, exFAT, network, removable and RAM drives have no usable ACLs.
      ReFS is refused for now (its 128-bit file ids are not handled).
 7. **Explicit roots.** An explicitly configured root that already exists must
-   already satisfy W6. The runtime only verifies; it never edits an ACL. To
-   create a private root outside `%LOCALAPPDATA%`, run (substituting the path):
+   already satisfy W6. The runtime only verifies an existing directory; it never
+   edits its ACL (it only locks directories it creates, see *Creation and
+   locking*). To prepare a private root by hand, run (substituting the path):
 
    ```bat
    mkdir D:\Apps\MyApp
@@ -286,7 +322,7 @@ behaviour is involved, `src/windows-custody.win32.test.ts` (Windows runner only)
 |---|--------|-----------|---------------|
 | WT1 | Another local user reads or replaces the database, secret, markers, leases or state | W6 custodied rule; default root under the user profile | `W6 policy (WT1 other users, WT3 inherited access)` (foreign owner, Everyone, Users, Interactive, Authenticated Users, a domain admin, another local user, NULL/absent DACL, conditional/object/callback/audit ACEs); `refuses an existing root owned by another user before creating anything (WT1)`; `refuses a lease directory planted by another user (WT1, WT2)`; `rejects a database explicitly shared with Users` |
 | WT2 | A junction, symlink or mount point planted in a shared parent at a missing component | W3, W4, post-create W6 | `refuses a symbolic link or junction at an ancestor and at the leaf (WT2)`; `refuses a reparse point that lstat cannot see as a link (WT2, WT7)`; `refuses a directory planted by another user at a missing component, and leaves it alone (WT2)`; real: `refuses a junction at an ancestor and at the root (WT2)` |
-| WT3 | A root created under a parent whose inheritable ACL grants others access (`C:\`, `D:\`) | post-create re-inspection under the custodied rule, with rollback | `removes a root created under C:\ whose inherited ACL admits other users`; `never removes a directory it did not create`; `holds a directory it created to the custodied rule even above the root`; `creates a file and removes it again when its inherited ACL is wrong`; `refuses a lease beside a root whose parent would expose it (WT3)`; `refuses a state base whose inherited ACL admits other users (WT3)`; real: `refuses a directory under C:\ ...` |
+| WT3 | A root created under a parent whose inheritable ACL grants others access (`C:\`, `D:\`, or a profile that inherits a third-party group) | the new root is locked (inheritance off, three-principal DACL; smrt#4843), then re-inspected under the custodied rule, with rollback; an existing one is refused by name | `removes a root created under C:\ whose inherited ACL admits other users`; `never removes a directory it did not create`; `a created directory is locked (smrt#4843)` and `a pre-existing directory that fails the rule is refused by name` (`src/windows-acl-lock.test.ts`); `holds a directory it created to the custodied rule even above the root`; `creates a file and removes it again when its inherited ACL is wrong`; `refuses a lease beside a root whose parent would expose it (WT3)`; `refuses a state base whose inherited ACL admits other users (WT3)`; real: `refuses a directory under C:\ ...` |
 | WT4 | Hard-link games on the database, secret, markers or lease | `nlink === 1` and handle identity (W5) | `refuses a file with a second hard link (WT4, W5)`; `refuses a handle that is not the file lstat saw, even when the ids round to one number (W5)`; `rejects a database with a second hard link`; `refuses a state marker with a second hard link`; `refuses a path that was swapped while its ACL was being read (TOCTOU)` |
 | WT5 | 8.3 aliases, case variants, alternate data streams, trailing dot or space, device names, `\\?\`, UNC, WSL | W1 and W4 | `W1 lexical rule (WT5: aliases, devices, streams)` (every form listed); `appId against Windows device names (WT5)`; `refuses a path that resolves through an 8.3 short name (WT7)`; `refuses a case variant of an existing directory (WT5, D6)`; `refuses to lease through a case variant of an existing parent (D6)`; real: `refuses an 8.3 short-name spelling of a long directory (WT5)` |
 | WT6 | Roaming profile or folder redirection | W2: `LOCALAPPDATA` only | `data root base (WT6: roaming profile)` (missing, empty, APPDATA only, relative, share, device path); `puts the state beside the data under LOCALAPPDATA, never the home directory` |
@@ -300,7 +336,7 @@ behaviour is involved, `src/windows-custody.win32.test.ts` (Windows runner only)
 | G1 | A half-built root left behind on a platform that cannot finish | database acquisition is refused with a named error before any directory is created | `refuses before the lease creates a single directory or file`; `refuses initializeLocalApplicationRuntime the same way`; `refuses acquireLocalDatabase before any filesystem access`; `refuses to open the token store, after validating the stored root` |
 
 Out of scope, as on POSIX: hostile code already running as the same user, and
-Administrators or SYSTEM (trusted like uid 0). Setting or repairing ACLs,
+Administrators or SYSTEM (trusted like uid 0). Repairing the ACL of an existing directory,
 encrypting the database at rest, network shares, and Linux-in-WSL data roots on
 DrvFs/9p (POSIX uid and mode there are synthesized) are not handled here.
 
@@ -322,7 +358,10 @@ trusted principal (<trustee>)`, the custody tests fail, and the first real run
 prints the true descriptors to correct the rule. The failure mode is a refusal
 (fail closed), never an acceptance.
 
-Also unverified until the real-Windows tests have run: how
+Also unverified until the real-Windows tests have run: that `icacls.exe` with
+the argv above produces a descriptor the inspector accepts (expected
+`D:P(A;OICI;FA;;;<user>)(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)`), on a stock profile and
+on one whose `AppData\Local` inherits a third-party group; how
 libuv reports non-symlink reparse tags and `nlink`; `realpath.native` on 8.3,
 `subst` and mapped drives; `fs.open` on a directory; the default DACLs of `C:\`,
 `C:\Users`, a secondary volume root and `%LOCALAPPDATA%` (the SDDL fixtures

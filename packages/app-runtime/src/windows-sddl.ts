@@ -274,6 +274,36 @@ export function trustedPrincipals(userSid: string): ReadonlySet<string> {
 const ANCESTOR_REPLACEMENT_RIGHTS =
   (0x00010000 | 0x00040000 | 0x00080000 | 0x40 | 0x10000000 | 0x40000000) >>> 0;
 
+/** Well-known trustees, for the refusal message only (never for a decision). */
+const WELL_KNOWN_NAMES: Readonly<Record<string, string>> = {
+  'S-1-1-0': 'Everyone',
+  'S-1-5-11': 'Authenticated Users',
+  'S-1-5-32-545': 'BUILTIN\\Users',
+  'S-1-5-4': 'INTERACTIVE',
+  'ALIAS:WD': 'Everyone',
+  'ALIAS:AU': 'Authenticated Users',
+  'ALIAS:BU': 'BUILTIN\\Users',
+  'ALIAS:IU': 'INTERACTIVE',
+  'ALIAS:NU': 'NETWORK',
+  'ALIAS:AN': 'ANONYMOUS LOGON',
+  'ALIAS:LA': 'the local built-in Administrator',
+  'ALIAS:DA': 'Domain Admins',
+  'ALIAS:DU': 'Domain Users',
+};
+
+/**
+ * The principal as a refusal message names it: the SID (or alias) always, plus
+ * a name when it is a well-known one. The inspector does not translate other
+ * SIDs to names, so for those the fix text points at `icacls`.
+ */
+function describeTrustee(trustee: string): string {
+  const name = WELL_KNOWN_NAMES[trustee];
+  return name === undefined ? trustee : `${trustee} (${name})`;
+}
+
+const REFUSAL_REMEDY =
+  'The runtime never changes the permissions of an existing directory. Move the data directory to a location that only you, SYSTEM and Administrators can access, or remove that access yourself (run icacls on the directory to see who holds it).';
+
 export type WindowsCustodyRole =
   /** At or beneath the custody root: nobody but trusted principals. */
   | 'custodied'
@@ -292,7 +322,7 @@ export function assertWindowsSecurityPolicy(
 ): void {
   const reject = (reason: string): never => {
     throw unsafeFilesystemEntry(
-      `Local runtime path lacks Windows custody (${role}): ${label}: ${reason}`,
+      `Local runtime path lacks Windows custody (${role}): ${label}: ${reason}. ${REFUSAL_REMEDY}`,
     );
   };
   const trusted = trustedPrincipals(userSid);
@@ -321,7 +351,7 @@ export function assertWindowsSecurityPolicy(
         (inheritOnly && ace.trustee === SID_CREATOR_OWNER);
       if (!allowed) {
         reject(
-          `${inheritOnly ? 'inheritable ' : ''}access is granted to ${ace.trustee}`,
+          `${inheritOnly ? 'inheritable ' : ''}access is granted to ${describeTrustee(ace.trustee)}`,
         );
       }
       continue;
@@ -338,7 +368,9 @@ export function assertWindowsSecurityPolicy(
       !trustedTrustee &&
       (ace.mask & ANCESTOR_REPLACEMENT_RIGHTS) >>> 0 !== 0
     ) {
-      reject(`${ace.trustee} may delete or re-secure what is beneath it`);
+      reject(
+        `${describeTrustee(ace.trustee)} may delete or re-secure what is beneath it`,
+      );
     }
   }
 }

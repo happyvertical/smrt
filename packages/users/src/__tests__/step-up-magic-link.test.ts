@@ -107,6 +107,31 @@ describe('magic-link step-up', () => {
     expect(await rows.list({})).toHaveLength(before.length);
   });
 
+  it('lets an owner who only ever signed in with OIDC step up by email', async () => {
+    // Eligibility is any active user with a valid email, whatever method the
+    // session came from: a Google-only family has no password, passkey or
+    // magic-link sign-in and must still be able to step up.
+    const sessionId = await sessions.createSession(ownerId, undefined, {
+      authMethod: 'oidc',
+    });
+    const before = await context(sessionId);
+    expect(() => requireRecentAuthentication(before)).toThrow(
+      StepUpRequiredError,
+    );
+
+    const { token, email } = await links.requestStepUp({ sessionId });
+    expect(email).toBe('owner@example.com');
+    await links.consumeStepUp({ token, sessionId });
+
+    const fresh = await context(sessionId);
+    expect(() =>
+      requireRecentAuthentication(fresh, {
+        expectedSessionId: sessionId,
+        expectedUserId: ownerId,
+      }),
+    ).not.toThrow();
+  });
+
   it('caps a step-up link at the step-up window whatever the sign-in expiry', async () => {
     const long = await MagicLinkService.create({
       ...options,
