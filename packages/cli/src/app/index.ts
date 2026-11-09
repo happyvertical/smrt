@@ -30,6 +30,58 @@ export {
   withOperationLock,
 } from '@happyvertical/smrt-app-runtime';
 export {
+  BACKUP_TARGETS_FILE,
+  BACKUPS_USAGE,
+  type BackupTargetConfig,
+  type BackupTargetDependencies,
+  backupToTarget,
+  createBackupTarget,
+  parseTargetConfig,
+  readBackupConfig,
+  runBackupsCommand,
+} from './backup-command.js';
+export {
+  FileBackupTarget,
+  type FileBackupTargetOptions,
+} from './backup-target-file.js';
+export {
+  assertDriveFolderName,
+  assertNarrowDriveScope,
+  createGoogleDriveFilesystem,
+  DEFAULT_DRIVE_MAX_BYTES,
+  DRIVE_APPDATA_SCOPE,
+  DRIVE_FILE_SCOPE,
+  type DriveCredentials,
+  type DriveFilesystem,
+  GoogleDriveBackupTarget,
+  type GoogleDriveBackupTargetOptions,
+  mapDriveError,
+} from './backup-target-gdrive.js';
+export {
+  DEFAULT_VAULT_CHUNK_BYTES,
+  normalizeRelayUrl,
+  VAULT_FEATURE_KEY,
+  VAULT_SIGNATURE_PROTOCOL,
+  type VaultDeviceSigner,
+  type VaultEntitlementSource,
+  VaultRelayBackupTarget,
+  type VaultRelayBackupTargetOptions,
+} from './backup-target-vault.js';
+export {
+  type BackupObject,
+  type BackupPutRequest,
+  type BackupRetention,
+  type BackupTarget,
+  BackupTargetError,
+  type BackupTargetErrorCode,
+  type BackupTargetKind,
+  objectNameForSequence,
+  planRetention,
+  type RetentionPlan,
+  sequenceFromObjectName,
+  verifiedCiphertext,
+} from './backup-targets.js';
+export {
   APP_COMMANDS,
   APP_RECOVERY,
   type AppErrorEnvelope,
