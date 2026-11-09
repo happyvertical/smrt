@@ -18,15 +18,20 @@
 #    including the updater feed `latest.json`. It FAILS CLOSED: the first job
 #    refuses to continue unless every signing secret, a real updater public
 #    key and the product inputs exist, and each target refuses a bundle that
-#    was not built from a gpg-verified Node pin. Nothing here generates,
-#    defaults or invents a key, certificate, identity or secret. Until the
-#    owner supplies them (see "Release pipeline" in
+#    does not match the committed, gpg-verified Node pin. Nothing here
+#    generates, defaults or invents a key, certificate, identity or secret.
+#    Until the owner supplies them (see "Release pipeline" in
 #    packages/smrt-desktop/shell/README.md) this path stops at its preflight.
 #
 # The product code (the app and its dependencies) only ever runs in
-# release-bundle, which has no secrets. The job that holds the signing secrets
-# runs the shell's own build and the pinned Tauri toolchain, on a bundle whose
-# file digests it re-verifies after the artifact hop.
+# release-bundle, which has no secrets, no environment and no cache writes.
+# The jobs that hold the signing secrets (release-preflight and release) and
+# the job that publishes (release-publish) all run in the `desktop-release`
+# GitHub environment. The owner restricts that environment to main and puts
+# the secrets in it; a workflow file edited on another branch or in a pull
+# request cannot reach them. The signing legs publish nothing: they upload
+# their output as workflow artifacts, and release-publish, which needs every
+# leg, writes the release and latest.json in one go.
 # =============================================================================
 
 name: Desktop release
@@ -131,9 +136,12 @@ jobs:
         with:
           workspaces: packages/smrt-desktop/shell
 
-      - name: Test the release preflight
+      - name: Test the release preflight and the release feed
         if: runner.os == 'Linux'
-        run: node --test "$SHELL_DIR/scripts/release-preflight.test.mjs"
+        run: |
+          node --test \
+            "$SHELL_DIR/scripts/release-preflight.test.mjs" \
+            "$SHELL_DIR/scripts/release-feed.test.mjs"
 
       - name: Install the pinned Tauri CLI
         run: npm install --global --ignore-scripts "@tauri-apps/cli@${TAURI_CLI_VERSION}"
@@ -169,6 +177,9 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && inputs.release
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # Secrets live in this environment, not in the repository. Restricted to
+    # main with required reviewers by the owner; see the README.
+    environment: desktop-release
     steps:
       - name: Require main
         env:
@@ -209,9 +220,10 @@ jobs:
             --config "$SHELL_DIR/tauri.conf.json" \
             --inputs "$PRODUCT_DIR" "$BRIDGE_PATH"
 
-  # Runs the product's own code, so it holds no secrets and only `contents:
-  # read`. `--require-verified-pins` refuses an unverified Node pin before any
-  # work (exit 4).
+  # Runs the product's own code, so it holds no secrets, no environment and
+  # only `contents: read`. It installs cold and saves no cache: what it
+  # writes could otherwise be restored by a trusted run. `--require-verified-
+  # pins` refuses an unverified Node pin before any work (exit 4).
   release-bundle:
     name: Bundle the product (${{ matrix.target }})
     needs: release-preflight
@@ -235,6 +247,8 @@ jobs:
         uses: ./.github/actions/setup-environment
         with:
           setup-playwright: 'false'
+          turbo-cache-shim: 'off'
+          pnpm-cache: 'false'
 
       - name: Build the s-m-r-t CLI and the bundler
         run: pnpm turbo run build --filter=@happyvertical/smrt-cli...
@@ -270,24 +284,26 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  # Builds, signs and verifies one target and uploads the result as a workflow
+  # artifact. It never publishes and holds only `contents: read`; the
+  # secrets come from the `desktop-release` environment.
   release:
-    name: Sign and publish (${{ matrix.target }})
+    name: Sign and verify (${{ matrix.target }})
     needs: [release-preflight, release-bundle]
-    # The only job with `contents: write`. macOS signing runs on the runner
-    # named by the repository variable DESKTOP_MACOS_SIGNING_RUNNER (a label,
-    # or a JSON array of labels for a self-hosted runner); the default is the
-    # GitHub-hosted macos-14. The self-hosted runner is not assumed.
+    # macOS signing runs on the runner named by the repository variable
+    # DESKTOP_MACOS_SIGNING_RUNNER (a label, or a JSON array of labels for a
+    # self-hosted runner); the default is the GitHub-hosted macos-14. The
+    # self-hosted runner is not assumed.
     runs-on: ${{ fromJSON(startsWith(matrix.runner, '[') && matrix.runner || format('["{0}"]', matrix.runner)) }}
     timeout-minutes: 90
-    permissions:
-      contents: write
+    environment: desktop-release
     defaults:
       run:
         shell: bash
-    # One at a time: every leg merges its platform into the same latest.json.
+    # One failed leg stops the others: nothing is published unless all four
+    # succeed, so finishing the rest would only spend signing minutes.
     strategy:
-      fail-fast: false
-      max-parallel: 1
+      fail-fast: true
       matrix:
         include:
           - target: aarch64-apple-darwin
@@ -320,10 +336,14 @@ jobs:
         with:
           node-version: '24'
 
-      # Re-verify the bundle after the artifact hop, and turn its identity
-      # into the Tauri config overlay. Fails closed on an unverified Node pin,
-      # a placeholder identity, another target or a changed file.
-      - name: Preflight the bundle and write the config overlay
+      # Re-verify the bundle after the artifact hop against the COMMITTED Node
+      # pin record of this (main) checkout, never against the bundle's own
+      # claim. Fails closed on a pin that is not committed and gpg-verified, a
+      # placeholder identity, another target, a changed, unlisted or symlinked
+      # file or any extra Tauri key. Then writes the config overlay from an
+      # allowlist and copies exactly the verified files next to
+      # tauri.conf.json (the paths in tauri.bundle.json are relative to it).
+      - name: Preflight the bundle, write the overlay and stage the files
         env:
           TARGET: ${{ matrix.target }}
         run: |
@@ -333,10 +353,9 @@ jobs:
             --config "$SHELL_DIR/tauri.conf.json" \
             --bundle ".desktop-bundle/$TARGET" \
             --target "$TARGET" \
-            --write-overlay "$SHELL_DIR/tauri.release.json"
-          # tauri.bundle.json paths are relative to the Tauri config directory.
-          cp -R ".desktop-bundle/$TARGET/binaries" "$SHELL_DIR/binaries"
-          cp -R ".desktop-bundle/$TARGET/resources" "$SHELL_DIR/resources"
+            --node-pins packages/smrt-desktop/src/bundler/node-pins.ts \
+            --write-overlay "$SHELL_DIR/tauri.release.json" \
+            --stage "$SHELL_DIR"
 
       - name: Install Tauri Linux system dependencies
         if: runner.os == 'Linux'
@@ -347,6 +366,8 @@ jobs:
             libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
             librsvg2-dev libssl-dev libxdo-dev patchelf
 
+      # No rust-cache here: a restored cache is code that runs with the
+      # signing key, so this job builds cold.
       - name: Set up Rust
         env:
           TARGET: ${{ matrix.target }}
@@ -355,20 +376,15 @@ jobs:
           rustup default stable
           rustup target add "$TARGET"
 
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-        with:
-          workspaces: packages/smrt-desktop/shell
-
       - name: Install the pinned Tauri CLI
         run: npm install --global --ignore-scripts "@tauri-apps/cli@${TAURI_CLI_VERSION}"
 
-      # Apple credentials reach only this step, and only on macOS.
-      - name: Build, sign, notarize and publish (macOS)
+      # Apple credentials reach only this step, and only on macOS. There is no
+      # tagName and no release id: this builds and publishes nothing.
+      - name: Build, sign and notarize (macOS)
         if: runner.os == 'macOS'
         uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # action-v1.0.0
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
@@ -381,35 +397,23 @@ jobs:
           projectPath: packages/smrt-desktop/shell
           tauriScript: tauri
           args: --target ${{ matrix.target }} --config tauri.release.json --bundles ${{ matrix.bundles }}
-          tagName: desktop-latest
-          releaseName: Desktop (rolling)
-          releaseBody: Rolling desktop build and updater feed (latest.json). Not a versioned release.
-          prerelease: true
-          uploadUpdaterJson: true
-          retryAttempts: 1
+          uploadUpdaterJson: false
 
-      - name: Build, sign and publish (Windows and Linux)
+      - name: Build and sign (Windows and Linux)
         if: runner.os != 'macOS'
         uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # action-v1.0.0
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: packages/smrt-desktop/shell
           tauriScript: tauri
           args: --target ${{ matrix.target }} --config tauri.release.json --bundles ${{ matrix.bundles }}
-          tagName: desktop-latest
-          releaseName: Desktop (rolling)
-          releaseBody: Rolling desktop build and updater feed (latest.json). Not a versioned release.
-          prerelease: true
-          uploadUpdaterJson: true
-          updaterJsonPreferNsis: true
-          retryAttempts: 1
+          uploadUpdaterJson: false
 
       # A build that came out unsigned or un-notarized must not stand as a
-      # release. Runs after the upload, so it is a loud failure for the owner,
-      # not a gate; Tauri itself fails the build when signing fails.
+      # release. This runs BEFORE the leg is uploaded, so a failure here keeps
+      # the whole release from being published.
       - name: Verify the macOS signature and notarization ticket
         if: runner.os == 'macOS'
         env:
@@ -419,3 +423,91 @@ jobs:
           test -n "$app" || { echo "No .app bundle was produced." >&2; exit 1; }
           codesign --verify --deep --strict --verbose=2 "$app"
           xcrun stapler validate "$app"
+
+      # Collect exactly one installer (and, where the updater can use it, one
+      # archive with its signature) under safe unique names.
+      - name: Stage the leg output
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          node "$SHELL_DIR/scripts/release-feed.mjs" leg \
+            --target "$TARGET" \
+            --bundle-dir "$SHELL_DIR/target/$TARGET/release/bundle" \
+            --overlay "$SHELL_DIR/tauri.release.json" \
+            --out .desktop-leg
+
+      - name: Upload the leg
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: desktop-release-${{ matrix.target }}
+          path: .desktop-leg
+          if-no-files-found: error
+          retention-days: 1
+
+  # The only job that can write the release. It needs every leg, so a failed
+  # leg, a failed signature check or a missing artifact means nothing is
+  # published. New assets are uploaded first and latest.json last, so the feed
+  # never points at an asset that is not there yet.
+  release-publish:
+    name: Publish the release (all legs verified)
+    needs: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: desktop-release
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: desktop-latest
+    steps:
+      - name: Require main
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          if [ "$REF" != "refs/heads/main" ]; then
+            echo "A release is only published from main; this run is on ${REF}." >&2
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '24'
+
+      - name: Download every leg
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: desktop-release-*
+          path: .desktop-legs
+
+      # Refuses a missing leg, a version mismatch, a symlink or a missing
+      # signature. Writes the assets and latest.json to .desktop-publish.
+      - name: Assemble the assets and the updater feed
+        env:
+          REPO: ${{ github.repository }}
+        run: |
+          node "$SHELL_DIR/scripts/release-feed.mjs" feed \
+            --legs .desktop-legs \
+            --targets aarch64-apple-darwin,x86_64-apple-darwin,x86_64-pc-windows-msvc,x86_64-unknown-linux-gnu \
+            --repo "$REPO" \
+            --tag "$RELEASE_TAG" \
+            --out .desktop-publish
+
+      - name: Publish to the rolling release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" \
+              --prerelease \
+              --target "$GITHUB_SHA" \
+              --title 'Desktop (rolling)' \
+              --notes 'Rolling desktop build and updater feed (latest.json). Not a versioned release.'
+          fi
+          gh release upload "$RELEASE_TAG" .desktop-publish/assets/* --clobber
+          gh release upload "$RELEASE_TAG" .desktop-publish/latest.json --clobber

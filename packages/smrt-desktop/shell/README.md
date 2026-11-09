@@ -172,10 +172,10 @@ Rust checks (fmt, clippy, tests on Ubuntu); this workflow builds.
 | --- | --- | --- |
 | Trigger | pull request or push to main that changes `packages/smrt-desktop/**` or the workflow; manual dispatch | manual dispatch from main with `release` set; nothing else reaches it |
 | Signing | none, unsigned | Apple Developer ID signing and notarization, Tauri updater signature |
-| Token and secrets | `contents: read`, no secrets | `contents: write` in the publishing job only; secrets reach only the preflight step and the build step |
+| Token and secrets | `contents: read`, no secrets | secrets come from the `desktop-release` environment and reach only the preflight step and the build step; `contents: write` only in the final publish job |
 | Matrix | macOS arm64 (`macos-14`), macOS x64 (`macos-15-intel`), Windows, Linux | the same four targets |
 | Product | none: the shell is compiled and linked with `tauri build --no-bundle` | a bundle made by `smrt desktop bundle` for each target |
-| Output | pull requests upload nothing; main and dispatch keep the unsigned shell binary for 3 days | the rolling `desktop-latest` prerelease plus `latest.json` (the updater feed) |
+| Output | pull requests upload nothing; main and dispatch keep the unsigned shell binary for 3 days | one publish step, after every target is built and verified, to the rolling `desktop-latest` prerelease plus `latest.json` (the updater feed) |
 
 Pull request builds are a compile and link smoke, not a product build. There is
 no product in this repository, so no `externalBin`, resources or installer are
@@ -202,27 +202,117 @@ exist:
    paths.
 
 Each target then checks its bundle again after the artifact hop, before any
-signing: the bundle report says the Node pin is `gpg-verified` with signer
-fingerprints (the bundle step also runs `smrt desktop bundle
---require-verified-pins`), the target matches, every file still has the digest
-in `bundle-files.sha256`, and the product identity is not empty or a
-placeholder. The committed `productName` and `identifier` are placeholders on
-purpose: the release identity comes only from the bundle (`bundleId`,
-`displayName`, `productVersion` in `bundle-report.json`), written into a
-`tauri.release.json` overlay together with `tauri.bundle.json`. The bundle's
-`binaries/` and `resources/` are copied next to `tauri.conf.json` because the
-paths in `tauri.bundle.json` are relative to it. A build with any of this
-missing stops before it holds a signing key.
+signing, and the checks are made in the job that holds the signing key against
+the trusted checkout (main), not against what the bundle says about itself:
+
+- `tauri.bundle.json` must be exactly `bundle.externalBin` (one entry, the
+  product-scoped `binaries/<productId>-node`) and `bundle.resources`
+  (`{"resources/": "./"}`) and nothing else, at any level. The overlay handed
+  to the signing build is built from an allowlist (that sidecar, that resource
+  directory, `createUpdaterArtifacts: true`), so a `signCommand`, an NSIS
+  template, extra `files`, entitlements or any other key in the bundle cannot
+  reach it. The overlay's product name and version are also validated (safe
+  characters, semantic version).
+- `binaries/` and `resources/` are walked with `lstat`. Any symlink or other
+  non-regular file fails; so does any file the digest list
+  (`bundle-files.sha256`) does not name and any listed file that is missing or
+  has a different digest. Only the files that passed are copied next to
+  `tauri.conf.json` (each is read once, hashed again and written without
+  overwrite); there is no recursive copy of the downloaded tree.
+- The Node pin is compared with the committed table,
+  `packages/smrt-desktop/src/bundler/node-pins.ts`, read from the trusted
+  checkout with a small strict parser. That record, not the report, must say
+  the release is `gpg-verified` (with signer fingerprints), the report's Node
+  version and dist file must exist in the table for this target, and the
+  report's archive digest must equal the committed digest. The sidecar file's
+  digest must equal the `binarySha256` the report records.
+- The target matches and the product identity is not empty or a placeholder.
+
+What the Node check does and does not prove. For **Windows** the committed pin
+is the digest of `node.exe` itself, so the sidecar is proved byte-for-byte to
+be the pinned, gpg-verified binary. For **macOS and Linux** the table pins the
+`.tar.gz` archive; the sidecar is the `bin/node` member the untrusted bundle
+job extracted from it, and the signing job does not re-extract anything. There
+the check proves that the report claims the committed archive and that the
+sidecar matches the report's own `binarySha256`, but **not** that the sidecar
+is the binary inside that archive; a bundle job that swapped the binary and
+kept the genuine archive digest would pass. (The unit test
+`does not prove an extracted tar.gz binary` records this limit.) Closing it
+needs the extracted binary's digest pinned too (a change to
+`update-node-pins.mjs` and the table) or the signing job fetching and
+extracting the pinned archive itself. The bundle job's own
+`--require-verified-pins` run is not a defence against a compromised bundle
+job, only a fast failure.
+
+The committed `productName` and `identifier` are placeholders on purpose: the
+release identity comes only from the bundle (`bundleId`, `displayName`,
+`productVersion` in `bundle-report.json`), written into the allowlisted
+`tauri.release.json` overlay. A build with any of this missing stops before it
+holds a signing key.
 
 The product code (the app, its dependencies, `pnpm install`, `smrt app build`
 and the bundler) runs only in the secretless bundle job on a GitHub-hosted
-runner. The job that holds the signing secrets runs the shell's own build and
-the pinned Tauri toolchain.
+runner. That job has no environment, installs with no pnpm cache and no Turbo
+cache shim (it saves nothing a trusted run could restore), and the signing job
+restores no cargo cache either: it builds cold with the pinned Tauri toolchain.
 
 macOS signing runs on the runner named by the repository variable
 `DESKTOP_MACOS_SIGNING_RUNNER` (a runner label, or a JSON array of labels for a
 self-hosted runner), default `macos-14`. Both macOS targets build there; the
 x64 target is cross-compiled. Nothing assumes a self-hosted runner may be used.
+
+### All or nothing publishing
+
+The four signing legs publish nothing. Each builds, signs, and (macOS) runs
+`codesign --verify --deep --strict` and `xcrun stapler validate` on its `.app`,
+then stages its installer, updater archive and signature under safe names
+(`scripts/release-feed.mjs leg`) and uploads them as a one-day workflow
+artifact. `fail-fast` stops the other legs when one fails. The
+`release-publish` job `needs` every leg, so it runs only when all four
+succeeded; it assembles one `latest.json` and the asset set
+(`release-feed.mjs feed`: refuses a missing leg, a version mismatch, a symlink
+or a missing signature), uploads the new assets to `desktop-latest` first and
+`latest.json` last, so the feed never names an asset that is not there yet.
+Linux ships a `.deb` only; the Tauri updater cannot update a `.deb`, so the
+feed has no Linux entry (AppImage is not built in v1). Assets are named
+`<product>_<version>_<target>.<ext>` so a rebuild of the same version replaces
+the same names and a new version never overwrites the previous feed's
+targets.
+
+### Owner setup (once, before the first release)
+
+The release path trusts its location. A workflow file lives on whatever branch
+a person with write access dispatches it from, and a same-repository pull
+request that edits it receives repository secrets, so the main-only check
+inside the file is not a control on its own. The gate is a GitHub environment.
+Do these in order:
+
+1. **Create the `desktop-release` environment first**, before storing any
+   secret (Settings, Environments). A workflow that names an environment that
+   does not exist creates it silently and **unprotected**; the preflight then
+   fails closed on the missing secrets, which is the backstop, not the
+   control.
+2. Under **Deployment branches and tags**, restrict it to the `main` branch
+   only. A dispatch from any other branch, or a pull request, then cannot read
+   anything in it.
+3. Add **required reviewers** (and, if wanted, prevent self-review). Expect an
+   approval prompt for the preflight, one for the signing legs and one for the
+   publish job.
+4. Store **all eight secrets in the environment, not as repository secrets**:
+   `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`,
+   `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID`, `TAURI_SIGNING_PRIVATE_KEY`
+   and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. If any of them also exists as a
+   repository or organization secret, delete that copy.
+5. If the macOS runner is not the default, set the **`DESKTOP_MACOS_SIGNING_RUNNER`
+   variable in the same environment** (an environment variable is visible only
+   to the jobs that use the environment). Without it the signing legs use
+   `macos-14`.
+6. Commit the updater public key as `plugins.updater.pubkey` in
+   `tauri.conf.json` (see Owner inputs below).
+7. Have a maintainer run `scripts/update-node-pins.mjs` with `gpg` so the
+   committed record for the Node version is `gpg-verified`.
+
+The environment is deliberately not created or populated by this repository.
 
 ### Owner inputs still missing
 
@@ -231,40 +321,52 @@ exist the release path stops at its preflight. Item 4 (#4835, packaging
 matrix) and the signing half of #4836 are `status: blocked` on them.
 
 1. **Apple Developer ID certificate and notarization credentials**, as the six
-   repository secrets above (the certificate is a base64 `.p12`; the password
-   is an app-specific password).
+   Apple secrets above, stored in the `desktop-release` environment (the
+   certificate is a base64 `.p12`; the password is an app-specific password).
 2. **Permission to generate the Tauri updater signing key** and a decision on
    where its private half lives. The private key and its password become
-   `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`; the
+   `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` (also
+   in the environment); the
    public half is committed as `plugins.updater.pubkey` in `tauri.conf.json`.
    Losing the private key strands every installed copy.
 3. **macOS arm64 runner confirmation**: either keep GitHub-hosted `macos-14` or
    state that the self-hosted runner used for ergot may be reused for signing
-   and set `DESKTOP_MACOS_SIGNING_RUNNER` to it.
+   and set `DESKTOP_MACOS_SIGNING_RUNNER` to it (in the environment).
 4. **Product identity strings** (bundle identifier, display name) in the
    product's `smrt-desktop.json`, plus real product icons: the icons in
    `icons/` are placeholders and no product icons are supplied by the bundle.
 5. **A gpg-verified Node pin.** The only pin, Node 26.8.1, is `unverified` (see
    `../README.md`, Node pin provenance); a maintainer with `gpg` must run
-   `scripts/update-node-pins.mjs`.
+   `scripts/update-node-pins.mjs`. The signing job reads this committed record,
+   so a release cannot be signed until it says `gpg-verified`.
 6. **The product itself** for the `product_dir` and `bridge_path` inputs: a
    standalone app with `smrt-desktop.json`, its lockfile and a pre-bundled MCP
    bridge.
 
 ### Not verified
 
-A workflow cannot be run locally. `actionlint`, `yamllint`, the preflight unit
-tests and a local `tauri build --no-bundle` of the shell were run; the hosted
-runners, `tauri-action`'s publishing, `latest.json` merging, notarization and
-the final macOS `codesign` and `stapler` checks have not run. Known gaps for
+A workflow cannot be run locally. `actionlint`, `yamllint`, the preflight and
+feed unit tests and a local `tauri build --no-bundle` of the shell were run; the
+hosted runners, the `desktop-release` environment (its branch rule, reviewers
+and secret scoping), `tauri-action` building without a release, notarization,
+the `codesign` and `stapler` checks, the artifact hand-off between jobs, the
+`gh release` upload and Tauri's updater signature have not run. Known gaps for
 the first real run:
 
 - The Node sidecar needs a JIT entitlement under the hardened runtime
   (`com.apple.security.cs.allow-jit`); no entitlements file is committed
   because it cannot be tested without the certificate.
-- The release is published before the macOS verification step runs, so a bad
-  build is a loud failure but is already uploaded; the rolling release keeps
+- Publishing is all or nothing across the four legs, but the final step is two
+  `gh release upload` calls (assets, then `latest.json`), not a transaction: a
+  failure between them leaves new assets next to the previous feed, which still
+  points at the previous, still present, assets. The rolling release keeps
   every version's assets until pruned.
+- The updater signature is produced by Tauri in the signing leg and copied into
+  `latest.json`; nothing in the publish job verifies it against the public key.
+- The macOS and Linux sidecar binary is not proved to be the one in the pinned
+  archive (see above).
+- Tar extraction of the downloaded bundle uses the runner's `tar`; the
+  `lstat` walk afterwards is what refuses symlinks and extra files.
 - Windows installers and Linux packages carry the updater signature but no
   platform code-signing certificate; none was requested. AppImage is not built
   (the launcher does not support it in v1).
@@ -295,8 +397,9 @@ cargo test --locked
   for changes under `packages/smrt-desktop/shell/` only. It is path filtered
   and is not a required check. The build and release workflow is described
   under Release pipeline.
-- `node --test scripts/release-preflight.test.mjs` covers the release
-  preflight.
+- `node --test scripts/release-preflight.test.mjs scripts/release-feed.test.mjs`
+  covers the release preflight (closed Tauri fragment, tree walk, committed
+  Node pin) and the release asset and feed assembly.
 
 Manual smoke run: in a debug build the resource directory is the executable directory, so put a
 `sidecar-manifest.json`, the sidecar script and a symlink named like the
