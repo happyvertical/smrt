@@ -259,6 +259,41 @@ describe('VaultLeaseKeeper', () => {
     });
     expect(lease.state).toBe('stopped');
   });
+
+  it('ignores a renewal that answers after stop (no revival, no new timer)', async () => {
+    let answerRenewal: (reply: VaultRelayResponse) => void = () => undefined;
+    const slow = new VaultLeaseClient({
+      async send(_method, path, body) {
+        calls.push({ path, body });
+        if (path === '/v1/lease/renew') {
+          return new Promise<VaultRelayResponse>((resolve) => {
+            answerRenewal = resolve;
+          });
+        }
+        const reply = replies.shift();
+        if (!reply) throw new Error(`unexpected call ${path}`);
+        if (reply instanceof Error) throw reply;
+        return reply;
+      },
+    });
+    replies.push(granted(5), { status: 204, body: null });
+    const lease = new VaultLeaseKeeper({
+      client: slow,
+      stateRoot,
+      accountId: 'acct-a',
+      monotonicNow: () => clock,
+      timers,
+    });
+    await lease.start();
+    const renewing = lease.renew();
+    await lease.stop();
+    pending = [];
+    answerRenewal(granted(5));
+    await renewing;
+    expect(lease.state).toBe('stopped');
+    expect(lease.writable()).toBe(false);
+    expect(pending).toEqual([]);
+  });
 });
 
 describe('vault sync record', () => {

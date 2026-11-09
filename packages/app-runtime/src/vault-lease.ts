@@ -362,9 +362,18 @@ export class VaultLeaseKeeper {
       return this.currentState;
     }
     const sentAt = this.now();
+    const sentToken = this.token;
+    // A response that arrives after stop() (or after the lease was replaced)
+    // belongs to a lease this keeper no longer holds: it must not revive the
+    // keeper, restart the timer or fail it into another state.
+    const superseded = () =>
+      this.currentState !== 'held' || this.token !== sentToken;
     try {
-      this.accept(sentAt, await this.options.client.renew(this.token));
+      const granted = await this.options.client.renew(sentToken);
+      if (superseded()) return this.currentState;
+      this.accept(sentAt, granted);
     } catch (error) {
+      if (superseded()) return this.currentState;
       if (
         error instanceof VaultLeaseError &&
         error.code === 'relay_error' &&
