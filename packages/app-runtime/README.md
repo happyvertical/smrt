@@ -290,7 +290,9 @@ writes.
 
 - **Position** (`vault-sync-state.ts`): `<state root>/vault-sync.json` records
   the vault account, `baseSequence` (the snapshot this data root is at),
-  `highestSeenSequence` (the downgrade floor, since the relay is untrusted)
+  `highestSeenSequence` (the downgrade floor, since the relay is untrusted;
+  raised only from sequences this location published or restored, never from
+  a lease grant's head, which can be an uncommitted hole or a hostile claim)
   and `localWritesPending`. It lives in the state root, so a copied data root
   cannot carry a forged position.
 - **Lease keeper** (`vault-lease.ts`): `VaultLeaseKeeper` acquires the relay

@@ -324,12 +324,15 @@ export class VaultLeaseKeeper {
       return this.currentState;
     }
     try {
+      // The downgrade floor only ever rises from sequences known to be
+      // committed: ones this location published or restored (recorded by
+      // `recordPublished` and by restore-latest). A granted `headSequence`
+      // can be a hole (an upload that never committed, which the relay lets a
+      // device at the latest committed sequence acquire past) or a number a
+      // hostile relay chose; raising the floor to it would make the real
+      // latest snapshot look like a downgrade at the next restore.
       writeVaultSyncRecord(this.options.stateRoot, {
         ...sync,
-        highestSeenSequence: Math.max(
-          sync.highestSeenSequence,
-          granted.headSequence,
-        ),
         localWritesPending: true,
       });
     } catch (error) {

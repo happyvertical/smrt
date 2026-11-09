@@ -107,6 +107,28 @@ describe('VaultLeaseKeeper', () => {
     expect(readVaultSyncRecord(stateRoot)?.localWritesPending).toBe(true);
   });
 
+  it('does not raise the downgrade floor to a granted head that is a hole', async () => {
+    writeVaultSyncRecord(stateRoot, {
+      accountId: 'acct-a',
+      baseSequence: 4,
+      highestSeenSequence: 4,
+      localWritesPending: false,
+    });
+    // The relay head moved to 9 for an upload that never committed; this
+    // device (at the latest committed sequence 4) is allowed to acquire past
+    // it. A hostile relay can also just claim a huge head.
+    replies.push(granted(7, 9));
+    expect(await keeper().start()).toBe('held');
+    expect(readVaultSyncRecord(stateRoot)).toMatchObject({
+      baseSequence: 4,
+      highestSeenSequence: 4,
+      localWritesPending: true,
+    });
+    replies.push(granted(8, 2 ** 40));
+    await keeper().start();
+    expect(readVaultSyncRecord(stateRoot)?.highestSeenSequence).toBe(4);
+  });
+
   it('renews ahead of expiry and stays writable', async () => {
     replies.push(granted(1), granted(1));
     const lease = keeper();
