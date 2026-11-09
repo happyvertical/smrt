@@ -132,7 +132,7 @@ third weighs them, or one drafts and another answers. SMRT ships the
 interpreter and three modes; you define every fusion. Callers do not change:
 they ask for a tier, and the tier is bound to the fusion.
 
-| Mode | Model calls | Shape |
+| Mode | Seat calls | Shape |
 | --- | --- | --- |
 | `single` | 1 | one seat |
 | `pair` | 3 | seats 0 and 1 in parallel, seat 2 merges both |
@@ -142,12 +142,16 @@ A seat is a smrt-prompts key (its resolved template is the seat's
 instructions, so tenant prompt overrides apply) plus a target: a tier, an
 alias, a candidate list or one model, never another fusion. Each seat runs
 through its own chain, so one seat's fallback is a substitution of that
-seat, not an extra call.
+seat, not an extra seat. The seat-call count is fixed; actual requests can be
+higher: a fallback candidate or a `transient` retry is another request for
+that seat, and a gate adds one decision call.
 
 - **Decision gate** (`pair`, `handoff`): one yes/no-style question through
   the typed decision client `evaluate()` uses. When the chosen label clears
   `minConfidence`, the remaining stage is skipped and recorded `skipped`.
-  With no decision client the stage always runs.
+  With no decision client the stage always runs and no gate call is made.
+  So a gated `pair` makes two seat calls and the gate call when the gate
+  skips the merge, and four calls when it does not.
 - **Failure semantics.** A dead seat never aborts a `pair`: the merge seat is
   told which seat failed. A dead merge or answer seat falls back to the
   first live output and the run is recorded `degraded`. When every seat
@@ -212,7 +216,7 @@ config({
   },
 });
 
-await proposal.do('Review this proposal', { tier: 'best' }); // 3 calls, 1 run row
+await proposal.do('Review this proposal', { tier: 'best' }); // 3 seat calls (+ gate), 1 run row
 await proposal.do('Summarize it', { tier: 'good' });         // gpt-5-mini, then Claude Haiku
 ```
 
@@ -256,9 +260,12 @@ registerUserInferenceResolver(
 );
 ```
 
-**Modes.** A user or tenant may store a mode. `off` stops every AI call for
-that principal; `byo`, `local` and `hosted` bind only a stored binding of
-that source and never fall back to your app config. With no mode, the layers
+**Modes.** A user or tenant may store a mode. `off` stops every call that
+goes through the app's inference clients for that principal; `byo`, `local`
+and `hosted` bind only a stored binding of that source and never fall back
+to your app config. Modes do not govern a typed decision client the app
+configured for `is()` / `evaluate()` (#3158): that route keeps running, so
+leave it unconfigured where `off` must mean no model traffic. With no mode, the layers
 above apply. When AI cannot run, core throws `InferenceUnavailableError`
 (code `AI_UNAVAILABLE`, `reason: off | unconfigured | entitlement |
 capability`) before any model call, and nothing is recorded:
