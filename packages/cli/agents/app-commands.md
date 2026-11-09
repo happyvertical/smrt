@@ -164,9 +164,16 @@ config loading; `bin/smrt.js` imports `dist/` in-process so SIGTERM reaches
   `conflict`/`rejected`. The journal is bound to bundle digest, origin, link,
   tenant and batch contents (resume with the same batch size).
   `beginCloudMigration` checks custody and the link, then retires the
-  location before export; `completeCloudMigration` verifies a fresh target
-  export itself and needs a bundle exported after retirement, an `applied`
-  journal (shared) and acknowledged changed columns (never `id`/`tenant_id`).
+  location before export (recording the custody epoch). The per-user link is
+  made after the import, when the location is already retired, so it is
+  opened with `openMigrationCloudLinkIdentity`, which signs only the per-user
+  challenge of the recorded migration. `completeCloudMigration` (async)
+  verifies a fresh target export itself and needs the location still retired
+  for that installation at the same custody epoch (restoring it, even before
+  re-retiring, abandons the migration), a bundle exported after retirement,
+  an `applied` journal (shared), acknowledged changed columns (never
+  `id`/`tenant_id`) and `acknowledgedOmittedTables` naming every table the
+  plan withheld for credential-like columns (`plan.skipped.omittedTables`).
   `exportTenantBundle` selects by ID only global rows (`cloudIdentityRows`);
   `downgradeCloudBundle` refuses foreign-tenant rows and reverse-maps into a
   `local` bundle `app import` accepts.

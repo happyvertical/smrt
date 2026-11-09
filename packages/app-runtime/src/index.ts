@@ -438,20 +438,42 @@ export type LocalCloudLinkExpectations = Omit<
   'appId' | 'installationId' | 'linkPublicKey'
 >;
 
+/** Options for {@link openLocalCloudLinkIdentity}. */
+export interface OpenLocalCloudLinkIdentityOptions
+  extends ResolveLocalRuntimePathsOptions {
+  /**
+   * The installation a per-user cloud migration began at this location (#4806).
+   * Beginning retires the location before the bundle is exported, yet the
+   * per-user link can only be made after that bundle is imported, so a
+   * location retired for this exact installation may still sign the per-user
+   * link of its own migration, and nothing else: a shared-target challenge is
+   * refused. The caller must have checked its migration record
+   * (`openMigrationCloudLinkIdentity` in `@happyvertical/smrt-cli/app`).
+   */
+  retiredInstallationId?: string;
+}
+
 /**
  * Open the link identity of an initialized local installation. Refuses unless
  * custody is `in-custody`: an arrived copy, a retired location or a seed
- * mismatch cannot link. Read-only; it never opens the database.
+ * mismatch cannot link, except the narrow `retiredInstallationId` case above.
+ * Read-only; it never opens the database.
  */
 export async function openLocalCloudLinkIdentity(
-  options: ResolveLocalRuntimePathsOptions,
+  options: OpenLocalCloudLinkIdentityOptions,
 ): Promise<LocalCloudLinkIdentity> {
   const paths = await validateLocalDatabaseStorage(options);
   const canonicalSourceRoot = await realpath(
     resolve(options.sourceRoot ?? process.cwd()),
   );
+  const retiredFor = options.retiredInstallationId;
+  const custodyUsable = (report: InstallationCustodyReport) =>
+    report.status === 'in-custody' ||
+    (retiredFor !== undefined &&
+      report.status === 'retired' &&
+      report.installationId === retiredFor);
   const report = await inspectInstallationCustody(options);
-  if (report.status !== 'in-custody') throw installationUnverified(report);
+  if (!custodyUsable(report)) throw installationUnverified(report);
   const readIdentity = async () => {
     const secret = await validateApplicationSecret(
       paths.applicationSecret,
@@ -484,6 +506,12 @@ export async function openLocalCloudLinkIdentity(
         installationId: identity.deviceId,
         linkPublicKey,
       });
+      if (retiredFor !== undefined && challenge.target !== 'per-user') {
+        throw new CloudLinkError(
+          'challenge_mismatch',
+          'A retired location can only sign the per-user link of its own migration.',
+        );
+      }
       if (
         challenge.target === 'per-user' &&
         (challenge.accountId !== identities.ownerId ||
@@ -496,7 +524,7 @@ export async function openLocalCloudLinkIdentity(
       }
       const custody = await inspectInstallationCustody(options);
       if (
-        custody.status !== 'in-custody' ||
+        !custodyUsable(custody) ||
         custody.installationId !== identity.deviceId
       ) {
         throw installationUnverified(custody);

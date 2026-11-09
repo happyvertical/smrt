@@ -110,6 +110,7 @@ export {
   DEFAULT_CLOUD_IDENTITY_TABLES,
   downgradeCloudBundle,
   exportTenantBundle,
+  openMigrationCloudLinkIdentity,
   planCloudMigration,
   readCloudLinkRecord,
   readCloudMigrationRecord,

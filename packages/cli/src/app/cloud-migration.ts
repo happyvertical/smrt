@@ -45,6 +45,8 @@ import {
   cloudLinkIdentityMap,
   type InstallationCustodyOptions,
   inspectInstallationCustody,
+  type LocalCloudLinkIdentity,
+  openLocalCloudLinkIdentity,
   parseCloudLinkRecord,
   prepareApplicationStateRoot,
   retireInstallation,
@@ -94,9 +96,12 @@ const SERVER_MANAGED_COLUMNS = new Set([
  * directions) carry no rows of a table with such a column.
  */
 const CLOUD_NON_PORTABLE_COLUMN_PATTERN =
-  /(?:^|_)(?:totp|otp|mfa|recovery_codes?|backup_codes?|passkey|webauthn|salt|refresh|verifier|(?:code|reset|backup_code|otp|pin|key|verifier)_hash)(?:_|$)/;
-// A bare `hash` is deliberately not matched: content, spec and manifest
-// digests (`content_hash`, …) are ordinary data and must migrate.
+  /(?:^|_)(?:totp|otp|mfa|recovery_codes?|backup_codes?|passkey|webauthn|refresh_(?:token|secret|key|hash)|(?:password|passcode|pin|otp|secret|key|auth|login|hash)_salt|salt_(?:hash|value)|verifier|(?:code|reset|backup_code|otp|pin|key|verifier)_hash)(?:_|$)/;
+// A bare `hash`, `salt` or `refresh` is deliberately not matched: content,
+// spec and manifest digests (`content_hash`), a seasoning `salt` and a
+// `refresh_interval` / `auto_refresh` setting are ordinary data and must
+// migrate. Whatever the pattern still withholds is listed in
+// `plan.skipped.omittedTables` and must be acknowledged at completion.
 const MAX_REPORTED_ISSUES = 50;
 const DEFAULT_BATCH_SIZE = 500;
 const MAX_JSON_DEPTH = 32;
@@ -1492,6 +1497,14 @@ export interface CloudMigrationRecord {
   completedAt?: string;
   bundleDigest?: string;
   acknowledgedChangedColumns?: Record<string, string[]>;
+  /** Tables withheld from the bundle that the operator accepted leaving behind. */
+  acknowledgedOmittedTables?: string[];
+  /**
+   * Custody epoch of the installation when the migration began. A restore
+   * (abandoning the migration) bumps it, so completion can tell that this
+   * location was put back in service after the bundle's retirement.
+   */
+  custodyEpoch?: number;
   secretValuesIncluded: false;
 }
 
@@ -1528,6 +1541,36 @@ export function readCloudMigrationRecord(
     );
   }
   return record as CloudMigrationRecord;
+}
+
+/**
+ * Open the link identity for the **per-user** link of a migration in progress.
+ *
+ * Beginning a migration retires this location before the bundle is exported,
+ * and the per-user link can only be made after that bundle is imported (the
+ * hosted account is the imported local owner), so an ordinary
+ * {@link openLocalCloudLinkIdentity} would refuse by then. This opens it for
+ * the installation the migration record names, on a location that is retired
+ * for exactly that installation, and signs only the per-user challenge.
+ */
+export async function openMigrationCloudLinkIdentity(
+  options: InstallationCustodyOptions,
+): Promise<LocalCloudLinkIdentity> {
+  const record = readCloudMigrationRecord(options);
+  if (
+    !record ||
+    record.target !== 'per-user' ||
+    record.status !== 'in-progress'
+  ) {
+    throw new CloudMigrationError(
+      'custody_refused',
+      'No per-user cloud migration is in progress at this location.',
+    );
+  }
+  return openLocalCloudLinkIdentity({
+    ...options,
+    retiredInstallationId: record.installationId,
+  });
 }
 
 /** Options for {@link beginCloudMigration}. */
@@ -1580,7 +1623,11 @@ export async function beginCloudMigration(
     // An interrupted start, or a location restored after an abandoned
     // attempt: retire again and restart the clock, so only a bundle exported
     // from now on can complete the migration.
-    const restarted = { ...existing, startedAt: new Date().toISOString() };
+    const restarted = {
+      ...existing,
+      startedAt: new Date().toISOString(),
+      ...(custody.epoch !== null ? { custodyEpoch: custody.epoch } : {}),
+    };
     writeJsonAtomic(cloudMigrationRecordPath(options), restarted);
     await retireInstallation(options);
     return restarted;
@@ -1603,6 +1650,7 @@ export async function beginCloudMigration(
     target: options.target,
     installationId: custody.installationId,
     startedAt: new Date().toISOString(),
+    ...(custody.epoch !== null ? { custodyEpoch: custody.epoch } : {}),
     ...(link
       ? {
           linkId: link.linkId,
@@ -1632,19 +1680,29 @@ export interface CompleteCloudMigrationOptions
   journalPath?: string;
   /** Columns allowed to differ on the target (never `id` / `tenant_id`). */
   acknowledgedChangedColumns?: Readonly<Record<string, readonly string[]>>;
+  /**
+   * Tables whose rows were withheld from the bundle (`plan.skipped
+   * .omittedTables`: credential-like columns) and are therefore not on the
+   * target. Every one must be named: completing retires the local copy.
+   */
+  acknowledgedOmittedTables?: readonly string[];
 }
 
 /**
  * Finish a migration. Verifies the target itself, and refuses unless:
- * the plan's bundle was exported after the location was retired; the link
+ * this location is still retired for the installation the migration began
+ * with (restoring it, even after a later retire, is abandoning the migration:
+ * writes made since never reached the cloud); the plan's bundle was exported
+ * after the location was retired; the link
  * matches the plan (and, per-user, maps the plan's identities to themselves);
  * a shared run's journal is `applied` for this bundle and link; every carried
- * row and asset is present; and every column whose value changed on the
- * target is acknowledged (`id` and `tenant_id` never can be).
+ * row and asset is present; every table withheld from the bundle is
+ * acknowledged; and every column whose value changed on the target is
+ * acknowledged (`id` and `tenant_id` never can be).
  */
-export function completeCloudMigration(
+export async function completeCloudMigration(
   options: CompleteCloudMigrationOptions,
-): CloudMigrationVerification & { record: CloudMigrationRecord } {
+): Promise<CloudMigrationVerification & { record: CloudMigrationRecord }> {
   const { plan } = options;
   const link = parseCloudLinkRecord(options.link);
   const existing = readCloudMigrationRecord(options);
@@ -1659,6 +1717,17 @@ export function completeCloudMigration(
     if (existing.bundleDigest !== plan.bundleDigest) {
       refuse('A different migration already completed here.');
     }
+  }
+  const custody = await inspectInstallationCustody(options);
+  if (
+    custody.status !== 'retired' ||
+    custody.installationId !== started.installationId ||
+    (started.custodyEpoch !== undefined &&
+      custody.epoch !== started.custodyEpoch)
+  ) {
+    refuse(
+      `This location is not retired for the installation the migration began with (${custody.status}); it was put back in service, so local writes since may never have reached the cloud. Start the migration again and export a new bundle.`,
+    );
   }
   const exportedAt = Date.parse(plan.bundle.exportedAt);
   const startedAt = Date.parse(started.startedAt);
@@ -1696,6 +1765,18 @@ export function completeCloudMigration(
     ) {
       refuse('The shared migration has not been applied for this plan.');
     }
+  }
+  const acknowledgedOmitted = new Set(options.acknowledgedOmittedTables ?? []);
+  const unacknowledgedOmitted = plan.skipped.omittedTables.filter(
+    (table) => !acknowledgedOmitted.has(table),
+  );
+  if (unacknowledgedOmitted.length > 0) {
+    throw new CloudMigrationError(
+      'verification_failed',
+      `These tables were withheld from the migration (credential-like columns) and are not on the target; acknowledge each to complete and retire the local copy: ${unacknowledgedOmitted.join(', ')}.`,
+      [],
+      { unacknowledgedOmittedTables: unacknowledgedOmitted },
+    );
   }
   const verification = verifyCloudMigration(plan, options.target);
   if (!verification.ok) {
@@ -1740,6 +1821,9 @@ export function completeCloudMigration(
     completedAt: new Date().toISOString(),
     bundleDigest: plan.bundleDigest,
     acknowledgedChangedColumns: verification.changedColumns,
+    ...(plan.skipped.omittedTables.length > 0
+      ? { acknowledgedOmittedTables: [...plan.skipped.omittedTables] }
+      : {}),
   };
   writeJsonAtomic(cloudMigrationRecordPath(options), record);
   return { ...verification, record };
