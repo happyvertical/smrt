@@ -16,7 +16,7 @@ use tauri::{AppHandle, Manager, RunEvent, WindowEvent, Wry};
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
 
-use crate::env::{resolve_data_dir, window_url};
+use crate::env::{resolve_data_dir, window_log_line, window_url};
 use crate::log::Logger;
 use crate::manifest::{read_manifest_file, MANIFEST_FILE_NAME};
 use crate::process::{
@@ -168,8 +168,8 @@ fn status_text(text: &str) -> String {
 }
 
 /// Update tray text and (on first ready) point the window at the sidecar.
-/// `ready_url` is the origin plus the manifest's owner route; the route
-/// answers with a redirect that carries the one-time owner link to the
+/// `ready_url` is the origin plus the manifest's owner route and the launch
+/// secret query; the route answers with a redirect that carries the one-time owner link to the
 /// webview, so this process never sees that link. Safe to call from any thread.
 fn publish(app: &AppHandle, status: String, retryable: bool, ready_url: Option<String>) {
     let handle = app.clone();
@@ -199,14 +199,16 @@ fn on_phase(app: &AppHandle, logger: &Logger, owner_route: Option<&str>, phase: 
     logger.info(&format!("phase: {}", phase.status_line()));
     let (retryable, target) = match phase {
         Phase::Failed(_) => (true, None),
-        Phase::Ready { origin, .. } => {
-            // Origin and route only: the redirect's Location (which carries the
-            // owner token) is never read here, so it cannot reach the log.
-            logger.info(&format!(
-                "window origin={origin} route={}",
-                owner_route.unwrap_or("/")
-            ));
-            (false, Some(window_url(origin, owner_route)))
+        Phase::Ready {
+            origin,
+            launch_secret,
+            ..
+        } => {
+            // Origin and route only: neither the launch secret (the window URL's
+            // query) nor the redirect's Location (which carries the owner token)
+            // is logged.
+            logger.info(&window_log_line(origin, owner_route));
+            (false, Some(window_url(origin, owner_route, launch_secret)))
         }
         _ => (false, None),
     };

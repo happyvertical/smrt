@@ -279,6 +279,7 @@ describe('sidecar manifest v1', () => {
         'PORT',
         'ORIGIN',
         'SMRT_DATA_DIR',
+        'SMRT_DESKTOP_OWNER_LINK_SECRET',
       ]);
     });
 
@@ -437,6 +438,24 @@ describe('buildSidecarEnv', () => {
       ORIGIN: 'http://127.0.0.1:49152',
       SMRT_DATA_DIR: '/home/me/.local/share/app/runtime',
     });
+  });
+
+  it('applies the owner-link secret last, only when supplied, never from base or manifest', () => {
+    const withSecret = buildSidecarEnv(
+      { env: { smrt_desktop_owner_link_secret: 'manifest' } },
+      { ...supplied, ownerLinkSecret: 'a'.repeat(64) },
+      { Smrt_Desktop_Owner_Link_Secret: 'inherited' },
+    );
+    expect(withSecret.SMRT_DESKTOP_OWNER_LINK_SECRET).toBe('a'.repeat(64));
+    expect(
+      Object.keys(withSecret).filter((k) =>
+        /^smrt_desktop_owner_link_secret$/i.test(k),
+      ),
+    ).toEqual(['SMRT_DESKTOP_OWNER_LINK_SECRET']);
+    const without = buildSidecarEnv({}, supplied, {
+      SMRT_DESKTOP_OWNER_LINK_SECRET: 'inherited',
+    });
+    expect('SMRT_DESKTOP_OWNER_LINK_SECRET' in without).toBe(false);
   });
 
   it('works without a manifest env', () => {

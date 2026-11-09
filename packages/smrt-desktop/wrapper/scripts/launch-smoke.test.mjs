@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   appLocalDataDir,
   CARGO_LOCK,
+  containsLaunchSecretShape,
   STAGE_RUN_DIR,
   parseReadyOrigin,
   parseWindowLine,
@@ -117,4 +118,17 @@ test('the stage plan names the product scoped sidecar for the triple', () => {
 test('the stage mimics a cargo output directory, which Tauri treats as the resource root', () => {
   assert.deepEqual(STAGE_RUN_DIR, ['target', 'debug']);
   assert.equal(CARGO_LOCK, '.cargo-lock');
+});
+
+test('a 64-hex run is the shape of the launch secret', () => {
+  assert.equal(containsLaunchSecretShape(`x ${'ab'.repeat(32)} y`), true);
+  assert.equal(containsLaunchSecretShape('A'.repeat(64)), true);
+  assert.equal(containsLaunchSecretShape('ab'.repeat(31)), false);
+  assert.equal(containsLaunchSecretShape('ab'.repeat(33)), false);
+  assert.equal(
+    containsLaunchSecretShape(
+      'window origin=http://127.0.0.1:5000 route=/api/_runtime/owner-link',
+    ),
+    false,
+  );
 });

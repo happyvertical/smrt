@@ -7,10 +7,13 @@
 //   1. the wrapper starts the sidecar and logs the ready origin;
 //   2. the sidecar's health route answers 200 (the app created its schema on
 //      first start) and the data directory was created and is not empty;
-//   3. the owner link route answers 302 to /setup?token=... on the loopback
-//      origin, answers 403 to a foreign Host, and the /setup page loads;
-//   4. the wrapper log never contains the token and neither does anything
-//      this script prints;
+//   3. the owner link route answers 403 with an empty body to a loopback
+//      request that lacks the per-launch secret (the secret is known only to
+//      the wrapper window and the sidecar, so this script cannot redirect),
+//      answers 403 to a wrong secret and to a foreign Host, and the /setup
+//      page loads;
+//   4. the wrapper log shows the window origin and route and contains no
+//      secret-looking 64-hex string, no `launch=` query and no token;
 //   5. the wrapper quits on request and no process of the sidecar is left.
 //
 //   node launch-smoke.mjs --wrapper <exe> --bundle <bundle dir> \
@@ -80,6 +83,14 @@ export function parseWindowLine(logText) {
       logText,
     );
   return match ? { origin: match[1], route: match[2] } : null;
+}
+
+/**
+ * True when `text` holds a 64-character hex run: the shape of the per-launch
+ * owner-link secret (32 random bytes, lowercase hex).
+ */
+export function containsLaunchSecretShape(text) {
+  return /(?<![0-9A-Fa-f])[0-9A-Fa-f]{64}(?![0-9A-Fa-f])/.test(String(text));
 }
 
 /**
@@ -331,16 +342,21 @@ async function main() {
     }
     console.log('data directory created and not empty');
 
+    // This script is not the wrapper window, so it has no launch secret: the
+    // owner link must refuse it, whatever else about the request is valid.
     const link = await get(origin, expectedRoute);
-    const token = tokenFromSetupLocation(link.headers.location);
-    if (link.status !== 302 || !token) {
+    if (link.status !== 403 || link.headers.location || link.body !== '') {
       throw new Error(
-        `the owner link did not redirect to /setup?token= (status ${link.status})`,
+        `the owner link without the launch secret answered ${link.status}, expected an empty 403`,
       );
     }
-    secrets.push(token, encodeURIComponent(token));
-    if (link.body !== '') throw new Error('the owner link has a response body');
-    console.log('owner link: 302 to /setup?token=<redacted>');
+    console.log('owner link: 403 without the launch secret');
+
+    const wrong = await get(origin, `${expectedRoute}?launch=${'0'.repeat(64)}`);
+    if (wrong.status !== 403 || wrong.headers.location || wrong.body !== '') {
+      throw new Error(`a wrong launch secret got ${wrong.status} from the owner link`);
+    }
+    console.log('owner link: 403 for a wrong launch secret');
 
     const foreign = await get(origin, expectedRoute, { host: 'evil.example' });
     if (foreign.status !== 403) {
@@ -348,15 +364,19 @@ async function main() {
     }
     console.log('owner link: 403 for a foreign Host');
 
-    const setup = await get(origin, link.headers.location);
+    const setup = await get(origin, '/setup');
     if (setup.status !== 200) throw new Error(`/setup answered ${setup.status}`);
     console.log('setup page: 200');
 
     const log = readIfExists(logPath);
-    if (secrets.some((secret) => log.includes(secret)) || /token=/.test(log)) {
-      throw new Error('the wrapper log contains an owner token');
+    if (
+      containsLaunchSecretShape(log) ||
+      /launch=|token=/.test(log) ||
+      !/window origin=http:\/\/127\.0\.0\.1:\d{1,5} route=\//.test(log)
+    ) {
+      throw new Error('the wrapper log holds a secret or lacks the origin+route line');
     }
-    console.log('wrapper log holds no token');
+    console.log('wrapper log shows origin + route and holds no secret');
 
     // Quit. POSIX: the signal the wrapper turns into an orderly quit. Windows
     // has no portable graceful signal for a GUI process, so the tree is ended

@@ -22,7 +22,9 @@ signing secret in a URL query is deliberately not carried over.
      manifest `env`, then the supervisor values, which always win:
      `HOST=127.0.0.1`, `PORT=<port>`, `ORIGIN=http://127.0.0.1:<port>`,
      `SMRT_DATA_DIR=<app_local_data_dir>/<dataDirectory>` (machine-local, never the
-     roaming `app_data_dir`; assumed decision D7, see the parent README).
+     roaming `app_data_dir`; assumed decision D7, see the parent README), and
+     `SMRT_DESKTOP_OWNER_LINK_SECRET=<launch secret>` (see Owner link). The
+     secret is set on the sidecar command only.
      Inherited names that collide case-insensitively with a reserved or
      manifest name are dropped (`Port`, `host`).
 3. Polls `healthRoute` on exactly that origin (`src/health.rs`). Only after a
@@ -121,16 +123,24 @@ can take the port in that window. This is handled, not prevented:
 ## Owner link
 
 The window does not open on the bare origin when the manifest declares
-`ownerClaimRoute`: it opens on `<origin><ownerClaimRoute>` (`window_url` in
-`env.rs`; the route is only ever appended to the origin the supervisor selected,
-never an absolute URL, and a value that is not a plain absolute path is
-ignored). A generic s-m-r-t app declares `/api/_runtime/owner-link`, which
+`ownerClaimRoute`: it opens on `<origin><ownerClaimRoute>?launch=<secret>`
+(`window_url` in `env.rs`; the route is only ever appended to the origin the
+supervisor selected, never an absolute URL, and a value that is not a plain
+absolute path is ignored; the `launch` query is added only with a claim route).
+The launch secret is 32 bytes from the OS random source (`getrandom`), hex
+encoded to 64 lowercase characters, drawn fresh on every sidecar start. It
+is passed only in the sidecar child's environment as
+`SMRT_DESKTOP_OWNER_LINK_SECRET` (a reserved name a manifest cannot set) and in
+that URL; its `Debug` output is redacted and it is never logged. The route
+compares it in constant time and answers `403` without it, so another process
+or OS user on the machine cannot fetch the owner link. A generic s-m-r-t app declares `/api/_runtime/owner-link`, which
 app-runtime serves (`createOwnerLinkHandler`) as a loopback-only `302` to its
 existing one-time `/setup?token=...` page while the owner is unclaimed, and to
 `/` afterwards. The wrapper never requests that route itself: the webview
 follows the redirect, so the token is never in the wrapper's memory, argv,
-environment or log. The log line is `window origin=<origin> route=<route>`; the
-`Location` header is never read. The owner then claims through app-runtime's
+environment or log. The log line is `window origin=<origin> route=<route>`
+(`window_log_line`; never the query or the full URL); the `Location` header is
+never read. The owner then claims through app-runtime's
 `/setup` page and `claimOwner()`; the wrapper holds no credential. After a
 sidecar restart the window is navigated to the same route again, which hands out
 a fresh invitation if the owner is still unclaimed.
@@ -605,8 +615,8 @@ cargo test --locked
   --locked`) and runs `scripts/launch-smoke.mjs` against that bundle from an
   empty data directory: ready origin in the log, window opened on origin plus
   `ownerClaimRoute`, health 200, data directory created, the owner link
-  redirecting to `/setup?token=` (and `403` for a foreign `Host`), no token in
-  the wrapper log, an orderly quit and no sidecar left. The local runtime now
+  answering `403` without the launch secret (and for a wrong secret and a
+  foreign `Host`), no secret or token in the wrapper log, an orderly quit and no sidecar left. The local runtime now
   opens its database on Windows through `@happyvertical/sql`'s
   `windowsCustody.verify` (smrt#4837), so the Windows leg can pass, but no green
   `windows-latest` run is recorded yet; the Windows and Linux legs stay

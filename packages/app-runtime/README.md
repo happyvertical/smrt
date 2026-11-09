@@ -937,20 +937,29 @@ invitation expired, a rotated one (`rotateBootstrapInvitation()`, as
 `smrt app recover`). The owner then claims through the usual `/setup` page and
 `claimOwner()`, which stays the single-use gate; a spent link fails there.
 
-The route answers only a request from this device addressed to the app's own
-origin: a loopback peer address, a loopback `Host` equal to the URL's host, no
-foreign `Origin`, no `Sec-Fetch-Site: cross-site` or `same-site`; anything else
-is a `403` with an empty body. Responses have an empty body, `Cache-Control:
-no-store` and `Referrer-Policy: no-referrer`; the token is only in `Location`,
-which the desktop wrapper's webview follows and the wrapper never reads or logs.
-Any process on the device that can reach the loopback port can ask for the link,
-including another OS user on a shared machine: unlike `onboarding.json` (mode
-0600) the port is not private to the user, so on a shared computer another
-account could claim ownership first during the short window before the owner is
-claimed. The claim is first-come and single-use, and after it the route only
-redirects to `/`. Treat the desktop path as single-user until the route is bound
-to a per-launch secret the wrapper passes to the sidecar (follow-up issue). `runtime.ownerSetupLocation()` is the underlying
-method; never log or serialize its result.
+The route requires a per-launch secret. The desktop wrapper draws 32 random
+bytes from the OS on every sidecar start, passes them only in the sidecar's
+environment as `SMRT_DESKTOP_OWNER_LINK_SECRET` (a name a sidecar manifest
+cannot set) and opens its window on `OWNER_LINK_ROUTE?launch=<secret>`. The
+handler compares the `launch` query value with the variable in constant time
+(both sides are hashed with SHA-256 first, so lengths do not leak) and answers
+`403` with an empty body for a missing, empty or wrong value. With no secret
+configured, which is the case whenever the app is not running under the
+wrapper, it answers `403` to every request, so the route is never open by
+default. Pass `createOwnerLinkHandler(runtime, { launchSecret })` to supply the
+secret explicitly (tests). Another process or OS user on the machine can reach
+the loopback port but does not hold the secret, so it cannot fetch the link and
+claim ownership first.
+
+On top of the secret the route still answers only a request from this device
+addressed to the app's own origin: a loopback peer address, a loopback `Host`
+equal to the URL's host, no foreign `Origin`, no `Sec-Fetch-Site: cross-site` or
+`same-site`; anything else is a `403` with an empty body. Responses have an
+empty body, `Cache-Control: no-store` and `Referrer-Policy: no-referrer`; the
+token is only in `Location`, which the desktop wrapper's webview follows and the
+wrapper never reads or logs. The secret and the query string are never logged
+or echoed, and the runtime writes no access log. `runtime.ownerSetupLocation()`
+is the underlying method; never log or serialize its result.
 
 Password-based applications should pass `{ requirePassword: true }` to
 `createOwnerSetupPage` and include a password field in their setup form. The

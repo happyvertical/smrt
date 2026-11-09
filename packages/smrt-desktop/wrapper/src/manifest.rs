@@ -19,7 +19,13 @@ use serde::Deserialize;
 pub const MAX_MANIFEST_BYTES: usize = 1024 * 1024;
 
 /// Environment names the supervisor owns (compared case-insensitively).
-pub const RESERVED_ENV_KEYS: [&str; 4] = ["HOST", "PORT", "ORIGIN", "SMRT_DATA_DIR"];
+pub const RESERVED_ENV_KEYS: [&str; 5] = [
+    "HOST",
+    "PORT",
+    "ORIGIN",
+    "SMRT_DATA_DIR",
+    "SMRT_DESKTOP_OWNER_LINK_SECRET",
+];
 
 const WINDOWS_DEVICE_STEMS: [&str; 4] = ["CON", "PRN", "AUX", "NUL"];
 
@@ -736,6 +742,8 @@ mod tests {
             "OrIgIn",
             "SMRT_DATA_DIR",
             "smrt_data_dir",
+            "SMRT_DESKTOP_OWNER_LINK_SECRET",
+            "smrt_desktop_owner_link_secret",
         ] {
             let json = with("env", &format!("{{\"{key}\":\"v\"}}"));
             assert!(

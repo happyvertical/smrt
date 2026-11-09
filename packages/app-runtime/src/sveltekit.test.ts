@@ -70,6 +70,7 @@ import {
   isLoopbackAddress,
   isLoopbackHostname,
   OWNER_LINK_ROUTE,
+  OWNER_LINK_SECRET_ENV,
   RUNTIME_DIAGNOSTICS_READ_PERMISSION,
   selectTenantSlug,
 } from './sveltekit.js';
@@ -2028,7 +2029,9 @@ describe('F2: downstream failures run application code once', () => {
 });
 
 describe('desktop owner link', () => {
-  const LINK_URL = `http://127.0.0.1:5173${OWNER_LINK_ROUTE}`;
+  const SECRET = 'c0ffee'.repeat(10) + 'beef';
+  const LINK_URL = `http://127.0.0.1:5173${OWNER_LINK_ROUTE}?launch=${SECRET}`;
+  const OPTIONS = { launchSecret: SECRET };
 
   function linkEvent(
     headers: Record<string, string> = {},
@@ -2047,7 +2050,7 @@ describe('desktop owner link', () => {
 
   it('answers only a same-origin loopback request and never asks for the token otherwise', async () => {
     const ownerSetupLocation = vi.fn(async () => '/setup?token=T');
-    const handler = createOwnerLinkHandler({ ownerSetupLocation });
+    const handler = createOwnerLinkHandler({ ownerSetupLocation }, OPTIONS);
     const rejected: Array<ReturnType<typeof linkEvent>> = [
       linkEvent({}, '10.0.0.5'),
       linkEvent({}, '192.168.1.9'),
@@ -2059,7 +2062,7 @@ describe('desktop owner link', () => {
       linkEvent(
         {},
         '127.0.0.1',
-        'http://203.0.113.7:5173/api/_runtime/owner-link',
+        `http://203.0.113.7:5173/api/_runtime/owner-link?launch=${SECRET}`,
       ),
       testEvent(LINK_URL, {
         headers: { host: '127.0.0.1:5173' },
@@ -2093,18 +2096,183 @@ describe('desktop owner link', () => {
       linkEvent(
         {},
         '::1',
-        'http://localhost:5173/api/_runtime/owner-link',
+        `http://localhost:5173/api/_runtime/owner-link?launch=${SECRET}`,
       ) as never,
     );
     expect(ipv6.status).toBe(302);
   });
 
-  it('falls back to / when the runtime cannot answer', async () => {
-    const handler = createOwnerLinkHandler({
-      ownerSetupLocation: async () => {
-        throw new Error('secret-token-material');
-      },
+  describe('launch secret', () => {
+    const NOT_THE_SECRET = 'f'.repeat(SECRET.length);
+    const urlWith = (query: string) =>
+      `http://127.0.0.1:5173${OWNER_LINK_ROUTE}${query}`;
+
+    async function expectRefused(
+      handler: ReturnType<typeof createOwnerLinkHandler>,
+      event: ReturnType<typeof linkEvent>,
+    ) {
+      const response = await handler(event as never);
+      expect(response.status).toBe(403);
+      expect(response.headers.get('location')).toBeNull();
+      expect(await response.text()).toBe('');
+      expect(response.headers.get('cache-control')).toBe('no-store');
+      return response;
+    }
+
+    it('refuses a loopback request without the secret even when every other check passes', async () => {
+      const ownerSetupLocation = vi.fn(async () => '/setup?token=T');
+      const handler = createOwnerLinkHandler({ ownerSetupLocation }, OPTIONS);
+      await expectRefused(
+        handler,
+        linkEvent(
+          { origin: 'http://127.0.0.1:5173' },
+          '127.0.0.1',
+          urlWith(''),
+        ),
+      );
+      await expectRefused(
+        handler,
+        linkEvent({}, '127.0.0.1', urlWith('?other=1')),
+      );
+      expect(ownerSetupLocation).not.toHaveBeenCalled();
     });
+
+    it('redirects to /setup with the right secret and leaves the target unchanged', async () => {
+      const handler = createOwnerLinkHandler(
+        { ownerSetupLocation: async () => '/setup?token=T' },
+        OPTIONS,
+      );
+      const response = await handler(linkEvent() as never);
+      expect(response.status).toBe(302);
+      expect(response.headers.get('location')).toBe('/setup?token=T');
+      expect(response.headers.get('cache-control')).toBe('no-store');
+      expect(response.headers.get('referrer-policy')).toBe('no-referrer');
+      expect(await response.text()).toBe('');
+    });
+
+    it('refuses a wrong secret, one of another length, a truncated or extended one, and an empty one', async () => {
+      const ownerSetupLocation = vi.fn(async () => '/setup?token=T');
+      const handler = createOwnerLinkHandler({ ownerSetupLocation }, OPTIONS);
+      for (const wrong of [
+        NOT_THE_SECRET,
+        'short',
+        SECRET.slice(0, -1),
+        `${SECRET}0`,
+        SECRET.toUpperCase(),
+        '',
+      ]) {
+        await expectRefused(
+          handler,
+          linkEvent(
+            {},
+            '127.0.0.1',
+            urlWith(`?launch=${encodeURIComponent(wrong)}`),
+          ),
+        );
+      }
+      await expectRefused(
+        handler,
+        linkEvent({}, '127.0.0.1', urlWith('?launch')),
+      );
+      expect(ownerSetupLocation).not.toHaveBeenCalled();
+    });
+
+    it('still applies every other check when the secret is right', async () => {
+      const ownerSetupLocation = vi.fn(async () => '/setup?token=T');
+      const handler = createOwnerLinkHandler({ ownerSetupLocation }, OPTIONS);
+      await expectRefused(handler, linkEvent({}, '10.0.0.5'));
+      await expectRefused(handler, linkEvent({ host: 'evil.example' }));
+      await expectRefused(
+        handler,
+        linkEvent({ origin: 'https://evil.example' }),
+      );
+      await expectRefused(
+        handler,
+        linkEvent({ 'sec-fetch-site': 'same-site' }),
+      );
+      expect(ownerSetupLocation).not.toHaveBeenCalled();
+    });
+
+    it('refuses everything when no secret is configured, even if launch is sent', async () => {
+      const ownerSetupLocation = vi.fn(async () => '/setup?token=T');
+      for (const handler of [
+        createOwnerLinkHandler({ ownerSetupLocation }, { launchSecret: null }),
+        createOwnerLinkHandler({ ownerSetupLocation }, { launchSecret: '' }),
+      ]) {
+        await expectRefused(handler, linkEvent());
+        await expectRefused(
+          handler,
+          linkEvent({}, '127.0.0.1', urlWith('?launch=')),
+        );
+        await expectRefused(
+          handler,
+          linkEvent({}, '127.0.0.1', urlWith('?launch=undefined')),
+        );
+      }
+      expect(ownerSetupLocation).not.toHaveBeenCalled();
+    });
+
+    it('reads SMRT_DESKTOP_OWNER_LINK_SECRET per request by default', async () => {
+      const ownerSetupLocation = vi.fn(async () => '/setup?token=T');
+      const handler = createOwnerLinkHandler({ ownerSetupLocation });
+      const previous = process.env[OWNER_LINK_SECRET_ENV];
+      try {
+        delete process.env[OWNER_LINK_SECRET_ENV];
+        await expectRefused(handler, linkEvent());
+        process.env[OWNER_LINK_SECRET_ENV] = SECRET;
+        expect((await handler(linkEvent() as never)).status).toBe(302);
+        await expectRefused(
+          handler,
+          linkEvent({}, '127.0.0.1', urlWith(`?launch=${NOT_THE_SECRET}`)),
+        );
+      } finally {
+        if (previous === undefined) delete process.env[OWNER_LINK_SECRET_ENV];
+        else process.env[OWNER_LINK_SECRET_ENV] = previous;
+      }
+    });
+
+    it('never puts the secret in a response body, header or log', async () => {
+      const spies = (['log', 'info', 'warn', 'error', 'debug'] as const).map(
+        (method) => vi.spyOn(console, method).mockImplementation(() => {}),
+      );
+      try {
+        const handler = createOwnerLinkHandler(
+          { ownerSetupLocation: async () => '/setup?token=T' },
+          OPTIONS,
+        );
+        const responses = [
+          await handler(linkEvent() as never),
+          await handler(
+            linkEvent(
+              {},
+              '127.0.0.1',
+              urlWith(`?launch=${NOT_THE_SECRET}`),
+            ) as never,
+          ),
+          await handler(linkEvent({}, '127.0.0.1', urlWith('')) as never),
+        ];
+        for (const response of responses) {
+          expect(await response.text()).not.toContain(SECRET);
+          expect(JSON.stringify([...response.headers])).not.toContain(SECRET);
+        }
+        for (const spy of spies) {
+          expect(JSON.stringify(spy.mock.calls)).not.toContain(SECRET);
+        }
+      } finally {
+        for (const spy of spies) spy.mockRestore();
+      }
+    });
+  });
+
+  it('falls back to / when the runtime cannot answer', async () => {
+    const handler = createOwnerLinkHandler(
+      {
+        ownerSetupLocation: async () => {
+          throw new Error('secret-token-material');
+        },
+      },
+      OPTIONS,
+    );
     const response = await handler(linkEvent() as never);
     expect(response.status).toBe(302);
     expect(response.headers.get('location')).toBe('/');
@@ -2123,7 +2291,7 @@ describe('desktop owner link', () => {
       await runtime.init();
       const token = onBootstrapInvitation.mock.calls[0]?.[0].token as string;
       expect(token).toBeTruthy();
-      const handler = createOwnerLinkHandler(runtime);
+      const handler = createOwnerLinkHandler(runtime, OPTIONS);
 
       const first = await handler(linkEvent() as never);
       expect(first.status).toBe(302);
@@ -2184,7 +2352,7 @@ describe('desktop owner link', () => {
     });
     await runtime.init();
     const first = onBootstrapInvitation.mock.calls[0]?.[0].token as string;
-    const handler = createOwnerLinkHandler(runtime);
+    const handler = createOwnerLinkHandler(runtime, OPTIONS);
     clock = new Date(clock.getTime() + 120_000);
 
     const response = await handler(linkEvent() as never);
@@ -2215,9 +2383,10 @@ describe('desktop owner link', () => {
       runtime: resolveApplicationRuntime({ profile: 'self-hosted' }),
       env: { NODE_ENV: 'development' },
     });
-    const response = await createOwnerLinkHandler(runtime)(
-      linkEvent() as never,
-    );
+    const response = await createOwnerLinkHandler(
+      runtime,
+      OPTIONS,
+    )(linkEvent() as never);
     expect(response.status).toBe(302);
     expect(response.headers.get('location')).toBe('/');
   });

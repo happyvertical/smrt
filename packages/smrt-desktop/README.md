@@ -74,8 +74,10 @@ const sidecar = parseSidecarManifest(
   URL). It follows exactly the `healthRoute` grammar and loopback rules. A
   s-m-r-t app declares app-runtime's `/api/_runtime/owner-link`
   (`createOwnerLinkHandler`), which redirects to the one-time `/setup?token=`
-  page while the owner is unclaimed and to `/` afterwards. The wrapper never
-  sees or logs the token; claiming it belongs to the runtime.
+  page while the owner is unclaimed and to `/` afterwards, but only for a
+  request that carries the per-launch `?launch=<secret>` the wrapper adds (403
+  otherwise). The wrapper never sees or logs the token; claiming it belongs to
+  the runtime.
 - `dataDirectory` is a portable path relative to Tauri's stable
   `app_local_data_dir` (the per-app, machine-local OS data root; see
   [Data root and roaming](#data-root-and-roaming)). The supervisor supplies its
@@ -117,15 +119,21 @@ change on Windows leaves its old directory behind in the roaming profile.
 
 ### Supervisor-supplied environment
 
-`HOST`, `PORT`, `ORIGIN` and `SMRT_DATA_DIR` are exported as
-`RESERVED_ENV_KEYS`. The supervisor sets `HOST=127.0.0.1`, `PORT` to the
-selected port, `ORIGIN=http://127.0.0.1:<port>` and `SMRT_DATA_DIR` to the
-absolute resolved data directory. A manifest `env` naming any of them, in any
+`HOST`, `PORT`, `ORIGIN`, `SMRT_DATA_DIR` and
+`SMRT_DESKTOP_OWNER_LINK_SECRET` are exported as `RESERVED_ENV_KEYS`. The
+supervisor sets `HOST=127.0.0.1`, `PORT` to the selected port,
+`ORIGIN=http://127.0.0.1:<port>`, `SMRT_DATA_DIR` to the absolute resolved data
+directory and `SMRT_DESKTOP_OWNER_LINK_SECRET` to a fresh per-launch secret
+(32 bytes from the OS random source as 64 lowercase hex characters, drawn on
+every sidecar start, passed only in the sidecar's environment and in the
+window's first URL as `?launch=`, never logged); the owner link route answers
+403 without it. A manifest `env` naming any of them, in any
 letter case, is rejected at parse time with a value-free diagnostic.
 `buildSidecarEnv(manifest, { port, dataDirectory }, baseEnv)` composes the
 final environment: it drops reserved names from `baseEnv` (case-insensitively),
 layers the manifest `env`, then applies the reserved values last so they always
-win. `port` must be an integer from 1 to 65535 and `dataDirectory` a nonempty
+win (the secret only when the optional `ownerLinkSecret` is supplied; the Rust
+wrapper always supplies one). `port` must be an integer from 1 to 65535 and `dataDirectory` a nonempty
 absolute path (POSIX, `C:\`, or UNC form, checked lexically); otherwise it
 throws a fixed diagnostic. Variables of `baseEnv` with value `undefined` are
 omitted.

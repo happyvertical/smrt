@@ -40,6 +40,6 @@ only), which is the first-run check.
 
 `wrapper/scripts/launch-smoke.mjs` runs the unsigned wrapper against a bundle
 from an empty data directory and checks the health route, the owner link
-(`302` to `/setup?token=...`, never logged), the created data directory and a
+(`403` without the per-launch secret the wrapper keeps to itself, no secret in the log), the created data directory and a
 clean quit with no sidecar left. CI runs it as `Launch generic app (<os>)`
 (`.github/workflows/desktop-launch.yml`).

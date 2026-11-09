@@ -51,6 +51,8 @@ export { createLocalMcpCredentialHandler } from './local-mcp-credentials.js';
 export {
   createOwnerLinkHandler,
   OWNER_LINK_ROUTE,
+  OWNER_LINK_SECRET_ENV,
+  type OwnerLinkHandlerOptions,
 } from './owner-link.js';
 export {
   createOwnerSetupPage,
