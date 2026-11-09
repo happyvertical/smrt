@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-desktop",
-  "version": "0.60.14",
+  "version": "0.60.15",
   "description": "Versioned sidecar manifest for SMRT desktop apps",
   "author": "HappyVertical",
   "license": "MIT",

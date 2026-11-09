@@ -1,5 +1,20 @@
 # @happyvertical/smrt-projects
 
+## 0.60.15
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.60.15
+  - @happyvertical/smrt-prompts@0.60.15
+  - @happyvertical/smrt-svelte@0.60.15
+  - @happyvertical/smrt-subscriptions@0.60.15
+  - @happyvertical/smrt-tenancy@0.60.15
+  - @happyvertical/smrt-timesheets@0.60.15
+  - @happyvertical/smrt-config@0.60.15
+  - @happyvertical/smrt-ui@0.60.15
+  - @happyvertical/smrt-types@0.60.15
+
 ## 0.60.14
 
 ### Patch Changes

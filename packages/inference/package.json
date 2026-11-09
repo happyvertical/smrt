@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-inference",
-  "version": "0.60.14",
+  "version": "0.60.15",
   "description": "Inference alias chains with classified failures, recorded fallback and ladder degradation, consumer-defined fusions, per-user and per-tenant bindings, the InferenceSettingsPanel, hosted provisioning and spend gate, and the smrt doctor --ai binding check, for SMRT inference tiers",
   "type": "module",
   "main": "./dist/index.js",

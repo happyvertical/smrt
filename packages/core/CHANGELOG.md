@@ -1,5 +1,29 @@
 # @happyvertical/smrt-core
 
+## 0.60.15
+
+### Patch Changes
+
+- ### Features
+  
+  - alias chains, fusions, bindings, modes, hosted gate (#4808) (inference)
+  - add reviewed allocations, durable schedules, and protected delivery (#4769)
+  - supervisor contract and first Tauri supervisor slice (#4795) (desktop)
+  - rotate immutable ingress TLS references safely (#4770) (deployment)
+  - public AI usage recorder with ambient tenant attribution (#4779) (core)
+  - support native legacy adoption and immutable TLS rotation (#4494) (deployment)
+  - declare inference tiers across framework prompts (#4777) (prompts)
+  - prompt-run tags, columns, ai:usage report and outcome labels (#4763) (core,prompts)
+  - plan grants as flags, standard paid keys, requireFeature (#4762) (features,subscriptions)
+  - inference tiers and binding resolver seam (#4767) (core)
+  
+  ### Other Changes
+  
+  - docs: s-m-r-t.dev inference guide and docs currency sweep (#4816) (inference)
+- @happyvertical/smrt-config@0.60.15
+  - @happyvertical/smrt-scanner@0.60.15
+  - @happyvertical/smrt-types@0.60.15
+
 ## 0.60.14
 
 ### Patch Changes
