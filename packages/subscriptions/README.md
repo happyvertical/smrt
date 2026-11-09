@@ -361,6 +361,144 @@ keeps its credit ledger (reversible in a system context), and the new parent
 creates its own balance. A parent's `retail` cap counts only what the child owes that
 parent.
 
+## Billing host glue (Stripe)
+
+`createBillingHost()` is the reusable checkout, webhook and customer-portal
+wiring for hosts that sell a `SubscriptionPlan` through Stripe (#4786). A host
+configures it; it does not re-implement it. Every provider call goes through
+`@happyvertical/accounting`; there are no direct Stripe calls here. Web only:
+phone apps never sell a subscription in-app.
+
+### Host configuration
+
+| Variable | Meaning |
+| --- | --- |
+| `STRIPE_SECRET_KEY` | Secret or restricted key (`sk_` / `rk_`). |
+| `STRIPE_WEBHOOK_SECRET` | Webhook endpoint signing secret (`whsec_`). |
+| `STRIPE_WEBHOOK_TOLERANCE` | Optional. Maximum signature age in seconds, 1 to 900, default 300. |
+| `BILLING_METADATA_SECRET` | Optional. Secret that signs new Checkout metadata. Unset: the webhook secret is used, so rotating the webhook secret also rotates this. Set it to a stable value to decouple the two. |
+| `BILLING_METADATA_PREVIOUS_SECRETS` | Optional, comma-separated. Retired metadata secrets still accepted when a completed Checkout is verified. |
+| `STRIPE_PRICE_<PLAN_KEY>` | Price id sold for a plan, for example `STRIPE_PRICE_PRO`. Wins over `SubscriptionPlan.providerPriceId`. |
+| `BILLING_SUCCESS_URL`, `BILLING_CANCEL_URL`, `BILLING_PORTAL_RETURN_URL` | Fixed absolute https destinations (plain http only for localhost). |
+
+`readBillingEnv(process.env, { planKeys })` validates these and keeps the
+secrets in non-enumerable properties, so logging the config does not print
+them. Its errors name the variable, never the value.
+
+**Rotating secrets.** A Checkout session is signed when it is created and
+verified when it completes, which can be days later. If the signing secret
+changes in between (by default it is the webhook secret), a paid session no
+longer verifies and the purchase is dropped. Before rotating, put the outgoing
+secret in `BILLING_METADATA_PREVIOUS_SECRETS` (`metadataVerificationSecrets`)
+and keep it there until sessions created under it have expired. A completed
+session that claims to be ours but does not verify under any accepted secret
+is logged at error level (`billing.webhook.checkout_signature_invalid`), so a
+dropped purchase is visible.
+
+### Recipe (SvelteKit)
+
+```ts
+// src/lib/server/billing.ts
+import { getAccountingProvider } from '@happyvertical/accounting';
+import {
+  createBillingHost,
+  readBillingEnv,
+  TenantSubscriptionCollection,
+} from '@happyvertical/smrt-subscriptions';
+
+const env = readBillingEnv(process.env, { planKeys: ['pro', 'team'] });
+const provider = await getAccountingProvider({
+  type: 'stripe',
+  secretKey: env.stripe.secretKey, // read explicitly: non-enumerable on purpose
+  webhookSecret: env.stripe.webhookSecret,
+  webhookTolerance: env.stripe.webhookTolerance,
+});
+const { db } = await TenantSubscriptionCollection.create(smrtConfig);
+
+export const billing = createBillingHost({
+  provider,
+  db, // needs transaction(): SQLite or PostgreSQL
+  webhookSecret: env.stripe.webhookSecret,
+  metadataSigningSecret: env.metadata.signingSecret,
+  metadataVerificationSecrets: env.metadata.previousSecrets,
+  webhookToleranceSeconds: env.stripe.webhookTolerance,
+  urls: env.urls,
+  prices: env.prices,
+  logger, // optional; receives ids and reason codes only
+});
+
+// src/routes/api/billing/checkout/+server.ts  (authenticate and authorise first)
+export const POST = async ({ request, locals }) => {
+  const membership = await requirePermission(locals, 'billing.manage');
+  return billing.handlers.checkout(request, {
+    tenantId: membership.tenantId,
+    email: membership.userEmail,
+  });
+};
+
+// .../portal/+server.ts  -> billing.handlers.portal(request, { tenantId })
+// .../webhook/+server.ts -> billing.handlers.webhook(request)   (no auth; signature only)
+```
+
+The webhook route must receive the raw body. Point the Stripe endpoint at it
+and subscribe it to `checkout.session.completed` and
+`customer.subscription.created|updated|deleted|paused|resumed`.
+
+### What it guarantees
+
+- **Checkout** takes only a plan key or id from the request. Tenant, price,
+  customer and URLs come from the host's authenticated tenant, server
+  configuration and the tenant's own subscription row. A plan must be visible
+  to the tenant (its own or global), active, fixed-price and priced, and the
+  tenant must not already hold a live Stripe subscription (use the portal to
+  change plans). Only operator-owned (global) plans are sold unless the host
+  sets `tenantPlans: 'allow'`, so a tenant that can write plan rows cannot buy
+  entitlements it defined itself or shadow a plan key; set `allow` only when
+  tenants cannot write `SubscriptionPlan`. `canPurchasePlan` adds host policy.
+  The session metadata is HMAC-signed and bound to the server price and, when
+  known, the billing customer, so another integration on the same Stripe
+  account cannot forge metadata for a tenant, and signed metadata cannot be
+  reused for a different price or another customer's subscription. Known gap:
+  when the tenant has no billing customer yet, the signed metadata is not
+  bound to the one session the host created and does not expire. A party that
+  can read it and create its own Checkout session on the same Stripe account
+  (a strong precondition) could pay it and so link the tenant to a billing
+  customer the tenant does not control: the portal then opens that customer,
+  later checkouts reuse it, and a payment the tenant makes concurrently can
+  end up as an untracked second subscription. Binding to a recorded session
+  id is tracked separately.
+- **Webhook** verifies the signature on the raw body with a bounded timestamp
+  tolerance, then claims the event id durably in the same transaction as the
+  subscription write (`runOnce`, `_smrt_run_once_claims`). A replay is a 2xx
+  no-op; a failed apply rolls the claim back (non-2xx) so the provider's retry
+  runs. Out-of-order events converge: each applied event records its time on
+  the row and an older one is skipped, and a cancellation wins a same-second
+  tie. A completed checkout reads the subscription back from the provider, so
+  the row reflects current state however events were ordered. A plan change at
+  the provider is applied as an authorised plan-version replacement, so
+  feature keys flip within that one webhook (including a mid-period
+  downgrade the provider billed).
+- **Linking** is by provider ids stored on `TenantSubscription`. A subscription
+  or customer already linked to one tenant is never re-linked to another, and
+  an event for an unknown subscription is acknowledged and ignored.
+- **Portal** opens the portal for the customer on the caller's own
+  subscription row only.
+- **Responses and logs** carry fixed messages, ids and reason codes. Provider
+  error text is never returned, and anything shaped like a key is redacted
+  before logging.
+
+Operational notes: if a second Checkout for a tenant that already holds a live
+subscription is paid (two tabs racing), the webhook cannot track it and logs
+`billing.checkout.orphaned_subscription` at error level with the provider
+subscription id; alert on it and cancel or refund that subscription at the
+provider. Keep server clocks synchronised (NTP): event ordering compares the
+provider's whole-second event time with this host's read-back time. A
+concurrent duplicate of an event being applied answers
+409 and Stripe retries it. Plans and which price backs which plan are the
+owner's input; this module only maps them. No schema change is needed: event
+claims use core's `_smrt_run_once_claims`, retained for its pruning window
+(30 days by default), far longer than Stripe's three-day retry horizon.
+
 ## Svelte entry point
 
 `@happyvertical/smrt-subscriptions/svelte` exports provider-neutral,
