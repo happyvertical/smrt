@@ -441,15 +441,15 @@ test('a matrix the reader would drop on the floor is refused, not skipped', () =
   // an axis or exclude AFTER the include list, where a line reader stops looking
   refused(
     mutate(
-      '            binary: smrt-desktop-shell\n    steps:',
-      '            binary: smrt-desktop-shell\n        runner: [my-mac-label]\n    steps:',
+      '            binary: smrt-desktop-wrapper\n    steps:',
+      '            binary: smrt-desktop-wrapper\n        runner: [my-mac-label]\n    steps:',
     ),
     /exactly an include list/,
   );
   refused(
     mutate(
-      '            binary: smrt-desktop-shell\n    steps:',
-      '            binary: smrt-desktop-shell\n        exclude:\n          - runner: macos-15\n    steps:',
+      '            binary: smrt-desktop-wrapper\n    steps:',
+      '            binary: smrt-desktop-wrapper\n        exclude:\n          - runner: macos-15\n    steps:',
     ),
     /exactly an include list/,
   );
@@ -464,8 +464,8 @@ test('a matrix the reader would drop on the floor is refused, not skipped', () =
   // anchors and aliases put a runner somewhere the reader does not look
   refused(
     mutate('runner: macos-15-intel', 'runner: &r self-hosted').replace(
-      'runner: windows-latest\n            binary: smrt-desktop-shell.exe',
-      'runner: *r\n            binary: smrt-desktop-shell.exe',
+      'runner: windows-latest\n            binary: smrt-desktop-wrapper.exe',
+      'runner: *r\n            binary: smrt-desktop-wrapper.exe',
     ),
     /anchor|alias/,
   );
@@ -481,8 +481,8 @@ test('a matrix the reader would drop on the floor is refused, not skipped', () =
   // the signing variable read anywhere else
   refused(
     mutate(
-      '      - name: Upload the unsigned shell binary (verification only)\n',
-      "      - name: Read\n        env:\n          R: ${{ vars.DESKTOP_MACOS_SIGNING_RUNNER }}\n        run: echo hi\n      - name: Upload the unsigned shell binary (verification only)\n",
+      '      - name: Upload the unsigned wrapper binary (verification only)\n',
+      "      - name: Read\n        env:\n          R: ${{ vars.DESKTOP_MACOS_SIGNING_RUNNER }}\n        run: echo hi\n      - name: Upload the unsigned wrapper binary (verification only)\n",
     ),
     /read outside/,
   );

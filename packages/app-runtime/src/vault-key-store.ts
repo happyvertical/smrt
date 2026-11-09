@@ -6,7 +6,7 @@ import { isAbsolute, join } from 'node:path';
 /**
  * Custody seam for vault key material on one device.
  *
- * The desktop shell injects an OS keychain provider; headless and development
+ * The desktop wrapper injects an OS keychain provider; headless and development
  * installs use {@link createFileVaultKeyStore}. Items hold the device secret,
  * wrapped data keys, recovery records and the device registry. Providers must
  * replace an item atomically: a reader sees the previous or the new value,
@@ -62,7 +62,7 @@ export function createFileVaultKeyStore(
   }
   const currentUid = options.currentUid ?? process.getuid?.();
   // Windows reports synthetic POSIX modes; custody there rests on the
-  // profile directory's ACLs, and desktop shells inject a keychain instead.
+  // profile directory's ACLs, and desktop wrappers inject a keychain instead.
   const checkMode = (options.platform ?? process.platform) !== 'win32';
   let prepared: Promise<void> | undefined;
 

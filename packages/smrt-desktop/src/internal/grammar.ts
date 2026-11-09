@@ -104,30 +104,6 @@ export function isEnvPrefix(value: unknown): value is string {
   return typeof value === 'string' && envPrefix.test(value);
 }
 
-/** Lowercase UUID version 4. */
-export function isUuidV4(value: unknown): value is string {
-  return typeof value === 'string' && uuidV4.test(value);
-}
-
-/**
- * Parse the only origin the supervisor ever produces,
- * `http://127.0.0.1:<1..65535>`: no `localhost`, no IPv6, no scheme other than
- * `http`, no userinfo, path, query, fragment or leading zeros. Returns the
- * port, or `null` when the value is not exactly that.
- */
-export function parseLoopbackOrigin(value: unknown): number | null {
-  if (typeof value !== 'string') return null;
-  const match = loopbackOrigin.exec(value);
-  if (match === null) return null;
-  const port = Number(match[1]);
-  return port >= 1 && port <= 65535 ? port : null;
-}
-
-/** True when `value` is exactly `http://127.0.0.1:<1..65535>`. */
-export function isLoopbackOrigin(value: unknown): value is string {
-  return parseLoopbackOrigin(value) !== null;
-}
-
 /**
  * Human-readable single-line text: 1 to `maxLength` UTF-16 units, no control,
  * line-separator or bidirectional override characters, no surrounding space.
@@ -142,15 +118,5 @@ export function isDisplayText(
     value.length <= maxLength &&
     value.trim() === value &&
     !displayForbidden.test(value)
-  );
-}
-
-/** UTC timestamp `YYYY-MM-DDTHH:MM:SS[.mmm]Z` naming a real instant. */
-export function isIsoUtcTimestamp(value: unknown): value is string {
-  if (typeof value !== 'string' || !isoUtc.test(value)) return false;
-  const time = Date.parse(value);
-  return (
-    !Number.isNaN(time) &&
-    new Date(time).toISOString().slice(0, 19) === value.slice(0, 19)
   );
 }

@@ -34,20 +34,11 @@ describe('the bundler entry is separate', () => {
     expect(files.filter((file) => file.startsWith(`bundler${'/'}`))).toEqual(
       [],
     );
-    expect(files).toContain(join('install', 'bundle-manifest.ts'));
   });
 
-  it('is not reachable from the browser-safe webview entry', () => {
-    const files = reachable('webview/index.ts');
-    expect(files.filter((file) => file.startsWith(`bundler${'/'}`))).toEqual(
-      [],
-    );
-  });
-
-  it('reaches the contract serializers it writes the manifests with', () => {
+  it('reaches the sidecar manifest serializer it writes', () => {
     const files = reachable('bundler/index.ts');
     expect(files).toContain('sidecar-manifest.ts');
-    expect(files).toContain(join('install', 'bundle-manifest.ts'));
     expect(files).toContain(join('bundler', 'run.ts'));
   });
 

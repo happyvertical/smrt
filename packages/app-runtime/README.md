@@ -197,7 +197,7 @@ gate, not before.
    missing, relative, UNC or `\\?\` `LOCALAPPDATA` is an error. The runtime
    never falls back to the roaming `APPDATA` (which can be folder-redirected to
    a network share) or to the home directory; the operator state root and the
-   desktop shell use the same machine-local base.
+   desktop wrapper use the same machine-local base.
 3. **No reparse point (W3).** Every component from the drive root to the leaf is
    a real directory (a regular file for the leaf of a file check): not a
    symbolic link or junction (`lstat`) and without the `ReparsePoint` attribute,
@@ -1129,7 +1129,7 @@ always do.
 ### Custody
 
 `VaultKeyStore` is the custody seam: `get`, `set` and `delete` named byte
-items, with atomic replacement. The desktop shell injects an OS keychain
+items, with atomic replacement. The desktop wrapper injects an OS keychain
 provider. Headless and development installs use `createFileVaultKeyStore(dir)`
 from `@happyvertical/smrt-app-runtime/vault-key-store`.
 
@@ -1138,7 +1138,7 @@ from `@happyvertical/smrt-app-runtime/vault-key-store`.
 - Items are mode 0600 files replaced by atomic rename.
 - On Windows, POSIX modes are synthetic and there is no uid, so the file
   store performs no custody check. Place the directory under the user's
-  profile, and prefer the shell's keychain provider there.
+  profile, and prefer the wrapper's keychain provider there.
 - Keep the directory outside the application state root, so plain-data
   exports and backups never include it.
 

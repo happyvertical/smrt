@@ -1,7 +1,7 @@
 {
   "name": "@happyvertical/smrt-desktop",
   "version": "0.60.15",
-  "description": "Versioned sidecar manifest, installed-product contract and runtime bundler for SMRT desktop apps, plus the EXPERIMENTAL supervisor rendezvous (b) and native credential handoff (c) contracts, whose Rust shell half is not built",
+  "description": "Versioned sidecar manifest and the runtime bundler for SMRT desktop apps",
   "author": "HappyVertical",
   "license": "MIT",
   "type": "module",
@@ -18,17 +18,9 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
-    "./webview": {
-      "types": "./dist/webview.d.ts",
-      "import": "./dist/webview.js"
-    },
     "./bundler": {
       "types": "./dist/bundler.d.ts",
       "import": "./dist/bundler.js"
-    },
-    "./testing": {
-      "types": "./dist/testing.d.ts",
-      "import": "./dist/testing.js"
     },
     "./package.json": "./package.json"
   },

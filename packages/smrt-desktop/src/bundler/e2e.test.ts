@@ -21,7 +21,6 @@ import {
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { parseBundleManifest } from '../install/bundle-manifest.js';
 import { parseSidecarManifest } from '../sidecar-manifest.js';
 import { buildChildEnv } from './child-env.js';
 import { BundleError } from './errors.js';
@@ -144,11 +143,7 @@ suite('runtime bundler end to end', () => {
     const sidecar = parseSidecarManifest(
       readFileSync(join(out, 'resources', 'sidecar-manifest.json'), 'utf8'),
     );
-    const bundle = parseBundleManifest(
-      readFileSync(join(out, 'resources', 'smrt-bundle.json'), 'utf8'),
-    );
     expect(sidecar.executable).toBe('e2e-app-node');
-    expect(bundle.node.executable).toBe(sidecar.executable);
     expect(
       existsSync(join(out, 'resources', 'app', 'node_modules', 'ms')),
     ).toBe(true);

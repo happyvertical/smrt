@@ -11,7 +11,7 @@ SMRT is a multi-context monorepo. Use this map to find the package-level contrac
 | Business capabilities | `bookings`, `commerce`, `expenses`, `timesheets`, `human-resources`, `products`, `ads`, `affiliates`, `ledgers`, `analytics`, `reports`, `subscriptions` | Package `AGENTS.md` files |
 | Domain capabilities | `events`, `places`, `facts`, `sites`, `properties`, `tags` | Package `AGENTS.md` files |
 | Mobile | `smrt-mobile`, `smrt-android`, `smrt-ios`, `smrt-mobile-contract` | Package `AGENTS.md` files |
-| Desktop | `smrt-desktop`, `smrt-desktop-launcher` | [Sidecar manifest](packages/smrt-desktop/README.md), [Launcher core](packages/smrt-desktop-launcher/README.md) |
+| Desktop | `smrt-desktop` | [Sidecar manifest and runtime bundler](packages/smrt-desktop/README.md) |
 | Web and application tooling | `smrt-web`, `smrt-svelte`, `preferences`, `smrt-ui`, `smrt-app-cli`, `smrt-dev-mcp`, `smrt-app-mcp`, `planner`, templates | Package `AGENTS.md` files, [`docs/adr/0003-smrt-add-declarative-package-install.md`](docs/adr/0003-smrt-add-declarative-package-install.md) |
 | Admin Shell | `smrt-svelte` workspace and shell surfaces | Root `CONTEXT.md` |
 

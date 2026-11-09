@@ -1,15 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { MemoryFs } from '../testing/memory-fs.js';
 import {
   appendSegments,
-  assertTrustedChain,
   formatAbsolutePath,
   isInside,
   parentOf,
   parseAbsolutePath,
   samePath,
 } from './abs-path.js';
-import { FsTrustError } from './fs-seam.js';
 
 const posix = (value: unknown) => parseAbsolutePath(value, 'posix');
 const win = (value: unknown) => parseAbsolutePath(value, 'win32');
@@ -132,134 +129,5 @@ describe('containment', () => {
     expect(formatAbsolutePath(appendSegments(a, ['c', 'd']))).toBe('/a/b/c/d');
     expect(samePath(a, posix('/a/b') as never)).toBe(true);
     expect(samePath(a, posix('/a') as never)).toBe(false);
-  });
-});
-
-describe('assertTrustedChain', () => {
-  const root = posix('/opt/app') as never;
-  const target = posix('/opt/app/bin/tool') as never;
-  const build = () =>
-    new MemoryFs()
-      .set('/opt/app', 'dir', { uid: 1000, mode: 0o755 })
-      .set('/opt/app/bin', 'dir', { uid: 0, mode: 0o755 })
-      .set('/opt/app/bin/tool', 'file', { uid: 1000, mode: 0o755 });
-  const options = (fs: MemoryFs) => ({
-    fs,
-    platform: 'linux' as const,
-    uid: 1000,
-    leaf: 'file' as const,
-    executable: true,
-  });
-  const kind = async (promise: Promise<void>) => {
-    try {
-      await promise;
-    } catch (error) {
-      expect(error).toBeInstanceOf(FsTrustError);
-      return (error as FsTrustError).kind;
-    }
-    return 'ok';
-  };
-
-  it('accepts a clean chain owned by the user or root', async () => {
-    expect(await kind(assertTrustedChain(root, target, options(build())))).toBe(
-      'ok',
-    );
-  });
-
-  it('reports missing components as absent', async () => {
-    const fs = build();
-    fs.nodes.delete('/opt/app/bin/tool');
-    expect(await kind(assertTrustedChain(root, target, options(fs)))).toBe(
-      'absent',
-    );
-  });
-
-  it.each([
-    ['symlinked root', (fs: MemoryFs) => fs.set('/opt/app', 'symlink')],
-    [
-      'symlinked directory',
-      (fs: MemoryFs) => fs.set('/opt/app/bin', 'symlink'),
-    ],
-    [
-      'symlinked leaf',
-      (fs: MemoryFs) => fs.set('/opt/app/bin/tool', 'symlink'),
-    ],
-    [
-      'group-writable directory',
-      (fs: MemoryFs) => fs.set('/opt/app/bin', 'dir', { uid: 0, mode: 0o775 }),
-    ],
-    [
-      'other-writable root',
-      (fs: MemoryFs) => fs.set('/opt/app', 'dir', { uid: 1000, mode: 0o757 }),
-    ],
-    [
-      'foreign-owned directory',
-      (fs: MemoryFs) =>
-        fs.set('/opt/app/bin', 'dir', { uid: 4242, mode: 0o755 }),
-    ],
-    [
-      'foreign-owned leaf',
-      (fs: MemoryFs) =>
-        fs.set('/opt/app/bin/tool', 'file', { uid: 4242, mode: 0o755 }),
-    ],
-    [
-      'writable leaf',
-      (fs: MemoryFs) =>
-        fs.set('/opt/app/bin/tool', 'file', { uid: 1000, mode: 0o775 }),
-    ],
-    [
-      'non-executable leaf',
-      (fs: MemoryFs) =>
-        fs.set('/opt/app/bin/tool', 'file', { uid: 1000, mode: 0o644 }),
-    ],
-    ['directory leaf', (fs: MemoryFs) => fs.set('/opt/app/bin/tool', 'dir')],
-    [
-      'file in place of directory',
-      (fs: MemoryFs) => fs.set('/opt/app/bin', 'file'),
-    ],
-  ])('rejects %s', async (_name, mutate) => {
-    const fs = build();
-    mutate(fs);
-    expect(await kind(assertTrustedChain(root, target, options(fs)))).toBe(
-      'untrusted',
-    );
-  });
-
-  it('rejects a path that realpath resolves elsewhere', async () => {
-    const fs = build();
-    fs.realpaths.set('/opt/app', '/private/opt/app');
-    expect(await kind(assertTrustedChain(root, target, options(fs)))).toBe(
-      'untrusted',
-    );
-  });
-
-  it('rejects a target outside the root', async () => {
-    const fs = build();
-    expect(
-      await kind(
-        assertTrustedChain(root, posix('/opt/other/x') as never, options(fs)),
-      ),
-    ).toBe('untrusted');
-  });
-
-  it('skips ownership and mode on win32 but still rejects reparse points', async () => {
-    const wroot = win('C:\\Apps\\Product') as never;
-    const wtarget = win('C:\\Apps\\Product\\bin\\tool.exe') as never;
-    const fs = new MemoryFs()
-      .set('C:\\Apps\\Product', 'dir', { uid: 7, mode: 0o777 })
-      .set('C:\\Apps\\Product\\bin', 'dir', { uid: 7, mode: 0o777 })
-      .set('C:\\Apps\\Product\\bin\\tool.exe', 'file', { uid: 7, mode: 0o666 });
-    const opts = {
-      fs,
-      platform: 'win32' as const,
-      uid: undefined,
-      leaf: 'file' as const,
-      executable: true,
-    };
-    expect(await kind(assertTrustedChain(wroot, wtarget, opts))).toBe('ok');
-    fs.set('C:\\Apps\\Product\\bin', 'symlink');
-    expect(await kind(assertTrustedChain(wroot, wtarget, opts))).toBe(
-      'untrusted',
-    );
   });
 });
