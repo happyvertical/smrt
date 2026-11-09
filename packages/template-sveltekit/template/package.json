@@ -28,7 +28,8 @@
     "app:import": "smrt app import",
     "mcp-apps:validate": "pnpm exec smrt mcp-apps validate --output-dir ./mcp-apps",
     "worker": "smrt app worker task",
-    "worker:schedule": "smrt app worker schedule"
+    "worker:schedule": "smrt app worker schedule",
+    "deploy:check": "smrt deploy:check"
   },
   "devDependencies": {
     "@sveltejs/adapter-node": "^5.5.7",

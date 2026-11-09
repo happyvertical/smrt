@@ -11,6 +11,11 @@ PostgreSQL step API implement the contract below. The
 [deployment test matrix](./deployment-test-matrix.md) records required evidence.
 A rendered chart is not proof of a deployment, migration, or downstream adoption.
 
+An application declares its workloads, migration and platform services once,
+in its Compose file, under the [compose deployment contract](./deployment-compose.md).
+This chart is the self-host rendering of that declaration; a hosting
+platform's `smrt` preset is the runner for the same `smrt-release-v1` contract.
+
 ## Ownership and supported boundary
 
 The application owns its workload inventory, immutable images, entrypoints,
@@ -44,9 +49,9 @@ the enforcement boundary. JSON Schema cannot prove historical phase ordering.
 A user with unrestricted deployment writes can bypass this protocol; admission
 or repository controls must prevent that path for qualified deployment use.
 
-No SMRT operator is required for v1. Flux reconciles the acknowledged Git
-revision, Helm owns ordinary application resources, and the release command
-coordinates observations and subsequent Git revisions. Existing provider
+No SMRT operator is required to self-host with this chart. Flux reconciles the
+acknowledged Git revision, Helm owns ordinary application resources, and the
+release command coordinates observations and subsequent Git revisions. Existing provider
 operators remain platform-owned. A future operator would need evidence that
 these explicit lifecycle boundaries cannot support repeated deployments;
 automatic shared-service provisioning and rolling deployment remain deferred.
@@ -90,7 +95,9 @@ The initial chart schema uses `app`, `release`, `current`, `target`, `maintenanc
 the prior runtime while `target` declares the candidate. Workloads are a named
 map under each runtime. The `smrt-release-v1` migration guard value declares a
 capability; it does not implement the guard or authorize mutation by itself.
-Iolaus/Work fixtures use synthetic digests and adoption-only wrapper commands;
+The `starter` fixture is generated from the annotated template Compose file
+(`node scripts/compose-contract-fixture.mjs --write`) and must not be edited by
+hand. Iolaus/Work fixtures use synthetic digests and adoption-only wrapper commands;
 applications must supply real images and the durable migration adapter before
 use. Secret references must be versioned/immutable for release identity to bind
 their configuration without exposing values.

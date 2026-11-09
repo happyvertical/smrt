@@ -116,6 +116,21 @@ describe('deployed process topology', () => {
     expect(compose).not.toContain('change-me');
   });
 
+  it('declares its deployment in the Compose file (x-happyvertical v1)', () => {
+    // scripts/compose-contract.test.mjs validates this file against the
+    // contract and regenerates the chart's starter fixture from it; these
+    // assertions keep the annotations from being dropped in a template edit.
+    expect(compose).toMatch(/^x-happyvertical:\n {2}version: 1\n {2}preset: smrt$/m);
+    expect(compose).toContain(
+      'command: ["pnpm", "exec", "smrt", "db:migrate"]',
+    );
+    expect(compose.match(/^ {6}role: web$/gm)).toHaveLength(1);
+    expect(compose.match(/^ {6}role: worker$/gm)).toHaveLength(2);
+    expect(compose).toContain('path: /api/_runtime/health');
+    expect(compose.match(/^ {6}binding: postgres$/gm)).toHaveLength(1);
+    expect(templatePackage.scripts['deploy:check']).toBe('smrt deploy:check');
+  });
+
   it('keeps what the workers and operator commands need in the runtime image', () => {
     // The CLI is a devDependency; workers and app:doctor/export/import run it.
     expect(dockerfile).toContain(

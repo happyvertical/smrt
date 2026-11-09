@@ -13,6 +13,12 @@ It is the ground-up alternative to `smrt-start`.
 
 ## Current generated-project contract
 
+- `template/compose.yaml` carries the `x-happyvertical` deployment declaration
+  (contract v1, `@happyvertical/smrt-config/deployment`). It is the source of
+  `charts/smrt-app/fixtures/starter.json`: after changing its services or
+  annotations run `node scripts/compose-contract-fixture.mjs --write` and
+  commit the fixture; `scripts/compose-contract.test.mjs` fails on drift.
+
 - Node `>=26.0.0`; pnpm `11.25.0` via `packageManager` and `engines`. Node 25+
   images ship no Corepack, so the Dockerfile installs a pinned copy.
 - `runtime.profile` is the canonical infrastructure selector. Generated apps

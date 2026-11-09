@@ -1,0 +1,200 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://s-m-r-t.dev/schemas/x-happyvertical/v1.schema.json",
+  "title": "x-happyvertical compose deployment contract, version 1",
+  "description": "Extension fields that turn a Compose file into an application deployment declaration. The root schema checks the annotations of a whole Compose document and leaves every Compose key alone. Use #/$defs/application for the top-level block and #/$defs/service for a service block on their own. Rules that span several services (one web service, one ingress port, the supported platform subset) are checked by validateComposeDeployment() in @happyvertical/smrt-config/deployment, not by this schema.",
+  "type": "object",
+  "required": [
+    "x-happyvertical",
+    "services"
+  ],
+  "properties": {
+    "x-happyvertical": {
+      "$ref": "#/$defs/application"
+    },
+    "services": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "x-happyvertical": {
+            "$ref": "#/$defs/service"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "serviceName": {
+      "description": "A Compose service name the platform can use as a resource name.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,30}$"
+    },
+    "command": {
+      "description": "A command in list form, one argument per item. It is run as written, without a shell.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "application": {
+      "description": "The top-level x-happyvertical block.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "preset",
+        "migrate"
+      ],
+      "properties": {
+        "version": {
+          "description": "Contract version. This schema describes version 1.",
+          "const": 1
+        },
+        "preset": {
+          "description": "Which platform preset fills in the rest of the deployment.",
+          "enum": [
+            "smrt"
+          ]
+        },
+        "domain": {
+          "description": "The hostname the application wants to be served on. Lowercase, no scheme, port or path.",
+          "type": "string",
+          "maxLength": 253,
+          "pattern": "^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z][a-z0-9-]{0,61}[a-z0-9]$"
+        },
+        "migrate": {
+          "description": "How database migrations run before a release starts serving.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "command"
+          ],
+          "properties": {
+            "service": {
+              "description": "The web or worker service whose image runs the migration. Defaults to the web service.",
+              "$ref": "#/$defs/serviceName"
+            },
+            "command": {
+              "$ref": "#/$defs/command"
+            }
+          }
+        }
+      }
+    },
+    "health": {
+      "description": "How the platform decides a service is ready: an HTTP path on the ingress port, or a command run inside the container.",
+      "type": "object",
+      "additionalProperties": false,
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "path"
+          ],
+          "properties": {
+            "path": {}
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "command"
+          ],
+          "properties": {
+            "command": {}
+          }
+        }
+      ],
+      "properties": {
+        "path": {
+          "description": "Path answered with a 2xx status when the service is ready.",
+          "type": "string",
+          "pattern": "^/[^\\s]*$"
+        },
+        "command": {
+          "$ref": "#/$defs/command"
+        }
+      }
+    },
+    "service": {
+      "description": "A service-level x-happyvertical block. A service is either something the application runs (role) or a stand-in for a platform service (binding), never both.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "role": {
+          "description": "web serves HTTP on the one ingress port. worker runs in the background and serves nothing.",
+          "enum": [
+            "web",
+            "worker"
+          ]
+        },
+        "health": {
+          "$ref": "#/$defs/health"
+        },
+        "binding": {
+          "description": "The platform service this local container stands in for.",
+          "enum": [
+            "postgres",
+            "bucket",
+            "email",
+            "ai"
+          ]
+        }
+      },
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "role",
+            "health"
+          ],
+          "properties": {
+            "role": {},
+            "health": {},
+            "binding": false
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "binding"
+          ],
+          "properties": {
+            "binding": {},
+            "role": false,
+            "health": false
+          }
+        }
+      ],
+      "if": {
+        "type": "object",
+        "required": [
+          "role"
+        ],
+        "properties": {
+          "role": {
+            "const": "worker"
+          }
+        }
+      },
+      "then": {
+        "type": "object",
+        "properties": {
+          "health": {
+            "type": "object",
+            "required": [
+              "command"
+            ],
+            "properties": {
+              "command": {}
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -27,6 +27,37 @@ Configuration management with cosmiconfig, secret sanitization, and SSG export.
 | `getApplicationRuntimePreset(profile)` | Inspect a profile's safe provider defaults |
 | `resolveCliDatabaseConfig(env?)` | CLI database precedence shared by `smrt` and `smrt-dev-mcp`: declared `packages.cli.database.url` > `DATABASE_URL` (engine: config type > `DATABASE_TYPE` > scheme); read-only (`src/database-environment.ts`) |
 
+## Compose deployment contract (`./deployment`, #4789)
+
+`@happyvertical/smrt-config/deployment` is a separate entry, not part of the
+root export: the `x-happyvertical` contract (version 1) that makes a Compose
+file an application's deployment declaration. Guide:
+`docs/content/deployment-compose.md`.
+
+- `schemas/x-happyvertical.v1.schema.json` is the published JSON Schema
+  (`exports['./schemas/*']`, shipped through `files`). Other repositories
+  vendor it: keep it free of regex lookarounds (RE2 consumers) and clean under
+  Ajv strict mode. `src/deployment/schema.test.ts` holds its version, presets,
+  roles and bindings equal to the constants in `compose-contract.ts` and proves
+  every annotation shape error is refused by both.
+- `src/deployment/compose-contract.ts`: `validateComposeDeployment()` (stages
+  `declare` and `deploy`), the resolved declaration, and the plain-text
+  report. Pure and browser-safe: the caller parses YAML. Every rule has an
+  issue code and a test in `compose-contract.test.ts`; messages are for
+  non-experts and always carry a `fix`.
+- `src/deployment/chart-values.ts`: `renderSmrtAppChartValues()` renders a
+  `deploy`-stage declaration plus environment-owned inputs into `smrt-app`
+  chart values. It invents no defaults for Secrets, resources or ingress.
+- `charts/smrt-app/fixtures/starter.json` is generated from
+  `packages/template-sveltekit/template/compose.yaml` by
+  `scripts/compose-contract-fixture.mjs --write`; `scripts/compose-contract.test.mjs`
+  fails on drift. Change the contract, the template annotations and the
+  fixture together.
+- Version 1 changes by addition only (new binding kind, preset or optional
+  field). Changing the meaning of a field is a new `v2` schema file and a new
+  version constant, never an edit to v1.
+- Environment values are deliberately not part of the declaration.
+
 ## Key Files
 
 - `src/index.ts` — Node entry: `src/shared.ts` plus `loadConfig()`; `src/browser.ts` — `exports['.'].browser` entry, same surface with a `loadConfig()` that rejects (model roots bundle for browsers, #3625)

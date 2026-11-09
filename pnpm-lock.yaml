@@ -971,6 +971,9 @@ importers:
       tinyglobby:
         specifier: 0.2.17
         version: 0.2.17
+      yaml:
+        specifier: ^2.9.1
+        version: 2.9.1
     devDependencies:
       '@modelcontextprotocol/client':
         specifier: 2.3.1
@@ -1134,6 +1137,9 @@ importers:
       '@types/node':
         specifier: 24.13.2
         version: 24.13.2
+      ajv:
+        specifier: 8.20.0
+        version: 8.20.0
       typescript:
         specifier: 6.0.3
         version: 6.0.3
@@ -1143,6 +1149,9 @@ importers:
       vitest:
         specifier: 4.1.10
         version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@21.0.4)(jsdom@29.1.1(@noble/hashes@2.4.0))(vite@8.1.6(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1))
+      yaml:
+        specifier: ^2.9.1
+        version: 2.9.1
 
   packages/content:
     dependencies:

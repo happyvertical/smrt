@@ -89,6 +89,7 @@ import {
 import { dbRollbackCommand } from './db-rollback.js';
 import { dbStatusCommand } from './db-status.js';
 import { dbUpgradeCommerceMoneyCommand } from './db-upgrade-commerce-money.js';
+import { deployCommands } from './deploy.js';
 import { devKnowledgeCommands } from './dev-knowledge.js';
 import { devRuntimeCommands } from './dev-runtime.js';
 import { exportCommand } from './export.js';
@@ -4021,6 +4022,9 @@ export default testManifest;
 
   // Configuration commands
   'config:export': configExportCommand,
+
+  // Compose deployment contract (x-happyvertical)
+  ...deployCommands,
 
   // Data export command (for static site generation)
   export: exportCommand,

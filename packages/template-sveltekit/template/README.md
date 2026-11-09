@@ -409,6 +409,15 @@ concerns are intentionally absent here.
 - `cloud`: hosted identity, managed providers, required tenant context, and
   scalable workers. `.env.cloud.example` records the composition boundary.
 
+`compose.yaml` is also the app's deployment declaration. Its `x-happyvertical`
+fields name the web service and its health path, the two workers, the
+migration command, and the `database` service as a stand-in for a platform's
+PostgreSQL. Compose ignores them, so the file runs unchanged; `pnpm
+deploy:check` validates the declaration against the supported platform subset,
+and `pnpm exec smrt deploy:chart-values` renders it for the `smrt-app` chart.
+The one-shot `migrate` service has no annotation and stays local: a platform
+runs the declared migration command inside the web image instead.
+
 The adapter-node `Dockerfile` and `compose.yaml` provide the production path.
 Compose gates the web and both workers on the one-shot, idempotent migration
 service. The runtime image retains the generated manifest and operator CLI for

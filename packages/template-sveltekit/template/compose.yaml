@@ -1,6 +1,18 @@
 x-runtime-environment: &runtime-environment
   DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in the ignored .env file}
 
+# Deployment declaration (contract version 1). Compose ignores `x-` keys, so
+# this file still runs as it always did. A platform that reads the contract
+# deploys the `role` services from image digests, runs `migrate` before each
+# release, and provides its own service in place of every `binding`.
+# Check it with `pnpm exec smrt deploy:check`.
+x-happyvertical:
+  version: 1
+  preset: smrt
+  # domain: app.example.com
+  migrate:
+    command: ["pnpm", "exec", "smrt", "db:migrate"]
+
 services:
   web:
     build: .
@@ -12,6 +24,10 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
+    x-happyvertical:
+      role: web
+      health:
+        path: /api/_runtime/health
   worker:
     build: .
     env_file: .env.self-hosted
@@ -20,6 +36,10 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
+    x-happyvertical:
+      role: worker
+      health:
+        command: ["pnpm", "exec", "smrt", "app", "doctor"]
   schedule-worker:
     build: .
     env_file: .env.self-hosted
@@ -28,6 +48,13 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
+    x-happyvertical:
+      role: worker
+      health:
+        command: ["pnpm", "exec", "smrt", "app", "doctor"]
+  # Local and self-hosted one-shot migration. It has no annotation, so a
+  # platform does not run it: there the `migrate` command above runs inside
+  # the web image.
   migrate:
     build:
       context: .
@@ -52,6 +79,8 @@ services:
     volumes:
       # PostgreSQL 18+ keeps PGDATA under /var/lib/postgresql/18/docker.
       - postgres-data:/var/lib/postgresql
+    x-happyvertical:
+      binding: postgres
 
 volumes:
   postgres-data:
