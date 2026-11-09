@@ -234,15 +234,48 @@ function maskBareNumbers(
   value: string,
   replacements: ReadonlyArray<Replacement>,
 ): string {
-  let out = value;
+  const digits = new Map<string, string>();
   for (const [, mask, raw] of replacements) {
-    if (!/^\d+$/.test(raw)) continue;
-    out = out.replace(
-      new RegExp(`(?<!["\\w.\\-])${raw}(?![\\w."])`, 'g'),
-      JSON.stringify(mask),
-    );
+    if (/^\d+$/.test(raw) && !digits.has(raw)) digits.set(raw, mask);
   }
-  return out;
+  if (digits.size === 0) return value;
+  // A JSON-aware scan: complete quoted strings are matched first and kept
+  // as they are (the leaf pass handles them), so only bare number tokens
+  // outside strings can be replaced.
+  return value.replace(
+    /"(?:[^"\\]|\\.)*"|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/g,
+    (token) => {
+      const mask = token.startsWith('"') ? undefined : digits.get(token);
+      return mask === undefined ? token : JSON.stringify(mask);
+    },
+  );
+}
+
+/** An object's ordered keys or an array's length: a cheap match key. */
+function nodeShape(value: object): string {
+  return Array.isArray(value)
+    ? `[${value.length}`
+    : `{${Object.keys(value).join('\u0000')}`;
+}
+
+const blobShapes = new Map<string, string | null>();
+
+/** {@link nodeShape} of a serialized sensitive value; `null` for scalars. */
+function blobShape(raw: string): string | null {
+  if (!(raw.startsWith('{') || raw.startsWith('['))) return null;
+  let shape = blobShapes.get(raw);
+  if (shape === undefined) {
+    try {
+      const parsed = JSON.parse(raw);
+      shape = parsed && typeof parsed === 'object' ? nodeShape(parsed) : null;
+    } catch {
+      shape = null;
+    }
+    // Bounded: sensitive values come from the calling objects of a process.
+    if (blobShapes.size > 1000) blobShapes.clear();
+    blobShapes.set(raw, shape);
+  }
+  return shape;
 }
 
 function redactValue(
@@ -251,7 +284,11 @@ function redactValue(
   seen: WeakSet<object>,
 ): unknown {
   if (typeof value === 'string') {
-    const embedded = parseEmbeddedJson(maskBareNumbers(value, replacements));
+    // Masked numbers first; if that ever leaves invalid JSON, the original
+    // is parsed instead so field-based masking still applies.
+    const embedded =
+      parseEmbeddedJson(maskBareNumbers(value, replacements)) ??
+      parseEmbeddedJson(value);
     if (embedded !== undefined) {
       // Field-aware pass over the parsed tree (leaves, numbers, keys), then
       // the serialized values (an object-valued sensitive field echoed
@@ -279,17 +316,20 @@ function redactValue(
   // A whole sensitive object or array (an object-valued field echoed
   // verbatim) is masked before its children are touched: masking a child
   // first would change it and hide the match.
-  const blobs = replacements.filter(
-    ([, , raw]) => raw.startsWith('{') || raw.startsWith('['),
+  // Serializing is only tried for a node whose shape (array length, or
+  // ordered keys) equals a sensitive value's, so deep payloads stay linear.
+  const shape = nodeShape(value);
+  const candidates = replacements.filter(
+    (replacement) => blobShape(replacement[2]) === shape,
   );
-  if (blobs.length > 0) {
+  if (candidates.length > 0) {
     let serialized: string | undefined;
     try {
       serialized = JSON.stringify(value);
     } catch {
       serialized = undefined;
     }
-    const blob = blobs.find(([, , raw]) => raw === serialized);
+    const blob = candidates.find(([, , raw]) => raw === serialized);
     if (blob) return blob[1];
   }
   seen.add(value);

@@ -606,6 +606,26 @@ describe('AI call transcripts (#4780)', () => {
       expect(String(second?.content)).toBe('{"list":["[REDACTED:card]",2]}');
     });
 
+    it('leaves numbers inside JSON strings to the leaf pass', () => {
+      const [message] = redactAiTranscriptMessages(
+        [
+          {
+            role: 'tool',
+            content:
+              '{"password":"opaque-password-9","note":"code 123 here \\"123\\"","n":123}',
+          },
+        ],
+        { sensitive: [{ field: 'cvv', value: '123' }] },
+      );
+      const text = String(message?.content);
+      expect(text).not.toContain('opaque-password-9');
+      expect(JSON.parse(text)).toEqual({
+        password: '[REDACTED]',
+        note: 'code [REDACTED:cvv] here "[REDACTED:cvv]"',
+        n: '[REDACTED:cvv]',
+      });
+    });
+
     it('masks credential fields inside serialized tool arguments', async () => {
       enable();
       const ai = (await (await probe()).client()) as unknown as {
