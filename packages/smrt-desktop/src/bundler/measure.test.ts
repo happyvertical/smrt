@@ -6,6 +6,7 @@ import {
   type MeasureSeams,
   measureBundle,
   median,
+  stopMeasuredProcess,
   summarizeSeries,
 } from './measure.js';
 
@@ -235,5 +236,98 @@ describe('measureBundle', () => {
     await expect(
       measureBundle({ ...request, runs: 0 }, h.seams),
     ).rejects.toBeInstanceOf(BundleError);
+  });
+});
+
+describe('stopMeasuredProcess', () => {
+  /** A group whose leader exits at once but whose grandchildren live on. */
+  function group(options: {
+    leaderExitsOn: 'SIGTERM' | 'SIGKILL';
+    grandchildDiesOn: 'SIGTERM' | 'SIGKILL' | 'never';
+  }) {
+    const kills: string[] = [];
+    let resolveExit: (value: unknown) => void = () => undefined;
+    const exit = new Promise<unknown>((resolve) => {
+      resolveExit = resolve;
+    });
+    let grandchildAlive = true;
+    const child: MeasureChild = {
+      async kill(signal) {
+        kills.push(signal);
+        if (signal === options.leaderExitsOn) resolveExit({ signal });
+        if (signal === options.grandchildDiesOn) grandchildAlive = false;
+      },
+      exit,
+      alive: async () => grandchildAlive,
+    };
+    return { child, kills };
+  }
+
+  let clock = 0;
+  const clockSeams = {
+    now: () => clock,
+    sleep: async (ms: number) => {
+      clock += ms;
+    },
+  };
+
+  it('does not take the exit of the child for the end of its group', async () => {
+    clock = 0;
+    // The leader dies on SIGTERM; the grandchild ignores it. Before the fix
+    // the child's exit ended the wait and the grandchild kept running.
+    const { child, kills } = group({
+      leaderExitsOn: 'SIGTERM',
+      grandchildDiesOn: 'SIGKILL',
+    });
+    await stopMeasuredProcess(child, clockSeams, 500);
+    expect(kills).toEqual(['SIGTERM', 'SIGKILL']);
+  });
+
+  it('stops after SIGTERM alone when the whole group went away', async () => {
+    clock = 0;
+    const { child, kills } = group({
+      leaderExitsOn: 'SIGTERM',
+      grandchildDiesOn: 'SIGTERM',
+    });
+    await stopMeasuredProcess(child, clockSeams, 500);
+    expect(kills).toEqual(['SIGTERM']);
+  });
+
+  it('fails the bundle when a process is still running after SIGKILL', async () => {
+    clock = 0;
+    const { child, kills } = group({
+      leaderExitsOn: 'SIGKILL',
+      grandchildDiesOn: 'never',
+    });
+    await expect(
+      stopMeasuredProcess(child, clockSeams, 500),
+    ).rejects.toMatchObject({
+      code: 'measured_process_survived',
+      category: 'verification',
+      exitCode: 5,
+    });
+    expect(kills).toEqual(['SIGTERM', 'SIGKILL']);
+  });
+
+  it('fails the whole measurement when a started sidecar leaves a process behind', async () => {
+    const h = harness({ bootMs: 5 });
+    const spawn = h.seams.spawn;
+    h.seams.spawn = (req) => ({ ...spawn(req), alive: async () => true });
+    await expect(
+      measureBundle({ ...request, runs: 1, killGraceMs: 50 }, h.seams),
+    ).rejects.toMatchObject({ code: 'measured_process_survived' });
+  });
+
+  it('treats a child without a liveness probe as stopped once it exited', async () => {
+    clock = 0;
+    const kills: string[] = [];
+    const child: MeasureChild = {
+      kill(signal) {
+        kills.push(signal);
+      },
+      exit: Promise.resolve({ code: 0 }),
+    };
+    await stopMeasuredProcess(child, clockSeams, 500);
+    expect(kills).toEqual(['SIGTERM']);
   });
 });
