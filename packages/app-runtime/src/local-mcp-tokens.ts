@@ -32,7 +32,11 @@ import { deepFrozenPlainCopy, ownValue, PlainDataError } from './plain-data.js';
 export const LOCAL_MCP_TOKEN_TABLE = '_smrt_local_mcp_tokens';
 /** Prefix of every local MCP token (aids secret scanning). */
 export const LOCAL_MCP_TOKEN_PREFIX = 'smrt_mcp_';
-/** Default token lifetime: 30 days. */
+/**
+ * Window of a renewable token (issued without `expiresInSeconds`): 30 days.
+ * Each successful `verify()` slides the expiry to now + this window, so a
+ * token lapses only after a full unused window.
+ */
 export const DEFAULT_LOCAL_MCP_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60;
 /** Longest token lifetime: 365 days. There is no non-expiring token. */
 export const MAX_LOCAL_MCP_TOKEN_TTL_SECONDS = 365 * 24 * 60 * 60;
@@ -40,6 +44,15 @@ export const MAX_LOCAL_MCP_TOKEN_TTL_SECONDS = 365 * 24 * 60 * 60;
 const MAX_SCOPES = 64;
 const MAX_SCOPE_LENGTH = 128;
 const MAX_LABEL_LENGTH = 80;
+/** A renewable token writes its slide at most this often (per token). */
+const SLIDE_WRITE_INTERVAL_MS = 60 * 60 * 1000;
+/** Columns added after the first release; added idempotently to old tables. */
+const LATER_COLUMNS = [
+  ['holder', 'TEXT NULL'],
+  ['sliding', 'INTEGER NULL'],
+  ['last_used_at', 'TEXT NULL'],
+] as const;
+const HOLDER_INDEX = `${LOCAL_MCP_TOKEN_TABLE}_active_holder`;
 const SCOPE_PATTERN = /^[\x21\x23-\x5b\x5d-\x7e]+$/u;
 const TOKEN_PATTERN = /^smrt_mcp_[A-Za-z0-9_-]{43}$/u;
 const DESKTOP_SLOT_ID_PATTERN =
@@ -55,12 +68,21 @@ export interface IssueLocalMcpTokenInput {
   /** Permission slugs the token may use. Each must be held by the owner. */
   readonly scopes: readonly string[];
   /**
-   * Lifetime in whole seconds, 60..{@link MAX_LOCAL_MCP_TOKEN_TTL_SECONDS}.
-   * Defaults to {@link DEFAULT_LOCAL_MCP_TOKEN_TTL_SECONDS}.
+   * Fixed lifetime in whole seconds, 60..{@link MAX_LOCAL_MCP_TOKEN_TTL_SECONDS}.
+   * The token never slides. Omit it for a renewable token: a
+   * {@link DEFAULT_LOCAL_MCP_TOKEN_TTL_SECONDS} window that each successful
+   * `verify()` slides forward (written at most once an hour).
    */
   readonly expiresInSeconds?: number;
   /** Operator note shown by `list()` (printable, at most 80 characters). */
   readonly label?: string;
+  /**
+   * Short printable id (at most 80 characters) of the device or client that
+   * holds the token. A holder has at most one active token: issuing for a
+   * holder that already has one rotates it, revoking the previous token in the
+   * same transaction as the new one is stored.
+   */
+  readonly holder?: string;
 }
 
 /** The one-time result of {@link LocalMcpTokenStore.issue}. */
@@ -71,6 +93,9 @@ export interface IssuedLocalMcpToken {
   readonly token: string;
   readonly scopes: readonly string[];
   readonly label: string | null;
+  readonly holder: string | null;
+  /** True when verification slides the expiry (no fixed lifetime was asked). */
+  readonly renewable: boolean;
   readonly createdAt: string;
   readonly expiresAt: string;
 }
@@ -83,8 +108,13 @@ export interface LocalMcpTokenRecord {
   readonly id: string;
   readonly scopes: readonly string[];
   readonly label: string | null;
+  readonly holder: string | null;
+  /** Renewable tokens slide on use; fixed-lifetime (and legacy) ones do not. */
+  readonly renewable: boolean;
   readonly createdAt: string;
   readonly expiresAt: string;
+  /** When the expiry last slid (hour granularity); null if never or fixed. */
+  readonly lastUsedAt: string | null;
   readonly revokedAt: string | null;
   readonly status: LocalMcpTokenStatus;
 }
@@ -158,6 +188,11 @@ export interface LocalMcpTokenStore {
   /** Revoke a token by id. Repeating it is a no-op. Unknown ids throw. */
   revoke(id: string): Promise<'revoked' | 'already-revoked'>;
   /**
+   * Revoke every unrevoked token of a holder. Idempotent: `'none'` when the
+   * holder has nothing left to revoke (including an unknown holder).
+   */
+  revokeHolder(holder: string): Promise<'revoked' | 'none'>;
+  /**
    * Resolve a presented token to its principal, or `null` (fail closed) for
    * a malformed, unknown, revoked or expired token, or an owner whose user or
    * membership is no longer active.
@@ -189,12 +224,21 @@ interface TokenRow {
   tenant_id?: unknown;
   scopes?: unknown;
   label?: unknown;
+  holder?: unknown;
+  sliding?: unknown;
   created_at?: unknown;
   expires_at?: unknown;
+  last_used_at?: unknown;
   revoked_at?: unknown;
 }
 
-/** Create the runtime-owned token table if it does not exist. */
+/**
+ * Create the runtime-owned token table if it does not exist, add the columns
+ * later releases introduced (`holder`, `sliding`, `last_used_at`) to an older
+ * table, and enforce one unrevoked token per holder with a partial unique
+ * index. Idempotent and safe to race. Rows from before the upgrade have no
+ * holder and are not renewable. The local profile is SQLite-only.
+ */
 export async function ensureLocalMcpTokenTable(
   db: DatabaseInterface,
 ): Promise<void> {
@@ -208,8 +252,36 @@ export async function ensureLocalMcpTokenTable(
       label TEXT NULL,
       created_at TEXT NOT NULL,
       expires_at TEXT NOT NULL,
-      revoked_at TEXT NULL
+      revoked_at TEXT NULL,
+      holder TEXT NULL,
+      sliding INTEGER NULL,
+      last_used_at TEXT NULL
     )`,
+  );
+  const present = async (): Promise<Set<string>> =>
+    new Set(
+      (
+        (await db.query(`PRAGMA table_info(${LOCAL_MCP_TOKEN_TABLE})`))
+          .rows as Array<{ name?: unknown }>
+      ).map((column) => String(column.name)),
+    );
+  let columns = await present();
+  for (const [name, type] of LATER_COLUMNS) {
+    if (columns.has(name)) continue;
+    try {
+      await db.query(
+        `ALTER TABLE ${LOCAL_MCP_TOKEN_TABLE} ADD COLUMN ${name} ${type}`,
+      );
+    } catch (error) {
+      // Another process may have added it first.
+      columns = await present();
+      if (!columns.has(name)) throw error;
+    }
+  }
+  await db.query(
+    `CREATE UNIQUE INDEX IF NOT EXISTS ${HOLDER_INDEX}
+     ON ${LOCAL_MCP_TOKEN_TABLE} (holder)
+     WHERE holder IS NOT NULL AND revoked_at IS NULL`,
   );
 }
 
@@ -261,6 +333,39 @@ export function createLocalMcpTokenStore(
     return resolved?.permissions ?? null;
   };
 
+  /**
+   * Slide a renewable token's expiry to now + window, at most once an hour.
+   * The conditional UPDATE never revives an expired or revoked token and never
+   * shortens an expiry. Best effort: a failed write leaves the token valid
+   * until its current expiry rather than failing the request.
+   */
+  const slideExpiry = async (id: string, row: TokenRow): Promise<void> => {
+    const current = now().getTime();
+    const last = Date.parse(String(row.last_used_at ?? ''));
+    if (Number.isFinite(last) && current - last < SLIDE_WRITE_INTERVAL_MS) {
+      return;
+    }
+    const nowIso = new Date(current).toISOString();
+    const slidTo = new Date(
+      current + DEFAULT_LOCAL_MCP_TOKEN_TTL_SECONDS * 1000,
+    ).toISOString();
+    try {
+      await db.query(
+        `UPDATE ${LOCAL_MCP_TOKEN_TABLE}
+         SET expires_at = ?, last_used_at = ?
+         WHERE id = ? AND sliding = 1 AND revoked_at IS NULL
+           AND expires_at > ? AND expires_at < ?`,
+        slidTo,
+        nowIso,
+        id,
+        nowIso,
+        slidTo,
+      );
+    } catch {
+      // Keep serving the verified request; the next verification retries.
+    }
+  };
+
   return Object.freeze<LocalMcpTokenStore>({
     async issue(input: IssueLocalMcpTokenInput): Promise<IssuedLocalMcpToken> {
       // Own plain data only: inherited or poisoned fields never set scopes,
@@ -285,12 +390,21 @@ export function createLocalMcpTokenStore(
         ownValue(fields, 'scopes') as readonly string[] | undefined,
         fail,
       );
-      const ttl =
-        (ownValue(fields, 'expiresInSeconds') as number | undefined) ??
-        DEFAULT_LOCAL_MCP_TOKEN_TTL_SECONDS;
+      const fixedTtl = ownValue(fields, 'expiresInSeconds') as
+        | number
+        | undefined;
+      // No explicit lifetime: a renewable token over the default window.
+      const renewable = fixedTtl === undefined || fixedTtl === null;
+      const ttl = fixedTtl ?? DEFAULT_LOCAL_MCP_TOKEN_TTL_SECONDS;
       validateTtl(ttl, fail);
-      const label = normalizeLabel(
+      const label = normalizeText(
         ownValue(fields, 'label') as string | undefined,
+        'label',
+        fail,
+      );
+      const holder = normalizeText(
+        ownValue(fields, 'holder') as string | undefined,
+        'holder',
         fail,
       );
       const owner = await deps.findOwner(db);
@@ -314,24 +428,53 @@ export function createLocalMcpTokenStore(
       const created = now();
       const createdAt = created.toISOString();
       const expiresAt = new Date(created.getTime() + ttl * 1000).toISOString();
-      await db.query(
-        `INSERT INTO ${LOCAL_MCP_TOKEN_TABLE}
-          (id, token_hash, user_id, tenant_id, scopes, label, created_at, expires_at, revoked_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
-        id,
-        await hashToken(token),
-        owner.userId,
-        owner.tenantId,
-        JSON.stringify(scopes),
-        label,
-        createdAt,
-        expiresAt,
-      );
+      const tokenHash = await hashToken(token);
+      const insert = (executor: Pick<DatabaseInterface, 'query'>) =>
+        executor.query(
+          `INSERT INTO ${LOCAL_MCP_TOKEN_TABLE}
+            (id, token_hash, user_id, tenant_id, scopes, label, created_at, expires_at, revoked_at, holder, sliding, last_used_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, NULL)`,
+          id,
+          tokenHash,
+          owner.userId,
+          owner.tenantId,
+          JSON.stringify(scopes),
+          label,
+          createdAt,
+          expiresAt,
+          holder,
+          renewable ? 1 : 0,
+        );
+      if (holder === null) {
+        await insert(db);
+      } else {
+        if (typeof db.transaction !== 'function') {
+          throw fail(
+            'invalid_configuration',
+            'Rotating a holder token requires a database adapter with transaction support.',
+          );
+        }
+        // The previous token is revoked and the new one stored together: a
+        // failure leaves the previous token valid, success leaves only the
+        // new one. The partial unique index backstops a concurrent writer.
+        await db.transaction(async (tx) => {
+          await tx.query(
+            `UPDATE ${LOCAL_MCP_TOKEN_TABLE}
+             SET revoked_at = ?
+             WHERE holder = ? AND revoked_at IS NULL`,
+            createdAt,
+            holder,
+          );
+          await insert(tx);
+        });
+      }
       return Object.freeze({
         id,
         token,
         scopes: Object.freeze([...scopes]),
         label,
+        holder,
+        renewable,
         createdAt,
         expiresAt,
       });
@@ -432,6 +575,8 @@ export function createLocalMcpTokenStore(
         token,
         scopes: Object.freeze(scopes),
         label: DESKTOP_SLOT_LABEL,
+        holder: null,
+        renewable: false,
         createdAt,
         expiresAt,
       });
@@ -440,7 +585,8 @@ export function createLocalMcpTokenStore(
     async list(): Promise<LocalMcpTokenRecord[]> {
       await ensureLocalMcpTokenTable(db);
       const result = await db.query(
-        `SELECT id, scopes, label, created_at, expires_at, revoked_at
+        `SELECT id, scopes, label, holder, sliding, created_at, expires_at,
+                last_used_at, revoked_at
          FROM ${LOCAL_MCP_TOKEN_TABLE}
          ORDER BY created_at DESC, id`,
       );
@@ -458,8 +604,12 @@ export function createLocalMcpTokenStore(
           id: String(row.id),
           scopes: Object.freeze(parseScopes(row.scopes) ?? []),
           label: row.label == null ? null : String(row.label),
+          holder: row.holder == null ? null : String(row.holder),
+          renewable: isRenewable(row),
           createdAt: String(row.created_at),
           expiresAt,
+          lastUsedAt:
+            row.last_used_at == null ? null : String(row.last_used_at),
           revokedAt,
           status,
         });
@@ -490,11 +640,29 @@ export function createLocalMcpTokenStore(
       return 'already-revoked';
     },
 
+    async revokeHolder(holder: string): Promise<'revoked' | 'none'> {
+      const normalized = normalizeText(holder, 'holder', fail);
+      if (normalized === null) {
+        throw fail('invalid_configuration', 'An MCP token holder is required.');
+      }
+      await ensureLocalMcpTokenTable(db);
+      const updated = await db.query(
+        `UPDATE ${LOCAL_MCP_TOKEN_TABLE}
+         SET revoked_at = ?
+         WHERE holder = ? AND revoked_at IS NULL
+         RETURNING id`,
+        now().toISOString(),
+        normalized,
+      );
+      return updated.rows.length > 0 ? 'revoked' : 'none';
+    },
+
     async verify(token: string): Promise<LocalMcpTokenPrincipal | null> {
       // Reject garbage before any secret read or database access.
       if (typeof token !== 'string' || !TOKEN_PATTERN.test(token)) return null;
       const result = await db.query(
-        `SELECT id, user_id, tenant_id, scopes, expires_at, revoked_at
+        `SELECT id, user_id, tenant_id, scopes, sliding, expires_at,
+                last_used_at, revoked_at
          FROM ${LOCAL_MCP_TOKEN_TABLE}
          WHERE token_hash = ?
          LIMIT 1`,
@@ -523,6 +691,7 @@ export function createLocalMcpTokenStore(
       if (!user || user.status !== UserStatus.ACTIVE) return null;
       const held = await livePermissions(userId, tenantId);
       if (!held) return null;
+      if (isRenewable(row)) await slideExpiry(String(row.id), row);
       return Object.freeze({
         id: userId,
         tenantId,
@@ -574,8 +743,14 @@ function normalizeScopes(
   return [...new Set(value)].sort();
 }
 
-function normalizeLabel(
+function isRenewable(row: TokenRow): boolean {
+  // Rows from before sliding existed (NULL) are fixed.
+  return Number(row.sliding) === 1;
+}
+
+function normalizeText(
   value: string | undefined,
+  name: 'label' | 'holder',
   fail: LocalMcpTokenStoreDependencies['fail'],
 ): string | null {
   if (value === undefined) return null;
@@ -588,7 +763,7 @@ function normalizeLabel(
   ) {
     throw fail(
       'invalid_configuration',
-      'An MCP token label must be 1-80 printable characters.',
+      `An MCP token ${name} must be 1-80 printable characters.`,
     );
   }
   return label;

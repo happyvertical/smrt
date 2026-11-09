@@ -339,6 +339,7 @@ export async function openLocalMcpTokenStore(
     issue: store.issue,
     list: store.list,
     revoke: store.revoke,
+    revokeHolder: store.revokeHolder,
     verify: store.verify,
     close: async () => {
       await db.close?.();

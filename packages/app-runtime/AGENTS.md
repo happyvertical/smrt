@@ -82,7 +82,15 @@ Application infrastructure composition for the validated runtime profiles in
   seeding (#3323); the claim transaction's conditional UPDATE stays the
   authority for single use, expiry, and concurrency.
 - Local MCP tokens (`mcpTokens`, `openLocalMcpTokenStore`, `smrt app token`):
-  owner-bound, scoped, expiring (default 30 d, max 365 d), revocable. Only a
+  owner-bound, scoped, revocable. No `expiresInSeconds` = renewable: 30 d window
+  slid by `verify()` (conditional UPDATE, at most hourly via `last_used_at`;
+  never revives expired/revoked, never shortens, best effort); explicit TTL
+  (60 s..365 d) = fixed, never slides. Optional `holder`: `issue` rotates in one
+  transaction (revoke old + insert new; partial unique index backstop);
+  `revokeHolder` for device removal (no local caller exists). NULL
+  holder/sliding on old rows = no holder, fixed; `ensureLocalMcpTokenTable`
+  adds columns idempotently. Reseed changes the HMAC key, voiding all tokens.
+  Only a
   domain-separated HMAC (application secret) is stored, in the runtime-owned
   `_smrt_local_mcp_tokens` system table (created like the bootstrap table;
   never application schema). Issue refuses scopes the owner lacks; verify

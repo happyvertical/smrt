@@ -13,7 +13,7 @@ template's scripts so an app's `package.json` scripts become one-liners.
 | `node --env-file-if-exists=.env scripts/smrt-vite.mjs <args>` | `smrt app vite <args>` (`smrt app dev …` = `vite dev …` plus `--host 127.0.0.1` / `--port $PORT` unless given: `devServerArguments`) |
 | `smrt-mcp-apps.mjs validate-if-present && …smrt-vite.mjs build` | `smrt app build [vite args]` |
 | `scripts/smrt-web.mjs` | `bin/smrt-web.mjs` (spawned by `start`) |
-| — (new, #3413) | `smrt app token [create] --scopes … [--expires 30d] [--label …]`, `token list`, `token revoke <id>` |
+| — (new, #3413) | `smrt app token [create] --scopes … [--expires 30d] [--label …] [--holder …]`, `token list`, `token revoke <id>`, `token revoke-holder <holder>` |
 | — (new, #4804) | `smrt app backup --encrypted --target <name>`, `backups targets [add\|remove]`, `backups list`, `backups prune` |
 | — (new, #4704) | `smrt app installation [status]`, `restore --origin-retired`, `reseed --confirm-destroy-seed`, `recover-seed <file> [--unverified]`, `retire` |
 | — (new, #4805) | `smrt app restore-latest [--discard-local] [--replace-installation] [--origin-retired] [--recover]` |
@@ -145,7 +145,9 @@ Agent docs (#4878): `install` runs `docs:agents`, `dev` refreshes a missing or s
   connection, no writer lease, so it runs beside `app:start`), and serializes
   create/revoke under `operation.lock`. Only the `issued` document carries
   the token (`secretValuesIncluded: true`); list/revoke/error output never
-  does.
+  does. No `--expires` issues a renewable token (30 d window slides on use);
+  `--expires` a fixed one; `--holder` rotates that holder's token (#4874).
+  `list` shows `holder`, `renewable`, `lastUsedAt`.
 - **Artifacts**: backup/export/import paths go through
   `assertExternalArtifactPath` (real path of nearest existing ancestor, never
   in or over the checkout). Backup refuses an existing destination; export

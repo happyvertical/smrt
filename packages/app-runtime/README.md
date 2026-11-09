@@ -610,6 +610,40 @@ Both halves are exported from this package; the migration itself is
 
 Not yet provided: hosted HTTP routes, a durable hosted link store, unlinking.
 
+### Local MCP tokens
+
+`openLocalMcpTokenStore()` (and `smrt app token`) issue owner-bound, scoped
+bearer tokens; only a domain-separated HMAC keyed by the installation secret is
+stored. Credentials renew themselves instead of expiring on a short clock:
+
+- **Renewable by default.** A token issued without `expiresInSeconds` has a
+  30-day window. Each successful `verify()` slides the expiry to now + 30 days,
+  written at most once an hour per token (`lastUsedAt` shows the last slide), so
+  verification stays cheap. A token unused for the whole window lapses. Sliding
+  never revives an expired or revoked token and never shortens an expiry.
+- **Fixed on request.** `expiresInSeconds` (60 s to 365 d) makes a
+  fixed-lifetime token that never slides. `list()` reports `renewable`.
+- **One token per holder.** `issue({ holder })` (a short printable id) rotates:
+  the holder's previous token is revoked in the same transaction that stores the
+  new one, so exactly one is valid and a failed rotation keeps the old one.
+  The old value cannot be returned (only its HMAC exists); the caller receives
+  the new one. A partial unique index backs this up. Tokens without a holder
+  behave as before.
+- **Revoke with the holder.** `revokeHolder(holder)` (`'revoked'` | `'none'`,
+  idempotent; `smrt app token revoke-holder <holder>`) is for whatever removes
+  a device or client; this package has no local device-removal path to call it
+  from.
+- **Reseeding.** The hash key derives from the installation seed, so
+  `reseedInstallation` invalidates every token (and revokes the active ones).
+- **Upgrade.** Tables from earlier releases gain the `holder`, `sliding` and
+  `last_used_at` columns on open; their rows have no holder and stay fixed.
+
+```text
+smrt app token --scopes notes.read --holder laptop   # renewable, rotates laptop
+smrt app token --scopes notes.read --expires 7d      # fixed lifetime
+smrt app token list | revoke <id> | revoke-holder <holder>
+```
+
 ### Local desktop MCP credentials
 
 A desktop product can mount this opt-in SvelteKit route in
