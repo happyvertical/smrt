@@ -162,6 +162,113 @@ Tauri resolves it next to the app binary with the target suffix. `args` are
 relative to the resource directory, which is the child's working directory
 (for example `["app/build/index.js"]`). The icons in `icons/` are placeholders.
 
+## Release pipeline
+
+`.github/workflows/desktop-release.yml` (epic #4663 item 5, issue #4836) holds
+two paths that share a file and nothing else. `desktop-shell.yml` keeps the fast
+Rust checks (fmt, clippy, tests on Ubuntu); this workflow builds.
+
+| | PR and verification builds | Release |
+| --- | --- | --- |
+| Trigger | pull request or push to main that changes `packages/smrt-desktop/**` or the workflow; manual dispatch | manual dispatch from main with `release` set; nothing else reaches it |
+| Signing | none, unsigned | Apple Developer ID signing and notarization, Tauri updater signature |
+| Token and secrets | `contents: read`, no secrets | `contents: write` in the publishing job only; secrets reach only the preflight step and the build step |
+| Matrix | macOS arm64 (`macos-14`), macOS x64 (`macos-15-intel`), Windows, Linux | the same four targets |
+| Product | none: the shell is compiled and linked with `tauri build --no-bundle` | a bundle made by `smrt desktop bundle` for each target |
+| Output | pull requests upload nothing; main and dispatch keep the unsigned shell binary for 3 days | the rolling `desktop-latest` prerelease plus `latest.json` (the updater feed) |
+
+Pull request builds are a compile and link smoke, not a product build. There is
+no product in this repository, so no `externalBin`, resources or installer are
+produced and nothing is faked. The policy (path filter, uploads only from main
+or dispatch, short retention) follows ergot's `capture-desktop-artifacts.yml`.
+`tauri-action` and the other actions are pinned by commit SHA; the Tauri CLI is
+pinned to an exact version (`TAURI_CLI_VERSION`).
+
+### Fail-closed preflight
+
+The release path starts with `scripts/release-preflight.mjs` (tested by
+`scripts/release-preflight.test.mjs`, run by the verification build on Linux).
+It refuses, names what is missing and never prints a value, unless all of these
+exist:
+
+1. The run is on main.
+2. The Apple secrets `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`,
+   `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD` and `APPLE_TEAM_ID`.
+3. `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`.
+4. A real updater public key in `tauri.conf.json` (`plugins.updater.pubkey`).
+   The committed value is an obviously invalid placeholder; the check requires
+   the base64 minisign public key format Tauri generates.
+5. The `product_dir` and `bridge_path` dispatch inputs, as safe repo-relative
+   paths.
+
+Each target then checks its bundle again after the artifact hop, before any
+signing: the bundle report says the Node pin is `gpg-verified` with signer
+fingerprints (the bundle step also runs `smrt desktop bundle
+--require-verified-pins`), the target matches, every file still has the digest
+in `bundle-files.sha256`, and the product identity is not empty or a
+placeholder. The committed `productName` and `identifier` are placeholders on
+purpose: the release identity comes only from the bundle (`bundleId`,
+`displayName`, `productVersion` in `bundle-report.json`), written into a
+`tauri.release.json` overlay together with `tauri.bundle.json`. The bundle's
+`binaries/` and `resources/` are copied next to `tauri.conf.json` because the
+paths in `tauri.bundle.json` are relative to it. A build with any of this
+missing stops before it holds a signing key.
+
+The product code (the app, its dependencies, `pnpm install`, `smrt app build`
+and the bundler) runs only in the secretless bundle job on a GitHub-hosted
+runner. The job that holds the signing secrets runs the shell's own build and
+the pinned Tauri toolchain.
+
+macOS signing runs on the runner named by the repository variable
+`DESKTOP_MACOS_SIGNING_RUNNER` (a runner label, or a JSON array of labels for a
+self-hosted runner), default `macos-14`. Both macOS targets build there; the
+x64 target is cross-compiled. Nothing assumes a self-hosted runner may be used.
+
+### Owner inputs still missing
+
+None of these is generated, defaulted or stored by this repository. Until they
+exist the release path stops at its preflight. Item 4 (#4835, packaging
+matrix) and the signing half of #4836 are `status: blocked` on them.
+
+1. **Apple Developer ID certificate and notarization credentials**, as the six
+   repository secrets above (the certificate is a base64 `.p12`; the password
+   is an app-specific password).
+2. **Permission to generate the Tauri updater signing key** and a decision on
+   where its private half lives. The private key and its password become
+   `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`; the
+   public half is committed as `plugins.updater.pubkey` in `tauri.conf.json`.
+   Losing the private key strands every installed copy.
+3. **macOS arm64 runner confirmation**: either keep GitHub-hosted `macos-14` or
+   state that the self-hosted runner used for ergot may be reused for signing
+   and set `DESKTOP_MACOS_SIGNING_RUNNER` to it.
+4. **Product identity strings** (bundle identifier, display name) in the
+   product's `smrt-desktop.json`, plus real product icons: the icons in
+   `icons/` are placeholders and no product icons are supplied by the bundle.
+5. **A gpg-verified Node pin.** The only pin, Node 26.8.1, is `unverified` (see
+   `../README.md`, Node pin provenance); a maintainer with `gpg` must run
+   `scripts/update-node-pins.mjs`.
+6. **The product itself** for the `product_dir` and `bridge_path` inputs: a
+   standalone app with `smrt-desktop.json`, its lockfile and a pre-bundled MCP
+   bridge.
+
+### Not verified
+
+A workflow cannot be run locally. `actionlint`, `yamllint`, the preflight unit
+tests and a local `tauri build --no-bundle` of the shell were run; the hosted
+runners, `tauri-action`'s publishing, `latest.json` merging, notarization and
+the final macOS `codesign` and `stapler` checks have not run. Known gaps for
+the first real run:
+
+- The Node sidecar needs a JIT entitlement under the hardened runtime
+  (`com.apple.security.cs.allow-jit`); no entitlements file is committed
+  because it cannot be tested without the certificate.
+- The release is published before the macOS verification step runs, so a bad
+  build is a loud failure but is already uploaded; the rolling release keeps
+  every version's assets until pruned.
+- Windows installers and Linux packages carry the updater signature but no
+  platform code-signing certificate; none was requested. AppImage is not built
+  (the launcher does not support it in v1).
+
 ## Tests
 
 From this directory:
@@ -186,7 +293,10 @@ cargo test --locked
   `node` is absent. No test starts containers or leaves loopback.
 - `.github/workflows/desktop-shell.yml` runs the same three commands on Ubuntu
   for changes under `packages/smrt-desktop/shell/` only. It is path filtered
-  and is not a required check.
+  and is not a required check. The build and release workflow is described
+  under Release pipeline.
+- `node --test scripts/release-preflight.test.mjs` covers the release
+  preflight.
 
 Manual smoke run: in a debug build the resource directory is the executable directory, so put a
 `sidecar-manifest.json`, the sidecar script and a symlink named like the
@@ -202,7 +312,9 @@ manifest's `executable` (pointing at a `node` binary) in
   must not put secrets in the URL query.
 - **Native credential custody.** Nothing here stores or reads credentials.
 - **Rendezvous / discovery interface.** The origin is private to the process.
-- **Bundling the Node binary**, signing, notarisation and releases.
+- **Bundling the Node binary** is done by `smrt desktop bundle`. Signing,
+  notarisation and releases are described under Release pipeline and are
+  blocked on owner inputs.
 - Runtime health monitoring after `Ready` (a hung but alive sidecar is not
   detected; only exits are), an in-window status page for `Restarting` /
   `Failed` (the tray carries the state; the webview shows the browser's error

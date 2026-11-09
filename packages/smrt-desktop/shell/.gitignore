@@ -1,2 +1,5 @@
 /target/
 /gen/
+/binaries/
+/resources/
+/tauri.release.json

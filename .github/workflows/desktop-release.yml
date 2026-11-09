@@ -1,0 +1,421 @@
+# =============================================================================
+# Desktop build and release (Tauri 2 shell, epic #4663 item 5, issue #4836)
+# =============================================================================
+# Two separate paths share this file; nothing connects them except the code.
+#
+# 1. verify-build (pull_request, push to main, workflow_dispatch)
+#    UNSIGNED. Runs only when desktop-owned paths change. `contents: read`, no
+#    secrets. There is no product in this repository, so it compiles and links
+#    the reusable shell for four targets (cargo release build through
+#    `tauri build --no-bundle`) and packages nothing. Pull requests upload
+#    nothing at all; main and dispatch builds keep the unsigned shell binary
+#    for three days so a human can look at it. This is policy copied from
+#    ergot's capture-desktop-artifacts.yml (path-filtered pull requests,
+#    uploads only from main or manual dispatch, short retention).
+#
+# 2. release-* (workflow_dispatch from main with `release: true` only)
+#    Signs, notarizes and publishes to the rolling `desktop-latest` release,
+#    including the updater feed `latest.json`. It FAILS CLOSED: the first job
+#    refuses to continue unless every signing secret, a real updater public
+#    key and the product inputs exist, and each target refuses a bundle that
+#    was not built from a gpg-verified Node pin. Nothing here generates,
+#    defaults or invents a key, certificate, identity or secret. Until the
+#    owner supplies them (see "Release pipeline" in
+#    packages/smrt-desktop/shell/README.md) this path stops at its preflight.
+#
+# The product code (the app and its dependencies) only ever runs in
+# release-bundle, which has no secrets. The job that holds the signing secrets
+# runs the shell's own build and the pinned Tauri toolchain, on a bundle whose
+# file digests it re-verifies after the artifact hop.
+# =============================================================================
+
+name: Desktop release
+
+on:
+  pull_request:
+    paths:
+      - 'packages/smrt-desktop/**'
+      - '.github/workflows/desktop-release.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'packages/smrt-desktop/**'
+      - '.github/workflows/desktop-release.yml'
+  workflow_dispatch:
+    inputs:
+      release:
+        description: >-
+          Sign, notarize and publish to the rolling desktop-latest release.
+          Fails closed unless every owner input exists. Main only.
+        type: boolean
+        default: false
+      product_dir:
+        description: >-
+          Release only. Repo-relative root of the standalone app to bundle
+          (package.json, pnpm-lock.yaml, smrt-desktop.json).
+        type: string
+        default: ''
+      bridge_path:
+        description: >-
+          Release only. Repo-relative path of the pre-bundled MCP bridge file.
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-release-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: '0'
+  SHELL_DIR: packages/smrt-desktop/shell
+  # Exact Tauri CLI release (at least two weeks old when pinned).
+  TAURI_CLI_VERSION: 2.12.4
+
+jobs:
+  verify-build:
+    name: Verify build (${{ matrix.label }}, unsigned)
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: macos-arm64
+            runner: macos-14
+            binary: smrt-desktop-shell
+          - label: macos-x64
+            runner: macos-15-intel
+            binary: smrt-desktop-shell
+          - label: windows-x64
+            runner: windows-latest
+            binary: smrt-desktop-shell.exe
+          - label: linux-x64
+            runner: ubuntu-latest
+            binary: smrt-desktop-shell
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Install Tauri Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config \
+            libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
+            librsvg2-dev libssl-dev libxdo-dev patchelf
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '24'
+
+      - name: Set up Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustc --version
+          cargo --version
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: packages/smrt-desktop/shell
+
+      - name: Test the release preflight
+        if: runner.os == 'Linux'
+        run: node --test "$SHELL_DIR/scripts/release-preflight.test.mjs"
+
+      - name: Install the pinned Tauri CLI
+        run: npm install --global --ignore-scripts "@tauri-apps/cli@${TAURI_CLI_VERSION}"
+
+      # No product bundle exists in this repository, so there is no
+      # externalBin, no resources and nothing to package: the shell is
+      # compiled and linked, and `--no-bundle` stops there. A product build
+      # (tauri.bundle.json from `smrt desktop bundle`) happens only in the
+      # release path below. This is a compile/link smoke, not a product build.
+      - name: Build the shell without a product (unsigned)
+        uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # action-v1.0.0
+        with:
+          projectPath: packages/smrt-desktop/shell
+          tauriScript: tauri
+          args: --no-bundle
+          uploadUpdaterJson: false
+
+      - name: Upload the unsigned shell binary (verification only)
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: desktop-shell-unsigned-${{ matrix.label }}
+          path: packages/smrt-desktop/shell/target/release/${{ matrix.binary }}
+          if-no-files-found: error
+          retention-days: 3
+
+  # ---------------------------------------------------------------------------
+  # Release path. Everything below is skipped unless a person dispatched this
+  # workflow on main with `release` set.
+  # ---------------------------------------------------------------------------
+  release-preflight:
+    name: Release preflight (fails closed)
+    if: github.event_name == 'workflow_dispatch' && inputs.release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Require main
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          if [ "$REF" != "refs/heads/main" ]; then
+            echo "A release is only built from main; this run is on ${REF}." >&2
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '24'
+
+      # Presence only. The script names what is missing and never prints a
+      # value. The secrets reach this one step and no other in this job.
+      - name: Check secrets, updater key and product inputs
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          PRODUCT_DIR: ${{ inputs.product_dir }}
+          BRIDGE_PATH: ${{ inputs.bridge_path }}
+        run: |
+          node "$SHELL_DIR/scripts/release-preflight.mjs" \
+            --secrets \
+            --config "$SHELL_DIR/tauri.conf.json" \
+            --inputs "$PRODUCT_DIR" "$BRIDGE_PATH"
+
+  # Runs the product's own code, so it holds no secrets and only `contents:
+  # read`. `--require-verified-pins` refuses an unverified Node pin before any
+  # work (exit 4).
+  release-bundle:
+    name: Bundle the product (${{ matrix.target }})
+    needs: release-preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - aarch64-apple-darwin
+          - x86_64-apple-darwin
+          - x86_64-pc-windows-msvc
+          - x86_64-unknown-linux-gnu
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Setup environment
+        uses: ./.github/actions/setup-environment
+        with:
+          setup-playwright: 'false'
+
+      - name: Build the s-m-r-t CLI and the bundler
+        run: pnpm turbo run build --filter=@happyvertical/smrt-cli...
+
+      - name: Build the product app
+        env:
+          PRODUCT_DIR: ${{ inputs.product_dir }}
+        run: |
+          pnpm --dir "$PRODUCT_DIR" install --frozen-lockfile --ignore-scripts
+          pnpm --dir "$PRODUCT_DIR" exec smrt app build
+
+      - name: Bundle the product runtime
+        env:
+          PRODUCT_DIR: ${{ inputs.product_dir }}
+          BRIDGE_PATH: ${{ inputs.bridge_path }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/bundle"
+          node packages/cli/bin/smrt.js desktop bundle \
+            --app "$PRODUCT_DIR" \
+            --bridge "$GITHUB_WORKSPACE/$BRIDGE_PATH" \
+            --target "$TARGET" \
+            --out "$RUNNER_TEMP/bundle/$TARGET" \
+            --require-verified-pins
+          # A tar keeps the executable bit that an artifact upload drops.
+          tar -C "$RUNNER_TEMP/bundle" -cf "$RUNNER_TEMP/bundle-$TARGET.tar" "$TARGET"
+
+      - name: Upload the bundle for signing
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: desktop-bundle-${{ matrix.target }}
+          path: ${{ runner.temp }}/bundle-${{ matrix.target }}.tar
+          if-no-files-found: error
+          retention-days: 1
+
+  release:
+    name: Sign and publish (${{ matrix.target }})
+    needs: [release-preflight, release-bundle]
+    # The only job with `contents: write`. macOS signing runs on the runner
+    # named by the repository variable DESKTOP_MACOS_SIGNING_RUNNER (a label,
+    # or a JSON array of labels for a self-hosted runner); the default is the
+    # GitHub-hosted macos-14. The self-hosted runner is not assumed.
+    runs-on: ${{ fromJSON(startsWith(matrix.runner, '[') && matrix.runner || format('["{0}"]', matrix.runner)) }}
+    timeout-minutes: 90
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: bash
+    # One at a time: every leg merges its platform into the same latest.json.
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            runner: ${{ vars.DESKTOP_MACOS_SIGNING_RUNNER || 'macos-14' }}
+            bundles: app,dmg
+          - target: x86_64-apple-darwin
+            runner: ${{ vars.DESKTOP_MACOS_SIGNING_RUNNER || 'macos-14' }}
+            bundles: app,dmg
+          - target: x86_64-pc-windows-msvc
+            runner: windows-latest
+            bundles: nsis
+          # AppImage is excluded: the launcher does not support it in v1.
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-latest
+            bundles: deb
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Download the bundle
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: desktop-bundle-${{ matrix.target }}
+          path: .desktop-bundle-download
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '24'
+
+      # Re-verify the bundle after the artifact hop, and turn its identity
+      # into the Tauri config overlay. Fails closed on an unverified Node pin,
+      # a placeholder identity, another target or a changed file.
+      - name: Preflight the bundle and write the config overlay
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          mkdir -p .desktop-bundle
+          tar -C .desktop-bundle -xf ".desktop-bundle-download/bundle-$TARGET.tar"
+          node "$SHELL_DIR/scripts/release-preflight.mjs" \
+            --config "$SHELL_DIR/tauri.conf.json" \
+            --bundle ".desktop-bundle/$TARGET" \
+            --target "$TARGET" \
+            --write-overlay "$SHELL_DIR/tauri.release.json"
+          # tauri.bundle.json paths are relative to the Tauri config directory.
+          cp -R ".desktop-bundle/$TARGET/binaries" "$SHELL_DIR/binaries"
+          cp -R ".desktop-bundle/$TARGET/resources" "$SHELL_DIR/resources"
+
+      - name: Install Tauri Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config \
+            libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
+            librsvg2-dev libssl-dev libxdo-dev patchelf
+
+      - name: Set up Rust
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add "$TARGET"
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: packages/smrt-desktop/shell
+
+      - name: Install the pinned Tauri CLI
+        run: npm install --global --ignore-scripts "@tauri-apps/cli@${TAURI_CLI_VERSION}"
+
+      # Apple credentials reach only this step, and only on macOS.
+      - name: Build, sign, notarize and publish (macOS)
+        if: runner.os == 'macOS'
+        uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # action-v1.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: packages/smrt-desktop/shell
+          tauriScript: tauri
+          args: --target ${{ matrix.target }} --config tauri.release.json --bundles ${{ matrix.bundles }}
+          tagName: desktop-latest
+          releaseName: Desktop (rolling)
+          releaseBody: Rolling desktop build and updater feed (latest.json). Not a versioned release.
+          prerelease: true
+          uploadUpdaterJson: true
+          retryAttempts: 1
+
+      - name: Build, sign and publish (Windows and Linux)
+        if: runner.os != 'macOS'
+        uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # action-v1.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: packages/smrt-desktop/shell
+          tauriScript: tauri
+          args: --target ${{ matrix.target }} --config tauri.release.json --bundles ${{ matrix.bundles }}
+          tagName: desktop-latest
+          releaseName: Desktop (rolling)
+          releaseBody: Rolling desktop build and updater feed (latest.json). Not a versioned release.
+          prerelease: true
+          uploadUpdaterJson: true
+          updaterJsonPreferNsis: true
+          retryAttempts: 1
+
+      # A build that came out unsigned or un-notarized must not stand as a
+      # release. Runs after the upload, so it is a loud failure for the owner,
+      # not a gate; Tauri itself fails the build when signing fails.
+      - name: Verify the macOS signature and notarization ticket
+        if: runner.os == 'macOS'
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          app="$(find "$SHELL_DIR/target/$TARGET/release/bundle/macos" -maxdepth 1 -name '*.app' | head -n 1)"
+          test -n "$app" || { echo "No .app bundle was produced." >&2; exit 1; }
+          codesign --verify --deep --strict --verbose=2 "$app"
+          xcrun stapler validate "$app"

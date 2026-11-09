@@ -68,6 +68,13 @@ signature until `scripts/update-node-pins.mjs` is run with `gpg`; each pin's
 provenance is recorded in the report and `--require-verified-pins` refuses an
 unverified one (a test fails if a pin says `gpg-verified` without evidence).
 
+The release workflow `.github/workflows/desktop-release.yml` and
+`shell/scripts/release-preflight.mjs` fail closed: pull request builds are
+unsigned with no secrets, and the signing path refuses to start without every
+secret, a real updater key, a gpg-verified Node pin and a non-placeholder
+product identity. Never add a default, fallback or generated value for any of
+them; the owner inputs still missing are listed in `shell/README.md`.
+
 Keep the package free of runtime dependencies and use Node built-ins only.
 
 From this directory, run `npm run build`, `npm run typecheck`, and
