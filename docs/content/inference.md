@@ -386,10 +386,15 @@ const [t] = await listAiTranscripts(db, { actor: user.id, tenantId, callId });
 await recordAiUsageOutcome(db, { callId, label: 'wrong', score: 0, actor: user.id });
 ```
 
-**Comparing** (lands with #4782). `smrt ai:compare --prompt <key> --a
-hash:<h1> --b hash:<h2>` (also `model:` and `tier:` sides) compares two
-prompt versions or models on calls, cost, latency, fallback rate and label
-distribution, and `smrt prompts:history <key>` lists the template hashes
-seen.
+**Comparing.** `smrt ai:compare --prompt <key> --a hash:<h1> --b
+hash:<h2> --tenant <id>` (also `model:` and `tier:` sides) compares two
+prompt versions or models on calls, cost, latency percentiles, fallback and
+degraded rates, label distribution and mean score; rows matching neither
+side are counted, not dropped. `--transcripts N` prints each side's N
+worst-labelled transcripts side by side (an audited read). `smrt
+prompts:history <key> --tenant <id>` lists the template hashes seen with
+first and last seen and call counts. Both read one tenant unless
+`--all-tenants`; in code, `compareAiPromptRuns(db, { promptKey, a, b,
+tenantId })` and `listAiPromptTemplateHistory()`.
 
 Contract: [core ai-usage.md](https://github.com/happyvertical/smrt/blob/main/packages/core/agents/ai-usage.md).
