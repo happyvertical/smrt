@@ -52,7 +52,7 @@ describe('the builder tools say which types and names are allowed', () => {
       new RegExp(add.properties?.field?.pattern as string).test('due_date'),
     ).toBe(false);
     const change = await schemaOf('app_changefieldtype');
-    expect(change.properties?.to?.properties?.type?.enum).toEqual([
+    expect(change.properties?.definition?.properties?.type?.enum).toEqual([
       ...FIELD_TYPES,
     ]);
     expect(
@@ -164,5 +164,52 @@ describe('a rejected type or name steers the model to a fix in one retry', () =>
       events.filter((e) => e.type === 'tool_result') as { ok: boolean }[]
     ).map((e) => e.ok);
     expect(ok).toEqual([false, true]);
+  });
+});
+
+describe('every tool the assistant sends to a provider is self-contained', () => {
+  const FORBIDDEN_TOP = ['anyOf', 'oneOf', 'allOf', 'not', 'enum', 'const'];
+  const refs = (v: unknown, out: string[] = []): string[] => {
+    if (Array.isArray(v)) {
+      for (const x of v) refs(x, out);
+    } else if (v && typeof v === 'object')
+      for (const [k, x] of Object.entries(v)) {
+        if (k === '$ref' || k === '$defs' || k === '$schema') out.push(k);
+        refs(x, out);
+      }
+    return out;
+  };
+
+  it('with an app model present, shell and app tools alike', async () => {
+    const { callTool } = await import('./policy.ts');
+    await callTool(h.owner, 'app_definemodel', {
+      name: 'Chore',
+      fields: {
+        title: { type: 'text', required: true },
+        dueDate: { type: 'date' },
+        done: { type: 'boolean' },
+        points: { type: 'integer' },
+      },
+    }).catch(() => undefined);
+    const { requests } = await (async () => {
+      const s = scripted([() => say('ok')]);
+      await drive({ principal: h.owner, model: s.model, text: 'hi' });
+      return s;
+    })();
+    const tools = requests[0].tools;
+    const names = tools.map((t) => t.function.name);
+    expect(names).toEqual(
+      expect.arrayContaining(['app_definemodel', 'chore_get', 'chore_create']),
+    );
+    for (const t of tools) {
+      const p = t.function.parameters as Record<string, unknown>;
+      expect(p.type, t.function.name).toBe('object');
+      expect(Object.keys(p), t.function.name).not.toEqual(
+        expect.arrayContaining(FORBIDDEN_TOP.slice(0, 1)),
+      );
+      for (const key of FORBIDDEN_TOP)
+        expect(Object.keys(p), `${t.function.name} ${key}`).not.toContain(key);
+      expect(refs(p), t.function.name).toEqual([]);
+    }
   });
 });

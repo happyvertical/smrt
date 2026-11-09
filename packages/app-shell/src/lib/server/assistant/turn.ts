@@ -13,12 +13,14 @@
 //  - Bounded: max steps, max tokens, per-call and per-turn timeouts, a cap on
 //    calls per step and on result size. Client disconnect aborts everything.
 import type { AIMessage, AITool, AIToolCall } from '@happyvertical/ai';
+import { toProviderToolSchema } from '@happyvertical/smrt-core';
 import type { TurnEvent, TurnStop } from '../../assistant/events.ts';
 import type { AssistantThread } from '../../objects/AssistantThread.ts';
 import { getApprovalView } from '../approvals.ts';
 import type { CatalogResponse, CatalogTool } from '../catalog.ts';
 import { PolicyError, type Principal } from '../owner.ts';
 import { callTool, toolsFor } from '../policy.ts';
+import { describeModelError } from './diagnostics.ts';
 import { systemPrompt } from './guidance.ts';
 import { type HoldOutcome, holdForUser } from './hold.ts';
 import type { AssistantModel, ModelToolCall } from './model.ts';
@@ -76,10 +78,8 @@ function toAiTool(tool: CatalogTool): AITool {
     function: {
       name: tool.name,
       ...(tool.description ? { description: tool.description } : {}),
-      parameters: (tool.inputSchema as Record<string, unknown> | undefined) ?? {
-        type: 'object',
-        properties: {},
-      },
+      // Providers accept a narrower JSON Schema than MCP: core prepares it.
+      parameters: toProviderToolSchema(tool.inputSchema),
     },
   };
 }
@@ -375,12 +375,8 @@ export async function runTurn(options: RunTurnOptions): Promise<TurnStop> {
         });
         return finish('timeout');
       }
-      const name =
-        error instanceof Error
-          ? `${error.name}${(error as { code?: unknown }).code ? `/${String((error as { code?: unknown }).code)}` : ''}`
-          : 'unknown';
-      // biome-ignore lint/suspicious/noConsole: class and code only, never a message
-      console.error('assistant model call failed:', name);
+      // biome-ignore lint/suspicious/noConsole: provider message and status, redacted; never the request
+      console.error('assistant model call failed:', describeModelError(error));
       emit({
         type: 'error',
         code: 'model_error',
