@@ -49,6 +49,10 @@ const BASE_AI = { provider: 'openai', apiKey: KEY, model: 'base-model' };
 const DAY = 86_400_000;
 
 class Probe extends SmrtClass {
+  async init() {
+    await this.initialize();
+    return this;
+  }
   async client() {
     return this.getAiClient();
   }
@@ -175,7 +179,7 @@ describe('AI call transcripts (#4780)', () => {
       db,
       ...(tenantId ? { tenantId } : {}),
     } as never);
-    await instance.initialize();
+    await instance.init();
     // SmrtClass has no tenant field; set it the way a tenant-owned object has.
     if (tenantId) Object.assign(instance, { tenantId });
     return instance;
@@ -218,7 +222,7 @@ describe('AI call transcripts (#4780)', () => {
         db,
         inference: { transcripts: { enabled: true, sample: 1 } },
       } as never);
-      await instance.initialize();
+      await instance.init();
       const ai = await instance.client();
       await ai.message('hello');
       expect(await transcriptRows()).toHaveLength(0);
@@ -297,7 +301,7 @@ describe('AI call transcripts (#4780)', () => {
         },
         db,
       } as never);
-      await instance.initialize();
+      await instance.init();
       eventTags = {
         substitutions: JSON.stringify([
           { from: 'great', to: 'good', reason: 'quota' },
@@ -424,8 +428,12 @@ describe('AI call transcripts (#4780)', () => {
   it('applies a per-prompt sample override', async () => {
     enable({ sample: 0, prompts: { 'notes.review': { sample: 1 } } });
     const ai = await (await probe()).client();
-    await ai.message('sampled', { usageTags: { promptKey: 'notes.review' } });
-    await ai.message('not sampled', { usageTags: { promptKey: 'other' } });
+    await ai.message('sampled', {
+      usageTags: { promptKey: 'notes.review' },
+    } as never);
+    await ai.message('not sampled', {
+      usageTags: { promptKey: 'other' },
+    } as never);
     const stored = await transcriptRows();
     expect(stored).toHaveLength(1);
     expect(stored[0]?.prompt_key).toBe('notes.review');
@@ -515,7 +523,9 @@ describe('AI call transcripts (#4780)', () => {
     it('masks the calling object’s sensitive field values', async () => {
       enable();
       const account = new Issue4780Account({ ai: BASE_AI, db } as never);
-      await account.initialize();
+      await (
+        account as unknown as { initialize(): Promise<unknown> }
+      ).initialize();
       account.name = 'Acme';
       account.accountSecret = 'hunter2-account-secret';
       // A prompt that quotes the sensitive value verbatim.
@@ -573,7 +583,7 @@ describe('AI call transcripts (#4780)', () => {
 
     it('writes one audit event per transcript read', async () => {
       await seedTwoTenants();
-      const writer = vi.fn(async () => {});
+      const writer = vi.fn(async (_entry: unknown, _db: unknown) => {});
       const read = await listAiTranscripts(db, {
         actor: 'auditor',
         reason: 'tuning',
@@ -680,7 +690,9 @@ describe('AI call transcripts (#4780)', () => {
       tenantId: 't9',
       usage: { db, tenantId: 't9' },
     });
-    const ai = resolved.instrument(raw);
+    const ai = resolved.instrument(raw) as unknown as {
+      message: (text: string, options?: unknown) => Promise<string>;
+    };
     expect(ai).not.toBe(raw);
     await ai.message(`raw ${KEY}`, { transcript: true } as never);
     const [row] = await transcriptRows();
