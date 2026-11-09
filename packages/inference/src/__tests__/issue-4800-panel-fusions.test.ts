@@ -465,6 +465,30 @@ describe('app-row fusions reach the executor (#4800)', () => {
         ],
       },
     });
+    // An inline candidate list naming an app alias (PR review, #4855).
+    await admin.setFusion({
+      name: 'listed',
+      definition: {
+        mode: 'single',
+        seats: [
+          {
+            name: 'only',
+            prompt: 'p4800.skeptic',
+            target: {
+              candidates: [{ alias: 'panel-local' }, { alias: 'frontier' }],
+            },
+          },
+        ],
+      },
+    });
+    const listed = await lookupInferenceFusion(
+      'listed',
+      { tier: 'best' },
+      { resolver, config },
+    );
+    expect(listed?.definition.seats[0]?.target).toEqual({
+      candidates: [{ model: 'cheap-m' }, { alias: 'frontier' }],
+    });
     const found = await lookupInferenceFusion(
       'aliased',
       { tier: 'best' },
@@ -481,5 +505,15 @@ describe('app-row fusions reach the executor (#4800)', () => {
       'from great-m',
     );
     expect(calls.map((call) => call.model)).toEqual(['cheap-m', 'great-m']);
+
+    // The listed fusion runs too: the executor's re-validation accepts it.
+    await bindBest('listed');
+    const second = await note();
+    await expect(second.instance.do('Review', { tier: 'best' })).resolves.toBe(
+      'from cheap-m',
+    );
+    expect(
+      (await admin.listInferenceFusions()).find((f) => f.name === 'listed'),
+    ).not.toHaveProperty('issues');
   });
 });

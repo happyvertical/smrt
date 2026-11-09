@@ -72,20 +72,34 @@ function expandStoredAliases(
   appAliases: Record<string, InferenceAlias>,
   configAliases: Record<string, InferenceAlias>,
 ): InferenceTarget {
-  if (inferenceTargetKind(target) !== 'alias') return target;
-  const name = target.alias as string;
-  // A config alias the app row does not replace: the executor resolves it.
-  if (!Object.hasOwn(appAliases, name)) return target;
   const expand = (alias: string, seen: Set<string>): InferenceCandidate[] => {
     if (seen.has(alias)) return []; // validated cycle-free before this runs
     const next = new Set(seen).add(alias);
     const definition = appAliases[alias] ?? configAliases[alias];
-    return (definition?.candidates ?? []).flatMap((candidate) =>
+    return inline(definition?.candidates ?? [], next);
+  };
+  // App-only alias candidates are inlined; config aliases stay references.
+  const inline = (
+    candidates: InferenceCandidate[],
+    seen: Set<string>,
+  ): InferenceCandidate[] =>
+    candidates.flatMap((candidate) =>
       candidate.alias && Object.hasOwn(appAliases, candidate.alias)
-        ? expand(candidate.alias, next)
+        ? expand(candidate.alias, seen)
         : [candidate],
     );
-  };
+  const kind = inferenceTargetKind(target);
+  if (kind === 'candidates') {
+    // An inline list (a stored fusion seat, #4800) may name app aliases too.
+    return {
+      ...target,
+      candidates: inline(target.candidates ?? [], new Set()),
+    };
+  }
+  if (kind !== 'alias') return target;
+  const name = target.alias as string;
+  // A config alias the app row does not replace: the executor resolves it.
+  if (!Object.hasOwn(appAliases, name)) return target;
   return { kind: 'candidates', candidates: expand(name, new Set()) };
 }
 
