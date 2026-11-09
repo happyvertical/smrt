@@ -207,6 +207,19 @@ environment names are in the README. Invariants:
   secrets non-enumerable. Add a named test per new threat in
   `__tests__/billing-host.test.ts`.
 
+## Vault account restart and supersede (#4841)
+
+`src/vault-account/`. `supersedeVaultAccount`, `unsupersedeVaultAccount` and
+`provisionRestartAccount` take injected ports (`VaultRelayAdminPort`,
+`VaultAccountDirectory`, an audit sink); no HTTP server or relay is needed.
+Order is load-bearing: owner of the tenant and of both accounts (`not_owner`),
+then `requireRecentAuthentication` from `smrt-users/step-up`
+(`step_up_required`, default 300 s), then the `authorized` audit record, then
+exactly one relay call, then the outcome record. Refusals are audited and never
+reach the relay; a member never learns about the step-up. Audit entries carry
+ids and codes only (no session id, key, token or message text). Import only the
+`@happyvertical/smrt-users/step-up` subpath, never the package root.
+
 ## Notes
 
 - Keep Stripe-specific fields as provider binding metadata. Runtime Stripe API

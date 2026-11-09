@@ -67,6 +67,14 @@ export interface SessionContext {
    * ceiling never receives super-admin bypass or system context.
    */
   permissionCeiling?: string[] | null;
+  /**
+   * When the person last proved a credential on this session (#4841): a
+   * step-up or an interactive sign-in. Server-derived from the stored row
+   * (`Session.getReauthenticatedAt`); null when never, malformed, or the
+   * session was minted by a method that proves nothing about the person.
+   * Decide with `requireRecentAuthentication`, never by reading this alone.
+   */
+  reauthenticatedAt?: Date | null;
 }
 
 /**
@@ -303,6 +311,7 @@ export class SessionService {
         authMethod: session.authMethod,
         parent,
         permissionCeiling,
+        reauthenticatedAt: current.getReauthenticatedAt(),
       };
     }
     return null;

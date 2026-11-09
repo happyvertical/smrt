@@ -74,6 +74,7 @@ export {
   SESSION_DATA_KEYS,
   Session,
   type SessionAuthMethod,
+  STEP_UP_SIGN_IN_AUTH_METHODS,
 } from './Session.js';
 export { MAX_TENANT_HIERARCHY_DEPTH, Tenant } from './Tenant.js';
 export {

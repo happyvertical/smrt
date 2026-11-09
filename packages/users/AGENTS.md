@@ -145,6 +145,14 @@ are not prerequisites for unrelated user-package work.
   server-set (`setSessionData` refuses it). State-changing handlers require
   `application/json` (415). Challenge rows are reaped only 10 minutes past expiry
   (clock skew).
+- Step-up (#4841, `src/step-up.ts`, subpath `./step-up`): `requireRecentAuthentication`
+  decides on `SessionContext.reauthenticatedAt`, derived from the stored row:
+  `data.reauthenticatedAt` (server-set by `PasswordCredentialService.stepUp`
+  after a limiter-guarded verify; `setSessionData` refuses it; extend/activity
+  never move it) or the sign-in time of an interactive `authMethod` only
+  (`STEP_UP_SIGN_IN_AUTH_METHODS`; never `terminal`/`pin`). Every failure is one
+  `StepUpRequiredError` (`step_up_required`). Passkey step-up = a fresh passkey
+  sign-in. Keep the entry free of side-effect imports.
 - A layered session whose tenant differs from its parent's never loads (null
   is allowed: narrower). Limiter rows carry `retain_until`; retention must
   not fall back to a process-wide horizon.

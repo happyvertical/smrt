@@ -38,6 +38,10 @@
     "./permission-registry": {
       "types": "./dist/permission-registry.d.ts",
       "import": "./dist/permission-registry.js"
+    },
+    "./step-up": {
+      "types": "./dist/step-up.d.ts",
+      "import": "./dist/step-up.js"
     }
   },
   "files": [

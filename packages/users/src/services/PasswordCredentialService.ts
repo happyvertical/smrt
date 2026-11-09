@@ -356,6 +356,20 @@ export interface PasswordSignInInput {
   replaceSessionId?: string | null;
 }
 
+export interface PasswordStepUpInput {
+  /** The signed-in session to step up (the cookie value, server-side). */
+  sessionId: string;
+  /** The person's current password. */
+  password: string;
+  ipAddress?: string;
+}
+
+export interface PasswordStepUpResult {
+  sessionId: string;
+  /** ISO time stamped on the session. */
+  reauthenticatedAt: string;
+}
+
 export interface PasswordSignInResult {
   /** The new session id: the cookie value. Never send it to client script. */
   sessionId: string;
@@ -766,6 +780,45 @@ export class PasswordCredentialService {
       }
       throw error;
     }
+  }
+
+  // -------------------------------------------------------------------------
+  // Step-up
+  // -------------------------------------------------------------------------
+
+  /**
+   * Re-verify the signed-in person's password on their CURRENT session and
+   * stamp `data.reauthenticatedAt` (#4841), which
+   * `requireRecentAuthentication` then reads. Goes through the same limiter
+   * and constant-work verification as sign-in and self-service changes, so it
+   * is no oracle outside the sign-in budget. A layered/PIN session or one with
+   * a permission ceiling never steps up. Every refusal (no or dead session,
+   * wrong password, none set) is one {@link PasswordCredentialError}. The
+   * stamp is not client input and ordinary session use never moves it.
+   */
+  async stepUp(input: PasswordStepUpInput): Promise<PasswordStepUpResult> {
+    const sessionId =
+      typeof input.sessionId === 'string' ? input.sessionId.trim() : '';
+    if (!sessionId) throw new PasswordCredentialError();
+    const session = await this.sessionRows.findValidSession(sessionId);
+    if (
+      !session ||
+      session.isLayered() ||
+      session.authMethod === 'pin' ||
+      session.getPermissionCeiling() !== null
+    ) {
+      throw new PasswordCredentialError();
+    }
+    const user = await this.users.get(session.userId);
+    if (!user?.id || !user.isActive()) throw new PasswordCredentialError();
+
+    await this.verifyCurrent(user, input.password, input.ipAddress, 'step-up');
+
+    const at = await this.sessionRows.markReauthenticated(sessionId, {
+      userId: user.id,
+    });
+    if (!at) throw new PasswordCredentialError();
+    return { sessionId, reauthenticatedAt: at.toISOString() };
   }
 
   // -------------------------------------------------------------------------

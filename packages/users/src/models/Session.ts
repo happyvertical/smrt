@@ -44,6 +44,19 @@ export type SessionAuthMethod =
   | (string & {});
 
 /**
+ * Sign-in methods whose mint counts as a fresh authentication for step-up
+ * (#4841): the person proved a credential interactively. `terminal` approval
+ * (any holder of a stale session can mint one), `pin`, `mobile` and
+ * host-defined methods never count.
+ */
+export const STEP_UP_SIGN_IN_AUTH_METHODS: readonly string[] = Object.freeze([
+  'password',
+  'passkey',
+  'oidc',
+  'magic-link',
+]);
+
+/**
  * Default session TTL: 7 days in seconds
  */
 export const DEFAULT_SESSION_TTL = 7 * 24 * 60 * 60;
@@ -78,6 +91,15 @@ export const SESSION_DATA_KEYS = {
    * {@link Session.getAuthenticatedAt}.
    */
   authenticatedAt: 'authenticatedAt',
+  /**
+   * ISO timestamp of the last step-up: a fresh password check made on this
+   * already-signed-in session (#4841). Written only by
+   * `SessionCollection.markReauthenticated` after the credential was verified;
+   * never from client input (`setSessionData` refuses it), never moved by
+   * `extend()`/activity, carried forward unchanged by tenant-switch rotation
+   * and gone with the session. See {@link Session.getReauthenticatedAt}.
+   */
+  reauthenticatedAt: 'reauthenticatedAt',
   /**
    * Row id of the passkey (`users_passkey_credentials`) a session was signed
    * in with. Set only by `PasskeyCredentialService` at mint; it decides which
@@ -317,6 +339,32 @@ export class Session extends SmrtObject {
     return created instanceof Date && !Number.isNaN(created.getTime())
       ? created
       : null;
+  }
+
+  /**
+   * When the person last proved a credential on this session (#4841): the
+   * newer of the step-up stamp (`data.reauthenticatedAt`) and the sign-in time
+   * ({@link Session.getAuthenticatedAt}), the latter counting only for an
+   * interactive sign-in method in {@link STEP_UP_SIGN_IN_AUTH_METHODS}. A
+   * `terminal`, `pin`, `mobile` or host-defined session proves nothing about
+   * the person at mint. A present but malformed step-up stamp returns null
+   * (fail closed, even if the sign-in time is fresh).
+   */
+  getReauthenticatedAt(): Date | null {
+    const raw = this.data?.[SESSION_DATA_KEYS.reauthenticatedAt];
+    let stepUp: Date | null = null;
+    if (raw !== undefined && raw !== null) {
+      const at = typeof raw === 'string' ? new Date(raw) : null;
+      if (!at || Number.isNaN(at.getTime())) return null;
+      stepUp = at;
+    }
+    const signIn =
+      typeof this.authMethod === 'string' &&
+      STEP_UP_SIGN_IN_AUTH_METHODS.includes(this.authMethod)
+        ? this.getAuthenticatedAt()
+        : null;
+    if (stepUp && signIn) return stepUp > signIn ? stepUp : signIn;
+    return stepUp ?? signIn;
   }
 
   /**

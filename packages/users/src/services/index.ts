@@ -213,6 +213,8 @@ export {
   type PasswordRecoveryProofContext,
   type PasswordSignInInput,
   type PasswordSignInResult,
+  type PasswordStepUpInput,
+  type PasswordStepUpResult,
   type ReplaceForgottenPasswordInput,
   type ResetPasswordInput,
   type SetPasswordInput,

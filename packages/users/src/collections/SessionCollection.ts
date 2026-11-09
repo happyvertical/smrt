@@ -351,6 +351,45 @@ export class SessionCollection extends SmrtCollection<Session> {
   }
 
   /**
+   * Record a step-up (#4841): stamp `data.reauthenticatedAt` on a live session.
+   * Call ONLY after the person's credential was verified on the server; this
+   * method proves nothing itself. Returns the stamp, or null when the session
+   * is unknown, not active, expired, or not `userId`'s (when given). Only the
+   * stamp moves: expiry, activity and every other `data` key are untouched,
+   * so ordinary use or refresh can never extend it.
+   */
+  async markReauthenticated(
+    sessionId: string,
+    options: { userId?: string; at?: Date } = {},
+  ): Promise<Date | null> {
+    const at = options.at ?? new Date();
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const session = await this.findValidSession(sessionId);
+      if (!session) return null;
+      if (options.userId !== undefined && session.userId !== options.userId) {
+        return null;
+      }
+      session.setData(SESSION_DATA_KEYS.reauthenticatedAt, at.toISOString());
+      try {
+        await session.save();
+        return at;
+      } catch (error) {
+        if (
+          attempt === 3 ||
+          !(
+            error instanceof Error &&
+            'code' in error &&
+            error.code === 'RUNTIME_REVISION_CONFLICT'
+          )
+        ) {
+          throw error;
+        }
+      }
+    }
+    return null;
+  }
+
+  /**
    * Set custom session data
    */
   async setSessionData(
@@ -362,6 +401,7 @@ export class SessionCollection extends SmrtCollection<Session> {
     // passkey sign-in writes the passkey row id; neither is caller data.
     if (
       key === SESSION_DATA_KEYS.authenticatedAt ||
+      key === SESSION_DATA_KEYS.reauthenticatedAt ||
       key === SESSION_DATA_KEYS.passkeyCredentialId
     ) {
       return false;

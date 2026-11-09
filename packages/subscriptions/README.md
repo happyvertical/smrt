@@ -499,6 +499,33 @@ owner's input; this module only maps them. No schema change is needed: event
 claims use core's `_smrt_run_once_claims`, retained for its pruning window
 (30 days by default), far longer than Stripe's three-day retry horizon.
 
+## Hosted vault-account restart and supersede (#4841)
+
+The hosted account layer (the service that holds the vault relay's admin
+token) replaces a family's vault account after a restart. That is a takeover
+of the backup line if done by the wrong person, so every action here is gated:
+
+- `supersedeVaultAccount`, `unsupersedeVaultAccount` (relay admin `PUT` and
+  `DELETE .../superseded-by`) and `provisionRestartAccount` (a fresh account
+  linked to the tenant plus the working device's relay signing key, step 1 of
+  the restart in the app-runtime README).
+- Each requires the caller to be the tenant **owner** (`NotOwnerError`, code
+  `not_owner`: a member, a device-only or layered session, no session, or an
+  account of another tenant) **and** a **step-up**: the owner re-authenticated
+  with a fresh password or passkey within `stepUpMaxAgeSeconds` (default 300;
+  `StepUpRequiredError`, code `step_up_required`). A signed-in session or an
+  unlocked device is not enough. See `smrt-users` "Step-up".
+- The relay is called only after both checks pass, exactly once. Every attempt
+  is written to your `audit` sink (`denied` with the reason code, `authorized`
+  before the call, then `succeeded` or `failed`); records hold ids, codes and
+  times, never a password, session id, token or key. If the `authorized`
+  record cannot be written, nothing is done.
+- Collaborators are injected: `session` (from `loadSessionContext`), `relay`
+  (`VaultRelayAdminPort`; `createVaultRelayAdminClient({ baseUrl, adminToken })`
+  speaks the admin HTTP API, and a `VaultRelay` instance fits in-process),
+  `directory` (which tenant owns an account, and linking a new one so
+  `backup.vault` resolves), and `audit`.
+
 ## Svelte entry point
 
 `@happyvertical/smrt-subscriptions/svelte` exports provider-neutral,

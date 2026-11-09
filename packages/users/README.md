@@ -1150,6 +1150,42 @@ What the app must do:
 
 Passkeys/WebAuthn are a separate credential: see "Passkey sign-in" below.
 
+### Step-up (recent authentication) for sensitive actions
+
+A signed-in session is not proof the person is at the keyboard now. For an
+action that must not ride on an old or unlocked session (replacing a vault
+account, #4841), require a recent authentication:
+
+```ts
+import { requireRecentAuthentication } from '@happyvertical/smrt-users/step-up';
+
+const ctx = await sessionService.loadSessionContext(sessionId);
+// throws StepUpRequiredError (code 'step_up_required') unless the person
+// proved a credential within the last 5 minutes (maxAgeSeconds, max 1 hour)
+requireRecentAuthentication(ctx, { maxAgeSeconds: 300 });
+```
+
+- The proof is server-side session state. An interactive sign-in (`password`,
+  `passkey`, `oidc`, `magic-link`) counts at mint; `terminal`, `pin`, `mobile`
+  and host-defined sessions do not. `ctx.reauthenticatedAt` is derived from the
+  stored row.
+- To refresh it on an existing session, the page asks for the password and the
+  host calls `(await passwordAuth.service()).stepUp({ sessionId, password,
+  ipAddress })`. It uses the sign-in limiter and constant-work verification,
+  refuses layered/PIN and ceilinged sessions, and answers every refusal with
+  one `PasswordCredentialError`. A passkey owner re-authenticates with a fresh
+  passkey sign-in and the host uses the new session: there is no separate
+  passkey step-up ceremony.
+- The stamp (`SESSION_DATA_KEYS.reauthenticatedAt`) is never client input
+  (`setSessionData` refuses it), is not moved by refresh, activity or
+  `extend()`, is carried unchanged across tenant-switch rotation, and dies
+  with the session.
+- `isTenantOwnerSession(ctx)` is the matching owner test: a direct active
+  `owner` membership on a first-class session (not a member, `terminal`/`pin`
+  device, layered, ceilinged or inherited one).
+- The `@happyvertical/smrt-users/step-up` entry has no side effects and can be
+  imported by packages that must not load the whole identity module.
+
 ### Passkey sign-in
 
 `PasskeyCredentialService` (#3275) gives an app passkey (WebAuthn) sign-in for
