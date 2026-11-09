@@ -119,7 +119,7 @@ describe('bundle manifest v1', () => {
       failure(() =>
         parseBundleManifest(
           example.replace(
-            '"executable": "smrt-start-node"',
+            '"executable": "smrt-notes-node"',
             '"executable": "a", "executable": "b"',
           ),
         ),
@@ -256,10 +256,8 @@ describe('bundle manifest v1', () => {
 });
 
 describe('assertBundleMatchesSidecar', () => {
-  const sidecar = {
-    ...parseSidecarManifest(read('node26-sidecar.json')),
-    executable: 'smrt-start-node',
-  };
+  // The two shared examples describe the same product.
+  const sidecar = parseSidecarManifest(read('node26-sidecar.json'));
 
   it('accepts a matching executable', () => {
     expect(() =>

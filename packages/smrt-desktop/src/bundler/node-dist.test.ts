@@ -614,6 +614,27 @@ describe('acquireNodeBinary', () => {
     expect(listAll(s.outDir)).toEqual([]);
   });
 
+  it('awaits an asynchronous target check and writes nothing when it rejects', async () => {
+    const s = setup(goodArchive);
+    const h = harness(() => response(goodArchive));
+    let finished = false;
+    expect(
+      await codeOf(
+        acquireNodeBinary({
+          ...s.base,
+          fetch: h.fetch,
+          verifyBinary: async () => {
+            await new Promise((resolve) => setTimeout(resolve, 5));
+            finished = true;
+            throw new Error('wrong architecture');
+          },
+        }),
+      ),
+    ).toBe('binary_rejected');
+    expect(finished).toBe(true);
+    expect(listAll(s.outDir)).toEqual([]);
+  });
+
   it('rejects a symlink binary member in a correctly hashed archive', async () => {
     const dir = `node-v${VERSION}-linux-x64`;
     const evil = tarGz([

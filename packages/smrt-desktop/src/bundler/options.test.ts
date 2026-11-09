@@ -195,6 +195,13 @@ posixOnly('createBundlePlan', () => {
     });
   });
 
+  it('resolves the bridge file to an absolute path', async () => {
+    const result = await plan({ bridgeFile: 'bridge.mjs' });
+    expect(result.bridgeFile).toBe(join(process.cwd(), 'bridge.mjs'));
+    expect((await plan({})).bridgeFile).toBeUndefined();
+    expect(await field({ bridgeFile: '' })).toBe('bridge');
+  });
+
   it('works without a configuration file when flags give the identity', async () => {
     rmSync(join(app, 'smrt-desktop.json'));
     const result = await plan({

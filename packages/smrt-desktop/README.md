@@ -10,16 +10,21 @@ dependencies and uses only Node built-ins.
 ## Node 26 and adapter-node example
 
 This [manifest](examples/node26-sidecar.json) describes a stock Node 26 sidecar
-and a SvelteKit adapter-node build. Mount the app-runtime health handler at
-`/api/_runtime/health` and use the local runtime profile.
+and a SvelteKit adapter-node build, in the layout `smrt desktop bundle` writes:
+the sidecar is product-scoped (`<productId>-node`, never a bare `node`), the
+app sits under `app/` in the resource directory, and `env` empties the
+`NODE_OPTIONS` and `NODE_PATH` the shell would otherwise inherit from the
+parent process. Mount the app-runtime health handler at `/api/_runtime/health`
+and use the local runtime profile.
 
 ```json
 {
   "version": 1,
-  "executable": "node",
-  "args": ["build/index.js"],
+  "executable": "smrt-notes-node",
+  "args": ["app/build/index.js"],
   "healthRoute": "/api/_runtime/health",
-  "dataDirectory": "runtime"
+  "dataDirectory": "runtime",
+  "env": { "NODE_ENV": "production", "NODE_OPTIONS": "", "NODE_PATH": "" }
 }
 ```
 
@@ -39,7 +44,7 @@ const sidecar = parseSidecarManifest(
   `ownerClaimRoute` are optional. Unknown fields and versions are errors. A
   future incompatible contract requires a new version.
 - `executable` is the logical Tauri `externalBin` basename: exactly one
-  portable segment with no `/`, such as `node`. The launcher owns the
+  portable segment with no `/`, such as `smrt-notes-node`. The launcher owns the
   `-<target-triple>` and `.exe` suffixes and resolves the file from the
   packaged `externalBin` mapping. It never searches `PATH`.
 - `args` is an ordered array of literal strings. Empty arrays and empty strings
@@ -73,7 +78,7 @@ Three locations are never conflated:
 1. Executable lookup: the `executable` basename resolves through Tauri
    `externalBin`, with the target suffix added by the launcher.
 2. App root: the packaged app/resource root is the sidecar's working
-   directory, so relative `args` such as `build/index.js` resolve against it.
+   directory, so relative `args` such as `app/build/index.js` resolve against it.
 3. Data root: `dataDirectory` resolves under `app_data_dir`, outside the app
    root, so app updates never touch runtime data.
 
@@ -200,7 +205,7 @@ paths do not exist at bundle time.
   "channel": "stable",
   "target": "aarch64-apple-darwin",
   "sidecarManifest": "sidecar-manifest.json",
-  "node": { "executable": "smrt-start-node" },
+  "node": { "executable": "smrt-notes-node" },
   "bridge": {
     "entry": "bridge/smrt-mcp-bridge.mjs",
     "envPrefix": "SMRT_NOTES",
@@ -241,12 +246,13 @@ the parser would reject. Both are exported from the package root.
 **Design finding F5 (for the owner): name the Node sidecar per product.**
 Tauri installs `externalBin` sidecars next to the main binary, which for
 `.deb` and `.rpm` is `/usr/bin`. A sidecar whose logical name is the bare
-`node`, as in the Node 26 example above, would install `/usr/bin/node` and
-collide with the distribution's own Node. This was reasoned from Tauri's
-documented behavior and not verified with a build. The bundle manifest example
-therefore uses the product-scoped `smrt-start-node`, and the sidecar manifest
-for that product must use the same name. The parser does not forbid `node`;
-the choice (and the wording of the Node 26 example) is the owner's decision.
+`node` would install `/usr/bin/node` and collide with the distribution's own
+Node. This was reasoned from Tauri's documented behavior and not verified with
+a build. Both examples therefore use the product-scoped `smrt-notes-node`, the
+runtime bundler always names the sidecar `<productId>-node`, and the sidecar
+manifest of a product must use the same name as its bundle manifest. The
+parser does not forbid `node`; the product-scoped name is a convention the
+bundler enforces.
 
 ### Installation record v1 (`installation.json`)
 

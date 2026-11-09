@@ -96,6 +96,11 @@ export interface TreeFs {
   unlink(path: string): Promise<void>;
   rmdir(path: string): Promise<void>;
   realpath(path: string): Promise<string>;
+  /**
+   * Set access and modification time. Optional so a minimal fake need not
+   * provide it; the orchestrator skips the step when absent.
+   */
+  utimes?(path: string, time: Date): Promise<void>;
 }
 
 type NodeStats = Awaited<ReturnType<typeof fsp.lstat>>;
@@ -150,6 +155,7 @@ export const nodeTreeFs: TreeFs = {
   unlink: (path) => fsp.unlink(path),
   rmdir: (path) => fsp.rmdir(path),
   realpath: (path) => fsp.realpath(path),
+  utimes: (path, time) => fsp.utimes(path, time, time),
 };
 
 // ---------------------------------------------------------------------------
@@ -930,6 +936,44 @@ export async function readRegularFile(
       chunks.push(buffer.subarray(0, bytesRead));
     }
     return Buffer.concat(chunks);
+  } catch (error) {
+    throw toTreeError(error);
+  } finally {
+    await handle?.close().catch(() => undefined);
+  }
+}
+
+/**
+ * Create a new file with exactly `mode` and write `data` to it. The create is
+ * `O_EXCL|O_NOFOLLOW`, so an existing entry (or a planted symlink) fails the
+ * write instead of being written through.
+ */
+export async function writeNewFile(
+  path: string,
+  data: Uint8Array | string,
+  mode: number,
+  options: { fs?: TreeFs; platform?: NodeJS.Platform } = {},
+): Promise<void> {
+  const fs = options.fs ?? nodeTreeFs;
+  const platform = options.platform ?? process.platform;
+  const bytes = typeof data === 'string' ? Buffer.from(data, 'utf8') : data;
+  let handle: TreeHandle | undefined;
+  try {
+    handle = await fs.open(path, O_WRONLY_CREATE_EXCL, mode);
+    let offset = 0;
+    while (offset < bytes.length) {
+      const { bytesWritten } = await handle.write(
+        bytes,
+        offset,
+        bytes.length - offset,
+      );
+      offset += bytesWritten;
+    }
+    try {
+      await handle.chmod(mode);
+    } catch (error) {
+      if (platform !== 'win32') throw error;
+    }
   } catch (error) {
     throw toTreeError(error);
   } finally {

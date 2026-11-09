@@ -105,6 +105,12 @@ export interface BundleOptionsInput {
   readonly nodeVersion?: string;
   readonly nodeArchive?: string;
   readonly nodeCache?: string;
+  /**
+   * The PRE-BUNDLED single-file MCP bridge (`--bridge`). The bundler does not
+   * bundle JavaScript itself; the app-cli publication of this file is a
+   * follow-up (see the README).
+   */
+  readonly bridgeFile?: string;
   /** Extra enabled features, added to the config's `features.default`. */
   readonly features?: readonly string[];
   readonly maxSizeMB?: number;
@@ -150,6 +156,8 @@ export interface BundlePlan {
     readonly ownerClaimRoute?: string;
   };
   readonly bridge?: { readonly envPrefix: string; readonly mcpPath: string };
+  /** Absolute path of the pre-bundled bridge file, when supplied. */
+  readonly bridgeFile?: string;
   readonly node: {
     readonly version?: string;
     readonly archive?: string;
@@ -358,6 +366,11 @@ export async function createBundlePlan(
       ? undefined
       : resolvePath(input.nodeCache, 'nodeCache');
 
+  const bridgeFile =
+    input.bridgeFile === undefined
+      ? undefined
+      : resolvePath(input.bridgeFile, 'bridge');
+
   // --- Features and size ---------------------------------------------------
   const effective: Pick<ProductConfig, 'features' | 'exclude'> = config ?? {
     features: { default: [], custom: {} },
@@ -443,6 +456,7 @@ export async function createBundlePlan(
         : { ownerClaimRoute: sidecarConfig.ownerClaimRoute }),
     },
     ...(config?.bridge === undefined ? {} : { bridge: config.bridge }),
+    ...(bridgeFile === undefined ? {} : { bridgeFile }),
     node: {
       ...(nodeVersion === undefined ? {} : { version: nodeVersion }),
       ...(nodeArchive === undefined ? {} : { archive: nodeArchive }),

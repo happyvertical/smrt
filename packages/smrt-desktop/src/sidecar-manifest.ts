@@ -160,6 +160,32 @@ export function parseSidecarManifest(json: string): SidecarManifestV1 {
   return manifest;
 }
 
+/**
+ * Serialize a manifest as canonical JSON (fixed key order: version,
+ * executable, args, healthRoute, dataDirectory, env, ownerClaimRoute;
+ * two-space indent; trailing newline). The input is validated first by
+ * parsing its own JSON, so a bundler cannot write a document the parser would
+ * reject (reserved or duplicate env names, bad routes, bad basenames).
+ */
+export function serializeSidecarManifest(manifest: SidecarManifestV1): string {
+  const checked = parseSidecarManifest(JSON.stringify(manifest));
+  return `${JSON.stringify(
+    {
+      version: checked.version,
+      executable: checked.executable,
+      args: checked.args,
+      healthRoute: checked.healthRoute,
+      dataDirectory: checked.dataDirectory,
+      ...(checked.env === undefined ? {} : { env: checked.env }),
+      ...(checked.ownerClaimRoute === undefined
+        ? {}
+        : { ownerClaimRoute: checked.ownerClaimRoute }),
+    },
+    null,
+    2,
+  )}\n`;
+}
+
 const posixAbsolute = /^\/[^\0]*$/;
 const windowsAbsolute = /^(?:[A-Za-z]:[\\/]|\\\\[^\\/]+[\\/]+[^\\/])/;
 

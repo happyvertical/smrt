@@ -135,7 +135,10 @@ can take the port in that window. This is handled, not prevented:
 The crate builds and tests without a Node binary. The base `tauri.conf.json`
 therefore declares no `externalBin` (tauri-build refuses to build when a
 declared binary for the target triple is missing) and no resources. The
-consuming app's packaging step supplies them through a config overlay:
+consuming app's packaging step supplies them through a config overlay.
+`smrt desktop bundle` (`@happyvertical/smrt-desktop/bundler`) writes the
+sidecar binary, the resources and a `tauri.bundle.json` fragment for exactly
+this; merge it with the product identity and icons:
 
 ```json
 {
@@ -143,20 +146,20 @@ consuming app's packaging step supplies them through a config overlay:
   "identifier": "com.example.my-app",
   "bundle": {
     "icon": ["icons/icon.icns", "icons/icon.ico", "icons/icon.png"],
-    "externalBin": ["binaries/node"],
-    "resources": {
-      "dist/sidecar-manifest.json": "sidecar-manifest.json",
-      "dist/build": "build"
-    }
+    "externalBin": ["binaries/my-app-node"],
+    "resources": { "resources/": "./" }
   }
 }
 ```
 
-used as `tauri build --config overlay.json`. The manifest `executable` is the
-logical basename (`node`); Tauri resolves it next to the app binary with the
-target suffix. `args` are relative to the resource directory, which is the
-child's working directory (for example `["build/index.js"]`). The icons in
-`icons/` are placeholders.
+used as `tauri build --config overlay.json --target <triple>`, where the
+bundle was made for the same `<triple>` (tauri-build wants
+`binaries/my-app-node-<triple>[.exe]`). The manifest `executable` is the
+product-scoped logical basename (`my-app-node`, never a bare `node`: Tauri
+installs sidecars next to the main binary, `/usr/bin` for `.deb` and `.rpm`);
+Tauri resolves it next to the app binary with the target suffix. `args` are
+relative to the resource directory, which is the child's working directory
+(for example `["app/build/index.js"]`). The icons in `icons/` are placeholders.
 
 ## Tests
 
@@ -185,7 +188,8 @@ cargo test --locked
   and is not a required check.
 
 Manual smoke run: in a debug build the resource directory is the executable directory, so put a
-`sidecar-manifest.json`, the sidecar script and a `node` symlink in
+`sidecar-manifest.json`, the sidecar script and a symlink named like the
+manifest's `executable` (pointing at a `node` binary) in
 `target/debug/` and run `target/debug/smrt-desktop-shell`. The log is at
 `<app_data_dir>/.desktop-shell/supervisor.log`.
 

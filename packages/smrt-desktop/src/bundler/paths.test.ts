@@ -38,6 +38,7 @@ import {
   type TreeStats,
   walkTree,
   withStagedPublish,
+  writeNewFile,
 } from './paths.js';
 import { BundleTreeError } from './tree-errors.js';
 
@@ -908,5 +909,43 @@ posixOnly('staging and publish', () => {
     ).rejects.toMatchObject({ code: 'out_dir_not_empty' });
     expect(names()).toEqual(['bundle']);
     expect(readFileSync(join(final, 'existing'), 'utf8')).toBe('x');
+  });
+});
+
+describe('writeNewFile', () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = realpathSync(mkdtempSync(join(tmpdir(), 'smrt-write-new-')));
+  });
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+  it('creates a file with the exact bytes and mode', async () => {
+    await writeNewFile(join(dir, 'a.txt'), 'hello', 0o644);
+    await writeNewFile(join(dir, 'b.bin'), Buffer.from([1, 2, 3]), 0o755);
+    expect(readFileSync(join(dir, 'a.txt'), 'utf8')).toBe('hello');
+    expect([...readFileSync(join(dir, 'b.bin'))]).toEqual([1, 2, 3]);
+    if (process.platform !== 'win32') {
+      expect(statSync(join(dir, 'a.txt')).mode & 0o777).toBe(0o644);
+      expect(statSync(join(dir, 'b.bin')).mode & 0o777).toBe(0o755);
+    }
+  });
+
+  it('never overwrites an existing file', async () => {
+    writeFileSync(join(dir, 'a.txt'), 'mine');
+    expect(await codeOf(writeNewFile(join(dir, 'a.txt'), 'x', 0o644))).toBe(
+      'destination_exists',
+    );
+    expect(readFileSync(join(dir, 'a.txt'), 'utf8')).toBe('mine');
+  });
+
+  posixOnly('through a planted symlink', () => {
+    it('does not write through it', async () => {
+      writeFileSync(join(dir, 'target.txt'), 'target');
+      symlinkSync(join(dir, 'target.txt'), join(dir, 'link.txt'));
+      expect(
+        await codeOf(writeNewFile(join(dir, 'link.txt'), 'x', 0o644)),
+      ).not.toBe('ok');
+      expect(readFileSync(join(dir, 'target.txt'), 'utf8')).toBe('target');
+    });
   });
 });
