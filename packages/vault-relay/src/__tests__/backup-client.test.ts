@@ -3,11 +3,21 @@
  * against the real in-process relay: protocol compatibility, the entitlement
  * gate, publish-on-commit, quota and sequence behaviour, and the blindness
  * property end to end with real encrypted snapshots.
+ *
+ * Since #4805 every upload needs the primary-writer lease: the target acquires
+ * it at the installation's recorded vault position, sends its fencing token,
+ * and records the published sequence. The lease tests at the end prove that
+ * path end to end, and that a publish without the lease is refused with
+ * `must_restore_first`.
  */
 import { createHash, randomBytes, sign } from 'node:crypto';
-import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import {
+  readVaultSyncRecord,
+  writeVaultSyncRecord,
+} from '@happyvertical/smrt-app-runtime';
 import {
   BackupTargetError,
   type VaultDeviceSigner,
@@ -18,8 +28,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   createHarness,
   type Harness,
+  leaseStatus,
   newDevice,
   registerDevice,
+  signed,
   type TestDevice,
 } from './helpers.js';
 
@@ -27,6 +39,7 @@ const KEY = Buffer.alloc(32, 5);
 let h: Harness;
 let device: TestDevice;
 let work: string;
+let stateRoot: string;
 
 beforeEach(async () => {
   h = await createHarness({
@@ -37,12 +50,15 @@ beforeEach(async () => {
         maxChunkBytes: 4096,
         uploadTtlMs: 60_000,
         maxClockSkewMs: 30_000,
+        leaseTtlMs: 30_000,
       },
     },
   });
   device = newDevice('acct-a', 'device-a1');
   await registerDevice(h, device);
   work = await mkdtemp(join(tmpdir(), 'backup-client-'));
+  stateRoot = join(work, 'state');
+  await mkdir(stateRoot, { mode: 0o700 });
 });
 
 afterEach(async () => {
@@ -65,12 +81,14 @@ function target(
     entitled?: boolean;
     as?: TestDevice;
     fetchImpl?: typeof fetch;
+    stateRoot?: string;
   } = {},
 ) {
   return new VaultRelayBackupTarget({
     name: 'vault',
     url: 'https://relay.test',
     signer: async () => signerFor(options.as ?? device),
+    stateRoot: options.stateRoot ?? stateRoot,
     entitlements: {
       async status() {
         return {
@@ -241,6 +259,7 @@ describe('vault backup target against the real relay', () => {
       name: 'vault',
       url: 'https://relay.test',
       signer: async () => signerFor(device),
+      stateRoot,
       entitlements: { status: async () => ({ featureKeys: ['backup.vault'] }) },
       fetch: (async (input, init) =>
         h.relay.handle(
@@ -252,5 +271,134 @@ describe('vault backup target against the real relay', () => {
     const snap = await sealed(1n);
     await small.put(snap.request());
     expect((await collect(small.get('1'))).equals(snap.bytes)).toBe(true);
+  });
+
+  describe('primary-writer lease end to end (#4805)', () => {
+    async function second() {
+      const other = newDevice('acct-a', 'device-a2');
+      await registerDevice(h, other);
+      const otherState = join(work, 'state-b');
+      await mkdir(otherState, { mode: 0o700 });
+      return { other, otherState };
+    }
+
+    it('backs up under the lease: token sent, head advanced, position recorded, lease released', async () => {
+      const calls: string[] = [];
+      const recording = (async (input, init) => {
+        calls.push(
+          `${init?.method ?? 'GET'} ${new URL(String(input)).pathname}`,
+        );
+        return h.relay.handle(new Request(String(input), init as RequestInit));
+      }) as typeof fetch;
+
+      await target({ fetchImpl: recording }).put((await sealed(1n)).request());
+
+      expect(calls[0]).toBe('POST /v1/lease/acquire');
+      expect(calls.indexOf('POST /v1/lease/acquire')).toBeLessThan(
+        calls.indexOf('POST /v1/uploads'),
+      );
+      expect(calls.at(-1)).toBe('POST /v1/lease/release');
+      expect(readVaultSyncRecord(stateRoot)).toMatchObject({
+        accountId: 'acct-a',
+        baseSequence: 1,
+        highestSeenSequence: 1,
+        localWritesPending: false,
+      });
+      // The relay's head moved with the commit and nobody holds the lease.
+      expect(await leaseStatus(h, device)).toMatchObject({
+        holder: null,
+        headSequence: 1,
+      });
+
+      // The next backup acquires at the recorded position and advances it.
+      await target().put((await sealed(2n)).request());
+      expect(readVaultSyncRecord(stateRoot)?.baseSequence).toBe(2);
+    });
+
+    it('threat: a device behind the account cannot publish and is told to restore first', async () => {
+      await target().put((await sealed(1n)).request());
+      const { other, otherState } = await second();
+      const behind = target({ as: other, stateRoot: otherState });
+
+      const error = await behind.put((await sealed(2n)).request()).then(
+        () => undefined,
+        (caught: unknown) => caught,
+      );
+      expect(error).toBeInstanceOf(BackupTargetError);
+      expect((error as BackupTargetError).code).toBe('must_restore_first');
+      expect((error as BackupTargetError).message).toMatch(/restore-latest/);
+      expect(await code(behind.preflight())).toBe('must_restore_first');
+      // Nothing was published, reserved or recorded by the stale device.
+      expect((await target().list()).map((o) => o.id)).toEqual(['1']);
+      expect((await h.relay.operatorView('acct-a')).usage?.usedBytes).toBe(
+        (await target().list())[0]?.byteSize,
+      );
+      expect(readVaultSyncRecord(otherState)).toBeNull();
+    });
+
+    it('threat: a writer whose lease lapsed and was taken over cannot commit', async () => {
+      await target().put((await sealed(1n)).request());
+      const { other, otherState } = await second();
+      // The second device has restored sequence 1: its position is the head.
+      writeVaultSyncRecord(otherState, {
+        accountId: 'acct-a',
+        baseSequence: 1,
+        highestSeenSequence: 1,
+        localWritesPending: false,
+      });
+
+      // After the first chunk the first device's lease lapses on the relay
+      // clock and the second device takes over.
+      let chunks = 0;
+      const lapsing = (async (input, init) => {
+        const response = await h.relay.handle(
+          new Request(String(input), init as RequestInit),
+        );
+        if (String(input).includes('/chunks/') && ++chunks === 1) {
+          h.clock.now += 40_000;
+          await target({ as: other, stateRoot: otherState }).preflight();
+        }
+        return response;
+      }) as typeof fetch;
+
+      expect(
+        await code(
+          target({ fetchImpl: lapsing }).put(
+            (await sealed(2n, randomBytes(12_000))).request(),
+          ),
+        ),
+      ).toBe('lease_lost');
+      // Nothing from the lapsed writer is visible, and its reservation is gone.
+      expect((await target().list()).map((o) => o.id)).toEqual(['1']);
+      expect(readVaultSyncRecord(stateRoot)).toMatchObject({
+        baseSequence: 1,
+        localWritesPending: true,
+      });
+    });
+
+    it('a publish without the lease is refused by the relay itself', async () => {
+      const begin = async (fencingToken?: unknown) => {
+        const snap = await sealed(1n);
+        const response = await h.relay.handle(
+          signed(h, device, 'POST', '/v1/uploads', {
+            body: JSON.stringify({
+              sequence: 1,
+              byteSize: snap.bytes.length,
+              chunkSize: 4096,
+              sha256: createHash('sha256').update(snap.bytes).digest('hex'),
+              ...(fencingToken === undefined ? {} : { fencingToken }),
+            }),
+          }),
+        );
+        return { status: response.status, body: await response.json() };
+      };
+      // No token, a token nobody was granted, and a lease nobody holds.
+      expect((await begin()).status).toBe(400);
+      expect(await begin(1)).toMatchObject({
+        status: 409,
+        body: { error: 'must_restore_first' },
+      });
+      expect((await h.relay.operatorView('acct-a')).snapshots).toEqual([]);
+    });
   });
 });

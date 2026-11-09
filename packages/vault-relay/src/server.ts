@@ -8,6 +8,7 @@ import { FeatureResolver } from '@happyvertical/smrt-features';
 import { SubscriptionFeatureSource } from '@happyvertical/smrt-subscriptions';
 import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
 import type { VaultRelayPolicyInput } from './config.js';
+import { migrateVaultRelayLeasesV1 } from './lease-store.js';
 import { migrateVaultRelayV1, VaultRelayStore } from './metadata-store.js';
 import { createRelayHttpServer } from './node-server.js';
 import {
@@ -114,6 +115,9 @@ export function loadServerConfig(
                 integer(env, 'VAULT_RELAY_UPLOAD_TTL_SECONDS') * 1000,
             }
           : {}),
+        ...(env.VAULT_RELAY_LEASE_TTL_SECONDS
+          ? { leaseTtlMs: integer(env, 'VAULT_RELAY_LEASE_TTL_SECONDS') * 1000 }
+          : {}),
         ...(env.VAULT_RELAY_MAX_CLOCK_SKEW_SECONDS
           ? {
               maxClockSkewMs:
@@ -160,6 +164,7 @@ export async function runMigrations(
   const db = await openRelayDatabase(config.databaseUrl);
   try {
     await migrateVaultRelayV1(db);
+    await migrateVaultRelayLeasesV1(db);
   } finally {
     await db.close?.();
   }

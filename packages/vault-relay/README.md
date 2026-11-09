@@ -23,7 +23,11 @@ ciphertext; responses are JSON unless noted.
 
 | Route | Purpose |
 | --- | --- |
-| `POST /v1/uploads` | Begin an upload: `{ sequence, byteSize, chunkSize, sha256 }`. Reserves quota. Returns `uploadId`, `chunkCount`, `expiresAt`. |
+| `GET /v1/lease` | Primary-writer lease state: `{ holder, expiresAt, headSequence, latestCommittedSequence, headIsHole }`. Never the token. |
+| `POST /v1/lease/acquire` | `{ baseSequence, ttlSeconds? }`. Grants `{ fencingToken, expiresAt, ttlMs, headSequence }`, or `409 must_restore_first`, `lease_held`, `publish_in_progress`. |
+| `POST /v1/lease/renew` | `{ fencingToken, ttlSeconds? }`. Extends an unexpired lease; `409 lease_lost` otherwise. |
+| `POST /v1/lease/release` | `{ fencingToken }`. `204`; a wrong token changes nothing. |
+| `POST /v1/uploads` | Begin an upload: `{ fencingToken, sequence, byteSize, chunkSize, sha256 }`. Needs the lease. Reserves quota. Returns `uploadId`, `chunkCount`, `expiresAt`. |
 | `PUT /v1/uploads/:uploadId/chunks/:index` | Upload one chunk. Every chunk except the last is exactly `chunkSize` bytes; the request must carry that exact `Content-Length`. A stored chunk is never replaced: an identical retry answers 200, different bytes `409 chunk_exists`. |
 | `POST /v1/uploads/:uploadId/commit` | Publish. The relay checks every chunk is present and the SHA-256 of the whole ciphertext matches the declared digest, then atomically makes it the newest snapshot. |
 | `DELETE /v1/uploads/:uploadId` | Abort a pending upload and release its quota. |
@@ -31,7 +35,7 @@ ciphertext; responses are JSON unless noted.
 | `GET /v1/snapshots/latest` | The newest committed snapshot. |
 | `GET /v1/snapshots/:sequence` | Metadata of one committed snapshot. |
 | `GET /v1/snapshots/:sequence/chunks/:index` | Chunk bytes (`application/octet-stream`, `x-vault-chunk-sha256`). |
-| `DELETE /v1/snapshots/:sequence` | Delete a committed snapshot. The sequence stays used. The account's last committed snapshot is refused with `409 last_snapshot`; delete only while another committed snapshot remains. |
+| `DELETE /v1/snapshots/:sequence` | Delete a committed snapshot. The sequence stays used. The account's last committed snapshot is refused with `409 last_snapshot`; delete only while another committed snapshot remains. The head (an in-flight or latest publish position) is refused with `409 head_snapshot`; delete only below both. |
 | `GET /healthz`, `GET /readyz` | Liveness, and readiness (schema present, object store reachable). No authentication. |
 
 Rules the relay enforces:
@@ -48,6 +52,10 @@ Rules the relay enforces:
   brand-new account starts from a mark of 0, so its first sequence is at most
   the cap. One commit at the largest safe integer can therefore no longer
   make every later upload `stale_sequence`.
+- **One primary writer per account** (#4805). Publishing needs the lease,
+  and the lease is granted only to a device whose `baseSequence` is the
+  account's head, so a device that is behind must restore first; there is no
+  merge. See [Primary-writer lease](#primary-writer-lease).
 - **Publish is atomic.** Pending uploads are never listed, never `latest`, and
   never downloadable. Abandoned uploads expire after the upload TTL.
 - **Quotas count pending uploads.** Bytes and snapshot count are reserved when
@@ -70,6 +78,37 @@ Rules the relay enforces:
 - **Bounded requests.** Chunk size is capped (default 8 MiB plus 64 KiB, hard
   ceiling 64 MiB), JSON bodies at 4 KiB. A body without `Content-Length`, or
   with the wrong one, is refused before it is buffered.
+
+### Primary-writer lease
+
+One lease row per account names the holder device, a fencing token, an
+expiry on the relay clock, and `headSequence`, the sequence the account's
+data line is at. Every decision is one conditional statement on that row.
+
+- **Acquire** succeeds when the lease is free, expired, or already the
+  caller's, and `baseSequence` is the head with no upload pending at the head,
+  or, when the head's upload was abandoned (a *hole*), the latest committed
+  sequence. Every grant, including a re-acquire by the same device,
+  increments the fencing token, which fences an earlier process of that
+  device too. Refusals: `must_restore_first { headSequence, latestSequence }`,
+  `lease_held { holder, expiresAt }`, `publish_in_progress { headSequence }`.
+- **Renew** needs the holder, the current token, and an unexpired lease.
+  **Release** needs the holder and the current token. Revoking a device clears
+  any lease it holds and bumps the token.
+- **Publish.** Begin records the caller's token with the upload and refuses
+  (`must_restore_first`) a caller that is not the unexpired holder with that
+  token or whose sequence is not above the head. That begin check is
+  advisory; commit enforces: after the digest check it advances the head
+  only for the holder with the recorded token, while the upload is still
+  pending, forward under an unexpired lease (or, for a retried commit, a head
+  already at that sequence). A refused commit discards the upload and answers
+  `409 must_restore_first`.
+- **Deletes** never remove the head or the latest committed snapshot, so a
+  head without a row is always an abandoned upload, never deleted data.
+
+The lifetime is `VAULT_RELAY_LEASE_TTL_SECONDS` (default 300, 30 to 3600); a
+client may ask for less with `ttlSeconds`. Clients judge expiry from `ttlMs`
+on their own monotonic clock, never by comparing `expiresAt` with local time.
 
 ### Request signing
 
@@ -131,8 +170,9 @@ that lands after an abort, expiry, or publish is deleted instead of counted. `Fi
 tests and single-node development. `createS3ObjectStore()` uses the
 `@happyvertical/files` S3 provider with path-style addressing for Garage.
 
-Metadata lives in the service database (SQLite or PostgreSQL) in five
-`vault_relay_*` tables. `migrateVaultRelayV1(db)` creates them idempotently.
+Metadata lives in the service database (SQLite or PostgreSQL) in seven
+`vault_relay_*` tables. `migrateVaultRelayV1(db)` and
+`migrateVaultRelayLeasesV1(db)` create them idempotently.
 Run it as the deployment's migration step (`node dist/cli.js migrate`); the
 server checks the tables exist at readiness and never creates schema while
 serving.
@@ -159,7 +199,8 @@ without them (except the admin token, see its row). Values are not chosen here.
 
 Optional technical settings: `VAULT_RELAY_PORT` (8080), `VAULT_RELAY_ADMIN_PORT`
 (8081), `VAULT_RELAY_MAX_CHUNK_BYTES` (8454144), `VAULT_RELAY_UPLOAD_TTL_SECONDS`
-(86400), `VAULT_RELAY_MAX_CLOCK_SKEW_SECONDS` (300), `VAULT_RELAY_MAX_SEQUENCE_JUMP` (1000). With `VAULT_RELAY_STORAGE=filesystem`,
+(86400), `VAULT_RELAY_MAX_CLOCK_SKEW_SECONDS` (300), `VAULT_RELAY_MAX_SEQUENCE_JUMP` (1000),
+`VAULT_RELAY_LEASE_TTL_SECONDS` (300). With `VAULT_RELAY_STORAGE=filesystem`,
 `VAULT_RELAY_STORAGE_PATH` is required.
 
 The deployment also needs, from the owner: the namespace, the public domain and
@@ -211,9 +252,16 @@ horizontally: every security check is a conditional database statement.
 | One commit pins the high-water mark out of reach, so every later upload is stale | Step cap at begin and inside the advance statement; operator reset on the admin listener, audited | `relay.test.ts` sequence step cap and high-water reset |
 | Entitlement bypass, off or lapsed plan | `requireFeature('backup.vault')` per request from server-side grants; fails closed | `entitlements.test.ts` |
 | Leakage through logs, listings, or storage | Logs carry route, status, and a hashed account handle only; operator view is sizes and dates | `blind-operator.test.ts` |
+| Two devices publishing divergent lines | Lease row: one holder, base must be the head, head advanced at commit only by the holder's recorded fencing token | `lease.test.ts` |
+| Lease theft or reuse after expiry; stale fencing token | Holder and token must both match; relay-clock expiry; token bumped on every grant and on revocation | `lease.test.ts` expiry and takeover, re-acquire fencing |
+| Replayed acquire | Signed nonce and timestamp | `lease.test.ts` replay |
 | Path traversal in object keys | Keys derived from hash, server UUID, and index; regex and containment checks | `storage-and-config.test.ts` |
 
-Residual risks: an operator can see ciphertext sizes, timing, and device ids
+Residual risks: a publish whose head advanced but whose commit was never
+retried blocks other devices' acquire (`publish_in_progress`) until the
+upload TTL expires; the relay is trusted to name the latest snapshot to a
+device with no local history (a device with history refuses anything below
+the highest sequence it has seen). An operator can see ciphertext sizes, timing, and device ids
 (an HVSF snapshot also carries its producing device id, key id, generation, and
 length in a clear file header that the relay stores but never parses);
 quota counters can over-count after a crash between steps (`reconcile`

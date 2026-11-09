@@ -660,6 +660,7 @@ describe('vault relay target', () => {
       name: 'vault',
       url: 'https://relay.example',
       signer: async () => relay.identity.signer,
+      stateRoot: tempRoot(roots, 'smrt-vault-state-'),
       entitlements: entitled,
       fetch: relay.relay.fetch,
       chunkBytes: 4096,
@@ -1123,6 +1124,209 @@ describe('vault relay target', () => {
         make(relay).put((await seal(root, 1n)).request()),
       );
       expect(error.message).not.toMatch(/account-1|device-1|signature|nonce/i);
+    });
+  });
+
+  describe('primary-writer lease (#4805)', () => {
+    const syncPath = (stateRoot: string) => join(stateRoot, 'vault-sync.json');
+    const position = (stateRoot: string) =>
+      JSON.parse(readFileSync(syncPath(stateRoot), 'utf8'));
+    const paths = (relay: ReturnType<typeof relayWithSigner>) =>
+      relay.relay.calls.map((call) => `${call.method} ${call.path}`);
+
+    it('acquires at the recorded position, sends the token, records the publish and releases', async () => {
+      const root = tempRoot(roots);
+      const stateRoot = tempRoot(roots, 'smrt-vault-state-');
+      const relay = relayWithSigner();
+      const target = make(relay, { stateRoot });
+      await target.put((await seal(root, 1n)).request());
+
+      const order = paths(relay);
+      expect(order[0]).toBe('POST /v1/lease/acquire');
+      expect(order.indexOf('POST /v1/lease/acquire')).toBeLessThan(
+        order.indexOf('POST /v1/uploads'),
+      );
+      expect(order.at(-1)).toBe('POST /v1/lease/release');
+      expect(position(stateRoot)).toMatchObject({
+        accountId: 'account-1',
+        baseSequence: 1,
+        highestSeenSequence: 1,
+        localWritesPending: false,
+      });
+
+      // The next publish acquires at the new position, not at zero.
+      await target.put((await seal(root, 2n)).request());
+      expect(position(stateRoot).baseSequence).toBe(2);
+      expect(relay.relay.snapshots.size).toBe(2);
+    });
+
+    it('holds one lease from preflight through put until close', async () => {
+      const root = tempRoot(roots);
+      const stateRoot = tempRoot(roots, 'smrt-vault-state-');
+      const relay = relayWithSigner();
+      const target = make(relay, { stateRoot });
+      await target.preflight();
+      await target.put((await seal(root, 1n)).request());
+      expect(paths(relay).filter((p) => p.endsWith('/lease/acquire'))).toEqual([
+        'POST /v1/lease/acquire',
+      ]);
+      expect(paths(relay)).not.toContain('POST /v1/lease/release');
+      await target.close();
+      expect(paths(relay).at(-1)).toBe('POST /v1/lease/release');
+      // Closing again is harmless.
+      await target.close();
+    });
+
+    it('threat: a device behind the account is refused as must_restore_first and publishes nothing', async () => {
+      const root = tempRoot(roots);
+      const stateRoot = tempRoot(roots, 'smrt-vault-state-');
+      const relay = relayWithSigner();
+      // Another device already published up to sequence 5.
+      relay.relay.highWater = 5;
+      const target = make(relay, { stateRoot });
+      const error = await failure(target.put((await seal(root, 6n)).request()));
+      expect(error.code).toBe('must_restore_first');
+      expect(error.message).toMatch(/restore-latest/);
+      expect(paths(relay)).not.toContain('POST /v1/uploads');
+      expect(relay.relay.snapshots.size).toBe(0);
+      // Preflight reports it too, before anything is sealed.
+      expect((await failure(target.preflight())).code).toBe(
+        'must_restore_first',
+      );
+      expect(existsSync(syncPath(stateRoot))).toBe(false);
+    });
+
+    it('threat: a relay that refuses a begin without a held lease surfaces must_restore_first', async () => {
+      const root = tempRoot(roots);
+      const relay = relayWithSigner();
+      relay.relay.fail.set('POST /v1/uploads', () =>
+        json(409, {
+          error: 'must_restore_first',
+          headSequence: 4,
+          latestSequence: 4,
+        }),
+      );
+      const error = await failure(
+        make(relay).put((await seal(root, 5n)).request()),
+      );
+      expect(error.code).toBe('must_restore_first');
+      expect(relay.relay.snapshots.size).toBe(0);
+    });
+
+    it.each([
+      [{ error: 'lease_held', holder: 'other', expiresAt: 1 }, 'lease_held'],
+      [{ error: 'publish_in_progress', headSequence: 1 }, 'lease_held'],
+    ])('reports another writer (%j) without publishing', async (refusal, code) => {
+      const root = tempRoot(roots);
+      const relay = relayWithSigner();
+      relay.relay.refuseAcquire = refusal;
+      const error = await failure(
+        make(relay).put((await seal(root, 1n)).request()),
+      );
+      expect(error.code).toBe(code);
+      expect(paths(relay)).not.toContain('POST /v1/uploads');
+    });
+
+    it('threat: a lease lost mid-upload publishes nothing and keeps the position unpublished', async () => {
+      const root = tempRoot(roots);
+      const stateRoot = tempRoot(roots, 'smrt-vault-state-');
+      const relay = relayWithSigner();
+      // The lease lapses after the first chunk (another device took over).
+      let chunks = 0;
+      const lapsing: typeof fetch = async (input, init) => {
+        const response = await relay.relay.fetch(input, init);
+        if (String(input).includes('/chunks/') && ++chunks === 1) {
+          relay.relay.leaseExpired = true;
+        }
+        return response;
+      };
+      const target = make(relay, { stateRoot, fetch: lapsing });
+      const error = await failure(target.put((await seal(root, 1n)).request()));
+      expect(error.code).toBe('lease_lost');
+      expect(relay.relay.snapshots.size).toBe(0);
+      expect(relay.relay.pending.size).toBe(0);
+      expect(paths(relay).some((call) => call.endsWith('/commit'))).toBe(false);
+      expect(position(stateRoot)).toMatchObject({
+        baseSequence: 0,
+        localWritesPending: true,
+      });
+    });
+
+    it('threat: a commit the relay fences off surfaces must_restore_first and records nothing', async () => {
+      const root = tempRoot(roots);
+      const stateRoot = tempRoot(roots, 'smrt-vault-state-');
+      const relay = relayWithSigner();
+      relay.relay.fail.set('POST /v1/uploads/:id/commit', () =>
+        json(409, {
+          error: 'must_restore_first',
+          headSequence: 0,
+          latestSequence: 3,
+        }),
+      );
+      const error = await failure(
+        make(relay, { stateRoot }).put((await seal(root, 1n)).request()),
+      );
+      expect(error.code).toBe('must_restore_first');
+      expect(relay.relay.snapshots.size).toBe(0);
+      expect(position(stateRoot).baseSequence).toBe(0);
+    });
+
+    it('keeps a held lease through a network failure of one renewal and still publishes', async () => {
+      const root = tempRoot(roots);
+      const stateRoot = tempRoot(roots, 'smrt-vault-state-');
+      const relay = relayWithSigner();
+      let dropped = 0;
+      const flaky: typeof fetch = async (input, init) => {
+        if (String(input).endsWith('/lease/renew') && dropped++ === 0) {
+          throw new TypeError('connection reset');
+        }
+        return relay.relay.fetch(input, init);
+      };
+      await make(relay, { stateRoot, fetch: flaky }).put(
+        (await seal(root, 1n)).request(),
+      );
+      expect(dropped).toBe(1);
+      expect(relay.relay.snapshots.size).toBe(1);
+      expect(position(stateRoot).baseSequence).toBe(1);
+    });
+
+    it('treats a rejected device on the lease route like any other rejection', async () => {
+      const root = tempRoot(roots);
+      const relay = relayWithSigner();
+      relay.relay.fail.set('POST /v1/lease/acquire', () =>
+        json(403, { code: 'feature_upgrade_required', error: 'text' }),
+      );
+      const error = await failure(
+        make(relay).put((await seal(root, 1n)).request()),
+      );
+      expect(error.code).toBe('entitlement_required');
+    });
+
+    it('says so when the publish succeeded but the position could not be recorded', async () => {
+      const root = tempRoot(roots);
+      const stateRoot = tempRoot(roots, 'smrt-vault-state-');
+      const relay = relayWithSigner();
+      const corrupting: typeof fetch = async (input, init) => {
+        if (String(input).endsWith('/commit')) {
+          writeFileSync(syncPath(stateRoot), 'not json', { mode: 0o600 });
+        }
+        return relay.relay.fetch(input, init);
+      };
+      const error = await failure(
+        make(relay, { stateRoot, fetch: corrupting }).put(
+          (await seal(root, 1n)).request(),
+        ),
+      );
+      expect(error.code).toBe('position_unrecorded');
+      expect(error.message).toMatch(/published/);
+      // The relay did publish; the local position fails safe.
+      expect(relay.relay.snapshots.size).toBe(1);
+    });
+
+    it('needs an absolute state root', () => {
+      expect(() =>
+        make(relayWithSigner(), { stateRoot: 'relative/state' }),
+      ).toThrow(BackupTargetError);
     });
   });
 });

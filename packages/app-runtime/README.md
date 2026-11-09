@@ -280,6 +280,55 @@ spelled, so a differently cased alias of one macOS path is a different
 location. Declarations run `smrt-app-runtime` code under the writer lease; keep
 at most one SQLite writer on a data root (#3379).
 
+### Vault primary writer and restore-latest
+
+A vault account has one data line on the blind relay
+(`@happyvertical/smrt-vault-relay`) and one primary writer at a time (#4805).
+The relay holds the lease; this package holds the client side and the local
+swap. There is no merge: a device that is behind must restore before it
+writes.
+
+- **Position** (`vault-sync-state.ts`): `<state root>/vault-sync.json` records
+  the vault account, `baseSequence` (the snapshot this data root is at),
+  `highestSeenSequence` (the downgrade floor, since the relay is untrusted)
+  and `localWritesPending`. It lives in the state root, so a copied data root
+  cannot carry a forged position.
+- **Lease keeper** (`vault-lease.ts`): `VaultLeaseKeeper` acquires the relay
+  lease with the local base when the app starts writing against a vault
+  account, renews at a third of the granted lifetime, and treats the lease as
+  lost at its monotonic send time plus `ttlMs` minus a safety margin, never by
+  comparing the relay's `expiresAt` with local time. Its states are `held`
+  (writable), `must-restore`, `held-elsewhere`, `lost` and `unavailable`;
+  `assertWritable()` throws `VaultLeaseError` with code `vault_lease_lost`, and
+  `onChange` drives a visible read-only indicator. `recordPublished(sequence)`
+  advances the position after a publish. The relay transport is injected
+  (`VaultRelayTransport`), signed by the vault relay client.
+- **Swap** (`data-root-swap.ts`): `swapDataRoot` replaces the live data root
+  with a verified sibling candidate under an fsynced journal
+  (`<state root>/data-root-swap.json`), rolling back to the previous root on
+  any failure before the commit. While the journal exists,
+  `acquireWriterLease` refuses every writer except the recovery path
+  (`dataRootSwapRecovery`), so neither the web process nor an operator
+  command can open or initialize a missing or half-swapped root.
+  `recoverDataRootSwap` rolls an unfinished swap back or finishes a committed
+  one; journal paths must be generated siblings of the live root.
+- **Candidate check**: `inspectDataRootInstallation` judges a data root's own
+  seed and custody record without a state root.
+- **Retired locations**: `inspectLocationCustodyRecord` reads only this
+  location's own custody record (`retired` after a move or a cloud migration,
+  `invalid` when it cannot be trusted), so a restore can refuse before it
+  touches a data root.
+
+`smrt app restore-latest` (CLI) composes these: writer lease, refusal of a
+retired or unverifiable location, of pending local writes and of downgrades, relay lease at the target sequence,
+authenticated decrypt into a candidate, SQLite integrity and installation
+checks, journalled swap, then the new position. Custody moves
+(`restoreInstallation`) only on the operator's `--origin-retired`: releasing
+the relay lease does not stop the origin device. A live root with no recorded
+position counts as unpublished, and `removeStaleRestoreSiblings` clears
+plaintext a crash left before the journal existed. Open: the SvelteKit request layer does not yet consult the
+keeper; the desktop launcher wires `assertWritable()` into writes.
+
 ### Local desktop MCP credentials
 
 A desktop product can mount this opt-in SvelteKit route in

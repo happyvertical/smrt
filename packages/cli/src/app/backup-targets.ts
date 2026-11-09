@@ -44,6 +44,10 @@ export type BackupTargetErrorCode =
   | 'protocol'
   | 'unauthorized'
   | 'stale_sequence'
+  | 'must_restore_first'
+  | 'lease_held'
+  | 'lease_lost'
+  | 'position_unrecorded'
   | 'unavailable';
 
 /**
@@ -103,6 +107,11 @@ export interface BackupTarget {
   get(id: string): AsyncIterable<Uint8Array>;
   /** Remove one snapshot. */
   delete(id: string): Promise<void>;
+  /**
+   * Release anything `preflight` or `put` acquired (the vault writer lease).
+   * Optional; callers invoke it when finished, success or failure.
+   */
+  close?(): Promise<void>;
 }
 
 /** Retention applied per target. */

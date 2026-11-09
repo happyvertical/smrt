@@ -45,7 +45,8 @@ Targets are for the `local` profile.
   sign(message) }`; the Ed25519 private key stays with its custodian.
 - `entitlements` is `{ status() }` returning `featureKeys`; the device
   entitlement cache (#4787) satisfies it. Only the vault target reads it.
-- `fetch`, `createDriveFilesystem` and `vault` tuning exist for tests and
+- `fetch`, `createDriveFilesystem` and `vault` tuning (chunking, retry and
+  the lease's `leaseMonotonicNow` / `leaseTimers`) exist for tests and
   embedding. Snapshot keys come from `snapshotKeys` as before.
 
 The vault key lifecycle (#4785) and the host supply these in production; this
@@ -85,6 +86,23 @@ because the relay needs the digest before the first byte.
   Records are bounded before use (chunk size 1 KiB to 64 MiB, under 1,000,000
   chunks, larger than the clear header), so a hostile relay cannot make the
   client buffer or request without limit.
+  - **Writer lease (#4805).** Every relay upload needs the primary-writer
+    lease. `preflight` takes it (before a snapshot is sealed, so a device that
+    is behind fails cheaply), `put` reuses it or takes its own, and `close`
+    (called by `backupToTarget`) releases it. The target builds a
+    `VaultLeaseKeeper` over its own signed requests with the installation's
+    private state root (`vault-sync.json`): acquire at the recorded base
+    sequence, send the fencing token in `begin`, renew before commit, and call
+    `recordPublished` only after the relay confirms the commit. Refusals are
+    `must_restore_first` (behind the account, or the lease was lost or taken:
+    run `smrt app restore-latest`), `lease_held` (another device is writing or
+    publishing) and `lease_lost`; none publishes anything. If the snapshot was
+    published but the position cannot be recorded the error is
+    `position_unrecorded`, and the next acquire is refused until a restore
+    (fail safe). A failed attempt leaves `localWritesPending` set, which is
+    conservative: `restore-latest` then needs `--discard-local` (the previous
+    root is kept). `restoreProvider()` gives `restore-latest` its account, the
+    lease routes and the latest-snapshot download over the same transport.
 
 ## Google Drive scope and limits
 
@@ -112,6 +130,7 @@ so the two cannot be told apart). Provider text is never forwarded.
 | Tokens or keys in logs or config | Strict config parser, credential seam, fixed error text, no provider text | `backup-command.test.ts` no way to store a secret; Drive failure cases |
 | Relay response confusion | Begin, chunk, commit and list answers checked against the request; downloads verified per chunk, whole digest, and header sequence; no redirects | `backup-targets.test.ts` relay response confusion |
 | Partial upload published | Staged-then-published (file, Drive); begin/chunk/commit with abort (vault) | per-target interrupted-upload cases; `backup-client.test.ts` (vault-relay) |
+| Publishing without, or after losing, the writer lease; a stale device overwriting a newer account | Fencing token in `begin`, renewal before commit, relay re-check at commit; `must_restore_first` publishes nothing and records nothing | `backup-targets.test.ts` primary-writer lease; `backup-client.test.ts` and `restore-e2e.test.ts` (vault-relay, real relay) |
 | Entitlement bypass for the vault | Client check before any request or sequence; the relay gates every route from server-side grants | `backup-targets.test.ts` entitlement; `backup-client.test.ts` |
 
 Residual risks: the client entitlement check is a courtesy (the relay is the

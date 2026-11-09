@@ -18,6 +18,7 @@ import {
   prepareApplicationStateRoot,
   resolveApplicationId,
 } from './identity.js';
+import type { VaultRestoreProvider } from './restore-latest.js';
 import type { SnapshotKeyProvider } from './snapshot-framing.js';
 
 /** Output sinks. Each call receives complete text including the newline. */
@@ -89,6 +90,11 @@ export interface AppCommandDependencies {
    * (#4804). Absent means Drive and vault targets fail closed.
    */
   backup?: BackupTargetDependencies;
+  /**
+   * Vault account, relay lease client and snapshot source for
+   * `restore-latest` (#4805). Absent means restore-latest fails closed.
+   */
+  vaultRestore?: VaultRestoreProvider;
 }
 
 /** Per-invocation context. */

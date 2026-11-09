@@ -18,11 +18,16 @@ service storing encrypted snapshot blobs per account. See
   read-then-write. Counter drift may only over-count. The high-water advance
   also carries the `maxSequenceJump` bound; the admin reset is the only way
   down.
+- **Primary-writer lease** (#4805, `lease-store.ts`, `lease.ts`): one row per
+  account; acquire, renew, release, revoke and the commit-time head advance
+  are single conditional statements on it. Publishing needs the holder's
+  fencing token; the head never moves back, and the head and latest committed
+  snapshot are never deleted (a missing head row means an abandoned upload).
 - **Object keys** are derived (`v1/<account hash>/<upload uuid>/<index>.<object
   id>`, a fresh object id per write) and checked by `assertObjectKey`; never
   build one from a client string or overwrite a recorded object. Removal of a
   pending upload is conditional on `status = 'pending'`.
-- **Schema** comes from `migrateVaultRelayV1` in the deployment migration
+- **Schema** comes from `migrateVaultRelayV1` and `migrateVaultRelayLeasesV1` in the deployment migration
   step; request handling only checks table existence. No `@smrt()` models, so
   nothing gains generated REST, CLI, or MCP surfaces.
 - **Owner inputs** (quotas, retention, bucket, databases, domain, namespace)

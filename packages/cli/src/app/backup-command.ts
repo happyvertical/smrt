@@ -314,6 +314,7 @@ export function createBackupTarget(
         name,
         url: config.url,
         signer: async () => deps.credentials?.vaultSigner(),
+        stateRoot: preparedStateRoot(context),
         entitlements: deps.entitlements,
         fetch: deps.fetch ?? context.deps.fetch,
         ...deps.vault,
@@ -403,7 +404,22 @@ export async function backupToTarget(
 ): Promise<Record<string, unknown>> {
   const stateRoot = preparedStateRoot(context);
   const { target, config } = openTarget(context, stateRoot, options.targetName);
-  // Entitlement, credentials and scope fail here, before a sequence is spent.
+  try {
+    return await backupToOpenTarget(stateRoot, target, config, options);
+  } finally {
+    // Releases the vault writer lease taken by the preflight, if any.
+    await target.close?.().catch(() => undefined);
+  }
+}
+
+async function backupToOpenTarget(
+  stateRoot: string,
+  target: BackupTarget,
+  config: BackupTargetConfig,
+  options: { dataRoot: string; snapshotKeys: SnapshotKeyProvider },
+): Promise<Record<string, unknown>> {
+  // Entitlement, credentials, scope and the vault writer lease fail here,
+  // before a sequence is spent.
   await target.preflight();
 
   const stagingDirectory = join(stateRoot, 'backup-staging');
