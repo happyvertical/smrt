@@ -1,5 +1,9 @@
 import { clearCache, setConfig } from '@happyvertical/smrt-config';
-import { getTestDatabase, ObjectRegistry } from '@happyvertical/smrt-core';
+import {
+  getTestDatabase,
+  ObjectRegistry,
+  setInferenceResolver,
+} from '@happyvertical/smrt-core';
 import { resetTenancy, setupTestTenancy } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -207,6 +211,96 @@ describe('@happyvertical/smrt-languages — miss → enqueue → run → resolve
     expect(persisted).toBeNull();
 
     getAiSpy.mockRestore();
+  });
+
+  it('takes a stored tenant binding and records attributed usage (#4756)', async () => {
+    const ai = await import('@happyvertical/ai');
+    const configs: Record<string, unknown>[] = [];
+    const getAiSpy = vi
+      .spyOn(ai, 'getAI')
+      .mockImplementation(async (config: unknown) => {
+        configs.push(config as Record<string, unknown>);
+        return { message: translationMessage } as any;
+      });
+    const requests: unknown[] = [];
+    setInferenceResolver({
+      resolve: (request) => {
+        requests.push(request);
+        return {
+          tierResolved: request.tier === 'auto' ? 'good' : request.tier,
+          target: {
+            provider: 'openai',
+            baseUrl: 'https://openrouter.ai/api/v1',
+            apiKey: 'sk-tenant-binding',
+            model: 'tenant/model',
+            source: 'byo',
+          },
+          via: 'resolver',
+        };
+      },
+    });
+    try {
+      defineLanguageString({
+        key: 'integration.binding',
+        locale: 'en',
+        template: 'Hello, {name}',
+      });
+      const TaskClass = ObjectRegistry.getClass('LanguageTranslationTask')
+        ?.constructor as new (
+        opts: Record<string, unknown>,
+      ) => LanguageTranslationTask;
+      const task = new TaskClass({ db });
+      await task.initialize();
+      const definition = LanguageRegistry.get('integration.binding', 'en');
+      await task.execute({
+        key: 'integration.binding',
+        sourceLocale: 'en',
+        sourceTemplate: definition?.template ?? '',
+        sourceHash: definition?.sourceHash ?? '',
+        targetLocale: 'es',
+        tenantId: 'tenant-binding',
+      });
+
+      expect(requests[0]).toMatchObject({
+        tenantId: 'tenant-binding',
+        promptKey: 'smrt-languages.translation',
+      });
+      expect(configs[0]).toMatchObject({
+        provider: 'openai',
+        baseUrl: 'https://openrouter.ai/api/v1',
+        model: 'tenant/model',
+      });
+      expect(translationMessage.mock.calls[0][1]).toMatchObject({
+        model: 'tenant/model',
+        usageTags: PROMPT_USAGE_TAGS,
+      });
+
+      const onUsage = configs[0].onUsage as (event: unknown) => Promise<void>;
+      await onUsage({
+        provider: 'openai',
+        model: 'tenant/model',
+        operation: 'message',
+        usage: { promptTokens: 3, completionTokens: 2, totalTokens: 5 },
+        tags: PROMPT_USAGE_TAGS,
+      });
+      const rows = await task.listAiUsage({
+        className: 'LanguageTranslationTask',
+      });
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({
+        tenantId: 'tenant-binding',
+        model: 'tenant/model',
+        tags: expect.objectContaining({
+          source: 'byo',
+          tierResolved: 'good',
+          promptKey: 'smrt-languages.translation',
+        }),
+      });
+      expect(JSON.stringify(rows[0])).not.toContain('sk-tenant-binding');
+    } finally {
+      setInferenceResolver(undefined);
+      getAiSpy.mockRestore();
+    }
   });
 
   it('never overwrites a human-edited row even when the source changes', async () => {

@@ -145,7 +145,13 @@ export class SubscriptionFeatureSource {
         { kind: 'tenant', tenantId },
         { now: this.now() },
       );
-      return grants.featureKeys.length > 0 ? grants : null;
+      return grants.featureKeys.length > 0
+        ? {
+            featureKeys: grants.featureKeys,
+            planId: grants.planId,
+            planKey: grants.planKey,
+          }
+        : null;
     } catch (error) {
       if (isMissingSubscriptionTableError(error)) {
         return null;

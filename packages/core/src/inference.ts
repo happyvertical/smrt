@@ -17,6 +17,15 @@
 
 import { getSmrtModuleConfig } from './config/global-config.js';
 import { config as globalSignalConfig } from './config.js';
+import type { DecisionRequest, DecisionResult } from './decisions.js';
+import {
+  type InferenceMode,
+  type InferenceUnavailableReason,
+  isInferenceMode,
+  isInferenceUnavailableReason,
+} from './inference-availability.js';
+import type { InferenceCapabilities } from './inference-capabilities.js';
+import { SmrtError } from './smrt-error.js';
 
 /** Ordered quality tiers, cheapest first. `fast` is deliberately not a tier. */
 export const INFERENCE_TIERS = ['cheap', 'good', 'great', 'best'] as const;
@@ -37,24 +46,128 @@ export type InferenceLatency = 'interactive' | 'background';
 export const DEFAULT_INFERENCE_TIER: InferenceTier = 'good';
 
 /**
+ * Target shapes. `single` (the default when `kind` is omitted) is one
+ * provider and model. `alias` names an entry of `inference.aliases`, and
+ * `candidates` is an inline ordered chain; both are run by the registered
+ * {@link InferenceExecutor} (`@happyvertical/smrt-inference`, #4752).
+ * `fusion` names a consumer-defined fusion (#4753) run by the same executor.
+ */
+export type InferenceTargetKind = 'single' | 'alias' | 'candidates' | 'fusion';
+
+/**
+ * Fusion modes (#4753). Modes are code, fusions are config: v1 ships exactly
+ * these three, each with a fixed, documented number of model calls.
+ *
+ * - `single`: one seat (1 call).
+ * - `pair`: the first two seats in parallel, then the third seat merges both
+ *   outputs, labelled by seat and model (3 calls).
+ * - `handoff`: the first seat drafts, the second receives the draft and
+ *   answers (2 calls).
+ */
+export const INFERENCE_FUSION_MODES = ['single', 'pair', 'handoff'] as const;
+
+export type InferenceFusionMode = (typeof INFERENCE_FUSION_MODES)[number];
+
+/** One seat of a fusion: a registered prompt key run on a target. */
+export interface InferenceFusionSeat {
+  /**
+   * Seat name, recorded as the `seat` usage tag and the run record's persona.
+   * Default: the prompt key. Unique within a fusion.
+   */
+  name?: string;
+  /**
+   * A prompt key registered with smrt-prompts `definePrompt()`. Its resolved
+   * template (code default, config, app and tenant overrides) is the seat's
+   * instructions, so tenant overrides of a seat need no new mechanism.
+   */
+  prompt: string;
+  /**
+   * A tier name (resolved through the same resolver, so per-user bindings
+   * apply), or a target: `{ alias }`, `{ candidates }` or an inline
+   * `{ provider, model }`. Never another fusion.
+   */
+  target: InferenceTierRequest | InferenceTarget;
+  temperature?: number;
+  /** `json` asks for a JSON object and parses it; default `text`. */
+  output?: 'text' | 'json';
+}
+
+/**
+ * A decision gate (#4753) evaluated through the instance's typed-decision
+ * client (the `evaluate()` path). When the answer is `sufficientWhen.choice`
+ * with at least `minConfidence`, the remaining stage is skipped and recorded
+ * as `skipped`.
+ */
+export interface InferenceFusionGate {
+  /** What the outputs so far must satisfy for the remaining stage to be skipped. */
+  criteria: string;
+  sufficientWhen: { choice: string; minConfidence: number };
+}
+
+/** A consumer-defined fusion (`inference.fusions.<key>` or `defineFusion()`). */
+export interface InferenceFusionDefinition {
+  mode: InferenceFusionMode;
+  seats: InferenceFusionSeat[];
+  /** `pair` and `handoff` only. */
+  gate?: InferenceFusionGate;
+  description?: string;
+}
+
+/**
+ * One entry of an ordered fallback chain (#4752).
+ *
+ * A candidate is exactly one of: a provider and model (`provider`, `model`,
+ * optional `baseUrl` with `apiKeyEnv` or `apiKey`), a #4674 preset with a
+ * model (`preset`, `model`, optional `apiKeyEnv`), or a nested alias
+ * reference (`alias`), expanded in place. Keys are read from the environment
+ * variable named by `apiKeyEnv` at call time and never logged or tagged; a
+ * key travels only with its own `baseUrl` (the pair rule on
+ * {@link InferenceTarget.apiKey}).
+ */
+export interface InferenceCandidate {
+  /** Provider name (`openai`, `anthropic`, ...). */
+  provider?: string;
+  /** Model id. */
+  model?: string;
+  /** Provider base URL; required with `apiKeyEnv` / `apiKey`. */
+  baseUrl?: string;
+  /** Environment variable holding this candidate's key. */
+  apiKeyEnv?: string;
+  /** Literal key (resolvers only; never put keys in config files). */
+  apiKey?: string;
+  /** A #4674 preset id (`openrouter`, `lemonade`, `llama.cpp`, `lm-studio`). */
+  preset?: string;
+  /** Another alias, expanded in place. */
+  alias?: string;
+  /** Per-call defaults for this candidate; caller options win. */
+  params?: Record<string, unknown>;
+}
+
+/** `inference.aliases.<name>`: a version-free name for an ordered chain. */
+export interface InferenceAlias {
+  /** Tried in order; the first that answers wins. */
+  candidates: InferenceCandidate[];
+  /** Free text for settings screens and `smrt doctor --ai`. */
+  description?: string;
+}
+
+/**
  * A tier's binding target.
  *
- * v1 is a single `AIConfig`-shaped target: every field is optional, and a
- * field that is absent inherits from the instance's configured AI client. An
- * empty target means "the configured client".
+ * The default `single` kind is an `AIConfig`-shaped target: every field is
+ * optional, and a field that is absent inherits from the instance's
+ * configured AI client. An empty target means "the configured client".
  *
- * Extension point: later children of #4749 add alias chains (`alias`), ordered
- * fallback `candidates`, and consumer-defined `fusion` keys by extending this
- * interface with new optional members (selected by an optional `kind`
- * discriminator that defaults to `'single'`). Code that consumes a target must
- * therefore ignore members it does not understand rather than reject them.
+ * Extension point: `kind` selects the shape. `alias` (`{ alias }`) and
+ * `candidates` (`{ candidates }`) are chains run by the registered
+ * {@link InferenceExecutor} (#4752); a later child adds `fusion`. A target
+ * with `alias` or `candidates` and no `kind` is read as that kind (see
+ * {@link inferenceTargetKind}). Code that consumes a target must ignore
+ * members it does not understand rather than reject them.
  */
 export interface InferenceTarget {
-  /**
-   * Target shape. Only `'single'` exists in v1 and it is the default when
-   * omitted; later children add further kinds.
-   */
-  kind?: 'single';
+  /** Target shape; see {@link inferenceTargetKind} for the default. */
+  kind?: InferenceTargetKind;
   /** Provider name (`openai`, `anthropic`, ...). Absent: the configured one. */
   provider?: string;
   /** Model id. Absent: the provider's configured default model. */
@@ -76,6 +189,64 @@ export interface InferenceTarget {
   params?: Record<string, unknown>;
   /** The latency class this target serves, if the binding declares one. */
   latency?: InferenceLatency;
+  /** `kind: 'alias'`: the `inference.aliases` entry to run. */
+  alias?: string;
+  /** `kind: 'candidates'`: an inline ordered chain. */
+  candidates?: InferenceCandidate[];
+  /** `kind: 'fusion'`: the fusion key to run (#4753). */
+  fusion?: string;
+  /**
+   * Where the binding came from, for usage visibility (#4756): a user's own
+   * key (`byo`), a local server (`local`), managed inference (`hosted`), or
+   * the app's configuration (`app`). Recorded as the `source` usage tag;
+   * never part of the client identity.
+   */
+  source?: InferenceTargetSource;
+  /**
+   * Non-secret tags the binding adds to every usage row it answers, such as
+   * hosted inference's `gatewayKeyAlias` (#4759). Never identity, never a
+   * credential; the tier keys (`tierRequested`, `tierResolved`, `source`)
+   * always win over a same-named entry.
+   */
+  usageTags?: Record<string, string>;
+}
+
+/** Binding origins recorded as the `source` usage tag (#4756). */
+export const INFERENCE_TARGET_SOURCES = [
+  'byo',
+  'local',
+  'hosted',
+  'app',
+] as const;
+
+/** One of {@link INFERENCE_TARGET_SOURCES}. */
+export type InferenceTargetSource = (typeof INFERENCE_TARGET_SOURCES)[number];
+
+/** True for a known {@link InferenceTargetSource}. */
+export function isInferenceTargetSource(
+  value: unknown,
+): value is InferenceTargetSource {
+  return (
+    typeof value === 'string' &&
+    (INFERENCE_TARGET_SOURCES as readonly string[]).includes(value)
+  );
+}
+
+/**
+ * The effective kind of a target: its `kind`, else `alias` when it names an
+ * alias, else `candidates` when it carries a list, else `single`. Unknown
+ * kinds from later children are returned as written.
+ */
+export function inferenceTargetKind(
+  target: InferenceTarget | undefined | null,
+): string {
+  if (!target || typeof target !== 'object') return 'single';
+  const kind: unknown = target.kind;
+  if (typeof kind === 'string' && kind !== '') return kind;
+  if (typeof target.alias === 'string') return 'alias';
+  if (Array.isArray(target.candidates)) return 'candidates';
+  if (typeof target.fusion === 'string') return 'fusion';
+  return 'single';
 }
 
 /** `SmrtConfig.inference`: the app's tier bindings. */
@@ -84,6 +255,21 @@ export interface InferenceConfig {
   defaultTier?: InferenceTier;
   /** Tier bindings. A tier without a binding uses the configured client. */
   tiers?: Partial<Record<InferenceTier, InferenceTarget>>;
+  /**
+   * Named ordered chains a tier (or a candidate) can reference by name
+   * (#4752). Each alias is replaced whole by the highest layer defining it.
+   */
+  aliases?: Record<string, InferenceAlias>;
+  /**
+   * Walk down the tier ladder when every candidate of a chain tier fails
+   * (#4752). Default `true`; a call's `minimumTier` stops the walk.
+   */
+  degrade?: boolean;
+  /**
+   * Consumer-defined fusions by key (#4753), app-level only. Each fusion is
+   * replaced whole by the highest layer defining it. SMRT ships none.
+   */
+  fusions?: Record<string, InferenceFusionDefinition>;
 }
 
 /** Input to an {@link InferenceResolver}. */
@@ -106,6 +292,38 @@ export interface InferenceResolution {
   /** The target for that tier. An empty target means the configured client. */
   target: InferenceTarget;
   via: InferenceResolutionSource;
+  /**
+   * What the bound model can do (#4758). Core fills it when it binds a
+   * `single` target for an object AI operation (see
+   * `inference-capabilities.ts` for the resolution order); a resolver need
+   * not set it. Absent for chain targets: the executor checks each
+   * candidate instead.
+   */
+  capabilities?: InferenceCapabilities;
+  /**
+   * The principal's inference mode (#4757), when the resolver knows it (a
+   * stored mode, or the answering binding's source). Absent: derived from
+   * the target by {@link inferenceModeForTarget}.
+   */
+  mode?: InferenceMode;
+  /**
+   * Set when no call may run for this tier (`off`: the principal chose mode
+   * `off`; `unconfigured`: an explicit mode with no binding of its kind;
+   * `entitlement` / `capability` are reserved for #4760 / #4758). Core
+   * throws `InferenceUnavailableError` before building any client, so
+   * nothing runs and nothing is recorded. The target is ignored.
+   */
+  unavailable?: InferenceUnavailableReason;
+}
+
+/** Input to {@link InferenceResolver.mode}: a request without a tier. */
+export type InferenceModeRequest = Omit<InferenceRequest, 'tier'>;
+
+/** Output of {@link InferenceResolver.mode}. */
+export interface InferenceModeState {
+  mode: InferenceMode;
+  /** Set when untiered calls must not run (in practice `off`). */
+  unavailable?: InferenceUnavailableReason;
 }
 
 /** Context handed to a registered resolver. */
@@ -132,6 +350,18 @@ export interface InferenceResolver {
     request: InferenceRequest,
     context: InferenceResolverContext,
   ): InferenceResolution | undefined | Promise<InferenceResolution | undefined>;
+  /**
+   * Optional (#4757): the principal's stored inference mode for calls that
+   * name no tier. Untiered calls ask only this: `undefined` (no stored mode)
+   * keeps the configured client without consulting {@link resolve};
+   * `unavailable` throws `InferenceUnavailableError`; any other mode is the
+   * principal's explicit choice and routes the call through `auto`, so it
+   * runs on the chosen binding or reports `unconfigured`, never on the app's
+   * configured client. Resolvers without it change nothing.
+   */
+  mode?(
+    request: InferenceModeRequest,
+  ): InferenceModeState | undefined | Promise<InferenceModeState | undefined>;
 }
 
 const RESOLVER_KEY = Symbol.for('smrt.inference.resolver');
@@ -259,6 +489,25 @@ export function mergeInferenceConfigs(
     if (record.defaultTier !== undefined) {
       merged.defaultTier = record.defaultTier as InferenceTier;
     }
+    if (record.degrade !== undefined) {
+      merged.degrade = record.degrade as boolean;
+    }
+    const aliases = asRecord(record.aliases);
+    if (aliases) {
+      for (const [name, alias] of Object.entries(aliases)) {
+        if (alias === undefined) continue;
+        merged.aliases ??= {};
+        merged.aliases[name] = alias as InferenceAlias;
+      }
+    }
+    const fusions = asRecord(record.fusions);
+    if (fusions) {
+      for (const [name, fusion] of Object.entries(fusions)) {
+        if (fusion === undefined) continue;
+        merged.fusions ??= {};
+        merged.fusions[name] = fusion as InferenceFusionDefinition;
+      }
+    }
     const tiers = asRecord(record.tiers);
     if (tiers) {
       for (const [tier, target] of Object.entries(tiers)) {
@@ -301,6 +550,25 @@ export function assertInferenceConfig(
     }
     if (!asRecord(target)) {
       throw new Error(`inference.tiers.${tier} must be an object.`);
+    }
+  }
+  if (value.degrade !== undefined && typeof value.degrade !== 'boolean') {
+    throw new Error('inference.degrade must be a boolean.');
+  }
+  if (value.aliases !== undefined && !asRecord(value.aliases)) {
+    throw new Error('inference.aliases must be an object of named chains.');
+  }
+  for (const [name, alias] of Object.entries(value.aliases ?? {})) {
+    if (!asRecord(alias)) {
+      throw new Error(`inference.aliases.${name} must be an object.`);
+    }
+  }
+  if (value.fusions !== undefined && !asRecord(value.fusions)) {
+    throw new Error('inference.fusions must be an object of named fusions.');
+  }
+  for (const [name, fusion] of Object.entries(value.fusions ?? {})) {
+    if (!asRecord(fusion)) {
+      throw new Error(`inference.fusions.${name} must be an object.`);
     }
   }
 }
@@ -348,6 +616,19 @@ function assertResolution(
       'Inference resolver returned an invalid resolution; expected { tierResolved, target, via }.',
     );
   }
+  if (record.mode !== undefined && !isInferenceMode(record.mode)) {
+    throw new Error(
+      `Inference resolver returned an unknown mode "${String(record.mode)}".`,
+    );
+  }
+  if (
+    record.unavailable !== undefined &&
+    !isInferenceUnavailableReason(record.unavailable)
+  ) {
+    throw new Error(
+      `Inference resolver returned an unknown unavailable reason "${String(record.unavailable)}".`,
+    );
+  }
 }
 
 /** Options for {@link resolveInference}. */
@@ -380,19 +661,339 @@ export async function resolveInference(
   }
   assertResolution(resolved);
   if (request.tier !== 'auto' && resolved.tierResolved !== request.tier) {
-    // A concrete tier request answered by another tier is a substitution,
-    // which v1 does not support silently (#4749: degradation is reported).
+    // A concrete tier request answered by another tier is a silent
+    // substitution (#4749: degradation is reported). Resolvers bind; only the
+    // executor degrades, and it records every step (#4752).
     throw new Error(
-      `Inference resolver answered tier "${request.tier}" with "${resolved.tierResolved}"; substitutions are not supported in this version.`,
+      `Inference resolver answered tier "${request.tier}" with "${resolved.tierResolved}"; a resolver must not substitute tiers.`,
     );
   }
   return resolved;
 }
 
-/** `usageTags` recorded for a call through the tier path. */
+/**
+ * The stored mode for an untiered call (#4757): the registered (or given)
+ * resolver's optional `mode()`, else `undefined`. The built-in resolver has
+ * none, so unconfigured apps never pay for this. Never calls a model.
+ */
+export async function resolveInferenceMode(
+  request: InferenceModeRequest = {},
+  options: Pick<ResolveInferenceOptions, 'resolver'> = {},
+): Promise<InferenceModeState | undefined> {
+  const resolver = options.resolver ?? getInferenceResolver();
+  if (typeof resolver.mode !== 'function') return undefined;
+  const state = await resolver.mode({ ...request });
+  if (state === undefined || state === null) return undefined;
+  if (!asRecord(state) || !isInferenceMode(state.mode)) {
+    throw new Error(
+      'Inference resolver returned an invalid mode; expected { mode, unavailable? }.',
+    );
+  }
+  if (
+    state.unavailable !== undefined &&
+    !isInferenceUnavailableReason(state.unavailable)
+  ) {
+    throw new Error(
+      `Inference resolver returned an unknown unavailable reason "${String(state.unavailable)}".`,
+    );
+  }
+  return state;
+}
+
+function isLoopbackEndpoint(baseUrl: unknown): boolean {
+  if (typeof baseUrl !== 'string' || baseUrl.trim() === '') return false;
+  try {
+    const host = new URL(baseUrl).hostname.toLowerCase();
+    return (
+      host === 'localhost' ||
+      host.endsWith('.localhost') ||
+      host === '[::1]' ||
+      host === '::1' ||
+      /^127\.\d+\.\d+\.\d+$/.test(host)
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The mode a working binding reports (#4757): the resolution's own `mode`,
+ * else the target's `source` (`byo`, `local`, `hosted`), else, for app
+ * configuration and the configured client (`source: 'app'` or none),
+ * `local` for Ollama or a loopback endpoint and `hosted` otherwise (the host
+ * provides inference; `source` still says `app`). `fallback` is the
+ * configured client's options, read when the target names no provider.
+ */
+export function inferenceModeForTarget(
+  resolution: Pick<InferenceResolution, 'mode' | 'target'> | undefined,
+  fallback?: Record<string, unknown>,
+): Exclude<InferenceMode, 'off'> {
+  if (resolution?.mode && resolution.mode !== 'off') return resolution.mode;
+  const target = resolution?.target ?? {};
+  const source = target.source;
+  if (source === 'byo' || source === 'local' || source === 'hosted') {
+    return source;
+  }
+  const named = typeof target.provider === 'string' && target.provider !== '';
+  const provider = named ? target.provider : fallback?.provider;
+  const baseUrl = named
+    ? target.baseUrl
+    : (target.baseUrl ?? fallback?.baseUrl);
+  if (typeof provider === 'string' && provider.toLowerCase() === 'ollama') {
+    return 'local';
+  }
+  return isLoopbackEndpoint(baseUrl) ? 'local' : 'hosted';
+}
+
+/**
+ * `usageTags` recorded for a call through the tier path: the target's own
+ * string `usageTags` (#4759), then the requested and resolved tier, plus the
+ * binding's `source` when the target names one.
+ */
 export function inferenceUsageTags(
   tierRequested: InferenceTierRequest,
   resolution: InferenceResolution,
 ): Record<string, string> {
-  return { tierRequested, tierResolved: resolution.tierResolved };
+  const source = resolution.target?.source;
+  const own = resolution.target?.usageTags;
+  return {
+    ...(own && typeof own === 'object'
+      ? Object.fromEntries(
+          Object.entries(own).filter(
+            ([key, value]) => typeof value === 'string' && key !== '',
+          ),
+        )
+      : {}),
+    tierRequested,
+    tierResolved: resolution.tierResolved,
+    ...(isInferenceTargetSource(source) ? { source } : {}),
+  };
+}
+
+/**
+ * How an executor may degrade a call for a candidate that lacks a
+ * capability (#4758), sent as the `capabilityFallback` call option. Core
+ * sets it only on calls to executor-run targets; executors strip it before
+ * a provider sees the options.
+ *
+ * - `json: 'text'`: drop `responseFormat` and let the caller parse text
+ *   (core's `is()` / `evaluate()` text verdict, fusion seats' raw recovery).
+ * - `tools: 'drop'`: run without `tools` (the caller marked them optional).
+ *
+ * Without a permitted fallback a missing capability is `missing-capability`
+ * and the walk advances to the next candidate without calling the model.
+ */
+export interface InferenceCapabilityFallbackOption {
+  json?: 'text';
+  tools?: 'drop';
+}
+
+/** Per-call options a chain client receives (the `ai.message()` options). */
+export type InferenceCallOptions = Record<string, unknown> & {
+  usageTags?: Record<string, string>;
+  capabilityFallback?: InferenceCapabilityFallbackOption;
+};
+
+/**
+ * The client surface an {@link InferenceExecutor} drives and returns: the
+ * subset of the AI SDK client it needs. Core passes real SDK clients in and
+ * treats the executor's client as one.
+ */
+export interface InferenceModelClient {
+  message(text: string, options?: InferenceCallOptions): Promise<string>;
+  [method: string]: unknown;
+}
+
+/** A usage row recorded without a model call (a chain that never answered). */
+export interface InferenceUsageRecord {
+  provider?: string;
+  model?: string;
+  operation: string;
+  /** Wall time spent on the attempts, in ms. */
+  duration?: number;
+  tags: Record<string, string>;
+}
+
+/**
+ * A usage event observed for one run (#4753): the normalized event core
+ * hands its usage handlers, minus everything but identity and totals.
+ */
+export interface InferenceUsageObservation {
+  provider: string;
+  model: string;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  estimatedCost?: number;
+  duration: number;
+  tags: Record<string, string>;
+}
+
+/** Outcome of a multi-call run (`_smrt_ai_runs.status`). */
+export type InferenceRunStatus = 'ok' | 'degraded' | 'failed';
+
+/**
+ * One multi-call run (a fusion, #4753) for `_smrt_ai_runs`. Core adds the
+ * instance's tenant and class when it writes the row.
+ */
+export interface InferenceRunRecord {
+  /** The run id every seat's usage row carries as its `runId` tag. */
+  id: string;
+  fusionKey: string;
+  mode: string;
+  /** The entry call's prompt key, when the caller sent one. */
+  promptKey?: string;
+  /** Seats that ran (skipped and never-reached seats excluded). */
+  seats: number;
+  /** Seats that died or answered through a substitution. */
+  degradedSeats: number;
+  status: InferenceRunStatus;
+  /** Wall time of the run in ms. */
+  duration: number;
+  /** Per-seat persona, target, model, usage, substitutions; gate result. */
+  details: Record<string, unknown>;
+}
+
+/** What core hands an {@link InferenceExecutor} for one call. */
+export interface InferenceExecutionContext {
+  /** The tier request as the caller made it. */
+  request: InferenceRequest;
+  /** The resolution whose target the executor runs. */
+  resolution: InferenceResolution;
+  /** The merged inference config (aliases, `degrade`). */
+  config: InferenceConfig | undefined;
+  /** Floor for ladder degradation (call option or prompt `ai.minimumTier`). */
+  minimumTier?: InferenceTier;
+  /** Return the text already streamed when a candidate fails mid-stream. */
+  allowPartial?: boolean;
+  /**
+   * A client for one `single` target, built by core with its credential pair
+   * rules and wired into the instance's usage pipeline.
+   */
+  clientFor(target: InferenceTarget): Promise<InferenceModelClient>;
+  /**
+   * Resolve another tier through the same seam (ladder degradation, fusion
+   * seats). `promptKey` replaces the request's for a fusion seat's prompt.
+   */
+  resolveTier(
+    tier: InferenceTier,
+    overrides?: { promptKey?: string },
+  ): Promise<InferenceResolution>;
+  /**
+   * Record a zero-token usage row through the instance's existing usage
+   * pipeline: the row for a call whose every candidate failed.
+   */
+  recordUsage(record: InferenceUsageRecord): Promise<void>;
+  /**
+   * Capabilities of one `single` target (#4758), detected the way core
+   * detects them for its own calls (the client's `getCapabilities()`, then
+   * presets, then the model heuristic, then assumed). Builds the client;
+   * never calls a model. Absent on older cores: treat every candidate as
+   * capable.
+   */
+  capabilitiesFor?(target: InferenceTarget): Promise<InferenceCapabilities>;
+  /**
+   * The instance database, for executors that read stored state such as
+   * app and tenant prompt overrides (fusion seats, #4753). Never written.
+   */
+  db?: unknown;
+  /**
+   * Ask the instance's typed-decision client (the `evaluate()` path, #3159)
+   * one batch of questions, recording its usage with `usageTags`. Resolves
+   * `undefined` when no decision client is configured. Used by fusion gates.
+   */
+  decide?(
+    request: DecisionRequest,
+    options?: { usageTags?: Record<string, string>; signal?: AbortSignal },
+  ): Promise<DecisionResult | undefined>;
+  /**
+   * Persist a run record into `_smrt_ai_runs` when usage persistence is on;
+   * a no-op otherwise. Never throws for a write failure (logged instead).
+   */
+  recordRun?(record: InferenceRunRecord): Promise<void>;
+  /**
+   * Observe the usage events whose `runId` tag is `runId` until the
+   * returned function is called (per-seat usage in the run record).
+   */
+  observeUsage?(
+    runId: string,
+    listener: (event: InferenceUsageObservation) => void,
+  ): () => void;
+}
+
+/**
+ * Runs targets whose kind core does not (chains, later fusions). Registered
+ * by `@happyvertical/smrt-inference` on import; core never imports it.
+ */
+export interface InferenceExecutor {
+  /** Target kinds this executor runs. */
+  readonly kinds: readonly string[];
+  /** A client whose calls run the target in `context.resolution`. */
+  createClient(context: InferenceExecutionContext): InferenceModelClient;
+}
+
+const EXECUTOR_KEY = Symbol.for('smrt.inference.executor');
+
+type ExecutorHolder = { [EXECUTOR_KEY]?: InferenceExecutor };
+
+/**
+ * Register the process-wide executor for non-`single` target kinds, or pass
+ * `undefined` to remove it. Stored on `globalThis` like the resolver.
+ */
+export function setInferenceExecutor(
+  executor: InferenceExecutor | undefined,
+): void {
+  if (
+    executor !== undefined &&
+    (executor === null ||
+      typeof (executor as Partial<InferenceExecutor>).createClient !==
+        'function' ||
+      !Array.isArray((executor as Partial<InferenceExecutor>).kinds))
+  ) {
+    throw new Error(
+      'An inference executor must declare kinds and implement createClient().',
+    );
+  }
+  const holder = globalThis as ExecutorHolder;
+  if (executor === undefined) delete holder[EXECUTOR_KEY];
+  else holder[EXECUTOR_KEY] = executor;
+}
+
+/** The registered executor, if any. */
+export function getInferenceExecutor(): InferenceExecutor | undefined {
+  return (globalThis as ExecutorHolder)[EXECUTOR_KEY];
+}
+
+/**
+ * The executor for a target's kind. `single` targets return `undefined`
+ * (core runs them); any other kind without a registered executor throws, so
+ * a chain is never silently replaced by the configured client.
+ */
+export function inferenceExecutorFor(
+  target: InferenceTarget,
+): InferenceExecutor | undefined {
+  const kind = inferenceTargetKind(target);
+  if (kind === 'single') return undefined;
+  const executor = getInferenceExecutor();
+  if (!executor || !executor.kinds.includes(kind)) {
+    throw new Error(
+      `Inference target kind "${kind}" needs a registered executor; import @happyvertical/smrt-inference.`,
+    );
+  }
+  return executor;
+}
+
+/** Code of {@link InferenceBindingError}. */
+export const INFERENCE_TARGET_UNBOUND = 'INFERENCE_TARGET_UNBOUND';
+
+/**
+ * A tier target core refuses to bind before any request is sent: an unbound
+ * endpoint/key pair, another provider while `HAVE_AI_*` is set, or an
+ * injected client asked for a new endpoint. Typed so a chain executor can
+ * classify it (as `credential`) without reading the message (#4752).
+ */
+export class InferenceBindingError extends SmrtError {
+  constructor(message: string) {
+    super(message, INFERENCE_TARGET_UNBOUND, 'configuration');
+  }
 }

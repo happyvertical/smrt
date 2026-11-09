@@ -109,6 +109,54 @@ function readAmbientAiUsageTenant(): string | undefined {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Ambient user slot (#4760)
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns the user id of the current async scope's principal, or
+ * `null`/`undefined` when there is none (jobs, service principals).
+ */
+export type AiUsageUserResolver = () => string | null | undefined;
+
+/** The usage tag that names the acting user (#4760 per-user spend). */
+export const AI_USAGE_USER_TAG = 'userId';
+
+declare global {
+  // eslint-disable-next-line no-var
+  var __smrtAiUsageUserResolver: AiUsageUserResolver | undefined;
+}
+
+/**
+ * Register the resolver whose user id every usage row records as the
+ * `userId` tag when the event does not carry one. The hosted gate
+ * (`@happyvertical/smrt-inference/gate`, #4760) registers the ambient
+ * principal's user, because per-user spend caps sum `_smrt_ai_usage` by that
+ * tag. Pass `undefined` to clear. Stored on `globalThis` like the tenant
+ * slot.
+ */
+export function setAiUsageUserResolver(
+  resolver: AiUsageUserResolver | undefined,
+): void {
+  globalThis.__smrtAiUsageUserResolver = resolver;
+}
+
+/** The registered ambient-user resolver, if any. */
+export function getAiUsageUserResolver(): AiUsageUserResolver | undefined {
+  return globalThis.__smrtAiUsageUserResolver;
+}
+
+function readAmbientAiUsageUser(): string | undefined {
+  const resolver = globalThis.__smrtAiUsageUserResolver;
+  if (!resolver) return undefined;
+  try {
+    return nonEmptyString(resolver());
+  } catch {
+    // A misbehaving resolver never breaks usage recording; attribute nothing.
+    return undefined;
+  }
+}
+
 /**
  * Resolve the tenant a usage event is attributed to:
  *
@@ -263,9 +311,15 @@ export function normalizeAiUsageEvent(
 
   const duration = firstNumber(raw.duration, raw.durationMs, raw.latency) ?? 0;
   const eventTags = normalizeAiUsageTags(raw.tags);
+  // An explicit `userId` tag (attribution or event) wins; otherwise the
+  // ambient principal's user, when a resolver is registered (#4760).
+  const explicitUser =
+    eventTags?.[AI_USAGE_USER_TAG] ?? attribution.tags?.[AI_USAGE_USER_TAG];
+  const ambientUser = explicitUser ? undefined : readAmbientAiUsageUser();
   const tags =
-    attribution.tags || eventTags
+    attribution.tags || eventTags || ambientUser
       ? normalizeAiUsageTags({
+          ...(ambientUser ? { [AI_USAGE_USER_TAG]: ambientUser } : {}),
           ...(attribution.tags ?? {}),
           ...(eventTags ?? {}),
         })

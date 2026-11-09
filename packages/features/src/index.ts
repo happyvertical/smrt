@@ -46,6 +46,12 @@ export {
   listFrameworkFeatures,
 } from './framework-features.js';
 export {
+  KillSwitchService,
+  type KillSwitchState,
+  readKillSwitch,
+  setKillSwitch,
+} from './kill-switch.js';
+export {
   checkFeature,
   FEATURE_DISABLED_CODE,
   FEATURE_GATE_STATUS,

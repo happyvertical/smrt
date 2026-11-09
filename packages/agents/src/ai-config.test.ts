@@ -5,6 +5,7 @@ import {
   attachAiUsageRecorder,
   createAiUsageRecorder,
   ObjectRegistry,
+  setInferenceResolver,
   smrt,
 } from '@happyvertical/smrt-core';
 import { getTestDatabase } from '@happyvertical/smrt-core/testing';
@@ -332,6 +333,129 @@ describe('agent AI secret resolution', () => {
           tags: { feature: 'per-call' },
         });
       });
+    });
+  });
+  describe('stored inference bindings (#4756)', () => {
+    const userTarget = {
+      provider: 'openai',
+      baseUrl: 'https://openrouter.ai/api/v1',
+      model: 'user/model',
+      apiKey: 'sk-user-binding',
+      source: 'byo' as const,
+    };
+
+    afterEach(() => {
+      setInferenceResolver(undefined);
+    });
+
+    it('falls through to the registered resolver when no agent secret is named', async () => {
+      const { child } = await createTenantHierarchy();
+      const requests: Array<Record<string, unknown>> = [];
+      setInferenceResolver({
+        resolve: (request) => {
+          requests.push({ ...request });
+          return {
+            tierResolved: request.tier === 'auto' ? 'good' : request.tier,
+            target: { ...userTarget },
+            via: 'resolver',
+          };
+        },
+      });
+
+      // Initialized inside a user's request: the agent keeps the options
+      // for every later run, so the resolver is told no user applies.
+      await withTenant(
+        { tenantId: String(child.id), userId: 'u-1' },
+        async () => {
+          await secrets.store('GEMINI_API_KEY', 'tenant-specific-key');
+          const agent = new GeminiSecretAgent({ db });
+          await agent.initialize();
+          const ai = agent.options.ai as Record<string, unknown> & {
+            onUsage?: (event: unknown) => Promise<void>;
+          };
+          expect(ai).toMatchObject({
+            provider: 'openai',
+            model: 'user/model',
+            baseUrl: 'https://openrouter.ai/api/v1',
+            apiKey: 'sk-user-binding',
+          });
+          await ai.onUsage?.({
+            provider: 'openai',
+            model: 'user/model',
+            operation: 'chat',
+            usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
+          });
+          const rows = await agent.listAiUsage({
+            className: 'GeminiSecretAgent',
+          });
+          expect(rows).toHaveLength(1);
+          expect(rows[0]).toMatchObject({
+            tenantId: child.id,
+            tags: expect.objectContaining({ source: 'byo' }),
+          });
+        },
+      );
+      expect(requests[0]).toMatchObject({ tenantId: child.id, userId: null });
+
+      // A named agent secret keeps the secret path.
+      await withTenant({ tenantId: String(child.id) }, async () => {
+        await secrets.store('AGENT_KEY', 'agent-key');
+        const named = await resolveAgentAIOptions({
+          aiConfig: {
+            type: 'gemini',
+            defaultModel: 'gemini-flash-latest',
+            apiKeySecretName: 'AGENT_KEY',
+          },
+          db,
+          recordUsage: false,
+        });
+        expect(named).toMatchObject({ type: 'gemini', apiKey: 'agent-key' });
+      });
+    });
+
+    it('re-resolves on every initialize, so a rotated tenant binding or secret is not kept', async () => {
+      const { child } = await createTenantHierarchy();
+      let key = 'sk-first';
+      setInferenceResolver({
+        resolve: (request) => ({
+          tierResolved: request.tier === 'auto' ? 'good' : request.tier,
+          target: { ...userTarget, apiKey: key },
+          via: 'resolver',
+        }),
+      });
+      await withTenant({ tenantId: String(child.id) }, async () => {
+        const agent = new GeminiSecretAgent({ db });
+        await agent.initialize();
+        expect(agent.options.ai).toMatchObject({ apiKey: 'sk-first' });
+        key = 'sk-rotated';
+        await agent.initialize();
+        expect(agent.options.ai).toMatchObject({ apiKey: 'sk-rotated' });
+
+        // The tenant secret path re-reads too once the binding is removed.
+        setInferenceResolver(undefined);
+        await secrets.store('GEMINI_API_KEY', 'secret-one');
+        await agent.initialize();
+        expect(agent.options.ai).toMatchObject({ apiKey: 'secret-one' });
+        await secrets.store('GEMINI_API_KEY', 'secret-two');
+        await agent.initialize();
+        expect(agent.options.ai).toMatchObject({ apiKey: 'secret-two' });
+      });
+    });
+
+    it('keeps the agent config against an app inference binding', async () => {
+      setInferenceResolver({
+        resolve: (request) => ({
+          tierResolved: request.tier === 'auto' ? 'good' : request.tier,
+          target: { provider: 'openai', model: 'app-model', source: 'app' },
+          via: 'resolver',
+        }),
+      });
+      const options = await resolveAgentAIOptions({
+        aiConfig: { type: 'gemini', defaultModel: 'gemini-flash-latest' },
+        db: undefined,
+      });
+      expect(options).toMatchObject({ type: 'gemini' });
+      expect(options).not.toHaveProperty('provider', 'openai');
     });
   });
 });

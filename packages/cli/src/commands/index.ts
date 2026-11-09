@@ -22,6 +22,11 @@ export { exportCommand } from './export.js';
 export { generateCommands } from './generate.js';
 export { gitCommands } from './git.js';
 export { gnodeCommands } from './gnode.js';
+export {
+  INFERENCE_HOSTED_SUBCOMMANDS,
+  inferenceHostedCommand,
+} from './inference-hosted.js';
+export { inferenceHostedProvisionSubcommands } from './inference-hosted-provision.js';
 export { initCommands } from './init.js';
 export { kitchenCommands } from './kitchen.js';
 export { mcpAppsCommands } from './mcp-apps-packaging.js';

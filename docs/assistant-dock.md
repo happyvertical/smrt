@@ -217,9 +217,13 @@ Refusals are JSON `{ error, code }` with a user-safe `error`.
   `clientRequestId` in `metadata`) and runs `runAssistantTurn`, whose reply is
   authored through the agent bridge. `ai` is a client or a per-turn factory;
   omitted, it is the `smrt.config` `ai` block through the shared resolver.
-  A failing factory, or no configured provider
-  (`AIProviderNotConfiguredError`, which names variables, never values, and
-  goes only to `onError`), answers 503 before anything is written. Tools are
+  A failing factory answers 503 `assistant_unavailable` before anything is
+  written. No configured provider (`AIProviderNotConfiguredError`, which
+  names variables, never values, and goes only to `onError`) or a principal
+  whose AI is off (`AI_UNAVAILABLE`, #4757) answers 503 `ai_unavailable` with
+  the structured `unavailable` status instead
+  ([chat ai-unavailable](../packages/chat/agents/ai-unavailable.md)); pass the
+  dock `aiSettingsHref` to render "AI is off" with a settings link. Tools are
   fail-closed: `allowedTools` (absent = none) gates `extraTools`, `tools` and
   the action adapter, and every tool runs under `executeAsPrincipal`. Without
   `tools`, the route offers the manifest operations `allowedTools` names

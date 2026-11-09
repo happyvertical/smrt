@@ -1,8 +1,10 @@
 /**
  * The language model behind `smrt kitchen`'s chat endpoint (#3750): the
  * user's configured `@happyvertical/ai` provider, resolved the way the rest of
- * s-m-r-t resolves it (the `ai` block of `smrt.config.ts`, then `SMRT_AI_*`,
- * then the provider's own key variable such as `OPENAI_API_KEY`).
+ * s-m-r-t resolves it: a registered inference binding or the app `inference`
+ * block (core's `resolveInferenceTarget()`, #4756), else the `ai` block of
+ * `smrt.config.ts`, then `SMRT_AI_*`, then the provider's own key variable
+ * such as `OPENAI_API_KEY`.
  */
 
 import { existsSync } from 'node:fs';
@@ -13,6 +15,7 @@ import {
   toAIClientOptions,
   tryResolveConfiguredAIProvider,
 } from '@happyvertical/smrt-config';
+import { resolveInferenceTarget } from '@happyvertical/smrt-core';
 
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant';
@@ -65,12 +68,26 @@ export async function resolveKitchenAI(
     // An unreadable smrt.config is not fatal here: env variables still count.
   }
   const resolved = tryResolveConfiguredAIProvider({ env: options.env });
-  if (!resolved?.provider) return null;
+  const base = resolved?.provider ? toAIClientOptions(resolved) : undefined;
+  // The CLI has no principal: only tenant-less bindings (the app `inference`
+  // block) apply. Usage reaches the configured handlers (#3077); no db here.
+  const target = await resolveInferenceTarget({
+    ...(base ? { base: base as Record<string, unknown> } : {}),
+    className: 'Kitchen',
+    usage: { className: 'Kitchen' },
+  });
+  if (!target.options) return null;
+  const clientOptions = target.options as ReturnType<typeof toAIClientOptions>;
+  const text = (value: unknown) =>
+    typeof value === 'string' && value ? value : undefined;
+  const provider =
+    text(target.options.provider) ?? text(target.options.type) ?? 'ai';
+  const model = text(target.options.model) ?? text(target.options.defaultModel);
   const client = await (options.createClient ?? defaultCreateClient)(
-    toAIClientOptions(resolved),
+    clientOptions,
   );
   return {
-    label: `${resolved.provider}${resolved.model ? ` (${resolved.model})` : ''}`,
+    label: `${provider}${model ? ` (${model})` : ''}`,
     async chat(messages) {
       const response = await client.chat(messages, { temperature: 0 });
       return response.content;

@@ -15,7 +15,11 @@ import type {
   DecisionValue,
 } from '@happyvertical/ai';
 import type { AiTokenUsage } from '@happyvertical/smrt-types';
-import type { InferenceLatency, InferenceTierRequest } from './inference.js';
+import type {
+  InferenceLatency,
+  InferenceTier,
+  InferenceTierRequest,
+} from './inference.js';
 
 export type {
   DecisionAnswer,
@@ -289,6 +293,16 @@ export interface EvaluateOptions {
   latency?: InferenceLatency;
   /** Prompt key passed to the generative route's tier resolver. */
   promptKey?: string;
+  /** Ladder floor for the generative route's chain tier (#4752). */
+  minimumTier?: InferenceTier;
+  /** Keep a chain candidate's streamed text on a mid-stream failure (#4752). */
+  allowPartial?: boolean;
+  /**
+   * Tool route only: `'optional'` runs without the registered tools when the
+   * bound model cannot call them; `'required'` (default) throws
+   * `InferenceUnavailableError` (`reason: 'capability'`, #4758).
+   */
+  toolUse?: 'required' | 'optional';
   /** Abort an in-flight provider request. */
   signal?: AbortSignal;
   /** Provider request deadline in milliseconds. */

@@ -5,10 +5,10 @@ description: "Chat rooms, DMs, threads, and agent conversations for the SMRT fra
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T15:48:19Z"
+  at: "2026-11-08T22:59:11Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:6d305ee403a1fc43b71f10a8be7764a9a48be5d3617ddd315b2c0c0ea14d73ac"
+source_revision: "sha256:78fa8f078b95f9a5979d9848ebb14bd46289ef2fa788f178c56203fa8978b5ea"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/chat/package.json"
@@ -17,21 +17,24 @@ sources:
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/chat/AGENTS.md"
     title: "@happyvertical/smrt-chat packages/chat/AGENTS.md"
   - id: "agents-2"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/chat/agents/ai-unavailable.md"
+    title: "@happyvertical/smrt-chat packages/chat/agents/ai-unavailable.md"
+  - id: "agents-3"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/chat/agents/assistant-questions.md"
     title: "@happyvertical/smrt-chat packages/chat/agents/assistant-questions.md"
-  - id: "agents-3"
+  - id: "agents-4"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/chat/agents/dev-workbench.md"
     title: "@happyvertical/smrt-chat packages/chat/agents/dev-workbench.md"
-  - id: "agents-4"
+  - id: "agents-5"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/chat/agents/overview-tools.md"
     title: "@happyvertical/smrt-chat packages/chat/agents/overview-tools.md"
-  - id: "agents-5"
+  - id: "agents-6"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/chat/agents/recipes.md"
     title: "@happyvertical/smrt-chat packages/chat/agents/recipes.md"
-  - id: "agents-6"
+  - id: "agents-7"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/chat/agents/token-streaming.md"
     title: "@happyvertical/smrt-chat packages/chat/agents/token-streaming.md"
-  - id: "agents-7"
+  - id: "agents-8"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/chat/agents/tool-loop.md"
     title: "@happyvertical/smrt-chat packages/chat/agents/tool-loop.md"
 ---
@@ -48,6 +51,7 @@ sources:
 ## Documentation
 
 - `packages/chat/AGENTS.md`
+- `packages/chat/agents/ai-unavailable.md`
 - `packages/chat/agents/assistant-questions.md`
 - `packages/chat/agents/dev-workbench.md`
 - `packages/chat/agents/overview-tools.md`

@@ -216,6 +216,8 @@ export { default as MessageInput } from './components/messages/MessageInput.svel
 export { default as MessageItem } from './components/messages/MessageItem.svelte';
 export { default as MessageList } from './components/messages/MessageList.svelte';
 export { default as ThreadPanel } from './components/messages/ThreadPanel.svelte';
+export type { AiUnavailableNoticeProps } from './components/shared/AiUnavailableNotice.svelte';
+export { default as AiUnavailableNotice } from './components/shared/AiUnavailableNotice.svelte';
 export { default as Avatar } from './components/shared/Avatar.svelte';
 export { default as FileUpload } from './components/shared/FileUpload.svelte';
 export { default as LinkPreview } from './components/shared/LinkPreview.svelte';

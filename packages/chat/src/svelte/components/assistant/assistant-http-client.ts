@@ -10,11 +10,16 @@
  * Browser-safe: no server imports. Authentication is the host's session
  * cookie (same-origin `fetch`), or headers the host supplies.
  */
+
 import type {
   DataSurfaceActionRequest,
   DataSurfaceActionResult,
   DataSurfaceRegistry,
 } from '@happyvertical/smrt-ui/data-surface';
+import {
+  type ChatUnavailableStatus,
+  readChatUnavailableStatus,
+} from '../../../client.js';
 import {
   type AssistantAttachmentRef,
   type AssistantMessage,
@@ -62,6 +67,8 @@ export class AssistantHttpError extends Error {
     message: string,
     readonly status: number,
     readonly code: string | undefined,
+    /** Set when AI is off or not set up (`code: 'ai_unavailable'`, #4757). */
+    readonly unavailable?: ChatUnavailableStatus,
   ) {
     super(message);
     this.name = 'AssistantHttpError';
@@ -96,14 +103,16 @@ function makeFetch(options: AssistantHttpOptions) {
 async function failure(response: Response): Promise<AssistantHttpError> {
   let message = `The assistant request failed (${response.status}).`;
   let code: string | undefined;
+  let unavailable: ChatUnavailableStatus | undefined;
   try {
     const body = (await response.json()) as { error?: unknown; code?: unknown };
     if (typeof body.error === 'string' && body.error) message = body.error;
     if (typeof body.code === 'string') code = body.code;
+    unavailable = readChatUnavailableStatus(body);
   } catch {
     // Not JSON: keep the generic message.
   }
-  return new AssistantHttpError(message, response.status, code);
+  return new AssistantHttpError(message, response.status, code, unavailable);
 }
 
 function isJson(response: Response): boolean {

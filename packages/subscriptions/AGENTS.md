@@ -86,6 +86,51 @@ that reverted to DECIMAL passes every SQLite suite.
   `retainsPaidPeriod`, derived on save from an entitled pre-cancel row.
 - **Recipe `subscriptions.plans`** (`src/recipes.ts`, help in `src/plans.recipe.md`): lists plans, subscriptions, plan versions (read-only, written by `plan-versioning.ts`) and charges (read-only, written by the usage service) for the planner and other catalog hosts. Fields it shows carry `@field({ description })` in plain words, money fields saying "in cents"; keep them when editing the models. Reseller models and pricing rules stay out of it.
 
+## Hosted AI spend caps (#4760)
+
+`src/services/hosted-ai-spend.ts`. Plans cap platform-paid (`source:
+hosted`) inference with ordinary `PlanThreshold`s on two reserved keys, so
+window, amount and enforcement come from the plan (pinned version included):
+`AI_HOSTED_SPEND_METRIC` (`ai.hosted.spend_micros`, the tenant) and
+`AI_HOSTED_USER_SPEND_METRIC` (`ai.hosted.user_spend_micros`, each user).
+
+- `limit` is **integer micro-dollars** (1 USD = 1,000,000; the money rule at
+  per-call precision). `block` blocks at or over the cap, `warn` warns,
+  `observe` never affects a call; `warningRatio` (default 0.8) warns early;
+  a 0 cap blocks every hosted call. A malformed hosted cap (fractional or
+  negative limit, unknown window/enforcement) throws
+  `HostedAiSpendPolicyError` (the gate fails closed); it never reads as "no
+  cap". `resolvePlanThresholds()` returns thresholds unfiltered for this
+  reason (the models' `getThresholds()` drop invalid entries) and throws on
+  non-array JSON.
+- Spend: `createHostedAiSpendReader(db)` sums `_smrt_ai_usage.estimated_cost`
+  (USD, rounded to micro-dollars) by `tenant_id` and `created_at` in the
+  cap's window for rows whose `tags` hold `"source":"hosted"` (and
+  `"userId":"<id>"` for the per-user cap), as exact, case-sensitive JSON
+  fragments (`hostedAiTagFragment()`; `strpos` on the PostgreSQL dialect,
+  `instr` elsewhere, never `LIKE`, which folds ASCII case on SQLite and
+  would merge `Alice` and `alice`); errors only over-count.
+  `operation: 'blocked'` rows and external-agent measurements never count;
+  uncosted rows add nothing (give hosted models a cost rate). The `userId`
+  tag exists only while the hosted gate's ambient-user resolver is
+  registered.
+- `resetsAt`: the calendar window's end; for a blocked `rolling` cap (30
+  days), `HostedAiSpendReader.liftsAt()`: one window-function query (newest
+  first running `SUM(estimated_cost)`, rounded as `summarize()` rounds)
+  returns the row whose expiry first brings the total below the cap, plus
+  30 days (null for a 0 cap). A blocked decision names the blocking cap that
+  lifts last.
+- `HostedAiSpendEvaluator` (`create({ db })`): plan thresholds via
+  `SubscriptionResolver.resolvePlanThresholds()` (entitled terms, no usage
+  meters; memoized per tenant for `termsTtlMs`, 30 s, failures evicted,
+  `invalidate()`), spend read fresh per call; per-user caps only with a
+  user. Errors propagate. smrt-inference's `./gate` consumes it.
+- `resolveEntitlements()` / the tenant usage meter report these keys with
+  quantity 0: only the evaluator meters them. The meter's AI summary (and so
+  `ai.requests`) skips `operation: 'blocked'` rows. `SpendingPolicy` rows stay the
+  billed-charge (cents) policy; hosted AI caps are plan terms because the
+  issue's window and amount come from the plan.
+
 ## Reseller billing (#3059)
 
 - Billing ownership is consumed from `smrt-tenancy`'s
@@ -143,3 +188,18 @@ that reverted to DECIMAL passes every SQLite suite.
   subscription report no grants silently; every other error propagates.
   `findGrantingPlan()` names the first active plan by `sortOrder` visible in
   the current context.
+- **Entitlement change hook (#4759).** `src/services/entitlement-changes.ts`.
+  The host wraps its billing-webhook write in
+  `trackEntitlementChange({ tenantId, resolver }, apply)`: it snapshots
+  `resolveFeatureGrants()` (keys plus grant `metadata`, no usage reads)
+  before and after, diffs `gained` / `lost` / `changed` (metadata, e.g. a
+  plan budget) and calls listeners registered with
+  `registerEntitlementChangeListener()` (a `Symbol.for` slot) or passed in.
+  Listeners run after `apply`; their failures are returned in `failures`,
+  never thrown, and never undo the write, so listeners must be idempotent.
+  An `apply` error propagates and notifies nobody. A redelivered webhook
+  diffs to no change, so a lost reaction is repaired by the consumer's
+  reconcile entry point (hosted inference: `createHostedInferenceReconciler()`
+  with `snapshotEntitlements()`), run on redelivery or a schedule. Listeners satisfy the
+  structural type (smrt-inference's hosted listener), so this package
+  depends on none of them.

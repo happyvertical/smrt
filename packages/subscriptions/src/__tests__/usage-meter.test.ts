@@ -386,6 +386,36 @@ describe('TenantUsageMeter AI usage summaries', () => {
     ).rejects.toBe(cyclic);
   });
 
+  it('never counts hosted-gate blocked rows as requests (#4760)', async () => {
+    await seedAiUsage(metrics, [
+      {
+        tenantId: 'tenant-1',
+        promptTokens: 10,
+        completionTokens: 5,
+        totalTokens: 15,
+        estimatedCost: 0.01,
+        createdAt: '2026-06-10T12:00:00.000Z',
+      },
+      {
+        tenantId: 'tenant-1',
+        operation: 'blocked',
+        promptTokens: 0,
+        completionTokens: 0,
+        totalTokens: 0,
+        estimatedCost: 0,
+        createdAt: '2026-06-11T12:00:00.000Z',
+      },
+    ]);
+    const summary = await new TenantUsageMeter(metrics).summarizeAiUsage({
+      tenantId: 'tenant-1',
+      window: {
+        start: new Date('2026-06-01T00:00:00.000Z'),
+        end: new Date('2026-07-01T00:00:00.000Z'),
+      },
+    });
+    expect(summary).toMatchObject({ requestCount: 1, totalTokens: 15 });
+  });
+
   it('returns zeroed totals when no usage matches', async () => {
     const meter = new TenantUsageMeter(metrics);
     const summary = await meter.summarizeAiUsage({

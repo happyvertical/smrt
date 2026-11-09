@@ -7,13 +7,16 @@
 import {
   AiUsagePersistenceHandler,
   ensureSystemTables,
+  recordAiRun,
   recordAiUsageOutcome,
+  reportAiRuns,
   reportAiUsage,
 } from '@happyvertical/smrt-core';
 import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   aiUsageCommand,
+  formatAiRunReport,
   formatAiUsageReport,
   parseUsageDimensions,
   parseUsageTime,
@@ -27,10 +30,11 @@ describe('parseUsageDimensions', () => {
       'model',
       'tier',
     ]);
-    expect(parseUsageDimensions('class,tenant,fusion')).toEqual([
+    expect(parseUsageDimensions('class,tenant,fusion,source')).toEqual([
       'class',
       'tenant',
       'fusion',
+      'source',
     ]);
   });
 
@@ -125,7 +129,35 @@ describe('formatAiUsageReport', () => {
     expect(text).toContain(
       'Cost basis: estimated_cost as recorded at call time',
     );
-    expect(text).toMatch(/total\s+2\s+300/);
+    expect(text).toMatch(/total\s+2\s+0\s+300/);
+  });
+
+  it('counts hosted-gate blocks beside calls, by tier (#4760)', async () => {
+    const handler = new AiUsagePersistenceHandler(db);
+    await handler.handle({
+      provider: 'openai',
+      model: 'hosted-model',
+      operation: 'blocked',
+      usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+      duration: 0,
+      timestamp: new Date(),
+      tenantId: 'tenant-a',
+      estimatedCost: 0,
+      tags: {
+        tierRequested: 'good',
+        tierResolved: 'good',
+        source: 'hosted',
+        reason: 'entitlement',
+        policy: 'user-cap',
+        cap: '1000000',
+        spend: '1200000',
+      },
+    });
+    const report = await reportAiUsage(db, { by: ['tier'] });
+    const text = formatAiUsageReport(report);
+    expect(text).toMatch(/calls\s+blocked/);
+    expect(text).toMatch(/good\s+0\s+1\s+0/);
+    expect(text).toMatch(/total\s+3\s+1\s+450/);
   });
 
   it('says so when the window is empty', async () => {
@@ -135,6 +167,60 @@ describe('formatAiUsageReport', () => {
     expect(formatAiUsageReport(report)).toContain(
       '(no AI usage recorded in this window)',
     );
+  });
+});
+
+describe('formatAiRunReport (--by fusion, #4753)', () => {
+  let db: DatabaseInterface;
+
+  beforeEach(async () => {
+    db = await getDatabase({ type: 'sqlite', url: ':memory:' });
+    await ensureSystemTables(db, 'sqlite');
+    const base = { mode: 'pair', seats: 3, duration: 100 };
+    await recordAiRun(db, {
+      ...base,
+      id: 'r1',
+      fusionKey: 'review-pair',
+      status: 'ok',
+      degradedSeats: 0,
+      tenantId: 'tenant-a',
+    });
+    await recordAiRun(db, {
+      ...base,
+      id: 'r2',
+      fusionKey: 'review-pair',
+      status: 'degraded',
+      degradedSeats: 1,
+      tenantId: 'tenant-a',
+    });
+    await recordAiRun(db, {
+      ...base,
+      id: 'r3',
+      fusionKey: 'review-pair',
+      status: 'failed',
+      degradedSeats: 3,
+      tenantId: 'tenant-b',
+    });
+  });
+
+  afterEach(async () => {
+    await db.close?.();
+  });
+
+  it('totals runs per fusion with outcome counts and exclusions', async () => {
+    const text = formatAiRunReport(
+      await reportAiRuns(db, { tenantId: 'tenant-a' }),
+    );
+    expect(text).toMatch(/review-pair\s+2\s+1\s+1\s+0\s+6\s+1\s+100ms/);
+    expect(text).toMatch(/total\s+2\s+1\s+1\s+0/);
+    expect(text).toContain('Excluded from totals: 1 run(s) of other tenants');
+  });
+
+  it('says so when no run was recorded', async () => {
+    const text = formatAiRunReport(
+      await reportAiRuns(db, { since: new Date('2999-01-01T00:00:00Z') }),
+    );
+    expect(text).toContain('(no fusion runs recorded in this window)');
   });
 });
 

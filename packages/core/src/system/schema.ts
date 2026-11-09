@@ -312,6 +312,44 @@ CREATE INDEX IF NOT EXISTS idx_smrt_ai_usage_outcomes_tenant_created
 `;
 
 /**
+ * Multi-call run records (#4753).
+ *
+ * One row per fusion run: what ran (`fusion_key`, `mode`, the entry call's
+ * `prompt_key`), how it went (`status`: ok | degraded | failed; `seats` that
+ * ran, `degraded_seats` that died or answered through a substitution), and
+ * `details`, JSON with per-seat persona, target, model, usage, substitutions
+ * and the gate result. Each seat's own `_smrt_ai_usage` row carries the run's
+ * id in `run_id`; that is not a foreign key, for the same retention reason as
+ * the outcome labels. `tenant_id` matches `_smrt_ai_usage.tenant_id` (TEXT).
+ * `status` has no index: it is always read beside a fusion key or a window.
+ */
+export const CREATE_SMRT_AI_RUNS_TABLE = `
+CREATE TABLE IF NOT EXISTS _smrt_ai_runs (
+  id TEXT PRIMARY KEY,
+  fusion_key TEXT NOT NULL,
+  mode TEXT NOT NULL,
+  tenant_id TEXT,
+  class_name TEXT,
+  prompt_key TEXT,
+  seats INTEGER NOT NULL,
+  degraded_seats INTEGER NOT NULL,
+  status TEXT NOT NULL,
+  duration INTEGER NOT NULL,
+  details TEXT,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_smrt_ai_runs_created
+  ON _smrt_ai_runs(created_at);
+
+CREATE INDEX IF NOT EXISTS idx_smrt_ai_runs_fusion_created
+  ON _smrt_ai_runs(fusion_key, created_at);
+
+CREATE INDEX IF NOT EXISTS idx_smrt_ai_runs_tenant_created
+  ON _smrt_ai_runs(tenant_id, created_at);
+`;
+
+/**
  * Append-only change feed (issue #1758)
  *
  * One row per framework save/delete: monotonic per-database sequence,
@@ -1226,6 +1264,7 @@ export const ALL_SYSTEM_TABLES = [
   CREATE_SMRT_DISPATCH_SUBSCRIPTIONS_TABLE,
   CREATE_SMRT_AI_USAGE_TABLE,
   CREATE_SMRT_AI_USAGE_OUTCOMES_TABLE,
+  CREATE_SMRT_AI_RUNS_TABLE,
   CREATE_SMRT_CHANGES_TABLE,
   CREATE_SMRT_SYNC_TOMBSTONES_TABLE,
 ];
@@ -1309,8 +1348,9 @@ export const RETIRED_SYSTEM_TABLES: readonly string[] = [
  * - `_smrt_ai_usage.tenant_id`: model usage writes tenant UUIDs, but the
  *   published external-agent usage API accepts any non-empty text tenant id,
  *   so converting it is a contract change tracked separately;
- * - `_smrt_ai_usage_outcomes.tenant_id`: matches `_smrt_ai_usage.tenant_id`,
- *   the column it is read beside, and converts with it.
+ * - `_smrt_ai_usage_outcomes.tenant_id` and `_smrt_ai_runs.tenant_id`: match
+ *   `_smrt_ai_usage.tenant_id`, the column they are read beside, and convert
+ *   with it.
  */
 export const SYSTEM_TABLE_TENANT_UUID_COLUMNS: ReadonlyArray<{
   table: string;
@@ -1401,8 +1441,10 @@ function toPostgresTenantUuid(ddl: string): string {
  * 1.13.0 adds the prompt-run observability columns `prompt_key`,
  * `tier_requested`, `tier_resolved`, `run_id` and their indexes to
  * `_smrt_ai_usage`, and the `_smrt_ai_usage_outcomes` label table (#4751).
+ *
+ * 1.14.0 adds the `_smrt_ai_runs` fusion run table (#4753).
  */
-export const SMRT_SCHEMA_VERSION = '1.13.0';
+export const SMRT_SCHEMA_VERSION = '1.14.0';
 
 /**
  * Canonical form of the system DDL that {@link SMRT_SCHEMA_DDL_CHECKSUMS} covers.
@@ -1451,4 +1493,6 @@ export const SMRT_SCHEMA_DDL_CHECKSUMS: Readonly<Record<string, string>> =
       '6aa42e368e7d57191de9b0c040c289edf38a1ffa7ae0097f57188ecd5a5b8f9c',
     '1.13.0':
       '321c33d4616dd98575c80aa6bc766f65c4282c2341fc9566e50914a873e1065f',
+    '1.14.0':
+      '4dc0c5f170ebe54ce1322bd42e42e042d8893f2b4588809c19c77f17479c15b3',
   });

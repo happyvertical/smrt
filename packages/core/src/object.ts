@@ -53,7 +53,18 @@ import {
   ValidationError,
 } from './errors';
 import { buildWhere } from './host.js';
-import type { InferenceLatency, InferenceTierRequest } from './inference';
+import type {
+  InferenceCapabilityFallbackOption,
+  InferenceLatency,
+  InferenceTier,
+  InferenceTierRequest,
+} from './inference';
+import { InferenceUnavailableError } from './inference-availability';
+import {
+  estimateInferenceTokens,
+  type InferenceCapabilities,
+  parseInferenceTextVerdict,
+} from './inference-capabilities';
 import {
   type BulkMutationEntry,
   createInterceptorContext,
@@ -577,7 +588,59 @@ export interface AiOperationOptions extends AITextCompletionOptions {
    * into the usage event (`_smrt_ai_usage.tags`).
    */
   usageTags?: Record<string, string>;
+
+  /**
+   * Lowest tier a chain tier may degrade to when all its candidates fail
+   * (#4752). Prompts set it from `ai.minimumTier`. Not forwarded to
+   * `ai.message()`.
+   */
+  minimumTier?: InferenceTier;
+
+  /**
+   * Return the text a chain candidate already streamed when it fails
+   * mid-stream, instead of throwing (#4752). Not forwarded to `ai.message()`.
+   */
+  allowPartial?: boolean;
+
+  /**
+   * Whether the class's registered tools are required for this call (#4758).
+   * On a tier whose bound model cannot call tools, `'required'` (the
+   * default) throws `InferenceUnavailableError` (`reason: 'capability'`)
+   * and `'optional'` runs without them, tagged `capabilityFallback:
+   * 'tools→none'`. Not forwarded to `ai.message()`.
+   */
+  toolUse?: AiToolUse;
 }
+
+/** See {@link AiOperationOptions.toolUse}. */
+export type AiToolUse = 'required' | 'optional';
+
+/** Tag value recorded when `is()` / `evaluate()` ask for a text verdict. */
+const JSON_TEXT_FALLBACK = 'json→text';
+/** Tag value recorded when optional tools are dropped. */
+const TOOLS_DROPPED_FALLBACK = 'tools→none';
+
+/** How an AI operation's request is shaped for the bound model (#4758). */
+interface AiRequestShape {
+  /** Send `responseFormat: json_object`. */
+  json: boolean;
+  tools: AITool[] | undefined;
+  /** `capabilityFallback` tag values, in order. */
+  fallbacks: string[];
+  /** Fallbacks an executor may apply per candidate (chain targets). */
+  capabilityFallback?: InferenceCapabilityFallbackOption;
+}
+
+/** True for a JSON `responseFormat` (`json_object` or `json_schema`). */
+function isJsonResponseFormat(format: unknown): boolean {
+  const type = (format as { type?: unknown } | undefined)?.type;
+  return type === 'json_object' || type === 'json_schema';
+}
+
+const JSON_VERDICT_ASK =
+  "Does the content meet all the given criteria? Reply with a json object with a single boolean 'result' property";
+const TEXT_VERDICT_ASK =
+  'Does the content meet all the given criteria? Answer with the single word yes or no.';
 
 /**
  * Base class for all persistent SMRT domain objects.
@@ -4853,6 +4916,169 @@ export class SmrtObject extends SmrtClass {
   }
 
   /**
+   * Shape an AI operation's request for the bound model (#4758). Untiered
+   * calls and models with every capability keep the request as it was.
+   * Without JSON mode the caller switches to a text verdict; without tool
+   * calling, optional tools are dropped and required tools throw
+   * `InferenceUnavailableError` (`reason: 'capability'`), never dropped
+   * silently. Chain targets get the permitted fallbacks as the
+   * `capabilityFallback` call option for the executor's per-candidate check.
+   */
+  private shapeAiRequest(
+    prepared: {
+      capabilities?: InferenceCapabilities;
+      executorRun?: boolean;
+      toolUse?: AiToolUse;
+    },
+    wanted: { json: boolean; tools: AITool[] },
+    operation: string,
+  ): AiRequestShape {
+    const tools = wanted.tools.length > 0 ? wanted.tools : undefined;
+    const toolUse = prepared.toolUse ?? 'required';
+    if (prepared.executorRun) {
+      const capabilityFallback: InferenceCapabilityFallbackOption = {
+        ...(wanted.json ? { json: 'text' as const } : {}),
+        ...(tools && toolUse === 'optional' ? { tools: 'drop' as const } : {}),
+      };
+      return {
+        json: wanted.json,
+        tools,
+        fallbacks: [],
+        ...(Object.keys(capabilityFallback).length > 0
+          ? { capabilityFallback }
+          : {}),
+      };
+    }
+    const capabilities = prepared.capabilities;
+    if (!capabilities) return { json: wanted.json, tools, fallbacks: [] };
+    const fallbacks: string[] = [];
+    let json = wanted.json;
+    if (json && !capabilities.json) {
+      json = false;
+      fallbacks.push(JSON_TEXT_FALLBACK);
+    }
+    let shapedTools = tools;
+    if (tools && !capabilities.tools) {
+      if (toolUse !== 'optional') {
+        throw new InferenceUnavailableError({
+          reason: 'capability',
+          message: `${this._className}.${operation}() needs its registered tools, but the bound model cannot call tools (capabilities: ${capabilities.source}). Pass toolUse: 'optional' to run without them, or bind a tool-capable model.`,
+          context: {
+            capability: 'tools',
+            operation,
+            source: capabilities.source,
+          },
+        });
+      }
+      shapedTools = undefined;
+      fallbacks.push(TOOLS_DROPPED_FALLBACK);
+    }
+    return { json, tools: shapedTools, fallbacks };
+  }
+
+  /**
+   * Build an operation's prompt within the bound model's known context
+   * (#4758). `build(maxDataLength)` renders the prompt; when the estimate
+   * (plus `maxTokens` reserved for the answer) exceeds `maxContext`, the
+   * object data is truncated through the existing `maxDataLength` path and
+   * `truncated` is true. A prompt that cannot fit even without its data
+   * throws `InferenceUnavailableError` (`reason: 'capability'`) instead of
+   * being sent to fail.
+   */
+  private fitAiPrompt(
+    capabilities: InferenceCapabilities | undefined,
+    build: (maxDataLength: number | undefined) => string,
+    data: { includeData?: boolean; maxDataLength?: number },
+    maxTokens: unknown,
+    operation: string,
+  ): { prompt: string; truncated: boolean } {
+    const prompt = build(data.maxDataLength);
+    const maxContext = capabilities?.maxContext;
+    if (!maxContext) return { prompt, truncated: false };
+    const reserve =
+      typeof maxTokens === 'number' && Number.isFinite(maxTokens)
+        ? Math.max(0, maxTokens)
+        : 0;
+    const budget = maxContext - reserve;
+    if (estimateInferenceTokens(prompt) <= budget) {
+      return { prompt, truncated: false };
+    }
+    const tooLarge = () =>
+      new InferenceUnavailableError({
+        reason: 'capability',
+        message: `${this._className}.${operation}(): the prompt does not fit the bound model's ${maxContext}-token context (capabilities: ${capabilities.source}).`,
+        context: {
+          capability: 'context',
+          operation,
+          maxContext,
+          source: capabilities.source,
+        },
+      });
+    if (data.includeData === false) throw tooLarge();
+    const dataLength = this.serializeForAiPrompt(data.maxDataLength).length;
+    // Characters the budget leaves for the data, at the estimate's rate.
+    const allowed = budget * 3 - (prompt.length - dataLength);
+    if (allowed < 200) throw tooLarge();
+    return { prompt: build(Math.floor(allowed)), truncated: true };
+  }
+
+  /**
+   * The `ai.message()` options for a shaped request (#4758): the caller's
+   * options, the capability tags, `responseFormat: json_object` for a
+   * verdict in JSON mode, the shaped `tools`, and the executor's
+   * `capabilityFallback`. After a `json→text` fallback no `responseFormat`
+   * survives, whether it came from the caller or a target's params.
+   */
+  private shapedMessageOptions(
+    aiOptions: Record<string, unknown>,
+    shape: AiRequestShape,
+    truncated: boolean,
+    verdict: boolean,
+    extra: Record<string, unknown> = {},
+  ): Record<string, unknown> {
+    const options: Record<string, unknown> = {
+      ...aiOptions,
+      ...this.capabilityUsageTags(
+        aiOptions.usageTags as Record<string, string> | undefined,
+        shape,
+        truncated,
+      ),
+      ...extra,
+      ...(verdict && shape.json
+        ? { responseFormat: { type: 'json_object' as const } }
+        : {}),
+      tools: shape.tools,
+      ...(shape.capabilityFallback
+        ? { capabilityFallback: shape.capabilityFallback }
+        : {}),
+    };
+    if (shape.fallbacks.includes(JSON_TEXT_FALLBACK)) {
+      delete options.responseFormat;
+    }
+    return options;
+  }
+
+  /** `usageTags` with the request shape's fallback and truncation tags. */
+  private capabilityUsageTags(
+    usageTags: Record<string, string> | undefined,
+    shape: AiRequestShape,
+    truncated: boolean,
+  ): { usageTags?: Record<string, string> } {
+    if (shape.fallbacks.length === 0 && !truncated) {
+      return usageTags ? { usageTags } : {};
+    }
+    return {
+      usageTags: {
+        ...(usageTags ?? {}),
+        ...(shape.fallbacks.length > 0
+          ? { capabilityFallback: shape.fallbacks.join(',') }
+          : {}),
+        ...(truncated ? { truncated: 'true' } : {}),
+      },
+    };
+  }
+
+  /**
    * Builds the optional "content body" section prepended to the AI prompts in
    * {@link is}, {@link do}, and {@link describe}.
    *
@@ -4935,9 +5161,9 @@ export class SmrtObject extends SmrtClass {
     }
 
     const { maxDataLength, includeData, ...operationOptions } = options ?? {};
-    const { ai, aiOptions: legacyAiOptions } =
-      await this.prepareAiOperation(operationOptions);
-    let aiOptions = legacyAiOptions;
+    const prepared = await this.prepareAiOperation(operationOptions);
+    const { ai } = prepared;
+    let aiOptions = prepared.aiOptions;
     if (tools.length > 0 && hasConfiguredDecisions) {
       const {
         threshold: _threshold,
@@ -4947,17 +5173,33 @@ export class SmrtObject extends SmrtClass {
       } = aiOptions as typeof aiOptions & Partial<EvaluateOptions>;
       aiOptions = generationOptions;
     }
-    const contentSection = this.buildAiContentSection(
-      includeData,
-      maxDataLength,
+    const shape = this.shapeAiRequest(prepared, { json: true, tools }, 'is');
+    const { prompt, truncated } = this.fitAiPrompt(
+      prepared.capabilities,
+      (length) =>
+        `${this.buildAiContentSection(includeData, length)}--- Beginning of criteria ---\n${criteria}\n--- End of criteria ---\n${shape.json ? JSON_VERDICT_ASK : TEXT_VERDICT_ASK}`,
+      { includeData, maxDataLength },
+      (aiOptions as { maxTokens?: unknown }).maxTokens,
+      'is',
     );
-    const prompt = `${contentSection}--- Beginning of criteria ---\n${criteria}\n--- End of criteria ---\nDoes the content meet all the given criteria? Reply with a json object with a single boolean 'result' property`;
 
-    const message = await ai.message(prompt, {
-      ...aiOptions,
-      responseFormat: { type: 'json_object' },
-      tools: tools.length > 0 ? tools : undefined,
-    });
+    const message = await ai.message(
+      prompt,
+      this.shapedMessageOptions(aiOptions, shape, truncated, true),
+    );
+
+    if (!shape.json) {
+      const verdict = parseInferenceTextVerdict(message);
+      if (verdict === undefined) {
+        throw new Error(`Unexpected answer: ${message}`);
+      }
+      return verdict;
+    }
+    if (shape.capabilityFallback?.json) {
+      // A chain candidate may have answered in text (#4758).
+      const verdict = parseInferenceTextVerdict(message);
+      if (verdict !== undefined) return verdict;
+    }
 
     try {
       const { result } = JSON.parse(message);
@@ -5092,19 +5334,46 @@ export class SmrtObject extends SmrtClass {
       generativeModel,
       ...generationOptions
     } = options;
-    const { ai, aiOptions } = await this.prepareAiOperation(generationOptions);
-    const contentSection = this.buildAiContentSection(
-      includeData,
-      maxDataLength,
+    // `generativeModel` is the model this route runs, so capability
+    // detection must see it (#4758).
+    const prepared = await this.prepareAiOperation(
+      generativeModel
+        ? { ...generationOptions, model: generativeModel }
+        : generationOptions,
     );
-    const prompt = `${contentSection}--- Beginning of criteria ---\n${criteria}\n--- End of criteria ---\nDoes the content meet all the given criteria? Reply with a json object with a single boolean 'result' property`;
+    const { ai, aiOptions } = prepared;
     const tools = this.getAvailableTools();
-    const message = await ai.message(prompt, {
-      ...aiOptions,
-      ...(generativeModel ? { model: generativeModel } : {}),
-      responseFormat: { type: 'json_object' },
-      tools: tools.length > 0 ? tools : undefined,
-    });
+    const shape = this.shapeAiRequest(
+      prepared,
+      { json: true, tools },
+      'evaluate',
+    );
+    const { prompt, truncated } = this.fitAiPrompt(
+      prepared.capabilities,
+      (length) =>
+        `${this.buildAiContentSection(includeData, length)}--- Beginning of criteria ---\n${criteria}\n--- End of criteria ---\n${shape.json ? JSON_VERDICT_ASK : TEXT_VERDICT_ASK}`,
+      { includeData, maxDataLength },
+      (aiOptions as { maxTokens?: unknown }).maxTokens,
+      'evaluate',
+    );
+    const message = await ai.message(
+      prompt,
+      this.shapedMessageOptions(
+        aiOptions,
+        shape,
+        truncated,
+        true,
+        generativeModel ? { model: generativeModel } : {},
+      ),
+    );
+    if (!shape.json || shape.capabilityFallback?.json) {
+      const verdict = parseInferenceTextVerdict(message);
+      if (verdict !== undefined)
+        return { result: verdict, route: 'generative' };
+      if (!shape.json) {
+        throw new Error('Unexpected answer from generative evaluation.');
+      }
+    }
     try {
       const { result } = JSON.parse(message);
       if (result === true || result === false) {
@@ -5150,20 +5419,31 @@ export class SmrtObject extends SmrtClass {
    */
   public async do(instructions: string, options: AiOperationOptions = {}) {
     const { maxDataLength, includeData, ...operationOptions } = options ?? {};
-    const { ai, aiOptions } = await this.prepareAiOperation(operationOptions);
-    const contentSection = this.buildAiContentSection(
-      includeData,
-      maxDataLength,
-    );
-    const prompt = `${contentSection}--- Beginning of instructions ---\n${instructions}\n--- End of instructions ---\nBased on the content body, please follow the instructions and provide a response. Never make use of codeblocks.`;
+    const prepared = await this.prepareAiOperation(operationOptions);
+    const { ai, aiOptions } = prepared;
 
     // Get available tools for AI function calling
-    const tools = this.getAvailableTools();
+    const shape = this.shapeAiRequest(
+      prepared,
+      {
+        json: isJsonResponseFormat(aiOptions.responseFormat),
+        tools: this.getAvailableTools(),
+      },
+      'do',
+    );
+    const { prompt, truncated } = this.fitAiPrompt(
+      prepared.capabilities,
+      (length) =>
+        `${this.buildAiContentSection(includeData, length)}--- Beginning of instructions ---\n${instructions}\n--- End of instructions ---\nBased on the content body, please follow the instructions and provide a response. Never make use of codeblocks.`,
+      { includeData, maxDataLength },
+      aiOptions.maxTokens,
+      'do',
+    );
 
-    const result = await ai.message(prompt, {
-      ...aiOptions,
-      tools: tools.length > 0 ? tools : undefined,
-    });
+    const result = await ai.message(
+      prompt,
+      this.shapedMessageOptions(aiOptions, shape, truncated, false),
+    );
 
     return result;
   }
@@ -5198,20 +5478,31 @@ export class SmrtObject extends SmrtClass {
    */
   public async describe(options: AiOperationOptions = {}) {
     const { maxDataLength, includeData, ...operationOptions } = options ?? {};
-    const { ai, aiOptions } = await this.prepareAiOperation(operationOptions);
-    const contentSection = this.buildAiContentSection(
-      includeData,
-      maxDataLength,
-    );
-    const prompt = `${contentSection}Generate a concise, professional description of this object based on its content and properties. The description should be clear, informative, and suitable for display to end users. Focus on the most important and distinctive characteristics.`;
+    const prepared = await this.prepareAiOperation(operationOptions);
+    const { ai, aiOptions } = prepared;
 
     // Get available tools for AI function calling
-    const tools = this.getAvailableTools();
+    const shape = this.shapeAiRequest(
+      prepared,
+      {
+        json: isJsonResponseFormat(aiOptions.responseFormat),
+        tools: this.getAvailableTools(),
+      },
+      'describe',
+    );
+    const { prompt, truncated } = this.fitAiPrompt(
+      prepared.capabilities,
+      (length) =>
+        `${this.buildAiContentSection(includeData, length)}Generate a concise, professional description of this object based on its content and properties. The description should be clear, informative, and suitable for display to end users. Focus on the most important and distinctive characteristics.`,
+      { includeData, maxDataLength },
+      aiOptions.maxTokens,
+      'describe',
+    );
 
-    const result = await ai.message(prompt, {
-      ...aiOptions,
-      tools: tools.length > 0 ? tools : undefined,
-    });
+    const result = await ai.message(
+      prompt,
+      this.shapedMessageOptions(aiOptions, shape, truncated, false),
+    );
 
     return result;
   }

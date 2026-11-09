@@ -16,6 +16,7 @@
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { DEFAULT_AI_COST_RATES } from '../adapters/cost-rates.js';
 import { EXTERNAL_AGENT_USAGE_OPERATION } from '../external-agent-usage.js';
+import { INFERENCE_BLOCKED_OPERATION } from '../inference-gate.js';
 import { toSafeInteger } from '../utils/safe-integer.js';
 
 // ============================================================================
@@ -421,6 +422,7 @@ export const AI_USAGE_REPORT_DIMENSIONS = [
   'class',
   'tenant',
   'fusion',
+  'source',
 ] as const;
 
 export type AiUsageReportDimension =
@@ -454,6 +456,12 @@ export interface AiUsageReportStats {
   substitutions: number;
   /** Outcome labels per label name. */
   outcomes: Record<string, number>;
+  /**
+   * Calls the hosted gate refused (#4760): zero-usage rows with
+   * `operation: 'blocked'`. Counted here, beside `calls`, never in it: a
+   * blocked call ran nothing, so it adds no tokens, cost or duration.
+   */
+  blocked: number;
 }
 
 /** One group of the report. */
@@ -513,6 +521,7 @@ function emptyAccumulator(): StatsAccumulator {
       // Null prototype: labels are free text, and `constructor` or
       // `__proto__` must count like any other label.
       outcomes: Object.create(null) as Record<string, number>,
+      blocked: 0,
     },
     durations: [],
     runIds: new Set(),
@@ -570,13 +579,19 @@ function dimensionValue(
       const fusion = tags?.fusionKey;
       return typeof fusion === 'string' && fusion.length > 0 ? fusion : null;
     }
+    case 'source': {
+      // Binding origin from the `source` tag (#4756): byo, local, hosted, app.
+      const source = tags?.source;
+      return typeof source === 'string' && source.length > 0 ? source : null;
+    }
   }
 }
 
 const REPORT_PAGE_SIZE = 1000;
 
 /**
- * Group persisted AI usage by prompt, model, tier, class, tenant or fusion.
+ * Group persisted AI usage by prompt, model, tier, class, tenant, fusion or
+ * binding source.
  *
  * Rows are read in bounded keyset pages (never one unbounded result set) and
  * aggregated in memory, which keeps the median and the tag-derived
@@ -707,6 +722,12 @@ export async function reportAiUsage(
         buckets.set(bucketId, bucket);
       }
 
+      if (row.operation === INFERENCE_BLOCKED_OPERATION) {
+        totals.stats.blocked++;
+        bucket.acc.stats.blocked++;
+        continue;
+      }
+
       if (row.prompt_key === null || row.prompt_key === undefined) {
         unattributedCalls++;
       }
@@ -761,7 +782,7 @@ export async function reportAiUsage(
     totals: finish(totals),
     buckets: [...buckets.values()]
       .map(({ key, acc }) => ({ key, ...finish(acc) }))
-      .sort((a, b) => b.calls - a.calls),
+      .sort((a, b) => b.calls - a.calls || b.blocked - a.blocked),
     unattributedCalls,
     excluded,
   };

@@ -96,6 +96,7 @@
     "@happyvertical/smrt-gnode": "workspace:*",
     "@happyvertical/smrt-human-resources": "workspace:*",
     "@happyvertical/smrt-images": "workspace:*",
+    "@happyvertical/smrt-inference": "workspace:*",
     "@happyvertical/smrt-ingestion": "workspace:*",
     "@happyvertical/smrt-inventory": "workspace:*",
     "@happyvertical/smrt-jobs": "workspace:*",

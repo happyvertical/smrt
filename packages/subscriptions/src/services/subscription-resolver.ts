@@ -8,6 +8,7 @@ import type { TenantSubscription } from '../models/TenantSubscription.js';
 import type {
   EntitlementResolution,
   EntitlementResolutionContext,
+  PlanFeatureGrant,
   PlanThreshold,
   SmrtClassOptions,
   Subscriber,
@@ -164,6 +165,8 @@ export class SubscriptionResolver {
     options: SubscriptionResolverOptions = {},
   ): Promise<{
     featureKeys: string[];
+    /** The entitled terms' grants with their `metadata` (#4759). */
+    grants: PlanFeatureGrant[];
     planId: string | null;
     planKey: string | null;
   }> {
@@ -175,8 +178,47 @@ export class SubscriptionResolver {
     );
     return {
       featureKeys: terms ? terms.getFeatureKeys() : [],
+      grants: terms ? terms.getFeatureGrants() : [],
       planId: identity?.planId ?? null,
       planKey: identity?.planKey ?? null,
+    };
+  }
+
+  /**
+   * The entitled plan terms' thresholds, without reading any usage meter
+   * (#4760). Same subscription, plan-version and entitlement rules as
+   * {@link resolveEntitlements}; `entitled` is false when there is no
+   * current subscription or it does not entitle now (thresholds are then
+   * empty). The hosted inference gate reads its spend caps from here and
+   * meters `_smrt_ai_usage` itself. Thresholds are returned as stored, valid
+   * or not (the models' `getThresholds()` drops invalid entries), so a caller
+   * can refuse a malformed cap instead of skipping it; thresholds JSON that
+   * is not an array throws.
+   */
+  async resolvePlanThresholds(
+    subscriber: Subscriber,
+    options: SubscriptionResolverOptions = {},
+  ): Promise<{
+    entitled: boolean;
+    thresholds: PlanThreshold[];
+    planId: string | null;
+    planKey: string | null;
+    planVersionId: string | null;
+    subscriptionId: string | null;
+  }> {
+    const now = options.now ?? new Date();
+    const { identity, terms } = await this.resolveEntitledTerms(
+      subscriber,
+      now,
+      options,
+    );
+    return {
+      entitled: terms !== null,
+      thresholds: terms ? rawThresholds(terms.thresholds) : [],
+      planId: identity?.planId ?? null,
+      planKey: identity?.planKey ?? null,
+      planVersionId: identity?.planVersionId ?? null,
+      subscriptionId: identity?.subscriptionId ?? null,
     };
   }
 
@@ -623,3 +665,20 @@ function emptyUsageSummary(
 }
 
 export type { PlanThreshold };
+
+/**
+ * Every stored threshold object, without the validity filter the plan
+ * models apply (#4760). Unparseable or non-array JSON throws: a broken
+ * plan must never read as "no caps".
+ */
+function rawThresholds(value: string | null | undefined): PlanThreshold[] {
+  if (value === null || value === undefined || value.trim() === '') return [];
+  const parsed: unknown = JSON.parse(value);
+  if (!Array.isArray(parsed)) {
+    throw new Error('Plan thresholds are not a JSON array.');
+  }
+  return parsed.filter(
+    (entry): entry is PlanThreshold =>
+      entry !== null && typeof entry === 'object' && !Array.isArray(entry),
+  );
+}
