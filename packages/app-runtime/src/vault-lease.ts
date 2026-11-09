@@ -37,6 +37,7 @@ export type VaultLeaseErrorCode =
   | 'publish_in_progress'
   | 'lease_lost'
   | 'vault_lease_lost'
+  | 'account_superseded'
   | 'relay_error';
 
 export class VaultLeaseError extends Error {
@@ -53,7 +54,9 @@ export class VaultLeaseError extends Error {
             ? 'Another device is publishing a snapshot; try again shortly.'
             : code === 'lease_lost' || code === 'vault_lease_lost'
               ? 'This device no longer holds the vault writer lease; it is read-only until restored.'
-              : 'The vault relay could not be reached or answered unexpectedly.',
+              : code === 'account_superseded'
+                ? 'This vault account was replaced by a new one; this device can no longer back up to it.'
+                : 'The vault relay could not be reached or answered unexpectedly.',
     );
     this.name = 'VaultLeaseError';
     this.code = code;
@@ -82,6 +85,7 @@ const KNOWN_REFUSALS = new Set<string>([
   'lease_held',
   'publish_in_progress',
   'lease_lost',
+  'account_superseded',
 ]);
 
 function record(value: unknown): Record<string, unknown> {
@@ -183,6 +187,7 @@ export type VaultLeaseState =
   | 'must-restore'
   | 'held-elsewhere'
   | 'lost'
+  | 'superseded'
   | 'unavailable'
   | 'stopped';
 
@@ -303,6 +308,11 @@ export class VaultLeaseKeeper {
       case 'lease_lost':
       case 'vault_lease_lost':
         this.transition('lost', lease);
+        return;
+      case 'account_superseded':
+        // Not retried: the account was replaced, so this device must follow
+        // the new one (the host decides which account it follows).
+        this.transition('superseded', lease);
         return;
       default:
         this.transition('unavailable', lease);

@@ -1168,6 +1168,424 @@ describe('vault key lifecycle: revocation requires the recovery secret (#4818)',
   });
 });
 
+describe('vault key lifecycle: recovery secret check (#4817)', () => {
+  function snapshotOf(store: MemoryStore) {
+    return JSON.stringify(
+      [...store.items.entries()]
+        .sort(([left], [right]) => (left < right ? -1 : 1))
+        .map(([name, value]) => [name, Buffer.from(value).toString('base64')]),
+    );
+  }
+
+  it('proves the secret opens the authority and the current key without changing anything', async () => {
+    const { laptop } = await family();
+    const before = snapshotOf(laptop.store);
+    expect(await laptop.lifecycle.checkRecoverySecret(RECOVERY_SECRET)).toEqual(
+      { authority: true, currentKey: true },
+    );
+    expect(
+      await laptop.lifecycle.checkRecoverySecret('a different credential'),
+    ).toEqual({ authority: false, currentKey: false });
+    expect(
+      await laptop.lifecycle.checkRecoverySecret(
+        undefined as unknown as string,
+      ),
+    ).toEqual({ authority: false, currentKey: false });
+    expect(snapshotOf(laptop.store)).toBe(before);
+    // The state is unchanged for sealing too.
+    await sealingKeyId(laptop.lifecycle);
+  });
+
+  it('threat: a superseded secret no longer checks out after the recovery secret rotates', async () => {
+    const { laptop } = await family();
+    await laptop.lifecycle.rotate({
+      recoverySecret: RECOVERY_SECRET,
+      newRecoverySecret: NEW_RECOVERY_SECRET,
+    });
+    expect(await laptop.lifecycle.checkRecoverySecret(RECOVERY_SECRET)).toEqual(
+      { authority: false, currentKey: false },
+    );
+    expect(
+      await laptop.lifecycle.checkRecoverySecret(NEW_RECOVERY_SECRET),
+    ).toEqual({ authority: true, currentKey: true });
+  });
+
+  it('reports a current key this device does not hold as unknown, not as failed', async () => {
+    const { laptop, phone } = await family();
+    await laptop.lifecycle.rotate({ recoverySecret: RECOVERY_SECRET });
+    // The phone learns the new head but has no grant, so no new key yet.
+    await phone.lifecycle.acceptAccountHead(
+      (await laptop.lifecycle.accountHead()).head,
+    );
+    expect(await phone.lifecycle.checkRecoverySecret(RECOVERY_SECRET)).toEqual({
+      authority: true,
+      currentKey: null,
+    });
+  });
+
+  it('refuses before initialization', async () => {
+    await expectCode(
+      device().lifecycle.checkRecoverySecret(RECOVERY_SECRET),
+      'not_initialized',
+    );
+  });
+});
+
+describe('vault key lifecycle: restart without the recovery secret (#4817)', () => {
+  const RESTART_SECRET = 'fresh synthetic credential for the new account';
+  const NEW_ACCOUNT = 'vault-account-b';
+
+  function restart(
+    lifecycle: VaultKeyLifecycle,
+    patch: Partial<Parameters<VaultKeyLifecycle['restartAccount']>[0]> = {},
+  ) {
+    return lifecycle.restartAccount({
+      accountId: NEW_ACCOUNT,
+      deviceId: 'laptop-b',
+      recoverySecret: RESTART_SECRET,
+      confirmRestart: true,
+      ...patch,
+    });
+  }
+
+  function itemNames(store: MemoryStore) {
+    return [...store.items.keys()].sort();
+  }
+
+  it('starts a new account from one working device that never knew the old secret', async () => {
+    const { laptop } = await family();
+    const oldHead = (await laptop.lifecycle.accountHead()).head;
+    const oldKey = await laptop.lifecycle.openSealingKey();
+    oldKey.key.fill(0);
+    const published = await restart(laptop.lifecycle);
+    expect(published.previousAccountId).toBe(ACCOUNT);
+    expect(published.generation).toBe(1n);
+    expect(published.head.accountId).toBe(NEW_ACCOUNT);
+    expect(published.authorityRecord.length).toBeGreaterThan(0);
+    const status = await laptop.lifecycle.status();
+    expect(status?.accountId).toBe(NEW_ACCOUNT);
+    expect(status?.devices.map((entry) => entry.deviceId)).toEqual([
+      'laptop-b',
+    ]);
+    // A new data key and a new authority: nothing is shared with the old account.
+    expect(published.keyId).not.toBe(oldKey.keyId);
+    expect(status?.authorityPublicKey).not.toBe(oldHead.authorityPublicKey);
+    expect(status?.generations.map((entry) => entry.keyId)).toEqual([
+      published.keyId,
+    ]);
+    // The device key differs too, so the relay cannot link the two accounts.
+    expect(status?.devices[0].publicKey).not.toBe(
+      oldHead.devices.find((entry) => entry.deviceId === 'laptop')?.publicKey,
+    );
+    await expectCode(
+      laptop.lifecycle.openReadingKey({
+        generation: oldKey.generation,
+        keyId: oldKey.keyId,
+      }),
+      'key_missing',
+    );
+    expect(await sealingKeyId(laptop.lifecycle)).toBe(published.keyId);
+    expect(await laptop.lifecycle.previousAccount()).toEqual({
+      accountId: ACCOUNT,
+      interrupted: false,
+    });
+  });
+
+  it('threat: the old secret opens nothing in the new account', async () => {
+    const { laptop } = await family();
+    const oldAuthority = (await laptop.lifecycle.accountHead())
+      .authorityRecord as Uint8Array;
+    const published = await restart(laptop.lifecycle);
+    expect(await laptop.lifecycle.checkRecoverySecret(RECOVERY_SECRET)).toEqual(
+      { authority: false, currentKey: false },
+    );
+    expect(await laptop.lifecycle.checkRecoverySecret(RESTART_SECRET)).toEqual({
+      authority: true,
+      currentKey: true,
+    });
+    // It cannot add a device, rotate or revoke.
+    const joiner = device();
+    const { request, deviceCode } =
+      await joiner.lifecycle.createEnrollmentRequest({
+        accountId: NEW_ACCOUNT,
+        deviceId: 'phone-b',
+      });
+    await expectCode(
+      laptop.lifecycle.enrollDevice(request, {
+        confirmationCode: deviceCode,
+        recoverySecret: RECOVERY_SECRET,
+      }),
+      'recovery_rejected',
+    );
+    await expectCode(
+      laptop.lifecycle.rotate({ recoverySecret: RECOVERY_SECRET }),
+      'recovery_rejected',
+    );
+    // Nor can it recover into the new account, even with the old records.
+    await expectCode(
+      device().lifecycle.enrollFromRecovery({
+        accountId: NEW_ACCOUNT,
+        deviceId: 'thief',
+        head: published.head,
+        authorityRecord: oldAuthority,
+        recoveryRecord: published.recoveryRecord,
+        recoverySecret: RECOVERY_SECRET,
+      }),
+      'recovery_rejected',
+    );
+    await expectCode(
+      device().lifecycle.enrollFromRecovery({
+        accountId: NEW_ACCOUNT,
+        deviceId: 'thief',
+        head: published.head,
+        authorityRecord: published.authorityRecord,
+        recoveryRecord: published.recoveryRecord,
+        recoverySecret: RECOVERY_SECRET,
+      }),
+      'recovery_rejected',
+    );
+  });
+
+  it('threat: a head of the old account is refused by the new one', async () => {
+    const { laptop } = await family();
+    const oldHead = (await laptop.lifecycle.accountHead()).head;
+    await restart(laptop.lifecycle);
+    await expectCode(
+      laptop.lifecycle.acceptAccountHead(oldHead),
+      'account_mismatch',
+    );
+  });
+
+  it('re-enrols another device through the normal exchange under the new secret', async () => {
+    const { laptop, phone } = await family();
+    const published = await restart(laptop.lifecycle);
+    expect(await phone.lifecycle.previousAccount()).toBeNull();
+    const left = await phone.lifecycle.leaveAccount({ confirmLeave: true });
+    expect(left.previousAccountId).toBe(ACCOUNT);
+    expect(await phone.lifecycle.status()).toBeNull();
+    expect(await phone.lifecycle.previousAccount()).toEqual({
+      accountId: ACCOUNT,
+      interrupted: true,
+    });
+    const { request, deviceCode } =
+      await phone.lifecycle.createEnrollmentRequest({
+        accountId: NEW_ACCOUNT,
+        deviceId: 'phone-b',
+      });
+    // The old secret cannot enrol it; the new one can.
+    await expectCode(
+      laptop.lifecycle.enrollDevice(request, {
+        confirmationCode: deviceCode,
+        recoverySecret: RECOVERY_SECRET,
+      }),
+      'recovery_rejected',
+    );
+    const { grant, accountCode } = await laptop.lifecycle.enrollDevice(
+      request,
+      { confirmationCode: deviceCode, recoverySecret: RESTART_SECRET },
+    );
+    const status = await phone.lifecycle.acceptEnrollment(grant, {
+      confirmationCode: accountCode,
+    });
+    expect(status.accountId).toBe(NEW_ACCOUNT);
+    expect(status.devices.map((entry) => entry.deviceId)).toEqual([
+      'laptop-b',
+      'phone-b',
+    ]);
+    expect(await sealingKeyId(phone.lifecycle)).toBe(published.keyId);
+    expect(await phone.lifecycle.previousAccount()).toEqual({
+      accountId: ACCOUNT,
+      interrupted: false,
+    });
+  });
+
+  it('requires confirmation and a different account', async () => {
+    const { laptop } = await family();
+    await expectCode(
+      restart(laptop.lifecycle, { confirmRestart: undefined as never }),
+      'invalid_input',
+    );
+    await expectCode(
+      restart(laptop.lifecycle, { confirmRestart: 'yes' as never }),
+      'invalid_input',
+    );
+    await expectCode(
+      laptop.lifecycle.leaveAccount({} as never),
+      'invalid_input',
+    );
+    await expectCode(
+      restart(laptop.lifecycle, { accountId: '' }),
+      'invalid_input',
+    );
+    expect((await laptop.lifecycle.status())?.accountId).toBe(ACCOUNT);
+    // Nothing was parked by the refusals.
+    expect(await laptop.lifecycle.previousAccount()).toBeNull();
+    await expectCode(
+      device().lifecycle.restartAccount({
+        accountId: NEW_ACCOUNT,
+        deviceId: 'laptop-b',
+        recoverySecret: RESTART_SECRET,
+        confirmRestart: true,
+      }),
+      'not_initialized',
+    );
+  });
+
+  it('threat: a retry after the restart finished must present the same secret', async () => {
+    const { laptop } = await family();
+    const first = await restart(laptop.lifecycle);
+    const again = await restart(laptop.lifecycle);
+    expect(again.head).toEqual(first.head);
+    expect(Buffer.from(again.authorityRecord)).toEqual(
+      Buffer.from(first.authorityRecord),
+    );
+    expect(Buffer.from(again.recoveryRecord)).toEqual(
+      Buffer.from(first.recoveryRecord),
+    );
+    expect(again.previousAccountId).toBe(ACCOUNT);
+    await expectCode(
+      restart(laptop.lifecycle, { recoverySecret: 'a mistyped credential' }),
+      'recovery_rejected',
+    );
+    // A plain account that was never restarted is not a restart to retry.
+    const plain = await initialized();
+    await expectCode(
+      plain.lifecycle.restartAccount({
+        accountId: ACCOUNT,
+        deviceId: 'laptop',
+        recoverySecret: RECOVERY_SECRET,
+        confirmRestart: true,
+      }),
+      'already_initialized',
+    );
+  });
+
+  it('refuses a second restart until the parked account is discarded', async () => {
+    const { laptop } = await family();
+    await restart(laptop.lifecycle);
+    await expectCode(
+      restart(laptop.lifecycle, { accountId: 'vault-account-c' }),
+      'restart_pending',
+    );
+    await expectCode(
+      laptop.lifecycle.leaveAccount({ confirmLeave: true }),
+      'restart_pending',
+    );
+    await laptop.lifecycle.discardPreviousAccount();
+    expect(await laptop.lifecycle.previousAccount()).toBeNull();
+    const third = await restart(laptop.lifecycle, {
+      accountId: 'vault-account-c',
+      deviceId: 'laptop-c',
+    });
+    expect(third.previousAccountId).toBe(NEW_ACCOUNT);
+  });
+
+  it('threat: a crash while creating the new account resumes, and discard waits for it', async () => {
+    const { laptop } = await family();
+    laptop.store.failOnSet = (name) => name === 'registry';
+    await expect(restart(laptop.lifecycle)).rejects.toThrow('simulated crash');
+    laptop.store.failOnSet = undefined;
+    // The device holds no account, and says why.
+    expect(await laptop.lifecycle.status()).toBeNull();
+    expect(await laptop.lifecycle.previousAccount()).toEqual({
+      accountId: ACCOUNT,
+      interrupted: true,
+    });
+    await expectCode(
+      laptop.lifecycle.discardPreviousAccount(),
+      'restart_incomplete',
+    );
+    const finished = await restart(laptop.lifecycle);
+    expect(finished.previousAccountId).toBe(ACCOUNT);
+    expect((await laptop.lifecycle.status())?.accountId).toBe(NEW_ACCOUNT);
+    expect(await sealingKeyId(laptop.lifecycle)).toBe(finished.keyId);
+  });
+
+  it('threat: a crash while parking the old account leaves it intact and resumes', async () => {
+    const { laptop } = await family();
+    const before = itemNames(laptop.store).filter((name) =>
+      name.startsWith('key.'),
+    );
+    laptop.store.failOnSet = (name) => name === 'previous-registry';
+    await expect(restart(laptop.lifecycle)).rejects.toThrow('simulated crash');
+    laptop.store.failOnSet = undefined;
+    // Still the old account, still sealing.
+    expect((await laptop.lifecycle.status())?.accountId).toBe(ACCOUNT);
+    await sealingKeyId(laptop.lifecycle);
+    // Parked registry copied but not yet removed: also resumes.
+    laptop.store.items.set(
+      'previous-registry',
+      new Uint8Array(laptop.store.items.get('registry') as Uint8Array),
+    );
+    const finished = await restart(laptop.lifecycle);
+    expect(finished.previousAccountId).toBe(ACCOUNT);
+    expect(
+      itemNames(laptop.store).filter(
+        (name) => name.startsWith('key.') && before.includes(name),
+      ),
+    ).toEqual(before);
+  });
+
+  it('reports a restart interrupted while parking, and a retry completes it', async () => {
+    const { laptop } = await family();
+    // Everything is parked, but the old registry could not be removed.
+    const realDelete = laptop.store.delete.bind(laptop.store);
+    let failed = false;
+    laptop.store.delete = async (name) => {
+      if (name === 'registry' && !failed) {
+        failed = true;
+        throw new Error('simulated crash');
+      }
+      await realDelete(name);
+    };
+    await expect(restart(laptop.lifecycle)).rejects.toThrow('simulated crash');
+    expect(await laptop.lifecycle.previousAccount()).toEqual({
+      accountId: ACCOUNT,
+      interrupted: true,
+    });
+    const finished = await restart(laptop.lifecycle);
+    expect(finished.previousAccountId).toBe(ACCOUNT);
+    expect(await laptop.lifecycle.previousAccount()).toEqual({
+      accountId: ACCOUNT,
+      interrupted: false,
+    });
+    expect(await sealingKeyId(laptop.lifecycle)).toBe(finished.keyId);
+  });
+
+  it('discard removes only the parked account and never the new keys', async () => {
+    const { laptop } = await family();
+    const oldKeys = itemNames(laptop.store).filter(
+      (name) => name.startsWith('key.') || name.startsWith('recovery.'),
+    );
+    expect(oldKeys.length).toBeGreaterThan(0);
+    const published = await restart(laptop.lifecycle);
+    const newKeys = [
+      `key.${published.generation}.${published.keyId}`,
+      `recovery.${published.generation}.${published.keyId}`,
+    ];
+    await laptop.lifecycle.discardPreviousAccount();
+    const left = itemNames(laptop.store);
+    for (const name of oldKeys) expect(left).not.toContain(name);
+    for (const name of newKeys) expect(left).toContain(name);
+    expect(left.filter((name) => name.startsWith('previous-'))).toEqual([]);
+    expect(await sealingKeyId(laptop.lifecycle)).toBe(published.keyId);
+    // Idempotent.
+    await laptop.lifecycle.discardPreviousAccount();
+  });
+
+  it('threat: secret material never reaches the parked or new records', async () => {
+    const { laptop } = await family();
+    await restart(laptop.lifecycle);
+    for (const name of ['registry', 'previous-registry']) {
+      const text = Buffer.from(
+        laptop.store.items.get(name) as Uint8Array,
+      ).toString();
+      expect(text).not.toContain(RECOVERY_SECRET);
+      expect(text).not.toContain(RESTART_SECRET);
+    }
+  });
+});
+
 describe('vault key lifecycle: recovery secret rotation', () => {
   it('rotates the recovery secret without changing the account authority', async () => {
     const { laptop, phone } = await family();

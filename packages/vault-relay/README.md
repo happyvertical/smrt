@@ -110,6 +110,28 @@ The lifetime is `VAULT_RELAY_LEASE_TTL_SECONDS` (default 300, 30 to 3600); a
 client may ask for less with `ttlSeconds`. Clients judge expiry from `ttlMs`
 on their own monotonic clock, never by comparing `expiresAt` with local time.
 
+### Account supersession
+
+After a family restarts its vault because the recovery secret is lost
+(`@happyvertical/smrt-app-runtime`, vault key lifecycle `restartAccount`), the
+account layer creates a new account and replaces the old one. The relay
+records only the replacement; it still cannot read anything.
+
+A replaced account answers `409 account_superseded` (no other detail, and
+never the new account's id: a client does not follow the relay to another
+account) to every device route that writes or offers a snapshot: lease
+acquire and renew, begin, chunk upload, commit, snapshot delete, list and
+latest. Lease status and release, aborting an upload, and a snapshot's
+metadata and chunks by explicit sequence stay available, so state can be
+cleaned up and a snapshot rescued by hand. A stale device on the old account
+therefore stops publishing into a line nobody follows, and restore-latest is
+never handed the old vault. The new account is unaffected.
+
+Only the admin listener sets or clears it, so a stolen device key cannot
+silence or redirect an account. The replacement must already hold an active
+device and must not be replaced itself, so there are no chains or loops.
+Existing snapshots stay until an operator deletes them.
+
 ### Request signing
 
 Each request carries `x-vault-account`, `x-vault-device`, `x-vault-timestamp`
@@ -154,6 +176,8 @@ Served on a separate listener, which must stay cluster-internal, and only when
 | `DELETE /admin/v1/accounts/:account/devices/:device` | Revoke a device. Effective on its next request. |
 | `GET /admin/v1/accounts/:account` | Usage, snapshot sizes and dates, device states. Never content. |
 | `POST /admin/v1/accounts/:account/high-water` | Reset the sequence high-water mark of an account whose mark was pushed out of reach: `{ highWaterSequence, removeSnapshotsAbove? }`. The new mark may not exceed the current one. A snapshot or pending upload above it is refused (`409 snapshots_above_high_water`, sequences listed) unless `removeSnapshotsAbove` is `true`, which deletes those rows and their objects first. Logged as `high_water_reset` (hashed account handle, previous and new mark, removed sequences). |
+| `PUT /admin/v1/accounts/:account/superseded-by` | Replace an account (#4817): `{ supersededBy }`. For the account layer after a vault restart, once the new account exists with an active device and holds a backup. `201` set, `200` repeated, `404 no_account`, `409 target_not_ready` (no active device), `409 target_superseded` or `409 account_is_target` (no chains or loops), `409 already_superseded` (another target). See [Account supersession](#account-supersession). |
+| `DELETE /admin/v1/accounts/:account/superseded-by` | Undo it, for an operator mistake. `204`, or `404 no_supersession`. |
 | `POST /admin/v1/accounts/:account/reconcile` | Recompute quota counters from snapshot rows. Run it while the account is quiet: a reconcile racing an upload can under-count until the next reconcile. |
 | `POST /admin/v1/sweep` | Expire abandoned uploads and old nonces (also runs every minute). |
 
@@ -170,7 +194,7 @@ that lands after an abort, expiry, or publish is deleted instead of counted. `Fi
 tests and single-node development. `createS3ObjectStore()` uses the
 `@happyvertical/files` S3 provider with path-style addressing for Garage.
 
-Metadata lives in the service database (SQLite or PostgreSQL) in seven
+Metadata lives in the service database (SQLite or PostgreSQL) in eight
 `vault_relay_*` tables. `migrateVaultRelayV1(db)` and
 `migrateVaultRelayLeasesV1(db)` create them idempotently.
 Run it as the deployment's migration step (`node dist/cli.js migrate`); the
@@ -255,6 +279,9 @@ horizontally: every security check is a conditional database statement.
 | Two devices publishing divergent lines | Lease row: one holder, base must be the head, head advanced at commit only by the holder's recorded fencing token | `lease.test.ts` |
 | Lease theft or reuse after expiry; stale fencing token | Holder and token must both match; relay-clock expiry; token bumped on every grant and on revocation | `lease.test.ts` expiry and takeover, re-acquire fencing |
 | Replayed acquire | Signed nonce and timestamp | `lease.test.ts` replay |
+| A stale device keeps publishing into a replaced account, or restore-latest is offered the old vault (#4817) | Admin-set supersession; writes, list and latest refuse with `409 account_superseded` | `supersession.test.ts`, `restore-e2e.test.ts` restarted account |
+| A stolen device silences or redirects an account | Supersession exists only on the admin listener; the refusal names no other account | `supersession.test.ts` set by the account layer only |
+| Supersession chains or loops | Target must have an active device and must not be replaced | `supersession.test.ts` target checks |
 | Path traversal in object keys | Keys derived from hash, server UUID, and index; regex and containment checks | `storage-and-config.test.ts` |
 
 Residual risks: a publish whose head advanced but whose commit was never

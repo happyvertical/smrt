@@ -138,6 +138,8 @@ export interface OperatorAccountView {
     registeredAt: string;
     revokedAt: string | null;
   }>;
+  /** The account that replaced this one (#4817), if the account layer set it. */
+  supersededBy: string | null;
 }
 
 class RelayError extends Error {
@@ -475,6 +477,7 @@ export class VaultRelay {
         `${url.pathname}${url.search}`,
       );
       handle = device.handle;
+      await this.refuseSuperseded(route, request.method, device.accountId);
       await this.requireEntitlement(device.accountId);
       response = await this.dispatch(route, request, device);
     } catch (error) {
@@ -534,6 +537,31 @@ export class VaultRelay {
       handle: accountHandle(parsed.fields.accountId),
       contentSha256: parsed.fields.contentSha256,
     };
+  }
+
+  /**
+   * An account the account layer replaced (#4817) takes no new writes and
+   * offers no snapshot to restore-latest: its devices would publish into a
+   * data line nobody follows, and a restore would hand back the old vault.
+   * What only removes state (lease status and release, aborting an upload)
+   * and reads by explicit sequence stay open. The refusal names no other
+   * account: the client never follows the relay to a new account.
+   */
+  private async refuseSuperseded(
+    route: DeviceRoute,
+    method: string,
+    accountId: string,
+  ): Promise<void> {
+    const open =
+      route.name === 'lease-status' ||
+      route.name === 'lease-release' ||
+      route.name === 'abort' ||
+      route.name === 'chunk' ||
+      (route.name === 'snapshot' && method.toUpperCase() === 'GET');
+    if (open) return;
+    if (await this.store.getSupersession(accountId)) {
+      throw new RelayError(409, 'account_superseded');
+    }
   }
 
   private async pruneNoncesIfDue(now: number): Promise<void> {
@@ -1261,15 +1289,75 @@ export class VaultRelay {
     };
   }
 
+  /**
+   * Mark `accountId` replaced by `supersededBy` (#4817), for the account
+   * layer once it has provisioned the new account and registered a device in
+   * it. Admin only: no device route can set or clear it, so a stolen device
+   * cannot silence or redirect an account. The old account's snapshots stay
+   * in place (readable by explicit sequence); it takes no new writes and
+   * offers nothing to restore-latest. Idempotent for the same target.
+   */
+  async supersedeAccount(
+    accountId: string,
+    supersededBy: string,
+  ): Promise<'superseded' | 'unchanged'> {
+    if (!isIdentifier(accountId)) throw new RelayError(404, 'not_found');
+    if (!isIdentifier(supersededBy) || supersededBy === accountId) {
+      throw new RelayError(400, 'invalid_request', { field: 'supersededBy' });
+    }
+    if (!(await this.store.getUsage(accountId))) {
+      throw new RelayError(404, 'no_account');
+    }
+    // The replacement must already be usable, and must not itself be
+    // replaced, nor may the replaced account be someone's replacement (no
+    // chains, so no cycles).
+    if (await this.store.isSupersessionTarget(accountId)) {
+      throw new RelayError(409, 'account_is_target');
+    }
+    if ((await this.store.countActiveDevices(supersededBy)) < 1) {
+      throw new RelayError(409, 'target_not_ready');
+    }
+    if (await this.store.getSupersession(supersededBy)) {
+      throw new RelayError(409, 'target_superseded');
+    }
+    const result = await this.store.setSupersession(
+      accountId,
+      supersededBy,
+      this.now(),
+    );
+    if (result === 'conflict') throw new RelayError(409, 'already_superseded');
+    if (result === 'superseded') {
+      this.logger.warn('account_superseded', {
+        account: accountHandle(accountId),
+        supersededBy: accountHandle(supersededBy),
+      });
+    }
+    return result;
+  }
+
+  /** Undo {@link supersedeAccount}, for an operator mistake. */
+  async clearSupersession(accountId: string): Promise<boolean> {
+    if (!isIdentifier(accountId)) return false;
+    const cleared = await this.store.clearSupersession(accountId);
+    if (cleared) {
+      this.logger.warn('account_supersession_cleared', {
+        account: accountHandle(accountId),
+      });
+    }
+    return cleared;
+  }
+
   /** Sizes, dates, and device state for one account; never content. */
   async operatorView(accountId: string): Promise<OperatorAccountView> {
-    const [usage, snapshots, devices] = await Promise.all([
+    const [usage, snapshots, devices, supersession] = await Promise.all([
       this.store.getUsage(accountId),
       this.store.listSnapshots(accountId),
       this.store.listDevices(accountId),
+      this.store.getSupersession(accountId),
     ]);
     return {
       usage,
+      supersededBy: supersession?.supersededBy ?? null,
       snapshots: snapshots.map((record) => ({
         sequence: record.sequence,
         status: record.status,
@@ -1366,6 +1454,26 @@ export class VaultRelay {
           removeSnapshotsAbove: input.removeSnapshotsAbove === true,
         }),
       );
+    }
+    m = /^\/admin\/v1\/accounts\/([^/]+)\/superseded-by$/.exec(path);
+    if (m && (method === 'PUT' || method === 'DELETE')) {
+      if (!isIdentifier(m[1])) throw new RelayError(404, 'not_found');
+      if (method === 'DELETE') {
+        if (!(await this.clearSupersession(m[1]))) {
+          throw new RelayError(404, 'no_supersession');
+        }
+        return json(204, null);
+      }
+      const input = parseJsonObject(
+        await readBoundedBody(request, MAX_JSON_BODY_BYTES),
+      );
+      if (typeof input.supersededBy !== 'string') {
+        throw new RelayError(400, 'invalid_request', {
+          field: 'supersededBy',
+        });
+      }
+      const result = await this.supersedeAccount(m[1], input.supersededBy);
+      return json(result === 'superseded' ? 201 : 200, { result });
     }
     m = /^\/admin\/v1\/accounts\/([^/]+)\/devices\/([^/]+)$/.exec(path);
     if (m) {

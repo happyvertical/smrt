@@ -143,7 +143,8 @@ export class RestoreLatestError extends Error {
     | 'rotation_pending'
     | 'generation_too_old'
     | 'account_state_unavailable'
-    | 'relay_inconsistent';
+    | 'relay_inconsistent'
+    | 'account_superseded';
 
   constructor(code: RestoreLatestError['code'], message: string) {
     super(message);
@@ -263,6 +264,26 @@ function verifyInstallation(
       'installation_mismatch',
       'The snapshot belongs to a different installation than this data root; pass --replace-installation to replace it.',
     );
+  }
+}
+
+/**
+ * The account layer replaced this vault account (#4817). The relay's refusal
+ * is a stop signal only: restore never follows it to another account, because
+ * which account an installation follows is the host's trusted configuration.
+ */
+async function supersededAware<T>(call: () => Promise<T>): Promise<T> {
+  try {
+    return await call();
+  } catch (error) {
+    const code = (error as { code?: unknown } | null)?.code;
+    if (code === 'account_superseded') {
+      throw new RestoreLatestError(
+        'account_superseded',
+        'This vault account was replaced by a new one, so its snapshots are not restored. Follow the new vault account on this device and restore from it.',
+      );
+    }
+    throw error;
   }
 }
 
@@ -454,7 +475,7 @@ export async function restoreLatest(
         'This device may have writes that were never published; publish them, or pass --discard-local to replace them (the current data root is kept).',
       );
     }
-    const latest = await vault.snapshots.latest();
+    const latest = await supersededAware(() => vault.snapshots.latest());
     if (!latest) {
       throw new RestoreLatestError(
         'no_snapshot',
@@ -531,7 +552,9 @@ export async function restoreLatest(
     }
 
     const acquiredAt = (vault.leaseMonotonicNow ?? (() => performance.now()))();
-    const grant = await vault.lease.acquire(latest.sequence);
+    const grant = await supersededAware(() =>
+      vault.lease.acquire(latest.sequence),
+    );
     let sealingFloor: number | null = null;
     let renewal: LeaseRenewal | undefined;
     const download = dataRootSiblingPath(liveRoot, 'download');

@@ -115,6 +115,7 @@ export * from './runtime-diagnostics.js';
 export * from './stale-reclaim.js';
 export * from './state-root.js';
 export * from './vault-lease.js';
+export * from './vault-restart.js';
 export * from './vault-sync-state.js';
 export * from './writer-lease.js';
 

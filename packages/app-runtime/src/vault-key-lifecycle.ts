@@ -70,6 +70,12 @@ const DEVICE_SECRET_ITEM = 'device-secret';
 const ENROLLMENT_ITEM = 'enrollment-request';
 const AUTHORITY_ITEM = 'authority';
 const AUTHORITY_NEXT_ITEM = 'authority-next';
+// A restart (#4817) parks the previous account here: its registry, its
+// authority record and its device secret. Its wrapped data keys stay under
+// their own key-ID names, which no new key can collide with.
+const PREVIOUS_REGISTRY_ITEM = 'previous-registry';
+const PREVIOUS_AUTHORITY_ITEM = 'previous-authority';
+const PREVIOUS_DEVICE_SECRET_ITEM = 'previous-device-secret';
 /** The authority seed's recovery record uses generation 0, never a data key. */
 const AUTHORITY_GENERATION = 0n;
 
@@ -89,7 +95,9 @@ export type VaultKeyLifecycleErrorCode =
   | 'generation_limit'
   | 'key_missing'
   | 'confirmation_rejected'
-  | 'request_expired';
+  | 'request_expired'
+  | 'restart_pending'
+  | 'restart_incomplete';
 
 const ERROR_MESSAGES: Record<VaultKeyLifecycleErrorCode, string> = {
   not_initialized: 'Vault keys are not initialized on this device',
@@ -109,6 +117,10 @@ const ERROR_MESSAGES: Record<VaultKeyLifecycleErrorCode, string> = {
   key_missing: 'Vault key is not held on this device',
   confirmation_rejected: 'Vault confirmation code does not match',
   request_expired: 'Vault enrollment request has expired',
+  restart_pending:
+    'A previous vault account is still held on this device; discard it first',
+  restart_incomplete:
+    'The vault restart on this device has not finished; finish it first',
 };
 
 /** Lifecycle failure with a stable code; messages never carry key material. */
@@ -214,6 +226,17 @@ export interface VaultRotationStatus {
   secretProven: boolean;
 }
 
+/** What a recovery secret opens, as proven by {@link VaultKeyLifecycle.checkRecoverySecret}. */
+export interface VaultRecoveryCheck {
+  /** The secret opens the authority record the adopted head signs. */
+  authority: boolean;
+  /**
+   * The secret opens the recovery record of the current key, so a fresh
+   * device could recover it. Null when this device does not hold that record.
+   */
+  currentKey: boolean | null;
+}
+
 /** JSON-safe request a new device shows to an enrolled device. */
 export interface VaultEnrollmentRequest {
   format: typeof REQUEST_FORMAT;
@@ -289,6 +312,22 @@ export interface VaultInitializeResult extends VaultPublication {
   recoveryRecord: Uint8Array;
 }
 
+/** The new account a restart created, plus the account it replaced. */
+export interface VaultRestartResult extends VaultInitializeResult {
+  previousAccountId: string;
+}
+
+/** A previous account this device still holds after a restart or leave. */
+export interface VaultPreviousAccount {
+  accountId: string;
+  /**
+   * True while no current account exists: a restart or leave stopped before
+   * the device joined or created the new account. Run `restartAccount` or
+   * enroll again.
+   */
+  interrupted: boolean;
+}
+
 export interface VaultRotationResult extends VaultPublication {
   authorityRecord: Uint8Array;
   generation: bigint;
@@ -310,6 +349,39 @@ export interface VaultKeyLifecycle {
     deviceId: string;
     recoverySecret: string;
   }): Promise<VaultInitializeResult>;
+  /**
+   * Start a new vault account from this working device when the recovery
+   * secret is lost (#4817). Needs no knowledge of the old secret. The old
+   * account is parked on the device (see {@link previousAccount}); nothing
+   * from it is carried into the new account, which gets its own device
+   * secret, authority key and first data key. Returns what to publish for
+   * the new account. A retry with the same input after a crash completes the
+   * restart; after it finished, it returns the same publication if the
+   * secret is the same and fails `recovery_rejected` otherwise.
+   * `confirmRestart` must be `true`: the old account stops being usable here.
+   */
+  restartAccount(input: {
+    accountId: string;
+    deviceId: string;
+    recoverySecret: string;
+    confirmRestart: true;
+  }): Promise<VaultRestartResult>;
+  /**
+   * Park this device's account so it can join another through the normal
+   * enrolment exchange (the other devices of a restarted family). Idempotent.
+   * `confirmLeave` must be `true`. Publish anything unpublished first.
+   */
+  leaveAccount(input: {
+    confirmLeave: true;
+  }): Promise<{ previousAccountId: string }>;
+  /** The account parked by `restartAccount` or `leaveAccount`, if any. */
+  previousAccount(): Promise<VaultPreviousAccount | null>;
+  /**
+   * Delete the parked account's wrapped keys and records. Refuses with
+   * `restart_incomplete` while the device has no current account. Call it
+   * once the new account has a published backup. Idempotent.
+   */
+  discardPreviousAccount(): Promise<void>;
   /** Show the request (QR) and the device code on the new device. */
   createEnrollmentRequest(input: {
     accountId: string;
@@ -349,6 +421,14 @@ export interface VaultKeyLifecycle {
    * the rotation that publishes it can run (`recovery_rejected` otherwise,
    * and nothing is recorded). Sealing stops on this device until `rotate`.
    */
+  /**
+   * Prove, without changing anything, that `recoverySecret` still opens the
+   * account authority record and the current key's recovery record. Nothing
+   * is written, settled or cached, so a product can run it whenever the user
+   * types the secret (for example to confirm it periodically) and warn
+   * before the account is frozen. A wrong secret is `false`, not an error.
+   */
+  checkRecoverySecret(recoverySecret: string): Promise<VaultRecoveryCheck>;
   revokeDevice(
     deviceId: string,
     input: { recoverySecret: string },
@@ -1296,6 +1376,143 @@ export function createVaultKeyLifecycle({
     }
   }
 
+  /** Create a fresh account on an uninitialized device. */
+  async function createAccount(
+    accountId: string,
+    deviceId: string,
+    recoverySecret: string,
+  ): Promise<VaultInitializeResult> {
+    const secret = await deviceSecret(true);
+    const seed = new Uint8Array(randomBytes(KEY_BYTES));
+    try {
+      const authorityRecord = await wrapAuthority(
+        seed,
+        accountId,
+        recoverySecret,
+      );
+      const prepared = await prepareVaultKeyGeneration({
+        accountId,
+        deviceId,
+        deviceSecret: secret,
+        recoverySecret: recoverySecret,
+        currentGeneration: null,
+      });
+      const entry = {
+        generation: prepared.generation,
+        keyId: prepared.keyId,
+      };
+      const key = openOwnKey(
+        { accountId, deviceId },
+        secret,
+        entry,
+        prepared.deviceRecord,
+      );
+      let commitment: string;
+      try {
+        commitment = keyCommitment(
+          key,
+          accountId,
+          entry.generation,
+          entry.keyId,
+        );
+      } finally {
+        key.fill(0);
+      }
+      const head = signHead(
+        {
+          accountId,
+          sequence: 1n,
+          issuedAt: isoNow(),
+          issuerDeviceId: deviceId,
+          current: entry,
+          generations: [
+            {
+              ...entry,
+              keyCommitment: commitment,
+              recoveryDigest: digestText(prepared.recoveryRecord),
+            },
+          ],
+          devices: [
+            {
+              deviceId,
+              publicKey: encode(deriveVaultDevicePublicKey(secret)),
+              enrolledAt: isoNow(),
+            },
+          ],
+          revokedDevices: [],
+          authorityPublicKey: encode(authorityPublicKey(seed)),
+          authorityRecordDigest: digestText(authorityRecord),
+        },
+        seed,
+      );
+      await store.set(keyItem(entry), prepared.deviceRecord);
+      await store.set(recoveryItem(entry), prepared.recoveryRecord);
+      await store.set(AUTHORITY_ITEM, authorityRecord);
+      await saveRegistry({
+        accountId,
+        deviceId,
+        head,
+        conflict: null,
+        keys: [entry],
+        pendingRevocations: [],
+        pendingRotation: null,
+      });
+      return {
+        ...entry,
+        recoveryRecord: prepared.recoveryRecord,
+        head: serializeHead(head),
+        authorityRecord,
+      };
+    } finally {
+      seed.fill(0);
+      secret.fill(0);
+    }
+  }
+
+  async function readPrevious(): Promise<VaultDeviceRegistry | null> {
+    const bytes = await store.get(PREVIOUS_REGISTRY_ITEM);
+    return bytes === null
+      ? null
+      : parseVaultDeviceRegistry(Buffer.from(bytes).toString('utf8'));
+  }
+
+  /**
+   * Park the current account (if any) as the previous one and leave the
+   * device uninitialized. Every step is repeatable: a crash anywhere leaves
+   * either the old account intact or an uninitialized device holding the
+   * archive, and a retry finishes. Returns the parked account's ID.
+   */
+  async function archiveCurrent(
+    registry: VaultDeviceRegistry | null,
+  ): Promise<string> {
+    const previous = await readPrevious();
+    if (registry === null) {
+      return previous?.accountId ?? fail('not_initialized');
+    }
+    // Another account is already parked: discard it first. The same account
+    // means an earlier attempt stopped part way.
+    if (previous && previous.accountId !== registry.accountId) {
+      fail('restart_pending');
+    }
+    // Finish an interrupted recovery-secret rotation so the parked
+    // authority record is the one the adopted head signs.
+    await settleAuthority(registry);
+    const authority = await store.get(AUTHORITY_ITEM);
+    const secret = await store.get(DEVICE_SECRET_ITEM);
+    const current = await store.get(REGISTRY_ITEM);
+    if (current === null) fail('invalid_state');
+    if (authority !== null) await store.set(PREVIOUS_AUTHORITY_ITEM, authority);
+    if (secret !== null) await store.set(PREVIOUS_DEVICE_SECRET_ITEM, secret);
+    await store.set(PREVIOUS_REGISTRY_ITEM, current);
+    await store.delete(ENROLLMENT_ITEM);
+    await store.delete(AUTHORITY_NEXT_ITEM);
+    await store.delete(AUTHORITY_ITEM);
+    await store.delete(DEVICE_SECRET_ITEM);
+    // Last: its absence is what makes the device uninitialized.
+    await store.delete(REGISTRY_ITEM);
+    return registry.accountId;
+  }
+
   return {
     status: () =>
       serial(async () => {
@@ -1308,91 +1525,88 @@ export function createVaultKeyLifecycle({
         const accountId = identifier(input?.accountId);
         const deviceId = identifier(input?.deviceId);
         await assertUninitialized();
-        const secret = await deviceSecret(true);
-        const seed = new Uint8Array(randomBytes(KEY_BYTES));
-        try {
-          const authorityRecord = await wrapAuthority(
-            seed,
-            accountId,
-            input.recoverySecret,
-          );
-          const prepared = await prepareVaultKeyGeneration({
-            accountId,
-            deviceId,
-            deviceSecret: secret,
-            recoverySecret: input.recoverySecret,
-            currentGeneration: null,
-          });
-          const entry = {
-            generation: prepared.generation,
-            keyId: prepared.keyId,
-          };
-          const key = openOwnKey(
-            { accountId, deviceId },
-            secret,
-            entry,
-            prepared.deviceRecord,
-          );
-          let commitment: string;
-          try {
-            commitment = keyCommitment(
-              key,
-              accountId,
-              entry.generation,
-              entry.keyId,
-            );
-          } finally {
-            key.fill(0);
-          }
-          const head = signHead(
-            {
-              accountId,
-              sequence: 1n,
-              issuedAt: isoNow(),
-              issuerDeviceId: deviceId,
-              current: entry,
-              generations: [
-                {
-                  ...entry,
-                  keyCommitment: commitment,
-                  recoveryDigest: digestText(prepared.recoveryRecord),
-                },
-              ],
-              devices: [
-                {
-                  deviceId,
-                  publicKey: encode(deriveVaultDevicePublicKey(secret)),
-                  enrolledAt: isoNow(),
-                },
-              ],
-              revokedDevices: [],
-              authorityPublicKey: encode(authorityPublicKey(seed)),
-              authorityRecordDigest: digestText(authorityRecord),
-            },
-            seed,
-          );
-          await store.set(keyItem(entry), prepared.deviceRecord);
-          await store.set(recoveryItem(entry), prepared.recoveryRecord);
-          await store.set(AUTHORITY_ITEM, authorityRecord);
-          await saveRegistry({
-            accountId,
-            deviceId,
-            head,
-            conflict: null,
-            keys: [entry],
-            pendingRevocations: [],
-            pendingRotation: null,
-          });
+        return createAccount(accountId, deviceId, input.recoverySecret);
+      }),
+
+    restartAccount: (input) =>
+      serial(async () => {
+        if (input?.confirmRestart !== true) fail('invalid_input');
+        const accountId = identifier(input.accountId);
+        const deviceId = identifier(input.deviceId);
+        const registry = await loadRegistry();
+        if (registry?.accountId === accountId) {
+          // The restart already finished. A retry must prove the same secret
+          // before it is shown the publication again.
+          const previous = await readPrevious();
+          if (previous === null) fail('already_initialized');
+          (await authoritySeed(registry, input.recoverySecret)).fill(0);
+          const authorityRecord = await headAuthorityRecord(registry);
+          if (authorityRecord === null) fail('invalid_state');
+          const current = registry.head.current;
           return {
-            ...entry,
-            recoveryRecord: prepared.recoveryRecord,
-            head: serializeHead(head),
+            generation: current.generation,
+            keyId: current.keyId,
+            recoveryRecord: await requireItem(recoveryItem(current)),
+            head: serializeHead(registry.head),
             authorityRecord,
+            previousAccountId: previous.accountId,
           };
-        } finally {
-          seed.fill(0);
-          secret.fill(0);
         }
+        const previousAccountId = await archiveCurrent(registry);
+        if (previousAccountId === accountId) fail('invalid_input');
+        return {
+          ...(await createAccount(accountId, deviceId, input.recoverySecret)),
+          previousAccountId,
+        };
+      }),
+
+    leaveAccount: (input) =>
+      serial(async () => {
+        if (input?.confirmLeave !== true) fail('invalid_input');
+        return {
+          previousAccountId: await archiveCurrent(await loadRegistry()),
+        };
+      }),
+
+    previousAccount: () =>
+      serial(async () => {
+        const previous = await readPrevious();
+        if (previous === null) return null;
+        const registry = await loadRegistry();
+        return {
+          accountId: previous.accountId,
+          // Also while the old registry is still in place: the device was
+          // part way through parking it and cannot use it any more.
+          interrupted:
+            registry === null || registry.accountId === previous.accountId,
+        };
+      }),
+
+    discardPreviousAccount: () =>
+      serial(async () => {
+        const previous = await readPrevious();
+        if (previous === null) return;
+        const registry = await loadRegistry();
+        if (registry === null) fail('restart_incomplete');
+        if (registry.accountId === previous.accountId) fail('invalid_state');
+        const parked = [
+          ...previous.keys,
+          ...(previous.pendingRotation ? [previous.pendingRotation] : []),
+        ];
+        for (const entry of parked) {
+          // Never delete an item the current account also uses.
+          if (
+            registry.keys.some((held) => sameReference(held, entry)) ||
+            registry.pendingRotation?.keyId === entry.keyId
+          ) {
+            continue;
+          }
+          await store.delete(keyItem(entry));
+          await store.delete(recoveryItem(entry));
+        }
+        await store.delete(PREVIOUS_AUTHORITY_ITEM);
+        await store.delete(PREVIOUS_DEVICE_SECRET_ITEM);
+        await store.delete(PREVIOUS_REGISTRY_ITEM);
       }),
 
     createEnrollmentRequest: (input) =>
@@ -1817,6 +2031,33 @@ export function createVaultKeyLifecycle({
           for (const entry of opened) entry.key.fill(0);
           secret.fill(0);
         }
+      }),
+
+    checkRecoverySecret: (recoverySecret) =>
+      serial(async () => {
+        const registry = await requireRegistry();
+        const record = await headAuthorityRecord(registry);
+        const seed =
+          record === null
+            ? null
+            : await openAuthority(
+                record,
+                registry.accountId,
+                registry.head.authorityPublicKey,
+                recoverySecret,
+              );
+        seed?.fill(0);
+        const current = registry.head.current;
+        return {
+          authority: seed !== null,
+          currentKey: registry.keys.some((held) => sameReference(held, current))
+            ? await verifyRecoveryRecord(
+                registry.accountId,
+                current,
+                recoverySecret,
+              )
+            : null,
+        };
       }),
 
     revokeDevice: (deviceId, proof) =>

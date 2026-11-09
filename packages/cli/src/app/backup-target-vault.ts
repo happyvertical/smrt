@@ -81,6 +81,8 @@ const RESTORE_MESSAGE =
   'This device is behind the vault account, or no longer holds its writer lease; nothing was published. Restore the latest snapshot (smrt app restore-latest) before backing up to the vault.';
 const LEASE_HELD_MESSAGE =
   'Another device is writing to this vault account, or is publishing a snapshot; try again shortly.';
+const SUPERSEDED_MESSAGE =
+  'This vault account was replaced by a new one, so nothing was published or restored. Follow the new vault account on this device; it no longer backs up to the old one.';
 const LEASE_LOST_MESSAGE =
   'This device no longer holds the vault writer lease; nothing was published. Restore the latest snapshot (smrt app restore-latest) before backing up to the vault.';
 
@@ -102,6 +104,9 @@ function leaseBackupError(
     case 'lost':
     case 'stopped':
       return new BackupTargetError('lease_lost', LEASE_LOST_MESSAGE);
+    case 'account_superseded':
+    case 'superseded':
+      return new BackupTargetError('account_superseded', SUPERSEDED_MESSAGE);
     default:
       return new BackupTargetError(
         'unavailable',
@@ -594,6 +599,9 @@ export class VaultRelayBackupTarget implements BackupTarget {
       (code === 'lease_held' || code === 'publish_in_progress')
     ) {
       return new BackupTargetError('lease_held', LEASE_HELD_MESSAGE);
+    }
+    if (response.status === 409 && code === 'account_superseded') {
+      return new BackupTargetError('account_superseded', SUPERSEDED_MESSAGE);
     }
     if (response.status === 409 && code === 'lease_lost') {
       return new BackupTargetError('lease_lost', LEASE_LOST_MESSAGE);

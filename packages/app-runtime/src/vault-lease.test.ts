@@ -107,6 +107,18 @@ describe('VaultLeaseKeeper', () => {
     expect(readVaultSyncRecord(stateRoot)?.localWritesPending).toBe(true);
   });
 
+  it('stops, without retrying, when the relay says the account was replaced (#4817)', async () => {
+    replies.push({ status: 409, body: { error: 'account_superseded' } });
+    const states: VaultLeaseState[] = [];
+    const lease = keeper(states);
+    expect(await lease.start()).toBe('superseded');
+    expect(states).toEqual(['superseded']);
+    expect(() => lease.assertWritable()).toThrow();
+    // Nothing is scheduled: a replaced account is not retried.
+    expect(pending).toEqual([]);
+    expect(calls).toHaveLength(1);
+  });
+
   it('does not raise the downgrade floor to a granted head that is a hole', async () => {
     writeVaultSyncRecord(stateRoot, {
       accountId: 'acct-a',

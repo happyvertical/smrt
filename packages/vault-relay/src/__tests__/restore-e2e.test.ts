@@ -21,7 +21,9 @@ import {
   initializeLocalApplicationRuntime,
   prepareApplicationStateRoot,
   readVaultSyncRecord,
+  switchVaultAccount,
 } from '@happyvertical/smrt-app-runtime';
+import { createVaultKeyLifecycle } from '@happyvertical/smrt-app-runtime/vault-key-lifecycle';
 import {
   BackupTargetError,
   planDataRootArchive,
@@ -35,6 +37,7 @@ import { resolveApplicationRuntime } from '@happyvertical/smrt-config';
 import { getTestDatabase } from '@happyvertical/smrt-core/testing';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  adminRequest,
   createHarness,
   type Harness,
   newDevice,
@@ -90,13 +93,17 @@ afterEach(async () => {
   }
 });
 
-function keysFor(deviceId: string): SnapshotKeyProvider {
+function keysFor(
+  deviceId: string,
+  account: string = ACCOUNT,
+  sealedAs: string = account,
+): SnapshotKeyProvider {
   let sequence = 0n;
   return {
     async sealingKey() {
       sequence += 1n;
       return {
-        accountId: ACCOUNT,
+        accountId: sealedAs,
         deviceId,
         sequence,
         generation: 1n,
@@ -108,7 +115,7 @@ function keysFor(deviceId: string): SnapshotKeyProvider {
       if (sequence < above) sequence = above;
     },
     async openingKey(reference) {
-      return reference.accountId === ACCOUNT &&
+      return reference.accountId === account &&
         reference.generation === 1n &&
         reference.keyId === KEY_ID
         ? new Uint8Array(KEY)
@@ -390,5 +397,139 @@ describe('device deletes through the client', () => {
     // An older snapshot is still removable.
     await vault.delete('1');
     expect((await h.relay.operatorView(ACCOUNT)).snapshots).toHaveLength(1);
+  });
+});
+
+describe('a restarted vault account (#4817)', () => {
+  const NEW_ACCOUNT = 'acct-b';
+
+  /** The account layer provisions the new account and replaces the old one. */
+  async function supersedeOldAccount() {
+    const response = await h.relay.handleAdmin(
+      adminRequest('PUT', `/admin/v1/accounts/${ACCOUNT}/superseded-by`, {
+        supersededBy: NEW_ACCOUNT,
+      }),
+    );
+    expect(response.status).toBe(201);
+  }
+
+  /** The working device's key lifecycle, restarted from account A to B. */
+  async function restartedLifecycle() {
+    const items = new Map<string, Uint8Array>();
+    const lifecycle = createVaultKeyLifecycle({
+      store: {
+        async get(name) {
+          const value = items.get(name);
+          return value ? new Uint8Array(value) : null;
+        },
+        async set(name, value) {
+          items.set(name, new Uint8Array(value));
+        },
+        async delete(name) {
+          items.delete(name);
+        },
+      },
+    });
+    await lifecycle.initializeAccount({
+      accountId: ACCOUNT,
+      deviceId: 'device-a1',
+      recoverySecret: 'a credential nobody remembers',
+    });
+    await lifecycle.restartAccount({
+      accountId: NEW_ACCOUNT,
+      deviceId: 'device-b1',
+      recoverySecret: 'the credential written down this time',
+      confirmRestart: true,
+    });
+    return lifecycle;
+  }
+
+  it('stops the old line, hides the old vault from restore-latest, and restores the new one on a fresh device', async () => {
+    const oldLaptop = newDevice(ACCOUNT, 'device-a1');
+    const oldFresh = newDevice(ACCOUNT, 'device-a2');
+    const newLaptop = newDevice(NEW_ACCOUNT, 'device-b1');
+    const newFresh = newDevice(NEW_ACCOUNT, 'device-b2');
+    for (const device of [oldLaptop, oldFresh, newLaptop, newFresh]) {
+      await registerDevice(h, device);
+    }
+    const env = makeEnvironment();
+    const laptop = join(env.root, 'laptop');
+    const fresh = join(env.root, 'fresh');
+    await env.boot(laptop, 'family data');
+    const oldKeys = keysFor('device-a1');
+    expect(await env.backup(oldLaptop, laptop, oldKeys)).toMatchObject({
+      sequence: 1n,
+    });
+
+    await supersedeOldAccount();
+
+    // The old line takes no more writes, from any device that still follows it.
+    expect(await code(env.backup(oldLaptop, laptop, oldKeys))).toBe(
+      'account_superseded',
+    );
+    // A fresh device still configured for the old account is not offered it.
+    const stale = await env.restore(oldFresh, fresh, keysFor('device-a2'));
+    expect(stale.code).not.toBe(0);
+    expect(stale.stderr).toContain('replaced by a new one');
+    expect(() => readFileSync(join(fresh, 'application.sqlite'))).toThrow();
+
+    // The working device moves its location to the new account and backs up.
+    const lifecycle = await restartedLifecycle();
+    await switchVaultAccount({
+      stateRoot: env.stateRootOf(laptop),
+      lifecycle,
+      from: ACCOUNT,
+      to: NEW_ACCOUNT,
+      lease: (await env.target(newLaptop, laptop).restoreProvider()).lease,
+    });
+    expect(readVaultSyncRecord(env.stateRootOf(laptop))).toMatchObject({
+      accountId: NEW_ACCOUNT,
+      baseSequence: 0,
+      localWritesPending: true,
+    });
+    const newKeys = keysFor('device-b1', NEW_ACCOUNT);
+    expect(await env.backup(newLaptop, laptop, newKeys)).toMatchObject({
+      sequence: 1n,
+    });
+
+    // A fresh device that follows the new account restores the family's data.
+    const restored = await env.restore(
+      newFresh,
+      fresh,
+      keysFor('device-b2', NEW_ACCOUNT),
+    );
+    expect(restored.stderr).toBe('');
+    expect(restored.code).toBe(0);
+    expect(env.marker(fresh)).toBe('family data');
+    expect(readVaultSyncRecord(env.stateRootOf(fresh))).toMatchObject({
+      accountId: NEW_ACCOUNT,
+      baseSequence: 1,
+    });
+  });
+
+  it('threat: a snapshot sealed under the old account is refused when offered by the new one', async () => {
+    const newLaptop = newDevice(NEW_ACCOUNT, 'device-b1');
+    const newFresh = newDevice(NEW_ACCOUNT, 'device-b2');
+    await registerDevice(h, newLaptop);
+    await registerDevice(h, newFresh);
+    const env = makeEnvironment();
+    const laptop = join(env.root, 'laptop');
+    const fresh = join(env.root, 'fresh');
+    await env.boot(laptop, 'family data');
+    // A hostile or confused host uploads an old-account envelope to the new line.
+    expect(
+      await env.backup(
+        newLaptop,
+        laptop,
+        keysFor('device-b1', NEW_ACCOUNT, ACCOUNT),
+      ),
+    ).toMatchObject({ sequence: 1n });
+    const restored = await env.restore(
+      newFresh,
+      fresh,
+      keysFor('device-b2', NEW_ACCOUNT),
+    );
+    expect(restored.code).not.toBe(0);
+    expect(() => readFileSync(join(fresh, 'application.sqlite'))).toThrow();
   });
 });

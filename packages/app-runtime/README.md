@@ -320,6 +320,10 @@ writes.
   location's own custody record (`retired` after a move or a cloud migration,
   `invalid` when it cannot be trusted), so a restore can refuse before it
   touches a data root.
+- **Account switch** (`vault-restart.ts`): `switchVaultAccount` is the only
+  way a location stops following one vault account and starts another, after
+  a restart (see
+  [Restarting when the recovery secret is lost](#restarting-when-the-recovery-secret-is-lost)).
 
 `smrt app restore-latest` (CLI) composes these: writer lease, refusal of a
 retired or unverifiable location, of pending local writes and of downgrades, relay lease at the target sequence,
@@ -1040,8 +1044,9 @@ record with the grant, and only the new secret then authorizes changes. Older
 recovery records stay under the old secret.
 
 The relay keeps old authority records, so a **leaked** secret keeps its
-authority. Today the remedy is a new account. Authority re-keying is tracked
-in #4807.
+authority. The remedy today is a new account (see
+[Restarting when the recovery secret is lost](#restarting-when-the-recovery-secret-is-lost)).
+Authority re-keying is tracked in #4807.
 
 `revokeDevice(deviceId, { recoverySecret })` takes the recovery secret as
 proof, #4818. It opens the authority record the adopted head signs, changes
@@ -1075,7 +1080,7 @@ known to be possible. It is null while nothing requires one.
 | `null` | No rotation needed | none |
 | `{ reasons: ['revocation'], secretProven: true }` | Rotation required and possible: the secret was proven when the revocation was recorded | finish with `rotate` |
 | `{ reasons: ['conflict'], secretProven: false }` | Fork evidence arrived from the relay; the secret has not been proven | ask for the secret, then `rotate` merges |
-| `{ reasons: [...], secretProven: false }` | Any state that includes a conflict, or a revocation recorded by a build that predates the proof | ask for the secret; if it is lost the way out is a new account (#4817) |
+| `{ reasons: [...], secretProven: false }` | Any state that includes a conflict, or a revocation recorded by a build that predates the proof | ask for the secret; if it is lost the way out is a [restart](#restarting-when-the-recovery-secret-is-lost) |
 
 `reasons` lists `revocation` and `conflict`. `rotationRequired` and `conflict`
 remain as before.
@@ -1088,7 +1093,8 @@ fork. So the conflict is always recorded, and the signal is how a product
 tells that its merge has not been proven possible. `rotate` fails with
 `recovery_rejected` without the secret, and sealing stays stopped until a
 head containing the evidence is adopted. A family with a conflict and no
-secret has no merge: the way out is a new account.
+secret has no merge: the way out is a
+[restart](#restarting-when-the-recovery-secret-is-lost).
 
 A pending revocation clears only when an adopted head revokes that exact
 device ID and public key. If another device rotates without having seen the
@@ -1099,6 +1105,88 @@ A revoked device gets no new generation. Peers reject its grants once they
 know of the revocation. It keeps any generation it had already opened.
 `recoveryRecord({ generation, keyId })` returns a held recovery record for
 publication.
+
+### Restarting when the recovery secret is lost
+
+Enrolling a device, rotating and setting a new recovery secret all need the
+current secret, because it unwraps the authority that signs heads. A family
+that loses it while its devices still work keeps reading, sealing and backing
+up, but the account is frozen: no device can be added, and if every device is
+later lost the backups open for nobody. The way out is a new vault account
+started from a working device (#4817). It costs the family their backup
+history under the old account and every other device a re-enrolment, and it
+needs no knowledge of the old secret. HappyVertical keeps no escrow copy, so
+there is no shorter route, and device-approved enrolment is a separate
+authority-rule decision that this does not make.
+
+**Detect it before the family is stuck.** `checkRecoverySecret(secret)`
+returns `{ authority, currentKey }` and changes nothing: `authority` is
+whether the secret opens the authority record the adopted head signs, and
+`currentKey` whether it opens the current key's recovery record (`null` when
+this device does not hold that record). A wrong secret is `false`, not an
+error. Ask the family to type the secret in periodically, for example every
+few months and after any rotation, run the check, and show the result. A
+`false` while the devices still work is the moment to offer the restart.
+
+**The restart**, in order. The account layer is the hosted service that
+provisions accounts and holds the relay admin token. It must re-authenticate
+the human owner before step 1, because the local calls in steps 2 and 3
+cannot tell the owner from someone holding the unlocked device. Before
+starting, ask every device to publish: after step 1 the old account takes no
+writes, and there is no merge, so what a device has not published is not in
+the new account.
+
+1. Account layer: provision the new vault account (a fresh account ID with
+   the `backup.vault` entitlement), register the working device's relay
+   signing key in it, then replace the old account (relay admin
+   `PUT .../superseded-by`). From then on the old account takes no writes and
+   offers nothing to restore-latest, so a device still following it stops
+   publishing into a dead line and says why (`account_superseded`). If the
+   restart is abandoned, the relay admin `DELETE` of the same path restores
+   the old account.
+2. Working device: `restartAccount({ accountId, deviceId, recoverySecret,
+   confirmRestart: true })`, where `recoverySecret` is a **new** secret the
+   user writes down now. It parks the old account (`previousAccount()`) and
+   creates the new one with its own device secret, authority key and first
+   data key. Nothing from the old account is carried across. Publish the
+   returned head, authority record and recovery record to the new account.
+   After a crash, call it again with the same input.
+3. Working device, holding the operation lock:
+   `switchVaultAccount({ stateRoot, lifecycle, from, to, lease })` from
+   `@happyvertical/smrt-app-runtime`. It moves the location's vault position
+   to the new account at sequence zero with local writes pending, so the next
+   backup is a full baseline. It refuses unless the lifecycle shows this
+   exact restart, the relay reports the new account empty, and the location
+   is active. It is the only code that resets the downgrade floor. Start the
+   key provider's snapshot sequence counter again at 1 for the new account
+   (the relay refuses a first sequence far above an empty account's mark),
+   and take a fresh backup through the normal path.
+4. Every other device: `leaveAccount({ confirmLeave: true })`, then the
+   normal exchange against the new account: `createEnrollmentRequest`, the
+   working device's `enrollDevice` with the **new** secret, then
+   `acceptEnrollment`. A wiped device uses `enrollFromRecovery` with the new
+   secret. An installation that already follows the old account moves with
+   `switchVaultAccount({ ..., role: 'follower' })`, which accepts an account
+   that already holds snapshots and leaves nothing pending, so its next step
+   is restore-latest, never a backup over the new account. A fresh device is
+   simply pointed at the new account by the host, and restore-latest then
+   restores the new account's snapshot.
+5. When the new account is backed up and the other devices have joined:
+   `discardPreviousAccount()` deletes the parked account's wrapped keys and
+   records. It refuses (`restart_incomplete`) while the device holds no
+   current account, and it never deletes a key the current account uses.
+
+The relay never tells a client which account to follow: `account_superseded`
+is a stop signal, and the host's trusted configuration decides the account.
+The parked keys are a local undo and a hold for a manual rescue; this release
+has no API that opens a parked account's data (follow-up), and the old
+account's snapshots stay on the relay, readable by explicit sequence, until
+the operator deletes them.
+
+What a restart cannot do: it does not recover the old account's data from the
+relay (the data lives on the working device and is backed up afresh), it does
+not revoke a leaked old secret on a relay that still serves old records
+(#4807), and it does not help when no device still works.
 
 ### Threat model notes
 
@@ -1116,3 +1204,8 @@ publication.
 
 Losing every enrolled device and the recovery code means losing the data.
 HappyVertical holds no escrow copy of any key and cannot recover it.
+
+Losing only the recovery code freezes the account without losing data. Prompt
+the family to confirm the code periodically with `checkRecoverySecret`, and
+tell them up front what a restart costs: a new code, a fresh backup history,
+and every other device re-enrolled.

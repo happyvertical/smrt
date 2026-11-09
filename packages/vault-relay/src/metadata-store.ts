@@ -21,6 +21,7 @@ export const VAULT_RELAY_TABLES = [
   'vault_relay_nonces',
   'vault_relay_snapshots',
   'vault_relay_chunks',
+  'vault_relay_supersessions',
 ] as const;
 
 const SCHEMA_V1 = [
@@ -72,6 +73,11 @@ const SCHEMA_V1 = [
     sha256 TEXT NOT NULL,
     object_id TEXT NOT NULL,
     PRIMARY KEY (upload_id, chunk_index)
+  )`,
+  `CREATE TABLE IF NOT EXISTS vault_relay_supersessions (
+    account_id TEXT PRIMARY KEY,
+    superseded_by TEXT NOT NULL,
+    superseded_at BIGINT NOT NULL
   )`,
 ];
 
@@ -133,6 +139,13 @@ export interface AccountUsage {
 }
 
 export type RegisterDeviceResult = 'registered' | 'unchanged' | 'conflict';
+
+/** An account the account layer replaced with a new one (#4817). */
+export interface SupersessionRecord {
+  accountId: string;
+  supersededBy: string;
+  supersededAt: number;
+}
 
 type Row = Record<string, unknown>;
 
@@ -292,6 +305,77 @@ export class VaultRelayStore {
       accountId,
     );
     return found.rows.map(deviceFromRow);
+  }
+
+  // Supersession -----------------------------------------------------------
+
+  async getSupersession(accountId: string): Promise<SupersessionRecord | null> {
+    const found = await this.db.query(
+      `SELECT account_id, superseded_by, superseded_at
+         FROM vault_relay_supersessions WHERE account_id = ?`,
+      accountId,
+    );
+    const row = found.rows[0];
+    return row
+      ? {
+          accountId: String(row.account_id),
+          supersededBy: String(row.superseded_by),
+          supersededAt: toSafeInteger(row.superseded_at, 'superseded_at'),
+        }
+      : null;
+  }
+
+  /**
+   * Record that `accountId` is replaced by `supersededBy`. One conditional
+   * insert: an existing record for the same target is `unchanged`, for
+   * another target a `conflict`; it is never overwritten.
+   */
+  async setSupersession(
+    accountId: string,
+    supersededBy: string,
+    now: number,
+  ): Promise<'superseded' | 'unchanged' | 'conflict'> {
+    const inserted = await this.db.query(
+      `INSERT INTO vault_relay_supersessions
+         (account_id, superseded_by, superseded_at)
+       VALUES (?, ?, ?)
+       ON CONFLICT (account_id) DO NOTHING
+       RETURNING account_id`,
+      accountId,
+      supersededBy,
+      now,
+    );
+    if (inserted.rows.length === 1) return 'superseded';
+    const existing = await this.getSupersession(accountId);
+    return existing?.supersededBy === supersededBy ? 'unchanged' : 'conflict';
+  }
+
+  /** True when some account was replaced by `accountId`. */
+  async isSupersessionTarget(accountId: string): Promise<boolean> {
+    const found = await this.db.query(
+      `SELECT account_id FROM vault_relay_supersessions
+        WHERE superseded_by = ? LIMIT 1`,
+      accountId,
+    );
+    return found.rows.length > 0;
+  }
+
+  async clearSupersession(accountId: string): Promise<boolean> {
+    const removed = await this.db.query(
+      `DELETE FROM vault_relay_supersessions WHERE account_id = ?
+        RETURNING account_id`,
+      accountId,
+    );
+    return removed.rows.length === 1;
+  }
+
+  async countActiveDevices(accountId: string): Promise<number> {
+    const found = await this.db.query(
+      `SELECT COUNT(*) AS active FROM vault_relay_devices
+        WHERE account_id = ? AND status = 'active'`,
+      accountId,
+    );
+    return toSafeInteger(found.rows[0]?.active ?? 0, 'active');
   }
 
   // Nonces --------------------------------------------------------------
