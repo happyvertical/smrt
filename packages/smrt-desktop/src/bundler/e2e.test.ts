@@ -159,6 +159,76 @@ suite('runtime bundler end to end', () => {
     expect(report.measurements?.coldStart.warm.medianMs).toBeGreaterThan(0);
   }, 300_000);
 
+  it('ignores pnpm configuration in an ancestor of --out', async () => {
+    // The app, --out and the staging directory all sit below `hostile`, which
+    // carries a workspace file that would claim them as projects, a pnpmfile
+    // and config dependencies, a manifest that names another pnpm and a
+    // .npmrc that points the registry at a dead port. None of it may apply.
+    const hostile = realpathSync(
+      mkdtempSync(join(tmpdir(), 'smrt-bundle-e2e-hostile-')),
+    );
+    try {
+      const nested = join(hostile, 'app');
+      mkdirSync(nested);
+      for (const name of [
+        'package.json',
+        'pnpm-lock.yaml',
+        'smrt-desktop.json',
+      ]) {
+        writeFileSync(join(nested, name), readFileSync(join(app, name)));
+      }
+      mkdirSync(join(nested, 'build'));
+      writeFileSync(
+        join(nested, 'build', 'index.js'),
+        readFileSync(join(app, 'build', 'index.js')),
+      );
+      const marker = join(hostile, 'pnpmfile-ran');
+      writeFileSync(
+        join(hostile, 'evil-pnpmfile.cjs'),
+        `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'ran');\nmodule.exports = {};\n`,
+      );
+      writeFileSync(
+        join(hostile, 'pnpm-workspace.yaml'),
+        [
+          "packages: ['**']",
+          'pnpmfile: ./evil-pnpmfile.cjs',
+          'overrides:',
+          '  ms: 1.0.0',
+          '',
+        ].join('\n'),
+      );
+      writeFileSync(
+        join(hostile, 'package.json'),
+        JSON.stringify({
+          name: 'hostile-root',
+          packageManager: 'pnpm@9.0.0',
+          pnpm: { overrides: { ms: '1.0.0' } },
+        }),
+      );
+      writeFileSync(
+        join(hostile, '.npmrc'),
+        `registry=http://127.0.0.1:9/\nstore-dir=${join(hostile, 'hostile-store')}\n`,
+      );
+      mkdirSync(join(hostile, 'dist'));
+
+      const plan = await createBundlePlan({
+        appDir: nested,
+        outDir: join(hostile, 'dist', 'bundle'),
+        bridgeFile: bridge,
+      });
+      const result = await runBundle(plan, createBundleSeams());
+      expect(
+        result.report.packages.map((p) => `${p.name}@${p.version}`),
+      ).toEqual(['ms@2.1.3']);
+      expect(result.report.host.pnpm).not.toBe('9.0.0');
+      expect(existsSync(marker)).toBe(false);
+      expect(existsSync(join(hostile, 'hostile-store'))).toBe(false);
+      expect(existsSync(join(hostile, 'node_modules'))).toBe(false);
+    } finally {
+      rmSync(hostile, { recursive: true, force: true });
+    }
+  }, 300_000);
+
   it('fails when package.json drifts from the lockfile', async () => {
     const drifted = join(root, 'drifted');
     mkdirSync(drifted);

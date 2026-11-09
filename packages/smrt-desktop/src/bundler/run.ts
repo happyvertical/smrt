@@ -68,7 +68,8 @@ import {
   findBuildStepPackages,
   findDisallowedDependencies,
   findManifestCodeLoading,
-  findWorkspaceCodeLoading,
+  findUnsafeWorkspaceConfig,
+  GENERATED_WORKSPACE_YAML,
   type StagedNpmrc,
   stageManifest,
   stageNpmrc,
@@ -520,12 +521,14 @@ export async function runBundle(
           subjects: disallowed.map((item) => item.name),
         });
       }
-      // pnpm loads JavaScript for these settings during the install, which
-      // `--ignore-scripts` does not cover: refuse them before any work.
+      // The workspace file is staged only when every top-level key is on the
+      // allowlist: pnpm loads JavaScript for some settings (which
+      // `--ignore-scripts` does not cover) and honours path and TLS settings
+      // the command line cannot override. Refuse before any work.
       const workspaceHooks =
         workspace === undefined
           ? []
-          : findWorkspaceCodeLoading(Buffer.from(workspace).toString('utf8'));
+          : findUnsafeWorkspaceConfig(Buffer.from(workspace).toString('utf8'));
       if (workspaceHooks.length > 0) {
         throw new BundleTreeError('unsafe_install_config', {
           field: 'pnpm-workspace.yaml',
@@ -631,14 +634,14 @@ export async function runBundle(
           platform,
         },
       );
-      if (inputs.workspace !== undefined) {
-        await writeNewFile(
-          at(installDir, 'pnpm-workspace.yaml'),
-          inputs.workspace,
-          0o600,
-          { fs, platform },
-        );
-      }
+      // Always a workspace file here: pnpm searches the directory and then
+      // every parent for one, and an ancestor's would apply to the install.
+      await writeNewFile(
+        at(installDir, 'pnpm-workspace.yaml'),
+        inputs.workspace ?? GENERATED_WORKSPACE_YAML,
+        0o600,
+        { fs, platform },
+      );
       if (inputs.stagedNpmrc !== undefined) {
         // Registry and boolean resolution lines only (credentials and every
         // other key are not staged); never copied to the output.
@@ -679,10 +682,24 @@ export async function runBundle(
         );
       }
 
-      // Probe from an empty directory: inside the install directory pnpm would
-      // honour the app's packageManager and report the pnpm it switched to,
-      // not the host's.
+      // Probe from a directory that holds only a workspace file and a bare
+      // manifest: inside the install directory pnpm would honour the app's
+      // packageManager and report the pnpm it switched to, and without the
+      // workspace file an ancestor's `package.json` `packageManager` would do
+      // the same.
       await fs.mkdir(at(stagingRoot, 'probe'), 0o700);
+      await writeNewFile(
+        at(stagingRoot, 'probe', 'pnpm-workspace.yaml'),
+        GENERATED_WORKSPACE_YAML,
+        0o600,
+        { fs, platform },
+      );
+      await writeNewFile(
+        at(stagingRoot, 'probe', 'package.json'),
+        json({ name: 'smrt-desktop-probe', private: true }),
+        0o600,
+        { fs, platform },
+      );
       const version = await seams.pnpmVersion(
         childEnv,
         at(stagingRoot, 'probe'),

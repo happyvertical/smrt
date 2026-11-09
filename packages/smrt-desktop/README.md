@@ -1095,28 +1095,63 @@ app's directory itself:
 
 - `package.json` without `scripts`, `packageManager` and `devEngines`. The
   last two make pnpm 10 and 11 download and run another pnpm than the host's;
-  the report's `host.pnpm` is the version probed from an empty directory, so
+  the report's `host.pnpm` is the version probed from a bare directory, so
   it is the pnpm that really ran, and a differing `packageManager` only warns.
-- `pnpm-lock.yaml`, `pnpm-workspace.yaml` (if any, verbatim, hash recorded)
-  and `patches/`.
+- `pnpm-lock.yaml`, `patches/` and a `pnpm-workspace.yaml`: the app's own
+  (verbatim, hash recorded) after the key allowlist below, or a generated
+  `packages: []` when the app has none. A workspace file is always present
+  because pnpm looks for one in the install directory and then in every parent
+  directory; staging sits beside `--out`, normally inside the app and often
+  inside a monorepo, so without it an ancestor's `pnpm-workspace.yaml`
+  (`overrides`, `catalog`, `pnpmfile`, `configDependencies`) would apply. The
+  version probe runs in a sibling directory with the same stop file and a bare
+  `package.json`, so an ancestor's `packageManager` cannot switch the probed
+  pnpm either. (`--ignore-workspace` is not used: it also stops pnpm reading
+  the directory's own `overrides`, `catalog` and `patchedDependencies`, and
+  the frozen install then fails with a lockfile config mismatch.) Nothing of an
+  ancestor's `package.json` or `.npmrc` reaches the install: the staged
+  `package.json` is the nearest project manifest, and only the filtered
+  `.npmrc` below is staged.
 - `.npmrc` **filtered**: only `registry=`, `@scope:registry=` (an `http(s)` URL
-  without credentials) and the booleans `auto-install-peers`,
+  without credentials and without `${...}`) and the booleans `auto-install-peers`,
   `dedupe-peer-dependents`, `exclude-links-from-lockfile` and
   `strict-peer-dependencies` are staged; the SHA-256 of what was staged is
   `inputs.npmrcSha256`. Every other line is dropped with a count in the
   warnings. **Credentials are not read from the app**: for a private
-  registry, put the `_authToken` line (a literal token; `${VAR}` is not
-  expanded because the child environment is an allowlist) in the build user's
-  own `~/.npmrc`, which pnpm reads.
+  registry, put the `_authToken` line (a literal token; a line containing
+  `${...}` is dropped, never staged, and the child environment is an
+  allowlist) in the build user's own `~/.npmrc`, which pnpm reads.
+
+**Trust model for `pnpm-workspace.yaml`.** The app author supplies this file
+and is trusted for dependency resolution only, not for pnpm's own behaviour.
+pnpm 10 and 11 honour many more settings from it than the lockfile needs
+(`storeDir`, `virtualStoreDir`, `modulesDir`, `lockfileDir`, `cacheDir`,
+`stateDir`, `strictSsl`, `registries`, `ca`, `proxy`, ... and the code-loading
+`pnpmfile`, `globalPnpmfile`, `configDependencies`), and the command line flags
+the bundler passes do not override them. So the file is checked against a
+**top-level key allowlist** by a small line scanner (no YAML parser): the
+allowed keys are `packages`, `overrides`, `catalog`, `catalogs`,
+`patchedDependencies`, `packageExtensions`, `peerDependencyRules`,
+`allowedDeprecatedVersions`, `supportedArchitectures`, `onlyBuiltDependencies`,
+`neverBuiltDependencies`, `ignoredBuiltDependencies`, `autoInstallPeers`,
+`dedupePeerDependents`, `excludeLinksFromLockfile` and
+`strictPeerDependencies` (camelCase only; a kebab-case spelling is not on the
+list and is refused). Any other key fails the bundle, as does anything that
+makes the top-level keys hard to read statically: a second YAML document, a
+flow-mapping or sequence root, an indented root, a tab, an anchor, alias, tag or
+merge key, a quoted key, a duplicate key, a backslash. The indented content
+under an allowed key is not interpreted, except that a non-registry specifier
+(`link:`, `file:`, `portal:`, `workspace:`, git or `http(s)://`) under
+`overrides`, `catalog` or `catalogs`, and a `..` or absolute path under
+`packages` or `patchedDependencies`, are refused.
 
 A `pnpmfile` or `global-pnpmfile` line in `.npmrc`, a `pnpmfile`,
-`globalPnpmfile` or `configDependencies` setting in `pnpm-workspace.yaml` (at
-any depth, in any spelling, including a quoted key written with an escape) or
-under the `pnpm` field of `package.json` fails the bundle before anything is
-installed (`unsafe_install_config`, exit 3): those settings make pnpm load
-JavaScript during the install, which `--ignore-scripts` does not stop.
-`--ignore-pnpmfile` is passed as well, so a `.pnpmfile.cjs` or a hook in the
-build user's global pnpm configuration is not loaded either.
+`globalPnpmfile` or `configDependencies` setting under the `pnpm` field of
+`package.json`, or any workspace-file problem above fails the bundle before
+anything is installed (`unsafe_install_config`, exit 3). The error lists only
+setting or key names and fixed labels, never values. `--ignore-pnpmfile` is
+passed as well, so a `.pnpmfile.cjs` or a hook in the build user's global pnpm
+configuration is not loaded either.
 
 ### Features and the size budget
 
@@ -1189,7 +1224,7 @@ deterministic as the app build; its hash is recorded, not rebuilt.
 | 0 | ok | bundle published, every check green |
 | 1 | `internal` | a bug; the message never carries a path or a secret |
 | 2 | `usage` | bad flag, unsupported target, unpinned Node version, `--measure` for a cross target |
-| 3 | `invalid_input` | missing app files, bad configuration, a non-registry dependency, a pnpmfile or config dependency, no `--bridge`, `--out` not empty |
+| 3 | `invalid_input` | missing app files, bad configuration, a non-registry dependency, a pnpmfile, config dependency or a `pnpm-workspace.yaml` key outside the allowlist, no `--bridge`, `--out` not empty |
 | 4 | `provenance` | Node checksum mismatch, redirect or HTTP error from nodejs.org, lockfile drift, integrity failure |
 | 5 | `verification` | wrong-architecture native, symlink, secret, removed package imported, install script without a prebuilt binary, manifests that do not round-trip |
 | 6 | `budget` | `--max-size` exceeded |
@@ -1220,7 +1255,7 @@ below did.
 | B1 | Node binary provenance: tampered download, redirect, poisoned cache, wrong version or architecture | committed SHA-256 pins (produced by `scripts/update-node-pins.mjs`), constant HTTPS URL, redirects refused, size caps, hash on every use including cache hits | `rejects a Node archive whose sha256 differs from the pin`; `re-verifies a cached archive and refuses a poisoned cache entry`; `refuses an unpinned Node version before any network or file access`; `refuses any redirect from the dist host`; `aborts a download larger than the cap`; `refuses to run with TLS verification disabled`; `rejects a Node binary built for another architecture` |
 | B2 | Archive extraction: tar slip, link members, pax overrides, bombs | one-member reader, output name is ours, header checksums, gzip and member caps | `extracts only the named member and writes nothing else`; `rejects a symlink or hardlink member with the wanted name`; `ignores ../ and absolute member names (they never match)`; `stops a gzip bomb at the expansion cap`; `rejects a header with a bad checksum`; `honours a pax path record for the Node member` |
 | B3 | npm integrity, lockfile drift, dependency confusion | `--frozen-lockfile`, only registry specifiers and resolutions, lockfile and manifest hashes recorded, failure output never echoed | `builds the exact pnpm argv for each target`; `rejects link:, file:, git and tarball production dependencies`; `rejects production dependencies that are not registry packages`; `rejects a lockfile package resolved from a tarball URL or git`; `records lockfile and package.json hashes`; `classifies a failed install by its output without echoing it`; `fails when package.json drifts from the lockfile` (opt-in end to end) |
-| B4 | Code running on the build host during the install: lifecycle scripts, pnpm hooks, a different pnpm | scripts never run (host or cross), staged manifest has no scripts, `packageManager` or `devEngines`, `--ignore-pnpmfile` and `pm-on-fail=ignore`, `pnpmfile`/`globalPnpmfile`/`configDependencies` fail the bundle, only registry lines of `.npmrc` are staged, side-effects cache off, install-script packages without a prebuilt binary fail | `never passes a flag that enables scripts for any target`; `never runs scripts: the staged package.json has none and argv is the frozen form`; `always ignores pnpmfile hooks and never lets pnpm switch versions`; `removes packageManager and devEngines so pnpm cannot switch to another version`; `probes the version from an empty directory outside the install directory`; `finds them nested, quoted, in flow style, kebab-cased or in another case`; `fails closed on a quoted key spelled with an escape`; `fails on pnpmfile, global-pnpmfile and config-dependencies keys without echoing values`; `stages only registry and boolean lines of .npmrc and records their hash`; `fails a package with an install script and no prebuilt binary`; `allows the closed list of harmless postinstall packages` |
+| B4 | Code running on the build host during the install: lifecycle scripts, pnpm hooks, a different pnpm | scripts never run (host or cross), staged manifest has no scripts, `packageManager` or `devEngines`, `--ignore-pnpmfile` and `pm-on-fail=ignore`, `pnpmfile`/`globalPnpmfile`/`configDependencies` and every other `pnpm-workspace.yaml` key outside the allowlist fail the bundle, a workspace file in the install and probe directories stops pnpm reading an ancestor's, only registry lines of `.npmrc` are staged (none with `${...}`), side-effects cache off, install-script packages without a prebuilt binary fail | `never passes a flag that enables scripts for any target`; `never runs scripts: the staged package.json has none and argv is the frozen form`; `always ignores pnpmfile hooks and never lets pnpm switch versions`; `removes packageManager and devEngines so pnpm cannot switch to another version`; `probes the version from a bare directory outside the install directory`; `gives the install and the version probe their own workspace file when the app has none`; `ignores pnpm configuration in an ancestor of --out` (opt-in end to end); `refuses the path, TLS or network key %s and reports only its name`; `fails closed on %s`; `refuses the non-registry specifier %s under overrides and catalogs`; `drops a registry URL that expands an environment variable`; `fails on pnpmfile, global-pnpmfile and config-dependencies keys without echoing values`; `stages only registry and boolean lines of .npmrc and records their hash`; `fails a package with an install script and no prebuilt binary`; `allows the closed list of harmless postinstall packages` |
 | B5 | Path traversal and symlink escape while copying | lstat walk, `O_NOFOLLOW` open with identity check, validated segments, `O_EXCL` writes, real containment | `rejects a build directory outside the application`; `rejects a symlink anywhere in the tree without following it`; `rejects FIFOs and, under policy, skips them`; `refuses a file replaced by a different inode between lstat and open`; `refuses a file swapped for a symlink after the walk (O_NOFOLLOW)`; `refuses an ancestor swapped for a symlink during the walk`; `refuses a file opened through a symlinked ancestor even if its identity matches`; `refuses to write through anything already at the destination` |
 | B6 | TOCTOU on the output directory, and `--force` deleting something that is not a bundle | private staging next to the output, single `rename`; an existing output must be empty, or with `--force` empty or the output of an earlier bundle run (checked when planning and again on the directory after it is moved aside), and only then is it deleted | `replaces an empty output directory but refuses a non-empty one`; `refuses an output that is a symlink or a file`; `publishes by rename and leaves no staging behind`; `moves a previous bundle aside before deleting it when replacing`; `refuses a directory holding unrelated files and leaves it untouched`; `refuses a bundle layout whose report does not parse, or with extra names`; `refuses a bundle-shaped directory with no report and one whose parts are links`; `refuses a symlink at the output`; `accepts an empty directory and a real earlier bundle`; `checks again after moving the directory aside and puts it back`; `refuses --force on a directory that holds unrelated files`; `refuses a non-empty output directory that appears before publishing`; `removes staging and leaves the output untouched when the build fails` |
 | B7 | Wrong-architecture or wrong-libc binaries | header parsers over every file by magic bytes, extension rule, libc from the ELF interpreter and `DT_NEEDED` (musl includes the unversioned `libc.so`; an addon naming no recognised libc and a library outside the glibc-companion list is `unknown` and refused), exceptions delete | `accepts thin arm64 and x86_64 addons (MH_BUNDLE and MH_DYLIB)`; `rejects a fat header whose slice header disagrees`; `rejects a Java class file mistaken for fat Mach-O`; `rejects a musl addon on a gnu target (DT_NEEDED)`; `rejects a musl addon that needs the unversioned libc.so on a gnu target`; `fails closed on an addon whose needed libraries name no recognised libc`; `keeps accepting addons that need only glibc companions or the GCC runtime`; `rejects PE32 (even with an x64 machine) and ARM64EC DLLs`; `rejects a .node file that is not a native binary`; `returns a fixed reason for every prefix of every sample`; `rejects a native binary for another architecture` |

@@ -9,9 +9,10 @@ import { BundleTreeError } from './tree-errors.js';
  * run without a shell on every platform. Lifecycle scripts NEVER run, host or
  * cross: `--ignore-scripts` is unconditional and there is no option to turn it
  * off. Neither does any JavaScript the app configures for pnpm itself:
- * `--ignore-pnpmfile` is unconditional and the app's `configDependencies`,
- * `pnpmfile` and `globalPnpmfile` settings fail the bundle (`--ignore-scripts`
- * does not cover pnpmfile hooks). Natives in scope ship as prebuilt optional
+ * `--ignore-pnpmfile` is unconditional and only an allowlist of top-level keys
+ * of the app's `pnpm-workspace.yaml` is staged (`configDependencies`,
+ * `pnpmfile`, `globalPnpmfile` and every path or TLS setting fail the bundle;
+ * `--ignore-scripts` does not cover pnpmfile hooks). Natives in scope ship as prebuilt optional
  * packages; a package that needs a build step is reported by
  * `findBuildStepPackages` and fails the bundle.
  *
@@ -268,21 +269,161 @@ function codeLoadingSettingsIn(key: string): string[] {
 }
 
 /**
- * Code-loading settings in the app's `pnpm-workspace.yaml`, as static setting
- * names (never file text). It is a conservative text scan, not a YAML parser,
- * and fails closed: a setting is found wherever its name appears outside a
- * full-line comment (block key, flow mapping, quoted key, anchor), and a
- * backslash escape, which could spell a key without writing it, is reported as
- * `escaped YAML key`.
+ * The `pnpm-workspace.yaml` written into the install directory when the app
+ * has none. pnpm looks for a workspace file in the working directory and then
+ * in every parent, so without a file here an ancestor of the staging directory
+ * (staging sits beside `--out`, normally inside the app and often inside a
+ * monorepo) could turn the install into a workspace install and bring its own
+ * `overrides`, `catalog`, `pnpmfile` or `configDependencies`. A workspace file
+ * in the directory itself ends that search. `--ignore-workspace` is NOT used:
+ * with it pnpm also stops reading the settings of the file in the directory
+ * (`overrides`, `catalog`, `patchedDependencies`), and a frozen install then
+ * fails with `ERR_PNPM_LOCKFILE_CONFIG_MISMATCH`.
  */
-export function findWorkspaceCodeLoading(yaml: string): string[] {
+export const GENERATED_WORKSPACE_YAML = 'packages: []\n';
+
+/**
+ * Top-level keys of an app `pnpm-workspace.yaml` that are staged. Everything
+ * else is refused: pnpm 10 and 11 honour many more settings from this file
+ * (`storeDir`, `virtualStoreDir`, `modulesDir`, `lockfileDir`, `cacheDir`,
+ * `strictSsl`, `registries`, `ca`, `proxy`, ...) and none of them can be
+ * overridden by the command line flags the bundler passes, so a key outside
+ * this list could write outside the staging directory or weaken TLS.
+ * `packages` is kept for apps that carry one; the keys below it are checked
+ * for paths that leave the directory.
+ */
+const WORKSPACE_ALLOWED_KEYS: ReadonlySet<string> = new Set([
+  'packages',
+  'overrides',
+  'catalog',
+  'catalogs',
+  'patchedDependencies',
+  'packageExtensions',
+  'peerDependencyRules',
+  'allowedDeprecatedVersions',
+  'supportedArchitectures',
+  'onlyBuiltDependencies',
+  'neverBuiltDependencies',
+  'ignoredBuiltDependencies',
+  'autoInstallPeers',
+  'dedupePeerDependents',
+  'excludeLinksFromLockfile',
+  'strictPeerDependencies',
+]);
+/** Keys whose content names dependency specifiers, which must be registry ones. */
+const WORKSPACE_SPEC_KEYS: ReadonlySet<string> = new Set([
+  'overrides',
+  'catalog',
+  'catalogs',
+]);
+/** Keys whose content names paths, which must stay inside the directory. */
+const WORKSPACE_PATH_KEYS: ReadonlySet<string> = new Set([
+  'packages',
+  'patchedDependencies',
+]);
+
+const WORKSPACE_TOP_KEY = /^([A-Za-z][A-Za-z0-9_.-]*) *:(?: +(.*))?$/;
+const NON_REGISTRY_SPEC =
+  /(?:^|[\s'"[,{@])(?:link|file|portal|workspace|git|github|gitlab|bitbucket|gist|ssh|git\+[a-z]+):(?=\S)|https?:\/\//i;
+const PATH_ESCAPE =
+  /(?:^|[\s'"[,{/])\.\.(?:$|[\s'"\],}/])|(?:^|[\s'"[,{])(?:\/|~|[A-Za-z]:[\\/])/;
+
+/** Remove a trailing ` # comment` unless the line has a quote (then keep all). */
+function withoutTrailingComment(text: string): string {
+  return /["']/.test(text) ? text : text.replace(/\s#.*$/, '');
+}
+
+/**
+ * Why an app `pnpm-workspace.yaml` cannot be staged, as static labels and
+ * top-level KEY NAMES only (never values). Empty when the file is acceptable.
+ *
+ * Zero-dependency and fail-closed: this is a line scanner for the one shape
+ * the file takes (a block mapping starting in column 0), not a YAML parser.
+ * Anything that makes the top-level keys hard to read statically is refused:
+ * more than one document, a flow-mapping or sequence root, an indented root, a
+ * tab, an anchor, alias, tag or merge key, a quoted or non-plain key, a
+ * duplicate key and a backslash (an escape could spell a key without writing
+ * it). Every top-level key must be in `WORKSPACE_ALLOWED_KEYS`; the indented
+ * content under an allowed key is not interpreted, except that under
+ * `overrides`/`catalog`/`catalogs` a non-registry specifier (`link:`, `file:`,
+ * git or `http(s)://`) and under `packages`/`patchedDependencies` a path that
+ * leaves the directory is refused.
+ */
+export function findUnsafeWorkspaceConfig(yaml: string): string[] {
   const found = new Set<string>();
-  const body = yaml
-    .split(/\r?\n/)
-    .filter((line) => !line.trimStart().startsWith('#'))
-    .join('\n');
-  for (const name of codeLoadingSettingsIn(body)) found.add(name);
-  if (body.includes('\\')) found.add('escaped YAML key');
+  const seen = new Set<string>();
+  let current: string | undefined;
+  let started = false;
+  let markers = 0;
+  if (/[\u0085\u2028\u2029]/.test(yaml)) found.add('unsupported line break');
+
+  const checkContent = (text: string): void => {
+    if (current === undefined) return;
+    const checked = withoutTrailingComment(text);
+    if (WORKSPACE_SPEC_KEYS.has(current) && NON_REGISTRY_SPEC.test(checked)) {
+      found.add(`${current} (non-registry specifier)`);
+    }
+    if (WORKSPACE_PATH_KEYS.has(current) && PATH_ESCAPE.test(checked)) {
+      found.add(`${current} (path outside the directory)`);
+    }
+  };
+
+  for (const raw of yaml.replace(/^﻿/, '').split(/\r\n|\r|\n/)) {
+    const trimmed = raw.trim();
+    if (trimmed.length === 0 || trimmed.startsWith('#')) continue;
+    if (raw.includes('\t')) found.add('tab character');
+    if (raw.includes('\\')) found.add('escaped YAML key');
+
+    if (raw.startsWith(' ')) {
+      if (started) checkContent(trimmed);
+      else found.add('indented root');
+      continue;
+    }
+
+    if (/^---(?:\s|$)/.test(raw)) {
+      markers += 1;
+      const rest = raw.slice(3).trim();
+      if (started || markers > 1) found.add('multiple YAML documents');
+      else if (rest.length > 0 && !rest.startsWith('#')) {
+        found.add('unsupported YAML structure');
+      }
+      continue;
+    }
+    if (/^\.\.\.(?:\s|$)/.test(raw)) {
+      found.add('multiple YAML documents');
+      continue;
+    }
+
+    const first = raw[0] as string;
+    if (first === '%') found.add('YAML directive');
+    else if (first === '{') found.add('flow mapping root');
+    else if (first === '[' || first === '-') found.add('sequence root');
+    else if (first === '&' || first === '*' || first === '!') {
+      found.add('anchor, alias or tag');
+    } else if (first === '"' || first === "'") found.add('quoted key');
+    else if (raw.startsWith('<<')) found.add('merge key');
+    else {
+      const match = WORKSPACE_TOP_KEY.exec(raw);
+      if (match === null) {
+        found.add('unsupported YAML structure');
+      } else {
+        started = true;
+        const key = match[1] as string;
+        const allowed = WORKSPACE_ALLOWED_KEYS.has(key);
+        if (seen.has(key)) found.add(`${key} (duplicate)`);
+        seen.add(key);
+        if (!allowed) found.add(key.length <= 64 ? key : 'unrecognised key');
+        current = allowed ? key : undefined;
+        const value = (match[2] ?? '').trim();
+        if (/^[&*!]/.test(value)) found.add('anchor, alias or tag');
+        if (value.length > 0) checkContent(value);
+        continue;
+      }
+    }
+    // A refused line still starts a new top-level entry.
+    started = true;
+    current = undefined;
+  }
   return [...found].sort();
 }
 
@@ -330,7 +471,8 @@ export interface StagedNpmrc {
  * `@scope:registry` (an `http(s)` URL without credentials) and four boolean
  * resolution settings. Everything else is dropped, including every `_auth*`
  * line (credentials come from the build user's own `~/.npmrc`) and anything
- * that expands an environment variable. A `pnpmfile`, `global-pnpmfile` or
+ * that expands an environment variable (`${...}`, even inside a registry URL).
+ * A `pnpmfile`, `global-pnpmfile` or
  * `config-dependencies` key fails the bundle (`unsafe_install_config`).
  */
 export function stageNpmrc(text: string): StagedNpmrc {
@@ -346,7 +488,10 @@ export function stageNpmrc(text: string): StagedNpmrc {
     const key = (eq === -1 ? line : line.slice(0, eq)).trim();
     const value = eq === -1 ? '' : line.slice(eq + 1).trim();
     for (const name of codeLoadingSettingsIn(key)) unsafe.add(name);
+    // `${VAR}` is expanded by pnpm from the environment; never stage it.
+    const expands = line.includes('${');
     const registry =
+      !expands &&
       (key === 'registry' || NPMRC_SCOPED_REGISTRY.test(key)) &&
       NPMRC_URL.test(value);
     const boolean =

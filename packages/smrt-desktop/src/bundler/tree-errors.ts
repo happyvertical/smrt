@@ -36,7 +36,7 @@ const TREE_ERROR_MESSAGES = {
     'The output directory must not be inside or contain the application',
   out_dir_not_empty: 'The output directory exists and is not empty',
   unsafe_install_config:
-    'The application configures pnpm to load code during the install (pnpmfile, global-pnpmfile or configDependencies)',
+    'The application configures pnpm beyond what a bundle install allows (pnpmfile, global-pnpmfile, configDependencies, or a pnpm-workspace.yaml key or specifier outside the allowlist)',
   invalid_package_json: 'An installed package has an invalid package.json',
   unsupported_resolution:
     'A dependency resolves from a link, file, git, workspace or URL source',

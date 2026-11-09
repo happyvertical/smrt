@@ -7,7 +7,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { parseBundleManifest } from '../install/bundle-manifest.js';
 import {
@@ -1040,6 +1040,9 @@ describe('pnpm configuration the app brings', () => {
     ['configDependencies', 'configDependencies:\n  hooks: 1.0.0+sha512-abc\n'],
     ['pnpmfile', 'pnpmfile: ./hooks.cjs\n'],
     ['globalPnpmfile', 'globalPnpmfile: ./global.cjs\n'],
+    ['storeDir', 'storeDir: /tmp/CANARY-outside\n'],
+    ['virtualStoreDir', 'virtualStoreDir: ../../escape\n'],
+    ['strictSsl', 'strictSsl: false\n'],
   ])('fails before any install when pnpm-workspace.yaml sets %s', async (name, yaml) => {
     const item = fixture({ workspaceYaml: yaml });
     const error = await failure(runBundle(await item.plan(), item.seams()));
@@ -1047,8 +1050,20 @@ describe('pnpm configuration the app brings', () => {
     expect(error.exitCode).toBe(3);
     expect(error.stage).toBe('inputs');
     expect(error.subjects).toEqual([name]);
+    expect(JSON.stringify(error)).not.toContain('CANARY-outside');
     expect(item.calls).toHaveLength(0);
     assertNothingLeft(item);
+  });
+
+  it('fails before any install on a non-registry override and lists no values', async () => {
+    const item = fixture({
+      workspaceYaml: 'overrides:\n  a: link:/CANARY-secret/dir\n',
+    });
+    const error = await failure(runBundle(await item.plan(), item.seams()));
+    expect(error.code).toBe('unsafe_install_config');
+    expect(error.subjects).toEqual(['overrides (non-registry specifier)']);
+    expect(JSON.stringify(error)).not.toContain('CANARY-secret');
+    expect(item.calls).toHaveLength(0);
   });
 
   it.each([
@@ -1110,12 +1125,135 @@ describe('pnpm configuration the app brings', () => {
     expect(result.report.inputs.npmrcSha256).toBeUndefined();
   });
 
+  it('drops a registry line that expands an environment variable', async () => {
+    const item = fixture({
+      npmrc: `registry=https://$\x7bREGISTRY_HOST}/npm/\nauto-install-peers=false\n`,
+    });
+    await runBundle(await item.plan(), item.seams());
+    expect(item.calls[0]?.npmrc).toBe('auto-install-peers=false\n');
+  });
+
+  it('writes a minimal workspace file when the app has none, and records no hash for it', async () => {
+    const item = fixture();
+    const result = await runBundle(await item.plan(), item.seams());
+    expect(item.calls[0]?.workspace).toBe('packages: []\n');
+    expect(result.report.inputs.workspaceYamlSha256).toBeUndefined();
+  });
+
   it('passes an ordinary workspace file through unchanged and records its hash', async () => {
     const yaml = 'overrides:\n  lodash: 4.17.21\n# pnpmfile: not used\n';
     const item = fixture({ workspaceYaml: yaml });
     const result = await runBundle(await item.plan(), item.seams());
     expect(item.calls[0]?.workspace).toBe(yaml);
     expect(result.report.inputs.workspaceYamlSha256).toBe(sha256(yaml));
+  });
+});
+
+/** Where pnpm would find a workspace file: the directory or the nearest parent with one. */
+function nearestWorkspaceDir(start: string): string | undefined {
+  for (let dir = start; ; dir = dirname(dir)) {
+    if (existsSync(join(dir, 'pnpm-workspace.yaml'))) return dir;
+    if (dirname(dir) === dir) return undefined;
+  }
+}
+
+describe('configuration in an ancestor of --out', () => {
+  const HOSTILE_WORKSPACE = [
+    "packages: ['**']",
+    'pnpmfile: ./CANARY-evil-pnpmfile.cjs',
+    'configDependencies:',
+    '  evil: 1.0.0+sha512-CANARY',
+    'overrides:',
+    '  a: link:../CANARY-elsewhere',
+    '',
+  ].join('\n');
+
+  function hostileAncestor(item: Fixture): void {
+    // `root` holds the app and `dist`; `dist` holds --out and the staging
+    // directory, so all three are below it.
+    writeFileSync(join(item.root, 'pnpm-workspace.yaml'), HOSTILE_WORKSPACE);
+    writeFileSync(
+      join(item.root, 'package.json'),
+      JSON.stringify({
+        name: 'hostile-root',
+        packageManager: 'pnpm@9.0.0',
+        pnpm: { overrides: { a: '0.0.1' }, pnpmfile: 'CANARY.cjs' },
+      }),
+    );
+    writeFileSync(
+      join(item.root, '.npmrc'),
+      'registry=http://127.0.0.1:9/\nstore-dir=/tmp/CANARY-store\n',
+    );
+  }
+
+  function recording(item: Fixture) {
+    const base = item.seams();
+    const installFrom: Array<string | undefined> = [];
+    const probeFrom: Array<string | undefined> = [];
+    const installCwd: string[] = [];
+    const probeCwd: string[] = [];
+    return {
+      installFrom,
+      probeFrom,
+      installCwd,
+      probeCwd,
+      seams: item.seams({
+        runPnpm: async (request) => {
+          installFrom.push(nearestWorkspaceDir(request.cwd));
+          installCwd.push(request.cwd);
+          return base.runPnpm(request);
+        },
+        pnpmVersion: async (_env, cwd) => {
+          probeFrom.push(nearestWorkspaceDir(cwd));
+          probeCwd.push(cwd);
+          return '11.25.0';
+        },
+      }),
+    };
+  }
+
+  it('gives the install and the version probe their own workspace file when the app has none', async () => {
+    const item = fixture();
+    hostileAncestor(item);
+    const seen = recording(item);
+    await runBundle(await item.plan(), seen.seams);
+    expect(seen.installFrom).toHaveLength(1);
+    expect(seen.probeFrom).toHaveLength(1);
+    // The nearest workspace file is in the directory pnpm runs in, so the
+    // ancestor's is never reached.
+    expect(seen.installFrom[0]).toBe(seen.installCwd[0]);
+    expect(seen.probeFrom[0]).toBe(seen.probeCwd[0]);
+    expect(seen.installFrom[0]).not.toBe(item.root);
+    expect(item.calls[0]?.workspace).toBe('packages: []\n');
+  });
+
+  it('keeps the app workspace file, not the ancestor one, and records only the app hash', async () => {
+    const yaml = 'overrides:\n  a: 1.0.0\n';
+    const item = fixture({ workspaceYaml: yaml });
+    hostileAncestor(item);
+    const seen = recording(item);
+    const result = await runBundle(await item.plan(), seen.seams);
+    expect(seen.installFrom[0]).toBe(seen.installCwd[0]);
+    expect(item.calls[0]?.workspace).toBe(yaml);
+    expect(result.report.inputs.workspaceYamlSha256).toBe(sha256(yaml));
+  });
+
+  it('puts nothing of the ancestor files in the install argv, staged files or output', async () => {
+    const plain = fixture();
+    await runBundle(await plain.plan(), plain.seams());
+    const item = fixture();
+    hostileAncestor(item);
+    const result = await runBundle(await item.plan(), item.seams());
+    const call = item.calls[0];
+    expect(call?.args).toEqual(plain.calls[0]?.args);
+    expect(call?.hadNpmrc).toBe(false);
+    expect(call?.workspace).not.toContain('CANARY');
+    const everything =
+      JSON.stringify(result) +
+      [...readTree(item.outDir).values()]
+        .map((b) => b.toString('latin1'))
+        .join('');
+    expect(everything).not.toContain('CANARY');
   });
 });
 
@@ -1133,7 +1271,7 @@ describe('the pnpm version', () => {
     expect(item.calls[0]?.manifest.name).toBe('fixture-app');
   });
 
-  it('probes the version from an empty directory outside the install directory', async () => {
+  it('probes the version from a bare directory outside the install directory', async () => {
     const item = fixture();
     let listing: string[] | undefined;
     let probed: string | undefined;
@@ -1147,7 +1285,9 @@ describe('the pnpm version', () => {
         },
       }),
     );
-    expect(listing).toEqual([]);
+    // Only the files that stop pnpm's upward search for a workspace file and
+    // a manifest.
+    expect(listing?.sort()).toEqual(['package.json', 'pnpm-workspace.yaml']);
     expect(probed).not.toBe(item.calls[0]?.cwd);
     expect(probed?.startsWith(item.appDir)).toBe(false);
   });
