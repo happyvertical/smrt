@@ -134,6 +134,12 @@ export interface VaultPendingRevocation {
   deviceId: string;
   publicKey: string;
   revokedAt: string;
+  /**
+   * When the recovery secret was proven to open the authority record, as a
+   * condition of recording this revocation (#4818). Null only for a state
+   * recorded before that rule; the rotation it needs may not be possible.
+   */
+  provenAt: string | null;
 }
 
 /**
@@ -186,6 +192,26 @@ export interface VaultKeyLifecycleStatus {
   rotationRequired: boolean;
   /** True after fork evidence; sealing is refused until a rotation merges. */
   conflict: boolean;
+  /**
+   * Why sealing is stopped on this device and whether the rotation that
+   * clears it is known to be possible. Null while nothing requires one.
+   */
+  rotation: VaultRotationStatus | null;
+}
+
+export type VaultRotationReason = 'revocation' | 'conflict';
+
+/**
+ * A rotation clears a pending revocation or merges a fork, and it needs the
+ * recovery secret. `secretProven` is true only when the secret was proven for
+ * every reason: a revocation records only after the proof, so it is proven
+ * unless the state predates that rule. Fork evidence arrives from the relay
+ * unasked, is never refused, and so is never proven; ask the user for the
+ * secret and check it (`checkRecoverySecret`) before offering the merge.
+ */
+export interface VaultRotationStatus {
+  reasons: VaultRotationReason[];
+  secretProven: boolean;
 }
 
 /** JSON-safe request a new device shows to an enrolled device. */
@@ -318,7 +344,15 @@ export interface VaultKeyLifecycle {
     head: VaultAccountHead,
     authorityRecord?: Uint8Array | null,
   ): Promise<VaultKeyLifecycleStatus>;
-  revokeDevice(deviceId: string): Promise<VaultKeyLifecycleStatus>;
+  /**
+   * Record a pending revocation. Requires the recovery secret as proof that
+   * the rotation that publishes it can run (`recovery_rejected` otherwise,
+   * and nothing is recorded). Sealing stops on this device until `rotate`.
+   */
+  revokeDevice(
+    deviceId: string,
+    input: { recoverySecret: string },
+  ): Promise<VaultKeyLifecycleStatus>;
   rotate(input: {
     recoverySecret: string;
     newRecoverySecret?: string;
@@ -518,6 +552,7 @@ export function serializeVaultDeviceRegistry(
       deviceId: entry.deviceId,
       publicKey: entry.publicKey,
       revokedAt: entry.revokedAt,
+      provenAt: entry.provenAt,
     })),
     pendingRotation: registry.pendingRotation && {
       generation: registry.pendingRotation.generation.toString(),
@@ -564,6 +599,11 @@ export function parseVaultDeviceRegistry(text: string): VaultDeviceRegistry {
             deviceId: identifier(entry.deviceId),
             publicKey: fixedBytesText(entry.publicKey, KEY_BYTES),
             revokedAt: timestamp(entry.revokedAt),
+            // Absent in state recorded before the proof rule: unproven.
+            provenAt:
+              entry.provenAt === undefined || entry.provenAt === null
+                ? null
+                : timestamp(entry.provenAt),
           };
         },
       ),
@@ -623,7 +663,12 @@ function revokedView(registry: VaultDeviceRegistry) {
     ),
     ...registry.pendingRevocations
       .filter((entry) => !signed.some((device) => sameDevice(device, entry)))
-      .map((entry) => ({ ...entry, effectiveGeneration: null })),
+      .map((entry) => ({
+        deviceId: entry.deviceId,
+        publicKey: entry.publicKey,
+        revokedAt: entry.revokedAt,
+        effectiveGeneration: null,
+      })),
   ];
 }
 
@@ -639,6 +684,21 @@ function knownGenerations(registry: VaultDeviceRegistry) {
     registry.head,
     ...(registry.conflict ? [registry.conflict] : []),
   ]).generations;
+}
+
+function rotationStatus(
+  registry: VaultDeviceRegistry,
+): VaultRotationStatus | null {
+  const reasons: VaultRotationReason[] = [];
+  if (registry.pendingRevocations.length > 0) reasons.push('revocation');
+  if (registry.conflict) reasons.push('conflict');
+  if (reasons.length === 0) return null;
+  return {
+    reasons,
+    secretProven:
+      registry.conflict === null &&
+      registry.pendingRevocations.every((entry) => entry.provenAt !== null),
+  };
 }
 
 function toStatus(registry: VaultDeviceRegistry): VaultKeyLifecycleStatus {
@@ -665,6 +725,7 @@ function toStatus(registry: VaultDeviceRegistry): VaultKeyLifecycleStatus {
     },
     rotationRequired: registry.pendingRevocations.length > 0,
     conflict: registry.conflict !== null,
+    rotation: rotationStatus(registry),
   };
 }
 
@@ -1758,7 +1819,7 @@ export function createVaultKeyLifecycle({
         }
       }),
 
-    revokeDevice: (deviceId) =>
+    revokeDevice: (deviceId, proof) =>
       serial(async () => {
         const id = identifier(deviceId);
         const registry = await requireRegistry();
@@ -1770,6 +1831,11 @@ export function createVaultKeyLifecycle({
           (entry) => entry.deviceId === id,
         );
         if (!device) fail('unknown_device');
+        // Record the revocation only when the rotation that publishes it can
+        // run: the secret must open the record the adopted head signs. A
+        // device holding only its own secret (for example a stolen one) can
+        // neither revoke a peer nor strand this device without a way out.
+        (await authoritySeed(registry, proof?.recoverySecret)).fill(0);
         const next: VaultDeviceRegistry = {
           ...registry,
           pendingRevocations: [
@@ -1778,6 +1844,7 @@ export function createVaultKeyLifecycle({
               deviceId: id,
               publicKey: device.publicKey,
               revokedAt: isoNow(),
+              provenAt: isoNow(),
             },
           ],
         };

@@ -930,7 +930,8 @@ message.
 ### Sealing and reading
 
 - `openSealingKey()` is the only path for sealing new data. It refuses with:
-  - `rotation_required` while a local revocation is pending
+  - `rotation_required` while a local revocation is pending (see `rotation`
+    on `status()`)
   - `generation_conflict` after fork evidence
   - `key_missing` when the device does not yet hold the current key
 
@@ -1042,11 +1043,52 @@ The relay keeps old authority records, so a **leaked** secret keeps its
 authority. Today the remedy is a new account. Authority re-keying is tracked
 in #4807.
 
-`revokeDevice(deviceId)` needs no secret. It records a local pending
-revocation, so this device refuses to seal (`rotation_required`) and refuses
-to enroll until a `rotate` publishes the revocation. Other devices keep
-sealing until they receive that rotation. Unsigned revocations are never
-broadcast, because a stolen device could use them to lock the others out.
+`revokeDevice(deviceId, { recoverySecret })` takes the recovery secret as
+proof, #4818. It opens the authority record the adopted head signs, changes
+nothing else, and only then records a local pending revocation. A wrong,
+missing or superseded secret fails with `recovery_rejected` and records
+nothing, so revoking and rotating succeed or fail together: a revocation never
+exists on a device that cannot rotate. There is no cancel path, so a stolen
+device cannot cancel its own revocation, and with only its own device secret
+it cannot revoke a peer to stop the others sealing. Who may revoke is
+unchanged: whoever holds the recovery secret.
+
+**Caller contract.** Revocation is two calls on one device:
+
+1. `revokeDevice(deviceId, { recoverySecret })`. From here this device refuses
+   to seal (`rotation_required`, so its backups stop) and refuses to enroll.
+   Other devices keep sealing, because unsigned revocations are never
+   broadcast: a stolen device could use them to lock the others out.
+2. `rotate({ recoverySecret })`. Publish the returned head, authority record,
+   recovery record and grants. Sealing resumes on this device and the
+   revocation reaches the peers with the rotation.
+
+Run both in one user flow and ask for the secret once. Between the two calls
+backups on this device are paused, so say so in your UI instead of letting
+each seal fail.
+
+`status().rotation` says why sealing is stopped and whether the rotation is
+known to be possible. It is null while nothing requires one.
+
+| `rotation` | Meaning | Product action |
+| --- | --- | --- |
+| `null` | No rotation needed | none |
+| `{ reasons: ['revocation'], secretProven: true }` | Rotation required and possible: the secret was proven when the revocation was recorded | finish with `rotate` |
+| `{ reasons: ['conflict'], secretProven: false }` | Fork evidence arrived from the relay; the secret has not been proven | ask for the secret, then `rotate` merges |
+| `{ reasons: [...], secretProven: false }` | Any state that includes a conflict, or a revocation recorded by a build that predates the proof | ask for the secret; if it is lost the way out is a new account (#4817) |
+
+`reasons` lists `revocation` and `conflict`. `rotationRequired` and `conflict`
+remain as before.
+
+**The fork differs from a revocation by design.** A revocation is the user's
+own act, so it can be refused without the proof. Fork evidence arrives from
+the relay unasked, and recording it is what stops this device sealing into a
+diverged account; refusing evidence for want of the secret would hide the
+fork. So the conflict is always recorded, and the signal is how a product
+tells that its merge has not been proven possible. `rotate` fails with
+`recovery_rejected` without the secret, and sealing stays stopped until a
+head containing the evidence is adopted. A family with a conflict and no
+secret has no merge: the way out is a new account.
 
 A pending revocation clears only when an adopted head revokes that exact
 device ID and public key. If another device rotates without having seen the
@@ -1066,6 +1108,9 @@ publication.
   send grants that are rejected.
 - Concurrent changes by two holders of the recovery secret fork the account.
   Sealing stops until a merge rotation.
+- A stolen device cannot record a revocation, so it can neither lock peers out
+  of sealing nor strand its own owner: recording needs the recovery secret
+  (#4818), and a revocation cannot be cancelled.
 
 ### Product rules
 

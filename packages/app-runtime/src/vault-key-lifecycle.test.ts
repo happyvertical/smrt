@@ -429,7 +429,9 @@ describe('vault key lifecycle: recovery', () => {
       generation: 1n,
       keyId: staleStatus?.currentKeyId as string,
     });
-    await laptop.lifecycle.revokeDevice('phone');
+    await laptop.lifecycle.revokeDevice('phone', {
+      recoverySecret: RECOVERY_SECRET,
+    });
     const rotated = await laptop.lifecycle.rotate({
       recoverySecret: RECOVERY_SECRET,
     });
@@ -551,7 +553,9 @@ describe('vault key lifecycle: rotation and revocation', () => {
     const phoneGrantBeforeRevoke =
       await phone.lifecycle.createDeviceGrant('tablet');
 
-    const revoked = await laptop.lifecycle.revokeDevice('phone');
+    const revoked = await laptop.lifecycle.revokeDevice('phone', {
+      recoverySecret: RECOVERY_SECRET,
+    });
     expect(revoked.rotationRequired).toBe(true);
     expect(revoked.devices.map((entry) => entry.deviceId)).toEqual([
       'laptop',
@@ -794,7 +798,9 @@ describe('vault key lifecycle: hostile active sender', () => {
         revokedDevices: forgedAdvance.head.revokedDevices,
       },
     });
-    await laptop.lifecycle.revokeDevice('phone');
+    await laptop.lifecycle.revokeDevice('phone', {
+      recoverySecret: RECOVERY_SECRET,
+    });
     const rotated = await laptop.lifecycle.rotate({
       recoverySecret: RECOVERY_SECRET,
     });
@@ -953,7 +959,9 @@ describe('vault key lifecycle: forks', () => {
 
   it('keeps a pending revocation through an unrelated enrollment head', async () => {
     const { laptop, tablet } = await family();
-    await laptop.lifecycle.revokeDevice('phone');
+    await laptop.lifecycle.revokeDevice('phone', {
+      recoverySecret: RECOVERY_SECRET,
+    });
     await enroll(tablet.lifecycle, 'watch');
     const status = await laptop.lifecycle.acceptAccountHead(
       (await tablet.lifecycle.accountHead()).head,
@@ -979,6 +987,184 @@ describe('vault key lifecycle: forks', () => {
       }),
       'rotation_required',
     );
+  });
+});
+
+describe('vault key lifecycle: revocation requires the recovery secret (#4818)', () => {
+  function registryBytes(store: MemoryStore) {
+    return Buffer.from(store.items.get('registry') as Uint8Array).toString();
+  }
+
+  it('threat: a device without the secret cannot record a revocation, so it cannot strand its own sealing', async () => {
+    const { laptop } = await family();
+    const before = registryBytes(laptop.store);
+    for (const input of [
+      { recoverySecret: 'a guess at the credential' },
+      { recoverySecret: '' },
+      {} as { recoverySecret: string },
+      undefined as unknown as { recoverySecret: string },
+    ]) {
+      await expectCode(
+        laptop.lifecycle.revokeDevice('phone', input),
+        'recovery_rejected',
+      );
+    }
+    // Nothing was recorded and sealing is unaffected.
+    expect(registryBytes(laptop.store)).toBe(before);
+    const status = await laptop.lifecycle.status();
+    expect(status?.rotationRequired).toBe(false);
+    expect(status?.rotation).toBeNull();
+    expect(status?.revokedDevices).toEqual([]);
+    await sealingKeyId(laptop.lifecycle);
+  });
+
+  it('threat: a stolen device holding only its own secret cannot lock the others out', async () => {
+    const { phone, laptop } = await family();
+    // The thief has the phone's store but not the recovery secret.
+    const thief = device(clone(phone.store));
+    await expectCode(
+      thief.lifecycle.revokeDevice('laptop', {
+        recoverySecret: 'not the credential',
+      }),
+      'recovery_rejected',
+    );
+    expect((await thief.lifecycle.status())?.rotationRequired).toBe(false);
+    await sealingKeyId(thief.lifecycle);
+    // The legitimate holder of the secret still can.
+    await laptop.lifecycle.revokeDevice('phone', {
+      recoverySecret: RECOVERY_SECRET,
+    });
+  });
+
+  it('records the revocation once the secret is proven, and rotating clears it', async () => {
+    const { laptop } = await family();
+    const status = await laptop.lifecycle.revokeDevice('phone', {
+      recoverySecret: RECOVERY_SECRET,
+    });
+    expect(status.rotationRequired).toBe(true);
+    expect(status.rotation).toEqual({
+      reasons: ['revocation'],
+      secretProven: true,
+    });
+    await expectCode(laptop.lifecycle.openSealingKey(), 'rotation_required');
+    // Revoke and rotate run on the same proof: rotating now succeeds.
+    await laptop.lifecycle.rotate({ recoverySecret: RECOVERY_SECRET });
+    const after = await laptop.lifecycle.status();
+    expect(after?.rotation).toBeNull();
+    expect(after?.rotationRequired).toBe(false);
+    await sealingKeyId(laptop.lifecycle);
+  });
+
+  it('keeps no trace of the secret, only the time it was proven', async () => {
+    const { laptop } = await family();
+    await laptop.lifecycle.revokeDevice('phone', {
+      recoverySecret: RECOVERY_SECRET,
+    });
+    const text = registryBytes(laptop.store);
+    expect(text).not.toContain(RECOVERY_SECRET);
+    expect(JSON.parse(text).pendingRevocations[0].provenAt).toEqual(
+      expect.any(String),
+    );
+  });
+
+  it('threat: a superseded secret cannot record a revocation', async () => {
+    const { laptop } = await family();
+    await laptop.lifecycle.rotate({
+      recoverySecret: RECOVERY_SECRET,
+      newRecoverySecret: NEW_RECOVERY_SECRET,
+    });
+    await expectCode(
+      laptop.lifecycle.revokeDevice('phone', {
+        recoverySecret: RECOVERY_SECRET,
+      }),
+      'recovery_rejected',
+    );
+    expect((await laptop.lifecycle.status())?.rotation).toBeNull();
+    const status = await laptop.lifecycle.revokeDevice('phone', {
+      recoverySecret: NEW_RECOVERY_SECRET,
+    });
+    expect(status.rotation?.secretProven).toBe(true);
+  });
+
+  it('keeps the self and unknown-device refusals, secret or not', async () => {
+    const { laptop } = await family();
+    await expectCode(
+      laptop.lifecycle.revokeDevice('laptop', {
+        recoverySecret: RECOVERY_SECRET,
+      }),
+      'device_conflict',
+    );
+    await expectCode(
+      laptop.lifecycle.revokeDevice('stranger', {
+        recoverySecret: RECOVERY_SECRET,
+      }),
+      'unknown_device',
+    );
+  });
+
+  it('reports a revocation recorded before the proof rule as unproven', async () => {
+    const { laptop } = await family();
+    await laptop.lifecycle.revokeDevice('phone', {
+      recoverySecret: RECOVERY_SECRET,
+    });
+    const legacy = JSON.parse(registryBytes(laptop.store));
+    // State written by an earlier build has no proof timestamp.
+    delete legacy.pendingRevocations[0].provenAt;
+    laptop.store.items.set(
+      'registry',
+      new Uint8Array(Buffer.from(JSON.stringify(legacy))),
+    );
+    const status = await laptop.lifecycle.status();
+    expect(status?.rotation).toEqual({
+      reasons: ['revocation'],
+      secretProven: false,
+    });
+    await expectCode(laptop.lifecycle.openSealingKey(), 'rotation_required');
+  });
+
+  it('threat: fork evidence is recorded without the secret and reports it unproven', async () => {
+    const { laptop, phone, tablet } = await family();
+    const fromPhone = await phone.lifecycle.rotate({
+      recoverySecret: RECOVERY_SECRET,
+    });
+    const fromTablet = await tablet.lifecycle.rotate({
+      recoverySecret: RECOVERY_SECRET,
+    });
+    await laptop.lifecycle.acceptDeviceGrant(
+      grantFor(fromPhone.grants, 'laptop'),
+    );
+    // Evidence arrives from the relay unasked: it must never be refused for
+    // want of the secret, or a diverged device would keep sealing.
+    const forked = await laptop.lifecycle.acceptDeviceGrant(
+      grantFor(fromTablet.grants, 'laptop'),
+    );
+    expect(forked.conflict).toBe(true);
+    expect(forked.rotationRequired).toBe(false);
+    expect(forked.rotation).toEqual({
+      reasons: ['conflict'],
+      secretProven: false,
+    });
+    await expectCode(laptop.lifecycle.openSealingKey(), 'generation_conflict');
+    // Without the secret the merge fails and nothing changes.
+    const before = registryBytes(laptop.store);
+    await expectCode(
+      laptop.lifecycle.rotate({ recoverySecret: 'lost it' }),
+      'recovery_rejected',
+    );
+    expect(registryBytes(laptop.store)).toBe(before);
+    await expectCode(laptop.lifecycle.openSealingKey(), 'generation_conflict');
+    // A revocation recorded during the fork keeps the whole state unproven
+    // until the merge.
+    const both = await laptop.lifecycle.revokeDevice('tablet', {
+      recoverySecret: RECOVERY_SECRET,
+    });
+    expect(both.rotation).toEqual({
+      reasons: ['revocation', 'conflict'],
+      secretProven: false,
+    });
+    await laptop.lifecycle.rotate({ recoverySecret: RECOVERY_SECRET });
+    expect((await laptop.lifecycle.status())?.rotation).toBeNull();
+    await sealingKeyId(laptop.lifecycle);
   });
 });
 
@@ -1242,7 +1428,9 @@ describe('vault key lifecycle: grant integrity', () => {
 describe('vault key lifecycle: secret custody', () => {
   it('threat: secret material never reaches registries, heads, grants or errors', async () => {
     const { laptop, phone } = await family();
-    await laptop.lifecycle.revokeDevice('tablet');
+    await laptop.lifecycle.revokeDevice('tablet', {
+      recoverySecret: RECOVERY_SECRET,
+    });
     const rotated = await laptop.lifecycle.rotate({
       recoverySecret: RECOVERY_SECRET,
     });

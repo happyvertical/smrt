@@ -160,7 +160,7 @@ describe('lifecycle snapshot key provider', () => {
     const old = join(root, 'before.hvsnap');
     await sealWith(keys, old, randomBytes(2000));
 
-    await laptop.revokeDevice('phone');
+    await laptop.revokeDevice('phone', { recoverySecret: RECOVERY_SECRET });
     expect((await laptop.status())?.rotationRequired).toBe(true);
 
     const refused = join(root, 'refused.hvsnap');
@@ -201,7 +201,7 @@ describe('lifecycle snapshot key provider', () => {
 
     // A revocation names the device at once but it still holds the current
     // key until the rotation that excludes it: restore must wait for that.
-    await laptop.revokeDevice('phone');
+    await laptop.revokeDevice('phone', { recoverySecret: RECOVERY_SECRET });
     expect(await snapshotAccountTrustFromLifecycle(laptop)).toMatchObject({
       revokedDeviceIds: ['phone'],
       rotationPending: true,
@@ -250,7 +250,7 @@ describe('lifecycle snapshot key provider', () => {
       generation: 1n,
       keyId: staleStatus?.currentKeyId as string,
     });
-    await laptop.revokeDevice('tablet');
+    await laptop.revokeDevice('tablet', { recoverySecret: RECOVERY_SECRET });
     const rotated = await laptop.rotate({ recoverySecret: RECOVERY_SECRET });
     void rotated;
 
