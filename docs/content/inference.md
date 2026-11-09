@@ -34,7 +34,7 @@ These words mean one thing everywhere in the s-m-r-t docs.
 | **call** | One model request; one `_smrt_ai_usage` row. |
 | **run** | One fusion execution; one `_smrt_ai_runs` row plus one usage row per seat call. |
 | **outcome** | A label recorded later about a call or a run (`good`, `wrong`, a score). |
-| **transcript** | The stored text of a call, opt-in (lands with #4780). |
+| **transcript** | The stored, redacted text of a call, opt-in; one `_smrt_ai_transcripts` row. |
 
 ## 1. One provider
 
@@ -347,23 +347,40 @@ as uncosted, hosted-gate blocks count as `blocked`, and other tenants' rows
 are counted as excluded.
 
 **Outcome labels.** A call cannot grade itself, so record the verdict when
-you know it: `recordAiUsageOutcome(db, { usageId | runId, label, score?,
-evidence?, actor })`. Labels stay in the call's tenant and are never pruned
+you know it: `recordAiUsageOutcome(db, { usageId | runId | callId, label,
+score?, evidence?, actor })`. Labels stay in the call's tenant and are never pruned
 with usage rows; `smrt ai:usage` reports them per bucket.
 
-**What is recorded.** Metadata only: never prompts, responses or keys. The
+**What is recorded.** Usage and run rows hold metadata only: never
+prompts, responses or keys (content is the opt-in transcript below). The
 system retention sweep prunes usage and run rows after 90 days by default
 (`config({ retention })`).
 
-**Transcripts** (lands with #4780). An app can opt in to storing the text of
-calls: `config({ inference: { transcripts: { enabled: true, sample: 0.1 } } })`
-or `SMRT_INFERENCE_TRANSCRIPTS=1`. Successful calls are sampled; failed,
-fallen-back and degraded calls, and calls passing `transcript: true`, are
-always kept. The setting is app-level only, with no tenant override. A host
-redactor runs before every write, keys are never stored, chat is excluded
-(it keeps its own history), and transcripts are pruned after 30 days.
-Usage row, transcript and outcome share a `callId`; read one with
-`smrt ai:transcript <callId>`.
+**Transcripts.** An app can opt in to storing the text of calls:
+`config({ inference: { transcripts: { enabled: true, sample: 0.1, maxBytes:
+65536 } } })` or `SMRT_INFERENCE_TRANSCRIPTS=1`. Successful calls are
+sampled (per prompt key with `transcripts.prompts: { '<key>': { sample } }`);
+failed, fallen-back and degraded calls, and calls passing `transcript: true`,
+are always kept, and `transcript: false` is never kept. The setting is
+app-level only, with no tenant override. A host redactor
+(`setTranscriptRedactor()`) runs before every write and the built-in one
+always runs after it: the client's key, the object's `sensitive` field values
+and known secret shapes are masked. Chat is excluded (it keeps its own
+history), each row is capped at `maxBytes` with a head-and-tail cut, and
+transcripts are pruned after 30 days while usage rows and labels stay for
+90. Usage row, transcript and outcome share a `callId`. Reads name a tenant
+and are audited: `listAiTranscripts(db, { actor, tenantId, ... })`,
+`smrt ai:transcript <callId> --tenant <id>`, and `smrt ai:usage
+--with-transcripts --tenant <id> [--prompt <key>]` for the worst-labelled
+calls.
+
+```ts
+setTranscriptRedactor((messages, { part }) =>
+  messages.map((m) => ({ ...m, content: scrubEmails(m.content) })),
+);
+const [t] = await listAiTranscripts(db, { actor: user.id, tenantId, callId });
+await recordAiUsageOutcome(db, { callId, label: 'wrong', score: 0, actor: user.id });
+```
 
 **Comparing** (lands with #4782). `smrt ai:compare --prompt <key> --a
 hash:<h1> --b hash:<h2>` (also `model:` and `tier:` sides) compares two

@@ -32,6 +32,8 @@ smrt db:rollback --mark-only # Record-only flip; schema untouched
 smrt db:prune                # Prune framework system tables to their retention windows
 smrt db:prune --dry-run      # Same predicates, counted rather than deleted
 smrt ai:usage [--by prompt,model,tier,class,tenant,fusion,source] [--since 7d] [--tenant <id>] [--json] # ../core/agents/ai-usage.md
+smrt ai:usage --with-transcripts --tenant <id>|--all-tenants [--prompt <key>] [--actor <who>] # Worst-labelled calls with transcripts (#4780; audited read)
+smrt ai:transcript <callId> --tenant <id>|--all-tenants [--actor <who>] [--reason] [--json] # One stored transcript (#4780; audited read)
 smrt inference:hosted provision|revoke --tenant <id> --user <id> [--budget-usd 20|--budget-micros N] [--window month] [--json] # Hosted gateway keys (#4759, ../inference/AGENTS.md)
 smrt inference:hosted disable|enable|status [--tenant <id>] [--json] # Hosted AI kill switch (#4760); one group, shared map: agents/inference-hosted.md
 smrt docs:agents             # Generate .agents/smrt-framework.md
@@ -280,6 +282,13 @@ also totals `_smrt_ai_runs` per fusion via `reportAiRuns()` (#4753).
 
 Hosted-gate blocks (`operation: 'blocked'`, #4760) print in a `blocked`
 column beside `calls`.
+
+`--with-transcripts` and `ai:transcript` (#4780, `src/commands/ai-transcript.ts`)
+read tenant content: they refuse to run without `--tenant` (`global` for
+tenant-less rows) or the explicit `--all-tenants`, and every read writes an
+audit event naming `--actor` (default `cli:<os user>`) through core's
+`listAiTranscripts()`. `db:prune --skip ai-transcripts` skips the 30-day
+transcript task.
 
 ## `db:drop-framework-base-tables` is a one-time remediation (#2647)
 
