@@ -76,6 +76,7 @@
 * [@happyvertical/smrt-types](/components/smrt-types.md) - Shared type definitions for the HAVE SDK
 * [@happyvertical/smrt-ui](/components/smrt-ui.md) - Domain-agnostic Svelte 5 UI runtime for SMRT: primitives, i18n client, theme system, and module UI registry
 * [@happyvertical/smrt-users](/components/smrt-users.md) - Multi-tenant user management for the SMRT framework - users, tenants, roles, permissions, groups
+* [@happyvertical/smrt-vault-relay](/components/smrt-vault-relay.md) - Blind snapshot relay: device-signed, per-account encrypted blob store gated by backup.vault
 * [@happyvertical/smrt-video](/components/smrt-video.md) - Video content management for AI-powered video production in the SMRT ecosystem
 * [@happyvertical/smrt-vitest](/components/smrt-vitest.md) - Vitest plugin for automatic cross-package manifest loading in SMRT tests
 * [@happyvertical/smrt-voice](/components/smrt-voice.md) - Voice profile management for AI-powered voice synthesis and cloning in the SMRT ecosystem

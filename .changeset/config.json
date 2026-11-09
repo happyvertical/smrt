@@ -75,6 +75,7 @@
       "@happyvertical/smrt-types",
       "@happyvertical/smrt-ui",
       "@happyvertical/smrt-users",
+      "@happyvertical/smrt-vault-relay",
       "@happyvertical/smrt-vitest",
       "@happyvertical/smrt-svelte",
       "@happyvertical/smrt-scanner",
