@@ -664,10 +664,18 @@ describe('tables withheld from a migration', () => {
     const plan = planFor(ids, [
       ['locks', ['pin_hash']],
       ['grants', ['refresh_token_hash']],
+      ['links', ['refresh_tokens']],
       ['accounts', ['password_salt']],
+      ['more_grants', ['refresh_secrets']],
       ['notes_extra', ['body']],
     ]);
-    expect(plan.skipped.omittedTables).toEqual(['locks', 'grants', 'accounts']);
+    expect(plan.skipped.omittedTables).toEqual([
+      'locks',
+      'grants',
+      'links',
+      'accounts',
+      'more_grants',
+    ]);
   });
 
   it('completes only once every withheld table is acknowledged, and records it', async () => {
