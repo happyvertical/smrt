@@ -837,15 +837,37 @@ async function doctor(context: AppContext): Promise<number> {
   return report.status === 'error' ? 1 : 0;
 }
 
-/** Split the `--encrypted` flag from positional arguments. */
-function snapshotArguments(args: string[]): {
+/**
+ * Split the `--encrypted` flag from positional arguments. Any other argument
+ * that looks like an option is refused: a misspelled `--encrypt` must never
+ * be taken as a path and silently write a plaintext backup. `--` ends option
+ * parsing, so a path that starts with a dash stays expressible.
+ */
+function snapshotArguments(
+  operation: 'backup' | 'export' | 'import',
+  args: string[],
+): {
   encrypted: boolean;
   positional: string[];
 } {
-  return {
-    encrypted: args.includes('--encrypted'),
-    positional: args.filter((arg) => arg !== '--encrypted'),
-  };
+  let encrypted = false;
+  let literal = false;
+  const positional: string[] = [];
+  for (const arg of args) {
+    if (!literal && arg === '--') {
+      literal = true;
+    } else if (!literal && arg === '--encrypted') {
+      encrypted = true;
+    } else if (!literal && arg.startsWith('-')) {
+      throw new Error(
+        `Unknown option for app ${operation}: ${JSON.stringify(arg)}. ` +
+          `Nothing was written. The only option is --encrypted; put -- before a path that starts with a dash.`,
+      );
+    } else {
+      positional.push(arg);
+    }
+  }
+  return { encrypted, positional };
 }
 
 function requireSnapshotKeys(context: AppContext): SnapshotKeyProvider {
@@ -865,13 +887,13 @@ function snapshotReport(snapshot: EncryptedSnapshotSummary) {
 }
 
 async function backup(context: AppContext, args: string[]): Promise<void> {
+  const { encrypted, positional } = snapshotArguments('backup', args);
   const runtime = await context.deps.resolveRuntime(context.sourceRoot);
   if (runtime.profile !== 'local') {
     throw new Error(
       'This scaffold delegates deployed backups to the selected operator or managed provider.',
     );
   }
-  const { encrypted, positional } = snapshotArguments(args);
   const snapshotKeys = encrypted ? requireSnapshotKeys(context) : null;
   const explicitDestination = positional[0]
     ? assertExternalArtifactPath({
@@ -1004,7 +1026,7 @@ async function portability(
   args: string[],
   operationLock?: OperationLock,
 ): Promise<void> {
-  const { encrypted, positional } = snapshotArguments(args);
+  const { encrypted, positional } = snapshotArguments(operation, args);
   let snapshotKeys: SnapshotKeyProvider | null = null;
   if (encrypted) {
     if (operation === 'import') {

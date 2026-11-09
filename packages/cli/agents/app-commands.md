@@ -109,8 +109,10 @@ config loading; `bin/smrt.js` imports `dist/` in-process so SIGTERM reaches
   and `export --encrypted` the logical bundle into one HVSF v1 file (0600,
   published with `link()`, only ciphertext on disk). Keys come only from the
   injected `deps.snapshotKeys` provider; without one the flag fails closed.
-  Plaintext stays the default. Format, limits and restore primitives:
-  [encrypted-snapshots.md](encrypted-snapshots.md).
+  Plaintext stays the default, so `backup`, `export` and `import` refuse every
+  other argument that starts with `-` (`--encrypt` is not `--encrypted`), before
+  any lock or write; `--` makes a dash-leading path expressible. Format, limits
+  and restore primitives: [encrypted-snapshots.md](encrypted-snapshots.md).
 - **Process identity**: `app.pid` is trusted only when the live command
   line's last two tokens are a path with basename `smrt-web.mjs` and exactly
   `--smrt-instance=<record instance>` (an app started by the template's former

@@ -1274,6 +1274,29 @@ describe('smrt app backup', () => {
     );
   });
 
+  it('refuses an unknown option instead of writing a plaintext backup to a path named after it', async () => {
+    const fixture = makeFixture();
+    await fixture.run(['setup']);
+    const before = readdirSync(fixture.root).sort();
+    for (const flag of ['--encrypt', '--encrypted=true', '--Encrypted', '-e']) {
+      for (const args of [
+        ['backup', flag],
+        ['backup', flag, join(fixture.root, 'backups', 'x')],
+        ['backup', join(fixture.root, 'backups', 'x'), flag],
+      ]) {
+        expect(await fixture.run(args, { snapshotKeys })).toBe(1);
+        expect(String(fixture.stderrJson().message)).toContain(
+          `Unknown option for app backup: ${JSON.stringify(flag)}`,
+        );
+      }
+    }
+    expect(readdirSync(fixture.root).sort()).toEqual(before);
+    expect(existsSync(join(fixture.root, 'backups'))).toBe(false);
+    expect(existsSync(join(fixture.app, '--encrypt'))).toBe(false);
+    expect(existsSync(join(process.cwd(), '--encrypt'))).toBe(false);
+    expectNoLocks(fixture);
+  });
+
   it('defaults an encrypted backup to a .hvsnap file beside local storage', async () => {
     const fixture = makeFixture();
     await fixture.run(['setup']);
@@ -1581,6 +1604,33 @@ describe('smrt app export / import', () => {
     expect(fixture.stderrJson().message).toBe(
       'Encrypted export is not available with a custom scripts/smrt-portability.mjs adapter.',
     );
+  });
+
+  it('refuses an unknown export or import option instead of exporting plaintext to a path named after it', async () => {
+    const { fixture } = await seededApplication();
+    const destination = join(fixture.root, 'exports', 'app.json');
+    for (const [operation, flag] of [
+      ['export', '--encrypt'],
+      ['export', '--encrypted=1'],
+      ['import', '--encrypt'],
+    ] as const) {
+      expect(
+        await fixture.run([operation, flag, destination], { snapshotKeys }),
+      ).toBe(1);
+      expect(String(fixture.stderrJson().message)).toContain(
+        `Unknown option for app ${operation}: ${JSON.stringify(flag)}`,
+      );
+      expect(
+        await fixture.run([operation, destination, flag], { snapshotKeys }),
+      ).toBe(1);
+    }
+    expect(await fixture.run(['export', '--encrypt'], { snapshotKeys })).toBe(
+      1,
+    );
+    expect(existsSync(join(fixture.root, 'exports'))).toBe(false);
+    expect(existsSync(destination)).toBe(false);
+    expect(existsSync(join(fixture.app, '--encrypt'))).toBe(false);
+    expect(existsSync(join(process.cwd(), '--encrypt'))).toBe(false);
   });
 
   it("keeps the application's scripts/smrt-portability.mjs adapter as the extension point", async () => {
