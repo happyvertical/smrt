@@ -1258,11 +1258,28 @@ and out-of-grammar values are errors, and no error echoes a value):
 }
 ```
 
-`sidecar.args` (default `["app/build/index.js"]`), `sidecar.ownerClaimRoute`,
+`sidecar.args` (default `["app/build/index.js"]`; see below), `sidecar.ownerClaimRoute`,
 `exclude` (extra package patterns to drop), `nativeExceptions`
 (`{path, reason}` globs under `app/node_modules`; a matching foreign native is
 **deleted**, never shipped, and recorded in the report) and `maxSizeMB` (MiB)
 are optional.
+
+`sidecar.args` is what the shell passes to the bundled Node binary, so it ships
+to every end user. Node flags are an **allowlist**, not a denylist (Node has too
+many options that load code or change trust, such as `--conditions`/`-C`,
+`--security-revert`, `--insecure-http-parser`, `--experimental-config-file` and
+`--env-file-if-exists`, and a release adds more): the only flag accepted is
+`--max-old-space-size=<MiB>` (10 to 999999, spelled exactly like that, at most
+once, before the script), the V8 heap ceiling. Anything else beginning with `-`
+(including abbreviations, the `--flag value` form, `-C`, `--` and
+`--node-options=...`) fails with `config_invalid_field`. The first argument that
+is not a flag is the entry script (a portable relative path ending in `.js`,
+`.mjs` or `.cjs`); after it come only plain values (portable paths or digits)
+for the script, never flags. To allow another Node flag, add it to
+`SIDECAR_NODE_FLAG_ALLOWLIST` with a reason. This guards the product
+configuration; the sidecar manifest parser the shell uses accepts any valid
+text arguments, so the shell must treat `sidecar-manifest.json` as trusted
+build output.
 
 ### Targets
 
@@ -1485,7 +1502,7 @@ below did.
 | B8 | A `.node` that is a symlink or shares an inode with the store | links refused in source and output, outputs are fresh copies, natives need `nlink` 1 | `fails symlinks, special files and hardlinked natives`; `refuses hard-linked files by default and copies them as independent files when allowed` |
 | B9 | Secrets in the bundle | deny-list fails the bundle, content scan of the build, maps dropped, only registry lines of `.npmrc` reach staging (no credentials) | `fails when the build output contains a .env file`; `fails on a private key in the build output`; `fails on a .smrt data directory inside the build`; `finds the OpenAI, Google, npm and Stripe token shapes and reports only ids`; `does not flag ordinary code or look-alikes`; `never copies the app .npmrc into the output`; `drops source maps unless asked`; `keeps a canary token out of the output, the report and the child environment` |
 | B10 | Build-host environment leaking into children | child environment allowlist, forced `npm_config_ignore_scripts`, `NODE_OPTIONS`/`npm_config_*`/`LD_*` dropped | `passes only allowlisted environment names to pnpm`; `drops NODE_OPTIONS and npm_config_* from the child environment`; `forces ignore-scripts in the child environment`; `never leaks a canary token, whatever the variable name` |
-| B11 | Environment injection into the sidecar at run time | the manifest empties `NODE_OPTIONS` and `NODE_PATH` | `writes a sidecar manifest that neutralises NODE_OPTIONS and NODE_PATH` |
+| B11 | Environment and option injection into the sidecar at run time | the manifest empties `NODE_OPTIONS` and `NODE_PATH`; the product configuration may pass Node only the allowlisted `--max-old-space-size=<n>`, before a script that must be `.js`, `.mjs` or `.cjs` | `writes a sidecar manifest that neutralises NODE_OPTIONS and NODE_PATH`; `documents the one flag a product may set, exactly and only before the script`; `rejects NODE_OPTIONS-style smuggling through the arguments`; `rejects the -- terminator wherever it stands`; `needs a script, and no argument may be empty or non-text` |
 | B12 | Manifest reproducibility and validity, and a measured app altering the bundle's own metadata | canonical serializers, re-parsed with the contract parsers, byte round trip, cross-check, no timestamps; `tauri.bundle.json` and the file list are written after the measured start and the output root is checked afterwards; the measured process group and its descendants are stopped and verified gone before the digests are re-checked (POSIX) | `writes manifests the contract parsers accept and that round-trip byte for byte`; `produces identical files and report for identical inputs`; `orders the file list independently of readdir order`; `sets every modification time to the epoch floor or SOURCE_DATE_EPOCH`; `writes tauri.bundle.json and the file list only after the measured start`; `fails when the measured start plants or changes a file in the bundle root`; `does not take the exit of the child for the end of its group`; `fails the bundle when a process is still running after SIGKILL`; `leaves no grandchild running, grouped or detached`; `leaves no grandchild running even when everything ignores SIGTERM` |
 | B13 | Bridge not self-contained, swapped or a link | verified regular file, size cap, built-ins only, hash recorded | `rejects a bridge bundle that imports a bare package`; `rejects a bridge that is a symlink`; `records the bridge sha256 and byte count` |
 | B14 | A removed package, or a file pruning removed, is still needed (availability) | reachability scan, relative imports checked against the pruned tree, files reached modules refer to protected from pruning, acknowledgements recorded, host start (a bundle built without `--measure` has no runtime check) | `fails when a reached file imports a relative path that is not in the bundle`; `fails on a missing relative import in the application build, and lets a lazy one be acknowledged`; `keeps a file a reached module imports from a directory that pruning removes by name`; `keeps data files a reached module reads by a literal path, and still prunes docs nobody names`; `records what the import scan covered, including bare imports that resolved to nothing`; `fails when the build statically imports a removed package`; `requires acknowledgement for a dynamic import of a removed package`; `ignores a build-time file of a kept package that nothing loads`; `bundles, verifies and measures a fixture app for the host triple` (opt-in end to end) |

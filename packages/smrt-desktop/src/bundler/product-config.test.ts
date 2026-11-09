@@ -15,6 +15,7 @@ import {
   parseProductConfig,
   readProductConfig,
   resolveFeatures,
+  SIDECAR_NODE_FLAG_ALLOWLIST,
 } from './product-config.js';
 import { BundleTreeError, TREE_ERROR_MESSAGE_TABLE } from './tree-errors.js';
 
@@ -289,6 +290,139 @@ describe('parseProductConfig', () => {
     expect(failure(() => parseProductConfig(text)).field).toBe(
       'features.custom',
     );
+  });
+});
+
+describe('sidecar Node flags are an allowlist', () => {
+  const args = (...items: string[]) => ({ sidecar: { args: items } });
+  const parsed = (...items: string[]) => parse(args(...items)).sidecar.args;
+  const rejected = (...items: string[]) => {
+    const error = failure(() => parse(args(...items)));
+    expect(error.code).toBe('config_invalid_field');
+    expect(error.field).toBe('sidecar.args');
+  };
+
+  it('documents the one flag a product may set, exactly and only before the script', () => {
+    expect(SIDECAR_NODE_FLAG_ALLOWLIST).toHaveLength(1);
+    expect(Object.isFrozen(SIDECAR_NODE_FLAG_ALLOWLIST)).toBe(true);
+    expect(parsed('--max-old-space-size=512', 'app/build/index.js')).toEqual([
+      '--max-old-space-size=512',
+      'app/build/index.js',
+    ]);
+    expect(parsed('--max-old-space-size=10', 'a.js')).toHaveLength(2);
+    expect(parsed('--max-old-space-size=999999', 'a.js')).toHaveLength(2);
+    expect(parsed('app/build/index.mjs')).toEqual(['app/build/index.mjs']);
+    expect(parsed('app/build/index.js', '3000', 'data/x')).toEqual([
+      'app/build/index.js',
+      '3000',
+      'data/x',
+    ]);
+  });
+
+  const eachCase = (cases: string[][]) =>
+    cases.map((flag) => [JSON.stringify(flag), flag] as const);
+
+  it.each(
+    eachCase([
+      // The flags the denylist let through.
+      ['--conditions=development'],
+      ['--conditions', 'development'],
+      ['-C', 'development'],
+      ['-C=development'],
+      ['--security-revert=CVE-2023-46809'],
+      ['--insecure-http-parser'],
+      ['--experimental-config-file=node.json'],
+      ['--env-file-if-exists=.env'],
+      // The ones it did block, still blocked.
+      ['-e'],
+      ['--eval=1'],
+      ['-p'],
+      ['-r'],
+      ['--require=./x.js'],
+      ['--import=./x.js'],
+      ['--loader=./x.js'],
+      ['--experimental-loader=./x.js'],
+      ['--env-file=.env'],
+      ['--inspect=0.0.0.0'],
+      ['--inspect-brk'],
+      ['--watch'],
+      ['--test'],
+      ['--interactive'],
+      // Node options that were never on any list.
+      ['--experimental-vm-modules'],
+      ['--disable-proto=delete'],
+      ['--allow-natives-syntax'],
+      ['--expose-gc'],
+      ['--openssl-config=x.cnf'],
+      ['--use-openssl-ca'],
+      ['--tls-min-v1.0'],
+      ['--max-http-header-size=1'],
+      ['--permission'],
+      ['--stack-size=5000'],
+      ['--experimental-default-type=module'],
+    ]),
+  )('rejects the Node flags %s before a valid script', (_label, flag) => {
+    rejected(...flag, 'app/build/index.js');
+  });
+
+  it.each(
+    eachCase([
+      // Abbreviation, spelling and value forms of the one allowed flag.
+      ['--max-old-space=512'],
+      ['--max-old=512'],
+      ['--max-old-space-s=512'],
+      ['--max_old_space_size=512'],
+      ['--Max-Old-Space-Size=512'],
+      ['--max-old-space-size'],
+      ['--max-old-space-size='],
+      ['--max-old-space-size', '512'],
+      ['--max-old-space-size=1'],
+      ['--max-old-space-size=0512'],
+      ['--max-old-space-size=512mb'],
+      ['--max-old-space-size=1000000'],
+      ['--max-old-space-size=-1'],
+      ['--max-old-space-size=512,--require=./x.js'],
+      ['--max-old-space-size=512 --require=./x.js'],
+      ['--max-old-space-size=512\n--require=./x.js'],
+      ['--max-old-space-size=512', '--max-old-space-size=1024'],
+      ['-max-old-space-size=512'],
+      ['---max-old-space-size=512'],
+    ]),
+  )('rejects the spelling %s of the allowed flag', (_label, flag) => {
+    rejected(...flag, 'app/build/index.js');
+  });
+
+  it('rejects NODE_OPTIONS-style smuggling through the arguments', () => {
+    rejected('NODE_OPTIONS=--require=./x.js', 'app/build/index.js');
+    rejected('--node-options=--require=./x.js', 'app/build/index.js');
+    rejected('--node-options', '--require=./x.js', 'app/build/index.js');
+    rejected('--env-file=.env', 'app/build/index.js');
+    // A plain first argument must be a script, not an assignment or a value.
+    rejected('NODE_OPTIONS=--require=./x.js');
+    rejected('3000');
+    rejected('app/build/index');
+    rejected('app/build/index.json');
+    // Nothing after the script may be a flag (Node would not read it; the
+    // allowlist stays the only place a dash is accepted).
+    rejected('app/build/index.js', '--max-old-space-size=512');
+    rejected('app/build/index.js', '--require=./x.js');
+    rejected('app/build/index.js', '-e');
+    rejected('app/build/index.js', 'NODE_OPTIONS=--require=./x.js');
+  });
+
+  it('rejects the -- terminator wherever it stands', () => {
+    rejected('--', 'app/build/index.js');
+    rejected('--max-old-space-size=512', '--', 'app/build/index.js');
+    rejected('app/build/index.js', '--');
+    rejected('-', 'app/build/index.js');
+  });
+
+  it('needs a script, and no argument may be empty or non-text', () => {
+    rejected('--max-old-space-size=512');
+    rejected('');
+    rejected('app/build/index.js', '');
+    expect(() => parse({ sidecar: { args: ['a.js', 3] } })).toThrow();
+    expect(() => parse({ sidecar: { args: ['a.js', null] } })).toThrow();
   });
 });
 
