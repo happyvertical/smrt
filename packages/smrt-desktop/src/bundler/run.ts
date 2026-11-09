@@ -110,6 +110,7 @@ import {
   createContentScan,
   createNodeModulesFilter,
 } from './prune.js';
+import { scanReachable } from './reach.js';
 import {
   BUNDLE_FILES_FILENAME,
   BUNDLE_REPORT_FILENAME,
@@ -124,9 +125,7 @@ import {
 import {
   assertNoRemovedImports,
   extractImports,
-  type ImportScanReport,
   packageNameOf,
-  scanDirectory,
 } from './scan-imports.js';
 import {
   externalBinName,
@@ -147,6 +146,8 @@ export interface MeasureInput {
   readonly sidecar: SidecarManifestV1;
   /** Sanitised base environment for the sidecar. */
   readonly baseEnv: Readonly<Record<string, string>>;
+  /** Prepared data directory to copy for each run (absolute), if any. */
+  readonly dataTemplate?: string;
   readonly files: { readonly count: number; readonly bytes: number };
 }
 
@@ -199,11 +200,21 @@ const MAX_BRIDGE_BYTES = 16 * 1024 * 1024;
 const MAX_OUTPUT_FILE = 512 * 1024 * 1024;
 const WARN_BYTES = 400 * 1024 * 1024;
 const BRIDGE_ENTRY = 'bridge/smrt-mcp-bridge.mjs';
-const SIDECAR_ENV = Object.freeze({
-  NODE_ENV: 'production',
-  NODE_OPTIONS: '',
-  NODE_PATH: '',
-});
+/**
+ * Environment every sidecar manifest carries. `NODE_OPTIONS` and `NODE_PATH`
+ * are emptied because the shell passes the parent's environment through.
+ * `SMRT_APP_ID` fixes the application identity: the runtime otherwise reads
+ * `package.json` from its working directory, which is the resource root and
+ * holds none (the app's lives under `app/`).
+ */
+function sidecarEnv(productId: string): Record<string, string> {
+  return {
+    NODE_ENV: 'production',
+    NODE_OPTIONS: '',
+    NODE_PATH: '',
+    SMRT_APP_ID: productId,
+  };
+}
 
 const ROOT_STATE = [
   /^\.modules\.yaml$/,
@@ -769,47 +780,32 @@ export async function runBundle(
     // -- 7. scan -----------------------------------------------------------
     const acknowledged: { from: string; specifier: string }[] = [];
     await stage('scan', async () => {
-      const isRemoved = createRemovalChecker(
-        segmentation.graph,
-        segmentation.result,
-      );
-      const reports: ImportScanReport[] = [];
-      reports.push(
-        await scanDirectory({
-          root: buildDest,
-          kind: 'app-build',
-          isRemoved,
-          acknowledged: plan.acknowledgedDynamicImports,
-          fs,
-          platform,
-        }),
-      );
-      reports.push(
-        await scanDirectory({
-          root: modulesDest,
-          kind: 'node-modules',
-          isRemoved,
-          acknowledged: plan.acknowledgedDynamicImports,
-          fs,
-          platform,
-        }),
-      );
-      for (const report of reports) assertNoRemovedImports(report);
-      for (const report of reports) {
-        for (const finding of report.acknowledged) {
-          acknowledged.push({
-            from: finding.path,
-            specifier: finding.specifier,
-          });
-        }
-        if (report.nonLiteral.length > 0) {
-          warnings.push(
-            `${report.nonLiteral.length} non-literal import(s) cannot be checked statically`,
-          );
-        }
-        if (report.unscanned.length > 0) {
-          warnings.push(`${report.unscanned.length} file(s) were not scanned`);
-        }
+      const entry = plan.sidecar.args.find((arg) => !arg.startsWith('-'));
+      if (entry === undefined) throw new BundleError('entry_missing');
+      const reach = await scanReachable({
+        buildRoot: buildDest,
+        modulesRoot: modulesDest,
+        entry: at(resourcesDir, ...entry.split('/')),
+        graph: segmentation.graph,
+        keep: segmentation.result.keep,
+        acknowledged: plan.acknowledgedDynamicImports,
+        fs,
+        platform,
+      });
+      assertNoRemovedImports(reach);
+      for (const finding of reach.acknowledged) {
+        acknowledged.push({
+          from: finding.path,
+          specifier: finding.specifier,
+        });
+      }
+      if (reach.nonLiteral.length > 0) {
+        warnings.push(
+          `${reach.nonLiteral.length} non-literal import(s) cannot be checked statically`,
+        );
+      }
+      if (reach.unscanned.length > 0) {
+        warnings.push(`${reach.unscanned.length} file(s) were not scanned`);
       }
     });
 
@@ -956,7 +952,7 @@ export async function runBundle(
       args: plan.sidecar.args,
       healthRoute: plan.sidecar.healthRoute,
       dataDirectory: plan.sidecar.dataDirectory,
-      env: { ...SIDECAR_ENV },
+      env: sidecarEnv(plan.product.productId),
       ...(plan.sidecar.ownerClaimRoute === undefined
         ? {}
         : { ownerClaimRoute: plan.sidecar.ownerClaimRoute }),
@@ -1179,7 +1175,7 @@ export async function runBundle(
       }
       if (plan.maxSizeBytes === undefined && digests.bytes > WARN_BYTES) {
         warnings.push(
-          `installed size is ${Math.round(digests.bytes / 1024 / 1024)} MB; set maxSizeMB to enforce a budget`,
+          `installed size is ${Math.round(digests.bytes / 1024 / 1024)} MiB; set maxSizeMB to enforce a budget`,
         );
       }
       return built;
@@ -1198,6 +1194,9 @@ export async function runBundle(
           resourcesDir,
           sidecar,
           baseEnv: childEnv,
+          ...(plan.measureDataDir === undefined
+            ? {}
+            : { dataTemplate: plan.measureDataDir }),
           files: { count: report.files.count, bytes: report.files.bytes },
         });
         // The start may have written into the bundle; refuse a changed bundle.

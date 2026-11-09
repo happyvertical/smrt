@@ -208,6 +208,8 @@ describe('runBundle layout', () => {
       NODE_ENV: 'production',
       NODE_OPTIONS: '',
       NODE_PATH: '',
+      // The runtime would otherwise read package.json from the resource root.
+      SMRT_APP_ID: 'smrt-start',
     });
   });
 
@@ -456,6 +458,13 @@ describe('failure handling', () => {
       '--config.verify-store-integrity=true',
     ]);
     expect(call?.env.npm_config_ignore_scripts).toBe('true');
+    // The app's own postinstall never reaches pnpm.
+    expect(call?.manifest.scripts).toBeUndefined();
+    expect(call?.manifest.name).toBe('fixture-app');
+    expect(call?.manifest.dependencies).toEqual({
+      a: '^1.0.0',
+      googleapis: '^170.0.0',
+    });
   });
 });
 
@@ -632,6 +641,24 @@ describe('secrets', () => {
     expect(error.stage).toBe('build_copy');
     expect(error.subjects).toEqual(['.env']);
     assertNothingLeft(item);
+  });
+
+  it('fails on a .smrt data directory inside the build', async () => {
+    const item = fixture({
+      buildFiles: { 'index.js': 'export {};\n', '.smrt/data.json': '{}' },
+    });
+    const error = await failure(runBundle(await item.plan(), item.seams()));
+    expect(error.code).toBe('secret_file');
+    expect(error.subjects).toEqual(['.smrt']);
+    assertNothingLeft(item);
+  });
+
+  it('never copies the app .npmrc into the output', async () => {
+    const item = fixture({ npmrc: '//registry.example/:_authToken=abc123\n' });
+    await runBundle(await item.plan(), item.seams());
+    expect(item.calls[0]?.hadNpmrc).toBe(true);
+    const files = [...readTree(item.outDir).keys()];
+    expect(files.some((f) => f.endsWith('.npmrc'))).toBe(false);
   });
 
   it('fails on a private key in the build output', async () => {
@@ -930,6 +957,33 @@ describe('size budget and measurement', () => {
       readFileSync(join(item.outDir, BUNDLE_REPORT_FILENAME), 'utf8'),
     );
     expect(written.measurements).toEqual(measurements);
+  });
+
+  it('hands the prepared data directory to the measurement', async () => {
+    const item = fixture();
+    const template = join(item.root, 'prepared-data');
+    mkdirSync(template);
+    let seen: string | undefined;
+    await runBundle(
+      await item.plan({ measure: true, measureDataDir: template }),
+      item.seams({
+        platform: 'darwin',
+        arch: 'arm64',
+        measure: async (request) => {
+          seen = request.dataTemplate;
+          return {
+            nodeVersionOutput: 'v26.8.1',
+            healthRoute: '/h',
+            installed: { apparentBytes: 1, files: 1 },
+            coldStart: {
+              firstRun: { runs: 1, samplesMs: [1], medianMs: 1, maxMs: 1 },
+              warm: { runs: 1, samplesMs: [1], medianMs: 1, maxMs: 1 },
+            },
+          };
+        },
+      }),
+    );
+    expect(seen).toBe(template);
   });
 
   it('refuses to measure a cross target', async () => {

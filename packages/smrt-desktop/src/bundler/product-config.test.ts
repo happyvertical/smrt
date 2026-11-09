@@ -8,7 +8,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { isPackagePattern } from './graph.js';
+import { isPackagePattern, matchPackageName } from './graph.js';
 import {
   DEFAULT_SIDECAR_ARGS,
   FEATURE_CATALOG,
@@ -304,6 +304,9 @@ describe('feature catalog', () => {
 
   it('names exactly the catalogued features and keeps the toolchain out', () => {
     expect(Object.keys(FEATURE_CATALOG).sort()).toEqual([
+      'ai-anthropic',
+      'ai-google',
+      'ai-openai',
       'ai-providers',
       'duckdb',
       'google-apis',
@@ -328,6 +331,9 @@ describe('resolveFeatures', () => {
     const resolved = resolveFeatures(base, []);
     expect(resolved.enabled).toEqual([]);
     expect(resolved.disabled.map((group) => group.label)).toEqual([
+      'feature:ai-anthropic',
+      'feature:ai-google',
+      'feature:ai-openai',
       'feature:ai-providers',
       'feature:duckdb',
       'feature:google-apis',
@@ -346,6 +352,45 @@ describe('resolveFeatures', () => {
     expect(labels).not.toContain('feature:images');
     expect(labels).not.toContain('feature:duckdb');
     expect(labels).toContain('feature:google-apis');
+  });
+
+  it('keeps the runtime helpers of compiled models out of the toolchain', () => {
+    const toolchain = FEATURE_CATALOG.toolchain?.packages ?? [];
+    expect(
+      toolchain.some((p) => matchPackageName(p, '@oxc-project/runtime')),
+    ).toBe(false);
+    expect(toolchain.some((p) => matchPackageName(p, 'oxc-transform'))).toBe(
+      true,
+    );
+    expect(
+      toolchain.some((p) => matchPackageName(p, '@oxc-project/types')),
+    ).toBe(true);
+    expect(
+      toolchain.some((p) =>
+        matchPackageName(p, '@oxc-parser/binding-darwin-arm64'),
+      ),
+    ).toBe(true);
+  });
+
+  it('keeps a single provider SDK when only that provider is enabled', () => {
+    const resolved = resolveFeatures(base, ['ai-anthropic']);
+    const providers = resolved.disabled.find(
+      (group) => group.label === 'feature:ai-providers',
+    );
+    expect(providers?.patterns).toEqual(['@google/genai', 'openai']);
+    expect(resolved.disabled.map((group) => group.label)).not.toContain(
+      'feature:ai-anthropic',
+    );
+  });
+
+  it('drops the provider groups entirely when every provider is enabled', () => {
+    const labels = resolveFeatures(base, ['ai-providers']).disabled.map(
+      (group) => group.label,
+    );
+    expect(labels).not.toContain('feature:ai-providers');
+    expect(labels).not.toContain('feature:ai-anthropic');
+    expect(labels).not.toContain('feature:ai-openai');
+    expect(labels).not.toContain('feature:ai-google');
   });
 
   it('combines config defaults with requested features', () => {

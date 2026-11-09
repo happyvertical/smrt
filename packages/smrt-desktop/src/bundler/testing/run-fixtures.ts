@@ -106,6 +106,8 @@ export interface FakePnpmCall {
   readonly args: readonly string[];
   readonly env: Readonly<Record<string, string>>;
   readonly hadNpmrc: boolean;
+  /** The staged `package.json` pnpm was given. */
+  readonly manifest: Record<string, unknown>;
 }
 
 export interface Fixture {
@@ -262,6 +264,9 @@ export function createFixture(options: FixtureOptions = {}): Fixture {
       args: [...request.args],
       env: { ...request.env },
       hadNpmrc: existsSync(join(request.cwd, '.npmrc')),
+      manifest: JSON.parse(
+        readFileSync(join(request.cwd, 'package.json'), 'utf8'),
+      ),
     });
     installPackages(join(request.cwd, 'node_modules'), packages);
     return { exitCode: 0, output: '' };

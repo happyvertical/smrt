@@ -474,7 +474,7 @@ export interface ImportScanReport {
   readonly unscanned: readonly string[];
 }
 
-function isAcknowledged(
+export function isAcknowledged(
   source: ScanSource,
   finding: ImportFinding,
   acknowledged: readonly AcknowledgedImport[],

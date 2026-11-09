@@ -136,6 +136,7 @@ describe('desktop bundle option parsing', () => {
       features: 'images, ai-providers',
       'max-size': '350',
       measure: true,
+      'measure-data': 'prepared',
       offline: true,
       'keep-sourcemaps': true,
       force: true,
@@ -164,6 +165,7 @@ describe('desktop bundle option parsing', () => {
         offline: true,
         force: true,
         measure: true,
+        measureDataDir: 'prepared',
       },
     });
   });
@@ -202,7 +204,7 @@ describe('desktop bundle exit codes', () => {
     expect(await runDesktopBundle([], { out: 'o' }, h.io)).toBe(0);
     const out = h.stdout.join('');
     expect(out).toContain('Bundle written to /out');
-    expect(out).toContain('3.0 MB in 3 files');
+    expect(out).toContain('3.0 MiB in 3 files');
     expect(out).toContain('smrt-start@1.2.3 (aarch64-apple-darwin)');
     expect(h.stderr.join('')).toContain('[1/14] inputs');
     expect(h.stderr.join('')).toContain('warning: installed size is large');
@@ -300,7 +302,7 @@ describe('desktop bundle exit codes', () => {
     });
     expect(await runDesktopBundle([], { out: 'o' }, h.io)).toBe(6);
     expect(h.stderr.join('')).toContain(
-      'installed size: 3.0 MB (3 files); nothing was published',
+      'installed size: 3.0 MiB (3 files); nothing was published',
     );
 
     const json = harness(() => {
@@ -359,6 +361,7 @@ describe('desktop bundle command definition', () => {
         'keep-sourcemaps',
         'max-size',
         'measure',
+        'measure-data',
         'node-archive',
         'node-cache',
         'node-version',

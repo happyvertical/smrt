@@ -17,7 +17,12 @@ const manifest = {
   args: ['app/build/index.js'],
   healthRoute: '/api/_runtime/health',
   dataDirectory: 'runtime',
-  env: { NODE_ENV: 'production', NODE_OPTIONS: '', NODE_PATH: '' },
+  env: {
+    NODE_ENV: 'production',
+    NODE_OPTIONS: '',
+    NODE_PATH: '',
+    SMRT_APP_ID: 'smrt-notes',
+  },
 };
 
 function parse(overrides: Record<string, unknown>) {
