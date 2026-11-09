@@ -96,7 +96,7 @@ const SERVER_MANAGED_COLUMNS = new Set([
  * directions) carry no rows of a table with such a column.
  */
 const CLOUD_NON_PORTABLE_COLUMN_PATTERN =
-  /(?:^|_)(?:totp|otp|mfa|recovery_codes?|backup_codes?|passkey|webauthn|refresh_(?:token|secret|key|hash)|(?:password|passcode|pin|otp|secret|key|auth|login|hash)_salt|salt_(?:hash|value)|verifier|(?:code|reset|backup_code|otp|pin|key|verifier)_hash)(?:_|$)/;
+  /(?:^|_)(?:totp|otp|mfa|recovery_codes?|backup_codes?|passkey|webauthn|refresh_(?:tokens?|secrets?|keys?|hash(?:es)?)|(?:password|passcode|pin|otp|secret|key|auth|login|hash)_salt|salt_(?:hash|value)|verifier|(?:code|reset|backup_code|otp|pin|key|verifier)_hash)(?:_|$)/;
 // A bare `hash`, `salt` or `refresh` is deliberately not matched: content,
 // spec and manifest digests (`content_hash`), a seasoning `salt` and a
 // `refresh_interval` / `auto_refresh` setting are ordinary data and must
