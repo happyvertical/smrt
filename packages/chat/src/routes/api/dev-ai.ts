@@ -61,6 +61,8 @@ export async function devAIClientOptions(
     },
     className: 'ChatDev',
     usage: { className: 'ChatDev' },
+    // Chat content is stored by smrt-chat, never as AI transcripts (#4780).
+    transcript: false,
   });
   return resolved.options ?? {};
 }
