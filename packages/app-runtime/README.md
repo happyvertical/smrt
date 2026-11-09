@@ -339,7 +339,11 @@ Both halves are exported from this package; the migration itself is
 `@happyvertical/smrt-cli/app` (`planCloudMigration` and friends).
 
 - **Local** (`openLocalCloudLinkIdentity(options)`): refuses unless custody is
-  `in-custody`. It exposes the public device ID, the four seed-derived
+  `in-custody`; the one exception is `retiredInstallationId`, which lets a
+  location retired for a per-user migration of that installation sign the
+  per-user link of that migration (a per-user database is linked only after
+  its import, and beginning retires the location first) and nothing else. It
+  exposes the public device ID, the four seed-derived
   identities and an Ed25519 link public key derived from the seed under a
   purpose outside the public-UUID namespace. `signProof(challenge, expected)`
   first checks the challenge (`verifyCloudLinkChallenge`): normalized https

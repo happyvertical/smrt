@@ -26,6 +26,7 @@ import {
   inspectInstallationCustody,
   openLocalCloudLinkIdentity,
   restoreInstallation,
+  retireInstallation,
   verifyCloudLinkReceipt,
 } from '@happyvertical/smrt-app-runtime';
 import { getTestDatabase } from '@happyvertical/smrt-core/testing';
@@ -33,6 +34,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   beginCloudMigration,
   completeCloudMigration,
+  openMigrationCloudLinkIdentity,
   planCloudMigration,
   readCloudLinkRecord,
   readCloudMigrationRecord,
@@ -315,7 +317,7 @@ describe('cloud migration custody', () => {
       tables: NOTES,
       link,
     });
-    expect(() =>
+    await expect(
       completeCloudMigration({
         ...options,
         plan: undated,
@@ -323,9 +325,9 @@ describe('cloud migration custody', () => {
         target,
         journalPath,
       }),
-    ).toThrow(/exported before/);
+    ).rejects.toThrow(/exported before/);
     // A bundle exported before the location was retired cannot complete.
-    expect(() =>
+    await expect(
       completeCloudMigration({
         ...options,
         plan: early,
@@ -333,7 +335,7 @@ describe('cloud migration custody', () => {
         target,
         journalPath,
       }),
-    ).toThrow(/exported before/);
+    ).rejects.toThrow(/exported before/);
 
     const plan = planCloudMigration({
       bundle: bundle(link, new Date(Date.now() + 1000).toISOString()),
@@ -341,9 +343,9 @@ describe('cloud migration custody', () => {
       link,
     });
     // Not applied yet: no journal.
-    expect(() =>
+    await expect(
       completeCloudMigration({ ...options, plan, link, target, journalPath }),
-    ).toThrow(/not been applied/);
+    ).rejects.toThrow(/not been applied/);
     await runSharedCloudMigration({
       plan,
       segments: { notes: 'notes' },
@@ -359,10 +361,10 @@ describe('cloud migration custody', () => {
         }),
       },
     });
-    expect(() =>
+    await expect(
       completeCloudMigration({ ...options, plan, link, target, journalPath }),
-    ).toThrow(/notes\.updated_at/);
-    expect(() =>
+    ).rejects.toThrow(/notes\.updated_at/);
+    await expect(
       completeCloudMigration({
         ...options,
         plan,
@@ -371,8 +373,8 @@ describe('cloud migration custody', () => {
         target: { ...target, tables: [{ ...target.tables[0], rows: [] }] },
         acknowledgedChangedColumns: { notes: ['updated_at'] },
       }),
-    ).toThrow(expect.objectContaining({ code: 'verification_failed' }));
-    expect(() =>
+    ).rejects.toMatchObject({ code: 'verification_failed' });
+    await expect(
       completeCloudMigration({
         ...options,
         plan,
@@ -389,8 +391,8 @@ describe('cloud migration custody', () => {
         },
         acknowledgedChangedColumns: { notes: ['updated_at', 'tenant_id'] },
       }),
-    ).toThrow(/notes\.tenant_id/);
-    const done = completeCloudMigration({
+    ).rejects.toThrow(/notes\.tenant_id/);
+    const done = await completeCloudMigration({
       ...options,
       plan,
       link,
@@ -408,5 +410,296 @@ describe('cloud migration custody', () => {
     // Abandoning the cloud is an explicit declaration.
     await restoreInstallation({ ...options, originRetired: true });
     await boot(data);
+  });
+});
+
+/** Hosted principal that is the imported local owner (per-user rule). */
+function importedOwner(ids: CloudLinkRecord['localIdentities']) {
+  return {
+    sessionId: randomUUID(),
+    accountId: ids.ownerId,
+    accountEmail: 'owner@family.test',
+    tenantId: ids.tenantId,
+    tenantName: 'Family',
+    profileId: ids.profileId,
+    membershipId: ids.membershipId,
+    isTenantOwner: true,
+    tenantOwnerCount: 1,
+    tenantMemberCount: 1,
+  } satisfies CloudLinkPrincipal;
+}
+
+async function perUserLink(options: {
+  appId: string;
+  dataDirectory: string;
+  sourceRoot: string;
+}) {
+  const service = createCloudLinkService({
+    origin: ORIGIN,
+    store: createMemoryCloudLinkStore(),
+  });
+  const local = await openMigrationCloudLinkIdentity(options);
+  const who = importedOwner(local.identities);
+  const issued = await service.issueChallenge(who, {
+    appId: APP_ID,
+    installationId: local.installationId,
+    linkPublicKey: local.linkPublicKey,
+    target: 'per-user',
+  });
+  const { challenge, signature } = await local.signProof(
+    JSON.parse(JSON.stringify(issued)),
+    {
+      origin: ORIGIN,
+      accountId: who.accountId,
+      tenantId: who.tenantId,
+      target: 'per-user',
+    },
+  );
+  const record = await service.completeChallenge(who, {
+    challengeId: challenge.challengeId,
+    localIdentities: local.identities,
+    signature,
+  });
+  return {
+    link: verifyCloudLinkReceipt(record, challenge, local.identities),
+    local,
+    service,
+    who,
+  };
+}
+
+describe('per-user migration with a real link', () => {
+  const exported = (
+    ids: CloudLinkRecord['localIdentities'],
+    exportedAt: string,
+  ) => bundle({ localIdentities: ids } as CloudLinkRecord, exportedAt);
+
+  it('completes through the shipped API: begin retires, the retired location still signs the per-user link, completion verifies', async () => {
+    const { options } = await installed();
+    const before = await openLocalCloudLinkIdentity(options);
+    const ids = before.identities;
+
+    const started = await beginCloudMigration({
+      ...options,
+      target: 'per-user',
+    });
+    expect(started.status).toBe('in-progress');
+    expect((await inspectInstallationCustody(options)).status).toBe('retired');
+    // The ordinary rule still refuses a retired location...
+    await expect(openLocalCloudLinkIdentity(options)).rejects.toMatchObject({
+      code: 'installation_unverified',
+    });
+
+    // ...the bundle is exported after the retirement and imported into the
+    // empty cloud database, and only then is the per-user link made.
+    const plan = planCloudMigration({
+      bundle: exported(ids, new Date(Date.now() + 1000).toISOString()),
+      tables: NOTES,
+      perUser: { appId: APP_ID, localIdentities: ids },
+    });
+    const { link } = await perUserLink(options);
+    expect(link).toMatchObject({
+      target: 'per-user',
+      installationId: before.installationId,
+    });
+    expect(writeCloudLinkRecord(options, link)).toEqual(link);
+
+    const done = await completeCloudMigration({
+      ...options,
+      plan,
+      link,
+      target: { tables: plan.bundle.tables, assets: plan.bundle.assets },
+    });
+    expect(done.record).toMatchObject({
+      status: 'completed',
+      target: 'per-user',
+      accountId: ids.ownerId,
+    });
+  });
+
+  it('threat: the retired location signs nothing but the per-user link of its own migration', async () => {
+    const { options } = await installed();
+    // No migration begun: a retired location cannot link through the helper.
+    await expect(openMigrationCloudLinkIdentity(options)).rejects.toMatchObject(
+      { code: 'custody_refused' },
+    );
+    await beginCloudMigration({ ...options, target: 'per-user' });
+    const local = await openMigrationCloudLinkIdentity(options);
+    const service = createCloudLinkService({
+      origin: ORIGIN,
+      store: createMemoryCloudLinkStore(),
+    });
+    const shared = principal();
+    const issued = await service.issueChallenge(shared, {
+      appId: APP_ID,
+      installationId: local.installationId,
+      linkPublicKey: local.linkPublicKey,
+      target: 'shared',
+    });
+    await expect(
+      local.signProof(JSON.parse(JSON.stringify(issued)), {
+        origin: ORIGIN,
+        accountId: shared.accountId,
+        tenantId: shared.tenantId,
+        target: 'shared',
+      }),
+    ).rejects.toMatchObject({ code: 'challenge_mismatch' });
+  });
+
+  it('threat: a location restored after an abandoned migration cannot be completed with the old bundle', async () => {
+    const { options } = await installed();
+    const link = await linkInstallation(options);
+    await beginCloudMigration({ ...options, target: 'shared', link });
+    const plan = planCloudMigration({
+      bundle: bundle(link, new Date(Date.now() + 1000).toISOString()),
+      tables: NOTES,
+      link,
+    });
+    const target = { tables: plan.bundle.tables, assets: plan.bundle.assets };
+    const journalPath = join(options.dataDirectory, '..', 'journal.json');
+    await runSharedCloudMigration({
+      plan,
+      segments: { notes: 'notes' },
+      journalPath,
+      transport: {
+        putAsset: async () => 'stored',
+        apply: async (request) => ({
+          results: request.items.map((item) => ({
+            itemId: item.itemId,
+            id: item.id,
+            status: 'applied' as const,
+          })),
+        }),
+      },
+    });
+
+    // Abandon: the origin goes back in service and keeps writing locally.
+    await restoreInstallation({ ...options, originRetired: true });
+    await expect(
+      completeCloudMigration({ ...options, plan, link, target, journalPath }),
+    ).rejects.toThrow(/not retired for the installation/);
+    // Retiring it again does not make the old bundle current: the custody
+    // epoch moved when the location was restored.
+    await retireInstallation(options);
+    await expect(
+      completeCloudMigration({ ...options, plan, link, target, journalPath }),
+    ).rejects.toThrow(/not retired for the installation/);
+    expect(readCloudMigrationRecord(options)?.status).toBe('in-progress');
+  });
+});
+
+describe('tables withheld from a migration', () => {
+  const table = (
+    name: string,
+    extra: string[],
+  ): { manifest: ManifestTable; rows: Record<string, unknown>[] } => {
+    const columns = ['id', 'tenant_id', ...extra];
+    return {
+      manifest: {
+        name,
+        columns,
+        columnDefinitions: Object.fromEntries(
+          columns.map((column) => [
+            column,
+            column === 'id' ? { primaryKey: true } : {},
+          ]),
+        ),
+        foreignKeys: [],
+        primaryKeys: ['id'],
+      },
+      rows: [
+        {
+          id: randomUUID(),
+          tenant_id: null,
+          ...Object.fromEntries(extra.map((column) => [column, 'x'])),
+        },
+      ],
+    };
+  };
+
+  function planFor(
+    ids: CloudLinkRecord['localIdentities'],
+    names: Array<[string, string[]]>,
+  ) {
+    const built = names.map(([name, extra]) => table(name, extra));
+    for (const entry of built) {
+      for (const row of entry.rows) row.tenant_id = ids.tenantId;
+    }
+    return planCloudMigration({
+      bundle: {
+        schemaVersion: 2,
+        application: APP_ID,
+        profile: 'local',
+        exportedAt: new Date(Date.now() + 1000).toISOString(),
+        tables: built.map((entry) => ({
+          name: entry.manifest.name,
+          columns: entry.manifest.columns,
+          rows: entry.rows as never,
+        })),
+        assets: {
+          schemaVersion: 1,
+          adapter: 'filesystem',
+          entries: [],
+          payloads: [],
+        },
+      },
+      tables: built.map((entry) => entry.manifest),
+      perUser: { appId: APP_ID, localIdentities: ids },
+    });
+  }
+
+  it('migrates ordinary refresh, auto_refresh and salt columns', async () => {
+    const { options } = await installed();
+    const ids = (await openLocalCloudLinkIdentity(options)).identities;
+    const plan = planFor(ids, [
+      ['feeds', ['refresh_interval', 'auto_refresh', 'salt', 'content_hash']],
+    ]);
+    expect(plan.skipped.omittedTables).toEqual([]);
+    expect(plan.bundle.tables[0].rows).toHaveLength(1);
+  });
+
+  it('still withholds credential columns, including a pin or refresh token hash', async () => {
+    const { options } = await installed();
+    const ids = (await openLocalCloudLinkIdentity(options)).identities;
+    const plan = planFor(ids, [
+      ['locks', ['pin_hash']],
+      ['grants', ['refresh_token_hash']],
+      ['accounts', ['password_salt']],
+      ['notes_extra', ['body']],
+    ]);
+    expect(plan.skipped.omittedTables).toEqual(['locks', 'grants', 'accounts']);
+  });
+
+  it('completes only once every withheld table is acknowledged, and records it', async () => {
+    const { options } = await installed();
+    const ids = (await openLocalCloudLinkIdentity(options)).identities;
+    await beginCloudMigration({ ...options, target: 'per-user' });
+    const plan = planFor(ids, [
+      ['locks', ['pin_hash']],
+      ['feeds', ['refresh_interval']],
+    ]);
+    const { link } = await perUserLink(options);
+    const target = { tables: plan.bundle.tables, assets: plan.bundle.assets };
+
+    // Verified, but rows were left behind: not silently.
+    await expect(
+      completeCloudMigration({ ...options, plan, link, target }),
+    ).rejects.toMatchObject({
+      code: 'verification_failed',
+      details: { unacknowledgedOmittedTables: ['locks'] },
+    });
+    expect(readCloudMigrationRecord(options)?.status).toBe('in-progress');
+
+    const done = await completeCloudMigration({
+      ...options,
+      plan,
+      link,
+      target,
+      acknowledgedOmittedTables: ['locks'],
+    });
+    expect(done.record).toMatchObject({
+      status: 'completed',
+      acknowledgedOmittedTables: ['locks'],
+    });
   });
 });
