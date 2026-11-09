@@ -60,6 +60,7 @@ function assertEndpointPlatform(endpoint: ControlEndpoint): void {
   }
 }
 
+/** @experimental */
 export interface SendControlRequestOptions<
   Req extends { readonly op: string } = ControlRequest,
   Res extends { readonly ok: boolean } = ControlResponse,
@@ -91,6 +92,8 @@ export interface SendControlRequestOptions<
  * (`invalid_json`, `duplicate_keys`, `invalid_control_message`,
  * `control_message_too_large`, `unsupported_contract`). Nothing is written to
  * disk and no message echoes a path, pid or payload.
+ *
+ * @experimental
  */
 export function sendControlRequest<
   Req extends { readonly op: string } = ControlRequest,
@@ -199,7 +202,11 @@ export function sendControlRequest<
   });
 }
 
-/** What a handler learns about the connection it serves. */
+/**
+ * What a handler learns about the connection it serves.
+ *
+ * @experimental
+ */
 export interface ControlRequestContext {
   /** Aborted if the peer disconnects or the server closes before the answer. */
   readonly signal: AbortSignal;
@@ -208,6 +215,8 @@ export interface ControlRequestContext {
 /**
  * Answers one request. May return a protocol-level error response; a thrown
  * error is answered as `internal` without echoing its message.
+ *
+ * @experimental
  */
 export type ControlHandler<
   Req extends { readonly op: string } = ControlRequest,
@@ -218,6 +227,8 @@ export type ControlHandler<
  * A registry maps each op to its handler; its `handler` plugs into
  * `serveControlChannelForTests`. Ops are open: a contract adds its own `register`
  * call. An op without a handler is answered `unsupported_op`.
+ *
+ * @experimental
  */
 export interface ControlHandlerRegistry<
   Req extends { readonly op: string } = ControlRequest,
@@ -231,6 +242,7 @@ export interface ControlHandlerRegistry<
   readonly handler: ControlHandler<Req, Res>;
 }
 
+/** @experimental */
 export function createControlHandlerRegistry<
   Req extends { readonly op: string } = ControlRequest,
   Res extends { readonly ok: boolean } = ControlResponse,
@@ -256,6 +268,7 @@ export function createControlHandlerRegistry<
   return registry;
 }
 
+/** @experimental */
 export interface ServeControlChannelForTestsOptions<
   Req extends { readonly op: string } = ControlRequest,
   Res extends { readonly ok: boolean } = ControlResponse,
@@ -279,6 +292,7 @@ export interface ServeControlChannelForTestsOptions<
   readonly platform?: NodeJS.Platform;
 }
 
+/** @experimental */
 export interface ControlServer {
   readonly endpoint: ControlEndpoint;
   /** Stop listening, drop open connections and remove the socket file. */
@@ -308,6 +322,8 @@ function errorResponse(code: string): ControlErrorResponse {
  *
  * Rejects with `invalid_endpoint`, `untrusted_endpoint` or
  * `control_server_failed`.
+ *
+ * @experimental
  */
 export async function serveControlChannelForTests<
   Req extends { readonly op: string } = ControlRequest,

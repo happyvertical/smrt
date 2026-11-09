@@ -15,7 +15,11 @@ import {
 } from '../internal/strict-json.js';
 import { isScopeList } from './grammar.js';
 
-/** File name of the slot record in the private state directory. */
+/**
+ * File name of the slot record in the private state directory.
+ *
+ * @experimental
+ */
 export const SLOT_RECORD_FILENAME = 'mcp-slot.json';
 
 /**
@@ -26,12 +30,18 @@ export const SLOT_RECORD_FILENAME = 'mcp-slot.json';
  *   The shell stops serving the credential at once and retries the revoke.
  * - `revoked`: the server confirmed the revoke (permanent for the id); the
  *   next connect uses a new slot id.
+ *
+ * @experimental
  */
 export type SlotState = 'minted' | 'revoking' | 'revoked';
 
 const states: readonly string[] = ['minted', 'revoking', 'revoked'];
 
-/** Non-secret metadata of the one credential slot. Holds no token. */
+/**
+ * Non-secret metadata of the one credential slot. Holds no token.
+ *
+ * @experimental
+ */
 export interface SlotRecordV1 {
   readonly version: 1;
   /** Opaque lowercase UUIDv4 chosen by the desktop app (never the server). */
@@ -87,6 +97,8 @@ function validateSlotRecord(input: unknown): SlotRecordV1 {
  * Parse `mcp-slot.json`. Throws a `DesktopContractError` with a fixed message
  * (`invalid_json`, `duplicate_keys`, `unsupported_contract`,
  * `invalid_document`, `invalid_field`); the input is never echoed.
+ *
+ * @experimental
  */
 export function parseSlotRecord(json: string): SlotRecordV1 {
   if (typeof json !== 'string') {
@@ -101,7 +113,11 @@ export function parseSlotRecord(json: string): SlotRecordV1 {
   return validateSlotRecord(parsed.value);
 }
 
-/** Serialize a validated record as canonical JSON with a trailing newline. */
+/**
+ * Serialize a validated record as canonical JSON with a trailing newline.
+ *
+ * @experimental
+ */
 export function serializeSlotRecord(record: SlotRecordV1): string {
   const r = validateSlotRecord(record);
   return `${JSON.stringify(
@@ -117,12 +133,20 @@ export function serializeSlotRecord(record: SlotRecordV1): string {
   )}\n`;
 }
 
-/** A fresh slot id: lowercase UUIDv4. */
+/**
+ * A fresh slot id: lowercase UUIDv4.
+ *
+ * @experimental
+ */
 export function newSlotId(): string {
   return randomUUID();
 }
 
-/** A new `minted` slot with no committed credential yet. */
+/**
+ * A new `minted` slot with no committed credential yet.
+ *
+ * @experimental
+ */
 export function newSlotRecord(
   scopes: readonly string[],
   slotId: string = newSlotId(),
@@ -140,6 +164,8 @@ export function newSlotRecord(
  * Read the slot record at `path` with the private-file rules (`O_NOFOLLOW`,
  * `fstat` on the descriptor). A missing file is `null`; a file that fails the
  * trust or schema checks throws a value-free `DesktopContractError`.
+ *
+ * @experimental
  */
 export async function readSlotRecord(
   path: string,
@@ -162,6 +188,8 @@ export async function readSlotRecord(
 /**
  * Persist the slot record atomically. Call it, and wait for it, before the
  * first mint request for a new slot id.
+ *
+ * @experimental
  */
 export async function writeSlotRecord(
   path: string,

@@ -18,9 +18,14 @@ import {
   type ShellFailureCode,
 } from './failure-code.js';
 
-/** File name of the instance record in the private state directory. */
+/**
+ * File name of the instance record in the private state directory.
+ *
+ * @experimental
+ */
 export const INSTANCE_RECORD_FILENAME = 'instance.json';
 
+/** @experimental */
 export type InstanceState = 'starting' | 'ready' | 'failed';
 
 const states: readonly string[] = ['starting', 'ready', 'failed'];
@@ -33,6 +38,8 @@ const states: readonly string[] = ['starting', 'ready', 'failed'];
  * It is a pointer and a cache, never an authority: liveness and identity are
  * proven by the control channel returning the same `instanceNonce`, not by
  * `pid` or by the file existing. Clients never write, delete or repair it.
+ *
+ * @experimental
  */
 export interface InstanceRecordV1 {
   readonly version: 1;
@@ -72,7 +79,11 @@ const optionalKeys = ['origin', 'failure'] as const;
 
 const nonce = /^[0-9a-f]{32}$/;
 
-/** True for a 32-character lowercase hex instance nonce. */
+/**
+ * True for a 32-character lowercase hex instance nonce.
+ *
+ * @experimental
+ */
 export function isInstanceNonce(value: unknown): value is string {
   return typeof value === 'string' && nonce.test(value);
 }
@@ -156,6 +167,8 @@ function validateInstanceRecord(input: unknown): InstanceRecordV1 {
  * Parse `instance.json`. Throws a `DesktopContractError` with a fixed,
  * value-free message: `invalid_json`, `duplicate_keys`,
  * `unsupported_contract`, `invalid_document` or `invalid_field`.
+ *
+ * @experimental
  */
 export function parseInstanceRecord(json: string): InstanceRecordV1 {
   if (typeof json !== 'string') {
@@ -170,7 +183,11 @@ export function parseInstanceRecord(json: string): InstanceRecordV1 {
   return validateInstanceRecord(parsed.value);
 }
 
-/** Serialize a validated record as canonical JSON with a trailing newline. */
+/**
+ * Serialize a validated record as canonical JSON with a trailing newline.
+ *
+ * @experimental
+ */
 export function serializeInstanceRecord(record: InstanceRecordV1): string {
   const r = validateInstanceRecord(record);
   return `${JSON.stringify(

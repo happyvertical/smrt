@@ -9,6 +9,7 @@ import { isInstanceNonce } from './grammar.js';
 
 export type { CredentialLease } from './control-handler.js';
 
+/** @experimental */
 export interface AcquireOptions {
   /** `instanceNonce` the rendezvous proved over the control channel. */
   readonly instanceNonce: string;
@@ -21,6 +22,8 @@ export interface AcquireOptions {
  * Launcher-facing source of the bearer. `acquire` either returns a lease bound
  * to the requested origin or throws a `DesktopContractError` whose `code` is
  * `credential_unavailable`, `credential_invalid` or `instance_mismatch`.
+ *
+ * @experimental
  */
 export interface CredentialProvider {
   acquire(request: AcquireOptions): Promise<CredentialLease>;
@@ -31,12 +34,15 @@ export interface CredentialProvider {
  * and resolves with the decoded reply (a parsed object or one JSON line). The
  * rendezvous transport implements it; this module imports nothing from it.
  * Honor `signal`: it fires on timeout and on caller abort.
+ *
+ * @experimental
  */
 export type SendAcquireRequest = (
   request: AcquireCredentialRequest,
   options: { readonly signal: AbortSignal },
 ) => Promise<unknown>;
 
+/** @experimental */
 export interface ControlChannelCredentialProviderOptions {
   readonly send: SendAcquireRequest;
   /** Defaults to 2000 ms, the control protocol's response budget. */
@@ -55,6 +61,8 @@ const DEFAULT_TIMEOUT_MS = 2000;
  * `instance_mismatch`) and the requested origin (the bearer is only ever bound
  * to the origin the caller proved), and refuses an already-expired bearer. A transport failure, timeout or malformed reply is
  * `credential_unavailable`; the underlying error is dropped, never chained.
+ *
+ * @experimental
  */
 export function createControlChannelCredentialProvider(
   options: ControlChannelCredentialProviderOptions,

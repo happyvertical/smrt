@@ -9,7 +9,11 @@
  * mapping from the current messages, for Node-based shells and test doubles.
  */
 
-/** Codes a shell may report (control channel and `instance.json`). */
+/**
+ * Codes a shell may report (control channel and `instance.json`).
+ *
+ * @experimental
+ */
 export const SHELL_FAILURE_CODES = [
   /** Another live process holds the runtime writer lease or operation lock. */
   'lease_held',
@@ -29,7 +33,11 @@ export const SHELL_FAILURE_CODES = [
   'unknown',
 ] as const;
 
-/** Codes only the client produces. */
+/**
+ * Codes only the client produces.
+ *
+ * @experimental
+ */
 export const CLIENT_FAILURE_CODES = [
   /** The client could not start the shell binary. */
   'launch_failed',
@@ -41,9 +49,15 @@ export const CLIENT_FAILURE_CODES = [
   'unsupported_contract',
 ] as const;
 
+/** @experimental */
 export type ShellFailureCode = (typeof SHELL_FAILURE_CODES)[number];
+/** @experimental */
 export type ClientFailureCode = (typeof CLIENT_FAILURE_CODES)[number];
-/** Closed union returned in `failed{code}`. */
+/**
+ * Closed union returned in `failed{code}`.
+ *
+ * @experimental
+ */
 export type RendezvousFailureCode = ShellFailureCode | ClientFailureCode;
 
 const shellCodes: readonly string[] = SHELL_FAILURE_CODES;
@@ -52,12 +66,20 @@ const allCodes: readonly string[] = [
   ...CLIENT_FAILURE_CODES,
 ];
 
-/** True for a code a shell may put on the wire or in `instance.json`. */
+/**
+ * True for a code a shell may put on the wire or in `instance.json`.
+ *
+ * @experimental
+ */
 export function isShellFailureCode(value: unknown): value is ShellFailureCode {
   return typeof value === 'string' && shellCodes.includes(value);
 }
 
-/** True for any member of the closed failure union. */
+/**
+ * True for any member of the closed failure union.
+ *
+ * @experimental
+ */
 export function isRendezvousFailureCode(
   value: unknown,
 ): value is RendezvousFailureCode {
@@ -97,6 +119,8 @@ export function isForwardCompatibleCode(value: unknown): value is string {
  * Map the current Rust supervisor `Failed` text to a code. Order matters: the
  * underlying cause wins over the generic "gave up after N restarts" suffix.
  * Unrecognized text is `unknown`, never an error.
+ *
+ * @experimental
  */
 export function failureCodeFromSupervisorMessage(
   message: string,

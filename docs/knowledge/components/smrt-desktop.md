@@ -1,14 +1,14 @@
 ---
 type: "Component"
 title: "@happyvertical/smrt-desktop"
-description: "Versioned sidecar manifest, installed-product, supervisor rendezvous and native credential handoff contracts, and the runtime bundler, for SMRT desktop apps"
+description: "Versioned sidecar manifest, installed-product contract and runtime bundler for SMRT desktop apps, plus the EXPERIMENTAL supervisor rendezvous (b) and native credential handoff (c) contracts, whose Rust shell half is not built"
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-09T05:19:23Z"
+  at: "2026-11-09T05:24:23Z"
 audience: "internal"
 evidence_level: "manifest-described"
-source_revision: "sha256:c9e80b7717edeace920811de3478252eec3224136d4149eadc1a05431b19e667"
+source_revision: "sha256:94ac6aef35ad71406d5e86c7265047a101d8c28dc381b2bc1de31dd29d3f69d3"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/smrt-desktop/package.json"

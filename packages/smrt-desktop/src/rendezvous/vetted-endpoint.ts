@@ -20,7 +20,7 @@ declare const vettedBrand: unique symbol;
  * the socket in between), which is why the credential reply is also bound to
  * the instance: it must echo the `instanceNonce` that `status` proved.
  *
- * @experimental Part of contract (b); not stable until the Rust shell lands.
+ * @experimental
  */
 export interface VettedEndpoint {
   readonly [vettedBrand]: true;

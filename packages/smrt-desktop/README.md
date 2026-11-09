@@ -7,6 +7,18 @@ contracts below let other programs on the same machine (an assistant launcher,
 a plugin) find and verify that installed app. The package has no runtime
 dependencies and uses only Node built-ins.
 
+> **Stability.** Contract (a), the installed-product bundle and the sidecar
+> manifest, is stable. Contracts **(b) supervisor rendezvous** and **(c) native
+> credential handoff are EXPERIMENTAL.** The TypeScript half exists (parsers,
+> the client, the vetting rules, the reference handler); the server half does
+> not: the control server, the `instance.json` writer, `--smrt-background`,
+> keychain custody, the peer-credential check and the pipe DACL are an unbuilt
+> Rust follow-up, and nothing here has run against a real shell. Names, wire
+> fields and result states of (b) and (c) may change in any release; every
+> exported type and function of those contracts carries an `@experimental`
+> TSDoc tag. The reference server and test doubles are a separate Node-only
+> subpath, `@happyvertical/smrt-desktop/testing`.
+
 ## Node 26 and adapter-node example
 
 This [manifest](examples/node26-sidecar.json) describes a stock Node 26 sidecar
@@ -395,6 +407,11 @@ This is a documented residual risk, not a guarantee.
 
 ### Supervisor rendezvous
 
+> **EXPERIMENTAL (contract b).** Only the client half is implemented. The
+> server half (control server, `instance.json` writer, `--smrt-background`,
+> peer-credential check, pipe DACL) is an unbuilt Rust follow-up; see the
+> threat table for which half closes which threat.
+
 A launcher that needs the app running asks `createFileRendezvous` for the
 supervisor's state instead of guessing from pids or ports.
 
@@ -611,14 +628,27 @@ that is not in its own list.
    `ready`, `failed`, `untrusted_state`, the budget (`timeout`) or the signal.
 
 **One writer.** A client only reads, talks to the channel and spawns the shell
-binary. Racing launchers may each spawn the shell: the single-instance plugin
-forwards the second start to the first and exits; if the plugin cannot run
-(for example Linux without a D-Bus session bus) the second shell's sidecar
-fails `lease_held` against the runtime writer lease and that shell ends
-`failed` without writing the record. The runtime lease, not this contract, is
-the backstop, and a shell must not write `instance.json` unless it holds the
-single-instance lock. Within one `createFileRendezvous` object concurrent calls
-share a single in-flight spawn.
+binary. Racing launchers may each spawn the shell, and nothing in this contract
+promises that only one shell process exists. The single-instance plugin
+usually helps (it forwards the second start to the first and exits), but it is
+not a lock the contract can lean on: where it cannot run, for example Linux
+without a D-Bus session bus, there is no process-level lock at all. The only
+exclusion that exists on every platform is the **runtime writer lease**
+(`writer.lease`), so the writer rule is keyed to it, not to the plugin:
+
+- a shell publishes or rewrites `instance.json` only while it holds the runtime
+  writer lease, and takes the lease before its first write (`starting`);
+- a shell that cannot take the lease, or finds it held by another live writer
+  (`lease_held`), writes nothing and does not touch the existing record: the
+  record belongs to the holder, whose control channel (answering with its own
+  `instanceNonce`) is the only authority. It ends `failed` in its own tray and
+  log;
+- a shell that loses the lease mid-run stops rewriting the record.
+
+This is a requirement on the Rust shell, which does not implement it yet; the
+TypeScript reference shell has no lease and, as a test double, does not model
+it. The runtime lease, not this contract, is the backstop. Within one
+`createFileRendezvous` object concurrent calls share a single in-flight spawn.
 
 **What a client must never do:** delete or "repair" `instance.json`, a socket,
 `writer.lease` or `operation.lock`; retry a `failed(lease_held)`; infer
@@ -648,6 +678,10 @@ given and vets nothing; a launcher uses `createFileRendezvous`, whose `ready`
 result carries the vetted handle.
 
 ### Native credential handoff
+
+> **EXPERIMENTAL (contract c).** The keychain custody, the four Tauri commands,
+> the control server and its peer check are an unbuilt Rust follow-up; the
+> remote IPC capability is deliberately not granted (see "Webview helper").
 
 The owner mints a local MCP bearer in the signed-in desktop webview (#4726).
 The bearer must reach the MCP bridge that an assistant host (Claude, ChatGPT)
@@ -787,14 +821,47 @@ JavaScript**:
 | `desktop-credential-status` | `{}` | the slot (as above) or `null` |
 | `desktop-credential-forget` | `{ slotId, revoked }` | `{ status: 'revoked' \| 'revoking' }` |
 
-The shell must grant these four commands, and only these, to the `main` window
-for the sidecar's loopback origin (`remote.urls: ["http://127.0.0.1:*"]` in a
-dedicated `desktop-credential` capability). This reverses the posture that
-remote content gets no IPC and is owner decision D1 of the design. At call time
-the shell must check that the invoking webview's URL origin equals the
-supervisor's *current* ready origin exactly (the capability glob matches any
-port), that `slotId` is the persisted slot, and that the body is at most 12 KiB
-and valid per `parseMintResponse`.
+**These commands are specified, not granted.** Today the shell grants the
+sidecar origin no IPC at all: `shell/capabilities/default.json` has no `remote`
+block and no permissions, and the shell registers no command handler. Two tests
+keep it that way (`src/shell-capabilities.test.ts` and the Rust
+`shell/tests/capabilities.rs`, which CI runs): they fail if any capability gains
+`remote`. Do not add the capability on its own. Granting remote content access
+to IPC reverses the posture that remote content gets no IPC (owner decision D1
+of the design), and it is only as safe as the three things below, which must
+land **in the same change as the capability, never after it**:
+
+1. **A command allowlist (`AppManifest`).** `build.rs` declares the four
+   commands with `tauri_build::AppManifest::new().commands(&[...])` and the
+   capability references only their generated permissions (no `core:*` default
+   set). Without it every command in `invoke_handler` is invokable by whatever
+   origin a capability matches; with it a command nobody listed is not.
+2. **`on_navigation` pinned to the ready origin.** The `main` window is built in
+   code (`WebviewWindowBuilder::from_config(...).on_navigation(...)`, because a
+   window created from `tauri.conf.json` cannot take a navigation handler) and
+   allows only the splash page and the supervisor's current ready origin,
+   `http://127.0.0.1:<port>`, compared whole (scheme, host and port). Today
+   `app.rs` navigates with no restriction, and a link or redirect inside the
+   sidecar page can land the webview on any other loopback page (another local
+   service, another port).
+3. **The origin check inside every command.** Each handler compares the
+   invoking webview's URL origin with the supervisor's *current* ready origin
+   (exact string equality, re-read at call time, so a restart on a new port
+   invalidates the old one), checks that `slotId` is the persisted slot, and
+   that the body is at most 12 KiB and valid per `parseMintResponse`.
+
+The capability itself must name the exact ready origin and no pattern. The
+port is chosen at run time, so it cannot be a static `remote.urls` entry. It is
+added once the supervisor reports `ready`, for that origin only, with
+`Manager::add_capability` (the `dynamic-acl` feature, on by default in the
+pinned Tauri 2) from a `CapabilityBuilder` limited to the `main` window and the
+four permissions, and it is replaced on a restart. A static entry that matches
+a range of loopback ports is not an alternative: it matches every port, so
+with it any page on any loopback port the webview reaches can call every
+registered command, and precondition 2 is then the only thing standing between
+a sidecar's neighbour and the keychain. This section is the contract for that
+work; none of it is implemented in this package, and the commands themselves
+are the shell's follow-up.
 
 #### Control channel: `acquire-credential`
 
@@ -931,18 +998,18 @@ so; those parts are not claimed closed by this package.
 
 | # | Threat | Mitigation | Closing test(s) |
 | --- | --- | --- | --- |
-| T1 | Same-user malware reads the keychain item | The shell stores the item in the OS secret store (macOS: created by the signed shell, `WhenUnlockedThisDeviceOnly`, non-synchronizable). This does not stop a same-user process: it can read `instance.json`, connect to the owner-only channel and call `acquire-credential`, and the shell itself reads the keychain on its behalf, so no keychain ACL prompt applies. Windows/Linux likewise have no same-user boundary. Residual (see "Same-user processes"); revoke/rotate is the recovery. Scopes and lifetime are bounded by the owner. Custody touches only `mcp-credential.<uuid>` names. | `credentials/custody.test.ts`: `T1: custody only touches mcp-credential.<uuid> item names`. Item attributes are asserted in the shell's macOS test (follow-up). |
-| T2 | Another OS user | Private directory 0700, files 0600, readers validate `fstat` (owner, mode); control-channel peer uid/SID check and pipe DACL are the shell's and contract (b)'s. | `credentials/slot-record.test.ts`: `T2: readSlotRecord rejects a foreign-owned, group-readable or symlinked record`. Peer-credential rejection is a Rust test (follow-up). |
+| T1 | Same-user malware reads the keychain item | **TypeScript (built):** the custody layer over an injected `SecretItemStore` touches only `mcp-credential.<uuid>` names; the in-memory store is a test double and is not a keychain. **Rust shell (not built):** the OS secret store itself (macOS: created by the signed shell, `WhenUnlockedThisDeviceOnly`, non-synchronizable). Neither half stops a same-user process: it can read `instance.json`, connect to the owner-only channel and call `acquire-credential`, and the shell itself reads the keychain on its behalf, so no keychain ACL prompt applies. Windows/Linux likewise have no same-user boundary. Residual (see "Same-user processes"); revoke/rotate is the recovery. Scopes and lifetime are bounded by the owner. | `credentials/custody.test.ts`: `T1: custody only touches mcp-credential.<uuid> item names`. Item attributes are asserted in the shell's macOS test (Rust, not built). |
+| T2 | Another OS user | **TypeScript (built):** private directory 0700, files 0600, readers validate `fstat` (owner, mode), and the rendezvous client vets the socket's directory, type, owner and mode before connecting. **Rust shell (not built):** the control server's peer-credential check (`SO_PEERCRED`, `getpeereid`, `GetNamedPipeClientProcessId` plus the token SID) and the Windows pipe DACL; the TypeScript test-double server has neither and only listens on Windows. | `credentials/slot-record.test.ts`: `T2: readSlotRecord rejects a foreign-owned, group-readable or symlinked record`. Peer-credential rejection is a Rust test (not built). |
 | T3 | Token in argv / `ps` | The bearer is never an argument (`--credential-fd=3` only); the spawn helper refuses a command, argument or cwd that contains it. | `credentials/bridge-spawn.test.ts`: `T3: argv and env passed to the spawner never contain the token`; `T3/T4: refuses to spawn when the token is in argv, env, command or cwd`; `T3: ps shows no token in the child command line` (real child). |
 | T4 | Token in the environment (`/proc/<pid>/environ`) | The child environment is exactly what the launcher passes, never inherited; the bridge in fd mode ignores `<PREFIX>_TOKEN`. | `credentials/bridge-spawn.test.ts`: `T4: the child environment as the OS reports it holds no token` (`/proc/<pid>/environ` on Linux, `ps eww` on macOS, real child with a real fd 3 pipe); `delivers the initial frame over fd 3 and keeps the token out of argv and env`; `credentials/end-to-end.test.ts`: `hands the minted token from the shell to the bridge over fd 3 and nowhere else`. |
 | T5 | Crash dumps and logs | The token lives in a `SecretString` until the three reveal sites; diagnostics are fixed text; buffers are zeroed. | `credentials/leak.test.ts`: `T5: SecretString is not serialized by JSON, inspect, String, template, structuredClone or console`; `T5: errors built with secrets in their context do not retain them`; `T5: every credential error message is fixed, value-free text`; the describe `T5/T11: every exported parser and handler, fed token-bearing invalid input`; `reveal() is called only by custody serialization, the wire encoders and the secret guard`. |
-| T6 | Webview XSS reaching the IPC command | No command returns a token; the helper never stores, logs or builds URLs from the body; the shell checks the webview origin equals the current ready origin, the slot id, and the body (follow-up). XSS in this origin already holds the session cookie and can mint itself, so the IPC path grants nothing new. | `webview/webview.test.ts`: `T6: touches no storage, cookie, console, URL or location API`; `T6: has no path to those APIs in its source or its import closure`; `mints with a same-origin POST and passes the RAW response text only to the put command`. Origin/slot/body rejection is a Rust test (follow-up). |
+| T6 | Webview XSS reaching the IPC command | **TypeScript (built):** no command returns a token; the helper never stores, logs or builds URLs from the body. **Rust shell (not built):** the four commands, their origin check (the invoking webview's origin equals the current ready origin), slot id and body checks, and the three preconditions that must land with any remote capability (an `AppManifest` allowlist, `on_navigation` pinned to the ready origin, the origin check). Until then the sidecar origin has no IPC at all, which is asserted. XSS in this origin already holds the session cookie and can mint itself, so the IPC path grants nothing new. | `webview/webview.test.ts`: `T6: touches no storage, cookie, console, URL or location API`; `T6: has no path to those APIs in its source or its import closure`; `mints with a same-origin POST and passes the RAW response text only to the put command`; `shell-capabilities.test.ts`: `has no capability with a remote block, and the default one grants nothing`. Origin/slot/body rejection is a Rust test (not built). |
 | T7 | Replay after rotation | Server: only the latest write verifies (`app-runtime/src/local-mcp-tokens.test.ts`: `mints, rotates, expires and revokes a private owner slot without colliding with operator tokens`). Custody replaces atomically and the handler reads it on every call; the pipe delivers the new bearer on refresh. | `credentials/control-handler.test.ts`: `T7: after rotation the handler returns only the latest bearer`; `credentials/bridge-spawn.test.ts`: `T7: a refresh request after a simulated 401 delivers the rotated token`; `credentials/custody.test.ts`: `replaces atomically: a later put wins and old bytes are gone`; over a real socket, `credentials/end-to-end.test.ts`: `yields only the latest token after a rotation`. |
-| T8 | Confused deputy via the control channel | `acquire-credential` is bound to the current `instanceNonce` and `origin` and refuses before touching custody. This defeats a stale or wrong-instance caller, not a same-user one: the nonce and origin are readable by any process of the same OS user (0600 `instance.json`), so they do not bound that caller. One request per connection is enforced; the peer check is the shell's, and today it is uid/SID only (see "Same-user processes"). | `credentials/control-handler.test.ts`: `T8: wrong nonce or origin yields instance_mismatch without touching custody`; over a real socket, `credentials/end-to-end.test.ts`: `answers a wrong instance nonce or origin with instance_mismatch`. Foreign peer is a Rust test (follow-up). |
+| T8 | Confused deputy via the control channel | **TypeScript (built):** `acquire-credential` is bound to the current `instanceNonce` and `origin` and refuses before touching custody; the reply echoes the nonce and the provider rejects a mismatch; the credential flow only accepts the endpoint handle the rendezvous vetted; the test-double server answers one request per connection. This defeats a stale or wrong-instance caller, not a same-user one: the nonce and origin are readable by any process of the same OS user (0600 `instance.json`), so they do not bound that caller. **Rust shell (not built):** the real control server and its peer check, which today would be uid/SID only (see "Same-user processes"). | `credentials/control-handler.test.ts`: `T8: wrong nonce or origin yields instance_mismatch without touching custody`; `credentials/provider.test.ts`: `binds the reply to the instance status proved: rejects a reply that echoes another nonce, or none`; over a real socket, `credentials/end-to-end.test.ts`: `answers a wrong instance nonce or origin with instance_mismatch`, `only takes the endpoint the rendezvous vetted: a raw endpoint or a look-alike is refused`. Foreign peer is a Rust test (not built). |
 | T9 | TOCTOU on state files | Readers open `O_NOFOLLOW` and validate the descriptor; writers use temp (`O_EXCL`) plus rename; clients never repair or delete. | `credentials/slot-record.test.ts`: `T9: a symlink swapped in for the record is never followed or repaired`; `persists the slot before the first request can be made` (write order); the stage-1 `internal/private-file.test.ts`. |
-| T10 | Windows named-pipe squatting | Random pipe name published in the private directory, `FILE_FLAG_FIRST_PIPE_INSTANCE`, DACL: contract (b) and the shell. This contract only guarantees that the provider opens no endpoint of its own. | `credentials/provider.test.ts`: `T10: talks only through the injected send and never opens an endpoint itself`. Name grammar belongs to contract (b)'s tests; the "second `CreateNamedPipe` fails" test is a Windows Rust test (follow-up). Residual: a Node client cannot query the server pid/SID. |
+| T10 | Windows named-pipe squatting | **TypeScript (built):** a random per-start pipe name; the provider opens no endpoint of its own; the credential flow takes only a vetted handle, and on Windows a `ready` result has none unless the shell injects `vetPipe` (fail closed). **TypeScript does not vet pipes**: there is no owner, SID or DACL check in this package. **Rust shell (not built):** `FILE_FLAG_FIRST_PIPE_INSTANCE`, the DACL and the server pid/SID check, and the `vetPipe` function itself. | `credentials/provider.test.ts`: `T10: talks only through the injected send and never opens an endpoint itself`; `rendezvous/file-rendezvous-win32.test.ts`: `returns ready WITHOUT a vetted endpoint when the shell supplied no vetting function (fail closed)`. Name grammar belongs to contract (b)'s tests; the "second `CreateNamedPipe` fails" test is a Windows Rust test (not built). Residual: a Node client cannot query the server pid/SID. |
 | T11 | Token in error messages | Code-only errors; parsers never echo input; the webview helper replaces every `fetch`/`invoke` rejection with a fixed code and does not chain it. | `credentials/mint-response.test.ts`: `T11: never echoes the body or the token in any failure`; `webview/webview.test.ts`: `T11: a token-bearing malformed body yields a fixed-code error without the token`; `credentials/leak.test.ts`: `the webview helper maps token-bearing failures to fixed codes` and the `T5/T11` describe. |
-| T12 | Port squatting after ready | The credential is released only for the nonce and origin the channel confirms; the provider requires the reply origin to equal the requested origin. | `credentials/control-handler.test.ts`: `T12: an origin that differs from the running instance never gets a token`; `credentials/provider.test.ts`: `T12: rejects a lease whose origin differs from the origin it asked about`. Nonce echo in the health route is optional (design D5). |
+| T12 | Port squatting after ready | The credential is released only for the nonce and origin the channel confirms; the provider requires the reply to echo the requested nonce and its origin to equal the requested origin. | `credentials/control-handler.test.ts`: `T12: an origin that differs from the running instance never gets a token`; `credentials/provider.test.ts`: `T12: rejects a lease whose origin differs from the origin it asked about`, `binds the reply to the instance status proved: rejects a reply that echoes another nonce, or none`. Nonce echo in the health route is optional (design D5). |
 | T13 | Credential sent to a non-owned endpoint | Origin grammar `http://127.0.0.1:<1..65535>` everywhere (no `localhost`, no `[::1]`, no https, no path or userinfo); the bridge pins the origin from the frame. | `credentials/handoff-frame.test.ts`: `T13: only the exact loopback origin grammar is accepted`; `credentials/provider.test.ts`: `T13: only the loopback origin grammar is ever accepted in a reply`; `credentials/bridge-spawn.test.ts`: `T13: refuses a lease for a non-loopback origin`. |
 | T14 | Roaming profile copies state to another machine | State lives only under `app_local_data_dir` (`LOCALAPPDATA`, never `APPDATA`). | Stage-1 `install/locations.test.ts`: `uses LOCALAPPDATA and never the roaming APPDATA on Windows`. |
 
@@ -984,8 +1051,9 @@ so; those parts are not claimed closed by this package.
 #### Shell and elsewhere (follow-ups, not in this package)
 
 - Rust shell: the OS secret store behind `SecretItemStore` (shared with the
-  vault keys of #4792), the four commands and the `desktop-credential`
-  capability with the checks above, a per-slot mutex, the control server and
+  vault keys of #4792), the four commands, and the three preconditions plus the
+  exact-origin `desktop-credential` capability (in one change, see above), a
+  per-slot mutex, the control server and
   its peer-credential checks, mirrors of `parseSlotRecord`/`parseMintResponse`
   tested against `examples/mcp-slot.json`.
 - app-cli: `--credential-fd` mode using the frame codec (a dependency on this

@@ -8,13 +8,21 @@ const scopeSlug = /^[\x21\x23-\x5b\x5d-\x7e]+$/;
 const instanceNonce = /^[0-9a-f]{32}$/;
 const secretItemName = /^[a-z0-9][a-z0-9.-]{0,127}$/;
 
-/** Shortest remaining lifetime a freshly minted credential may have. */
+/**
+ * Shortest remaining lifetime a freshly minted credential may have.
+ *
+ * @experimental
+ */
 export const MIN_CREDENTIAL_LIFETIME_MS = 60_000;
 /** Most scopes a slot may carry (the server limit). */
 export const MAX_SCOPES = 64;
 /** Longest scope slug (the server limit). */
 export const MAX_SCOPE_LENGTH = 128;
-/** Prefix of every item the credential custody writes to the secret store. */
+/**
+ * Prefix of every item the credential custody writes to the secret store.
+ *
+ * @experimental
+ */
 export const CREDENTIAL_ITEM_PREFIX = 'mcp-credential.';
 
 /** A local MCP bearer: `smrt_mcp_` plus 43 base64url characters. */
@@ -45,7 +53,11 @@ export function isScopeList(value: unknown): value is readonly string[] {
   );
 }
 
-/** The 32-lowercase-hex per-process instance nonce. */
+/**
+ * The 32-lowercase-hex per-process instance nonce.
+ *
+ * @experimental
+ */
 export function isInstanceNonce(value: unknown): value is string {
   return typeof value === 'string' && instanceNonce.test(value);
 }
