@@ -181,6 +181,8 @@ Agent docs (#4878): `install` runs `docs:agents`, `dev` refreshes a missing or s
   other argument that starts with `-` (`--encrypt` is not `--encrypted`), before
   any lock or write; `--` makes a dash-leading path expressible. Format, limits
   and restore primitives: [encrypted-snapshots.md](encrypted-snapshots.md).
+  The same guide defines [relay-visible metadata](encrypted-snapshots.md#relay-visible-metadata)
+  and [filesystem durability/capability limits](encrypted-snapshots.md#filesystem-durability-and-capability).
 - **Backup targets** (#4804, `backup-command.ts`, `backup-target-*.ts`):
   `backup --encrypted --target <name>` stores the snapshot on a configured
   local directory, the user's Google Drive, or the vault relay; `backups

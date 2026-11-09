@@ -25,7 +25,6 @@ import {
   randomBytes,
   timingSafeEqual,
 } from 'node:crypto';
-import { closeSync, fsyncSync, openSync } from 'node:fs';
 import type { FileHandle } from 'node:fs/promises';
 import { link, lstat, mkdir, open, rename, rm, unlink } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
@@ -35,6 +34,7 @@ import {
 } from '@happyvertical/encryption/vault-snapshot';
 import { errorCode } from './errors.js';
 import { extractDataRootArchive } from './snapshot-archive.js';
+import { syncSnapshotParents } from './snapshot-storage.js';
 
 /** What a snapshot's plaintext is. */
 export type SnapshotKind = 'data-root' | 'export-bundle';
@@ -408,6 +408,7 @@ async function publishFile(
   temporary: string,
   destination: string,
   label: string,
+  firstCreatedParent: string | undefined,
 ): Promise<void> {
   try {
     await link(temporary, destination);
@@ -415,35 +416,19 @@ async function publishFile(
     if (errorCode(error) === 'EEXIST') {
       throw new Error(`${label} already exists: ${destination}`);
     }
+    if (
+      ['ENOTSUP', 'EOPNOTSUPP', 'ENOSYS', 'EXDEV', 'EPERM'].includes(
+        errorCode(error) ?? '',
+      )
+    ) {
+      throw new Error(
+        `${label} cannot be published at ${destination}: the filesystem must support and permit atomic hard links. Check destination permissions or choose a target on another filesystem.`,
+        { cause: error },
+      );
+    }
     throw error;
   }
-  syncDirectory(dirname(destination));
-}
-
-/**
- * Flush a directory entry (a rename or link) to disk. Platforms that cannot
- * open or sync a directory report one of a few "not supported" codes; those
- * are the only errors swallowed.
- */
-function syncDirectory(path: string): void {
-  let fd: number | undefined;
-  try {
-    fd = openSync(path, 'r');
-    fsyncSync(fd);
-  } catch (error) {
-    const code = errorCode(error);
-    if (
-      code !== 'EINVAL' &&
-      code !== 'ENOTSUP' &&
-      code !== 'EISDIR' &&
-      code !== 'EPERM' &&
-      code !== 'EACCES'
-    ) {
-      throw error;
-    }
-  } finally {
-    if (fd !== undefined) closeSync(fd);
-  }
+  await syncSnapshotParents(destination, firstCreatedParent);
 }
 
 /** Write every byte; `FileHandle.write` may write fewer than requested. */
@@ -540,7 +525,10 @@ export async function writeEncryptedSnapshot(
       sequence: sealing.sequence,
     };
 
-    await mkdir(dirname(options.destination), { recursive: true, mode: 0o700 });
+    const firstCreatedParent = await mkdir(dirname(options.destination), {
+      recursive: true,
+      mode: 0o700,
+    });
     const temporary = temporarySibling(options.destination, 'tmp');
     const key = deriveSnapshotSubkey(dataKey);
     const payload = Buffer.alloc(PAYLOAD_PREFIX_BYTES + chunkSize);
@@ -627,6 +615,7 @@ export async function writeEncryptedSnapshot(
         temporary,
         options.destination,
         options.label ?? 'Snapshot destination',
+        firstCreatedParent,
       );
       return summary(header, digest.toString('hex'));
     } finally {
@@ -967,7 +956,10 @@ export async function decryptSnapshot(
   const staging = temporarySibling(destination, 'partial');
   let staged = false;
   try {
-    await mkdir(dirname(destination), { recursive: true, mode: 0o700 });
+    const firstCreatedParent = await mkdir(dirname(destination), {
+      recursive: true,
+      mode: 0o700,
+    });
     async function* remaining(): AsyncGenerator<Buffer, string> {
       if (first.done) return first.value;
       yield first.value;
@@ -980,7 +972,7 @@ export async function decryptSnapshot(
       digest = await extractDataRootArchive(remaining(), staging);
       await assertAbsent(destination);
       await rename(staging, destination);
-      syncDirectory(dirname(destination));
+      await syncSnapshotParents(destination, firstCreatedParent);
     } else {
       const handle = await open(staging, 'wx', 0o600);
       staged = true;
@@ -995,7 +987,12 @@ export async function decryptSnapshot(
       } finally {
         await handle.close();
       }
-      await publishFile(staging, destination, 'Restore destination');
+      await publishFile(
+        staging,
+        destination,
+        'Restore destination',
+        firstCreatedParent,
+      );
       await unlink(staging);
     }
     staged = false;

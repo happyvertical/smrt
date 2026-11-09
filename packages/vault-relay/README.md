@@ -4,8 +4,11 @@
 snapshot relay. It stores encrypted snapshots per account, in a monotonic
 sequence, and can never read or validate their content. Devices encrypt with a
 user-held key before upload (see the encrypted snapshot format in
-`smrt app backup --encrypted`); the relay sees sizes, dates, sequences, and
-SHA-256 digests of ciphertext only, and holds no key material.
+`smrt app backup --encrypted`). It holds no key material, but observes public
+framing, sizes, sequences, account/device identifiers and traffic activity.
+The complete [metadata visibility contract](../cli/agents/encrypted-snapshots.md#relay-visible-metadata)
+distinguishes this from content encryption; the relay's SHA-256 digests cover
+ciphertext.
 
 Every device route is authenticated by an Ed25519 device signature and then
 gated by the `backup.vault` feature (`requireFeature` from
