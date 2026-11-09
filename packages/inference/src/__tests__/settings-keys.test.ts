@@ -1,12 +1,14 @@
 import { getTestDatabase } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { parseInferenceProviderConfig } from '../provider-config.js';
 import {
   bindInferenceKey,
   InferenceKeyOriginError,
   InferenceSettingsService,
   inferenceKeyFor,
   inferenceKeyOrigin,
+  inferenceProviderConfigFromKey,
   redactInferenceSecret,
 } from '../server.js';
 
@@ -86,6 +88,57 @@ describe('origin-bound keys', () => {
     expect(redactInferenceSecret('Bearer abcdefghijklmnop')).toBe(
       'Bearer [redacted]',
     );
+  });
+});
+
+describe('inferenceProviderConfigFromKey (#4754 keys into #4756 storage)', () => {
+  it('turns every bound key into a valid self-contained provider config', () => {
+    const openai = inferenceProviderConfigFromKey(
+      bindInferenceKey({ provider: 'openai', key: KEY }),
+      { model: 'gpt-x' },
+    );
+    expect(openai).toEqual({
+      provider: 'openai',
+      baseUrl: 'https://api.openai.com/v1',
+      model: 'gpt-x',
+      apiKey: KEY,
+    });
+    expect(parseInferenceProviderConfig(openai)).toMatchObject(openai);
+
+    const gateway = inferenceProviderConfigFromKey(
+      bindInferenceKey({
+        provider: 'litellm',
+        key: KEY,
+        baseUrl: 'https://gw.example/v1',
+      }),
+    );
+    expect(parseInferenceProviderConfig(gateway)).toMatchObject({
+      provider: 'litellm',
+      baseUrl: 'https://gw.example/v1',
+    });
+
+    // The panel's preset choice arrives as a provider id.
+    const preset = inferenceProviderConfigFromKey(
+      bindInferenceKey({ provider: 'openrouter', key: KEY }),
+      { model: 'x/y' },
+    );
+    expect(preset).toEqual({ preset: 'openrouter', model: 'x/y', apiKey: KEY });
+    expect(parseInferenceProviderConfig(preset)).toMatchObject(preset);
+  });
+
+  it('refuses a preset key without a model and an endpoint off the bound origin', () => {
+    expect(() =>
+      inferenceProviderConfigFromKey(
+        bindInferenceKey({ provider: 'openrouter', key: KEY }),
+      ),
+    ).toThrow(InferenceKeyOriginError);
+    expect(() =>
+      inferenceProviderConfigFromKey({
+        provider: 'openai',
+        origin: 'https://other.example',
+        apiKey: KEY,
+      }),
+    ).toThrow(InferenceKeyOriginError);
   });
 });
 

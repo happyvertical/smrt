@@ -272,6 +272,32 @@ describe('chain executor', () => {
     expect(off.calls.map((call) => call.model)).toEqual(['a']);
   });
 
+  it('ends the ladder at a tier that may not run (#4757), never the configured client', async () => {
+    const config: InferenceConfig = {
+      tiers: { great: { candidates: [{ provider: 'openai', model: 'a' }] } },
+    };
+    const h = harness(
+      config,
+      { a: fail(new AuthenticationError('openai')) },
+      {
+        resolveTier: async (next) => ({
+          tierResolved: next,
+          target: {},
+          via: 'resolver',
+          mode: 'byo',
+          unavailable: 'unconfigured',
+        }),
+      },
+    );
+    await expect(h.client.message('hi')).rejects.toBeInstanceOf(
+      InferenceExhaustedError,
+    );
+    // Only the bound candidate ran; the unavailable lower tiers' empty
+    // targets never reached the configured client.
+    expect(h.calls.map((call) => call.model)).toEqual(['a']);
+    expect(h.usage).toHaveLength(1);
+  });
+
   it('never walks up the ladder', async () => {
     const config: InferenceConfig = {
       tiers: {

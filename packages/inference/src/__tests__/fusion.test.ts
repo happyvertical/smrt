@@ -356,6 +356,33 @@ describe('fusions', () => {
     });
   });
 
+  it('kills a seat whose tier may not run (#4757) without calling the configured client', async () => {
+    const config: InferenceConfig = {
+      tiers: { cheap: { model: 'cheap-m' }, great: { model: 'great-m' } },
+    };
+    const h = harness(
+      HANDOFF,
+      {},
+      {
+        resolveTier: async (tier) =>
+          tier === 'cheap'
+            ? {
+                tierResolved: 'cheap',
+                target: {},
+                via: 'resolver',
+                mode: 'byo',
+                unavailable: 'unconfigured',
+              }
+            : resolveInferenceFromConfig({ tier }, config),
+      },
+    );
+    await expect(h.call()).resolves.toBe('from great-m');
+    // The drafter seat died before any client was built: one call, no
+    // `default` (configured client) call.
+    expect(h.calls.map((c) => c.model)).toEqual(['great-m']);
+    expect(h.result()?.seats[0]?.status).toBe('failed');
+  });
+
   it('treats a seat tier resolver failure as a dead seat', async () => {
     const h = harness(
       HANDOFF,

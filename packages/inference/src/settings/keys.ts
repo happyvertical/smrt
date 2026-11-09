@@ -7,9 +7,10 @@
  * any other origin gets no key, even when the user later edits the base URL.
  * The settings panel never receives a key back, only "set / not set".
  *
- * Storage stays with the host: `bindInferenceKey()` returns the record the
- * host writes through smrt-secrets' `SecretService` (it is a subset of the
- * provider options #4756 stores as `inference.provider-config`).
+ * Storage stays with the host: `bindInferenceKey()` returns the bound
+ * record, and `inferenceProviderConfigFromKey()` turns it into the #4756
+ * `inference.provider-config` value the host writes through the user
+ * resolver's `write()` (one secret type for every key).
  */
 import { isInferencePresetId } from '@happyvertical/smrt-core';
 import { inferenceProbeUrl } from '../node.js';
@@ -115,6 +116,56 @@ export function bindInferenceKey(input: {
   if (preset) record.preset = preset;
   if (baseUrl) record.baseUrl = baseUrl;
   return record;
+}
+
+/**
+ * The #4756 stored provider config (`inference.provider-config`, written
+ * through the user resolver's `write(level, config)`) for a bound key: the
+ * one place a panel-saved key is stored, so the resolver uses it. The
+ * binding is self-contained: a preset key keeps its preset (the preset
+ * supplies the endpoint), a provider key names its endpoint explicitly
+ * (its base URL, else the provider default it was bound to), and the
+ * endpoint is checked against the bound origin again.
+ *
+ * @throws {InferenceKeyOriginError} when no endpoint on the bound origin is
+ *   known, or a preset key has no model.
+ */
+export function inferenceProviderConfigFromKey(
+  record: InferenceKeyRecord,
+  choice: { model?: string } = {},
+): {
+  provider?: string;
+  preset?: string;
+  baseUrl?: string;
+  model?: string;
+  apiKey: string;
+} {
+  const model = text(choice.model);
+  // A provider id that names a preset binds to that preset (as
+  // `inferenceKeyOrigin()` does).
+  const preset =
+    text(record.preset) ??
+    (isInferencePresetId(record.provider) ? record.provider : undefined);
+  if (preset) {
+    if (!model) throw new InferenceKeyOriginError('a preset key needs a model');
+    return { preset, model, apiKey: record.apiKey };
+  }
+  let baseUrl = text(record.baseUrl);
+  if (!baseUrl) {
+    const url = inferenceProbeUrl({ provider: record.provider });
+    baseUrl = url?.replace(/\/(?:models|api\/tags)$/, '');
+  }
+  if (!baseUrl || originOf(baseUrl) !== record.origin) {
+    throw new InferenceKeyOriginError(
+      `no endpoint on ${record.origin} is known for "${record.provider}"; enter its base URL`,
+    );
+  }
+  return {
+    provider: record.provider,
+    baseUrl,
+    ...(model ? { model } : {}),
+    apiKey: record.apiKey,
+  };
 }
 
 /**

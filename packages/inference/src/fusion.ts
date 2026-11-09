@@ -31,6 +31,7 @@ import {
   type InferenceRunStatus,
   type InferenceTarget,
   type InferenceTier,
+  InferenceUnavailableError,
   importOptionalDependency,
   inferenceTargetKind,
   resolveAutoTier,
@@ -459,6 +460,16 @@ class FusionRun {
       tier =
         seat.target === 'auto' ? resolveAutoTier(context.config) : seat.target;
       resolution = await resolveTier(tier);
+      if (resolution.unavailable) {
+        // #4757: this seat's tier may not run for the principal; the seat
+        // dies (never falls back to the configured client).
+        throw new InferenceUnavailableError({
+          reason: resolution.unavailable,
+          ...(resolution.mode ? { mode: resolution.mode } : {}),
+          tier: resolution.tierResolved,
+          owner: `fusion "${this.key}" seat "${seatName(seat)}"`,
+        });
+      }
     } else {
       // An alias, candidates or inline model: no ladder (the seat named
       // what it runs), recorded under the fusion's tier.

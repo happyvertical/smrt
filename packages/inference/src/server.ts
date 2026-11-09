@@ -28,6 +28,7 @@ export {
   type InferenceKeyRecord,
   inferenceKeyFor,
   inferenceKeyOrigin,
+  inferenceProviderConfigFromKey,
   REDACTED_KEY,
   redactInferenceSecret,
 } from './settings/keys.js';

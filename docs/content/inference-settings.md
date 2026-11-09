@@ -10,7 +10,7 @@ change what.
 
 | Setting | Store | Written by |
 | --- | --- | --- |
-| API keys | smrt-secrets (`SecretService`) | the host's `onSaveKey` action, using `bindInferenceKey()` |
+| API keys | smrt-secrets, as the #4756 `inference.provider-config` secret | the host's `onSaveKey` action: `bindInferenceKey()`, then `inferenceProviderConfigFromKey()` written through the user resolver's `write()` |
 | Mode, provider, base URL, model, default tier (per user, tenant default) | smrt-preferences kind `inference` | `createInferencePreferences(store).write()` |
 | Tier bindings, `auto`'s default tier, aliases, fusions (app and tenant) | `_smrt_inference_overrides` | `InferenceSettingsService` set methods (authorizer-gated) |
 
@@ -26,6 +26,7 @@ it was entered for, and the server sends it only to that origin.
 // +page.server.ts
 import {
   bindInferenceKey,
+  inferenceProviderConfigFromKey,
   createInferencePreferences,
   InferenceSettingsService,
 } from '@happyvertical/smrt-inference/server';
@@ -46,7 +47,12 @@ export const actions = {
     // Bind to the endpoint the key was entered for, not to saved choices.
     const change = await request.json();
     const record = bindInferenceKey(change);
-    await locals.secrets.store(`inference.key.${record.provider}`, JSON.stringify(record));
+    // Store it once, as the #4756 provider config the user resolver reads
+    // (`inference.provider-config`, user level; 'tenant' for a tenant key).
+    await locals.inferenceResolver.write(
+      'user',
+      inferenceProviderConfigFromKey(record, { model: change.model }),
+    );
   },
 };
 ```

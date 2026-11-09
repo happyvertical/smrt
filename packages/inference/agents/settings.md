@@ -5,9 +5,11 @@ Consumer guide: [docs/content/inference-settings.md](../../../docs/content/infer
 - **Storage split, enforced by API shape.** Keys: the panel emits
   `onSaveKey({ provider, key, preset?, baseUrl? })` (the endpoint shown when
   the key was typed; the key input remounts on a provider or base URL
-  change), the host writes through smrt-secrets'
-  `SecretService` the record `bindInferenceKey()` returns, and the panel
-  only ever gets `keySet` back. User choices (mode `byo | local | hosted |
+  change), the host binds it with `bindInferenceKey()` and stores it once,
+  as the #4756 `inference.provider-config` secret, through the user
+  resolver's `write()` (`inferenceProviderConfigFromKey()` converts the
+  record and re-checks the bound origin), and the panel only ever gets
+  `keySet` back. User choices (mode `byo | local | hosted |
   off`, provider, base URL, model, default tier): smrt-preferences kind
   `inference` (`inferencePreferenceKind`, permissions `inference.customize`
   / `inference.personalize`; the host registers both, smrt-preferences is

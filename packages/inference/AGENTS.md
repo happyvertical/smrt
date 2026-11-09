@@ -54,8 +54,10 @@ Hosts using the #4754 override table pass
 createInferenceOverrideResolver({ db }) }))`. Order per tier: user stored
 binding, tenant stored binding, allowed tenant override row, app override
 row, `inference` config, configured client. Keys are stored once, in
-`inference.provider-config`: #4754's `bindInferenceKey()` record is a subset
-of that value, never a second secret type.
+`inference.provider-config`: the host turns #4754's origin-bound
+`bindInferenceKey()` record into a self-contained binding with
+`inferenceProviderConfigFromKey(record, { model })` and writes it through
+the user resolver's `write(level, config)`; never a second secret type.
 
 ## Hosted inference (#4759, #4760)
 

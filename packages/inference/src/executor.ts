@@ -469,6 +469,11 @@ class ChainCall {
         break;
       }
       const resolution = await context.resolveTier(next);
+      // A lower tier that may not run (#4757: explicit mode with no binding
+      // of its kind, or `off`) ends the ladder. Its empty target would
+      // otherwise expand to the configured client and send the call to a
+      // provider the principal's mode excludes.
+      if (resolution.unavailable) break;
       tier = resolution.tierResolved;
       steps = expandResolved(resolution.target, tier, context.config);
     }
