@@ -59,6 +59,12 @@ class Probe extends SmrtClass {
   async prepare(options: Record<string, unknown>) {
     return this.prepareAiOperation(options);
   }
+  /** A raw-site subclass: its own client, its own bound key (#4780 F1). */
+  raw<T>(client: T, key: string): T {
+    return this.transcriptClient(client, undefined, {
+      secrets: () => [key],
+    });
+  }
 }
 
 @smrt()
@@ -518,6 +524,97 @@ describe('AI call transcripts (#4780)', () => {
         apiKey: '[REDACTED]',
         query: '[REDACTED] here',
       });
+    });
+
+    it('masks short sensitive values as whole tokens only', () => {
+      const [message] = redactAiTranscriptMessages(
+        [{ role: 'user', content: 'code 123, order 51234, 123.' }],
+        { sensitive: [{ field: 'cvv', value: '123' }] },
+      );
+      expect(message?.content).toBe(
+        'code [REDACTED:cvv], order 51234, [REDACTED:cvv].',
+      );
+    });
+
+    it('masks credential fields inside serialized tool arguments', async () => {
+      enable();
+      const ai = (await (await probe()).client()) as unknown as {
+        chat: (messages: unknown, options?: unknown) => Promise<unknown>;
+      };
+      const fake = (await getAIMock.mock.results[0]?.value) as Record<
+        string,
+        unknown
+      >;
+      fake.chat = vi.fn(async () => ({
+        content: '',
+        finishReason: 'tool_calls',
+        toolCalls: [
+          {
+            id: 'c2',
+            type: 'function',
+            function: {
+              name: 'login',
+              arguments: '{"user":"ann","password":"opaque-password-456"}',
+            },
+          },
+        ],
+      }));
+      await ai.chat(
+        [
+          { role: 'user', content: 'log in' },
+          {
+            role: 'assistant',
+            content: '',
+            tool_calls: [
+              {
+                id: 'c1',
+                type: 'function',
+                function: {
+                  name: 'login',
+                  arguments: '{"user":"ann","password":"opaque-password-123"}',
+                },
+              },
+            ],
+          },
+          { role: 'tool', tool_call_id: 'c1', content: '{"token":"t"}' },
+        ],
+        { transcript: true },
+      );
+      const [row] = await transcriptRows();
+      const stored = JSON.stringify(row);
+      expect(stored).not.toContain('opaque-password-123');
+      expect(stored).not.toContain('opaque-password-456');
+      const events = JSON.parse(String(row?.tool_events)) as Array<{
+        role: string;
+        content: string;
+      }>;
+      expect(events.map((event) => event.role)).toEqual([
+        'tool-call',
+        'tool-result',
+        'tool-call',
+      ]);
+      expect(JSON.parse(events[0]?.content ?? '{}')).toEqual({
+        user: 'ann',
+        password: '[REDACTED]',
+      });
+    });
+
+    it('masks a raw site’s own bound key, even an opaque one', async () => {
+      enable();
+      const instance = await probe();
+      const bound = 'opaque-bound-gateway-key-0001';
+      const raw = fakeClient({ provider: 'openai' });
+      reply = new Error(`401 from gateway for key ${bound} (and ${KEY})`);
+      const ai = instance.raw(raw, bound) as unknown as {
+        message: (text: string) => Promise<string>;
+      };
+      await expect(ai.message('hello')).rejects.toThrow('401');
+      const [row] = await transcriptRows();
+      const stored = JSON.stringify(row);
+      expect(stored).toContain('401 from gateway');
+      expect(stored).not.toContain(bound);
+      // The instance's configured key stays masked beside the site's.
+      expect(stored).not.toContain(KEY);
     });
 
     it('masks the calling object’s sensitive field values', async () => {

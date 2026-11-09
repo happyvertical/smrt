@@ -623,13 +623,19 @@ export class Issue extends SmrtObject {
       appBindings: false,
     });
     const clientConfig = target.options ?? base;
-    // Transcripts (#4780), while the app enables them.
+    // Transcripts (#4780), while the app enables them; the key this client
+    // carries (a stored binding's, or the env/config one) is masked exactly.
     const ai = this.transcriptClient(
       await getAI(
         this.withAiUsage(clientConfig, {
           tags: target.usageTags,
         }) as unknown as AIClientOptions,
       ),
+      undefined,
+      {
+        secrets: () =>
+          typeof clientConfig.apiKey === 'string' ? [clientConfig.apiKey] : [],
+      },
     );
 
     return this.sendPromptMessage(

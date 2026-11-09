@@ -184,8 +184,8 @@ a call for prompt tuning; usage rows stay metadata-only.
   or fusion is one transcript whose seats share its `callId`. The typed
   decision route captures through `captureAiTranscriptCall()` with the
   request and its answers. Raw `getAI()` sites: subclasses pass their client
-  to `this.transcriptClient(client, undefined, { tenantId })` (languages,
-  projects); other sites use `resolveInferenceTarget({ transcript, usage })`
+  to `this.transcriptClient(client, undefined, { tenantId, secrets })`
+  (languages, projects; `secrets` returns the site client's key); other sites use `resolveInferenceTarget({ transcript, usage })`
   and its result's `instrument(client)` (stores into `usage.db`). Chat passes
   `transcript: false` and never instruments: smrt-chat stores conversations
   itself.
@@ -200,11 +200,14 @@ a call for prompt tuning; usage rows stay metadata-only.
 - **Redaction.** The host redactor (`setTranscriptRedactor((messages,
   context) => messages)`, on `globalThis`) runs per part (`request`,
   `response`, `tools`), then the built-in `redactAiTranscriptMessages()`
-  always runs: exact masks for the client's `apiKey` (instance, options and
-  decision config) and the calling object's `sensitive` field values
-  (`[REDACTED:<field>]`, values of 4+ characters), `[REDACTED]` for values
-  under credential-named keys, smrt-config `redactSecretValues()` token
-  shapes, binary as `[binary]`. Errors are stored by message after the same
+  always runs: exact masks for the client's `apiKey` (instance, options,
+  decision config, every tier-target key the instance bound, and a raw
+  site's own key passed as `transcriptClient(..., { secrets })`, which adds
+  to the instance's) and the calling object's `sensitive` field values
+  (`[REDACTED:<field>]`; values under 4 characters only as whole tokens),
+  `[REDACTED]` for values under credential-named keys (also inside strings
+  that hold JSON, such as serialized tool arguments), smrt-config
+  `redactSecretValues()` token shapes, binary as `[binary]`. Errors are stored by message after the same
   redaction.
 - **Row.** `request` `{ messages, options }` (model, temperature, tool
   names, ...), `response` `{ messages, finishReason?, capture }` (`capture`

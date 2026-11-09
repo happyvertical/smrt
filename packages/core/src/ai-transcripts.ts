@@ -48,7 +48,10 @@ export const AI_CALL_ID_TAG = 'callId';
 export const DEFAULT_TRANSCRIPT_SAMPLE = 0.1;
 /** Default per-row byte cap. */
 export const DEFAULT_TRANSCRIPT_MAX_BYTES = 65_536;
-/** Values shorter than this are never masked as sensitive (too ambiguous). */
+/**
+ * Values shorter than this are masked only as a whole token (not inside a
+ * longer word), so a short secret is still masked without garbling text.
+ */
 export const MIN_SENSITIVE_VALUE_LENGTH = 4;
 
 // ============================================================================
@@ -203,12 +206,33 @@ function redactString(
   return redactSecretValues(out);
 }
 
+/**
+ * A string holding a JSON object or array (serialized tool arguments, a JSON
+ * answer): parsed so credential-named fields inside it are masked too.
+ */
+function parseEmbeddedJson(value: string): unknown {
+  const trimmed = value.trim();
+  if (!(trimmed.startsWith('{') || trimmed.startsWith('['))) return undefined;
+  try {
+    const parsed = JSON.parse(trimmed);
+    return parsed && typeof parsed === 'object' ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function redactValue(
   value: unknown,
   replacements: ReadonlyArray<[RegExp, string]>,
   seen: WeakSet<object>,
 ): unknown {
-  if (typeof value === 'string') return redactString(value, replacements);
+  if (typeof value === 'string') {
+    const embedded = parseEmbeddedJson(value);
+    if (embedded !== undefined) {
+      return JSON.stringify(redactValue(embedded, replacements, seen));
+    }
+    return redactString(value, replacements);
+  }
   if (!value || typeof value !== 'object') return value;
   if (seen.has(value)) return '[Circular]';
   seen.add(value);
@@ -244,9 +268,14 @@ export function redactAiTranscriptMessages(
   const replacements: Array<[RegExp, string]> = [];
   const add = (raw: string, mask: string) => {
     const value = raw.trim();
-    if (value.length >= MIN_SENSITIVE_VALUE_LENGTH) {
-      replacements.push([new RegExp(escapeRegExp(value), 'g'), mask]);
-    }
+    if (value === '') return;
+    // Long values are masked wherever they occur; short ones only as a whole
+    // token, so a 3-digit code is masked without rewriting every number.
+    const pattern =
+      value.length >= MIN_SENSITIVE_VALUE_LENGTH
+        ? escapeRegExp(value)
+        : `(?<![\\p{L}\\p{N}])${escapeRegExp(value)}(?![\\p{L}\\p{N}])`;
+    replacements.push([new RegExp(pattern, 'gu'), mask]);
   };
   for (const secret of values.secrets ?? []) add(secret, '[REDACTED]');
   // Longest first, so a value containing another is masked whole.

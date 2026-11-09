@@ -206,7 +206,12 @@ export class LanguageTranslationTask extends SmrtObject {
         }) as unknown as GetAIOptions,
       ),
       undefined,
-      { tenantId: () => args.tenantId ?? null },
+      {
+        tenantId: () => args.tenantId ?? null,
+        // The bound key (a tenant or user binding's) is masked exactly.
+        secrets: () =>
+          typeof clientConfig.apiKey === 'string' ? [clientConfig.apiKey] : [],
+      },
     );
 
     const { onUsage: _onUsage, ...callConfig } = target.bound

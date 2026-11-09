@@ -1131,9 +1131,20 @@ export class SmrtClass {
       return client;
     }
     if (transcript !== undefined || overrides) {
+      const context = this.aiTranscriptContext();
+      const extraSecrets = overrides?.secrets;
       return withAiTranscripts(client, {
-        ...this.aiTranscriptContext(),
+        ...context,
         ...(overrides ?? {}),
+        // A site's own credentials add to the instance's, never replace them.
+        ...(extraSecrets
+          ? {
+              secrets: () => [
+                ...(context.secrets?.() ?? []),
+                ...extraSecrets(),
+              ],
+            }
+          : {}),
         ...(transcript !== undefined ? { transcript } : {}),
       });
     }
