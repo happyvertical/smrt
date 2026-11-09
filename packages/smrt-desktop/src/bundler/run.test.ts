@@ -946,6 +946,135 @@ describe('segmentation and imports', () => {
     ]);
   });
 
+  it('keeps a file a reached module imports from a directory that pruning removes by name', async () => {
+    // `test/` at a package root is pruned; a relative import makes it code.
+    const item = fixture({
+      packages: [
+        {
+          name: 'a',
+          files: {
+            'index.js': "import './test/setup.js';\nexport default 1;\n",
+            'test/setup.js': 'export default 2;\n',
+            'test/unused.js': 'export default 3;\n',
+          },
+        },
+        { name: 'googleapis', files: { 'index.js': '' } },
+      ],
+    });
+    await runBundle(await item.plan(), item.seams());
+    const base = join(item.outDir, 'resources/app/node_modules/a');
+    expect(existsSync(join(base, 'test/setup.js'))).toBe(true);
+    // The directory is kept because a file in it is needed, and with it its
+    // other files (JavaScript is never pruned by name).
+    expect(readdirSync(join(base, 'test')).sort()).toEqual([
+      'setup.js',
+      'unused.js',
+    ]);
+  });
+
+  it('keeps data files a reached module reads by a literal path, and still prunes docs nobody names', async () => {
+    const item = fixture({
+      packages: [
+        {
+          name: 'a',
+          files: {
+            'index.js':
+              "import { readFileSync } from 'node:fs';\nexport default readFileSync(new URL('./docs/guide.md', import.meta.url));\n",
+            'docs/guide.md': '# needed at run time\n',
+            'docs/other.md': '# not needed\n',
+            'README.md': '# readme\n',
+          },
+        },
+        { name: 'googleapis', files: { 'index.js': '' } },
+      ],
+    });
+    await runBundle(await item.plan(), item.seams());
+    const base = join(item.outDir, 'resources/app/node_modules/a');
+    expect(existsSync(join(base, 'docs/guide.md'))).toBe(true);
+    expect(existsSync(join(base, 'docs/other.md'))).toBe(false);
+    expect(existsSync(join(base, 'README.md'))).toBe(false);
+  });
+
+  it('fails when a reached file imports a relative path that is not in the bundle', async () => {
+    const item = fixture({
+      packages: [
+        {
+          name: 'a',
+          files: { 'index.js': "import './never-shipped.js';\n" },
+        },
+        { name: 'googleapis', files: { 'index.js': '' } },
+      ],
+    });
+    const error = await failure(runBundle(await item.plan(), item.seams()));
+    expect(error.code).toBe('relative_import_missing');
+    expect(error.stage).toBe('scan');
+    expect(error.exitCode).toBe(5);
+    expect(error.subjects).toEqual([
+      'node_modules/a/index.js -> ./never-shipped.js',
+    ]);
+    assertNothingLeft(item);
+  });
+
+  it('fails on a missing relative import in the application build, and lets a lazy one be acknowledged', async () => {
+    const lazy = "export const load = () => import('./optional.js');\n";
+    const unacknowledged = fixture({ buildFiles: { 'index.js': lazy } });
+    const error = await failure(
+      runBundle(await unacknowledged.plan(), unacknowledged.seams()),
+    );
+    expect(error.code).toBe('relative_import_missing');
+    expect(error.subjects).toEqual(['app/build/index.js -> ./optional.js']);
+
+    const acknowledged = fixture({
+      buildFiles: { 'index.js': lazy },
+      config: {
+        acknowledgedDynamicImports: [
+          { from: 'app/build/index.js', specifier: './optional.js' },
+        ],
+      },
+    });
+    const { report } = await runBundle(
+      await acknowledged.plan(),
+      acknowledged.seams(),
+    );
+    expect(report.features.acknowledgedDynamicImports).toEqual([
+      { from: 'app/build/index.js', specifier: './optional.js' },
+    ]);
+  });
+
+  it('records what the import scan covered, including bare imports that resolved to nothing', async () => {
+    const item = fixture({
+      packages: [
+        {
+          name: 'a',
+          files: {
+            'index.js':
+              "import 'not-installed';\nimport './lib.js';\nconst n = 'x'; import(n);\n",
+            'lib.js': 'export {};\n',
+          },
+        },
+        { name: 'googleapis', files: { 'index.js': '' } },
+      ],
+    });
+    const result = await runBundle(await item.plan(), item.seams());
+    expect(result.report.importScan).toEqual({
+      filesReached: 3,
+      loadTimeFiles: 3,
+      unresolvedBareImports: 1,
+      nonLiteralImports: 1,
+      unscannedFiles: 0,
+    });
+    expect(
+      result.warnings.some((w) =>
+        w.includes('bare import(s) resolve to nothing'),
+      ),
+    ).toBe(true);
+    expect(
+      parseBundleReport(
+        readFileSync(join(item.outDir, BUNDLE_REPORT_FILENAME), 'utf8'),
+      ).importScan,
+    ).toEqual(result.report.importScan);
+  });
+
   it('keeps a feature group when it is enabled', async () => {
     const item = fixture({
       buildFiles: { 'index.js': "import 'googleapis';\n" },

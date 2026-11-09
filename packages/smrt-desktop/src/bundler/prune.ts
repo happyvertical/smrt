@@ -21,6 +21,10 @@ import { BundleTreeError } from './tree-errors.js';
  * - Directory rules (`docs`, `test`, `tests`, `example(s)`) apply only at a
  *   package root, `__tests__` and `.github` anywhere, and never to a
  *   directory that the package's `main`/`module`/`exports`/`bin` points into.
+ * - Files that reached modules refer to (`protectedPaths`: relative imports,
+ *   `new URL('./x', import.meta.url)`, literal `join(__dirname, ...)` paths)
+ *   are never pruned, whatever their name; so are the directories that hold
+ *   them.
  * - Documentation is dropped but `LICENSE*`, `LICENCE*`, `NOTICE*` and
  *   `COPYING*` always stay (compliance), as does `package.json`.
  * - Foreign `prebuilds/<os>-<arch>[-libc]/` and `napi-vN/<os>/<arch>/`
@@ -485,7 +489,42 @@ export interface PruneOptions {
   readonly entryPaths?: PackageEntryPaths;
   /** Package directories (relative to the `node_modules` root) to drop. */
   readonly removedDirs?: ReadonlySet<string>;
+  /**
+   * `node_modules`-relative paths (files or directories, forward slashes) a
+   * reached module refers to. Pruning keeps each of them, anything below a
+   * protected directory, and the directories on the way. It does not override
+   * `removedDirs`, a foreign-platform native directory or the secret
+   * deny-list.
+   */
+  readonly protectedPaths?: ReadonlySet<string>;
   readonly secrets?: SecretFilterOptions;
+}
+
+const protectedAncestors = new WeakMap<ReadonlySet<string>, Set<string>>();
+
+/** True when `rel` is protected, below a protected directory, or on the way to one. */
+function isProtectedPath(
+  rel: string,
+  protectedPaths: ReadonlySet<string> | undefined,
+): boolean {
+  if (protectedPaths === undefined || protectedPaths.size === 0) return false;
+  if (protectedPaths.has(rel)) return true;
+  const segments = rel.split('/');
+  for (let length = segments.length - 1; length > 0; length -= 1) {
+    if (protectedPaths.has(segments.slice(0, length).join('/'))) return true;
+  }
+  let ancestors = protectedAncestors.get(protectedPaths);
+  if (ancestors === undefined) {
+    ancestors = new Set();
+    for (const path of protectedPaths) {
+      const parts = path.split('/');
+      for (let length = 1; length < parts.length; length += 1) {
+        ancestors.add(parts.slice(0, length).join('/'));
+      }
+    }
+    protectedAncestors.set(protectedPaths, ancestors);
+  }
+  return ancestors.has(rel);
 }
 
 export interface PruneFilter {
@@ -530,6 +569,7 @@ export function classifyPrune(
     }
     const entries = options.entryPaths?.get(packageDir);
     if (referenced(entries, inner)) return undefined;
+    if (isProtectedPath(entry.rel, options.protectedPaths)) return undefined;
     if (lower === '__tests__') return 'tests';
     if (lower === '.github') return 'ci';
     if (inner.length === 1) {
@@ -542,6 +582,10 @@ export function classifyPrune(
   if (entry.kind !== 'file') return undefined;
   if (inner.length === 1 && lower === 'package.json') return undefined;
   if (LICENSE_NAME.test(name)) return undefined;
+  // A file a reached module refers to is code or data the package needs at
+  // run time, whatever its name. (`exports` also lists `types` conditions, so
+  // an entry path alone does not protect a file.)
+  if (isProtectedPath(entry.rel, options.protectedPaths)) return undefined;
   if (lower === '.ds_store') return 'os-junk';
   if (lower.endsWith('.map')) {
     return options.keepSourceMaps === true ? undefined : 'source-map';

@@ -284,6 +284,50 @@ describe('classifyPrune', () => {
     expect(dir('p/bin/napi-v3/darwin/arm64')).toBeUndefined();
   });
 
+  it('keeps a pruned-by-name file or directory that a reached module refers to', () => {
+    const protectedPaths = new Set([
+      'p/test/setup.js',
+      'p/types/shape.d.ts',
+      'p/docs/guide.md',
+      'q/assets',
+    ]);
+    const keep = (rel: string, kind: FilterEntry['kind'] = 'file') =>
+      rule(rel, kind, { protectedPaths });
+    // The file, the directories on the way, and everything below a directory.
+    expect(keep('p/test/setup.js')).toBeUndefined();
+    expect(keep('p/test', 'dir')).toBeUndefined();
+    expect(keep('p/types/shape.d.ts')).toBeUndefined();
+    expect(keep('p/docs/guide.md')).toBeUndefined();
+    expect(keep('p/docs', 'dir')).toBeUndefined();
+    expect(keep('q/assets', 'dir')).toBeUndefined();
+    expect(keep('q/assets/deep/readme.md')).toBeUndefined();
+    expect(keep('q/assets/deep', 'dir')).toBeUndefined();
+    // Siblings that nothing refers to are still pruned.
+    expect(keep('p/types/other.d.ts')).toBe('types');
+    expect(keep('p/docs/other.md')).toBe('docs');
+    expect(keep('p/README.md')).toBe('docs');
+    expect(keep('p/examples', 'dir')).toBe('docs');
+    expect(rule('p/test', 'dir')).toBe('tests');
+    expect(rule('p/test/setup.js', 'file')).toBeUndefined();
+    expect(rule('p/types/shape.d.ts')).toBe('types');
+  });
+
+  it('does not let protection override a removed package or a foreign native directory', () => {
+    const protectedPaths = new Set(['big/lib/x.js', 'p/prebuilds/linux-x64']);
+    expect(
+      classifyPrune(entry('big', 'dir'), {
+        removedDirs: new Set(['big']),
+        protectedPaths,
+      }),
+    ).toBe('removed-package');
+    expect(
+      classifyPrune(entry('p/prebuilds/linux-x64', 'dir'), {
+        target: darwinArm64,
+        protectedPaths,
+      }),
+    ).toBe('foreign-native');
+  });
+
   it('prunes removed package directories first', () => {
     expect(
       classifyPrune(entry('big', 'dir'), { removedDirs: new Set(['big']) }),

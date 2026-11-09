@@ -1358,15 +1358,43 @@ package it meets:
   `{from, specifier}` in `acknowledgedDynamicImports`, which the report
   records, so the owner confirms the lazy path is not on the desktop path.
 
+The same walk also checks that the files the sidecar loads are still there.
+A **relative** import (`./x.js`, `../lib`) whose target does not exist in the
+pruned bundle, whether pruning removed it or the package never shipped it,
+fails the bundle (`relative_import_missing`, exit 5), in the application build
+as well as in kept packages. It has the same two tiers: a load-time one is a
+crash at start, and a lazy one (or one the lexer cannot tell from a guarded
+`try { require('./x') } catch {}`) can be listed in
+`acknowledgedDynamicImports` with its `{from, specifier}`, which the report
+records. A relative `.node` specifier is left to the native check. A bare
+import that resolves to nothing installed (typically an optional dependency)
+is not a failure; it is counted in the report (`importScan.unresolvedBareImports`,
+with `filesReached`, `loadTimeFiles`, `nonLiteralImports` and `unscannedFiles`)
+and adds one warning.
+
 Files that nothing loads (for example `@sveltejs/kit`'s Vite plugin, which
 imports `vite`) are not findings. The scan is a heuristic over a hand-written
-lexer: it cannot see `import(variable)` (counted as a warning), and the host
-start (`--measure`) is the backstop.
+lexer: it cannot see `import(variable)` (counted in
+`importScan.nonLiteralImports` and as a warning), `readFileSync` of a computed
+path, or an import of a package that is only reached that way.
+
+**A bundle built without `--measure` has no runtime check.** Nothing starts the
+sidecar: the scan above is static, and only a start on this machine (host
+target only) shows that the bundle really runs. Cross-target bundles can never
+be measured here, so run the product's own smoke test on the target before you
+ship one. Even with `--measure`, only the health route is exercised, not every
+route or feature.
 
 File pruning inside kept packages removes `*.map`, `*.d.ts`, `*.ts`, docs
 (except `LICENSE*`, `NOTICE*`, `COPYING*`), tests and examples at a package
 root unless `main`/`exports`/`bin` points into them, tooling config, static
-libraries and prebuilds for other platforms. A secret deny-list (`.env*`,
+libraries and prebuilds for other platforms. Pruning never removes a file that
+a reached module refers to: before pruning, the same walk runs over the
+unpruned install tree and the targets of relative imports of any kind, plus
+literal `new URL('./x', import.meta.url)`, `join(__dirname, 'a', 'b')` and
+`readFileSync('./x')` paths that exist, are kept together with the directories
+that hold them (a removed package or a foreign-platform native directory is
+still removed). Paths built at run time are invisible to this. A secret deny-list (`.env*`,
 `.npmrc`, `*.pem`, `*.key`, `.git`, `.smrt`, `*.sqlite*`, …) **fails** the
 bundle wherever it matches, and the application build is scanned for private
 keys and common token shapes (GitHub, Anthropic, OpenAI `sk-`/`sk-proj-`, Google
@@ -1395,7 +1423,7 @@ deterministic as the app build; its hash is recorded, not rebuilt.
 | 2 | `usage` | bad flag, unsupported target, unpinned Node version, `--measure` for a cross target |
 | 3 | `invalid_input` | missing app files, bad configuration, a non-registry dependency, a pnpmfile, config dependency or a `pnpm-workspace.yaml` key outside the allowlist, no `--bridge`, `--out` not empty |
 | 4 | `provenance` | Node checksum mismatch, redirect or HTTP error from nodejs.org, lockfile drift, integrity failure, an unverified Node pin under `--require-verified-pins` |
-| 5 | `verification` | wrong-architecture native, symlink, secret, removed package imported, install script, `gypfile` or `binding.gyp` without a prebuilt addon for the target, manifests that do not round-trip |
+| 5 | `verification` | wrong-architecture native, symlink, secret, removed package imported, a relative import whose target is not in the bundle, install script, `gypfile` or `binding.gyp` without a prebuilt addon for the target, manifests that do not round-trip |
 | 6 | `budget` | `--max-size` exceeded |
 | 7 | `child_failed` | pnpm failed, the measured start did not answer its health route |
 | 8 | `io` | a file operation failed |
@@ -1434,7 +1462,7 @@ below did.
 | B11 | Environment injection into the sidecar at run time | the manifest empties `NODE_OPTIONS` and `NODE_PATH` | `writes a sidecar manifest that neutralises NODE_OPTIONS and NODE_PATH` |
 | B12 | Manifest reproducibility and validity, and a measured app altering the bundle's own metadata | canonical serializers, re-parsed with the contract parsers, byte round trip, cross-check, no timestamps; `tauri.bundle.json` and the file list are written after the measured start and the output root is checked afterwards | `writes manifests the contract parsers accept and that round-trip byte for byte`; `produces identical files and report for identical inputs`; `orders the file list independently of readdir order`; `sets every modification time to the epoch floor or SOURCE_DATE_EPOCH`; `writes tauri.bundle.json and the file list only after the measured start`; `fails when the measured start plants or changes a file in the bundle root` |
 | B13 | Bridge not self-contained, swapped or a link | verified regular file, size cap, built-ins only, hash recorded | `rejects a bridge bundle that imports a bare package`; `rejects a bridge that is a symlink`; `records the bridge sha256 and byte count` |
-| B14 | A removed package is still needed (availability) | reachability scan, acknowledgements recorded, host start | `fails when the build statically imports a removed package`; `requires acknowledgement for a dynamic import of a removed package`; `ignores a build-time file of a kept package that nothing loads`; `bundles, verifies and measures a fixture app for the host triple` (opt-in end to end) |
+| B14 | A removed package, or a file pruning removed, is still needed (availability) | reachability scan, relative imports checked against the pruned tree, files reached modules refer to protected from pruning, acknowledgements recorded, host start (a bundle built without `--measure` has no runtime check) | `fails when a reached file imports a relative path that is not in the bundle`; `fails on a missing relative import in the application build, and lets a lazy one be acknowledged`; `keeps a file a reached module imports from a directory that pruning removes by name`; `keeps data files a reached module reads by a literal path, and still prunes docs nobody names`; `records what the import scan covered, including bare imports that resolved to nothing`; `fails when the build statically imports a removed package`; `requires acknowledgement for a dynamic import of a removed package`; `ignores a build-time file of a kept package that nothing loads`; `bundles, verifies and measures a fixture app for the host triple` (opt-in end to end) |
 
 The tests live in `src/bundler/*.test.ts`; the end-to-end file is skipped
 unless `SMRT_DESKTOP_BUNDLE_E2E=1` (it needs network, pnpm and nodejs.org).

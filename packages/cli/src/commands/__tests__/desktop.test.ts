@@ -60,6 +60,13 @@ const report = {
     removedPackages: [],
     acknowledgedDynamicImports: [],
   },
+  importScan: {
+    filesReached: 3,
+    loadTimeFiles: 2,
+    unresolvedBareImports: 0,
+    nonLiteralImports: 0,
+    unscannedFiles: 0,
+  },
   packages: [],
   natives: [],
   nativeExceptions: [],

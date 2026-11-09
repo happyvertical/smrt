@@ -24,9 +24,19 @@
  * graph (nearest `node_modules` first), package `exports` (with the `node`,
  * `import`/`require`, `module-sync` and `default` conditions and `*`
  * patterns), `main`, and `#imports`. Removed packages are findings, never
- * traversed. A specifier that does not resolve (an optional dependency that
- * is not installed) is counted, not failed. Non-literal `import(x)` stays a
- * residual risk covered by the host smoke start.
+ * traversed. A BARE specifier that does not resolve (an optional dependency
+ * that is not installed) is counted (`unresolved`, reported in the bundle
+ * report), not failed. A RELATIVE specifier whose target is missing is a
+ * finding: when it runs over the pruned copy, the target is a file that was
+ * pruned or never shipped, and the sidecar would fail at that import. It
+ * follows the same two tiers as a removed package (load time or lazy), and
+ * the product can acknowledge a lazy one. A relative specifier ending in
+ * `.node` is left to the native verification stage. The files a reached
+ * module refers to (relative imports of any kind, `new URL('./x',
+ * import.meta.url)`, `join(__dirname, 'x')` and `readFileSync('./x')` with
+ * literal paths) are returned in `protectedPaths` so pruning can keep them.
+ * Non-literal `import(x)` stays a residual risk covered by the host smoke
+ * start (`--measure`); a bundle built without it has no runtime check.
  *
  * Like the scan it refines, this is a heuristic over a hand-written lexer,
  * not a parser, and it does no I/O except through the injected `TreeFs`.
@@ -51,6 +61,7 @@ import {
   isAcknowledged,
   packageNameOf,
 } from './scan-imports.js';
+import { BundleTreeError } from './tree-errors.js';
 
 export interface ReachOptions {
   /** Absolute root of the copied application build (`.../app/build`). */
@@ -76,6 +87,49 @@ export interface ReachReport extends ImportScanReport {
   readonly lazyFiles: number;
   /** Bare specifiers that resolved to nothing installed (count only). */
   readonly unresolved: number;
+  /**
+   * Relative specifiers whose target does not exist, not acknowledged
+   * (`kind` is the load tier of the importing edge). Acknowledged ones are in
+   * `acknowledged`.
+   */
+  readonly relativeMissing: readonly ImportFinding[];
+  /**
+   * Absolute, sorted paths of existing files and directories reached modules
+   * refer to by relative path; pruning must keep them.
+   */
+  readonly protectedPaths: readonly string[];
+}
+
+/**
+ * Module-relative literal paths a file reads or resolves at run time, found
+ * with three cheap patterns: `new URL('./x', import.meta.url)`,
+ * `join|resolve(__dirname | import.meta.dirname, 'a', 'b')` with literal
+ * segments, and `readFileSync|readFile|createReadStream|existsSync|statSync|
+ * readdirSync('./x')`. The last form is relative to the working directory at
+ * run time, not to the module; it is read module-relative here, which only
+ * ever protects a few extra files from pruning. A heuristic, not a parser.
+ */
+export function extractAssetRefs(text: string): string[] {
+  const out = new Set<string>();
+  const url =
+    /new\s+URL\(\s*(['"`])(\.{1,2}\/[^'"`\n$\\]*)\1\s*,\s*import\.meta\.url/g;
+  for (let m = url.exec(text); m !== null; m = url.exec(text)) {
+    out.add(m[2] as string);
+  }
+  const joined =
+    /\b(?:join|resolve)\(\s*(?:__dirname|import\.meta\.dirname)((?:\s*,\s*(['"`])[^'"`\n$\\]*\2)+)\s*\)/g;
+  for (let m = joined.exec(text); m !== null; m = joined.exec(text)) {
+    const segments = [...(m[1] as string).matchAll(/(['"`])([^'"`\n$\\]*)\1/g)]
+      .map((item) => item[2] as string)
+      .filter((segment) => segment !== '');
+    if (segments.length > 0) out.add(`./${posix.join(...segments)}`);
+  }
+  const reads =
+    /\b(?:readFileSync|readFile|createReadStream|existsSync|statSync|readdirSync)\(\s*(['"`])(\.{1,2}\/[^'"`\n$\\]+)\1/g;
+  for (let m = reads.exec(text); m !== null; m = reads.exec(text)) {
+    out.add(m[2] as string);
+  }
+  return [...out].sort();
 }
 
 const BUILTINS: ReadonlySet<string> = new Set(builtinModules);
@@ -196,13 +250,29 @@ interface Edge {
   readonly removed?: string;
   /** Kept files the specifier can resolve to (several for static refs). */
   readonly targets: readonly string[];
+  /** A relative specifier's existing target of any kind (for protection). */
+  readonly present?: string;
+  /** A relative specifier whose target does not exist. */
+  readonly missing?: true;
 }
 
 interface Parsed {
   readonly info: { owner: string; display: string; from: string };
   readonly edges: readonly Edge[];
   readonly nonLiteral: ReturnType<typeof extractImports>['nonLiteral'];
+  /** Existing files and directories the module's literal paths name. */
+  readonly assets: readonly string[];
 }
+
+/** Extensions probed for a relative specifier whose target is not a script. */
+const ASSET_EXTENSIONS: readonly string[] = [
+  '.json',
+  '.node',
+  '.wasm',
+  '.js',
+  '.mjs',
+  '.cjs',
+];
 
 /** Follow the module graph from the entry and report removed-package imports. */
 export async function scanReachable(
@@ -247,6 +317,22 @@ export async function scanReachable(
     } catch {
       return false;
     }
+  };
+
+  /** The first existing entry (file or directory) among `base` and `base` + a known extension. */
+  const existingPath = async (base: string): Promise<string | undefined> => {
+    for (const candidate of [
+      base,
+      ...ASSET_EXTENSIONS.map((extension) => `${base}${extension}`),
+    ]) {
+      try {
+        await fs.lstat(candidate);
+        return candidate;
+      } catch {
+        // Try the next one.
+      }
+    }
+    return undefined;
   };
 
   /** Probe `base` like Node's file resolution; the first regular script wins. */
@@ -358,9 +444,19 @@ export async function scanReachable(
       if (specifier.startsWith('.') || specifier.startsWith('/')) {
         const base = flavor.resolve(flavor.dirname(path), specifier);
         const target = within(base) ? await probe(base) : undefined;
+        const present = target ?? (await existingPath(base));
+        // A relative path that names nothing is a missing file; absolute
+        // paths, queries and addons are not judged here.
+        const missing =
+          present === undefined &&
+          specifier.startsWith('.') &&
+          !specifier.includes('?') &&
+          !specifier.endsWith('.node');
         edges.push({
           ref,
           targets: target !== undefined && within(target) ? [target] : [],
+          ...(present === undefined ? {} : { present }),
+          ...(missing ? { missing: true as const } : {}),
         });
         continue;
       }
@@ -408,7 +504,19 @@ export async function scanReachable(
       if (targets.length === 0) unresolved += 1;
       edges.push({ ref, targets: [...new Set(targets)] });
     }
-    const parsed: Parsed = { info, edges, nonLiteral: extracted.nonLiteral };
+    const assets: string[] = [];
+    for (const rel of extractAssetRefs(text)) {
+      const found = await existingPath(
+        flavor.resolve(flavor.dirname(path), rel),
+      );
+      if (found !== undefined) assets.push(found);
+    }
+    const parsed: Parsed = {
+      info,
+      edges,
+      nonLiteral: extracted.nonLiteral,
+      assets,
+    };
     parsedCache.set(path, parsed);
     return parsed;
   };
@@ -450,6 +558,8 @@ export async function scanReachable(
   const dynamicFindings: ImportFinding[] = [];
   const acknowledgedFindings: ImportFinding[] = [];
   const nonLiteral: ImportScanReport['nonLiteral'][number][] = [];
+  const relativeMissing: ImportFinding[] = [];
+  const protectedPaths = new Set<string>();
 
   for (const [path, parsed] of [...everything].sort(([a], [b]) =>
     a < b ? -1 : a > b ? 1 : 0,
@@ -462,7 +572,33 @@ export async function scanReachable(
       });
     }
     const inLoadSet = loadTime.has(path);
+    for (const asset of parsed.assets) protectedPaths.add(asset);
     for (const edge of parsed.edges) {
+      if (edge.present !== undefined) protectedPaths.add(edge.present);
+      if (edge.missing === true) {
+        const finding: ImportFinding = {
+          path: parsed.info.display,
+          package: edge.ref.specifier,
+          specifier: edge.ref.specifier,
+          kind: inLoadSet && edge.ref.kind === 'static' ? 'static' : 'dynamic',
+          line: edge.ref.line,
+        };
+        if (
+          isAcknowledged(
+            {
+              owner: parsed.info.owner,
+              path: parsed.info.display,
+              from: parsed.info.from,
+              text: '',
+            },
+            finding,
+            acknowledgedList,
+          )
+        ) {
+          acknowledgedFindings.push(finding);
+        } else relativeMissing.push(finding);
+        continue;
+      }
       if (edge.removed === undefined) continue;
       const finding: ImportFinding = {
         path: parsed.info.display,
@@ -499,5 +635,22 @@ export async function scanReachable(
     staticFiles: loadTime.size,
     lazyFiles: everything.size - loadTime.size,
     unresolved,
+    relativeMissing,
+    protectedPaths: [...protectedPaths].sort(),
   };
+}
+
+/**
+ * Throw `relative_import_missing` when a reached file imports a relative path
+ * whose target is not in the tree and the product did not acknowledge it.
+ * Subjects are `path -> specifier`.
+ */
+export function assertNoMissingRelativeImports(report: ReachReport): void {
+  if (report.relativeMissing.length > 0) {
+    throw new BundleTreeError('relative_import_missing', {
+      subjects: report.relativeMissing.map(
+        (finding) => `${finding.path} -> ${finding.specifier}`,
+      ),
+    });
+  }
 }

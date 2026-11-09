@@ -37,6 +37,7 @@
  */
 
 import { builtinModules } from 'node:module';
+import { posix, win32 } from 'node:path';
 import {
   assertBundleMatchesSidecar,
   type BundleManifestV1,
@@ -107,6 +108,7 @@ import {
   type FilterDecision,
   type FilterEntry,
   hashRegularFile,
+  isContained,
   parentPath,
   publishStaging,
   readRegularFile,
@@ -124,7 +126,7 @@ import {
   createContentScan,
   createNodeModulesFilter,
 } from './prune.js';
-import { scanReachable } from './reach.js';
+import { assertNoMissingRelativeImports, scanReachable } from './reach.js';
 import {
   BUNDLE_FILES_FILENAME,
   BUNDLE_REPORT_FILENAME,
@@ -863,6 +865,31 @@ export async function runBundle(
     let removedFiles = 0;
     let removedBytes = 0;
     await stage('prune_copy', async () => {
+      // Which files do reached modules refer to? Follow the module graph over
+      // the UNPRUNED install tree first, so the file rules below can never
+      // delete a file the sidecar loads (a relative import's target, a
+      // `new URL('./x', import.meta.url)` asset). The scan stage then checks
+      // the pruned copy again.
+      const entryScript = plan.sidecar.args.find((arg) => !arg.startsWith('-'));
+      if (entryScript === undefined) throw new BundleError('entry_missing');
+      const beforePruning = await scanReachable({
+        buildRoot: buildDest,
+        modulesRoot: installModules,
+        entry: at(resourcesDir, ...entryScript.split('/')),
+        graph: segmentation.graph,
+        keep: segmentation.result.keep,
+        fs,
+        platform,
+      });
+      const protectedPaths = new Set<string>();
+      for (const absolute of beforePruning.protectedPaths) {
+        if (!isContained(installModules, absolute, platform)) continue;
+        const flavor = platform === 'win32' ? win32 : posix;
+        protectedPaths.add(
+          flavor.relative(installModules, absolute).split(flavor.sep).join('/'),
+        );
+      }
+
       const prune = createNodeModulesFilter({
         keepSourceMaps: plan.keepSourceMaps,
         target: {
@@ -872,6 +899,7 @@ export async function runBundle(
         },
         entryPaths: entryPathsByDir(segmentation.packages),
         removedDirs: segmentation.result.removedDirs,
+        protectedPaths,
       });
       const copy = await copyTree({
         root: installModules,
@@ -930,6 +958,7 @@ export async function runBundle(
 
     // -- 7. scan -----------------------------------------------------------
     const acknowledged: { from: string; specifier: string }[] = [];
+    let importScan: BundleReportV1['importScan'] | undefined;
     await stage('scan', async () => {
       const entry = plan.sidecar.args.find((arg) => !arg.startsWith('-'));
       if (entry === undefined) throw new BundleError('entry_missing');
@@ -944,6 +973,19 @@ export async function runBundle(
         platform,
       });
       assertNoRemovedImports(reach);
+      assertNoMissingRelativeImports(reach);
+      importScan = {
+        filesReached: reach.staticFiles + reach.lazyFiles,
+        loadTimeFiles: reach.staticFiles,
+        unresolvedBareImports: reach.unresolved,
+        nonLiteralImports: reach.nonLiteral.length,
+        unscannedFiles: reach.unscanned.length,
+      };
+      if (reach.unresolved > 0) {
+        warnings.push(
+          `${reach.unresolved} bare import(s) resolve to nothing installed (optional dependencies, or a missing package); they are counted in the report and only a start with --measure would show whether one is needed`,
+        );
+      }
       for (const finding of reach.acknowledged) {
         acknowledged.push({
           from: finding.path,
@@ -1298,6 +1340,7 @@ export async function runBundle(
           removedPackages,
           acknowledgedDynamicImports: acks,
         },
+        importScan: importScan as BundleReportV1['importScan'],
         packages: keptPackages,
         natives,
         nativeExceptions: nativeSummary.removed.map((item) => ({
