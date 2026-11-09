@@ -9,7 +9,8 @@ import {
   findLeftoverLinks,
   findManifestCodeLoading,
   findNormalizationTargets,
-  findWorkspaceCodeLoading,
+  findUnsafeWorkspaceConfig,
+  GENERATED_WORKSPACE_YAML,
   isRegistryResolution,
   stageManifest,
   stageNpmrc,
@@ -294,53 +295,203 @@ describe('dependency policy', () => {
 });
 
 describe('pnpm configuration that would load code', () => {
-  it('finds configDependencies, pnpmfile and globalPnpmfile in the workspace file', () => {
+  it('names configDependencies, pnpmfile and globalPnpmfile as keys outside the allowlist', () => {
     expect(
-      findWorkspaceCodeLoading('configDependencies:\n  x: 1.0.0+sha512-abc\n'),
+      findUnsafeWorkspaceConfig('configDependencies:\n  x: 1.0.0+sha512-abc\n'),
     ).toEqual(['configDependencies']);
-    expect(findWorkspaceCodeLoading('pnpmfile: ./hooks.cjs\n')).toEqual([
+    expect(findUnsafeWorkspaceConfig('pnpmfile: ./hooks.cjs\n')).toEqual([
       'pnpmfile',
     ]);
-    expect(findWorkspaceCodeLoading('globalPnpmfile: /x/y.cjs\n')).toEqual([
+    expect(findUnsafeWorkspaceConfig('globalPnpmfile: /x/y.cjs\n')).toEqual([
       'globalPnpmfile',
     ]);
   });
 
-  it('finds them nested, quoted, in flow style, kebab-cased or in another case', () => {
-    for (const yaml of [
-      'settings:\n  nested:\n    pnpmfile: a.cjs\n',
-      '"pnpmfile": a.cjs\n',
-      "'config-dependencies':\n  x: 1\n",
-      'a: {b: 1, pnpmfile: x.cjs}\n',
-      'x: ["a #", {global-pnpmfile: x}]\n',
-      'PnpmFile: x.cjs\n',
-      '? pnpmfile\n: x.cjs\n',
-      'anchor: &k pnpmfile\n',
-    ]) {
-      expect(findWorkspaceCodeLoading(yaml), yaml).not.toEqual([]);
-    }
+  it.each([
+    'modulesDir',
+    'virtualStoreDir',
+    'storeDir',
+    'lockfileDir',
+    'cacheDir',
+    'stateDir',
+    'globalDir',
+    'globalBinDir',
+    'strictSsl',
+    'registries',
+    'registry',
+    'ca',
+    'cafile',
+    'proxy',
+    'httpProxy',
+    'httpsProxy',
+    'nodeLinker',
+    'scriptShell',
+    'store-dir',
+    'only-built-dependencies',
+  ])('refuses the path, TLS or network key %s and reports only its name', (key) => {
+    expect(
+      findUnsafeWorkspaceConfig(
+        `overrides:\n  a: 1.0.0\n${key}: /tmp/CANARY-x\n`,
+      ),
+    ).toEqual([key]);
   });
 
-  it('fails closed on a quoted key spelled with an escape', () => {
-    expect(findWorkspaceCodeLoading('"pnpm\\x66ile": a.cjs\n')).toEqual([
-      'escaped YAML key',
+  it('allows exactly the allowlisted top-level keys with ordinary content', () => {
+    const yaml = [
+      '# a comment',
+      '---',
+      'packages: []',
+      'overrides:',
+      '  lodash: 4.17.21',
+      "  '@scope/pkg@<2': npm:other@^1.0.0",
+      '  react: catalog:',
+      'catalog:',
+      '  ms: ^2.1.3',
+      'catalogs:',
+      '  legacy:',
+      '    file: ^1.0.0',
+      'patchedDependencies:',
+      '  foo@1.0.0: patches/foo.patch',
+      'packageExtensions:',
+      '  react-redux:',
+      '    peerDependencies:',
+      '      react-dom: "*"',
+      'peerDependencyRules:',
+      '  ignoreMissing: ["react"] # see https://example.com/why',
+      'allowedDeprecatedVersions:',
+      '  request: "*"',
+      'supportedArchitectures:',
+      '  os: [current]',
+      'onlyBuiltDependencies:',
+      '  - esbuild',
+      'neverBuiltDependencies: [fsevents]',
+      'ignoredBuiltDependencies: []',
+      'autoInstallPeers: true',
+      'dedupePeerDependents: false',
+      'excludeLinksFromLockfile: false',
+      'strictPeerDependencies: false',
+      '',
+    ].join('\n');
+    expect(findUnsafeWorkspaceConfig(yaml)).toEqual([]);
+    expect(findUnsafeWorkspaceConfig(GENERATED_WORKSPACE_YAML)).toEqual([]);
+    expect(findUnsafeWorkspaceConfig('')).toEqual([]);
+    expect(findUnsafeWorkspaceConfig('# only a comment\r\n')).toEqual([]);
+  });
+
+  it.each([
+    [
+      'a second document',
+      'overrides:\n  a: 1.0.0\n---\nstoreDir: /x\n',
+      'multiple YAML documents',
+    ],
+    [
+      'two document starts',
+      '---\n---\noverrides: {}\n',
+      'multiple YAML documents',
+    ],
+    [
+      'a document end marker',
+      'overrides: {}\n...\n',
+      'multiple YAML documents',
+    ],
+    [
+      'content on the document start',
+      '--- {storeDir: x}\n',
+      'unsupported YAML structure',
+    ],
+    [
+      'a flow-mapping root',
+      '{storeDir: /x, overrides: {}}\n',
+      'flow mapping root',
+    ],
+    ['a sequence root', '- overrides\n', 'sequence root'],
+    ['an indented root', '  storeDir: /x\n  overrides: {}\n', 'indented root'],
+    ['a tab', 'overrides:\n\ta: 1.0.0\n', 'tab character'],
+    ['an anchor key', '&k overrides: {}\n', 'anchor, alias or tag'],
+    ['an alias key', '*k : {}\n', 'anchor, alias or tag'],
+    [
+      'an anchored value',
+      'overrides: &o\n  a: 1.0.0\n',
+      'anchor, alias or tag',
+    ],
+    ['an aliased value', 'catalog: *o\n', 'anchor, alias or tag'],
+    ['a tag', '!!map overrides: {}\n', 'anchor, alias or tag'],
+    ['a merge key', '<<: {storeDir: /x}\n', 'merge key'],
+    ['a double-quoted key', '"storeDir": /x\n', 'quoted key'],
+    ['a single-quoted key', "'overrides': {}\n", 'quoted key'],
+    ['a complex key', '? storeDir\n: /x\n', 'unsupported YAML structure'],
+    ['a directive', '%YAML 1.2\n---\noverrides: {}\n', 'YAML directive'],
+    ['a non-mapping line', 'overrides\n', 'unsupported YAML structure'],
+    ['a key escape', '"stor\\x65Dir": /x\n', 'escaped YAML key'],
+    [
+      'a column-0 flow continuation',
+      'overrides: {\nstoreDir: x\n}\n',
+      'storeDir',
+    ],
+    [
+      'a line separator',
+      'overrides: {}\u2028storeDir: /x\n',
+      'unsupported line break',
+    ],
+  ])('fails closed on %s', (_name, yaml, subject) => {
+    expect(findUnsafeWorkspaceConfig(yaml)).toContain(subject);
+  });
+
+  it('refuses a duplicated top-level key by name', () => {
+    expect(
+      findUnsafeWorkspaceConfig(
+        'overrides:\n  a: 1.0.0\noverrides:\n  b: 2.0.0\n',
+      ),
+    ).toEqual(['overrides (duplicate)']);
+  });
+
+  it('refuses a key it cannot print safely as unrecognised, never echoing it', () => {
+    const long = `x${'y'.repeat(80)}`;
+    expect(findUnsafeWorkspaceConfig(`${long}: 1\n`)).toEqual([
+      'unrecognised key',
     ]);
   });
 
-  it('ignores comments and ordinary settings', () => {
+  it.each([
+    'link:../evil',
+    'file:../evil.tgz',
+    'portal:../evil',
+    'workspace:*',
+    'git+https://example.com/x.git',
+    'github:owner/repo',
+    'https://example.com/x.tgz',
+    'http://example.com/x.tgz',
+  ])('refuses the non-registry specifier %s under overrides and catalogs', (spec) => {
+    for (const yaml of [
+      `overrides:\n  a: ${spec}\n`,
+      `overrides:\n  "a": "${spec}"\n`,
+      `overrides: {a: ${spec}}\n`,
+      `catalog:\n  a: ${spec}\n`,
+      `catalogs:\n  named:\n    a: ${spec}\n`,
+    ]) {
+      expect(findUnsafeWorkspaceConfig(yaml), yaml).not.toEqual([]);
+    }
+    expect(findUnsafeWorkspaceConfig(`overrides:\n  a: ${spec}\n`)).toEqual([
+      'overrides (non-registry specifier)',
+    ]);
+  });
+
+  it('does not read a specifier into a package that merely has the name of a scheme', () => {
     expect(
-      findWorkspaceCodeLoading(
-        [
-          '# pnpmfile: not used',
-          'packages: []',
-          'overrides:',
-          '  lodash: 4.17.21',
-          'onlyBuiltDependencies:',
-          '  - esbuild',
-          '',
-        ].join('\n'),
-      ),
+      findUnsafeWorkspaceConfig('overrides:\n  file: ^1.0.0\n  link: 2.0.0\n'),
     ).toEqual([]);
+  });
+
+  it.each([
+    "packages: ['../*']",
+    'packages:\n  - ../sibling',
+    'packages:\n  - /abs/path',
+    'patchedDependencies:\n  foo@1.0.0: ../../patches/foo.patch',
+    'patchedDependencies:\n  foo@1.0.0: /etc/passwd',
+  ])('refuses a path that leaves the directory: %s', (yaml) => {
+    expect(findUnsafeWorkspaceConfig(`${yaml}\n`)).toEqual([
+      expect.stringMatching(/\(path outside the directory\)$/),
+    ]);
   });
 
   it('finds them under the manifest pnpm field and never reports a dependency named like them', () => {
@@ -358,7 +509,23 @@ describe('pnpm configuration that would load code', () => {
   });
 });
 
+/** An environment-variable reference as pnpm would expand it. */
+const expand = (name: string): string => `$\x7b${name}}`;
+
 describe('stageNpmrc', () => {
+  it('drops a registry URL that expands an environment variable', () => {
+    const staged = stageNpmrc(
+      [
+        `registry=https://${expand('REGISTRY_HOST')}/npm/`,
+        `@acme:registry=https://npm.acme.test/${expand('TEAM')}/`,
+        'registry=https://registry.example.com/',
+        '',
+      ].join('\n'),
+    );
+    expect(staged.text).toBe('registry=https://registry.example.com/\n');
+    expect(staged.dropped).toBe(2);
+  });
+
   it('keeps registry lines and four boolean resolution settings only', () => {
     const staged = stageNpmrc(
       [
