@@ -459,6 +459,63 @@ describe('smrt app backup --encrypted --target', () => {
     ]);
   });
 
+  it('keeps the snapshot it just stored when the sequence restarted below the target maximum', async () => {
+    const f = await makeFixture();
+    const dir = await withFileTarget(f, ['--keep-last', '1']);
+    // A previous install uploaded sequences 8 and 9.
+    for (const start of [8n, 9n]) {
+      expect(
+        await f.run(['backup', '--encrypted', '--target', 'disk'], {
+          snapshotKeys: keyring(start),
+        }),
+      ).toBe(0);
+    }
+    // A reinstalled device restarts its counter at 1.
+    expect(
+      await f.run(['backup', '--encrypted', '--target', 'disk'], {
+        snapshotKeys: keyring(1n),
+      }),
+    ).toBe(0);
+    const report = f.json();
+    expect(report).toMatchObject({
+      status: 'backed-up',
+      object: { sequence: '1' },
+      retention: { applied: true },
+    });
+    // The stored object is the one thing retention must not delete.
+    expect(readdirSync(dir).sort()).toEqual([
+      'snapshot-00000000000000000001.hvsnap',
+      'snapshot-00000000000000000009.hvsnap',
+    ]);
+    expect(report.retention.removed).toEqual([]);
+  });
+
+  it('warns loudly when the stored sequence is not above the target maximum', async () => {
+    const f = await makeFixture();
+    const dir = await withFileTarget(f);
+    expect(
+      await f.run(['backup', '--encrypted', '--target', 'disk'], {
+        snapshotKeys: keyring(9n),
+      }),
+    ).toBe(0);
+    expect(f.json().warnings).toBeUndefined();
+    expect(
+      await f.run(['backup', '--encrypted', '--target', 'disk'], {
+        snapshotKeys: keyring(2n),
+      }),
+    ).toBe(0);
+    expect(f.json()).toMatchObject({
+      status: 'backed-up',
+      warnings: [
+        {
+          code: 'sequence_not_above_target_maximum',
+          message: expect.stringContaining('sequence 9'),
+        },
+      ],
+    });
+    expect(readdirSync(dir)).toHaveLength(2);
+  });
+
   it('reports a retention failure without failing the finished backup', async () => {
     const target = {
       name: 't',

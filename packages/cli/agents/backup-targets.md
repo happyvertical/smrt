@@ -25,7 +25,12 @@ Retention is per target: `--keep-last <n>` (at least 1) and optionally
 `prune`; the newest snapshot is never removed, ordering is by sequence (not by
 clock), and a retention failure is reported without failing the finished
 backup. A vault target without client retention is left to the relay, which
-enforces its own after each commit. `--target` requires `--encrypted`; there is
+enforces its own after each commit. Retention always keeps the object the
+backup just stored. If that object's sequence is not above the target's
+existing maximum (a reinstalled or restored device whose counter restarted),
+the report carries a `sequence_not_above_target_maximum` warning: ranking is by
+sequence, so a later `prune` can still remove it; restore before backing up
+again. `--target` requires `--encrypted`; there is
 no plaintext path to a target.
 
 Configuration is `<state root>/backup-targets.json` (0600): a directory, a Drive

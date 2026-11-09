@@ -177,6 +177,17 @@ describe('retention planning', () => {
     expect(plan.remove).toEqual([]);
   });
 
+  it('keeps protected objects even when they rank oldest', () => {
+    const plan = planRetention(
+      [object(8, 3), object(9, 2), object(1, 0)],
+      { keepLast: 1 },
+      now,
+      ['1'],
+    );
+    expect(plan.keep.map((o) => o.id)).toEqual(['9', '1']);
+    expect(plan.remove.map((o) => o.id)).toEqual(['8']);
+  });
+
   it.each([0, -1, 1.5, 10_001])('rejects keepLast %s', (keepLast) => {
     expect(() => planRetention([], { keepLast }, now)).toThrow(
       BackupTargetError,
