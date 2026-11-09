@@ -250,16 +250,6 @@ const DEFAULT_CONFIG: ResolvedTaskRunnerConfig = {
 };
 
 /**
- * TaskRunner processes SMRT jobs by invoking methods on SmrtObjects
- *
- * Features:
- * - Executes jobs via SmrtObject method invocation
- * - Configurable concurrency and timeout behavior
- * - Automatic retry with configurable strategies
- * - Job context logging for visibility
- * - Embedded mode (in-process) or standalone (CLI)
- */
-/**
  * A rejection from one of a job's own state writes, as opposed to a listener
  * or telemetry call that threw after the write committed.
  */
@@ -269,6 +259,16 @@ class UnpersistedJobWriteError extends Error {
   }
 }
 
+/**
+ * TaskRunner processes SMRT jobs by invoking methods on SmrtObjects
+ *
+ * Features:
+ * - Executes jobs via SmrtObject method invocation
+ * - Configurable concurrency and timeout behavior
+ * - Automatic retry with configurable strategies
+ * - Job context logging for visibility
+ * - Embedded mode (in-process) or standalone (CLI)
+ */
 export class TaskRunner extends EventEmitter {
   /** Tenant selection is applied before claims and recovery ownership writes. */
   static readonly capabilities = Object.freeze({
