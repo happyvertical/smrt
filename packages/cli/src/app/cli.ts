@@ -45,9 +45,10 @@ export const APP_COMMANDS: Readonly<Record<string, string>> = Object.freeze({
   stop: 'Local: stop the managed application process',
   doctor: 'Report runtime, storage, provider, and migration findings (default)',
   open: 'Open the application or pending owner onboarding in a browser',
-  'backup [destination]':
-    'Local: copy the private data root to a new directory',
-  'export [path]': 'Write a logical, asset-aware export bundle',
+  'backup [--encrypted] [destination]':
+    'Local: copy the private data root to a new directory (or one encrypted snapshot file)',
+  'export [--encrypted] [path]':
+    'Write a logical, asset-aware export bundle (optionally as an encrypted snapshot)',
   'import <path>': 'Import a logical export bundle into an empty application',
   'migrate [--relax-columns]':
     'Prepare storage custody and run smrt db:migrate under the lock',

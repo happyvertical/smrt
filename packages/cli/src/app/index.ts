@@ -145,6 +145,35 @@ export {
   webLauncherPath,
 } from './runtime.js';
 export {
+  type DataRootArchive,
+  extractDataRootArchive,
+  planDataRootArchive,
+} from './snapshot-archive.js';
+export {
+  DEFAULT_SNAPSHOT_CHUNK_BYTES,
+  type DecryptSnapshotOptions,
+  decryptSnapshot,
+  ENCRYPTED_SNAPSHOT_EXTENSION,
+  EncryptedSnapshotError,
+  type EncryptedSnapshotSummary,
+  MAX_SNAPSHOT_CHUNK_BYTES,
+  MAX_SNAPSHOT_TOTAL_BYTES,
+  MIN_SNAPSHOT_CHUNK_BYTES,
+  type OpenSnapshotOptions,
+  parseSnapshotHeader,
+  readSnapshotHeader,
+  SNAPSHOT_HEADER_BYTES,
+  type SnapshotContext,
+  type SnapshotHeader,
+  type SnapshotKeyProvider,
+  type SnapshotKeyReference,
+  type SnapshotKind,
+  type SnapshotSealingKey,
+  verifySnapshot,
+  type WriteEncryptedSnapshotOptions,
+  writeEncryptedSnapshot,
+} from './snapshot-framing.js';
+export {
   parseTokenLifetime,
   runTokenOperation,
   TOKEN_USAGE,
