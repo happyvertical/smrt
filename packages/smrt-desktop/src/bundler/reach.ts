@@ -35,6 +35,12 @@
  * module refers to (relative imports of any kind, `new URL('./x',
  * import.meta.url)`, `join(__dirname, 'x')` and `readFileSync('./x')` with
  * literal paths) are returned in `protectedPaths` so pruning can keep them.
+ * A file is kept; a directory is kept as an entry (with the directories on the
+ * way) but not its contents, because `resolve(__dirname, '..')` names a whole
+ * package root without wanting its tests, docs and fixtures. Only an explicit
+ * asset directory (a literal ending in `/` that names a directory, as in
+ * `new URL('./assets/', import.meta.url)`) is returned in `protectedSubtrees`,
+ * whose contents are kept too.
  * Non-literal `import(x)` stays a residual risk covered by the host smoke
  * start (`--measure`); a bundle built without it has no runtime check.
  *
@@ -98,6 +104,24 @@ export interface ReachReport extends ImportScanReport {
    * refer to by relative path; pruning must keep them.
    */
   readonly protectedPaths: readonly string[];
+  /**
+   * Absolute, sorted explicit asset directories (a trailing-slash literal
+   * naming a directory) whose whole contents pruning must keep. Each
+   * is also in `protectedPaths`.
+   */
+  readonly protectedSubtrees: readonly string[];
+}
+
+/**
+ * True for a trailing-slash literal that names a directory by its own name
+ * (`./assets/`, `./a/b/`, `../data/`): an explicit asset directory. `./`,
+ * `../` and `./../..` end in the module's own directory or an ancestor of it
+ * (a package root, say) and are not.
+ */
+export function isAssetDirectoryRef(rel: string): boolean {
+  if (!rel.endsWith('/')) return false;
+  const last = posix.basename(posix.normalize(rel));
+  return last !== '' && last !== '.' && last !== '..';
 }
 
 /**
@@ -262,6 +286,8 @@ interface Parsed {
   readonly nonLiteral: ReturnType<typeof extractImports>['nonLiteral'];
   /** Existing files and directories the module's literal paths name. */
   readonly assets: readonly string[];
+  /** The subset of `assets` that are explicit asset directories. */
+  readonly assetSubtrees: readonly string[];
 }
 
 /** Extensions probed for a relative specifier whose target is not a script. */
@@ -505,17 +531,27 @@ export async function scanReachable(
       edges.push({ ref, targets: [...new Set(targets)] });
     }
     const assets: string[] = [];
+    const assetSubtrees: string[] = [];
     for (const rel of extractAssetRefs(text)) {
       const found = await existingPath(
         flavor.resolve(flavor.dirname(path), rel),
       );
-      if (found !== undefined) assets.push(found);
+      if (found === undefined) continue;
+      assets.push(found);
+      if (isAssetDirectoryRef(rel)) {
+        try {
+          if ((await fs.lstat(found)).isDirectory()) assetSubtrees.push(found);
+        } catch {
+          // Not a directory after all.
+        }
+      }
     }
     const parsed: Parsed = {
       info,
       edges,
       nonLiteral: extracted.nonLiteral,
       assets,
+      assetSubtrees,
     };
     parsedCache.set(path, parsed);
     return parsed;
@@ -560,6 +596,7 @@ export async function scanReachable(
   const nonLiteral: ImportScanReport['nonLiteral'][number][] = [];
   const relativeMissing: ImportFinding[] = [];
   const protectedPaths = new Set<string>();
+  const protectedSubtrees = new Set<string>();
 
   for (const [path, parsed] of [...everything].sort(([a], [b]) =>
     a < b ? -1 : a > b ? 1 : 0,
@@ -573,6 +610,7 @@ export async function scanReachable(
     }
     const inLoadSet = loadTime.has(path);
     for (const asset of parsed.assets) protectedPaths.add(asset);
+    for (const asset of parsed.assetSubtrees) protectedSubtrees.add(asset);
     for (const edge of parsed.edges) {
       if (edge.present !== undefined) protectedPaths.add(edge.present);
       if (edge.missing === true) {
@@ -637,6 +675,7 @@ export async function scanReachable(
     unresolved,
     relativeMissing,
     protectedPaths: [...protectedPaths].sort(),
+    protectedSubtrees: [...protectedSubtrees].sort(),
   };
 }
 

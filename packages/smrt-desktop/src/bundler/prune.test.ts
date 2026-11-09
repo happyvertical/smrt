@@ -284,7 +284,7 @@ describe('classifyPrune', () => {
     expect(dir('p/bin/napi-v3/darwin/arm64')).toBeUndefined();
   });
 
-  it('keeps a pruned-by-name file or directory that a reached module refers to', () => {
+  it('keeps a pruned-by-name file that a reached module refers to, and a directory only as an entry', () => {
     const protectedPaths = new Set([
       'p/test/setup.js',
       'p/types/shape.d.ts',
@@ -293,15 +293,16 @@ describe('classifyPrune', () => {
     ]);
     const keep = (rel: string, kind: FilterEntry['kind'] = 'file') =>
       rule(rel, kind, { protectedPaths });
-    // The file, the directories on the way, and everything below a directory.
+    // The file and the directories on the way.
     expect(keep('p/test/setup.js')).toBeUndefined();
     expect(keep('p/test', 'dir')).toBeUndefined();
     expect(keep('p/types/shape.d.ts')).toBeUndefined();
     expect(keep('p/docs/guide.md')).toBeUndefined();
     expect(keep('p/docs', 'dir')).toBeUndefined();
+    // A protected directory is kept as an entry, not its contents.
     expect(keep('q/assets', 'dir')).toBeUndefined();
-    expect(keep('q/assets/deep/readme.md')).toBeUndefined();
-    expect(keep('q/assets/deep', 'dir')).toBeUndefined();
+    expect(keep('q/assets/deep/readme.md')).toBe('docs');
+    expect(keep('q/assets/types.d.ts')).toBe('types');
     // Siblings that nothing refers to are still pruned.
     expect(keep('p/types/other.d.ts')).toBe('types');
     expect(keep('p/docs/other.md')).toBe('docs');
@@ -310,6 +311,38 @@ describe('classifyPrune', () => {
     expect(rule('p/test', 'dir')).toBe('tests');
     expect(rule('p/test/setup.js', 'file')).toBeUndefined();
     expect(rule('p/types/shape.d.ts')).toBe('types');
+  });
+
+  it('a package root a reached module names does not keep its tests, docs or fixtures', () => {
+    const protectedPaths = new Set(['p']);
+    const keep = (rel: string, kind: FilterEntry['kind'] = 'file') =>
+      rule(rel, kind, { protectedPaths });
+    expect(keep('p', 'dir')).toBeUndefined();
+    expect(keep('p/test', 'dir')).toBe('tests');
+    expect(keep('p/docs', 'dir')).toBe('docs');
+    expect(keep('p/lib/index.d.ts')).toBe('types');
+    expect(keep('p/README.md')).toBe('docs');
+  });
+
+  it('keeps everything below an explicit asset directory, and the directories on the way', () => {
+    const protectedSubtrees = new Set(['q/assets']);
+    const protectedPaths = new Set(['q/assets']);
+    const keep = (rel: string, kind: FilterEntry['kind'] = 'file') =>
+      rule(rel, kind, { protectedPaths, protectedSubtrees });
+    expect(keep('q/assets', 'dir')).toBeUndefined();
+    expect(keep('q/assets/deep', 'dir')).toBeUndefined();
+    expect(keep('q/assets/deep/readme.md')).toBeUndefined();
+    expect(keep('q/assets/types.d.ts')).toBeUndefined();
+    expect(keep('q/docs', 'dir')).toBe('docs');
+    expect(keep('q/assets2/readme.md')).toBe('docs');
+    // A directory only on the way keeps its entry, not its other contents.
+    const nested = new Set(['q/vendor/assets']);
+    expect(
+      rule('q/vendor', 'dir', { protectedSubtrees: nested }),
+    ).toBeUndefined();
+    expect(
+      rule('q/vendor/readme.md', 'file', { protectedSubtrees: nested }),
+    ).toBe('docs');
   });
 
   it('does not let protection override a removed package or a foreign native directory', () => {

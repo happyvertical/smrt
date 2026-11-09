@@ -881,14 +881,22 @@ export async function runBundle(
         fs,
         platform,
       });
-      const protectedPaths = new Set<string>();
-      for (const absolute of beforePruning.protectedPaths) {
-        if (!isContained(installModules, absolute, platform)) continue;
-        const flavor = platform === 'win32' ? win32 : posix;
-        protectedPaths.add(
-          flavor.relative(installModules, absolute).split(flavor.sep).join('/'),
-        );
-      }
+      const relativeSet = (absolutes: readonly string[]): Set<string> => {
+        const out = new Set<string>();
+        for (const absolute of absolutes) {
+          if (!isContained(installModules, absolute, platform)) continue;
+          const flavor = platform === 'win32' ? win32 : posix;
+          out.add(
+            flavor
+              .relative(installModules, absolute)
+              .split(flavor.sep)
+              .join('/'),
+          );
+        }
+        return out;
+      };
+      const protectedPaths = relativeSet(beforePruning.protectedPaths);
+      const protectedSubtrees = relativeSet(beforePruning.protectedSubtrees);
 
       const prune = createNodeModulesFilter({
         keepSourceMaps: plan.keepSourceMaps,
@@ -900,6 +908,7 @@ export async function runBundle(
         entryPaths: entryPathsByDir(segmentation.packages),
         removedDirs: segmentation.result.removedDirs,
         protectedPaths,
+        protectedSubtrees,
       });
       const copy = await copyTree({
         root: installModules,
