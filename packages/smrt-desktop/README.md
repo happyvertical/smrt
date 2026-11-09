@@ -963,3 +963,302 @@ Each artifact carries `version: 1`. A parser accepts a declared set of
 versions; an unknown one is `unsupported_contract`. An incompatible change is a
 new integer, never a silent reinterpretation. Optional additions within v1 are
 not made: unknown fields are errors, so every addition is a version decision.
+
+## Runtime bundler
+
+`smrt desktop bundle` (the Node-only `@happyvertical/smrt-desktop/bundler`
+entry, `runBundle(plan, seams)`) turns a built SMRT app into the runtime half of
+a desktop bundle: a pinned Node binary for the Tauri `externalBin`, the
+adapter-node build, a pruned production `node_modules`, the MCP bridge, the
+two contract manifests above and a provenance report. It does not run the app
+build (run `smrt app build` first), does not sign, and does not package; item
+4 of epic #4663 (the packaging matrix) consumes its output.
+
+```sh
+smrt app build
+smrt desktop bundle --app . --out dist/desktop/aarch64-apple-darwin \
+  --target aarch64-apple-darwin --bridge dist/smrt-mcp-bridge.mjs
+```
+
+`--out` must not exist (or be empty) unless `--force`, and its parent must
+exist. Everything is built in a staging directory beside `--out` and published
+by one `rename`; on any failure the staging directory is removed and `--out`
+is untouched. Progress goes to stderr; with `--json` stdout carries only the
+canonical report (or a failure document), so it pipes cleanly.
+
+| Flag | Meaning |
+| --- | --- |
+| `--app <dir>` | application root with `package.json` and `pnpm-lock.yaml` (default `.`); a standalone app, not a workspace member |
+| `--build <dir>` | adapter-node output inside `--app` (default `<app>/build`) |
+| `--config <file>` | product configuration inside `--app` (default `<app>/smrt-desktop.json`) |
+| `--target <triple>` | Rust triple (default: this machine); see Targets |
+| `--out <dir>` | output directory (required) |
+| `--bridge <file>` | the **pre-bundled** single-file MCP bridge (see Bridge) |
+| `--product-id`, `--bundle-id`, `--display-name`, `--product-version`, `--channel` | product identity; flags win over the configuration; the version defaults to the app's `package.json`, the channel to `stable` |
+| `--node-version`, `--node-archive`, `--node-cache` | exact pinned Node version (default: newest pinned 26.x), an offline archive (still checked against the pin), the download cache |
+| `--features <a,b>` | feature groups to keep in addition to the configuration's defaults |
+| `--max-size <MiB>` | installed-size budget; exceeding it exits 6 and publishes nothing, but still prints the report |
+| `--measure`, `--measure-data <dir>` | start the bundle on this machine and record installed size and cold start (host target only) |
+| `--offline` | `pnpm install --offline` and no Node download (needs the pnpm store and the Node cache) |
+| `--keep-sourcemaps`, `--force`, `--json` | keep `*.map`; replace an existing `--out`; JSON on stdout |
+
+### Output
+
+```
+<out>/
+  binaries/<productId>-node-<triple>[.exe]   Tauri externalBin (tauri-build requires the triple suffix)
+  resources/                                 Tauri resource root and the sidecar's working directory
+    sidecar-manifest.json                    v1; executable "<productId>-node", args ["app/build/index.js"]
+    smrt-bundle.json                         v1 bundle manifest
+    app/package.json                         {name, version, private, type: "module"}
+    app/build/**                             adapter-node output
+    app/node_modules/**                      hoisted production dependencies, pruned
+    bridge/smrt-mcp-bridge.mjs               the bridge, byte for byte as supplied
+    licenses/node-LICENSE                    Node's LICENSE (macOS and Linux archives)
+  tauri.bundle.json                          {"bundle": {"externalBin": ["binaries/<productId>-node"], "resources": {"resources/": "./"}}}
+  bundle-files.sha256                        "<sha256>  <path>" for every file under binaries/ and resources/
+  bundle-report.json                         provenance and verification record (not a resource)
+```
+
+Merge `tauri.bundle.json` into the Tauri configuration and build with
+`tauri build --target <the same triple>`. The sidecar manifest always carries
+`NODE_ENV=production`, empty `NODE_OPTIONS` and `NODE_PATH` (the shell passes
+the parent environment through) and `SMRT_APP_ID=<productId>`: the app runtime
+otherwise reads `package.json` from its working directory, which is the
+resource root and holds none. Because the sidecar is named per product, a
+`.deb` or `.rpm` never installs `/usr/bin/node`.
+
+### Product configuration (`smrt-desktop.json`)
+
+One strict-JSON file at the app root (closed schema; unknown or repeated keys
+and out-of-grammar values are errors, and no error echoes a value):
+
+```json
+{
+  "version": 1,
+  "productId": "smrt-start",
+  "bundleId": "com.happyvertical.smrt-start",
+  "displayName": "SMRT Start",
+  "bridge": { "envPrefix": "SMRT_START", "mcpPath": "/mcp" },
+  "sidecar": { "healthRoute": "/api/_runtime/health", "dataDirectory": "runtime" },
+  "features": { "default": ["ai-anthropic"], "custom": {} },
+  "exclude": [],
+  "maxSizeMB": 350,
+  "nativeExceptions": [],
+  "acknowledgedDynamicImports": [
+    { "from": "@happyvertical/ai", "specifier": "openai" },
+    { "from": "@happyvertical/ai", "specifier": "@google/genai" },
+    { "from": "@happyvertical/sql", "specifier": "@duckdb/node-api" },
+    { "from": "@happyvertical/smrt-core", "specifier": "tsx" },
+    { "from": "@happyvertical/smrt-core", "specifier": "oxc-transform" }
+  ]
+}
+```
+
+`sidecar.args` (default `["app/build/index.js"]`), `sidecar.ownerClaimRoute`,
+`exclude` (extra package patterns to drop), `nativeExceptions`
+(`{path, reason}` globs under `app/node_modules`; a matching foreign native is
+**deleted**, never shipped, and recorded in the report) and `maxSizeMB` (MiB)
+are optional.
+
+### Targets
+
+| Triple | Node distribution | pnpm filter | Native check |
+| --- | --- | --- | --- |
+| `aarch64-apple-darwin`, `x86_64-apple-darwin` | `node-vX-darwin-{arm64,x64}.tar.gz` | `--os darwin --cpu {arm64,x64}` | Mach-O (thin or fat with the target slice) |
+| `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu` | `node-vX-linux-{x64,arm64}.tar.gz` | `--os linux --cpu … --libc glibc` | ELF64 LE, machine, glibc (musl is refused) |
+| `x86_64-pc-windows-msvc`, `aarch64-pc-windows-msvc` | `win-{x64,arm64}/node.exe` | `--os win32 --cpu …` | PE32+ (`aarch64` is best effort: it works only when every native dependency ships win32-arm64 prebuilds) |
+
+Not supported: musl, `universal-apple-darwin` (Node ships no universal
+binary), 32-bit anything. Cross bundling works: the install is
+`--frozen-lockfile --prod --ignore-scripts` with `--os/--cpu/--libc` and
+`--config.node-linker=hoisted`, and natives come from prebuilt optional
+packages, so nothing is compiled or executed on the build host.
+
+### Features and the size budget
+
+A production closure of a real app is mostly packages a desktop product does
+not use. Segmentation **removes** packages, never adds: a package goes when
+every path from the app's direct dependencies to it passes through a disabled
+root (or an `exclude` entry). The catalog:
+
+| Feature | Removes unless enabled |
+| --- | --- |
+| `toolchain` (cannot be enabled) | `vite`, `rolldown`, `esbuild`, `lightningcss*`, `typescript`, `tsx`, `oxc-*`, `@oxc-parser/*`, `@oxc-transform/*`, `@oxc-resolver/*`, `@oxc-minify/*`, `@oxc-project/types`, `@types/*`, platform packages of these |
+| `google-apis` | `googleapis`, `googleapis-common` |
+| `duckdb` | `@duckdb/*` |
+| `vector-sqlite` | `sqlite-vss*` |
+| `images` | `@happyvertical/images`, `sharp`, `@img/*`, `@resvg/*`, `@mediapipe/*`, `jimp`, `@jimp/*`, `satori` |
+| `ai-providers` = `ai-anthropic` + `ai-openai` + `ai-google` | `@anthropic-ai/sdk`, `openai`, `@google/genai` |
+| `ocr`, `pdf` | `@happyvertical/ocr`, `tesseract.js*`, `onnxruntime-*`; `@happyvertical/pdf`, `pdfjs-dist` |
+
+`@oxc-project/runtime` is deliberately **not** in the toolchain: compiled SMRT
+models import its decorator helpers at run time. A product may add features
+under `features.custom`.
+
+Removing a package is only safe if nothing that stays loads it, so the bundler
+follows the module graph from the sidecar entry script (relative paths,
+package `exports` with the `node`/`import`/`require`/`module-sync`/`default`
+conditions and `*` patterns, `main`, `#imports`) and checks every removed
+package it meets:
+
+- imported at **load time** (a chain of `import`, `export … from` and top-level
+  `require` from the entry): the sidecar would crash at start, so the bundle
+  fails (`removed_package_imported`, exit 5), and no setting excuses it;
+- imported **lazily** (`import()`, a `require` inside a function, or any file
+  only reachable that way, which includes every SvelteKit route module):
+  the bundle fails (`dynamic_import_unacknowledged`) until the product lists
+  `{from, specifier}` in `acknowledgedDynamicImports`, which the report
+  records, so the owner confirms the lazy path is not on the desktop path.
+
+Files that nothing loads (for example `@sveltejs/kit`'s Vite plugin, which
+imports `vite`) are not findings. The scan is a heuristic over a hand-written
+lexer: it cannot see `import(variable)` (counted as a warning), and the host
+start (`--measure`) is the backstop.
+
+File pruning inside kept packages removes `*.map`, `*.d.ts`, `*.ts`, docs
+(except `LICENSE*`, `NOTICE*`, `COPYING*`), tests and examples at a package
+root unless `main`/`exports`/`bin` points into them, tooling config, static
+libraries and prebuilds for other platforms. A secret deny-list (`.env*`,
+`.npmrc`, `*.pem`, `*.key`, `.git`, `.smrt`, `*.sqlite*`, …) **fails** the
+bundle wherever it matches, and the application build is scanned for private
+keys and common token shapes. The installed size is the sum of every file
+under `binaries/` and `resources/`; above 400 MiB without a `maxSizeMB` the
+bundler warns.
+
+### Determinism
+
+Identical inputs (lockfile, configuration, Node pin, pnpm version, build tree,
+bridge file) give a byte-identical `binaries/`, `resources/`,
+`bundle-files.sha256` and `bundle-report.json`. The report has no timestamp or
+absolute path; `host` and `measurements` are the only machine-specific
+members. Every modification time is `SOURCE_DATE_EPOCH` (default 1980-01-01).
+File lists are sorted by UTF-16 code unit order whatever the OS. The report
+schema is closed (`parseBundleReport` rejects unknown keys, duplicates,
+unsorted lists and bad hashes). The build output itself is only as
+deterministic as the app build; its hash is recorded, not rebuilt.
+
+### Exit codes
+
+| Exit | Category | Examples |
+| --- | --- | --- |
+| 0 | ok | bundle published, every check green |
+| 1 | `internal` | a bug; the message never carries a path or a secret |
+| 2 | `usage` | bad flag, unsupported target, unpinned Node version, `--measure` for a cross target |
+| 3 | `invalid_input` | missing app files, bad configuration, a non-registry dependency, no `--bridge`, `--out` not empty |
+| 4 | `provenance` | Node checksum mismatch, redirect or HTTP error from nodejs.org, lockfile drift, integrity failure |
+| 5 | `verification` | wrong-architecture native, symlink, secret, removed package imported, install script without a prebuilt binary, manifests that do not round-trip |
+| 6 | `budget` | `--max-size` exceeded |
+| 7 | `child_failed` | pnpm failed, the measured start did not answer its health route |
+| 8 | `io` | a file operation failed |
+
+`bundleExitCode(error)` is the single mapping; errors carry a closed `code`, a
+`stage`, and bundle-relative `subjects`, never an absolute path or file
+content.
+
+### Bridge
+
+The bridge must be a single self-contained file that imports only Node
+built-ins (`node:` or bare names); the bundler verifies that, hashes it,
+copies it unchanged and records its hash. The bundler does not bundle
+JavaScript (that would add a runtime dependency to this package), so
+`@happyvertical/smrt-app-cli` has to publish the pre-bundled bridge. **That
+build is a follow-up** (a second `smrt-app-cli` build output and export
+checked by its postbuild); until it lands, produce the file yourself, for
+example with `esbuild --bundle --platform=node --format=esm` over
+`@happyvertical/smrt-app-cli/dist/bin/smrt-mcp-bridge.js`, as the measured run
+below did.
+
+### Threat model and closing tests
+
+| # | Threat | Mitigation | Closing tests |
+| --- | --- | --- | --- |
+| B1 | Node binary provenance: tampered download, redirect, poisoned cache, wrong version or architecture | committed SHA-256 pins (produced by `scripts/update-node-pins.mjs`), constant HTTPS URL, redirects refused, size caps, hash on every use including cache hits | `rejects a Node archive whose sha256 differs from the pin`; `re-verifies a cached archive and refuses a poisoned cache entry`; `refuses an unpinned Node version before any network or file access`; `refuses any redirect from the dist host`; `aborts a download larger than the cap`; `refuses to run with TLS verification disabled`; `rejects a Node binary built for another architecture` |
+| B2 | Archive extraction: tar slip, link members, pax overrides, bombs | one-member reader, output name is ours, header checksums, gzip and member caps | `extracts only the named member and writes nothing else`; `rejects a symlink or hardlink member with the wanted name`; `ignores ../ and absolute member names (they never match)`; `stops a gzip bomb at the expansion cap`; `rejects a header with a bad checksum`; `honours a pax path record for the Node member` |
+| B3 | npm integrity, lockfile drift, dependency confusion | `--frozen-lockfile`, only registry specifiers and resolutions, lockfile and manifest hashes recorded, failure output never echoed | `builds the exact pnpm argv for each target`; `rejects link:, file:, git and tarball production dependencies`; `rejects production dependencies that are not registry packages`; `rejects a lockfile package resolved from a tarball URL or git`; `records lockfile and package.json hashes`; `classifies a failed install by its output without echoing it`; `fails when package.json drifts from the lockfile` (opt-in end to end) |
+| B4 | Lifecycle scripts running on the build host, side-effect cache | scripts never run (host or cross), staged manifest has none, side-effects cache off, install-script packages without a prebuilt binary fail | `never passes a flag that enables scripts for any target`; `never runs scripts: the staged package.json has none and argv is the frozen form`; `fails a package with an install script and no prebuilt binary`; `allows the closed list of harmless postinstall packages` |
+| B5 | Path traversal and symlink escape while copying | lstat walk, `O_NOFOLLOW` open with identity check, validated segments, `O_EXCL` writes, real containment | `rejects a build directory outside the application`; `rejects a symlink anywhere in the tree without following it`; `rejects FIFOs and, under policy, skips them`; `refuses a file replaced by a different inode between lstat and open`; `refuses a file swapped for a symlink after the walk (O_NOFOLLOW)`; `refuses to write through anything already at the destination` |
+| B6 | TOCTOU on the output directory | private staging next to the output, single `rename`, existing output must be empty or is moved aside, never recursively deleted unless created by this run | `replaces an empty output directory but refuses a non-empty one`; `refuses an output that is a symlink or a file`; `publishes by rename and leaves no staging behind`; `moves a previous bundle aside before deleting it when replacing`; `refuses a non-empty output directory that appears before publishing`; `removes staging and leaves the output untouched when the build fails` |
+| B7 | Wrong-architecture or wrong-libc binaries | header parsers over every file by magic bytes, extension rule, libc from `DT_NEEDED`, exceptions delete | `accepts thin arm64 and x86_64 addons (MH_BUNDLE and MH_DYLIB)`; `rejects a fat header whose slice header disagrees`; `rejects a Java class file mistaken for fat Mach-O`; `rejects a musl addon on a gnu target (DT_NEEDED)`; `rejects PE32 (even with an x64 machine) and ARM64EC DLLs`; `rejects a .node file that is not a native binary`; `returns a fixed reason for every prefix of every sample`; `rejects a native binary for another architecture` |
+| B8 | A `.node` that is a symlink or shares an inode with the store | links refused in source and output, outputs are fresh copies, natives need `nlink` 1 | `fails symlinks, special files and hardlinked natives`; `refuses hard-linked files by default and copies them as independent files when allowed` |
+| B9 | Secrets in the bundle | deny-list fails the bundle, content scan of the build, maps dropped, `.npmrc` used only in staging | `fails when the build output contains a .env file`; `fails on a private key in the build output`; `fails on a .smrt data directory inside the build`; `never copies the app .npmrc into the output`; `drops source maps unless asked`; `keeps a canary token out of the output, the report and the child environment` |
+| B10 | Build-host environment leaking into children | child environment allowlist, forced `npm_config_ignore_scripts`, `NODE_OPTIONS`/`npm_config_*`/`LD_*` dropped | `passes only allowlisted environment names to pnpm`; `drops NODE_OPTIONS and npm_config_* from the child environment`; `forces ignore-scripts in the child environment`; `never leaks a canary token, whatever the variable name` |
+| B11 | Environment injection into the sidecar at run time | the manifest empties `NODE_OPTIONS` and `NODE_PATH` | `writes a sidecar manifest that neutralises NODE_OPTIONS and NODE_PATH` |
+| B12 | Manifest reproducibility and validity | canonical serializers, re-parsed with the contract parsers, byte round trip, cross-check, no timestamps | `writes manifests the contract parsers accept and that round-trip byte for byte`; `produces identical files and report for identical inputs`; `orders the file list independently of readdir order`; `sets every modification time to the epoch floor or SOURCE_DATE_EPOCH` |
+| B13 | Bridge not self-contained, swapped or a link | verified regular file, size cap, built-ins only, hash recorded | `rejects a bridge bundle that imports a bare package`; `rejects a bridge that is a symlink`; `records the bridge sha256 and byte count` |
+| B14 | A removed package is still needed (availability) | reachability scan, acknowledgements recorded, host start | `fails when the build statically imports a removed package`; `requires acknowledgement for a dynamic import of a removed package`; `ignores a build-time file of a kept package that nothing loads`; `bundles, verifies and measures a fixture app for the host triple` (opt-in end to end) |
+
+The tests live in `src/bundler/*.test.ts`; the end-to-end file is skipped
+unless `SMRT_DESKTOP_BUNDLE_E2E=1` (it needs network, pnpm and nodejs.org).
+
+**Residual risks.** The lockfile is trusted reviewed input (a lockfile with
+valid integrity for malicious tarballs is out of scope). The Node pins in
+`src/bundler/node-pins.ts` were copied from nodejs.org over HTTPS and the
+downloaded archive matched them, but **the release signature was not
+verified**; run `scripts/update-node-pins.mjs` (needs `gpg`) and review its
+diff before shipping. Non-literal `import(x)` is invisible to the scan. The
+glibc symbol-version floor of Linux natives is not checked. Windows ACLs of the
+output directory are not checked. Windows bundles carry no Node LICENSE file
+(the standalone `node.exe` has no archive to take it from). macOS signing and
+notarisation of every Mach-O under `resources/` is item 4: `natives[]` in the
+report is the list to sign.
+
+### Known gaps found while bundling a real app
+
+- **No first-run schema.** SMRT apps never create tables at run time
+  (`smrt db:migrate` does), so a sidecar started on an empty data directory
+  exits with `DB_SCHEMA_MISSING`. The desktop shell needs a prepare step
+  before the first start, or the runtime needs a supported way to migrate
+  itself. `--measure-data` works around it for measurement only: prepare a
+  directory with `SMRT_APP_ID=<id> SMRT_DATA_DIR=<dir> smrt app migrate` in
+  the app checkout.
+- **App identity.** The runtime reads the application id from `package.json`
+  in its working directory unless `SMRT_APP_ID` is set; the bundler sets it.
+- **Dependency hygiene** drives the size more than any bundler setting; see
+  the breakdown below.
+
+### Bundle size and cold start
+
+Measured with `smrt desktop bundle --measure --measure-data <migrated dir>`
+on a real app. "Cold start" is the wall time from `spawn()` of the bundled
+Node binary (working directory `resources/`, environment from the written
+sidecar manifest through `buildSidecarEnv`, a free loopback port) to the first
+2xx answer of `GET /api/_runtime/health` (polled every 20 ms, 500 ms per
+request, no redirects). Three timed runs per series; the child is stopped
+between runs. `firstRun` copies the prepared data directory for every run;
+`warm` reuses one directory after an untimed priming start. It is a **new
+process, not a cold OS file cache** (dropping caches needs root), and it does
+not include schema creation. Compressed installer size is item 4's number.
+
+| Date (UTC) | Product | Target | Node | Machine | Features | Installed (apparent / on disk) | Files | First run median / max | Warm median / max |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 2026-11-09 | smrt-start 0.57.2 | aarch64-apple-darwin | 26.8.1 | Apple M4 Max, macOS 26.6.2, pnpm 11.25.0 | `ai-anthropic` | 238.9 MiB / 274.0 MiB | 12 641 | 560.0 / 584.1 ms | 516.6 / 516.7 ms |
+
+Samples (ms): first run 584.1, 560.0, 540.3; warm 516.7, 516.6, 513.1.
+
+Breakdown of the 250 556 856 bytes (238.9 MiB) installed:
+
+| Part | Bytes | MiB |
+| --- | --- | --- |
+| Node 26.8.1 binary (official darwin-arm64 build) | 145 803 984 | 139.0 |
+| `app/node_modules` (386 packages kept, 215 removed) | 91 939 009 | 87.7 |
+| `app/build` | 11 178 090 | 10.7 |
+| manifests, bridge, licenses, app `package.json` | 1 635 773 | 1.6 |
+
+Segmentation removed 215 packages (663.4 MiB, 11 435 files) and file pruning
+another 18 729 files (118.9 MiB). For comparison, the same app with every
+enableable feature switched on (only the toolchain removed, files pruned) is
+565 538 811 bytes (539.3 MiB, 567 packages, 8 native files besides Node:
+DuckDB, sharp, libvips, libsql, resvg and sqlite-vss). The real app does start with the minimal feature set:
+`/api/_runtime/health` answers 200 (`status: ready`, `profile: local`), `/setup`
+and `/settings` answer 200, `/` redirects (303) and the authenticated routes
+answer 401, with nothing on stderr. The Node binary is the largest single
+part; the largest kept packages (`du`, on disk) are `@happyvertical/*` (24.0 MiB),
+`date-fns` (16.4 MiB), `@libsql` (8.2 MiB), `@modelcontextprotocol` (7.6 MiB)
+and `@aws-sdk` (5.4 MiB).
+
+Reproduce: build the app (`pnpm install && pnpm build`), write
+`smrt-desktop.json` as above, create the bridge file, prepare the data
+directory, then run the `smrt desktop bundle` command with
+`--measure --measure-data <dir>` and read `measurements` in
+`bundle-report.json`. Per-OS rows from the CI matrix are item 4's.
