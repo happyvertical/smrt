@@ -27,6 +27,10 @@ Application infrastructure composition for the validated runtime profiles in
   if its root is an existing real directory owned by another uid. Acquire in that order; never make the
   lease location configurable per process — every process sharing a data root
   must derive the same lease.
+- Filesystem custody (preflight, data-root and lease construction, markers, the
+  application secret, no-follow opens) lives in `src/local-custody.ts`; it is
+  internal (not exported from the package). `index.ts` only composes it into the
+  public entry points. `LocalRuntimeError` lives in `src/local-runtime-error.ts`.
 - Application migrations are explicit through `prepareDatabase`; runtime never
   creates application model tables implicitly. A rejected `prepareDatabase` is
   normalized into `LocalRuntimeError` with the stable `migration_failed` code
