@@ -39,10 +39,33 @@ function jobBlock(lines, job) {
 test('workflow runner inventory permits only explicit Ubuntu and native macOS jobs', () => {
   const unexpectedRunners = [];
   const expectedMacosJobs = new Set(['mobile.yml:gradle-macos', 'mobile.yml:xcode-ios']);
+  // Native-OS jobs that cannot run on Ubuntu (smrt#4663, assumed decision
+  // pending owner confirmation): the Windows custody tests, and the desktop
+  // build/release legs, whose runner comes from the target matrix
+  // (macOS arm64/x64, Windows, Linux) or the signing-runner variable. Each
+  // exception is a single named job with an exact runner rule; nothing else
+  // may leave ubuntu-latest.
+  const expectedNativeJobs = new Map([
+    ['app-runtime-windows.yml:custody', (value) => value === 'windows-latest'],
+    ['desktop-release.yml:verify-build', (value) => value === '${{ matrix.runner }}'],
+    [
+      'desktop-release.yml:release',
+      (value) => value.startsWith('${{ fromJSON(') && value.includes('matrix.runner'),
+    ],
+  ]);
   const declarations = workflowFiles.flatMap(runnerDeclarations);
 
   for (const declaration of declarations) {
     const key = `${declaration.file}:${declaration.job}`;
+    const nativeRule = expectedNativeJobs.get(key);
+    if (nativeRule) {
+      if (!nativeRule(declaration.value)) {
+        unexpectedRunners.push(
+          `${declaration.file}:${declaration.line}:${declaration.job}: native job runner rule failed, got ${declaration.value}`,
+        );
+      }
+      continue;
+    }
     const expectedRunner = expectedMacosJobs.has(key) ? 'macos-latest' : 'ubuntu-latest';
     if (declaration.value !== expectedRunner) {
       unexpectedRunners.push(
