@@ -11,6 +11,7 @@ import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type * as AppRuntime from '@happyvertical/smrt-app-runtime';
 import type { ResolvedApplicationRuntime } from '@happyvertical/smrt-config';
+import type { AgentDocsHooks } from './agent-docs.js';
 import type { BackupTargetDependencies } from './backup-command.js';
 import {
   AppCommandError,
@@ -78,6 +79,10 @@ export interface AppCommandDependencies {
   runSmrt: CommandRunner;
   /** Open a URL in the operator's browser. */
   openBrowser(url: string): void;
+  /** Agent-docs freshness seams (`install` / `dev` / `build`, #4878). */
+  agentDocs?: AgentDocsHooks;
+  /** Replaces the in-process Vite launch for `dev` / `build` (tests). */
+  launchVite?(context: AppContext, args: string[]): Promise<number>;
   /** Health probe transport for `start`. */
   fetch: typeof fetch;
   /** Delay between readiness polls. */

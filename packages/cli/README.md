@@ -204,6 +204,12 @@ intent index and the framework reference. Only the text between the markers is
 ever rewritten; a damaged marker pair is refused with a warning. Pass
 `--no-agents-block` to skip it; `--dry-run` prints it on stderr.
 
+The export stays current without anyone remembering it: `smrt app install`
+refreshes it, `smrt app dev` refreshes a missing or stale bundle (skipped when
+`CI` is set or `SMRT_AGENT_DOCS=off`), `smrt app build` only prints a warning
+and writes nothing, and `smrt doctor` has an "Agent knowledge" section. Agent
+docs never fail or change the exit status of those commands.
+
 Review and architecture prompt bundles include package guidance and modules
 matched by file or focus hints. Add `--complete` to either context command to
 include every module for the selected packages. These commands still build the

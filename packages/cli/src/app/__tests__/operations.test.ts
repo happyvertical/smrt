@@ -1069,6 +1069,48 @@ describe('smrt app start / stop', () => {
     expect(allOutput(fixture)).not.toContain(TOKEN);
     expect(await fixture.run(['stop'])).toBe(0);
   });
+
+  it('install refreshes agent docs in write mode, and a failing refresh never stops it (#4878)', async () => {
+    const fixture = makeFixture();
+    const port = await freePort();
+    process.env.PORT = port;
+    writeFakeBuild(fixture.app);
+    process.env.FAKE_HEALTH = JSON.stringify({
+      configuration: expectedFingerprint(fixture, port),
+    });
+    const refresh = vi.fn(async () => {
+      throw new Error('docs exploded');
+    });
+    expect(
+      await fixture.run(['install'], {
+        openBrowser: vi.fn(),
+        agentDocs: { refresh },
+      }),
+    ).toBe(0);
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(refresh).toHaveBeenCalledWith(
+      expect.objectContaining({ cwd: fixture.app, mode: 'write' }),
+    );
+    // Plain text on stderr, no error envelope; stdout is the usual JSON.
+    const stderr = fixture.output.stderr.join('');
+    expect(stderr).toContain('agent docs refresh failed (docs exploded)');
+    expect(() => JSON.parse(stderr)).toThrow();
+    const lines = fixture.output.stdout.join('');
+    expect(lines).toContain('"status": "ready"');
+    const started = JSON.parse(lines.trim().split('\n').at(-1) as string) as {
+      pid: number;
+    };
+    children.push(started.pid);
+    expect(await fixture.run(['stop'])).toBe(0);
+  });
+
+  it('install does not refresh agent docs when the local-operation assertion refuses', async () => {
+    const fixture = makeFixture();
+    fixture.setProfile('self-hosted');
+    const refresh = vi.fn();
+    expect(await fixture.run(['install'], { agentDocs: { refresh } })).toBe(1);
+    expect(refresh).not.toHaveBeenCalled();
+  });
 });
 
 describe('smrt app doctor', () => {

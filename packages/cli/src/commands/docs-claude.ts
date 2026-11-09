@@ -6,21 +6,9 @@
  * that writes to the historical .claude/smrt-framework.md path.
  */
 
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  realpathSync,
-  writeFileSync,
-} from 'node:fs';
-import {
-  dirname,
-  join,
-  relative as relativePath,
-  resolve as resolvePath,
-} from 'node:path';
-import {
-  checkKnowledgeGraphFreshness,
   readAgentModuleDocs,
   readPackageAgentDoc,
   resolveAgentModuleDocPaths,
@@ -29,26 +17,8 @@ import { compareVersions } from '@happyvertical/smrt-dev-mcp/knowledge';
 import type { DomainKnowledgeModuleDoc } from '@happyvertical/smrt-types';
 import type { CLICommand } from '../cli-generator.js';
 import {
-  type AgentsBlockInputs,
-  type AgentsBlockResult,
-  applyAgentsBlock,
-  renderAgentsBlock,
-} from './docs-agents-block.js';
-import {
-  type BundleExportResult,
-  exportKnowledgeBundle,
-  filterInstalledIntents,
-  isBundleSafePackage,
-  loadIntentRows,
-  renderIntentSection,
-  resolveIntentSource,
-  unscopedName,
-} from './docs-knowledge-bundle.js';
-import { installAgentSkills } from './docs-skills-install.js';
-import {
   collectWorkspacePackageEntries,
   type DocsRoot,
-  resolveDocsRoot,
   type WorkspacePackageEntry,
 } from './docs-workspace.js';
 
@@ -108,25 +78,6 @@ interface DocsHandlerOptions {
   here?: boolean;
 }
 
-/** Reports the AGENTS.md block outcome; warnings always go to stderr. */
-function reportAgentsBlock(result: AgentsBlockResult, dryRun: boolean): void {
-  const out = dryRun ? console.error : console.log;
-  const verb = dryRun ? 'would be ' : '';
-  const where = relativePath(process.cwd(), result.path) || result.path;
-  if (result.status === 'refused') {
-    // The warning below carries the reason.
-  } else if (result.status === 'unchanged') {
-    out(`   AGENTS.md block unchanged (${where})`);
-  } else {
-    out(`   AGENTS.md block ${verb}${result.status} (${where})`);
-  }
-  if (result.claude === 'created') {
-    out(`   CLAUDE.md ${verb}created (imports AGENTS.md)`);
-  }
-  if (dryRun) out(`\n${result.block}\n`);
-  for (const warning of result.warnings) console.error(`   ⚠️  ${warning}`);
-}
-
 function createDocsCommand(config: DocsCommandOptions): CLICommand {
   return {
     name: config.commandName,
@@ -178,264 +129,35 @@ function createDocsCommand(config: DocsCommandOptions): CLICommand {
           );
         }
 
-        const docsRoot = resolveDocsRoot({
+        // Loaded lazily: docs-refresh imports this module's generators.
+        const { refreshAgentDocs } = await import('./docs-refresh.js');
+        const result = await refreshAgentDocs({
           cwd: process.cwd(),
+          mode: 'write',
+          dryRun: options['dry-run'],
           here: options.here,
+          complete: options.complete,
+          skills: !options['no-install-skills'],
+          agentsBlock: !options['no-agents-block'],
+          output: options.output,
+          defaultOutput: config.defaultOutput,
+          generatedBy: config.generatedBy,
         });
-        // A consumer workspace root writes its default output under the root;
-        // an explicit --output stays relative to where the command ran.
-        const outputPath = options.output
-          ? options.output
-          : docsRoot.workspace
-            ? join(docsRoot.root, config.defaultOutput)
-            : config.defaultOutput;
-        const dryRun = options['dry-run'];
-        const monorepoRoot = detectMonorepoRoot();
-        const rootDocs = monorepoRoot ? loadRootDocs(monorepoRoot) : [];
-        const { packages, sdkPackages } = await collectWorkspacePackages(
-          docsRoot,
-          options.complete,
-        );
 
-        if (packages.length === 0 && sdkPackages.length === 0) {
+        if (result.status === 'skipped-nothing-installed') {
           console.log('\n⚠️  No @happyvertical packages found in node_modules');
           console.log(
             '   Make sure packages are installed before running this command.\n',
           );
           process.exit(1);
         }
-
-        if (docsRoot.workspace) {
-          // stdout carries the document under --dry-run, so report on stderr.
-          (dryRun ? console.error : console.log)(
-            `\n📦 pnpm workspace root: ${docsRoot.root}${
-              docsRoot.liftedFromMember
-                ? ` (resolved from ${process.cwd()}; pass --here to stay local)`
-                : ''
-            }`,
-          );
-        }
-
-        // Knowledge bundle (#4689): the intent section lists only intents
-        // whose home package is installed in this project.
-        const bundlePackages = packages
-          .filter(isBundleSafePackage)
-          .map((pkg) => ({
-            ...pkg,
-            versions: pkg.versionLocations?.map((entry) => entry.version),
-          }));
-        const installedVersions = new Map(
-          bundlePackages.map((pkg) => [unscopedName(pkg.name), pkg.version]),
-        );
-        const intentSource = resolveIntentSource({
-          monorepoRoot,
-          installedCliDirectory: packages.find(
-            (pkg) => pkg.specifier === '@happyvertical/smrt-cli',
-          )?.directory,
-        });
-        const intentRows = intentSource ? loadIntentRows(intentSource) : [];
-        const bundleDirName = 'smrt-knowledge';
-
-        const content = generateMarkdown(
-          packages,
-          rootDocs.length > 0 ? rootDocs : undefined,
-          sdkPackages.length > 0 ? sdkPackages : undefined,
-          config.generatedBy,
-          {
-            complete: options.complete,
-            intentSection: renderIntentSection(
-              intentRows,
-              installedVersions,
-              bundleDirName,
-            ),
-          },
-        );
-
-        const agentsBlockInputs = (
-          intentsExported: boolean,
-        ): AgentsBlockInputs => {
-          const versioned =
-            bundlePackages.find(
-              (pkg) => pkg.name === '@happyvertical/smrt-cli',
-            ) ??
-            bundlePackages.find(
-              (pkg) => pkg.name === '@happyvertical/smrt-core',
-            );
-          const bundleRel = relativePath(
-            resolvePath(docsRoot.root),
-            resolvePath(dirname(outputPath), bundleDirName),
-          );
-          return {
-            version: versioned?.version,
-            versionPackage: versioned?.name,
-            frameworkPath: relativePath(
-              resolvePath(docsRoot.root),
-              resolvePath(outputPath),
-            ),
-            intentIndexPath: intentsExported
-              ? `${bundleRel}/intents/index.md`
-              : undefined,
-          };
-        };
-
-        if (dryRun) {
-          console.log(content);
-          // stdout carries the document, so the block report goes to stderr.
-          if (!options['no-agents-block']) {
-            const result = applyAgentsBlock({
-              root: docsRoot.root,
-              block: renderAgentsBlock(
-                agentsBlockInputs(
-                  filterInstalledIntents(intentRows, installedVersions).length >
-                    0 && intentSource !== null,
-                ),
-              ),
-              dryRun: true,
-            });
-            reportAgentsBlock(result, true);
+        if (result.status === 'failed' && result.failure) {
+          console.error(`\n❌ ${result.failure.message}`);
+          for (const line of result.failure.details ?? []) {
+            console.error(`   ${line}`);
           }
-          return;
+          process.exit(1);
         }
-
-        const outputDir = dirname(outputPath);
-        if (!existsSync(outputDir)) {
-          mkdirSync(outputDir, { recursive: true });
-        }
-
-        writeFileSync(outputPath, content, 'utf-8');
-
-        const bundle: BundleExportResult | null = exportKnowledgeBundle({
-          bundleDir: join(outputDir, bundleDirName),
-          packages: bundlePackages,
-          monorepoRoot,
-          intentSource,
-          intentRows,
-          exportedBy: config.generatedBy,
-        });
-
-        // Export the merged cross-package knowledge graph (#2863) alongside
-        // the per-package snapshot, when this run is inside the monorepo
-        // that generated one. A consumer app installing individual packages
-        // has no root graph to export — only the monorepo build does.
-        let graphExported = false;
-        if (monorepoRoot) {
-          const graphPath = join(
-            monorepoRoot,
-            '.smrt',
-            'smrt-knowledge-graph.json',
-          );
-          if (existsSync(graphPath)) {
-            // A stale graph — a per-package artifact changed since the graph
-            // was last generated — must not be copied out as if it were
-            // current: a consumer snapshot exporting it would carry a graph
-            // that no longer matches the packages it describes. Fail rather
-            // than regenerate here: this command reads artifacts, it does
-            // not own the scanner run `pnpm knowledge:graph` needs (#2872
-            // review).
-            const graphIssues = checkKnowledgeGraphFreshness(
-              monorepoRoot,
-              '.smrt/smrt-knowledge-graph.json',
-              { requireArtifact: true },
-            );
-            const graphErrors = graphIssues.filter(
-              (issue) => issue.severity === 'error',
-            );
-            if (graphErrors.length > 0) {
-              console.error(
-                '\n❌ Cross-package knowledge graph is stale; run `pnpm knowledge:graph` first:',
-              );
-              for (const issue of graphErrors) {
-                console.error(`   ${issue.code}: ${issue.message}`);
-              }
-              process.exit(1);
-            }
-
-            const graphOutputPath = join(
-              dirname(outputPath),
-              'smrt-knowledge-graph.json',
-            );
-            writeFileSync(graphOutputPath, readFileSync(graphPath, 'utf-8'));
-            graphExported = true;
-          }
-        }
-
-        // Skills (#4708): installed under the directory the command runs in.
-        // The smrt repository itself (root package @happyvertical/smrt, not any
-        // pnpm monorepo) also gets smrt-contribute (#4709).
-        const skillResults = options['no-install-skills']
-          ? []
-          : installAgentSkills({
-              projectRoot: docsRoot.root,
-              bundleDir: relativePath(
-                resolvePath(docsRoot.root),
-                resolvePath(outputDir, bundleDirName),
-              ),
-              skills: isSmrtRepository(monorepoRoot)
-                ? ['smrt-catalog', 'smrt-contribute']
-                : ['smrt-catalog'],
-              generatedBy: config.generatedBy,
-            });
-
-        // AGENTS.md block (#4878): never fails the command.
-        let agentsBlock: AgentsBlockResult | null = null;
-        if (!options['no-agents-block']) {
-          agentsBlock = applyAgentsBlock({
-            root: docsRoot.root,
-            block: renderAgentsBlock(
-              agentsBlockInputs((bundle?.intents ?? 0) > 0),
-            ),
-          });
-        }
-
-        const totalPackages = packages.length + sdkPackages.length;
-        console.log(`\n✅ Generated ${outputPath}`);
-        console.log(`   ${totalPackages} packages documented`);
-        if (packages.length > 0) {
-          console.log(`   ${packages.length} SMRT packages`);
-        }
-        if (sdkPackages.length > 0) {
-          console.log(`   ${sdkPackages.length} SDK packages`);
-        }
-        const allPackages = [...packages, ...sdkPackages];
-        const withAgentDocs = allPackages.filter((p) => p.agentMd).length;
-        if (withAgentDocs > 0) {
-          console.log(`   ${withAgentDocs} with AGENTS.md`);
-        }
-        const moduleDocCount = allPackages.reduce(
-          (total, p) =>
-            total + (p.moduleDocPaths?.length ?? p.moduleDocs?.length ?? 0),
-          0,
-        );
-        if (moduleDocCount > 0) {
-          console.log(`   ${moduleDocCount} linked module docs`);
-        }
-        if (rootDocs.length > 0) {
-          console.log(`   ${rootDocs.length} framework documents included`);
-        }
-        if (graphExported) {
-          console.log('   cross-package knowledge graph exported');
-        }
-        if (bundle) {
-          console.log(
-            `   knowledge bundle exported to ${bundle.bundleDir} (${bundle.components} component pages, ${bundle.intents} intent pages)`,
-          );
-          if (bundle.withoutPages.length > 0) {
-            console.log(
-              `   ${bundle.withoutPages.length} installed packages ship no knowledge page`,
-            );
-          }
-        }
-        const written = skillResults.filter(
-          (result) =>
-            result.status === 'installed' || result.status === 'updated',
-        );
-        if (written.length > 0) {
-          console.log(
-            `   ${written.length} agent skill files written (${[...new Set(written.map((result) => result.skill))].join(', ')})`,
-          );
-        }
-        if (agentsBlock) reportAgentsBlock(agentsBlock, false);
-        console.log('');
       } catch (error) {
         console.error('\n❌ Failed to generate agent documentation:');
         if (error instanceof Error) {
@@ -657,7 +379,7 @@ function loadPackageInfo(
  * Whether `root` is the smrt repository itself (not just any pnpm monorepo):
  * only its root package is named `@happyvertical/smrt`.
  */
-function isSmrtRepository(root: string | null): boolean {
+export function isSmrtRepository(root: string | null): boolean {
   if (!root) return false;
   try {
     return (
@@ -669,9 +391,9 @@ function isSmrtRepository(root: string | null): boolean {
   }
 }
 
-export function detectMonorepoRoot(): string | null {
+export function detectMonorepoRoot(start = process.cwd()): string | null {
   try {
-    let currentDir = realpathSync(process.cwd());
+    let currentDir = realpathSync(start);
 
     for (;;) {
       const pnpmWorkspace = join(currentDir, 'pnpm-workspace.yaml');
@@ -696,7 +418,7 @@ export function detectMonorepoRoot(): string | null {
   return null;
 }
 
-function loadRootDocs(rootPath: string): RootDocInfo[] {
+export function loadRootDocs(rootPath: string): RootDocInfo[] {
   const docs: RootDocInfo[] = [];
 
   const rootDocs = [

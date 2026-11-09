@@ -74,3 +74,36 @@ user's file, so:
 - **Reuse.** Exports: `renderAgentsBlock`, `mergeAgentsBlock`,
   `applyAgentsBlock`, `checkAgentsBlock(root)` (`present | missing | refused`,
   for `smrt doctor`) and the marker constants.
+
+## Freshness in the app lifecycle (#4878)
+
+`refreshAgentDocs(options)` (`src/commands/docs-refresh.ts`) is the whole of the
+`docs:agents` handler as a function: it returns `{ status, root, warnings,
+failure? }` with `status` one of `written | skipped-fresh | skipped-disabled |
+skipped-nothing-installed | failed` and never calls `process.exit`. The command
+maps `skipped-nothing-installed` and `failed` (stale cross-package graph) to its
+historical `exit(1)`. `mode: 'write'` always writes; `mode: 'if-stale'` writes
+only when the bundle is missing or `bundle.json` no longer matches the installed
+versions (`checkOkfBundleFreshness`, with the docs root's `installRoots`; age
+alone is not staleness). `safeRefreshAgentDocs` catches everything and reports a
+`failed` result plus one `log.err` line. `inspectAgentDocs(cwd)` is read-only:
+`{ root, installed, bundle: missing|stale|fresh, block: present|missing|refused,
+skills: [{ name, dir, present }] }`.
+
+`src/app/agent-docs.ts` wires it into `smrt app`. Agent docs never fail or delay
+an operation, never touch stdout or an exit status, and report as plain text
+lines on stderr (not the JSON error envelope):
+
+- `install`: `write` mode, after the local-operation check and before the lock.
+- `dev`: `if-stale` mode before Vite starts. Skipped when `CI` is any value except
+  empty, `0` or `false`, or when `SMRT_AGENT_DOCS=off`.
+- `build`: never writes. One warning line (naming `smrt docs:agents`) when the
+  bundle is missing or stale; silent under `SMRT_AGENT_DOCS=off`.
+- Where no `@happyvertical/smrt*` package is installed (same root resolution as
+  `docs:agents`) all of this is skipped quietly.
+- `smrt doctor` "Agent knowledge" (`src/commands/doctor-agent-knowledge.ts`):
+  warnings, never issues, for a missing or stale bundle, a missing or unusable
+  AGENTS.md block, and a missing `smrt-catalog` skill under `.claude/skills` and
+  `.agents/skills` (each its own warning). `SMRT_AGENT_DOCS=off` does not silence it.
+- Test seams: `dependencies.agentDocs` (`refresh`, `inspect`, `env`) and
+  `dependencies.launchVite` on `runAppCommand`.
