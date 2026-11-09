@@ -12,9 +12,27 @@ smrt-app-shell (SvelteKit + adapter-node, app-runtime local profile)
 └── <data root>/user-app/                app.db, snapshots (plain files; the newest 20 `method-*` are kept, clean up prunes old migration ones)
 ```
 
-Run: `pnpm build && PORT=3000 SMRT_DATA_DIR=<dir outside the checkout> HOST=127.0.0.1 node build`,
-then open `/setup` (loopback only, single use) to create the owner. Health:
-`GET /api/_runtime/health`.
+## Run it
+
+Build once, then set up the data folder and the owner link, then start the
+server. Use the same `PORT` for setup and start, because the one-time link
+carries it. Keep the data folder outside the checkout.
+
+```sh
+pnpm --filter @happyvertical/smrt-app-shell build
+cd packages/app-shell
+export SMRT_DATA_DIR=<a new folder outside the checkout> PORT=4796 HOST=127.0.0.1 ORIGIN=http://127.0.0.1:4796
+
+node ../cli/bin/smrt.js app setup   # or `smrt app setup`: creates the data folder and issues the one-time owner link
+node build                          # start the server with the same exports
+smrt app open                       # opens the one-time /setup?token=... link; create the owner there
+```
+
+`node build` alone never prints a setup link: the shell passes no
+`onBootstrapInvitation`, so the link comes from `smrt app setup` (it is saved in
+the app's state folder, not the data folder). If the link is lost, stop the
+server and run `smrt app recover` for a new one. Setup is loopback only and
+single use. Health: `GET /api/_runtime/health`.
 
 ## Contracts for the UI and the assistant
 
