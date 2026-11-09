@@ -80,6 +80,25 @@ describe('sandbox (pure)', () => {
     expect(Date.now() - t0).toBeLessThan(15_000);
   });
 
+  it('stops each large-allocation bomb by the heap cap, long before the deadline', async () => {
+    // Without the heap cap the first of these takes about 3 s here (17 s or
+    // more on a CI runner): it allocates ~2 GB before WebAssembly gives up.
+    const bombs = [
+      `const a = []; while (true) a.push('x'.repeat(1e6));`,
+      `const a = []; while (true) a.push(new Array(1e5).fill(1));`,
+      `let s = 'xx'; while (true) s += s;`,
+    ];
+    for (const code of bombs) {
+      const t = Date.now();
+      await expect(run(code, { timeoutMs: 20_000 })).rejects.toBeInstanceOf(
+        SandboxError,
+      );
+      expect(Date.now() - t).toBeLessThan(2_000);
+    }
+    // The sandbox still works afterwards.
+    expect((await run(`return 1 + 1;`)).result).toBe(2);
+  });
+
   it('refuses hostile nesting without breaking later methods', async () => {
     await expect(
       run(`let o = {}; for (let i = 0; i < 1e5; i++) o = { o }; return o;`),

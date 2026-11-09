@@ -36,6 +36,10 @@ adds) and swaps it in once it is ready. The engine must not import SvelteKit,
   function body by V8 first (QuickJS's own `Function` accepts a body that closes
   the wrapper). Writes are validated and a `VACUUM INTO` snapshot is taken before
   they are applied.
+  `setMemoryLimit` does not bound large single allocations in this build, and the
+  interrupt handler is polled only every ~10,000 operations, so the WebAssembly
+  heap itself is capped (`SANDBOX_HEAP_PAGES`, 128 MB): a memory bomb stops in
+  ~0.2 s instead of allocating 2 GB.
 
 ## Profile subclass (core gap fixed, #4871)
 

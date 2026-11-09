@@ -6,8 +6,10 @@
 // string parsed inside the VM, the output comes out as one string parsed
 // here. No host object, function or handle is ever visible to method code.
 import {
-  getQuickJS,
+  newQuickJSWASMModuleFromVariant,
+  newVariant,
   type QuickJSWASMModule,
+  RELEASE_SYNC,
   shouldInterruptAfterDeadline,
 } from 'quickjs-emscripten';
 import { coerceValue, type FieldDef } from './definition.ts';
@@ -59,9 +61,26 @@ export class SandboxError extends EngineError {
   }
 }
 
+/**
+ * The WebAssembly heap every method runs in, capped at 128 MB (64 KiB pages).
+ *
+ * `setMemoryLimit` does not bound large single allocations here: a loop of
+ * `'x'.repeat(1e6)` ran to the 2 GB WebAssembly maximum (2,141 allocations,
+ * 3.3 s locally, 17 s or more on a CI runner) whatever limit was set, and the
+ * interrupt handler is polled only every ~10,000 operations, so the deadline
+ * did not fire in that loop either. A hard cap on the heap itself stops every
+ * allocation pattern in a fraction of a second; the runtime limit still
+ * covers many small allocations.
+ */
+export const SANDBOX_HEAP_PAGES = { initial: 256, maximum: 2048 } as const;
+
 let qjs: Promise<QuickJSWASMModule> | undefined;
 const quickjs = () => {
-  qjs ??= getQuickJS();
+  qjs ??= newQuickJSWASMModuleFromVariant(
+    newVariant(RELEASE_SYNC, {
+      wasmMemory: new WebAssembly.Memory({ ...SANDBOX_HEAP_PAGES }),
+    }),
+  );
   return qjs;
 };
 /**
