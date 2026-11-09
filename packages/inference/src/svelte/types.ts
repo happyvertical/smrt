@@ -176,6 +176,9 @@ export interface InferenceFusionView {
 export interface InferenceUsageView {
   by: string[];
   costBasis?: string;
+  /** The report window, passed on to transcript links. */
+  since?: Date | string | null;
+  until?: Date | string | null;
   buckets: Array<{
     key: Record<string, string | null | undefined>;
     calls: number;
@@ -183,10 +186,60 @@ export interface InferenceUsageView {
     estimatedCost: number;
     uncostedCalls?: number;
     outcomes?: Record<string, number>;
+    /** Calls with a stored transcript (`usage({ transcripts: true })`, #4781). */
+    transcripts?: number;
   }>;
 }
 
-export type InferenceUsageDimension = 'model' | 'tier' | 'prompt';
+export type InferenceUsageDimension =
+  | 'model'
+  | 'tier'
+  | 'prompt'
+  | 'fusion'
+  | 'template';
+
+/** The app's transcript setting values (#4781). */
+export interface InferenceTranscriptValuesView {
+  enabled?: boolean;
+  sample?: number;
+  maxBytes?: number;
+}
+
+/**
+ * The app's transcript setting (`getTranscriptSettings()`, #4781). App
+ * level only; tenants cannot override it. Never transcript content.
+ */
+export interface InferenceTranscriptSettingsView {
+  enabled: boolean;
+  sample: number;
+  maxBytes: number;
+  supplyingLevel?: 'default' | 'config' | 'app' | 'env';
+  appValue?: InferenceTranscriptValuesView | null;
+  appRevert?: { enabled: boolean; sample: number; maxBytes: number };
+  /** `SMRT_INFERENCE_TRANSCRIPTS` forces `enabled` (`null`: unset). */
+  envEnabled?: boolean | null;
+  /** Retention sweep window in days; `null`: not pruned. Read-only. */
+  retentionDays?: number | null;
+  promptOverrides?: string[];
+}
+
+/** What saving the transcript setting emits. Always the app row; `null` reverts it. */
+export interface InferenceTranscriptSettingsChange {
+  settings: { enabled: boolean; sample: number; maxBytes: number } | null;
+}
+
+/**
+ * Filters a Usage-tab row hands the host's transcript route (#4781): the
+ * `listAiTranscripts()` filters a bucket can name, plus the report window.
+ */
+export interface InferenceTranscriptLinkFilters {
+  promptKey?: string;
+  templateHash?: string;
+  outcome?: string;
+  /** ISO timestamps of the report window. */
+  since?: string;
+  until?: string;
+}
 
 export interface InferenceTierChange {
   tier: InferenceSettingsTier;
@@ -295,6 +348,37 @@ export function defaultTierRevertPreview(
 ): InferenceSettingsTier {
   if (scope === 'app') return view.appRevertTier ?? view.effectiveTier;
   return view.inheritedTier ?? view.appRevertTier ?? view.effectiveTier;
+}
+
+/**
+ * The transcript-route filters for one usage bucket (and, optionally, one
+ * outcome label): the prompt key and template hash when the report was
+ * grouped by them, and the report window.
+ */
+export function transcriptLinkFilters(
+  view: Pick<InferenceUsageView, 'since' | 'until'>,
+  key: Record<string, string | null | undefined>,
+  outcome?: string,
+): InferenceTranscriptLinkFilters {
+  const filters: InferenceTranscriptLinkFilters = {};
+  if (typeof key.prompt === 'string' && key.prompt) {
+    filters.promptKey = key.prompt;
+  }
+  if (typeof key.template === 'string' && key.template) {
+    filters.templateHash = key.template;
+  }
+  if (outcome) filters.outcome = outcome;
+  const iso = (value: Date | string | null | undefined) =>
+    value instanceof Date
+      ? value.toISOString()
+      : typeof value === 'string' && value
+        ? value
+        : undefined;
+  const since = iso(view.since);
+  const until = iso(view.until);
+  if (since) filters.since = since;
+  if (until) filters.until = until;
+  return filters;
 }
 
 /** Usage columns to render: only the dimensions the report was grouped by. */
