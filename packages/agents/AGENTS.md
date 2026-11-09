@@ -16,12 +16,12 @@ Agent framework for autonomous actors with inter-agent messaging, interest-based
 - Extend `Agent` (which extends `SmrtObject`) and implement `run()`
 - Status tracking: `idle → initializing → running → error/skipped/shutdown`
 - `execute()` runs the full lifecycle automatically
-- AI unavailable (`AI_UNAVAILABLE`, #4757): `execute()` ends the run
-  `skipped` with `runRecord` `{ reason, mode }`, never rethrown or retried;
-  interests stop at it; learning neither reinforces nor decays. Direct
-  `run()` (jobs) throws it with `retryable: false`. Agents read only the
-  tenant's mode and binding (`inferenceUserScope()` is `null`).
-- Process signal handling is opt-in via `manageProcessSignals: true` and is intended for single-agent processes
+- `AI_UNAVAILABLE` (#4757): `execute()` ends the run `skipped`
+  (`runRecord` `{ reason, mode }`), never rethrown or retried; interests
+  stop; learning neither reinforces nor decays. Direct `run()` (jobs)
+  throws it, `retryable: false`. Agents read only the tenant's mode and
+  binding (`inferenceUserScope()` is `null`).
+- Process signal handling is opt-in (`manageProcessSignals: true`), for single-agent processes
 
 ## DispatchBus — Inter-Agent Communication
 
@@ -62,16 +62,14 @@ async run() { for (const { type, data } of await this.interesting()) { ... } }
   agents use `AgentOptions.personaId` as the durable config owner; legacy agents
   use the saved Agent row id.
 - **Merged**: `getMergedConfig('slotId')` — DB overrides file config
-- **AI usage (#3077)**: `initialize()` wires `options.ai` through
-  `withAiUsage()`, and `resolveAgentAIOptions({ db })` attaches a usage
-  recorder, so per-call `getAI(...)` clients write `_smrt_ai_usage` for the
-  run's tenant. See core [ai-usage](../core/agents/ai-usage.md).
-- **Inference bindings (#4756)**: with no `apiKey`/`apiKeySecretName`,
-  `resolveAgentAIClientOptions()` takes a stored per-tenant binding via core
-  `resolveInferenceTarget({ appBindings: false, userId: null })`; its tags
-  ride on usage rows. Never a user's binding (options outlive the run) nor
-  an app tier binding. Each `initialize()` re-resolves from the configured
-  `ai`, so a rotated or removed key or binding is never kept.
+- **AI usage (#3077)**: `initialize()` wraps `options.ai` in `withAiUsage()`;
+  `resolveAgentAIOptions({ db })` attaches a recorder, so per-call `getAI()`
+  clients record for the run's tenant ([ai-usage](../core/agents/ai-usage.md)).
+- **Inference bindings (#4756)**: without `apiKey`/`apiKeySecretName`,
+  `resolveAgentAIClientOptions()` takes the stored tenant binding (core
+  `resolveInferenceTarget({ appBindings: false, userId: null })`), tags on
+  usage rows; never a user's (options outlive the run) or an app tier
+  binding. `initialize()` re-resolves, so rotated keys are never kept.
 - **UI slots**: `static uiSlots` declares admin panels (id, label, icon, order,
   `scope`, optional versioned `settingsSchema`). Without a registered custom
   component, `AgentSettingsForm` renders that schema.
