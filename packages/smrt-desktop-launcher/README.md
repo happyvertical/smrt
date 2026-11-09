@@ -177,5 +177,12 @@ streaming filter that replaces the exact credential with `[REDACTED]`, even
 when split across chunks. It holds back only a trailing partial match, so
 ordinary output is not delayed; a stream that ends inside such a match
 (four or more bytes of the credential) emits `[REDACTED]` rather than a
-prefix. The credential alphabet is unchanged by JSON and URL encoding, so an
-encoded copy is caught too.
+prefix.
+
+Only that exact byte string is matched. The credential alphabet
+(`A-Za-z0-9_-`) passes through JSON string escaping and URL percent-encoding
+unchanged, so a copy embedded in JSON or a URL as written is still caught. A
+copy in any other encoding is **not** caught: base64, hex, `\uXXXX` escapes,
+a copy split by inserted characters, a truncated or case-changed copy. The
+filter is a safety net against accidental echo, not a guarantee against a
+bridge that transforms the credential; the bridge is trusted not to emit it.
