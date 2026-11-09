@@ -1,0 +1,100 @@
+# =============================================================================
+# App runtime Windows custody (smrt#4837)
+# =============================================================================
+# Runs the Windows custody tests of @happyvertical/smrt-app-runtime on a real
+# Windows runner: the in-memory seam tests (`windows-custody.test.ts`) and the
+# real-Windows-only tests (`windows-custody.win32.test.ts`), which exercise the
+# real PowerShell ACL inspector, NTFS file ids, junctions, subst drives and
+# DACL inheritance that no fake can reproduce.
+#
+# This workflow is path filtered so it never runs for (or blocks) unrelated
+# pull requests, and it is intentionally NOT a required status check: it is new,
+# its install and test steps have not yet been proven on windows-latest, and
+# the monorepo's native dependencies may not all install there. Promote it to a
+# required check only once it has been stable for a while. It needs no
+# secrets and starts no containers.
+# =============================================================================
+
+name: App runtime Windows
+
+on:
+  pull_request:
+    paths:
+      - 'packages/app-runtime/**'
+      - '.github/workflows/app-runtime-windows.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'packages/app-runtime/**'
+      - '.github/workflows/app-runtime-windows.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  # Read-only: the install resolves a few @happyvertical tarballs that still
+  # live only in GitHub Packages (see .npmrc).
+  packages: read
+
+concurrency:
+  group: app-runtime-windows-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  custody:
+    name: Windows custody tests
+    runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '26.12.1'
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        with:
+          run_install: false
+
+      - name: Configure GitHub Packages auth
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          touch "$HOME/.npmrc"
+          {
+            echo "@happyvertical:registry=https://npm.pkg.github.com"
+            echo "//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}"
+            echo "//npm.pkg.github.com/:always-auth=true"
+          } >> "$HOME/.npmrc"
+
+      # Filtered to the package and its dependency closure: the rest of the
+      # monorepo (native addons, Playwright) is neither needed nor expected to
+      # install on Windows.
+      - name: Install dependencies
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: pnpm install --frozen-lockfile --filter "@happyvertical/smrt-app-runtime..."
+
+      - name: Build the dependency closure
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: pnpm turbo run build --filter="@happyvertical/smrt-app-runtime^..."
+
+      - name: Restore the core test manifest
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: pnpm turbo run generate:test --filter='@happyvertical/smrt-core'
+
+      - name: Windows custody tests
+        working-directory: packages/app-runtime
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_ENV: test
+        run: pnpm exec vitest run src/windows-custody
