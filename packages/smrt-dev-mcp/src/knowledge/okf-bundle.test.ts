@@ -27,8 +27,14 @@ function installed(name: string, version: string, shipsPage = false): void {
   if (shipsPage) writeFileSync(join(dir, 'dist', 'smrt-knowledge.okf.md'), 'x');
 }
 
-function bundle(stamped: string, exportedAt: string, name = 'smrt-jobs'): void {
-  const dir = join(root, '.agents', 'smrt-knowledge');
+function bundle(
+  stamped: string,
+  exportedAt: string,
+  name = 'smrt-jobs',
+  parent = '.agents',
+  versions?: string[],
+): void {
+  const dir = join(root, parent, 'smrt-knowledge');
   mkdirSync(join(dir, 'components'), { recursive: true });
   writeFileSync(
     join(dir, 'components', `${name}.md`),
@@ -45,6 +51,7 @@ function bundle(stamped: string, exportedAt: string, name = 'smrt-jobs'): void {
         {
           name: `@happyvertical/${name}`,
           version: stamped,
+          ...(versions ? { versions } : {}),
           concept: `/components/${name}.md`,
         },
       ],
@@ -193,5 +200,68 @@ describe('workspace install roots', () => {
       installRoots: [root, member],
     }).filter((issue) => issue.code === 'stale-okf-bundle');
     expect(withMembers).toEqual([]);
+  });
+
+  it('detects a change in a lower-version member under version skew', () => {
+    const a = join(root, 'apps', 'a');
+    const b = join(root, 'apps', 'b');
+    const put = (dirRoot: string, version: string) => {
+      const dir = join(dirRoot, 'node_modules', '@happyvertical', 'smrt-jobs');
+      mkdirSync(join(dir, 'dist'), { recursive: true });
+      writeFileSync(
+        join(dir, 'package.json'),
+        JSON.stringify({ name: '@happyvertical/smrt-jobs', version }),
+      );
+      writeFileSync(join(dir, 'dist', 'smrt-knowledge.okf.md'), 'x');
+    };
+    put(a, '1.2.0');
+    put(b, '1.4.0');
+    bundle('1.4.0', '2026-11-04T12:00:00Z', 'smrt-jobs', '.agents', [
+      '1.2.0',
+      '1.4.0',
+    ]);
+    const stale = () =>
+      checkOkfBundleFreshness(root, { now: NOW, installRoots: [root, a, b] })
+        .filter((issue) => issue.code === 'stale-okf-bundle')
+        .map((issue) => issue.message);
+    expect(stale()).toEqual([]);
+
+    put(a, '1.3.0');
+    expect(stale()).toHaveLength(1);
+    expect(stale()[0]).toContain('1.2.0, 1.4.0');
+    expect(stale()[0]).toContain('1.3.0, 1.4.0');
+
+    // Skew with no recorded versions list is stale too.
+    put(a, '1.2.0');
+    bundle('1.4.0', '2026-11-04T12:00:00Z');
+    expect(stale()).toHaveLength(1);
+  });
+});
+
+describe('parentDirs restriction', () => {
+  beforeEach(() => {
+    root = realpathSync(mkdtempSync(join(tmpdir(), 'okf-bundle-parents-')));
+  });
+  afterEach(() => rmSync(root, { recursive: true, force: true }));
+
+  const stale = (parentDirs?: string[]) =>
+    checkOkfBundleFreshness(root, { now: NOW, parentDirs }).filter(
+      (issue) => issue.code === 'stale-okf-bundle',
+    );
+
+  it('ignores a stale legacy bundle when only .agents is judged', () => {
+    installed('smrt-jobs', '1.2.0', true);
+    bundle('1.2.0', '2026-11-04T12:00:00Z');
+    bundle('1.0.0', '2026-11-04T12:00:00Z', 'smrt-jobs', '.claude');
+    expect(stale()).toHaveLength(1);
+    expect(stale(['.agents'])).toEqual([]);
+  });
+
+  it('reports nothing for an absent restricted parent', () => {
+    installed('smrt-jobs', '1.2.0', true);
+    bundle('1.0.0', '2026-11-04T12:00:00Z', 'smrt-jobs', '.claude');
+    expect(
+      checkOkfBundleFreshness(root, { now: NOW, parentDirs: ['.agents'] }),
+    ).toEqual([]);
   });
 });

@@ -32,7 +32,9 @@ export interface DocsRoot {
  * - `here` keeps today's behaviour: `cwd` alone.
  * - Otherwise the nearest ancestor of `cwd` (inclusive) holding
  *   `pnpm-workspace.yaml` is the root, unless it is the smrt repository, whose
- *   existing cwd-relative behaviour is unchanged.
+ *   existing cwd-relative behaviour is unchanged, or `cwd` is neither that root
+ *   nor inside one of its members (a stray directory under a workspace that
+ *   does not include it stays local).
  * - With no workspace, `cwd` alone.
  */
 export function resolveDocsRoot(options: {
@@ -56,15 +58,43 @@ export function resolveDocsRoot(options: {
   for (let dir = start; ; ) {
     if (existsSync(join(dir, 'pnpm-workspace.yaml'))) {
       if (isSmrtRepositoryRoot(dir)) return local;
+      const installRoots = listConsumerWorkspaceInstallRoots(dir);
+      // A workspace file only claims directories that belong to it.
+      if (!isWorkspaceMember(start, dir, installRoots)) return local;
       return {
         root: dir,
-        installRoots: listConsumerWorkspaceInstallRoots(dir),
+        installRoots,
         workspace: true,
         liftedFromMember: dir !== start,
       };
     }
     const parent = dirname(dir);
     if (parent === dir) return local;
+    dir = parent;
+  }
+}
+
+/** True when `start` is `root`, a member, or nested inside a member (up to `root`). */
+function isWorkspaceMember(
+  start: string,
+  root: string,
+  installRoots: string[],
+): boolean {
+  if (start === root) return true;
+  const members = new Set<string>();
+  for (const installRoot of installRoots) {
+    try {
+      if (installRoot === root) continue;
+      members.add(realpathSync(installRoot));
+    } catch {
+      // A member that cannot be resolved cannot contain cwd.
+    }
+  }
+  for (let dir = start; ; ) {
+    if (members.has(dir)) return true;
+    if (dir === root) return false;
+    const parent = dirname(dir);
+    if (parent === dir) return false;
     dir = parent;
   }
 }

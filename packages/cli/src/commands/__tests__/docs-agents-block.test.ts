@@ -6,9 +6,11 @@
  */
 
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   realpathSync,
   rmSync,
@@ -234,10 +236,10 @@ describe('mergeAgentsBlock replacement', () => {
     expect(text).toBe(`${outsideBefore}${BLOCK}${outsideAfter}`);
   });
 
-  it('bytes after the end marker on the same line survive', () => {
-    const stale = `# T\n\n${BEGIN}\nx\n${END} trailing  \nrest`;
+  it('whitespace after the end marker on the same line survives', () => {
+    const stale = `# T\n\n${BEGIN}\nx\n${END}  \nrest`;
     const [, , post] = around(merged(stale));
-    expect(post).toBe(' trailing  \nrest');
+    expect(post).toBe('  \nrest');
   });
 
   it('is a fixed point: merging its own output changes nothing', () => {
@@ -277,9 +279,81 @@ describe('mergeAgentsBlock refusals', () => {
     });
   }
 
-  it('counts markers inside code fences (documented: refuse over corrupt)', () => {
+  it('ignores markers inside code fences and inline mentions (documented)', () => {
     const input = `# T\n\n\`\`\`md\n${BEGIN}\n\`\`\`\n`;
-    expect(mergeAgentsBlock(input, BLOCK).refused).toBeDefined();
+    const merged = mergeAgentsBlock(input, BLOCK);
+    expect(merged.refused).toBeUndefined();
+    expect(merged.text?.startsWith(`# T\n\n${BEGIN}`)).toBe(true);
+  });
+});
+
+describe('structural markers only', () => {
+  const write = (text: string) => writeFileSync(agents(), text);
+
+  it('leaves a complete pair inside a fence untouched, inserts elsewhere, idempotent', () => {
+    const example = `\`\`\`md\n${BEGIN}\nuser text kept\n${END}\n\`\`\`\n`;
+    const input = `# T\n\nintro\n\n${example}`;
+    write(input);
+    expect(applyAgentsBlock({ root: dir, block: BLOCK }).status).toBe(
+      'updated',
+    );
+    const once = read();
+    expect(once).toBe(`# T\n\n${BLOCK}\n\nintro\n\n${example}`);
+    expect(once.endsWith(example)).toBe(true);
+    expect(applyAgentsBlock({ root: dir, block: BLOCK }).status).toBe(
+      'unchanged',
+    );
+    // A refresh of the real block leaves the fenced example alone.
+    write(once.replace('Framework reference', 'Framework reference X'));
+    const edited = read();
+    expect(applyAgentsBlock({ root: dir, block: BLOCK }).status).toBe(
+      'updated',
+    );
+    expect(read()).toBe(once);
+    expect(edited).not.toBe(once);
+    expect(read().endsWith(example)).toBe(true);
+    expect(checkAgentsBlock(dir).state).toBe('present');
+  });
+
+  it('ignores both markers mentioned inline in a sentence', () => {
+    const prose = `Wrap it in ${BEGIN} and ${END} yourself, text between survives.\n`;
+    write(`# T\n\n${prose}`);
+    expect(checkAgentsBlock(dir).state).toBe('missing');
+    applyAgentsBlock({ root: dir, block: BLOCK });
+    expect(read()).toBe(`# T\n\n${BLOCK}\n\n${prose}`);
+    expect(checkAgentsBlock(dir).state).toBe('present');
+  });
+
+  it('ignores a lone begin marker in a fence beside a real pair outside', () => {
+    const fenced = `\`\`\`\n${BEGIN}\n\`\`\`\n`;
+    write(`# T\n\n${fenced}\n  ${BEGIN}\nold\n${END}  \ntail\n`);
+    const result = applyAgentsBlock({ root: dir, block: BLOCK });
+    expect(result.status).toBe('updated');
+    expect(read()).toBe(`# T\n\n${fenced}\n  ${BLOCK}  \ntail\n`);
+  });
+
+  it('treats a pair inside an UNCLOSED fence as non-structural, never overwriting it', () => {
+    const tail = `\`\`\`md\n${BEGIN}\nprecious\n${END}\n`;
+    write(`# T\n\n${tail}`);
+    expect(checkAgentsBlock(dir).state).toBe('missing');
+    applyAgentsBlock({ root: dir, block: BLOCK });
+    const once = read();
+    expect(once.endsWith(tail)).toBe(true);
+    expect(once.startsWith(`# T\n\n${BEGIN}`)).toBe(true);
+    expect(applyAgentsBlock({ root: dir, block: BLOCK }).status).toBe(
+      'unchanged',
+    );
+    expect(read()).toBe(once);
+  });
+
+  it('still refuses a structural begin without end beside a fenced pair', () => {
+    const input = `# T\n${BEGIN}\n\`\`\`\n${END}\n\`\`\`\n`;
+    write(input);
+    expect(applyAgentsBlock({ root: dir, block: BLOCK }).status).toBe(
+      'refused',
+    );
+    expect(read()).toBe(input);
+    expect(checkAgentsBlock(dir).state).toBe('refused');
   });
 });
 
@@ -354,6 +428,30 @@ describe('applyAgentsBlock', () => {
     expect(result.status).toBe('refused');
     expect(existsSync(join(dir, 'nowhere.md'))).toBe(false);
   });
+
+  it('preserves the file mode and leaves no temp file after an atomic write', () => {
+    writeFileSync(agents(), '# T\n');
+    chmodSync(agents(), 0o640);
+    applyAgentsBlock({ root: dir, block: BLOCK });
+    expect(statSync(agents()).mode & 0o777).toBe(0o640);
+    expect(readdirSync(dir).filter((f) => f.endsWith('.tmp'))).toEqual([]);
+  });
+
+  it.skipIf(process.getuid?.() === 0)(
+    'a failed write leaves the original byte-identical and no temp file',
+    () => {
+      writeFileSync(agents(), '# T\n\nhand written\n');
+      chmodSync(dir, 0o555);
+      try {
+        const result = applyAgentsBlock({ root: dir, block: BLOCK });
+        expect(result.status).toBe('refused');
+      } finally {
+        chmodSync(dir, 0o755);
+      }
+      expect(read()).toBe('# T\n\nhand written\n');
+      expect(readdirSync(dir)).toEqual(['AGENTS.md']);
+    },
+  );
 
   it('is idempotent: second run reports unchanged, bytes and mtime stable', () => {
     writeFileSync(agents(), '# T\r\n\r\nhand written\r\n');

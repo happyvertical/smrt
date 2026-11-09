@@ -15,20 +15,27 @@
  *    unchanged result is not written at all;
  *  - writes obey the bundle writer's containment and symlink rules.
  *
- * Markers are matched as plain text anywhere in the file, including inside code
- * fences: a fenced example of the markers counts, which can only make the
- * module refuse, never corrupt.
+ * Only a marker alone on its own line and outside a fenced code block is
+ * structural. A marker mentioned inline in prose, or shown inside a fence, is
+ * ignored entirely, so a documented example can never be mistaken for the
+ * block and the text around it is never overwritten.
  */
+import { randomBytes } from 'node:crypto';
 import {
+  chmodSync,
   closeSync,
   existsSync,
+  fsyncSync,
   lstatSync,
   openSync,
   readFileSync,
   realpathSync,
+  renameSync,
+  unlinkSync,
   writeFileSync,
+  writeSync,
 } from 'node:fs';
-import { basename, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { assertNotSymlink, containedPath } from './docs-knowledge-bundle.js';
 
 export const AGENTS_BLOCK_BEGIN = '<!-- smrt:agents:begin -->';
@@ -81,52 +88,6 @@ export type MergeResult =
   | { text: string; refused?: undefined }
   | { text?: undefined; refused: string };
 
-function count(haystack: string, needle: string): number {
-  let n = 0;
-  for (let at = haystack.indexOf(needle); at !== -1; ) {
-    n++;
-    at = haystack.indexOf(needle, at + needle.length);
-  }
-  return n;
-}
-
-/** The marker structure of `text`: `ok` with offsets, or why it is unusable. */
-export function inspectMarkers(
-  text: string,
-):
-  | { state: 'absent' }
-  | { state: 'ok'; begin: number; end: number }
-  | { state: 'refused'; reason: string } {
-  const begins = count(text, AGENTS_BLOCK_BEGIN);
-  const ends = count(text, AGENTS_BLOCK_END);
-  if (begins === 0 && ends === 0) return { state: 'absent' };
-  if (begins > 1 || ends > 1) {
-    return {
-      state: 'refused',
-      reason: `found ${begins} begin and ${ends} end markers; expected exactly one pair`,
-    };
-  }
-  if (begins === 0) {
-    return { state: 'refused', reason: 'end marker without a begin marker' };
-  }
-  if (ends === 0) {
-    return { state: 'refused', reason: 'begin marker without an end marker' };
-  }
-  const begin = text.indexOf(AGENTS_BLOCK_BEGIN);
-  const end = text.indexOf(AGENTS_BLOCK_END);
-  if (end < begin) {
-    return { state: 'refused', reason: 'end marker comes before begin marker' };
-  }
-  return { state: 'ok', begin, end: end + AGENTS_BLOCK_END.length };
-}
-
-/** CRLF when CRLF line endings outnumber bare LF; LF otherwise (and for no newline). */
-export function dominantEol(text: string): '\r\n' | '\n' {
-  const crlf = (text.match(/\r\n/g) ?? []).length;
-  const lf = (text.match(/\n/g) ?? []).length - crlf;
-  return crlf > lf ? '\r\n' : '\n';
-}
-
 const FENCE = /^ {0,3}(`{3,}|~{3,})/;
 
 /** Offset just past the line starting at `from` (past its terminator when present). */
@@ -137,6 +98,109 @@ function lineEnd(text: string, from: number): number {
 
 function stripEol(line: string): string {
   return line.replace(/\r?\n$/, '').replace(/\r$/, '');
+}
+
+/**
+ * Advances fence state for one line: returns the fence opener in force after
+ * `line` (`undefined` when outside a fence). Shared by the H1 finder and the
+ * marker scanner so both agree on what is code.
+ */
+function nextFence(
+  line: string,
+  fence: string | undefined,
+): string | undefined {
+  const fenceMatch = FENCE.exec(line);
+  if (fence) {
+    return fenceMatch &&
+      fenceMatch[1][0] === fence[0] &&
+      fenceMatch[1].length >= fence.length &&
+      line.trim() === fenceMatch[1]
+      ? undefined
+      : fence;
+  }
+  return fenceMatch ? fenceMatch[1] : undefined;
+}
+
+interface StructuralMarker {
+  kind: 'begin' | 'end';
+  /** Offset of the first marker character. */
+  start: number;
+  /** Offset just past the marker. */
+  end: number;
+}
+
+/**
+ * Markers that are structural: alone on their own line (surrounding
+ * whitespace allowed) and outside a fenced code block. A marker string
+ * mentioned inline in prose or shown inside a fence is documentation, not
+ * structure, and is ignored. An unclosed fence runs to the end of the file, so
+ * markers after it are ignored too; insertion always happens before any fence
+ * (after the first H1 outside fences, or at the top), so a block inserted next
+ * to such a file is found again on the next run.
+ */
+function structuralMarkers(text: string): StructuralMarker[] {
+  const found: StructuralMarker[] = [];
+  let fence: string | undefined;
+  for (let at = 0; at < text.length; ) {
+    const next = lineEnd(text, at);
+    const line = stripEol(text.slice(at, next));
+    const inFence = fence !== undefined;
+    fence = nextFence(line, fence);
+    if (!inFence && fence === undefined) {
+      const trimmed = line.trim();
+      const kind =
+        trimmed === AGENTS_BLOCK_BEGIN
+          ? 'begin'
+          : trimmed === AGENTS_BLOCK_END
+            ? 'end'
+            : undefined;
+      if (kind) {
+        const start = at + line.indexOf(trimmed);
+        found.push({ kind, start, end: start + trimmed.length });
+      }
+    }
+    at = next;
+  }
+  return found;
+}
+
+/**
+ * The marker structure of `text`: `ok` with offsets, or why it is unusable.
+ * Only structural markers count (see {@link structuralMarkers}).
+ */
+export function inspectMarkers(
+  text: string,
+):
+  | { state: 'absent' }
+  | { state: 'ok'; begin: number; end: number }
+  | { state: 'refused'; reason: string } {
+  const markers = structuralMarkers(text);
+  const begins = markers.filter((m) => m.kind === 'begin');
+  const ends = markers.filter((m) => m.kind === 'end');
+  if (begins.length === 0 && ends.length === 0) return { state: 'absent' };
+  if (begins.length > 1 || ends.length > 1) {
+    return {
+      state: 'refused',
+      reason: `found ${begins.length} begin and ${ends.length} end markers; expected exactly one pair`,
+    };
+  }
+  if (begins.length === 0) {
+    return { state: 'refused', reason: 'end marker without a begin marker' };
+  }
+  if (ends.length === 0) {
+    return { state: 'refused', reason: 'begin marker without an end marker' };
+  }
+  if (ends[0].start < begins[0].start) {
+    return { state: 'refused', reason: 'end marker comes before begin marker' };
+  }
+  return { state: 'ok', begin: begins[0].start, end: ends[0].end };
+}
+
+/** CRLF when CRLF line endings outnumber bare LF; LF otherwise (and for no newline). */
+export function dominantEol(text: string): '\r\n' | '\n' {
+  const crlf = (text.match(/\r\n/g) ?? []).length;
+  const lf = (text.match(/\n/g) ?? []).length - crlf;
+  return crlf > lf ? '\r\n' : '\n';
 }
 
 /** Offset past a leading YAML frontmatter block (`---` ... `---`), or `start`. */
@@ -164,14 +228,7 @@ function afterFirstH1(text: string, from: number): number {
     const line = stripEol(text.slice(at, next));
     const fenceMatch = FENCE.exec(line);
     if (fence) {
-      if (
-        fenceMatch &&
-        fenceMatch[1][0] === fence[0] &&
-        fenceMatch[1].length >= fence.length &&
-        line.trim() === fenceMatch[1]
-      ) {
-        fence = undefined;
-      }
+      fence = nextFence(line, fence);
     } else if (fenceMatch) {
       fence = fenceMatch[1];
     } else if (/^ {0,3}#(?:[ \t]|$)/.test(line)) {
@@ -337,7 +394,7 @@ export function applyAgentsBlock(options: {
     if (!options.dryRun && status !== 'unchanged') {
       // The full new content exists; only now is the file opened for writing.
       assertNotSymlink(agentsPath);
-      writeFileSync(agentsPath, merged.text, 'utf8');
+      replaceFileAtomically(agentsPath, merged.text);
     }
 
     const claude = handleClaudeFile(
@@ -350,6 +407,41 @@ export function applyAgentsBlock(options: {
     return result(status, claude);
   } catch (error) {
     return refuse(error instanceof Error ? error.message : String(error));
+  }
+}
+
+/**
+ * Writes `text` to a fresh temp file beside `path` (flag `wx`: never reuses a
+ * path), then renames it over `path`. The target is never truncated, and a
+ * symlink swapped in at `path` after the checks is replaced, not followed. The
+ * original mode is kept; the temp file is removed on any failure.
+ */
+function replaceFileAtomically(path: string, text: string): void {
+  const mode = lstatOrNull(path)?.mode;
+  const temp = join(
+    dirname(path),
+    `.${basename(path)}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`,
+  );
+  const fd = openSync(temp, 'wx', 0o600);
+  try {
+    try {
+      const data = Buffer.from(text, 'utf8');
+      for (let written = 0; written < data.length; ) {
+        written += writeSync(fd, data, written);
+      }
+      fsyncSync(fd);
+    } finally {
+      closeSync(fd);
+    }
+    if (mode !== undefined) chmodSync(temp, mode & 0o7777);
+    renameSync(temp, path);
+  } catch (error) {
+    try {
+      unlinkSync(temp);
+    } catch {
+      // Already gone.
+    }
+    throw error;
   }
 }
 

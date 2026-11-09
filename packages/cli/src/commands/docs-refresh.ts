@@ -21,7 +21,6 @@ import { checkKnowledgeGraphFreshness } from '@happyvertical/smrt-core/knowledge
 import {
   checkOkfBundleFreshness,
   OKF_BUNDLE_DIR_NAME,
-  OKF_BUNDLE_PARENT_DIRS,
   readOkfBundleManifest,
 } from '@happyvertical/smrt-dev-mcp/knowledge';
 import {
@@ -175,11 +174,17 @@ function hasSmrtPackage(docsRoot: DocsRoot): boolean {
   );
 }
 
+const REFRESH_BUNDLE_PARENT = '.agents';
+
 function inspectBundle(docsRoot: DocsRoot): {
   state: 'missing' | 'stale' | 'fresh';
   reasons: string[];
 } {
-  const present = OKF_BUNDLE_PARENT_DIRS.some((parent) => {
+  // The lifecycle refresh writes only the default `.agents` bundle; a legacy
+  // `.claude` one (deprecated `docs:claude`) is never rewritten here, so it
+  // must not decide freshness or the refresh would run on every start.
+  const parentDirs = [REFRESH_BUNDLE_PARENT];
+  const present = parentDirs.some((parent) => {
     try {
       return (
         readOkfBundleManifest(
@@ -195,6 +200,7 @@ function inspectBundle(docsRoot: DocsRoot): {
   // `okf-bundle-aged` and the age `info` line are not version drift.
   const reasons = checkOkfBundleFreshness(docsRoot.root, {
     installRoots: docsRoot.installRoots,
+    parentDirs,
   })
     .filter(
       (issue) =>

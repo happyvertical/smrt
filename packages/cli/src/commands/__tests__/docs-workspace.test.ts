@@ -274,4 +274,37 @@ describe('resolveDocsRoot', () => {
     expect(lifted.installRoots).toEqual([root, app]);
     expect(resolveDocsRoot({ cwd: app, here: true }).root).toBe(app);
   });
+
+  it('lifts a directory nested inside a member to the workspace root', () => {
+    writeFileSync(join(root, 'pnpm-workspace.yaml'), 'packages:\n  - apps/*\n');
+    writeFileSync(join(root, 'package.json'), '{"name":"consumer"}');
+    const app = join(root, 'apps', 'web');
+    mkdirSync(join(app, 'src'), { recursive: true });
+    writeFileSync(join(app, 'package.json'), '{"name":"web"}');
+    expect(resolveDocsRoot({ cwd: join(app, 'src') })).toMatchObject({
+      root,
+      workspace: true,
+      liftedFromMember: true,
+    });
+    expect(resolveDocsRoot({ cwd: root })).toMatchObject({
+      root,
+      liftedFromMember: false,
+    });
+  });
+
+  it('stays local for a directory the workspace does not include', () => {
+    writeFileSync(
+      join(root, 'pnpm-workspace.yaml'),
+      'packages:\n  - packages/*\n',
+    );
+    writeFileSync(join(root, 'package.json'), '{"name":"consumer"}');
+    const scratch = join(root, 'scratch', 'site');
+    mkdirSync(scratch, { recursive: true });
+    expect(resolveDocsRoot({ cwd: scratch })).toEqual({
+      root: scratch,
+      installRoots: [scratch],
+      workspace: false,
+      liftedFromMember: false,
+    });
+  });
 });

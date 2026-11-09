@@ -54,8 +54,10 @@ user's file, so:
   frontmatter block and BOM.
 - **Refusal.** A begin without an end, an end without a begin, an end before the
   begin, or more than one of either: nothing is written and a warning is
-  printed; the exit status is unchanged. Markers are matched as plain text
-  everywhere, code fences included (refusing is safe, guessing is not).
+  printed; the exit status is unchanged. Only a marker alone on its own line and
+  outside a fenced code block is structural; one mentioned inline in prose or
+  shown inside a fence is ignored (an unclosed fence runs to the end of the
+  file), so text between such look-alikes is never overwritten.
 - **Idempotent.** An unchanged result is not written (mtime stable).
 - **Content** (at most 15 lines, harness-neutral): the installed
   `@happyvertical/smrt-cli` (else `smrt-core`) version, the relative paths of

@@ -4,11 +4,13 @@
  */
 
 import {
+  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   realpathSync,
+  renameSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
@@ -232,6 +234,35 @@ describe('inspectAgentDocs and the doctor section', () => {
     expect(section.warnings).toHaveLength(1);
     expect(section.warnings[0]).toContain('stale');
     expect(section.warnings[0]).toContain('smrt docs:agents');
+  });
+
+  it('judges only the .agents bundle: a stale legacy .claude bundle is ignored', async () => {
+    install('1.0.0');
+    await refreshAgentDocs({ cwd: root, log: sinks().log });
+    const legacy = join(root, '.claude', 'smrt-knowledge');
+    cpSync(join(root, '.agents', 'smrt-knowledge'), legacy, {
+      recursive: true,
+    });
+    writeFileSync(
+      join(legacy, 'components', 'smrt-core.md'),
+      '---\ntype: "Component"\npackage_version: "0.0.1"\n---\n\n# old\n',
+    );
+    expect(inspectAgentDocs(root).bundle).toBe('fresh');
+    const second = await refreshAgentDocs({
+      cwd: root,
+      mode: 'if-stale',
+      log: sinks().log,
+    });
+    expect(second.status).toBe('skipped-fresh');
+  });
+
+  it('reports missing when only a legacy .claude bundle exists', async () => {
+    install('1.0.0');
+    await refreshAgentDocs({ cwd: root, log: sinks().log });
+    renameSync(join(root, '.agents', 'smrt-knowledge'), join(root, 'legacy-x'));
+    mkdirSync(join(root, '.claude'), { recursive: true });
+    renameSync(join(root, 'legacy-x'), join(root, '.claude', 'smrt-knowledge'));
+    expect(inspectAgentDocs(root).bundle).toBe('missing');
   });
 
   it('reports a missing block, a refused block and a missing skill each on their own', async () => {

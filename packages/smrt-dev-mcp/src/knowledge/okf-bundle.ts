@@ -168,28 +168,20 @@ export function compareVersions(a: string, b: string): number {
   return 0;
 }
 
-/** Highest installed version of `name` across `installRoots`, if any. */
-function installedVersion(
-  installRoots: string[],
-  name: string,
-): string | undefined {
-  let highest: string | undefined;
+/** Every distinct installed version of `name` across `installRoots`, ascending. */
+function installedVersions(installRoots: string[], name: string): string[] {
+  const found = new Set<string>();
   for (const rootDir of installRoots) {
     const path = join(rootDir, 'node_modules', name, 'package.json');
     if (!existsSync(path)) continue;
     try {
       const version = JSON.parse(readFileSync(path, 'utf8')).version;
-      if (
-        typeof version === 'string' &&
-        (highest === undefined || compareVersions(version, highest) > 0)
-      ) {
-        highest = version;
-      }
+      if (typeof version === 'string') found.add(version);
     } catch {
       // An unreadable manifest is not an installed package.
     }
   }
-  return highest;
+  return [...found].sort(compareVersions);
 }
 
 /** Installed `@happyvertical/*` packages whose published artifact ships a page. */
@@ -215,6 +207,13 @@ export interface OkfBundleFreshnessOptions {
    * `docs:agents` exported.
    */
   installRoots?: string[];
+  /**
+   * Project-relative directories whose bundle is judged. Defaults to every
+   * {@link OKF_BUNDLE_PARENT_DIRS} entry; a caller that only writes one (the
+   * `docs:agents` lifecycle refresh writes `.agents`) passes it so a stale
+   * legacy bundle it never touches cannot keep the project looking stale.
+   */
+  parentDirs?: readonly string[];
 }
 
 /**
@@ -233,7 +232,7 @@ export function checkOkfBundleFreshness(
   const installRoots = options.installRoots ?? [rootDir];
   const issues: KnowledgeIssue[] = [];
 
-  for (const parent of OKF_BUNDLE_PARENT_DIRS) {
+  for (const parent of options.parentDirs ?? OKF_BUNDLE_PARENT_DIRS) {
     const bundleDir = join(rootDir, parent, OKF_BUNDLE_DIR_NAME);
     const where = relative(rootDir, bundleDir);
     let manifest: OkfBundleManifest | null;
@@ -299,12 +298,30 @@ export function checkOkfBundleFreshness(
         });
         continue;
       }
-      const installed = installedVersion(installRoots, entry.name);
+      const all = installedVersions(installRoots, entry.name);
+      const installed = all.at(-1);
+      // With skew the manifest records every installed version; a change in a
+      // lower one (not the highest) must still be noticed.
+      const recorded = entry.versions;
+      const skewDrift =
+        installed !== undefined &&
+        (recorded
+          ? recorded.length !== all.length ||
+            recorded.some((version, i) => version !== all[i])
+          : all.length > 1);
       if (installed === undefined) {
         issues.push({
           severity: 'error',
           code: 'stale-okf-bundle',
           message: `Exported OKF page for ${entry.name} (${stamped}) but the package is no longer installed. Rerun \`smrt docs:agents\`.`,
+          file: pageFile,
+          packageName: entry.name,
+        });
+      } else if (skewDrift && installed === stamped) {
+        issues.push({
+          severity: 'error',
+          code: 'stale-okf-bundle',
+          message: `Exported OKF bundle for ${entry.name} recorded ${recorded ? recorded.join(', ') : entry.version} but ${all.join(', ')} are installed. Rerun \`smrt docs:agents\`.`,
           file: pageFile,
           packageName: entry.name,
         });
