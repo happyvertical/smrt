@@ -105,6 +105,12 @@ config loading; `bin/smrt.js` imports `dist/` in-process so SIGTERM reaches
   target; deployed import requires `SMRT_MAINTENANCE_MODE=true`.
   Local relative asset locators resolve against the approved asset root during
   export and stay relative after import. Legacy file URLs import as file URLs.
+- **Encrypted snapshots** (#4797): `backup --encrypted` streams the data root
+  and `export --encrypted` the logical bundle into one HVSF v1 file (0600,
+  published with `link()`, only ciphertext on disk). Keys come only from the
+  injected `deps.snapshotKeys` provider; without one the flag fails closed.
+  Plaintext stays the default. Format, limits and restore primitives:
+  [encrypted-snapshots.md](encrypted-snapshots.md).
 - **Process identity**: `app.pid` is trusted only when the live command
   line's last two tokens are a path with basename `smrt-web.mjs` and exactly
   `--smrt-instance=<record instance>` (an app started by the template's former

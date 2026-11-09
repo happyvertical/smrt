@@ -42,6 +42,7 @@
   },
   "dependencies": {
     "@happyvertical/ai": "catalog:",
+    "@happyvertical/encryption": "catalog:",
     "@happyvertical/files": "catalog:",
     "@happyvertical/logger": "catalog:",
     "@happyvertical/smrt-agents": "workspace:*",
