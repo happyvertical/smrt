@@ -345,6 +345,38 @@ describe('renderSmrtAppChartValues', () => {
     ]);
   });
 
+  it('names missing inputs instead of failing on undefined', () => {
+    for (const value of [null, [], 'inputs.json']) {
+      expect(
+        problems(() => renderSmrtAppChartValues(declare(), value as never)),
+      ).toEqual([expect.stringContaining('`inputs`')]);
+    }
+    expect(
+      problems(() => renderSmrtAppChartValues(declare(), {} as never)),
+    ).toEqual(
+      ['release', 'app', 'bindings', 'defaults', 'maintenance', 'ingress'].map(
+        (field) => expect.stringContaining(`\`${field}\``),
+      ),
+    );
+    expect(
+      problems(() =>
+        renderSmrtAppChartValues(declare(), {
+          ...inputs(),
+          app: {},
+          defaults: {},
+          ingress: {},
+        } as never),
+      ),
+    ).toEqual(
+      [
+        'app.environment',
+        'defaults.resources',
+        'defaults.terminationGracePeriodSeconds',
+        'ingress.className',
+      ].map((field) => expect.stringContaining(`\`${field}\``)),
+    );
+  });
+
   it('refuses what the chart cannot render', () => {
     expect(
       problems(() =>

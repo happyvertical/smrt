@@ -800,12 +800,19 @@ function checkRoleService(
 
   const image = resolveImage(entry, options, stage, issues);
 
-  if (definition.privileged === true || definition.privileged === 'true') {
+  // Fail closed: Compose reads YAML 1.1 booleans (`yes`, `on`), which a
+  // YAML 1.2 parser hands over as strings. Anything but an explicit false is
+  // treated as a request for privileged mode.
+  if (
+    definition.privileged !== undefined &&
+    definition.privileged !== null &&
+    definition.privileged !== false
+  ) {
     issues.error(
       'privileged',
       `services.${name}.privileged`,
       `Service \`${name}\` asks for privileged mode, which gives the container control of the machine it runs on.`,
-      'Remove `privileged: true`. The platform never runs privileged containers.',
+      'Remove the `privileged` line. The platform never runs privileged containers.',
       name,
     );
   }

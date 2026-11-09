@@ -627,12 +627,22 @@ describe('validateComposeDeployment: the supported platform subset', () => {
     ).toEqual(['image-for-unknown-service']);
   });
 
-  it('refuses privileged containers', () => {
-    expect(
-      codes((doc) => {
-        doc.services.worker.privileged = true;
-      }),
-    ).toEqual(['privileged']);
+  it('refuses privileged containers, however the boolean is spelled', () => {
+    // Compose honours YAML 1.1 booleans; a YAML 1.2 parser yields strings.
+    for (const privileged of [true, 'true', 'yes', 'on', 'Y', 1]) {
+      expect(
+        codes((doc) => {
+          doc.services.worker.privileged = privileged;
+        }),
+      ).toEqual(['privileged']);
+    }
+    for (const privileged of [false, null, undefined]) {
+      expect(
+        check((doc) => {
+          doc.services.worker.privileged = privileged;
+        }).ok,
+      ).toBe(true);
+    }
   });
 
   it('refuses host networking', () => {
@@ -753,7 +763,7 @@ describe('validateComposeDeployment: reporting', () => {
     );
     expect(report).toContain('The deployment declaration has 1 problem.');
     expect(report).toContain('1. services.worker.privileged: ');
-    expect(report).toContain('   Fix: Remove `privileged: true`.');
+    expect(report).toContain('   Fix: Remove the `privileged` line.');
     expect(report).toContain('Runs only on your machine');
   });
 

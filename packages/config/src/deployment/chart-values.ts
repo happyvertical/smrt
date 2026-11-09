@@ -120,6 +120,44 @@ function own<T>(
   return record && Object.hasOwn(record, key) ? record[key] : undefined;
 }
 
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * The inputs normally come from a hand-written JSON file. Name what is
+ * missing instead of failing on a property of `undefined`.
+ */
+function missingInputs(inputs: unknown): string[] {
+  if (!isObject(inputs)) return ['inputs'];
+  const missing: string[] = [];
+  const requireObject = (field: string): Record<string, unknown> => {
+    const value = inputs[field];
+    if (isObject(value)) return value;
+    missing.push(field);
+    return {};
+  };
+  requireObject('release');
+  const app = requireObject('app');
+  if (isObject(inputs.app) && typeof app.environment !== 'string') {
+    missing.push('app.environment');
+  }
+  requireObject('bindings');
+  const defaults = requireObject('defaults');
+  if (isObject(inputs.defaults)) {
+    if (!isObject(defaults.resources)) missing.push('defaults.resources');
+    if (typeof defaults.terminationGracePeriodSeconds !== 'number') {
+      missing.push('defaults.terminationGracePeriodSeconds');
+    }
+  }
+  requireObject('maintenance');
+  const ingress = requireObject('ingress');
+  if (isObject(inputs.ingress) && typeof ingress.className !== 'string') {
+    missing.push('ingress.className');
+  }
+  return missing;
+}
+
 function secretEnv(name: string, ref: SmrtAppChartSecretRef) {
   return {
     name,
@@ -215,6 +253,16 @@ export function renderSmrtAppChartValues(
   inputs: SmrtAppChartInputs,
 ): Record<string, unknown> {
   const problems: string[] = [];
+
+  const missing = missingInputs(inputs);
+  if (missing.length > 0) {
+    throw new SmrtAppChartValuesError(
+      missing.map(
+        (field) =>
+          `The inputs have no usable \`${field}\`. See the deployment guide for the inputs file.`,
+      ),
+    );
+  }
 
   const name = inputs.app.name ?? declaration.name;
   if (name === undefined || !CHART_NAME.test(name)) {

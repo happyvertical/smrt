@@ -111,12 +111,17 @@ Compose supports.
 | --- | --- |
 | Images are deployed by digest. `build:` is never run. | CI builds and pushes once; the platform deploys exactly what was tested. A tag can move after it was tested. |
 | Only declared data volumes. | A volume must be a named volume under top-level `volumes:`. Bind mounts, unnamed volumes, `volumes_from`, and volumes that are `external` or use `driver_opts` read from a machine the file does not describe. `tmpfs` scratch space is allowed and holds no data. |
-| No `privileged: true`. | It gives the container control of the machine it runs on. |
+| No `privileged`. | It gives the container control of the machine it runs on. Any value other than `false` is refused. |
 | No host networking. | `network_mode: host` and `mode: host` port publishing bind to the machine's own network. Services reach each other by service name. |
 | One ingress port. | Exactly one service has `role: web`, and it publishes exactly one fixed TCP container port. Workers publish none. |
 | Every `binding` keeps a local image. | The file must stay a complete working stack where no platform is providing that service. |
 | One file. | Top-level `include` and `extends` on a role service are refused: the platform reads this file and nothing else. |
 | Commands the platform can run as written. | `command` and `entrypoint` on a role service are a list, or a plain string of space-separated words. Quoting, variables and shell operators are split differently by Compose and by a container runtime. |
+
+Only what the tables above name is part of the declaration. Every other
+Compose setting on a role service (`environment`, `depends_on`, `restart`,
+`deploy`, `user`, `cap_add`, `devices`, `pid` and the rest) is neither checked
+nor carried: it keeps working locally and a platform does not see it.
 
 Version 1 binds each platform service at most once, and service names that
 carry an annotation must be lowercase letters, digits and hyphens, starting
@@ -148,7 +153,7 @@ and what to change, and exits 1 when there is a problem:
 The deployment declaration has 1 problem.
 
 1. services.worker.privileged: Service `worker` asks for privileged mode, which gives the container control of the machine it runs on.
-   Fix: Remove `privileged: true`. The platform never runs privileged containers.
+   Fix: Remove the `privileged` line. The platform never runs privileged containers.
 
 Runs only on your machine (the platform will not run it): migrate
 ```
@@ -214,6 +219,47 @@ pnpm exec smrt deploy:chart-values --inputs self-host.json \
   --image web=ghcr.io/acme/app@sha256:<digest> \
   --image worker=ghcr.io/acme/app@sha256:<digest> > values.json
 ```
+
+The inputs file:
+
+```json
+{
+  "release": { "id": "release-001", "phase": "maintenance", "sequence": 0, "attempt": 1 },
+  "app": { "name": "acme", "environment": "production" },
+  "bindings": {
+    "postgres": {
+      "runtime": { "secretName": "app-runtime-v1", "secretKey": "uri" },
+      "migration": { "secretName": "app-migration-v1", "secretKey": "uri" }
+    }
+  },
+  "env": [
+    { "name": "SESSION_SECRET", "secretName": "app-config-v1", "secretKey": "session-secret" }
+  ],
+  "defaults": {
+    "resources": {
+      "requests": { "cpu": "100m", "memory": "128Mi" },
+      "limits": { "cpu": "1", "memory": "512Mi" }
+    },
+    "terminationGracePeriodSeconds": 90
+  },
+  "workloads": { "web": { "replicas": 2 }, "worker": { "role": "task" } },
+  "maintenance": {
+    "image": "docker.io/library/nginx@sha256:<digest>",
+    "command": ["nginx", "-g", "daemon off;"],
+    "port": 8080,
+    "http": { "path": "/", "status": 503, "body": "Maintenance" }
+  },
+  "ingress": { "className": "nginx" }
+}
+```
+
+`release`, `app.environment`, `bindings`, `defaults`, `maintenance` and
+`ingress.className` are required. `app.name` defaults to the Compose file's
+top-level `name:`, and `ingress.host` to the declared `domain`. Add
+`currentImages` (digest per service) to render the running release as
+`current`; without it the values describe a first install. `env` entries may
+carry a `services` list to limit a variable to some workloads. `maintenance`
+and any further `ingress` fields are passed to the chart unchanged.
 
 | Declaration | Chart values |
 | --- | --- |
