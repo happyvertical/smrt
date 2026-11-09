@@ -812,6 +812,35 @@ describe('smrt app backup --encrypted --target', () => {
       expect(existsSync(join(f.stateRoot, 'vault-sync.json'))).toBe(false);
     });
 
+    it("threat: keys of another vault account never seal into this account's line (#4817)", async () => {
+      const f = await makeFixture();
+      await configure(f);
+      const relay = relayWithSigner();
+      const ring = keyring(1n);
+      // After a restart the lifecycle is on the new account while the target
+      // and sync record still name the old one.
+      const keys = {
+        ...ring,
+        async sealingKey() {
+          return { ...(await ring.sealingKey()), accountId: 'account-new' };
+        },
+      };
+      expect(
+        await f.run(['backup', '--encrypted', '--target', 'vault'], {
+          snapshotKeys: keys,
+          ...vaultDeps(relay),
+        }),
+      ).toBe(1);
+      expect(f.error().message).toMatch(/different vault account/);
+      expect(relay.relay.snapshots.size).toBe(0);
+      expect(readdirSync(join(f.stateRoot, 'backup-staging'))).toEqual([]);
+      const calls = relay.relay.calls.map((c) => `${c.method} ${c.path}`);
+      expect(calls.filter((c) => c === 'POST /v1/uploads')).toEqual([]);
+      expect(
+        JSON.parse(readFileSync(join(f.stateRoot, 'vault-sync.json'), 'utf8')),
+      ).toMatchObject({ baseSequence: 0 });
+    });
+
     it('never prunes a vault target that has no client retention', async () => {
       const f = await makeFixture();
       await configure(f);

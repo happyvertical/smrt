@@ -455,12 +455,25 @@ async function backupToOpenTarget(
   );
   try {
     const archive = planDataRootArchive(options.dataRoot);
+    const sealing = await options.snapshotKeys.sealingKey();
+    // After a vault restart the key lifecycle may already be on the new
+    // account while the target still publishes into the old one. Sealing for
+    // one account and uploading into another's line would move that line's
+    // head past the other devices, so refuse before anything is written.
+    const targetAccount = await target.accountId?.();
+    if (targetAccount !== undefined && sealing.accountId !== targetAccount) {
+      sealing.key.fill(0);
+      throw new BackupTargetError(
+        'account_mismatch',
+        'The device keys belong to a different vault account than this backup target; nothing was sealed or published. Finish the vault restart on this installation (switch it to the new account) or point the target at the account the keys belong to.',
+      );
+    }
     const snapshot = await writeEncryptedSnapshot({
       destination: staged,
       kind: 'data-root',
       totalLength: archive.totalLength,
       source: archive.chunks(),
-      sealing: await options.snapshotKeys.sealingKey(),
+      sealing,
       label: 'Backup staging file',
     });
     const { sha256, byteSize } = await digestFile(staged);

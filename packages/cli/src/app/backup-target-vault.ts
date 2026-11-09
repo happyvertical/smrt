@@ -82,7 +82,7 @@ const RESTORE_MESSAGE =
 const LEASE_HELD_MESSAGE =
   'Another device is writing to this vault account, or is publishing a snapshot; try again shortly.';
 const SUPERSEDED_MESSAGE =
-  'This vault account was replaced by a new one, so nothing was published or restored. Follow the new vault account on this device; it no longer backs up to the old one.';
+  'The relay reports that this vault account was replaced by a new one, so nothing was published or restored. If you did not start a vault restart, check the account with your administrator; nothing on this device was changed.';
 const LEASE_LOST_MESSAGE =
   'This device no longer holds the vault writer lease; nothing was published. Restore the latest snapshot (smrt app restore-latest) before backing up to the vault.';
 
@@ -750,6 +750,10 @@ export class VaultRelayBackupTarget implements BackupTarget {
       chunkSize,
       chunkCount: view.chunkCount as number,
     };
+  }
+
+  async accountId(): Promise<string> {
+    return (await this.#deviceSigner()).accountId;
   }
 
   async put(request: BackupPutRequest): Promise<BackupObject> {

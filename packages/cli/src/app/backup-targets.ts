@@ -67,6 +67,7 @@ export type BackupTargetErrorCode =
   | 'lease_held'
   | 'lease_lost'
   | 'account_superseded'
+  | 'account_mismatch'
   | 'last_snapshot'
   | 'head_snapshot'
   | 'position_unrecorded'
@@ -134,6 +135,12 @@ export interface BackupTarget {
    * Optional; callers invoke it when finished, success or failure.
    */
   close?(): Promise<void>;
+  /**
+   * The vault account this target publishes into, for targets that belong to
+   * one (the vault relay). The backup refuses to seal for any other account:
+   * a key of another account must never land in this target's data line.
+   */
+  accountId?(): Promise<string>;
 }
 
 /** Retention applied per target. */
