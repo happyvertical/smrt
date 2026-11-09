@@ -58,10 +58,16 @@ method, say so on #4663 rather than widening this interface.
 1. `resolveInstall`. Check the contract version and field shapes, and that the
    product is the one the launcher was built for.
 2. Verify the files (below). Nothing is executed yet.
-3. `connectInstance`. The origin must be exactly
-   `http://127.0.0.1:<port>`, `http://[::1]:<port>` or
-   `http://localhost:<port>`: no HTTPS, userinfo, path, query or fragment.
-4. `GET <origin><healthRoute>` must answer 2xx. Redirects are refused.
+3. `connectInstance`. The origin must be exactly `http://127.0.0.1:<port>`,
+   the literal address the supervisor listens on and probes: no `localhost`,
+   no `[::1]`, no HTTPS, userinfo, path, query or fragment. A name or the IPv6
+   loopback can be claimed by another local user while the instance listens
+   elsewhere, and the credential probe would hand them the bearer token.
+4. `GET <origin><healthRoute>` must answer 2xx. Redirects are refused. The
+   probes connect straight to `127.0.0.1` over a dedicated `node:http` agent
+   and ignore proxy settings (`NODE_USE_ENV_PROXY`, `HTTP_PROXY`), unlike
+   global `fetch`, which an environment proxy can route (and the token with
+   it). A replacement `fetch` option must do the same.
 5. `acquireCredential`. The credential is requested only now, so a bad
    install or the wrong endpoint never causes a handoff.
 6. An authenticated JSON-RPC `ping` to the MCP endpoint. 401 or 403 means the

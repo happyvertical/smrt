@@ -23,6 +23,7 @@ import {
   validateOrigin,
 } from './endpoint.js';
 import { LauncherFailure } from './failure.js';
+import { loopbackFetch, type ProbeFetch } from './loopback-fetch.js';
 import {
   type InstalledRuntime,
   type LauncherCredential,
@@ -54,8 +55,14 @@ export interface RunLauncherOptions {
   readonly stderr?: Writable;
   /** Default `process`. */
   readonly signals?: SignalSource;
-  /** Used for the health and credential probes. Default global `fetch`. */
-  readonly fetch?: typeof fetch;
+  /**
+   * Transport for the health and credential probes. The default connects to
+   * `127.0.0.1` over a dedicated `node:http` agent that ignores proxy
+   * settings (`NODE_USE_ENV_PROXY`, `HTTP_PROXY`), so the bearer token never
+   * reaches a proxy. A replacement must keep both properties and must not
+   * follow redirects; global `fetch` does neither under an environment proxy.
+   */
+  readonly fetch?: ProbeFetch;
   /** Provider contract versions accepted. Default `[1]`. */
   readonly supportedContracts?: readonly number[];
   /** Budget for each provider method. Default 30 000 ms. */
@@ -197,7 +204,7 @@ async function launch(
   getSignal: () => NodeJS.Signals | undefined,
 ): Promise<number> {
   const probeTimeout = options.probeTimeoutMs ?? PROBE_TIMEOUT_MS;
-  const fetchImpl = options.fetch ?? fetch;
+  const fetchImpl = options.fetch ?? loopbackFetch;
   const { provider, productId } = options;
 
   const install = validateInstall(

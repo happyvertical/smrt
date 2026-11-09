@@ -10,6 +10,11 @@ export {
   runLauncher,
   type SignalSource,
 } from './launcher.js';
+export type {
+  ProbeFetch,
+  ProbeInit,
+  ProbeResponse,
+} from './loopback-fetch.js';
 export {
   type InstalledRuntime,
   type InstanceEndpoint,

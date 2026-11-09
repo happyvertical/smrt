@@ -278,6 +278,15 @@ describe('provider diagnostics', () => {
     ['query', 'http://127.0.0.1:4678?x=1'],
     ['not a url', 'nonsense'],
     ['all interfaces', 'http://0.0.0.0:4678'],
+    // Only the literal address the supervisor listens on and probes: another
+    // local user can listen on ::1 or on a localhost alias the instance does
+    // not use, and would receive the bearer token.
+    ['localhost', 'http://localhost:4678'],
+    ['localhost, uppercase', 'http://LOCALHOST:4678'],
+    ['ipv6 loopback', 'http://[::1]:4678'],
+    ['ipv4 loopback elsewhere in the block', 'http://127.0.0.2:4678'],
+    ['ipv4-mapped ipv6 loopback', 'http://[::ffff:127.0.0.1]:4678'],
+    ['decimal ipv4 loopback', 'http://2130706433:4678'],
   ])('rejects an unexpected endpoint: %s', async (_name, origin) => {
     const provider = fakeProvider(stage, stub, {
       instance: () => ({ origin }),
