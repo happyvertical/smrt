@@ -7,13 +7,18 @@
     "node": ">=26.0.0"
   },
   "exports": {
+    ".": {
+      "types": "./dist/lib/objects/index.d.ts",
+      "import": "./dist/lib/objects/index.js"
+    },
     "./engine": {
       "types": "./dist/engine/index.d.ts",
       "import": "./dist/engine/index.js"
     },
     "./engine/worker": {
       "import": "./dist/engine/app-worker.js"
-    }
+    },
+    "./manifest": "./dist/manifest.json"
   },
   "files": [
     "build",
@@ -24,7 +29,7 @@
   ],
   "scripts": {
     "dev": "svelte-kit sync && vite dev",
-    "build": "tsc -p tsconfig.engine.json && svelte-kit sync && vite build",
+    "build": "tsc -p tsconfig.lib.json && svelte-kit sync && vite build && node tools/publish-manifest.mjs",
     "preview": "vite preview",
     "start": "node build",
     "clean": "rm -rf dist build .svelte-kit",
