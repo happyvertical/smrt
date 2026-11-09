@@ -31,8 +31,10 @@ smrt db:rollback             # Roll back migrations by executing their recorded 
 smrt db:rollback --mark-only # Record-only flip; schema untouched
 smrt db:prune                # Prune framework system tables to their retention windows
 smrt db:prune --dry-run      # Same predicates, counted rather than deleted
-smrt ai:usage [--by prompt,model,tier,class,tenant,fusion,source] [--since 7d] [--tenant <id>] [--json] # ../core/agents/ai-usage.md
+smrt ai:usage [--by prompt,model,tier,class,tenant,fusion,source] [--since 7d] [--tenant <id>] [--json] # agents/ai-commands.md
 smrt ai:transcript <callId> --tenant <id>|--all-tenants # Audited read (#4780), ai:usage --with-transcripts
+smrt ai:compare --prompt <key> --a hash:<h> --b model:<m>|tier:<t> --tenant <id>|--all-tenants [--transcripts N] # agents/ai-commands.md
+smrt prompts:history <key> --tenant <id>|--all-tenants # Template hashes seen (#4782)
 smrt inference:hosted provision|revoke --tenant <id> --user <id> [--budget-usd 20|--budget-micros N] [--window month] [--json] # Hosted gateway keys (#4759, ../inference/AGENTS.md)
 smrt inference:hosted disable|enable|status [--tenant <id>] [--json] # Hosted AI kill switch (#4760); one group, shared map: agents/inference-hosted.md
 smrt docs:agents             # Generate .agents/smrt-framework.md
@@ -269,18 +271,6 @@ sessions/magic-link tokens/CLI-auth requests from `smrt-users`).
   looks clean to cron. Individual task failures never abort the others.
 - Deployments running a jobs `TaskRunner` already get the same sweep every six
   hours; this command is for those that do not, and for one-off operator runs.
-
-## `ai:usage` reports, it never filters accounting away (#4751)
-
-A thin wrapper over core `reportAiUsage()`; read-only, it never bootstraps
-system tables (a pre-1.13.0 database fails with a hint to start the app or run
-`db:migrate`). Calls without a prompt key print as `(unattributed)`, uncosted
-calls are counted beside the cost total with the cost basis printed, and rows
-outside `--tenant` or from external agents are listed as excluded. `--by fusion`
-also totals `_smrt_ai_runs` per fusion via `reportAiRuns()` (#4753).
-
-Hosted-gate blocks (`operation: 'blocked'`, #4760) print in a `blocked`
-column beside `calls`.
 
 ## `db:drop-framework-base-tables` is a one-time remediation (#2647)
 
