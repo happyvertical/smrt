@@ -114,6 +114,45 @@ not a runtime block (`null`, `false`, `0`, `''`) throws the same
 `RuntimeProfileValidationError` instead of selecting `local`; `setConfig()`
 rejects such a `runtime` override with that error before storing anything.
 
+### Compose deployment contract
+
+`@happyvertical/smrt-config/deployment` reads an application's Compose file as
+its deployment declaration. The file carries `x-happyvertical` extension fields
+(contract version 1): a top-level block with `preset`, `domain` and `migrate`,
+`role: web|worker` with a `health` check on the services the application runs,
+and `binding: postgres|bucket|email|ai` on local stand-ins for platform
+services. See the
+[compose deployment contract](https://github.com/happyvertical/smrt/blob/main/docs/content/deployment-compose.md)
+for the fields and the supported platform subset.
+
+```typescript
+import { parse } from 'yaml';
+import {
+  formatComposeDeploymentReport,
+  renderSmrtAppChartValues,
+  validateComposeDeployment,
+} from '@happyvertical/smrt-config/deployment';
+
+// The entry does no I/O: parse the YAML yourself, with merge keys enabled.
+const document = parse(composeText, { merge: true });
+
+// `declare` checks the file as written; `deploy` also requires image digests.
+const result = validateComposeDeployment(document, {
+  stage: 'deploy',
+  images: { web: webDigest, worker: workerDigest },
+});
+if (!result.ok) throw new Error(formatComposeDeploymentReport(result));
+
+// Self-host rendering: values for the smrt-app chart.
+const values = renderSmrtAppChartValues(result.declaration, inputs);
+```
+
+Each issue has a `code`, a `path` into the file, a plain-language `message`
+and a `fix`. Unannotated services are reported as warnings: they run locally
+and are never deployed. The JSON Schema for the annotations is published as
+`@happyvertical/smrt-config/schemas/x-happyvertical.v1.schema.json`. From a
+terminal, use `smrt deploy:check` and `smrt deploy:chart-values`.
+
 ### Use config in code
 
 ```typescript

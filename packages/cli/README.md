@@ -202,6 +202,8 @@ knowledge index; documentation snapshots use lightweight package discovery.
 |---------|------------|
 | `smrt config:export` | Export agent config for SSG |
 | `smrt export` | Export data in various formats |
+| `smrt deploy:check [file]` | Check the Compose file as a deployment declaration (`x-happyvertical` contract). `--image service=ref@sha256:…` (repeatable) or `--deploy` checks a release; `--json` for tooling |
+| `smrt deploy:chart-values [file] --inputs <json>` | Render the declaration and image digests as `smrt-app` chart values on stdout |
 | `smrt init` | Initialize s-m-r-t in an existing SvelteKit project |
 | `smrt cookbook validate <file\|url>` | Check a cookbook against cookbook/v1 and the recipe manifests |
 | `smrt cookbook apply <file\|url> [dir]` | Create a project from a cookbook and the smrt-start template, its smrt packages pinned to this CLI's release (`--into`, `--template`, `--dry-run`, `--no-install`) |

@@ -12,10 +12,16 @@
       "types": "./dist/index.d.ts",
       "browser": "./dist/browser.js",
       "import": "./dist/index.js"
-    }
+    },
+    "./deployment": {
+      "types": "./dist/deployment.d.ts",
+      "import": "./dist/deployment.js"
+    },
+    "./schemas/*": "./schemas/*"
   },
   "files": [
     "dist",
+    "schemas",
     "CLAUDE.md",
     "AGENTS.md"
   ],
@@ -33,6 +39,7 @@
   },
   "devDependencies": {
     "@types/node": "24.13.6",
+    "ajv": "8.20.0",
     "typescript": "6.0.3",
     "vite": "8.1.6",
     "vitest": "4.1.10"

@@ -7,6 +7,24 @@ ConfigMap, and a retained migration Job. Existing databases, private buckets and
 Secrets remain externally owned. Installing or uninstalling this chart never
 creates or deletes those bindings.
 
+This chart is the self-host rendering of the
+[compose deployment contract](../../docs/content/deployment-compose.md). An
+application declares its web and worker services, its migration command and
+the platform services it binds in its Compose file, under `x-happyvertical`.
+`smrt deploy:chart-values` turns that declaration, image digests and an inputs
+file holding what the environment owns (release identity, Secret references,
+resources, maintenance responder, ingress class) into a values document for
+this chart. It renders `target` only: `current` is the previous release's
+`target`, passed in unchanged, and the release runner owns it. Because this
+chart's `command` replaces the image's entrypoint, a rendered service must set
+`entrypoint` in its Compose file. A hosting platform's `smrt` preset is
+intended to be the runner for the same `smrt-release-v1` contract from the
+same declaration; it is a separate implementation and is not part of this
+chart. `fixtures/starter.json` is generated from
+`packages/template-sveltekit/template/compose.yaml` by
+`node scripts/compose-contract-fixture.mjs --write`; `scripts/compose-contract.test.mjs`
+fails when it is stale. Never edit it by hand.
+
 The required `current` field accepts exactly `false` for bootstrap or a complete
 runtime object; missing, null, true and empty objects are rejected. Bootstrap is
 published at maintenance sequence zero by the runner and acknowledged through all
@@ -33,6 +51,7 @@ remain platform-owned prerequisites.
 ```sh
 helm lint --strict charts/smrt-app -f charts/smrt-app/fixtures/iolaus.json
 helm template fixture charts/smrt-app -f charts/smrt-app/fixtures/work.json
+helm lint --strict charts/smrt-app -f charts/smrt-app/fixtures/starter.json
 helm package charts/smrt-app
 node --test scripts/deployment-chart.test.mjs
 ```
@@ -95,7 +114,9 @@ including dry-running every phase under the actual reconciliation identity.
 Inventory presence is not evidence that permission or admission checks passed.
 
 The Iolaus and Work fixtures are adoption examples, not runnable deployment values.
-All image digests are synthetic. Replace them with published images and real
+The starter fixture is the template application rendered from its Compose
+declaration with synthetic digests and example Secret names; it is equally not
+a deployable release. All image digests are synthetic. Replace them with published images and real
 immutable Secret references. The example `scripts/release-migrate.mjs` is a required
 downstream wrapper, not an existing entry point in those applications. Iolaus needs
 the current per-workload migration initContainers removed, its existing guarded

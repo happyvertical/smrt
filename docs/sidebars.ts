@@ -13,6 +13,7 @@ const sidebars: SidebarsConfig = {
         { type: 'doc', id: 'data-compartmentalization' },
         { type: 'doc', id: 'data-surface-conformance' },
         { type: 'doc', id: 'deployment' },
+        { type: 'doc', id: 'deployment-compose' },
         { type: 'doc', id: 'deployment-test-matrix' },
         { type: 'doc', id: 'dispatch' },
         { type: 'doc', id: 'field-policies' },

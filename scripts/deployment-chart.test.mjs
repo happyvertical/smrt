@@ -51,7 +51,7 @@ test('legacy adoption capabilities ship as a new immutable feature-minor chart a
 });
 
 test('representative fixtures lint strictly and chart packages independently', () => {
-  for (const app of ['iolaus', 'work']) {
+  for (const app of ['iolaus', 'work', 'starter']) {
     execFileSync(helm, ['lint', '--strict', chart, '-f', join(chart, 'fixtures', `${app}.json`)]);
   }
   execFileSync(helm, ['package', chart, '--destination', scratch]);
