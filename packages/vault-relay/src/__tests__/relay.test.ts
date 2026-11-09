@@ -506,6 +506,7 @@ describe('sequence step cap and high-water reset', () => {
     return h.relay.handle(
       signed(h, device, 'POST', '/v1/uploads', {
         body: JSON.stringify({
+          fencingToken: await leaseToken(h, device),
           sequence,
           byteSize: 10,
           chunkSize: 4096,
@@ -834,16 +835,36 @@ describe('device deletes', () => {
     ).toBe(false);
   });
 
-  it('lets the newest go while an older one remains, but never the last', async () => {
+  it('composes the last-snapshot rule with the head rule: distinct refusals, each audited', async () => {
     for (const sequence of [1, 2]) {
       await uploadSnapshot(h, a1, sequence, randomBytes(20));
     }
-    expect((await del(a1, 2)).status).toBe(204);
-    expect((await del(a1, 1)).status).toBe(409);
+    h.logger.lines.length = 0;
+    // The newest of several is the lease head: a different refusal from the
+    // sole-snapshot one, and the older one stays deletable.
+    const head = await del(a1, 2);
+    expect(head.status).toBe(409);
+    expect(await head.json()).toEqual({ error: 'head_snapshot', sequence: 2 });
+    expect((await del(a1, 1)).status).toBe(204);
+    // Now it is the only committed snapshot (and the head).
+    const last = await del(a1, 2);
+    expect(last.status).toBe(409);
+    expect(await last.json()).toEqual({ error: 'last_snapshot', sequence: 2 });
     const latest = await h.relay.handle(
       signed(h, a1, 'GET', '/v1/snapshots/latest'),
     );
-    expect(((await latest.json()) as { sequence: number }).sequence).toBe(1);
+    expect(((await latest.json()) as { sequence: number }).sequence).toBe(2);
+    expect(
+      h.logger.lines
+        .filter((line) => line.event === 'snapshot_delete_refused')
+        .map((line) => ({ level: line.level, reason: line.fields?.reason })),
+    ).toEqual([
+      { level: 'warn', reason: 'head' },
+      { level: 'warn', reason: 'last_committed' },
+    ]);
+    expect(
+      h.logger.lines.filter((line) => line.event === 'snapshot_deleted'),
+    ).toHaveLength(1);
   });
 
   it('judges each account separately and does not count pending uploads', async () => {
@@ -853,6 +874,7 @@ describe('device deletes', () => {
     const begin = await h.relay.handle(
       signed(h, a1, 'POST', '/v1/uploads', {
         body: JSON.stringify({
+          fencingToken: await leaseToken(h, a1),
           sequence: 2,
           byteSize: 10,
           chunkSize: 4096,
@@ -1207,6 +1229,6 @@ describe('concurrent writes', () => {
     });
     expect(created).toBe(false);
     const view = await h.relay.operatorView('acct-a');
-    expect(view.usage).toMatchObject({ usedBytes: 10, usedSnapshots: 1 });
+    expect(view.usage).toMatchObject({ usedBytes: 20, usedSnapshots: 2 });
   });
 });

@@ -1244,6 +1244,9 @@ export class VaultRelay {
       // was reset, so the operator can look again.
       throw new RelayError(409, 'high_water_changed');
     }
+    // The lease head follows the mark down, or the next acquire (which must
+    // name the head) and publish (which must exceed it) could never succeed.
+    await this.leaseStore.resetHead(accountId);
     this.logger.warn('high_water_reset', {
       account: handle,
       previous: usage.highWaterSequence,
