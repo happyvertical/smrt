@@ -17,7 +17,9 @@ hand).
   `createVirtualKey`, `updateVirtualKey`, `deleteVirtualKey`,
   `listProjects`); a provider missing one is `HOSTED_GATEWAY_UNSUPPORTED`.
   SMRT persists only `AIVirtualKey.id`, the non-secret handle (Bifrost id,
-  LiteLLM `token_id`; an id equal to the key is dropped). Budget sync sends
+  LiteLLM `token_id`); an id that equals or looks like a key value (`sk-…`)
+  is dropped on create and when older state is read, so that key counts as
+  having no id. Budget sync sends
   `updateVirtualKey(id, { budget })` only (Bifrost refuses `models` /
   `metadata`, LiteLLM `providerConfigs`: `ADMIN_UNSUPPORTED_FIELD`);
   `unsupported` now means the grant has no key id. Revoke ends local use

@@ -708,6 +708,23 @@ function sameBudget(
   return !!a && a.limitMicros === b.limitMicros && a.window === b.window;
 }
 
+/** A gateway key value (`sk-...`), as the SDK's own redaction matches it. */
+const KEY_VALUE_PATTERN = /\bsk-[A-Za-z0-9_-]{8,}/;
+
+/**
+ * A key handle safe to persist, audit and return: `null` when it is empty,
+ * equals the key, or looks like a key value (a state written through an SDK
+ * before 0.111.7 may hold LiteLLM's key as its id). Such a key then counts
+ * as having no id: never updated or deleted by SMRT, owed by alias.
+ */
+function safeKeyId(id: unknown, apiKey?: string): string | null {
+  const handle = text(id);
+  if (!handle || handle === apiKey || KEY_VALUE_PATTERN.test(handle)) {
+    return null;
+  }
+  return handle;
+}
+
 function parseState(value: string): HostedInferenceState {
   let raw: unknown;
   try {
@@ -737,6 +754,14 @@ function parseState(value: string): HostedInferenceState {
   }
   return {
     ...(state as HostedInferenceState),
+    keyId: safeKeyId(state.keyId),
+    ...(Array.isArray(state.pendingGatewayRevocations)
+      ? {
+          pendingGatewayRevocations: state.pendingGatewayRevocations.map(
+            (entry) => ({ ...entry, keyId: safeKeyId(entry.keyId) }),
+          ),
+        }
+      : {}),
     prior: state.prior ? parseInferenceProviderConfig(state.prior) : null,
   };
 }
@@ -1467,8 +1492,7 @@ export function createHostedInferenceProvisioner(
         const apiKey = text(key?.key);
         // The persisted handle must never be the key itself (an SDK before
         // 0.111.7 could echo LiteLLM's key as its id).
-        const returnedId = text(key?.id);
-        const keyId = returnedId && returnedId !== apiKey ? returnedId : null;
+        const keyId = safeKeyId(key?.id, apiKey);
         /**
          * After the claim rolled back (a delete inside its transaction would
          * wait on it on single-connection adapters): delete the new key or

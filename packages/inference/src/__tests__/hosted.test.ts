@@ -1103,6 +1103,57 @@ describe('hosted inference provisioning (#4759)', () => {
     });
   });
 
+  it('never surfaces a legacy key handle that is the key value itself', async () => {
+    const legacyKey = `${KEY_MARK}-legacy-0123456789`;
+    await withTenant({ tenantId: TENANT }, () =>
+      secrets.store(
+        hostedInferenceStateSecretName(ALICE),
+        JSON.stringify({
+          version: 1,
+          status: 'revoked',
+          generation: 1,
+          keyId: legacyKey,
+          keyAlias: `smrt-${TENANT}-${ALICE}-g0-x`,
+          prior: null,
+          pendingGatewayRevocations: [
+            {
+              keyId: legacyKey,
+              keyAlias: `smrt-${TENANT}-${ALICE}-g0-x`,
+              reason: 'unsupported',
+              since: '2026-11-08T00:00:00.000Z',
+            },
+          ],
+        }),
+        { category: 'inference.hosted' },
+      ),
+    );
+    const p = provisioner();
+    const status = await p.status({ tenantId: TENANT, userId: ALICE });
+    expect(status.keyId).toBeNull();
+    expect(status.pendingGatewayRevocations).toEqual([
+      expect.objectContaining({ keyId: null, reason: 'unsupported' }),
+    ]);
+    const result = await p.reconcileTenant(TENANT, { entitled: false });
+    expect(result.pending).toEqual([{ userId: ALICE, remaining: 1 }]);
+    expect(admin.deleted).toEqual([]);
+    // Provisioning again rewrites the state without the legacy handle.
+    await p.provision({
+      tenantId: TENANT,
+      userId: ALICE,
+      budget: { limitMicros: 1_000_000 },
+    });
+    const audit = await withTenant({ tenantId: TENANT }, () =>
+      secrets.getAuditLogs({}),
+    );
+    const outputs = JSON.stringify({
+      status,
+      result,
+      audit: audit.map((entry) => entry.details),
+      state: await read(hostedInferenceStateSecretName(ALICE)),
+    });
+    expect(outputs).not.toContain(legacyKey);
+  });
+
   it('adopts the tenant project a crash left unrecorded instead of creating a second', async () => {
     // A previous attempt created the project, then died before storing it.
     admin.gatewayProjects.push(
