@@ -21,8 +21,12 @@ service storing encrypted snapshot blobs per account. See
 - **Primary-writer lease** (#4805, `lease-store.ts`, `lease.ts`): one row per
   account; acquire, renew, release, revoke and the commit-time head advance
   are single conditional statements on it. Publishing needs the holder's
-  fencing token; the head never moves back, and the head and latest committed
-  snapshot are never deleted (a missing head row means an abandoned upload).
+  fencing token; the head never moves back (only the operator's high-water
+  reset lowers it, to the latest remaining committed snapshot, clearing the
+  holder), and the head and latest committed snapshot are never deleted by a
+  device (a missing head row means an abandoned upload). A device delete of the
+  sole committed snapshot is `409 last_snapshot`, of the newest of several
+  `409 head_snapshot`; both are audited as `snapshot_delete_refused`.
 - **Object keys** are derived (`v1/<account hash>/<upload uuid>/<index>.<object
   id>`, a fresh object id per write) and checked by `assertObjectKey`; never
   build one from a client string or overwrite a recorded object. Removal of a

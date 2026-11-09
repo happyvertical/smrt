@@ -364,6 +364,28 @@ export class VaultRelayLeaseStore {
   }
 
   /**
+   * Operator reset of the account's high-water mark (the one way the head
+   * moves back): the head becomes the latest committed sequence that remains
+   * and the holder is cleared with a bumped token, so nothing recorded under
+   * the old position can publish and the next acquire starts from the
+   * restored head.
+   */
+  async resetHead(accountId: string): Promise<void> {
+    await this.db.query(
+      `UPDATE vault_relay_leases
+          SET head_sequence = COALESCE((SELECT MAX(sequence)
+                                          FROM vault_relay_snapshots
+                                         WHERE account_id = ?
+                                           AND status = 'committed'), 0),
+              holder_device_id = NULL, expires_at = 0,
+              fencing_token = fencing_token + 1
+        WHERE account_id = ?`,
+      accountId,
+      accountId,
+    );
+  }
+
+  /**
    * Delete a committed snapshot only when it is below the head and below the
    * latest committed snapshot, in one statement. The head never moves back,
    * so a stale read can only refuse more. Returns the row when removed.
