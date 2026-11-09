@@ -28,6 +28,13 @@ them (#4734). Source: `src/commands/docs-workspace.ts`,
   under `.claude/skills` / `.agents/skills` are all written at the docs root; the
   skill's bundle path is relative to it. The chosen root is printed (stderr under
   `--dry-run`).
+- **Checkout-only inputs.** Root docs (`AGENTS.md`, ...), checkout intents and the
+  merged knowledge graph apply only when the detected root is the smrt repository
+  (`isSmrtRepository`); a consumer workspace, which matches the detector once it
+  has a root `AGENTS.md`, gets published intents from the installed smrt-cli.
+- **Module-doc links.** Resolved from the docs root under the install location of
+  the entry that supplied the docs (`apps/web/node_modules/@happyvertical/...`);
+  a root install keeps the bare `node_modules/` wording.
 - **`--here`.** Skips workspace resolution: the working directory alone, exactly
   as before. Outside any workspace nothing changes.
 

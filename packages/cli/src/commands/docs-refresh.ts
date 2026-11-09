@@ -289,7 +289,11 @@ export async function refreshAgentDocs(
       ? join(docsRoot.root, defaultOutput)
       : defaultOutput;
   const absoluteOutput = resolve(cwd, outputPath);
-  const monorepoRoot = detectMonorepoRoot(cwd);
+  // Checkout-only inputs (root docs, checkout intents, the knowledge graph)
+  // apply to the smrt repository itself. A consumer pnpm workspace also matches
+  // the detector once it has a root AGENTS.md, and must never feed them (#4878).
+  const detectedRoot = detectMonorepoRoot(cwd);
+  const monorepoRoot = isSmrtRepository(detectedRoot) ? detectedRoot : null;
   const rootDocs = monorepoRoot ? loadRootDocs(monorepoRoot) : [];
   const { packages, sdkPackages } = await collectWorkspacePackages(
     docsRoot,

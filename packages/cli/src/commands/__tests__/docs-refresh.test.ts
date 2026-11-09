@@ -331,3 +331,122 @@ describe('inspectAgentDocs and the doctor section', () => {
     expect(inspectAgentDocs(member).bundle).toBe('fresh');
   });
 });
+
+describe('consumer pnpm workspace with a packages/ dir (#4878)', () => {
+  const INDEX = `---
+type: Index
+title: "Developer-intent index"
+package_version: 0.0.1
+---
+
+# Developer-intent index
+
+| Intent | Page | Home package(s) | Entry point | Hand-rolled signals |
+| --- | --- | --- | --- | --- |
+| Background work and retries | [background-work](/intents/background-work.md) | [smrt-core](/components/smrt-core.md) | \`withBackgroundJobs\` | \`import:bullmq\` |
+`;
+
+  function member(name: string, withCli: boolean): string {
+    const dir = join(root, 'apps', name);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'package.json'), `{"name":"${name}"}`);
+    const hv = join(dir, 'node_modules', '@happyvertical');
+    const core = join(hv, 'smrt-core');
+    mkdirSync(join(core, 'dist'), { recursive: true });
+    mkdirSync(join(core, 'agents'), { recursive: true });
+    writeFileSync(
+      join(core, 'package.json'),
+      '{"name":"@happyvertical/smrt-core","version":"1.0.0"}',
+    );
+    writeFileSync(
+      join(core, 'AGENTS.md'),
+      '# core\n\nCore docs.\n\n| Module | Module doc |\n|---|---|\n| runtime | [agents/runtime.md](agents/runtime.md) |\n',
+    );
+    writeFileSync(join(core, 'agents', 'runtime.md'), '# runtime\n');
+    writeFileSync(
+      join(core, 'dist', 'smrt-knowledge.okf.md'),
+      '---\ntype: "Component"\npackage_version: "1.0.0"\n---\n\n# core\n',
+    );
+    if (withCli) {
+      const cli = join(hv, 'smrt-cli');
+      const intents = join(cli, 'dist', 'knowledge', 'intents');
+      mkdirSync(intents, { recursive: true });
+      writeFileSync(
+        join(cli, 'package.json'),
+        '{"name":"@happyvertical/smrt-cli","version":"2.0.0"}',
+      );
+      writeFileSync(join(intents, 'index.md'), INDEX);
+      writeFileSync(join(intents, 'background-work.md'), 'published intent\n');
+    }
+    return dir;
+  }
+
+  function consumerWorkspace(): void {
+    writeFileSync(join(root, 'pnpm-workspace.yaml'), 'packages:\n  - apps/*\n');
+    mkdirSync(join(root, 'packages'), { recursive: true });
+    member('web', true);
+    member('api', false);
+    // Checkout-shaped inputs a consumer happens to have.
+    mkdirSync(join(root, 'docs', 'knowledge', 'intents'), { recursive: true });
+    writeFileSync(
+      join(root, 'docs', 'knowledge', 'intents', 'index.md'),
+      INDEX.replace('Background work and retries', 'CONSUMER OWN INTENT'),
+    );
+    mkdirSync(join(root, '.smrt'), { recursive: true });
+    writeFileSync(join(root, '.smrt', 'smrt-knowledge-graph.json'), '{}');
+  }
+
+  const framework = () =>
+    readFileSync(join(root, '.agents', 'smrt-framework.md'), 'utf-8');
+
+  it('never embeds the consumer AGENTS.md or checkout inputs; reruns are byte-identical', async () => {
+    consumerWorkspace();
+    const refresh = () =>
+      refreshAgentDocs({ cwd: root, mode: 'write', log: sinks().log });
+
+    await refresh();
+    // Run 1 created the root AGENTS.md block, so the detector now matches.
+    expect(existsSync(join(root, 'AGENTS.md'))).toBe(true);
+    writeFileSync(
+      join(root, 'AGENTS.md'),
+      `${readFileSync(join(root, 'AGENTS.md'), 'utf-8')}\nCONSUMER-OWN-TEXT\n`,
+    );
+
+    await refresh();
+    const second = framework();
+    const secondBundle = readFileSync(bundlePath(), 'utf-8');
+    const secondIntent = readFileSync(
+      join(root, '.agents', 'smrt-knowledge', 'intents', 'background-work.md'),
+      'utf-8',
+    );
+    expect(second).not.toContain('CONSUMER-OWN-TEXT');
+    expect(second).not.toContain('## Framework Documentation');
+    expect(second).not.toContain('CONSUMER OWN INTENT');
+    expect(second).toContain('Background work and retries');
+    expect(secondIntent).toBe('published intent\n');
+    expect(existsSync(join(root, '.agents', 'smrt-knowledge-graph.json'))).toBe(
+      false,
+    );
+
+    await refresh();
+    expect(framework()).toBe(second);
+    expect(readFileSync(bundlePath(), 'utf-8')).toBe(secondBundle);
+  });
+
+  it('names module docs under the member that holds them, and they exist', async () => {
+    consumerWorkspace();
+    await refreshAgentDocs({ cwd: root, mode: 'write', log: sinks().log });
+    const doc = framework();
+    const links = [...doc.matchAll(/- \[[^\]]+\]\(<([^>]+)>\)/g)].map(
+      (match) => match[1],
+    );
+    const runtime = links.filter((link) => link.endsWith('agents/runtime.md'));
+    // Same version in both members: one entry, one primary install location.
+    expect(runtime).toEqual([
+      'apps/api/node_modules/@happyvertical/smrt-core/agents/runtime.md',
+    ]);
+    for (const link of links) {
+      expect(existsSync(join(root, link))).toBe(true);
+    }
+  });
+});

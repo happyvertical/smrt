@@ -49,6 +49,11 @@ export interface PackageInfo {
    * highest, and the exported knowledge page is that version's.
    */
   versionLocations?: Array<{ version: string; locations: string[] }>;
+  /**
+   * Install root (relative to the docs root, `.` for the root) of the entry that
+   * supplied this package's docs. Module-doc references are resolved under it.
+   */
+  installLocation?: string;
 }
 
 export interface RootDocInfo {
@@ -306,7 +311,8 @@ function mergePackageVersions(
     const ascending = [...versions.entries()].sort(([a], [b]) =>
       compareVersions(a, b),
     );
-    const primary = ascending[ascending.length - 1][1].pkg;
+    const { pkg: primary, locations } = ascending[ascending.length - 1][1];
+    primary.installLocation = [...locations].sort()[0];
     if (ascending.length > 1) {
       primary.versionLocations = ascending.map(([version, entry]) => ({
         version,
@@ -520,9 +526,15 @@ function renderPackageDoc(
   const paths =
     pkg.moduleDocPaths ?? pkg.moduleDocs?.map((doc) => doc.path) ?? [];
   if (!complete && paths.length > 0) {
+    const installRoot =
+      pkg.installLocation && pkg.installLocation !== '.'
+        ? pkg.installLocation.replace(/\\/g, '/')
+        : null;
     lines.push('#### Module documentation', '');
     lines.push(
-      'Resolve each link under `node_modules/` (for example `node_modules/@happyvertical/smrt-core/agents/object-runtime.md`) and read it on demand, or regenerate with `--complete`.',
+      installRoot
+        ? `Resolve each link from the project root (it lives under \`${installRoot}/node_modules/\`, for example \`${installRoot}/node_modules/@happyvertical/smrt-core/agents/object-runtime.md\`) and read it on demand, or regenerate with \`--complete\`.`
+        : 'Resolve each link under `node_modules/` (for example `node_modules/@happyvertical/smrt-core/agents/object-runtime.md`) and read it on demand, or regenerate with `--complete`.',
       '',
     );
     for (const path of paths) {
@@ -532,7 +544,10 @@ function renderPackageDoc(
       // every install in another worktree or machine.
       const relative = path.replace(/\\/g, '/');
       const specifier = pkg.specifier ?? pkg.name;
-      lines.push(`- [${relative}](<${specifier}/${relative}>)`);
+      const target = installRoot
+        ? `${installRoot}/node_modules/${specifier}/${relative}`
+        : `${specifier}/${relative}`;
+      lines.push(`- [${relative}](<${target}>)`);
     }
     lines.push('');
   }

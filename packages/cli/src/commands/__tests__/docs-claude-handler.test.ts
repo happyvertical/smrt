@@ -257,6 +257,12 @@ describe('docs:agents handler', () => {
       'utf-8',
     );
     mkdirSync(join(tempDir, 'packages'), { recursive: true });
+    // Only the smrt repository itself feeds checkout-only inputs (#4878).
+    writeFileSync(
+      join(tempDir, 'package.json'),
+      '{"name":"@happyvertical/smrt"}',
+      'utf-8',
+    );
     writeFileSync(
       join(tempDir, 'AGENTS.md'),
       '# Root Agents\n\nFramework overview text.',
@@ -288,6 +294,12 @@ describe('docs:agents handler', () => {
       'utf-8',
     );
     mkdirSync(join(tempDir, 'packages'), { recursive: true });
+    // Only the smrt repository itself feeds checkout-only inputs (#4878).
+    writeFileSync(
+      join(tempDir, 'package.json'),
+      '{"name":"@happyvertical/smrt"}',
+      'utf-8',
+    );
     writeFileSync(join(tempDir, 'AGENTS.md'), '# Root Agents\n', 'utf-8');
     makePackage('@happyvertical', 'smrt-content', {
       agents: '# smrt-content\n\nDocs.',
@@ -317,6 +329,12 @@ describe('docs:agents handler', () => {
       'utf-8',
     );
     mkdirSync(join(tempDir, 'packages'), { recursive: true });
+    // Only the smrt repository itself feeds checkout-only inputs (#4878).
+    writeFileSync(
+      join(tempDir, 'package.json'),
+      '{"name":"@happyvertical/smrt"}',
+      'utf-8',
+    );
     writeFileSync(join(tempDir, 'AGENTS.md'), '# Root Agents\n', 'utf-8');
     makePackage('@happyvertical', 'smrt-content', {
       agents: '# smrt-content\n\nDocs.',
@@ -375,6 +393,12 @@ describe('docs:agents handler', () => {
       'utf-8',
     );
     mkdirSync(join(tempDir, 'packages'), { recursive: true });
+    // Only the smrt repository itself feeds checkout-only inputs (#4878).
+    writeFileSync(
+      join(tempDir, 'package.json'),
+      '{"name":"@happyvertical/smrt"}',
+      'utf-8',
+    );
     writeFileSync(join(tempDir, 'AGENTS.md'), '# Root Agents\n', 'utf-8');
     makePackage('@happyvertical', 'smrt-content', {
       agents: '# smrt-content\n\nDocs.',
