@@ -208,13 +208,13 @@ describe('ai:compare over SQLite', () => {
     expect(out).not.toContain('call-a1 ');
   });
 
-  it('reads every chosen transcript of a call that has more than 20', async () => {
-    // 24 more transcripts of call-a2 (all labelled through the call) at one
-    // instant: the compare order (id ascending on ties) differs from the
-    // read path's newest-first page (id descending), so a 20-row read per
-    // reference would miss some of the chosen 20. One read per call does not.
+  it('reads every chosen transcript of a call past one read page', async () => {
+    // 504 more transcripts of call-a2 (all labelled through the call) at one
+    // instant: more than the read path's 500-row page. The compare order
+    // breaks ties like the read path (id descending), so the chosen 20 are
+    // always within the call's first page.
     const at = new Date('2026-11-08T12:00:00Z');
-    for (let index = 0; index < 24; index++) {
+    for (let index = 0; index < 504; index++) {
       await recordAiTranscript(db, {
         callId: 'call-a2',
         tenantId: 'tenant-a',
@@ -234,7 +234,7 @@ describe('ai:compare over SQLite', () => {
       b: { templateHash: 'h2' },
       tenantId: 'tenant-a',
     });
-    expect(result.a.transcriptCount).toBe(26);
+    expect(result.a.transcriptCount).toBe(506);
     await aiCompareCommand.handler?.([], {
       prompt: 'notes.review',
       a: 'hash:h1',

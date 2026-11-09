@@ -340,7 +340,7 @@ export interface AiPromptCompareSide {
   /**
    * Up to `transcriptLimit` transcripts, worst-labelled first: lowest
    * score, then labelled without a score, then unlabelled; newest first
-   * within each.
+   * within each, ties by id descending (the `listAiTranscripts()` order).
    */
   transcripts: AiPromptCompareTranscriptRef[];
 }
@@ -787,7 +787,10 @@ export async function compareAiPromptRuns(
         rank(x) - rank(y) ||
         (x.worstScore ?? 0) - (y.worstScore ?? 0) ||
         y.createdAt.getTime() - x.createdAt.getTime() ||
-        (x.id < y.id ? -1 : x.id > y.id ? 1 : 0),
+        // Ties break by id descending, the order listAiTranscripts() pages
+        // in: a call's transcripts share their labels, so the ones chosen
+        // here are always a prefix of that call's read page.
+        (x.id < y.id ? 1 : x.id > y.id ? -1 : 0),
     );
     return {
       ...side,
