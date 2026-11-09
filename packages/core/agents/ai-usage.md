@@ -286,8 +286,11 @@ rows of one prompt key; no model judges anything (labels come from
   allowCrossTenant })`: per `templateHash` tag (`null` = recorded without
   one), `firstSeen`, `lastSeen`, `calls`, `blocked`, `layers`, `models`,
   newest `lastSeen` first.
-- Queries: keyset pages on `id` over `idx_smrt_ai_usage_prompt_key`; label,
-  run and transcript joins are `IN` lists of at most 500 ids on their
-  indexed columns. No new table or index. Tests:
+- Queries: `idx_smrt_ai_usage_prompt_key (prompt_key, created_at)` selects
+  the prompt's rows; pages are keyed on `id` like the report's, so on a very
+  large prompt each page re-sorts the prompt's rows in the window (correct,
+  not cheap; the report's `(created_at, id)` keyset follow-up applies here
+  too). Label, run and transcript joins are `IN` lists of at most 500 ids on
+  their indexed columns. No new table or index. Tests:
   `issue-4782-ai-prompt-compare.test.ts`, PostgreSQL lane
   `issue-4782-ai-prompt-compare-postgres.optional.test.ts`.

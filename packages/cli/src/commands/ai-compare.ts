@@ -263,7 +263,9 @@ interface AiCompareOptions {
 
 /**
  * Read the full transcripts behind the `count` worst-labelled references of
- * a side (audited, one read per call in the row's own tenant).
+ * a side: one audited read per distinct call, in the row's own tenant, at
+ * the read path's maximum page so newer transcripts of the same call never
+ * push the chosen one out.
  */
 async function readWorstTranscripts(
   db: DatabaseInterface,
@@ -275,19 +277,28 @@ async function readWorstTranscripts(
   const refs = side.transcripts
     .filter((ref) => ref.labels.length > 0)
     .slice(0, count);
-  const out: AiTranscriptWithUsage[] = [];
+  const calls = new Map<string, { tenantId: string | null; callId: string }>();
   for (const ref of refs) {
+    calls.set(JSON.stringify([ref.tenantId, ref.callId]), {
+      tenantId: ref.tenantId,
+      callId: ref.callId,
+    });
+  }
+  const byId = new Map<string, AiTranscriptWithUsage>();
+  for (const { tenantId, callId } of calls.values()) {
     const rows = await listAiTranscripts(db, {
       actor,
       reason: 'ai:compare --transcripts',
-      tenantId: ref.tenantId,
-      callId: ref.callId,
-      limit: 20,
+      tenantId,
+      callId,
+      limit: 500,
     });
-    const match = rows.find((row) => row.id === ref.id);
-    if (match) out.push(match);
+    for (const row of rows) byId.set(row.id, row);
   }
-  return out;
+  return refs.flatMap((ref) => {
+    const row = byId.get(ref.id);
+    return row ? [row] : [];
+  });
 }
 
 export const aiCompareCommand: CLICommand = {

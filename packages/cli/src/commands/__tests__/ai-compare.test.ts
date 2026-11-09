@@ -208,6 +208,48 @@ describe('ai:compare over SQLite', () => {
     expect(out).not.toContain('call-a1 ');
   });
 
+  it('reads every chosen transcript of a call that has more than 20', async () => {
+    // 24 more transcripts of call-a2 (all labelled through the call) at one
+    // instant: the compare order (id ascending on ties) differs from the
+    // read path's newest-first page (id descending), so a 20-row read per
+    // reference would miss some of the chosen 20. One read per call does not.
+    const at = new Date('2026-11-08T12:00:00Z');
+    for (let index = 0; index < 24; index++) {
+      await recordAiTranscript(db, {
+        callId: 'call-a2',
+        tenantId: 'tenant-a',
+        promptKey: 'notes.review',
+        operation: 'message',
+        request: JSON.stringify({ messages: [] }),
+        response: JSON.stringify({ messages: [] }),
+        toolEvents: null,
+        truncated: false,
+        bytes: 10,
+        createdAt: at,
+      });
+    }
+    const result = await compareAiPromptRuns(db, {
+      promptKey: 'notes.review',
+      a: { templateHash: 'h1' },
+      b: { templateHash: 'h2' },
+      tenantId: 'tenant-a',
+    });
+    expect(result.a.transcriptCount).toBe(26);
+    await aiCompareCommand.handler?.([], {
+      prompt: 'notes.review',
+      a: 'hash:h1',
+      b: 'hash:h2',
+      tenant: 'tenant-a',
+      transcripts: '20',
+      json: true,
+    });
+    const json = JSON.parse(logs.at(-1) ?? '{}');
+    expect(json.worstTranscripts.a).toHaveLength(20);
+    expect(
+      json.worstTranscripts.a.map((row: { id: string }) => row.id),
+    ).toEqual(result.a.transcripts.slice(0, 20).map((ref) => ref.id));
+  });
+
   it('emits JSON and refuses a read without a tenant scope', async () => {
     await aiCompareCommand.handler?.([], {
       prompt: 'notes.review',
