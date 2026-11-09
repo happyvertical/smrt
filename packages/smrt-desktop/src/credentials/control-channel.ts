@@ -198,7 +198,8 @@ export interface ControlChannelSendOptions {
  * `endpoint` is the `endpoint` of a `ready` rendezvous result: the handle only
  * `createFileRendezvous` can mint, after its custody checks. Nothing else is
  * accepted (a raw `ControlEndpoint`, a look-alike object, a missing handle),
- * so the credential flow cannot be pointed at an endpoint nobody vetted. On
+ * so this helper cannot be pointed at an endpoint nobody vetted (the provider
+ * itself takes any `send`, so this is a guided path, not a barrier). On
  * Windows a `ready` result has a handle only if the shell supplied `vetPipe`.
  * Throws `invalid_endpoint` for anything else.
  *

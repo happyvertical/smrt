@@ -541,7 +541,7 @@ its peer's uid or SID, and a client cannot learn who owns the listening end. So
 | `not_installed` | `locate()` found no installed product |
 | `not_running` | no live instance (`status()`, or `ensureReady({start:false})`) |
 | `untrusted_state` | the installation, record, directory, socket or peer failed a custody or protocol check; nothing was started |
-| `unresponsive` | something holds the control endpoint (it accepted the connection, or never answered) but gave no usable answer, for example a saturated server dropping connections past its limit; nothing was started, try again later |
+| `unresponsive` | something holds the control endpoint (it accepted the connection, or never answered) but gave no usable answer, for example a saturated server dropping connections past its limit; nothing was started, try again later. If it persists the shell is wedged: quit the app or kill the shell process by hand (a client never does) |
 | `timeout` | not ready within the budget |
 
 Cancelling with the `AbortSignal` rejects with the signal's reason. A result
@@ -553,7 +553,11 @@ carries `endpoint`, a `VettedEndpoint`: an opaque branded handle that only the
 vetting code can mint (a run-time registry, not just the type, so a look-alike
 object is rejected) and that serializes as `{}`, with no path or pipe name in
 it. `createControlChannelSend(endpoint)` accepts nothing else and throws
-`invalid_endpoint` for a raw `ControlEndpoint`, a copy or a missing handle. The
+`invalid_endpoint` for a raw `ControlEndpoint`, a copy or a missing handle.
+That is a guided path, not a barrier: only `createControlChannelSend` enforces
+the handle, `createControlChannelCredentialProvider({ send })` accepts any
+`send` and `credentialControlCodec` is exported, so code that wants to can
+still talk to an arbitrary endpoint. The
 handle is issued after the checks of step 3 and the nonce proof of step 4, for
 that record's endpoint only. It states what was true at that moment: the
 connect that follows is not atomic with the check, which is why the credential
@@ -596,8 +600,13 @@ is not tampering and does not become `untrusted_state`. What is still rejected,
 as `untrusted_state`, is a malformed shape: a non-string, a string that is not a
 short lowercase snake_case word, or a client-only code (`launch_failed`,
 `instance_mismatch`, `identity_mismatch`, `unsupported_contract`) reported by a
-shell. Reading is lenient and writing is strict: a codec never *encodes* a code
-that is not in its own list.
+shell. Reading is lenient and writing is strict, for both kinds of code: a
+codec's `encodeResponse` rejects (`invalid_control_message`) an `ok: false`
+code outside its own error-code list and a `failed` state answer whose `code`
+is outside `SHELL_FAILURE_CODES`, and `serializeInstanceRecord` rejects
+(`invalid_field`) a `failure` outside that list. Nothing is rewritten on the
+way out. Only reading normalizes: the same `failed` answer or `instance.json`
+parsed from a peer yields `unknown`.
 
 **`ensureReady({ timeoutMs = 60000, start = true, signal })`:**
 
@@ -609,13 +618,24 @@ that is not in its own list.
    private directory, so no second shell is started on top of it.
 4. Ask `status`. Only proof that nobody listens (the socket is missing, or the
    connection is refused: `ENOENT`, `ENOTDIR`, `ECONNREFUSED`) means the record
-   is stale: go to step 5. A connection that was accepted and then reset,
+   is stale: go to step 5. *Platform limit:* on macOS/BSD a unix `connect()` to
+   a socket whose accept queue is full also fails with `ECONNREFUSED` (Linux
+   returns `EAGAIN`, which is read as `unresponsive`), so a live shell that is
+   wedged and has a full backlog can be classed stale there and a second shell
+   spawned. Node cannot tell the two apart. The writer lease below is then the
+   only exclusion: the second shell fails `lease_held`, writes nothing and
+   leaves the record alone. A connection that was accepted and then reset,
    closed or left unanswered is not stale: the server drops connections past
    `maxConnections`, and an `ensure-ready` long poll can hold a slot for up to
    600 s, so a busy instance looks exactly like that. It reports
    `unresponsive` (from `status`), or, inside `ensureReady`, keeps asking
-   `status` until the budget ends and then returns `unresponsive`; it never
-   starts a second shell on top of it. A nonce, product or origin
+   `status` until the budget ends and then returns `unresponsive` (or
+   `timeout`, if this call had already seen a nonce-verified `starting`: the
+   instance was alive and booting and the budget simply ran out); it never
+   starts a second shell on top of it. A holder that stays `unresponsive` is
+   a wedged shell the client must not repair: recovery is manual, so quit the
+   app (tray Quit) or kill the shell process, after which the record goes
+   stale and the next `ensureReady` starts a fresh instance. A nonce, product or origin
    disagreement is re-read once, then `instance_mismatch`. `ready` is returned. `failed(code)` is
    returned and never retried: a live shell that failed is not a reason to
    start another. `starting` waits with `ensure-ready` for the remaining
@@ -913,7 +933,8 @@ whole path over a real unix socket.
 `createControlChannelCredentialProvider({ send })` is the launcher side. `send`
 is injected (`createControlChannelSend(result.endpoint)` implements it over the
 rendezvous transport and `credentialControlCodec`, and accepts only the vetted
-handle of a `ready` result); the provider validates the nonce and origin before
+handle of a `ready` result; that vetting is enforced by this helper alone, and
+the provider will take any `send`); the provider validates the nonce and origin before
 sending, applies a timeout (default 2 s) and the caller's `AbortSignal`,
 decodes the reply strictly, requires the reply to **echo the requested
 `instanceNonce`** (`instance_mismatch` otherwise: the reply is bound to the
@@ -1007,7 +1028,7 @@ so; those parts are not claimed closed by this package.
 | T7 | Replay after rotation | Server: only the latest write verifies (`app-runtime/src/local-mcp-tokens.test.ts`: `mints, rotates, expires and revokes a private owner slot without colliding with operator tokens`). Custody replaces atomically and the handler reads it on every call; the pipe delivers the new bearer on refresh. | `credentials/control-handler.test.ts`: `T7: after rotation the handler returns only the latest bearer`; `credentials/bridge-spawn.test.ts`: `T7: a refresh request after a simulated 401 delivers the rotated token`; `credentials/custody.test.ts`: `replaces atomically: a later put wins and old bytes are gone`; over a real socket, `credentials/end-to-end.test.ts`: `yields only the latest token after a rotation`. |
 | T8 | Confused deputy via the control channel | **TypeScript (built):** `acquire-credential` is bound to the current `instanceNonce` and `origin` and refuses before touching custody; the reply echoes the nonce and the provider rejects a mismatch; the credential flow only accepts the endpoint handle the rendezvous vetted; the test-double server answers one request per connection. This defeats a stale or wrong-instance caller, not a same-user one: the nonce and origin are readable by any process of the same OS user (0600 `instance.json`), so they do not bound that caller. **Rust shell (not built):** the real control server and its peer check, which today would be uid/SID only (see "Same-user processes"). | `credentials/control-handler.test.ts`: `T8: wrong nonce or origin yields instance_mismatch without touching custody`; `credentials/provider.test.ts`: `binds the reply to the instance status proved: rejects a reply that echoes another nonce, or none`; over a real socket, `credentials/end-to-end.test.ts`: `answers a wrong instance nonce or origin with instance_mismatch`, `only takes the endpoint the rendezvous vetted: a raw endpoint or a look-alike is refused`. Foreign peer is a Rust test (not built). |
 | T9 | TOCTOU on state files | Readers open `O_NOFOLLOW` and validate the descriptor; writers use temp (`O_EXCL`) plus rename; clients never repair or delete. | `credentials/slot-record.test.ts`: `T9: a symlink swapped in for the record is never followed or repaired`; `persists the slot before the first request can be made` (write order); the stage-1 `internal/private-file.test.ts`. |
-| T10 | Windows named-pipe squatting | **TypeScript (built):** a random per-start pipe name; the provider opens no endpoint of its own; the credential flow takes only a vetted handle, and on Windows a `ready` result has none unless the shell injects `vetPipe` (fail closed). **TypeScript does not vet pipes**: there is no owner, SID or DACL check in this package. **Rust shell (not built):** `FILE_FLAG_FIRST_PIPE_INSTANCE`, the DACL and the server pid/SID check, and the `vetPipe` function itself. | `credentials/provider.test.ts`: `T10: talks only through the injected send and never opens an endpoint itself`; `rendezvous/file-rendezvous-win32.test.ts`: `returns ready WITHOUT a vetted endpoint when the shell supplied no vetting function (fail closed)`. Name grammar belongs to contract (b)'s tests; the "second `CreateNamedPipe` fails" test is a Windows Rust test (not built). Residual: a Node client cannot query the server pid/SID. |
+| T10 | Windows named-pipe squatting | **TypeScript (built):** a random per-start pipe name; the provider opens no endpoint of its own; `createControlChannelSend` takes only a vetted handle (a guided path: the provider takes any `send`), and on Windows a `ready` result has none unless the shell injects `vetPipe` (fail closed). **TypeScript does not vet pipes**: there is no owner, SID or DACL check in this package. **Rust shell (not built):** `FILE_FLAG_FIRST_PIPE_INSTANCE`, the DACL and the server pid/SID check, and the `vetPipe` function itself. | `credentials/provider.test.ts`: `T10: talks only through the injected send and never opens an endpoint itself`; `rendezvous/file-rendezvous-win32.test.ts`: `returns ready WITHOUT a vetted endpoint when the shell supplied no vetting function (fail closed)`. Name grammar belongs to contract (b)'s tests; the "second `CreateNamedPipe` fails" test is a Windows Rust test (not built). Residual: a Node client cannot query the server pid/SID. |
 | T11 | Token in error messages | Code-only errors; parsers never echo input; the webview helper replaces every `fetch`/`invoke` rejection with a fixed code and does not chain it. | `credentials/mint-response.test.ts`: `T11: never echoes the body or the token in any failure`; `webview/webview.test.ts`: `T11: a token-bearing malformed body yields a fixed-code error without the token`; `credentials/leak.test.ts`: `the webview helper maps token-bearing failures to fixed codes` and the `T5/T11` describe. |
 | T12 | Port squatting after ready | The credential is released only for the nonce and origin the channel confirms; the provider requires the reply to echo the requested nonce and its origin to equal the requested origin. | `credentials/control-handler.test.ts`: `T12: an origin that differs from the running instance never gets a token`; `credentials/provider.test.ts`: `T12: rejects a lease whose origin differs from the origin it asked about`, `binds the reply to the instance status proved: rejects a reply that echoes another nonce, or none`. Nonce echo in the health route is optional (design D5). |
 | T13 | Credential sent to a non-owned endpoint | Origin grammar `http://127.0.0.1:<1..65535>` everywhere (no `localhost`, no `[::1]`, no https, no path or userinfo); the bridge pins the origin from the frame. | `credentials/handoff-frame.test.ts`: `T13: only the exact loopback origin grammar is accepted`; `credentials/provider.test.ts`: `T13: only the loopback origin grammar is ever accepted in a reply`; `credentials/bridge-spawn.test.ts`: `T13: refuses a lease for a non-loopback origin`. |

@@ -14,6 +14,7 @@ import {
 } from '../internal/strict-json.js';
 import { type ControlEndpoint, parseControlEndpoint } from './endpoint.js';
 import {
+  isShellFailureCode,
   normalizeShellFailureCode,
   type ShellFailureCode,
 } from './failure-code.js';
@@ -92,7 +93,10 @@ function invalid(field: string): DesktopContractError {
   return new DesktopContractError('invalid_field', { field });
 }
 
-function validateInstanceRecord(input: unknown): InstanceRecordV1 {
+function validateInstanceRecord(
+  input: unknown,
+  strict = false,
+): InstanceRecordV1 {
   if (!isRecord(input)) throw new DesktopContractError('invalid_document');
   if (!Object.hasOwn(input, 'version')) {
     throw new DesktopContractError('invalid_document');
@@ -141,7 +145,12 @@ function validateInstanceRecord(input: unknown): InstanceRecordV1 {
   let failureCode: ShellFailureCode | undefined;
   if (state === 'failed') {
     // A code from a newer shell reads as `unknown`, never as tampering.
-    failureCode = normalizeShellFailureCode(failure);
+    // Serializing is strict: a code outside the closed list is not written.
+    failureCode = strict
+      ? isShellFailureCode(failure)
+        ? failure
+        : undefined
+      : normalizeShellFailureCode(failure);
     if (failureCode === undefined) throw invalid('failure');
   } else if (failure !== undefined) {
     throw invalid('failure');
@@ -189,7 +198,7 @@ export function parseInstanceRecord(json: string): InstanceRecordV1 {
  * @experimental
  */
 export function serializeInstanceRecord(record: InstanceRecordV1): string {
-  const r = validateInstanceRecord(record);
+  const r = validateInstanceRecord(record, true);
   return `${JSON.stringify(
     {
       version: r.version,

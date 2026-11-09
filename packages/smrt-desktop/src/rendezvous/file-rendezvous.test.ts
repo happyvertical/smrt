@@ -442,6 +442,49 @@ posixOnly(
         }
       });
 
+      it('reports timeout, not unresponsive, when the budget ends after a verified starting and the shell then stops answering', async () => {
+        const net = await import('node:net');
+        const path = `${dir}/c-aaaabbbbccccddddeeeeffff00002222.sock`;
+        let answered = 0;
+        const wedged = net.createServer((socket) => {
+          socket.on('error', () => {});
+          socket.on('data', () => {
+            answered += 1;
+            if (answered === 1) {
+              socket.end(
+                `${JSON.stringify({
+                  v: 1,
+                  ok: true,
+                  state: 'starting',
+                  instanceNonce: NONCE_B,
+                  productId: PRODUCT,
+                })}\n`,
+              );
+            } else {
+              socket.destroy(); // alive, but every later connection is dropped
+            }
+          });
+        });
+        await new Promise<void>((resolve) => wedged.listen(path, resolve));
+        chmodSync(path, 0o600);
+        try {
+          writeRecord(
+            recordText({
+              control: { kind: 'unix', path },
+              state: 'ready',
+              origin: ORIGIN,
+            }),
+          );
+          expect(await make().ensureReady({ timeoutMs: 300 })).toEqual({
+            state: 'timeout',
+          });
+          expect(answered).toBeGreaterThan(1);
+          expect(spawnShell).not.toHaveBeenCalled();
+        } finally {
+          wedged.close();
+        }
+      });
+
       it('times out while a live shell stays in starting', async () => {
         await boot();
         expect(await make().ensureReady({ timeoutMs: 150 })).toEqual({

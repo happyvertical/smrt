@@ -140,6 +140,24 @@ describe('instance record v1', () => {
     }
   });
 
+  it('serializes strictly: an unlisted failure code is refused, not rewritten', () => {
+    const failed = parse({
+      state: 'failed',
+      origin: undefined,
+      failure: 'disk_on_fire',
+    });
+    // The lenient read normalized it; the record is now a listed code.
+    expect(serializeInstanceRecord(failed)).toContain('"failure": "unknown"');
+    expect(
+      failure(() =>
+        serializeInstanceRecord({
+          ...failed,
+          failure: 'future_code',
+        } as never),
+      ).code,
+    ).toBe('invalid_field');
+  });
+
   it('rejects missing and unknown fields', () => {
     for (const key of [
       'productId',

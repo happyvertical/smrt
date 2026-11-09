@@ -27,8 +27,12 @@ refuses to start without `insecureForTests: true`.
 Clients are read-only: never write, rename or delete a record, socket, lease or
 lock, and never retry `failed(lease_held)`. A connection that was accepted and
 then dropped or left unanswered is `unresponsive`, never a stale endpoint: do
-not spawn. The credential flow takes only the vetted `endpoint` handle of a
-`ready` result (none on Windows without a shell-supplied `vetPipe`), and the
+not spawn. `createControlChannelSend` takes only the vetted `endpoint` handle of a
+`ready` result (none on Windows without a shell-supplied `vetPipe`); that is a
+guided path, not a barrier: `createControlChannelCredentialProvider({ send })`
+accepts any `send` and `credentialControlCodec` is exported. Also, on macOS/BSD
+a full accept queue is `ECONNREFUSED` (stale) where Linux gives `EAGAIN`, so
+the writer lease is the only exclusion there. The
 `acquire-credential` reply must echo the `instanceNonce`. Node cannot verify the control
 channel's peer, so the real check lives in the Rust shell; keep that stated.
 Control ops are extensible (`ControlOpSpec`, `createControlCodec`, handler
