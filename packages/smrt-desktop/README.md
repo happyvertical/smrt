@@ -541,6 +541,16 @@ and test doubles:
 | `identity_mismatch` | client | the installed product's identity differs from the record (benign after an update until the app restarts) |
 | `unsupported_contract` | client | a record or channel speaks a contract version this client rejects |
 
+**Newer shells.** A failure code this client has never heard of (a newer shell
+added one), in an answer or in `instance.json`, is read as `unknown`, and an
+unrecognised refusal code as `internal` (also `failed(unknown)`): version skew
+is not tampering and does not become `untrusted_state`. What is still rejected,
+as `untrusted_state`, is a malformed shape: a non-string, a string that is not a
+short lowercase snake_case word, or a client-only code (`launch_failed`,
+`instance_mismatch`, `identity_mismatch`, `unsupported_contract`) reported by a
+shell. Reading is lenient and writing is strict: a codec never *encodes* a code
+that is not in its own list.
+
 **`ensureReady({ timeoutMs = 60000, start = true, signal })`:**
 
 1. `locate()` the installation (contract a). `not_installed` and the locate

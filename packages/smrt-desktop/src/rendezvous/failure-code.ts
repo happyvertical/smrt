@@ -64,6 +64,35 @@ export function isRendezvousFailureCode(
   return typeof value === 'string' && allCodes.includes(value);
 }
 
+const clientCodes: readonly string[] = CLIENT_FAILURE_CODES;
+const FORWARD_CODE = /^[a-z][a-z0-9_]{0,63}$/;
+
+/**
+ * Normalize a failure code read from the wire or from `instance.json`.
+ *
+ * A known shell code is returned as is. A code this client has never heard of
+ * (a newer shell added one) becomes `unknown`, so a version skew is not
+ * mistaken for tampering. Still rejected (`undefined`): a non-string, a string
+ * that is not a short lowercase snake_case word, and a code only a client may
+ * produce (`launch_failed`, `instance_mismatch`, ...): a shell reporting one
+ * of those is malformed, not newer.
+ */
+export function normalizeShellFailureCode(
+  value: unknown,
+): ShellFailureCode | undefined {
+  if (typeof value !== 'string') return undefined;
+  if (shellCodes.includes(value)) return value as ShellFailureCode;
+  if (clientCodes.includes(value) || !FORWARD_CODE.test(value)) {
+    return undefined;
+  }
+  return 'unknown';
+}
+
+/** True for a short lowercase snake_case word (a forward-compatible code). */
+export function isForwardCompatibleCode(value: unknown): value is string {
+  return typeof value === 'string' && FORWARD_CODE.test(value);
+}
+
 /**
  * Map the current Rust supervisor `Failed` text to a code. Order matters: the
  * underlying cause wins over the generic "gave up after N restarts" suffix.
