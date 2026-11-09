@@ -51,6 +51,13 @@ export function createInferenceResolver(
     const mode = base.mode.bind(base);
     resolver.mode = (request) => mode(request);
   }
+  // Forward the #4800 fusion lookup the same way: stored fusions (app
+  // override rows) reach the executor through core's `lookupFusion()`.
+  if (base && typeof base.lookupFusion === 'function') {
+    const lookupFusion = base.lookupFusion.bind(base);
+    resolver.lookupFusion = (key, request, context) =>
+      lookupFusion(key, request, context);
+  }
   resolver[OWN_RESOLVER] = true;
   return resolver;
 }

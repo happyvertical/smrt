@@ -50,7 +50,11 @@ Consumer guide: [docs/content/inference-settings.md](../../../docs/content/infer
   `inheritedTarget` = config + app row), plus `getDefaultTierSetting()`,
   `listInferenceAliases()`, `listInferenceFusions()` (registry: the
   `registryFusions` option, default #4753's `defineFusion()` registry;
-  config `inference.fusions`; editable app rows). Writes go through `InferenceOverrideService`
+  config `inference.fusions`; editable app rows), each entry with
+  `shadows` (lower sources it replaces by name) and `issues` (what would make
+  the executor refuse it, prompt keys included), the executor's precedence
+  (#4800). `setFusion()` refuses credential members, then a definition that
+  adds a structural issue. Writes go through `InferenceOverrideService`
   (authorizer first, fails closed; without `authorize` the service is
   read-only) and refuse a value that adds a config issue to the layer it
   lands in; removing an app alias or fusion that any row (every tenant) or
@@ -82,10 +86,14 @@ Consumer guide: [docs/content/inference-settings.md](../../../docs/content/infer
   allow-list and policy are re-applied on every call, and only the requested
   tier's chain is validated, so one dangling reference fails one tier.
   Compose it as the per-user resolver's `fallback` (see AGENTS.md,
-  "Resolver composition"). App-row fusions are not yet visible to the
-  executor (it reads the process config and the `defineFusion()` registry):
-  a tier bound to a fusion defined only in an app row fails loudly
-  (`fusion-unknown`) until stored fusions reach the executor (#4800).
+  "Resolver composition"). Its `lookupFusion()` (#4800) answers core's
+  executor lookup from app rows only (read with no tenant, so a tenant row
+  never defines a fusion), validated against config + app rows with every
+  seat prompt key (`InferenceConfigError`, paths `fusion:<name>…`), app-only
+  seat aliases inlined like tier aliases; an app row that exists but cannot
+  be read fails `fusion-invalid` (never its value) rather than deferring (the
+  list shows it as the app winner with that issue); no app row defers to
+  `base`, then config. An app row shadows a config fusion of the same name.
 - **Panel** (`src/svelte`): built like `PromptSettingsPanel` (presentational,
   `svelte` optional peer, prune script, two-project Vitest, `svelte-check`,
   named `$props()` interfaces, types free of core). The default view is the

@@ -87,7 +87,15 @@ uses it (`undefined` without one), recording its usage row with the given
 tags; `recordRun(record)`, the `_smrt_ai_runs` writer
 ([ai-usage.md](ai-usage.md#run-records-_smrt_ai_runs-4753)); and
 `observeUsage(runId, listener)`, which feeds the run's normalized usage
-events back for per-seat totals. Seat usage rows carry `runId` (lifted to
+events back for per-seat totals; and `lookupFusion(key)` (#4800):
+`lookupInferenceFusion(key, request, { resolver, config })` with the
+instance's scope, asking the resolver's optional `lookupFusion(key, request,
+context)` first (`source: 'resolver'`; smrt-inference's override resolver
+answers from app rows), then the merged `inference.fusions` (`source:
+'config'`), else `undefined` (the executor then reads its `defineFusion()`
+registry). A resolver answer shadows a config fusion of the same name, as
+stored bindings shadow config; core checks only its shape (`seats` array)
+and the executor validates it before running. Seat usage rows carry `runId` (lifted to
 `run_id`), `fusionKey` and `seat` tags.
 
 ## Clients and calls

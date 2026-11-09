@@ -53,8 +53,14 @@ function save(event: SubmitEvent, existing?: string): void {
       <div class="ifl-head">
         <strong>{fusion.name}</strong>
         <span class="ifl-label">{fusion.source}</span>
+        {#if fusion.shadows?.length}<span class="ifl-label">replaces {fusion.shadows.join(', ')}</span>{/if}
         {#if fusion.description}<span class="ifl-label">{fusion.description}</span>{/if}
       </div>
+      {#if fusion.issues?.length}
+        <ul class="ifl-label" role="alert" data-testid="inference-fusion-issues">
+          {#each fusion.issues as issue (issue.path + issue.message)}<li>{issue.message}</li>{/each}
+        </ul>
+      {/if}
       {#if editable && fusion.editable}
         <form onsubmit={(event) => save(event, fusion.name)}>
           <textarea

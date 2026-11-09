@@ -95,6 +95,38 @@ function layerFromRows(
   return layer;
 }
 
+/**
+ * True when an app `fusion:<name>` row holds a value that cannot be read
+ * (not JSON, not an object, a credential-shaped member). Such a row never
+ * takes effect, but it must not let a lower fusion of the same name run in
+ * its place without a word (#4800): the executor lookup refuses it and the
+ * settings list reports it.
+ */
+export function isUnreadableFusionRow(
+  row: InferenceOverride | undefined,
+): boolean {
+  if (!row || row.target === null || row.target === undefined) return false;
+  try {
+    row.getValue();
+    return false;
+  } catch {
+    return true;
+  }
+}
+
+/** The issue reported for an unreadable app fusion row (never its value). */
+export function unreadableFusionIssue(name: string): {
+  path: string;
+  code: 'fusion-invalid';
+  message: string;
+} {
+  return {
+    path: `fusion:${name}`,
+    code: 'fusion-invalid',
+    message: `app row fusion:${name} cannot be read (not a JSON object, or a credential-shaped member); fix or remove it`,
+  };
+}
+
 /** The raw rows of the app scope and (with a tenant) one tenant scope. */
 export interface InferenceOverrideRows {
   tenantId: string | null;

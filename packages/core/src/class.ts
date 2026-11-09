@@ -79,6 +79,7 @@ import {
   getInferenceConfig as getProcessInferenceConfig,
   InferenceBindingError,
   type InferenceConfig,
+  type InferenceFusionLookup,
   type InferenceLatency,
   type InferenceModelClient,
   type InferenceRequest,
@@ -94,6 +95,7 @@ import {
   inferenceModeForTarget,
   inferenceTargetKind,
   inferenceUsageTags,
+  lookupInferenceFusion as lookupInferenceFusionBinding,
   mergeInferenceConfigs,
   resolveInference as resolveInferenceBinding,
   resolveInferenceMode,
@@ -1036,6 +1038,7 @@ export class SmrtClass {
           recordRun: (record) => this.recordInferenceRun(record),
           observeUsage: (runId, listener) =>
             this.observeRunUsage(runId, listener),
+          lookupFusion: (key) => this.lookupInferenceFusion(key, request),
         }) as unknown as AIClient;
       }
       return this.getAiClientForTarget(
@@ -1510,6 +1513,28 @@ export class SmrtClass {
   ): Promise<InferenceResolution> {
     const { resolver, tenantId, userId } = this.inferenceRequestScope();
     return resolveInferenceBinding(
+      {
+        className: this._className,
+        ...(tenantId !== undefined ? { tenantId } : {}),
+        ...(userId === null ? { userId: null } : {}),
+        ...request,
+      },
+      { resolver, config: this.getInferenceConfig() },
+    );
+  }
+
+  /**
+   * The fusion definition `key` runs (#4800): the instance's (or the
+   * registered) resolver's stored layer, then the merged `inference.fusions`.
+   * Same scope as {@link resolveInferenceTier}; never calls a model.
+   */
+  protected async lookupInferenceFusion(
+    key: string,
+    request: InferenceRequest,
+  ): Promise<InferenceFusionLookup | undefined> {
+    const { resolver, tenantId, userId } = this.inferenceRequestScope();
+    return lookupInferenceFusionBinding(
+      key,
       {
         className: this._className,
         ...(tenantId !== undefined ? { tenantId } : {}),

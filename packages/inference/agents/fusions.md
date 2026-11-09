@@ -2,7 +2,10 @@
 
 `src/fusion.ts` runs `{ fusion: '<key>' }` tier targets. SMRT ships the
 interpreter and the vocabulary, never a fusion: modes are code, fusions are
-config. A fusion comes from `inference.fusions.<key>` (app config, wins) or
+config. A fusion comes from, highest first (each replaces a lower one whole):
+the registered resolver's stored layer through core's
+`context.lookupFusion(key)` (#4800; the override resolver's app rows),
+`inference.fusions.<key>` (app config), or
 `defineFusion({ key, mode, seats, gate?, description? })` (process registry
 on `globalThis`). A seat is `{ name?, prompt, target, temperature?, output? }`:
 `prompt` is a smrt-prompts key whose resolved template (code default,
@@ -88,5 +91,15 @@ await contract.do('Summarize this contract', { tier: 'best' }); // unchanged cal
 - **Fusions are app-scope only.** A fusion multiplies hosted model spend
   per call, so a tenant never defines or redefines one; with #4754's
   allow-list a tenant may bind a tier to a listed fusion (`fusion:<n>`).
-  The executor reads fusions from app config and `defineFusion()`; a fusion
-  defined only in an app override row fails `fusion-unknown` until #4800.
+- **Stored fusions (#4800).** Core hands the executor
+  `context.lookupFusion(key)`: the instance's (or registered) resolver's
+  optional `lookupFusion(key, request, context)`, then the merged
+  `inference.fusions`; `undefined` falls to the registry. Without it (older
+  cores) the executor reads config, then the registry, and validates at bind
+  time; with it the lookup starts at bind time and an unknown or invalid
+  fusion fails the first call before any seat runs (nothing recorded). Every
+  definition, whatever its source, is validated before it runs (structure
+  against the call's aliases, every seat prompt key); a resolver's answer
+  fails under path `resolver.fusions.<key>`. The #4752 validating wrapper
+  and the #4756 user resolver forward `lookupFusion` to their base /
+  `fallback` (stored user and tenant configs never define a fusion).

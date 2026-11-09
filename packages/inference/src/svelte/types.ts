@@ -170,6 +170,10 @@ export interface InferenceFusionView {
   definition: Record<string, unknown>;
   description?: string;
   editable?: boolean;
+  /** Lower sources this definition replaces by name (#4800). */
+  shadows?: Array<'registry' | 'config'>;
+  /** Why the executor would refuse to run it (#4800); absent when it runs. */
+  issues?: Array<{ path: string; message: string }>;
 }
 
 /** Usage report (`reportAiUsage()`, #4751), structurally. */

@@ -472,6 +472,13 @@ export function createUserInferenceResolver(
         : { mode: chosen.mode };
     },
 
+    // Fusions are app-scope only (#4753): stored user and tenant configs
+    // never define one, so the lookup is the fallback's (override rows,
+    // #4800) or none (core then reads `inference.fusions`).
+    async lookupFusion(key, request, context) {
+      return options.fallback?.lookupFusion?.(key, request, context);
+    },
+
     async resolveBindings(bindingOptions = {}) {
       const redact = bindingOptions.redact !== false;
       // Identity is ambient only: no caller-chosen tenant or user.

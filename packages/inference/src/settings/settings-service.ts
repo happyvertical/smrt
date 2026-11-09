@@ -25,6 +25,7 @@ import {
   type InferenceAlias,
   type InferenceCandidate,
   type InferenceConfig,
+  type InferenceFusionDefinition,
   type InferenceTarget,
   type InferenceTier,
   type InferenceTranscriptsConfig,
@@ -34,7 +35,11 @@ import {
   type SmrtClassOptions,
   type SmrtCollectionOptions,
 } from '@happyvertical/smrt-core';
-import { findInferenceConfigIssues } from '../config.js';
+import {
+  findFusionDefinitionIssues,
+  findFusionDefinitionPromptIssues,
+  findInferenceConfigIssues,
+} from '../config.js';
 import { getFusion, listFusions } from '../fusion.js';
 import { APP_INFERENCE_SCOPE_ID } from '../models/InferenceOverride.js';
 import {
@@ -56,8 +61,10 @@ import {
 import {
   type InferenceOverrideLayers,
   type InferenceSettingsConfig,
+  isUnreadableFusionRow,
   loadInferenceOverrideLayers,
   mergeSettingsConfigs,
+  unreadableFusionIssue,
 } from './layers.js';
 import {
   type InferenceOverrideAuthorizer,
@@ -70,6 +77,7 @@ import {
   INFERENCE_BINDING_NAME_PATTERN,
   InferenceBindingValueError,
   type InferenceTranscriptSettingsValue,
+  normalizeFusionDefinition,
   stripKeyMembers,
   TRANSCRIPTS_BINDING,
   tierBinding,
@@ -151,6 +159,18 @@ export interface InferenceFusionSetting {
   description?: string;
   /** Config entries (app rows) can be edited as JSON; registry fusions are code. */
   editable: boolean;
+  /**
+   * Lower sources this definition replaces by name (#4800): an app row
+   * shadows config and the registry, config shadows the registry, exactly
+   * as the executor picks. Absent when nothing is shadowed.
+   */
+  shadows?: Array<'registry' | 'config'>;
+  /**
+   * Why the executor would refuse to run this definition (structure,
+   * aliases, unregistered seat prompt keys), checked as the executor
+   * checks it (#4800). Absent when it would run.
+   */
+  issues?: InferenceConfigIssue[];
 }
 
 /**
@@ -567,56 +587,111 @@ export class InferenceSettingsService {
   /**
    * Fusions from the host's registry (code, read-only), the config's
    * `inference.fusions`, and app rows (editable JSON). A later source
-   * shadows an earlier one by name.
+   * shadows an earlier one by name, the executor's precedence (#4800): app
+   * row, then config, then registry. Each entry carries the issues that
+   * would make the executor refuse it, so the list shows what would run.
    */
   async listInferenceFusions(): Promise<InferenceFusionSetting[]> {
     const layers = await this.loadLayers(null);
+    const config = this.readConfig() as InferenceSettingsConfig | undefined;
+    const merged = mergeSettingsConfigs(config, layers.app);
     const out = new Map<string, InferenceFusionSetting>();
+    const put = (
+      setting: InferenceFusionSetting,
+      raw: unknown,
+      path: string,
+      against: InferenceConfig | undefined,
+    ) => {
+      const previous = out.get(setting.name);
+      const shadows = previous
+        ? [
+            ...(previous.shadows ?? []),
+            previous.source as 'registry' | 'config',
+          ]
+        : [];
+      const issues = [
+        ...findFusionDefinitionIssues(raw, path, against),
+        ...findFusionDefinitionPromptIssues(raw, path),
+      ];
+      if (shadows.length > 0) setting.shadows = shadows;
+      if (issues.length > 0) setting.issues = issues;
+      out.set(setting.name, setting);
+    };
     const registry = this.options.registryFusions ?? defaultRegistryFusions;
     for (const fusion of registry()) {
       if (!fusion || typeof fusion.key !== 'string') continue;
       const definition = stripKeyMembers(
         JSON.parse(JSON.stringify(fusion)) as Record<string, unknown>,
       );
-      out.set(fusion.key, {
-        name: fusion.key,
-        source: 'registry',
-        definition,
-        description:
-          typeof fusion.description === 'string'
-            ? fusion.description
-            : undefined,
-        editable: false,
-      });
+      const { key: _key, ...raw } = fusion;
+      put(
+        {
+          name: fusion.key,
+          source: 'registry',
+          definition,
+          description:
+            typeof fusion.description === 'string'
+              ? fusion.description
+              : undefined,
+          editable: false,
+        },
+        raw,
+        `fusions.${fusion.key}`,
+        config,
+      );
     }
-    const configFusions = (this.readConfig() as InferenceSettingsConfig)
-      ?.fusions;
-    if (isRecord(configFusions)) {
-      for (const [name, definition] of Object.entries(configFusions)) {
+    if (isRecord(config?.fusions)) {
+      for (const [name, definition] of Object.entries(config.fusions)) {
         if (!isRecord(definition)) continue;
-        out.set(name, {
+        put(
+          {
+            name,
+            source: 'config',
+            definition: stripKeyMembers(definition),
+            description:
+              typeof definition.description === 'string'
+                ? definition.description
+                : undefined,
+            editable: false,
+          },
+          definition,
+          `inference.fusions.${name}`,
+          config,
+        );
+      }
+    }
+    for (const [name, definition] of Object.entries(layers.app.fusions ?? {})) {
+      put(
+        {
           name,
-          source: 'config',
-          definition: stripKeyMembers(definition),
+          source: 'app',
+          definition: definition as unknown as Record<string, unknown>,
           description:
             typeof definition.description === 'string'
               ? definition.description
               : undefined,
-          editable: false,
-        });
-      }
+          editable: true,
+        },
+        definition,
+        `fusion:${name}`,
+        merged,
+      );
     }
-    for (const [name, definition] of Object.entries(layers.app.fusions ?? {})) {
-      out.set(name, {
-        name,
-        source: 'app',
-        definition: definition as unknown as Record<string, unknown>,
-        description:
-          typeof definition.description === 'string'
-            ? definition.description
-            : undefined,
-        editable: true,
-      });
+    // An app row that cannot be read wins the name and is refused by the
+    // executor (#4800); its stored value is never echoed.
+    for (const [binding, row] of layers.appRows) {
+      if (!binding.startsWith('fusion:') || !isUnreadableFusionRow(row)) {
+        continue;
+      }
+      const name = binding.slice('fusion:'.length);
+      put(
+        { name, source: 'app', definition: {}, editable: true },
+        undefined,
+        binding,
+        merged,
+      );
+      const entry = out.get(name);
+      if (entry) entry.issues = [unreadableFusionIssue(name)];
     }
     return [...out.values()].sort((a, b) => a.name.localeCompare(b.name));
   }
@@ -711,6 +786,16 @@ export class InferenceSettingsService {
     if (!INFERENCE_BINDING_NAME_PATTERN.test(String(request.name))) {
       throw new InferenceBindingValueError(binding, 'invalid fusion name');
     }
+    if (request.definition !== null) {
+      // Credential members are refused first (never echoed as config
+      // issues), then a definition that adds a structural issue (#4800).
+      const normalized = normalizeFusionDefinition(binding, request.definition);
+      await this.assertConfigStaysValid('app', APP_INFERENCE_SCOPE_ID, {
+        fusions: {
+          [request.name]: normalized as unknown as InferenceFusionDefinition,
+        },
+      });
+    }
     await this.writes.setValue(
       binding,
       'app',
@@ -741,7 +826,7 @@ export class InferenceSettingsService {
       kind === 'alias'
         ? Object.hasOwn(config?.aliases ?? {}, name)
         : Object.hasOwn(config?.fusions ?? {}, name) ||
-          [...(this.options.registryFusions?.() ?? [])].some(
+          [...(this.options.registryFusions ?? defaultRegistryFusions)()].some(
             (fusion) => fusion?.key === name,
           );
     if (defined) return;

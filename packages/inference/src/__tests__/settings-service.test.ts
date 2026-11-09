@@ -19,6 +19,16 @@ import {
   InvalidInferenceScopeError,
 } from '../server.js';
 
+/** A structurally valid pair (seat prompts are checked at run time). */
+const VALID_PAIR = {
+  mode: 'pair',
+  seats: [
+    { name: 'a', prompt: 'p.a', target: 'good' },
+    { name: 'b', prompt: 'p.b', target: 'good' },
+    { name: 'c', prompt: 'p.c', target: 'great' },
+  ],
+};
+
 const APP = APP_INFERENCE_SCOPE_ID;
 
 describe('InferenceSettingsService', () => {
@@ -391,10 +401,14 @@ describe('InferenceSettingsService', () => {
       authorize: true,
       registry: [{ key: 'draft-handoff', description: 'Draft then review' }],
     });
-    await admin.setFusion({
-      name: 'ab-test',
-      definition: { key: 'ab-test', mode: 'pair', seats: [] },
-    });
+    // #4800: a structurally invalid definition is refused on write.
+    await expect(
+      admin.setFusion({
+        name: 'ab-test',
+        definition: { mode: 'pair', seats: [] },
+      }),
+    ).rejects.toBeInstanceOf(InferenceSettingsConfigError);
+    await admin.setFusion({ name: 'ab-test', definition: VALID_PAIR });
     await expect(
       admin.setFusion({
         name: 'leaky',
@@ -409,11 +423,20 @@ describe('InferenceSettingsService', () => {
       ['draft-handoff', 'registry', false],
       ['review-pair', 'config', false],
     ]);
-    expect((await admin.getEffectiveConfig())?.fusions?.['ab-test']).toEqual({
-      key: 'ab-test',
-      mode: 'pair',
-      seats: [],
-    });
+    expect((await admin.getEffectiveConfig())?.fusions?.['ab-test']).toEqual(
+      VALID_PAIR,
+    );
+    // The list carries what the executor would refuse (#4800): the config
+    // entry is malformed and no seat prompt of the app row is registered.
+    const byName = new Map(fusions.map((fusion) => [fusion.name, fusion]));
+    expect(byName.get('review-pair')?.issues?.map((i) => i.code)).toContain(
+      'fusion-invalid',
+    );
+    expect(byName.get('ab-test')?.issues?.map((i) => i.code)).toEqual([
+      'fusion-prompt-unknown',
+      'fusion-prompt-unknown',
+      'fusion-prompt-unknown',
+    ]);
   });
 
   it('lists defineFusion() registrations by default (#4753 registry)', async () => {
@@ -635,7 +658,7 @@ describe('InferenceSettingsService', () => {
     });
     await admin.setAlias({ name: 'frontier', alias: null });
 
-    await admin.setFusion({ name: 'ab', definition: { mode: 'pair' } });
+    await admin.setFusion({ name: 'ab', definition: VALID_PAIR });
     await admin.setTierOverride({
       tier: 'great',
       scopeType: 'app',

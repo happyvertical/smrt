@@ -9,10 +9,18 @@
  * the process config), so a stored binding to such an alias is returned as
  * the alias's inline candidate chain, expanded recursively; aliases that the
  * config defines stay references.
+ *
+ * Fusions defined in app rows reach the executor through `lookupFusion()`
+ * (#4800, core's `InferenceExecutionContext.lookupFusion`): read from the
+ * app scope only (a tenant never defines a fusion), validated against
+ * config + app rows including every seat's prompt key (an invalid row throws
+ * `InferenceConfigError`, never runs), with app-only seat aliases inlined
+ * the same way. An app row shadows a config fusion of the same name.
  */
 import {
   type InferenceAlias,
   type InferenceCandidate,
+  type InferenceFusionDefinition,
   type InferenceResolver,
   type InferenceTarget,
   type InferenceTier,
@@ -21,14 +29,21 @@ import {
   type SmrtClassOptions,
   type SmrtCollectionOptions,
 } from '@happyvertical/smrt-core';
-import { validateInferenceTarget } from '../config.js';
+import {
+  findFusionDefinitionIssues,
+  findFusionDefinitionPromptIssues,
+  validateInferenceTarget,
+} from '../config.js';
+import { InferenceConfigError } from '../errors.js';
 import { InferenceOverrideCollection } from '../models/InferenceOverrideCollection.js';
 import { getInferenceOverrideGeneration } from './cache.js';
 import {
   buildInferenceOverrideLayers,
   type InferenceOverrideRows,
+  isUnreadableFusionRow,
   mergeSettingsConfigs,
   readInferenceOverrideRows,
+  unreadableFusionIssue,
 } from './layers.js';
 import type { InferenceTenantTargetPolicy } from './override-service.js';
 import { applyStoredTranscriptSettings } from './transcripts.js';
@@ -57,21 +72,61 @@ function expandStoredAliases(
   appAliases: Record<string, InferenceAlias>,
   configAliases: Record<string, InferenceAlias>,
 ): InferenceTarget {
-  if (inferenceTargetKind(target) !== 'alias') return target;
-  const name = target.alias as string;
-  // A config alias the app row does not replace: the executor resolves it.
-  if (!Object.hasOwn(appAliases, name)) return target;
   const expand = (alias: string, seen: Set<string>): InferenceCandidate[] => {
     if (seen.has(alias)) return []; // validated cycle-free before this runs
     const next = new Set(seen).add(alias);
     const definition = appAliases[alias] ?? configAliases[alias];
-    return (definition?.candidates ?? []).flatMap((candidate) =>
+    return inline(definition?.candidates ?? [], next);
+  };
+  // App-only alias candidates are inlined; config aliases stay references.
+  const inline = (
+    candidates: InferenceCandidate[],
+    seen: Set<string>,
+  ): InferenceCandidate[] =>
+    candidates.flatMap((candidate) =>
       candidate.alias && Object.hasOwn(appAliases, candidate.alias)
-        ? expand(candidate.alias, next)
+        ? expand(candidate.alias, seen)
         : [candidate],
     );
-  };
+  const kind = inferenceTargetKind(target);
+  if (kind === 'candidates') {
+    // An inline list (a stored fusion seat, #4800) may name app aliases too.
+    return {
+      ...target,
+      candidates: inline(target.candidates ?? [], new Set()),
+    };
+  }
+  if (kind !== 'alias') return target;
+  const name = target.alias as string;
+  // A config alias the app row does not replace: the executor resolves it.
+  if (!Object.hasOwn(appAliases, name)) return target;
   return { kind: 'candidates', candidates: expand(name, new Set()) };
+}
+
+/**
+ * A stored fusion's seats with app-only aliases inlined as candidate
+ * chains (the executor resolves seat aliases against the process config).
+ */
+function expandStoredFusionAliases(
+  definition: InferenceFusionDefinition,
+  appAliases: Record<string, InferenceAlias>,
+  configAliases: Record<string, InferenceAlias>,
+): InferenceFusionDefinition {
+  return {
+    ...definition,
+    seats: definition.seats.map((seat) =>
+      typeof seat.target === 'string'
+        ? { ...seat }
+        : {
+            ...seat,
+            target: expandStoredAliases(
+              { ...seat.target },
+              appAliases,
+              configAliases,
+            ),
+          },
+    ),
+  };
 }
 
 /** See the module doc. */
@@ -164,6 +219,39 @@ export function createInferenceOverrideResolver(
         ),
         via: 'resolver',
       };
+    },
+
+    async lookupFusion(key, request, context) {
+      // App scope only: the rows are read with no tenant, so a tenant row
+      // (refused on write, but possible from a foreign writer) can never
+      // define or redefine a fusion.
+      const rows = await rowsFor(null);
+      // A row that exists but cannot be read is a load error, never a
+      // silent fall-through to a config or registry fusion of that name.
+      if (isUnreadableFusionRow(rows.appRows.get(`fusion:${key}`))) {
+        throw new InferenceConfigError([unreadableFusionIssue(key)]);
+      }
+      const app = (await buildInferenceOverrideLayers(rows)).app;
+      const stored = Object.hasOwn(app.fusions ?? {}, key)
+        ? app.fusions?.[key]
+        : undefined;
+      if (!stored) {
+        return options.base?.lookupFusion
+          ? options.base.lookupFusion(key, request, context)
+          : undefined;
+      }
+      const merged = mergeSettingsConfigs(context.config, app);
+      const path = `fusion:${key}`;
+      const issues = [
+        ...findFusionDefinitionIssues(stored, path, merged),
+        ...findFusionDefinitionPromptIssues(stored, path),
+      ];
+      if (issues.length > 0) throw new InferenceConfigError(issues);
+      return expandStoredFusionAliases(
+        stored,
+        (app.aliases ?? {}) as Record<string, InferenceAlias>,
+        (context.config?.aliases ?? {}) as Record<string, InferenceAlias>,
+      );
     },
   };
 }
