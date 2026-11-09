@@ -146,8 +146,7 @@ async function upgrade(db: DatabaseInterface, engine: 'sqlite' | 'postgres') {
     outcomes.filter((result) => result.status === 'rejected'),
   ).toHaveLength(1);
   const winner = outcomes.find((result) => result.status === 'fulfilled');
-  if (!winner || winner.status !== 'fulfilled')
-    throw new Error('Missing race winner');
+  if (winner?.status !== 'fulfilled') throw new Error('Missing race winner');
   const retained = await plans.findByPlanKey(tenant, 'racing');
   expect(retained?.id).toBe(winner.value.id);
   expect(retained?.pricingMode).toBe(winner.value.pricingMode);
@@ -250,7 +249,7 @@ async function upgrade(db: DatabaseInterface, engine: 'sqlite' | 'postgres') {
       expect(stalePlan).not.toBeNull();
       stalePlan!.pricingMode = 'fixed';
       stalePlan!.priceAmount = 500;
-      await expect(stalePlan!.save()).rejects.toThrow();
+      await expect(stalePlan?.save()).rejects.toThrow();
       await expect(
         plans.update(String(contextualPlan.id), { minimumAmount: 100 }),
       ).rejects.toThrow();
@@ -260,7 +259,7 @@ async function upgrade(db: DatabaseInterface, engine: 'sqlite' | 'postgres') {
         planId: String(contextualPlan.id),
       });
       expect(contextualSubscription.tenantId).toBe(tenant);
-      await expect(stalePlan!.save()).rejects.toThrow();
+      await expect(stalePlan?.save()).rejects.toThrow();
       const retainedPlan = await plans.get(
         { id: String(contextualPlan.id) },
         { cache: false },
