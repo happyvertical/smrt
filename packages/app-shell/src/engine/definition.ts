@@ -159,7 +159,7 @@ const RESERVED = new Set([
   'typeId',
   'metaType',
 ]);
-const TYPES: FieldType[] = [
+export const FIELD_TYPES: readonly FieldType[] = [
   'text',
   'number',
   'integer',
@@ -170,6 +170,28 @@ const TYPES: FieldType[] = [
   'reference',
   'json',
 ];
+
+const TYPES = FIELD_TYPES;
+
+/** The regular expression field and method names must match (camelCase). */
+export const FIELD_NAME_PATTERN = FIELD_NAME.source;
+
+/** A legal camelCase spelling of a rejected name, e.g. `due_date` -> `dueDate`. */
+export function suggestFieldName(name: string): string | undefined {
+  const words = String(name)
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .split(/[^A-Za-z0-9]+/)
+    .filter(Boolean)
+    .map((w) => w.toLowerCase());
+  if (!words.length || /^[0-9]/.test(words[0])) return undefined;
+  const camel =
+    words[0] +
+    words
+      .slice(1)
+      .map((w) => w[0].toUpperCase() + w.slice(1))
+      .join('');
+  return FIELD_NAME.test(camel) && camel !== name ? camel : undefined;
+}
 
 export const snake = (s: string) =>
   s.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
@@ -313,7 +335,10 @@ export function validate(def: unknown): string[] {
       errs.push(`${m}: a model needs a fields object`);
       continue;
     }
-    if (!MODEL_NAME.test(m)) errs.push(`${m}: model names are PascalCase`);
+    if (!MODEL_NAME.test(m))
+      errs.push(
+        `${m}: model names are PascalCase (e.g. Chore): uppercase first letter, then letters and digits`,
+      );
     if (md.label !== undefined && typeof md.label !== 'string')
       errs.push(`${m}: label must be text`);
     let builtIn: Record<string, FieldDef> = {};
@@ -329,8 +354,7 @@ export function validate(def: unknown): string[] {
     if (fieldNames.length > MAX_FIELDS) errs.push(`${m}: too many fields`);
     for (const [f, fd] of Object.entries(md.fields)) {
       const at = `${m}.${f}`;
-      if (!FIELD_NAME.test(f))
-        errs.push(`${at}: field names are camelCase letters and digits`);
+      if (!FIELD_NAME.test(f)) errs.push(fieldNameProblem(at, f));
       if (RESERVED.has(f)) errs.push(`${at}: reserved name`);
       if (Object.hasOwn(builtIn, f)) errs.push(`${at}: is built in`);
       if (!isObj(fd)) {
@@ -338,7 +362,9 @@ export function validate(def: unknown): string[] {
         continue;
       }
       if (!TYPES.includes(fd.type as FieldType))
-        errs.push(`${at}: unknown type '${String(fd.type)}'`);
+        errs.push(
+          `${at}: unknown type '${String(fd.type)}'; use one of ${TYPES.join(', ')}`,
+        );
       if (fd.type === 'choice') {
         const c = fd.choices;
         if (
@@ -366,7 +392,11 @@ export function validate(def: unknown): string[] {
     for (const [name, meth] of Object.entries(methods)) {
       const at = `${m}.${name}()`;
       if (!FIELD_NAME.test(name) || RESERVED.has(name))
-        errs.push(`${at}: bad method name`);
+        errs.push(
+          RESERVED.has(name)
+            ? `${at}: '${name}' is a reserved name`
+            : fieldNameProblem(`${m} method`, name),
+        );
       if (Object.hasOwn(md.fields, name) || Object.hasOwn(builtIn, name))
         errs.push(`${at}: clashes with a field`);
       if (!isObj(meth) || typeof meth.code !== 'string') {
@@ -383,13 +413,21 @@ export function validate(def: unknown): string[] {
         continue;
       }
       for (const [p, pd] of Object.entries(params)) {
-        if (!FIELD_NAME.test(p)) errs.push(`${at}: bad param name '${p}'`);
+        if (!FIELD_NAME.test(p)) errs.push(fieldNameProblem(`${at} param`, p));
         if (!isObj(pd) || !TYPES.includes(pd.type as FieldType))
-          errs.push(`${at}: param '${p}' needs a type`);
+          errs.push(
+            `${at}: param '${p}' needs a type, one of ${TYPES.join(', ')}`,
+          );
       }
     }
   }
   return errs;
+}
+
+/** The message for a rejected field, method or parameter name. */
+function fieldNameProblem(at: string, name: string): string {
+  const hint = suggestFieldName(name);
+  return `${at}: field names are camelCase (e.g. dueDate): lowercase first letter, then letters and digits, no underscores, spaces or runs of capitals${hint ? `; did you mean '${hint}'?` : ''} (got '${name}')`;
 }
 
 /** Changes that cannot be applied by only adding things. */

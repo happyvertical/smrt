@@ -84,7 +84,7 @@ describe('validate', () => {
     expect(text).toMatch(/odd: unknown type/);
     expect(text).toMatch(/aBC/);
     expect(text).toMatch(/kind\(\): clashes/);
-    expect(text).toMatch(/delete\(\): bad method name/);
+    expect(text).toMatch(/delete\(\): 'delete' is a reserved name/);
   });
 
   it('keeps recipe models consistent with recipes', () => {

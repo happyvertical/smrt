@@ -6,7 +6,11 @@ import {
   type McpAppPrincipal,
   type McpAppServer,
 } from '@happyvertical/smrt-app-mcp';
-import { isRiskyTool } from '../../engine/index.ts';
+import {
+  FIELD_NAME_PATTERN,
+  FIELD_TYPES,
+  isRiskyTool,
+} from '../../engine/index.ts';
 import { App } from '../objects/App.ts';
 import { Approval } from '../objects/Approval.ts';
 import { collectIssuedApprovals, type PendingApproval } from './approvals.ts';
@@ -61,6 +65,97 @@ export const NON_TOOL_METHODS: ReadonlySet<string> = new Set([
   'approval_decide',
 ]);
 
+/**
+ * The scanner turns `FieldDef` into a bare object, so a model sees no list of
+ * types and invents them ('string', 'Text', 'ShortText'). These schemas are
+ * the explicit tool-schema override for the builder tools that take fields.
+ */
+const FIELD_NAME_SCHEMA = {
+  type: 'string',
+  pattern: FIELD_NAME_PATTERN,
+  description:
+    'camelCase, e.g. dueDate: lowercase first letter, then letters and digits; no underscores or spaces',
+};
+
+export const FIELD_DEF_SCHEMA = {
+  type: 'object',
+  description:
+    "One field. `type` is required. Use 'choice' with `choices`, and 'reference' with `ref` (a model of the app).",
+  properties: {
+    type: {
+      type: 'string',
+      enum: [...FIELD_TYPES],
+      description:
+        'text (words), number (decimal), integer (whole number), boolean (yes/no, done or not), date (a day or time), money (whole minor units such as cents), choice (one of `choices`), reference (id of a record of the model `ref`), json (structured data)',
+    },
+    label: { type: 'string', description: 'Name shown to people' },
+    required: { type: 'boolean' },
+    choices: {
+      type: 'array',
+      items: { type: 'string' },
+      minItems: 1,
+      description: "The allowed values; only for type 'choice'",
+    },
+    ref: {
+      type: 'string',
+      description: "A model of the app; only for type 'reference'",
+    },
+  },
+  required: ['type'],
+  additionalProperties: false,
+};
+
+const TYPES_TEXT = FIELD_TYPES.join(', ');
+const BUILDER_SCHEMAS: Record<
+  string,
+  { description: string; props: Record<string, unknown> }
+> = {
+  app_definemodel: {
+    description: `Add a model (a kind of record, e.g. Chore) with its fields. Model names are PascalCase. Field names are camelCase (e.g. dueDate, not due_date). Field types are exactly: ${TYPES_TEXT}. Example fields: {"title":{"type":"text","required":true},"dueDate":{"type":"date"},"done":{"type":"boolean"},"points":{"type":"integer"}}.`,
+    props: {
+      name: {
+        type: 'string',
+        pattern: '^[A-Z][A-Za-z0-9]{0,39}$',
+        description: 'PascalCase, e.g. Chore',
+      },
+      fields: {
+        type: 'object',
+        description: 'Fields by name (camelCase keys)',
+        propertyNames: FIELD_NAME_SCHEMA,
+        additionalProperties: FIELD_DEF_SCHEMA,
+      },
+      label: { type: 'string' },
+    },
+  },
+  app_addfield: {
+    description: `Add one field to a model. The field name is camelCase (e.g. dueDate). Field types are exactly: ${TYPES_TEXT}.`,
+    props: { field: FIELD_NAME_SCHEMA, definition: FIELD_DEF_SCHEMA },
+  },
+  app_changefieldtype: {
+    description: `Change a field's type (needs the owner's approval). The new type is exactly one of: ${TYPES_TEXT}.`,
+    props: { field: FIELD_NAME_SCHEMA, to: FIELD_DEF_SCHEMA },
+  },
+};
+
+/** Replace the generated, vague schema of the builder tools that take fields. */
+function withBuilderSchema<
+  T extends { name: string; description?: string; inputSchema: unknown },
+>(tool: T): T {
+  const o = BUILDER_SCHEMAS[tool.name];
+  if (!o) return tool;
+  const base = (tool.inputSchema ?? {}) as {
+    properties?: Record<string, unknown>;
+  };
+  return {
+    ...tool,
+    description: o.description,
+    inputSchema: {
+      ...base,
+      properties: { ...(base.properties ?? {}), ...o.props },
+    },
+  };
+}
+
 /** Tools of the shell's own models, for `principal`. */
 export async function listShellTools(
   principal: McpAppPrincipal,
@@ -68,6 +163,7 @@ export async function listShellTools(
   await getShellDb();
   return (await shellMcpServer().listTools({ principal }))
     .filter((t) => !NON_TOOL_METHODS.has(t.name))
+    .map(withBuilderSchema)
     .map((t) => ({
       name: t.name,
       description: t.description,

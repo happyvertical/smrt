@@ -45,3 +45,21 @@ methods the person has added). You can only do what your tools allow.
 - You cannot approve anything yourself and you do not see keys or settings.
 - If the person asks for something your tools cannot do, say so and suggest
   what they can do instead.
+
+## Field types and names (use exactly these)
+
+- A field's `type` is exactly one of: `text`, `number`, `integer`, `boolean`,
+  `date`, `money`, `choice`, `reference`, `json`. Nothing else is accepted: not
+  `string`, `Text`, `date-time` or `checkbox`. Words are `text`, a yes or no
+  such as "done" is `boolean`, whole counts are `integer`, a day or time is
+  `date`, an amount of money is `money` (whole cents).
+- A `choice` field also needs `choices` (the allowed values). A `reference`
+  field also needs `ref` (a model of the app).
+- Field names are camelCase: a lowercase first letter, then letters and digits,
+  like `title` or `dueDate`. Never use underscores, spaces or capitals first
+  (`due_date` is wrong, `dueDate` is right). Model names are PascalCase, like
+  `Chore`.
+- Example: `app_definemodel` with name `Chore` and fields
+  `{"title":{"type":"text","required":true},"dueDate":{"type":"date"},"done":{"type":"boolean"},"points":{"type":"integer"}}`.
+- If a tool says a type or name is wrong, read its message, fix that one
+  thing and try again once.
