@@ -8,6 +8,7 @@
 * [@happyvertical/smrt-app-cli](/components/smrt-app-cli.md) - Reusable CLI factory for SMRT apps — branded `<name> <resource> <command>` CLI + stdio MCP bridge with decorator-driven resource discovery
 * [@happyvertical/smrt-app-mcp](/components/smrt-app-mcp.md) - App-runtime MCP server scaffolding for SMRT apps — `createMcpAppServer` plus transport adapters (SvelteKit today) for exposing a SMRT app's MCP surface over HTTP.
 * [@happyvertical/smrt-app-runtime](/components/smrt-app-runtime.md) - Validated local, self-hosted, and cloud runtime composition for s-m-r-t applications
+* [@happyvertical/smrt-app-shell](/components/smrt-app-shell.md) - A smrt app that builds and runs a person's own smrt app from definitions
 * [@happyvertical/smrt-approvals](/components/smrt-approvals.md) - Approval decision gate for the SMRT framework: revision-bound, single-use approvals with quorum, expiry, and an append-only event ledger
 * [@happyvertical/smrt-assets-ergot](/components/smrt-assets-ergot.md) - Ergot-backed processing, search, and workflow adapter for SMRT assets
 * [@happyvertical/smrt-assets-local](/components/smrt-assets-local.md) - Local image metadata and variant processor for SMRT assets

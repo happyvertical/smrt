@@ -1,0 +1,295 @@
+/* Page-level styles for the shell's own pages. Colors and spacing come from
+   the smrt-ui tokens (light and dark follow the theme provider). */
+.sh-page {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 64rem;
+  margin: 0 auto;
+  padding: var(--smrt-spacing-lg, 1rem);
+  color: var(--smrt-color-on-surface, inherit);
+  overflow-wrap: anywhere;
+}
+.sh-page *,
+.sh-page *::before,
+.sh-page *::after {
+  box-sizing: border-box;
+}
+.sh-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--smrt-spacing-md, 0.75rem);
+  margin-block-end: var(--smrt-spacing-lg, 1rem);
+}
+.sh-head h1 {
+  margin: 0;
+  font-size: 1.5rem;
+}
+.sh-sub {
+  margin: 0.25rem 0 0;
+  color: var(--smrt-color-on-surface-variant, inherit);
+}
+.sh-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--smrt-spacing-sm, 0.5rem);
+}
+.sh-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  min-height: var(--smrt-control-target-min, 2.5rem);
+  padding: 0 var(--smrt-spacing-lg, 1rem);
+  border: 1px solid var(--smrt-color-outline, #888);
+  border-radius: var(--smrt-radius-md, 0.5rem);
+  background: var(--smrt-color-surface, transparent);
+  color: var(--smrt-color-on-surface, inherit);
+  font: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+.sh-btn:hover:not(:disabled) {
+  background: var(--smrt-color-surface-container-high, rgb(128 128 128 / 0.15));
+}
+.sh-btn:focus-visible,
+.sh-input:focus-visible,
+.sh-link:focus-visible,
+.sh-tile:focus-visible {
+  outline: 2px solid var(--smrt-color-primary, currentColor);
+  outline-offset: 2px;
+}
+.sh-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.sh-btn-primary {
+  background: var(--smrt-color-primary, #36c);
+  border-color: var(--smrt-color-primary, #36c);
+  color: var(--smrt-color-on-primary, #fff);
+}
+.sh-btn-primary:hover:not(:disabled) {
+  background: var(--smrt-color-primary, #36c);
+  filter: brightness(1.1);
+}
+.sh-btn-danger {
+  border-color: var(--smrt-color-error, #c33);
+  color: var(--smrt-color-error, #c33);
+}
+.sh-btn-small {
+  min-height: 2rem;
+  padding: 0 var(--smrt-spacing-md, 0.75rem);
+  font-size: 0.875rem;
+}
+.sh-link {
+  color: var(--smrt-color-primary, #36c);
+}
+.sh-card {
+  padding: var(--smrt-spacing-lg, 1rem);
+  border: 1px solid var(--smrt-color-outline-variant, #8885);
+  border-radius: var(--smrt-radius-lg, 0.75rem);
+  background: var(--smrt-color-surface-container-low, transparent);
+}
+.sh-card + .sh-card {
+  margin-block-start: var(--smrt-spacing-md, 0.75rem);
+}
+.sh-muted {
+  color: var(--smrt-color-on-surface-variant, inherit);
+  font-size: 0.875rem;
+}
+.sh-empty {
+  padding: var(--smrt-spacing-2xl, 2rem) var(--smrt-spacing-lg, 1rem);
+  text-align: center;
+  border: 1px dashed var(--smrt-color-outline-variant, #8887);
+  border-radius: var(--smrt-radius-lg, 0.75rem);
+}
+.sh-alert {
+  margin: 0 0 var(--smrt-spacing-md, 0.75rem);
+  padding: var(--smrt-spacing-md, 0.75rem);
+  border-radius: var(--smrt-radius-md, 0.5rem);
+  background: var(--smrt-color-surface-container, rgb(128 128 128 / 0.12));
+}
+.sh-alert-error {
+  background: var(--smrt-color-error-container, #fdd);
+  color: var(--smrt-color-on-error-container, #400);
+}
+.sh-alert-warn {
+  background: var(--smrt-color-warning-container, #ffe9b5);
+  color: var(--smrt-color-on-warning-container, #3a2a00);
+}
+.sh-alert-ok {
+  background: var(--smrt-color-success-container, #cfe9cf);
+  color: var(--smrt-color-on-success-container, #0a2a0a);
+}
+.sh-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-block-end: var(--smrt-spacing-lg, 1rem);
+}
+.sh-field label,
+.sh-label {
+  font-weight: 600;
+}
+.sh-req {
+  color: var(--smrt-color-error, #c33);
+}
+.sh-input {
+  width: 100%;
+  min-height: var(--smrt-control-target-min, 2.5rem);
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--smrt-color-outline, #888);
+  border-radius: var(--smrt-radius-md, 0.5rem);
+  background: var(--smrt-color-surface, transparent);
+  color: var(--smrt-color-on-surface, inherit);
+  font: inherit;
+}
+textarea.sh-input {
+  min-height: 7rem;
+  resize: vertical;
+}
+.sh-input[aria-invalid='true'] {
+  border-color: var(--smrt-color-error, #c33);
+}
+.sh-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: var(--smrt-control-target-min, 2.5rem);
+}
+.sh-check input {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+.sh-error {
+  margin: 0;
+  color: var(--smrt-color-error, #c33);
+  font-size: 0.875rem;
+}
+.sh-hint {
+  margin: 0;
+  color: var(--smrt-color-on-surface-variant, inherit);
+  font-size: 0.8125rem;
+}
+.sh-tablewrap {
+  overflow-x: auto;
+  border: 1px solid var(--smrt-color-outline-variant, #8885);
+  border-radius: var(--smrt-radius-lg, 0.75rem);
+}
+.sh-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.sh-table th,
+.sh-table td {
+  padding: 0.6rem 0.75rem;
+  text-align: start;
+  vertical-align: top;
+  border-block-end: 1px solid var(--smrt-color-outline-variant, #8885);
+}
+.sh-table tbody tr:last-child td {
+  border-block-end: 0;
+}
+.sh-table th {
+  font-size: 0.8125rem;
+  color: var(--smrt-color-on-surface-variant, inherit);
+  white-space: nowrap;
+}
+.sh-table td.sh-row-actions {
+  white-space: nowrap;
+  text-align: end;
+}
+.sh-tiles {
+  display: grid;
+  gap: var(--smrt-spacing-md, 0.75rem);
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 12rem), 1fr));
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.sh-tile {
+  display: block;
+  height: 100%;
+  padding: var(--smrt-spacing-lg, 1rem);
+  border: 1px solid var(--smrt-color-outline-variant, #8885);
+  border-radius: var(--smrt-radius-lg, 0.75rem);
+  background: var(--smrt-color-surface-container-low, transparent);
+  color: inherit;
+  text-decoration: none;
+}
+.sh-tile:hover {
+  background: var(--smrt-color-surface-container-high, rgb(128 128 128 / 0.15));
+}
+.sh-tile strong {
+  display: block;
+  font-size: 1.75rem;
+  line-height: 1.2;
+}
+.sh-code {
+  max-height: 20rem;
+  margin: var(--smrt-spacing-sm, 0.5rem) 0;
+  padding: var(--smrt-spacing-md, 0.75rem);
+  overflow: auto;
+  border-radius: var(--smrt-radius-md, 0.5rem);
+  background: var(--smrt-color-surface-container-highest, rgb(128 128 128 / 0.18));
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8125rem;
+  white-space: pre;
+}
+.sh-badge {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border-radius: var(--smrt-radius-full, 999px);
+  background: var(--smrt-color-secondary-container, rgb(128 128 128 / 0.2));
+  color: var(--smrt-color-on-secondary-container, inherit);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+.sh-badge-warn {
+  background: var(--smrt-color-warning-container, #ffe9b5);
+  color: var(--smrt-color-on-warning-container, #3a2a00);
+}
+.sh-badge-ok {
+  background: var(--smrt-color-success-container, #cfe9cf);
+  color: var(--smrt-color-on-success-container, #0a2a0a);
+}
+.sh-badge-bad {
+  background: var(--smrt-color-error-container, #fdd);
+  color: var(--smrt-color-on-error-container, #400);
+}
+.sh-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.sh-list > li + li {
+  margin-block-start: var(--smrt-spacing-md, 0.75rem);
+}
+.sh-dialog {
+  max-width: min(28rem, calc(100vw - 2rem));
+  padding: var(--smrt-spacing-lg, 1rem);
+  border: 1px solid var(--smrt-color-outline, #888);
+  border-radius: var(--smrt-radius-lg, 0.75rem);
+  background: var(--smrt-color-surface, Canvas);
+  color: var(--smrt-color-on-surface, CanvasText);
+}
+.sh-dialog::backdrop {
+  background: var(--smrt-color-scrim, rgb(0 0 0 / 0.5));
+}
+.sh-dialog h2 {
+  margin-block-start: 0;
+  font-size: 1.125rem;
+}
+.sh-dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--smrt-spacing-sm, 0.5rem);
+  margin-block-start: var(--smrt-spacing-lg, 1rem);
+}
+.sh-grid2 {
+  display: grid;
+  gap: var(--smrt-spacing-lg, 1rem);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+}
