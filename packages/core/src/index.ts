@@ -598,6 +598,7 @@ export {
 export * from './run-once';
 // Runtime utilities
 export * from './runtime/index';
+export * from './runtime-model';
 export { detectEngine, generateDDLForEngine } from './schema/ddl';
 // Per-foreign-key orphan count report (#2753) — read-only, COUNT(*) probe of
 // every manifest foreign key, reusing the same predicate the migration
