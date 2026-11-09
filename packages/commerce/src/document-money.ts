@@ -4,6 +4,10 @@ import {
   readHistoricalSalesLines,
 } from './historical-sales-money.js';
 import type { HistoricalSalesMoneySnapshot } from './historical-sales-types.js';
+import {
+  assertInvoiceLineSource,
+  assertInvoiceSourceDelete,
+} from './invoice-source-binding.js';
 /** Transactional Invoice money aggregate persistence. */
 
 import type { SmrtSaveOptions } from '@happyvertical/smrt-core';
@@ -189,6 +193,7 @@ const FROZEN_LINE_FIELDS = [
   'amount',
   'sourceType',
   'sourceId',
+  'sourceReservationId',
   'periodStart',
   'periodEnd',
   'revenueAccountId',
@@ -1591,6 +1596,11 @@ export async function saveInvoice(
           : '';
         await recomputeInvoiceAggregate(tx, invoice, settings, snapshotId);
         if (freezing) {
+          const sourceLines = await (
+            await InvoiceLineItemCollection.create({ db: tx })
+          ).findByInvoice(existingId);
+          for (const line of sourceLines)
+            await assertInvoiceLineSource(tx, invoice, line, line, true);
           await assertContractScheduleInvoiceFreeze(tx, invoice);
           const customers = await CustomerCollection.create({ db: tx });
           const customer = invoice.customerId
@@ -1621,7 +1631,7 @@ export async function saveInvoiceLineItem(
   return withDocumentMoneyObjectTransaction(input, async (line, tx) => {
     const candidateTenantId = getTenantId() ?? line.tenantId ?? null;
     const settings = await lockRuntimeSettings(tx, candidateTenantId);
-    const persisted = line.id
+    let persisted = line.id
       ? await (await InvoiceLineItemCollection.create({ db: tx })).get(
           { id: line.id },
           { cache: false },
@@ -1641,6 +1651,13 @@ export async function saveInvoiceLineItem(
       first.invoice.tenantId,
       first.invoice.creditedInvoiceId,
     );
+    // Binding may have committed while this save waited for its invoice lock.
+    persisted = line.id
+      ? await (await InvoiceLineItemCollection.create({ db: tx })).get(
+          { id: line.id },
+          { cache: false },
+        )
+      : null;
     if (persisted && line.invoiceId !== persisted.invoiceId)
       throw new MoneyValidationError(
         'FROZEN_DOCUMENT',
@@ -1662,6 +1679,7 @@ export async function saveInvoiceLineItem(
         'CREDIT_TARGET_NOT_ISSUED',
         'Credit source changed while saving its line',
       );
+    await assertInvoiceLineSource(tx, invoice, line, persisted);
     if (isFrozen(invoice)) {
       if (!persisted)
         throw new MoneyValidationError(
@@ -1732,6 +1750,11 @@ export async function deleteInvoiceLineItem(
         persisted.invoiceId,
         first.invoice.tenantId,
       );
+      const current = await (
+        await InvoiceLineItemCollection.create({ db: tx })
+      ).get({ id: persisted.id }, { cache: false });
+      if (!current) return;
+      assertInvoiceSourceDelete([current]);
       if (isFrozen(invoice))
         throw new MoneyValidationError(
           'FROZEN_DOCUMENT',
@@ -1770,6 +1793,11 @@ export async function deleteInvoice(
       assertTenantId(persisted.tenantId);
       const persistedId = requireId(persisted.id, 'Invoice');
       await lockAndReloadInvoice(tx, persistedId, persisted.tenantId);
+      assertInvoiceSourceDelete(
+        await (
+          await InvoiceLineItemCollection.create({ db: tx })
+        ).findByInvoice(persistedId),
+      );
       const documentTaxes = await DocumentTaxCollection.create({ db: tx });
       await documentTaxes.replaceDerivedForDocument(DOCUMENT_MONEY_WRITE, {
         tenantId: persisted.tenantId,

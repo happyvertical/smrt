@@ -239,3 +239,13 @@ exact complete source Order/Agreement evidence without synthetic lines or tax re
 
 See [ordinary invoice accounting adjustments](agents/ordinary-accounting.md) for
 non-retained provider credit applications, recorded refunds and durable recovery.
+
+## Protected billable sources (#4746)
+
+`invoice-source-binding.ts` is the generic pointer/guard contract for an owning
+package's existing capacity reservation. It creates no capacity ledger. Trusted
+packages register qualified `billable:` source handlers; missing handlers and
+unbound protected lines fail closed at issue. `InvoiceLineItem.sourceReservationId`
+is command-owned; line save/delete, collection deletion, invoice cascade deletion
+and issue validate persisted identities. Release/unbind must share the owning
+reservation transaction. See [source binding](agents/invoice-source-binding.md).

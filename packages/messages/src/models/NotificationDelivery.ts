@@ -1,17 +1,24 @@
-import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
+import type {
+  SmrtObjectOptions,
+  SmrtSaveOptions,
+} from '@happyvertical/smrt-core';
+import { isDeepStrictEqual } from '../host.js';
+import { assertNotificationRecipientIdentity } from '../notification-recipient-identity.js';
 // Register the package manifest before this module's @smrt() decorator
 // runs, whichever chunk the library build places it in (#3098).
 import '../__smrt-register__.js';
 import {
+  type CollectionInterceptor,
   crossPackageRef,
   field,
   foreignKey,
+  GlobalInterceptors,
   SmrtObject,
   smrt,
   usesEmbeddedRevisionFallback,
   withEmbeddedWriteQueue,
 } from '@happyvertical/smrt-core';
-import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy/decorators';
 
 /** Channels the notification outbox can deliver through. */
 export type NotificationDeliveryChannel = 'email';
@@ -40,10 +47,14 @@ export type NotificationDeliveryStatus =
 
 export interface NotificationDeliveryOptions extends SmrtObjectOptions {
   tenantId?: string;
-  recipientUserId?: string;
+  recipientUserId?: string | null;
+  recipientProfileId?: string | null;
+  recipientKind?: 'user' | 'profile';
   channel?: NotificationDeliveryChannel;
   sourceRef?: string;
   kind?: string;
+  requiredDispatchPolicy?: string;
+  dispatchPolicyBinding?: string;
   subject?: string;
   textBody?: string;
   href?: string;
@@ -96,6 +107,20 @@ const TRANSITION_COLUMNS: Record<keyof NotificationDeliveryTransition, string> =
     lastError: 'last_error',
   };
 
+// Private owning-policy snapshots reach Core's final INSERT/UPDATE predicate.
+// An unnamed interceptor is retained by reference: reloaded module instances
+// cannot replace another active save's lexical WeakMap with a fresh empty map.
+const saveGuards = new WeakMap<SmrtObject, Record<string, unknown>>();
+const activeSaves = new WeakSet<SmrtObject>();
+const saveGuardInterceptor: CollectionInterceptor = {
+  writeGuard: (instance) => saveGuards.get(instance),
+  bulkMutation: {
+    compatible: (className) =>
+      className !== 'NotificationDelivery' &&
+      className !== '@happyvertical/smrt-messages:NotificationDelivery',
+  },
+};
+
 /**
  * One durable, source-keyed notification delivery to one person over one
  * external channel (the outbox row behind `NotificationOutboxService`).
@@ -118,8 +143,25 @@ const TRANSITION_COLUMNS: Record<keyof NotificationDeliveryTransition, string> =
   api: false,
   mcp: false,
   cli: false,
-  conflictColumns: ['tenant_id', 'recipient_user_id', 'channel', 'source_ref'],
+  conflictColumns: [
+    'tenant_id',
+    'recipient_kind',
+    'recipient_user_id',
+    'recipient_profile_id',
+    'channel',
+    'source_ref',
+  ],
   indexes: [
+    {
+      name: 'notification_deliveries_user_identity',
+      columns: ['tenantId', 'recipientUserId', 'channel', 'sourceRef'],
+      unique: true,
+    },
+    {
+      name: 'notification_deliveries_profile_identity',
+      columns: ['tenantId', 'recipientProfileId', 'channel', 'sourceRef'],
+      unique: true,
+    },
     {
       name: 'notification_deliveries_due_idx',
       columns: ['status', 'nextAttemptAt'],
@@ -135,8 +177,16 @@ export class NotificationDelivery extends SmrtObject {
   tenantId = '';
 
   /** The person being told (`smrt-users:User`, uuid). */
-  @crossPackageRef('@happyvertical/smrt-users:User', { required: true })
-  recipientUserId = '';
+  @crossPackageRef('@happyvertical/smrt-users:User', { nullable: true })
+  recipientUserId: string | null = null;
+
+  /** Stable external contact identity; never a fabricated auth account. */
+  @crossPackageRef('@happyvertical/smrt-profiles:Profile', { nullable: true })
+  recipientProfileId: string | null = null;
+
+  /** Exactly one corresponding reference is required; legacy rows remain users. */
+  @field({ required: true })
+  recipientKind: 'user' | 'profile' = 'user';
 
   /** Delivery channel; only `email` today. */
   @field({ required: true })
@@ -149,6 +199,13 @@ export class NotificationDelivery extends SmrtObject {
   /** Host-defined type, e.g. `project-question.asked`. */
   @field({ required: true })
   kind = '';
+
+  /** Trusted host policy required at every provider handoff; empty is legacy ordinary mail. */
+  requiredDispatchPolicy = '';
+
+  /** Immutable host-approved resource/version/digest binding, serialized JSON. */
+  @field({ type: 'json' })
+  dispatchPolicyBinding = '{}';
 
   /** Email subject line. */
   @field({ required: true })
@@ -223,9 +280,13 @@ export class NotificationDelivery extends SmrtObject {
     for (const key of [
       'tenantId',
       'recipientUserId',
+      'recipientProfileId',
+      'recipientKind',
       'channel',
       'sourceRef',
       'kind',
+      'requiredDispatchPolicy',
+      'dispatchPolicyBinding',
       'subject',
       'textBody',
       'href',
@@ -248,6 +309,181 @@ export class NotificationDelivery extends SmrtObject {
     ] as const) {
       assign(key);
     }
+  }
+
+  /** Protected consent and document bindings cannot be downgraded by ordinary saves. */
+  override async save(options?: SmrtSaveOptions): Promise<this> {
+    if (activeSaves.has(this))
+      throw new Error(
+        'Concurrent saves of one notification delivery are not supported.',
+      );
+    activeSaves.add(this);
+    try {
+      return await this.saveWithGuard(options);
+    } finally {
+      saveGuards.delete(this);
+      activeSaves.delete(this);
+    }
+  }
+
+  private async saveWithGuard(options?: SmrtSaveOptions): Promise<this> {
+    assertNotificationRecipientIdentity(this);
+
+    if (
+      this.kind.startsWith('protected:') &&
+      (!this.requiredDispatchPolicy ||
+        this.kind !== `protected:${this.requiredDispatchPolicy}`)
+    ) {
+      throw new Error(
+        'Protected notification kinds require their exact dispatch policy.',
+      );
+    }
+    // Use Core's existing missing-schema contract before any protection query.
+    // Initialization defers table verification and must not load over patches.
+    await this.verifyStorageReady();
+    let stored: Record<string, unknown> | undefined;
+    if (this.id) {
+      const { rows } = await this.db.query(
+        'SELECT tenant_id, required_dispatch_policy, dispatch_policy_binding, source_ref, recipient_user_id, recipient_profile_id, recipient_kind, recipient_address, account_id, kind, subject, text_body, href, recipient_name, channel, status, state_version, transition_id, attempts, max_attempts, next_attempt_at, lease_token, lease_expires_at, handed_off_at, delivered_at, provider_message_id, last_error, message_id FROM notification_deliveries WHERE id = ?',
+        this.id,
+      );
+      stored = rows[0] as Record<string, unknown> | undefined;
+    }
+    if (!stored) {
+      // A new-ID clone can still upsert the same natural identity. Authorize against that row too.
+      const existing = await this.db.query(
+        'SELECT * FROM notification_deliveries WHERE tenant_id=? AND recipient_kind=? AND recipient_user_id IS NOT DISTINCT FROM ? AND recipient_profile_id IS NOT DISTINCT FROM ? AND channel=? AND source_ref=?',
+        this.tenantId,
+        this.recipientKind,
+        this.recipientUserId,
+        this.recipientProfileId,
+        this.channel,
+        this.sourceRef,
+      );
+      stored = existing.rows[0] as Record<string, unknown> | undefined;
+    }
+    if (
+      stored &&
+      (stored.required_dispatch_policy || this.requiredDispatchPolicy)
+    ) {
+      const binding = (value: unknown) =>
+        typeof value === 'string' ? JSON.parse(value) : value;
+      const instant = (value: unknown) =>
+        value == null ? null : new Date(value as string | Date).getTime();
+      if (
+        stored.status !== this.status ||
+        Number(stored.state_version) !== this.stateVersion ||
+        stored.transition_id !== this.transitionId ||
+        Number(stored.attempts) !== this.attempts ||
+        Number(stored.max_attempts) !== this.maxAttempts ||
+        stored.lease_token !== this.leaseToken ||
+        stored.message_id !== this.messageId ||
+        stored.provider_message_id !== this.providerMessageId ||
+        stored.last_error !== this.lastError ||
+        instant(stored.next_attempt_at) !== instant(this.nextAttemptAt) ||
+        instant(stored.lease_expires_at) !== instant(this.leaseExpiresAt) ||
+        instant(stored.handed_off_at) !== instant(this.handedOffAt) ||
+        instant(stored.delivered_at) !== instant(this.deliveredAt)
+      ) {
+        throw new Error(
+          'Protected notification lifecycle changes require a guarded transition.',
+        );
+      }
+
+      if (
+        stored.tenant_id !== this.tenantId ||
+        stored.required_dispatch_policy !== this.requiredDispatchPolicy ||
+        !isDeepStrictEqual(
+          binding(stored.dispatch_policy_binding),
+          binding(this.dispatchPolicyBinding),
+        ) ||
+        stored.source_ref !== this.sourceRef ||
+        stored.recipient_user_id !== this.recipientUserId ||
+        stored.recipient_profile_id !== this.recipientProfileId ||
+        stored.recipient_kind !== this.recipientKind ||
+        stored.recipient_address !== this.recipientAddress ||
+        stored.account_id !== this.accountId ||
+        stored.channel !== this.channel ||
+        stored.recipient_name !== this.recipientName ||
+        stored.kind !== this.kind ||
+        stored.subject !== this.subject ||
+        stored.text_body !== this.textBody ||
+        stored.href !== this.href
+      ) {
+        throw new Error(
+          'Protected notification consent and dispatch policy are immutable.',
+        );
+      }
+    }
+    const guard =
+      stored?.required_dispatch_policy || this.requiredDispatchPolicy
+        ? Object.fromEntries(
+            [
+              'tenant_id',
+              'required_dispatch_policy',
+              'dispatch_policy_binding',
+              'source_ref',
+              'recipient_user_id',
+              'recipient_profile_id',
+              'recipient_kind',
+              'recipient_address',
+              'recipient_name',
+              'account_id',
+              'kind',
+              'channel',
+              'subject',
+              'text_body',
+              'href',
+              'status',
+              'state_version',
+              'transition_id',
+              'attempts',
+              'max_attempts',
+              'lease_token',
+              'message_id',
+              'provider_message_id',
+              'last_error',
+            ].map((column) => [
+              column,
+              stored
+                ? stored[column]
+                : (this as unknown as Record<string, unknown>)[
+                    column.replace(/_([a-z])/g, (_, letter: string) =>
+                      letter.toUpperCase(),
+                    )
+                  ],
+            ]),
+          )
+        : {
+            // Bind the observed legacy NULL exactly; a new ordinary row uses ''.
+            required_dispatch_policy: stored
+              ? stored.required_dispatch_policy
+              : '',
+            kind: stored ? stored.kind : this.kind,
+          };
+    if (!stored && this.requiredDispatchPolicy) this.requireInsertOnSave();
+    saveGuards.set(this, guard);
+    if (!GlobalInterceptors.getAll().includes(saveGuardInterceptor))
+      GlobalInterceptors.register(saveGuardInterceptor);
+    // Core preserves supplied options/revision guards and applies this mandatory
+    // predicate at the final write. State/version covers lifecycle dates without
+    // comparing lossy hydrated PostgreSQL timestamps.
+    return super.save(options);
+  }
+
+  /** Protected history must survive mutable caller flags and uncertain outcomes. */
+  override async delete(): Promise<void> {
+    const stored = this.id
+      ? await this.db.get(this.tableName, { id: this.id })
+      : null;
+    if (
+      stored?.required_dispatch_policy ||
+      String(stored?.kind ?? '').startsWith('protected:')
+    )
+      throw new Error(
+        'Protected notification delivery history cannot be deleted.',
+      );
+    return super.delete();
   }
 
   /** Whether no further automatic work will happen on this row. */

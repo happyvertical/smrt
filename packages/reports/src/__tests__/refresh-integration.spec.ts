@@ -441,6 +441,7 @@ async function createRuntimeTables(db: DatabaseInterface): Promise<void> {
       slug TEXT,
       context TEXT,
       tenant_id TEXT,
+      dedupe_key TEXT,
       queue TEXT NOT NULL DEFAULT 'default',
       object_type TEXT NOT NULL,
       object_id TEXT,

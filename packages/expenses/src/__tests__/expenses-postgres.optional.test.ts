@@ -1,3 +1,4 @@
+import { defineAllocationSuite } from './helpers/allocation-suite.js';
 /**
  * PostgreSQL lane for smrt-expenses.
  *
@@ -49,7 +50,13 @@ import { defineRefundConcurrency } from './helpers/refund-concurrency.js';
 
 const describePostgres = isPostgresAvailable() ? describe : describe.skip;
 
-const PACKAGE_TABLES = ['expenses', 'expense_receipts'];
+const PACKAGE_TABLES = [
+  'expenses',
+  'expense_receipts',
+  'expense_allocation_revisions',
+  'expense_allocation_portions',
+  'expense_allocation_billings',
+];
 
 type Closable = { close?: () => Promise<void> };
 
@@ -257,5 +264,6 @@ describePostgres('expenses on PostgreSQL', () => {
 
   describe('behaviour', () => {
     defineExpenseSuite(() => db);
+    defineAllocationSuite(() => db);
   });
 });

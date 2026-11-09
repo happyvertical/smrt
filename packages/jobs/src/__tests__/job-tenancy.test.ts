@@ -334,7 +334,7 @@ describe('job tenancy propagation', () => {
     ).toMatchObject([{ status: 'failed', failureKind: 'stale-recovery' }]);
   });
 
-  it('reconciles stale scheduled jobs and frees stuck running slots', async () => {
+  it('lets TaskRunner recover stale jobs before reconciling schedule slots', async () => {
     const db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
     const collection = await SmrtJobCollection.create({ db });
 
@@ -410,6 +410,12 @@ describe('job tenancy propagation', () => {
       staleJobThresholdMs: 1,
     });
     await runner.initialize(db);
+    // ScheduleRunner never overrides worker retry/recovery ownership.
+    const taskRunner = createTaskRunner();
+    await taskRunner.initialize(db);
+    await (
+      taskRunner as unknown as { recoverStaleJobs(): Promise<void> }
+    ).recoverStaleJobs();
     await (
       runner as unknown as {
         recoverStaleScheduleState(): Promise<void>;
@@ -439,12 +445,12 @@ describe('job tenancy propagation', () => {
     ).toBe(0);
     expect(
       (schedules.rows[0] as { last_status: string | null }).last_status,
-    ).toBe('failed');
+    ).toBe('success');
     expect(
       (schedules.rows[0] as { last_error: string | null }).last_error,
-    ).toContain('Recovered 1 orphaned scheduled job');
+    ).toBeNull();
     expect((schedules.rows[0] as { failure_count: number }).failure_count).toBe(
-      1,
+      0,
     );
   });
 

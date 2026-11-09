@@ -5,10 +5,10 @@ description: "Background job processing for SMRT objects with persistence and sc
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T15:48:19Z"
+  at: "2026-11-08T11:50:49Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:2b3e5ba10b5ee9f2a597912a00e16d26e1e519d95ef33a85dabcecb6a177fd44"
+source_revision: "sha256:350fca00191c16de2357992320a352ce93971dc2432ad36cb1b6477fc39c3ae0"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/jobs/package.json"
@@ -16,6 +16,9 @@ sources:
   - id: "agents"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/jobs/AGENTS.md"
     title: "@happyvertical/smrt-jobs packages/jobs/AGENTS.md"
+  - id: "agents-2"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/jobs/agents/scheduling.md"
+    title: "@happyvertical/smrt-jobs packages/jobs/agents/scheduling.md"
 ---
 
 # @happyvertical/smrt-jobs
@@ -30,6 +33,7 @@ sources:
 ## Documentation
 
 - `packages/jobs/AGENTS.md`
+- `packages/jobs/agents/scheduling.md`
 
 ## Framework dependencies
 
@@ -65,6 +69,8 @@ sources:
 - `ForgeProjectionCheckpoint` (collection `forgeprojectioncheckpoints`, extends `SmrtObject`)
 - `SmrtJob` (collection `smrtjobs`, extends `SmrtObject`)
 - `SmrtJobCollection` (collection `smrtjobs`, extends `SmrtCollection`)
+- `SmrtJobDedupeSlot` (collection `smrtjobdedupeslots`, extends `SmrtObject`)
+- `SmrtJobDedupeSlotCollection` (collection `smrtjobdedupeslots`, extends `SmrtCollection`)
 - `SmrtJobEvent` (collection `smrtjobevents`, extends `SmrtObject`)
 - `SmrtJobEventCollection` (collection `smrtjobevents`, extends `SmrtCollection`)
 - `SmrtWorker` (collection `smrtworkers`, extends `SmrtObject`)

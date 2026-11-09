@@ -1,3 +1,4 @@
+import { defineProtectedMessageHandoffSuite } from './helpers/protected-message-handoff-suite.js';
 /**
  * PostgreSQL lane for the notification outbox: the manifest migration creates
  * `notification_deliveries` with native uuid columns and the source-keyed
@@ -153,6 +154,143 @@ describePostgres(
           outcome: 'sent',
         },
       ]);
+    });
+    it('migrates protected bindings and refuses a broad dispatcher before scoped byte handoff', async () => {
+      const db = scratch.track(
+        await getTestDatabase({
+          type: 'postgres',
+          url: scratch.url(),
+          classes: [],
+          includeSystemTables: false,
+        }),
+      );
+      await dbMigrate(db);
+      const tenantId = crypto.randomUUID(),
+        userId = crypto.randomUUID();
+      const senderId = await withTenant({ tenantId }, async () => {
+        const account = new EmailAccount({
+          db,
+          tenantId,
+          name: 'Capture only',
+          providerType: 'smtp',
+          isActive: true,
+        });
+        await account.initialize();
+        await account.save();
+        return account.id as string;
+      });
+      const policyId = 'fixture.invoice.v1';
+      const bytes = Buffer.from('%PDF-1.7\nsynthetic retained invoice\n%%EOF');
+      const calls: string[] = [];
+      const options = {
+        db,
+        linkBaseUrl: 'https://work.example.com',
+        resolveRecipient: () => ({ address: 'fixture@example.com' }),
+        resolveSenderAccountId: () => senderId,
+        transport: {
+          name: 'capture',
+          async send(
+            request: import('../services/NotificationOutboxService.js').NotificationTransportRequest,
+          ) {
+            expect(
+              Buffer.from(request.attachments?.[0]?.content ?? []),
+            ).toEqual(bytes);
+            calls.push(request.delivery.id as string);
+            return { status: 'accepted' as const };
+          },
+        },
+      };
+      const outbox = new NotificationOutboxService({
+        ...options,
+        dispatchPolicies: {
+          [policyId]: {
+            resolveAttachments: ({ delivery }) => {
+              const binding =
+                typeof delivery.dispatchPolicyBinding === 'string'
+                  ? JSON.parse(delivery.dispatchPolicyBinding)
+                  : delivery.dispatchPolicyBinding;
+              expect(binding).toEqual({
+                artifact: 'fixture-document',
+                version: 1,
+                recipientUserId: userId,
+              });
+              return [
+                {
+                  filename: 'invoice.pdf',
+                  contentType: 'application/pdf',
+                  content: bytes,
+                },
+              ];
+            },
+          },
+        },
+      });
+      const input = {
+        tenantId,
+        recipientUserId: userId,
+        sourceRef: 'protected-invoice',
+        kind: `protected:${policyId}`,
+        subject: 'Synthetic invoice',
+        text: 'Review the attached invoice.',
+        path: '/invoices/fixture',
+        requiredDispatchPolicy: policyId,
+        dispatchPolicyBinding: {
+          artifact: 'fixture-document',
+          version: 1,
+          recipientUserId: userId,
+        },
+      };
+      const { delivery } = await outbox.enqueueEmail(input);
+      const report = await new NotificationOutboxService(options).dispatchDue({
+        tenantIds: [tenantId],
+      });
+      expect(report).toMatchObject({
+        leased: 0,
+        outcomes: [{ outcome: 'blocked' }],
+      });
+      expect(calls).toHaveLength(0);
+      const collection = await import(
+        '../collections/NotificationDeliveryCollection.js'
+      );
+      const stored = await withTenant({ tenantId }, async () =>
+        (await collection.NotificationDeliveryCollection.create({ db })).get(
+          delivery.id as string,
+          { cache: false },
+        ),
+      );
+      expect(stored).toMatchObject({
+        attempts: 0,
+        status: 'pending',
+        requiredDispatchPolicy: policyId,
+      });
+      stored!.requiredDispatchPolicy = '';
+      await expect(
+        withTenant({ tenantId }, () => stored!.save()),
+      ).rejects.toThrow();
+      await outbox.dispatchDue({
+        tenantIds: [tenantId],
+        deliveryIds: [delivery.id as string],
+      });
+      expect(calls).toEqual([delivery.id]);
+    });
+  },
+);
+
+describePostgres(
+  'protected canonical Message handoff on migrated PostgreSQL',
+  () => {
+    const scratch = withScratchDatabase(beforeEach, afterEach);
+    defineProtectedMessageHandoffSuite(async () => {
+      const db = scratch.track(
+        await getTestDatabase({
+          type: 'postgres',
+          url: scratch.url(),
+          classes: [],
+          includeSystemTables: false,
+        }),
+      );
+      await dbMigrate(db);
+      return { db, cleanup: async () => {} };
     });
   },
 );

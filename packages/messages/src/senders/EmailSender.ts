@@ -1,3 +1,8 @@
+import {
+  assertProtectedEmailAdmission,
+  assertProtectedEmailHandoff,
+  ProtectedNotificationHandoffError,
+} from '../protected-notification-handoff.js';
 /**
  * EmailSender — sends email messages via the SDK EmailClient
  */
@@ -37,6 +42,7 @@ export class EmailSender implements MessageSenderInterface {
     // that cannot be read fails the send instead of leaving silently (#3808).
     let attachments: Attachment[];
     try {
+      await assertProtectedEmailAdmission(message, options);
       attachments = await this.collectAttachments(message, options);
     } catch (error) {
       return {
@@ -71,6 +77,12 @@ export class EmailSender implements MessageSenderInterface {
     };
 
     try {
+      await assertProtectedEmailHandoff(
+        message,
+        attachments as unknown as NonNullable<SendEmailOptions['attachments']>,
+        options,
+        emailMessage,
+      );
       const result = await this.client.send(emailMessage);
 
       return {
@@ -85,7 +97,10 @@ export class EmailSender implements MessageSenderInterface {
       return {
         success: false,
         error: error instanceof Error ? error.message : String(error),
-        ...(isDefiniteSendRejection(error) ? {} : { outcomeUnknown: true }),
+        ...(error instanceof ProtectedNotificationHandoffError ||
+        isDefiniteSendRejection(error)
+          ? {}
+          : { outcomeUnknown: true }),
         sentAt: new Date(),
       };
     }
@@ -139,7 +154,7 @@ export class EmailSender implements MessageSenderInterface {
         filename: attachment.filename,
         contentType: attachment.contentType || 'application/octet-stream',
         size: content.length,
-        content,
+        content: Buffer.from(content),
         contentId: attachment.contentId || undefined,
         contentDisposition: attachment.contentDisposition,
       });
@@ -154,13 +169,9 @@ export class EmailSender implements MessageSenderInterface {
           `Send-time attachment "${attachment.filename}" has no content.`,
         );
       }
-      const content = Buffer.isBuffer(attachment.content)
-        ? attachment.content
-        : Buffer.from(
-            attachment.content.buffer,
-            attachment.content.byteOffset,
-            attachment.content.byteLength,
-          );
+      // Own the bytes handed to the SDK so callers cannot mutate the approved
+      // document while an asynchronous provider send is in flight.
+      const content = Buffer.from(attachment.content);
       resolved.push({
         filename: attachment.filename,
         contentType: attachment.contentType || 'application/octet-stream',

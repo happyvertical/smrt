@@ -143,3 +143,12 @@ Modes: `'required'` (default — throws without context) or `'optional'` (passes
 ## Known exceptions to monorepo standards
 
 - **`serializeInstance()` in `src/interceptor.ts` calls `instance.toJSON()` directly** (standards.md §7 forbids this in favor of `transformJSON()`). The interceptor must serialize arbitrary instances handed to it — including workspace stubs and plain-object test doubles whose classes may not extend `SmrtObject` and therefore have no `transformJSON()` hook. The call is duck-typed and falls back to manual key iteration when `toJSON` is absent. See the inline comment at the call site for the full rationale.
+
+## Portable model annotations (#4765)
+
+Model-only packages may import the original `TenantScoped`, `tenantId`, and
+annotation option types from `@happyvertical/smrt-tenancy/decorators`. This public
+entry reuses the same functions and registry as the root; it imports no context,
+AsyncLocalStorage, query helpers or adapters. It only declares metadata. Existing
+server interception, context, filtering and RLS/authorization remain required and
+unchanged. Never replace these declarations with consumer-owned decorator stubs.

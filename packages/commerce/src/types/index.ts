@@ -706,6 +706,8 @@ export interface InvoiceLineItemOptions extends SmrtObjectOptions {
   amount?: number;
   sourceType?: string;
   sourceId?: string;
+  /** Hydration only; use bindInvoiceLineSource. */
+  sourceReservationId?: string | null;
   periodStart?: Date | null;
   periodEnd?: Date | null;
   revenueAccountId?: string | null;

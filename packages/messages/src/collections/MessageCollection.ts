@@ -5,7 +5,7 @@
  */
 
 import { SmrtCollection } from '@happyvertical/smrt-core';
-import { queryGlobal, queryWithGlobals } from '@happyvertical/smrt-tenancy';
+import { queryGlobal, queryWithGlobals } from '../host.js';
 import { Message } from '../models/Message';
 import type { MessageSearchFilters } from '../types';
 

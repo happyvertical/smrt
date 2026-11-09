@@ -43,6 +43,15 @@ describePostgres('Expense runtime timestamps on PostgreSQL (#3940)', () => {
     const legacy = structuredClone(current);
     delete legacy.columns.recorded_at;
     delete legacy.columns.reimbursed_at;
+    // This snapshot predates allocation heads as well as runtime timestamps.
+    // Keeping its new FK would require a table that did not exist in that era.
+    delete legacy.columns.active_allocation_revision_id;
+    legacy.foreignKeys = legacy.foreignKeys.filter(
+      (key) => key.column !== 'active_allocation_revision_id',
+    );
+    legacy.indexes = legacy.indexes.filter(
+      (index) => !index.columns.includes('active_allocation_revision_id'),
+    );
     const ddl = generateDDLForEngine(legacy, 'postgres');
     await db.query(ddl.createTable);
     for (const index of ddl.indexes) await db.query(index);
@@ -86,7 +95,7 @@ describePostgres('Expense runtime timestamps on PostgreSQL (#3940)', () => {
       'reimbursed_at',
     ]);
     const legacy = await db.query(
-      'SELECT id, amount, currency, incurred_on FROM expenses WHERE id = ?',
+      'SELECT id, amount, currency, incurred_on, active_allocation_revision_id FROM expenses WHERE id = ?',
       legacyExpenseId,
     );
     expect(legacy.rows).toEqual([
@@ -95,6 +104,7 @@ describePostgres('Expense runtime timestamps on PostgreSQL (#3940)', () => {
         amount: '12500',
         currency: 'USD',
         incurred_on: '2026-09-01',
+        active_allocation_revision_id: null,
       }),
     ]);
   });

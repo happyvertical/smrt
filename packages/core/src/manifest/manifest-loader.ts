@@ -49,6 +49,7 @@ import {
   dirname,
   existsSync,
   join,
+  nodeHost,
   readdirSync,
   readFileSync,
   require,
@@ -727,6 +728,7 @@ function findWorkspaceRoot(startDir: string): string | null {
 }
 
 function resolveInstalledPackageJsonPath(packageName: string): string | null {
+  if (!nodeHost()) return null;
   let currentDir = process.cwd();
 
   while (true) {
@@ -751,6 +753,7 @@ function resolveInstalledPackageJsonPath(packageName: string): string | null {
 }
 
 function resolveWorkspacePackageJsonPath(packageName: string): string | null {
+  if (!nodeHost()) return null;
   const workspaceRoot = findWorkspaceRoot(process.cwd());
   if (!workspaceRoot) {
     return null;
