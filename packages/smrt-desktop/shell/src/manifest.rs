@@ -95,7 +95,7 @@ pub struct SidecarManifest {
     pub args: Vec<String>,
     /// Path probed on the selected loopback origin.
     pub health_route: String,
-    /// Portable path under the Tauri app data dir, exported as `SMRT_DATA_DIR`.
+    /// Portable path under the Tauri app local data dir, exported as `SMRT_DATA_DIR`.
     pub data_directory: String,
     /// Extra child environment, in manifest order.
     pub env: Vec<(String, String)>,

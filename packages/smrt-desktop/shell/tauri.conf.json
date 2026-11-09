@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "SMRT Desktop",
+  "productName": "Placeholder Product",
   "version": "0.1.0",
-  "identifier": "com.happyvertical.smrt-desktop-shell",
+  "identifier": "placeholder.invalid.smrt-desktop-shell",
   "build": {
     "frontendDist": "./frontend"
   },
@@ -25,5 +25,10 @@
     "active": true,
     "targets": "all",
     "icon": ["icons/32x32.png", "icons/128x128.png", "icons/icon.ico"]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "PLACEHOLDER-NOT-A-KEY-the-owner-commits-the-public-half-of-the-updater-key-here"
+    }
   }
 }

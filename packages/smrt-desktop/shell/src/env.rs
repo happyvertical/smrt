@@ -53,18 +53,19 @@ impl fmt::Display for DataDirError {
 
 impl std::error::Error for DataDirError {}
 
-/// Join the validated, `/`-separated `dataDirectory` onto the app data dir.
+/// Join the validated, `/`-separated `dataDirectory` onto the app local data
+/// dir (Tauri `app_local_data_dir`, never the roaming `app_data_dir`).
 ///
 /// The manifest validator already guarantees relative, dot-free segments, so
-/// the join cannot escape `app_data_dir`.
+/// the join cannot escape `app_local_data_dir`.
 pub fn resolve_data_dir(
-    app_data_dir: &Path,
+    app_local_data_dir: &Path,
     data_directory: &str,
 ) -> Result<PathBuf, DataDirError> {
-    if !app_data_dir.is_absolute() {
+    if !app_local_data_dir.is_absolute() {
         return Err(DataDirError::RootNotAbsolute);
     }
-    let mut path = app_data_dir.to_path_buf();
+    let mut path = app_local_data_dir.to_path_buf();
     path.extend(data_directory.split('/'));
     if path.to_str().is_none() {
         return Err(DataDirError::NotUnicode);
@@ -189,7 +190,7 @@ mod tests {
     }
 
     #[test]
-    fn data_dir_joins_segments_under_the_app_data_dir() {
+    fn data_dir_joins_segments_under_the_app_local_data_dir() {
         let root = std::env::temp_dir();
         let path = resolve_data_dir(&root, "a/b").unwrap();
         assert_eq!(path, root.join("a").join("b"));

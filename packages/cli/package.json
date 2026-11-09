@@ -50,6 +50,7 @@
     "@happyvertical/smrt-assets": "workspace:*",
     "@happyvertical/smrt-config": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
+    "@happyvertical/smrt-desktop": "workspace:*",
     "@happyvertical/smrt-dev-mcp": "workspace:*",
     "@happyvertical/smrt-inference": "workspace:*",
     "@happyvertical/smrt-ledgers": "workspace:*",

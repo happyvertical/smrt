@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "productId": "smrt-notes",
+  "bundleId": "com.happyvertical.smrt-notes",
+  "displayName": "SMRT Notes",
+  "productVersion": "1.4.0",
+  "channel": "stable",
+  "target": "aarch64-apple-darwin",
+  "sidecarManifest": "sidecar-manifest.json",
+  "node": { "executable": "smrt-notes-node" },
+  "bridge": {
+    "entry": "bridge/smrt-mcp-bridge.mjs",
+    "envPrefix": "SMRT_NOTES",
+    "mcpPath": "/api/mcp",
+    "serverName": "smrt-notes",
+    "serverVersion": "1.4.0"
+  }
+}

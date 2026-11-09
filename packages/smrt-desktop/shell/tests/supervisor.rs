@@ -207,12 +207,16 @@ impl Harness {
     }
 
     fn runs(&self) -> u32 {
+        // A momentarily empty or partial read counts as "not yet written".
         self.state_file("runs")
-            .map_or(0, |s| s.trim().parse().unwrap())
+            .and_then(|s| s.trim().parse().ok())
+            .unwrap_or(0)
     }
 
     fn pid(&self) -> u32 {
-        self.state_file("pid").unwrap().trim().parse().unwrap()
+        self.state_file("pid")
+            .and_then(|s| s.trim().parse().ok())
+            .expect("the sidecar has written its pid")
     }
 
     fn phases(&self) -> Vec<Phase> {

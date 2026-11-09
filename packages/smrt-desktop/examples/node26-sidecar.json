@@ -1,7 +1,13 @@
 {
   "version": 1,
-  "executable": "node",
-  "args": ["build/index.js"],
+  "executable": "smrt-notes-node",
+  "args": ["app/build/index.js"],
   "healthRoute": "/api/_runtime/health",
-  "dataDirectory": "runtime"
+  "dataDirectory": "runtime",
+  "env": {
+    "NODE_ENV": "production",
+    "NODE_OPTIONS": "",
+    "NODE_PATH": "",
+    "SMRT_APP_ID": "smrt-notes"
+  }
 }

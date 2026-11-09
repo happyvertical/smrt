@@ -27,6 +27,31 @@ Application infrastructure composition for the validated runtime profiles in
   if its root is an existing real directory owned by another uid. Acquire in that order; never make the
   lease location configurable per process — every process sharing a data root
   must derive the same lease.
+- Filesystem custody (preflight, data-root and lease construction, markers, the
+  application secret, no-follow opens) lives in `src/local-custody.ts`; it is
+  internal (not exported from the package). `index.ts` only composes it into the
+  public entry points. `LocalRuntimeError` lives in `src/local-runtime-error.ts`.
+- Windows has its own custody rule (README "Windows", smrt#4837), because Node
+  has no `O_NOFOLLOW`, uid, mode bits, or DACL access there: `windows-paths.ts`
+  (lexical), `windows-sddl.ts` (SDDL access decision), `windows-acl-inspector.ts`
+  (fixed-argv PowerShell, paths in the environment, ASCII JSON out, every
+  failure a refusal; no "unverified" mode), `windows-custody.ts` (synchronous
+  chain walk, creation with post-create re-inspection and rollback, bigint
+  identity). Default root is `%LOCALAPPDATA%` only, never APPDATA or home.
+  Everything runs through `WindowsCustodyRuntime`; tests inject
+  `test-support/windows-fake-runtime.ts` with `runWithCustodyContext`
+  (`custody-context.ts`), never a public option. SQLite acquisition on Windows
+  throws `WindowsDatabaseAcquisitionUnsupportedError` before any directory is
+  created (`refuseWindowsDatabaseAcquisition`; remove it when `@happyvertical/sql`
+  takes a caller-supplied Windows verifier; that error cannot promise what its
+  caller created first, so `smrt app` refuses the local profile on Windows
+  before it creates anything, see `packages/cli`). Lease, state root and
+  `validateLocalDatabaseStorage` work. SDDL writes the built-in RID-500
+  Administrator as `LA`: it is trusted (`ALIAS:LA`) only when the current
+  user's SID is a machine `S-1-5-21-…-500` SID (`trustedPrincipals`);
+  unverified on a real runner. `windows-custody.test.ts` runs anywhere;
+  `windows-custody.win32.test.ts` runs only in the advisory
+  `app-runtime-windows.yml` job.
 - Application migrations are explicit through `prepareDatabase`; runtime never
   creates application model tables implicitly. A rejected `prepareDatabase` is
   normalized into `LocalRuntimeError` with the stable `migration_failed` code

@@ -58,6 +58,18 @@ config loading; `bin/smrt.js` imports `dist/` in-process so SIGTERM reaches
   `prepareDatabase` that runs `smrt db:migrate`; `migrate` calls
   `prepareLocalDatabaseStorage`; `doctor`/`backup`/`export`/`import` call
   `validateLocalDatabaseStorage`, which never creates or repairs storage.
+- **Windows local profile** (smrt#4837): `refuseWindowsLocalProfile`
+  (`runtime.ts`, the `deps.platform` seam) runs first in `install`, `setup`,
+  `recover`, `start`, `stop`, `open` (`runApplicationOperation`), `migrate`
+  (`prepareMigration`, after usage validation) and `token`
+  (`runTokenOperation`, after argument validation), and
+  `refuseWindowsOperatorCopy` first in `backup`/`export`/`import`. Both resolve
+  the runtime (config only) and refuse for the local profile before any state
+  root, lock, lease, build or data-root access; deployed profiles pass through.
+  `doctor` stays read-only and, instead of running `db:status`, reports
+  `windows-local-profile-unsupported`. A new command that creates a state root
+  or touches the data root must add itself to the gate and to
+  `WINDOWS_LOCAL_REFUSED_OPERATIONS`.
 - **No runtime schema**: migrations run only through `smrt db:migrate`.
 - **Output**: success JSON on stdout; failure is one stderr line
   `{schemaVersion:1,status:'error',code:'operation-failed',message,recovery,secretValuesIncluded:false}`

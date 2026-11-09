@@ -13,6 +13,8 @@ const baseConfig = createPackageConfig('app-runtime', {
     'vault-key-store',
     'vault-key-lifecycle',
   ],
+  // Fake Windows runtime for the custody tests; never published.
+  dtsExclude: ['src/test-support/**'],
 });
 
 /**

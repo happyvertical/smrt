@@ -2745,24 +2745,46 @@ describe('local runtime paths', () => {
   });
 
   it.each([
-    'win32',
-    'darwin',
-  ] as const)('applies the %s platform override to conservative case-insensitive custody guards', (runtimePlatform) => {
+    {
+      runtimePlatform: 'win32',
+      // The Windows lexical rule needs drive-qualified paths.
+      source: 'C:\\workspace\\lolaus',
+      home: 'C:\\Users\\Test',
+      dedicated: 'c:\\users\\test',
+      upperSource: 'C:\\Workspace\\Lolaus',
+      nested: 'c:\\workspace\\lolaus\\data',
+    },
+    {
+      runtimePlatform: 'darwin',
+      source: '/workspace/lolaus',
+      home: '/Users/Test',
+      dedicated: '/users/test',
+      upperSource: '/Workspace/Lolaus',
+      nested: '/workspace/lolaus/data',
+    },
+  ] as const)('applies the $runtimePlatform platform override to conservative case-insensitive custody guards', ({
+    runtimePlatform,
+    source,
+    home,
+    dedicated,
+    upperSource,
+    nested,
+  }) => {
     expect(() =>
       resolveLocalRuntimePaths({
         appId: 'lolaus',
-        sourceRoot: '/workspace/lolaus',
-        dataDirectory: '/users/test',
-        homeDirectory: '/Users/Test',
+        sourceRoot: source,
+        dataDirectory: dedicated,
+        homeDirectory: home,
         platform: runtimePlatform,
       }),
     ).toThrow('dedicated directory');
     expect(() =>
       resolveLocalRuntimePaths({
         appId: 'lolaus',
-        sourceRoot: '/Workspace/Lolaus',
-        dataDirectory: '/workspace/lolaus/data',
-        homeDirectory: '/Users/Test',
+        sourceRoot: upperSource,
+        dataDirectory: nested,
+        homeDirectory: home,
         platform: runtimePlatform,
       }),
     ).toThrow('does not overlap the source tree');

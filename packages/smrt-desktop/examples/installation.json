@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "productId": "smrt-notes",
+  "bundleId": "com.happyvertical.smrt-notes",
+  "productVersion": "1.4.0",
+  "target": "aarch64-apple-darwin",
+  "platform": "darwin",
+  "installRoot": "/Applications/SMRT Notes.app",
+  "executableDir": "/Applications/SMRT Notes.app/Contents/MacOS",
+  "resourceDir": "/Applications/SMRT Notes.app/Contents/Resources",
+  "shellExecutable": "/Applications/SMRT Notes.app/Contents/MacOS/smrt-notes",
+  "recordedAt": "2026-11-01T12:00:00Z"
+}
