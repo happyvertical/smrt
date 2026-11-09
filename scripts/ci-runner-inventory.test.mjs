@@ -3,28 +3,55 @@ import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { isAlias, isMap, isScalar, isSeq, parseDocument, visit } from 'yaml';
+import { isAlias, isMap, isScalar, isSeq, LineCounter, parseDocument, visit } from 'yaml';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const workflowsDir = path.join(repoRoot, '.github', 'workflows');
 const workflowFiles = readdirSync(workflowsDir).filter((file) => file.match(/\.ya?ml$/));
 
-function runnerDeclarations(file) {
+/**
+ * Every job's `runs-on` of one workflow, read from the parsed document (never
+ * from lines: a job header such as `evil: # c`, a flow-style job or an odd
+ * indent is not something a line reader places, and its `runs-on` would be
+ * credited to the job before it). A job with no `runs-on` and no `uses` (a
+ * reusable workflow call) is reported with `value: undefined`, so it cannot
+ * pass unnoticed. `text` defaults to the file on disk.
+ */
+function runnerDeclarations(file, text = readFileSync(path.join(workflowsDir, file), 'utf8')) {
+  const lineCounter = new LineCounter();
+  const doc = parseDocument(text, { lineCounter, uniqueKeys: true, merge: false });
+  const problems = [...doc.errors, ...doc.warnings].map(
+    (error) => `${file}: not plain YAML: ${error.message.split('\n')[0]}`,
+  );
+  const jobs = doc.get('jobs', true);
   const declarations = [];
-  let job;
-  const lines = readFileSync(path.join(workflowsDir, file), 'utf8').split('\n');
-
-  for (const [index, line] of lines.entries()) {
-    const jobMatch = line.match(/^  ([A-Za-z][\w-]*):\s*$/);
-    if (jobMatch) job = jobMatch[1];
-
-    const runnerMatch = line.match(/^    runs-on:\s*(.*)$/);
-    if (!runnerMatch) continue;
-
-    declarations.push({ file, job, line: index + 1, value: runnerMatch[1] });
+  if (!isMap(jobs)) {
+    return { declarations, problems: [...problems, `${file}: no jobs mapping`] };
   }
-
-  return declarations;
+  for (const pair of jobs.items) {
+    const job = String(pair.key?.value);
+    const line = pair.key?.range ? lineCounter.linePos(pair.key.range[0]).line : 0;
+    if (!isMap(pair.value)) {
+      problems.push(`${file}:${line}:${job}: the job is not a mapping`);
+      continue;
+    }
+    const runsOn = pair.value.items.find((item) => item.key?.value === 'runs-on');
+    if (!runsOn) {
+      if (!pair.value.has('uses')) {
+        problems.push(`${file}:${line}:${job}: the job has no runs-on and no uses`);
+      }
+      continue;
+    }
+    const node = runsOn.value;
+    const value = isScalar(node) ? String(node.value) : JSON.stringify(node?.toJSON?.() ?? null);
+    declarations.push({
+      file,
+      job,
+      line: runsOn.key?.range ? lineCounter.linePos(runsOn.key.range[0]).line : line,
+      value,
+    });
+  }
+  return { declarations, problems };
 }
 
 // desktop-release.yml jobs whose runner comes from a matrix. The expression in
@@ -45,6 +72,42 @@ const DESKTOP_HOSTED_RUNNERS = Object.freeze([
 const DESKTOP_SIGNING_RUNNER_EXPRESSION =
   "${{ vars.DESKTOP_MACOS_SIGNING_RUNNER || 'macos-14' }}";
 
+// Exactly these jobs, each with exactly this runs-on. The matrix-driven ones
+// are checked value by value in desktopRunnerViolations.
+const DESKTOP_EXPECTED_RUNS_ON = Object.freeze({
+  'verify-build': DESKTOP_MATRIX_RUNS_ON,
+  'release-preflight': 'ubuntu-latest',
+  'release-bundle': 'ubuntu-latest',
+  'release-build': DESKTOP_MATRIX_RUNS_ON,
+  release: DESKTOP_SIGNING_RUNS_ON,
+  'release-publish': 'ubuntu-latest',
+});
+
+/** Job ids and runs-on of desktop-release.yml against the expected table. */
+function desktopJobViolations(text) {
+  const violations = [];
+  const { doc, problems } = parseDesktopWorkflow(text);
+  violations.push(...problems);
+  const jobs = doc.toJS({ maxAliasCount: -1 })?.jobs;
+  if (jobs === null || typeof jobs !== 'object' || Array.isArray(jobs)) {
+    return [...violations, 'desktop-release.yml has no jobs mapping'];
+  }
+  const expected = Object.keys(DESKTOP_EXPECTED_RUNS_ON);
+  for (const id of Object.keys(jobs)) {
+    if (!expected.includes(id)) violations.push(`desktop-release.yml: unexpected job ${id}`);
+  }
+  for (const id of expected) {
+    if (!(id in jobs)) {
+      violations.push(`desktop-release.yml: job ${id} is missing`);
+    } else if (jobs[id]?.['runs-on'] !== DESKTOP_EXPECTED_RUNS_ON[id]) {
+      violations.push(
+        `desktop-release.yml: job ${id} runs-on is ${JSON.stringify(jobs[id]?.['runs-on'])}, expected ${DESKTOP_EXPECTED_RUNS_ON[id]}`,
+      );
+    }
+  }
+  return violations;
+}
+
 function jobBlock(lines, job) {
   const start = lines.findIndex((line) => line.match(new RegExp(`^  ${job}:\\s*$`)));
   assert.notEqual(start, -1, `${job} must declare a job block`);
@@ -55,9 +118,16 @@ function jobBlock(lines, job) {
   return lines.slice(start, end === -1 ? lines.length : end);
 }
 
-test('workflow runner inventory permits only explicit Ubuntu and native macOS jobs', () => {
+const expectedMacosJobs = new Set(['mobile.yml:gradle-macos', 'mobile.yml:xcode-ios']);
+
+/**
+ * Violations of the runner rules over every workflow. `overrides` maps a
+ * workflow file name to replacement text (for the negative tests); every other
+ * file is read from disk. Problems reading a file (invalid YAML, a job that is
+ * not a mapping, a job with no runs-on) are violations too.
+ */
+function inventoryViolations(overrides = {}) {
   const unexpectedRunners = [];
-  const expectedMacosJobs = new Set(['mobile.yml:gradle-macos', 'mobile.yml:xcode-ios']);
   // Native-OS jobs that cannot run on Ubuntu (smrt#4663, assumed decision
   // pending owner confirmation): the Windows custody tests, and the desktop
   // build/release legs, whose runner comes from the target matrix
@@ -72,7 +142,9 @@ test('workflow runner inventory permits only explicit Ubuntu and native macOS jo
     ['desktop-release.yml:release-build', (value) => value === DESKTOP_MATRIX_RUNS_ON],
     ['desktop-release.yml:release', (value) => value === DESKTOP_SIGNING_RUNS_ON],
   ]);
-  const declarations = workflowFiles.flatMap(runnerDeclarations);
+  const results = workflowFiles.map((file) => runnerDeclarations(file, overrides[file]));
+  const declarations = results.flatMap((result) => result.declarations);
+  unexpectedRunners.push(...results.flatMap((result) => result.problems));
 
   for (const declaration of declarations) {
     const key = `${declaration.file}:${declaration.job}`;
@@ -93,16 +165,27 @@ test('workflow runner inventory permits only explicit Ubuntu and native macOS jo
     }
   }
 
+  const macosJobs = declarations
+    .filter(({ value }) => value === 'macos-latest')
+    .map(({ file, job }) => `${file}:${job}`)
+    .sort();
+  if (macosJobs.join() !== [...expectedMacosJobs].sort().join()) {
+    unexpectedRunners.push(
+      `only Kotlin/Native and Xcode jobs may use macos-latest, got ${macosJobs.join(', ')}`,
+    );
+  }
+  // desktop-release.yml: exactly the expected jobs, each with the expected
+  // runs-on, read from the parsed document (a job the line reader of an older
+  // version of this test could not place is still a job here).
+  const desktopText = overrides['desktop-release.yml'] ?? desktopWorkflow();
+  unexpectedRunners.push(...desktopJobViolations(desktopText));
+  return { violations: unexpectedRunners, declarations };
+}
+
+test('workflow runner inventory permits only explicit Ubuntu and native macOS jobs', () => {
+  const { violations, declarations } = inventoryViolations();
   assert.ok(declarations.length > 0, 'workflow inventory must find runner declarations');
-  assert.deepEqual(unexpectedRunners, []);
-  assert.deepEqual(
-    declarations
-      .filter(({ value }) => value === 'macos-latest')
-      .map(({ file, job }) => `${file}:${job}`)
-      .sort(),
-    [...expectedMacosJobs].sort(),
-    'only Kotlin/Native and Xcode jobs may use macos-latest',
-  );
+  assert.deepEqual(violations, []);
 });
 
 const DESKTOP_MATRIX_JOBS = Object.freeze({
@@ -431,8 +514,70 @@ test('the runs-on expressions of the desktop-release matrix jobs are exact', () 
   assert.notEqual(desktopRunsOn(signing).release, DESKTOP_SIGNING_RUNS_ON);
 });
 
+test('a job header a line reader cannot place cannot hide a runs-on', () => {
+  const text = desktopWorkflow();
+  const BEFORE = '  release-publish:\n';
+  assert.equal(text.split(BEFORE).length, 2);
+  const withJob = (job) => text.replace(BEFORE, `${job}\n${BEFORE}`);
+  const generic = (mutated) =>
+    inventoryViolations({ 'desktop-release.yml': mutated }).violations;
+  const evilJobs = [
+    // a trailing comment after the header: the old reader skipped the header
+    // and credited the runs-on below to the job before it
+    '  evil: # c\n    runs-on: ${{ matrix.runner }}\n    strategy:\n      matrix:\n        runner: [self-hosted]\n    steps:\n      - run: echo hi\n',
+    '  evil: # c\n    runs-on: [self-hosted]\n    steps:\n      - run: echo hi\n',
+    '  "evil":\n    runs-on: self-hosted\n    steps:\n      - run: echo hi\n',
+    '  evil :\n    runs-on: self-hosted\n    steps:\n      - run: echo hi\n',
+    '  evil: {runs-on: self-hosted, steps: [{run: echo hi}]}\n',
+    '  evil:\n    name: x\n    runs-on:\n      group: mine\n    steps:\n      - run: echo hi\n',
+  ];
+  for (const job of evilJobs) {
+    const mutated = withJob(job);
+    const declared = runnerDeclarations('desktop-release.yml', mutated).declarations;
+    assert.ok(
+      declared.some((d) => d.job === 'evil'),
+      `the job is read as a job of its own: ${job}`,
+    );
+    assert.ok(
+      generic(mutated).some((v) => /:evil: (native job runner rule failed|expected ubuntu-latest)/.test(v)),
+      `the generic inventory refuses it: ${job}`,
+    );
+    assert.ok(
+      desktopJobViolations(mutated).some((v) => /unexpected job evil/.test(v)),
+      `the desktop-release job list refuses it: ${job}`,
+    );
+  }
+  // a job the document has but the expected table does not, or lacks
+  assert.ok(desktopJobViolations(text.replace('  release-publish:\n', '  release-publish-2:\n')).some((v) => /job release-publish is missing/.test(v)));
+  // an expected job with another runs-on, written in any spelling
+  const bundle = /(  release-bundle:\n(?:.*\n)*?    runs-on: )ubuntu-latest/;
+  assert.ok(bundle.test(text), 'the release-bundle runs-on anchor');
+  for (const runsOn of ['[self-hosted]', 'self-hosted', 'macos-latest', '${{ matrix.runner }}', '{group: mine}']) {
+    const mutated = text.replace(bundle, `$1${runsOn}`);
+    assert.ok(
+      desktopJobViolations(mutated).some((v) => /job release-bundle runs-on/.test(v)),
+      runsOn,
+    );
+    assert.ok(generic(mutated).some((v) => /release-bundle/.test(v)), runsOn);
+  }
+  // an extra job on a hosted runner is still not one of the six jobs
+  assert.ok(
+    generic(withJob('  evil: # c\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo hi\n')).some((v) =>
+      /unexpected job evil/.test(v),
+    ),
+  );
+  // a job with neither runs-on nor uses is reported, not skipped
+  assert.ok(
+    generic(withJob('  evil:\n    steps:\n      - run: echo hi\n')).some((v) =>
+      /evil: the job has no runs-on and no uses/.test(v),
+    ),
+  );
+  // a file that does not parse is reported, not skipped
+  assert.ok(generic(`${text}\n---\nother: 1\n`).some((v) => /not plain YAML/.test(v)));
+});
+
 test('test matrices retain the hosted three-shard parallelism', () => {
-  const declarations = runnerDeclarations('test-suite.yml');
+  const { declarations } = runnerDeclarations('test-suite.yml');
 
   for (const job of [
     'affected-core-tests',
