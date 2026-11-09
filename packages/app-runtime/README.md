@@ -387,7 +387,7 @@ behaviour is involved, `src/windows-custody.win32.test.ts` (Windows runner only)
 | L2 | A Windows process also takes a legacy `/tmp` lease | none exists on Windows | `takes exactly one beside-data lease, never a legacy /tmp lease` |
 | S1 | Case variants of one data directory get two state roots and so two writer leases | state-root identity hashes the case-folded root on Windows | `gives case variants of one data directory one state root (one lock domain)` |
 | S2 | The state root silently skips its owner checks when no identity is known | the check now throws on every platform | `throws instead of skipping the owner checks when no uid is known` |
-| G1 | A half-built root left behind on a platform that cannot finish | database acquisition is refused with a named error before any directory is created | `refuses before the lease creates a single directory or file`; `refuses initializeLocalApplicationRuntime the same way`; `refuses acquireLocalDatabase before any filesystem access`; `refuses to open the token store, after validating the stored root` |
+| G1 | A half-built root left behind when acquisition fails midway on Windows | the marker pair and every directory created by the attempt are rolled back; the SDK removes a database leaf it created when its second custody pass fails | `rolls back the markers and directories when the database custody check fails` |
 
 Out of scope, as on POSIX: hostile code already running as the same user, and
 Administrators or SYSTEM (trusted like uid 0). Repairing the ACL of an existing directory,
@@ -944,8 +944,12 @@ is a `403` with an empty body. Responses have an empty body, `Cache-Control:
 no-store` and `Referrer-Policy: no-referrer`; the token is only in `Location`,
 which the desktop wrapper's webview follows and the wrapper never reads or logs.
 Any process on the device that can reach the loopback port can ask for the link,
-which is the same trust as the `onboarding.json` file's owner; the claim is still
-first-come and single-use. `runtime.ownerSetupLocation()` is the underlying
+including another OS user on a shared machine: unlike `onboarding.json` (mode
+0600) the port is not private to the user, so on a shared computer another
+account could claim ownership first during the short window before the owner is
+claimed. The claim is first-come and single-use, and after it the route only
+redirects to `/`. Treat the desktop path as single-user until the route is bound
+to a per-launch secret the wrapper passes to the sidecar (follow-up issue). `runtime.ownerSetupLocation()` is the underlying
 method; never log or serialize its result.
 
 Password-based applications should pass `{ requirePassword: true }` to

@@ -31,7 +31,12 @@
  *    immediately. Done once `vault-sync.json` records a published sequence.
  *
  * `discardPreviousAccount()` is not a step: it waits for the other devices to
- * join and is the caller's decision.
+ * join and is the caller's decision. Once it has run, the parked previous
+ * account is gone and a finished restart can no longer be told apart from an
+ * account created from scratch under the same id, so `restartVault` and
+ * `inspectVaultRestart` report `mismatch` (nothing is changed): call them only
+ * while the previous account is still parked, and do not rely on them after the
+ * discard.
  *
  * The caller holds the operation lock, as `switchVaultAccount` requires.
  */

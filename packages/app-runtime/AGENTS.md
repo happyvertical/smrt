@@ -38,7 +38,8 @@ Application infrastructure composition for the validated runtime profiles in
   failure a refusal; no "unverified" mode), `windows-custody.ts` (synchronous
   chain walk, creation with post-create re-inspection and rollback, bigint
   identity). `windows-acl-lock.ts` (smrt#4843): a directory the runtime itself
-  creates (the private leaf only, never an existing one or an ancestor) is
+  creates (every component the call creates, intermediate ones included;
+  never one that already existed) is
   locked at once through `WindowsCustodyRuntime.lockDirectory` (fixed-argv
   `icacls.exe /inheritance:r /grant:r *user/SY/BA (OI)(CI)F`, path one argv
   element) and then verified by the unchanged rule; a lock failure removes it.

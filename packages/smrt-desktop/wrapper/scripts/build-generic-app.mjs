@@ -282,11 +282,15 @@ function publishWorkspace(packages, names, registry, root) {
       join(packs, tarball),
       '--registry',
       registry.url,
+      // A scope mapping in an ambient .npmrc (the repository's own) wins over
+      // --registry for scoped packages, so name the scope explicitly, and run
+      // outside the checkout so no project .npmrc is read at all.
+      `--@happyvertical:registry=${registry.url}`,
       '--userconfig',
       registry.userconfig,
       '--access',
       'public',
-    ]);
+    ], { cwd: packs });
   }
 }
 

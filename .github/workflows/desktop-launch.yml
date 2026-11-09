@@ -31,11 +31,19 @@ on:
   pull_request:
     paths:
       - 'packages/smrt-desktop/**'
+      - 'packages/app-runtime/**'
+      - 'packages/template-sveltekit/**'
+      - 'packages/cli/**'
+      - 'packages/app-cli/**'
       - '.github/workflows/desktop-launch.yml'
   push:
     branches: [main]
     paths:
       - 'packages/smrt-desktop/**'
+      - 'packages/app-runtime/**'
+      - 'packages/template-sveltekit/**'
+      - 'packages/cli/**'
+      - 'packages/app-cli/**'
       - '.github/workflows/desktop-launch.yml'
   workflow_dispatch:
 
