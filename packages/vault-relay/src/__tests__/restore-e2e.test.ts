@@ -272,7 +272,16 @@ function makeEnvironment() {
     });
     return { code, stdout: stdout.join(''), stderr: stderr.join('') };
   };
-  return { root, boot, marker, setMarker, backup, restore, stateRootOf };
+  return {
+    root,
+    boot,
+    marker,
+    setMarker,
+    backup,
+    restore,
+    stateRootOf,
+    target,
+  };
 }
 
 async function code(promise: Promise<unknown>): Promise<string> {
@@ -348,5 +357,38 @@ describe('vault backup then restore across two devices', () => {
     expect(env.marker(JSON.parse(behind.stdout).previousRoot)).toBe(
       'laptop edit after backup',
     );
+  });
+});
+
+describe('device deletes through the client', () => {
+  it('tells the sole committed snapshot (last_snapshot) from the head of several (head_snapshot), and still deletes older ones', async () => {
+    const device = newDevice(ACCOUNT, 'device-a1');
+    await registerDevice(h, device);
+    const env = makeEnvironment();
+    const laptop = join(env.root, 'laptop');
+    await env.boot(laptop, 'laptop v1');
+    const keys = keysFor('device-a1');
+    await env.backup(device, laptop, keys);
+
+    const vault = env.target(device, laptop);
+    h.logger.lines.length = 0;
+    // The account's only snapshot: train 1's rule.
+    const sole = await code(vault.delete('1'));
+    expect(sole).toBe('last_snapshot');
+
+    await env.backup(device, laptop, keys);
+    // The newest of two is the lease head: the lease rule, a different error.
+    expect(await code(vault.delete('2'))).toBe('head_snapshot');
+    // Both refusals are audited with their own reason, without account names.
+    expect(
+      h.logger.lines
+        .filter((line) => line.event === 'snapshot_delete_refused')
+        .map((line) => line.fields?.reason),
+    ).toEqual(['last_committed', 'head']);
+    expect(JSON.stringify(h.logger.lines)).not.toContain(ACCOUNT);
+
+    // An older snapshot is still removable.
+    await vault.delete('1');
+    expect((await h.relay.operatorView(ACCOUNT)).snapshots).toHaveLength(1);
   });
 });

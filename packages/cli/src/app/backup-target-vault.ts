@@ -604,6 +604,18 @@ export class VaultRelayBackupTarget implements BackupTarget {
         'A snapshot with this sequence is already uploading or stored.',
       );
     }
+    if (response.status === 409 && code === 'last_snapshot') {
+      return new BackupTargetError(
+        'last_snapshot',
+        'The vault refuses to delete the only snapshot of this account; keep it until a newer one is stored.',
+      );
+    }
+    if (response.status === 409 && code === 'head_snapshot') {
+      return new BackupTargetError(
+        'head_snapshot',
+        'The vault refuses to delete the newest snapshot (the writer lease head); only older snapshots can be removed.',
+      );
+    }
     if (response.status === 404) {
       return new BackupTargetError('not_found', 'Unknown snapshot.');
     }

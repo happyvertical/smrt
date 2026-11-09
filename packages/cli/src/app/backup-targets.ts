@@ -66,6 +66,8 @@ export type BackupTargetErrorCode =
   | 'must_restore_first'
   | 'lease_held'
   | 'lease_lost'
+  | 'last_snapshot'
+  | 'head_snapshot'
   | 'position_unrecorded'
   | 'unavailable';
 
