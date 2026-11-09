@@ -198,23 +198,26 @@ function bad(field: string): never {
 
 const featureName = /^[a-z][a-z0-9-]{0,31}$/;
 const globPath = /^(?:[A-Za-z0-9@._*+~-]+\/)*[A-Za-z0-9@._*+~-]+$/;
-const FORBIDDEN_NODE_FLAGS: ReadonlySet<string> = new Set([
-  '-e',
-  '--eval',
-  '-p',
-  '--print',
-  '-r',
-  '--require',
-  '--import',
-  '--loader',
-  '--experimental-loader',
-  '--input-type',
-  '--env-file',
-  '--watch',
-  '--test',
-  '-i',
-  '--interactive',
+/**
+ * The Node flags a product may put before the entry script of its sidecar:
+ * an ALLOWLIST, because Node has far too many options that load code, change
+ * trust or widen the process (`--conditions`/`-C`, `--security-revert`,
+ * `--insecure-http-parser`, `--experimental-config-file`,
+ * `--env-file-if-exists`, `--require`, `--import`, `--loader`, `--inspect*`,
+ * ...) to enumerate as a denylist, and new ones appear in every release. The
+ * set is deliberately tiny: a V8 heap ceiling is the one flag a desktop
+ * product has a reason to set. Matching is exact and `=`-joined (no abbreviation,
+ * no `--flag value` form, no `_` spelling); anything else is rejected and the
+ * product asks for a new entry here. After the entry script only plain values
+ * are accepted (they are the script's arguments, not Node's), and `--` is
+ * never accepted.
+ */
+export const SIDECAR_NODE_FLAG_ALLOWLIST: readonly RegExp[] = Object.freeze([
+  // The V8 old-generation ceiling in MiB (10 to 999999).
+  /^--max-old-space-size=[1-9][0-9]{1,5}$/,
 ]);
+
+const SCRIPT_PATH = /\.(?:m?js|cjs)$/;
 
 function stringArray(
   value: unknown,
@@ -232,29 +235,37 @@ function stringArray(
 
 function parseArgs(value: unknown): string[] {
   const field = 'sidecar.args';
-  const args = stringArray(
-    value,
-    field,
-    16,
-    (item) => {
-      if (!isValidText(item) || item.length === 0 || item.length > 256) {
-        return false;
+  if (!Array.isArray(value) || value.length === 0 || value.length > 16) {
+    bad(field);
+  }
+  const items = value as unknown[];
+  let seenScript = false;
+  const flags = new Set<string>();
+  for (const item of items) {
+    if (!isValidText(item) || item.length === 0 || item.length > 256) {
+      bad(field);
+    }
+    const arg = item as string;
+    if (arg.startsWith('-')) {
+      // Node options exist only before the script, and only the allowlist.
+      if (
+        seenScript ||
+        flags.has(arg.split('=')[0] as string) ||
+        !SIDECAR_NODE_FLAG_ALLOWLIST.some((allowed) => allowed.test(arg))
+      ) {
+        bad(field);
       }
-      if (item.startsWith('-')) {
-        const flag = item.split('=')[0] as string;
-        return (
-          /^-{1,2}[A-Za-z0-9][A-Za-z0-9_.=:,-]*$/.test(item) &&
-          !FORBIDDEN_NODE_FLAGS.has(flag) &&
-          !flag.startsWith('--inspect')
-        );
-      }
-      return isPortablePath(item) || /^[0-9]+$/.test(item);
-    },
-    false,
-  );
-  // At least one non-flag argument: the script node runs.
-  if (!args.some((arg) => !arg.startsWith('-'))) bad(field);
-  return args;
+      flags.add(arg.split('=')[0] as string);
+    } else if (!seenScript) {
+      // The first plain argument is the script node runs.
+      if (!isPortablePath(arg) || !SCRIPT_PATH.test(arg)) bad(field);
+      seenScript = true;
+    } else if (!(isPortablePath(arg) || /^[0-9]+$/.test(arg))) {
+      bad(field);
+    }
+  }
+  if (!seenScript) bad(field);
+  return items as string[];
 }
 
 function parseSidecar(value: unknown): ProductConfig['sidecar'] {
