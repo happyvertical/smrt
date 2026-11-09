@@ -80,6 +80,17 @@ export interface AiUsageRetentionPolicy {
   maxRows?: number;
 }
 
+/**
+ * Retention for AI call transcripts (`_smrt_ai_transcripts`, #4780). Separate
+ * from {@link AiUsageRetentionPolicy} so labels and metrics outlive content.
+ */
+export interface AiTranscriptsRetentionPolicy {
+  /** Run this task (default `true`). */
+  enabled?: boolean;
+  /** Drop transcripts older than this many days (default 30). */
+  maxAgeDays?: number;
+}
+
 /** Retention for remembered context entries (`_smrt_contexts`). */
 export interface ContextsRetentionPolicy {
   /** Run this task (default `true`). */
@@ -131,6 +142,8 @@ export interface RetentionPolicy {
   changes?: ChangeFeedRetentionPolicy | false;
   /** `_smrt_ai_usage` retention, or `false` to skip. */
   aiUsage?: AiUsageRetentionPolicy | false;
+  /** `_smrt_ai_transcripts` retention (#4780), or `false` to skip. */
+  aiTranscripts?: AiTranscriptsRetentionPolicy | false;
   /** `_smrt_contexts` expiry enforcement, or `false` to skip. */
   contexts?: ContextsRetentionPolicy | false;
   /** `_smrt_dispatch` retention, or `false` to skip. */
@@ -156,12 +169,16 @@ export interface RetentionPolicy {
 export const DEFAULT_RETENTION_POLICY: {
   changes: ChangeFeedRetentionPolicy;
   aiUsage: AiUsageRetentionPolicy;
+  aiTranscripts: AiTranscriptsRetentionPolicy;
   contexts: ContextsRetentionPolicy;
   dispatch: DispatchRetentionPolicy;
   runOnceClaims: RunOnceClaimsRetentionPolicy;
 } = {
   changes: { maxAgeDays: 30 },
   aiUsage: { maxAgeDays: 90 },
+  // Readable content (#4780) goes after 30 days; its usage rows and labels
+  // stay for the aiUsage window.
+  aiTranscripts: { maxAgeDays: 30 },
   contexts: {},
   dispatch: { completedOlderThanDays: 30, failedOlderThanDays: 90 },
   // 30 days is generous relative to any realistic runOnce() client retry —
@@ -373,6 +390,48 @@ export async function pruneAiRuns(
   const pruned = await deleteFrom(
     db,
     AI_RUNS_TABLE,
+    [...scope.conditions, 'created_at < ?'],
+    [...scope.params, cutoff],
+    dryRun,
+  );
+  return { pruned };
+}
+
+/** Name of the AI call transcript table (#4780). */
+const AI_TRANSCRIPTS_TABLE = '_smrt_ai_transcripts';
+
+/** Options for {@link pruneAiTranscripts}. */
+export interface AiTranscriptsRetention {
+  /** Delete transcripts older than this many milliseconds. */
+  maxAgeMs: number;
+  /** One tenant (`null`: global rows); omit for every tenant. */
+  tenantId?: string | null;
+  dryRun?: boolean;
+  now?: Date;
+}
+
+/**
+ * Prune AI call transcripts (`_smrt_ai_transcripts`, #4780) older than
+ * `maxAgeMs`. Usage rows, runs and labels are untouched: they are pruned by
+ * their own tasks. Served by `idx_smrt_ai_transcripts_created` /
+ * `idx_smrt_ai_transcripts_tenant_created`.
+ */
+export async function pruneAiTranscripts(
+  db: DatabaseInterface,
+  retention: AiTranscriptsRetention,
+): Promise<{ pruned: number }> {
+  const { maxAgeMs, dryRun = false } = retention;
+  if (!Number.isFinite(maxAgeMs) || maxAgeMs < 0) {
+    throw new Error(
+      `pruneAiTranscripts maxAgeMs must be >= 0, got ${maxAgeMs}`,
+    );
+  }
+  const now = retention.now ?? new Date();
+  const scope = tenantScopeClause(retention);
+  const cutoff = new Date(now.getTime() - maxAgeMs).toISOString();
+  const pruned = await deleteFrom(
+    db,
+    AI_TRANSCRIPTS_TABLE,
     [...scope.conditions, 'created_at < ?'],
     [...scope.params, cutoff],
     dryRun,
@@ -709,6 +768,11 @@ function builtInTasks(policy: RetentionPolicy): BuiltInRetentionTask[] {
   return [
     { name: 'changes', table: '_smrt_changes', task: changeFeedTask(policy) },
     { name: 'ai-usage', table: AI_USAGE_TABLE, task: aiUsageTask(policy) },
+    {
+      name: 'ai-transcripts',
+      table: AI_TRANSCRIPTS_TABLE,
+      task: aiTranscriptsTask(policy),
+    },
     { name: 'contexts', table: CONTEXTS_TABLE, task: contextsTask(policy) },
     { name: 'dispatch', table: '_smrt_dispatch', task: dispatchTask(policy) },
     {
@@ -772,6 +836,30 @@ function aiUsageTask(policy: RetentionPolicy): RetentionTask | null {
         now: context.now,
       });
       return pruned + runs.pruned;
+    },
+  };
+}
+
+function aiTranscriptsTask(policy: RetentionPolicy): RetentionTask | null {
+  const config = resolveEntry<AiTranscriptsRetentionPolicy>(
+    policy.aiTranscripts,
+    DEFAULT_RETENTION_POLICY.aiTranscripts,
+  );
+  if (!config) return null;
+
+  return {
+    name: 'ai-transcripts',
+    description: 'Prune AI call transcripts (_smrt_ai_transcripts)',
+    run: async (db, context) => {
+      const { pruned } = await pruneAiTranscripts(db, {
+        maxAgeMs:
+          (config.maxAgeDays ??
+            DEFAULT_RETENTION_POLICY.aiTranscripts.maxAgeDays ??
+            30) * MS_PER_DAY,
+        dryRun: context.dryRun,
+        now: context.now,
+      });
+      return pruned;
     },
   };
 }

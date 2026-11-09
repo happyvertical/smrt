@@ -93,7 +93,8 @@ export class AiUsageCollector implements AiUsageHandler {
 }
 
 /**
- * Usage tags lifted into indexed `_smrt_ai_usage` columns (#4751), tag name to
+ * Usage tags lifted into indexed `_smrt_ai_usage` columns (#4751; `callId`,
+ * #4780), tag name to
  * column name. The full tag map is always stored in `tags` as well, so a
  * lifted tag is a copy, never a move.
  */
@@ -102,6 +103,7 @@ export const AI_USAGE_TAG_COLUMNS = Object.freeze({
   tierRequested: 'tier_requested',
   tierResolved: 'tier_resolved',
   runId: 'run_id',
+  callId: 'call_id',
 } as const);
 
 /** A lifted tag value: a non-empty string, else NULL. */
@@ -125,8 +127,8 @@ export class AiUsagePersistenceHandler implements AiUsageHandler {
         `INSERT INTO _smrt_ai_usage
           (id, provider, model, operation, prompt_tokens, completion_tokens,
            total_tokens, estimated_cost, duration, class_name, tenant_id, tags, created_at,
-           prompt_key, tier_requested, tier_resolved, run_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
+           prompt_key, tier_requested, tier_resolved, run_id, call_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
         crypto.randomUUID(),
         event.provider,
         event.model,
@@ -144,6 +146,7 @@ export class AiUsagePersistenceHandler implements AiUsageHandler {
         liftedTag(event.tags, 'tierRequested'),
         liftedTag(event.tags, 'tierResolved'),
         liftedTag(event.tags, 'runId'),
+        liftedTag(event.tags, 'callId'),
       );
     } catch (error) {
       throw new Error(
