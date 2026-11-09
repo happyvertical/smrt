@@ -56,11 +56,21 @@ import {
 } from '@happyvertical/smrt-users';
 import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
 import {
+  type CloudLinkChallenge,
+  CloudLinkError,
+  type CloudLinkExpectations,
+  type CloudLinkIdentities,
+  deriveCloudLinkKeyPair,
+  signCloudLinkProof,
+  verifyCloudLinkChallenge,
+} from './cloud-link.js';
+import {
   describeInstallationStateRoot,
   enforceInstallationCustody,
   INSTALLATION_CUSTODY_FILE,
   type InstallationCustodyReport,
   type InstallationStateRootNote,
+  inspectInstallationCustody,
   installationCustodyHint,
   stateRootOptions,
 } from './installation-custody.js';
@@ -79,6 +89,7 @@ import {
 } from './state-root.js';
 
 export * from './application-identity.js';
+export * from './cloud-link.js';
 export * from './data-root-swap.js';
 export * from './deployed-runtime.js';
 export * from './installation-custody.js';
@@ -399,6 +410,112 @@ export async function openLocalMcpTokenStore(
     verify: store.verify,
     close: async () => {
       await db.close?.();
+    },
+  });
+}
+
+/** The local half of a cloud link (#4806); holds no secret material. */
+export interface LocalCloudLinkIdentity {
+  /** The public device ID. */
+  readonly installationId: string;
+  readonly identities: CloudLinkIdentities;
+  /** Raw Ed25519 link public key, base64url. */
+  readonly linkPublicKey: string;
+  /**
+   * Check a challenge against this installation and the operator's
+   * expectations (`verifyCloudLinkChallenge()`), then sign it. The seed is
+   * re-read for each signature and never retained.
+   */
+  signProof(
+    challenge: unknown,
+    expected: LocalCloudLinkExpectations,
+  ): Promise<{ challenge: CloudLinkChallenge; signature: string }>;
+}
+
+/** Operator expectations for {@link LocalCloudLinkIdentity.signProof}. */
+export type LocalCloudLinkExpectations = Omit<
+  CloudLinkExpectations,
+  'appId' | 'installationId' | 'linkPublicKey'
+>;
+
+/**
+ * Open the link identity of an initialized local installation. Refuses unless
+ * custody is `in-custody`: an arrived copy, a retired location or a seed
+ * mismatch cannot link. Read-only; it never opens the database.
+ */
+export async function openLocalCloudLinkIdentity(
+  options: ResolveLocalRuntimePathsOptions,
+): Promise<LocalCloudLinkIdentity> {
+  const paths = await validateLocalDatabaseStorage(options);
+  const canonicalSourceRoot = await realpath(
+    resolve(options.sourceRoot ?? process.cwd()),
+  );
+  const report = await inspectInstallationCustody(options);
+  if (report.status !== 'in-custody') throw installationUnverified(report);
+  const readIdentity = async () => {
+    const secret = await validateApplicationSecret(
+      paths.applicationSecret,
+      canonicalSourceRoot,
+    );
+    return {
+      identity: deriveLocalInstallationIdentity(secret),
+      keys: deriveCloudLinkKeyPair(secret),
+    };
+  };
+  const { identity, keys } = await readIdentity();
+  if (identity.deviceId !== report.installationId) {
+    throw installationUnverified(report);
+  }
+  const identities: CloudLinkIdentities = Object.freeze({
+    tenantId: identity.tenantId,
+    ownerId: identity.ownerId,
+    profileId: identity.profileId,
+    membershipId: identity.membershipId,
+  });
+  const linkPublicKey = keys.publicKey;
+  return Object.freeze({
+    installationId: identity.deviceId,
+    identities,
+    linkPublicKey,
+    async signProof(value: unknown, expected: LocalCloudLinkExpectations) {
+      const challenge = verifyCloudLinkChallenge(value, {
+        ...expected,
+        appId: validateApplicationId(options.appId),
+        installationId: identity.deviceId,
+        linkPublicKey,
+      });
+      if (
+        challenge.target === 'per-user' &&
+        (challenge.accountId !== identities.ownerId ||
+          challenge.tenantId !== identities.tenantId)
+      ) {
+        throw new CloudLinkError(
+          'challenge_mismatch',
+          'A per-user link must be signed in as the imported local owner and tenant.',
+        );
+      }
+      const custody = await inspectInstallationCustody(options);
+      if (
+        custody.status !== 'in-custody' ||
+        custody.installationId !== identity.deviceId
+      ) {
+        throw installationUnverified(custody);
+      }
+      const current = await readIdentity();
+      if (current.keys.publicKey !== linkPublicKey) {
+        throw new LocalRuntimeError(
+          'installation_unverified',
+          'The installation seed changed while linking; nothing was signed.',
+        );
+      }
+      return {
+        challenge,
+        signature: signCloudLinkProof(
+          current.keys.privateKey,
+          challenge,
+          identities,
+        ),
+      };
     },
   });
 }

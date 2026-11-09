@@ -329,6 +329,47 @@ position counts as unpublished, and `removeStaleRestoreSiblings` clears
 plaintext a crash left before the journal existed. Open: the SvelteKit request layer does not yet consult the
 keeper; the desktop launcher wires `assertWritable()` into writes.
 
+### Linking an installation to a hosted account
+
+`smrt-cloud-link-v1` (#4806; design and security review on #4668) links a
+local installation to a hosted account before a local-to-cloud migration.
+Both halves are exported from this package; the migration itself is
+`@happyvertical/smrt-cli/app` (`planCloudMigration` and friends).
+
+- **Local** (`openLocalCloudLinkIdentity(options)`): refuses unless custody is
+  `in-custody`. It exposes the public device ID, the four seed-derived
+  identities and an Ed25519 link public key derived from the seed under a
+  purpose outside the public-UUID namespace. `signProof(challenge, expected)`
+  first checks the challenge (`verifyCloudLinkChallenge`): normalized https
+  origin equal to the one called, own application, installation and key, the
+  operator's expected account **and** tenant IDs, a lifetime of at most ten
+  minutes (60 s skew), a sole-member tenant for the per-user target, and an
+  explicit `allowSharedTenant` when a shared tenant has other owners. The
+  seed is re-read for the signature and never retained.
+- **Hosted** (`createCloudLinkService({ origin, store })`): `origin` comes
+  from configuration, never from request headers. The account, tenant,
+  profile and membership come from the authenticated session
+  (`CloudLinkPrincipal`), and only a tenant owner can link. A challenge is
+  bound to that session and consumed by that session's first completion,
+  whether or not the signature verifies; another session cannot burn it. The
+  hosted identities are always the session's: on the per-user target the
+  principal must be the imported local owner, tenant, profile and membership
+  exactly (a per-user database is linked after its import). Links are unique per link public key: the same
+  inputs return the same link; anything else is
+  `installation_linked_elsewhere` (a copied seed that linked first is undone
+  by `reseed`, which changes the key). Each account has at most five
+  outstanding challenges. Every `CloudLinkStore` method is one atomic step:
+  `insertChallenge` checks that cap and inserts together, `consumeChallenge`
+  is a compare-and-set for the issuing session, and `createLinkIfAbsent`
+  inserts only when no link exists;
+  `createMemoryCloudLinkStore()` is for tests only.
+- **Receipt**: `verifyCloudLinkReceipt` checks the returned link against the
+  signed proof. `cloudLinkIdentityMap(link)` maps local to hosted
+  identities (the identity on the per-user target) and system role IDs to
+  themselves. H never authorizes anything on the claimed local identities.
+
+Not yet provided: hosted HTTP routes, a durable hosted link store, unlinking.
+
 ### Local desktop MCP credentials
 
 A desktop product can mount this opt-in SvelteKit route in
