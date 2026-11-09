@@ -1,8 +1,8 @@
-# Inference tiers and the binding resolver seam (#4750, #4752, #4753, #4758)
+# Inference tiers and the binding resolver seam (#4750, #4752, #4753, #4756–#4758, #4760)
 
 Source: `src/inference.ts`, `SmrtClass.getAiClient(tier?)` in `src/class.ts`,
 `SmrtClass.prepareAiOperation()` (objects and collections) in `src/class.ts`.
-Epic: #4749.
+Epic: #4749. App-author guide: [docs/content/inference.md](../../../docs/content/inference.md).
 
 ## Vocabulary
 
@@ -41,8 +41,9 @@ config resolution. `resolveInference()` validates the result and rejects a
 concrete tier answered by another tier: resolvers bind, only the executor
 degrades, and #4749 requires every degradation to be recorded.
 
-The #4666 per-user resolver is an `InferenceResolver` returning a tier →
-target binding map, not a single `AIClientOptions`.
+The per-user resolver (#4756, smrt-inference `./resolver`) is an
+`InferenceResolver` returning a tier → target binding map, not a single
+`AIClientOptions`.
 
 ## Chain kinds and the executor seam (#4752)
 
@@ -202,7 +203,7 @@ and the dev photo-setup route (vision / decision providers).
 entitlement | capability`; `isInferenceUnavailableError()` matches by code
 across core copies). `entitlement` is raised by the hosted gate (#4760,
 below) and carries `entitlement: { policy, cap?, spend?, resetsAt?,
-disabledBy? }`; `capability` is reserved for capability detection (#4758).
+disabledBy? }`; `capability` is raised by capability detection (#4758, above).
 `off` and `unconfigured` always report mode `off`.
 
 - **Where it is thrown.** `getAiClient()`, before any client is built, so

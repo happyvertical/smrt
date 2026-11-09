@@ -78,8 +78,21 @@ app scope only, so a tenant cannot change what an allow-listed name means.
 
 ## Applying the bindings
 
-Register `createInferenceOverrideResolver({ db })` with core's
-`setInferenceResolver()`. For each call it uses the stored binding, or
-defers to its `base` resolver or to config when nothing is stored. Run
-`smrt db:migrate` to create `_smrt_inference_overrides`; the runtime never
-creates the table.
+Compose `createInferenceOverrideResolver({ db })` as the per-user
+resolver's `fallback`, so stored user and tenant keys still win and the
+chain validation of `@happyvertical/smrt-inference` stays outermost:
+
+```ts
+registerUserInferenceResolver(
+  createUserInferenceResolver({ db, fallback: createInferenceOverrideResolver({ db }) }),
+);
+```
+
+A bare `setInferenceResolver()` would drop that validation. For each call
+the override resolver uses the stored row, or defers to config when nothing
+is stored. Run `smrt db:migrate` to create `_smrt_inference_overrides`; the
+runtime never creates the table. A tier bound to a fusion that exists only
+in an app row fails `fusion-unknown` until #4800; define fusions in config
+or with `defineFusion()` meanwhile. The whole picture (tiers, fallback,
+fusions, modes, hosted inference, usage) is in
+[Inference tiers, bindings and usage](./inference.md).

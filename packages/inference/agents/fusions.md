@@ -85,7 +85,8 @@ await contract.do('Summarize this contract', { tier: 'best' }); // unchanged cal
   then core's `importOptionalDependency()` (a module registered with
   `registerOptionalDependency()` in bundled builds).
   `setFusionPromptResolver()` replaces it.
-- **Tenant-level fusions are deferred** to #4754's allow-list: a fusion
-  multiplies hosted model spend per call, so a tenant must not be able to
-  define or rebind one until bindings have a tenant allow-list. v1 reads
-  fusions from app config and code only.
+- **Fusions are app-scope only.** A fusion multiplies hosted model spend
+  per call, so a tenant never defines or redefines one; with #4754's
+  allow-list a tenant may bind a tier to a listed fusion (`fusion:<n>`).
+  The executor reads fusions from app config and `defineFusion()`; a fusion
+  defined only in an app override row fails `fusion-unknown` until #4800.

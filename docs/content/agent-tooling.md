@@ -139,6 +139,9 @@ The same knowledge and checks are available without an MCP client:
   the local boot otherwise.
 - `smrt db:diff` and `smrt runtime:check` cover the schema diff and the
   manifest/registry consistency check from the developer's terminal.
+- `smrt doctor --ai` checks the app's AI model bindings and `smrt ai:usage`
+  reports model calls per prompt, model and tier; the runtime tools do not
+  read `_smrt_ai_usage`. See [Inference tiers, bindings and usage](./inference.md).
 
 ## Where the details live
 

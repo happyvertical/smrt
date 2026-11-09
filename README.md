@@ -138,7 +138,7 @@ For framework invariants and production setup, read [the repository guide](./AGE
 
 - **Domain-first ORM:** typed objects, collections, relationships, tenancy, STI, migrations, and portable database adapters.
 - **Generated interfaces:** REST, CLI, MCP, manifests, web collection definitions, and mobile contracts from one model graph.
-- **AI runtime:** object-level `is()`/`do()`, prompts, agents, personas, learning memory, jobs, and observability signals.
+- **AI runtime:** object-level `is()`/`do()`, prompts, agents, personas, learning memory, jobs, and observability signals; inference tiers, fallback aliases, fusions, user and tenant bindings, hosted inference, and per-prompt usage reports ([guide](./docs/content/inference.md)).
 - **Reusable vertical packages:** identity, content, commerce, sales, support, projects, media, analytics, and more.
 - **Cross-platform clients:** Svelte 5 UI, browser data runtime, Kotlin Multiplatform foundations, Android Compose, and SwiftUI.
 
@@ -150,6 +150,7 @@ For framework invariants and production setup, read [the repository guide](./AGE
 | Start a SvelteKit application | [`smrt-template-sveltekit`](./packages/template-sveltekit/README.md) |
 | Run a local, self-hosted, or cloud application | [`smrt-app-runtime`](./packages/app-runtime/README.md) |
 | Build agents and personas | [`smrt-agents`](./packages/agents/README.md), [`smrt-personas`](./packages/personas/README.md) |
+| Choose models, fallbacks, and who may change them | [Inference guide](./docs/content/inference.md), [`smrt-inference`](./packages/inference/README.md) |
 | Add tenant-aware identity and authorization | [`smrt-tenancy`](./packages/tenancy/README.md), [`smrt-users`](./packages/users/README.md) |
 | Build live or offline browser data | [`smrt-web`](./packages/smrt-web/README.md), [`smrt-svelte`](./packages/smrt-svelte/README.md) |
 | Expose an application CLI or MCP server | [`smrt-app-cli`](./packages/app-cli/README.md), [`smrt-app-mcp`](./packages/smrt-app-mcp/README.md) |
@@ -200,7 +201,7 @@ Status legend:
 | [`smrt-approvals`](./packages/approvals/README.md) | Experimental | Revision-bound, single-use approvals with quorum, expiry, and an append-only decision ledger. |
 | [`smrt-playbooks`](./packages/playbooks/README.md) | Preview | Layered playbook registry, overrides, and plan resolution. |
 | [`smrt-prompts`](./packages/prompts/README.md) | Stable | Typed prompt registry and tenant-aware overrides. |
-| [`smrt-inference`](./packages/inference/README.md) | Preview | Inference alias chains with classified, recorded fallback, ladder degradation, and `smrt doctor --ai`. |
+| [`smrt-inference`](./packages/inference/README.md) | Preview | Inference alias chains with recorded fallback, fusions, user and tenant bindings, the settings panel, hosted inference, and `smrt doctor --ai`. |
 | [`smrt-projects`](./packages/projects/README.md) | Preview | Provider-neutral projects, repositories, issues, and delivery work. |
 | [`smrt-support`](./packages/support/README.md) | Preview | Support Case intake, lifecycle, routing, targets, and service time. |
 | [`smrt-timesheets`](./packages/timesheets/README.md) | Preview | Shared time entries, approval and correction, and immutable charge/compensation snapshots. |
@@ -312,6 +313,7 @@ The first command links a sibling HappyVertical SDK checkout; the second restore
 
 - [Repository architecture and agent guidance](./AGENTS.md)
 - [Core framework API and examples](./packages/core/README.md)
+- [Inference tiers, bindings and usage](./docs/content/inference.md)
 - [Package standards](./docs/content/standards.md)
 - [UI surface conventions](./docs/ui-surfaces.md)
 - [AssistantDock (route-aware assistant surface)](./docs/assistant-dock.md)

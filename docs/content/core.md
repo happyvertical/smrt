@@ -229,6 +229,8 @@ const summary = await doc.generateSummary();
 
 SMRT objects include built-in AI operations that enable intelligent content analysis and transformation. These methods leverage the configured AI provider to perform natural language tasks.
 
+To choose which model answers each call (tiers, fallback aliases, fusions, user and tenant bindings, hosted inference, usage reports), see [Inference tiers, bindings and usage](./inference.md).
+
 ### `is(criteria)` - Evaluate Criteria
 
 Evaluates whether the object meets specified criteria using AI analysis. Returns a boolean.
@@ -377,7 +379,7 @@ for (const item of items) {
 1. **Be specific with criteria**: Provide clear, measurable conditions for `is()` calls
 2. **Use structured prompts**: Break complex instructions into bullet points for `do()` calls
 3. **Cache expensive results**: Store AI-generated content in object properties to avoid repeated calls
-4. **Handle errors gracefully**: AI methods may throw errors if the provider is unavailable
+4. **Handle errors gracefully**: AI methods throw `InferenceUnavailableError` (`AI_UNAVAILABLE`) when AI is off or not configured for the principal, and `InferenceExhaustedError` when every model in a fallback chain failed; see [Inference](./inference.md#5-who-decides-what)
 
 ```typescript
 class Article extends SmrtObject {
@@ -2354,4 +2356,4 @@ See the [API documentation](https://happyvertical.github.io/sdk/modules/_have_sm
 
 ## License
 
-This package is part of the HAVE SDK and is licensed under the MIT License - see the [LICENSE](../../LICENSE) file for details.
+This package is part of the HAVE SDK and is licensed under the MIT License - see the [LICENSE](https://github.com/happyvertical/smrt/blob/main/LICENSE) file for details.

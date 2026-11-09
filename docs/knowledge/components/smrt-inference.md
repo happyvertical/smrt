@@ -1,14 +1,14 @@
 ---
 type: "Component"
 title: "@happyvertical/smrt-inference"
-description: "Inference alias chains with classified failures, recorded fallback and ladder degradation, the smrt doctor --ai binding check, layered app/tenant binding storage and the InferenceSettingsPanel, for SMRT inference tiers"
+description: "Inference alias chains with classified failures, recorded fallback and ladder degradation, consumer-defined fusions, per-user and per-tenant bindings, the InferenceSettingsPanel, hosted provisioning and spend gate, and the smrt doctor --ai binding check, for SMRT inference tiers"
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-09T01:00:58Z"
+  at: "2026-11-09T01:28:57Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:fdc89a4883add8570f9fbd534c737b5ebe301eb1e14c70d04a05f9de9203cd1e"
+source_revision: "sha256:0dfdae6ecb272e29319cbfd7b23977ab97634b30ac79e7a0fcb107f3d9f29d42"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/inference/package.json"

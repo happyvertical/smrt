@@ -286,7 +286,10 @@ provisioned per user on the operator's AI gateway by `smrt-inference`
 `smrt-subscriptions` entitlement-change listener); the gateway and its admin
 credentials come from `SMRT_INFERENCE_HOSTED_*`. Local installs never set
 these, so hosted inference stays off there. See
-[smrt-inference](../../packages/inference/AGENTS.md) ("Hosted provisioning").
+[hosted inference](./inference.md#6-hosted-inference) for entitlement, spend
+caps and the kill switch, and
+[smrt-inference](https://github.com/happyvertical/smrt/blob/main/packages/inference/AGENTS.md)
+("Hosted inference") for the contract.
 
 ## SvelteKit server hooks
 

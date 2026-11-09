@@ -465,6 +465,23 @@ const isExpensive = await product.is('costs more than the average product');
 const description = await product.do('Write a short marketing description');
 ```
 
+### Inference tiers
+
+Ask for a quality tier instead of a model: `cheap`, `good`, `great`, `best`,
+or `auto` (the configured default tier). With no `inference` config every
+tier runs on the configured client.
+
+```typescript
+const relevant = await product.is('is a winter product', { tier: 'cheap' });
+const copy = await product.do('Write a launch email', { tier: 'great' });
+```
+
+Bind tiers with `config({ inference: { tiers } })` or
+`SMRT_INFERENCE_<TIER>_PROVIDER` / `_MODEL`. Fallback aliases, fusions, user
+and tenant bindings, hosted inference and usage reports are covered in the
+[inference guide](../../docs/content/inference.md); the contract is
+[agents/inference.md](./agents/inference.md).
+
 ### BYO inference presets and local discovery
 
 From Node application code, import `resolveInferencePreset` and
