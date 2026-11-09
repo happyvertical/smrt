@@ -68,7 +68,8 @@ async function runInstall(t, scenario = {}) {
     res.end(
       kind === 'archive'
         ? bytes
-        : (scenario.manifest ?? `${digest}  ${archive}\n`),
+        : (scenario.manifest ?? `${digest}  ${archive}\n`) +
+            (scenario.malformedExtra ? `malformed  ${archive}\n` : ''),
     );
   });
   server.listen(0, '127.0.0.1');
@@ -150,3 +151,9 @@ for (const manifest of [
     assert.equal(result.installed, false);
   });
 }
+
+test('gitleaks rejects mixed valid and malformed target checksums', async (t) => {
+  const result = await runInstall(t, { malformedExtra: true });
+  assert.notEqual(result.code, 0);
+  assert.equal(result.installed, false);
+});

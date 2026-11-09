@@ -239,7 +239,7 @@ jobs:
           # Verify this archive before extracting or executing the scanner.
           awk -v archive="$archive" '$2 == archive { print; found=1 } END { if (!found) exit 1 }' \
             checksums.txt > archive.sha256
-          sha256sum --check archive.sha256
+          sha256sum --check --strict archive.sha256
           tar -xzf "$archive" gitleaks
           sudo mv gitleaks /usr/local/bin/gitleaks
           gitleaks version
