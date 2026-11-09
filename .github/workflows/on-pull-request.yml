@@ -659,6 +659,71 @@ jobs:
       - name: Run the live preview browser suite
         run: pnpm --filter @happyvertical/smrt-planner test:live-preview-browser
 
+  docs-scope:
+    name: Detect Docs Site Scope
+    if: >-
+      github.event_name == 'merge_group' ||
+      (github.event_name == 'pull_request_target' &&
+      github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      docs: ${{ steps.filter.outputs.docs }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+          persist-credentials: false
+      # The Docusaurus site throws on a broken internal link (#4831), so build
+      # it before merge whenever its inputs change (#4846): authored docs and
+      # config, the workspace READMEs docs/scripts/copy-readmes.js copies (and
+      # the workspace discovery it uses), a new workspace (whose README it then
+      # requires), and any deletion, because a README or doc may link to the
+      # deleted path. scripts/docs-site-scope.test.mjs pins this list.
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
+        id: filter
+        with:
+          base: ${{ github.event.merge_group.base_sha || github.event.repository.default_branch }}
+          filters: |
+            docs:
+              - 'docs/**'
+              - 'packages/*/README.md'
+              - 'packages/smrt-playground/host/README.md'
+              - 'packages/smrt-workbench/host/README.md'
+              - added: 'packages/*/package.json'
+              - added: 'packages/smrt-playground/host/package.json'
+              - added: 'packages/smrt-workbench/host/package.json'
+              - deleted: '**'
+              - 'pnpm-workspace.yaml'
+              - 'scripts/workspaces.mjs'
+              - '.github/workflows/on-pull-request.yml'
+              - '.github/actions/setup-environment/**'
+
+  docs-site-build:
+    name: Docs Site Build
+    needs: docs-scope
+    if: needs.docs-scope.outputs.docs == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+          persist-credentials: false
+      # Same setup and build as publish.yml's deploy-docs job, which stays the
+      # only place the site is uploaded and deployed.
+      - name: Setup environment
+        uses: ./.github/actions/setup-environment
+        with:
+          node-version: '26.12.1'
+          install-deps: 'false'
+          setup-playwright: 'false'
+          registry-url: 'https://registry.npmjs.org'
+      - name: Install docs dependencies
+        run: pnpm --dir docs install --frozen-lockfile
+      - name: Build documentation site
+        run: pnpm docs:site:build
+
   required-ci:
     name: Required CI
     if: always() && github.event_name != 'workflow_dispatch'
@@ -676,6 +741,8 @@ jobs:
       - visual-regression
       - planner-scope
       - planner-browser
+      - docs-scope
+      - docs-site-build
     runs-on: ubuntu-latest
     # Deliberately below the 45-minute standard. This aggregator does no
     # checkout and no work beyond reading `needs.*.result`, and it is
@@ -728,6 +795,9 @@ jobs:
           PLANNER_SCOPE: ${{ needs.planner-scope.result }}
           PLANNER_SELECTED: ${{ needs.planner-scope.outputs.planner }}
           PLANNER_RESULT: ${{ needs.planner-browser.result }}
+          DOCS_SCOPE: ${{ needs.docs-scope.result }}
+          DOCS_SELECTED: ${{ needs.docs-scope.outputs.docs }}
+          DOCS_RESULT: ${{ needs.docs-site-build.result }}
           EVENT_NAME: ${{ github.event_name }}
         run: |
           set -euo pipefail
@@ -766,6 +836,20 @@ jobs:
             fi
           elif [ "$PLANNER_RESULT" != skipped ]; then
             echo "::error::unexpected planner browser result: $PLANNER_RESULT"
+            exit 1
+          fi
+
+          if [ "$DOCS_SCOPE" != success ] && [ "$DOCS_SCOPE" != skipped ]; then
+            echo "::error::docs site scope detection failed"
+            exit 1
+          fi
+          if [ "$DOCS_SELECTED" = true ]; then
+            if [ "$DOCS_RESULT" != success ]; then
+              echo "::error::docs site build did not succeed"
+              exit 1
+            fi
+          elif [ "$DOCS_RESULT" != skipped ]; then
+            echo "::error::unexpected docs site build result: $DOCS_RESULT"
             exit 1
           fi
 
