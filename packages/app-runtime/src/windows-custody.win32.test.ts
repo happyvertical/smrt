@@ -166,8 +166,10 @@ describe.runIf(onWindows)('real Windows machine', () => {
       { encoding: 'utf8' },
     ).trim();
     if (short.toLowerCase() === directory.toLowerCase()) skip();
+    // The `~` spelling is refused either as a non-canonical redirect or, as
+    // observed on real Windows, by the safe-name check.
     expect(() => walkWindowsChain(rt, short, 'directory')).toThrow(
-      /redirected|not in canonical/,
+      /redirected|not in canonical|not a safe Windows name/,
     );
   });
 

@@ -10,7 +10,7 @@
 
 import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { resolveApplicationRuntime } from '@happyvertical/smrt-config';
 import * as sql from '@happyvertical/sql';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -257,7 +257,7 @@ describe('appId against Windows device names (WT5)', () => {
         platform: 'linux',
         homeDirectory: '/home/test',
       }).root,
-    ).toBe('/data/test/x');
+    ).toBe(resolve('/data/test/x'));
   });
 });
 
@@ -948,6 +948,21 @@ describe('inspector invocation (WT9: no injection through the path)', () => {
     for (const path of ['unique-path-marker', ...hostile]) {
       for (const arg of calls[1].args) expect(arg).not.toContain(path);
     }
+  });
+
+  it('inherits PATHEXT (without it Windows PowerShell 5.1 returns nothing from whoami.exe) but never PATH', () => {
+    const { calls, exec } = capture();
+    createPowerShellAclInspector({
+      exec,
+      env: {
+        SystemRoot: 'C:\\Windows',
+        PATHEXT: '.COM;.EXE',
+        PATH: 'C:\\evil',
+      },
+    })(['C:\\x']);
+    const env = calls[0].options.env as Record<string, string>;
+    expect(env.PATHEXT).toBe('.COM;.EXE');
+    expect(Object.keys(env).map((k) => k.toLowerCase())).not.toContain('path');
   });
 
   it('carries every path verbatim in one environment variable', () => {
