@@ -188,7 +188,10 @@ the `_smrt_inference_overrides` model (ships through `smrt db:migrate`).
 Keys go to smrt-secrets through the host and are bound to their endpoint's
 origin; user choices are the smrt-preferences kind `inference`; app/tenant
 bindings are override rows, tenants limited to the app row's allow-list and
-the `tenantTargetPolicy` hook. Details: [agents/settings.md](agents/settings.md),
+the `tenantTargetPolicy` hook. The app's transcript setting (#4781) is the
+app-only `transcripts` row, editable in the panel only with `appEditable`,
+applied as core's transcript app settings layer; the Usage tab shows
+transcript counts and links to a host route, never content. Details: [agents/settings.md](agents/settings.md),
 consumer guide [docs/content/inference-settings.md](../../docs/content/inference-settings.md).
 
 ## Validation

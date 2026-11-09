@@ -61,7 +61,19 @@ Consumer guide: [docs/content/inference-settings.md](../../../docs/content/infer
   `getEffectiveConfig()` is server-side only. `testConnection()`, `testCandidate()` and `doctor()` reuse
   `./node`; `testCandidate()` reads a key variable only for a candidate
   already in the effective config (an unsaved one is probed keyless);
-  `usage()` is `reportAiUsage()` by model (default), tier, prompt.
+  `usage()` is `reportAiUsage()` by model (default), tier, prompt, fusion,
+  template, with `transcripts: true` for per-bucket counts (#4781).
+- **Transcript setting** (#4781, `src/settings/transcripts.ts`): binding
+  `transcripts`, app row only (service and model refuse a tenant row),
+  value `{ enabled?, sample?, maxBytes? }` checked by core's
+  `assertInferenceTranscriptsConfig()`. `setTranscriptSettings()` writes it
+  through the authorizer and installs it as core's
+  `setAiTranscriptAppSettings()` layer (config < app row < env); the
+  override resolver re-applies the app rows on every resolve (rows cached
+  for `ttlMs`), `loadInferenceTranscriptSettings()` is the worker startup
+  hook. `getTranscriptSettings()` adds the revert preview, the env override
+  (detected by forcing both values through the layer) and the sweep's
+  retention days, read-only (the sweep runs with its caller's policy).
 - **`createInferenceOverrideResolver({ db, base })`** applies stored
   bindings at call time and defers unbound tiers to `base` or config; an
   app-only alias is returned as its inline candidate chain because the
@@ -81,4 +93,7 @@ Consumer guide: [docs/content/inference-settings.md](../../../docs/content/infer
   aliases, fusions) is not rendered until opened. The key input is its own
   form, never in state, cleared on submit. Tenant scope disables targets
   off the allow-list (display only) and makes aliases/fusions read-only.
-  Rows remount on `contextKey`.
+  Rows remount on `contextKey`. The transcript section is read-only unless
+  `appEditable` and `onSaveTranscripts` are both passed; the Usage tab
+  links counts through the host's `transcriptHref` and renders no
+  transcript content (#4781).

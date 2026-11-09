@@ -13,6 +13,7 @@ change what.
 | API keys | smrt-secrets, as the #4756 `inference.provider-config` secret | the host's `onSaveKey` action: `bindInferenceKey()`, then `inferenceProviderConfigFromKey()` written through the user resolver's `write()` |
 | Mode, provider, base URL, model, default tier (per user, tenant default) | smrt-preferences kind `inference` | `createInferencePreferences(store).write()` |
 | Tier bindings, `auto`'s default tier, aliases, fusions (app and tenant) | `_smrt_inference_overrides` | `InferenceSettingsService` set methods (authorizer-gated) |
+| Transcripts on/off, sample rate, byte cap (app only) | `_smrt_inference_overrides`, app row `transcripts` | `InferenceSettingsService.setTranscriptSettings()` (authorizer-gated) |
 
 The split is enforced by the API shape. The panel hands a key out only
 through `onSaveKey({ provider, key })` and never receives one back; it shows
@@ -75,6 +76,40 @@ on the hosted tier a plan allows. Both halves are checked on every tenant
 write and again on every read, so narrowing either one stops an existing
 tenant binding from taking effect. Aliases and fusions are defined at the
 app scope only, so a tenant cannot change what an allow-listed name means.
+
+## Transcripts
+
+Pass `transcripts: await settings.getTranscriptSettings()` and the panel
+shows the app's transcript setting under Advanced: on or off, the success
+sample rate, the byte cap, the retention window and which level set it.
+Tenants cannot override it, so it is read-only unless the host also passes
+`appEditable` (a platform admin) and `onSaveTranscripts`. Wire that callback
+to an action that calls `setTranscriptSettings({ settings })`; it always
+writes the app row (`null` reverts to config), asks your authorizer with
+`{ binding: 'transcripts', scopeType: 'app' }`, and takes effect in that
+process at once. `SMRT_INFERENCE_TRANSCRIPTS` still wins over the stored
+value. Other processes pick it up through the override resolver within its
+cache window; a worker that does not use the resolver calls
+`loadInferenceTranscriptSettings({ db })` at startup. Retention is the
+sweep's `retention.aiTranscripts.maxAgeDays` and is shown read-only.
+
+In the Usage tab, build the report with
+`settings.usage({ by, tenantId, transcripts: true })` to show a transcript
+count per row, and pass `transcriptHref(filters)` to link each count and
+outcome label to your own transcript page. `filters` holds `promptKey`
+and `templateHash` (when the report is grouped by prompt or template),
+`outcome`, `since` and `until`, which map onto `listAiTranscripts()`. The
+panel never shows transcript text. When transcripts are off, the tab says
+so in one line.
+
+```svelte
+<InferenceSettingsPanel
+  {...data}
+  appEditable={data.isPlatformAdmin}
+  onSaveTranscripts={saveTranscripts}
+  transcriptHref={(f) => `/admin/transcripts?${new URLSearchParams(f)}`}
+/>
+```
 
 ## Applying the bindings
 
