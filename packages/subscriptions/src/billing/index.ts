@@ -23,6 +23,7 @@ export {
   type BillingProviderPort,
   type BillingProviderWebhookEvent,
   type BillingSubscriptionState,
+  type BillingUnreconciledCheckout,
   type BillingUrls,
   type BillingWebhookOutcome,
   type BillingWebhookResponse,

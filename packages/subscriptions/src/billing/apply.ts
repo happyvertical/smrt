@@ -25,7 +25,7 @@ import type { BillingLogger } from './types.js';
 
 /** JSON-safe result stored with the idempotency claim and replayed. */
 export interface AppliedOutcome {
-  action: 'applied' | 'ignored';
+  action: 'applied' | 'ignored' | 'needs_reconciliation';
   reason?: string;
 }
 

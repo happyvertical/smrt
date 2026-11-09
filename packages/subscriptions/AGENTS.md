@@ -180,7 +180,22 @@ environment names are in the README. Invariants:
   base handle deadlocks single-connection SQLite. Never claim before applying.
 - **Trust comes from our own state.** Checkout metadata is HMAC-signed
   (`smrt_sig`, `signing.ts`) and an unsigned or foreign-signed session never
-  links a tenant or plan. A provider subscription or customer id links to one
+  links a tenant or plan.
+- **Checkout is bound to a recorded session (#4814)**, `checkout-sessions.ts`
+  and `models/BillingCheckoutSession.ts` (`_smrt_billing_checkout_sessions`,
+  no API surface, not a root export). `createCheckout` records the session id
+  before returning the URL and signs `smrt_exp`; the completion (inside the
+  `runOnce` transaction, after the PostgreSQL `checkout:<id>` lock) checks, in
+  order: record exists, status is not `completed` / `needs_reconciliation`
+  (no-op `ignored`), record tenant equals the signed tenant, `smrt_exp` is
+  well-formed, event time is not after the signed or recorded expiry. A
+  missing, mismatched or expired record never links and never drops: the row
+  becomes `needs_reconciliation` (outcome `needs_reconciliation`, error log).
+  Only `applied` marks a record `completed`. `reconcileCheckout()` is the only
+  way out and is operator-only: it never skips the apply-time conflict checks.
+  The expiry is deterministic per idempotency window so a repeated click sends
+  identical provider parameters. Change the table shape only with owner
+  approval. A provider subscription or customer id links to one
   tenant; a conflicting event is ignored with a reason code, not merged.
   Verification accepts the signing secret plus `metadataVerificationSecrets`
   (rotation); a purpose-matching session that fails them logs at error.

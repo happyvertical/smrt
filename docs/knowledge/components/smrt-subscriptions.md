@@ -5,10 +5,10 @@ description: "Tenant subscriptions, entitlement resolution, usage thresholds, an
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-09T18:13:45Z"
+  at: "2026-11-09T19:54:46Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:7034536b7cd6490a147ae5ade091dc833b29300f47eb54cb2cd8e824c5fe7cef"
+source_revision: "sha256:dc0bac2b82e862454ed240dded77c0e65691d987f7c25cfeaa94275424095bd1"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/subscriptions/package.json"
@@ -55,6 +55,8 @@ sources:
 
 - `BillingAdjustment` (collection `billingadjustments`, extends `SmrtObject`)
 - `BillingAdjustmentCollection` (collection `billingadjustments`, extends `SmrtCollection`)
+- `BillingCheckoutSession` (collection `billingcheckoutsessions`, extends `SmrtObject`)
+- `BillingCheckoutSessionCollection` (collection `billingcheckoutsessions`, extends `SmrtCollection`)
 - `ClientCharge` (collection `clientcharges`, extends `SmrtObject`)
 - `ClientChargeCollection` (collection `clientcharges`, extends `SmrtCollection`)
 - `CreditGrant` (collection `creditgrants`, extends `SmrtObject`)

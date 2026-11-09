@@ -455,18 +455,41 @@ and subscribe it to `checkout.session.completed` and
   sets `tenantPlans: 'allow'`, so a tenant that can write plan rows cannot buy
   entitlements it defined itself or shadow a plan key; set `allow` only when
   tenants cannot write `SubscriptionPlan`. `canPurchasePlan` adds host policy.
-  The session metadata is HMAC-signed and bound to the server price and, when
-  known, the billing customer, so another integration on the same Stripe
-  account cannot forge metadata for a tenant, and signed metadata cannot be
-  reused for a different price or another customer's subscription. Known gap:
-  when the tenant has no billing customer yet, the signed metadata is not
-  bound to the one session the host created and does not expire. A party that
-  can read it and create its own Checkout session on the same Stripe account
-  (a strong precondition) could pay it and so link the tenant to a billing
-  customer the tenant does not control: the portal then opens that customer,
-  later checkouts reuse it, and a payment the tenant makes concurrently can
-  end up as an untracked second subscription. Binding to a recorded session
-  id is tracked separately.
+  The session metadata is HMAC-signed and bound to the server price, an
+  expiry and, when known, the billing customer, so another integration on the
+  same Stripe account cannot forge metadata for a tenant, and signed metadata
+  cannot be reused for a different price or another customer's subscription.
+- **First purchases are bound to the session the host created (#4814).** The
+  host records each Checkout session id (table
+  `_smrt_billing_checkout_sessions`: session id, tenant, expiry, status
+  `pending`, `completed` or `needs_reconciliation`) before it returns the
+  buyer's URL, and signs an expiry (`smrt_exp`, 25 hours, so a Stripe session's
+  24 hours plus an hour) into the metadata. A paid session links a tenant only
+  when, in order: the signature verifies, a record exists for exactly that
+  session id, it is still `pending`, it names the same tenant as the signed
+  metadata, and the event time (not the delivery time, so late webhook retries
+  of an in-time payment still count) is before the signed and recorded expiry.
+  Metadata copied onto another integration's session is therefore never
+  linked, however it is paid. A completed session is single use: a second
+  completion with the same session id changes nothing.
+- **A paid session that cannot be bound is kept, not dropped.** If the record
+  is missing, expired or names another tenant, the tenant is not linked, the
+  event is claimed (no provider retry loop) and the session is stored as
+  `needs_reconciliation` with a reason code (`session_record_missing`,
+  `session_expired`, `session_record_mismatch`). The webhook answers 200 with
+  `outcome: 'needs_reconciliation'` and logs
+  `billing.checkout.needs_reconciliation` at error level (ids and codes only).
+  A genuine buyer whose record was lost, or a session that was in flight when
+  this binding was deployed (it has no record), lands here. An operator lists
+  them with `host.listCheckoutsNeedingReconciliation()` and links one on
+  purpose with `host.reconcileCheckout({ sessionId, tenantId, operatorId })`:
+  server-side only (authenticate and authorise the operator first; it is not a
+  request handler), it re-reads the subscription from the provider, requires
+  it to be the subscription and customer recorded when the session was
+  flagged, applies the same tenant/customer conflict checks as a normal
+  completion, links once, and logs `billing.checkout.reconciled` with the
+  operator id. Treat a flagged session you did not expect as another
+  integration's payment and leave it unreconciled.
 - **Webhook** verifies the signature on the raw body with a bounded timestamp
   tolerance, then claims the event id durably in the same transaction as the
   subscription write (`runOnce`, `_smrt_run_once_claims`). A replay is a 2xx
