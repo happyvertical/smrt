@@ -14,6 +14,7 @@ import {
 } from './client';
 import {
   type Action,
+  announcement,
   type DockState,
   type Item,
   initialState,
@@ -47,12 +48,7 @@ const waiting = $derived(
   dock.items.filter((i) => i.kind === 'approval' && i.state === 'pending')
     .length,
 );
-const announce = $derived.by(() => {
-  const last = dock.items.at(-1);
-  if (dock.running) return 'The assistant is working.';
-  if (last?.kind === 'assistant') return last.text;
-  return '';
-});
+const announce = $derived(announcement(dock));
 
 function remember(value: boolean) {
   try {

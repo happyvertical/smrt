@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { TurnEvent } from './events.ts';
 import {
   type Action,
+  announcement,
   type DockState,
   initialState,
   reduce,
@@ -171,5 +172,20 @@ describe('dock reducer', () => {
     expect(stopNote('complete')).toBe('');
     expect(stopNote('waiting')).toContain('Nothing has changed');
     expect(stopNote('max_steps')).toContain('stopped');
+  });
+});
+
+describe('announcement', () => {
+  it('never repeats the reply text', () => {
+    let state = reduce(initialState, { type: 'send', text: 'hi' });
+    expect(announcement(state)).toBe('The assistant is working.');
+    state = reduce(state, {
+      type: 'event',
+      event: { type: 'text', delta: 'I added two example chores.' },
+    });
+    state = reduce(state, { type: 'ended' });
+    expect(announcement(state)).toBe('The assistant replied.');
+    expect(announcement(state)).not.toContain('chores');
+    expect(announcement(initialState)).toBe('');
   });
 });

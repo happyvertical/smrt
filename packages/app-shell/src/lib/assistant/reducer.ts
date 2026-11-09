@@ -386,3 +386,16 @@ export function stopNote(stop: TurnStop | null): string {
       return '';
   }
 }
+
+/**
+ * What the screen-reader live region says. Never the reply itself: the reply
+ * is already in the log, and repeating its text there made every answer appear
+ * twice (once in the log, once in the hidden live region) to text extraction
+ * and to a screen reader.
+ */
+export function announcement(state: DockState): string {
+  if (state.running) return 'The assistant is working.';
+  return state.items.at(-1)?.kind === 'assistant'
+    ? 'The assistant replied.'
+    : '';
+}
