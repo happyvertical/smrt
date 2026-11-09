@@ -107,3 +107,16 @@ lines on stderr (not the JSON error envelope):
   `.agents/skills` (each its own warning). `SMRT_AGENT_DOCS=off` does not silence it.
 - Test seams: `dependencies.agentDocs` (`refresh`, `inspect`, `env`) and
   `dependencies.launchVite` on `runAppCommand`.
+
+## Scaffolds and templates (#4878)
+
+Both starter templates (`template-sveltekit`, `template-site-static-json`) ship
+`template/AGENTS.md` with the block directly after the H1, rendered without a
+version (a template cannot know it; the first `smrt docs:agents` fills it in),
+and a `docs:agents` script. `scaffold-agent-docs.test.ts` fails when a template's
+block drifts from `renderAgentsBlock`. `smrt cookbook apply` (not `--dry-run`)
+and `smrt init` call `refreshScaffoldedProject(dir)`
+(`src/commands/scaffold-agent-docs.ts`) from their handlers: `write` mode via
+`safeRefreshAgentDocs`, all messages on stderr, never a failure or exit change.
+With nothing installed yet it prints one hint to run `smrt docs:agents` after
+installing. Test seam: `scaffoldAgentDocs.refresh`.

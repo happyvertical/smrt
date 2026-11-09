@@ -36,6 +36,7 @@ import {
   validateCookbookText,
 } from '../cookbook/validate.js';
 import { cookbookCommands } from '../cookbook.js';
+import { scaffoldAgentDocs } from '../scaffold-agent-docs.js';
 
 const fixtureDir = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -1109,5 +1110,88 @@ describe('scopedProjectName (#4061)', () => {
     const name = scopedProjectName('a'.repeat(300), '@smrt-app/start');
     expect(name.length).toBeLessThanOrEqual(214);
     expect(name.startsWith('@smrt-app/a')).toBe(true);
+  });
+});
+
+describe('cookbook apply refreshes agent docs (#4878)', () => {
+  function run(dir: string, extra: Record<string, unknown> = {}) {
+    return cookbookCommands['cookbook apply'].handler?.(
+      [join(fixtureDir, 'bakery.cookbook.json'), dir],
+      {
+        template,
+        manifests: [manifests],
+        'no-registry': true,
+        'no-install': true,
+        ...extra,
+      },
+    );
+  }
+
+  function seam(
+    refresh: (typeof scaffoldAgentDocs)['refresh'] = async () => ({
+      status: 'written',
+      root: '',
+      warnings: [],
+    }),
+  ) {
+    return vi.spyOn(scaffoldAgentDocs, 'refresh').mockImplementation(refresh);
+  }
+
+  it('refreshes at the written project in write mode, after a new apply', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const refresh = seam();
+    const dir = join(work, 'fresh');
+    await run(dir);
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(refresh.mock.calls[0][0]).toMatchObject({ cwd: dir, mode: 'write' });
+    expect(existsSync(join(dir, 'smrt.cookbook.json'))).toBe(true);
+  });
+
+  it('refreshes for --into too', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const dir = join(work, 'existing');
+    await run(dir);
+    const refresh = seam();
+    await run(dir, { into: true });
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(refresh.mock.calls[0][0]).toMatchObject({ cwd: dir });
+  });
+
+  it('does not refresh on --dry-run', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const refresh = seam();
+    await run(join(work, 'dry'), { 'dry-run': true });
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it('a failing refresh keeps the result, stdout JSON and exit status', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const exit = vi.spyOn(process, 'exit');
+    seam(async () => {
+      throw new Error('boom');
+    });
+    const dir = join(work, 'broken');
+    await run(dir, { json: true });
+    expect(exit).not.toHaveBeenCalled();
+    expect(log).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(log.mock.calls[0][0] as string).dryRun).toBe(false);
+    expect(err.mock.calls.join('\n')).toContain(
+      'agent docs refresh failed: boom',
+    );
+    expect(existsSync(join(dir, 'smrt.cookbook.json'))).toBe(true);
+  });
+
+  it('nothing installed prints one stderr hint and leaves stdout alone', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    seam(async () => ({
+      status: 'skipped-nothing-installed',
+      root: '',
+      warnings: [],
+    }));
+    await run(join(work, 'bare'), { json: true });
+    expect(log).toHaveBeenCalledTimes(1);
+    expect(err.mock.calls.flat().join('\n')).toContain('smrt docs:agents');
   });
 });

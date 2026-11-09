@@ -13,6 +13,7 @@ import {
   validateCookbookSource,
 } from './cookbook/shared.js';
 import type { CookbookReport } from './cookbook/validate.js';
+import { refreshScaffoldedProject } from './scaffold-agent-docs.js';
 
 interface CookbookCliOptions {
   json?: boolean;
@@ -165,6 +166,10 @@ export const cookbookCommands: Record<string, CLICommand> = {
           install: !options['no-install'],
           cliVersion: cliVersion(),
         });
+        // After the project is written; stderr only, never fails the command (#4878).
+        if (!result.dryRun) {
+          await refreshScaffoldedProject(result.plan.targetDir);
+        }
         if (options.json) {
           console.log(
             JSON.stringify(
