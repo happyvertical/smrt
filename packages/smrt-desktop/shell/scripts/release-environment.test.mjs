@@ -72,7 +72,7 @@ describe('checkEnvironment', () => {
     const problems = await run({});
     assert.equal(problems.length, 1);
     assert.match(problems[0], /not found, or the token cannot read it/);
-    assert.match(problems[0], /contents: read/);
+    assert.match(problems[0], /actions: read/);
   });
 
   it('fails closed, naming the permission, when the token is refused', async () => {
@@ -80,7 +80,7 @@ describe('checkEnvironment', () => {
       const problems = await run({ [BASE]: { status, body: {} } });
       assert.equal(problems.length, 1);
       assert.match(problems[0], /refused/);
-      assert.match(problems[0], /contents: read/);
+      assert.match(problems[0], /actions: read/);
     }
   });
 
@@ -229,6 +229,17 @@ describe('checkEnvironment', () => {
     delete table[`${BASE}/deployment-branch-policies`];
     const problems = await run(table);
     assert.ok(problems.some((p) => /could not be read/.test(p)));
+    // a 403 or 404 on this endpoint names the permission too
+    for (const status of [403, 404]) {
+      const refused = await run({
+        ...valid(),
+        [`${BASE}/deployment-branch-policies`]: { status, body: {} },
+      });
+      assert.ok(
+        refused.some((p) => /could not be read/.test(p) && /actions: read/.test(p)),
+        refused.join(' | '),
+      );
+    }
   });
 
   it('refuses names that are not plain', async () => {

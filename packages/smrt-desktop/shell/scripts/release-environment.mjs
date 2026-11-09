@@ -20,11 +20,14 @@
 // environment). It is not a defence against an attacker: anyone who can
 // change this workflow file can remove the step. The environment's own branch
 // rule, which GitHub enforces before a job can read any secret, is the real
-// control. Token permission: GitHub documents these two endpoints as readable
-// by "anyone with read access to the repository", so the job's default
-// `contents: read` token is enough and no extra workflow permission exists or
-// is needed. If the token cannot read the environment the guard FAILS CLOSED
-// and names the permission. Never prints the token.
+// control. Token permission: GitHub's permission table for fine-grained
+// tokens lists GET /repos/{repo}/environments/{name} and
+// .../deployment-branch-policies under "Actions: read". A workflow token with
+// only `contents: read` has `actions: none`, so the job needs
+// `permissions: { contents: read, actions: read }`, nothing broader. That has
+// NOT been proven by a real run. If the token cannot read the environment
+// (403, 401, or the 404 GitHub also answers) the guard FAILS CLOSED and names
+// the permission. Never prints the token.
 //
 //   --repo <owner/name> --environment <name>      token in env GITHUB_TOKEN
 //
@@ -37,8 +40,8 @@ const ENV_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 export const REQUIRED_BRANCH = 'main';
 
 const READ_HINT =
-  'the workflow token must be able to read the repository (permissions: contents: read; ' +
-  'GitHub lets anyone with read access call this endpoint)';
+  'the workflow token needs "actions: read" (permissions: contents: read, actions: read; ' +
+  "GitHub's permission table lists the environment endpoints under Actions: read)";
 
 /**
  * Production API client. Returns `{ status, body }` and never throws on an HTTP
