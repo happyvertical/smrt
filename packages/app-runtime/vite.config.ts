@@ -8,6 +8,10 @@ const baseConfig = createPackageConfig('app-runtime', {
     'vault-recovery',
     'vault-device-key',
     'vault-key-generation',
+    'device-entitlements',
+    'vault-device-transfer',
+    'vault-key-store',
+    'vault-key-lifecycle',
   ],
 });
 

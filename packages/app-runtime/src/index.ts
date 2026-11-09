@@ -56,6 +56,25 @@ import {
 } from '@happyvertical/smrt-users';
 import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
 import {
+  type CloudLinkChallenge,
+  CloudLinkError,
+  type CloudLinkExpectations,
+  type CloudLinkIdentities,
+  deriveCloudLinkKeyPair,
+  signCloudLinkProof,
+  verifyCloudLinkChallenge,
+} from './cloud-link.js';
+import {
+  describeInstallationStateRoot,
+  enforceInstallationCustody,
+  INSTALLATION_CUSTODY_FILE,
+  type InstallationCustodyReport,
+  type InstallationStateRootNote,
+  inspectInstallationCustody,
+  installationCustodyHint,
+  stateRootOptions,
+} from './installation-custody.js';
+import {
   deriveLocalInstallationIdentity,
   type LocalInstallationIdentity,
 } from './local-installation-identity.js';
@@ -64,9 +83,16 @@ import {
   ensureLocalMcpTokenTable,
   type LocalMcpTokenStore,
 } from './local-mcp-tokens.js';
+import {
+  applicationStateRootSource,
+  prepareApplicationStateRoot,
+} from './state-root.js';
 
 export * from './application-identity.js';
+export * from './cloud-link.js';
+export * from './data-root-swap.js';
 export * from './deployed-runtime.js';
+export * from './installation-custody.js';
 export {
   DEFAULT_LOCAL_MCP_TOKEN_TTL_SECONDS,
   type IssuedLocalMcpToken,
@@ -88,6 +114,9 @@ export * from './provider-readiness.js';
 export * from './runtime-diagnostics.js';
 export * from './stale-reclaim.js';
 export * from './state-root.js';
+export * from './vault-lease.js';
+export * from './vault-restart.js';
+export * from './vault-sync-state.js';
 export * from './writer-lease.js';
 
 const DEFAULT_BIND_HOST = '127.0.0.1';
@@ -386,6 +415,147 @@ export async function openLocalMcpTokenStore(
   });
 }
 
+/** The local half of a cloud link (#4806); holds no secret material. */
+export interface LocalCloudLinkIdentity {
+  /** The public device ID. */
+  readonly installationId: string;
+  readonly identities: CloudLinkIdentities;
+  /** Raw Ed25519 link public key, base64url. */
+  readonly linkPublicKey: string;
+  /**
+   * Check a challenge against this installation and the operator's
+   * expectations (`verifyCloudLinkChallenge()`), then sign it. The seed is
+   * re-read for each signature and never retained.
+   */
+  signProof(
+    challenge: unknown,
+    expected: LocalCloudLinkExpectations,
+  ): Promise<{ challenge: CloudLinkChallenge; signature: string }>;
+}
+
+/** Operator expectations for {@link LocalCloudLinkIdentity.signProof}. */
+export type LocalCloudLinkExpectations = Omit<
+  CloudLinkExpectations,
+  'appId' | 'installationId' | 'linkPublicKey'
+>;
+
+/** Options for {@link openLocalCloudLinkIdentity}. */
+export interface OpenLocalCloudLinkIdentityOptions
+  extends ResolveLocalRuntimePathsOptions {
+  /**
+   * The installation a per-user cloud migration began at this location (#4806).
+   * Beginning retires the location before the bundle is exported, yet the
+   * per-user link can only be made after that bundle is imported, so a
+   * location retired for this exact installation may still sign the per-user
+   * link of its own migration, and nothing else: a shared-target challenge is
+   * refused. The caller must have checked its migration record
+   * (`openMigrationCloudLinkIdentity` in `@happyvertical/smrt-cli/app`).
+   */
+  retiredInstallationId?: string;
+}
+
+/**
+ * Open the link identity of an initialized local installation. Refuses unless
+ * custody is `in-custody`: an arrived copy, a retired location or a seed
+ * mismatch cannot link, except the narrow `retiredInstallationId` case above.
+ * Read-only; it never opens the database.
+ */
+export async function openLocalCloudLinkIdentity(
+  options: OpenLocalCloudLinkIdentityOptions,
+): Promise<LocalCloudLinkIdentity> {
+  const paths = await validateLocalDatabaseStorage(options);
+  const canonicalSourceRoot = await realpath(
+    resolve(options.sourceRoot ?? process.cwd()),
+  );
+  const retiredFor = options.retiredInstallationId;
+  const unverified = (report: InstallationCustodyReport) => {
+    const stateOptions = stateRootOptions(options);
+    return installationUnverified(report, {
+      stateRoot: prepareApplicationStateRoot(stateOptions),
+      source: applicationStateRootSource(stateOptions),
+    });
+  };
+  const custodyUsable = (report: InstallationCustodyReport) =>
+    report.status === 'in-custody' ||
+    (retiredFor !== undefined &&
+      report.status === 'retired' &&
+      report.installationId === retiredFor);
+  const report = await inspectInstallationCustody(options);
+  if (!custodyUsable(report)) throw unverified(report);
+  const readIdentity = async () => {
+    const secret = await validateApplicationSecret(
+      paths.applicationSecret,
+      canonicalSourceRoot,
+    );
+    return {
+      identity: deriveLocalInstallationIdentity(secret),
+      keys: deriveCloudLinkKeyPair(secret),
+    };
+  };
+  const { identity, keys } = await readIdentity();
+  if (identity.deviceId !== report.installationId) {
+    throw unverified(report);
+  }
+  const identities: CloudLinkIdentities = Object.freeze({
+    tenantId: identity.tenantId,
+    ownerId: identity.ownerId,
+    profileId: identity.profileId,
+    membershipId: identity.membershipId,
+  });
+  const linkPublicKey = keys.publicKey;
+  return Object.freeze({
+    installationId: identity.deviceId,
+    identities,
+    linkPublicKey,
+    async signProof(value: unknown, expected: LocalCloudLinkExpectations) {
+      const challenge = verifyCloudLinkChallenge(value, {
+        ...expected,
+        appId: validateApplicationId(options.appId),
+        installationId: identity.deviceId,
+        linkPublicKey,
+      });
+      if (retiredFor !== undefined && challenge.target !== 'per-user') {
+        throw new CloudLinkError(
+          'challenge_mismatch',
+          'A retired location can only sign the per-user link of its own migration.',
+        );
+      }
+      if (
+        challenge.target === 'per-user' &&
+        (challenge.accountId !== identities.ownerId ||
+          challenge.tenantId !== identities.tenantId)
+      ) {
+        throw new CloudLinkError(
+          'challenge_mismatch',
+          'A per-user link must be signed in as the imported local owner and tenant.',
+        );
+      }
+      const custody = await inspectInstallationCustody(options);
+      if (
+        !custodyUsable(custody) ||
+        custody.installationId !== identity.deviceId
+      ) {
+        throw unverified(custody);
+      }
+      const current = await readIdentity();
+      if (current.keys.publicKey !== linkPublicKey) {
+        throw new LocalRuntimeError(
+          'installation_unverified',
+          'The installation seed changed while linking; nothing was signed.',
+        );
+      }
+      return {
+        challenge,
+        signature: signCloudLinkProof(
+          current.keys.privateKey,
+          challenge,
+          identities,
+        ),
+      };
+    },
+  });
+}
+
 function localMcpTokenStore(
   db: DatabaseInterface,
   paths: LocalRuntimePaths,
@@ -478,6 +648,8 @@ export type LocalRuntimeErrorCode =
   | 'bootstrap_unavailable'
   | 'capability_disabled'
   | 'invalid_configuration'
+  | 'installation_seed_missing'
+  | 'installation_unverified'
   | 'invalid_scope'
   | 'migration_failed'
   | 'owner_tenant_conflict'
@@ -592,7 +764,12 @@ export async function initializeLocalApplicationRuntime(
     const acquired = await acquireLocalDatabase(paths, sourceRoot, appId);
     db = acquired.db;
     const { canonicalSourceRoot } = acquired;
-    const identity = await prepareLocalFilesystem(paths, canonicalSourceRoot);
+    const identity = await prepareLocalFilesystem(
+      paths,
+      canonicalSourceRoot,
+      db,
+      options,
+    );
     setDatabaseSyncDeviceId(db, identity.deviceId);
     await tuneLocalSqlite(db);
     try {
@@ -1572,15 +1749,95 @@ function preservePrimaryFailure(
 async function prepareLocalFilesystem(
   paths: LocalRuntimePaths,
   canonicalSourceRoot: string,
+  db: DatabaseInterface,
+  options: ResolveLocalRuntimePathsOptions,
 ): Promise<LocalInstallationIdentity> {
   await ensureSafeDirectoryTree(paths.assets, canonicalSourceRoot);
   await ensureSafeDirectoryTree(paths.secrets, canonicalSourceRoot);
-  await ensureApplicationSecret(paths.applicationSecret, canonicalSourceRoot);
-  return deriveLocalInstallationIdentity(
+  // The bootstrap table is created only after the seed exists, and the data
+  // root's custody record is written as soon as it does, so either proves a
+  // seed once existed. A missing seed then means loss, never a first run:
+  // regenerating it would silently replace every derived identity and token
+  // key (#4704).
+  const initialized = await hasInitializedInstallation(db);
+  const seedPresent = await pathExists(paths.applicationSecret);
+  if (
+    !seedPresent &&
+    (initialized ||
+      (await pathExists(resolve(paths.secrets, INSTALLATION_CUSTODY_FILE))))
+  ) {
+    throw new LocalRuntimeError(
+      'installation_seed_missing',
+      installationSeedMissingMessage(),
+    );
+  }
+  // Only a seed this call itself published is new; one that appears between
+  // the check and the publish (a sync tool) is an arrival like any other.
+  const seedIsNew = await ensureApplicationSecret(
+    paths.applicationSecret,
+    canonicalSourceRoot,
+  );
+  const identity = deriveLocalInstallationIdentity(
     await validateApplicationSecret(
       paths.applicationSecret,
       canonicalSourceRoot,
     ),
+  );
+  const stateOptions = stateRootOptions(options);
+  const stateRoot = prepareApplicationStateRoot(stateOptions);
+  const enforcement = enforceInstallationCustody({
+    secretsDirectory: paths.secrets,
+    stateRoot,
+    installationId: identity.deviceId,
+    seedIsNew,
+    initialized,
+  });
+  if (enforcement.kind === 'refused') {
+    throw installationUnverified(enforcement.report, {
+      stateRoot,
+      source: applicationStateRootSource(stateOptions),
+    });
+  }
+  return identity;
+}
+
+async function hasInitializedInstallation(
+  db: DatabaseInterface,
+): Promise<boolean> {
+  const result = await db.query(
+    "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
+    BOOTSTRAP_TABLE,
+  );
+  return result.rows.length > 0;
+}
+
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await lstat(path);
+    return true;
+  } catch (error) {
+    if (isMissingFile(error)) return false;
+    throw error;
+  }
+}
+
+// A function, not a constant: installation-custody.ts and this module import
+// each other, and a top-level call could run before that module's constants.
+const installationSeedMissingMessage = () =>
+  `The installation seed is missing from an initialized data root; nothing was changed. ${installationCustodyHint('seed-missing')}`;
+
+function installationUnverified(
+  report: InstallationCustodyReport,
+  stateRoot: InstallationStateRootNote,
+): LocalRuntimeError {
+  // Only statuses that concern this location's own record can be caused by a
+  // state root that was lost; a seed problem cannot.
+  const location = report.resolutions.includes('restore')
+    ? ` ${describeInstallationStateRoot(stateRoot)}`
+    : '';
+  return new LocalRuntimeError(
+    'installation_unverified',
+    `This data root is not in this location's custody (${report.status}); nothing was changed. Run "smrt app installation status". ${installationCustodyHint(report.status)}${location}`,
   );
 }
 
@@ -1770,6 +2027,38 @@ async function acquireInitializationLock(
       await releaseInitializationLeases(held);
     },
   };
+}
+
+/**
+ * Run `callback` while holding the data root's initialization lock, so a
+ * custody declaration cannot interleave with a runtime initializing the same
+ * root. The caller must already have preflighted the root.
+ *
+ * @internal Operator custody declarations only.
+ */
+export async function withLocalInitializationLock<T>(
+  root: string,
+  callback: () => Promise<T> | T,
+): Promise<T> {
+  const lock = await acquireInitializationLock(root);
+  let result: T;
+  try {
+    result = await callback();
+  } catch (error) {
+    try {
+      await lock.release();
+    } catch (releaseError) {
+      throw preservePrimaryFailure(
+        error,
+        releaseError,
+        'initializationLockReleaseError',
+        'Local installation custody operation and lock release both failed.',
+      );
+    }
+    throw error;
+  }
+  await lock.release();
+  return result;
 }
 
 async function isForeignOwnedDirectory(
@@ -2276,7 +2565,7 @@ async function removeCreatedDirectories(paths: string[]): Promise<void> {
 async function ensureApplicationSecret(
   path: string,
   canonicalSourceRoot: string,
-): Promise<void> {
+): Promise<boolean> {
   const directoryPath = resolve(path, '..');
   const temporaryPath = resolve(
     directoryPath,
@@ -2284,6 +2573,7 @@ async function ensureApplicationSecret(
   );
   let temporary: FileHandle | undefined;
   let failure: unknown;
+  let created = false;
   try {
     temporary = await openSafeFile(
       temporaryPath,
@@ -2302,6 +2592,7 @@ async function ensureApplicationSecret(
 
     try {
       await link(temporaryPath, path);
+      created = true;
     } catch (error) {
       if (!isFileAlreadyExists(error)) throw error;
     }
@@ -2323,6 +2614,7 @@ async function ensureApplicationSecret(
   }
   if (failure !== undefined) throw failure;
   await removeStaleSecretTemps(directoryPath);
+  return created;
 }
 
 async function validateApplicationSecret(

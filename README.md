@@ -252,6 +252,7 @@ Status legend:
 | [`smrt-properties`](./packages/properties/README.md) | Stable | Digital properties and hierarchical content/ad zones. |
 | [`smrt-tags`](./packages/tags/README.md) | Stable | Context-scoped hierarchical tags and aliases. |
 | [`smrt-secrets`](./packages/secrets/README.md) | Stable | Tenant envelope encryption, rotation, and audit. |
+| [`smrt-vault-relay`](./packages/vault-relay/README.md) | Experimental | Blind encrypted-snapshot relay with device-signed requests, gated by `backup.vault`. |
 | [`smrt-features`](./packages/features/README.md) | Preview | Code-first feature flags and tenant overrides. |
 | [`smrt-languages`](./packages/languages/README.md) | Preview | Language strings, overrides, and translation jobs. |
 | [`smrt-fields`](./packages/fields/README.md) | Preview | Layered field policy store, resolution engine, and form surfaces. |
@@ -268,6 +269,7 @@ Status legend:
 | [`smrt-playground-host`](./packages/smrt-playground/host/README.md) | Internal | Private SvelteKit end-to-end test host for the playground runtime. |
 | [`smrt-planner`](./packages/planner/README.md) | Preview | Mountable app planner: pick recipes from every package's manifest, lay out the app, and export a cookbook; ships the static planner app and its MCP widget. |
 | [`smrt-desktop`](./packages/smrt-desktop/README.md) | Preview | Versioned manifest for packaged desktop runtimes. |
+| [`smrt-desktop-launcher`](./packages/smrt-desktop-launcher/README.md) | Preview | Launcher core for desktop assistant plugins: injected provider, fixed diagnostics and stdio lifecycle. |
 | [`smrt-mobile-contract`](./packages/smrt-mobile-contract/README.md) | Preview | Manifest-to-Kotlin/Swift contract generation. |
 | [`smrt-mobile`](./packages/smrt-mobile/README.md) | Preview | Kotlin Multiplatform offline, sync, auth, and platform seams. |
 | [`smrt-android`](./packages/smrt-android/README.md) | Internal | Android Compose foundation and native adapters. |

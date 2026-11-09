@@ -14,6 +14,9 @@ template's scripts so an app's `package.json` scripts become one-liners.
 | `smrt-mcp-apps.mjs validate-if-present && …smrt-vite.mjs build` | `smrt app build [vite args]` |
 | `scripts/smrt-web.mjs` | `bin/smrt-web.mjs` (spawned by `start`) |
 | — (new, #3413) | `smrt app token [create] --scopes … [--expires 30d] [--label …]`, `token list`, `token revoke <id>` |
+| — (new, #4804) | `smrt app backup --encrypted --target <name>`, `backups targets [add\|remove]`, `backups list`, `backups prune` |
+| — (new, #4704) | `smrt app installation [status]`, `restore --origin-retired`, `reseed --confirm-destroy-seed`, `recover-seed <file> [--unverified]`, `retire` |
+| — (new, #4805) | `smrt app restore-latest [--discard-local] [--replace-installation] [--origin-retired] [--recover]` |
 | helper modules | `@happyvertical/smrt-cli/app` (side-effect-free subpath) |
 
 ## Source
@@ -85,6 +88,44 @@ config loading; `bin/smrt.js` imports `dist/` in-process so SIGTERM reaches
   keeps the configured port until `open` rewrites it. `smrt app <op> --help`
   prints usage for every operation except `dev`/`build`/`vite` (Vite's help)
   and `token` (its own).
+- **`installation`** (`installation.ts`, local only): declares a restored move,
+  an independent copy, or a recovered seed (#4704; decision in the app-runtime
+  README). `status` is read-only; the rest take the operation lock and refuse
+  while a writer is active. Output is secret-free JSON with explicit identity
+  and token effects.
+- **`restore-latest`** (`restore-latest.ts`, local only, #4805): under
+  `operation.lock` and the writer lease (so no web process or second SQLite
+  connection is open, smrt#3379) it settles an interrupted swap and removes
+  plaintext restore leftovers, refuses pending local writes (or a live root
+  with no recorded vault position) without `--discard-local` and any latest
+  sequence below the location's highest seen, always keeps the replaced root
+  as a `previous` sibling (the app does not yet mark writes made after the
+  last publish, #4810; it is never deleted), takes the
+  relay lease at the target, decrypts into a sibling candidate, checks SQLite
+  integrity and the carried installation (`--replace-installation` for a
+  different one), swaps under the app-runtime journal and records the new
+  vault position. A location whose installation was retired (moved away, or
+  migrated to the cloud, #4806) is refused before the relay is contacted, even
+  with `--origin-retired`: reverse it first with `installation restore
+  --origin-retired`. An unreadable custody record is refused too. Custody moves (`restoreInstallation`) only with
+  `--origin-retired`; otherwise it stays pending and the app refuses to start
+  until declared. `--recover` only settles a swap. Collaborators
+  come from `deps.vaultRestore` (account, lease client, snapshot source from
+  the relay client, and `accountTrust()`) and `deps.snapshotKeys`; without them
+  it fails closed. The relay is untrusted, so the snapshot's producer and key
+  generation are judged by the adopted signed head (`accountTrust()`,
+  `snapshotAccountTrustFromLifecycle`): a snapshot from a revoked device, or
+  sealed below the highest effective generation of a revocation, is refused
+  (`revoked_device`, `generation_too_old`), and while a revocation still waits
+  for its rotation (`rotation_pending`: the revoked device still holds the
+  current key, so only the rotation separates it from real devices);
+  snapshots published before the
+  rotation that revoked a device must be re-published by a remaining device to
+  be restorable. The relay lease is renewed on a timer through the download and
+  decrypt (a lost lease aborts the download), and the key provider's sealing
+  sequence is moved past the relay head (`advanceSealingSequence`, also on
+  `up-to-date`) so the next backup is not refused as behind it; the report's
+  `sealingFloor` is that sequence, `null` when the host owns no counter.
 - **`token`** (`tokens.ts`, local only): parses every argument before touching
   state, opens `openLocalMcpTokenStore` (validated custody, uncached
   connection, no writer lease, so it runs beside `app:start`), and serializes
@@ -99,6 +140,54 @@ config loading; `bin/smrt.js` imports `dist/` in-process so SIGTERM reaches
   target; deployed import requires `SMRT_MAINTENANCE_MODE=true`.
   Local relative asset locators resolve against the approved asset root during
   export and stay relative after import. Legacy file URLs import as file URLs.
+- **Encrypted snapshots** (#4797): `backup --encrypted` streams the data root
+  and `export --encrypted` the logical bundle into one HVSF v1 file (0600,
+  published with `link()`, only ciphertext on disk). Keys come only from the
+  injected `deps.snapshotKeys` provider; without one the flag fails closed.
+  Plaintext stays the default, so `backup`, `export` and `import` refuse every
+  other argument that starts with `-` (`--encrypt` is not `--encrypted`), before
+  any lock or write; `--` makes a dash-leading path expressible. Format, limits
+  and restore primitives: [encrypted-snapshots.md](encrypted-snapshots.md).
+- **Backup targets** (#4804, `backup-command.ts`, `backup-target-*.ts`):
+  `backup --encrypted --target <name>` stores the snapshot on a configured
+  local directory, the user's Google Drive, or the vault relay; `backups
+  targets|list|prune` manage them. Config holds no secrets; credentials, the
+  device signer and the entitlement arrive through
+  `AppCommandDependencies.backup` and fail closed. Contract, scope rules and
+  threat table: [backup-targets.md](backup-targets.md).
+- **Cloud migration** (#4806, `cloud-migration.ts`, library only; hosted
+  routes and `smrt app cloud` commands are follow-ups): built on a
+  `smrt-cloud-link-v1` link (app-runtime README). `planCloudMigration`
+  checks and remaps a local bundle before anything is written. The per-user
+  target (planned with `perUser` identities, linked after import) is a
+  byte-preserving `importApplication` into an empty database; the shared
+  target goes through hosted `sync/apply` (`runSharedCloudMigration`) and
+  refuses foreign-tenant, global, tenantless, colliding, embedded-identity and
+  `file:`/`asset-local:` values anywhere, and stops on any
+  `conflict`/`rejected`. The journal is bound to bundle digest, origin, link,
+  tenant and batch contents (resume with the same batch size).
+  `beginCloudMigration` checks custody and the link, then retires the
+  location before export (recording the custody epoch). The per-user link is
+  made after the import, when the location is already retired, so it is
+  opened with `openMigrationCloudLinkIdentity`, which signs only the per-user
+  challenge of the recorded migration. `completeCloudMigration` (async)
+  verifies a fresh target export itself and needs the location still retired
+  for that installation at the same custody epoch (restoring it, even before
+  re-retiring, abandons the migration), a bundle exported after retirement,
+  an `applied` journal (shared), acknowledged changed columns (never
+  `id`/`tenant_id`) and `acknowledgedOmittedTables` naming every table the
+  plan withheld for credential-like columns (`plan.skipped.omittedTables`). A
+  `salt` column alone migrates; a table with a `salt` and any hash-like column
+  (`hash`, `*_hash`, `digest`) is withheld, as are `pin_hash`/`key_hash`/
+  `code_hash` columns. Both are assumed defaults pending the owner.
+  `exportTenantBundle` selects by ID only global rows (`cloudIdentityRows`);
+  `downgradeCloudBundle` refuses foreign-tenant rows and reverse-maps into a
+  `local` bundle `app import` accepts.
+  Composition with `restore-latest` (`restore-cloud-composition.test.ts`):
+  a restored location is not in custody until the operator declares the move,
+  so a migration refuses to start there; a location the migration retired is
+  refused by `restore-latest` (even with `--origin-retired`) until `installation
+  restore --origin-retired` reverses the retirement.
 - **Process identity**: `app.pid` is trusted only when the live command
   line's last two tokens are a path with basename `smrt-web.mjs` and exactly
   `--smrt-instance=<record instance>` (an app started by the template's former

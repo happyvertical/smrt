@@ -143,10 +143,10 @@ role IDs. Restarts reuse the same installation identities. Treat
 with the database in protected backups and during a restore or move of the
 same installation. Deleting, replacing, or rotating the file changes the
 derived identities and invalidates existing bootstrap and local MCP tokens.
-Keep only one active installation for a given secret. A copied data root
-retains the same owner, tenant, and writer IDs, and the runtime currently has
-no way to detect that copy. Start independent installations with a fresh data
-root.
+A data root that is copied, restored or moved is governed by installation
+custody; see [Moving, restoring and copying an installation](#moving-restoring-and-copying-an-installation).
+A restored data root keeps its identities only when its seed does, and runtime
+initialization no longer silently regenerates a seed that went missing.
 
 The invitation and active owner membership authorize the owner. The same
 seed derives a separate writer UUID. The local runtime binds it to the
@@ -167,6 +167,218 @@ Background jobs and application-defined paid capabilities remain disabled until
 explicitly enabled. With embedded job topology, `createEmbeddedJobRunner()`
 returns the normal s-m-r-t `TaskRunner`, so the application keeps one enqueue
 and execution contract without requiring a separate worker service.
+
+### Moving, restoring and copying an installation
+
+The seed (`secrets/application.secret`) *is* the installation: the device,
+tenant, owner, profile and membership IDs and the keys of bootstrap and local
+MCP tokens all derive from it, and it lives inside the data root. Anything that
+copies the data root (`smrt app backup`, a synced folder, a manual `cp`) copies
+the identity. Offline, a restore onto a new machine and a second active copy
+are byte-identical, so the runtime never guesses between them (#4704).
+
+**Decision.** Which *location* last took custody of a seed is recorded, and
+every arrival it cannot attribute is refused until the operator says what it
+is. Two records carry the evidence; neither holds secret material, and each
+names the installation (the public device ID), an `epoch` that counts custody
+transfers, and a random `activationId`:
+
+- `<data root>/secrets/installation.json` travels with every copy.
+- `<state root>/installation.json` stays at the location. The state root is
+  derived from the data-root path and is outside the data root, so a copy never
+  carries it.
+
+Matching `activationId`s mean the data root was last activated here. Startup
+(`initializeLocalApplicationRuntime`, under its initialization lock, before any
+migration or table is touched) behaves as follows, with the `installation_*`
+code in `LocalRuntimeError`:
+
+| Situation | Status | Startup |
+|---|---|---|
+| First run, or a data root started fresh | n/a | Establishes custody, epoch 1 (a stale record for a deleted data root at this location is replaced) |
+| Installation older than the records | `unrecorded` | Adopted at epoch 1 (trust on first use; a copy made before this feature cannot be told from the original) |
+| Records agree | `in-custody` | Starts |
+| Copy or move arrived (this location never activated it) | `arrived` | `installation_unverified` |
+| Data root restored from another activation, an older backup, or another installation's backup put over this location | `diverged`, `data-record-missing` | `installation_unverified` (a first run that stopped between its two record writes is finished instead) |
+| Location retired by `retire` | `retired` | `installation_unverified` |
+| Seed differs from the recorded installation | `seed-mismatch` | `installation_unverified` |
+| Record malformed, extended, oversized, a link or not private | `record-invalid` | `installation_unverified` |
+| Seed file missing although the bootstrap table or the data root's custody record shows one existed | `seed-missing` | `installation_seed_missing`; the seed is **not** recreated |
+
+A refusal changes nothing and never reaches the database schema or tokens, and
+its hint names only the declarations that accept that status (a `seed-mismatch`
+is pointed at `recover-seed` or `reseed`, never at `restore`, which refuses it). Only
+a seed this very run created counts as new; a seed that already existed, even
+beside an empty database, is judged like any arrival. The data record is the
+authority on which installation a seed belongs to, so a seed that disagrees with
+it is `seed-mismatch` even if another record is corrupted.
+
+**Declarations** (exported functions; `smrt app installation <subcommand>`).
+All require the application to be stopped (they take the writer lease and the
+initialization lock) and print secret-free JSON that spells out the effects.
+`status` (`inspectInstallationCustody`) never changes a custody record; like
+startup it may create the private state directory and tighten the `secrets/`
+directory mode:
+
+| Declaration | Use it when | Seed | Identities | Seed-keyed tokens | Epoch |
+|---|---|---|---|---|---|
+| `restoreInstallation` (`restore --origin-retired`) | The same installation moved or was restored and the origin is stopped or deleted | kept | unchanged | still valid | +1 |
+| `reseedInstallation` (`reseed --confirm-destroy-seed`) | A copy whose origin stays active; a lost seed with no backup; planned rotation | **replaced** (old one not kept) | **device, tenant, owner, profile, membership derivations change** | **invalidated**; active local MCP tokens are revoked | 1 (`previousInstallationId` names the old one) |
+| `recoverInstallationSeed` (`recover-seed <file>`) | The seed was lost or replaced and a backup exists | restored from backup, which must derive the recorded installation | unchanged | still valid | unchanged |
+| `retireInstallation` (`retire`) | After moving away from this location | kept | unchanged | unchanged | unchanged; this location cannot start until `restore` |
+
+`restore` requires the explicit assertion `originRetired: true`: the runtime
+cannot see another machine, so it records the claim rather than verifying it.
+A copy whose origin stays active must be re-seeded instead. `reseed` is
+irreversible (the seed is not kept, identities change and active local MCP
+tokens are revoked), so it likewise requires an explicit
+`confirmDestroySeed: true` / `--confirm-destroy-seed` even when the seed is
+healthy, and refuses before touching any state without it; back up
+`secrets/application.secret` first if you may need the old identity. Re-seeding keeps
+all application data: existing rows keep the IDs they were created with and
+only new derivations use the new seed, so the copy becomes a distinct sync
+device. A pending owner invitation was keyed by the old seed; run
+`smrt app recover` for a new one. Sessions are not seed-keyed and are not
+revoked. `smrt app export` / `import` produce an independent installation by
+construction (secrets are not exported; the target gets its own seed).
+
+**Missing seed.** There is no server escrow. A backup of the seed restores
+everything exactly (`recover-seed`); with no backup the seed is lost and the
+only way forward is `reseed`, whose effects are the table above. The runtime
+refuses to quietly mint a replacement because that would silently change every
+derived identity and token key.
+
+**Containers and ephemeral homes.** The location's record lives in the state
+root, `$XDG_STATE_HOME` (else `$HOME/.local/state`) plus
+`/.<appId>-<hash of the data directory>-state`, on Linux; on macOS it is under
+`~/Library/Application Support` and on Windows under `%LOCALAPPDATA%`, and
+`XDG_STATE_HOME` is ignored there. A deployment that persists the data volume
+but recreates `HOME` on every start loses that record: the first start
+establishes custody, and the next start after the environment is rebuilt finds
+a data root that arrived from nowhere (`arrived`) and refuses with
+`installation_unverified`, with no way out except an operator running
+`smrt app installation` by hand (a headless assertion is tracked separately in
+#4823; it is deliberately not added here). So:
+
+- **Set `XDG_STATE_HOME` to an absolute path on the same persistent volume as
+  the data root** (outside the source tree and outside the data root itself) for
+  every container that runs the local profile. Never leave it to `HOME` or
+  `/tmp`. This is required, not a tuning option.
+- Hosted deployments should keep the self-hosted runtime profile, which does not
+  use the local runtime and does not read these records; no manifest should set
+  the profile to `local` just to reuse the local runtime in a container.
+- The refusal message names the state root and says whether it was derived from
+  the home directory, so the cause is visible in the logs.
+
+**Limits.** This is a local, cooperative control. A byte-identical clone of
+both the data root and the state root (a VM or home-directory image), a copy
+made before the records existed, and two operators who each assert `restore`
+from one backup are not detectable offline; the later primary-writer relay
+compares `epoch` and `activationId` to catch them (equal epochs with different
+activations are a conflict). The state root is keyed by the data-root path as
+spelled, so a differently cased alias of one macOS path is a different
+location. Declarations run `smrt-app-runtime` code under the writer lease; keep
+at most one SQLite writer on a data root (#3379).
+
+### Vault primary writer and restore-latest
+
+A vault account has one data line on the blind relay
+(`@happyvertical/smrt-vault-relay`) and one primary writer at a time (#4805).
+The relay holds the lease; this package holds the client side and the local
+swap. There is no merge: a device that is behind must restore before it
+writes.
+
+- **Position** (`vault-sync-state.ts`): `<state root>/vault-sync.json` records
+  the vault account, `baseSequence` (the snapshot this data root is at),
+  `highestSeenSequence` (the downgrade floor, since the relay is untrusted;
+  raised only from sequences this location published or restored, never from
+  a lease grant's head, which can be an uncommitted hole or a hostile claim)
+  and `localWritesPending`. It lives in the state root, so a copied data root
+  cannot carry a forged position.
+- **Lease keeper** (`vault-lease.ts`): `VaultLeaseKeeper` acquires the relay
+  lease with the local base when the app starts writing against a vault
+  account, renews at a third of the granted lifetime, and treats the lease as
+  lost at its monotonic send time plus `ttlMs` minus a safety margin, never by
+  comparing the relay's `expiresAt` with local time. Its states are `held`
+  (writable), `must-restore`, `held-elsewhere`, `lost` and `unavailable`;
+  `assertWritable()` throws `VaultLeaseError` with code `vault_lease_lost`, and
+  `onChange` drives a visible read-only indicator. `recordPublished(sequence)`
+  advances the position after a publish. The relay transport is injected
+  (`VaultRelayTransport`), signed by the vault relay client.
+- **Swap** (`data-root-swap.ts`): `swapDataRoot` replaces the live data root
+  with a verified sibling candidate under an fsynced journal
+  (`<state root>/data-root-swap.json`), rolling back to the previous root on
+  any failure before the commit. While the journal exists,
+  `acquireWriterLease` refuses every writer except the recovery path
+  (`dataRootSwapRecovery`), so neither the web process nor an operator
+  command can open or initialize a missing or half-swapped root.
+  `recoverDataRootSwap` rolls an unfinished swap back or finishes a committed
+  one; journal paths must be generated siblings of the live root.
+- **Candidate check**: `inspectDataRootInstallation` judges a data root's own
+  seed and custody record without a state root.
+- **Retired locations**: `inspectLocationCustodyRecord` reads only this
+  location's own custody record (`retired` after a move or a cloud migration,
+  `invalid` when it cannot be trusted), so a restore can refuse before it
+  touches a data root.
+- **Account switch** (`vault-restart.ts`): `switchVaultAccount` is the only
+  way a location stops following one vault account and starts another, after
+  a restart (see
+  [Restarting when the recovery secret is lost](#restarting-when-the-recovery-secret-is-lost)).
+
+`smrt app restore-latest` (CLI) composes these: writer lease, refusal of a
+retired or unverifiable location, of pending local writes and of downgrades, relay lease at the target sequence,
+authenticated decrypt into a candidate, SQLite integrity and installation
+checks, journalled swap, then the new position. Custody moves
+(`restoreInstallation`) only on the operator's `--origin-retired`: releasing
+the relay lease does not stop the origin device. A live root with no recorded
+position counts as unpublished, and `removeStaleRestoreSiblings` clears
+plaintext a crash left before the journal existed. Open: the SvelteKit request layer does not yet consult the
+keeper; the desktop launcher wires `assertWritable()` into writes.
+
+### Linking an installation to a hosted account
+
+`smrt-cloud-link-v1` (#4806; design and security review on #4668) links a
+local installation to a hosted account before a local-to-cloud migration.
+Both halves are exported from this package; the migration itself is
+`@happyvertical/smrt-cli/app` (`planCloudMigration` and friends).
+
+- **Local** (`openLocalCloudLinkIdentity(options)`): refuses unless custody is
+  `in-custody`; the one exception is `retiredInstallationId`, which lets a
+  location retired for a per-user migration of that installation sign the
+  per-user link of that migration (a per-user database is linked only after
+  its import, and beginning retires the location first) and nothing else. It
+  exposes the public device ID, the four seed-derived
+  identities and an Ed25519 link public key derived from the seed under a
+  purpose outside the public-UUID namespace. `signProof(challenge, expected)`
+  first checks the challenge (`verifyCloudLinkChallenge`): normalized https
+  origin equal to the one called, own application, installation and key, the
+  operator's expected account **and** tenant IDs, a lifetime of at most ten
+  minutes (60 s skew), a sole-member tenant for the per-user target, and an
+  explicit `allowSharedTenant` when a shared tenant has other owners. The
+  seed is re-read for the signature and never retained.
+- **Hosted** (`createCloudLinkService({ origin, store })`): `origin` comes
+  from configuration, never from request headers. The account, tenant,
+  profile and membership come from the authenticated session
+  (`CloudLinkPrincipal`), and only a tenant owner can link. A challenge is
+  bound to that session and consumed by that session's first completion,
+  whether or not the signature verifies; another session cannot burn it. The
+  hosted identities are always the session's: on the per-user target the
+  principal must be the imported local owner, tenant, profile and membership
+  exactly (a per-user database is linked after its import). Links are unique per link public key: the same
+  inputs return the same link; anything else is
+  `installation_linked_elsewhere` (a copied seed that linked first is undone
+  by `reseed`, which changes the key). Each account has at most five
+  outstanding challenges. Every `CloudLinkStore` method is one atomic step:
+  `insertChallenge` checks that cap and inserts together, `consumeChallenge`
+  is a compare-and-set for the issuing session, and `createLinkIfAbsent`
+  inserts only when no link exists;
+  `createMemoryCloudLinkStore()` is for tests only.
+- **Receipt**: `verifyCloudLinkReceipt` checks the returned link against the
+  signed proof. `cloudLinkIdentityMap(link)` maps local to hosted
+  identities (the identity on the per-user target) and system role IDs to
+  themselves. H never authorizes anything on the claimed local identities.
+
+Not yet provided: hosted HTTP routes, a durable hosted link store, unlinking.
 
 ### Local desktop MCP credentials
 
@@ -484,8 +696,8 @@ returns an opaque record. `openVaultRecoveryKey(record, recoverySecret, context)
 returns the authenticated key ID and key. Use a high-entropy passphrase or a
 randomly generated printable recovery code. Keep the secret separate from the
 wrapped record. Losing every authorized device and the recovery secret means
-losing access to the data. These functions leave storage, device enrollment,
-rotation, and revocation to their callers.
+losing access to the data. Storage, device enrollment, rotation, and
+revocation are in [Vault key lifecycle](#vault-key-lifecycle).
 
 Supply the expected account and key generation from trusted local or pairing
 state. The recovery record cannot establish which account or generation is
@@ -528,6 +740,77 @@ carries the data key ID. Derive the 32-byte wrapping key from the device secret
 with [HKDF-SHA256](https://www.rfc-editor.org/rfc/rfc5869), an empty salt, and
 ASCII `smrt-vault-device-key-v1` as the info string.
 
+## Device entitlement cache
+
+A local install learns its tier offline from a signed, time-limited snapshot of
+feature keys. The cloud/billing host signs it (Ed25519) from the account's
+resolved entitlements; the install verifies it against public keys that ship
+with the application and exposes the verified keys through `smrt-features`, so
+`requireFeature()` works unchanged. Import from
+`@happyvertical/smrt-app-runtime/device-entitlements`.
+
+```ts
+import {
+  DeviceEntitlementCache,
+  registerDeviceEntitlementGrantSource,
+} from '@happyvertical/smrt-app-runtime/device-entitlements';
+
+const entitlements = new DeviceEntitlementCache({
+  filePath: join(stateRoot, 'entitlement.json'),
+  // Public keys bundled with the app (key id -> SPKI PEM / JWK / KeyObject).
+  trustedKeys: { 'issuer-2026-11': ISSUER_PUBLIC_KEY_PEM },
+  accountId, // the signed-in account
+  deviceId, // this device
+  gracePeriodMs: 3 * 24 * 60 * 60 * 1000, // optional, default 0
+  transport: async ({ accountId, deviceId, signal }) =>
+    fetchSnapshotFromHostedEndpoint(accountId, deviceId, signal),
+});
+
+registerDeviceEntitlementGrantSource(
+  entitlements.grantSource({ tenantId: localTenantId }),
+);
+await entitlements.refresh(); // verifies and stores; keeps the old one on failure
+const status = await entitlements.status(); // { tier, state, reason?, featureKeys, ... }
+```
+
+- **Snapshot.** `{ accountId, deviceId, featureKeys, issuedAt, expiresAt, keyId }`
+  (epoch milliseconds), serialized as `{ version, keyId, payload, signature }`
+  where `payload` is base64url JSON and `signature` covers it under the domain
+  prefix `smrt-device-entitlement-v1\0`. The issuing host calls
+  `signDeviceEntitlementSnapshot(snapshot, privateKey)`; the private key never
+  ships with an install.
+- **Fail closed.** No snapshot, expired, tampered, signed by an unknown or
+  wrong key, for another account or device, issued more than `clockSkewMs`
+  (default 5 minutes, max 1 hour) in the future, longer than `maxLifetimeMs`
+  (default 90 days), older than a newer one already accepted, or unreadable:
+  the Local tier with no paid keys. Nothing throws; `status()` carries a reason
+  code. Invalid configuration (for example a non-Ed25519 or private key in
+  `trustedKeys`) throws when the cache is constructed.
+- **Grace period.** `gracePeriodMs` (default 0, max 30 days) keeps the keys on
+  after `expiresAt` for a device that cannot reach the host. The status is
+  `state: 'grace'` with `graceEndsAt`. Clock skew is tolerated on `issuedAt`
+  only; it never extends an expiry.
+- **Replay.** The newest accepted `issuedAt` is kept in `<filePath>.watermark`,
+  and both `install()` and `status()` compare against it. A user who deletes
+  or corrupts the watermark (or both files) or sets the clock back can reuse a
+  snapshot that has not expired; keep issued lifetimes short enough that this is
+  acceptable. A snapshot carries at most 64 keys of 128 characters.
+- **Trust.** The cache file and its directory are not trusted; the key set is.
+  Ship the public keys in the application, not in the data root.
+- **Identity inputs must be unforgeable.** `accountId` and `deviceId` are the
+  only things that bind a snapshot to this install: a snapshot is accepted when
+  its signed account and device equal the values passed in, and nothing else
+  ties it to the machine. Take them from the installation's own identity (the
+  signed-in account, the installation seed's derived device ID or the device
+  key custody), never from a file, environment variable or setting the user or
+  another local process can edit. If a copied cache file can be paired with
+  edited identity values, it works on another machine until the snapshot
+  expires (plus any grace period) and the keys it carries stay on for that long.
+  Short issued lifetimes limit the exposure; they do not remove it.
+- **Refresh.** The transport is injected (the hosted endpoint is not part of
+  this package). Its result is verified like a file; a thrown, timed-out, forged
+  or replayed answer leaves the stored snapshot in place.
+
 ## Preparing a vault key generation
 
 Use `prepareVaultKeyGeneration(options)` from
@@ -546,3 +829,399 @@ generation. Concurrent preparations can produce different candidates for the
 same next generation. Retain the wrapped keys needed to open existing
 backups. Device enrollment and revocation have their own authorization and
 storage requirements.
+
+## Vault key lifecycle
+
+Use `createVaultKeyLifecycle({ store })` from
+`@happyvertical/smrt-app-runtime/vault-key-lifecycle` to manage one device's
+vault keys. It builds on the three entries above and adds device enrollment,
+custody, rotation and revocation. The lifecycle runs one operation at a time.
+Processes that share a store must serialize their calls, for example under
+the application's operation lock.
+
+### Account authority and signed heads
+
+Account state moves between devices only in a signed **account head**. Account
+state means the current key, a commitment to every data key, the active
+devices and the revocations.
+
+An Ed25519 **account authority** key signs every head. Its random seed is
+wrapped under the recovery secret as an `HVRK` record at generation 0, called
+the authority record. A device opens it only while the user has entered the
+recovery secret. So a stolen device secret alone cannot:
+
+- advance the generation,
+- choose a key,
+- add a device, or
+- revoke one.
+
+Only these operations sign a head, and each takes the recovery secret:
+
+- `initializeAccount`
+- `enrollDevice`
+- `enrollFromRecovery`
+- `rotate`
+
+Heads are signed over a length-prefixed encoding with domain tags. Each data
+key is committed with HKDF-SHA256 over the account, generation and key ID.
+Each recovery record is committed by its SHA-256 digest. Keys are identified
+by `(generation, keyId)`.
+
+A device applies a head, from a grant or from
+`acceptAccountHead(head, authorityRecord?)`, by these rules:
+
+- **Newer head that contains the local one:** the device adopts it. Containing
+  means it lists every key entry identically, every revocation, and every
+  device as active or revoked.
+- **Older head the local one contains:** it is stale and changes nothing.
+- **Anything else:** it is fork evidence. The device keeps the evidence, and
+  its revocations take effect at once. Sealing then fails with
+  `generation_conflict` until the device adopts a head that contains the
+  evidence. Any device can produce that head with
+  `rotate({ recoverySecret })`, which merges every branch.
+  - A device revoked on two branches keeps the earlier effective
+    generation.
+  - Two devices enrolled on different branches under one ID or key are both
+    revoked; enroll the right one again.
+
+A head that revokes the receiving device fails with `device_revoked`.
+
+`accountHead()` returns the adopted head and authority record for the relay
+to publish. The relay is blind and untrusted. It only carries heads, grants
+and records.
+
+A device opens the authority only from the stored record whose digest the
+adopted head signs. A device that learns a head without that record cannot
+sign until it receives the record, from `acceptAccountHead` or a grant.
+Grants carry the record when the sender holds it, and enrollment grants
+always do.
+
+### Custody
+
+`VaultKeyStore` is the custody seam: `get`, `set` and `delete` named byte
+items, with atomic replacement. The desktop shell injects an OS keychain
+provider. Headless and development installs use `createFileVaultKeyStore(dir)`
+from `@happyvertical/smrt-app-runtime/vault-key-store`.
+
+- The directory must be absolute. It is created with mode 0700 and must be a
+  real directory owned by the current user.
+- Items are mode 0600 files replaced by atomic rename.
+- On Windows, POSIX modes are synthetic and there is no uid, so the file
+  store performs no custody check. Place the directory under the user's
+  profile, and prefer the shell's keychain provider there.
+- Keep the directory outside the application state root, so plain-data
+  exports and backups never include it.
+
+The store holds the following:
+
+- the device secret
+- per key, the device's wrapped record (`key.<generation>.<keyId>`) and the
+  recovery record (`recovery.<generation>.<keyId>`)
+- the authority record
+- the device registry
+
+The registry holds only IDs, digests, signatures, timestamps and public keys.
+Secrets and wrapped keys never pass through process arguments.
+
+The lifecycle zeroes the device secret and authority seed after each
+operation. Callers must zero the `key` bytes returned by `openSealingKey` and
+`openReadingKey`. JavaScript strings cannot be zeroed, so drop references to
+the recovery secret promptly.
+
+Errors are `VaultKeyLifecycleError` values with a stable `code` and a fixed
+message.
+
+### Sealing and reading
+
+- `openSealingKey()` is the only path for sealing new data. It refuses with:
+  - `rotation_required` while a local revocation is pending (see `rotation`
+    on `status()`)
+  - `generation_conflict` after fork evidence
+  - `key_missing` when the device does not yet hold the current key
+
+  It never falls back to an older key.
+- `openReadingKey({ generation, keyId })` opens a held key named by stored
+  data. It is not gated, because reading old data during a pending rotation
+  is legitimate. Never seal with it.
+
+An encrypted-snapshot `SnapshotKeyProvider` maps onto the lifecycle as
+follows. `createLifecycleSnapshotKeys({ lifecycle, nextSequence })` in
+`@happyvertical/smrt-cli/app` implements this mapping:
+
+- `sealingKey()` takes the key from `openSealingKey()` and adds the snapshot
+  sequence from `nextSequence()`. The gate runs first, so a refused seal
+  (`rotation_required`, `generation_conflict`, `key_missing`,
+  `not_initialized`) spends no sequence and writes no file. It never calls
+  `openReadingKey` and never falls back to an older generation.
+- `openingKey(ref)` checks `ref.accountId` against `status().accountId`, then
+  returns `(await openReadingKey(ref)).key`, or `undefined` on `key_missing`.
+- `snapshotAccountTrustFromLifecycle(lifecycle)` reads the adopted head for
+  restore-latest: the revoked device ids and a generation floor (the highest
+  `effectiveGeneration` of any revocation). A revoked device keeps every key
+  below that generation, so snapshots under it cannot be told from forgeries.
+
+### Enrollment
+
+1. The new device calls `createEnrollmentRequest({ accountId, deviceId })`.
+   It returns the request and a device code. The request holds the device's
+   X25519 public key, a random nonce and an `expiresAt` at most 15 minutes
+   ahead (default 10). It is not secret. Show it, for example as a QR code,
+   together with the device code.
+2. The enrolled device calls `enrollDevice(request, { confirmationCode,
+   recoverySecret })`. The user types or confirms the device code from the
+   new device's screen. On a code mismatch, an expired request or a wrong
+   secret, it writes nothing. Otherwise it signs a head that adds the
+   device. It returns the grant and an account code.
+3. The new device calls `acceptEnrollment(grant, { confirmationCode })` with
+   the account code read from the enroller's screen. It accepts only:
+   - a grant for its own unexpired request,
+   - whose head lists both devices, and
+   - whose keys match the head's commitments.
+
+Each code is 12 base32 characters (60 bits) derived from the request nonce:
+
+- The device code binds the account, device ID, public key and expiry. So a
+  relay cannot substitute the new device's key.
+- The account code binds the authority key, the signed head and the new
+  device's key. So someone who sees the QR code cannot pull the device into
+  another vault.
+
+Each data key in a grant is sealed to the recipient with
+`sealVaultDeviceTransfer` from
+`@happyvertical/smrt-app-runtime/vault-device-transfer`. The seal combines an
+ephemeral and a static X25519 agreement through HKDF-SHA256. The HKDF info
+binds the sender ID, both public keys, the ephemeral key and a SHA-256 digest
+of every other grant field, including the head and the authority record. A
+change to any of them fails authentication.
+
+The resulting key wraps the data key as an `HVDK` record behind the `HVDT`
+`01` prefix and the ephemeral public key. The authenticated context binds
+the account, the recipient device, the generation and the key ID. The device
+secret never leaves the device: the X25519 private key is derived from it
+with HKDF info `smrt-vault-device-agreement-v1`.
+
+Devices learn of each other only from signed heads. A device enrolled
+anywhere reaches every peer with the next head or grant. Rotation then seals
+for every active device in its head.
+
+On a fresh machine, use `enrollFromRecovery({ accountId, deviceId, head,
+authorityRecord, recoveryRecord, recoverySecret })`. Take the head and
+records from the relay. The call checks the following:
+
+- the head's signature against the authority opened with the secret
+- the recovery record against the head's digest
+- the recovered key against the head's commitment
+
+It then signs a head that adds the device. The generation and key ID come
+only from the head.
+
+**Trust requirement:** the relay must serve the latest head. An older
+authentic head cannot be detected until the device meets a peer. At that
+point it surfaces as a fork on both sides. Until then the device may seal
+under a stale generation. Show the head's `headIssuedAt` and
+`headIssuerDeviceId` from `status()` and ask the user to confirm them before
+writing.
+
+### Rotation and revocation
+
+`rotate({ recoverySecret, newRecoverySecret? })` opens the authority with the
+recovery secret before it changes anything. It then:
+
+1. prepares the next generation with `prepareVaultKeyGeneration`
+2. records the candidate and writes its records
+3. signs and commits a head that makes every pending revocation effective at
+   the new generation
+4. returns the head, the authority record, the new recovery record and one
+   update grant for each other active device
+
+A crash at any point leaves the adopted head usable. The next `rotate` call
+resumes a complete candidate or replaces an incomplete one. A head holds at
+most 1024 key entries. Past that, `rotate` refuses with `generation_limit`.
+
+Passing `newRecoverySecret` re-wraps the same authority seed and wraps the
+new recovery record under the new secret. Peers receive the new authority
+record with the grant, and only the new secret then authorizes changes. Older
+recovery records stay under the old secret.
+
+The relay keeps old authority records, so a **leaked** secret keeps its
+authority. The remedy today is a new account (see
+[Restarting when the recovery secret is lost](#restarting-when-the-recovery-secret-is-lost)).
+Authority re-keying is tracked in #4807.
+
+`revokeDevice(deviceId, { recoverySecret })` takes the recovery secret as
+proof, #4818. It opens the authority record the adopted head signs, changes
+nothing else, and only then records a local pending revocation. A wrong,
+missing or superseded secret fails with `recovery_rejected` and records
+nothing, so revoking and rotating succeed or fail together: a revocation never
+exists on a device that cannot rotate. There is no cancel path, so a stolen
+device cannot cancel its own revocation, and with only its own device secret
+it cannot revoke a peer to stop the others sealing. Who may revoke is
+unchanged: whoever holds the recovery secret.
+
+**Caller contract.** Revocation is two calls on one device:
+
+1. `revokeDevice(deviceId, { recoverySecret })`. From here this device refuses
+   to seal (`rotation_required`, so its backups stop) and refuses to enroll.
+   Other devices keep sealing, because unsigned revocations are never
+   broadcast: a stolen device could use them to lock the others out.
+2. `rotate({ recoverySecret })`. Publish the returned head, authority record,
+   recovery record and grants. Sealing resumes on this device and the
+   revocation reaches the peers with the rotation.
+
+Run both in one user flow and ask for the secret once. Between the two calls
+backups on this device are paused, so say so in your UI instead of letting
+each seal fail.
+
+`status().rotation` says why sealing is stopped and whether the rotation is
+known to be possible. It is null while nothing requires one.
+
+| `rotation` | Meaning | Product action |
+| --- | --- | --- |
+| `null` | No rotation needed | none |
+| `{ reasons: ['revocation'], secretProven: true }` | Rotation required and possible: the secret was proven when the revocation was recorded | finish with `rotate` |
+| `{ reasons: ['conflict'], secretProven: false }` | Fork evidence arrived from the relay; the secret has not been proven | ask for the secret, then `rotate` merges |
+| `{ reasons: [...], secretProven: false }` | Any state that includes a conflict, or a revocation recorded by a build that predates the proof | ask for the secret; if it is lost the way out is a [restart](#restarting-when-the-recovery-secret-is-lost) |
+
+`reasons` lists `revocation` and `conflict`. `rotationRequired` and `conflict`
+remain as before.
+
+**The fork differs from a revocation by design.** A revocation is the user's
+own act, so it can be refused without the proof. Fork evidence arrives from
+the relay unasked, and recording it is what stops this device sealing into a
+diverged account; refusing evidence for want of the secret would hide the
+fork. So the conflict is always recorded, and the signal is how a product
+tells that its merge has not been proven possible. `rotate` fails with
+`recovery_rejected` without the secret, and sealing stays stopped until a
+head containing the evidence is adopted. A family with a conflict and no
+secret has no merge: the way out is a
+[restart](#restarting-when-the-recovery-secret-is-lost).
+
+A pending revocation clears only when an adopted head revokes that exact
+device ID and public key. If another device rotates without having seen the
+local revocation, its new key still reaches the device you meant to revoke.
+Rotate from the device that revoked.
+
+A revoked device gets no new generation. Peers reject its grants once they
+know of the revocation. It keeps any generation it had already opened.
+`recoveryRecord({ generation, keyId })` returns a held recovery record for
+publication.
+
+### Restarting when the recovery secret is lost
+
+Enrolling a device, rotating and setting a new recovery secret all need the
+current secret, because it unwraps the authority that signs heads. A family
+that loses it while its devices still work keeps reading, sealing and backing
+up, but the account is frozen: no device can be added, and if every device is
+later lost the backups open for nobody. The way out is a new vault account
+started from a working device (#4817). It costs the family their backup
+history under the old account and every other device a re-enrolment, and it
+needs no knowledge of the old secret. HappyVertical keeps no escrow copy, so
+there is no shorter route, and device-approved enrolment is a separate
+authority-rule decision that this does not make.
+
+**Detect it before the family is stuck.** `checkRecoverySecret(secret)`
+returns `{ authority, currentKey }` and changes nothing: `authority` is
+whether the secret opens the authority record the adopted head signs, and
+`currentKey` whether it opens the current key's recovery record (`null` when
+this device does not hold that record). A wrong secret is `false`, not an
+error. Ask the family to type the secret in periodically, for example every
+few months and after any rotation, run the check, and show the result. A
+`false` while the devices still work is the moment to offer the restart.
+
+**The restart**, in order. The account layer is the hosted service that
+provisions accounts and holds the relay admin token. It must re-authenticate
+the human owner before step 1. This is a **hard requirement**, not a
+suggestion: the local calls in steps 2 and 3 cannot tell the owner from
+someone holding the unlocked device, so the account layer is the only gate on
+a takeover of the backup line. A product that offers the restart without it
+is not safe to ship. Before
+starting, ask every device to publish: after step 1 the old account takes no
+writes, and there is no merge, so what a device has not published is not in
+the new account.
+
+1. Account layer: provision the new vault account (a fresh account ID with
+   the `backup.vault` entitlement), register the working device's relay
+   signing key in it, then replace the old account (relay admin
+   `PUT .../superseded-by`). From then on the old account takes no writes and
+   offers nothing to restore-latest, so a device still following it stops
+   publishing into a dead line and says why (`account_superseded`). The relay
+   admin `DELETE` of the same path undoes this, but only for a restart that
+   never reached the working device: once step 2 has run, there is no API
+   that undoes `restartAccount` locally. That device is on the new account
+   and finishes the restart (steps 2 to 5). A backup on it that still targets
+   the old account is refused (`account_mismatch`) and nothing is sealed, so
+   even a reverted supersession cannot move the old account's data line.
+2. Working device: `restartAccount({ accountId, deviceId, recoverySecret,
+   confirmRestart: true })`, where `recoverySecret` is a **new** secret the
+   user writes down now. It parks the old account (`previousAccount()`) and
+   creates the new one with its own device secret, authority key and first
+   data key. Nothing from the old account is carried across. Publish the
+   returned head, authority record and recovery record to the new account.
+   After a crash, call it again with the same input.
+3. Working device, holding the operation lock:
+   `switchVaultAccount({ stateRoot, lifecycle, from, to, lease })` from
+   `@happyvertical/smrt-app-runtime`. It moves the location's vault position
+   to the new account at sequence zero with local writes pending, so the next
+   backup is a full baseline. It refuses unless the lifecycle shows this
+   exact restart, the relay reports the new account empty, and the location
+   is active. It is the only code that resets the downgrade floor. Start the
+   key provider's snapshot sequence counter again at 1 for the new account
+   (the relay refuses a first sequence far above an empty account's mark),
+   and take a fresh backup through the normal path.
+4. Every other device: `leaveAccount({ confirmLeave: true })`, then the
+   normal exchange against the new account: `createEnrollmentRequest`, the
+   working device's `enrollDevice` with the **new** secret, then
+   `acceptEnrollment`. A wiped device uses `enrollFromRecovery` with the new
+   secret. An installation that already follows the old account moves with
+   `switchVaultAccount({ ..., role: 'follower', fromLease })`, which accepts an
+   account that already holds snapshots but only once the relay reports the
+   old account as replaced (`fromLease`, signed as the device's old-account
+   key; keep the old account's devices registered until every device has
+   followed). Unpublished local writes stay marked, so restore-latest still
+   asks for `--discard-local`; its next step is restore-latest, never a
+   backup over the new account. A fresh device is
+   simply pointed at the new account by the host, and restore-latest then
+   restores the new account's snapshot.
+5. When the new account is backed up and the other devices have joined:
+   `discardPreviousAccount()` deletes the parked account's wrapped keys and
+   records. It refuses (`restart_incomplete`) while the device holds no
+   current account, and it never deletes a key the current account uses.
+
+**Deploying.** Run the relay migration job (`migrateVaultRelayV1`, which now
+also creates `vault_relay_supersessions`) before deploying a relay that
+includes supersession. Until it has run, the relay's `/readyz` reports
+`schema_missing`.
+
+The relay never tells a client which account to follow: `account_superseded`
+is a stop signal, and the host's trusted configuration decides the account.
+The parked keys are a local undo and a hold for a manual rescue; this release
+has no API that opens a parked account's data (follow-up), and the old
+account's snapshots stay on the relay, readable by explicit sequence, until
+the operator deletes them.
+
+What a restart cannot do: it does not recover the old account's data from the
+relay (the data lives on the working device and is backed up afresh), it does
+not revoke a leaked old secret on a relay that still serves old records
+(#4807), and it does not help when no device still works.
+
+### Threat model notes
+
+- Whoever holds the recovery secret is the account. Typing it on a device
+  gives that device's malware authority.
+- A stolen device secret alone can only replay authentic heads and keys, or
+  send grants that are rejected.
+- Concurrent changes by two holders of the recovery secret fork the account.
+  Sealing stops until a merge rotation.
+- A stolen device cannot record a revocation, so it can neither lock peers out
+  of sealing nor strand its own owner: recording needs the recovery secret
+  (#4818), and a revocation cannot be cancelled.
+
+### Product rules
+
+Losing every enrolled device and the recovery code means losing the data.
+HappyVertical holds no escrow copy of any key and cannot recover it.
+
+Losing only the recovery code freezes the account without losing data. Prompt
+the family to confirm the code periodically with `checkRecoverySecret`, and
+tell them up front what a restart costs: a new code, a fresh backup history,
+and every other device re-enrolled.
