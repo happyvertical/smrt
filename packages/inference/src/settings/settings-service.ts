@@ -808,7 +808,7 @@ export class InferenceSettingsService {
       kind === 'alias'
         ? Object.hasOwn(config?.aliases ?? {}, name)
         : Object.hasOwn(config?.fusions ?? {}, name) ||
-          [...(this.options.registryFusions?.() ?? [])].some(
+          [...(this.options.registryFusions ?? defaultRegistryFusions)()].some(
             (fusion) => fusion?.key === name,
           );
     if (defined) return;

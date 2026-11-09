@@ -231,6 +231,15 @@ describe('app-row fusions reach the executor (#4800)', () => {
     ]);
   });
 
+  it('removes a referenced app row while defineFusion() keeps the name', async () => {
+    defineFusion({ key: 'kept', ...SINGLE });
+    await admin.setFusion({ name: 'kept', definition: HANDOFF as never });
+    await bindBest('kept');
+    // The default registry (no `registryFusions` option) counts.
+    await admin.setFusion({ name: 'kept', definition: null });
+    expect((await admin.listInferenceFusions())[0]?.source).toBe('registry');
+  });
+
   it('core lookup precedence: resolver answer, then config, then undefined', async () => {
     const stored: InferenceFusionDefinition = HANDOFF;
     const answering: InferenceResolver = {
