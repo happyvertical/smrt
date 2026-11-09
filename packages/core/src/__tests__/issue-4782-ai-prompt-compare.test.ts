@@ -6,7 +6,7 @@
  */
 
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SmrtClass } from '../class';
 import {
   AiUsageScopeError,
@@ -14,7 +14,10 @@ import {
   listAiPromptTemplateHistory,
 } from '../system/ai-prompt-compare';
 import { recordAiRun } from '../system/ai-runs';
-import { recordAiTranscript } from '../system/ai-transcripts';
+import {
+  listAiTranscripts,
+  recordAiTranscript,
+} from '../system/ai-transcripts';
 import { recordAiUsageOutcome } from '../system/ai-usage-observability';
 
 let instance: SmrtClass;
@@ -584,6 +587,35 @@ describe('compareAiPromptRuns (#4782)', () => {
     expect({ ...result.a.outcomes }).toEqual({ late: 1 });
     expect(result.a.transcripts[0]?.callId).toBe('call-k0510');
     expect(result.a.latencyMs.p50).toBe(259);
+  });
+});
+
+describe('transcript reads behind ai:compare --transcripts (#4782)', () => {
+  it('scope their usage and label joins to the tenant in SQL', async () => {
+    await seed();
+    const query = vi.spyOn(db, 'query');
+    const [row] = await listAiTranscripts(db, {
+      actor: 'r',
+      tenantId: 't1',
+      callId: 'c1',
+    });
+    // t2 reuses call c1 and run r1; its row and label are never read.
+    expect(row?.usage.map((usage) => usage.id)).toEqual(['a1']);
+    const joins = query.mock.calls
+      .map(([sql]) => String(sql))
+      .filter((sql) => /FROM _smrt_ai_usage(_outcomes)?\b/.test(sql));
+    expect(joins).toHaveLength(2);
+    for (const sql of joins) expect(sql).toMatch(/AND tenant_id = \$\d+/);
+    const t2Rows = await Promise.all(
+      query.mock.results.map(async (result) => {
+        const value = (await result.value) as {
+          rows?: { id?: string; usage_id?: string }[];
+        };
+        return (value?.rows ?? []).flatMap((r) => [r.id, r.usage_id]);
+      }),
+    );
+    expect(t2Rows.flat()).not.toContain('t2a');
+    query.mockRestore();
   });
 });
 
