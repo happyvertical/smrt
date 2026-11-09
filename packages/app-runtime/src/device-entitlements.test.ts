@@ -607,6 +607,23 @@ describe('DeviceEntitlementCache', () => {
     });
   });
 
+  it.each([
+    null,
+    'not-a-sha256-digest',
+    12,
+  ])('fails closed on malformed envelope digest %s', async (envelopeDigest) => {
+    await cache().install(issue());
+    const watermark = JSON.parse(await readFile(`${file}.watermark`, 'utf8'));
+    await writeFile(
+      `${file}.watermark`,
+      JSON.stringify({ ...watermark, envelopeDigest }),
+    );
+    expect(await cache().status()).toMatchObject({
+      ...LOCAL,
+      reason: 'unreadable',
+    });
+  });
+
   it('keeps the replay floor when snapshot storage fails and permits retry', async () => {
     const old = issue({ issuedAt: NOW - 2 * HOUR });
     const newer = issue({ issuedAt: NOW - HOUR });
@@ -624,6 +641,63 @@ describe('DeviceEntitlementCache', () => {
     await writeFile(file, JSON.stringify(old));
     expect((await cache().status()).reason).toBe('replayed');
     expect((await cache().install(newer)).accepted).toBe(true);
+  });
+
+  it('reserves same-time identity across partial failure and permits only the exact retry', async () => {
+    await cache().install(issue({ issuedAt: NOW - 2 * HOUR }));
+    const newer = issue({ issuedAt: NOW - HOUR, featureKeys: [] });
+    await rm(file);
+    await mkdir(file);
+    expect(await cache().install(newer)).toMatchObject({
+      accepted: false,
+      reason: 'storage_failed',
+    });
+    await rm(file, { recursive: true });
+    await writeFile(file, JSON.stringify(issue({ issuedAt: NOW - 2 * HOUR })));
+    const conflicting = issue({ issuedAt: NOW - HOUR });
+    expect(await cache().install(conflicting)).toMatchObject({
+      accepted: false,
+      reason: 'replayed',
+    });
+    expect((await cache().install(newer)).accepted).toBe(true);
+    await writeFile(file, JSON.stringify(conflicting));
+    expect((await cache().status()).reason).toBe('replayed');
+  });
+
+  it('observes authenticated expired offers without accepting them or their issuance floor', async () => {
+    const expired = issue({ expiresAt: NOW + HOUR });
+    clock = NOW + 2 * HOUR;
+    expect(await cache().install(expired)).toMatchObject({
+      accepted: false,
+      reason: 'expired',
+    });
+    await expect(readFile(file)).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(
+      JSON.parse(await readFile(`${file}.watermark`, 'utf8')),
+    ).toMatchObject({ issuedAt: Number.MIN_SAFE_INTEGER, observedAt: clock });
+    clock = NOW;
+    expect(await cache().install(expired)).toMatchObject({
+      accepted: false,
+      reason: 'expired',
+    });
+    clock = NOW + 2 * HOUR;
+    expect(
+      (await cache().install(issue({ issuedAt: NOW - 2 * HOUR }))).accepted,
+    ).toBe(true);
+  });
+
+  it('does not trust time from expired offers for another identity or signing key', async () => {
+    clock = NOW + 2 * HOUR;
+    for (const envelope of [
+      issue({ accountId: 'other', expiresAt: NOW + HOUR }),
+      issue({ deviceId: 'other', expiresAt: NOW + HOUR }),
+      issue({ expiresAt: NOW + HOUR }, attacker.privateKey),
+    ]) {
+      expect((await cache().install(envelope)).accepted).toBe(false);
+      await expect(readFile(`${file}.watermark`)).rejects.toMatchObject({
+        code: 'ENOENT',
+      });
+    }
   });
 
   it('does not replace the snapshot if watermark persistence fails', async () => {
@@ -802,6 +876,23 @@ describe('DeviceEntitlementCache', () => {
     const first = issue();
     expect((await cache().install(first)).accepted).toBe(true);
     expect((await cache().install(first)).accepted).toBe(true);
+    expect(
+      (
+        await cache().install(
+          JSON.stringify(
+            {
+              ignored: true,
+              signature: first.signature,
+              payload: first.payload,
+              keyId: first.keyId,
+              version: first.version,
+            },
+            null,
+            2,
+          ),
+        )
+      ).accepted,
+    ).toBe(true);
     const sibling = issue({ featureKeys: [] });
     expect(await cache().install(sibling)).toMatchObject({
       accepted: false,

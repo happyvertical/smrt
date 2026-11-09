@@ -178,18 +178,11 @@ Application infrastructure composition for the validated runtime profiles in
   no keys. `status()` and `grantSource()` never throw; `install()`/`refresh()`
   report a reason and keep what is stored. Invalid *configuration* (non-Ed25519
   or private key, empty key set, out-of-range durations) throws at construction.
-- Replay: `<filePath>.watermark` holds newest accepted `issuedAt` and highest
-  authenticated observation time `observedAt`, including expiry reads. Earlier
-  clocks fail closed (`expired`), even in grace. Legacy v1 missing observedAt
-  upgrades on read; malformed values fail closed. Expired status retains only
-  authenticated, identity-bound dates. Standalone verification has no watermark.
-- All cache reads/installs take the existing `withOperationLock` under
-  `<filePath>.lock`; same-instance calls queue. Cross-instance/process contention
-  fails closed (`unreadable` / `storage_failed`); retry is allowed. The watermark
-  lands before the snapshot, so partial failure denies the old file; retrying
-  the newer snapshot repairs it. Every process must share the private cache
-  destination and participate in this lock. No protection against an owner
-  deleting/corrupting state or an older binary that ignores the lock. See README.
+- Entitlement cache reads and installs share `<filePath>.lock`; its watermark
+  records issuance, observed time and signed-envelope identity before replacement.
+  Rollback, replay and lock contention fail closed; only authenticated expiry
+  dates are exposed. See [cache persistence](README.md#device-entitlement-cache)
+  for legacy, retry and standalone-verifier behavior.
 - Grace (`gracePeriodMs`, default 0, max 30 d) keeps keys on past `expiresAt`
   (`state: 'grace'`); skew applies to `issuedAt` only, never extends expiry.
 - Features integration is structural: `cache.grantSource()` is a

@@ -23,6 +23,7 @@
  * `Symbol.for()` slot `smrt-subscriptions` uses.
  */
 import {
+  createHash,
   createPublicKey,
   type JsonWebKey,
   type KeyObject,
@@ -591,7 +592,12 @@ export interface DeviceEntitlementRefreshResult
 }
 
 type Watermark =
-  | { kind: 'ok'; issuedAt: number; observedAt?: number }
+  | {
+      kind: 'ok';
+      issuedAt: number;
+      observedAt?: number;
+      envelopeDigest?: string;
+    }
   | { kind: 'corrupt' };
 
 /**
@@ -754,6 +760,7 @@ export class DeviceEntitlementCache {
         version?: unknown;
         issuedAt?: unknown;
         observedAt?: unknown;
+        envelopeDigest?: unknown;
       };
       if (
         value?.version === DEVICE_ENTITLEMENT_FORMAT_VERSION &&
@@ -761,12 +768,16 @@ export class DeviceEntitlementCache {
         Number.isSafeInteger(value.issuedAt) &&
         (value.observedAt === undefined ||
           (typeof value.observedAt === 'number' &&
-            Number.isSafeInteger(value.observedAt)))
+            Number.isSafeInteger(value.observedAt))) &&
+        (value.envelopeDigest === undefined ||
+          (typeof value.envelopeDigest === 'string' &&
+            /^[a-f0-9]{64}$/.test(value.envelopeDigest)))
       ) {
         return {
           kind: 'ok',
           issuedAt: value.issuedAt,
           observedAt: value.observedAt as number | undefined,
+          envelopeDigest: value.envelopeDigest as string | undefined,
         };
       }
     } catch {
@@ -793,7 +804,13 @@ export class DeviceEntitlementCache {
     const snapshot =
       'snapshot' in verification ? verification.snapshot : undefined;
     if (!snapshot) return local('expired', 'expired');
-    if (watermark && snapshot.issuedAt < watermark.issuedAt) {
+    if (
+      watermark &&
+      (snapshot.issuedAt < watermark.issuedAt ||
+        (snapshot.issuedAt === watermark.issuedAt &&
+          watermark.envelopeDigest !== undefined &&
+          watermark.envelopeDigest !== envelopeDigest(text)))
+    ) {
       return local('invalid', 'replayed');
     }
     const dates = {
@@ -807,9 +824,10 @@ export class DeviceEntitlementCache {
     if (
       !watermark ||
       watermark.observedAt !== now ||
-      watermark.issuedAt < snapshot.issuedAt
+      watermark.issuedAt < snapshot.issuedAt ||
+      watermark.envelopeDigest === undefined
     ) {
-      await this.#writeWatermark(snapshot.issuedAt, now);
+      await this.#writeWatermark(snapshot.issuedAt, now, envelopeDigest(text));
     }
     if (!verification.ok) return { ...local('expired', 'expired'), ...dates };
     return {
@@ -828,13 +846,18 @@ export class DeviceEntitlementCache {
     }
   }
 
-  async #writeWatermark(issuedAt: number, observedAt: number): Promise<void> {
+  async #writeWatermark(
+    issuedAt: number,
+    observedAt: number,
+    envelopeDigest?: string,
+  ): Promise<void> {
     await writePrivateFileAtomic(
       this.#watermarkPath,
       JSON.stringify({
         version: DEVICE_ENTITLEMENT_FORMAT_VERSION,
         issuedAt,
         observedAt,
+        envelopeDigest,
       }),
       { createParent: true },
     );
@@ -849,6 +872,29 @@ export class DeviceEntitlementCache {
       now: () => now,
     });
     if (!verification.ok) {
+      if (verification.reason === 'expired' && Number.isSafeInteger(now)) {
+        try {
+          const watermark = await this.#readWatermark();
+          // An authenticated expired offer observes time, but does not reserve
+          // its rejected issuedAt or replace the held snapshot.
+          if (
+            watermark?.kind !== 'corrupt' &&
+            (watermark?.observedAt === undefined || now >= watermark.observedAt)
+          ) {
+            await this.#writeWatermark(
+              watermark?.issuedAt ?? Number.MIN_SAFE_INTEGER,
+              now,
+              watermark?.envelopeDigest,
+            );
+          }
+        } catch {
+          return {
+            accepted: false,
+            reason: 'storage_failed',
+            status: await this.#safeEvaluate(),
+          };
+        }
+      }
       return {
         accepted: false,
         reason: verification.reason,
@@ -884,31 +930,42 @@ export class DeviceEntitlementCache {
           status: await this.#safeEvaluate(),
         };
       }
-      if (snapshot.issuedAt === floor) {
+      const digest = envelopeDigest(serialized);
+      if (
+        snapshot.issuedAt === floor &&
+        watermark?.kind === 'ok' &&
+        watermark.envelopeDigest !== undefined &&
+        watermark.envelopeDigest !== digest
+      ) {
+        return {
+          accepted: false,
+          reason: 'replayed',
+          status: await this.#safeEvaluate(),
+        };
+      }
+      if (
+        snapshot.issuedAt === floor &&
+        !(watermark?.kind === 'ok' && watermark.envelopeDigest === digest)
+      ) {
         const current = await readPrivateFileBounded(
           this.#filePath,
           MAX_FILE_BYTES,
         ).catch(() => null);
         if (current !== null && !sameEnvelope(current, serialized)) {
-          const held = verifyWithPolicy(current, {
-            ...this.#policy,
-            now: () => now,
-          });
-          if (
-            !('snapshot' in held) ||
-            held.snapshot.issuedAt >= snapshot.issuedAt
-          ) {
-            return {
-              accepted: false,
-              reason: 'replayed',
-              status: await this.#safeEvaluate(),
-            };
-          }
+          return {
+            accepted: false,
+            reason: 'replayed',
+            status: await this.#safeEvaluate(),
+          };
         }
       }
       // Persist the floor first. If snapshot replacement fails or the process
       // dies, an older file fails closed; retrying this snapshot repairs it.
-      await this.#writeWatermark(Math.max(floor, snapshot.issuedAt), now);
+      await this.#writeWatermark(
+        Math.max(floor, snapshot.issuedAt),
+        now,
+        digest,
+      );
       await writePrivateFileAtomic(this.#filePath, serialized, {
         createParent: true,
       });
@@ -921,6 +978,21 @@ export class DeviceEntitlementCache {
       };
     }
   }
+}
+
+/** Canonical signed identity, independent of envelope whitespace/field order. */
+function envelopeDigest(text: string): string {
+  const envelope = parseEnvelope(text);
+  if (!envelope) throw new Error('malformed');
+  return createHash('sha256')
+    .update(
+      JSON.stringify([
+        envelope.keyId,
+        envelope.payload.toString('base64url'),
+        envelope.signature.toString('base64url'),
+      ]),
+    )
+    .digest('hex');
 }
 
 function sameEnvelope(a: string, b: string): boolean {
