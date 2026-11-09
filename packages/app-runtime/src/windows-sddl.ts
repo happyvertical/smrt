@@ -234,12 +234,34 @@ export function parseSddl(sddl: string): WindowsSecurityDescriptor {
   return { owner, dacl };
 }
 
-/** The principals whose access is part of custody on Windows. */
+/**
+ * A machine-account SID whose RID is 500: the built-in `Administrator`. SDDL
+ * writes that one account as the alias `LA` (never as its SID) whenever the
+ * descriptor is rendered on its own machine, so the current user's SID and
+ * the trustee `ALIAS:LA` can name the same principal.
+ */
+const MACHINE_ADMINISTRATOR_SID = /^S-1-5-21-\d+-\d+-\d+-500$/;
+
+/** The SDDL alias for the machine's built-in Administrator (RID 500). */
+export const SDDL_ALIAS_LOCAL_ADMINISTRATOR = 'ALIAS:LA';
+
+/**
+ * The principals whose access is part of custody on Windows.
+ *
+ * When the current user's SID is a RID-500 machine-account SID (a runner's
+ * `runneradmin`, or a renamed built-in Administrator), `LA` in a descriptor is
+ * that very user, so `ALIAS:LA` is trusted too. For any other user `LA` stays
+ * untrusted: the built-in Administrator is then a different principal.
+ */
 export function trustedPrincipals(userSid: string): ReadonlySet<string> {
   if (!SID_PATTERN.test(userSid)) {
     return malformed('current-user identity is not a SID');
   }
-  return new Set([userSid, SID_SYSTEM, SID_ADMINISTRATORS]);
+  const trusted = new Set([userSid, SID_SYSTEM, SID_ADMINISTRATORS]);
+  if (MACHINE_ADMINISTRATOR_SID.test(userSid)) {
+    trusted.add(SDDL_ALIAS_LOCAL_ADMINISTRATOR);
+  }
+  return trusted;
 }
 
 /**

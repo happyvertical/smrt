@@ -155,6 +155,22 @@ another driver. The gate is a single call (`refuseWindowsDatabaseAcquisition`).
 Because the gate sits before the lease, the Windows lease is not reachable from
 the public entry points until then; it is exercised directly by the tests.
 
+The runtime can promise only what it does itself: it creates and opens nothing
+before it refuses, but a caller may already have created files of its own. The
+`smrt app` commands used to (`setup` and `install` created the state root,
+marker and `operation.lock`, took `writer.lease` and ran a full `pnpm build`;
+`migrate` created the state root). They now refuse the **local profile on
+Windows first**, before any of that: `install`, `setup`, `recover`, `start`,
+`stop`, `open`, `migrate`, `token` (`WindowsLocalProfileUnsupportedError`) and
+`backup`, `export`, `import` (`WindowsOperatorCopyUnsupportedError`). Still
+available on Windows: `help`, `doctor` (read-only; it reports
+`windows-local-profile-unsupported` and does not run `db:status`), `build`,
+`dev`, `vite`, `worker` (deployed only), and the self-hosted and cloud
+profiles: `setup`, `migrate`, `export` and `import` run for them, and a
+deployed `export` or `import` writes to the operator's chosen path with no
+mode guarantee, because Windows ignores modes (deployed `backup` is delegated
+to the operator and throws on every host).
+
 **Removing that gate is not the only step.** Read-only validation
 (`validateLocalDatabaseStorage()`) passes on Windows, so the `smrt app backup`,
 `export` and `import` commands, which copy the application secret and database
@@ -206,6 +222,14 @@ gate, not before.
    - *Trusted principals:* the current user, `SYSTEM` and `BUILTIN\Administrators`
      (trusted the way uid 0 is on POSIX; objects created by an elevated admin are
      owned by Administrators). Ancestor owners may also be `TrustedInstaller`.
+     SDDL writes the machine's built-in RID-500 `Administrator` as the alias
+     `LA`, not as its SID, so when the current user's SID is a machine-account
+     SID ending in `-500` (a runner's `runneradmin`, or a renamed built-in
+     Administrator) `LA` is the same principal and is trusted too; for any other
+     user `LA` is refused. A domain `Administrator` (`S-1-5-21-<domain>-500`)
+     matches the same shape, so for that user a local `LA` entry is accepted as
+     well; the local built-in Administrator is a member of
+     `BUILTIN\Administrators`, which is trusted already.
    - *Custodied* (the data root and everything under it, the lease directory and
      file, the state root and its files): the owner is trusted, a DACL is
      present (a NULL DACL is refused), and every allow ACE names a trusted
@@ -282,7 +306,23 @@ DrvFs/9p (POSIX uid and mode there are synthesized) are not handled here.
 
 **Not verified on Windows.** Everything above was written and tested without a
 Windows machine: the in-memory machine proves the policy and the control flow,
-not the operating system. Unverified until the real-Windows tests have run: how
+not the operating system. **Every Windows claim in this package stays
+unverified until one green run of the `windows-latest` job
+(`app-runtime-windows.yml`) is attached to the pull request or recorded on
+smrt#4837.** The job is advisory, not a required check; its path filter covers
+`packages/app-runtime/**`, `packages/cli/src/app/**` and the workflow itself.
+
+*Known unverified risk: the RID-500 `LA` alias.* The `LA` handling above rests
+on how SDDL renders that account, which was not observed on a real machine. If
+the runner's `runneradmin` is the built-in RID-500 Administrator and Windows
+renders it in some other form than a bare `LA` (for example a full SID that
+differs from the `whoami` SID, or a domain-qualified alias), every custodied
+path is refused with `access is granted to <trustee>` or `owner is not a
+trusted principal (<trustee>)`, the custody tests fail, and the first real run
+prints the true descriptors to correct the rule. The failure mode is a refusal
+(fail closed), never an acceptance.
+
+Also unverified until the real-Windows tests have run: how
 libuv reports non-symlink reparse tags and `nlink`; `realpath.native` on 8.3,
 `subst` and mapped drives; `fs.open` on a directory; the default DACLs of `C:\`,
 `C:\Users`, a secondary volume root and `%LOCALAPPDATA%` (the SDDL fixtures

@@ -26,7 +26,6 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs';
-import { platform } from 'node:os';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
@@ -62,7 +61,9 @@ import {
 } from './process-record.js';
 import {
   type AppContext,
+  hostPlatform,
   preparedStateRoot,
+  refuseWindowsLocalProfile,
   runtimeEnvironment,
   webLauncherPath,
 } from './runtime.js';
@@ -766,7 +767,22 @@ async function doctor(context: AppContext): Promise<number> {
       });
     }
 
-    if (canInspectMigrations) {
+    // `smrt db:status` would open (and could create) the local SQLite file,
+    // which the Windows custody rule does not yet cover: report instead.
+    const windowsLocal =
+      runtime.profile === 'local' && hostPlatform(context) === 'win32';
+    if (windowsLocal) {
+      findings.push({
+        code: 'windows-local-profile-unsupported',
+        severity: 'error',
+        message:
+          'The local runtime cannot open its SQLite database on Windows yet (smrt#4837); migration status was not read.',
+        recovery:
+          'Use a non-Windows host for the local profile, or select the self-hosted or cloud profile.',
+      });
+    }
+
+    if (canInspectMigrations && !windowsLocal) {
       try {
         const status = context.deps.runSmrt(['db:status', '--json'], {
           env: runtimeEnvironment(context, runtime).env,
@@ -894,11 +910,12 @@ function snapshotReport(snapshot: EncryptedSnapshotSummary) {
  * root (`backup`, `export`, `import`) on Windows. Their privacy relies on
  * POSIX modes, which Windows ignores, so a copy would inherit the destination
  * parent's ACL. Runs before the state root, operation lock, or destination is
- * touched, and only for the local profile.
+ * touched, and only for the local profile: a deployed profile reads no local
+ * data root (deployed `backup` is delegated to the operator and throws its own
+ * error; deployed `export`/`import` are not refused here).
  */
 async function refuseWindowsOperatorCopy(context: AppContext): Promise<void> {
-  const host = context.deps.platform?.() ?? platform();
-  if (host !== 'win32') return;
+  if (hostPlatform(context) !== 'win32') return;
   const runtime = await context.deps.resolveRuntime(context.sourceRoot);
   if (runtime.profile !== 'local') return;
   throw new WindowsOperatorCopyUnsupportedError();
@@ -1168,6 +1185,19 @@ export async function runApplicationOperation(
   operation: AppOperation,
   args: string[],
 ): Promise<number> {
+  // Windows local profile: refuse before any state root, lock, lease, build or
+  // data-root access (smrt#4837). `doctor` is read-only and stays; the copies
+  // have their own, more specific refusal below.
+  if (
+    operation === 'install' ||
+    operation === 'setup' ||
+    operation === 'recover' ||
+    operation === 'start' ||
+    operation === 'stop' ||
+    operation === 'open'
+  ) {
+    await refuseWindowsLocalProfile(context, operation);
+  }
   switch (operation) {
     case 'install': {
       await assertLocalOperation(context, 'app:install');

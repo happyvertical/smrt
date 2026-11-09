@@ -43,8 +43,13 @@ Application infrastructure composition for the validated runtime profiles in
   (`custody-context.ts`), never a public option. SQLite acquisition on Windows
   throws `WindowsDatabaseAcquisitionUnsupportedError` before any directory is
   created (`refuseWindowsDatabaseAcquisition`; remove it when `@happyvertical/sql`
-  takes a caller-supplied Windows verifier). Lease, state root and
-  `validateLocalDatabaseStorage` work. `windows-custody.test.ts` runs anywhere;
+  takes a caller-supplied Windows verifier; that error cannot promise what its
+  caller created first, so `smrt app` refuses the local profile on Windows
+  before it creates anything, see `packages/cli`). Lease, state root and
+  `validateLocalDatabaseStorage` work. SDDL writes the built-in RID-500
+  Administrator as `LA`: it is trusted (`ALIAS:LA`) only when the current
+  user's SID is a machine `S-1-5-21-…-500` SID (`trustedPrincipals`);
+  unverified on a real runner. `windows-custody.test.ts` runs anywhere;
   `windows-custody.win32.test.ts` runs only in the advisory
   `app-runtime-windows.yml` job.
 - Application migrations are explicit through `prepareDatabase`; runtime never

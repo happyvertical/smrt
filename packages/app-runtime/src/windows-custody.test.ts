@@ -456,6 +456,56 @@ describe('W6 policy (WT1 other users, WT3 inherited access)', () => {
   });
 });
 
+describe('W6 policy: the built-in Administrator is written as LA (RID 500)', () => {
+  // SDDL renders the machine's RID-500 account as the alias LA, never as its
+  // SID. A runner whose user is that account must still trust its own files.
+  const RID_500 = 'S-1-5-21-111-222-333-500';
+  const adminPrivate =
+    'O:LAG:LAD:PAI(A;OICI;FA;;;LA)(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)';
+  const adminOwnedByAdministrators =
+    'O:BAG:BAD:PAI(A;OICIID;FA;;;LA)(A;OICIID;FA;;;SY)(A;OICIID;FA;;;BA)';
+
+  it.each([
+    ['an LA owner and LA grant', adminPrivate],
+    ['an LA inherited grant', adminOwnedByAdministrators],
+  ])('trusts %s when the current user is RID 500', (_name, sddl) => {
+    expect(policy('custodied', sddl, RID_500)).not.toThrow();
+    expect(policy('ancestor', sddl, RID_500)).not.toThrow();
+  });
+
+  it('still refuses LA for an ordinary user, whose Administrator is another principal', () => {
+    expect(policy('custodied', adminOwnedByAdministrators)).toThrow(
+      /access is granted to ALIAS:LA/,
+    );
+    expect(policy('custodied', adminPrivate)).toThrow(
+      /owner is not a trusted principal \(ALIAS:LA\)/,
+    );
+  });
+
+  it.each([
+    ['the Guest account (RID 501)', 'S-1-5-21-111-222-333-501'],
+    ['a RID that merely ends in 500', 'S-1-5-21-111-222-333-1500'],
+    ['a service SID', 'S-1-5-80-111-222-333-500'],
+    ['a non-machine SID', 'S-1-5-32-500'],
+  ])('does not extend LA to %s', (_name, user) => {
+    expect(policy('custodied', adminOwnedByAdministrators, user)).toThrow(
+      /access is granted to ALIAS:LA/,
+    );
+  });
+
+  it('still refuses every other alias for a RID-500 user', () => {
+    for (const alias of ['LG', 'DA', 'BU', 'AU', 'WD']) {
+      expect(
+        policy(
+          'custodied',
+          `O:BAG:BAD:PAI(A;OICIID;FA;;;${alias})(A;OICIID;FA;;;BA)`,
+          RID_500,
+        ),
+      ).toThrow(/lacks Windows custody/);
+    }
+  });
+});
+
 describe('W3/W4/W5 chain checks (WT2, WT4, WT7)', () => {
   const prepare = (machine: FakeWindowsMachine, directory = ROOT) =>
     preparePrivateWindowsTree(machine.runtime(), { directory });
@@ -1379,6 +1429,13 @@ describe('database acquisition is refused with a named error (D8)', () => {
       WINDOWS_DATABASE_ACQUISITION_UNSUPPORTED_MESSAGE,
     );
     expect(named.message).toContain('smrt#4837');
+    // The runtime cannot know what its caller created first (the smrt app
+    // commands used to build and lock before reaching it), so it must not
+    // claim that nothing exists on disk.
+    expect(named.message).not.toMatch(/No files or directories were created/);
+    expect(named.message).toContain('refused before it created or opened');
+    expect(named.message).toContain('calling program prepared earlier');
+    expect(named.message).toContain('self-hosted and cloud profiles');
     expect(machine.operations).toEqual([]);
     expect(workers.created).toHaveLength(0);
     expect(getDatabase).not.toHaveBeenCalled();

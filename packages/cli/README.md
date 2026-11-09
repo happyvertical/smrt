@@ -299,12 +299,27 @@ app's `package.json` scripts are one-liners:
 | `smrt app start` / `stop` | Local: run the production build on loopback; readiness is proven by app id, process instance, and configuration fingerprint |
 | `smrt app doctor` | Secret-free findings (`invalid-runtime-profile`, `unsafe-local-bind`, `runtime-path-unavailable`, `migration-required`, …); exits 1 on any error (default operation) |
 | `smrt app open` | Open the app, or the pending onboarding launch file |
-| `smrt app backup [--encrypted] [destination]` | Local: copy the validated data root to a new private directory outside the checkout; `--encrypted` writes one encrypted snapshot file instead and needs a vault key provider, which the stock binary does not yet supply ([format](agents/encrypted-snapshots.md)); any other `-`/`--` option is refused rather than taken as a path Refused on Windows (`WindowsOperatorCopyUnsupportedError`) until the destination has custody |
+| `smrt app backup [--encrypted] [destination]` | Local: copy the validated data root to a new private directory outside the checkout; `--encrypted` writes one encrypted snapshot file instead and needs a vault key provider, which the stock binary does not yet supply ([format](agents/encrypted-snapshots.md)); any other `-`/`--` option is refused rather than taken as a path. Refused on Windows for the local profile (`WindowsOperatorCopyUnsupportedError`) until the destination has custody |
 | `smrt app backup --encrypted --target <name>` / `smrt app backups targets\|list\|prune` | Local: store the encrypted snapshot on a configured local directory, your own Google Drive, or the vault relay (needs the `backup.vault` entitlement); retention per target; configuration holds no secrets and credentials come from an injected credential store ([targets](agents/backup-targets.md)) |
-| `smrt app export [--encrypted] [path]` / `import <path>` | Logical, asset-aware bundle, optionally as an encrypted snapshot; import takes a plaintext bundle and requires an empty target (deployed: `SMRT_MAINTENANCE_MODE=true`) Local `export`/`import` are refused on Windows like `backup` |
+| `smrt app export [--encrypted] [path]` / `import <path>` | Logical, asset-aware bundle, optionally as an encrypted snapshot; import takes a plaintext bundle and requires an empty target (deployed: `SMRT_MAINTENANCE_MODE=true`). Local `export`/`import` are refused on Windows like `backup`; deployed ones are not |
 | `smrt app migrate` | Establish local storage custody, then `smrt db:migrate`, under the operation lock |
 | `smrt app worker [task\|schedule]` | Deployed: imports `.smrt/runtime/register.js`, then runs the jobs runner until SIGTERM. The kind defaults to `task`; any other value is a usage error before anything starts |
 | `smrt app dev\|build\|vite [args]` | Run the app's installed Vite with `.env` loaded (shell wins); `build` validates `./mcp-apps` first |
+
+**Windows (smrt#4837).** The local profile cannot open its SQLite database on
+Windows yet, so on a Windows host every local-profile command that would create
+a state root, take `operation.lock` or `writer.lease`, run `pnpm build`, or
+touch the data root refuses first, before doing any of that:
+`install`, `setup`, `recover`, `start`, `stop`, `open`, `migrate`, `token`
+(`WindowsLocalProfileUnsupportedError`) and `backup`, `export`, `import`
+(`WindowsOperatorCopyUnsupportedError`). Still available there: `help`,
+`doctor` (read-only; it reports `windows-local-profile-unsupported` and does not
+run `db:status`), `build`, `dev`, `vite`, `worker`, and the `self-hosted` and
+`cloud` profiles, whose `setup`, `migrate`, `export` and `import` are not
+refused (a deployed `export`/`import` writes to the operator's chosen path with
+no mode guarantee, because Windows ignores modes; deployed `backup` is
+delegated to the operator). Unverified on a real Windows host until one green
+`windows-latest` run is recorded on smrt#4837.
 
 Success output is JSON on stdout; a failure is one JSON envelope on stderr with
 exit code 1 and never contains secret values. The same primitives (operation

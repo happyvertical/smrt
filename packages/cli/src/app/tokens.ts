@@ -17,7 +17,11 @@ import {
   withOperationLock,
 } from '@happyvertical/smrt-app-runtime';
 import { assertLocalOperation } from './operations.js';
-import { type AppContext, preparedStateRoot } from './runtime.js';
+import {
+  type AppContext,
+  preparedStateRoot,
+  refuseWindowsLocalProfile,
+} from './runtime.js';
 
 /** Usage text for `smrt app token`. */
 export const TOKEN_USAGE =
@@ -109,6 +113,7 @@ export async function runTokenOperation(
   if (subcommand === 'revoke' && subArgs.length !== 1) {
     throw new Error(`token revoke takes exactly one token id. ${TOKEN_USAGE}`);
   }
+  await refuseWindowsLocalProfile(context, 'token');
   await assertLocalOperation(context, 'app:token');
 
   const open =
