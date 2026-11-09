@@ -12,9 +12,11 @@ import { BundleTreeError } from './tree-errors.js';
  * `--ignore-pnpmfile` is unconditional and only an allowlist of top-level keys
  * of the app's `pnpm-workspace.yaml` is staged (`configDependencies`,
  * `pnpmfile`, `globalPnpmfile` and every path or TLS setting fail the bundle;
- * `--ignore-scripts` does not cover pnpmfile hooks). Natives in scope ship as prebuilt optional
- * packages; a package that needs a build step is reported by
- * `findBuildStepPackages` and fails the bundle.
+ * `--ignore-scripts` does not cover pnpmfile hooks). Natives in scope ship as
+ * prebuilt optional packages or prebuilt addons inside the package; a package
+ * that would have needed a build step (an install script, `gypfile`, or a
+ * root `binding.gyp`) and ships no addon for the target after pruning is
+ * reported by `findBuildStepPackages` and fails the bundle.
  *
  * The functions here do no I/O. The post-install checks work on a directory
  * listing (`TreeEntry[]`) and package facts the orchestrator collects through
@@ -588,9 +590,12 @@ const INSTALL_HOOKS = ['preinstall', 'install', 'postinstall'] as const;
 
 /**
  * Names of installed packages that would have needed an install step to work:
- * they declare `preinstall`/`install`/`postinstall` or build via node-gyp, are
- * not in the harmless list, and ship no prebuilt `.node`. Scripts were not run
- * (`--ignore-scripts`), so these cannot be bundled.
+ * they declare `preinstall`/`install`/`postinstall` or build via node-gyp (a
+ * `gypfile`, or a root `binding.gyp`, which npm builds without any script), are
+ * not in the harmless list, and ship no prebuilt `.node` for the target. The
+ * orchestrator sets `hasPrebuiltNode` from the pruned copy, so an addon for
+ * another platform does not count. Scripts were not run (`--ignore-scripts`),
+ * so these cannot be bundled.
  */
 export function findBuildStepPackages(
   packages: readonly InstalledPackageFacts[],

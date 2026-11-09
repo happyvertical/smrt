@@ -70,6 +70,7 @@ import {
   findManifestCodeLoading,
   findUnsafeWorkspaceConfig,
   GENERATED_WORKSPACE_YAML,
+  type InstalledPackageFacts,
   type StagedNpmrc,
   stageManifest,
   stageNpmrc,
@@ -354,6 +355,24 @@ async function shipsPrebuiltAddon(
     return false;
   };
   return visit(root, 0);
+}
+
+/** A kept package that would have needed an install-time build step. */
+interface BuildCandidate {
+  readonly name: string;
+  /** Package directory relative to `node_modules`. */
+  readonly dir: string;
+  readonly scripts: Readonly<Record<string, string>>;
+  readonly gypfile: boolean;
+  readonly hasBindingGyp: boolean;
+}
+
+async function isRegularFile(fs: TreeFs, path: string): Promise<boolean> {
+  try {
+    return (await fs.lstat(path)).isFile();
+  } catch {
+    return false;
+  }
 }
 
 /** `node:fs` or a bare built-in name such as `fs` or `fs/promises`. */
@@ -808,36 +827,36 @@ export async function runBundle(
       assertNoMissingDependencies(graph);
       const result = computeSegmentation(graph, plan.features.disabled);
 
-      const candidates = packages.filter(
-        (pkg) =>
-          result.keep.has(pkg.id) &&
-          (pkg.installScripts.length > 0 || pkg.gypfile),
-      );
-      const facts = [];
-      for (const pkg of candidates) {
-        facts.push({
-          name: pkg.name,
-          scripts: Object.fromEntries(
-            pkg.installScripts.map((script) => [script, 'present']),
-          ),
-          gypfile: pkg.gypfile,
-          hasPrebuiltNode: await shipsPrebuiltAddon(
-            fs,
-            at(installModules, ...pkg.dir.split('/')),
-            platform,
-          ),
-        });
-      }
-      const needBuild = findBuildStepPackages(facts);
-      if (needBuild.length > 0) {
-        throw new BundleError('build_step_required', { subjects: needBuild });
+      // Packages that would have needed a build step (an install script,
+      // `gypfile`, or a root `binding.gyp`, which npm builds without any
+      // script). Whether each ships an addon is decided AFTER pruning, on what
+      // survives: an addon for another platform is dropped as foreign and
+      // must not count.
+      const buildCandidates: BuildCandidate[] = [];
+      for (const pkg of packages) {
+        if (!result.keep.has(pkg.id)) continue;
+        const hasBindingGyp = await isRegularFile(
+          fs,
+          at(installModules, ...pkg.dir.split('/'), 'binding.gyp'),
+        );
+        if (pkg.installScripts.length > 0 || pkg.gypfile || hasBindingGyp) {
+          buildCandidates.push({
+            name: pkg.name,
+            dir: pkg.dir,
+            scripts: Object.fromEntries(
+              pkg.installScripts.map((script) => [script, 'present']),
+            ),
+            gypfile: pkg.gypfile,
+            hasBindingGyp,
+          });
+        }
       }
       for (const orphan of result.orphans) {
         warnings.push(
           `package not reachable from direct dependencies: ${orphan}`,
         );
       }
-      return { packages, graph, result };
+      return { packages, graph, result, buildCandidates };
     });
 
     // -- 6. prune_copy -----------------------------------------------------
@@ -885,6 +904,28 @@ export async function runBundle(
         },
       });
       void copy;
+
+      // The build-step audit, on what SURVIVED pruning: a candidate whose
+      // only addon was for another platform (dropped as foreign above) ships
+      // nothing for the target, and `--ignore-scripts` never builds one.
+      const facts: InstalledPackageFacts[] = [];
+      for (const candidate of segmentation.buildCandidates) {
+        facts.push({
+          name: candidate.name,
+          scripts: candidate.scripts,
+          gypfile: candidate.gypfile,
+          hasBindingGyp: candidate.hasBindingGyp,
+          hasPrebuiltNode: await shipsPrebuiltAddon(
+            fs,
+            at(modulesDest, ...candidate.dir.split('/')),
+            platform,
+          ),
+        });
+      }
+      const needBuild = findBuildStepPackages(facts);
+      if (needBuild.length > 0) {
+        throw new BundleError('build_step_required', { subjects: needBuild });
+      }
     });
 
     // -- 7. scan -----------------------------------------------------------

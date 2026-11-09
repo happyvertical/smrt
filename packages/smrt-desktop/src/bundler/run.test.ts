@@ -560,6 +560,94 @@ describe('inputs and provenance', () => {
     ).toBe(true);
   });
 
+  it('fails a package whose only addon is for another platform (checked after pruning)', async () => {
+    // The fixture target is darwin-arm64: `prebuilds/linux-x64` is dropped as
+    // foreign, so nothing in the package survives for the target.
+    const item = fixture({
+      packages: [
+        {
+          name: 'a',
+          scripts: { install: 'node-gyp-build' },
+          files: {
+            'index.js': 'export default 1;\n',
+            'prebuilds/linux-x64/a.node': Buffer.from('not for this target'),
+          },
+        },
+        { name: 'googleapis', files: { 'index.js': '' } },
+      ],
+    });
+    const error = await failure(runBundle(await item.plan(), item.seams()));
+    expect(error.code).toBe('build_step_required');
+    expect(error.subjects).toEqual(['a']);
+    expect(error.exitCode).toBe(5);
+    assertNothingLeft(item);
+  });
+
+  it('accepts a package whose prebuilds include the target next to foreign ones', async () => {
+    const item = fixture({
+      packages: [
+        {
+          name: 'a',
+          scripts: { install: 'node-gyp-build' },
+          files: {
+            'index.js': 'export default 1;\n',
+            'prebuilds/linux-x64/a.node': Buffer.from('foreign'),
+            'prebuilds/win32-x64/a.node': Buffer.from('foreign'),
+            'prebuilds/darwin-arm64/a.node': machoThin({
+              cpu: 'arm64',
+              filetype: 8,
+            }),
+          },
+        },
+        { name: 'googleapis', files: { 'index.js': '' } },
+      ],
+    });
+    await runBundle(await item.plan(), item.seams());
+    const root = join(item.outDir, 'resources/app/node_modules/a/prebuilds');
+    expect(readdirSync(root)).toEqual(['darwin-arm64']);
+  });
+
+  it('fails a package that builds only from a root binding.gyp', async () => {
+    // No install script and no `gypfile`: npm would run node-gyp implicitly.
+    const item = fixture({
+      packages: [
+        {
+          name: 'a',
+          files: {
+            'index.js': 'export default 1;\n',
+            'binding.gyp': '{ "targets": [] }\n',
+          },
+        },
+        { name: 'googleapis', files: { 'index.js': '' } },
+      ],
+    });
+    const error = await failure(runBundle(await item.plan(), item.seams()));
+    expect(error.code).toBe('build_step_required');
+    expect(error.subjects).toEqual(['a']);
+    assertNothingLeft(item);
+  });
+
+  it('accepts a binding.gyp package that ships a prebuilt addon for the target, and ignores one in a removed package', async () => {
+    const item = fixture({
+      packages: [
+        {
+          name: 'a',
+          files: {
+            'index.js': 'export default 1;\n',
+            'binding.gyp': '{ "targets": [] }\n',
+            'build/Release/a.node': machoThin({ cpu: 'arm64', filetype: 8 }),
+          },
+        },
+        {
+          // Removed by segmentation (feature `google-apis`): never audited.
+          name: 'googleapis',
+          files: { 'index.js': '', 'binding.gyp': '{}\n' },
+        },
+      ],
+    });
+    await runBundle(await item.plan(), item.seams());
+  });
+
   it('allows the closed list of harmless postinstall packages', async () => {
     const item = fixture({
       packages: [
