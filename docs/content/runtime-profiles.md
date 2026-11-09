@@ -180,6 +180,14 @@ default. An explicit background opt-in exposes the regular embedded
 by deployed workers. Diagnostics report these choices and bootstrap state but
 never read or emit application secrets, token plaintext, or token hashes.
 
+A local install learns which paid capabilities it may enable from the device
+entitlement cache (`@happyvertical/smrt-app-runtime/device-entitlements`): a
+signed, time-limited snapshot of feature keys verified against public keys the
+application ships. With no valid snapshot (none, expired, tampered, wrong
+account or device, replayed) the install is on the Local tier and every paid key
+stays off, so the default-off rule above holds on any failure. See the package
+README for the grace-period policy.
+
 ## Running self-hosted and cloud profiles
 
 `initializeDeployedApplicationRuntime()` composes the application-side seams

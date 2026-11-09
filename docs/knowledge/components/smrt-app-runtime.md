@@ -5,10 +5,10 @@ description: "Validated local, self-hosted, and cloud runtime composition for s-
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-09T00:38:40Z"
+  at: "2026-11-09T00:39:54Z"
 audience: "internal"
 evidence_level: "manifest-described"
-source_revision: "sha256:ba292ccb12d92d096a30c3942de5eb5db60bd52993b326f62d64f264b17219c3"
+source_revision: "sha256:7263fde4f0666ffd6c2eb8bafe9b3673b85074b10b5675df652e94e07de3ffa0"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-runtime/package.json"
@@ -53,6 +53,7 @@ sources:
 ## Exports
 
 - `.`
+- `./device-entitlements`
 - `./sveltekit`
 - `./sveltekit-runtime`
 - `./vault-device-key`
