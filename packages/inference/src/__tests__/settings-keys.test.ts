@@ -124,6 +124,24 @@ describe('inferenceProviderConfigFromKey (#4754 keys into #4756 storage)', () =>
     );
     expect(preset).toEqual({ preset: 'openrouter', model: 'x/y', apiKey: KEY });
     expect(parseInferenceProviderConfig(preset)).toMatchObject(preset);
+
+    // A preset key entered for a custom base URL keeps that endpoint: the
+    // preset's default origin never receives it.
+    const custom = inferenceProviderConfigFromKey(
+      bindInferenceKey({
+        provider: 'openrouter',
+        baseUrl: 'https://private.example/v1',
+        key: KEY,
+      }),
+      { model: 'x/y' },
+    );
+    expect(custom).toEqual({
+      provider: 'openai',
+      baseUrl: 'https://private.example/v1',
+      model: 'x/y',
+      apiKey: KEY,
+    });
+    expect(parseInferenceProviderConfig(custom)).toMatchObject(custom);
   });
 
   it('refuses a preset key without a model and an endpoint off the bound origin', () => {
@@ -138,6 +156,16 @@ describe('inferenceProviderConfigFromKey (#4754 keys into #4756 storage)', () =>
         origin: 'https://other.example',
         apiKey: KEY,
       }),
+    ).toThrow(InferenceKeyOriginError);
+    expect(() =>
+      inferenceProviderConfigFromKey(
+        {
+          provider: 'openrouter',
+          origin: 'https://other.example',
+          apiKey: KEY,
+        },
+        { model: 'x/y' },
+      ),
     ).toThrow(InferenceKeyOriginError);
   });
 });

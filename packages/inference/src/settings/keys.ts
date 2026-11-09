@@ -148,6 +148,27 @@ export function inferenceProviderConfigFromKey(
     (isInferencePresetId(record.provider) ? record.provider : undefined);
   if (preset) {
     if (!model) throw new InferenceKeyOriginError('a preset key needs a model');
+    const custom = text(record.baseUrl);
+    const presetUrl = isInferencePresetId(preset)
+      ? inferenceProbeUrl({ preset })
+      : undefined;
+    const endpoint = custom ?? presetUrl;
+    if (!endpoint || originOf(endpoint) !== record.origin) {
+      throw new InferenceKeyOriginError(
+        `no endpoint on ${record.origin} is known for preset "${preset}"`,
+      );
+    }
+    // A preset always calls its own endpoint, so a key entered for a custom
+    // base URL on another origin is stored as the OpenAI-compatible endpoint
+    // it was entered for (every preset is one), never under the preset.
+    if (custom && (!presetUrl || originOf(presetUrl) !== record.origin)) {
+      return {
+        provider: 'openai',
+        baseUrl: custom,
+        model,
+        apiKey: record.apiKey,
+      };
+    }
     return { preset, model, apiKey: record.apiKey };
   }
   let baseUrl = text(record.baseUrl);
