@@ -303,6 +303,7 @@ const WORKSPACE_ALLOWED_KEYS: ReadonlySet<string> = new Set([
   'allowedDeprecatedVersions',
   'supportedArchitectures',
   'onlyBuiltDependencies',
+  'allowBuilds',
   'neverBuiltDependencies',
   'ignoredBuiltDependencies',
   'autoInstallPeers',
@@ -397,7 +398,12 @@ export function findUnsafeWorkspaceConfig(yaml: string): string[] {
     const first = raw[0] as string;
     if (first === '%') found.add('YAML directive');
     else if (first === '{') found.add('flow mapping root');
-    else if (first === '[' || first === '-') found.add('sequence root');
+    else if (first === '-' && started && /^-(?:\s|$)/.test(raw)) {
+      // A column-0 block sequence entry belongs to the previous key
+      // (`packages:\n- 'a/*'`); judge it as that key's content.
+      checkContent(raw.slice(1).trim());
+      continue;
+    } else if (first === '[' || first === '-') found.add('sequence root');
     else if (first === '&' || first === '*' || first === '!') {
       found.add('anchor, alias or tag');
     } else if (first === '"' || first === "'") found.add('quoted key');

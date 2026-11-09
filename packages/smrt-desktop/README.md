@@ -1132,7 +1132,7 @@ the bundler passes do not override them. So the file is checked against a
 **top-level key allowlist** by a small line scanner (no YAML parser): the
 allowed keys are `packages`, `overrides`, `catalog`, `catalogs`,
 `patchedDependencies`, `packageExtensions`, `peerDependencyRules`,
-`allowedDeprecatedVersions`, `supportedArchitectures`, `onlyBuiltDependencies`,
+`allowedDeprecatedVersions`, `supportedArchitectures`, `onlyBuiltDependencies`, `allowBuilds`,
 `neverBuiltDependencies`, `ignoredBuiltDependencies`, `autoInstallPeers`,
 `dedupePeerDependents`, `excludeLinksFromLockfile` and
 `strictPeerDependencies` (camelCase only; a kebab-case spelling is not on the
