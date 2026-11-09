@@ -31,12 +31,12 @@ import {
   prepareApplicationStateRoot,
   prepareLocalDatabaseStorage,
   processExists,
-  WindowsDatabaseAcquisitionUnsupportedError,
 } from './index.js';
 import { acquireInitializationLock } from './local-custody.js';
 import {
   createNodeWindowsRuntime,
   preparePrivateWindowsTree,
+  validateExistingWindowsFile,
   walkWindowsChain,
 } from './windows-custody.js';
 
@@ -232,16 +232,39 @@ describe.runIf(onWindows)('real Windows machine', () => {
     expect(prepareApplicationStateRoot(options)).toBe(stateRoot);
   });
 
-  it('reaches the SDK gate with the read-only preflight done and nothing created', async () => {
+  it('opens the secure database through windowsCustody.verify, marks the root, and reopens it', async () => {
+    const leases = () =>
+      readdirSync(localAppData).filter((name) =>
+        name.startsWith('.smrt-lease-'),
+      );
+    const before = new Set(leases());
     const dataDirectory = unique();
-    await expect(
-      prepareLocalDatabaseStorage({
-        appId: 'win32-custody-test',
-        dataDirectory,
-        sourceRoot: process.cwd(),
-      }),
-    ).rejects.toBeInstanceOf(WindowsDatabaseAcquisitionUnsupportedError);
-    expect(existsSync(dataDirectory)).toBe(false);
+    const options = {
+      appId: 'win32-custody-test',
+      dataDirectory,
+      sourceRoot: process.cwd(),
+    };
+    try {
+      const paths = await prepareLocalDatabaseStorage(options);
+      expect(existsSync(paths.database)).toBe(true);
+      const entries = readdirSync(dataDirectory);
+      expect(entries).toContain('.smrt-local-runtime-win32-custody-test');
+      expect(entries).not.toContain(
+        '.smrt-local-runtime-win32-custody-test.pending',
+      );
+      // Idempotent: the same root opens again under the same rule.
+      await prepareLocalDatabaseStorage(options);
+      // The database file passes the custodied rule on its own.
+      expect(() =>
+        validateExistingWindowsFile(rt, paths.database, {
+          custodyRoot: dataDirectory,
+        }),
+      ).not.toThrow();
+    } finally {
+      for (const name of leases()) {
+        if (!before.has(name)) created.push(join(localAppData, name));
+      }
+    }
   });
 
   it('recognises live and dead processes', () => {

@@ -28,6 +28,8 @@ import {
   type BigIntStats,
   closeSync,
   fstatSync,
+  fsyncSync,
+  linkSync,
   lstatSync,
   mkdirSync,
   openSync,
@@ -36,6 +38,7 @@ import {
   realpathSync,
   rmdirSync,
   unlinkSync,
+  writeFileSync,
 } from 'node:fs';
 import { win32 } from 'node:path';
 import { errorCode } from './error-code.js';
@@ -71,6 +74,8 @@ export type { WindowsAclInspector, WindowsAclRecord };
 export interface WindowsFileHandle {
   stat(): BigIntStats;
   readUtf8(): string;
+  /** Write (and flush) the whole content of a file opened with `create`. */
+  writeUtf8(contents: string): void;
   close(): void;
 }
 
@@ -92,6 +97,8 @@ export interface WindowsCustodyRuntime {
   lockDirectory: WindowsDirectoryLocker;
   rmdir(path: string): void;
   unlink(path: string): void;
+  /** Hard link `existing` at `path` (exclusive: fails when `path` exists). */
+  link(existing: string, path: string): void;
   readdir(path: string): string[];
   /** `create` is exclusive creation (`wx`); `read` is read-only. */
   openFile(path: string, mode: 'read' | 'create'): WindowsFileHandle;
@@ -120,12 +127,17 @@ export function createNodeWindowsRuntime(
       options.lockDirectory ?? createIcaclsDirectoryLocker({ env }),
     rmdir: (path) => rmdirSync(path),
     unlink: (path) => unlinkSync(path),
+    link: (existing, path) => linkSync(existing, path),
     readdir: (path) => readdirSync(path),
     openFile: (path, mode) => {
       const descriptor = openSync(path, mode === 'create' ? 'wx' : 'r');
       return {
         stat: () => fstatSync(descriptor, { bigint: true }),
         readUtf8: () => readFileSync(descriptor, 'utf8'),
+        writeUtf8: (contents) => {
+          writeFileSync(descriptor, contents);
+          fsyncSync(descriptor);
+        },
         close: () => closeSync(descriptor),
       };
     },
@@ -355,8 +367,8 @@ export function inspectWindowsChain(
 export function verifyWindowsFile(
   rt: WindowsCustodyRuntime,
   path: string,
-  options: { size?: number } = {},
-): void {
+  options: { size?: number; read?: boolean } = {},
+): string | undefined {
   const before = rt.lstat(path);
   if (before.isSymbolicLink() || !before.isFile()) {
     throw unsafeFilesystemEntry(
@@ -387,6 +399,9 @@ export function verifyWindowsFile(
         `Local runtime file has an unexpected size: ${path}`,
       );
     }
+    // Read through the handle that was just identity-checked, so the content
+    // is that of the verified file and not of a path swapped in afterwards.
+    return options.read ? handle.readUtf8() : undefined;
   } finally {
     handle.close();
   }
@@ -402,6 +417,67 @@ export function validateExistingWindowsFile(
   if (!chain.complete) throw missingEntry(path);
   inspectWindowsChain(rt, chain, { custodyRoot: options.custodyRoot });
   verifyWindowsFile(rt, path, { size: options.size });
+}
+
+/**
+ * The `windowsCustody.verify` callback of `@happyvertical/sql`'s secure SQLite
+ * file (`@happyvertical/sql` >= 0.111.8), bound to this runtime's custody rule.
+ *
+ * Node cannot read NTFS ACLs, so on `win32` the SDK performs its structural
+ * walk (lexical containment, no links, canonical `realpath`, regular leaf with
+ * one link, stable leaf identity) and hands the trust decision to the caller.
+ * This is the caller's half: the database's directory chain must pass the same
+ * W3/W4/W6 inspection as the rest of the data root (custodied from
+ * `custodyRoot` down, ancestors held to the looser ancestor rule), and the
+ * database file, once it exists, must be a custodied regular file with one
+ * link (W5/W6).
+ *
+ * The SDK passes the drive-root-to-parent chain and, when it exists, the
+ * database file last. They must be exactly `database`'s own chain: anything
+ * else is refused, so the callback can never be steered into inspecting some
+ * other path. The rule always runs on the runtime's own canonical strings,
+ * never on the strings the SDK passed. It throws (the SDK refuses acquisition
+ * and removes a leaf it just created); it never returns a verdict.
+ */
+export function createWindowsDatabaseVerifier(
+  rt: WindowsCustodyRuntime,
+  target: { readonly custodyRoot: string; readonly database: string },
+): (paths: readonly string[]) => void {
+  const { custodyRoot, database } = target;
+  assertCanonicalPath(custodyRoot, 'Local application data root');
+  assertCanonicalPath(database, 'Local application database');
+  if (
+    foldWindowsCase(win32.dirname(database)) !== foldWindowsCase(custodyRoot)
+  ) {
+    throw unsafeFilesystemEntry(
+      'The local application database must sit directly inside its data root.',
+    );
+  }
+  const chain = windowsPathComponents(custodyRoot);
+  const fold = (path: string): string => foldWindowsCase(path);
+  return (paths) => {
+    const withLeaf = paths.length === chain.length + 1;
+    const matches =
+      (paths.length === chain.length || withLeaf) &&
+      chain.every(
+        (component, index) =>
+          typeof paths[index] === 'string' &&
+          fold(paths[index] as string) === fold(component),
+      ) &&
+      (!withLeaf || fold(paths[chain.length] as string) === fold(database));
+    if (!matches) {
+      throw unsafeFilesystemEntry(
+        `Windows custody verification received an unexpected path chain for the local application database: ${database}`,
+      );
+    }
+    const walked = walkWindowsChain(rt, custodyRoot, 'directory');
+    if (!walked.complete) throw missingEntry(custodyRoot);
+    inspectWindowsChain(rt, walked, {
+      custodyRoot,
+      files: withLeaf ? [database] : [],
+    });
+    if (withLeaf) verifyWindowsFile(rt, database);
+  };
 }
 
 function removeQuietly(action: () => void): void {

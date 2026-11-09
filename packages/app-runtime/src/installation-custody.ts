@@ -425,9 +425,12 @@ function readSeed(path: string, lenientMode = false): string | null {
   try {
     descriptor = openSync(path, constants.O_RDONLY | NO_FOLLOW);
     const details = fstatSync(descriptor);
-    const modeOk = lenientMode
-      ? (details.mode & 0o077) === 0
-      : (details.mode & 0o777) === 0o600;
+    // Windows reports synthetic modes: its privacy is the directory's DACL.
+    const modeOk =
+      process.platform === 'win32' ||
+      (lenientMode
+        ? (details.mode & 0o077) === 0
+        : (details.mode & 0o777) === 0o600);
     if (!isPrivateFileStat(details, 64) || !modeOk || details.size !== 44) {
       throw new Error(
         'The installation seed must be a complete current-user-owned private file; for a backup copy, chmod 600 it first.',

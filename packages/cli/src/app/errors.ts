@@ -30,9 +30,9 @@ export class AppCommandError extends Error {
   }
 }
 
-/** What still works on a Windows host, appended to every refusal. */
+/** What this refusal leaves alone, appended to it. */
 const WINDOWS_STILL_AVAILABLE =
-  'Still available there: smrt app help, doctor (read-only), build, and the self-hosted and cloud profiles, which this refusal does not touch.';
+  'Every other smrt app command, and the self-hosted and cloud profiles, are not affected by this refusal.';
 
 /** Fixed, value-free message of {@link WindowsOperatorCopyUnsupportedError}. */
 export const WINDOWS_OPERATOR_COPY_UNSUPPORTED_MESSAGE = `smrt app backup, export, and import are not available on Windows for the local profile yet: directory and file modes are not enforced there, so a copy of the application data would inherit the destination folder permissions instead of being private (smrt#4837). Refused before any state root, operation lock, writer lease, or destination was created or opened, and nothing was copied. ${WINDOWS_STILL_AVAILABLE}`;
@@ -51,45 +51,6 @@ export class WindowsOperatorCopyUnsupportedError extends Error {
   constructor() {
     super(WINDOWS_OPERATOR_COPY_UNSUPPORTED_MESSAGE);
     this.name = 'WindowsOperatorCopyUnsupportedError';
-  }
-}
-
-/** `smrt app` operations the Windows local-profile gate refuses. */
-export const WINDOWS_LOCAL_REFUSED_OPERATIONS = [
-  'install',
-  'setup',
-  'recover',
-  'start',
-  'stop',
-  'open',
-  'migrate',
-  'token',
-] as const;
-
-/** One of {@link WINDOWS_LOCAL_REFUSED_OPERATIONS}. */
-export type WindowsLocalRefusedOperation =
-  (typeof WINDOWS_LOCAL_REFUSED_OPERATIONS)[number];
-
-/** Fixed, value-free message of {@link WindowsLocalProfileUnsupportedError}. */
-export function windowsLocalProfileUnsupportedMessage(
-  operation: WindowsLocalRefusedOperation,
-): string {
-  return `smrt app ${operation} is not available on Windows for the local profile yet: the local runtime cannot open its SQLite database there, because @happyvertical/sql has no caller-supplied Windows custody verifier (smrt#4837). Refused before any work: no state root, operation.lock, writer.lease, marker, or data directory was created or opened, and no build or migration ran. ${WINDOWS_STILL_AVAILABLE}`;
-}
-
-/**
- * Refusal of every local-profile command that would create a state root,
- * take the operation lock or writer lease, run the build, or touch the data
- * root, on Windows. Raised first, before any of that.
- */
-export class WindowsLocalProfileUnsupportedError extends Error {
-  readonly code = 'windows_local_profile_unsupported';
-  readonly operation: WindowsLocalRefusedOperation;
-
-  constructor(operation: WindowsLocalRefusedOperation) {
-    super(windowsLocalProfileUnsupportedMessage(operation));
-    this.name = 'WindowsLocalProfileUnsupportedError';
-    this.operation = operation;
   }
 }
 

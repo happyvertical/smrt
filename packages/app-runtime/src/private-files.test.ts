@@ -183,3 +183,44 @@ describe('private directories', () => {
     expect(() => assertPrivateDirectorySync(path)).toThrow();
   });
 });
+
+describe('Windows platform form (no uid, synthetic modes)', () => {
+  const stat = (mode: number, size = 10) => ({
+    isFile: () => true,
+    uid: process.getuid?.() ?? 0,
+    mode,
+    size,
+  });
+
+  it('ignores the synthetic mode on win32 but keeps the size bound and kind', () => {
+    // Windows reports 0o666 for a writable file; that is not group access.
+    expect(isPrivateFileStat(stat(0o100666), 64, 'win32')).toBe(true);
+    expect(isPrivateFileStat(stat(0o100666, 65), 64, 'win32')).toBe(false);
+    expect(
+      isPrivateFileStat(
+        { ...stat(0o100666), isFile: () => false },
+        64,
+        'win32',
+      ),
+    ).toBe(false);
+  });
+
+  itPosix('still refuses group or other access on every other platform', () => {
+    expect(isPrivateFileStat(stat(0o100644), 64, 'linux')).toBe(false);
+    expect(isPrivateFileStat(stat(0o100644), 64, 'darwin')).toBe(false);
+  });
+
+  it('accepts a real directory and refuses a file or link on win32', () => {
+    const directory = join(root, 'dir');
+    mkdirSync(directory);
+    expect(() => assertPrivateDirectorySync(directory, 'win32')).not.toThrow();
+    const file = join(root, 'file');
+    writeFileSync(file, '');
+    expect(() => assertPrivateDirectorySync(file, 'win32')).toThrow();
+    if (posix) {
+      const link = join(root, 'link');
+      symlinkSync(directory, link);
+      expect(() => assertPrivateDirectorySync(link, 'win32')).toThrow();
+    }
+  });
+});

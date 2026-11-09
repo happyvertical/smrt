@@ -327,20 +327,17 @@ app's `package.json` scripts are one-liners:
 | `smrt app worker [task\|schedule]` | Deployed: imports `.smrt/runtime/register.js`, then runs the jobs runner until SIGTERM. The kind defaults to `task`; any other value is a usage error before anything starts |
 | `smrt app dev\|build\|vite [args]` | Run the app's installed Vite with `.env` loaded (shell wins); `build` validates `./mcp-apps` first |
 
-**Windows (smrt#4837).** The local profile cannot open its SQLite database on
-Windows yet, so on a Windows host every local-profile command that would create
-a state root, take `operation.lock` or `writer.lease`, run `pnpm build`, or
-touch the data root refuses first, before doing any of that:
-`install`, `setup`, `recover`, `start`, `stop`, `open`, `migrate`, `token`
-(`WindowsLocalProfileUnsupportedError`) and `backup`, `export`, `import`
-(`WindowsOperatorCopyUnsupportedError`). Still available there: `help`,
-`doctor` (read-only; it reports `windows-local-profile-unsupported` and does not
-run `db:status`), `build`, `dev`, `vite`, `worker`, and the `self-hosted` and
-`cloud` profiles, whose `setup`, `migrate`, `export` and `import` are not
-refused (a deployed `export`/`import` writes to the operator's chosen path with
-no mode guarantee, because Windows ignores modes; deployed `backup` is
-delegated to the operator). Unverified on a real Windows host until one green
-`windows-latest` run is recorded on smrt#4837.
+**Windows (smrt#4837).** The local runtime opens its SQLite database on
+Windows through `@happyvertical/sql`'s `windowsCustody.verify` (the runtime's
+own Windows custody rule), so `install`, `setup`, `recover`, `start`, `stop`,
+`open`, `migrate`, `token` and `doctor` are no longer refused for the local
+profile. `backup`, `export` and `import` still are
+(`WindowsOperatorCopyUnsupportedError`), for a different reason: their
+destination relies on POSIX modes that Windows ignores, so a copy would inherit
+the destination folder's ACL. Deployed profiles are not refused: a deployed
+`export`/`import` writes to the operator's chosen path with no mode guarantee,
+and deployed `backup` is delegated to the operator. Unverified on a real
+Windows host until one green `windows-latest` run is recorded on smrt#4837.
 
 Success output is JSON on stdout; a failure is one JSON envelope on stderr with
 exit code 1 and never contains secret values. The same primitives (operation

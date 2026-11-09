@@ -83,7 +83,7 @@ import {
   resolveLocalRuntimePaths,
   validateApplicationId,
 } from '../index.js';
-import { refuseWindowsDatabaseAcquisition } from '../local-custody.js';
+import { windowsSecureFileCustody } from '../local-custody.js';
 import type { PrepareDatabaseContext } from '../local-schema.js';
 import { publishLocalOrigin } from '../origin-file.js';
 import {
@@ -603,6 +603,7 @@ export function composeSmrtSvelteKitRuntime(
           driver: 'node:sqlite',
           custody: 'trusted-parent',
           root: paths.root,
+          ...windowsSecureFileCustody(paths),
         },
       };
     }
@@ -666,9 +667,6 @@ export function composeSmrtSvelteKitRuntime(
       );
     }
     if (localPromise) return localPromise;
-    // Refuse a Windows database acquisition before the writer lease creates
-    // the state root, marker, or lease file: nothing may be left behind.
-    refuseWindowsDatabaseAcquisition();
     const bindHost =
       options.bindHost ||
       env.HOST ||

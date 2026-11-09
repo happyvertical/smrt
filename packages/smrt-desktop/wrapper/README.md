@@ -606,9 +606,11 @@ cargo test --locked
   empty data directory: ready origin in the log, window opened on origin plus
   `ownerClaimRoute`, health 200, data directory created, the owner link
   redirecting to `/setup?token=` (and `403` for a foreign `Host`), no token in
-  the wrapper log, an orderly quit and no sidecar left. The Windows leg cannot
-  pass until the local runtime can open its database there (smrt#4837), and the
-  Linux leg is unproven; both are `continue-on-error`. The unsigned wrapper is
+  the wrapper log, an orderly quit and no sidecar left. The local runtime now
+  opens its database on Windows through `@happyvertical/sql`'s
+  `windowsCustody.verify` (smrt#4837), so the Windows leg can pass, but no green
+  `windows-latest` run is recorded yet; the Windows and Linux legs stay
+  `continue-on-error` until one is. The unsigned wrapper is
   the cargo build, not an installer: signed installers are the release path.
 - `node --test scripts/*.test.mjs` covers the release preflight (closed Tauri
   fragment, tree walk, committed Node pin), the environment guard (offline

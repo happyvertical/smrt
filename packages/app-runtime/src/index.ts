@@ -10,7 +10,6 @@
  */
 
 import { createHash, createHmac, randomBytes } from 'node:crypto';
-import { realpath } from 'node:fs/promises';
 import { homedir, platform } from 'node:os';
 import { parse, resolve, win32 } from 'node:path';
 import {
@@ -59,6 +58,7 @@ import {
   acquireInitializationLock,
   acquireLocalDatabase,
   BOOTSTRAP_TABLE,
+  canonicalLocalSourceRoot,
   closeDatabaseAfterFailure,
   DATABASE_FILE_NAME,
   defaultApplicationDataRoot,
@@ -67,11 +67,11 @@ import {
   preflightLocalApplicationRoot,
   prepareLocalFilesystem,
   preservePrimaryFailure,
-  refuseWindowsDatabaseAcquisition,
   SECRET_FILE_NAME,
   sameFilesystemPath,
   validateApplicationSecret,
   validateLocalStorageCustody,
+  windowsSecureFileCustody,
 } from './local-custody.js';
 import {
   deriveLocalInstallationIdentity,
@@ -125,8 +125,6 @@ export {
 export {
   LocalRuntimeError,
   type LocalRuntimeErrorCode,
-  WINDOWS_DATABASE_ACQUISITION_UNSUPPORTED_MESSAGE,
-  WindowsDatabaseAcquisitionUnsupportedError,
 } from './local-runtime-error.js';
 export {
   type LocalPrepareDatabase,
@@ -276,9 +274,6 @@ export async function prepareLocalDatabaseStorage(
   const sourceRoot = resolveSourceRoot(options);
   const appId = validateApplicationId(options.appId);
   await preflightLocalApplicationRoot(paths.root, sourceRoot, appId);
-  // Windows custody is implemented, but the SDK cannot yet open SQLite there:
-  // refuse (named error) before the lease creates a single directory.
-  refuseWindowsDatabaseAcquisition();
   const initializationLock = await acquireInitializationLock(paths.root);
   let db: DatabaseInterface | undefined;
   let failure: unknown;
@@ -347,8 +342,9 @@ export async function openLocalMcpTokenStore(
   options: OpenLocalMcpTokenStoreOptions,
 ): Promise<OpenedLocalMcpTokenStore> {
   const paths = await validateLocalDatabaseStorage(options);
-  refuseWindowsDatabaseAcquisition();
-  const canonicalSourceRoot = await realpath(resolveSourceRoot(options));
+  const canonicalSourceRoot = await canonicalLocalSourceRoot(
+    resolveSourceRoot(options),
+  );
   // Uncached: `close()` must never close a connection another caller in
   // this process (for example the web runtime) shares.
   const db = await getDatabase({
@@ -359,6 +355,7 @@ export async function openLocalMcpTokenStore(
       driver: 'node:sqlite',
       custody: 'trusted-parent',
       root: paths.root,
+      ...windowsSecureFileCustody(paths),
     },
   });
   try {
@@ -434,8 +431,8 @@ export async function openLocalCloudLinkIdentity(
   options: OpenLocalCloudLinkIdentityOptions,
 ): Promise<LocalCloudLinkIdentity> {
   const paths = await validateLocalDatabaseStorage(options);
-  const canonicalSourceRoot = await realpath(
-    resolve(options.sourceRoot ?? process.cwd()),
+  const canonicalSourceRoot = await canonicalLocalSourceRoot(
+    resolveSourceRoot(options),
   );
   const retiredFor = options.retiredInstallationId;
   const unverified = (report: InstallationCustodyReport) => {
@@ -736,7 +733,6 @@ export async function initializeLocalApplicationRuntime(
   const sourceRoot = resolveSourceRoot(options);
   const appId = validateApplicationId(options.appId);
   await preflightLocalApplicationRoot(paths.root, sourceRoot, appId);
-  refuseWindowsDatabaseAcquisition();
   const initializationLock = await acquireInitializationLock(paths.root);
   let db: DatabaseInterface | undefined;
   let initialization: LocalRuntimeInitialization | undefined;

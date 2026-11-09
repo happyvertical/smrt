@@ -15,6 +15,7 @@ import {
   fchmodSync,
   fstatSync,
   fsyncSync,
+  lstatSync,
   mkdirSync,
   openSync,
   renameSync,
@@ -43,17 +44,21 @@ export interface PrivateWriteOptions {
 
 /**
  * A regular file owned by the current user (when the uid is known), with no
- * group or other access, no larger than `maxBytes`.
+ * group or other access, no larger than `maxBytes`. On Windows Node reports
+ * synthetic modes (0o666 or 0o444) and no uid, so the owner and mode checks do
+ * not exist there: the file's privacy is that of its directory, which the
+ * Windows custody rule (`windows-custody.ts`) has already verified.
  */
 export function isPrivateFileStat(
   details: PrivateFileStat,
   maxBytes: number,
+  platformName: NodeJS.Platform = process.platform,
 ): boolean {
   const uid = process.getuid?.();
   return (
     details.isFile() &&
     (uid === undefined || details.uid === uid) &&
-    (details.mode & 0o077) === 0 &&
+    (platformName === 'win32' || (details.mode & 0o077) === 0) &&
     details.size <= maxBytes
   );
 }
@@ -68,7 +73,19 @@ export function ensurePrivateDirectorySync(path: string): void {
  * its mode to 0700 when group or other have access. Throws a generic error;
  * callers wrap it in their own message.
  */
-export function assertPrivateDirectorySync(path: string): void {
+export function assertPrivateDirectorySync(
+  path: string,
+  platformName: NodeJS.Platform = process.platform,
+): void {
+  if (platformName === 'win32') {
+    // A directory cannot be opened for `fstat` on Windows. It must be a real
+    // (not linked) directory; its ACL is the Windows custody rule's concern.
+    const details = lstatSync(path);
+    if (details.isSymbolicLink() || !details.isDirectory()) {
+      throw new Error('not a current-user directory');
+    }
+    return;
+  }
   let descriptor: number | undefined;
   try {
     descriptor = openSync(

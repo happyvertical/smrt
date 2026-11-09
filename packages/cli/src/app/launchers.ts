@@ -19,11 +19,7 @@ import {
 } from '@happyvertical/smrt-app-runtime';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { AppCommandError } from './errors.js';
-import {
-  type AppContext,
-  preparedStateRoot,
-  refuseWindowsLocalProfile,
-} from './runtime.js';
+import { type AppContext, preparedStateRoot } from './runtime.js';
 
 /**
  * Prepare the schema explicitly: under the operation lock, refuse while a
@@ -37,8 +33,6 @@ export async function prepareMigration(
   if (args.some((arg) => arg !== '--relax-columns') || args.length > 1) {
     throw new AppCommandError('Usage: smrt app migrate [--relax-columns]', 2);
   }
-  // Before the state root exists: on Windows the local profile creates nothing.
-  await refuseWindowsLocalProfile(context, 'migrate');
   const runtime = await context.deps.resolveRuntime(context.sourceRoot);
   const stateRoot = preparedStateRoot(context);
   await withOperationLock(stateRoot, 'db:migrate', async () => {

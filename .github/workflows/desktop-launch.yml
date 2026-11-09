@@ -144,14 +144,13 @@ jobs:
             target: aarch64-apple-darwin
             binary: smrt-desktop-wrapper
             experimental: false
-          # NOT passing yet, by design of the platform: the local runtime
-          # refuses to open its SQLite database on Windows
-          # (WindowsDatabaseAcquisitionUnsupportedError, smrt#4837; the SDK's
-          # secure SQLite has no win32 verifier), so the sidecar never becomes
-          # healthy and the leg fails at that point. It stays so the failure
-          # is visible and turns green by itself when that lands. The Windows
-          # quit is also forced (taskkill), as a GUI process has no portable
-          # graceful signal.
+          # Not yet proven green. The local runtime used to refuse to open its
+          # SQLite database on Windows (smrt#4837); it now opens it through
+          # @happyvertical/sql's windowsCustody.verify (sdk#1498), so the
+          # known cause is gone, but nothing here was run on a Windows
+          # machine. Keep `experimental` until one green run is recorded,
+          # then set it to false. The Windows quit is also forced (taskkill),
+          # as a GUI process has no portable graceful signal.
           - label: windows
             runner: windows-latest
             target: x86_64-pc-windows-msvc

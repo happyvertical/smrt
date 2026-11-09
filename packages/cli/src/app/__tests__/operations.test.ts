@@ -44,10 +44,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runAppCommand } from '../cli.js';
 import {
   AppCommandError,
-  WINDOWS_LOCAL_REFUSED_OPERATIONS,
   WINDOWS_OPERATOR_COPY_UNSUPPORTED_MESSAGE,
-  type WindowsLocalRefusedOperation,
-  windowsLocalProfileUnsupportedMessage,
 } from '../errors.js';
 import {
   prepareApplicationStateRoot,
@@ -1496,100 +1493,48 @@ describe('smrt app operator copies on Windows (smrt#4837 C1)', () => {
   });
 });
 
-describe('smrt app local-profile commands on Windows (smrt#4837 W1)', () => {
+describe('smrt app local-profile commands on Windows (smrt#4837)', () => {
   const onWindows = { platform: () => 'win32' as const };
 
-  /** Every path under `directory` with its directory mtime in nanoseconds. */
-  function tree(directory: string): string[] {
-    const entries: string[] = [];
-    const walk = (current: string) => {
-      const { mtimeNs } = statSync(current, { bigint: true });
-      entries.push(`${current}@${mtimeNs}`);
-      if (!lstatSync(current).isDirectory()) return;
-      for (const name of readdirSync(current).sort()) {
-        walk(join(current, name));
-      }
+  it('no longer refuses setup, migrate, token or doctor for the local profile', async () => {
+    const fixture = makeFixture();
+    // The refusal existed only because the database could not be opened on
+    // Windows; with `windowsCustody.verify` it can, so the commands run.
+    expect(await fixture.run(['setup'], onWindows)).toBe(0);
+    expect(existsSync(fixture.stateRoot())).toBe(true);
+    expect(fixture.calls.smrt.length).toBeGreaterThan(0);
+    expect(await fixture.run(['migrate'], onWindows)).toBe(0);
+    expect(fixture.calls.smrt.at(-1)?.args).toEqual(['db:migrate']);
+    expect(await fixture.run(['token', '--help'], onWindows)).toBe(0);
+  });
+
+  it('doctor reads migration status again instead of reporting a refusal', async () => {
+    const fixture = makeFixture();
+    await fixture.run(['setup']);
+    const runSmrt = vi.fn(() => ({
+      status: 0,
+      stdout: JSON.stringify({ drift: [] }),
+      stderr: '',
+    }));
+    await fixture.run(['doctor'], {
+      ...onWindows,
+      runSmrt: runSmrt as never,
+    });
+    const report = fixture.stdoutJson() as {
+      findings: Array<{ code: string }>;
     };
-    if (existsSync(directory)) walk(directory);
-    return entries;
-  }
-
-  // Each argv is the shortest valid invocation of the command.
-  const REFUSED: Array<[WindowsLocalRefusedOperation, string[]]> = [
-    ['install', ['install']],
-    ['setup', ['setup']],
-    ['recover', ['recover']],
-    ['start', ['start']],
-    ['stop', ['stop']],
-    ['open', ['open']],
-    ['migrate', ['migrate']],
-    ['token', ['token', 'list']],
-  ];
-
-  it('covers every refused command in the exported list', () => {
-    expect(REFUSED.map(([operation]) => operation).sort()).toEqual(
-      [...WINDOWS_LOCAL_REFUSED_OPERATIONS].sort(),
+    expect(report.findings.map((finding) => finding.code)).not.toContain(
+      'windows-local-profile-unsupported',
     );
+    expect(runSmrt).toHaveBeenCalled();
   });
 
-  it.each(
-    REFUSED,
-  )('%s creates no state root, lock, lease, marker, data root, build or browser on a fresh machine', async (operation, argv) => {
-    const fixture = makeFixture();
-    const openBrowser = vi.fn();
-    expect(await fixture.run(argv, { ...onWindows, openBrowser })).toBe(1);
-    expect(fixture.stderrJson().message).toBe(
-      windowsLocalProfileUnsupportedMessage(operation),
-    );
-    expect(fixture.stderrJson().message).not.toContain(fixture.root);
-    // The state root holds operation.lock, writer.lease and the marker.
-    expect(existsSync(fixture.stateRoot())).toBe(false);
-    expect(existsSync(fixture.data)).toBe(false);
-    expect(readdirSync(fixture.root).sort()).toEqual(['app']);
-    expect(fixture.calls.pm).toEqual([]);
-    expect(fixture.calls.smrt).toEqual([]);
-    expect(openBrowser).not.toHaveBeenCalled();
-  });
-
-  it.each(
-    REFUSED,
-  )('%s changes nothing after a real setup (state root, lock, lease, data, build output)', async (operation, argv) => {
-    const fixture = makeFixture();
-    expect(await fixture.run(['setup'])).toBe(0);
-    mkdirSync(join(fixture.app, 'build'), { recursive: true });
-    writeFileSync(join(fixture.app, 'build', 'index.js'), 'built');
-    const before = tree(fixture.root);
-    const builds = fixture.calls.pm.length;
-    const migrations = fixture.calls.smrt.length;
-    const openBrowser = vi.fn();
-
-    expect(await fixture.run(argv, { ...onWindows, openBrowser })).toBe(1);
-    expect(fixture.stderrJson().message).toBe(
-      windowsLocalProfileUnsupportedMessage(operation),
-    );
-    // Creating and removing operation.lock or writer.lease would still change
-    // the state root's mtime, so an unchanged tree proves neither was taken.
-    expect(tree(fixture.root)).toEqual(before);
-    expect(existsSync(join(fixture.stateRoot(), 'operation.lock'))).toBe(false);
-    expect(existsSync(join(fixture.stateRoot(), 'writer.lease'))).toBe(false);
-    expect(fixture.calls.pm).toHaveLength(builds);
-    expect(fixture.calls.smrt).toHaveLength(migrations);
-    expect(openBrowser).not.toHaveBeenCalled();
-  });
-
-  it('states what is refused, why, and what still works', () => {
-    const message = windowsLocalProfileUnsupportedMessage('setup');
-    expect(message).toContain('smrt app setup is not available on Windows');
-    expect(message).toContain('local profile');
-    expect(message).toContain('SQLite');
-    expect(message).toContain('smrt#4837');
-    expect(message).toContain('no state root');
-    expect(message).toContain('no build or migration ran');
-    expect(message).toContain('doctor (read-only)');
-    expect(message).toContain('self-hosted and cloud');
-    expect(message).not.toMatch(/No files or directories were created/);
+  it('keeps the destination-custody refusal of the operator copies', () => {
     expect(WINDOWS_OPERATOR_COPY_UNSUPPORTED_MESSAGE).toContain(
       'for the local profile',
+    );
+    expect(WINDOWS_OPERATOR_COPY_UNSUPPORTED_MESSAGE).toContain(
+      'would inherit the destination folder permissions',
     );
   });
 
@@ -1608,35 +1553,12 @@ describe('smrt app local-profile commands on Windows (smrt#4837 W1)', () => {
     expect(existsSync(local.stateRoot())).toBe(true);
   });
 
-  it('leaves a malformed migrate usage and token help as usage output, not a Windows refusal', async () => {
+  it('leaves a malformed migrate usage as usage output', async () => {
     const fixture = makeFixture();
     expect(await fixture.run(['migrate', '--bogus'], onWindows)).toBe(1);
     expect(fixture.stderrJson().message).toBe(
       'Usage: smrt app migrate [--relax-columns]',
     );
-    expect(await fixture.run(['token', '--help'], onWindows)).toBe(0);
-    expect(existsSync(fixture.stateRoot())).toBe(false);
-  });
-
-  it('doctor stays read-only: it reports the refusal and never runs db:status', async () => {
-    const fixture = makeFixture();
-    await fixture.run(['setup']);
-    const before = tree(fixture.root);
-    const runSmrt = vi.fn();
-    expect(
-      await fixture.run(['doctor'], {
-        ...onWindows,
-        runSmrt: runSmrt as never,
-      }),
-    ).toBe(1);
-    const report = fixture.stdoutJson() as {
-      findings: Array<{ code: string }>;
-    };
-    expect(report.findings.map((finding) => finding.code)).toContain(
-      'windows-local-profile-unsupported',
-    );
-    expect(runSmrt).not.toHaveBeenCalled();
-    expect(tree(fixture.root)).toEqual(before);
   });
 });
 

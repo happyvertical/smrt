@@ -27,7 +27,11 @@ import { platform } from 'node:os';
 import { isAbsolute, parse, relative, resolve, sep, win32 } from 'node:path';
 import { promisify } from 'node:util';
 import { Worker } from 'node:worker_threads';
-import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
+import {
+  type DatabaseInterface,
+  getDatabase,
+  type SecureSqliteWindowsCustody,
+} from '@happyvertical/sql';
 import { custodyContext } from './custody-context.js';
 import type {
   LocalRuntimePaths,
@@ -49,7 +53,6 @@ import {
 import {
   LocalRuntimeError,
   unsafeFilesystemEntry,
-  WindowsDatabaseAcquisitionUnsupportedError,
 } from './local-runtime-error.js';
 import {
   applicationStateRootSource,
@@ -61,6 +64,7 @@ export const BOOTSTRAP_TABLE = '_smrt_local_owner_bootstrap';
 
 import { lookupWindowsEnvironment } from './windows-acl-inspector.js';
 import {
+  createWindowsDatabaseVerifier,
   inspectWindowsChain,
   missingEntry,
   preparePrivateWindowsTree,
@@ -315,7 +319,9 @@ export async function acquireLocalDatabase(
   canonicalSourceRoot: string;
   db: DatabaseInterface;
 }> {
-  refuseWindowsDatabaseAcquisition();
+  if (isWindowsCustody()) {
+    return acquireWindowsLocalDatabase(paths, sourceRoot, appId);
+  }
   requireNoFollowSupport();
   const canonicalSourceRoot = await realpath(sourceRoot);
   const createdDirectories = await ensureSafeDirectoryTree(
@@ -338,6 +344,7 @@ export async function acquireLocalDatabase(
         driver: 'node:sqlite',
         custody: 'trusted-parent',
         root: paths.root,
+        ...windowsSecureFileCustody(paths),
       },
     });
     await enforcePrivateDatabaseMode(paths.database, canonicalSourceRoot);
@@ -431,9 +438,17 @@ export async function prepareLocalFilesystem(
   db: DatabaseInterface,
   options: ResolveLocalRuntimePathsOptions,
 ): Promise<LocalInstallationIdentity> {
-  refuseWindowsDatabaseAcquisition();
-  await ensureSafeDirectoryTree(paths.assets, canonicalSourceRoot);
-  await ensureSafeDirectoryTree(paths.secrets, canonicalSourceRoot);
+  if (isWindowsCustody()) {
+    // Same private-tree rule as the data root: existing directories are
+    // verified, directories created here are locked to the current user,
+    // SYSTEM and Administrators and re-inspected, or removed again.
+    const rt = custodyContext().windows;
+    preparePrivateWindowsTree(rt, { directory: paths.assets });
+    preparePrivateWindowsTree(rt, { directory: paths.secrets });
+  } else {
+    await ensureSafeDirectoryTree(paths.assets, canonicalSourceRoot);
+    await ensureSafeDirectoryTree(paths.secrets, canonicalSourceRoot);
+  }
   // The bootstrap table is created only after the seed exists, and the data
   // root's custody record is written as soon as it does, so either proves a
   // seed once existed. A missing seed then means loss, never a first run:
@@ -1243,10 +1258,15 @@ async function removeCreatedDirectories(paths: string[]): Promise<void> {
   }
 }
 
-async function ensureApplicationSecret(
+/**
+ * Publish the application secret if none exists; `true` only when this call
+ * created it. `@internal`: exported for the tests.
+ */
+export async function ensureApplicationSecret(
   path: string,
   canonicalSourceRoot: string,
 ): Promise<boolean> {
+  if (isWindowsCustody()) return ensureWindowsApplicationSecret(path);
   const directoryPath = resolve(path, '..');
   const temporaryPath = resolve(
     directoryPath,
@@ -1302,7 +1322,7 @@ export async function validateApplicationSecret(
   path: string,
   canonicalSourceRoot: string,
 ): Promise<string> {
-  refuseWindowsDatabaseAcquisition();
+  if (isWindowsCustody()) return validateWindowsApplicationSecret(path);
   await validateExistingPathChain(path, canonicalSourceRoot, 'file');
   const file = await openSafeFile(
     path,
@@ -1643,15 +1663,190 @@ function isWindowsCustody(): boolean {
 }
 
 /**
- * Secure SQLite acquisition is not available on Windows yet: the SDK's secure
- * file path (`@happyvertical/sql`) refuses `win32` and exposes no way for the
- * caller to supply a Windows verifier. Refused with a named error before any
- * file or directory is created, so no half-built root is left behind. The
- * leases, state root, and read-only validation do work on Windows.
+ * The `windowsCustody` option of `@happyvertical/sql`'s `secureFile` for this
+ * runtime: on Windows, the verifier that applies the runtime's own Windows
+ * custody rule (W3/W4/W6 on the database's directory chain and file, see
+ * {@link createWindowsDatabaseVerifier}); nothing elsewhere, so the option
+ * object a macOS or Linux host passes the SDK is unchanged. Every place that
+ * opens the secure database spreads this into its `secureFile`.
  */
-export function refuseWindowsDatabaseAcquisition(): void {
-  if (isWindowsCustody())
-    throw new WindowsDatabaseAcquisitionUnsupportedError();
+export function windowsSecureFileCustody(paths: {
+  root: string;
+  database: string;
+}): { windowsCustody?: SecureSqliteWindowsCustody } {
+  if (!isWindowsCustody()) return {};
+  return {
+    windowsCustody: {
+      verify: createWindowsDatabaseVerifier(custodyContext().windows, {
+        custodyRoot: validateWindowsPath(
+          paths.root,
+          'Local application data root',
+          WINDOWS_DERIVED_PATH_RESERVE,
+        ),
+        database: validateWindowsPath(
+          paths.database,
+          'Local application database',
+        ),
+      }),
+    },
+  };
+}
+
+/**
+ * The canonical (real) path of the source checkout. On Windows it is the
+ * native real path through the custody runtime; elsewhere `realpath`.
+ */
+export async function canonicalLocalSourceRoot(
+  sourceRoot: string,
+): Promise<string> {
+  if (isWindowsCustody()) {
+    return custodyContext().windows.realpath(win32.resolve(sourceRoot));
+  }
+  return realpath(sourceRoot);
+}
+
+function removeWindowsQuietly(action: () => void): void {
+  try {
+    action();
+  } catch {
+    // Rollback only ever removes what this attempt created; best effort.
+  }
+}
+
+/**
+ * Windows form of {@link acquireLocalDatabase}. The same steps, with the
+ * Windows custody rule in place of `O_NOFOLLOW`, uid and mode bits: the
+ * read-only preflight (W1, overlap, chain, markers), the data root created
+ * private (every directory this call creates is locked and re-inspected, or
+ * removed again), the pending marker, the SDK open with `windowsCustody.verify`
+ * bound to the same rule (it runs before and after the SDK creates the file),
+ * then the final marker. There is no mode to repair; the DACL is the
+ * guarantee.
+ */
+async function acquireWindowsLocalDatabase(
+  paths: LocalRuntimePaths,
+  sourceRoot: string,
+  appId: string,
+): Promise<{ canonicalSourceRoot: string; db: DatabaseInterface }> {
+  const rt = custodyContext().windows;
+  preflightWindowsRoot(paths.root, sourceRoot, appId);
+  const root = validateWindowsPath(
+    paths.root,
+    'Local application data root',
+    WINDOWS_DERIVED_PATH_RESERVE,
+  );
+  const canonicalSourceRoot = rt.realpath(win32.resolve(sourceRoot));
+  const finalMarker = win32.join(root, `${ROOT_MARKER_PREFIX}${appId}`);
+  const pendingName = `${ROOT_MARKER_PREFIX}${appId}.pending`;
+  const pendingPath = win32.join(root, pendingName);
+
+  const { createdDirectories } = preparePrivateWindowsTree(rt, {
+    directory: root,
+  });
+  let pendingMarkerCreatedByAttempt = false;
+  let db: DatabaseInterface | undefined;
+  try {
+    const entries = rt.readdir(root);
+    const hasFinal = entries.includes(win32.basename(finalMarker));
+    const hasPending = entries.includes(pendingName);
+    if (!hasFinal && !hasPending) {
+      pendingMarkerCreatedByAttempt = preparePrivateWindowsTree(rt, {
+        directory: root,
+        file: { path: pendingPath, size: 0 },
+      }).createdFile;
+    }
+    db = await getDatabase({
+      type: 'sqlite',
+      url: paths.database,
+      secureFile: {
+        driver: 'node:sqlite',
+        custody: 'trusted-parent',
+        root: paths.root,
+        ...windowsSecureFileCustody(paths),
+      },
+    });
+  } catch (error) {
+    if (db) throw await closeDatabaseAfterFailure(db, error);
+    if (pendingMarkerCreatedByAttempt) {
+      removeWindowsQuietly(() => rt.unlink(pendingPath));
+      for (const directory of createdDirectories.toReversed()) {
+        removeWindowsQuietly(() => rt.rmdir(directory));
+      }
+    }
+    throw error;
+  }
+
+  // As on POSIX: once SQLite acquisition succeeds the database is an
+  // authoritative artifact, so the pending marker is kept through every
+  // promotion failure and a later start resumes.
+  try {
+    preparePrivateWindowsTree(rt, {
+      directory: root,
+      file: { path: finalMarker, size: 0 },
+    });
+    if (rt.readdir(root).includes(pendingName)) {
+      verifyWindowsFile(rt, pendingPath, { size: 0 });
+      rt.unlink(pendingPath);
+    }
+  } catch (error) {
+    throw await closeDatabaseAfterFailure(db, error);
+  }
+  return { canonicalSourceRoot, db };
+}
+
+/** The Windows application secret: a custodied one-link file in `secrets`. */
+function validateWindowsApplicationSecret(path: string): string {
+  const rt = custodyContext().windows;
+  // The data root is two levels up: `<root>\secrets\application.secret`.
+  const root = win32.dirname(win32.dirname(path));
+  const chain = walkWindowsChain(rt, path, 'file');
+  if (!chain.complete) throw missingEntry(path);
+  inspectWindowsChain(rt, chain, { custodyRoot: root });
+  const secret = verifyWindowsFile(rt, path, { size: 44, read: true });
+  if (secret === undefined || !/^[A-Za-z0-9_-]{43}\n$/.test(secret)) {
+    throw unsafeFilesystemEntry(
+      'Application secret must be a complete current-user-owned value in the expected format.',
+    );
+  }
+  return secret;
+}
+
+/**
+ * Publish the Windows application secret the way POSIX does: complete content
+ * in a temporary file, then an exclusive hard link to the final name, so a
+ * crash leaves no partial secret and a secret that appeared meanwhile wins.
+ */
+function ensureWindowsApplicationSecret(path: string): boolean {
+  const rt = custodyContext().windows;
+  const directory = win32.dirname(path);
+  const temporaryPath = win32.join(
+    directory,
+    `.${SECRET_FILE_NAME}.tmp-${randomBytes(16).toString('hex')}`,
+  );
+  let created = false;
+  try {
+    const handle = rt.openFile(temporaryPath, 'create');
+    try {
+      handle.writeUtf8(`${randomBytes(32).toString('base64url')}\n`);
+    } finally {
+      handle.close();
+    }
+    try {
+      rt.link(temporaryPath, path);
+      created = true;
+    } catch (error) {
+      if (!isFileAlreadyExists(error)) throw error;
+    }
+  } finally {
+    removeWindowsQuietly(() => rt.unlink(temporaryPath));
+  }
+  validateWindowsApplicationSecret(path);
+  for (const entry of rt.readdir(directory)) {
+    if (entry.startsWith(`.${SECRET_FILE_NAME}.tmp-`)) {
+      removeWindowsQuietly(() => rt.unlink(win32.join(directory, entry)));
+    }
+  }
+  return created;
 }
 
 /**

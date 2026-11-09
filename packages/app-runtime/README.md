@@ -91,8 +91,8 @@ The path resolver selects the current user's OS application-data directory
 `$XDG_DATA_HOME` / `~/.local/share` on Linux). On macOS and Linux, secure
 initialization requires Node to expose nonzero `O_NOFOLLOW` and `O_DIRECTORY`
 filesystem flags and fails closed without them. Windows has its own custody
-rule (see [Windows](#windows)); opening the database there is still refused
-until `@happyvertical/sql` supports it. The data root contains a mode-0600
+rule (see [Windows](#windows)); the database opens there through
+`@happyvertical/sql`'s `windowsCustody.verify`. The data root contains a mode-0600
 SQLite database, a user-owned asset directory, and generated mode-0600
 application secret material. The root must be a dedicated application
 directory: placing it inside the source checkout or choosing an ancestor is
@@ -192,46 +192,46 @@ with an in-memory machine and, separately, on a real runner.
 
 **Status.** The initialization lease, the operator state root
 (`prepareApplicationStateRoot`, writer lease, operation lock), the read-only
-preflight and `validateLocalDatabaseStorage()` work on Windows. **Opening the
-SQLite database does not.** `prepareLocalDatabaseStorage()`,
+preflight, `validateLocalDatabaseStorage()` and **database acquisition** work
+on Windows. `prepareLocalDatabaseStorage()`,
 `initializeLocalApplicationRuntime()`, `openLocalMcpTokenStore()` and the
-acquisition inside the runtime throw `WindowsDatabaseAcquisitionUnsupportedError`
-(a `LocalRuntimeError` with `code: 'invalid_configuration'`,
-`reason: 'windows_secure_sqlite_unsupported'`) **before any directory or file is
-created** (the read-only preflight may run first; it creates nothing). The
-SvelteKit runtime's `localRuntime()` makes the same call first, ahead of the
-writer lease, so it does not create the `%LOCALAPPDATA%` state directory, marker
-or `writer.lease` either. The SDK's secure SQLite path
-(`@happyvertical/sql` `secureFile`) refuses `win32` and has no way for the
-caller to supply a Windows verifier; the runtime does not route around it with
-another driver. The gate is a single call (`refuseWindowsDatabaseAcquisition`).
-Because the gate sits before the lease, the Windows lease is not reachable from
-the public entry points until then; it is exercised directly by the tests.
+SvelteKit runtime open SQLite through `@happyvertical/sql` (>= 0.111.8,
+sdk#1498) with `secureFile: { driver: 'node:sqlite', custody: 'trusted-parent',
+root, windowsCustody: { verify } }`. Node cannot read NTFS ACLs, so the SDK
+owns only the structural walk (lexical containment, no links, canonical
+`realpath`, regular leaf with one link, stable leaf identity) and hands the
+trust decision to the caller: `verify(paths)` receives the drive-root-to-parent
+chain and, when the file exists, the database file last. It runs before and
+after the SDK creates a missing file, and again for an existing file after its
+identity is recorded; if it throws, the SDK refuses and removes a file it just
+created. The runtime's `verify`
+(`createWindowsDatabaseVerifier()`, `windows-custody.ts`) accepts only the
+database's own chain (anything else throws), then applies the **unchanged**
+rule below: W3/W4/W6 on every component (custodied from the data root down,
+ancestors under the looser ancestor rule) and on the database file, plus W5
+(regular file, one link). It throws a `LocalRuntimeError`; it never returns a
+verdict. The SDK wraps that failure as `Secure SQLite Windows custody
+verification failed` (the original message is kept in `originalError`).
+`windowsSecureFileCustody()` adds the option only when the custody platform is
+`win32`, so the options a macOS or Linux host passes are unchanged.
 
-The runtime can promise only what it does itself: it creates and opens nothing
-before it refuses, but a caller may already have created files of its own. The
-`smrt app` commands used to (`setup` and `install` created the state root,
-marker and `operation.lock`, took `writer.lease` and ran a full `pnpm build`;
-`migrate` created the state root). They now refuse the **local profile on
-Windows first**, before any of that: `install`, `setup`, `recover`, `start`,
-`stop`, `open`, `migrate`, `token` (`WindowsLocalProfileUnsupportedError`) and
-`backup`, `export`, `import` (`WindowsOperatorCopyUnsupportedError`). Still
-available on Windows: `help`, `doctor` (read-only; it reports
-`windows-local-profile-unsupported` and does not run `db:status`), `build`,
-`dev`, `vite`, `worker` (deployed only), and the self-hosted and cloud
-profiles: `setup`, `migrate`, `export` and `import` run for them, and a
-deployed `export` or `import` writes to the operator's chosen path with no
-mode guarantee, because Windows ignores modes (deployed `backup` is delegated
-to the operator and throws on every host).
+The rest of the Windows acquisition uses the same rule in place of
+`O_NOFOLLOW`, uid and mode bits: `acquireLocalDatabase()` prepares the data
+root with `preparePrivateWindowsTree()` (directories it creates are locked and
+re-inspected, or removed again), keeps the pending/final root markers,
+and `prepareLocalFilesystem()` does the same for `assets` and `secrets`. The
+application secret is written to a temporary file and published with an
+exclusive hard link (so a crash leaves no partial secret), then read back
+through the identity-checked handle with one link and the custodied ACL. There
+is no mode to repair; the DACL is the guarantee.
 
-**Removing that gate is not the only step.** Read-only validation
-(`validateLocalDatabaseStorage()`) passes on Windows, so the `smrt app backup`,
-`export` and `import` commands, which copy the application secret and database
-into a destination whose privacy relies on POSIX modes that Windows ignores
-(the copy would inherit the destination folder's ACL), refuse on Windows with
-`WindowsOperatorCopyUnsupportedError` until the destination gets the same
-custody rule as the data root. Lift that refusal together with the database
-gate, not before.
+The `smrt app` local-profile commands are no longer refused on Windows. The
+`backup`, `export` and `import` copies still are
+(`WindowsOperatorCopyUnsupportedError`): their refusal is about the
+**destination**, not the database, because they copy the application secret and
+database into a destination whose privacy relies on POSIX modes that Windows
+ignores (the copy would inherit the destination folder's ACL). Lift that
+refusal only with a destination custody rule for the copy.
 
 **The rule.** A path is in Windows custody only when all of this holds:
 
@@ -433,8 +433,10 @@ is accepted; and whether the monorepo installs and Vitest runs on
 - *D4* The PowerShell cost is accepted: fixed argv, paths in the environment,
   fail closed, no "unverified" opt-out.
 - *D7* ReFS, and any volume without ACL support, is refused.
-- *D8* #4837 stays open: Windows database acquisition is refused with a named
-  error until `@happyvertical/sql` accepts a caller-supplied Windows verifier.
+- *D8* Windows database acquisition was refused with a named error until
+  `@happyvertical/sql` accepted a caller-supplied Windows verifier (sdk#1498,
+  0.111.8); it now runs through `windowsCustody.verify` with the rule unchanged.
+  Unverified on a real Windows machine until one green `windows-latest` run.
 - *D9* The `app-runtime-windows` workflow is added but is not a required check.
 - *D10* The trusted-account set is exactly the current user, `SYSTEM` and
   `BUILTIN\Administrators` (plus `TrustedInstaller` for ancestors). A corporate
