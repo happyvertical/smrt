@@ -4440,6 +4440,9 @@ importers:
       '@happyvertical/encryption':
         specifier: ^0.111.6
         version: 0.111.6(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))(@types/node@24.13.2)(typescript@6.0.3)
+      '@happyvertical/smrt-cli':
+        specifier: workspace:*
+        version: link:../cli
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core

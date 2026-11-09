@@ -35,6 +35,7 @@ import {
   withOperationLock,
 } from '@happyvertical/smrt-app-runtime';
 import type { ResolvedApplicationRuntime } from '@happyvertical/smrt-config';
+import { backupToTarget, extractOption } from './backup-command.js';
 import {
   ApplicationStartError,
   boundedTail,
@@ -887,7 +888,20 @@ function snapshotReport(snapshot: EncryptedSnapshotSummary) {
 }
 
 async function backup(context: AppContext, args: string[]): Promise<void> {
-  const { encrypted, positional } = snapshotArguments('backup', args);
+  const { value: targetName, rest } = extractOption(args, '--target');
+  const { encrypted, positional } = snapshotArguments('backup', rest);
+  if (targetName !== undefined) {
+    if (!encrypted) {
+      throw new Error(
+        'Backup targets accept only encrypted snapshots; add --encrypted.',
+      );
+    }
+    if (positional.length > 0) {
+      throw new Error(
+        'A backup destination path cannot be combined with --target.',
+      );
+    }
+  }
   const runtime = await context.deps.resolveRuntime(context.sourceRoot);
   if (runtime.profile !== 'local') {
     throw new Error(
@@ -915,6 +929,17 @@ async function backup(context: AppContext, args: string[]): Promise<void> {
         operationInstance: lock.instance,
       });
       try {
+        if (targetName !== undefined) {
+          printJson(
+            context,
+            await backupToTarget(context, {
+              targetName,
+              dataRoot: paths.root,
+              snapshotKeys: snapshotKeys as SnapshotKeyProvider,
+            }),
+          );
+          return;
+        }
         const destination = assertExternalArtifactPath({
           sourceRoot: context.sourceRoot,
           path:
