@@ -56,6 +56,12 @@ import {
 } from '@happyvertical/smrt-users';
 import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
 import {
+  enforceInstallationCustody,
+  INSTALLATION_CUSTODY_FILE,
+  type InstallationCustodyReport,
+  stateRootOptions,
+} from './installation-custody.js';
+import {
   deriveLocalInstallationIdentity,
   type LocalInstallationIdentity,
 } from './local-installation-identity.js';
@@ -64,9 +70,11 @@ import {
   ensureLocalMcpTokenTable,
   type LocalMcpTokenStore,
 } from './local-mcp-tokens.js';
+import { prepareApplicationStateRoot } from './state-root.js';
 
 export * from './application-identity.js';
 export * from './deployed-runtime.js';
+export * from './installation-custody.js';
 export {
   DEFAULT_LOCAL_MCP_TOKEN_TTL_SECONDS,
   type IssuedLocalMcpToken,
@@ -478,6 +486,8 @@ export type LocalRuntimeErrorCode =
   | 'bootstrap_unavailable'
   | 'capability_disabled'
   | 'invalid_configuration'
+  | 'installation_seed_missing'
+  | 'installation_unverified'
   | 'invalid_scope'
   | 'migration_failed'
   | 'owner_tenant_conflict'
@@ -592,7 +602,12 @@ export async function initializeLocalApplicationRuntime(
     const acquired = await acquireLocalDatabase(paths, sourceRoot, appId);
     db = acquired.db;
     const { canonicalSourceRoot } = acquired;
-    const identity = await prepareLocalFilesystem(paths, canonicalSourceRoot);
+    const identity = await prepareLocalFilesystem(
+      paths,
+      canonicalSourceRoot,
+      db,
+      options,
+    );
     setDatabaseSyncDeviceId(db, identity.deviceId);
     await tuneLocalSqlite(db);
     try {
@@ -1572,15 +1587,82 @@ function preservePrimaryFailure(
 async function prepareLocalFilesystem(
   paths: LocalRuntimePaths,
   canonicalSourceRoot: string,
+  db: DatabaseInterface,
+  options: ResolveLocalRuntimePathsOptions,
 ): Promise<LocalInstallationIdentity> {
   await ensureSafeDirectoryTree(paths.assets, canonicalSourceRoot);
   await ensureSafeDirectoryTree(paths.secrets, canonicalSourceRoot);
-  await ensureApplicationSecret(paths.applicationSecret, canonicalSourceRoot);
-  return deriveLocalInstallationIdentity(
+  // The bootstrap table is created only after the seed exists, and the data
+  // root's custody record is written as soon as it does, so either proves a
+  // seed once existed. A missing seed then means loss, never a first run:
+  // regenerating it would silently replace every derived identity and token
+  // key (#4704).
+  const initialized = await hasInitializedInstallation(db);
+  const seedPresent = await pathExists(paths.applicationSecret);
+  if (
+    !seedPresent &&
+    (initialized ||
+      (await pathExists(resolve(paths.secrets, INSTALLATION_CUSTODY_FILE))))
+  ) {
+    throw new LocalRuntimeError(
+      'installation_seed_missing',
+      INSTALLATION_SEED_MISSING_MESSAGE,
+    );
+  }
+  // Only a seed this call itself published is new; one that appears between
+  // the check and the publish (a sync tool) is an arrival like any other.
+  const seedIsNew = await ensureApplicationSecret(
+    paths.applicationSecret,
+    canonicalSourceRoot,
+  );
+  const identity = deriveLocalInstallationIdentity(
     await validateApplicationSecret(
       paths.applicationSecret,
       canonicalSourceRoot,
     ),
+  );
+  const enforcement = enforceInstallationCustody({
+    secretsDirectory: paths.secrets,
+    stateRoot: prepareApplicationStateRoot(stateRootOptions(options)),
+    installationId: identity.deviceId,
+    seedIsNew,
+    initialized,
+  });
+  if (enforcement.kind === 'refused') {
+    throw installationUnverified(enforcement.report);
+  }
+  return identity;
+}
+
+async function hasInitializedInstallation(
+  db: DatabaseInterface,
+): Promise<boolean> {
+  const result = await db.query(
+    "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
+    BOOTSTRAP_TABLE,
+  );
+  return result.rows.length > 0;
+}
+
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await lstat(path);
+    return true;
+  } catch (error) {
+    if (isMissingFile(error)) return false;
+    throw error;
+  }
+}
+
+const INSTALLATION_SEED_MISSING_MESSAGE =
+  'The installation seed is missing from an initialized data root; nothing was changed. Restore it from a backup with "smrt app installation recover-seed <file>", or accept new identities with "smrt app installation reseed".';
+
+function installationUnverified(
+  report: InstallationCustodyReport,
+): LocalRuntimeError {
+  return new LocalRuntimeError(
+    'installation_unverified',
+    `This data root is not in this location's custody (${report.status}); nothing was changed. Run "smrt app installation status", then declare it a move with "restore --origin-retired" or an independent copy with "reseed".`,
   );
 }
 
@@ -1770,6 +1852,38 @@ async function acquireInitializationLock(
       await releaseInitializationLeases(held);
     },
   };
+}
+
+/**
+ * Run `callback` while holding the data root's initialization lock, so a
+ * custody declaration cannot interleave with a runtime initializing the same
+ * root. The caller must already have preflighted the root.
+ *
+ * @internal Operator custody declarations only.
+ */
+export async function withLocalInitializationLock<T>(
+  root: string,
+  callback: () => Promise<T> | T,
+): Promise<T> {
+  const lock = await acquireInitializationLock(root);
+  let result: T;
+  try {
+    result = await callback();
+  } catch (error) {
+    try {
+      await lock.release();
+    } catch (releaseError) {
+      throw preservePrimaryFailure(
+        error,
+        releaseError,
+        'initializationLockReleaseError',
+        'Local installation custody operation and lock release both failed.',
+      );
+    }
+    throw error;
+  }
+  await lock.release();
+  return result;
 }
 
 async function isForeignOwnedDirectory(
@@ -2276,7 +2390,7 @@ async function removeCreatedDirectories(paths: string[]): Promise<void> {
 async function ensureApplicationSecret(
   path: string,
   canonicalSourceRoot: string,
-): Promise<void> {
+): Promise<boolean> {
   const directoryPath = resolve(path, '..');
   const temporaryPath = resolve(
     directoryPath,
@@ -2284,6 +2398,7 @@ async function ensureApplicationSecret(
   );
   let temporary: FileHandle | undefined;
   let failure: unknown;
+  let created = false;
   try {
     temporary = await openSafeFile(
       temporaryPath,
@@ -2302,6 +2417,7 @@ async function ensureApplicationSecret(
 
     try {
       await link(temporaryPath, path);
+      created = true;
     } catch (error) {
       if (!isFileAlreadyExists(error)) throw error;
     }
@@ -2323,6 +2439,7 @@ async function ensureApplicationSecret(
   }
   if (failure !== undefined) throw failure;
   await removeStaleSecretTemps(directoryPath);
+  return created;
 }
 
 async function validateApplicationSecret(
