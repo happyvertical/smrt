@@ -53,6 +53,7 @@ import {
 import type {
   AccountUsage,
   DeviceRecord,
+  LapseRecord,
   SnapshotRecord,
   VaultRelayStore,
 } from './metadata-store.js';
@@ -140,6 +141,46 @@ export interface OperatorAccountView {
   }>;
   /** The account that replaced this one (#4817), if the account layer set it. */
   supersededBy: string | null;
+  /** When the lapse was first observed (#4819); null while entitled. */
+  lapsedAt: string | null;
+  /** End of the post-lapse restore window; the sweep may delete after it. */
+  lapseRetentionEndsAt: string | null;
+}
+
+/** Options of {@link VaultRelay.sweepLapsedAccounts}. */
+export interface LapseSweepOptions {
+  /** Operator identity recorded in the audit trail (required). */
+  operator: string;
+  /** Report what would be deleted; change and audit nothing. */
+  dryRun?: boolean;
+  /** Accounts handled per phase in this run (default 10, at most 100). */
+  limit?: number;
+  /** `nextCursor` of the previous run, to continue the discovery pass. */
+  cursor?: string;
+  now?: number;
+}
+
+/** One account a lapse sweep deleted (or, in a dry run, would delete). */
+export interface LapseSweepAccount {
+  /** Hashed handle, never the account id. */
+  account: string;
+  lapsedAt: string;
+  retentionEndedAt: string;
+  snapshots: number;
+  bytes: number;
+}
+
+export interface LapseSweepResult {
+  dryRun: boolean;
+  operator: string;
+  /** Accounts newly found lapsed by the discovery pass. */
+  discovered: number;
+  swept: LapseSweepAccount[];
+  skipped: Array<{ account: string; reason: string }>;
+  /** Pass as `cursor` to continue the discovery pass; null when finished. */
+  nextCursor: string | null;
+  /** More accounts were due than `limit`; run again. */
+  more: boolean;
 }
 
 class RelayError extends Error {
@@ -157,6 +198,9 @@ class RelayError extends Error {
 
 const NONCE_PRUNE_INTERVAL_MS = 60_000;
 const SWEEP_BATCH = 100;
+const DEFAULT_LAPSE_SWEEP_ACCOUNTS = 10;
+const MAX_LAPSE_SWEEP_ACCOUNTS = 100;
+const OPERATOR_LABEL = /^[A-Za-z0-9][A-Za-z0-9._@-]{0,63}$/;
 
 function json(
   status: number,
@@ -380,6 +424,21 @@ function matchDeviceRoute(method: string, path: string): DeviceRoute | null {
   return null;
 }
 
+/**
+ * Routes that publish or change stored data. A lapsed entitlement refuses
+ * only these (#4819); listing, `latest`, downloads, aborting an upload and
+ * the lease routes (restore-latest holds the lease while it downloads) stay
+ * open for the retention window.
+ */
+function isWriteRoute(route: DeviceRoute, method: string): boolean {
+  return (
+    route.name === 'begin' ||
+    route.name === 'upload-chunk' ||
+    route.name === 'commit' ||
+    (route.name === 'snapshot' && method.toUpperCase() === 'DELETE')
+  );
+}
+
 interface AuthenticatedDevice {
   accountId: string;
   deviceId: string;
@@ -478,7 +537,7 @@ export class VaultRelay {
       );
       handle = device.handle;
       await this.refuseSuperseded(route, request.method, device.accountId);
-      await this.requireEntitlement(device.accountId);
+      await this.gateEntitlement(route, request.method, device.accountId);
       response = await this.dispatch(route, request, device);
     } catch (error) {
       response = this.toErrorResponse(error, handle);
@@ -571,8 +630,14 @@ export class VaultRelay {
     await this.store.pruneNonces(now);
   }
 
-  /** The `backup.vault` gate, resolved server-side for the account's tenant. */
-  private async requireEntitlement(accountId: string): Promise<void> {
+  /**
+   * The `backup.vault` check, resolved server-side for the account's tenant:
+   * `null` when granted, the structured denial otherwise. A lookup that
+   * cannot complete fails closed (`503`).
+   */
+  private async checkEntitlement(
+    accountId: string,
+  ): Promise<FeatureUnavailableError | null> {
     const tenantId =
       this.entitlements.tenantForAccount?.(accountId) ?? accountId;
     try {
@@ -584,8 +649,9 @@ export class VaultRelay {
         tenantId,
         ...(grantSource !== undefined ? { grantSource } : {}),
       });
+      return null;
     } catch (error) {
-      if (error instanceof FeatureUnavailableError) throw error;
+      if (error instanceof FeatureUnavailableError) return error;
       // Fail closed: an entitlement lookup that cannot complete denies.
       this.logger.error('entitlement_check_failed', {
         error: error instanceof Error ? error.name : 'unknown',
@@ -593,6 +659,69 @@ export class VaultRelay {
       });
       throw new RelayError(503, 'entitlement_unavailable');
     }
+  }
+
+  /**
+   * Gate a device route on `backup.vault` (#4819). An entitled account clears
+   * any recorded lapse. A denied account that holds committed snapshots is
+   * *lapsed*: the relay records when it first saw that, refuses the write
+   * routes with `402 entitlement_lapsed`, and keeps the read routes open
+   * until the retention window after the lapse has passed, then answers
+   * `410 retention_expired`. Any other denial (never entitled, operator
+   * disabled) is the original `403`.
+   */
+  private async gateEntitlement(
+    route: DeviceRoute,
+    method: string,
+    accountId: string,
+  ): Promise<void> {
+    const denial = await this.checkEntitlement(accountId);
+    if (!denial) {
+      if (await this.store.getLapse(accountId)) {
+        await this.store.clearLapse(accountId);
+        this.logger.info('entitlement_restored', {
+          account: accountHandle(accountId),
+        });
+      }
+      return;
+    }
+    const lapse = await this.observeLapse(accountId, denial);
+    if (!lapse) throw denial;
+    const detail = this.lapseDetail(lapse);
+    if (isWriteRoute(route, method)) {
+      throw new RelayError(402, 'entitlement_lapsed', detail);
+    }
+    if (this.now() >= lapse.lapsedAt + this.policy.retention.lapseRetentionMs) {
+      throw new RelayError(410, 'retention_expired', detail);
+    }
+  }
+
+  /**
+   * The lapse record of a denied account, created on first observation. Only
+   * an upgrade-required denial of an account with data counts as a lapse.
+   */
+  private async observeLapse(
+    accountId: string,
+    denial: FeatureUnavailableError,
+  ): Promise<LapseRecord | null> {
+    if (denial.code !== 'feature_upgrade_required') return null;
+    const existing = await this.store.getLapse(accountId);
+    if (existing) return existing;
+    if (!(await this.store.hasCommitted(accountId))) return null;
+    const recorded = await this.store.recordLapse(accountId, this.now());
+    this.logger.warn('entitlement_lapsed', {
+      account: accountHandle(accountId),
+    });
+    return recorded;
+  }
+
+  private lapseDetail(lapse: LapseRecord): Record<string, unknown> {
+    return {
+      lapsedAt: iso(lapse.lapsedAt),
+      restoreAvailableUntil: iso(
+        lapse.lapsedAt + this.policy.retention.lapseRetentionMs,
+      ),
+    };
   }
 
   /** Reject a body on a route that takes none, and bind the empty digest. */
@@ -1118,14 +1247,15 @@ export class VaultRelay {
     record: SnapshotRecord,
     handle: string,
     status: SnapshotRecord['status'],
-  ): Promise<void> {
+  ): Promise<boolean> {
     const removed = await this.store.deleteSnapshotRow(
       record.accountId,
       record.uploadId,
       status,
     );
-    if (!removed) return;
+    if (!removed) return false;
     await this.discardRemoved(removed, handle);
+    return true;
   }
 
   /** Counters, fence, chunk rows and objects of a snapshot row already deleted. */
@@ -1186,6 +1316,166 @@ export class VaultRelay {
     }
     await this.store.pruneNonces(now);
     return stale.length;
+  }
+
+  // Lapse sweep (#4819) -----------------------------------------------------
+
+  /**
+   * Operator sweep of lapsed accounts. Two bounded phases per run:
+   *
+   * 1. *Discovery* walks accounts that hold committed snapshots but have no
+   *    lapse record (`cursor`/`nextCursor` resume it) and records those whose
+   *    entitlement is lapsed, so an account whose devices never call again
+   *    still starts its window.
+   * 2. *Deletion* takes lapses whose window (`lapseRetentionDays` from the
+   *    first observation) has elapsed, re-checks the entitlement, and deletes
+   *    the account's snapshots through the normal removal path. An account
+   *    that is entitled again has its lapse cleared and keeps its data.
+   *
+   * Every account deleted gets a `lapse_sweep_started` audit record (what is
+   * about to go) before anything is removed and a `lapse_sweep_completed`
+   * record (what went) after, so a crash leaves the intent on record and the
+   * next run finishes the job. A dry run changes and audits nothing.
+   */
+  async sweepLapsedAccounts(
+    options: LapseSweepOptions,
+  ): Promise<LapseSweepResult> {
+    const operator = options.operator;
+    if (
+      typeof operator !== 'string' ||
+      operator.length < 1 ||
+      operator.length > 128
+    ) {
+      throw new RelayError(400, 'invalid_request', { field: 'operator' });
+    }
+    const limit = options.limit ?? DEFAULT_LAPSE_SWEEP_ACCOUNTS;
+    if (
+      !Number.isSafeInteger(limit) ||
+      limit < 1 ||
+      limit > MAX_LAPSE_SWEEP_ACCOUNTS
+    ) {
+      throw new RelayError(400, 'invalid_request', { field: 'limit' });
+    }
+    const cursor = options.cursor ?? '';
+    if (cursor !== '' && !isIdentifier(cursor)) {
+      throw new RelayError(400, 'invalid_request', { field: 'cursor' });
+    }
+    const dryRun = options.dryRun === true;
+    const now = options.now ?? this.now();
+    const retentionMs = this.policy.retention.lapseRetentionMs;
+    const result: LapseSweepResult = {
+      dryRun,
+      operator,
+      discovered: 0,
+      swept: [],
+      skipped: [],
+      nextCursor: null,
+      more: false,
+    };
+
+    const unrecorded = await this.store.listUnrecordedAccounts(cursor, limit);
+    for (const accountId of unrecorded) {
+      try {
+        const denial = await this.checkEntitlement(accountId);
+        if (denial?.code !== 'feature_upgrade_required') continue;
+        if (!dryRun) await this.store.recordLapse(accountId, now);
+        result.discovered += 1;
+      } catch {
+        result.skipped.push({
+          account: accountHandle(accountId),
+          reason: 'entitlement_unavailable',
+        });
+      }
+    }
+    if (unrecorded.length === limit) {
+      result.nextCursor = unrecorded[unrecorded.length - 1] ?? null;
+    }
+
+    const due = await this.store.listDueLapses(now - retentionMs, limit);
+    result.more = due.length === limit;
+    for (const lapse of due) {
+      const handle = accountHandle(lapse.accountId);
+      let denial: FeatureUnavailableError | null;
+      try {
+        denial = await this.checkEntitlement(lapse.accountId);
+      } catch {
+        result.skipped.push({
+          account: handle,
+          reason: 'entitlement_unavailable',
+        });
+        continue;
+      }
+      if (!denial) {
+        if (!dryRun) await this.store.clearLapse(lapse.accountId);
+        result.skipped.push({ account: handle, reason: 'entitled' });
+        continue;
+      }
+      if (denial.code !== 'feature_upgrade_required') {
+        result.skipped.push({ account: handle, reason: 'not_lapsed' });
+        continue;
+      }
+      const records = await this.store.listSnapshots(lapse.accountId);
+      const planned = {
+        account: handle,
+        lapsedAt: iso(lapse.lapsedAt),
+        retentionEndedAt: iso(lapse.lapsedAt + retentionMs),
+        snapshots: records.length,
+        bytes: records.reduce((total, record) => total + record.byteSize, 0),
+      };
+      if (dryRun) {
+        result.swept.push(planned);
+        continue;
+      }
+      await this.audit('lapse_sweep_started', operator, handle, planned, now);
+      let removedSnapshots = 0;
+      let removedBytes = 0;
+      for (const record of records) {
+        if (await this.removeSnapshot(record, handle, record.status)) {
+          removedSnapshots += 1;
+          removedBytes += record.byteSize;
+        }
+      }
+      await this.store.markLapseSwept(lapse.accountId, this.now());
+      const done = {
+        ...planned,
+        snapshots: removedSnapshots,
+        bytes: removedBytes,
+      };
+      await this.audit(
+        'lapse_sweep_completed',
+        operator,
+        handle,
+        done,
+        this.now(),
+      );
+      this.logger.warn('lapse_swept', {
+        account: handle,
+        snapshots: removedSnapshots,
+        bytes: removedBytes,
+      });
+      result.swept.push(done);
+    }
+    return result;
+  }
+
+  private async audit(
+    action: string,
+    operator: string,
+    handle: string,
+    summary: { snapshots: number; bytes: number } & Record<string, unknown>,
+    at: number,
+  ): Promise<void> {
+    const { snapshots, bytes, ...rest } = summary;
+    await this.store.appendAudit({
+      id: randomUUID(),
+      at,
+      action,
+      operator,
+      accountHandle: handle,
+      snapshots,
+      bytes,
+      detail: JSON.stringify(rest),
+    });
   }
 
   // Account-layer hooks ------------------------------------------------------
@@ -1350,14 +1640,19 @@ export class VaultRelay {
 
   /** Sizes, dates, and device state for one account; never content. */
   async operatorView(accountId: string): Promise<OperatorAccountView> {
-    const [usage, snapshots, devices, supersession] = await Promise.all([
+    const [usage, snapshots, devices, supersession, lapse] = await Promise.all([
       this.store.getUsage(accountId),
       this.store.listSnapshots(accountId),
       this.store.listDevices(accountId),
       this.store.getSupersession(accountId),
+      this.store.getLapse(accountId),
     ]);
     return {
       usage,
+      lapsedAt: lapse ? iso(lapse.lapsedAt) : null,
+      lapseRetentionEndsAt: lapse
+        ? iso(lapse.lapsedAt + this.policy.retention.lapseRetentionMs)
+        : null,
       supersededBy: supersession?.supersededBy ?? null,
       snapshots: snapshots.map((record) => ({
         sequence: record.sequence,
@@ -1416,6 +1711,44 @@ export class VaultRelay {
     }
   }
 
+  /**
+   * Operator identity for the audit trail: the optional `x-vault-operator`
+   * label the caller states, plus a fingerprint of the admin token that
+   * authenticated the request (a hash prefix, never the token).
+   */
+  private operatorIdentity(request: Request): string {
+    const fingerprint = `token:${this.adminTokenHash?.toString('hex').slice(0, 12) ?? 'none'}`;
+    const label = request.headers.get('x-vault-operator');
+    if (label === null) return fingerprint;
+    if (!OPERATOR_LABEL.test(label)) {
+      throw new RelayError(400, 'invalid_request', {
+        field: 'x-vault-operator',
+      });
+    }
+    return `${label}/${fingerprint}`;
+  }
+
+  private async adminLapseSweep(request: Request): Promise<LapseSweepResult> {
+    const operator = this.operatorIdentity(request);
+    const bytes = await readBoundedBody(request, MAX_JSON_BODY_BYTES);
+    const input = bytes.length === 0 ? {} : parseJsonObject(bytes);
+    if (input.dryRun !== undefined && typeof input.dryRun !== 'boolean') {
+      throw new RelayError(400, 'invalid_request', { field: 'dryRun' });
+    }
+    if (input.limit !== undefined && typeof input.limit !== 'number') {
+      throw new RelayError(400, 'invalid_request', { field: 'limit' });
+    }
+    if (input.cursor !== undefined && typeof input.cursor !== 'string') {
+      throw new RelayError(400, 'invalid_request', { field: 'cursor' });
+    }
+    return this.sweepLapsedAccounts({
+      operator,
+      dryRun: input.dryRun === true,
+      ...(input.limit !== undefined ? { limit: input.limit } : {}),
+      ...(input.cursor !== undefined ? { cursor: input.cursor } : {}),
+    });
+  }
+
   private async dispatchAdmin(
     method: string,
     path: string,
@@ -1423,6 +1756,9 @@ export class VaultRelay {
   ): Promise<Response> {
     if (path === '/admin/v1/sweep' && method === 'POST') {
       return json(200, { expired: await this.sweepExpired() });
+    }
+    if (path === '/admin/v1/lapse-sweep' && method === 'POST') {
+      return json(200, await this.adminLapseSweep(request));
     }
     let m = /^\/admin\/v1\/accounts\/([^/]+)$/.exec(path);
     if (m && method === 'GET') {

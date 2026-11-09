@@ -55,6 +55,8 @@ export type BackupTargetErrorCode =
   | 'already_exists'
   | 'not_found'
   | 'entitlement_required'
+  | 'subscription_lapsed'
+  | 'retention_expired'
   | 'credentials_unavailable'
   | 'scope_too_wide'
   | 'grant_expired'

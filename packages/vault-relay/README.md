@@ -10,7 +10,9 @@ SHA-256 digests of ciphertext only, and holds no key material.
 Every device route is authenticated by an Ed25519 device signature and then
 gated by the `backup.vault` feature (`requireFeature` from
 `@happyvertical/smrt-features`), resolved server-side from the account's plan
-grants and overrides. A client cannot claim the entitlement.
+grants and overrides. A client cannot claim the entitlement. When the
+entitlement lapses, writes stop at once but restores stay open for a
+retention window; see [Lapsed subscriptions](#lapsed-subscriptions).
 
 This package deploys as a container. It is not deployed by this repository:
 hosting is configured in `happyvertical/iac` from the inputs listed under
@@ -167,8 +169,44 @@ device ids match `[A-Za-z0-9][A-Za-z0-9_-]{0,127}`.
 Entitlement denials answer `403` with the structured body from
 `smrt-features` (`feature_upgrade_required` naming the granting plan, or
 `feature_disabled`). If the entitlement lookup itself fails, the relay answers
-`503 entitlement_unavailable`: it fails closed. The gate applies to every
-route, including downloads.
+`503 entitlement_unavailable`: it fails closed. An account that never held the
+entitlement, or whose entitlement an operator disabled, is refused on every
+route. An account that held it and stored snapshots is *lapsed*:
+
+### Lapsed subscriptions
+
+Owner decision #4819. When `backup.vault` lapses for an account that holds
+committed snapshots:
+
+- The relay records the lapse time the first time it observes it (a device
+  request, or the operator sweep's discovery pass). The time is kept, never
+  moved, and cleared when the entitlement is active again.
+- **Writes are refused** (`begin`, chunk upload, commit, device snapshot
+  delete) with `402 entitlement_lapsed` and `{ lapsedAt, restoreAvailableUntil }`.
+  This code differs from the `403` upgrade/disabled denials and from the `401`
+  authentication failure.
+- **Reads stay open** for authenticated devices of the account: list,
+  `latest`, snapshot metadata and chunk download, aborting an upload, and the
+  lease routes (restore-latest holds the lease while it downloads).
+- After `lapseRetentionDays` (default **90**, `VAULT_RELAY_LAPSE_RETENTION_DAYS`,
+  1 to 3650) reads answer `410 retention_expired` and the account is eligible
+  for the sweep. Writes keep answering `402 entitlement_lapsed`.
+- **The sweep is an operator action, not a device action.**
+  `POST /admin/v1/lapse-sweep` (admin token) with `{ dryRun?, limit?, cursor? }`
+  and an optional `x-vault-operator` label header. Per run it handles at most
+  `limit` accounts (default 10, at most 100) in two phases: a discovery pass
+  over accounts with snapshots but no lapse record (resume with the returned
+  `nextCursor`), which starts the window for lapses no device reported; and a
+  deletion pass over lapses whose window has elapsed. Each account is
+  re-checked first: one that is entitled again keeps its data and has its
+  lapse cleared. Deletion uses the normal removal path (rows, counters,
+  objects). Every deleted account writes a `lapse_sweep_started` and a
+  `lapse_sweep_completed` record to the append-only `vault_relay_audit` table:
+  time, operator (label plus a fingerprint of the admin token, never the
+  token), hashed account handle, snapshot count and bytes. Re-running is
+  idempotent; a run that crashed mid-account is finished by the next one. A
+  dry run reports the same result and changes and audits nothing. A sweep
+  leaves the account's high-water mark and lease head as they were.
 
 ## Admin API (account layer and operator)
 
@@ -185,6 +223,7 @@ Served on a separate listener, which must stay cluster-internal, and only when
 | `DELETE /admin/v1/accounts/:account/superseded-by` | Undo it, for an operator mistake. `204`, or `404 no_supersession`. |
 | `POST /admin/v1/accounts/:account/reconcile` | Recompute quota counters from snapshot rows. Run it while the account is quiet: a reconcile racing an upload can under-count until the next reconcile. |
 | `POST /admin/v1/sweep` | Expire abandoned uploads and old nonces (also runs every minute). |
+| `POST /admin/v1/lapse-sweep` | Audited deletion of lapsed accounts' snapshots after the retention window (#4819). `{ dryRun?, limit?, cursor? }`; see [Lapsed subscriptions](#lapsed-subscriptions). |
 
 The same hooks are available in-process: `relay.registerDevice()`,
 `relay.revokeDevice()`, `relay.operatorView()`.
@@ -199,7 +238,7 @@ that lands after an abort, expiry, or publish is deleted instead of counted. `Fi
 tests and single-node development. `createS3ObjectStore()` uses the
 `@happyvertical/files` S3 provider with path-style addressing for Garage.
 
-Metadata lives in the service database (SQLite or PostgreSQL) in eight
+Metadata lives in the service database (SQLite or PostgreSQL) in ten
 `vault_relay_*` tables. `migrateVaultRelayV1(db)` and
 `migrateVaultRelayLeasesV1(db)` create them idempotently.
 Run it as the deployment's migration step (`node dist/cli.js migrate`); the
@@ -212,6 +251,11 @@ idempotent) **before** deploying this version: until the table exists,
 `/readyz` reports `schema_missing` and the relay is not ready, and every
 device route that checks supersession (backup, restore, lease acquire and
 renew) fails.
+
+**Upgrading to the lapse window (#4819).** `migrateVaultRelayV1` also creates
+`vault_relay_lapses` and `vault_relay_audit` (plain `CREATE TABLE IF NOT
+EXISTS`, no change to existing tables). Re-run the migration job before
+deploying this version; until then `/readyz` reports `schema_missing`.
 
 ## Required configuration
 
@@ -236,7 +280,8 @@ without them (except the admin token, see its row). Values are not chosen here.
 Optional technical settings: `VAULT_RELAY_PORT` (8080), `VAULT_RELAY_ADMIN_PORT`
 (8081), `VAULT_RELAY_MAX_CHUNK_BYTES` (8454144), `VAULT_RELAY_UPLOAD_TTL_SECONDS`
 (86400), `VAULT_RELAY_MAX_CLOCK_SKEW_SECONDS` (300), `VAULT_RELAY_MAX_SEQUENCE_JUMP` (1000),
-`VAULT_RELAY_LEASE_TTL_SECONDS` (300). With `VAULT_RELAY_STORAGE=filesystem`,
+`VAULT_RELAY_LEASE_TTL_SECONDS` (300), `VAULT_RELAY_LAPSE_RETENTION_DAYS` (90, 1 to
+3650). With `VAULT_RELAY_STORAGE=filesystem`,
 `VAULT_RELAY_STORAGE_PATH` is required.
 
 The deployment also needs, from the owner: the namespace, the public domain and
@@ -286,7 +331,8 @@ horizontally: every security check is a conditional database statement.
 | Partial upload becoming latest | Pending status; commit verifies every chunk and the whole digest | `relay.test.ts` atomic publish |
 | Sequence rollback or overwrite | Account high-water mark advanced conditionally; unique (account, sequence) | `relay.test.ts` atomic publish |
 | One commit pins the high-water mark out of reach, so every later upload is stale | Step cap at begin and inside the advance statement; operator reset on the admin listener, audited | `relay.test.ts` sequence step cap and high-water reset |
-| Entitlement bypass, off or lapsed plan | `requireFeature('backup.vault')` per request from server-side grants; fails closed | `entitlements.test.ts` |
+| Entitlement bypass, off plan | `requireFeature('backup.vault')` per request from server-side grants; fails closed | `entitlements.test.ts` |
+| Writing after the plan lapsed; data lingering forever, or a family locked out of its own data (#4819) | Writes `402 entitlement_lapsed`; reads open for `lapseRetentionDays` from the first observed lapse, then `410`; audited operator sweep deletes | `lapse.test.ts` |
 | Leakage through logs, listings, or storage | Logs carry route, status, and a hashed account handle only; operator view is sizes and dates | `blind-operator.test.ts` |
 | Two devices publishing divergent lines | Lease row: one holder, base must be the head, head advanced at commit only by the holder's recorded fencing token | `lease.test.ts` |
 | Lease theft or reuse after expiry; stale fencing token | Holder and token must both match; relay-clock expiry; token bumped on every grant and on revocation | `lease.test.ts` expiry and takeover, re-acquire fencing |
@@ -305,8 +351,7 @@ the highest sequence it has seen). An operator can see ciphertext sizes, timing,
 length in a clear file header that the relay stores but never parses);
 quota counters can over-count after a crash between steps (`reconcile`
 repairs it); a crash between storing a chunk object and recording it can leave
-one unreferenced ciphertext object; a lapsed subscription blocks downloads as
-well as uploads.
+one unreferenced ciphertext object.
 
 ## Development
 

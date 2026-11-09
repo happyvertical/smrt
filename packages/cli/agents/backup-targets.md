@@ -111,6 +111,13 @@ because the relay needs the digest before the first byte.
     also needs the `accountTrust` option (revoked devices and the key
     generation floor of the adopted head); without it restore fails closed.
 
+A lapsed `backup.vault` subscription (#4819): the relay refuses `begin`,
+chunk upload, commit and device delete with `402 entitlement_lapsed`, which
+the vault target reports as `subscription_lapsed` (renew the subscription).
+List, `latest`, download and the lease routes keep working, so restore is
+never blocked by that error; once the retention window after the lapse ends
+reads answer `410 retention_expired`, reported as `retention_expired`.
+
 The vault target reports the relay's refusal to delete the sole committed
 snapshot as `last_snapshot` and of the newest of several (the lease head) as
 `head_snapshot`; they are distinct codes with distinct messages.
@@ -142,7 +149,7 @@ so the two cannot be told apart). Provider text is never forwarded.
 | Relay response confusion | Begin, chunk, commit and list answers checked against the request; downloads verified per chunk, whole digest, and header sequence; no redirects | `backup-targets.test.ts` relay response confusion |
 | Partial upload published | Staged-then-published (file, Drive); begin/chunk/commit with abort (vault) | per-target interrupted-upload cases; `backup-client.test.ts` (vault-relay) |
 | Publishing without, or after losing, the writer lease; a stale device overwriting a newer account | Fencing token in `begin`, renewal before commit, relay re-check at commit; `must_restore_first` publishes nothing and records nothing | `backup-targets.test.ts` primary-writer lease; `backup-client.test.ts` and `restore-e2e.test.ts` (vault-relay, real relay) |
-| Entitlement bypass for the vault | Client check before any request or sequence; the relay gates every route from server-side grants | `backup-targets.test.ts` entitlement; `backup-client.test.ts` |
+| Entitlement bypass for the vault | Client check before any request or sequence; the relay gates the write routes (and, after a lapse, reads past the retention window) from server-side grants | `backup-targets.test.ts` entitlement; `backup-client.test.ts` |
 
 Residual risks: the client entitlement check is a courtesy (the relay is the
 gate); Drive and the relay operator see ciphertext sizes and timing; the

@@ -256,4 +256,44 @@ describe.skipIf(!url)('vault relay on PostgreSQL', () => {
     });
     expect((await acquire(winner, next)).status).toBe(200);
   });
+
+  it('runs the lapse and audit statements on PostgreSQL (#4819)', async () => {
+    const store = new VaultRelayStore(db);
+    const lapsed = `lapse-${randomUUID().slice(0, 8)}`;
+    expect(await store.getLapse(lapsed)).toBeNull();
+    const first = await store.recordLapse(lapsed, 1000);
+    expect(first).toEqual({ accountId: lapsed, lapsedAt: 1000, sweptAt: null });
+    // The first observation wins; the window never slides.
+    expect((await store.recordLapse(lapsed, 9000)).lapsedAt).toBe(1000);
+    const due = await store.listDueLapses(1000, 100);
+    expect(due.map((lapse) => lapse.accountId)).toContain(lapsed);
+    expect(await store.markLapseSwept(lapsed, 2000)).toBe(true);
+    expect(await store.markLapseSwept(lapsed, 3000)).toBe(false);
+    expect(
+      (await store.listDueLapses(1000, 100)).map((lapse) => lapse.accountId),
+    ).not.toContain(lapsed);
+    expect(await store.clearLapse(lapsed)).toBe(true);
+    expect(await store.clearLapse(lapsed)).toBe(false);
+
+    expect(Array.isArray(await store.listUnrecordedAccounts('', 5))).toBe(true);
+    expect(await store.hasCommitted(`none-${randomUUID()}`)).toBe(false);
+
+    const id = randomUUID();
+    await store.appendAudit({
+      id,
+      at: 5000,
+      action: 'lapse_sweep_completed',
+      operator: 'ops/token:abc',
+      accountHandle: 'deadbeef',
+      snapshots: 2,
+      bytes: 16,
+      detail: '{}',
+    });
+    const audit = await store.listAudit(1000);
+    expect(audit.find((entry) => entry.id === id)).toMatchObject({
+      action: 'lapse_sweep_completed',
+      snapshots: 2,
+      bytes: 16,
+    });
+  });
 });

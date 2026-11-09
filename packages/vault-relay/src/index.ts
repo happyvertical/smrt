@@ -14,12 +14,14 @@ export {
   signRelayRequest,
 } from './auth.js';
 export {
+  DEFAULT_LAPSE_RETENTION_DAYS,
   DEFAULT_LEASE_TTL_MS,
   DEFAULT_MAX_CHUNK_BYTES,
   DEFAULT_MAX_CLOCK_SKEW_MS,
   DEFAULT_MAX_SEQUENCE_JUMP,
   DEFAULT_UPLOAD_TTL_MS,
   MAX_CHUNK_BYTES_CEILING,
+  MAX_LAPSE_RETENTION_DAYS,
   resolvePolicy,
   type VaultRelayLimits,
   type VaultRelayPolicy,
@@ -42,7 +44,9 @@ export {
 } from './lease-store.js';
 export {
   type AccountUsage,
+  type AuditEntry,
   type DeviceRecord,
+  type LapseRecord,
   migrateVaultRelayV1,
   type SnapshotRecord,
   VAULT_RELAY_TABLES,
@@ -59,6 +63,9 @@ export {
 } from './object-store.js';
 export {
   jsonLineLogger,
+  type LapseSweepAccount,
+  type LapseSweepOptions,
+  type LapseSweepResult,
   type OperatorAccountView,
   VaultRelay,
   type VaultRelayEntitlements,

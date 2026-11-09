@@ -1,8 +1,10 @@
 /**
  * The `backup.vault` gate reads the account's resolved entitlements through
  * the real feature resolver and subscription grant source, never a client
- * claim. Off, lapsed, and operator-disabled accounts are refused on every
- * route, and an entitlement lookup that fails denies.
+ * claim. Accounts that were never entitled, and operator-disabled accounts,
+ * are refused on every route, and an entitlement lookup that fails denies. An
+ * account that held `backup.vault` and stored snapshots, then lapsed, is
+ * refused writes only for the retention window (#4819, see `lapse.test.ts`).
  */
 import { getTestDatabase } from '@happyvertical/smrt-core';
 import {
@@ -153,7 +155,7 @@ describe('backup.vault entitlement gate', () => {
     }
   });
 
-  it('refuses a paid account that lapses after uploading, including downloads', async () => {
+  it('refuses uploads but not downloads for a paid account that lapses after uploading (#4819)', async () => {
     expect(
       (await uploadSnapshot(h, devices['acct-paid'], 1, new Uint8Array(8)))
         .status,
@@ -161,8 +163,16 @@ describe('backup.vault entitlement gate', () => {
     subscriptions['acct-paid'].status = 'past_due';
     try {
       expect(await status('acct-paid', 'GET', '/v1/snapshots/1/chunks/0')).toBe(
-        403,
+        200,
       );
+      expect(await status('acct-paid', 'GET', '/v1/snapshots')).toBe(200);
+      const refused = await h.relay.handle(
+        signed(h, devices['acct-paid'], 'POST', '/v1/uploads'),
+      );
+      expect(refused.status).toBe(402);
+      expect(await refused.json()).toMatchObject({
+        error: 'entitlement_lapsed',
+      });
     } finally {
       subscriptions['acct-paid'].status = 'active';
     }

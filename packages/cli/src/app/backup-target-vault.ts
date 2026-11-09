@@ -77,6 +77,11 @@ const EMPTY_SHA256 = createHash('sha256').digest('hex');
 const UPGRADE_MESSAGE =
   'Vault backups need the Vault plan (feature backup.vault), which this installation does not have. Upgrade to enable them, or back up to a local file or your own Google Drive.';
 
+const LAPSED_MESSAGE =
+  'The vault subscription has lapsed, so new backups are refused; nothing was published. Renew the subscription to back up again. Your existing snapshots can still be listed and restored until the retention period after the lapse ends (smrt app restore-latest).';
+const RETENTION_EXPIRED_MESSAGE =
+  'The vault subscription lapsed and its retention period has ended, so the relay no longer serves this account. Renew the subscription and contact your administrator to ask whether the snapshots still exist.';
+
 const RESTORE_MESSAGE =
   'This device is behind the vault account, or no longer holds its writer lease; nothing was published. Restore the latest snapshot (smrt app restore-latest) before backing up to the vault.';
 const LEASE_HELD_MESSAGE =
@@ -413,7 +418,11 @@ export class VaultRelayBackupTarget implements BackupTarget {
             path,
             body ? Buffer.from(JSON.stringify(body), 'utf8') : undefined,
           );
-          if (response.status === 401 || response.status === 403) {
+          if (
+            response.status === 401 ||
+            response.status === 403 ||
+            response.status === 410
+          ) {
             throw await this.#failure(response);
           }
           let parsed: unknown;
@@ -578,6 +587,17 @@ export class VaultRelayBackupTarget implements BackupTarget {
             'unauthorized',
             'The vault relay refused this device.',
           );
+    }
+    // A lapsed subscription refuses writes only (402); restore keeps working
+    // until the retention window ends, then reads answer 410.
+    if (response.status === 402 && code === 'entitlement_lapsed') {
+      return new BackupTargetError('subscription_lapsed', LAPSED_MESSAGE);
+    }
+    if (response.status === 410 && code === 'retention_expired') {
+      return new BackupTargetError(
+        'retention_expired',
+        RETENTION_EXPIRED_MESSAGE,
+      );
     }
     if (response.status === 413 && code === 'quota_exceeded') {
       return new BackupTargetError(
