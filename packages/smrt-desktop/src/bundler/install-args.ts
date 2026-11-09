@@ -466,6 +466,23 @@ const NPMRC_BOOLEAN_KEYS = new Set([
 ]);
 const NPMRC_SCOPED_REGISTRY = /^@[a-z0-9][a-z0-9._~-]*:registry$/;
 const NPMRC_URL = /^https?:\/\/[^\s@]+$/;
+/** Hosts a plain-http registry (a local mirror) may use: the traffic stays on this machine. */
+const LOOPBACK_HOSTS: ReadonlySet<string> = new Set([
+  'localhost',
+  '127.0.0.1',
+  '[::1]',
+]);
+
+/** True for an `http:` URL whose host is not the local machine. */
+function isPlainRemoteHttp(url: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  return parsed.protocol === 'http:' && !LOOPBACK_HOSTS.has(parsed.hostname);
+}
 
 export interface StagedNpmrc {
   /** The `.npmrc` text to place in the install directory (maybe empty). */
@@ -476,12 +493,14 @@ export interface StagedNpmrc {
 
 /**
  * The part of the app's `.npmrc` that reaches pnpm: `registry`,
- * `@scope:registry` (an `http(s)` URL without credentials) and four boolean
- * resolution settings. Everything else is dropped, including every `_auth*`
+ * `@scope:registry` (an `https` URL without credentials; plain `http` only for
+ * a loopback host, a plain-http registry elsewhere fails the bundle) and four
+ * boolean resolution settings. Everything else is dropped, including every `_auth*`
  * line (credentials come from the build user's own `~/.npmrc`) and anything
  * that expands an environment variable (`${...}`, even inside a registry URL).
- * A `pnpmfile`, `global-pnpmfile` or
- * `config-dependencies` key fails the bundle (`unsafe_install_config`).
+ * A `pnpmfile`, `global-pnpmfile` or `config-dependencies` key, and a registry
+ * on plain `http` to a host other than this machine, fail the bundle
+ * (`unsafe_install_config`).
  */
 export function stageNpmrc(text: string): StagedNpmrc {
   const kept: string[] = [];
@@ -504,6 +523,8 @@ export function stageNpmrc(text: string): StagedNpmrc {
       NPMRC_URL.test(value);
     const boolean =
       NPMRC_BOOLEAN_KEYS.has(key) && /^(?:true|false)$/.test(value);
+    if (registry && isPlainRemoteHttp(value))
+      unsafe.add('registry (plain http)');
     if (registry || boolean) kept.push(`${key}=${value}`);
     else dropped += 1;
   }
