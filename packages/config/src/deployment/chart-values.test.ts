@@ -328,6 +328,17 @@ describe('renderSmrtAppChartValues', () => {
       delete doc.services.web.command;
     });
     expect(values.target.workloads.web.command).toEqual(['tini', '--', 'node']);
+    // An explicitly empty command adds nothing and is not a reason to guess.
+    expect(
+      render(undefined, (doc) => {
+        doc.services.web.command = [];
+      }).target.workloads.web.command,
+    ).toEqual(['docker-entrypoint.sh']);
+    expect(
+      refused({}, (doc) => {
+        doc.services.worker.command = [];
+      }),
+    ).toEqual([expect.stringContaining('empty `entrypoint` and no `command`')]);
   });
 
   it('reads per-service inputs by own key, whatever a service is called', () => {

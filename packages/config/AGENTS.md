@@ -52,8 +52,8 @@ file an application's deployment declaration. Guide:
   `entrypoint`, `migrate.command`, `health`, volume targets), because Compose
   interpolates the whole file; `name` and a declare-stage `image` are carried
   only when literal. The schema carries the same `$` patterns.
-- `entrypoint`/`command` keep Compose meaning in the declaration: absent
-  `entrypoint` = the image's runs; `[]` = discarded.
+- `entrypoint`/`command` keep Compose meaning in the declaration: absent =
+  the image's own runs; `[]` (or '') = discarded. Never collapse the two.
 - `src/deployment/chart-values.ts`: `renderSmrtAppChartValues()` renders a
   `deploy`-stage declaration plus environment-owned inputs into `smrt-app`
   chart values. It invents no defaults for Secrets, resources or ingress,

@@ -138,7 +138,11 @@ export interface ComposeDeploymentWorkload {
    * runs, with `command` as its arguments, exactly as Compose does.
    */
   entrypoint?: string[];
-  /** Present only when the Compose file sets `command`. */
+  /**
+   * Present only when the Compose file sets `command`; an empty list means
+   * the image's default command is discarded. Absent means the image's
+   * default command runs.
+   */
   command?: string[];
   /** The ingress port. Present on the web service only. */
   port?: number;
@@ -603,12 +607,12 @@ function parseCommand(
   issues: IssueCollector,
 ): string[] | undefined {
   if (value === undefined || value === null) return undefined;
-  // `entrypoint: []` (or '') is meaningful in Compose: it discards the
-  // image's entrypoint. An empty `command` just leaves the image default.
+  // Empty is meaningful in Compose, for both fields: `[]` or '' discards what
+  // the image declares, and only a missing or null value inherits it.
   const empty =
     (Array.isArray(value) && value.length === 0) ||
     (typeof value === 'string' && value.trim() === '');
-  if (empty) return field === 'entrypoint' ? [] : undefined;
+  if (empty) return [];
   const path = `services.${name}.${field}`;
   const what = `The \`${field}\` of \`${name}\``;
   if (isStringList(value)) {

@@ -199,7 +199,8 @@ Compose supports.
 `entrypoint` and `command` keep their Compose meaning in the declaration. With
 no `entrypoint`, the image's own entrypoint runs and `command` is its
 arguments. With `entrypoint` set, it replaces the image's, and `entrypoint: []`
-discards it.
+discards it. `command: []` likewise discards the image's default command;
+leave `command` out to keep it.
 
 Only what the tables above name is part of the declaration. Every other
 Compose setting on a role service (`environment`, `depends_on`, `restart`,

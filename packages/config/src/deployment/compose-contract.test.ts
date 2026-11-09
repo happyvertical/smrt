@@ -1014,6 +1014,24 @@ describe('validateComposeDeployment: the supported platform subset', () => {
     // Unset means the image's entrypoint runs.
     expect(check().declaration?.workloads[0]).not.toHaveProperty('entrypoint');
   });
+
+  it('keeps an explicitly empty command or entrypoint apart from an inherited one', () => {
+    // Compose: `[]` and '' discard what the image declares; null inherits it.
+    for (const field of ['command', 'entrypoint'] as const) {
+      for (const empty of [[], '', '  ']) {
+        const workload = check((doc) => {
+          doc.services.worker[field] = empty;
+        }).declaration?.workloads[1];
+        expect(workload?.[field]).toEqual([]);
+      }
+      for (const inherited of [null, undefined]) {
+        const workload = check((doc) => {
+          doc.services.worker[field] = inherited;
+        }).declaration?.workloads[1];
+        expect(workload).not.toHaveProperty(field);
+      }
+    }
+  });
 });
 
 describe('validateComposeDeployment: reporting', () => {
