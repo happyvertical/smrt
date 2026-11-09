@@ -7,7 +7,7 @@
   "channel": "stable",
   "target": "aarch64-apple-darwin",
   "sidecarManifest": "sidecar-manifest.json",
-  "node": { "executable": "smrt-start-node" },
+  "node": { "executable": "smrt-notes-node" },
   "bridge": {
     "entry": "bridge/smrt-mcp-bridge.mjs",
     "envPrefix": "SMRT_NOTES",

@@ -121,8 +121,11 @@ export interface AcquireNodeBinaryOptions {
   readonly archivePath?: string;
   /** Never fetch; fail with `offline_cache_miss` when the cache lacks it. */
   readonly offline?: boolean;
-  /** Receives the verified executable bytes; throw to reject (nothing is written). */
-  readonly verifyBinary?: (binary: Buffer) => void;
+  /**
+   * Receives the verified executable bytes; throw or reject to refuse them
+   * (nothing is written). May be asynchronous.
+   */
+  readonly verifyBinary?: (binary: Buffer) => void | Promise<void>;
   readonly fetch?: FetchLike;
   readonly fs?: NodeDistFs;
   /** Test seam; defaults to the committed table. */
@@ -631,7 +634,7 @@ export async function acquireNodeBinary(
   }
   if (options.verifyBinary) {
     try {
-      options.verifyBinary(binary);
+      await options.verifyBinary(binary);
     } catch {
       throw new NodeDistError('binary_rejected');
     }

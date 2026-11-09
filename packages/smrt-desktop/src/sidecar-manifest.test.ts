@@ -4,6 +4,7 @@ import {
   buildSidecarEnv,
   parseSidecarManifest,
   RESERVED_ENV_KEYS,
+  serializeSidecarManifest,
 } from './sidecar-manifest.js';
 
 const example = readFileSync(
@@ -12,10 +13,11 @@ const example = readFileSync(
 );
 const manifest = {
   version: 1,
-  executable: 'node',
-  args: ['build/index.js'],
+  executable: 'smrt-notes-node',
+  args: ['app/build/index.js'],
   healthRoute: '/api/_runtime/health',
   dataDirectory: 'runtime',
+  env: { NODE_ENV: 'production', NODE_OPTIONS: '', NODE_PATH: '' },
 };
 
 function parse(overrides: Record<string, unknown>) {
@@ -39,8 +41,9 @@ describe('sidecar manifest v1', () => {
   });
 
   it('omits optional keys that were not given', () => {
-    const parsed = parseSidecarManifest(example);
-    expect(Object.keys(parsed)).toEqual(Object.keys(manifest));
+    const { env: _env, ...required } = manifest;
+    const parsed = parseSidecarManifest(JSON.stringify(required));
+    expect(Object.keys(parsed)).toEqual(Object.keys(required));
   });
 
   it.each([
@@ -86,7 +89,7 @@ describe('sidecar manifest v1', () => {
   });
 
   it.each(
-    Object.keys(manifest).filter((key) => key !== 'version'),
+    Object.keys(manifest).filter((key) => key !== 'version' && key !== 'env'),
   )('requires field %s', (key) => {
     expect(() => parse({ [key]: undefined })).toThrow('documented fields');
   });
@@ -550,5 +553,66 @@ describe('buildSidecarEnv', () => {
     expect(() =>
       buildSidecarEnv({}, { ...supplied, dataDirectory }, {}),
     ).toThrow('data directory');
+  });
+});
+
+describe('serializeSidecarManifest', () => {
+  const full = {
+    version: 1 as const,
+    executable: 'smrt-notes-node',
+    args: ['app/build/index.js'],
+    healthRoute: '/api/_runtime/health',
+    dataDirectory: 'runtime',
+    env: { NODE_ENV: 'production', NODE_OPTIONS: '', NODE_PATH: '' },
+    ownerClaimRoute: '/setup',
+  };
+
+  it('writes canonical JSON with a fixed key order and a trailing newline', () => {
+    const text = serializeSidecarManifest(full);
+    expect(text.endsWith('}\n')).toBe(true);
+    expect(Object.keys(JSON.parse(text))).toEqual([
+      'version',
+      'executable',
+      'args',
+      'healthRoute',
+      'dataDirectory',
+      'env',
+      'ownerClaimRoute',
+    ]);
+    // Key order of the input does not matter.
+    const scrambled = Object.fromEntries(Object.entries(full).reverse());
+    expect(serializeSidecarManifest(scrambled as typeof full)).toBe(text);
+  });
+
+  it('round-trips through the parser byte for byte', () => {
+    const text = serializeSidecarManifest(full);
+    expect(parseSidecarManifest(text)).toEqual(full);
+    expect(serializeSidecarManifest(parseSidecarManifest(text))).toBe(text);
+  });
+
+  it('omits absent optional fields and keeps empty env values', () => {
+    const { env: _env, ownerClaimRoute: _route, ...bare } = full;
+    expect(Object.keys(JSON.parse(serializeSidecarManifest(bare)))).toEqual([
+      'version',
+      'executable',
+      'args',
+      'healthRoute',
+      'dataDirectory',
+    ]);
+    expect(JSON.parse(serializeSidecarManifest(full)).env.NODE_OPTIONS).toBe(
+      '',
+    );
+  });
+
+  it('refuses a manifest the parser would reject', () => {
+    expect(() =>
+      serializeSidecarManifest({ ...full, env: { PORT: '1' } }),
+    ).toThrow(/reserved/);
+    expect(() =>
+      serializeSidecarManifest({ ...full, executable: 'a/b' }),
+    ).toThrow(/basename/);
+    expect(() =>
+      serializeSidecarManifest({ ...full, healthRoute: 'health' }),
+    ).toThrow(/healthRoute/);
   });
 });

@@ -12,6 +12,7 @@
     "**/*.test.ts",
     "**/*.spec.ts",
     "src/__tests__/**",
-    "src/testing/**"
+    "src/testing/**",
+    "src/**/testing/**"
   ]
 }

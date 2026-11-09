@@ -108,4 +108,5 @@ export {
   buildSidecarEnv,
   parseSidecarManifest,
   RESERVED_ENV_KEYS,
+  serializeSidecarManifest,
 } from './sidecar-manifest.js';
