@@ -1130,8 +1130,11 @@ few months and after any rotation, run the check, and show the result. A
 
 **The restart**, in order. The account layer is the hosted service that
 provisions accounts and holds the relay admin token. It must re-authenticate
-the human owner before step 1, because the local calls in steps 2 and 3
-cannot tell the owner from someone holding the unlocked device. Before
+the human owner before step 1. This is a **hard requirement**, not a
+suggestion: the local calls in steps 2 and 3 cannot tell the owner from
+someone holding the unlocked device, so the account layer is the only gate on
+a takeover of the backup line. A product that offers the restart without it
+is not safe to ship. Before
 starting, ask every device to publish: after step 1 the old account takes no
 writes, and there is no merge, so what a device has not published is not in
 the new account.
@@ -1141,9 +1144,13 @@ the new account.
    signing key in it, then replace the old account (relay admin
    `PUT .../superseded-by`). From then on the old account takes no writes and
    offers nothing to restore-latest, so a device still following it stops
-   publishing into a dead line and says why (`account_superseded`). If the
-   restart is abandoned, the relay admin `DELETE` of the same path restores
-   the old account.
+   publishing into a dead line and says why (`account_superseded`). The relay
+   admin `DELETE` of the same path undoes this, but only for a restart that
+   never reached the working device: once step 2 has run, there is no API
+   that undoes `restartAccount` locally. That device is on the new account
+   and finishes the restart (steps 2 to 5). A backup on it that still targets
+   the old account is refused (`account_mismatch`) and nothing is sealed, so
+   even a reverted supersession cannot move the old account's data line.
 2. Working device: `restartAccount({ accountId, deviceId, recoverySecret,
    confirmRestart: true })`, where `recoverySecret` is a **new** secret the
    user writes down now. It parks the old account (`previousAccount()`) and
@@ -1166,15 +1173,24 @@ the new account.
    working device's `enrollDevice` with the **new** secret, then
    `acceptEnrollment`. A wiped device uses `enrollFromRecovery` with the new
    secret. An installation that already follows the old account moves with
-   `switchVaultAccount({ ..., role: 'follower' })`, which accepts an account
-   that already holds snapshots and leaves nothing pending, so its next step
-   is restore-latest, never a backup over the new account. A fresh device is
+   `switchVaultAccount({ ..., role: 'follower', fromLease })`, which accepts an
+   account that already holds snapshots but only once the relay reports the
+   old account as replaced (`fromLease`, signed as the device's old-account
+   key; keep the old account's devices registered until every device has
+   followed). Unpublished local writes stay marked, so restore-latest still
+   asks for `--discard-local`; its next step is restore-latest, never a
+   backup over the new account. A fresh device is
    simply pointed at the new account by the host, and restore-latest then
    restores the new account's snapshot.
 5. When the new account is backed up and the other devices have joined:
    `discardPreviousAccount()` deletes the parked account's wrapped keys and
    records. It refuses (`restart_incomplete`) while the device holds no
    current account, and it never deletes a key the current account uses.
+
+**Deploying.** Run the relay migration job (`migrateVaultRelayV1`, which now
+also creates `vault_relay_supersessions`) before deploying a relay that
+includes supersession. Until it has run, the relay's `/readyz` reports
+`schema_missing`.
 
 The relay never tells a client which account to follow: `account_superseded`
 is a stop signal, and the host's trusted configuration decides the account.

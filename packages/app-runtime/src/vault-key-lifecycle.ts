@@ -321,9 +321,12 @@ export interface VaultRestartResult extends VaultInitializeResult {
 export interface VaultPreviousAccount {
   accountId: string;
   /**
-   * True while no current account exists: a restart or leave stopped before
-   * the device joined or created the new account. Run `restartAccount` or
-   * enroll again.
+   * True while a restart or leave has not finished. Either no current account
+   * exists (it stopped before the device joined or created the new one: run
+   * `restartAccount` or enroll again), or parking stopped part way and the
+   * old account is still current. In that second case the device may still
+   * seal normally on the old account; call `restartAccount` or `leaveAccount`
+   * again to finish.
    */
   interrupted: boolean;
 }
@@ -417,11 +420,6 @@ export interface VaultKeyLifecycle {
     authorityRecord?: Uint8Array | null,
   ): Promise<VaultKeyLifecycleStatus>;
   /**
-   * Record a pending revocation. Requires the recovery secret as proof that
-   * the rotation that publishes it can run (`recovery_rejected` otherwise,
-   * and nothing is recorded). Sealing stops on this device until `rotate`.
-   */
-  /**
    * Prove, without changing anything, that `recoverySecret` still opens the
    * account authority record and the current key's recovery record. Nothing
    * is written, settled or cached, so a product can run it whenever the user
@@ -429,6 +427,11 @@ export interface VaultKeyLifecycle {
    * before the account is frozen. A wrong secret is `false`, not an error.
    */
   checkRecoverySecret(recoverySecret: string): Promise<VaultRecoveryCheck>;
+  /**
+   * Record a pending revocation. Requires the recovery secret as proof that
+   * the rotation that publishes it can run (`recovery_rejected` otherwise,
+   * and nothing is recorded). Sealing stops on this device until `rotate`.
+   */
   revokeDevice(
     deviceId: string,
     input: { recoverySecret: string },

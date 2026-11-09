@@ -120,15 +120,20 @@ records only the replacement; it still cannot read anything.
 A replaced account answers `409 account_superseded` (no other detail, and
 never the new account's id: a client does not follow the relay to another
 account) to every device route that writes or offers a snapshot: lease
-acquire and renew, begin, chunk upload, commit, snapshot delete, list and
-latest. Lease status and release, aborting an upload, and a snapshot's
-metadata and chunks by explicit sequence stay available, so state can be
-cleaned up and a snapshot rescued by hand. A stale device on the old account
+acquire and renew, begin, chunk upload, commit, snapshot delete, list,
+latest and lease status (the refusal on lease status is how a device proves,
+before it follows the new account, that the old one was replaced). Lease
+release, aborting an upload, and a snapshot's metadata and chunks by explicit
+sequence stay available, so state can be cleaned up and a snapshot rescued by
+hand. A stale device on the old account
 therefore stops publishing into a line nobody follows, and restore-latest is
 never handed the old vault. The new account is unaffected.
 
 Only the admin listener sets or clears it, so a stolen device key cannot
-silence or redirect an account. The replacement must already hold an active
+silence or redirect an account. The account layer must re-authenticate the
+human owner first. The `DELETE` is for an operator mistake or a restart that
+never reached the working device; it does not undo a device that already ran
+`restartAccount`, which has no local undo. The replacement must already hold an active
 device and must not be replaced itself, so there are no chains or loops.
 Existing snapshots stay until an operator deletes them.
 
@@ -176,7 +181,7 @@ Served on a separate listener, which must stay cluster-internal, and only when
 | `DELETE /admin/v1/accounts/:account/devices/:device` | Revoke a device. Effective on its next request. |
 | `GET /admin/v1/accounts/:account` | Usage, snapshot sizes and dates, device states. Never content. |
 | `POST /admin/v1/accounts/:account/high-water` | Reset the sequence high-water mark of an account whose mark was pushed out of reach: `{ highWaterSequence, removeSnapshotsAbove? }`. The new mark may not exceed the current one. A snapshot or pending upload above it is refused (`409 snapshots_above_high_water`, sequences listed) unless `removeSnapshotsAbove` is `true`, which deletes those rows and their objects first. Logged as `high_water_reset` (hashed account handle, previous and new mark, removed sequences). |
-| `PUT /admin/v1/accounts/:account/superseded-by` | Replace an account (#4817): `{ supersededBy }`. For the account layer after a vault restart, once the new account exists with an active device and holds a backup. `201` set, `200` repeated, `404 no_account`, `409 target_not_ready` (no active device), `409 target_superseded` or `409 account_is_target` (no chains or loops), `409 already_superseded` (another target). See [Account supersession](#account-supersession). |
+| `PUT /admin/v1/accounts/:account/superseded-by` | Replace an account (#4817): `{ supersededBy }`. For the account layer at the start of a vault restart, as soon as the new account exists with an active device (before the first backup into it): from then on a stale device cannot publish into the old line. `201` set, `200` repeated, `404 no_account`, `409 target_not_ready` (no active device), `409 target_superseded` or `409 account_is_target` (no chains or loops), `409 already_superseded` (another target). See [Account supersession](#account-supersession). |
 | `DELETE /admin/v1/accounts/:account/superseded-by` | Undo it, for an operator mistake. `204`, or `404 no_supersession`. |
 | `POST /admin/v1/accounts/:account/reconcile` | Recompute quota counters from snapshot rows. Run it while the account is quiet: a reconcile racing an upload can under-count until the next reconcile. |
 | `POST /admin/v1/sweep` | Expire abandoned uploads and old nonces (also runs every minute). |
@@ -200,6 +205,13 @@ Metadata lives in the service database (SQLite or PostgreSQL) in eight
 Run it as the deployment's migration step (`node dist/cli.js migrate`); the
 server checks the tables exist at readiness and never creates schema while
 serving.
+
+**Upgrading to account supersession (#4817).** `migrateVaultRelayV1` now also
+creates `vault_relay_supersessions`. Re-run the migration job (it is
+idempotent) **before** deploying this version: until the table exists,
+`/readyz` reports `schema_missing` and the relay is not ready, and every
+device route that checks supersession (backup, restore, lease acquire and
+renew) fails.
 
 ## Required configuration
 
