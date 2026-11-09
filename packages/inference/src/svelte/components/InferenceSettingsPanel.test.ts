@@ -483,6 +483,36 @@ describe('InferenceSettingsPanel advanced', () => {
     expect(onSaveFusion).toHaveBeenCalledTimes(1);
     expect(list?.textContent).toContain('Not valid JSON.');
   });
+
+  it('shows what a fusion replaces and why the executor would refuse it (#4800)', () => {
+    const target = render({
+      fusions: [
+        {
+          name: 'review',
+          source: 'app',
+          definition: { mode: 'single', seats: [] },
+          editable: true,
+          shadows: ['registry', 'config'],
+          issues: [
+            {
+              path: 'fusion:review.seats[0].prompt',
+              message: 'names prompt "x", which no definePrompt() registered',
+            },
+          ],
+        },
+      ],
+      advancedOpen: true,
+    });
+    const list = target.querySelector<HTMLElement>(
+      '[data-testid="inference-fusions"]',
+    );
+    expect(list?.textContent).toContain('replaces registry, config');
+    const issues = list?.querySelector(
+      '[data-testid="inference-fusion-issues"]',
+    );
+    expect(issues?.getAttribute('role')).toBe('alert');
+    expect(issues?.textContent).toContain('no definePrompt() registered');
+  });
 });
 
 describe('InferenceSettingsPanel usage tab', () => {

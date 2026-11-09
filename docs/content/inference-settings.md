@@ -126,8 +126,10 @@ registerUserInferenceResolver(
 A bare `setInferenceResolver()` would drop that validation. For each call
 the override resolver uses the stored row, or defers to config when nothing
 is stored. Run `smrt db:migrate` to create `_smrt_inference_overrides`; the
-runtime never creates the table. A tier bound to a fusion that exists only
-in an app row fails `fusion-unknown` until #4800; define fusions in config
-or with `defineFusion()` meanwhile. The whole picture (tiers, fallback,
+runtime never creates the table. Fusions saved as app rows reach the
+executor through the same resolver: an app row replaces a config or
+`defineFusion()` fusion of the same name, and `listInferenceFusions()` marks
+what each entry replaces (`shadows`) and why the executor would refuse it
+(`issues`, seat prompt keys included). The whole picture (tiers, fallback,
 fusions, modes, hosted inference, usage) is in
 [Inference tiers, bindings and usage](./inference.md).

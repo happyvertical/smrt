@@ -914,25 +914,46 @@ function isDegraded(seat: FusionSeatResult): boolean {
   );
 }
 
-/** Resolve, validate and return the fusion a target names. */
-function fusionFor(context: InferenceExecutionContext): {
+/** A fusion a target names, validated. */
+interface ResolvedFusion {
   key: string;
   definition: InferenceFusionDefinition;
-} {
-  const key = String(context.resolution.target.fusion ?? '').trim();
-  const definition = key ? lookupFusion(key, context.config) : undefined;
-  if (!definition) {
-    throw new InferenceConfigError([
-      {
-        path: `resolution.${context.resolution.tierResolved}`,
-        code: 'fusion-unknown',
-        message: `tier "${context.resolution.tierResolved}" names unknown fusion "${key}"`,
-      },
-    ]);
-  }
-  const path = Object.hasOwn(context.config?.fusions ?? {}, key)
-    ? `inference.fusions.${key}`
-    : `fusions.${key}`;
+}
+
+/** Where a fusion definition was found, for validation paths. */
+type FusionOrigin = 'resolver' | 'config' | 'registry';
+
+function unknownFusion(
+  context: InferenceExecutionContext,
+  key: string,
+): InferenceConfigError {
+  return new InferenceConfigError([
+    {
+      path: `resolution.${context.resolution.tierResolved}`,
+      code: 'fusion-unknown',
+      message: `tier "${context.resolution.tierResolved}" names unknown fusion "${key}"`,
+    },
+  ]);
+}
+
+/**
+ * Validate a definition before it runs, whatever its origin: structure
+ * against the call's config (aliases) and every seat's prompt key. A
+ * resolver's stored definition (an app override row, #4800) gets the same
+ * checks as config, so an invalid stored row is a load error, never a run.
+ */
+function validatedFusion(
+  context: InferenceExecutionContext,
+  key: string,
+  definition: InferenceFusionDefinition,
+  origin: FusionOrigin,
+): ResolvedFusion {
+  const path =
+    origin === 'config'
+      ? `inference.fusions.${key}`
+      : origin === 'resolver'
+        ? `resolver.fusions.${key}`
+        : `fusions.${key}`;
   const issues = [
     ...findFusionDefinitionIssues(definition, path, context.config),
     ...findFusionDefinitionPromptIssues(definition, path),
@@ -942,17 +963,67 @@ function fusionFor(context: InferenceExecutionContext): {
 }
 
 /**
+ * Resolve and validate the fusion a target names without the context's
+ * lookup (older cores, direct executor contexts): config, then registry.
+ */
+function fusionForSync(context: InferenceExecutionContext): ResolvedFusion {
+  const key = String(context.resolution.target.fusion ?? '').trim();
+  const definition = key ? lookupFusion(key, context.config) : undefined;
+  if (!definition) throw unknownFusion(context, key);
+  const origin: FusionOrigin = Object.hasOwn(context.config?.fusions ?? {}, key)
+    ? 'config'
+    : 'registry';
+  return validatedFusion(context, key, definition, origin);
+}
+
+/**
+ * Resolve and validate the fusion a target names (#4800). With core's
+ * `context.lookupFusion()`, precedence is: the registered resolver's stored
+ * layer (app override rows), then `inference.fusions`, then the
+ * `defineFusion()` registry; each source replaces a lower one whole.
+ */
+async function fusionFor(
+  context: InferenceExecutionContext,
+): Promise<ResolvedFusion> {
+  if (typeof context.lookupFusion !== 'function') return fusionForSync(context);
+  const key = String(context.resolution.target.fusion ?? '').trim();
+  if (!key) throw unknownFusion(context, key);
+  const found = await context.lookupFusion(key);
+  if (found) {
+    return validatedFusion(context, key, found.definition, found.source);
+  }
+  const registered = fusionStore().get(key);
+  if (!registered) throw unknownFusion(context, key);
+  return validatedFusion(context, key, registered, 'registry');
+}
+
+/**
  * Run a fusion for one input and return the structured result. Throws
  * {@link InferenceFusionError} (`INFERENCE_FUSION_FAILED`) when every seat
  * died, with the run recorded as `failed`.
  */
-export function runFusion(
+export async function runFusion(
   context: InferenceExecutionContext,
   input: string,
   callerOptions: InferenceCallOptions = {},
   options: ChainExecutorOptions = {},
 ): Promise<FusionRunResult> {
-  const { key, definition } = fusionFor(context);
+  return runResolvedFusion(
+    context,
+    await fusionFor(context),
+    input,
+    callerOptions,
+    options,
+  );
+}
+
+function runResolvedFusion(
+  context: InferenceExecutionContext,
+  { key, definition }: ResolvedFusion,
+  input: string,
+  callerOptions: InferenceCallOptions,
+  options: ChainExecutorOptions,
+): Promise<FusionRunResult> {
   const resolved: Required<ChainExecutorOptions> = {
     retryDelayMs: options.retryDelayMs ?? (() => 200 + Math.random() * 300),
     sleep:
@@ -980,14 +1051,29 @@ export function createFusionClient(
   context: InferenceExecutionContext,
   options: ChainExecutorOptions = {},
 ): InferenceModelClient {
-  // Fail at bind time, not on the first call, for an unknown or bad fusion.
-  fusionFor(context);
+  // Without core's lookup the definition is known now: fail at bind time.
+  // With it (#4800) the lookup may read stored rows, so it starts now, once
+  // per client, and an unknown or invalid fusion fails the first call before
+  // any seat runs (nothing is recorded).
+  let fusion: Promise<ResolvedFusion>;
+  if (typeof context.lookupFusion === 'function') {
+    fusion = fusionFor(context);
+    fusion.catch(() => {}); // surfaced by message(); never unhandled
+  } else {
+    fusion = Promise.resolve(fusionForSync(context));
+  }
   return {
     async message(text: string, callerOptions?: InferenceCallOptions) {
       const { onFusionResult, ...rest } = (callerOptions ?? {}) as
         | (InferenceCallOptions & FusionCallOptions)
         | Record<string, never>;
-      const result = await runFusion(context, text, rest, options);
+      const result = await runResolvedFusion(
+        context,
+        await fusion,
+        text,
+        rest,
+        options,
+      );
       if (typeof onFusionResult === 'function') onFusionResult(result);
       return result.text;
     },

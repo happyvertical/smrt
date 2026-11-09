@@ -237,9 +237,11 @@ layer's provider.
 - **App** (you): the `inference` config, plus app override rows written from
   the settings panel (`_smrt_inference_overrides`, created by
   `smrt db:migrate`). Aliases and fusions are defined only here. A fusion
-  defined only in the settings panel does not reach the executor yet and
-  fails `fusion-unknown` (#4800); define fusions in config or with
-  `defineFusion()` until then.
+  saved in the settings panel runs like one from config: for one name, the
+  app row wins over `inference.fusions`, which wins over `defineFusion()`
+  (the panel's fusion list shows the same winner). A stored fusion is
+  checked again before every run, seat prompt keys included; an invalid
+  one fails with `InferenceConfigError` and no seat runs.
 - **Tenant**: may bind a tier only to a target on the app row's
   **allow-list** (`alias:frontier`, `model:openai/*`); no list means
   tenants bind nothing. Narrowing the list disables existing tenant rows.

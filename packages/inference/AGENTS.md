@@ -157,8 +157,9 @@ its own `baseUrl` core's pair rule refuses it.
 ## Fusions (#4753)
 
 `{ fusion: '<key>' }` tier targets run consumer-defined fusions (`single` 1
-call, `pair` 3, `handoff` 2) from `inference.fusions` (wins) or
-`defineFusion()`. SMRT ships the interpreter, never a fusion. Seats are
+call, `pair` 3, `handoff` 2) from, highest first, the resolver's stored app
+rows (core's `lookupFusion()`, #4800), `inference.fusions`, or
+`defineFusion()`; every source is re-validated before it runs. SMRT ships the interpreter, never a fusion. Seats are
 smrt-prompts keys run through `createChainClient()`; a dead seat never
 aborts a `pair`, all seats dead throws `InferenceFusionError`; each run writes
 one `_smrt_ai_runs` row. Fusions are defined at app scope only; a tenant
