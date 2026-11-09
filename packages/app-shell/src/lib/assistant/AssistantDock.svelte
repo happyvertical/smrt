@@ -240,6 +240,13 @@ onMount(() => {
   }
 });
 onDestroy(() => controller?.abort());
+
+// While the dock is open the page reserves room for it, so it never covers the
+// lists behind it (see the body rules in the style block).
+$effect(() => {
+  document.body.classList.toggle('assistant-open', open);
+  return () => document.body.classList.remove('assistant-open');
+});
 </script>
 
 <div class="dock" class:open>
@@ -356,6 +363,11 @@ onDestroy(() => controller?.abort());
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.theme {
+  /* Room for the open dock: beside the page on wide screens, below it on phones. */
+  :global(body.assistant-open) {
+    box-sizing: border-box;
+    padding-inline-end: calc(26rem + 2 * var(--smrt-spacing-lg, 1rem));
+  }
   .dock {
     position: fixed;
     inset-inline-end: var(--smrt-spacing-lg, 1rem);
@@ -469,6 +481,10 @@ onDestroy(() => controller?.abort());
   }
   /* Phones: a bottom sheet above the tab bar. */
   @media (max-width: 40rem) {
+    :global(body.assistant-open) {
+      padding-inline-end: 0;
+      padding-block-end: 75dvh;
+    }
     .dock {
       inset-inline: 0;
       inset-block-end: 4rem;
