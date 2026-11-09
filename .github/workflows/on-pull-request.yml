@@ -226,9 +226,21 @@ jobs:
           # Pin for deterministic results; bump deliberately.
           GITLEAKS_VERSION: 8.30.1
         run: |
-          url="https://github.com/gitleaks/gitleaks/releases/download"
-          url="$url/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
-          curl -sSfL "$url" | tar -xz gitleaks
+          url="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}"
+          archive="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          # Keep retry output in files: a pipe cannot discard a partial download.
+          download() {
+            curl -sSfL --retry 5 --retry-all-errors --retry-delay 5 \
+              --connect-timeout 15 --max-time 120 --retry-max-time 300 \
+              "$url/$1" --output "$2"
+          }
+          download "$archive" "$archive"
+          download "gitleaks_${GITLEAKS_VERSION}_checksums.txt" checksums.txt
+          # Verify this archive before extracting or executing the scanner.
+          awk -v archive="$archive" '$2 == archive { print; found=1 } END { if (!found) exit 1 }' \
+            checksums.txt > archive.sha256
+          sha256sum --check archive.sha256
+          tar -xzf "$archive" gitleaks
           sudo mv gitleaks /usr/local/bin/gitleaks
           gitleaks version
 
