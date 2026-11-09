@@ -1573,6 +1573,119 @@ describe('vault key lifecycle: restart without the recovery secret (#4817)', () 
     await laptop.lifecycle.discardPreviousAccount();
   });
 
+  describe('rescue reader for the parked account (#4838)', () => {
+    function snapshotOf(store: MemoryStore) {
+      return JSON.stringify(
+        [...store.items.entries()]
+          .sort(([left], [right]) => (left < right ? -1 : 1))
+          .map(([name, value]) => [name, Buffer.from(value).toString('hex')]),
+      );
+    }
+
+    async function parked() {
+      const { laptop } = await family();
+      const old = await laptop.lifecycle.openSealingKey();
+      const oldKey = Buffer.from(old.key);
+      old.key.fill(0);
+      const published = await restart(laptop.lifecycle);
+      const ask = (patch: Record<string, unknown> = {}) =>
+        laptop.lifecycle.openPreviousReadingKey({
+          accountId: ACCOUNT,
+          generation: old.generation,
+          keyId: old.keyId,
+          ...patch,
+        });
+      return { laptop, old, oldKey, published, ask };
+    }
+
+    it('opens a parked data key bound to the old account, without writing', async () => {
+      const { laptop, old, oldKey, ask } = await parked();
+      const before = snapshotOf(laptop.store);
+      const reading = await ask();
+      expect(reading).toMatchObject({
+        purpose: 'read',
+        accountId: ACCOUNT,
+        generation: old.generation,
+        keyId: old.keyId,
+      });
+      expect(Buffer.from(reading.key).equals(oldKey)).toBe(true);
+      expect(snapshotOf(laptop.store)).toBe(before);
+      // The key does not survive JSON or a spread, nor reach an error.
+      const text = JSON.stringify(reading, (_, value) =>
+        typeof value === 'bigint' ? value.toString() : value,
+      );
+      expect(text).not.toContain(oldKey.toString('base64'));
+      expect(text).not.toContain('"key"');
+      expect(Object.keys({ ...reading })).not.toContain('key');
+      reading.key.fill(0);
+      // Sealing stays on the new account.
+      expect((await laptop.lifecycle.openSealingKey()).accountId).toBe(
+        NEW_ACCOUNT,
+      );
+    });
+
+    it('also opens it while the restart is interrupted', async () => {
+      const { laptop } = await family();
+      const old = await laptop.lifecycle.openSealingKey();
+      old.key.fill(0);
+      laptop.store.failOnSet = (name) => name === 'registry';
+      await expect(restart(laptop.lifecycle)).rejects.toThrow(
+        'simulated crash',
+      );
+      laptop.store.failOnSet = undefined;
+      const reading = await laptop.lifecycle.openPreviousReadingKey({
+        accountId: ACCOUNT,
+        generation: old.generation,
+        keyId: old.keyId,
+      });
+      expect(reading.accountId).toBe(ACCOUNT);
+      reading.key.fill(0);
+    });
+
+    it('refuses when nothing is parked', async () => {
+      const { laptop } = await family();
+      const current = await laptop.lifecycle.openSealingKey();
+      current.key.fill(0);
+      await expectCode(
+        laptop.lifecycle.openPreviousReadingKey({
+          accountId: ACCOUNT,
+          generation: current.generation,
+          keyId: current.keyId,
+        }),
+        'no_previous_account',
+      );
+    });
+
+    it('refuses after the parked account is discarded', async () => {
+      const { laptop, ask } = await parked();
+      await laptop.lifecycle.discardPreviousAccount();
+      await expectCode(ask(), 'no_previous_account');
+    });
+
+    it('refuses a different account id, including the current account', async () => {
+      const { ask, published } = await parked();
+      await expectCode(ask({ accountId: NEW_ACCOUNT }), 'account_mismatch');
+      await expectCode(
+        ask({ accountId: 'vault-account-c' }),
+        'account_mismatch',
+      );
+      await expectCode(ask({ accountId: undefined }), 'invalid_input');
+      // A key of the current account is not a parked key.
+      await expectCode(
+        ask({ generation: published.generation, keyId: published.keyId }),
+        'key_missing',
+      );
+      await expectCode(ask({ keyId: '0'.repeat(32) }), 'key_missing');
+    });
+
+    it('fails closed, with no key in the message, when the parked secret is gone', async () => {
+      const { laptop, oldKey, ask } = await parked();
+      laptop.store.items.delete('previous-device-secret');
+      const error = await expectCode(ask(), 'invalid_state');
+      expect(error.message).not.toContain(oldKey.toString('base64'));
+    });
+  });
+
   it('threat: secret material never reaches the parked or new records', async () => {
     const { laptop } = await family();
     await restart(laptop.lifecycle);

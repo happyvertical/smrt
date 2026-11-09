@@ -278,6 +278,7 @@ export {
 } from './snapshot-framing.js';
 export {
   createLifecycleSnapshotKeys,
+  createPreviousAccountSnapshotKeys,
   type LifecycleSnapshotKeysOptions,
   type SnapshotAccountTrust,
   type SnapshotKeyLifecycle,
@@ -288,3 +289,23 @@ export {
   runTokenOperation,
   TOKEN_USAGE,
 } from './tokens.js';
+export {
+  inspectVaultRestart,
+  restartVault,
+  rotateVaultKeys,
+  type VaultBackupAfterRotation,
+  type VaultHostConfig,
+  type VaultRestartInspection,
+  type VaultRestartOptions,
+  type VaultRestartReport,
+  type VaultRestartState,
+  type VaultRestartStep,
+  type VaultRestartStepName,
+  type VaultRestartStores,
+  type VaultRotationOptions,
+  type VaultRotationReport,
+  type VaultRotationState,
+  type VaultStepFailure,
+  type VaultStepOutcome,
+  type VaultStoreAccount,
+} from './vault-restart.js';

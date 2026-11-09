@@ -1474,10 +1474,50 @@ includes supersession. Until it has run, the relay's `/readyz` reports
 
 The relay never tells a client which account to follow: `account_superseded`
 is a stop signal, and the host's trusted configuration decides the account.
-The parked keys are a local undo and a hold for a manual rescue; this release
-has no API that opens a parked account's data (follow-up), and the old
+The parked keys are a local undo and a hold for a manual rescue, and the old
 account's snapshots stay on the relay, readable by explicit sequence, until
 the operator deletes them.
+
+**One call for steps 2 and 3.** `restartVault` from
+`@happyvertical/smrt-cli/app` (#4838) runs the working device's part: it reads
+the three stores a restart touches (the key lifecycle, `vault-sync.json`, the
+host's followed-account config), runs only the missing steps in this order,
+and returns a report. Order: `restartAccount`, the host's `publish`,
+`switchVaultAccount`, the host's `followAccount`, then the first backup. The
+host config flips after the sync position on purpose: until it does, a backup
+still targets the old account while the keys are on the new one, and it is
+refused (`account_mismatch`) before anything is sealed. The report's `state`
+is `complete` (all steps done, or found done: calling again is a no-op),
+`resumed` (an earlier call stopped part way and this one finished it),
+`mismatch` (a step failed and the stores disagree: call again; or, with
+`repairable: false`, a store follows an account that is neither the old nor
+the new one, nothing was changed and a person must look) or `backup_failed`.
+`inspectVaultRestart` reads the same state without changing anything, for a
+host that checks at startup. The new recovery secret is only needed while
+something is outstanding, and no report carries it or any key.
+
+**Back up immediately after every rotation** (#4834, strict rule kept):
+snapshots sealed under the older generation are refused on restore until an
+enrolled device publishes a new one, so the window between a key change and
+the first backup is the window in which losing the last device loses the
+history. The restart's last step is that backup, and a rotation goes through
+`rotateVaultKeys` (same module), which publishes and backs up at once. Both
+report `backupAfterRotation: 'done' | 'failed' | 'skipped'`; a failed backup
+is the distinct state `backup_failed`, never a quiet success, and the host
+must keep retrying until it clears. The backup counts only once
+`vault-sync.json` records the published sequence.
+
+**Rescuing the old account by hand.** While the account is parked,
+`openPreviousReadingKey({ accountId, generation, keyId })` opens one of its
+data keys as a reading key bound to the old account id (`purpose: 'read'`,
+`key` not enumerable so it does not survive JSON or a spread). It writes
+nothing and cannot seal. It refuses with `no_previous_account` when nothing is
+parked or after `discardPreviousAccount()`, `account_mismatch` for any other
+account id (including the current one) and `key_missing` for a key the parked
+account did not hold. In the CLI package `createPreviousAccountSnapshotKeys`
+wraps it as the opening-key side of the snapshot seam, for `decryptSnapshot`
+on a snapshot fetched by hand from the old account. There is no `smrt app`
+subcommand for it yet.
 
 What a restart cannot do: it does not recover the old account's data from the
 relay (the data lives on the working device and is backed up afresh), it does

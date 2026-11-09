@@ -29,6 +29,7 @@ import {
 } from '../snapshot-framing.js';
 import {
   createLifecycleSnapshotKeys,
+  createPreviousAccountSnapshotKeys,
   snapshotAccountTrustFromLifecycle,
 } from '../snapshot-keys.js';
 
@@ -367,5 +368,110 @@ describe('lifecycle snapshot key provider', () => {
         nextSequence: () => 1n,
       }).openingKey(reference),
     ).toBeUndefined();
+  });
+});
+
+describe('parked previous account rescue reader (#4838)', () => {
+  const NEW_ACCOUNT = 'vault-account-b';
+
+  /** A snapshot sealed under ACCOUNT, then the device restarts to another. */
+  async function restarted() {
+    const root = workspace();
+    const lifecycle = await initialized();
+    const { nextSequence } = sequencer(3n);
+    const plaintext = randomBytes(MIN_SNAPSHOT_CHUNK_BYTES + 5);
+    const source = join(root, 'old.hvsnap');
+    await sealWith(
+      createLifecycleSnapshotKeys({ lifecycle, nextSequence }),
+      source,
+      plaintext,
+    );
+    await lifecycle.restartAccount({
+      accountId: NEW_ACCOUNT,
+      deviceId: 'laptop-b',
+      recoverySecret: 'a replacement synthetic credential',
+      confirmRestart: true,
+    });
+    const rescue = (name: string, accountId = ACCOUNT) =>
+      decryptSnapshot({
+        source,
+        destination: join(root, name),
+        context: { accountId, deviceId: 'laptop', sequence: 3n },
+        keys: createPreviousAccountSnapshotKeys(lifecycle),
+        expectedKind: 'export-bundle',
+      });
+    return { root, lifecycle, plaintext, rescue };
+  }
+
+  it('decrypts the old account snapshot by hand while the account is parked', async () => {
+    const { root, plaintext, rescue, lifecycle } = await restarted();
+    await rescue('rescued.bin');
+    expect(readFileSync(join(root, 'rescued.bin')).equals(plaintext)).toBe(
+      true,
+    );
+    // The current account's keys cannot open it; only the rescue reader can.
+    await expect(
+      decryptSnapshot({
+        source: join(root, 'old.hvsnap'),
+        destination: join(root, 'current.bin'),
+        context: { accountId: ACCOUNT, deviceId: 'laptop', sequence: 3n },
+        keys: createLifecycleSnapshotKeys({
+          lifecycle,
+          nextSequence: () => 1n,
+        }),
+        expectedKind: 'export-bundle',
+      }),
+    ).rejects.toThrow();
+  });
+
+  it('is read-only: it offers no sealing key and leaves the lifecycle as it was', async () => {
+    const { rescue, lifecycle } = await restarted();
+    const keys = createPreviousAccountSnapshotKeys(lifecycle);
+    expect('sealingKey' in keys).toBe(false);
+    const before = await lifecycle.status();
+    await rescue('rescued.bin');
+    expect(await lifecycle.status()).toEqual(before);
+    expect(await lifecycle.previousAccount()).toEqual({
+      accountId: ACCOUNT,
+      interrupted: false,
+    });
+  });
+
+  it('refuses after the parked account is discarded', async () => {
+    const { rescue, lifecycle, root } = await restarted();
+    await lifecycle.discardPreviousAccount();
+    await expect(rescue('after.bin')).rejects.toThrow();
+    expect(() => lstatSync(join(root, 'after.bin'))).toThrow();
+  });
+
+  it('refuses when nothing is parked and for another account id', async () => {
+    const { rescue, lifecycle } = await restarted();
+    await expect(rescue('other.bin', NEW_ACCOUNT)).rejects.toThrow();
+    const keys = createPreviousAccountSnapshotKeys(device());
+    expect(
+      await keys.openingKey({
+        accountId: ACCOUNT,
+        generation: 1n,
+        keyId: '0'.repeat(32),
+      }),
+    ).toBeUndefined();
+    const status = await lifecycle.status();
+    expect(
+      await createPreviousAccountSnapshotKeys(lifecycle).openingKey({
+        accountId: NEW_ACCOUNT,
+        generation: 1n,
+        keyId: status?.currentKeyId as string,
+      }),
+    ).toBeUndefined();
+  });
+
+  it('threat: a refusal carries no key bytes', async () => {
+    const { rescue, lifecycle } = await restarted();
+    await lifecycle.discardPreviousAccount();
+    const error = await rescue('after.bin').then(
+      () => undefined,
+      (caught: unknown) => caught as Error,
+    );
+    expect(error?.message ?? '').not.toMatch(/[A-Za-z0-9+/]{40,}/);
   });
 });

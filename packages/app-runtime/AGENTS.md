@@ -276,6 +276,12 @@ Application infrastructure composition for the validated runtime profiles in
   only during a restore, `data-root-swap.json`: while that journal exists
   `acquireWriterLease` refuses every writer except `dataRootSwapRecovery`
   (#4805; README "Vault primary writer and restore-latest").
+- A vault restart is orchestrated by `restartVault` in
+  `@happyvertical/smrt-cli/app` (README "Restarting when the recovery secret is
+  lost"); it adds no state, only sequencing over `restartAccount`,
+  `switchVaultAccount` and `vault-sync.json`. The parked account is read only
+  through `openPreviousReadingKey`: it never seals, never writes, and refuses
+  once `discardPreviousAccount` has run (#4838).
 - Tests that hook `node:fs` interleavings must live in this package: from a
   consumer the package is an externalized dependency a mock cannot reach.
 

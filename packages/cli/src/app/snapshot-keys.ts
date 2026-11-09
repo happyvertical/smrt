@@ -105,14 +105,60 @@ export async function snapshotAccountTrustFromLifecycle(
   };
 }
 
-function isKeyMissing(error: unknown): boolean {
+function isRefusal(
+  error: unknown,
+  codes: ReadonlyArray<VaultKeyLifecycleError['code']>,
+): boolean {
   return (
     typeof error === 'object' &&
     error !== null &&
     (error as Partial<VaultKeyLifecycleError>).name ===
       'VaultKeyLifecycleError' &&
-    (error as Partial<VaultKeyLifecycleError>).code === 'key_missing'
+    codes.includes((error as VaultKeyLifecycleError).code)
   );
+}
+
+function isKeyMissing(error: unknown): boolean {
+  return isRefusal(error, ['key_missing']);
+}
+
+/**
+ * Opening keys for the previous vault account a restart parked (#4838), so
+ * its snapshots can be rescued by hand with `decryptSnapshot` while
+ * `discardPreviousAccount()` has not run. Read-only by construction: the
+ * result has no `sealingKey`, and the lifecycle's `openPreviousReadingKey`
+ * writes nothing. A key of any other account, a key the parked account did
+ * not hold, nothing parked, or a discarded account all answer `undefined`,
+ * so the framing refuses the snapshot.
+ */
+export function createPreviousAccountSnapshotKeys(
+  lifecycle: Pick<VaultKeyLifecycle, 'openPreviousReadingKey'>,
+): Pick<SnapshotKeyProvider, 'openingKey'> {
+  return {
+    async openingKey(
+      reference: SnapshotKeyReference,
+    ): Promise<Uint8Array | undefined> {
+      try {
+        const reading = await lifecycle.openPreviousReadingKey({
+          accountId: reference.accountId,
+          generation: reference.generation,
+          keyId: reference.keyId,
+        });
+        return reading.key;
+      } catch (error) {
+        if (
+          isRefusal(error, [
+            'key_missing',
+            'account_mismatch',
+            'no_previous_account',
+          ])
+        ) {
+          return undefined;
+        }
+        throw error;
+      }
+    },
+  };
 }
 
 /** Build the snapshot key provider backed by a vault key lifecycle. */

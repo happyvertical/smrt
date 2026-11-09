@@ -156,6 +156,26 @@ Agent docs (#4878): `install` runs `docs:agents`, `dev` refreshes a missing or s
   target; deployed import requires `SMRT_MAINTENANCE_MODE=true`.
   Local relative asset locators resolve against the approved asset root during
   export and stay relative after import. Legacy file URLs import as file URLs.
+- **Vault restart and rotation** (#4838, `vault-restart.ts`, API only; no
+  `smrt app` subcommand, the host supplies the collaborators):
+  `restartVault({ from, to, deviceId, recoverySecret, stateRoot, lifecycle,
+  hostConfig, lease, publish, backup })` sequences the key lifecycle
+  (`restartAccount`), the host's `publish`, `vault-sync.json`
+  (`switchVaultAccount`), the host config (`followAccount`) and the first
+  backup as idempotent steps, deciding each from the stores themselves, and
+  returns `{ state: complete | resumed | mismatch | backup_failed, stores,
+  steps, backupAfterRotation, repairable }`. A step failure is reported, not
+  thrown; call again to resume. A store on an account that is neither `from`
+  nor `to` is a non-repairable mismatch and nothing runs. `inspectVaultRestart`
+  is the read-only form. `rotateVaultKeys` is `lifecycle.rotate` followed
+  immediately by the host's `publish` and `backup`: restore refuses snapshots
+  from the older generation until a new one is published, so a failed backup
+  is the loud `backup_failed` state with `backupAfterRotation: 'failed'`.
+  Reports hold ids, step names, codes and redacted messages, never the secret
+  or a key. `createPreviousAccountSnapshotKeys(lifecycle)` (`snapshot-keys.ts`)
+  is the read-only rescue reader for the parked account: `openingKey` only,
+  for `decryptSnapshot`, refusing once `discardPreviousAccount()` ran.
+  Contract: app-runtime README "Restarting when the recovery secret is lost".
 - **Encrypted snapshots** (#4797): `backup --encrypted` streams the data root
   and `export --encrypted` the logical bundle into one HVSF v1 file (0600,
   published with `link()`, only ciphertext on disk). Keys come only from the
