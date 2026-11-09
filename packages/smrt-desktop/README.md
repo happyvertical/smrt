@@ -74,10 +74,11 @@ const sidecar = parseSidecarManifest(
   where the local runtime's owner setup lives. It follows exactly the
   `healthRoute` grammar and loopback rules. The manifest only declares it;
   claim tokens and their handling belong to the supervisor and runtime.
-- `dataDirectory` is a portable path relative to Tauri's stable `app_data_dir`
-  (the per-app OS data root). The supervisor supplies its resolved absolute
-  path to the local runtime as `SMRT_DATA_DIR`. The app-runtime retains
-  ownership of directory custody.
+- `dataDirectory` is a portable path relative to Tauri's stable
+  `app_local_data_dir` (the per-app, machine-local OS data root; see
+  [Data root and roaming](#data-root-and-roaming)). The supervisor supplies its
+  resolved absolute path to the local runtime as `SMRT_DATA_DIR`. The
+  app-runtime retains ownership of directory custody.
 - `env` (optional) is a JSON object of string names to string values added to
   the sidecar environment. Names match `[A-Za-z_][A-Za-z0-9_]*`, must be unique
   ignoring case, and must not be reserved. Values may not contain NUL or
@@ -91,8 +92,26 @@ Three locations are never conflated:
    `externalBin`, with the target suffix added by the launcher.
 2. App root: the packaged app/resource root is the sidecar's working
    directory, so relative `args` such as `app/build/index.js` resolve against it.
-3. Data root: `dataDirectory` resolves under `app_data_dir`, outside the app
-   root, so app updates never touch runtime data.
+3. Data root: `dataDirectory` resolves under `app_local_data_dir`, outside the
+   app root, so app updates never touch runtime data.
+
+#### Data root and roaming
+
+> **Assumed decision D7, pending owner confirmation.** The shell resolves the
+> sidecar data directory (`SMRT_DATA_DIR`) and its own log
+> (`<app_local_data_dir>/.desktop-shell/supervisor.log`) under Tauri's
+> `app_local_data_dir` on every platform, the same root the installed-product
+> contracts already use for private state. Alternative: keep Tauri's
+> `app_data_dir`, which on Windows is the roaming `%APPDATA%` profile.
+
+Reason: the runtime keeps SQLite files, a writer lease and process state in the
+data directory, and none of that may follow a user to another machine through a
+roaming profile. On macOS (`~/Library/Application Support/<identifier>`) and
+Linux (`${XDG_DATA_HOME:-~/.local/share}/<identifier>`) the local and roaming
+roots are the same directory, so nothing moves there. Only Windows changes:
+`%APPDATA%\<identifier>` becomes `%LOCALAPPDATA%\<identifier>`. No released
+product exists yet, so there is no migration; a build that ran before this
+change on Windows leaves its old directory behind in the roaming profile.
 
 ### Supervisor-supplied environment
 

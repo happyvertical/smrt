@@ -263,9 +263,12 @@ fn stop_supervisor(app: &AppHandle) {
 
 fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let handle = app.handle().clone();
-    let app_data_dir = app.path().app_data_dir()?;
+    // The machine-local root, never the roaming one: on Windows `app_data_dir`
+    // is `%APPDATA%` (Roaming), which would copy the SQLite files, pid and
+    // socket state to other machines. On macOS and Linux the two coincide.
+    let app_local_data_dir = app.path().app_local_data_dir()?;
     let resource_dir = app.path().resource_dir()?;
-    let logger = Arc::new(Logger::new(app_data_dir.join(LOG_DIR), LOG_FILE));
+    let logger = Arc::new(Logger::new(app_local_data_dir.join(LOG_DIR), LOG_FILE));
     logger.info("shell starting");
 
     app.manage(Shell::default());
@@ -286,7 +289,7 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
             return Ok(());
         }
     };
-    let data_dir = match resolve_data_dir(&app_data_dir, &manifest.data_directory) {
+    let data_dir = match resolve_data_dir(&app_local_data_dir, &manifest.data_directory) {
         Ok(path) => path,
         Err(error) => {
             logger.error(&format!("data directory: {error}"));
@@ -410,6 +413,25 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// D7 (assumed, pending owner confirmation): the data directory and the
+    /// log live under `app_local_data_dir`. Tauri's `app_data_dir` is Roaming
+    /// on Windows; SQLite and pid/socket state must not roam. This guards the
+    /// non-test source from calling the roaming resolver again.
+    #[test]
+    fn shell_state_uses_the_local_data_dir_never_the_roaming_one() {
+        let source = include_str!("app.rs");
+        let production = source
+            .split("\n#[cfg(test)]\nmod tests")
+            .next()
+            .expect("split always yields a first part");
+        let roaming_call = [".app_data", "_dir("].concat();
+        assert!(
+            !production.contains(&roaming_call),
+            "app.rs must resolve the data directory with app_local_data_dir"
+        );
+        assert!(production.contains(".app_local_data_dir()"));
+    }
 
     #[test]
     fn valid_pairs_are_kept_in_order() {

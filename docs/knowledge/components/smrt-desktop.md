@@ -5,10 +5,10 @@ description: "Versioned sidecar manifest, installed-product contract and runtime
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-09T05:43:11Z"
+  at: "2026-11-09T07:06:36Z"
 audience: "internal"
 evidence_level: "manifest-described"
-source_revision: "sha256:4eec33e3a25b5a2e203c41e35a1567a549cea2cc1aabb0abf2e7d4fb90a72458"
+source_revision: "sha256:fe84c4be8aad36f7d4a5332961c17d47ab3d80b21ab08a474803fb900875a903"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/smrt-desktop/package.json"

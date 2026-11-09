@@ -21,7 +21,8 @@ signing secret in a URL query is deliberately not carried over.
    - a cleared environment rebuilt from the parent environment, then the
      manifest `env`, then the supervisor values, which always win:
      `HOST=127.0.0.1`, `PORT=<port>`, `ORIGIN=http://127.0.0.1:<port>`,
-     `SMRT_DATA_DIR=<app_data_dir>/<dataDirectory>`.
+     `SMRT_DATA_DIR=<app_local_data_dir>/<dataDirectory>` (machine-local, never the
+     roaming `app_data_dir`; assumed decision D7, see the parent README).
      Inherited names that collide case-insensitively with a reserved or
      manifest name are dropped (`Port`, `host`).
 3. Polls `healthRoute` on exactly that origin (`src/health.rs`). Only after a
@@ -49,7 +50,7 @@ directory writer lease or operation lock; gave up after 5 restarts`.
 | Close hides, `quitting` flag lets quit through | `CloseRequested` is prevented and hides the window unless quitting |
 | `will-quit` stops the runtime before exiting | `RunEvent::ExitRequested{None}` (Cmd+Q) and the tray Quit run the same shutdown, then `exit(0)`; `RunEvent::Exit` is a safety net |
 | Child stop: SIGTERM then SIGKILL after 5 s | `shutdown.rs`: graceful 10 s, forced kill, wait for exit; configurable |
-| Append-only log, failures never break the tray | `log.rs`, under `<app_data_dir>/.desktop-shell/supervisor.log`, 512 KiB cap plus one `.1` file, never panics |
+| Append-only log, failures never break the tray | `log.rs`, under `<app_local_data_dir>/.desktop-shell/supervisor.log`, 512 KiB cap plus one `.1` file, never panics |
 | `uncaughtException` logged | Supervisor thread panics kill the sidecar and surface `Failed`; a main-thread panic hook kills the sidecar |
 | Health wait accepted any status below 500 and followed redirects | Only 2xx is healthy; any 3xx fails immediately and is never followed |
 | Fixed ports | Ephemeral loopback port per launch, preferring the previous port on restart |
@@ -191,7 +192,7 @@ Manual smoke run: in a debug build the resource directory is the executable dire
 `sidecar-manifest.json`, the sidecar script and a symlink named like the
 manifest's `executable` (pointing at a `node` binary) in
 `target/debug/` and run `target/debug/smrt-desktop-shell`. The log is at
-`<app_data_dir>/.desktop-shell/supervisor.log`.
+`<app_local_data_dir>/.desktop-shell/supervisor.log`.
 
 ## Deferred to later slices (clean seams only)
 
