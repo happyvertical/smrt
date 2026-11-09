@@ -131,6 +131,9 @@ export function buildPrunePolicy(
       case 'ai-usage':
         policy.aiUsage = false;
         break;
+      case 'ai-transcripts':
+        policy.aiTranscripts = false;
+        break;
       case 'contexts':
         policy.contexts = false;
         break;
@@ -241,7 +244,7 @@ export const dbPruneCommand: CLICommand = {
     skip: {
       type: 'string',
       description:
-        'Comma-separated task names to skip (changes, ai-usage, contexts, dispatch, …)',
+        'Comma-separated task names to skip (changes, ai-usage, ai-transcripts, contexts, dispatch, …)',
     },
   },
   handler: async (_args: string[], options: DbPruneOptions) => {
