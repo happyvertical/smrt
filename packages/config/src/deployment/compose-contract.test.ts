@@ -191,7 +191,8 @@ describe('validateComposeDeployment: a valid declaration', () => {
 describe('validateComposeDeployment: the local-first shape', () => {
   // One process, SQLite on a declared data volume, no worker, no platform
   // service: the other shape version 1 has to express besides the
-  // web + worker + postgres stack above.
+  // web + worker + postgres stack above. This proves the contract can
+  // express it; nothing here claims an application can run this way today.
   const localFirst = (): Doc => ({
     name: 'notes',
     'x-happyvertical': {
@@ -202,9 +203,9 @@ describe('validateComposeDeployment: the local-first shape', () => {
     services: {
       web: {
         build: '.',
-        command: ['pnpm', 'exec', 'smrt', 'app', 'start'],
+        command: ['node', 'server.js'],
         ports: ['3000:3000'],
-        volumes: ['data:/home/node/.local/share/notes'],
+        volumes: ['data:/data'],
         'x-happyvertical': {
           role: 'web',
           health: { path: '/api/_runtime/health' },
@@ -229,7 +230,7 @@ describe('validateComposeDeployment: the local-first shape', () => {
           volumes: [
             {
               name: 'data',
-              target: '/home/node/.local/share/notes',
+              target: '/data',
               readOnly: false,
             },
           ],
@@ -327,15 +328,86 @@ describe('validateComposeDeployment: hostile and malformed input', () => {
     expect(result.errors[0].message.length).toBeLessThan(200);
   });
 
-  it('refuses a service whose YAML merge key was not resolved', () => {
-    // Parsed without merge keys, `<<` hides whatever the anchor carries.
+  it('refuses a file with a YAML merge key left anywhere in it', () => {
+    // Parsed without merge keys, `<<` hides whatever its anchor carries: a
+    // privileged flag, a port's protocol, a volume's driver, whole services.
+    const cases: Array<[(doc: Doc) => void, string]> = [
+      [
+        (doc) => (doc.services.worker['<<'] = { privileged: true }),
+        'services.worker.<<',
+      ],
+      [
+        (doc) =>
+          (doc.services.web.ports = [
+            { '<<': { protocol: 'udp', mode: 'host' }, target: 3000 },
+          ]),
+        'services.web.ports[0].<<',
+      ],
+      [
+        (doc) => {
+          doc.volumes.uploads = { '<<': { external: true } };
+          doc.services.worker.volumes = ['uploads:/data'];
+        },
+        'volumes.uploads.<<',
+      ],
+      [
+        (doc) => (doc.services['<<'] = { extra: doc.services.worker }),
+        'services.<<',
+      ],
+      [
+        (doc) => (doc['x-happyvertical']['<<'] = { domain: 'x.example.com' }),
+        'x-happyvertical.<<',
+      ],
+      [
+        (doc) => (doc.services.database['<<'] = { image: 'postgres' }),
+        'services.database.<<',
+      ],
+      [(doc) => (doc['<<'] = { services: {} }), '<<'],
+    ];
+    for (const [mutate, path] of cases) {
+      const result = check(mutate);
+      expect(result.errors.map((issue) => issue.code)).toEqual([
+        'merge-key-unresolved',
+      ]);
+      expect(result.errors[0].path).toBe(path);
+      expect(result.errors[0].fix).toContain('merge keys enabled');
+      expect(result.declaration).toBeUndefined();
+    }
+  });
+
+  it('walks a document with cycles without looping', () => {
     const result = check((doc) => {
-      doc.services.worker['<<'] = { privileged: true };
+      doc.services.web.labels = doc.services;
+      doc.loop = doc;
     });
-    expect(result.errors.map((issue) => issue.code)).toEqual([
-      'merge-key-unresolved',
-    ]);
-    expect(result.errors[0].fix).toContain('merge keys enabled');
+    expect(result.errors).toEqual([]);
+  });
+
+  it('carries the name and a declared image only as literal text', () => {
+    const literal = check((doc) => {
+      doc.services.web.image = 'ghcr.io/acme/web:dev';
+    }).declaration;
+    expect(literal?.name).toBe('acme');
+    expect(literal?.workloads[0].image).toBe('ghcr.io/acme/web:dev');
+    expect(literal?.migrate.image).toBe('ghcr.io/acme/web:dev');
+
+    const interpolated = check((doc) => {
+      doc.name = '${APP:-acme}';
+      doc.services.web.image = 'ghcr.io/${ORG}/web:dev';
+    });
+    expect(interpolated.errors).toEqual([]);
+    expect(interpolated.declaration).not.toHaveProperty('name');
+    expect(interpolated.declaration?.workloads[0]).not.toHaveProperty('image');
+    expect(interpolated.declaration?.migrate).not.toHaveProperty('image');
+    // At deploy an interpolated image is not a digest and is refused.
+    expect(
+      codes(
+        (doc) => {
+          doc.services.web.image = 'ghcr.io/${ORG}/web:dev';
+        },
+        { stage: 'deploy', images: { worker: digest('worker') } },
+      ),
+    ).toEqual(['image-not-digest']);
   });
 });
 

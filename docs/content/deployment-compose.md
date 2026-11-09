@@ -135,8 +135,9 @@ the `smrt-app` chart renders, and the chart's `starter` fixture is generated
 from that file.
 
 **Local-first, one process.** An application that keeps its data in SQLite and
-runs as a single process, such as one started from `smrt-start`, declares one
-`role: web` service with a declared data volume, no worker and no binding:
+runs as a single process, such as one started from `smrt-start`, would declare
+one `role: web` service with a declared data volume, no worker and no binding.
+Version 1 can express this shape, and the validator accepts it:
 
 ```yaml
 x-happyvertical:
@@ -148,12 +149,11 @@ x-happyvertical:
 services:
   web:
     build: .
-    entrypoint: ["docker-entrypoint.sh"]
-    command: ["pnpm", "exec", "smrt", "app", "start"]
+    command: ["<start the server in the foreground on port 3000>"]
     ports:
       - "3000:3000"
     volumes:
-      - data:/home/node/.local/share/notes
+      - data:/data
     x-happyvertical:
       role: web
       health:
@@ -166,11 +166,17 @@ volumes:
 The data volume is what makes this shape storable: the declaration carries the
 volume's name and mount path, and a platform that hosts it gives the one
 replica a persistent volume there. SQLite is storage the application owns, so
-it is a declared volume and not a `binding`. The `smrt-app` chart does not
-render this shape: it binds an existing PostgreSQL database and creates no
-persistent volumes, and `smrt deploy:chart-values` says so. The commands and
-the mount path above are illustrative; `smrt-start` does not ship a Compose
-file today.
+it is a declared volume and not a `binding`.
+
+This shape is specified, not yet runnable. The `command` above is a
+placeholder on purpose: nothing in this repository starts a SQLite application
+as a foreground server reachable from outside its container. `smrt app start`
+belongs to the `local` runtime profile, which binds loopback only and returns
+after starting the server in the background, and the `self-hosted` profile
+expects PostgreSQL. `smrt-start` ships no Dockerfile or Compose file. The
+`smrt-app` chart does not render this shape either: it binds an existing
+PostgreSQL database and creates no persistent volumes, and
+`smrt deploy:chart-values` says so.
 
 ## The supported platform subset
 
@@ -186,8 +192,8 @@ Compose supports.
 | No host networking. | `network_mode: host`, and a published port with a `mode` other than `ingress`, bind to the network of the machine the container runs on. Services reach each other by service name. |
 | One ingress port. | Exactly one service has `role: web`, and it publishes exactly one fixed TCP container port. Workers publish none. |
 | Every `binding` keeps a local image. | The file must stay a complete working stack where no platform is providing that service. |
-| One file, read as written. | Top-level `include` and `extends` on a role service are refused, and so is an unresolved YAML merge key (`<<`): each service must be complete in this file. |
-| No variables in what is carried. | Compose replaces `$VAR` and `${VAR}` in every string before it runs the stack, including inside `x-happyvertical`. A reader of the file as written would run something else, so `$` is refused in `command`, `entrypoint`, `migrate.command`, `health` and volume mount paths. The published side of a port (`"${WEB_PORT:-3000}:3000"`) and anything outside the declaration may use variables. |
+| One file, read as written. | Top-level `include` and `extends` on a role service are refused: each service must be complete in this file. A YAML merge key (`<<`) left anywhere in the parsed document is refused outright, because it means the file was parsed without merge keys and part of it is missing. |
+| No variables in what is carried. | Compose replaces `$VAR` and `${VAR}` in every string before it runs the stack, including inside `x-happyvertical`. A reader of the file as written would run something else, so `$` is refused in `command`, `entrypoint`, `migrate.command`, `health` and volume mount paths. The file's `name:` and an `image:` checked at the `declare` stage are carried only when they are literal text. The published side of a port (`"${WEB_PORT:-3000}:3000"`) and anything outside the declaration may use variables. |
 | Commands that mean one thing. | `command` and `entrypoint` on a role service are a list, or a plain string of space-separated words. Quoting and shell operators are split differently by Compose and by a container runtime. |
 
 `entrypoint` and `command` keep their Compose meaning in the declaration. With
@@ -270,8 +276,9 @@ each workload with its role, image, entrypoint, command, port, health check
 and volumes, and each binding. A consumer should work from that object and
 not re-read the Compose file, because nothing outside it has been checked.
 
-The JSON Schema checks the shape of the annotations and is enough for a tool
-that only needs to know a file is a well-formed declaration. The rules in the
+The JSON Schema checks the shape of the annotations, including that no
+command item or health path contains `$`, and is enough for a tool that only
+needs to know a file is a well-formed declaration. The rules in the
 subset table span several services and are checked by the validator only.
 
 ## The chart is the self-host rendering
@@ -342,7 +349,10 @@ top-level `name:`, and `ingress.host` to the declared `domain`. The inputs are
 checked before anything is rendered:
 
 - `bindings.postgres.runtime` and `.migration` must name different Secrets,
-  and no `env` entry may read the migration Secret;
+  and neither `bindings.bucket` nor any `env` entry may read the migration
+  Secret;
+- `env` names must be unique and may not be `DATABASE_URL`, which the
+  `postgres` binding sets;
 - `env` entries may carry a `services` list to limit a variable to some
   workloads, and `workloads` is keyed by service name. Both may only name web
   and worker services the declaration has, so a misspelled name is an error

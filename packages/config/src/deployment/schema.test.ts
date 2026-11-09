@@ -113,6 +113,26 @@ describe('published x-happyvertical v1 JSON Schema', () => {
       (doc) => (doc['x-happyvertical'].migrate.command = 'pnpm migrate'),
     ],
     [
+      'variable in the migrate command',
+      (doc) => (doc['x-happyvertical'].migrate.command = ['pnpm', '$TASK']),
+    ],
+    [
+      'variable in the health path',
+      (doc) => (doc.services.web['x-happyvertical'].health.path = '/${P}'),
+    ],
+    [
+      'variable in a health command',
+      (doc) =>
+        (doc.services.worker['x-happyvertical'].health.command = [
+          'check',
+          '$MODE',
+        ]),
+    ],
+    [
+      'empty argument in the migrate command',
+      (doc) => (doc['x-happyvertical'].migrate.command = ['pnpm', '']),
+    ],
+    [
       'empty migrate command',
       (doc) => (doc['x-happyvertical'].migrate.command = []),
     ],

@@ -47,8 +47,11 @@ file an application's deployment declaration. Guide:
   non-experts and always carry a `fix`. The document is untrusted: the
   validator must never throw (format values with `describe()`, never
   `String()`/`JSON.stringify()`), fails closed on spellings it cannot tell
-  apart, and refuses `$` in every string the declaration carries, because
-  Compose interpolates the whole file.
+  apart, refuses a `<<` key anywhere (the caller parsed without merge keys),
+  and refuses `$` in what a platform would run or mount (`command`,
+  `entrypoint`, `migrate.command`, `health`, volume targets), because Compose
+  interpolates the whole file; `name` and a declare-stage `image` are carried
+  only when literal. The schema carries the same `$` patterns.
 - `entrypoint`/`command` keep Compose meaning in the declaration: absent
   `entrypoint` = the image's runs; `[]` = discarded.
 - `src/deployment/chart-values.ts`: `renderSmrtAppChartValues()` renders a

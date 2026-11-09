@@ -432,6 +432,18 @@ describe('renderSmrtAppChartValues', () => {
         bindings: { ...inputs().bindings, bucket: { secretName: 'b' } },
       }),
     ).toEqual([expect.stringContaining('`bindings.bucket` must be')]);
+    expect(
+      refused({
+        bindings: {
+          ...inputs().bindings,
+          bucket: { secretName: 'app-migration-v1', secretKey: 's3' },
+        },
+      }),
+    ).toEqual([
+      expect.stringContaining(
+        '`bindings.bucket.secretName` must be a runtime Secret',
+      ),
+    ]);
     for (const env of ['X', [{ name: 'X' }], [null]]) {
       expect(refused({ env })).toEqual([
         expect.stringContaining(
@@ -461,6 +473,38 @@ describe('renderSmrtAppChartValues', () => {
     expect(refused({ workloads: { database: {} } })).toEqual([
       expect.stringContaining('`workloads.database` names a service'),
     ]);
+  });
+
+  it('refuses environment names that would replace another variable', () => {
+    const entry = { secretName: 'app-config-v1', secretKey: 'k' };
+    expect(refused({ env: [{ name: 'DATABASE_URL', ...entry }] })).toEqual([
+      expect.stringContaining(
+        '`env[0].name` must be something other than `DATABASE_URL`',
+      ),
+    ]);
+    expect(
+      refused({
+        env: [
+          { name: 'QUEUE', ...entry },
+          { name: 'QUEUE', ...entry, services: ['worker'] },
+        ],
+      }),
+    ).toEqual([expect.stringContaining('`env[1].name` must be unique')]);
+  });
+
+  it('refuses service names the chart reserves', () => {
+    for (const name of ['maintenance', 'inventory']) {
+      expect(
+        refused({}, (doc) => {
+          doc.services[name] = doc.services.worker;
+          delete doc.services.worker;
+        }),
+      ).toEqual([
+        expect.stringContaining(
+          `Service \`${name}\` uses a name the chart keeps`,
+        ),
+      ]);
+    }
   });
 
   it('refuses overrides the chart would reject', () => {

@@ -129,7 +129,7 @@ export interface ComposeDeploymentWorkload {
   /**
    * At the `deploy` stage, always an image digest reference. At the `declare`
    * stage, the `image:` written in the file, absent for a service that is
-   * only built locally.
+   * only built locally or whose image is interpolated (contains `$`).
    */
   image?: string;
   /**
@@ -165,7 +165,7 @@ export interface ComposeDeploymentDeclaration {
   version: typeof X_HAPPYVERTICAL_VERSION;
   preset: XHappyVerticalPreset;
   stage: ComposeDeploymentStage;
-  /** Top-level Compose `name:`, when the file sets one. */
+  /** Top-level Compose `name:`, when the file sets a literal one (no `$`). */
   name?: string;
   domain?: string;
   migrate: ComposeDeploymentMigration;
@@ -255,6 +255,39 @@ function refuseVariables(
     service,
   );
   return true;
+}
+
+/**
+ * Path of the first `<<` key anywhere in the document, or undefined. Visits
+ * each object once, so cycles built from YAML aliases cannot loop.
+ */
+function findMergeKey(root: unknown): string | undefined {
+  const seen = new Set<object>();
+  const pending: Array<[unknown, string]> = [[root, '']];
+  while (pending.length > 0) {
+    const [value, path] = pending.pop() as [unknown, string];
+    if (typeof value !== 'object' || value === null || seen.has(value)) {
+      continue;
+    }
+    seen.add(value);
+    if (Array.isArray(value)) {
+      value.forEach((item, index) => {
+        pending.push([item, `${path}[${index}]`]);
+      });
+      continue;
+    }
+    for (const [key, item] of Object.entries(value)) {
+      const here = path ? `${path}.${key}` : key;
+      if (key === '<<') return here;
+      pending.push([item, here]);
+    }
+  }
+  return undefined;
+}
+
+/** Compose interpolates this value, so the text in the file is not what runs. */
+function isLiteral(value: string): boolean {
+  return !value.includes('$');
 }
 
 function quoteList(values: readonly string[]): string {
@@ -889,7 +922,11 @@ function resolveImage(
       name,
     );
   }
-  if (stage === 'declare') return supplied ?? declared;
+  if (stage === 'declare') {
+    // Informational at this stage: carry the image only as literal text.
+    const image = supplied ?? declared;
+    return image !== undefined && isLiteral(image) ? image : undefined;
+  }
 
   const effective = supplied ?? declared;
   if (effective !== undefined && DIGEST_IMAGE.test(effective)) {
@@ -923,16 +960,6 @@ function checkRoleService(
       `services.${name}.extends`,
       `Service \`${name}\` takes part of its definition from another service with \`extends\`, so what it runs is not written here.`,
       'Write the service out in full. The platform reads each service as written, in this one file.',
-      name,
-    );
-  }
-
-  if (Object.hasOwn(definition, '<<')) {
-    issues.error(
-      'merge-key-unresolved',
-      `services.${name}`,
-      `Service \`${name}\` still contains a YAML merge key (\`<<\`), so the part of its definition that comes from the anchor was not read.`,
-      'Parse the file with YAML merge keys enabled, as Compose does (`smrt deploy:check` does this for you).',
       name,
     );
   }
@@ -1055,6 +1082,20 @@ export function validateComposeDeployment(
       '',
       'This is not a Compose file: the top level must be a mapping with `services`.',
       'Check that the file is valid YAML and starts with top-level keys such as `services:`.',
+    );
+    return finish();
+  }
+
+  // A `<<` key anywhere means the caller parsed without YAML merge keys, so
+  // some mapping is missing whatever its anchor carries: a port's protocol, a
+  // volume's driver, a whole service. Nothing below can be trusted, so stop.
+  const mergeKey = findMergeKey(document);
+  if (mergeKey !== undefined) {
+    issues.error(
+      'merge-key-unresolved',
+      mergeKey,
+      'The file still contains a YAML merge key (`<<`), so the part of it that comes from an anchor was not read.',
+      'Parse the file with YAML merge keys enabled, as Compose does (`smrt deploy:check` does this for you).',
     );
     return finish();
   }
@@ -1310,7 +1351,9 @@ export function validateComposeDeployment(
     version: X_HAPPYVERTICAL_VERSION,
     preset: application.preset,
     stage,
-    ...(typeof document.name === 'string' && document.name.length > 0
+    ...(typeof document.name === 'string' &&
+    document.name.length > 0 &&
+    isLiteral(document.name)
       ? { name: document.name }
       : {}),
     ...(application.domain !== undefined ? { domain: application.domain } : {}),

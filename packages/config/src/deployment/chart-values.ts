@@ -24,6 +24,8 @@ export const SMRT_RELEASE_GUARD = 'smrt-release-v1';
 const CHART_NAME = /^[a-z][a-z0-9-]{0,30}$/;
 const DIGEST_IMAGE = /^[a-zA-Z0-9./:_-]+@sha256:[a-f0-9]{64}$/;
 const WORKER_ROLES = ['background', 'task', 'schedule'] as const;
+// charts/smrt-app/templates/validate.yaml: "reserved workload name".
+const RESERVED_WORKLOAD_NAMES = ['maintenance', 'inventory'];
 const PROBE_TIMING_FIELDS = [
   'initialDelaySeconds',
   'periodSeconds',
@@ -291,17 +293,30 @@ function inputProblems(
         );
       }
     }
-    need(
-      'bindings.bucket',
-      inputs.bindings.bucket === undefined ||
-        isSecretRef(inputs.bindings.bucket),
-      'an object with `secretName` and `secretKey`',
-    );
+    const bucket = inputs.bindings.bucket;
+    if (bucket === undefined || isSecretRef(bucket)) {
+      need(
+        'bindings.bucket.secretName',
+        bucket === undefined || bucket.secretName !== migrationSecret,
+        'a runtime Secret, not the migration Secret',
+      );
+    } else {
+      need(
+        'bindings.bucket',
+        false,
+        'an object with `secretName` and `secretKey`',
+      );
+    }
   } else {
     need('bindings', false, 'an object');
   }
 
   if (Array.isArray(inputs.env)) {
+    const names = new Set<string>(
+      isObject(inputs.bindings) && inputs.bindings.postgres !== undefined
+        ? ['DATABASE_URL']
+        : [],
+    );
     inputs.env.forEach((entry, index) => {
       const field = `env[${index}]`;
       if (!isObject(entry) || !isText(entry.name) || !isSecretRef(entry)) {
@@ -312,6 +327,17 @@ function inputProblems(
         );
         return;
       }
+      // Kubernetes keeps the last of two variables with one name, which
+      // would silently replace the bound database credential or an earlier
+      // entry.
+      need(
+        `${field}.name`,
+        !names.has(entry.name),
+        entry.name === 'DATABASE_URL'
+          ? 'something other than `DATABASE_URL`, which the `postgres` binding sets'
+          : `unique: another entry already sets \`${entry.name}\``,
+      );
+      names.add(entry.name);
       need(
         `${field}.secretName`,
         entry.secretName !== migrationSecret,
@@ -482,6 +508,11 @@ export function renderSmrtAppChartValues(
 
   const images: Record<string, string> = {};
   for (const workload of declaration.workloads) {
+    if (RESERVED_WORKLOAD_NAMES.includes(workload.name)) {
+      problems.push(
+        `Service \`${workload.name}\` uses a name the chart keeps for its own resources (${RESERVED_WORKLOAD_NAMES.join(', ')}). Rename the service.`,
+      );
+    }
     if (workload.image !== undefined && DIGEST_IMAGE.test(workload.image)) {
       images[workload.name] = workload.image;
     } else {
