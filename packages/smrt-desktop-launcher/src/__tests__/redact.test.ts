@@ -24,6 +24,27 @@ describe('SecretRedactor', () => {
     }
   });
 
+  it('catches a copy in JSON or a URL as written, and only that exact string', async () => {
+    const json = JSON.stringify({ authorization: `Bearer ${secret}` });
+    expect(await redact(secret, [json])).toBe(
+      '{"authorization":"Bearer [REDACTED]"}',
+    );
+    expect(
+      await redact(secret, [`GET /x?t=${encodeURIComponent(secret)}`]),
+    ).toBe('GET /x?t=[REDACTED]');
+    // Other encodings are documented as not caught (README, Credential
+    // redaction): the filter matches one exact byte string.
+    const base64 = Buffer.from(secret).toString('base64');
+    const hex = Buffer.from(secret).toString('hex');
+    const escaped = [...secret]
+      .map((char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, '0')}`)
+      .join('');
+    const spaced = secret.replace('_', ' ');
+    for (const copy of [base64, hex, escaped, spaced, secret.toUpperCase()]) {
+      expect(await redact(secret, [`seen ${copy}`])).toBe(`seen ${copy}`);
+    }
+  });
+
   it('redacts one byte at a time', async () => {
     const text = `x${secret}y`;
     expect(await redact(secret, [...text])).toBe('x[REDACTED]y');
