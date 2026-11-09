@@ -226,6 +226,7 @@ export {
   type RestoreLatestReport,
   restoreLatest,
   runRestoreLatestOperation,
+  type VaultAccountTrust,
   type VaultRestoreProvider,
   type VaultSnapshotReference,
   type VaultSnapshotSource,
@@ -277,7 +278,9 @@ export {
 export {
   createLifecycleSnapshotKeys,
   type LifecycleSnapshotKeysOptions,
+  type SnapshotAccountTrust,
   type SnapshotKeyLifecycle,
+  snapshotAccountTrustFromLifecycle,
 } from './snapshot-keys.js';
 export {
   parseTokenLifetime,

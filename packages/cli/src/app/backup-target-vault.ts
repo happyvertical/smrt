@@ -46,7 +46,10 @@ import {
   rechunk,
   verifiedCiphertext,
 } from './backup-targets.js';
-import type { VaultRestoreProvider } from './restore-latest.js';
+import type {
+  VaultAccountTrust,
+  VaultRestoreProvider,
+} from './restore-latest.js';
 import {
   parseSnapshotHeader,
   SNAPSHOT_HEADER_BYTES,
@@ -138,6 +141,12 @@ export interface VaultRelayBackupTargetOptions {
    */
   stateRoot: string;
   entitlements?: VaultEntitlementSource;
+  /**
+   * Revoked devices and the key-generation floor of the adopted account head,
+   * for `restoreProvider()` (`snapshotAccountTrustFromLifecycle`). Without it
+   * restore-latest fails closed.
+   */
+  accountTrust?: () => Promise<VaultAccountTrust>;
   fetch?: typeof fetch;
   /** Monotonic clock for lease deadlines. Default `performance.now()`. */
   leaseMonotonicNow?: () => number;
@@ -300,6 +309,7 @@ export class VaultRelayBackupTarget implements BackupTarget {
   readonly #stateRoot: string;
   readonly #leaseMonotonicNow?: () => number;
   readonly #leaseTimers?: VaultLeaseTimers;
+  readonly #accountTrust?: () => Promise<VaultAccountTrust>;
   #keeper: VaultLeaseKeeper | undefined;
 
   constructor(options: VaultRelayBackupTargetOptions) {
@@ -307,6 +317,7 @@ export class VaultRelayBackupTarget implements BackupTarget {
     this.#stateRoot = options.stateRoot;
     this.#leaseMonotonicNow = options.leaseMonotonicNow;
     this.#leaseTimers = options.leaseTimers;
+    this.#accountTrust = options.accountTrust;
     this.#origin = normalizeRelayUrl(options.url);
     this.#signer = options.signer;
     this.#entitlements = options.entitlements;
@@ -996,6 +1007,19 @@ export class VaultRelayBackupTarget implements BackupTarget {
     return {
       accountId: signer.accountId,
       lease: new VaultLeaseClient(this.#leaseTransport(() => undefined)),
+      accountTrust: async () => {
+        if (!this.#accountTrust) {
+          throw new BackupTargetError(
+            'unavailable',
+            'No account trust source is configured for restore.',
+          );
+        }
+        return this.#accountTrust();
+      },
+      ...(this.#leaseTimers ? { leaseTimers: this.#leaseTimers } : {}),
+      ...(this.#leaseMonotonicNow
+        ? { leaseMonotonicNow: this.#leaseMonotonicNow }
+        : {}),
       snapshots: {
         latest: async () => {
           const response = await this.#exchange(
@@ -1012,10 +1036,13 @@ export class VaultRelayBackupTarget implements BackupTarget {
           }
           return { sequence: parsed.sequence, deviceId };
         },
-        download: async (sequence, destination) => {
+        download: async (sequence, destination, downloadOptions) => {
           const file = await open(destination, 'wx', 0o600);
           try {
             for await (const piece of this.get(String(sequence))) {
+              // The restore lost its lease: stop pulling a snapshot nobody
+              // will install.
+              downloadOptions?.signal?.throwIfAborted();
               await file.write(piece);
             }
             await file.sync();

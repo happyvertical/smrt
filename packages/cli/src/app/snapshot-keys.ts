@@ -44,6 +44,52 @@ export interface LifecycleSnapshotKeysOptions {
    * opened; must be a positive bigint that the account has not used.
    */
   nextSequence(): bigint | Promise<bigint>;
+  /**
+   * Make `nextSequence()` return a value above `above` from now on (raise
+   * the host's counter, never lower it). Supplying it lets restore-latest
+   * move this device's sealing sequence past the restored head (#4805).
+   */
+  advanceSequence?(above: bigint): void | Promise<void>;
+}
+
+/** What restore-latest enforces about a snapshot, from the adopted head. */
+export interface SnapshotAccountTrust {
+  /** Lowest key generation a restored snapshot may be sealed under. */
+  minimumGeneration: bigint;
+  /** Devices the adopted head has revoked; their snapshots are refused. */
+  revokedDeviceIds: string[];
+}
+
+/**
+ * Derive restore trust from the lifecycle's adopted signed head.
+ *
+ * A revoked device keeps the keys of every generation below its
+ * `effectiveGeneration`, so a hostile relay plus that device can forge
+ * snapshots under any of them. The floor is therefore the highest effective
+ * generation among revoked devices; snapshots sealed before the rotation that
+ * revoked a device must be re-published by a remaining device before they are
+ * restorable. Throws when the device has no account state.
+ */
+export async function snapshotAccountTrustFromLifecycle(
+  lifecycle: Pick<VaultKeyLifecycle, 'status'>,
+): Promise<SnapshotAccountTrust> {
+  const status = await lifecycle.status();
+  if (!status) {
+    throw new Error('This device has no vault account state to restore from.');
+  }
+  let minimumGeneration = 1n;
+  for (const revoked of status.revokedDevices) {
+    if (
+      revoked.effectiveGeneration !== null &&
+      revoked.effectiveGeneration > minimumGeneration
+    ) {
+      minimumGeneration = revoked.effectiveGeneration;
+    }
+  }
+  return {
+    minimumGeneration,
+    revokedDeviceIds: status.revokedDevices.map((revoked) => revoked.deviceId),
+  };
 }
 
 function isKeyMissing(error: unknown): boolean {
@@ -60,8 +106,15 @@ function isKeyMissing(error: unknown): boolean {
 export function createLifecycleSnapshotKeys(
   options: LifecycleSnapshotKeysOptions,
 ): SnapshotKeyProvider {
-  const { lifecycle, nextSequence } = options;
+  const { lifecycle, nextSequence, advanceSequence } = options;
   return {
+    ...(advanceSequence
+      ? {
+          async advanceSealingSequence(above: bigint): Promise<void> {
+            await advanceSequence(above);
+          },
+        }
+      : {}),
     async sealingKey(): Promise<SnapshotSealingKey> {
       // The only sealing path; a refusal propagates untouched.
       const sealing = await lifecycle.openSealingKey();

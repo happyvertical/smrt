@@ -104,6 +104,9 @@ function keysFor(deviceId: string): SnapshotKeyProvider {
         key: new Uint8Array(KEY),
       };
     },
+    async advanceSealingSequence(above) {
+      if (sequence < above) sequence = above;
+    },
     async openingKey(reference) {
       return reference.accountId === ACCOUNT &&
         reference.generation === 1n &&
@@ -201,6 +204,10 @@ function makeEnvironment() {
       signer: async () => signerFor(test),
       stateRoot: stateRootOf(data),
       entitlements: { status: async () => ({ featureKeys: ['backup.vault'] }) },
+      accountTrust: async () => ({
+        minimumGeneration: 1n,
+        revokedDeviceIds: [],
+      }),
       fetch: (async (input, init) =>
         h.relay.handle(
           new Request(String(input), init as RequestInit),
@@ -300,12 +307,10 @@ describe('vault backup then restore across two devices', () => {
     });
 
     // Device B restores sequence 1 through the relay's lease routes.
-    const restored = await env.restore(
-      desktopDevice,
-      desktop,
-      keysFor('device-a2'),
-      ['--origin-retired'],
-    );
+    const desktopKeys = keysFor('device-a2');
+    const restored = await env.restore(desktopDevice, desktop, desktopKeys, [
+      '--origin-retired',
+    ]);
     expect(restored.stderr).toBe('');
     expect(restored.code).toBe(0);
     expect(JSON.parse(restored.stdout)).toMatchObject({
@@ -321,8 +326,8 @@ describe('vault backup then restore across two devices', () => {
 
     // B publishes the next sequence at the position it restored.
     await env.boot(desktop, 'desktop v2');
-    const desktopKeys = keysFor('device-a2');
-    await desktopKeys.sealingKey(); // sequence 1 is spent; seal 2 next
+    // Restore moved this device's sealing counter past the head it restored,
+    // so the very next backup is sequence 2 with nothing burned by hand.
     expect(await env.backup(desktopDevice, desktop, desktopKeys)).toMatchObject(
       { sequence: 2n },
     );

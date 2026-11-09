@@ -946,6 +946,10 @@ follows. `createLifecycleSnapshotKeys({ lifecycle, nextSequence })` in
   `openReadingKey` and never falls back to an older generation.
 - `openingKey(ref)` checks `ref.accountId` against `status().accountId`, then
   returns `(await openReadingKey(ref)).key`, or `undefined` on `key_missing`.
+- `snapshotAccountTrustFromLifecycle(lifecycle)` reads the adopted head for
+  restore-latest: the revoked device ids and a generation floor (the highest
+  `effectiveGeneration` of any revocation). A revoked device keeps every key
+  below that generation, so snapshots under it cannot be told from forgeries.
 
 ### Enrollment
 

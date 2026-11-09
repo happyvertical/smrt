@@ -374,6 +374,217 @@ describe('smrt app restore-latest', () => {
     expect(readVaultSyncRecord(h.stateRootOf(desktop))).toBeNull();
   });
 
+  describe('threat: a hostile relay serves a snapshot the account no longer trusts', () => {
+    it('refuses a snapshot from a revoked device before taking the lease', async () => {
+      const h = await harness();
+      const laptop = join(h.root, 'laptop');
+      await h.boot(laptop, 'v1');
+      await h.relay.publish(laptop, 'device-lost', h.keys);
+      h.relay.state.trust = {
+        minimumGeneration: 1n,
+        revokedDeviceIds: ['device-lost'],
+      };
+      const desktop = join(h.root, 'desktop');
+      const result = await h.run(desktop, 'device-desktop');
+      expect(result.code).toBe(1);
+      expect(result.stderr).toContain('has been revoked');
+      expect(h.relay.state.calls).not.toContain('/v1/lease/acquire');
+      expect(existsSync(desktop)).toBe(false);
+      expect(readVaultSyncRecord(h.stateRootOf(desktop))).toBeNull();
+    });
+
+    it('refuses a higher-sequence snapshot under an old key generation, whoever the relay says made it', async () => {
+      const h = await harness();
+      const laptop = join(h.root, 'laptop');
+      await h.boot(laptop, 'honest');
+      // The honest line: generation 2, sequence 1.
+      await h.relay.publish(laptop, 'device-laptop', h.keys, ACCOUNT, 2n);
+      await h.boot(join(h.root, 'forged'), 'forged by the revoked device');
+      // The revoked device's old key (generation 1) makes sequence 2.
+      await h.relay.publish(
+        join(h.root, 'forged'),
+        'device-lost',
+        h.keys,
+        ACCOUNT,
+        1n,
+      );
+      h.relay.state.trust = {
+        minimumGeneration: 2n,
+        revokedDeviceIds: ['device-lost'],
+      };
+      const desktop = join(h.root, 'desktop');
+      // Named honestly it is a revoked device; relabelled as the laptop the
+      // generation floor still refuses it.
+      for (const claimed of ['device-lost', 'device-laptop']) {
+        const entry = h.relay.state.snapshots.get(2);
+        if (entry) entry.deviceId = claimed;
+        const result = await h.run(desktop, 'device-desktop');
+        expect(result.code).toBe(1);
+        expect(result.stderr).toMatch(/revoked|key generation 1/);
+        expect(existsSync(desktop)).toBe(false);
+        expect(siblings(h.root, desktop)).toEqual([]);
+        expect(h.relay.state.holder).toBeNull();
+      }
+    });
+
+    it('fails closed when the account state cannot be read', async () => {
+      const h = await harness();
+      const laptop = join(h.root, 'laptop');
+      await h.boot(laptop, 'v1');
+      await h.relay.publish(laptop, 'device-laptop', h.keys);
+      h.relay.state.trust = null as never;
+      const desktop = join(h.root, 'desktop');
+      const result = await h.run(desktop, 'device-desktop');
+      expect(result.code).toBe(1);
+      expect(result.stderr).toContain('could not be read');
+      expect(existsSync(desktop)).toBe(false);
+    });
+  });
+
+  describe('relay lease during a long restore', () => {
+    function manualTimers() {
+      const pending = new Set<{ callback: () => void }>();
+      return {
+        timers: {
+          set(callback: () => void) {
+            const entry = { callback };
+            pending.add(entry);
+            return entry;
+          },
+          clear(handle: unknown) {
+            pending.delete(handle as { callback: () => void });
+          },
+        },
+        async fire() {
+          for (const entry of [...pending]) {
+            pending.delete(entry);
+            entry.callback();
+          }
+          await new Promise((resolve) => setImmediate(resolve));
+        },
+        get pending() {
+          return pending.size;
+        },
+      };
+    }
+    const renewals = (calls: string[]) =>
+      calls.filter((path) => path === '/v1/lease/renew').length;
+
+    it('renews on a timer while the download runs, so a long download keeps the lease', async () => {
+      const h = await harness();
+      const laptop = join(h.root, 'laptop');
+      await h.boot(laptop, 'v1');
+      await h.relay.publish(laptop, 'device-laptop', h.keys);
+      const clock = manualTimers();
+      let during = -1;
+      h.relay.state.downloadGate = async () => {
+        // The download outlasts three renewal intervals.
+        for (let tick = 0; tick < 3; tick += 1) await clock.fire();
+        during = renewals(h.relay.state.calls);
+      };
+      const desktop = join(h.root, 'desktop');
+      const result = await h.run(desktop, 'device-desktop', [], {
+        timers: clock.timers,
+      });
+      expect(result.stderr).toBe('');
+      expect(result.code).toBe(0);
+      expect(during).toBe(3);
+      expect(marker(desktop)).toBe('v1');
+      // The timer is stopped with the restore.
+      expect(clock.pending).toBe(0);
+      expect(h.relay.state.holder).toBeNull();
+    });
+
+    it('aborts the download as soon as a renewal shows the lease is lost', async () => {
+      const h = await harness();
+      const laptop = join(h.root, 'laptop');
+      await h.boot(laptop, 'v1');
+      await h.relay.publish(laptop, 'device-laptop', h.keys);
+      const clock = manualTimers();
+      h.relay.state.downloadGate = async () => {
+        h.relay.state.loseLeaseOnRenew = true;
+        await clock.fire();
+      };
+      const desktop = join(h.root, 'desktop');
+      const result = await h.run(desktop, 'device-desktop', [], {
+        timers: clock.timers,
+      });
+      expect(result.code).toBe(1);
+      expect(result.stderr).toContain('no longer holds the vault writer lease');
+      expect(existsSync(desktop)).toBe(false);
+      expect(siblings(h.root, desktop)).toEqual([]);
+      expect(clock.pending).toBe(0);
+    });
+  });
+
+  describe('sealing sequence after a restore', () => {
+    it('moves the key provider past the relay head so the next backup is accepted', async () => {
+      const h = await harness();
+      const laptop = join(h.root, 'laptop');
+      await h.boot(laptop, 'v1');
+      await h.relay.publish(laptop, 'device-laptop', h.keys);
+      await h.relay.publish(laptop, 'device-laptop', h.keys);
+      const keys = h.keys;
+      const desktop = join(h.root, 'desktop');
+      const result = await h.run(desktop, 'device-desktop', [], { keys });
+      expect(result.code).toBe(0);
+      expect(JSON.parse(result.stdout)).toMatchObject({ sealingFloor: 2 });
+      expect(keys.advanced).toEqual([2n]);
+    });
+
+    it('moves it past a head that is a hole (an upload that never committed)', async () => {
+      const h = await harness();
+      const laptop = join(h.root, 'laptop');
+      await h.boot(laptop, 'v1');
+      await h.relay.publish(laptop, 'device-laptop', h.keys);
+      h.relay.state.headOverride = 4;
+      const keys = h.keys;
+      const result = await h.run(
+        join(h.root, 'desktop'),
+        'device-desktop',
+        [],
+        {
+          keys,
+        },
+      );
+      expect(result.code).toBe(0);
+      expect(keys.advanced).toEqual([4n]);
+    });
+
+    it('does the same when already up to date, so a second restore repairs a stuck device', async () => {
+      const h = await harness();
+      const laptop = join(h.root, 'laptop');
+      await h.boot(laptop, 'v1');
+      await h.relay.publish(laptop, 'device-laptop', h.keys);
+      const desktop = join(h.root, 'desktop');
+      expect((await h.run(desktop, 'device-desktop')).code).toBe(0);
+      const keys = h.keys;
+      const again = await h.run(desktop, 'device-desktop', [], { keys });
+      expect(JSON.parse(again.stdout)).toMatchObject({
+        status: 'up-to-date',
+        sealingFloor: 1,
+      });
+      // Once by the first restore, once more by the up-to-date one.
+      expect(keys.advanced).toEqual([1n, 1n]);
+    });
+
+    it('refuses a head the relay reports far above its latest snapshot', async () => {
+      const h = await harness();
+      const laptop = join(h.root, 'laptop');
+      await h.boot(laptop, 'v1');
+      await h.relay.publish(laptop, 'device-laptop', h.keys);
+      h.relay.state.headOverride = 9_000_000_000;
+      const keys = h.keys;
+      const desktop = join(h.root, 'desktop');
+      const result = await h.run(desktop, 'device-desktop', [], { keys });
+      expect(result.code).toBe(1);
+      expect(result.stderr).toContain('refuses a head that far ahead');
+      expect(keys.advanced).toEqual([]);
+      expect(existsSync(desktop)).toBe(false);
+      expect(h.relay.state.holder).toBeNull();
+    });
+  });
+
   it('refuses when another device holds the relay lease', async () => {
     const h = await harness();
     const laptop = join(h.root, 'laptop');

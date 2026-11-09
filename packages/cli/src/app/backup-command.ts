@@ -90,6 +90,7 @@ export interface BackupTargetDependencies {
       | 'requestTimeoutMs'
       | 'now'
       | 'sleep'
+      | 'accountTrust'
     >
   >;
 }
