@@ -12,8 +12,16 @@ const stateDir = process.env.FAKE_STATE_DIR;
 const failRuns = Number(process.env.FAKE_FAIL_RUNS ?? '0');
 const healthRoute = process.env.FAKE_HEALTH_ROUTE ?? '/health';
 
+// Atomic: a reader polling the state directory never sees a truncated file.
+function writeState(name, body) {
+  const target = path.join(stateDir, name);
+  const temporary = `${target}.${process.pid}.tmp`;
+  fs.writeFileSync(temporary, body);
+  fs.renameSync(temporary, target);
+}
+
 function mark(name, body = '') {
-  if (stateDir) fs.writeFileSync(path.join(stateDir, name), body);
+  if (stateDir) writeState(name, body);
 }
 
 function alive(pid) {
@@ -29,8 +37,8 @@ let run = 0;
 if (stateDir) {
   const counter = path.join(stateDir, 'runs');
   run = Number(fs.existsSync(counter) ? fs.readFileSync(counter, 'utf8') : '0') + 1;
-  fs.writeFileSync(counter, String(run));
-  fs.writeFileSync(path.join(stateDir, 'pid'), String(process.pid));
+  writeState('runs', String(run));
+  writeState('pid', String(process.pid));
   // At most one live sidecar per state directory (smrt#3379 guard).
   for (const entry of fs.readdirSync(stateDir)) {
     const match = /^live-(\d+)$/.exec(entry);
