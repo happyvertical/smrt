@@ -7,7 +7,10 @@ import { hasClosedKeys, isRecord } from '../internal/strict-json.js';
  * Where the owner-only control channel listens. A Unix domain socket on
  * macOS and Linux, a named pipe on Windows. The name contains 128 random bits
  * chosen per shell start and is published only inside the 0700 private state
- * directory, so no well-known name exists to squat.
+ * directory, so there is no well-known name. A name proves nothing about who
+ * listens behind it: the client still vets the endpoint.
+ *
+ * @experimental
  */
 export type ControlEndpoint =
   | { readonly kind: 'unix'; readonly path: string }
@@ -16,13 +19,19 @@ export type ControlEndpoint =
 /**
  * `sockaddr_un.sun_path` holds 104 bytes on macOS and 108 on Linux, including
  * the terminating NUL. Anything longer cannot be bound or connected.
+ *
+ * @experimental
  */
 export const MAX_UNIX_SOCKET_PATH_BYTES = 103;
 
 const pipeName = /^\\\\\.\\pipe\\smrt-[0-9a-f]{16}-[0-9a-f]{32}$/;
 const socketLeaf = /^c-[0-9a-f]{32}\.sock$/;
 
-/** True for a named pipe path of the exact form the shell derives. */
+/**
+ * True for a named pipe path of the exact form the shell derives.
+ *
+ * @experimental
+ */
 export function isControlPipeName(value: unknown): value is string {
   return typeof value === 'string' && pipeName.test(value);
 }
@@ -30,6 +39,8 @@ export function isControlPipeName(value: unknown): value is string {
 /**
  * True for an absolute POSIX socket path short enough for `sun_path` whose
  * last segment is `c-<32 lowercase hex>.sock`.
+ *
+ * @experimental
  */
 export function isControlSocketPath(value: unknown): value is string {
   if (typeof value !== 'string') return false;
@@ -41,7 +52,11 @@ export function isControlSocketPath(value: unknown): value is string {
   return socketLeaf.test(parsed.segments[parsed.segments.length - 1] ?? '');
 }
 
-/** Validate an endpoint object (closed schema). Throws `invalid_endpoint`. */
+/**
+ * Validate an endpoint object (closed schema). Throws `invalid_endpoint`.
+ *
+ * @experimental
+ */
 export function parseControlEndpoint(input: unknown): ControlEndpoint {
   const invalid = () =>
     new DesktopContractError('invalid_endpoint', { field: 'control' });
@@ -59,6 +74,7 @@ export function parseControlEndpoint(input: unknown): ControlEndpoint {
   throw invalid();
 }
 
+/** @experimental */
 export interface DeriveControlEndpointOptions {
   /** Defaults to `process.platform`. */
   readonly platform?: NodeJS.Platform;
@@ -82,6 +98,8 @@ export interface DeriveControlEndpointOptions {
  * `\\.\pipe\smrt-<16 hex of sha256(bundleId)>-<32 hex>`.
  * Throws `invalid_endpoint` when the result would not satisfy the grammar
  * (relative or over-long directory).
+ *
+ * @experimental
  */
 export function deriveControlEndpoint(
   options: DeriveControlEndpointOptions,
@@ -123,7 +141,11 @@ export function deriveControlEndpoint(
   });
 }
 
-/** The directory containing a unix socket path. */
+/**
+ * The directory containing a unix socket path.
+ *
+ * @experimental
+ */
 export function controlSocketDirectory(path: string): string {
   const cut = path.lastIndexOf('/');
   return cut <= 0 ? '/' : path.slice(0, cut);

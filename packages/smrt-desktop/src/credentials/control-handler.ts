@@ -13,6 +13,8 @@ import type { SlotRecordV1 } from './slot-record.js';
 /**
  * What a launcher may be told when it asks for the credential. The three
  * codes are the whole failure vocabulary of the handoff; none carries a value.
+ *
+ * @experimental
  */
 export type CredentialFailureCode =
   | 'credential_unavailable'
@@ -25,7 +27,11 @@ const failureCodes: readonly string[] = [
   'instance_mismatch',
 ];
 
-/** True when `value` is one of the three handoff failure codes. */
+/**
+ * True when `value` is one of the three handoff failure codes.
+ *
+ * @experimental
+ */
 export function isCredentialFailureCode(
   value: unknown,
 ): value is CredentialFailureCode {
@@ -36,6 +42,8 @@ export function isCredentialFailureCode(
  * The part of the control protocol this handler needs: the identity of the
  * running instance. The control protocol registry supplies it; this module
  * deliberately imports nothing from it.
+ *
+ * @experimental
  */
 export interface ControlContext {
   readonly instanceNonce: string;
@@ -43,7 +51,11 @@ export interface ControlContext {
   readonly origin: string;
 }
 
-/** `acquire-credential` request, after the control codec decoded the line. */
+/**
+ * `acquire-credential` request, after the control codec decoded the line.
+ *
+ * @experimental
+ */
 export interface AcquireCredentialRequest {
   readonly v: 1;
   readonly op: 'acquire-credential';
@@ -51,7 +63,11 @@ export interface AcquireCredentialRequest {
   readonly origin: string;
 }
 
-/** A bearer bound to the origin it may be sent to. */
+/**
+ * A bearer bound to the origin it may be sent to.
+ *
+ * @experimental
+ */
 export interface CredentialLease {
   readonly token: SecretString;
   readonly origin: string;
@@ -59,6 +75,7 @@ export interface CredentialLease {
   readonly expiresAt: string;
 }
 
+/** @experimental */
 export type AcquireCredentialResult =
   | {
       readonly ok: true;
@@ -71,6 +88,7 @@ export type AcquireCredentialResult =
     }
   | { readonly ok: false; readonly code: CredentialFailureCode };
 
+/** @experimental */
 export interface CredentialControlHandlerOptions {
   readonly custody: CredentialCustody;
   /** The persisted slot record, or `null` before any slot was minted. */
@@ -86,6 +104,7 @@ export interface CredentialControlHandlerOptions {
   readonly skewMs?: number;
 }
 
+/** @experimental */
 export type AcquireCredentialHandler = (
   request: AcquireCredentialRequest,
 ) => Promise<AcquireCredentialResult>;
@@ -114,6 +133,8 @@ function refuse(code: CredentialFailureCode): AcquireCredentialResult {
  * The credential is read from custody on every call, so after a rotation only
  * the latest committed bearer is ever returned. The handler never throws and
  * never lets an underlying error text escape.
+ *
+ * @experimental
  */
 export function createCredentialControlHandler(
   options: CredentialControlHandlerOptions,
@@ -184,6 +205,8 @@ const failureKeys = ['v', 'ok', 'code'];
  * newline; the control codec frames it). This is the only place on the shell
  * side that reveals the bearer for the control channel, and the channel is the
  * owner-only socket or pipe.
+ *
+ * @experimental
  */
 export function encodeAcquireCredentialResponse(
   result: AcquireCredentialResult,
@@ -209,6 +232,8 @@ export function encodeAcquireCredentialResponse(
  * `{ v, ok: true, instanceNonce, lease }`, which is re-validated field by field) into a
  * result whose bearer is a `SecretString`. Any deviation (unknown key, bad origin, bad token, bad
  * timestamp, unknown code) throws a value-free `credential_unavailable`.
+ *
+ * @experimental
  */
 export function parseAcquireCredentialResponse(
   input: unknown,

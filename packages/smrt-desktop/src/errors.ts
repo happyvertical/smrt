@@ -94,10 +94,18 @@ const ERROR_MESSAGES = {
 /** Closed set of codes for contract (a), the installed-product bundle. */
 export type InstallErrorCode = keyof typeof INSTALL_ERROR_MESSAGES;
 
-/** Closed set of codes for contract (b), the supervisor rendezvous. */
+/**
+ * Closed set of codes for contract (b), the supervisor rendezvous.
+ *
+ * @experimental
+ */
 export type RendezvousErrorCode = keyof typeof RENDEZVOUS_ERROR_MESSAGES;
 
-/** Closed set of codes for contract (c), the native credential handoff. */
+/**
+ * Closed set of codes for contract (c), the native credential handoff.
+ *
+ * @experimental
+ */
 export type CredentialErrorCode = keyof typeof CREDENTIAL_ERROR_MESSAGES;
 
 /** Every code a `DesktopContractError` can carry. */

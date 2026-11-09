@@ -24,8 +24,10 @@ type SpawnFunction = (
   options: SpawnOptions,
 ) => ChildProcess;
 
+/** @experimental */
 export type BridgeStdio = 'inherit' | 'pipe' | 'ignore';
 
+/** @experimental */
 export interface SpawnBridgeOptions {
   /** Absolute path of the bundled Node executable (or any bridge launcher). */
   readonly command: string;
@@ -53,6 +55,7 @@ export interface SpawnBridgeOptions {
   readonly spawn?: SpawnFunction;
 }
 
+/** @experimental */
 export interface BridgeHandoff {
   readonly child: ChildProcess;
   /** Push a new credential (rotation or port change) over the pipe. */
@@ -79,6 +82,8 @@ function failed(): DesktopContractError {
  *
  * On POSIX the pipe is a socketpair, on Windows a named pipe (libuv extra
  * stdio), so both directions work on every platform.
+ *
+ * @experimental
  */
 export function spawnBridgeWithCredential(
   options: SpawnBridgeOptions,

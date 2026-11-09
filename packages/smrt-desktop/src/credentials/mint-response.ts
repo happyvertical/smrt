@@ -12,7 +12,11 @@ import {
   MIN_CREDENTIAL_LIFETIME_MS,
 } from './grammar.js';
 
-/** A credential as held in custody: the bearer is always a `SecretString`. */
+/**
+ * A credential as held in custody: the bearer is always a `SecretString`.
+ *
+ * @experimental
+ */
 export interface StoredCredential {
   readonly slotId: string;
   readonly token: SecretString;
@@ -21,9 +25,14 @@ export interface StoredCredential {
   readonly expiresAt: string;
 }
 
-/** Largest success reply accepted (token, id, up to 64 scopes, timestamp). */
+/**
+ * Largest success reply accepted (token, id, up to 64 scopes, timestamp).
+ *
+ * @experimental
+ */
 export const MAX_MINT_RESPONSE_BYTES = 12 * 1024;
 
+/** @experimental */
 export interface ParseMintResponseOptions {
   /** Clock, milliseconds since the epoch. Defaults to `Date.now`. */
   readonly now?: () => number;
@@ -53,6 +62,8 @@ function utf8Length(text: string): number {
  * Checks: strict JSON (duplicate keys rejected), exactly the four keys, `id`
  * equals `expectedSlotId` (and is a UUIDv4), the token format, a valid scope
  * list, and an expiry at least `minLifetimeMs` (default 60 s) in the future.
+ *
+ * @experimental
  */
 export function parseMintResponse(
   body: string,

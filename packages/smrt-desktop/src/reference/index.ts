@@ -23,7 +23,9 @@
  *   endpoint it is given and vets nothing: a launcher goes through
  *   `createFileRendezvous`, whose `ready` result carries the vetted handle.
  *
- * @experimental Contracts (b) and (c) are experimental; see the README.
+ * Contracts (b) and (c) are experimental; see the README.
+ *
+ * @experimental
  */
 
 export type {

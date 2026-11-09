@@ -28,10 +28,18 @@ import {
 } from './instance-record.js';
 import { issueVettedEndpoint, type VettedEndpoint } from './vetted-endpoint.js';
 
-/** The non-secret flag that starts the shell without showing a window. */
+/**
+ * The non-secret flag that starts the shell without showing a window.
+ *
+ * @experimental
+ */
 export const SHELL_BACKGROUND_FLAG = '--smrt-background';
 
-/** Default `ensureReady` budget: a cold start plus migrations. */
+/**
+ * Default `ensureReady` budget: a cold start plus migrations.
+ *
+ * @experimental
+ */
 export const DEFAULT_ENSURE_READY_TIMEOUT_MS = 60_000;
 
 /**
@@ -54,6 +62,8 @@ export const DEFAULT_ENSURE_READY_TIMEOUT_MS = 60_000;
  *   saturated server dropping connections. Its state is unknown, so nothing
  *   was started; try again later. It is never a stale endpoint.
  * - `timeout`: not ready within the budget (a shell may still be starting).
+ *
+ * @experimental
  */
 export type RendezvousResult =
   | {
@@ -78,12 +88,17 @@ export type RendezvousResult =
   | { readonly state: 'unresponsive' }
   | { readonly state: 'timeout' };
 
-/** What `ensureReady` returns: everything except the transient `starting`. */
+/**
+ * What `ensureReady` returns: everything except the transient `starting`.
+ *
+ * @experimental
+ */
 export type EnsureReadyResult = Exclude<
   RendezvousResult,
   { readonly state: 'starting' }
 >;
 
+/** @experimental */
 export interface EnsureReadyOptions {
   /** Abort the wait. `ensureReady` then rejects with the signal's reason. */
   readonly signal?: AbortSignal;
@@ -93,6 +108,7 @@ export interface EnsureReadyOptions {
   readonly start?: boolean;
 }
 
+/** @experimental */
 export interface SupervisorRendezvous {
   /** Observe only: never starts anything. */
   status(options?: {
@@ -105,7 +121,11 @@ export interface SupervisorRendezvous {
   ensureReady(options?: EnsureReadyOptions): Promise<EnsureReadyResult>;
 }
 
-/** The command the client runs to start the shell. */
+/**
+ * The command the client runs to start the shell.
+ *
+ * @experimental
+ */
 export interface ShellLaunch {
   readonly executable: string;
   readonly args: readonly string[];
@@ -114,17 +134,23 @@ export interface ShellLaunch {
   readonly env: Readonly<Record<string, string>>;
 }
 
+/** @experimental */
 export interface RendezvousClock {
   now(): number;
   /** Resolve after `ms`; reject with the signal's reason when aborted. */
   sleep(ms: number, signal?: AbortSignal): Promise<void>;
 }
 
-/** `lstat` must report socket-ness so the endpoint can be vetted. */
+/**
+ * `lstat` must report socket-ness so the endpoint can be vetted.
+ *
+ * @experimental
+ */
 export interface RendezvousFs extends DesktopFs {
   lstat(path: string): Promise<StatsLike & { isSocket(): boolean }>;
 }
 
+/** @experimental */
 export interface FileRendezvousOptions {
   /**
    * Contract (a): find and verify the installed product, for example
@@ -135,9 +161,9 @@ export interface FileRendezvousOptions {
   /**
    * Start the shell detached and resolve once the process exists. The default
    * spawns `launch.executable` with `detached`, ignored stdio and no shell.
-   * The shell's single-instance lock, and behind it the runtime writer lease,
-   * are the real exclusion: a duplicate start is forwarded or fails
-   * `lease_held`, it never becomes a second writer.
+   * The runtime writer lease is the real exclusion (the shell's
+   * single-instance plugin helps only where it can run): a duplicate start is
+   * forwarded or fails `lease_held`, it never becomes a second writer.
    */
   readonly spawnShell?: (launch: ShellLaunch) => Promise<void>;
   /** Read-only filesystem seam. Defaults to `node:fs/promises`. */
@@ -220,7 +246,11 @@ const ENV_ALLOWLIST = new Set([
 ]);
 const ENV_ALLOW_PREFIXES = ['XDG_', 'LC_'];
 
-/** The environment the shell is started with: an allowlist, never wholesale. */
+/**
+ * The environment the shell is started with: an allowlist, never wholesale.
+ *
+ * @experimental
+ */
 export function shellLaunchEnvironment(
   source: Readonly<Record<string, string | undefined>>,
 ): Record<string, string> {
@@ -331,6 +361,8 @@ function frozen<T extends object>(value: T): T {
  * The client is read-only: it never writes, renames or deletes
  * `instance.json`, a socket, a lease or a lock. Exclusion between concurrent
  * launchers belongs to the shell (see `FileRendezvousOptions.spawnShell`).
+ *
+ * @experimental
  */
 export function createFileRendezvous(
   options: FileRendezvousOptions,

@@ -26,11 +26,15 @@ import { isMcpToken } from './grammar.js';
  *   `unavailable`
  * - bridge to launcher: `refresh` (sent after a 401, 403 or refused
  *   connection; the bridge rate-limits it to one per ten seconds)
+ *
+ * @experimental
  */
 export const HANDOFF_FRAME_MAX_BYTES = 2048;
 
+/** @experimental */
 export type HandoffDirection = 'to-bridge' | 'to-launcher';
 
+/** @experimental */
 export interface CredentialFrame {
   readonly v: 1;
   readonly type: 'credential';
@@ -42,6 +46,7 @@ export interface CredentialFrame {
   readonly expiresAt: string;
 }
 
+/** @experimental */
 export interface UnavailableFrame {
   readonly v: 1;
   readonly type: 'unavailable';
@@ -49,13 +54,17 @@ export interface UnavailableFrame {
   readonly code: CredentialFailureCode;
 }
 
+/** @experimental */
 export interface RefreshFrame {
   readonly v: 1;
   readonly type: 'refresh';
 }
 
+/** @experimental */
 export type LauncherFrame = CredentialFrame | UnavailableFrame;
+/** @experimental */
 export type BridgeFrame = RefreshFrame;
+/** @experimental */
 export type HandoffFrame = LauncherFrame | BridgeFrame;
 
 const MAX_SEQ = 0x7fffffff;
@@ -129,6 +138,8 @@ function validate(value: unknown, direction: HandoffDirection): HandoffFrame {
  * Parse one frame line (an optional single trailing `\n` is accepted). The
  * error is always value-free: `invalid_handoff_frame`,
  * `handoff_frame_too_large` or `unsupported_contract`.
+ *
+ * @experimental
  */
 export function parseHandoffFrame(
   line: string,
@@ -150,6 +161,8 @@ export function parseHandoffFrame(
  * launcher side that reveals the bearer, and the result goes straight to the
  * pipe: never log or store it. The frame is validated as a parsed frame would
  * be, so an invalid frame cannot be written.
+ *
+ * @experimental
  */
 export function encodeHandoffFrame(
   frame: HandoffFrame,
@@ -183,6 +196,8 @@ export function encodeHandoffFrame(
  * Guard for the launcher: true when `secret` appears inside any of `values`
  * (argv entries, environment values, ...). Use it to prove a child's command
  * line and environment are token-free before spawning.
+ *
+ * @experimental
  */
 export function containsSecret(
   secret: SecretString,
@@ -197,6 +212,8 @@ export function containsSecret(
  * longer than `HANDOFF_FRAME_MAX_BYTES` without a newline, or any invalid
  * frame, throws and poisons the decoder (the peer is misbehaving: close the
  * pipe). Buffered partial data is bounded by the cap.
+ *
+ * @experimental
  */
 export class HandoffFrameDecoder {
   readonly #direction: HandoffDirection;

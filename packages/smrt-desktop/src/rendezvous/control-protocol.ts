@@ -24,19 +24,31 @@ import { isInstanceNonce } from './instance-record.js';
  * without changing this file's core: ops are data (`ControlOpSpec`), a codec
  * is built from a list of specs (`createControlCodec`), and the
  * request/response unions widen through the codec's type parameters.
+ *
+ * @experimental
  */
 
 export const CONTROL_PROTOCOL_VERSION = 1;
-/** Size cap of one message, excluding the terminating newline. */
+/**
+ * Size cap of one message, excluding the terminating newline.
+ *
+ * @experimental
+ */
 export const MAX_CONTROL_MESSAGE_BYTES = 4096;
-/** Upper bound of the `ensure-ready` wait, ten minutes. */
+/**
+ * Upper bound of the `ensure-ready` wait, ten minutes.
+ *
+ * @experimental
+ */
 export const MAX_ENSURE_READY_TIMEOUT_MS = 600_000;
 
+/** @experimental */
 export interface StatusRequest {
   readonly v: 1;
   readonly op: 'status';
 }
 
+/** @experimental */
 export interface EnsureReadyRequest {
   readonly v: 1;
   readonly op: 'ensure-ready';
@@ -44,14 +56,21 @@ export interface EnsureReadyRequest {
   readonly timeoutMs: number;
 }
 
+/** @experimental */
 export type CoreControlRequest = StatusRequest | EnsureReadyRequest;
 
-/** The core request union. The credential module widens it with its op. */
+/**
+ * The core request union. The credential module widens it with its op.
+ *
+ * @experimental
+ */
 export type ControlRequest = CoreControlRequest;
 
 /**
  * Success body of `status` and `ensure-ready`. A `ready` answer carries the
  * origin; no answer ever carries a bearer or any secret.
+ *
+ * @experimental
  */
 export type InstanceStateResponse =
   | {
@@ -79,7 +98,11 @@ export type InstanceStateResponse =
       readonly code: ShellFailureCode;
     };
 
-/** Error codes of the core protocol. Other contracts may extend the list. */
+/**
+ * Error codes of the core protocol. Other contracts may extend the list.
+ *
+ * @experimental
+ */
 export const CORE_CONTROL_ERROR_CODES = [
   'unsupported_version',
   'unsupported_op',
@@ -88,8 +111,10 @@ export const CORE_CONTROL_ERROR_CODES = [
   'forbidden',
   'internal',
 ] as const;
+/** @experimental */
 export type CoreControlErrorCode = (typeof CORE_CONTROL_ERROR_CODES)[number];
 
+/** @experimental */
 export interface ControlErrorResponse {
   readonly v: 1;
   readonly ok: false;
@@ -97,8 +122,13 @@ export interface ControlErrorResponse {
   readonly code: string;
 }
 
+/** @experimental */
 export type CoreControlResponse = InstanceStateResponse | ControlErrorResponse;
-/** The core response union. The credential module widens it with its op. */
+/**
+ * The core response union. The credential module widens it with its op.
+ *
+ * @experimental
+ */
 export type ControlResponse = CoreControlResponse;
 
 type Fields = Readonly<Record<string, unknown>>;
@@ -108,6 +138,8 @@ type Fields = Readonly<Record<string, unknown>>;
  * (including `v` and `op`) and must enforce a closed key set; it returns a
  * fresh object in canonical key order. `parseResponse` does the same for the
  * `ok: true` answer to this op.
+ *
+ * @experimental
  */
 export interface ControlOpSpec<Req extends object, Ok extends object> {
   readonly op: string;
@@ -115,6 +147,7 @@ export interface ControlOpSpec<Req extends object, Ok extends object> {
   parseResponse(fields: Fields): Ok;
 }
 
+/** @experimental */
 export interface ControlCodec<
   Req extends { readonly op: string } = ControlRequest,
   Res extends { readonly ok: boolean } = ControlResponse,
@@ -162,7 +195,11 @@ function parseOkField(fields: Fields): boolean {
   return fields.ok;
 }
 
-/** Build a codec from a list of operation specs and an error-code list. */
+/**
+ * Build a codec from a list of operation specs and an error-code list.
+ *
+ * @experimental
+ */
 export function createControlCodec<
   Req extends { readonly op: string } = ControlRequest,
   Res extends { readonly ok: boolean } = ControlResponse,
@@ -239,7 +276,11 @@ export function createControlCodec<
   };
 }
 
-/** Map a codec failure to the protocol error code a server answers with. */
+/**
+ * Map a codec failure to the protocol error code a server answers with.
+ *
+ * @experimental
+ */
 export function controlErrorCodeFor(error: unknown): CoreControlErrorCode {
   if (error instanceof DesktopContractError) {
     switch (error.code) {
@@ -287,7 +328,11 @@ function failureCodeField(value: unknown): ShellFailureCode {
   return code;
 }
 
-/** Parse the `ok: true` body shared by `status` and `ensure-ready`. */
+/**
+ * Parse the `ok: true` body shared by `status` and `ensure-ready`.
+ *
+ * @experimental
+ */
 export function parseInstanceStateResponse(
   fields: Fields,
 ): InstanceStateResponse {
@@ -323,6 +368,7 @@ export function parseInstanceStateResponse(
   }
 }
 
+/** @experimental */
 export const STATUS_OP: ControlOpSpec<StatusRequest, InstanceStateResponse> = {
   op: 'status',
   parseRequest(fields) {
@@ -332,6 +378,7 @@ export const STATUS_OP: ControlOpSpec<StatusRequest, InstanceStateResponse> = {
   parseResponse: parseInstanceStateResponse,
 };
 
+/** @experimental */
 export const ENSURE_READY_OP: ControlOpSpec<
   EnsureReadyRequest,
   InstanceStateResponse
@@ -350,22 +397,37 @@ export const ENSURE_READY_OP: ControlOpSpec<
   parseResponse: parseInstanceStateResponse,
 };
 
-/** The two operations this contract defines. */
+/**
+ * The two operations this contract defines.
+ *
+ * @experimental
+ */
 export const CORE_CONTROL_OPS = [STATUS_OP, ENSURE_READY_OP] as const;
 
-/** The codec for `status` and `ensure-ready`. */
+/**
+ * The codec for `status` and `ensure-ready`.
+ *
+ * @experimental
+ */
 export const coreControlCodec: ControlCodec = createControlCodec<
   CoreControlRequest,
   CoreControlResponse
 >(CORE_CONTROL_OPS);
 
+/** @experimental */
 export const encodeControlRequest = (request: ControlRequest): string =>
   coreControlCodec.encodeRequest(request);
+/** @experimental */
 export const parseControlRequest = (line: string): ControlRequest =>
   coreControlCodec.parseRequest(line);
+/** @experimental */
 export const encodeControlResponse = (response: ControlResponse): string =>
   coreControlCodec.encodeResponse(response);
-/** Parse the answer to a request for `op` (`status` or `ensure-ready`). */
+/**
+ * Parse the answer to a request for `op` (`status` or `ensure-ready`).
+ *
+ * @experimental
+ */
 export const parseControlResponse = (
   op: ControlRequest['op'],
   line: string,

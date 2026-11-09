@@ -40,7 +40,11 @@ import type { SendAcquireRequest } from './provider.js';
  * the only reveal and the only wrap. No rendezvous type carries it.
  */
 
-/** Success body of `acquire-credential`: the lease, bearer wrapped. */
+/**
+ * Success body of `acquire-credential`: the lease, bearer wrapped.
+ *
+ * @experimental
+ */
 export interface AcquireCredentialSuccess {
   readonly v: 1;
   readonly ok: true;
@@ -49,21 +53,34 @@ export interface AcquireCredentialSuccess {
   readonly lease: CredentialLease;
 }
 
-/** Every request the extended channel carries. */
+/**
+ * Every request the extended channel carries.
+ *
+ * @experimental
+ */
 export type CredentialControlRequest =
   | ControlRequest
   | AcquireCredentialRequest;
-/** Every response the extended channel carries. */
+/**
+ * Every response the extended channel carries.
+ *
+ * @experimental
+ */
 export type CredentialControlResponse =
   | ControlResponse
   | AcquireCredentialSuccess;
 
+/** @experimental */
 export type CredentialControlCodec = ControlCodec<
   CredentialControlRequest,
   CredentialControlResponse
 >;
 
-/** Failure codes `acquire-credential` adds to the core error-code list. */
+/**
+ * Failure codes `acquire-credential` adds to the core error-code list.
+ *
+ * @experimental
+ */
 export const CREDENTIAL_CONTROL_ERROR_CODES = [
   'credential_unavailable',
   'credential_invalid',
@@ -81,6 +98,8 @@ function invalidMessage(field?: string): DesktopContractError {
  * The op spec. The request is closed to `v`, `op`, `instanceNonce` and
  * `origin`; the response is whatever `parseAcquireCredentialResponse` accepts
  * for a success body (its failures are value-free `credential_unavailable`).
+ *
+ * @experimental
  */
 export const credentialControlOp: ControlOpSpec<
   AcquireCredentialRequest,
@@ -143,6 +162,8 @@ function isAcquireSuccess(
  * encoder cannot serialize the success body; this codec routes it through
  * `encodeAcquireCredentialResponse` and validates the line it produced with
  * the same strict parser a client would use (size cap included).
+ *
+ * @experimental
  */
 export const credentialControlCodec: CredentialControlCodec = {
   ops: baseCodec.ops,
@@ -162,6 +183,7 @@ export const credentialControlCodec: CredentialControlCodec = {
   },
 };
 
+/** @experimental */
 export interface ControlChannelSendOptions {
   /** Response budget in milliseconds. Defaults to 2000. */
   readonly timeoutMs?: number;
@@ -179,6 +201,8 @@ export interface ControlChannelSendOptions {
  * so the credential flow cannot be pointed at an endpoint nobody vetted. On
  * Windows a `ready` result has a handle only if the shell supplied `vetPipe`.
  * Throws `invalid_endpoint` for anything else.
+ *
+ * @experimental
  */
 export function createControlChannelSend(
   endpoint: VettedEndpoint,

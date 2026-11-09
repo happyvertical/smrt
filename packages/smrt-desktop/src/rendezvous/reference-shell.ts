@@ -43,6 +43,8 @@ import {
  * It enforces nothing the Rust shell does beyond Node's reach: there is no
  * peer-credential check, and no single-instance lock (tests model that with
  * their own fake). See `control-transport.ts`.
+ *
+ * @experimental
  */
 
 export interface ReferenceSnapshot {
@@ -51,6 +53,7 @@ export interface ReferenceSnapshot {
   readonly failure?: ShellFailureCode;
 }
 
+/** @experimental */
 export interface ReferenceSupervisor {
   readonly productId: string;
   readonly instanceNonce: string;
@@ -75,6 +78,7 @@ export interface ReferenceSupervisor {
   ): Promise<InstanceStateResponse>;
 }
 
+/** @experimental */
 export interface ReferenceSupervisorOptions {
   readonly productId: string;
   /** Defaults to 16 random bytes as 32 hex characters. */
@@ -83,6 +87,7 @@ export interface ReferenceSupervisorOptions {
   readonly initial?: ReferenceSnapshot;
 }
 
+/** @experimental */
 export function createReferenceSupervisor(
   options: ReferenceSupervisorOptions,
 ): ReferenceSupervisor {
@@ -159,6 +164,8 @@ export function createReferenceSupervisor(
 /**
  * Build the handler registry a reference shell serves: `status` and
  * `ensure-ready` answered from `supervisor`. Callers may `register` more ops.
+ *
+ * @experimental
  */
 export function createReferenceRegistry(
   supervisor: ReferenceSupervisor,
@@ -172,6 +179,7 @@ export function createReferenceRegistry(
   return registry;
 }
 
+/** @experimental */
 export interface ReferenceShellOptions<
   Req extends { readonly op: string } = ControlRequest,
   Res extends { readonly ok: boolean } = ControlResponse,
@@ -219,6 +227,7 @@ export interface ReferenceShellOptions<
   readonly onWriteError?: (error: unknown) => void;
 }
 
+/** @experimental */
 export interface ReferenceShell<
   Req extends { readonly op: string } = ControlRequest,
   Res extends { readonly ok: boolean } = ControlResponse,
@@ -240,6 +249,7 @@ export interface ReferenceShell<
   close(): Promise<void>;
 }
 
+/** @experimental */
 export async function startReferenceShell<
   Req extends { readonly op: string } = ControlRequest,
   Res extends { readonly ok: boolean } = ControlResponse,

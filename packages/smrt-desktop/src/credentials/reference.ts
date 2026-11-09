@@ -27,6 +27,8 @@ import {
  * `createCredentialControlHandler` (it decides from its own `current()`, which
  * must be the serving instance's identity). Its `{ ok: false, code }` result
  * becomes a protocol error response; a success becomes the lease body.
+ *
+ * @experimental
  */
 export function registerAcquireCredential(
   registry: ControlHandlerRegistry<
@@ -53,6 +55,8 @@ export function registerAcquireCredential(
  * represents, or `null` unless it is `ready`. Feed it to the handler as
  * `current` so the nonce and origin it checks are the serving instance's own,
  * never anything the request supplies.
+ *
+ * @experimental
  */
 export function referenceControlContext(
   supervisor: ReferenceSupervisor,
@@ -69,6 +73,7 @@ export function referenceControlContext(
   };
 }
 
+/** @experimental */
 export type ReferenceCredentialRegistryOptions = Omit<
   CredentialControlHandlerOptions,
   'current'
@@ -78,6 +83,8 @@ export type ReferenceCredentialRegistryOptions = Omit<
  * Handler registry for a reference shell that serves the core ops and
  * `acquire-credential`. Pass it, with `credentialControlCodec`, to
  * `startReferenceShell`.
+ *
+ * @experimental
  */
 export function createCredentialReferenceRegistry(
   supervisor: ReferenceSupervisor,

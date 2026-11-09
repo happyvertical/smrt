@@ -19,6 +19,8 @@ import type { StoredCredential } from './mint-response.js';
  * Byte-level secret store, structurally identical to the vault-key store of
  * #4792. The Rust shell supplies the OS keychain implementation; this package
  * only ever talks to the seam.
+ *
+ * @experimental
  */
 export interface SecretItemStore {
   /** The item's bytes, or `null` when absent. */
@@ -32,6 +34,8 @@ export interface SecretItemStore {
 /**
  * Typed credential custody over a `SecretItemStore`. Keyed by slot id; no
  * method returns the bearer except inside a `SecretString`.
+ *
+ * @experimental
  */
 export interface CredentialCustody {
   /**
@@ -46,7 +50,11 @@ export interface CredentialCustody {
   delete(slotId: string): Promise<void>;
 }
 
-/** Secret-store item name for a slot: `mcp-credential.<slotId>`. */
+/**
+ * Secret-store item name for a slot: `mcp-credential.<slotId>`.
+ *
+ * @experimental
+ */
 export function credentialItemName(slotId: string): string {
   if (!isUuidV4(slotId)) {
     throw new DesktopContractError('invalid_field', { field: 'slotId' });
@@ -140,6 +148,8 @@ function decodeItem(bytes: Uint8Array, slotId: string): StoredCredential {
  *
  * Only `mcp-credential.<slotId>` names are ever passed to the store. Store
  * exceptions are replaced by value-free errors (their text may echo the item).
+ *
+ * @experimental
  */
 export function createCredentialCustody(
   store: SecretItemStore,
@@ -209,6 +219,8 @@ export function createCredentialCustody(
  * In-memory `SecretItemStore` for tests and development only. It copies on
  * every read and write, so callers may zero the buffers they pass or receive,
  * and it enforces the same item-name grammar as the OS-backed stores.
+ *
+ * @experimental
  */
 export function createMemorySecretItemStore(): SecretItemStore {
   const items = new Map<string, Uint8Array>();
