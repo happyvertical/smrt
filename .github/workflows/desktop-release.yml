@@ -240,6 +240,9 @@ jobs:
     permissions:
       contents: read
       actions: read
+    defaults:
+      run:
+        shell: bash
     steps:
       - name: Require main
         env:
@@ -731,7 +734,7 @@ jobs:
             payloads=("$SIGNED_DIR"/nsis/*-setup.exe)
           fi
           test "${#payloads[@]}" -eq 1
-          "$PWD/$SHELL_DIR/signing-tools/node_modules/.bin/tauri" signer sign "${payloads[0]}"
+          "$GITHUB_WORKSPACE/$SHELL_DIR/signing-tools/node_modules/.bin/tauri" signer sign "${payloads[0]}"
 
       # A build that came out unsigned or un-notarized must not stand as a
       # release. This runs BEFORE the leg is uploaded, so a failure here keeps

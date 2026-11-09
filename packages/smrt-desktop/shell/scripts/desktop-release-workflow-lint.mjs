@@ -23,7 +23,9 @@
 //     allow-list: a line that is not listed, whatever it is, fails. On top of
 //     it, a builder, installer, downloader, another `tauri` command, `node`
 //     other than the preflight script and a write to the workflow command
-//     files are reported by name.
+//     files are reported by name. A comment line never joins the line after
+//     it (see logicalLines), and a string that holds a `${{` expression is
+//     searched whole for `secrets`, not up to its first `}}`.
 //  3. A step that builds or installs (cargo, rustup, tauri build, pnpm, npm
 //     install, tauri-action) holds no secret.
 //  4. A job that has a secret step runs no cargo, rustup, tauri build, pnpm,
@@ -31,9 +33,12 @@
 //     scripts ... --prefix "$SHELL_DIR/signing-tools"` (a committed lockfile,
 //     see checkLockfile); its `uses:` are the pinned checkout, node, and
 //     artifact actions; it is in the `desktop-release` environment; it has no
-//     job-level `env` and no write permission; its default shell is bash; and
-//     a job that imports a certificate ends with an always() cleanup that
-//     deletes the keychain and removes the installed CLI.
+//     job-level `env` and no write permission; its `defaults.run.shell` is
+//     exactly bash and it sets no `defaults.run.working-directory` (nor does
+//     the workflow); EVERY other step of it is held to the build/install,
+//     interpreter and command-file checks, except the VETTED_STEPS matched by
+//     their exact `run` text; and a job that imports a certificate ends with
+//     the exact CLEANUP_STEP under `if: always()`.
 //  5. Every cargo build/test/check/clippy/run/install and every `tauri build`
 //     has `--locked` (for tauri after `--`).
 //  6. The Rust toolchain and Node versions are exact, not `stable` or a line.
@@ -45,15 +50,21 @@
 // named checks above only make the message clearer.
 
 import { isAlias, parseDocument, visit } from 'yaml';
-import { SECRET_STEPS } from './desktop-release-signing-commands.mjs';
+import {
+  CLEANUP_STEP,
+  SECRET_STEPS,
+  SIGNING_TOOLS_INSTALL,
+  VETTED_STEPS,
+} from './desktop-release-signing-commands.mjs';
 
-export { SECRET_STEPS };
+export { CLEANUP_STEP, SECRET_STEPS, SIGNING_TOOLS_INSTALL, VETTED_STEPS };
 
 const TOOL_VERSION = /^\d+\.\d+\.\d+$/;
 const PINNED_ACTION =
   /^(actions\/(checkout|setup-node|download-artifact|upload-artifact))@[0-9a-f]{40}$/;
 const ENVIRONMENT = 'desktop-release';
 const SECRET_STEP_KEYS = new Set(['name', 'id', 'if', 'env', 'run']);
+const CLEANUP_KEYS = new Set(['name', 'if', 'run']);
 // The only workflow-level env names. A name such as BASH_ENV, NODE_OPTIONS or
 // LD_PRELOAD here would reach every step, including the ones holding secrets.
 const WORKFLOW_ENV_NAMES = new Set([
@@ -72,53 +83,76 @@ const BUILD_OR_INSTALL =
   /\b(cargo|rustup|rustc|npm|npx|pnpm|yarn|corepack|bun|deno|pip3?|pipx|curl|wget|brew|gem)\b|\btauri\s+(build|dev|bundle|init|add)\b|tauri-action/;
 const LOCAL_BUILD =
   /\b(cargo|rustup|rustc|pnpm|yarn|npx|corepack|bun|deno)\b|\btauri\s+(build|dev|bundle|init|add)\b|tauri-action/;
-// The one npm command a job that holds secrets may run: install exactly what
-// the committed lockfile says, with lifecycle scripts off.
-export const SIGNING_TOOLS_INSTALL =
-  'npm ci --ignore-scripts --no-audit --no-fund --registry https://registry.npmjs.org/ --prefix "$SHELL_DIR/signing-tools"';
+// Interpreters and ways to run code that is not in the step's own text. Applied
+// to every step of a job that holds a secret, next to BUILD_OR_INSTALL.
+const RUNS_OTHER_CODE =
+  /\bnode\s+(-[A-Za-z]*[eprc]\b|--(eval|print|require|import|input-type)\b)|\b(python[0-9.]*|perl|ruby|php|lua|osascript|pwsh|powershell|eval|source)\b|(^|[\s;&|(])\.\s+\S|\b(ba|z|da|k)?sh\s+-[A-Za-z]*c\b|\bbase64\s+(-d|-D|--decode)\b/;
+// The files a step writes to change the environment of the steps after it.
+const COMMAND_FILES = /GITHUB_(ENV|PATH|OUTPUT|STATE)/;
+// Names that change what a later step executes. None may be written to the
+// command files (the vetted blocks write the names listed in VETTED_STEPS).
+const DANGEROUS_ENV_NAME =
+  /(^|[^A-Za-z0-9_])(BASH_ENV|ENV|PATH|NODE_OPTIONS|NODE_PATH|LD_[A-Z_]+|DYLD_[A-Z_]+)\s*=/;
 
-/** Join `\` continuations so one command is one line; drop comment lines. */
+/**
+ * Join `\` continuations so one command is one line; drop comment lines.
+ * Physical lines are classified first, as bash reads them: a line whose first
+ * non-blank character is `#` is a comment, and a comment never continues onto
+ * the next line, whatever it ends with. Only a line that is not a comment and
+ * ends in an odd number of backslashes joins the one after it. (A `#` line that
+ * is itself the continuation of a command is part of that command, so the
+ * joined line stays unlisted and is reported.)
+ */
 export function logicalLines(text) {
-  return text
-    .replace(/\r/g, '')
-    .replace(/[ \t]*\\\n[ \t]*/g, ' ')
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line !== '' && !line.startsWith('#'));
+  const lines = [];
+  let current = null;
+  for (const physical of text.replace(/\r/g, '').split('\n')) {
+    const body = physical.trimStart();
+    if (current === null && (body.trim() === '' || body.startsWith('#'))) {
+      continue;
+    }
+    const trailing = /\\*$/.exec(body)[0].length;
+    const joins = trailing % 2 === 1 && !body.startsWith('#');
+    const piece = joins ? body.slice(0, -1).trimEnd() : body;
+    current = current === null ? piece : `${current} ${piece}`;
+    if (!joins) {
+      lines.push(current.trim());
+      current = null;
+    }
+  }
+  if (current !== null) lines.push(current.trim());
+  return lines.filter((line) => line !== '');
 }
 
 const isObject = (value) =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
 const text = (value) => (value === undefined ? undefined : String(value));
 
-/** The expression text inside every `${{ ... }}` of a string (also unclosed). */
-function expressionsOf(value) {
-  return value
-    .split('${{')
-    .slice(1)
-    .map((part) => part.split('}}')[0]);
-}
-
 /**
  * Every reference to `secrets` anywhere under `value`: `{ path, value, key }`.
- * A string counts when one of its expressions mentions `secrets` in any case,
- * or when it is an `if` condition (a bare expression) that does. A mapping key
- * counts when it is `secrets` (`secrets: inherit`) or an expression naming it.
+ * A string counts when it holds an expression (`${{`) and mentions `secrets`
+ * anywhere in any case, or when it is an `if` condition (a bare expression)
+ * that does. The WHOLE string is tested, not the text up to the first `}}`:
+ * `${{ '}}' || secrets.X }}` would otherwise hide the reference in a string
+ * literal. Over-matching is safe: a string that merely says "secrets" next to
+ * an expression is reported and has to be reworded. A mapping key counts when
+ * it is `secrets` (`secrets: inherit`) or an expression naming it.
  */
 export function secretReferences(value, path = []) {
   const found = [];
   const mentions = (s) => /secrets/i.test(s);
+  const expression = (s) => s.includes('${{') && mentions(s);
   const walk = (node, at) => {
     if (typeof node === 'string') {
       const bare = at.at(-1) === 'if';
-      if (expressionsOf(node).some(mentions) || (bare && mentions(node))) {
+      if (expression(node) || (bare && mentions(node))) {
         found.push({ path: at, value: node, key: false });
       }
     } else if (Array.isArray(node)) {
       node.forEach((item, index) => walk(item, [...at, index]));
     } else if (isObject(node)) {
       for (const [key, item] of Object.entries(node)) {
-        if (/^secrets$/i.test(key) || expressionsOf(key).some(mentions)) {
+        if (/^secrets$/i.test(key) || expression(key)) {
           found.push({ path: [...at, key], value: key, key: true });
         }
         walk(item, [...at, key]);
@@ -207,6 +241,58 @@ export function parseWorkflow(source) {
   return { problems, top, env: isObject(top.env) ? top.env : {}, jobs };
 }
 
+/**
+ * The VETTED_STEPS entry a step is, or undefined: the exact `run` text (trailing
+ * newlines aside), only the keys name / id / if / env / run, and only the env
+ * names the entry lists. A step that is not one is checked line by line.
+ */
+function vettedStep(step) {
+  if (step.run === undefined) return undefined;
+  const run = step.run.replace(/\n+$/, '');
+  return VETTED_STEPS.find(
+    (entry) =>
+      entry.run === run &&
+      Object.keys(step.raw).every((key) => SECRET_STEP_KEYS.has(key)) &&
+      Object.keys(step.env).every((name) => entry.env.includes(name)),
+  );
+}
+
+/**
+ * `defaults:` of the workflow or of a job. Neither may set a working
+ * directory (the signing line is anchored to $GITHUB_WORKSPACE, and a changed
+ * directory moves every relative path). A job that holds a secret must set
+ * the shell to exactly `bash`, so that no step of it runs under a shell
+ * the allow-list does not describe (Windows defaults to PowerShell); at
+ * workflow level the shell is absent or exactly `bash`.
+ */
+function defaultsProblems(defaults, requireShell) {
+  const problems = [];
+  if (defaults !== undefined && !isObject(defaults)) {
+    return ['is not a mapping'];
+  }
+  const keys = Object.keys(defaults ?? {});
+  if (keys.some((key) => key !== 'run')) {
+    problems.push(`may only set run (got ${keys.join(', ')})`);
+  }
+  const run = defaults?.run;
+  if (run !== undefined && !isObject(run)) problems.push('run is not a mapping');
+  const runKeys = isObject(run) ? Object.keys(run) : [];
+  if (runKeys.includes('working-directory')) {
+    problems.push('sets defaults.run.working-directory');
+  }
+  if (runKeys.some((key) => key !== 'shell' && key !== 'working-directory')) {
+    problems.push(`defaults.run may only set shell (got ${runKeys.join(', ')})`);
+  }
+  const shell = isObject(run) ? run.shell : undefined;
+  if (shell !== undefined && shell !== 'bash') {
+    problems.push(`sets its default shell to ${JSON.stringify(shell)}, not exactly bash`);
+  }
+  if (requireShell && shell !== 'bash') {
+    problems.push('does not set defaults.run.shell to exactly bash');
+  }
+  return problems;
+}
+
 /** Returns the list of problems; empty means the separation holds. */
 export function checkWorkflow(source) {
   const workflow = parseWorkflow(source);
@@ -220,6 +306,9 @@ export function checkWorkflow(source) {
     if (!WORKFLOW_ENV_NAMES.has(name)) {
       add(`workflow-level env ${name} is not one of the allowed names`);
     }
+  }
+  for (const problem of defaultsProblems(workflow.top.defaults, false)) {
+    add(`workflow-level defaults: ${problem}`);
   }
 
   for (const job of workflow.jobs) {
@@ -349,9 +438,8 @@ export function checkWorkflow(source) {
       if (job.head.env !== undefined) {
         add(`${where}: a job with secrets sets job-level env`);
       }
-      const shell = job.head.defaults?.run?.shell;
-      if (shell !== undefined && shell !== 'bash') {
-        add(`${where}: a job with secrets sets its default shell to ${shell}`);
+      for (const problem of defaultsProblems(job.head.defaults, true)) {
+        add(`${where}: a job with secrets: defaults ${problem}`);
       }
       if (
         !isObject(job.permissions) ||
@@ -362,6 +450,31 @@ export function checkWorkflow(source) {
       for (const step of job.steps) {
         const at = `${where}, step "${step.name}"`;
         const commands = logicalLines(step.run ?? '');
+        const vetted = vettedStep(step);
+        // A step that holds a secret is held to its allow-list above; every
+        // other step of the job is held to the rules below.
+        if (
+          step.run !== undefined &&
+          !vetted &&
+          secretReferences(step.raw).length === 0
+        ) {
+          const joined = commands.join('\n');
+          if (
+            BUILD_OR_INSTALL.test(joined) ||
+            /\btauri\s+(build|dev|bundle|init|add)\b/.test(joined)
+          ) {
+            add(`${at}: a step in a job with secrets builds, installs or downloads code`);
+          }
+          if (RUNS_OTHER_CODE.test(joined)) {
+            add(`${at}: a step in a job with secrets runs an interpreter or code that is not in its text`);
+          }
+          if (COMMAND_FILES.test(step.run) || /GITHUB_\W*E\W*N\W*V/.test(step.run)) {
+            add(`${at}: a step in a job with secrets writes to the workflow command files (GITHUB_ENV, GITHUB_PATH, GITHUB_OUTPUT, GITHUB_STATE) outside the vetted blocks`);
+          }
+          if (DANGEROUS_ENV_NAME.test(step.run)) {
+            add(`${at}: a step in a job with secrets sets BASH_ENV, NODE_OPTIONS, PATH, LD_*, DYLD_* or ENV`);
+          }
+        }
         if (commands.some((line) => LOCAL_BUILD.test(line))) {
           add(`${at}: a job with secrets compiles or runs a package manager`);
         }
@@ -379,13 +492,16 @@ export function checkWorkflow(source) {
       );
       if (importsCertificate) {
         const cleanup = job.steps.at(-1);
-        const cleanupLines = logicalLines(cleanup?.run ?? '');
+        const keys = Object.keys(cleanup?.raw ?? {});
         if (
-          cleanup?.if !== 'always()' ||
-          !cleanupLines.some((line) => /^security delete-keychain /.test(line)) ||
-          !cleanupLines.includes('rm -rf "$SHELL_DIR/signing-tools/node_modules"')
+          cleanup === undefined ||
+          cleanup.if !== 'always()' ||
+          cleanup.uses !== undefined ||
+          keys.some((key) => !CLEANUP_KEYS.has(key)) ||
+          cleanup.run === undefined ||
+          cleanup.run.replace(/\n+$/, '') !== CLEANUP_STEP.run
         ) {
-          add(`${where}: the last step must be an always() cleanup that deletes the keychain and removes the installed CLI`);
+          add(`${where}: the last step must be the exact always() cleanup that deletes the keychain and removes the installed CLI (only name, if: always() and the vetted run)`);
         }
       }
     } else if (job.environment !== undefined && job.environment !== ENVIRONMENT) {

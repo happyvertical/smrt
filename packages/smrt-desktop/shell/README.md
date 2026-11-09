@@ -210,7 +210,7 @@ lockfile pins `@tauri-apps/cli` and every platform-specific optional package it
 has by version and sha512 integrity, all resolved from `registry.npmjs.org`;
 `npm ci` refuses a lockfile that disagrees with `package.json`, and the step
 cannot fetch anything the lockfile does not name. The signing step runs the
-binary by absolute path (`$PWD/$SHELL_DIR/signing-tools/node_modules/.bin/tauri
+binary by absolute path (`$GITHUB_WORKSPACE/$SHELL_DIR/signing-tools/node_modules/.bin/tauri
 signer sign`), never from `PATH`. Nothing is installed or downloaded after that.
 `signing-tools` is not a pnpm workspace package (the workspace globs do not reach
 it). To change the CLI version, edit `TAURI_CLI_VERSION` in the workflow and
@@ -228,7 +228,11 @@ written: `tauri signer sign` reads the key from the environment of its one step.
 what is checked, and fails if a future edit mixes these. (`yaml` comes from the
 repository's `node_modules` locally; the verification build installs it with
 `npm ci --ignore-scripts` from the lockfile in `scripts/`, in a job that holds
-no secret.) What it enforces:
+no secret.) The textual lint is sound only because of how GitHub exposes
+secrets: an environment secret reaches a step only when that step references
+`secrets.X`, and the lint enumerates every such reference (it fails on any
+reference it cannot place), so the secret steps and the allow-list below are the
+whole of what can read one. What it enforces:
 
 - The file has no YAML anchor, alias, merge key or tag, and is one valid
   document with no duplicate key.
@@ -244,21 +248,38 @@ no secret.) What it enforces:
   `xcrun notarytool`/`stapler`, `hdiutil`, `ditto`, the locked `tauri signer
   sign`, the preflight script and the shell plumbing those use, each as an
   exact line). An unlisted line fails, whatever it runs: `bash ./x.sh`,
-  `python3`, `sh -c`, `make`, `source`. It does not model bash beyond that: a
-  new command in a signing step is a reviewed change to the allow-list file.
+  `python3`, `sh -c`, `make`, `source`. A comment line never continues onto the
+  next line, so `# note \` followed by a command does not hide the command.
+  A string that holds a `${{` expression is searched whole for `secrets`, so a
+  `}}` inside a string literal hides nothing. It does not model bash beyond
+  that: a new command in a signing step is a reviewed change to the allow-list
+  file.
 - A step that builds or installs (cargo, rustup, `tauri build`, npm, pnpm,
   `tauri-action`) holds no secret, and a job that holds a secret runs no
   compiler or package manager other than the one locked `npm ci`, uses only the
   SHA-pinned checkout, node and artifact actions, sets no job-level `env`, has
-  read-only permissions, and runs in the protected environment.
+  read-only permissions, and runs in the protected environment. Every other
+  step of such a job is held to the same rules (no download, interpreter,
+  `node -e`, or write to `GITHUB_ENV`/`GITHUB_PATH`/`GITHUB_OUTPUT`/
+  `GITHUB_STATE`), because a step that sets `BASH_ENV`, `NODE_OPTIONS` or
+  `PATH` there changes what the later signing lines run. The only exceptions
+  are three blocks matched by their exact text in the allow-list file (the
+  directory exports, the product identity read, the locked CLI install). Its
+  last step is the exact `always()` cleanup, compared in full, so an `exit 0`
+  or an `if false` around the deletion fails. No workflow or secret-job
+  `defaults.run.working-directory` is allowed, a job that holds a secret sets
+  `defaults.run.shell` to exactly `bash`, and the signing command is anchored
+  to `$GITHUB_WORKSPACE`, not `$PWD`.
 - Every `cargo` and `tauri build` has `--locked`, and the Rust and Node versions
   are exact.
 - The preflight job has exactly `contents: read` and `actions: read`.
 - The signing-tools lockfile names `@tauri-apps/cli` at the workflow's version,
   with a sha512 integrity and a registry.npmjs.org resolution for every entry.
 
-`scripts/ci-runner-inventory.test.mjs` (root) reads the three matrix jobs the
-same way and fails on any runner that is not on the explicit list, any matrix
+`scripts/ci-runner-inventory.test.mjs` (root) reads every workflow's `runs-on`
+from the parsed document (a job header the old line reader did not match could
+hide one), requires `desktop-release.yml` to have exactly its six jobs with the
+expected `runs-on` each, reads the three matrix jobs the same way and fails on any runner that is not on the explicit list, any matrix
 axis or `exclude` besides `include`, any flow-style entry, extra key, anchor or
 alias.
 
