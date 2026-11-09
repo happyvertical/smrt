@@ -11,6 +11,14 @@
  * - The cached device entitlement must grant `backup.vault` before anything is
  *   sent. That check is a courtesy; the relay enforces the same gate on every
  *   route from server-side grants.
+ * - Publishing is fenced by the primary-writer lease (#4805). The target
+ *   acquires the lease at this installation's recorded vault position
+ *   (`vault-sync.json` in the private state root) through
+ *   {@link VaultLeaseKeeper}, sends the holder's fencing token with `begin`,
+ *   renews before commit, and records the published sequence only after the
+ *   relay confirms the commit. A device that is behind the account, or whose
+ *   lease was lost or taken, is refused with `must_restore_first` and
+ *   publishes nothing: restore first (`smrt app restore-latest`).
  * - The relay is not trusted to be honest: every response is checked against
  *   what was asked (sequence, sizes, digests, ordering) and a download is
  *   verified chunk by chunk and as a whole, and its clear header must carry the
@@ -20,6 +28,16 @@
  */
 
 import { createHash, randomBytes } from 'node:crypto';
+import { open, rm } from 'node:fs/promises';
+import { isAbsolute } from 'node:path';
+import {
+  VaultLeaseClient,
+  VaultLeaseError,
+  VaultLeaseKeeper,
+  type VaultLeaseState,
+  type VaultLeaseTimers,
+  type VaultRelayTransport,
+} from '@happyvertical/smrt-app-runtime';
 import {
   type BackupObject,
   type BackupPutRequest,
@@ -28,6 +46,7 @@ import {
   rechunk,
   verifiedCiphertext,
 } from './backup-targets.js';
+import type { VaultRestoreProvider } from './restore-latest.js';
 import {
   parseSnapshotHeader,
   SNAPSHOT_HEADER_BYTES,
@@ -57,6 +76,39 @@ const EMPTY_SHA256 = createHash('sha256').digest('hex');
 const UPGRADE_MESSAGE =
   'Vault backups need the Vault plan (feature backup.vault), which this installation does not have. Upgrade to enable them, or back up to a local file or your own Google Drive.';
 
+const RESTORE_MESSAGE =
+  'This device is behind the vault account, or no longer holds its writer lease; nothing was published. Restore the latest snapshot (smrt app restore-latest) before backing up to the vault.';
+const LEASE_HELD_MESSAGE =
+  'Another device is writing to this vault account, or is publishing a snapshot; try again shortly.';
+const LEASE_LOST_MESSAGE =
+  'This device no longer holds the vault writer lease; nothing was published. Restore the latest snapshot (smrt app restore-latest) before backing up to the vault.';
+
+/** The stable failure for a lease the keeper could not hold. */
+function leaseBackupError(
+  state: VaultLeaseState,
+  failure: VaultLeaseError | undefined,
+): BackupTargetError {
+  switch (failure?.code ?? state) {
+    case 'must_restore_first':
+    case 'must-restore':
+      return new BackupTargetError('must_restore_first', RESTORE_MESSAGE);
+    case 'lease_held':
+    case 'publish_in_progress':
+    case 'held-elsewhere':
+      return new BackupTargetError('lease_held', LEASE_HELD_MESSAGE);
+    case 'lease_lost':
+    case 'vault_lease_lost':
+    case 'lost':
+    case 'stopped':
+      return new BackupTargetError('lease_lost', LEASE_LOST_MESSAGE);
+    default:
+      return new BackupTargetError(
+        'unavailable',
+        'The vault relay could not grant the writer lease.',
+      );
+  }
+}
+
 /**
  * Device identity and signing, held by the vault key lifecycle (#4785) or the
  * embedding host. `sign` returns the raw 64-byte Ed25519 signature of the
@@ -79,8 +131,18 @@ export interface VaultRelayBackupTargetOptions {
   /** Relay origin: `https://…`, or `http://` on a loopback host only. */
   url: string;
   signer: () => Promise<VaultDeviceSigner | undefined>;
+  /**
+   * Private state root that holds this installation's vault position
+   * (`vault-sync.json`). Every publish needs the writer lease, and the lease
+   * is acquired at, and advances, that position.
+   */
+  stateRoot: string;
   entitlements?: VaultEntitlementSource;
   fetch?: typeof fetch;
+  /** Monotonic clock for lease deadlines. Default `performance.now()`. */
+  leaseMonotonicNow?: () => number;
+  /** Timer seam for lease renewal. Default unref'd `setTimeout`. */
+  leaseTimers?: VaultLeaseTimers;
   /** Upload chunk size. Default 4 MiB. */
   chunkBytes?: number;
   /** Attempts per retryable request. Default 3. */
@@ -235,9 +297,16 @@ export class VaultRelayBackupTarget implements BackupTarget {
   readonly #timeoutMs: number;
   readonly #now: () => number;
   readonly #sleep: (milliseconds: number) => Promise<void>;
+  readonly #stateRoot: string;
+  readonly #leaseMonotonicNow?: () => number;
+  readonly #leaseTimers?: VaultLeaseTimers;
+  #keeper: VaultLeaseKeeper | undefined;
 
   constructor(options: VaultRelayBackupTargetOptions) {
     this.name = options.name;
+    this.#stateRoot = options.stateRoot;
+    this.#leaseMonotonicNow = options.leaseMonotonicNow;
+    this.#leaseTimers = options.leaseTimers;
     this.#origin = normalizeRelayUrl(options.url);
     this.#signer = options.signer;
     this.#entitlements = options.entitlements;
@@ -255,11 +324,13 @@ export class VaultRelayBackupTarget implements BackupTarget {
       !Number.isSafeInteger(this.#chunkBytes) ||
       this.#chunkBytes < MIN_CHUNK_BYTES ||
       this.#chunkBytes > MAX_CHUNK_BYTES ||
-      this.#attempts < 1
+      this.#attempts < 1 ||
+      typeof this.#stateRoot !== 'string' ||
+      !isAbsolute(this.#stateRoot)
     ) {
       throw new BackupTargetError(
         'invalid_config',
-        'The vault chunk size or attempt count is invalid.',
+        'The vault chunk size, attempt count or state root is invalid.',
       );
     }
   }
@@ -302,6 +373,101 @@ export class VaultRelayBackupTarget implements BackupTarget {
   async preflight(): Promise<void> {
     await this.#requireEntitlement();
     await this.#deviceSigner();
+    // Fail before a snapshot is sealed: a device that is behind the account
+    // or shut out by another writer learns it here, not after the upload.
+    await this.#holdLease();
+  }
+
+  /** Release the writer lease taken by {@link preflight}, if any. */
+  async close(): Promise<void> {
+    const keeper = this.#keeper;
+    this.#keeper = undefined;
+    await keeper?.stop().catch(() => undefined);
+  }
+
+  // Writer lease -------------------------------------------------------------
+
+  /** The relay's lease routes over this target's signed requests. */
+  #leaseTransport(
+    onFailure: (failure: BackupTargetError) => void,
+  ): VaultRelayTransport {
+    return {
+      send: async (method, path, body) => {
+        try {
+          const response = await this.#request(
+            method,
+            path,
+            body ? Buffer.from(JSON.stringify(body), 'utf8') : undefined,
+          );
+          if (response.status === 401 || response.status === 403) {
+            throw await this.#failure(response);
+          }
+          let parsed: unknown;
+          if (response.status !== 204) {
+            try {
+              parsed = await readJson(response);
+            } catch {
+              parsed = undefined;
+            }
+          }
+          return { status: response.status, body: parsed };
+        } catch (error) {
+          if (error instanceof BackupTargetError) {
+            onFailure(error);
+            throw error;
+          }
+          // A network failure is not a lease decision: the keeper keeps a
+          // held lease through a failed renewal until its local deadline.
+          throw new VaultLeaseError('relay_error');
+        }
+      },
+    };
+  }
+
+  /**
+   * Hold the writer lease at this installation's vault position, reusing the
+   * one a previous call took while it is still writable.
+   */
+  async #holdLease(): Promise<VaultLeaseKeeper> {
+    const existing = this.#keeper;
+    if (existing) {
+      if (existing.writable() && (await existing.renew()) === 'held') {
+        return existing;
+      }
+      await this.close();
+    }
+    const signer = await this.#deviceSigner();
+    let transportFailure: BackupTargetError | undefined;
+    let leaseFailure: VaultLeaseError | undefined;
+    const keeper = new VaultLeaseKeeper({
+      client: new VaultLeaseClient(
+        this.#leaseTransport((failure) => {
+          transportFailure = failure;
+        }),
+      ),
+      stateRoot: this.#stateRoot,
+      accountId: signer.accountId,
+      monotonicNow: this.#leaseMonotonicNow,
+      timers: this.#leaseTimers,
+      onChange: (_state, error) => {
+        leaseFailure = error;
+      },
+    });
+    let state: VaultLeaseState;
+    try {
+      state = await keeper.start();
+    } catch {
+      throw new BackupTargetError(
+        'unavailable',
+        'The vault position of this installation could not be recorded.',
+      );
+    }
+    if (state !== 'held') {
+      await keeper.stop().catch(() => undefined);
+      throw transportFailure ?? leaseBackupError(state, leaseFailure);
+    }
+    this.#keeper = keeper;
+    return keeper;
   }
 
   // Transport ----------------------------------------------------------------
@@ -411,6 +577,18 @@ export class VaultRelayBackupTarget implements BackupTarget {
         'The vault already holds a newer snapshot than this one; restore it before backing up from this device.',
       );
     }
+    if (response.status === 409 && code === 'must_restore_first') {
+      return new BackupTargetError('must_restore_first', RESTORE_MESSAGE);
+    }
+    if (
+      response.status === 409 &&
+      (code === 'lease_held' || code === 'publish_in_progress')
+    ) {
+      return new BackupTargetError('lease_held', LEASE_HELD_MESSAGE);
+    }
+    if (response.status === 409 && code === 'lease_lost') {
+      return new BackupTargetError('lease_lost', LEASE_LOST_MESSAGE);
+    }
     if (response.status === 409 && code === 'sequence_exists') {
       return new BackupTargetError(
         'already_exists',
@@ -486,10 +664,12 @@ export class VaultRelayBackupTarget implements BackupTarget {
     request: BackupPutRequest,
     chunkSize: number,
     allowShrink: boolean,
+    fencingToken: number,
   ): Promise<{ uploadId: string; chunkSize: number; chunkCount: number }> {
     const body = Buffer.from(
       JSON.stringify({
         sequence: Number(request.sequence),
+        fencingToken,
         byteSize: request.byteSize,
         chunkSize,
         sha256: request.sha256,
@@ -518,7 +698,7 @@ export class VaultRelayBackupTarget implements BackupTarget {
           (limit as number) >= MIN_CHUNK_BYTES &&
           (limit as number) < chunkSize
         ) {
-          return this.#begin(request, limit as number, false);
+          return this.#begin(request, limit as number, false, fencingToken);
         }
       }
       throw await this.#failure(response);
@@ -554,7 +734,42 @@ export class VaultRelayBackupTarget implements BackupTarget {
         'The snapshot sequence is outside the range the vault supports.',
       );
     }
-    const upload = await this.#begin(request, this.#chunkBytes, true);
+    // A lease taken here is released here; one taken by `preflight` stays
+    // until `close`, so the caller can seal and publish under a single lease.
+    const owned = this.#keeper === undefined;
+    try {
+      const keeper = await this.#holdLease();
+      const committed = await this.#upload(request, keeper);
+      try {
+        keeper.recordPublished(committed.sequence);
+      } catch {
+        // Published, but this installation's position is stale: the next
+        // acquire is refused until the position is restored, which is safe.
+        throw new BackupTargetError(
+          'position_unrecorded',
+          'The snapshot was published, but this installation could not record its vault position; run "smrt app restore-latest --discard-local" before the next vault backup (the current data root is kept).',
+        );
+      }
+      return {
+        id: String(committed.sequence),
+        sequence: BigInt(committed.sequence),
+        byteSize: committed.byteSize,
+        createdAt: committed.committedAt,
+        sha256: committed.sha256,
+      };
+    } finally {
+      if (owned) await this.close();
+    }
+  }
+
+  /** Begin, chunk and commit under the held lease; aborts on any failure. */
+  async #upload(
+    request: BackupPutRequest,
+    keeper: VaultLeaseKeeper,
+  ): Promise<SnapshotView> {
+    const token = keeper.fencingToken;
+    if (token === null) throw leaseBackupError('lost', undefined);
+    const upload = await this.#begin(request, this.#chunkBytes, true, token);
     try {
       let index = 0;
       for await (const piece of rechunk(
@@ -586,14 +801,12 @@ export class VaultRelayBackupTarget implements BackupTarget {
           'The snapshot ended before every declared chunk was sent.',
         );
       }
-      const committed = await this.#commit(request, upload.uploadId);
-      return {
-        id: String(committed.sequence),
-        sequence: BigInt(committed.sequence),
-        byteSize: committed.byteSize,
-        createdAt: committed.committedAt,
-        sha256: committed.sha256,
-      };
+      // A long upload may outlive the lease: renew, and publish only while it
+      // is demonstrably still held. The relay re-checks at commit.
+      if ((await keeper.renew()) !== 'held') {
+        throw leaseBackupError(keeper.state, undefined);
+      }
+      return await this.#commit(request, upload.uploadId);
     } catch (error) {
       await this.#abort(upload.uploadId);
       throw error instanceof BackupTargetError
@@ -767,5 +980,53 @@ export class VaultRelayBackupTarget implements BackupTarget {
     if (response.status === 404 && progress.attempts === 1) {
       throw new BackupTargetError('not_found', 'Unknown snapshot.');
     }
+  }
+
+  // Restore ------------------------------------------------------------------
+
+  /**
+   * The collaborators `smrt app restore-latest` needs (#4805): the account
+   * this device signs as, the relay's lease routes, and the latest snapshot's
+   * download, all over this target's signed, response-checked transport.
+   * Values the relay reports are untrusted; the snapshot's authenticated
+   * envelope decides what is restored.
+   */
+  async restoreProvider(): Promise<VaultRestoreProvider> {
+    const signer = await this.#deviceSigner();
+    return {
+      accountId: signer.accountId,
+      lease: new VaultLeaseClient(this.#leaseTransport(() => undefined)),
+      snapshots: {
+        latest: async () => {
+          const response = await this.#exchange(
+            'GET',
+            '/v1/snapshots/latest',
+            [200, 404],
+          );
+          if (response.status === 404) return null;
+          const view = await readJson(response);
+          const parsed = parseSnapshotView(view);
+          const deviceId = isRecord(view) ? view.deviceId : undefined;
+          if (typeof deviceId !== 'string' || !IDENTIFIER.test(deviceId)) {
+            throw protocolError();
+          }
+          return { sequence: parsed.sequence, deviceId };
+        },
+        download: async (sequence, destination) => {
+          const file = await open(destination, 'wx', 0o600);
+          try {
+            for await (const piece of this.get(String(sequence))) {
+              await file.write(piece);
+            }
+            await file.sync();
+          } catch (error) {
+            await file.close().catch(() => undefined);
+            await rm(destination, { force: true });
+            throw error;
+          }
+          await file.close();
+        },
+      },
+    };
   }
 }

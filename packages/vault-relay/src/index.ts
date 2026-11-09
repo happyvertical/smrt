@@ -14,6 +14,7 @@ export {
   signRelayRequest,
 } from './auth.js';
 export {
+  DEFAULT_LEASE_TTL_MS,
   DEFAULT_MAX_CHUNK_BYTES,
   DEFAULT_MAX_CLOCK_SKEW_MS,
   DEFAULT_MAX_SEQUENCE_JUMP,
@@ -27,6 +28,18 @@ export {
   type VaultRelayRetention,
 } from './config.js';
 export { accountHandle, EMPTY_SHA256, sha256Hex } from './encoding.js';
+export {
+  type LeaseRefusal,
+  type LeaseStatus,
+  MIN_LEASE_TTL_MS,
+} from './lease.js';
+export {
+  type LeaseGrant,
+  type LeaseRecord,
+  migrateVaultRelayLeasesV1,
+  VAULT_RELAY_LEASE_TABLES,
+  VaultRelayLeaseStore,
+} from './lease-store.js';
 export {
   type AccountUsage,
   type DeviceRecord,

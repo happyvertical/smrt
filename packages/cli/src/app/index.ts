@@ -186,6 +186,17 @@ export {
   writeProcessRecord,
 } from './process-record.js';
 export {
+  RESTORE_LATEST_USAGE,
+  RestoreLatestError,
+  type RestoreLatestOptions,
+  type RestoreLatestReport,
+  restoreLatest,
+  runRestoreLatestOperation,
+  type VaultRestoreProvider,
+  type VaultSnapshotReference,
+  type VaultSnapshotSource,
+} from './restore-latest.js';
+export {
   type AppCommandDependencies,
   type AppCommandIo,
   type AppContext,

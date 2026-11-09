@@ -45,6 +45,11 @@ import {
   parseCanonicalInteger,
   sha256Hex,
 } from './encoding.js';
+import { type LeaseRefusal, LeaseService } from './lease.js';
+import {
+  VAULT_RELAY_LEASE_TABLES,
+  VaultRelayLeaseStore,
+} from './lease-store.js';
 import type {
   AccountUsage,
   DeviceRecord,
@@ -101,6 +106,8 @@ export interface VaultRelayEntitlements {
 
 export interface VaultRelayOptions {
   store: VaultRelayStore;
+  /** Primary-writer lease store; defaults to one over `store.db`. */
+  leaseStore?: VaultRelayLeaseStore;
   objects: VaultObjectStore;
   entitlements: VaultRelayEntitlements;
   policy: VaultRelayPolicyInput;
@@ -239,6 +246,24 @@ function positiveSafeInteger(value: unknown, field: string): number {
   return value;
 }
 
+function nonNegativeSafeInteger(value: unknown, field: string): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
+    throw new RelayError(400, 'invalid_request', { field });
+  }
+  return value;
+}
+
+/** Optional `ttlSeconds` of a lease request, in milliseconds. */
+function requestedTtlMs(input: Record<string, unknown>): number | undefined {
+  if (input.ttlSeconds === undefined) return undefined;
+  return positiveSafeInteger(input.ttlSeconds, 'ttlSeconds') * 1000;
+}
+
+function refusalError(refusal: LeaseRefusal): RelayError {
+  const { error, ...detail } = refusal;
+  return new RelayError(409, error, detail);
+}
+
 function iso(ms: number): string {
   return new Date(ms).toISOString();
 }
@@ -263,6 +288,10 @@ function expectedChunkBytes(record: SnapshotRecord, index: number): number {
 }
 
 type DeviceRoute =
+  | { name: 'lease-status' }
+  | { name: 'lease-acquire' }
+  | { name: 'lease-renew' }
+  | { name: 'lease-release' }
   | { name: 'list' }
   | { name: 'latest' }
   | { name: 'snapshot'; sequence: number }
@@ -293,6 +322,18 @@ function only(
 }
 
 function matchDeviceRoute(method: string, path: string): DeviceRoute | null {
+  if (path === '/v1/lease') {
+    return only(method, ['GET'], { name: 'lease-status' });
+  }
+  if (path === '/v1/lease/acquire') {
+    return only(method, ['POST'], { name: 'lease-acquire' });
+  }
+  if (path === '/v1/lease/renew') {
+    return only(method, ['POST'], { name: 'lease-renew' });
+  }
+  if (path === '/v1/lease/release') {
+    return only(method, ['POST'], { name: 'lease-release' });
+  }
   if (path === '/v1/snapshots') return only(method, ['GET'], { name: 'list' });
   if (path === '/v1/snapshots/latest') {
     return only(method, ['GET'], { name: 'latest' });
@@ -347,6 +388,8 @@ interface AuthenticatedDevice {
 export class VaultRelay {
   readonly policy: VaultRelayPolicy;
   private readonly store: VaultRelayStore;
+  private readonly leaseStore: VaultRelayLeaseStore;
+  private readonly leases: LeaseService;
   private readonly objects: VaultObjectStore;
   private readonly entitlements: VaultRelayEntitlements;
   private readonly adminTokenHash: Buffer | null;
@@ -357,6 +400,12 @@ export class VaultRelay {
   constructor(options: VaultRelayOptions) {
     this.policy = resolvePolicy(options.policy);
     this.store = options.store;
+    this.leaseStore =
+      options.leaseStore ?? new VaultRelayLeaseStore(options.store.db);
+    this.leases = new LeaseService(
+      this.leaseStore,
+      this.policy.limits.leaseTtlMs,
+    );
     this.objects = options.objects;
     this.entitlements = options.entitlements;
     if (options.adminToken !== undefined && options.adminToken.length < 32) {
@@ -377,6 +426,9 @@ export class VaultRelay {
   async ready(): Promise<{ ready: boolean; reason?: string }> {
     try {
       const missing = await this.store.missingTables();
+      for (const table of VAULT_RELAY_LEASE_TABLES) {
+        if (!(await this.store.db.tableExists(table))) missing.push(table);
+      }
       if (missing.length > 0) return { ready: false, reason: 'schema_missing' };
       await this.objects.check();
       return { ready: true };
@@ -526,12 +578,84 @@ export class VaultRelay {
     }
   }
 
+  /** A bounded JSON body whose digest is the signed one. */
+  private async readJson(
+    request: Request,
+    device: AuthenticatedDevice,
+  ): Promise<Record<string, unknown>> {
+    const body = await readBoundedBody(request, MAX_JSON_BODY_BYTES);
+    if (sha256Hex(body) !== device.contentSha256) {
+      throw new RelayError(400, 'content_digest_mismatch');
+    }
+    return parseJsonObject(body);
+  }
+
+  private async dispatchLease(
+    route: DeviceRoute,
+    request: Request,
+    device: AuthenticatedDevice,
+  ): Promise<Response> {
+    const now = this.now();
+    if (route.name === 'lease-status') {
+      await this.requireEmptyBody(request, device);
+      const status = await this.leases.status(device.accountId, now);
+      return json(200, {
+        ...status,
+        expiresAt: status.expiresAt === null ? null : iso(status.expiresAt),
+      });
+    }
+    const input = await this.readJson(request, device);
+    if (route.name === 'lease-acquire') {
+      const result = await this.leases.acquire(
+        device.accountId,
+        device.deviceId,
+        nonNegativeSafeInteger(input.baseSequence, 'baseSequence'),
+        requestedTtlMs(input),
+        now,
+      );
+      if (!result.ok) throw refusalError(result.refusal);
+      return json(200, {
+        fencingToken: result.grant.fencingToken,
+        expiresAt: iso(result.grant.expiresAt),
+        ttlMs: result.grant.expiresAt - now,
+        headSequence: result.grant.headSequence,
+      });
+    }
+    const fencingToken = positiveSafeInteger(
+      input.fencingToken,
+      'fencingToken',
+    );
+    if (route.name === 'lease-renew') {
+      const result = await this.leases.renew(
+        device.accountId,
+        device.deviceId,
+        fencingToken,
+        requestedTtlMs(input),
+        now,
+      );
+      if (!result.ok) throw refusalError(result.refusal);
+      return json(200, {
+        fencingToken: result.grant.fencingToken,
+        expiresAt: iso(result.grant.expiresAt),
+        ttlMs: result.grant.expiresAt - now,
+        headSequence: result.grant.headSequence,
+      });
+    }
+    await this.leases.release(device.accountId, device.deviceId, fencingToken);
+    return json(204, null);
+  }
+
   private async dispatch(
     route: DeviceRoute,
     request: Request,
     device: AuthenticatedDevice,
   ): Promise<Response> {
     switch (route.name) {
+      case 'lease-status':
+      case 'lease-acquire':
+      case 'lease-renew':
+      case 'lease-release':
+        return this.dispatchLease(route, request, device);
       case 'list': {
         await this.requireEmptyBody(request, device);
         const snapshots = await this.store.listSnapshots(
@@ -587,12 +711,12 @@ export class VaultRelay {
     request: Request,
     device: AuthenticatedDevice,
   ): Promise<Response> {
-    const body = await readBoundedBody(request, MAX_JSON_BODY_BYTES);
-    if (sha256Hex(body) !== device.contentSha256) {
-      throw new RelayError(400, 'content_digest_mismatch');
-    }
-    const input = parseJsonObject(body);
+    const input = await this.readJson(request, device);
     const sequence = positiveSafeInteger(input.sequence, 'sequence');
+    const fencingToken = positiveSafeInteger(
+      input.fencingToken,
+      'fencingToken',
+    );
     const byteSize = positiveSafeInteger(input.byteSize, 'byteSize');
     const chunkSize = positiveSafeInteger(input.chunkSize, 'chunkSize');
     if (!isSha256Hex(input.sha256)) {
@@ -627,6 +751,15 @@ export class VaultRelay {
     // The device picks the sequence and a commit raises the mark for good, so
     // bound the step before reserving anything.
     this.assertSequenceStep(sequence, usage?.highWaterSequence ?? 0);
+    // Divergence detection: only the lease holder, at the head, may publish.
+    const refused = await this.leases.admitUpload(
+      device.accountId,
+      device.deviceId,
+      fencingToken,
+      sequence,
+      now,
+    );
+    if (refused) throw refusalError(refused);
     // Reserve before inserting, so a failure in between can only over-count.
     const reserved = await this.store.reserve(
       device.accountId,
@@ -662,6 +795,7 @@ export class VaultRelay {
       }
       throw new RelayError(409, 'sequence_exists');
     }
+    await this.leaseStore.recordFence(device.accountId, uploadId, fencingToken);
     return json(201, {
       uploadId,
       sequence,
@@ -802,6 +936,34 @@ export class VaultRelay {
       throw new RelayError(422, 'snapshot_digest_mismatch');
     }
 
+    // Advance the lease head first, conditional on the holder, the token
+    // recorded at begin, and the upload still pending. A publish that lost
+    // its lease is refused and discarded: the device must restore first.
+    const leaseNow = this.now();
+    const fence = await this.leaseStore.getFence(
+      device.accountId,
+      record.uploadId,
+    );
+    if (leaseNow - record.createdAt > this.policy.limits.uploadTtlMs) {
+      await this.removeSnapshot(record, device.handle, 'pending');
+      throw new RelayError(404, 'no_upload');
+    }
+    if (
+      fence === null ||
+      !(await this.leaseStore.advanceHead(
+        device.accountId,
+        device.deviceId,
+        record.uploadId,
+        fence,
+        record.sequence,
+        leaseNow,
+      ))
+    ) {
+      const refusal = await this.leases.mustRestore(device.accountId);
+      await this.removeSnapshot(record, device.handle, 'pending');
+      throw refusalError(refusal);
+    }
+
     if (
       !(await this.store.advanceHighWater(
         device.accountId,
@@ -822,6 +984,7 @@ export class VaultRelay {
     ) {
       throw new RelayError(409, 'no_upload');
     }
+    await this.leaseStore.deleteFence(record.uploadId);
     await this.applyRetention(device.accountId, device.handle, now);
     const committed = await this.store.getCommitted(
       device.accountId,
@@ -844,7 +1007,9 @@ export class VaultRelay {
     record: SnapshotRecord,
     device: AuthenticatedDevice,
   ): Promise<Response> {
-    const removed = await this.store.deleteCommittedUnlessLast(
+    // Below the head and below the latest committed snapshot only (#4805): the
+    // head and the last committed snapshot are never deletable here.
+    const removed = await this.leaseStore.deleteCommittedBelowHead(
       record.accountId,
       record.uploadId,
     );
@@ -854,13 +1019,22 @@ export class VaultRelay {
         record.sequence,
       );
       if (!stillThere) throw new RelayError(404, 'no_snapshot');
+      // Two refusals, one rule (the snapshot is the latest committed one and
+      // the lease head): the account's only committed snapshot is
+      // `last_snapshot`; the newest of several is `head_snapshot`. Both are
+      // audited, and a device or client can tell them apart.
+      const committed = await this.store.listSnapshots(
+        record.accountId,
+        'committed',
+      );
+      const sole = committed.length <= 1;
       this.logger.warn('snapshot_delete_refused', {
         account: device.handle,
         device: device.deviceId,
         sequence: record.sequence,
-        reason: 'last_committed',
+        reason: sole ? 'last_committed' : 'head',
       });
-      throw new RelayError(409, 'last_snapshot', {
+      throw new RelayError(409, sole ? 'last_snapshot' : 'head_snapshot', {
         sequence: record.sequence,
       });
     }
@@ -925,12 +1099,13 @@ export class VaultRelay {
     await this.discardRemoved(removed, handle);
   }
 
-  /** Counters, chunk rows and objects of a snapshot row already deleted. */
+  /** Counters, fence, chunk rows and objects of a snapshot row already deleted. */
   private async discardRemoved(
     removed: SnapshotRecord,
     handle: string,
   ): Promise<void> {
     await this.store.release(removed.accountId, removed.byteSize);
+    await this.leaseStore.deleteFence(removed.uploadId);
     const chunks = await this.store.deleteChunks(removed.uploadId);
     for (const chunk of chunks) {
       await this.deleteObject(
@@ -1010,7 +1185,15 @@ export class VaultRelay {
   /** Revoke a device; its signatures fail from the next request on. */
   async revokeDevice(accountId: string, deviceId: string): Promise<boolean> {
     if (!isIdentifier(accountId) || !isIdentifier(deviceId)) return false;
-    return this.store.revokeDevice(accountId, deviceId, this.now());
+    const revoked = await this.store.revokeDevice(
+      accountId,
+      deviceId,
+      this.now(),
+    );
+    // After the revocation, so an acquire racing it cannot keep the lease;
+    // the token bump fences anything recorded under the old token.
+    await this.leaseStore.clearHolder(accountId, deviceId);
+    return revoked;
   }
 
   /**

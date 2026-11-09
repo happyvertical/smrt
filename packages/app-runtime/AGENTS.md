@@ -233,7 +233,10 @@ Application infrastructure composition for the validated runtime profiles in
   app root with Node's own ESM rules). File names, record formats, and
   messages are a cross-process contract; never change them unilaterally.
   `installation.json` joins `writer.lease` and `operation.lock` in the state
-  root; the writer lease record is unchanged.
+  root; the writer lease record is unchanged. So do `vault-sync.json` and,
+  only during a restore, `data-root-swap.json`: while that journal exists
+  `acquireWriterLease` refuses every writer except `dataRootSwapRecovery`
+  (#4805; README "Vault primary writer and restore-latest").
 - Tests that hook `node:fs` interleavings must live in this package: from a
   consumer the package is an externalized dependency a mock cannot reach.
 

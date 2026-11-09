@@ -690,6 +690,71 @@ describe('smrt app backup --encrypted --target', () => {
       expect(f.json().targets[0].snapshots).toHaveLength(1);
     });
 
+    function vaultDeps(relay: ReturnType<typeof relayWithSigner>) {
+      return {
+        backup: {
+          credentials: {
+            driveCredentials: async () => undefined,
+            vaultSigner: async () => relay.identity.signer,
+          },
+          entitlements: entitled,
+          fetch: relay.relay.fetch,
+          vault: noop,
+        },
+      };
+    }
+
+    it('publishes under the writer lease, records the vault position and releases the lease', async () => {
+      const f = await makeFixture();
+      await configure(f);
+      const relay = relayWithSigner();
+      const keys = keyring(1n);
+      for (const sequence of [1, 2]) {
+        expect(
+          await f.run(['backup', '--encrypted', '--target', 'vault'], {
+            snapshotKeys: keys,
+            ...vaultDeps(relay),
+          }),
+        ).toBe(0);
+        expect(f.json().object.sequence).toBe(String(sequence));
+        expect(
+          JSON.parse(
+            readFileSync(join(f.stateRoot, 'vault-sync.json'), 'utf8'),
+          ),
+        ).toMatchObject({
+          baseSequence: sequence,
+          highestSeenSequence: sequence,
+          localWritesPending: false,
+        });
+      }
+      const calls = relay.relay.calls.map((c) => `${c.method} ${c.path}`);
+      expect(calls.filter((c) => c === 'POST /v1/lease/acquire')).toHaveLength(
+        2,
+      );
+      expect(calls.filter((c) => c === 'POST /v1/lease/release')).toHaveLength(
+        2,
+      );
+    });
+
+    it('threat: a device behind the account is refused before a snapshot is sealed', async () => {
+      const f = await makeFixture();
+      await configure(f);
+      const relay = relayWithSigner();
+      relay.relay.highWater = 9;
+      const keys = keyring(10n);
+      expect(
+        await f.run(['backup', '--encrypted', '--target', 'vault'], {
+          snapshotKeys: keys,
+          ...vaultDeps(relay),
+        }),
+      ).toBe(1);
+      expect(f.error().message).toMatch(/restore-latest/);
+      expect(keys.sealed).toBe(0);
+      expect(relay.relay.snapshots.size).toBe(0);
+      expect(existsSync(join(f.stateRoot, 'backup-staging'))).toBe(false);
+      expect(existsSync(join(f.stateRoot, 'vault-sync.json'))).toBe(false);
+    });
+
     it('never prunes a vault target that has no client retention', async () => {
       const f = await makeFixture();
       await configure(f);

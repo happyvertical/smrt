@@ -16,6 +16,7 @@ template's scripts so an app's `package.json` scripts become one-liners.
 | — (new, #3413) | `smrt app token [create] --scopes … [--expires 30d] [--label …]`, `token list`, `token revoke <id>` |
 | — (new, #4804) | `smrt app backup --encrypted --target <name>`, `backups targets [add\|remove]`, `backups list`, `backups prune` |
 | — (new, #4704) | `smrt app installation [status]`, `restore --origin-retired`, `reseed --confirm-destroy-seed`, `recover-seed <file> [--unverified]`, `retire` |
+| — (new, #4805) | `smrt app restore-latest [--discard-local] [--replace-installation] [--origin-retired] [--recover]` |
 | helper modules | `@happyvertical/smrt-cli/app` (side-effect-free subpath) |
 
 ## Source
@@ -92,6 +93,25 @@ config loading; `bin/smrt.js` imports `dist/` in-process so SIGTERM reaches
   README). `status` is read-only; the rest take the operation lock and refuse
   while a writer is active. Output is secret-free JSON with explicit identity
   and token effects.
+- **`restore-latest`** (`restore-latest.ts`, local only, #4805): under
+  `operation.lock` and the writer lease (so no web process or second SQLite
+  connection is open, smrt#3379) it settles an interrupted swap and removes
+  plaintext restore leftovers, refuses pending local writes (or a live root
+  with no recorded vault position) without `--discard-local` and any latest
+  sequence below the location's highest seen, always keeps the replaced root
+  as a `previous` sibling (the app does not yet mark writes made after the
+  last publish, #4810; it is never deleted), takes the
+  relay lease at the target, decrypts into a sibling candidate, checks SQLite
+  integrity and the carried installation (`--replace-installation` for a
+  different one), swaps under the app-runtime journal and records the new
+  vault position. A location whose installation was retired (moved away, or
+  migrated to the cloud, #4806) is refused before the relay is contacted, even
+  with `--origin-retired`: reverse it first with `installation restore
+  --origin-retired`. An unreadable custody record is refused too. Custody moves (`restoreInstallation`) only with
+  `--origin-retired`; otherwise it stays pending and the app refuses to start
+  until declared. `--recover` only settles a swap. Collaborators
+  come from `deps.vaultRestore` (account, lease client, snapshot source from
+  the relay client) and `deps.snapshotKeys`; without them it fails closed.
 - **`token`** (`tokens.ts`, local only): parses every argument before touching
   state, opens `openLocalMcpTokenStore` (validated custody, uncached
   connection, no writer lease, so it runs beside `app:start`), and serializes

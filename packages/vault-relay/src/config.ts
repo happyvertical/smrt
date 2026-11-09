@@ -23,6 +23,11 @@ export const DEFAULT_MAX_CLOCK_SKEW_MS = 5 * 60 * 1000;
  * may raise it with `VAULT_RELAY_MAX_SEQUENCE_JUMP`.
  */
 export const DEFAULT_MAX_SEQUENCE_JUMP = 1000;
+/** Default primary-writer lease lifetime (#4805). */
+export const DEFAULT_LEASE_TTL_MS = 5 * 60 * 1000;
+/** Bounds of the configured lease lifetime. */
+export const MIN_CONFIGURED_LEASE_TTL_MS = 30 * 1000;
+export const MAX_CONFIGURED_LEASE_TTL_MS = 60 * 60 * 1000;
 /** Upper bound of a JSON request body (begin upload, device registration). */
 export const MAX_JSON_BODY_BYTES = 4096;
 
@@ -46,6 +51,8 @@ export interface VaultRelayLimits {
   maxClockSkewMs: number;
   /** Largest `sequence - highWaterSequence` a begin or commit may carry. */
   maxSequenceJump: number;
+  /** Primary-writer lease lifetime; holders renew before it lapses. */
+  leaseTtlMs: number;
 }
 
 export interface VaultRelayPolicy {
@@ -115,7 +122,19 @@ export function resolvePolicy(input: VaultRelayPolicyInput): VaultRelayPolicy {
       input.limits?.maxSequenceJump ?? DEFAULT_MAX_SEQUENCE_JUMP,
       'limits.maxSequenceJump',
     ),
+    leaseTtlMs: positiveInteger(
+      input.limits?.leaseTtlMs ?? DEFAULT_LEASE_TTL_MS,
+      'limits.leaseTtlMs',
+    ),
   };
+  if (
+    limits.leaseTtlMs < MIN_CONFIGURED_LEASE_TTL_MS ||
+    limits.leaseTtlMs > MAX_CONFIGURED_LEASE_TTL_MS
+  ) {
+    throw new Error(
+      'vault relay: limits.leaseTtlMs must be between 30 seconds and 1 hour',
+    );
+  }
   if (limits.maxChunkBytes > MAX_CHUNK_BYTES_CEILING) {
     throw new Error(
       `vault relay: limits.maxChunkBytes may not exceed ${MAX_CHUNK_BYTES_CEILING}`,

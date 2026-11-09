@@ -79,6 +79,7 @@ import {
 } from './state-root.js';
 
 export * from './application-identity.js';
+export * from './data-root-swap.js';
 export * from './deployed-runtime.js';
 export * from './installation-custody.js';
 export {
@@ -102,6 +103,8 @@ export * from './provider-readiness.js';
 export * from './runtime-diagnostics.js';
 export * from './stale-reclaim.js';
 export * from './state-root.js';
+export * from './vault-lease.js';
+export * from './vault-sync-state.js';
 export * from './writer-lease.js';
 
 const DEFAULT_BIND_HOST = '127.0.0.1';

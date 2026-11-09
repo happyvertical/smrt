@@ -126,6 +126,10 @@ describe('backup.vault entitlement gate', () => {
     ['acct-cancelled', 'a cancelled subscription'],
   ])('refuses %s (%s) on every route with an upgrade answer', async (account) => {
     for (const [method, path] of [
+      ['GET', '/v1/lease'],
+      ['POST', '/v1/lease/acquire'],
+      ['POST', '/v1/lease/renew'],
+      ['POST', '/v1/lease/release'],
       ['GET', '/v1/snapshots'],
       ['GET', '/v1/snapshots/latest'],
       ['GET', '/v1/snapshots/1'],

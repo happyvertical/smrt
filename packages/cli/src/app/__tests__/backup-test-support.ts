@@ -351,6 +351,7 @@ interface StoredSnapshot {
 
 interface PendingUpload extends Omit<StoredSnapshot, 'committedAt'> {
   uploadId: string;
+  fencingToken: number;
 }
 
 export interface RelayCall {
@@ -382,6 +383,11 @@ export class FakeRelay {
   fail = new Map<string, () => Response | Promise<never>>();
   loseCommitAnswer = false;
   statusOverride: Response | undefined;
+  /** Writer lease (#4805): the current fencing token and head sequence. */
+  token = 0;
+  leaseExpired = false;
+  /** Refuse the next acquire with this relay error body (status 409). */
+  refuseAcquire: Record<string, unknown> | undefined;
 
   constructor(
     private readonly publicKey: KeyObject,
@@ -450,7 +456,56 @@ export class FakeRelay {
     };
   }
 
+  #lease(key: string, body: Buffer): Response | undefined {
+    if (key === 'GET /v1/lease') {
+      return json(200, {
+        holder: this.token > 0 && !this.leaseExpired ? 'device' : null,
+        headSequence: this.highWater,
+        latestCommittedSequence: this.highWater,
+        headIsHole: false,
+      });
+    }
+    if (!key.startsWith('POST /v1/lease/')) return undefined;
+    const input = JSON.parse(body.toString('utf8') || '{}') as Record<
+      string,
+      number
+    >;
+    if (key.endsWith('/acquire')) {
+      if (this.refuseAcquire) {
+        const refusal = this.refuseAcquire;
+        this.refuseAcquire = undefined;
+        return json(409, refusal);
+      }
+      if (input.baseSequence !== this.highWater) {
+        return json(409, {
+          error: 'must_restore_first',
+          headSequence: this.highWater,
+          latestSequence: this.highWater,
+        });
+      }
+      this.token += 1;
+      this.leaseExpired = false;
+      return json(200, {
+        fencingToken: this.token,
+        ttlMs: 60_000,
+        headSequence: this.highWater,
+      });
+    }
+    if (key.endsWith('/renew')) {
+      return input.fencingToken === this.token && !this.leaseExpired
+        ? json(200, {
+            fencingToken: this.token,
+            ttlMs: 60_000,
+            headSequence: this.highWater,
+          })
+        : json(409, { error: 'lease_lost' });
+    }
+    return new Response(null, { status: 204 });
+  }
+
   #route(method: string, path: string, body: Buffer, key: string): Response {
+    const lease = this.#lease(key, body);
+    if (lease) return lease;
     if (key === 'POST /v1/uploads') {
       const input = JSON.parse(body.toString('utf8')) as Record<string, number>;
       if (input.chunkSize > this.maxChunkBytes) {
@@ -462,6 +517,18 @@ export class FakeRelay {
       if (input.sequence <= this.highWater) {
         return json(409, { error: 'stale_sequence' });
       }
+      // Publishing needs the current holder's token (#4805).
+      if (
+        !Number.isSafeInteger(input.fencingToken) ||
+        input.fencingToken !== this.token ||
+        this.leaseExpired
+      ) {
+        return json(409, {
+          error: 'must_restore_first',
+          headSequence: this.highWater,
+          latestSequence: this.highWater,
+        });
+      }
       const uploadId = crypto.randomUUID();
       const chunkCount = Math.ceil(input.byteSize / input.chunkSize);
       this.pending.set(uploadId, {
@@ -472,6 +539,7 @@ export class FakeRelay {
         chunkCount,
         sha256: input.sha256 as unknown as string,
         chunks: [],
+        fencingToken: input.fencingToken as number,
       });
       const answer = {
         uploadId,
@@ -500,6 +568,14 @@ export class FakeRelay {
     if (commit && method === 'POST') {
       const upload = this.pending.get(commit[1] as string);
       if (!upload) return json(404, { error: 'no_upload' });
+      if (upload.fencingToken !== this.token || this.leaseExpired) {
+        this.pending.delete(upload.uploadId);
+        return json(409, {
+          error: 'must_restore_first',
+          headSequence: this.highWater,
+          latestSequence: this.highWater,
+        });
+      }
       const whole = Buffer.concat(upload.chunks);
       if (
         upload.chunks.length !== upload.chunkCount ||
