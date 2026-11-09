@@ -47,6 +47,13 @@ export function sampleBundleReport(): BundleReportV1 {
       removedPackages: [],
       acknowledgedDynamicImports: [],
     },
+    importScan: {
+      filesReached: 9,
+      loadTimeFiles: 4,
+      unresolvedBareImports: 1,
+      nonLiteralImports: 0,
+      unscannedFiles: 0,
+    },
     packages: [
       { name: 'a', version: '1.0.0', path: 'resources/app/node_modules/a' },
       { name: 'b', version: '1.0.0', path: 'resources/app/node_modules/b' },

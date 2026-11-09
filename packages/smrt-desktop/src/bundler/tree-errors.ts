@@ -62,6 +62,8 @@ const TREE_ERROR_MESSAGES = {
     'A kept file statically imports a package removed by feature exclusion',
   dynamic_import_unacknowledged:
     'A kept file dynamically imports a package removed by feature exclusion',
+  relative_import_missing:
+    'A file the sidecar can load imports a relative path whose target is not in the bundle (pruned or never shipped)',
   // io
   destination_exists: 'The destination already exists',
   io_failed: 'A file operation failed',
@@ -108,6 +110,7 @@ const CATEGORY: Record<TreeErrorCode, TreeErrorCategory> = {
   secret_content: 'verification',
   removed_package_imported: 'verification',
   dynamic_import_unacknowledged: 'verification',
+  relative_import_missing: 'verification',
   destination_exists: 'io',
   io_failed: 'io',
   publish_failed: 'io',

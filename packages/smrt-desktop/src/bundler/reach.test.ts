@@ -13,7 +13,12 @@ import {
   computeSegmentation,
   readInstalledPackages,
 } from './graph.js';
-import { resolvePackageEntry, scanReachable } from './reach.js';
+import {
+  assertNoMissingRelativeImports,
+  extractAssetRefs,
+  resolvePackageEntry,
+  scanReachable,
+} from './reach.js';
 import { assertNoRemovedImports } from './scan-imports.js';
 import { BundleTreeError } from './tree-errors.js';
 
@@ -242,6 +247,147 @@ describe('lazy reachability', () => {
       entry,
     );
     expect(acknowledged.acknowledged).toHaveLength(1);
+  });
+});
+
+describe('relative imports whose target is missing', () => {
+  it('reports a load-time import of a file that is not in the tree, and fails on it', async () => {
+    pkg('a', { 'index.js': "import './lib/helper.js';\n" });
+    const report = await scan(['a'], []);
+    expect(report.relativeMissing).toEqual([
+      {
+        path: 'node_modules/a/index.js',
+        package: './lib/helper.js',
+        specifier: './lib/helper.js',
+        kind: 'static',
+        line: 1,
+      },
+    ]);
+    expect(() => assertNoMissingRelativeImports(report)).toThrow(
+      expect.objectContaining({
+        code: 'relative_import_missing',
+        subjects: ['node_modules/a/index.js -> ./lib/helper.js'],
+      }),
+    );
+    expect(() => assertNoMissingRelativeImports(report)).toThrow(
+      BundleTreeError,
+    );
+  });
+
+  it('reports the build output too, and lazy imports as dynamic', async () => {
+    pkg('a', {
+      'index.js': "export const load = () => import('./gone.js');\n",
+    });
+    const report = await scan(
+      ['a'],
+      [],
+      {},
+      "import 'a';\nimport './missing-chunk.js';\n",
+    );
+    expect(
+      report.relativeMissing.map((f) => [f.path, f.specifier, f.kind]),
+    ).toEqual([
+      ['app/build/index.js', './missing-chunk.js', 'static'],
+      ['node_modules/a/index.js', './gone.js', 'dynamic'],
+    ]);
+  });
+
+  it('lets the product acknowledge a missing relative import, and records it', async () => {
+    pkg('a', {
+      'index.js': "try { await import('./optional.js'); } catch {}\n",
+    });
+    const report = await scan(['a'], [], {
+      acknowledged: [{ from: 'a', specifier: './optional.js' }],
+    });
+    expect(report.relativeMissing).toEqual([]);
+    expect(report.acknowledged.map((f) => f.specifier)).toEqual([
+      './optional.js',
+    ]);
+    expect(() => assertNoMissingRelativeImports(report)).not.toThrow();
+  });
+
+  it('accepts targets that exist: scripts, json, wasm, directories and extensionless probes', async () => {
+    pkg('a', {
+      'index.js':
+        "import './data.json' with { type: 'json' };\nimport './x.wasm';\nimport './dir';\nimport './lib/util';\n",
+      'data.json': '{}',
+      'x.wasm': '',
+      'dir/index.js': '',
+      'lib/util.js': '',
+    });
+    const report = await scan(['a'], []);
+    expect(report.relativeMissing).toEqual([]);
+  });
+
+  it('leaves a missing .node addon to the native verification stage', async () => {
+    pkg('a', {
+      'index.js': "import './build/Release/a.node';\nimport './q.js?raw';\n",
+    });
+    const report = await scan(['a'], []);
+    expect(report.relativeMissing).toEqual([]);
+  });
+
+  it('keeps a bare import that resolves to nothing as a count, not a failure', async () => {
+    pkg('a', { 'index.js': "import 'not-installed';\n" });
+    const report = await scan(['a'], []);
+    expect(report.unresolved).toBe(1);
+    expect(report.relativeMissing).toEqual([]);
+  });
+});
+
+describe('files a reached module refers to', () => {
+  it('returns relative import targets of any kind, and literal asset paths, as protected', async () => {
+    pkg('a', {
+      'index.js': [
+        "import './test/setup.js';",
+        "import data from './notes.json' with { type: 'json' };",
+        "const html = readFileSync(new URL('./views/page.html', import.meta.url));",
+        "const css = readFileSync(join(__dirname, 'assets', 'site.css'));",
+        '',
+      ].join('\n'),
+      'test/setup.js': 'export {};\n',
+      'notes.json': '{}',
+      'views/page.html': '<p>',
+      'assets/site.css': 'a{}',
+      'unrelated/README.md': '#',
+    });
+    const report = await scan(['a'], []);
+    const rel = report.protectedPaths.map((path) =>
+      path.slice(modules.length + 1),
+    );
+    expect(rel).toEqual([
+      'a/assets/site.css',
+      'a/notes.json',
+      'a/test/setup.js',
+      'a/views/page.html',
+    ]);
+  });
+
+  it('does not protect what only an unreached file refers to', async () => {
+    pkg('a', {
+      'index.js': 'export {};\n',
+      'build-only.js': "import './helper.json' with { type: 'json' };\n",
+      'helper.json': '{}',
+    });
+    const report = await scan(['a'], []);
+    expect(report.protectedPaths).toEqual([]);
+  });
+
+  it('extracts only literal module-relative asset paths', () => {
+    expect(
+      extractAssetRefs(
+        [
+          "new URL('./a.txt', import.meta.url);",
+          'new URL(`./b-$' + '{x}.txt`, import.meta.url);',
+          "new URL('https://example.com/x', import.meta.url);",
+          "path.join(__dirname, '..', 'data', 'c.json');",
+          "resolve(import.meta.dirname, 'd.bin');",
+          'join(__dirname, name);',
+          "readFileSync('./e.txt');",
+          "readFileSync(someVar, 'utf8');",
+        ].join('\n'),
+      ),
+    ).toEqual(['./../data/c.json', './a.txt', './d.bin', './e.txt']);
   });
 });
 

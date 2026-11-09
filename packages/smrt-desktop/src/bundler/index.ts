@@ -63,6 +63,7 @@ export {
 export type {
   BundleMeasurements,
   BundleReportV1,
+  ReportImportScan,
   ReportNodePin,
   SeriesStats,
 } from './report.js';

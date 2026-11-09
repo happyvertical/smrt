@@ -58,6 +58,19 @@ export interface ReportPackage {
   readonly path: string;
 }
 
+export interface ReportImportScan {
+  /** Files reached from the sidecar entry (load time and lazily). */
+  readonly filesReached: number;
+  /** Of those, files reached through load-time edges only. */
+  readonly loadTimeFiles: number;
+  /** Bare specifiers that resolved to nothing installed. */
+  readonly unresolvedBareImports: number;
+  /** `import(x)` / `require(x)` with a non-literal argument (invisible). */
+  readonly nonLiteralImports: number;
+  /** Reached files too large or unreadable to scan. */
+  readonly unscannedFiles: number;
+}
+
 export interface ReportNodePin {
   readonly verification: 'gpg-verified' | 'unverified';
   readonly source: string;
@@ -133,6 +146,12 @@ export interface BundleReportV1 {
       readonly specifier: string;
     }[];
   };
+  /**
+   * What the import scan covered. It is a static check over the module graph
+   * from the sidecar entry; only a start with `--measure` shows that the
+   * bundle actually runs, and a bundle built without it has no runtime check.
+   */
+  readonly importScan: ReportImportScan;
   readonly packages: readonly ReportPackage[];
   readonly natives: readonly ReportNative[];
   readonly nativeExceptions: readonly {
@@ -428,6 +447,16 @@ const SCHEMA = obj([
           },
         ),
       ],
+    ]),
+  ],
+  [
+    'importScan',
+    obj([
+      ['filesReached', count],
+      ['loadTimeFiles', count],
+      ['unresolvedBareImports', count],
+      ['nonLiteralImports', count],
+      ['unscannedFiles', count],
     ]),
   ],
   [
