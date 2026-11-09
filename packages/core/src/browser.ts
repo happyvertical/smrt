@@ -39,6 +39,7 @@ export * from './adapters/index';
 // list identical in index.ts and browser.ts.
 export {
   AI_CALL_ID_TAG,
+  type AiTranscriptAppSettings,
   type AiTranscriptCaptureReason,
   type AiTranscriptContext,
   type AiTranscriptMessage,
@@ -54,6 +55,7 @@ export {
   DEFAULT_TRANSCRIPT_SAMPLE,
   type FittedAiTranscript,
   fitAiTranscript,
+  getAiTranscriptAppSettings,
   getTranscriptRedactor,
   MIN_SENSITIVE_VALUE_LENGTH,
   maybeWithAiTranscripts,
@@ -63,6 +65,7 @@ export {
   type ResolvedAiTranscriptConfig,
   redactAiTranscriptMessages,
   resolveAiTranscriptConfig,
+  setAiTranscriptAppSettings,
   setTranscriptRedactor,
   unwrapAiTranscriptClient,
   withAiTranscripts,
@@ -364,6 +367,7 @@ export {
   getInferenceConfig,
   getInferenceExecutor,
   getInferenceResolver,
+  getInferenceTranscriptsConfig,
   INFERENCE_FUSION_MODES,
   INFERENCE_TARGET_SOURCES,
   INFERENCE_TARGET_UNBOUND,

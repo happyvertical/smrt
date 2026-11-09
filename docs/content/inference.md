@@ -372,7 +372,11 @@ transcripts are pruned after 30 days while usage rows and labels stay for
 and are audited: `listAiTranscripts(db, { actor, tenantId, ... })`,
 `smrt ai:transcript <callId> --tenant <id>`, and `smrt ai:usage
 --with-transcripts --tenant <id> [--prompt <key>]` for the worst-labelled
-calls.
+calls. In the [settings panel](./inference-settings.md) a platform admin
+(`appEditable`) can turn transcripts on or off and set the sample rate and
+byte cap, which writes the app-level row (the environment variable still
+wins). The Usage tab shows how many calls have transcripts and links to
+your own transcript page.
 
 ```ts
 setTranscriptRedactor((messages, { part }) =>

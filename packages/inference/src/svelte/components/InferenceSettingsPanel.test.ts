@@ -549,3 +549,199 @@ describe('InferenceSettingsPanel usage tab', () => {
     expect(onUsageGroupBy).toHaveBeenCalledWith(['model', 'tier']);
   });
 });
+
+describe('InferenceSettingsPanel transcripts (#4781)', () => {
+  const SETTINGS = {
+    enabled: true,
+    sample: 0.25,
+    maxBytes: 8192,
+    supplyingLevel: 'app' as const,
+    appValue: { enabled: true, sample: 0.25, maxBytes: 8192 },
+    appRevert: { enabled: false, sample: 0.1, maxBytes: 65_536 },
+    envEnabled: null,
+    retentionDays: 30,
+  };
+
+  function usageTab(target: HTMLElement): void {
+    (
+      [...target.querySelectorAll('[role="tab"]')].find(
+        (tab) => tab.textContent?.trim() === 'Usage',
+      ) as HTMLButtonElement
+    ).click();
+    flushSync();
+  }
+
+  it('shows the setting read-only without appEditable, even with a callback', () => {
+    for (const scope of ['tenant', 'app']) {
+      const target = render({
+        advancedOpen: true,
+        scope,
+        transcripts: SETTINGS,
+        onSaveTranscripts: vi.fn(),
+      });
+      const section = target.querySelector(
+        '[data-testid="inference-transcripts"]',
+      );
+      expect(section).not.toBeNull();
+      expect(
+        target.querySelector('[data-testid="inference-transcripts-form"]'),
+      ).toBeNull();
+      expect(section?.querySelector('input, select, button')).toBeNull();
+      expect(
+        target.querySelector('[data-testid="inference-transcripts-enabled"]')
+          ?.textContent,
+      ).toBe('On');
+      expect(section?.textContent).toContain('25%');
+      expect(section?.textContent).toContain('30 days');
+    }
+  });
+
+  it('renders no transcript section when the host passes none', () => {
+    const target = render({ advancedOpen: true });
+    expect(
+      target.querySelector('[data-testid="inference-transcripts"]'),
+    ).toBeNull();
+  });
+
+  it('round-trips an edit for appEditable hosts, retention stays read-only', () => {
+    const onSaveTranscripts = vi.fn();
+    const target = render({
+      advancedOpen: true,
+      scope: 'tenant',
+      appEditable: true,
+      transcripts: SETTINGS,
+      onSaveTranscripts,
+    });
+    const form = target.querySelector<HTMLFormElement>(
+      '[data-testid="inference-transcripts-form"]',
+    );
+    if (!form) throw new Error('no transcript form');
+    const enabled = form.querySelector<HTMLInputElement>('[name="enabled"]');
+    const sample = form.querySelector<HTMLInputElement>('[name="sample"]');
+    const maxBytes = form.querySelector<HTMLInputElement>('[name="maxBytes"]');
+    if (!enabled || !sample || !maxBytes) throw new Error('missing inputs');
+    expect(enabled.checked).toBe(true);
+    expect(sample.value).toBe('0.25');
+    expect(maxBytes.value).toBe('8192');
+    expect(form.querySelector('[name="retentionDays"]')).toBeNull();
+
+    enabled.checked = false;
+    sample.value = '0.5';
+    maxBytes.value = '4096';
+    form.requestSubmit();
+    expect(onSaveTranscripts).toHaveBeenCalledWith({
+      settings: { enabled: false, sample: 0.5, maxBytes: 4096 },
+    });
+
+    const revert = [...form.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Revert'),
+    );
+    if (!revert) throw new Error('no revert button');
+    revert.click();
+    expect(onSaveTranscripts).toHaveBeenLastCalledWith({ settings: null });
+  });
+
+  it('says when transcripts are off, in one line, in the Usage tab', () => {
+    const target = render({
+      usage: { by: ['model'], buckets: [] },
+      transcripts: { ...SETTINGS, enabled: false },
+    });
+    usageTab(target);
+    const line = target.querySelector(
+      '[data-testid="inference-transcripts-off"]',
+    );
+    expect(line?.textContent).toContain('inference.transcripts.enabled');
+    const on = render({
+      usage: { by: ['model'], buckets: [] },
+      transcripts: SETTINGS,
+    });
+    usageTab(on);
+    expect(
+      on.querySelector('[data-testid="inference-transcripts-off"]'),
+    ).toBeNull();
+  });
+
+  it('renders counts and host links from the report, never transcript text', () => {
+    const transcriptHref = vi.fn(
+      (filters: Record<string, string>) =>
+        `/transcripts?${new URLSearchParams(filters).toString()}`,
+    );
+    const target = render({
+      transcripts: SETTINGS,
+      transcriptHref,
+      usage: {
+        by: ['prompt', 'template'],
+        since: new Date('2026-11-01T00:00:00.000Z'),
+        until: null,
+        buckets: [
+          {
+            key: { prompt: 'p.one', template: 'h1' },
+            calls: 4,
+            totalTokens: 40,
+            estimatedCost: 0,
+            outcomes: { bad: 2 },
+            transcripts: 3,
+          },
+          {
+            key: { prompt: 'p.two', template: null },
+            calls: 1,
+            totalTokens: 10,
+            estimatedCost: 0,
+            outcomes: { good: 1 },
+            transcripts: 0,
+          },
+        ],
+      },
+    });
+    usageTab(target);
+    const headers = [...target.querySelectorAll('th')].map((th) =>
+      th.textContent?.trim(),
+    );
+    expect(headers).toContain('Transcripts');
+    expect(headers).toContain('Template');
+    const counts = [
+      ...target.querySelectorAll('[data-testid="inference-transcript-count"]'),
+    ].map((cell) => cell.textContent?.trim());
+    expect(counts).toEqual(['3', '0']);
+    const links = target.querySelectorAll<HTMLAnchorElement>(
+      '[data-testid="inference-transcript-link"]',
+    );
+    expect(links).toHaveLength(1);
+    expect(links[0]?.getAttribute('href')).toBe(
+      '/transcripts?promptKey=p.one&templateHash=h1&since=2026-11-01T00%3A00%3A00.000Z',
+    );
+    const outcomes = target.querySelectorAll<HTMLAnchorElement>(
+      '[data-testid="inference-transcript-outcome-link"]',
+    );
+    expect(outcomes).toHaveLength(1);
+    expect(outcomes[0]?.getAttribute('href')).toContain('outcome=bad');
+    expect(transcriptHref).not.toHaveBeenCalledWith(
+      expect.objectContaining({ promptKey: 'p.two' }),
+    );
+    expect(target.innerHTML).not.toMatch(/messages|request|response/i);
+  });
+
+  it('shows plain counts without a host route', () => {
+    const target = render({
+      usage: {
+        by: ['fusion'],
+        buckets: [
+          {
+            key: { fusion: 'duo' },
+            calls: 2,
+            totalTokens: 2,
+            estimatedCost: 0,
+            transcripts: 2,
+          },
+        ],
+      },
+    });
+    usageTab(target);
+    expect(target.querySelector('a')).toBeNull();
+    expect(
+      target.querySelector('[data-testid="inference-transcript-count"]')
+        ?.textContent,
+    ).toContain('2');
+    expect(target.textContent).toContain('duo');
+  });
+});

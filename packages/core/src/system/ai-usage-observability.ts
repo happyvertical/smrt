@@ -477,6 +477,7 @@ export const AI_USAGE_REPORT_DIMENSIONS = [
   'tenant',
   'fusion',
   'source',
+  'template',
 ] as const;
 
 export type AiUsageReportDimension =
@@ -490,6 +491,12 @@ export interface AiUsageReportOptions {
   until?: Date;
   /** Total only this tenant; `null` totals only global rows. */
   tenantId?: string | null;
+  /**
+   * Also count, per bucket and in the totals, the calls that have a stored
+   * transcript (#4781): distinct `call_id`s with a `_smrt_ai_transcripts`
+   * row of the same tenant. A count only; no transcript content is read.
+   */
+  transcripts?: boolean;
 }
 
 /** Totals for one bucket (or the whole report). */
@@ -516,6 +523,11 @@ export interface AiUsageReportStats {
    * blocked call ran nothing, so it adds no tokens, cost or duration.
    */
   blocked: number;
+  /**
+   * Calls with a stored transcript (#4781), counted once per call. Present
+   * only when the report was asked for `transcripts: true`.
+   */
+  transcripts?: number;
 }
 
 /** One group of the report. */
@@ -558,9 +570,11 @@ interface StatsAccumulator {
   stats: AiUsageReportStats;
   durations: number[];
   runIds: Set<string>;
+  /** Calls already counted in `stats.transcripts`. */
+  transcriptCalls: Set<string>;
 }
 
-function emptyAccumulator(): StatsAccumulator {
+function emptyAccumulator(transcripts = false): StatsAccumulator {
   return {
     stats: {
       calls: 0,
@@ -576,9 +590,11 @@ function emptyAccumulator(): StatsAccumulator {
       // `__proto__` must count like any other label.
       outcomes: Object.create(null) as Record<string, number>,
       blocked: 0,
+      ...(transcripts ? { transcripts: 0 } : {}),
     },
     durations: [],
     runIds: new Set(),
+    transcriptCalls: new Set(),
   };
 }
 
@@ -638,10 +654,59 @@ function dimensionValue(
       const source = tags?.source;
       return typeof source === 'string' && source.length > 0 ? source : null;
     }
+    case 'template': {
+      // The rendered template's hash from the `templateHash` tag (#4751).
+      const hash = tags?.templateHash;
+      return typeof hash === 'string' && hash.length > 0 ? hash : null;
+    }
   }
 }
 
 const REPORT_PAGE_SIZE = 1000;
+
+/**
+ * The `(tenant, call id)` keys of a page's calls that have a stored
+ * transcript (#4781). Reads ids only, never content, and only rows of the
+ * report's tenant filter; a transcript counts only for usage rows of its own
+ * tenant (the caller compares the keys).
+ */
+async function transcribedCalls(
+  db: DatabaseInterface,
+  page: Record<string, unknown>[],
+  tenantId: string | null | undefined,
+  targetKey: (tenant: string | null, id: string) => string,
+): Promise<Set<string>> {
+  const callIds = [
+    ...new Set(
+      page
+        .map((row) => nullableString(row.call_id))
+        .filter((id): id is string => id !== null),
+    ),
+  ];
+  const found = new Set<string>();
+  if (callIds.length === 0) return found;
+  const params: unknown[] = [...callIds];
+  const conditions = [
+    `call_id IN (${callIds.map((_, index) => `$${index + 1}`).join(', ')})`,
+  ];
+  if (tenantId === null) conditions.push('tenant_id IS NULL');
+  else if (tenantId !== undefined) {
+    params.push(tenantId);
+    conditions.push(`tenant_id = $${params.length}`);
+  }
+  const rows = getRows(
+    await db.query(
+      `SELECT DISTINCT call_id, tenant_id FROM _smrt_ai_transcripts
+        WHERE ${conditions.join(' AND ')}`,
+      ...params,
+    ),
+  );
+  for (const row of rows) {
+    const callId = nullableString(row.call_id);
+    if (callId) found.add(targetKey(nullableString(row.tenant_id), callId));
+  }
+  return found;
+}
 
 /**
  * Group persisted AI usage by prompt, model, tier, class, tenant, fusion or
@@ -723,7 +788,8 @@ export async function reportAiUsage(
     }
   }
 
-  const totals = emptyAccumulator();
+  const withTranscripts = options.transcripts === true;
+  const totals = emptyAccumulator(withTranscripts);
   const buckets = new Map<
     string,
     { key: AiUsageReportBucket['key']; acc: StatsAccumulator }
@@ -755,6 +821,9 @@ export async function reportAiUsage(
     );
     if (page.length === 0) break;
     lastId = String(page[page.length - 1]?.id);
+    const transcribed = withTranscripts
+      ? await transcribedCalls(db, page, options.tenantId, targetKey)
+      : null;
 
     for (const row of page) {
       const id = String(row.id);
@@ -777,7 +846,7 @@ export async function reportAiUsage(
       const bucketId = JSON.stringify(by.map((dimension) => key[dimension]));
       let bucket = buckets.get(bucketId);
       if (!bucket) {
-        bucket = { key, acc: emptyAccumulator() };
+        bucket = { key, acc: emptyAccumulator(withTranscripts) };
         buckets.set(bucketId, bucket);
       }
 
@@ -815,6 +884,14 @@ export async function reportAiUsage(
         }
         acc.durations.push(Number(row.duration ?? 0));
         if (hasSubstitution(tags)) stats.substitutions++;
+        if (
+          callKey &&
+          transcribed?.has(callKey) &&
+          !acc.transcriptCalls.has(callKey)
+        ) {
+          acc.transcriptCalls.add(callKey);
+          stats.transcripts = (stats.transcripts ?? 0) + 1;
+        }
         for (const label of usageLabels) countOutcome(stats.outcomes, label);
         // A run label counts once per bucket containing the run, and once in
         // the totals, however many rows the run has.

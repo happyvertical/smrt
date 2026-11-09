@@ -34,7 +34,7 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import { resolveAiUsageTenantId } from './adapters/ai-usage-recorder.js';
 import {
   assertInferenceTranscriptsConfig,
-  getInferenceConfig,
+  getInferenceTranscriptsConfig,
   type InferenceRunStatus,
   type InferenceTranscriptPromptConfig,
 } from './inference.js';
@@ -67,11 +67,70 @@ export interface ResolvedAiTranscriptConfig {
 }
 
 /**
- * The process-level transcript config (#4780). Throws on an invalid block,
- * so a typo never silently stores (or silently drops) content.
+ * The operator's stored app-level transcript setting (#4781): whether to
+ * store, the success sample rate and the byte cap. Process-wide, never per
+ * tenant (owner decision: tenants cannot override transcripts).
+ */
+export interface AiTranscriptAppSettings {
+  enabled?: boolean;
+  sample?: number;
+  maxBytes?: number;
+}
+
+const APP_SETTINGS_KEY = Symbol.for('smrt.core.aiTranscriptAppSettings');
+
+type AppSettingsHolder = {
+  [APP_SETTINGS_KEY]?: AiTranscriptAppSettings | null;
+};
+
+/**
+ * Install (or, with `null`, clear) the app settings layer of the transcript
+ * config: smrt.config < `config()` < this layer < `SMRT_INFERENCE_TRANSCRIPTS`.
+ * smrt-inference calls it with its stored app row (the settings panel's
+ * write path and the override resolver's refresh); hosts rarely call it
+ * directly. Kept on `globalThis` so duplicate module copies share it.
+ * Throws on an invalid value, before anything changes.
+ */
+export function setAiTranscriptAppSettings(
+  settings: AiTranscriptAppSettings | null,
+): void {
+  if (settings !== null) {
+    assertInferenceTranscriptsConfig(settings);
+    if (Object.hasOwn(settings, 'prompts')) {
+      throw new Error(
+        'AI transcript app settings carry enabled, sample and maxBytes only.',
+      );
+    }
+  }
+  (globalThis as AppSettingsHolder)[APP_SETTINGS_KEY] =
+    settings === null
+      ? null
+      : {
+          ...(settings.enabled !== undefined
+            ? { enabled: settings.enabled }
+            : {}),
+          ...(settings.sample !== undefined ? { sample: settings.sample } : {}),
+          ...(settings.maxBytes !== undefined
+            ? { maxBytes: settings.maxBytes }
+            : {}),
+        };
+}
+
+/** The installed app settings layer, or `null`. */
+export function getAiTranscriptAppSettings(): AiTranscriptAppSettings | null {
+  const settings = (globalThis as AppSettingsHolder)[APP_SETTINGS_KEY];
+  return settings ? { ...settings } : null;
+}
+
+/**
+ * The process-level transcript config (#4780), with the app settings layer
+ * (#4781) under the environment. Throws on an invalid block, so a typo never
+ * silently stores (or silently drops) content.
  */
 export function resolveAiTranscriptConfig(): ResolvedAiTranscriptConfig {
-  const transcripts = getInferenceConfig()?.transcripts;
+  const transcripts = getInferenceTranscriptsConfig(
+    getAiTranscriptAppSettings(),
+  );
   assertInferenceTranscriptsConfig(transcripts);
   return {
     enabled: transcripts?.enabled === true,

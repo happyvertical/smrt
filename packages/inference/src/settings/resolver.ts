@@ -31,6 +31,7 @@ import {
   readInferenceOverrideRows,
 } from './layers.js';
 import type { InferenceTenantTargetPolicy } from './override-service.js';
+import { applyStoredTranscriptSettings } from './transcripts.js';
 
 /** Options for {@link createInferenceOverrideResolver}. */
 export interface InferenceOverrideResolverOptions {
@@ -123,8 +124,12 @@ export function createInferenceOverrideResolver(
         typeof request.tenantId === 'string' && request.tenantId
           ? request.tenantId
           : null;
+      const rows = await rowsFor(tenantId);
+      // The app's transcript setting (#4781) rides on the same rows: keep
+      // core's app settings layer current in this process.
+      applyStoredTranscriptSettings(rows.appRows);
       const layers = await buildInferenceOverrideLayers(
-        await rowsFor(tenantId),
+        rows,
         options.tenantTargetPolicy,
       );
       const merged = mergeSettingsConfigs(
