@@ -18,7 +18,7 @@ import {
   SmrtObject,
   smrt,
 } from '@happyvertical/smrt-core';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { backgroundEligible } from '../background-policy.js';
 import { createTaskRunner } from '../runner.js';
 import { type SmrtJob, SmrtJobCollection } from '../smrt-job.js';
@@ -161,10 +161,26 @@ describe('TaskRunner remediation (#1401)', () => {
     const runnerError = new Promise<Error>((resolve) => {
       runner.once('runner:error', resolve);
     });
+    const errorLines: string[] = [];
+    const consoleError = vi
+      .spyOn(console, 'error')
+      .mockImplementation((...parts: unknown[]) => {
+        errorLines.push(parts.map(String).join(' '));
+      });
 
     await runner.start();
     try {
       expect((await runnerError).message).toMatch(/completion event rejected/);
+      // Not silent (#4735): the error log names the job, not only an event a
+      // caller may not be listening for.
+      expect(
+        errorLines.some(
+          (line) =>
+            line.includes(job.id ?? 'missing-id') &&
+            line.includes('completion could not be persisted'),
+        ),
+      ).toBe(true);
+      consoleError.mockRestore();
       const persisted = await collection.get({ id: job.id ?? '' });
       expect(persisted?.status).toBe('running');
       expect(persisted?.attempts).toBe(1);

@@ -52,7 +52,11 @@ import {
   DEFAULT_TASK_HEARTBEAT_INTERVAL_MS,
   getEffectiveLeaseTtlMs,
 } from './stale-recovery.js';
-import { terminalSnapshot, transitionTerminalJob } from './terminal-outcome.js';
+import {
+  ensureTerminalOutcomeStorage,
+  terminalSnapshot,
+  transitionTerminalJob,
+} from './terminal-outcome.js';
 import {
   createWorkerKey,
   isWorkerAlive,
@@ -361,6 +365,8 @@ export class TaskRunner extends EventEmitter {
     // Fail fast if the job-system tables were never migrated, with an
     // actionable error rather than a confusing recovery failure later.
     await this.workerCollection.assertReady();
+
+    await this.prepareTerminalOutcomeStorage();
 
     // On SQLite, the runner's writes will race the off-loop ticker's writes to
     // the same file; enable WAL + a busy timeout up front so neither loses a
@@ -741,7 +747,7 @@ export class TaskRunner extends EventEmitter {
         // failure is an operator fault, not a business execution failure: the
         // transaction left the owned row running and must not relabel it or
         // schedule a retry through handleJobError().
-        this.emit('runner:error', persistenceError as Error);
+        this.reportUnpersistedJobWrite(job, 'completion', persistenceError);
         return;
       }
 
@@ -761,7 +767,7 @@ export class TaskRunner extends EventEmitter {
       try {
         await this.handleJobError(job, error as Error);
       } catch (handlerError) {
-        this.emit('runner:error', handlerError as Error);
+        this.reportUnpersistedJobWrite(job, 'failure', handlerError);
       }
     } finally {
       if (timeoutHandle) clearTimeout(timeoutHandle);
@@ -769,6 +775,45 @@ export class TaskRunner extends EventEmitter {
       this.jobAborts.delete(jobId);
       this.activeJobs.delete(jobId);
     }
+  }
+
+  /**
+   * Every terminal write needs the terminal-outcome storage, and preparing it
+   * builds the registry's merged schemas. Prepare it before claiming anything
+   * (#4735): a registry inconsistency then stops the runner at start, naming
+   * itself, instead of leaving every claimed job `running`; and models that
+   * register after start can no longer block a terminal write, because
+   * readiness is cached for this database.
+   */
+  private async prepareTerminalOutcomeStorage(): Promise<void> {
+    try {
+      await ensureTerminalOutcomeStorage(this.db as DatabaseInterface);
+    } catch (error) {
+      this.logger.error(
+        `TaskRunner cannot start: terminal job outcomes cannot be persisted: ${redactErrorForPersistence(error)}`,
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * A job's terminal (or retry) write could not be persisted. The state and
+   * its event commit together or not at all, so the row is still `running`
+   * and stale-job recovery will settle it once the fault clears; nothing here
+   * relabels it. What must not happen is silence (#4735): `runner:error` is
+   * only heard by a caller that listens, so say it at error level with the
+   * job id as well.
+   */
+  private reportUnpersistedJobWrite(
+    job: SmrtJob,
+    write: 'completion' | 'failure' | 'stale recovery',
+    cause: unknown,
+  ): void {
+    const error = cause instanceof Error ? cause : new Error(String(cause));
+    this.logger.error(
+      `Job ${job.id} (${job.getDescription()}) ${write} could not be persisted; the row stays running until stale-job recovery: ${redactErrorForPersistence(error)}`,
+    );
+    this.emit('runner:error', error);
   }
 
   /**
@@ -1446,16 +1491,24 @@ export class TaskRunner extends EventEmitter {
     for (const job of orphans) {
       const snapshot = terminalSnapshot(job);
       if (!snapshot) continue;
-      const event = await transitionTerminalJob(this.db, {
-        job: snapshot,
-        status: 'failed',
-        completedAt: recoveredAt,
-        expectedStatuses: ['running'],
-        expectedWorkerId: job.workerId ?? null,
-        clearWorker: true,
-        lastError: errorMessage,
-        failureKind: 'stale-recovery',
-      });
+      let event: SmrtJobEvent | null;
+      try {
+        event = await transitionTerminalJob(this.db, {
+          job: snapshot,
+          status: 'failed',
+          completedAt: recoveredAt,
+          expectedStatuses: ['running'],
+          expectedWorkerId: job.workerId ?? null,
+          clearWorker: true,
+          lastError: errorMessage,
+          failureKind: 'stale-recovery',
+        });
+      } catch (persistenceError) {
+        // One orphan that cannot be settled must not stop the sweep for the
+        // others, or stop this poll from claiming work (#4735).
+        this.reportUnpersistedJobWrite(job, 'stale recovery', persistenceError);
+        continue;
+      }
       if (!event) continue;
       job.status = 'failed';
       job.completedAt = recoveredAt;

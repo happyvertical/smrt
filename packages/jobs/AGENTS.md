@@ -42,6 +42,8 @@ lease advertising remains queue-level; it does not prove per-tenant availability
 8. Retry: uses strategy from `@happyvertical/jobs`, schedules future `runAt` on failure. A handler error's own hints win (#3308): `error.retryable === false` fails the job terminally; a positive `error.retryAfterMs` (capped at 24 h) is a floor on the strategy's delay
 9. Events: `job:started`, `job:completed`, `job:failed`, `job:retrying`, `runner:started/stopped`
 
+`start()` prepares the terminal-outcome storage before it registers or claims anything (#4735). Preparing it builds the registry's merged schemas, so a registry inconsistency (two unrelated classes claiming one table) rejects `start()` with that error, logged at error level, instead of stranding every claimed job as `running`. Readiness is cached per database: a model family that registers after start cannot block a later terminal write. A terminal or retry write that still cannot be persisted is logged at error level with the job id as well as emitted as `runner:error`; the row stays `running` for stale-job recovery, because state and event commit together (see Terminal outcomes) and a handler that returned is never relabelled. A recovery sweep logs an orphan it cannot settle and continues with the rest.
+
 A rejection from `processJob` can never escape the poll loop: the caller attaches `.catch(e => emit('runner:error', e))` and the error path (`handleJobError`) is itself try/caught, so a failure-path write that rejects is surfaced as a `runner:error` event instead of crashing the worker with an unhandled rejection.
 
 ## Timeouts & at-least-once
