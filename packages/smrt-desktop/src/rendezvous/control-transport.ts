@@ -41,6 +41,13 @@ const DEFAULT_CONNECT_TIMEOUT_MS = 1000;
 const DEFAULT_REQUEST_READ_TIMEOUT_MS = 2000;
 const DEFAULT_MAX_CONNECTIONS = 16;
 
+/**
+ * `connect(2)` errors that prove nothing is listening at the address: the
+ * name is gone or nobody holds it. Anything else, and every failure after a
+ * successful connect, says something was there and the outcome is unknown.
+ */
+const NO_LISTENER_CODES = new Set(['ENOENT', 'ENOTDIR', 'ECONNREFUSED']);
+
 function endpointAddress(endpoint: ControlEndpoint): string {
   return endpoint.kind === 'unix' ? endpoint.path : endpoint.name;
 }
@@ -71,8 +78,15 @@ export interface SendControlRequestOptions<
  *
  * Resolves with the parsed response, which may be an `ok: false` answer (a
  * protocol-level refusal is data, not an exception). Rejects with a
- * `DesktopContractError`: `control_unreachable` (no listener, connection
- * refused or dropped before an answer), `control_timeout`, `control_aborted`,
+ * `DesktopContractError`:
+ *
+ * - `control_unreachable`: proof that nothing listens (`ENOENT`, `ENOTDIR` or
+ *   `ECONNREFUSED` while connecting). Only this means a stale endpoint.
+ * - `control_indeterminate`: something accepted or may have accepted, and no
+ *   usable answer came: a reset, close or end after connecting (a server that
+ *   is saturated drops connections past its limit), or a connect error that is
+ *   not a refusal. The instance may be alive; never read it as stale.
+ * - `control_timeout`, `control_aborted`,
  * `invalid_endpoint`, or a codec code for an unparseable response
  * (`invalid_json`, `duplicate_keys`, `invalid_control_message`,
  * `control_message_too_large`, `unsupported_contract`). Nothing is written to
@@ -93,6 +107,7 @@ export function sendControlRequest<
   const signal = options.signal;
   return new Promise<Res>((resolve, reject) => {
     let settled = false;
+    let connected = false;
     let socket: Socket | undefined;
     let connectTimer: ReturnType<typeof setTimeout> | undefined;
     let responseTimer: ReturnType<typeof setTimeout> | undefined;
@@ -133,6 +148,7 @@ export function sendControlRequest<
       options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS,
     );
     socket.once('connect', () => {
+      connected = true;
       clearTimeout(connectTimer);
       responseTimer = setTimeout(
         () => fail('control_timeout'),
@@ -166,11 +182,20 @@ export function sendControlRequest<
         }
       });
     });
-    // Any socket error or an early close is "no usable listener": the caller
-    // treats that as a stale endpoint, never as a reason to retry the write.
-    socket.once('error', () => fail('control_unreachable'));
-    socket.once('close', () => fail('control_unreachable'));
-    socket.once('end', () => fail('control_unreachable'));
+    // Only a refusal or a missing name before the connection is "nobody
+    // there". A reset, close or end after it (or any other error) means a
+    // server may be alive: report that as indeterminate so the caller does not
+    // start a second instance on top of a busy one. The caller never retries
+    // the write.
+    socket.once('error', (error: NodeJS.ErrnoException) =>
+      fail(
+        !connected && NO_LISTENER_CODES.has(String(error?.code))
+          ? 'control_unreachable'
+          : 'control_indeterminate',
+      ),
+    );
+    socket.once('close', () => fail('control_indeterminate'));
+    socket.once('end', () => fail('control_indeterminate'));
   });
 }
 

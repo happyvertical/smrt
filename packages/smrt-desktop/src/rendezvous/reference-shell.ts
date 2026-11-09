@@ -204,6 +204,8 @@ export interface ReferenceShellOptions<
   readonly currentUid?: number;
   /** Passed to the control server (time a peer has to deliver its request). */
   readonly requestReadTimeoutMs?: number;
+  /** Passed to the control server (connections served at once). */
+  readonly maxConnections?: number;
   /**
    * Called with every `instance.json` write that failed. The shell keeps
    * publishing later phases regardless; `flush()` and `close()` also rethrow
@@ -318,6 +320,9 @@ export async function startReferenceShell<
       ...(options.requestReadTimeoutMs === undefined
         ? {}
         : { requestReadTimeoutMs: options.requestReadTimeoutMs }),
+      ...(options.maxConnections === undefined
+        ? {}
+        : { maxConnections: options.maxConnections }),
     },
   );
   const unsubscribe = supervisor.onChange(() => {

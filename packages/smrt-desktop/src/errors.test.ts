@@ -45,6 +45,7 @@ describe('DesktopContractError', () => {
       'invalid_endpoint',
       'untrusted_endpoint',
       'control_unreachable',
+      'control_indeterminate',
       'control_timeout',
       'control_aborted',
       'control_server_failed',

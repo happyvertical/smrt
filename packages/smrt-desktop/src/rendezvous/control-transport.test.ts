@@ -1,5 +1,10 @@
 import { chmodSync, existsSync, mkdtempSync, rmSync, statSync } from 'node:fs';
-import { createConnection, createServer, type Server } from 'node:net';
+import {
+  createConnection,
+  createServer,
+  type Server,
+  type Socket,
+} from 'node:net';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { DesktopContractError } from '../errors.js';
@@ -349,6 +354,61 @@ posixOnly('control transport over a unix socket', () => {
     ).toBe('control_unreachable');
   });
 
+  it('tells a dropped connection from a missing listener: close and end after connecting are indeterminate', async () => {
+    for (const drop of [
+      (socket: Socket) => socket.destroy(),
+      (socket: Socket) => socket.end(),
+    ]) {
+      const target = deriveControlEndpoint({
+        platform: process.platform,
+        bundleId: 'com.happyvertical.smrt-notes',
+        directory: dir,
+      }) as typeof endpoint;
+      const dropper = createServer((socket) => {
+        socket.on('error', () => {});
+        drop(socket);
+      });
+      await new Promise<void>((resolve) =>
+        dropper.listen(target.path, resolve),
+      );
+      rawServers.push(dropper);
+      expect(
+        await code(
+          sendControlRequest(
+            target,
+            { v: 1, op: 'status' },
+            { timeoutMs: 500 },
+          ),
+        ),
+      ).toBe('control_indeterminate');
+    }
+  });
+
+  it('reads a server that drops connections past maxConnections as indeterminate, not unreachable', async () => {
+    const release: Array<() => void> = [];
+    const server = await serve(
+      () => new Promise<never>((_resolve, reject) => release.push(reject)),
+      { maxConnections: 1 },
+    );
+    const holder = sendControlRequest(
+      endpoint,
+      { v: 1, op: 'status' },
+      { timeoutMs: 5000 },
+    ).catch(() => undefined);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(
+      await code(
+        sendControlRequest(
+          endpoint,
+          { v: 1, op: 'status' },
+          { timeoutMs: 500 },
+        ),
+      ),
+    ).toBe('control_indeterminate');
+    await server.close();
+    await holder;
+  });
+
   it('times out on a listener that never answers', async () => {
     const hung = createServer((socket) => socket.on('error', () => {}));
     await new Promise<void>((resolve) => hung.listen(endpoint.path, resolve));
@@ -405,7 +465,7 @@ posixOnly('control transport over a unix socket', () => {
     await stop();
 
     await reply('{"v":1,"ok":true');
-    expect(await code(ask())).toBe('control_unreachable');
+    expect(await code(ask())).toBe('control_indeterminate');
     await stop();
 
     await reply(Buffer.from([0xff, 0x0a]));

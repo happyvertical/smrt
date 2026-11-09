@@ -47,6 +47,10 @@ export const DEFAULT_ENSURE_READY_TIMEOUT_MS = 60_000;
  *   `start: false`).
  * - `untrusted_state`: the installation, record, directory or socket failed a
  *   custody check. Nothing was started.
+ * - `unresponsive`: something holds the control endpoint (it accepted the
+ *   connection, or timed out) but gave no usable answer, for example a
+ *   saturated server dropping connections. Its state is unknown, so nothing
+ *   was started; try again later. It is never a stale endpoint.
  * - `timeout`: not ready within the budget (a shell may still be starting).
  */
 export type RendezvousResult =
@@ -61,6 +65,7 @@ export type RendezvousResult =
   | { readonly state: 'not_installed' }
   | { readonly state: 'not_running' }
   | { readonly state: 'untrusted_state' }
+  | { readonly state: 'unresponsive' }
   | { readonly state: 'timeout' };
 
 /** What `ensureReady` returns: everything except the transient `starting`. */
@@ -238,9 +243,11 @@ type Probe =
   | { readonly kind: 'starting'; readonly instanceNonce: string }
   | { readonly kind: 'failed'; readonly code: RendezvousFailureCode }
   | { readonly kind: 'absent' }
+  | { readonly kind: 'unresponsive' }
   | { readonly kind: 'untrusted' };
 
 const ABSENT: Probe = { kind: 'absent' };
+const UNRESPONSIVE: Probe = { kind: 'unresponsive' };
 const UNTRUSTED: Probe = { kind: 'untrusted' };
 
 /** Delay before re-reading the record after a nonce/origin disagreement. */
@@ -286,7 +293,11 @@ function frozen<T extends object>(value: T): T {
  *    Failure => `untrusted_state`; nothing is started.
  * 4. Ask `status`. Liveness is proven by the channel answering with the
  *    recorded `instanceNonce`: never by the pid, never by the file existing.
- *    No listener (missing, refused, timed out) => stale => step 5. A nonce,
+ *    No listener (the socket is missing or refuses the connection) => stale =>
+ *    step 5. A connection that was accepted and then reset, closed or left
+ *    unanswered is NOT stale: the instance may be alive and saturated, so
+ *    nothing is started and the call retries `status` until the budget ends
+ *    (`unresponsive`). A nonce,
  *    product or origin disagreement is re-read once, then `instance_mismatch`.
  *    `ready` => return. `failed(code)` => return it (never retried, never a
  *    reason to spawn). `starting` => wait on `ensure-ready` for the budget.
@@ -493,14 +504,20 @@ export function createFileRendezvous(
       } catch (error) {
         throwIfAborted(signal);
         if (error instanceof DesktopContractError) {
+          // Only a refused or missing endpoint proves nobody listens.
           if (error.code === 'control_unreachable') return ABSENT;
           if (error.code === 'control_timeout') {
-            // A long poll that outlived its budget is still starting; a
-            // status that gets no answer means nobody is serving.
+            // A long poll that outlived its budget is still starting. A
+            // status that is not answered in time came from something that
+            // holds the endpoint: not proof that nobody serves.
             return waitMs === undefined
-              ? ABSENT
+              ? UNRESPONSIVE
               : { kind: 'starting', instanceNonce: record.instanceNonce };
           }
+          // Connected, then reset, closed or ended with no answer (for
+          // example a server dropping connections past its limit): the
+          // instance may be alive and busy, so never treat it as stale.
+          if (error.code === 'control_indeterminate') return UNRESPONSIVE;
           if (error.code === 'unsupported_contract') {
             return failureOf('unsupported_contract');
           }
@@ -534,6 +551,8 @@ export function createFileRendezvous(
         return frozen({ state: 'failed', code: result.code });
       case 'untrusted':
         return frozen({ state: 'untrusted_state' });
+      case 'unresponsive':
+        return frozen({ state: 'unresponsive' });
       default:
         return frozen({ state: 'not_running' });
     }
@@ -587,11 +606,18 @@ export function createFileRendezvous(
       // Set once a nonce-verified `starting` has been seen in this call. From
       // then on a dropped long poll is not evidence that nobody serves.
       let sawLive = false;
+      // The last look found a holder that gave no usable answer: running out
+      // of budget then reports that, not a plain timeout.
+      let lastUnresponsive = false;
       let delay = pollIntervalMs;
       for (;;) {
         throwIfAborted(signal);
         const remaining = deadline - clock.now();
-        if (remaining <= 0) return frozen({ state: 'timeout' });
+        if (remaining <= 0) {
+          return frozen({
+            state: lastUnresponsive ? 'unresponsive' : 'timeout',
+          });
+        }
 
         const asked = clock.now();
         const seen = await probe(
@@ -599,11 +625,24 @@ export function createFileRendezvous(
           signal,
           waiting ? remaining : undefined,
         );
+        lastUnresponsive = seen.kind === 'unresponsive';
         switch (seen.kind) {
           case 'ready':
           case 'failed':
           case 'untrusted':
             return toResult(seen) as EnsureReadyResult;
+          case 'unresponsive': {
+            // Never launch on top of something that holds the endpoint: ask
+            // again with `status` (a held long-poll slot is not retried as
+            // one) and give it the budget to answer.
+            waiting = false;
+            await clock.sleep(
+              Math.min(delay, Math.max(0, deadline - clock.now())),
+              signal,
+            );
+            delay = Math.min(Math.ceil(delay * 1.5), maxPollIntervalMs);
+            break;
+          }
           case 'starting': {
             waiting = true;
             sawLive = true;

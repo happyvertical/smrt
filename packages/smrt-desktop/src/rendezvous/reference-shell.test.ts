@@ -86,7 +86,7 @@ posixOnly('reference shell record writes', () => {
     await expect(shell.close()).rejects.toBeInstanceOf(FsTrustError);
   });
 
-  it('does not leave a listener behind when the first publish fails', async () => {
+  it('fails to start (and stops its server) when the first publish fails', async () => {
     const { fs, state } = flakyFs();
     state.failRenames = 1;
     await expect(
