@@ -268,3 +268,58 @@ describe('approval gating', () => {
     await expect(host.get('Chore', chore)).rejects.toThrow();
   });
 });
+
+describe('undo that would overwrite newer data', () => {
+  it('App.undo and the assistant/MCP door return a pending approval with the count', async () => {
+    const host = await getHost();
+    await asOwner(() => App.defineModel('Dial', { level: { type: 'text' } }));
+    const a = await host.create('Dial', { level: '1' });
+    await host.create('Dial', { level: '2' });
+    await host.execute(
+      {
+        type: 'changeFieldType',
+        model: 'Dial',
+        field: 'level',
+        to: { type: 'integer' },
+      },
+      { author: 't', approved: true },
+    );
+    await host.update('Dial', a.id as string, { level: 50 });
+    const version = host.version;
+
+    const out = (await asOwner(() => App.undo())) as {
+      status: string;
+      approvalId: string;
+      preview: { replaced: number; fields: { model: string; field: string }[] };
+    };
+    expect(out.status).toBe('pending_approval');
+    expect(out.preview.replaced).toBe(1);
+    expect(out.preview.fields[0]).toMatchObject({
+      model: 'Dial',
+      field: 'level',
+    });
+    expect(host.version).toBe(version);
+    // the engine refuses on its own, whatever the caller says
+    await expect(
+      host.execute({ type: 'undo' }, { author: 'x' }),
+    ).rejects.toThrow(/approval required/);
+    // an identical request reuses the card
+    const again = (await asOwner(() => App.undo())) as { approvalId: string };
+    expect(again.approvalId).toBe(out.approvalId);
+
+    const row = (await (
+      await ApprovalCollection.create({ db: h.db })
+    ).get(out.approvalId)) as Approval;
+    expect((await runAs(h.owner, () => row.decide(true))).status).toBe(
+      'approved',
+    );
+    expect(host.version).toBe(version - 1);
+    expect((await host.get('Dial', a.id as string)).level).toBe('1');
+  });
+
+  it('a plain undo is still immediate', async () => {
+    await asOwner(() => App.addField('Dial', 'tag', { type: 'text' }));
+    const out = (await asOwner(() => App.undo())) as { status?: string };
+    expect(out.status).toBeUndefined();
+  });
+});

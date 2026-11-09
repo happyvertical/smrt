@@ -23,8 +23,21 @@ export async function runCommand(
   try {
     return await host.execute(command, { author });
   } catch (e) {
-    if (e instanceof ApprovalRequiredError)
-      return requestApproval({ kind: 'command', command }, e.plan, author);
+    if (e instanceof ApprovalRequiredError) {
+      // An undo is approved for the version it was planned against: if the app
+      // moves on first, approving it must not undo something else.
+      const version = (e.plan.preview as { version?: unknown } | undefined)
+        ?.version;
+      const pinned: Command =
+        command.type === 'undo' && typeof version === 'number'
+          ? { type: 'undo', version }
+          : command;
+      return requestApproval(
+        { kind: 'command', command: pinned },
+        e.plan,
+        author,
+      );
+    }
     throw e;
   }
 }

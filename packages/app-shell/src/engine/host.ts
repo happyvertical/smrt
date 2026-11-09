@@ -15,6 +15,7 @@ import {
   type ExecuteOptions,
   isRiskyCommand,
   isRiskyTool,
+  overwritesOnUndo,
   type Plan,
   type Template,
 } from './commands.ts';
@@ -29,6 +30,7 @@ import {
   type Migration,
   RECIPES,
   refuseChanges,
+  restRouteAllowed,
   type Step,
   snake,
   tableFor,
@@ -66,6 +68,8 @@ export interface CleanUpResult {
   purgedVersions: number[];
   values: number;
   tables: number;
+  /** Old migration/schema snapshot files removed. */
+  snapshots: number;
 }
 
 export type ExecuteResult = ChangeResult | CleanUpResult | Template;
@@ -114,6 +118,8 @@ function defaultWorkerUrl(): URL {
 }
 
 const MAX_TEMPLATE_RECORDS = 100_000;
+/** Method code an import may carry: all of it is shown for approval. */
+const MAX_REVIEW_CODE_CHARS = 200_000;
 const isObj = (v: unknown): v is Row =>
   !!v && typeof v === 'object' && !Array.isArray(v);
 
@@ -612,7 +618,7 @@ export class AppHost extends EventEmitter {
         return change(`enable ${cmd.recipe}`, d);
       }
       case 'undo':
-        return this.analyseUndo();
+        return this.analyseUndo(cmd.version);
       case 'cleanUp':
         return this.analyseCleanUp(cmd.keep);
       case 'exportTemplate':
@@ -634,10 +640,15 @@ export class AppHost extends EventEmitter {
     if (errs.length) throw new EngineError(errs.join('\n'));
   }
 
-  private async analyseUndo(): Promise<Analysis> {
+  private async analyseUndo(pin?: number): Promise<Analysis> {
     const rec = await this.store.get(this.version);
     if (!rec || rec.parent == null)
       throw new EngineError('nothing to undo', 'refused');
+    if (pin !== undefined && pin !== rec.version)
+      throw new EngineError(
+        `the app has changed since this undo was asked for (now at version ${rec.version}); ask again`,
+        'refused',
+      );
     if (rec.migration?.purged)
       throw new EngineError(
         `can't undo "${rec.summary}": its archived data was cleaned up`,
@@ -646,14 +657,37 @@ export class AppHost extends EventEmitter {
     const parent = await this.store.get(rec.parent);
     if (!parent)
       throw new EngineError(`version ${rec.parent} is missing`, 'not_found');
+    // Undo is the safety net, so it is immediate, except where going back
+    // overwrites newer data: a convertColumn step restores each row's original
+    // value, replacing whatever was written to that column since. Decided here
+    // from the stored version, never from the caller.
+    const steps = rec.migration?.steps ?? [];
+    const converts = steps.filter(overwritesOnUndo);
+    const risky = converts.length > 0;
+    let preview: Record<string, unknown> = {
+      version: rec.version,
+      steps: steps.length,
+    };
+    if (risky) {
+      const counts = await this.callApp<
+        { table: string; column: string; replaced: number }[]
+      >('countOverwrites', rec.version, steps);
+      const fields = counts.map((c) => {
+        const where = this.locate(rec.definition, c.table, c.column);
+        return { ...where, rows: c.replaced };
+      });
+      preview = {
+        ...preview,
+        fields,
+        replaced: fields.reduce((n, f) => n + f.rows, 0),
+        note: 'Going back restores the original value of every row in these fields. Values written since the type change are replaced.',
+      };
+    }
     return {
       plan: {
         summary: `undo: ${rec.summary}`,
-        risky: false,
-        preview: {
-          version: rec.version,
-          steps: rec.migration?.steps.length ?? 0,
-        },
+        risky,
+        preview,
       },
       apply: async () => {
         const migration: Migration | undefined = rec.migration?.steps.length
@@ -683,6 +717,15 @@ export class AppHost extends EventEmitter {
     };
   }
 
+  /** The model and field stored in `table.column` under `def`. */
+  private locate(def: AppDefinition, table: string, column: string) {
+    for (const [model, md] of Object.entries(def.models))
+      if (tableFor(model, md) === table)
+        for (const f of Object.keys(md.fields))
+          if (snake(f) === column) return { model, field: f };
+    return { model: table, field: column };
+  }
+
   /** The chain from the current version back to the root, newest first. */
   private async chain(): Promise<VersionRecord[]> {
     const out: VersionRecord[] = [];
@@ -699,7 +742,8 @@ export class AppHost extends EventEmitter {
   private async analyseCleanUp(keep: number): Promise<Analysis> {
     if (!Number.isInteger(keep) || keep < 0)
       throw new EngineError('keep must be a whole number, zero or more');
-    const old = (await this.chain())
+    const chain = await this.chain();
+    const old = chain
       .slice(keep)
       .filter((r) => r.migration?.steps.length && !r.migration.purged);
     const versions = old.map((r) => r.version);
@@ -713,6 +757,9 @@ export class AppHost extends EventEmitter {
       versions,
       tables,
     );
+    // Snapshots taken before the newest purged change belong to changes that
+    // can no longer be undone.
+    const cutoff = Date.parse(chain[keep]?.createdAt ?? '');
     return {
       plan: {
         summary: `clean up: keep the last ${keep} changes undoable`,
@@ -731,7 +778,10 @@ export class AppHost extends EventEmitter {
           tables,
         );
         for (const v of versions) await this.store.markPurged(v);
-        return { purgedVersions: versions, ...purged };
+        const snapshots = Number.isFinite(cutoff)
+          ? await this.callApp<number>('pruneSnapshots', cutoff)
+          : 0;
+        return { purgedVersions: versions, ...purged, snapshots };
       },
     };
   }
@@ -767,14 +817,34 @@ export class AppHost extends EventEmitter {
     if (this.version !== 0 || Object.keys(this.def.models).length)
       throw new EngineError('import needs an empty app', 'refused');
     const def = structuredClone(data.definition);
-    let methods = 0;
+    // The approval shows every method in full: what is approved is what runs.
+    const methods: {
+      model: string;
+      name: string;
+      description: string;
+      params: Record<string, unknown>;
+      code: string;
+    }[] = [];
+    let codeChars = 0;
     for (const [m, md] of Object.entries(def.models))
       for (const [n, meth] of Object.entries(md.methods ?? {})) {
-        methods++;
         const problem = await checkSyntax(meth.code);
         if (problem)
           throw new EngineError(`${m}.${n}() does not parse: ${problem}`);
+        codeChars += meth.code.length;
+        methods.push({
+          model: m,
+          name: n,
+          description: meth.description,
+          params: meth.params ?? {},
+          code: meth.code,
+        });
       }
+    if (codeChars > MAX_REVIEW_CODE_CHARS)
+      throw new EngineError(
+        `the template carries too much code to review (${codeChars} characters, at most ${MAX_REVIEW_CODE_CHARS}); import it in smaller parts`,
+        'refused',
+      );
     let records: Record<string, Row[]> | undefined;
     let total = 0;
     if (data.records !== undefined) {
@@ -907,6 +977,14 @@ export class AppHost extends EventEmitter {
     opts: { approved?: boolean } = {},
   ) {
     const method = req.method.toUpperCase();
+    // Only the app's own collection routes are served (see restRouteAllowed);
+    // checked before the gate so a reserved route is never even an approval.
+    if (!restRouteAllowed(this.def, req.url))
+      return {
+        status: 404,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'Not found' }),
+      } satisfies RestResult;
     if (method === 'DELETE' && opts.approved !== true)
       throw new ApprovalRequiredError({
         summary: `DELETE ${req.url}`,

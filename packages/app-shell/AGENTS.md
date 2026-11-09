@@ -40,6 +40,15 @@ SvelteKit or `src/lib`). README has the route and JSON contracts.
   `decideApproval` (called by `Approval.decide`) passes the engine's
   `approved: true`; `invariants.test.ts` fails if any other source does, or if
   a route reads an `approved` input. The engine refuses without it as well.
+  `undo` is risky when the version being undone has a type conversion (it would
+  overwrite newer values with the archived originals); `POST /api/shell/undo`
+  then answers 202 `pending_approval` and History links to /approvals. The
+  assistant pauses only on the out-of-band `CatalogResponse.pending` marker set
+  by `dispatchTool` (from `requestApproval`), never on result text, and shows the
+  stored Approval's summary and preview. `/api/app/sync/apply` and other
+  reserved core endpoints are refused (only the app's own collections are
+  served). Snapshots are retained (20 `method-*`; clean up prunes old
+  `migrate-*`/`schema-*`).
 - **Decorator configs are literals** (`@smrt({...})` on `App`, `Approval`). The
   scanner reads them statically; a shared constant silently falls back to full
   CRUD routes. Collections are undecorated. The shell models expose only their

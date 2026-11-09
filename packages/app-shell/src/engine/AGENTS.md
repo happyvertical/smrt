@@ -37,14 +37,39 @@ adds) and swaps it in once it is ready. The engine must not import SvelteKit,
   the wrapper). Writes are validated and a `VACUUM INTO` snapshot is taken before
   they are applied.
 
-## Known core gap
+## Profile subclass (core gap fixed, #4871)
 
-The app subclass is registered as `AppProfile`, not `Profile`
-(`RECIPES.profiles.models.Profile.className`). A second class named `Profile`
-makes `ObjectRegistry.getSTIBase` return null for the shipped `Profile` and for
-`Person`/`Organization`, and `getAllSchemasAsDefinitions` then throws
-`CONFIG_TABLE_NAME_COLLISION`. `core-gap.test.ts` is an `it.fails` that flips
-when core resolves a parent by qualified name.
+The app subclass of the shipped `Profile` is registered as
+`@local/app:Profile`, the same class name as its parent. Core keeps the two
+apart: `registerRuntimeModel` leaves a same-named parent registered (constructor
+index, no lineage replacement), and the parent's generated REST and MCP
+surfaces are closed with `ObjectRegistry.registerOverride(parent, { api: false,
+mcp: false })` in `AppRuntime.register`, so only the subclass's tools exist.
+Covered by core's `runtime-model.test.ts` and engine `profile-subclass.test.ts`.
+
+## Safety rules added in review
+
+- **Undo is gated when it overwrites data.** `undo` is not in `RISKY_COMMANDS`;
+  the host decides from the *stored* version (`analyseUndo`): a version with a
+  `convertColumn` step restores each row's archived original on the way back,
+  replacing values written since, so the plan is `risky` with a read-only
+  `countOverwrites` preview (`replaced`, `fields[]`). Every other undo stays
+  immediate. The shell pins the approval to that version (`undo.version`); the
+  host refuses if the app moved on.
+- **REST surface.** `restRouteAllowed` (definition.ts) lets only
+  `/api/<route>` and `/api/<route>/<id|action>` of the app's own models through,
+  in `AppHost.rest` and `AppRuntime.rest`. Core's reserved `sync/apply` (its
+  `delete` op deletes records), `_changes`/`_events`/`_inference` and the
+  registry fallback to shipped classes (e.g. `ProfileType`) are 404 before the
+  DELETE gate. `DELETE` on an allowed route still needs approval.
+- **Snapshot retention** (`snapshots.ts`): the worker keeps the newest 20
+  `method-*` snapshots after each new one; `cleanUp` removes `migrate-*` and
+  `schema-*` snapshots older than the newest change it purges. Only plain files
+  matching the engine's own name pattern in `snapshots/` are ever deleted
+  (never symlinks, directories or other files).
+- **importTemplate preview** lists every method (model, name, description,
+  params, code), so what the owner approves is what is shown; a template with
+  more than 200,000 characters of method code is refused as unreviewable.
 
 ## Lessons
 

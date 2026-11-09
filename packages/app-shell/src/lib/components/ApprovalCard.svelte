@@ -37,11 +37,11 @@ const badge = $derived(
     <p class:warn={detail.destructive && i === detail.lines.length - 1}>{line}</p>
   {/each}
 
-  {#if detail.code}
-    <p class="sh-muted" id="{uid}-code">Code for {detail.codeTitle}</p>
+  {#each detail.blocks as block, i (i)}
+    <p class="sh-muted" id="{uid}-code-{i}">Code for {block.title}</p>
     <!-- svelte-ignore a11y_no_noninteractive_tabindex (keyboard scrolling of long code) -->
-    <pre class="sh-code" tabindex="0" aria-labelledby="{uid}-code"><code>{detail.code}</code></pre>
-  {/if}
+    <pre class="sh-code" tabindex="0" aria-labelledby="{uid}-code-{i}"><code>{block.code}</code></pre>
+  {/each}
 
   <p class="sh-muted">
     Asked <time datetime={approval.createdAt} title={fullTime(approval.createdAt)}

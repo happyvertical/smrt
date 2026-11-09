@@ -59,8 +59,56 @@ describe('approval descriptions', () => {
         },
       }),
     );
-    expect(d.code).toBe('return 1;');
-    expect(d.codeTitle).toBe('Chore.complete()');
+    expect(d.blocks).toEqual([
+      { title: 'Chore.complete()', code: 'return 1;' },
+    ]);
+  });
+
+  it('shows every method of an imported template in full', () => {
+    const d = describeApproval(
+      view({
+        action: { kind: 'command', command: { type: 'importTemplate' } },
+        preview: {
+          models: ['Chore', 'Errand'],
+          records: 0,
+          methods: [
+            {
+              model: 'Chore',
+              name: 'done',
+              description: 'Marks done',
+              params: {},
+              code: 'return 1;',
+            },
+            {
+              model: 'Errand',
+              name: 'wipe',
+              description: '',
+              params: {},
+              code: 'return 2;',
+            },
+          ],
+        },
+      }),
+    );
+    expect(d.lines.join(' ')).toContain('2 code methods');
+    expect(d.blocks.map((b) => b.code)).toEqual(['return 1;', 'return 2;']);
+    expect(d.blocks[0].title).toContain('Chore.done()');
+  });
+
+  it('describes an undo that overwrites newer values', () => {
+    const d = describeApproval(
+      view({
+        action: { kind: 'command', command: { type: 'undo', version: 3 } },
+        preview: {
+          version: 3,
+          fields: [{ model: 'Chore', field: 'points', rows: 2 }],
+          replaced: 2,
+        },
+      }),
+    );
+    expect(d.lines.join(' ')).toContain('Chore.points');
+    expect(d.lines.join(' ')).toContain('2 records changed since');
+    expect(d.destructive).toBe(true);
   });
 
   it('flags cleanUp and deletes as permanent', () => {

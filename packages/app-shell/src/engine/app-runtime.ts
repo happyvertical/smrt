@@ -25,6 +25,7 @@ import {
   type ModelDef,
   RECIPES,
   recipeModelFor,
+  restRouteAllowed,
   routeFor,
   type Step,
   snake,
@@ -44,6 +45,7 @@ import {
   validateWrites,
   type Write,
 } from './sandbox.ts';
+import { pruneMethodSnapshots, pruneMigrationSnapshots } from './snapshots.ts';
 
 type Row = Record<string, unknown>;
 type Handle = any;
@@ -384,6 +386,49 @@ export class AppRuntime {
     return { values, tables: tables.length };
   }
 
+  /**
+   * How many rows undoing `version`'s `convertColumn` steps would overwrite:
+   * rows whose current value is not what converting the archived original
+   * gives (they were edited, or created over the original, since).
+   */
+  async countOverwrites(version: number, steps: Step[]) {
+    const out: { table: string; column: string; replaced: number }[] = [];
+    for (const step of steps) {
+      if (step.op !== 'convertColumn') continue;
+      let replaced = 0;
+      if (
+        (await this.tableExists(this.db, '_archive')) &&
+        (await this.columnTypes(this.db, step.table)).has(step.column)
+      ) {
+        const archived = (
+          await this.db.query(
+            `SELECT record_id, value FROM _archive WHERE version = ? AND tbl = ? AND col = ?`,
+            [version, step.table, step.column],
+          )
+        ).rows as Row[];
+        const current = new Map<string, unknown>(
+          (
+            (
+              await this.db.query(
+                `SELECT ${q(step.key)} AS k, ${q(step.column)} AS v FROM ${q(step.table)}`,
+              )
+            ).rows as Row[]
+          ).map((r) => [String(r.k), r.v]),
+        );
+        for (const a of archived) {
+          const id = String(a.record_id);
+          if (!current.has(id)) continue; // deleted since: nothing to overwrite
+          const was = convertValue(a.value, step.to).value;
+          const now = current.get(id);
+          if ((was ?? null) !== (now ?? null) && String(was) !== String(now))
+            replaced++;
+        }
+      }
+      out.push({ table: step.table, column: step.column, replaced });
+    }
+    return out;
+  }
+
   /** Delete archived values and tables for the given versions. */
   async purgeArchives(versions: number[], tables: string[]) {
     if (!versions.length && !tables.length) return { values: 0, tables: 0 };
@@ -409,7 +454,18 @@ export class AppRuntime {
       `${Date.now()}-${this.snapshots++}-${safe}.db`,
     );
     await this.db.query(`VACUUM INTO '${file.replace(/'/g, "''")}'`);
+    // Applied method writes can come in a stream: keep only the newest few.
+    if (safe.startsWith('method-'))
+      pruneMethodSnapshots(join(this.dataDir, 'snapshots'));
     return file;
+  }
+
+  /** Delete migrate/schema snapshots taken before `beforeMs` (clean up). */
+  pruneSnapshots(beforeMs: number) {
+    return pruneMigrationSnapshots(
+      join(this.dataDir, 'snapshots'),
+      Number(beforeMs),
+    );
   }
 
   // ---------- SMRT's generated surfaces ----------
@@ -448,6 +504,12 @@ export class AppRuntime {
 
   /** SMRT's generated REST routes. */
   async rest(req: { method: string; url: string; body?: string }) {
+    if (!restRouteAllowed(this.def, req.url))
+      return {
+        status: 404,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'Not found' }),
+      };
     const api = new APIGenerator(
       {
         basePath: '/api',

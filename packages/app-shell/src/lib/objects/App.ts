@@ -231,7 +231,11 @@ export class App extends SmrtObject {
     return run({ type: 'enableRecipe', recipe: str(recipe, 'recipe') });
   }
 
-  /** Undo the last change. */
+  /**
+   * Undo the last change. If that change converted a field's type, going back
+   * would overwrite newer values with the archived originals, so it waits for
+   * the owner's approval (`pending_approval`).
+   */
   static async undo() {
     return run({ type: 'undo' });
   }

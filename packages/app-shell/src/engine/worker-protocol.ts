@@ -13,6 +13,8 @@ export const WORKER_OPS = [
   'countValues',
   'countRows',
   'countArchives',
+  'countOverwrites',
+  'pruneSnapshots',
   'purgeArchives',
   'importRecords',
 ] as const;

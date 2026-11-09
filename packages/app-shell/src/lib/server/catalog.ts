@@ -9,6 +9,7 @@ import {
 import { isRiskyTool } from '../../engine/index.ts';
 import { App } from '../objects/App.ts';
 import { Approval } from '../objects/Approval.ts';
+import { collectIssuedApprovals, type PendingApproval } from './approvals.ts';
 import { runAppTool } from './builder.ts';
 import { getHost, getShellDb, shellDbSync } from './host.ts';
 import { runAs } from './owner.ts';
@@ -28,6 +29,12 @@ export interface CatalogResponse {
   content: unknown;
   isError?: boolean;
   structuredContent?: unknown;
+  /**
+   * Set by `dispatchTool` only, never derived from content: this call was
+   * turned into an Approval (by `requestApproval`). The assistant holds its
+   * turn on this, not on what the result text looks like.
+   */
+  pending?: PendingApproval;
 }
 
 let shellServer: McpAppServer | null = null;
@@ -100,6 +107,17 @@ function asText(value: unknown): { type: 'text'; text: string }[] {
 
 /** Dispatch a call to the half that owns `name`. Authorize BEFORE calling. */
 export async function dispatchTool(
+  principal: McpAppPrincipal & { id: string },
+  tool: CatalogTool,
+  args: Record<string, unknown>,
+): Promise<CatalogResponse> {
+  const { value, issued } = await collectIssuedApprovals(() =>
+    dispatchInner(principal, tool, args),
+  );
+  return issued.length ? { ...value, pending: issued[0] } : value;
+}
+
+async function dispatchInner(
   principal: McpAppPrincipal & { id: string },
   tool: CatalogTool,
   args: Record<string, unknown>,

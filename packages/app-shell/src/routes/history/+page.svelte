@@ -1,7 +1,7 @@
 <script lang="ts">
 import { invalidate } from '$app/navigation';
 import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
-import { ApiError, undoLast } from '$lib/ui/api';
+import { ApiError, isPendingApproval, undoLast } from '$lib/ui/api';
 import { DEPENDS } from '$lib/ui/events';
 import { fullTime, timeAgo } from '$lib/ui/format';
 import type { PageProps } from './$types';
@@ -14,6 +14,8 @@ let confirming = $state(false);
 let busy = $state(false);
 let error = $state('');
 let status = $state('');
+/** Set when the undo is waiting for the owner's approval instead of applied. */
+let waiting = $state(false);
 
 async function undo() {
   busy = true;
@@ -21,6 +23,13 @@ async function undo() {
   try {
     const { data: out } = await undoLast();
     confirming = false;
+    if (isPendingApproval(out)) {
+      // Going back would overwrite newer values: nothing has changed yet.
+      waiting = true;
+      status = 'Waiting for your approval before this is undone.';
+      return;
+    }
+    waiting = false;
     status = `Undone: ${out.summary}`;
     await Promise.all([
       invalidate(DEPENDS.history),
@@ -51,7 +60,12 @@ async function undo() {
   </header>
 
   <p class="sr-only" role="status" aria-live="polite">{status}</p>
-  {#if status}<p class="sh-alert sh-alert-ok">{status}</p>{/if}
+  {#if status}
+    <p class="sh-alert sh-alert-ok">
+      {status}
+      {#if waiting}<a href="/approvals">Review it on the approvals page</a>.{/if}
+    </p>
+  {/if}
 
   {#if data.versions.length === 0}
     <div class="sh-empty">

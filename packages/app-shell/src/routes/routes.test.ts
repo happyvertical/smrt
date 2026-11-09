@@ -2,6 +2,8 @@
 // session is the only way in; the verified principal comes from `locals`.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { App } from '../lib/objects/App.ts';
+import { type Approval, ApprovalCollection } from '../lib/objects/Approval.ts';
+import { listApprovalViews } from '../lib/server/approvals.ts';
 import { type ShellEvent, subscribe } from '../lib/server/events.ts';
 import { getHost } from '../lib/server/host.ts';
 import { runAs } from '../lib/server/owner.ts';
@@ -347,6 +349,54 @@ describe('owner flows', () => {
     expect((await getHost()).describe().models.Chore.fields).not.toHaveProperty(
       'extra',
     );
+  });
+
+  it('undo of a type change is a 202 approval; nothing changes until the owner approves', async () => {
+    const host = await getHost();
+    await runAs(h.owner, () =>
+      App.defineModel('Gauge', { reading: { type: 'text' } }),
+    );
+    const row = await host.create('Gauge', { reading: '5' });
+    await host.execute(
+      {
+        type: 'changeFieldType',
+        model: 'Gauge',
+        field: 'reading',
+        to: { type: 'integer' },
+      },
+      { author: 't', approved: true },
+    );
+    await host.update('Gauge', row.id as string, { reading: 99 });
+    const version = host.version;
+    const res = await undoRoute.POST(event(h.owner, 'POST', '/api/shell/undo'));
+    expect(res.status).toBe(202);
+    const body = await res.json();
+    expect(body).toMatchObject({
+      status: 'pending_approval',
+      preview: { replaced: 1 },
+    });
+    expect(body.approvalId).toBeTruthy();
+    expect(body.summary).toContain('undo');
+    expect(host.version).toBe(version);
+    expect((await host.get('Gauge', row.id as string)).reading).toBe(99);
+    // the card is stored against the version it was planned for
+    const stored = (await listApprovalViews({ status: 'pending' })).find(
+      (a) => a.id === body.approvalId,
+    );
+    expect(stored?.action).toEqual({
+      kind: 'command',
+      command: { type: 'undo', version },
+    });
+    const decided = await runAs(h.owner, async () =>
+      (
+        (await (
+          await ApprovalCollection.create({ db: h.db })
+        ).get(body.approvalId)) as Approval
+      ).decide(true),
+    );
+    expect(decided.status).toBe('approved');
+    expect(host.version).toBe(version - 1);
+    expect((await host.get('Gauge', row.id as string)).reading).toBe('5');
   });
 
   it('events: SSE streams ready and live changes', async () => {

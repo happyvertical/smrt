@@ -6,6 +6,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   AppHost,
+  ApprovalRequiredError,
   type Command,
   EngineError,
   MemoryVersionStore,
@@ -209,7 +210,9 @@ describe('migrations (sequential, one app)', () => {
     await undo(); // rename title -> name
     expect(cols('u_chores')).toContain('title');
     expect(cols('u_chores')).not.toContain('name');
-    await undo(); // change type
+    // Undoing a type change can overwrite newer values, so it is gated.
+    await expect(undo()).rejects.toBeInstanceOf(ApprovalRequiredError);
+    await run({ type: 'undo' }); // change type (approved)
     expect(sql(`select points from u_chores where id='${ids[2]}'`)).toBe(
       'lots',
     );

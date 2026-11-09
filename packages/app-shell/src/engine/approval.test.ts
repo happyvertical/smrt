@@ -85,6 +85,7 @@ describe('approval gate', () => {
     ]);
     expect(isRiskyTool('chore_delete')).toBe(true);
     expect(isRiskyTool('chore_list')).toBe(false);
+    // undo's risk comes from the stored version (see hardening.test.ts)
     expect(isRiskyCommand({ type: 'undo' })).toBe(false);
   });
 

@@ -19,7 +19,11 @@ export type Command =
   | { type: 'removeModel'; model: string }
   | { type: 'addMethod'; model: string; name: string; method: MethodDef }
   | { type: 'enableRecipe'; recipe: string }
-  | { type: 'undo' }
+  /**
+   * Undo the current version. `version` (optional) pins which version the
+   * caller means; the host refuses if the app has moved on since.
+   */
+  | { type: 'undo'; version?: number }
   | { type: 'cleanUp'; keep: number }
   | { type: 'exportTemplate'; includeRecords?: boolean }
   | { type: 'importTemplate'; data: Template };
@@ -50,7 +54,10 @@ export interface Template {
 
 /**
  * Commands that must be approved. `importTemplate` is risky only when the
- * template carries method code (see {@link isRiskyCommand}).
+ * template carries method code (see {@link isRiskyCommand}); `undo` is risky
+ * only when the stored version being undone has a `convertColumn` step, which
+ * the host decides from the stored version (never from the caller), so it is
+ * not in this set.
  */
 export const RISKY_COMMANDS: ReadonlySet<CommandType> = new Set<CommandType>([
   'addMethod',
@@ -60,6 +67,12 @@ export const RISKY_COMMANDS: ReadonlySet<CommandType> = new Set<CommandType>([
   'cleanUp',
 ]);
 
+/** A migration step whose down path overwrites newer data with archived originals. */
+export function overwritesOnUndo(step: { op: string }): boolean {
+  return step.op === 'convertColumn';
+}
+
+/** Static risk of a command. `undo` is decided by the host from the stored version. */
 export function isRiskyCommand(cmd: Command): boolean {
   if (RISKY_COMMANDS.has(cmd.type)) return true;
   if (cmd.type === 'importTemplate')

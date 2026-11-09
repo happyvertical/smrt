@@ -2,6 +2,7 @@
 // does not run: it becomes an `Approval` row for the owner. Only
 // `decideApproval` (called from `Approval.decide`) ever passes the engine's
 // `approved: true`; nothing taken from a request body can set it.
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash } from 'node:crypto';
 import type { Command, Plan } from '../../engine/index.ts';
 import { type Approval, ApprovalCollection } from '../objects/Approval.ts';
@@ -21,6 +22,20 @@ export interface PendingApproval {
   approvalId: string;
   summary: string;
   preview: unknown;
+}
+
+// Out-of-band record of the approvals a call issued. `requestApproval` is the
+// only writer, so a caller (the assistant's turn loop) can tell "this call
+// became an Approval" from a tool result whose text merely looks like one.
+const issuedScope = new AsyncLocalStorage<PendingApproval[]>();
+
+/** Run `fn`, collecting every approval `requestApproval` issues inside it. */
+export async function collectIssuedApprovals<T>(
+  fn: () => Promise<T>,
+): Promise<{ value: T; issued: PendingApproval[] }> {
+  const issued: PendingApproval[] = [];
+  const value = await issuedScope.run(issued, fn);
+  return { value, issued };
 }
 
 export interface ApprovalView {
@@ -116,8 +131,9 @@ export async function requestApproval(
         command: JSON.stringify(action),
         actionKey: key,
         summary: plan.summary,
+        // Flat: the Approval card reads `preview.model`, `preview.code`, ...
         preview: JSON.stringify({
-          ...(plan.preview ? { preview: plan.preview } : {}),
+          ...(plan.preview ?? {}),
           ...(plan.affectedMethods
             ? { affectedMethods: plan.affectedMethods }
             : {}),
@@ -136,12 +152,22 @@ export async function requestApproval(
       return created;
     })());
   const v = view(row);
-  return {
+  const pending: PendingApproval = {
     status: 'pending_approval',
     approvalId: v.id,
     summary: v.summary,
     preview: v.preview,
   };
+  issuedScope.getStore()?.push(pending);
+  return pending;
+}
+
+/** One approval as stored, or null. */
+export async function getApprovalView(
+  id: string,
+): Promise<ApprovalView | null> {
+  const row = await (await approvals()).get(id);
+  return row ? view(row) : null;
 }
 
 export async function listApprovalViews(

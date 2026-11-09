@@ -16,13 +16,17 @@ function plural(n: number, one: string, many = `${one}s`): string {
   return `${n} ${n === 1 ? one : many}`;
 }
 
+export interface CodeBlock {
+  /** `Model.method()`. */
+  title: string;
+  code: string;
+}
+
 export interface ApprovalDescription {
   /** Short sentences saying what will happen. */
   lines: string[];
-  /** Code to show in a read-only block (for a new method). */
-  code: string | null;
-  /** The method's parameter list, for display next to the code. */
-  codeTitle: string | null;
+  /** Code to show in read-only blocks (new methods): what is approved is what is shown. */
+  blocks: CodeBlock[];
   /** True when something is lost for good (not restorable by undo). */
   destructive: boolean;
 }
@@ -34,8 +38,7 @@ function commandLines(
   const op = String(command.type ?? '');
   const base: ApprovalDescription = {
     lines: [],
-    code: null,
-    codeTitle: null,
+    blocks: [],
     destructive: false,
   };
   switch (op) {
@@ -80,8 +83,15 @@ function commandLines(
           String(preview.description ?? ''),
           'It runs in a sandbox and can only propose changes to your records. Read it before you approve.',
         ].filter(Boolean),
-        code: typeof preview.code === 'string' ? preview.code : null,
-        codeTitle: `${preview.model}.${preview.method}()`,
+        blocks:
+          typeof preview.code === 'string'
+            ? [
+                {
+                  title: `${preview.model}.${preview.method}()`,
+                  code: preview.code,
+                },
+              ]
+            : [],
       };
     case 'cleanUp': {
       const versions = Array.isArray(preview.versions)
@@ -98,13 +108,46 @@ function commandLines(
     }
     case 'importTemplate': {
       const models = Array.isArray(preview.models) ? preview.models.length : 0;
-      const methods = num(preview.methods);
+      const methods = Array.isArray(preview.methods)
+        ? preview.methods.map(obj)
+        : [];
       const lines = [
-        `Builds the app from a template: ${plural(models, 'model')}, ${plural(methods, 'code method')}, ${plural(num(preview.records), 'starter record')}.`,
+        `Builds the app from a template: ${plural(models, 'model')}, ${plural(methods.length, 'code method')}, ${plural(num(preview.records), 'starter record')}.`,
       ];
-      if (methods > 0)
-        lines.push('The template carries code that will run on your data.');
-      return { ...base, lines };
+      if (methods.length > 0)
+        lines.push(
+          'The template carries code that will run on your data. Read all of it before you approve.',
+        );
+      return {
+        ...base,
+        lines,
+        blocks: methods.flatMap((m) =>
+          typeof m.code === 'string'
+            ? [
+                {
+                  title: `${m.model}.${m.name}()${m.description ? `: ${m.description}` : ''}`,
+                  code: m.code,
+                },
+              ]
+            : [],
+        ),
+      };
+    }
+    case 'undo': {
+      const fields = (Array.isArray(preview.fields) ? preview.fields : [])
+        .map(obj)
+        .map((f) => `${f.model}.${f.field}`);
+      const replaced = num(preview.replaced);
+      return {
+        ...base,
+        destructive: replaced > 0,
+        lines: [
+          `Undoes a type change: every row of ${fields.join(', ') || 'the field'} goes back to its original value.`,
+          replaced > 0
+            ? `${plural(replaced, 'record')} changed since will be overwritten with the original value. This cannot be taken back.`
+            : 'No value written since the change will be lost.',
+        ],
+      };
     }
     default:
       return base;
@@ -117,8 +160,7 @@ export function describeApproval(view: ApprovalView): ApprovalDescription {
   const action = view.action;
   const empty: ApprovalDescription = {
     lines: [],
-    code: null,
-    codeTitle: null,
+    blocks: [],
     destructive: false,
   };
   if (!action) return empty;

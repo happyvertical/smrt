@@ -56,7 +56,9 @@ export function createShellMcpServer(): McpAppServer {
         tool,
         args ?? {},
       );
-      return result as never;
+      // The host-only `pending` marker never goes to a client.
+      const { pending: _pending, ...wire } = result;
+      return wire as never;
     },
   };
 }

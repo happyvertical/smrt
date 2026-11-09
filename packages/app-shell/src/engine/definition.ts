@@ -199,6 +199,30 @@ export function routeFor(model: string, md?: ModelDef): string {
   return t.startsWith('u_') ? t.slice(2) : t;
 }
 
+/**
+ * Whether a REST request may be served: only `/api/<route>` and
+ * `/api/<route>/<id or action>` of the app's own models. Core's generated
+ * handler also serves reserved endpoints (`sync/apply`, whose `delete` op
+ * deletes records, `_changes`, `_events`, ...) and any shipped class it can
+ * find in its registry; none of those belong to the app.
+ */
+export function restRouteAllowed(def: AppDefinition, rawUrl: string): boolean {
+  let path: string;
+  try {
+    path = new URL(rawUrl, 'http://app.local').pathname;
+  } catch {
+    return false;
+  }
+  if (path !== '/api' && !path.startsWith('/api/')) return false;
+  const parts = path.slice('/api'.length).split('/').filter(Boolean);
+  if (parts.length < 1 || parts.length > 2) return false;
+  const routes = new Set(
+    Object.entries(def.models).map(([m, md]) => routeFor(m, md)),
+  );
+  if (!routes.has(parts[0])) return false;
+  return parts.length === 1 || !parts[1].startsWith('_');
+}
+
 /** Names of the generated tools: `<class>_list`, ... and one per method. */
 export function toolNamesFor(model: string, md: ModelDef): string[] {
   const cls = classNameFor(model, md).toLowerCase();

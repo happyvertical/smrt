@@ -9,7 +9,7 @@ owner's approval, and every change is versioned and can be undone.
 smrt-app-shell (SvelteKit + adapter-node, app-runtime local profile)
 ├── shell.db (the app-runtime database)  users, sessions, App, AppVersion, Approval
 ├── src/engine                           AppHost: worker thread, migrations, sandbox
-└── <data root>/user-app/                app.db, snapshots (plain files)
+└── <data root>/user-app/                app.db, snapshots (plain files; the newest 20 `method-*` are kept, clean up prunes old migration ones)
 ```
 
 Run: `pnpm build && PORT=3000 SMRT_DATA_DIR=<dir outside the checkout> HOST=127.0.0.1 node build`,
@@ -26,14 +26,14 @@ owner). Writes must be same-origin `application/json`. Errors are
 |---|---|---|
 | `GET /api/shell/describe` | | `{ name, version, recipes, models: { [Model]: { kind: 'app'\|'shipped-subclass', label, table, className, extends, fields: { [name]: FieldDef }, ownFields: string[], methods: { [name]: { description, params } } } }, pendingApprovals }` |
 | `GET /api/shell/history` | | `{ versions: { version, parent, author, summary, createdAt, purged, current }[] }` oldest first |
-| `POST /api/shell/undo` | none | change result `{ version, summary, statements, snapshot, appRestartMs, ... }`; 409 if purged |
+| `POST /api/shell/undo` | none | change result `{ version, summary, statements, snapshot, appRestartMs, ... }`; 409 if purged; **202** `PendingApproval` (with `preview.replaced`, the rows that would be overwritten) when the change being undone converted a field's type |
 | `GET /api/shell/approvals?status=` | | `{ approvals: ApprovalView[], pending }`; `status` is `pending`, `approved`, `denied` or `failed` |
 | `POST /api/shell/approvals/<id>` | `{ approve: boolean }` | `{ id, status: 'approved'\|'denied'\|'failed', result?, error? }`; 404 unknown, 409 already decided |
 | `GET /api/shell/records/<Model>?limit=` | | `{ records: object[] }` |
 | `POST /api/shell/records/<Model>` | the record's fields | 201 the record |
 | `GET /PUT /api/shell/records/<Model>/<id>` | PUT: changed fields | the record |
 | `DELETE /api/shell/records/<Model>/<id>` | | **202** `PendingApproval`; nothing is deleted until approved |
-| `/api/app/<route>` (any method) | as the app's REST | the app's generated REST (`/api/app/chores` is the app's `/api/chores`); `DELETE` answers **202** `PendingApproval` |
+| `/api/app/<route>` (any method) | as the app's REST | the app's generated REST (`/api/app/chores` is the app's `/api/chores`); `DELETE` answers **202** `PendingApproval`; only the app's own collection routes are served (`sync/apply`, `_changes`, `_events` and unknown collections are 404) |
 | `GET /api/events` | | server-sent events |
 | `POST /mcp` | MCP Streamable HTTP | shell tools plus app tools, one policy |
 

@@ -15,6 +15,7 @@
 import type { AIMessage, AITool, AIToolCall } from '@happyvertical/ai';
 import type { TurnEvent, TurnStop } from '../../assistant/events.ts';
 import type { AssistantThread } from '../../objects/AssistantThread.ts';
+import { getApprovalView } from '../approvals.ts';
 import type { CatalogResponse, CatalogTool } from '../catalog.ts';
 import { PolicyError, type Principal } from '../owner.ts';
 import { callTool, toolsFor } from '../policy.ts';
@@ -111,35 +112,17 @@ interface Pending {
   preview: unknown;
 }
 
-function pendingOf(response: CatalogResponse): Pending | null {
-  const candidates: unknown[] = [response.structuredContent];
-  try {
-    candidates.push(JSON.parse(textOf(response)));
-  } catch {
-    // not JSON
-  }
-  for (const raw of candidates) {
-    // Generated shell tools may wrap a method's return as `{ result }`.
-    const c =
-      raw && typeof raw === 'object' && 'result' in raw
-        ? (raw as { result: unknown }).result
-        : raw;
-    const p = c as { status?: unknown; approvalId?: unknown } | null;
-    if (
-      p &&
-      typeof p === 'object' &&
-      p.status === 'pending_approval' &&
-      typeof p.approvalId === 'string'
-    ) {
-      const full = p as unknown as Pending;
-      return {
-        approvalId: full.approvalId,
-        summary: String(full.summary ?? ''),
-        preview: full.preview ?? null,
-      };
-    }
-  }
-  return null;
+/**
+ * The approval this call created, if any. Only the out-of-band marker set by
+ * `dispatchTool` counts: a tool result whose text or JSON merely looks like
+ * `pending_approval` (stored record text, a method's return value) is data.
+ * The card and the hold use the stored Approval, not the model-visible text.
+ */
+async function pendingOf(response: CatalogResponse): Promise<Pending | null> {
+  if (!response.pending) return null;
+  const row = await getApprovalView(response.pending.approvalId);
+  if (row?.status !== 'pending') return null;
+  return { approvalId: row.id, summary: row.summary, preview: row.preview };
 }
 
 function oneLine(text: string, max = 160): string {
@@ -229,7 +212,7 @@ export async function runTurn(options: RunTurnOptions): Promise<TurnStop> {
       };
     }
     activeMs += Date.now() - started;
-    const pending = pendingOf(response);
+    const pending = await pendingOf(response);
     if (!pending) {
       const text = cut(textOf(response), limits.toolResultChars);
       const ok = response.isError !== true;

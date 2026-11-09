@@ -86,10 +86,14 @@ export const decideApproval = (id: string, approve: boolean) =>
     { method: 'POST', body: { approve } },
   );
 
+/** 202 with a PendingApproval when going back would overwrite newer data. */
 export const undoLast = () =>
-  api<{ version: number; summary: string }>('/api/shell/undo', {
-    method: 'POST',
-  });
+  api<PendingApproval | { version: number; summary: string }>(
+    '/api/shell/undo',
+    {
+      method: 'POST',
+    },
+  );
 
 export interface MethodOutcome {
   isError: boolean;
