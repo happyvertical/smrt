@@ -111,6 +111,12 @@ export interface ElfOptions {
   needed?: string[];
   /** Omit PT_DYNAMIC even when `needed` is empty (default: always emit). */
   noDynamic?: boolean;
+  /**
+   * Zero bytes appended to the dynamic string table (and counted in DT_STRSZ),
+   * to model a large `.dynstr`. The official Node 26.8.1 linux-x64 binary has
+   * a 2,694,159 byte one (it exports its whole N-API and V8 surface).
+   */
+  strtabPadding?: number;
 }
 
 const ELF_MACHINE: Record<string, number> = {
@@ -133,6 +139,7 @@ export function elf(options: ElfOptions = {}): Buffer {
     interp,
     needed = [],
     noDynamic = false,
+    strtabPadding = 0,
   } = options;
   const le = data !== 2;
   const w16 = (b: Buffer, v: number, at: number) =>
@@ -147,6 +154,7 @@ export function elf(options: ElfOptions = {}): Buffer {
     strtabParts.push(b);
     strLen += b.length;
   }
+  if (strtabPadding > 0) strtabParts.push(Buffer.alloc(strtabPadding));
   const strtab = Buffer.concat(strtabParts);
 
   const emitDynamic = !noDynamic;

@@ -63,13 +63,23 @@ env:
   NODE_VERSION: 24.11.1
 
 jobs:
+  # One leg per target, so a bundling failure for one platform cannot skip the
+  # launch legs of the others. All legs run on Linux and cross-bundle (the
+  # build script is POSIX-only).
   bundle:
-    name: Bundle generic app
+    name: Bundle generic app (${{ matrix.target }})
     runs-on: ubuntu-latest
     timeout-minutes: 60
     defaults:
       run:
         shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - aarch64-apple-darwin
+          - x86_64-pc-windows-msvc
+          - x86_64-unknown-linux-gnu
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -94,39 +104,24 @@ jobs:
 
       # Builds the generic app from the repository's own template against a
       # loopback registry that serves this commit's workspace packages, then
-      # bundles it for each target. The registry is stopped when it finishes.
+      # bundles it for this leg's target. The registry is stopped when it
+      # finishes.
       - name: Build and bundle the generic app
+        env:
+          TARGET: ${{ matrix.target }}
         run: |
           node "$WRAPPER_DIR/scripts/build-generic-app.mjs" \
             --out "$RUNNER_TEMP/generic-app" \
-            --targets aarch64-apple-darwin,x86_64-pc-windows-msvc,x86_64-unknown-linux-gnu
+            --targets "$TARGET"
 
       # Directories, not archives, like the release path: upload-artifact
       # stores file contents only and drops permission bits (launch-smoke.mjs
       # restores the executable bit).
-      - name: Upload the macOS bundle
+      - name: Upload the bundle
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: generic-app-bundle-aarch64-apple-darwin
-          path: ${{ runner.temp }}/generic-app/bundle/aarch64-apple-darwin
-          include-hidden-files: true
-          if-no-files-found: error
-          retention-days: 1
-
-      - name: Upload the Windows bundle
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: generic-app-bundle-x86_64-pc-windows-msvc
-          path: ${{ runner.temp }}/generic-app/bundle/x86_64-pc-windows-msvc
-          include-hidden-files: true
-          if-no-files-found: error
-          retention-days: 1
-
-      - name: Upload the Linux bundle
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: generic-app-bundle-x86_64-unknown-linux-gnu
-          path: ${{ runner.temp }}/generic-app/bundle/x86_64-unknown-linux-gnu
+          name: generic-app-bundle-${{ matrix.target }}
+          path: ${{ runner.temp }}/generic-app/bundle/${{ matrix.target }}
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 1
@@ -134,6 +129,10 @@ jobs:
   launch:
     name: Launch generic app (${{ matrix.label }})
     needs: bundle
+    # Run whenever the bundle legs finished, even if another target's leg
+    # failed: this leg downloads only its own target's bundle and fails on its
+    # own if that one is missing.
+    if: ${{ !cancelled() }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
     # Not required, and a leg that is known not to pass yet must not turn the

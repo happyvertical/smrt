@@ -399,7 +399,7 @@ test('desktop-launch jobs and matrix runners come from the explicit list', () =>
     ).length > 0,
   );
   assert.ok(
-    desktopLaunchViolations(mutate('  bundle:\n    name: Bundle generic app\n    runs-on: ubuntu-latest', '  bundle:\n    name: Bundle generic app\n    runs-on: macos-15')).length > 0,
+    desktopLaunchViolations(mutate('    name: Bundle generic app (${{ matrix.target }})\n    runs-on: ubuntu-latest', '    name: Bundle generic app (${{ matrix.target }})\n    runs-on: macos-15')).length > 0,
   );
   assert.ok(
     desktopLaunchViolations(`${text}\n  extra:\n    runs-on: ubuntu-latest\n    steps: []\n`).some((v) =>
