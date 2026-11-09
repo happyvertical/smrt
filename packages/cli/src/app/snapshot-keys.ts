@@ -58,6 +58,13 @@ export interface SnapshotAccountTrust {
   minimumGeneration: bigint;
   /** Devices the adopted head has revoked; their snapshots are refused. */
   revokedDeviceIds: string[];
+  /**
+   * A revocation (or fork evidence) still waits for the rotation that
+   * excludes the device. Until then the revoked device holds the current
+   * generation's key, so no generation floor can tell its forgeries from
+   * real snapshots and restore refuses.
+   */
+  rotationPending: boolean;
 }
 
 /**
@@ -89,6 +96,12 @@ export async function snapshotAccountTrustFromLifecycle(
   return {
     minimumGeneration,
     revokedDeviceIds: status.revokedDevices.map((revoked) => revoked.deviceId),
+    rotationPending:
+      status.rotationRequired ||
+      status.conflict ||
+      status.revokedDevices.some(
+        (revoked) => revoked.effectiveGeneration === null,
+      ),
   };
 }
 

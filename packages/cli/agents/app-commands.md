@@ -116,7 +116,10 @@ config loading; `bin/smrt.js` imports `dist/` in-process so SIGTERM reaches
   generation are judged by the adopted signed head (`accountTrust()`,
   `snapshotAccountTrustFromLifecycle`): a snapshot from a revoked device, or
   sealed below the highest effective generation of a revocation, is refused
-  (`revoked_device`, `generation_too_old`); snapshots published before the
+  (`revoked_device`, `generation_too_old`), and while a revocation still waits
+  for its rotation (`rotation_pending`: the revoked device still holds the
+  current key, so only the rotation separates it from real devices);
+  snapshots published before the
   rotation that revoked a device must be re-published by a remaining device to
   be restorable. The relay lease is renewed on a timer through the download and
   decrypt (a lost lease aborts the download), and the key provider's sealing

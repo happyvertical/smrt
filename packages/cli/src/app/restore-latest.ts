@@ -98,6 +98,12 @@ export interface VaultAccountTrust {
   minimumGeneration: bigint;
   /** Devices the head has revoked; their snapshots are never restored. */
   revokedDeviceIds: readonly string[];
+  /**
+   * A revocation still waits for its key rotation, so the revoked device
+   * still holds the current key and nothing about a snapshot can exclude it.
+   * Restore refuses until the rotation is published.
+   */
+  rotationPending?: boolean;
 }
 
 /** Vault collaborators for restore-latest, supplied by the embedding host. */
@@ -133,6 +139,7 @@ export class RestoreLatestError extends Error {
     | 'custody_unusable'
     | 'writer_lost'
     | 'revoked_device'
+    | 'rotation_pending'
     | 'generation_too_old'
     | 'account_state_unavailable'
     | 'relay_inconsistent';
@@ -507,6 +514,12 @@ export async function restoreLatest(
       throw new RestoreLatestError(
         'account_state_unavailable',
         'The vault account state (revoked devices and key generations) could not be read from this device, so the latest snapshot cannot be trusted; check "smrt app vault status".',
+      );
+    }
+    if (trust.rotationPending === true) {
+      throw new RestoreLatestError(
+        'rotation_pending',
+        'A device revocation on this account has not been rotated yet, so the revoked device still holds the current key and its snapshots cannot be told from real ones; rotate the vault keys first, then restore.',
       );
     }
     if (trust.revokedDeviceIds.includes(latest.deviceId)) {

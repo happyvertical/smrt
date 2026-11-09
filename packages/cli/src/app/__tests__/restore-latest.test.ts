@@ -427,6 +427,26 @@ describe('smrt app restore-latest', () => {
       }
     });
 
+    it('refuses while a revocation still waits for its rotation, whoever the snapshot names', async () => {
+      const h = await harness();
+      const laptop = join(h.root, 'laptop');
+      await h.boot(laptop, 'v1');
+      await h.relay.publish(laptop, 'device-laptop', h.keys);
+      // The revoked device still holds the current key, so it could have
+      // sealed this under any device ID: only a rotation tells them apart.
+      h.relay.state.trust = {
+        minimumGeneration: 1n,
+        revokedDeviceIds: ['device-lost'],
+        rotationPending: true,
+      };
+      const desktop = join(h.root, 'desktop');
+      const result = await h.run(desktop, 'device-desktop');
+      expect(result.code).toBe(1);
+      expect(result.stderr).toContain('rotate the vault keys first');
+      expect(h.relay.state.calls).not.toContain('/v1/lease/acquire');
+      expect(existsSync(desktop)).toBe(false);
+    });
+
     it('fails closed when the account state cannot be read', async () => {
       const h = await harness();
       const laptop = join(h.root, 'laptop');
