@@ -623,10 +623,13 @@ export class Issue extends SmrtObject {
       appBindings: false,
     });
     const clientConfig = target.options ?? base;
-    const ai = await getAI(
-      this.withAiUsage(clientConfig, {
-        tags: target.usageTags,
-      }) as unknown as AIClientOptions,
+    // Transcripts (#4780), while the app enables them.
+    const ai = this.transcriptClient(
+      await getAI(
+        this.withAiUsage(clientConfig, {
+          tags: target.usageTags,
+        }) as unknown as AIClientOptions,
+      ),
     );
 
     return this.sendPromptMessage(

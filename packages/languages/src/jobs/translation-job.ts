@@ -196,11 +196,17 @@ export class LanguageTranslationTask extends SmrtObject {
     const clientConfig = target.options ?? mergedAiConfig;
     // Usage lands in `_smrt_ai_usage` through this task's pipeline (#3077),
     // attributed to the requesting tenant with the binding's tags.
-    const ai = await getAI(
-      this.withAiUsage(clientConfig, {
-        tenantId: args.tenantId ?? null,
-        tags: target.usageTags,
-      }) as unknown as GetAIOptions,
+    // Transcripts (#4780), while the app enables them, follow the same
+    // tenant as the usage row.
+    const ai = this.transcriptClient(
+      await getAI(
+        this.withAiUsage(clientConfig, {
+          tenantId: args.tenantId ?? null,
+          tags: target.usageTags,
+        }) as unknown as GetAIOptions,
+      ),
+      undefined,
+      { tenantId: () => args.tenantId ?? null },
     );
 
     const { onUsage: _onUsage, ...callConfig } = target.bound
