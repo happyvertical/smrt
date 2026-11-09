@@ -29,6 +29,7 @@ import {
   AGENTS_BLOCK_BEGIN as BEGIN,
   checkAgentsBlock,
   AGENTS_BLOCK_END as END,
+  inspectMarkers,
   mergeAgentsBlock,
   renderAgentsBlock,
 } from '../docs-agents-block.js';
@@ -344,6 +345,66 @@ describe('structural markers only', () => {
       'unchanged',
     );
     expect(read()).toBe(once);
+  });
+
+  it('is idempotent when a fence line sits in frontmatter or after a BOM', () => {
+    const inputs = [
+      '---\ndesc: |\n  ```\n---\n# Title\n',
+      '\uFEFF```\ncode\n```\n# Title\n',
+      '\uFEFF---\nk: ```\n---\n# Title\nbody\n',
+    ];
+    for (const input of inputs) {
+      const first = mergeAgentsBlock(input, BLOCK).text as string;
+      const second = mergeAgentsBlock(first, BLOCK);
+      expect(second.text, JSON.stringify(input)).toBe(first);
+      expect(inspectMarkers(first).state).toBe('ok');
+    }
+  });
+
+  it('property: merge twice equals merge once across varied prefixes', () => {
+    const boms = ['', '\uFEFF'];
+    const fronts = [
+      '',
+      '---\nk: v\n---\n',
+      '---\nd: |\n  ```\n---\n',
+      '---\nd: ~~~\n---\n',
+    ];
+    const bodies = [
+      '# Title\ntext\n',
+      'Setext\n======\ntext\n',
+      'no heading\n',
+      '```\ncode\n```\n# Title\n',
+      '',
+    ];
+    for (const bom of boms)
+      for (const front of fronts)
+        for (const body of bodies) {
+          const input = `${bom}${front}${body}`;
+          const first = mergeAgentsBlock(input, BLOCK).text as string;
+          expect(
+            mergeAgentsBlock(first, BLOCK).text,
+            JSON.stringify(input),
+          ).toBe(first);
+          expect(inspectMarkers(first).state, JSON.stringify(input)).toBe('ok');
+        }
+  });
+
+  it('ignores markers indented as code (4+ spaces or a tab)', () => {
+    for (const indent of ['    ', '\t']) {
+      const example = `${indent}${BEGIN}\n${indent}example\n${indent}${END}\n`;
+      write(`# T\n\n${example}\nkeep me\n`);
+      applyAgentsBlock({ root: dir, block: BLOCK });
+      const once = read();
+      expect(once).toBe(`# T\n\n${BLOCK}\n\n${example}\nkeep me\n`);
+      expect(applyAgentsBlock({ root: dir, block: BLOCK }).status).toBe(
+        'unchanged',
+      );
+    }
+  });
+
+  it('creates AGENTS.md with the umask-derived mode', () => {
+    applyAgentsBlock({ root: dir, block: BLOCK });
+    expect(statSync(agents()).mode & 0o777).toBe(0o666 & ~process.umask());
   });
 
   it('still refuses a structural begin without end beside a fenced pair', () => {

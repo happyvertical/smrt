@@ -12,7 +12,11 @@ them (#4734). Source: `src/commands/docs-workspace.ts`,
   directory to the nearest `pnpm-workspace.yaml`. That directory is the docs root
   unless its `package.json` is `@happyvertical/smrt` (the smrt repository keeps
   its cwd-relative behaviour). It is deliberately not `detectMonorepoRoot()`,
-  which is the smrt repository's own detector.
+  which is the smrt repository's own detector. The command lifts only when the
+  working directory is that root, a workspace member, or inside a member; a
+  directory the workspace does not include stays local. When member glob
+  expansion is fatal (over the package/entry budget) no member is known, so a
+  member working directory stays local too.
 - **Discovery.** `listConsumerWorkspaceInstallRoots(root)` (owned by
   `@happyvertical/smrt-dev-mcp/knowledge`, reusing the #2143/#2275 workspace glob
   expansion) returns the root plus every member. Each one's
@@ -57,7 +61,8 @@ user's file, so:
   printed; the exit status is unchanged. Only a marker alone on its own line and
   outside a fenced code block is structural; one mentioned inline in prose or
   shown inside a fence is ignored (an unclosed fence runs to the end of the
-  file), so text between such look-alikes is never overwritten.
+  file), so text between such look-alikes is never overwritten. Markers
+  indented four or more spaces (or by a tab) are indented code, not structure.
 - **Idempotent.** An unchanged result is not written (mtime stable).
 - **Content** (at most 15 lines, harness-neutral): the installed
   `@happyvertical/smrt-cli` (else `smrt-core`) version, the relative paths of

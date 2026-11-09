@@ -141,21 +141,27 @@ interface StructuralMarker {
 function structuralMarkers(text: string): StructuralMarker[] {
   const found: StructuralMarker[] = [];
   let fence: string | undefined;
-  for (let at = 0; at < text.length; ) {
+  // Scan the same region the insertion point is computed over: past a BOM and
+  // a leading frontmatter block, whose lines are neither fences nor markers.
+  const bom = text.startsWith(BOM) ? BOM.length : 0;
+  for (let at = afterFrontmatter(text, bom); at < text.length; ) {
     const next = lineEnd(text, at);
     const line = stripEol(text.slice(at, next));
     const inFence = fence !== undefined;
     fence = nextFence(line, fence);
     if (!inFence && fence === undefined) {
-      const trimmed = line.trim();
+      // 0-3 leading spaces only: deeper or tab indentation is an indented
+      // code block, not structure.
+      const match = /^( {0,3})(\S.*?)[ \t]*$/.exec(line);
+      const trimmed = match?.[2];
       const kind =
         trimmed === AGENTS_BLOCK_BEGIN
           ? 'begin'
           : trimmed === AGENTS_BLOCK_END
             ? 'end'
             : undefined;
-      if (kind) {
-        const start = at + line.indexOf(trimmed);
+      if (kind && match && trimmed !== undefined) {
+        const start = at + match[1].length;
         found.push({ kind, start, end: start + trimmed.length });
       }
     }
@@ -422,7 +428,7 @@ function replaceFileAtomically(path: string, text: string): void {
     dirname(path),
     `.${basename(path)}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`,
   );
-  const fd = openSync(temp, 'wx', 0o600);
+  const fd = openSync(temp, 'wx', 0o666);
   try {
     try {
       const data = Buffer.from(text, 'utf8');
