@@ -176,7 +176,10 @@ config loading; `bin/smrt.js` imports `dist/` in-process so SIGTERM reaches
   re-retiring, abandons the migration), a bundle exported after retirement,
   an `applied` journal (shared), acknowledged changed columns (never
   `id`/`tenant_id`) and `acknowledgedOmittedTables` naming every table the
-  plan withheld for credential-like columns (`plan.skipped.omittedTables`).
+  plan withheld for credential-like columns (`plan.skipped.omittedTables`). A
+  `salt` column alone migrates; a table with a `salt` and any hash-like column
+  (`hash`, `*_hash`, `digest`) is withheld, as are `pin_hash`/`key_hash`/
+  `code_hash` columns. Both are assumed defaults pending the owner.
   `exportTenantBundle` selects by ID only global rows (`cloudIdentityRows`);
   `downgradeCloudBundle` refuses foreign-tenant rows and reverse-maps into a
   `local` bundle `app import` accepts.

@@ -111,6 +111,10 @@ because the relay needs the digest before the first byte.
     also needs the `accountTrust` option (revoked devices and the key
     generation floor of the adopted head); without it restore fails closed.
 
+The vault target reports the relay's refusal to delete the sole committed
+snapshot as `last_snapshot` and of the newest of several (the lease head) as
+`head_snapshot`; they are distinct codes with distinct messages.
+
 ## Google Drive scope and limits
 
 The scope is the one the credential store recorded from Google's token
