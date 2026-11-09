@@ -43,6 +43,7 @@ import {
   type BackupPutRequest,
   type BackupTarget,
   BackupTargetError,
+  parseBufferedSnapshotHeader,
   rechunk,
   verifiedCiphertext,
 } from './backup-targets.js';
@@ -50,10 +51,7 @@ import type {
   VaultAccountTrust,
   VaultRestoreProvider,
 } from './restore-latest.js';
-import {
-  parseSnapshotHeader,
-  SNAPSHOT_HEADER_BYTES,
-} from './snapshot-framing.js';
+import { SNAPSHOT_HEADER_BYTES } from './snapshot-framing.js';
 
 /** Feature key the relay gates every route on. */
 export const VAULT_FEATURE_KEY = 'backup.vault';
@@ -943,18 +941,19 @@ export class VaultRelayBackupTarget implements BackupTarget {
       }
       whole.update(bytes);
       if (!headChecked) {
-        head = Buffer.concat([head, bytes]).subarray(0, SNAPSHOT_HEADER_BYTES);
-        if (head.length >= SNAPSHOT_HEADER_BYTES) {
+        head = Buffer.concat([head, bytes]);
+        let parsedHeader: ReturnType<typeof parseBufferedSnapshotHeader>;
+        try {
+          parsedHeader = parseBufferedSnapshotHeader(head);
+        } catch {
+          throw new BackupTargetError(
+            'integrity',
+            'The vault relay returned data that is not an encrypted snapshot.',
+          );
+        }
+        if (parsedHeader) {
           headChecked = true;
-          let sequenceInHeader: bigint;
-          try {
-            sequenceInHeader = parseSnapshotHeader(head).sequence;
-          } catch {
-            throw new BackupTargetError(
-              'integrity',
-              'The vault relay returned data that is not an encrypted snapshot.',
-            );
-          }
+          const sequenceInHeader = parsedHeader.header.sequence;
           if (sequenceInHeader !== BigInt(sequence)) {
             throw new BackupTargetError(
               'integrity',
