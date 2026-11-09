@@ -6,19 +6,24 @@
 // assembles one consistent set with `feed`. A leg that failed leaves no feed.
 //
 //   leg  --target <triple> --bundle-dir <tauri bundle dir> --overlay <json>
-//        --out <dir>
+//        --pubkey-config <tauri.conf.json> --out <dir>
 //        Finds exactly the expected installer (and updater archive with its
-//        signature) for the target, copies them under safe, unique names and
-//        writes <dir>/leg.json.
+//        signature) for the target, verifies the signature against the
+//        COMMITTED updater public key, copies them under safe, unique names
+//        and writes <dir>/leg.json.
 //   feed --legs <dir> --targets <t1,t2,...> --repo <owner/name> --tag <tag>
-//        --out <dir> [--date <RFC 3339>]
+//        --pubkey-config <tauri.conf.json> --out <dir> [--date <RFC 3339>]
 //        Reads <legs>/desktop-release-<target>/leg.json for every target,
-//        refuses anything missing or inconsistent, and writes <out>/assets/*
-//        and <out>/latest.json.
+//        refuses anything missing or inconsistent, verifies every updater
+//        signature again against the committed public key, and writes
+//        <out>/assets/* and <out>/latest.json.
 //
-// The updater signature (minisign) is produced by Tauri in the signing leg;
-// this script copies it into the feed and cannot verify it. Node built-ins
-// only. Exit 0 ok, 1 refused, 2 usage.
+// The updater signature (minisign) is produced by `tauri signer sign` in the
+// signing leg. Both commands verify it with minisign.mjs against the public key
+// committed in tauri.conf.json (plugins.updater.pubkey), so a signature that
+// does not verify, or a private key that is not the pair of the committed
+// public key, stops the leg and the publish. Node built-ins only. Exit 0 ok,
+// 1 refused, 2 usage.
 
 import {
   copyFileSync,
@@ -31,6 +36,7 @@ import {
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { verifyUpdaterSignature } from './minisign.mjs';
 import { isSafeDisplayName, isSemver } from './release-preflight.mjs';
 
 /**
@@ -96,8 +102,11 @@ function assetName(productName, version, target, suffix) {
 }
 
 /** Stage one leg. Returns the leg descriptor it wrote. */
-export function stageLeg({ target, bundleDir, overlay, outDir }) {
+export function stageLeg({ target, bundleDir, overlay, outDir, pubkey }) {
   if (!Object.hasOwn(TARGETS, target)) throw new Error('unsupported target');
+  if (typeof pubkey !== 'string' || pubkey === '') {
+    throw new Error('no committed updater public key to verify against');
+  }
   const spec = TARGETS[target];
   const { productName, version } = overlay;
   if (!isSafeDisplayName(productName) || !isSemver(version)) {
@@ -131,6 +140,7 @@ export function stageLeg({ target, bundleDir, overlay, outDir }) {
       'utf8',
     ).trim();
     if (!SIGNATURE.test(signature)) throw new Error('no usable signature');
+    verifyUpdaterSignature({ pubkey, signature, file: archive });
     const name = assetName(productName, version, target, spec.updater.suffix);
     if (!assets.includes(name)) put(archive, spec.updater.suffix);
     put(`${archive}.sig`, `${spec.updater.suffix}.sig`);
@@ -180,9 +190,20 @@ function readLeg(legsDir, target) {
  * Assemble the release set. Refuses unless every expected target produced a
  * complete leg and all legs agree on the version.
  */
-export function assembleFeed({ legsDir, targets, repo, tag, outDir, date }) {
+export function assembleFeed({
+  legsDir,
+  targets,
+  repo,
+  tag,
+  outDir,
+  date,
+  pubkey,
+}) {
   if (!OWNER_REPO.test(repo) || !TAG.test(tag)) {
     throw new Error('repo or tag is not a plain name');
+  }
+  if (typeof pubkey !== 'string' || pubkey === '') {
+    throw new Error('no committed updater public key to verify against');
   }
   if (
     targets.length === 0 ||
@@ -195,6 +216,32 @@ export function assembleFeed({ legsDir, targets, repo, tag, outDir, date }) {
   const { version } = legs[0].leg;
   if (legs.some(({ leg }) => leg.version !== version)) {
     throw new Error('the legs disagree on the version');
+  }
+  const { productName } = legs[0].leg;
+  if (legs.some(({ leg }) => leg.productName !== productName)) {
+    throw new Error('the legs disagree on the product name');
+  }
+  // Before anything is copied or written: every updater signature must verify
+  // against the committed public key, and the .sig asset that will be
+  // uploaded must be the very signature the feed carries.
+  for (const { leg, dir } of legs) {
+    if (!leg.updater) continue;
+    try {
+      verifyUpdaterSignature({
+        pubkey,
+        signature: leg.updater.signature,
+        file: join(dir, leg.updater.asset),
+      });
+      const sigAsset = readFileSync(
+        join(dir, `${leg.updater.asset}.sig`),
+        'utf8',
+      ).trim();
+      if (sigAsset !== leg.updater.signature) {
+        throw new Error('the .sig asset is not the signature in the descriptor');
+      }
+    } catch (error) {
+      throw new Error(`the ${leg.target} updater signature: ${error.message}`);
+    }
   }
   const assetsDir = join(outDir, 'assets');
   mkdirSync(assetsDir, { recursive: true });
@@ -227,6 +274,15 @@ export function assembleFeed({ legsDir, targets, repo, tag, outDir, date }) {
   return feed;
 }
 
+/** The committed `plugins.updater.pubkey`; a missing option is a refusal. */
+function committedPubkey(configPath) {
+  if (configPath === undefined) {
+    throw new Error('--pubkey-config is required (the committed Tauri config)');
+  }
+  const config = JSON.parse(readFileSync(configPath, 'utf8'));
+  return config?.plugins?.updater?.pubkey;
+}
+
 function parseOptions(argv) {
   const options = {};
   for (let i = 0; i < argv.length; i += 2) {
@@ -252,17 +308,21 @@ export function main(argv, io = {}) {
   }
   const need = (...names) => names.every((name) => options[name] !== undefined);
   try {
-    if (command === 'leg' && need('target', 'bundle-dir', 'overlay', 'out')) {
+    if (
+      command === 'leg' &&
+      need('target', 'bundle-dir', 'overlay', 'out', 'pubkey-config')
+    ) {
       const overlay = JSON.parse(readFileSync(options.overlay, 'utf8'));
       stageLeg({
         target: options.target,
         bundleDir: options['bundle-dir'],
         overlay,
         outDir: options.out,
+        pubkey: committedPubkey(options['pubkey-config']),
       });
     } else if (
       command === 'feed' &&
-      need('legs', 'targets', 'repo', 'tag', 'out')
+      need('legs', 'targets', 'repo', 'tag', 'out', 'pubkey-config')
     ) {
       assembleFeed({
         legsDir: options.legs,
@@ -271,6 +331,7 @@ export function main(argv, io = {}) {
         tag: options.tag,
         outDir: options.out,
         date: options.date,
+        pubkey: committedPubkey(options['pubkey-config']),
       });
     } else {
       out('release feed: usage error: unknown command or missing option\n');
