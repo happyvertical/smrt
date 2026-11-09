@@ -652,10 +652,11 @@ describe('tables withheld from a migration', () => {
     const { options } = await installed();
     const ids = (await openLocalCloudLinkIdentity(options)).identities;
     const plan = planFor(ids, [
-      ['feeds', ['refresh_interval', 'auto_refresh', 'salt', 'content_hash']],
+      ['feeds', ['refresh_interval', 'auto_refresh', 'salt']],
+      ['pages', ['content_hash']],
     ]);
     expect(plan.skipped.omittedTables).toEqual([]);
-    expect(plan.bundle.tables[0].rows).toHaveLength(1);
+    for (const table of plan.bundle.tables) expect(table.rows).toHaveLength(1);
   });
 
   it('still withholds credential columns, including a pin or refresh token hash', async () => {
@@ -667,6 +668,9 @@ describe('tables withheld from a migration', () => {
       ['links', ['refresh_tokens']],
       ['accounts', ['password_salt']],
       ['more_grants', ['refresh_secrets']],
+      ['logins', ['salt', 'hash']],
+      ['pins', ['salt', 'pin_digest']],
+      ['stamps', ['salt', 'content_hash']],
       ['notes_extra', ['body']],
     ]);
     expect(plan.skipped.omittedTables).toEqual([
@@ -675,6 +679,9 @@ describe('tables withheld from a migration', () => {
       'links',
       'accounts',
       'more_grants',
+      'logins',
+      'pins',
+      'stamps',
     ]);
   });
 

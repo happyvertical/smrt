@@ -97,10 +97,11 @@ const SERVER_MANAGED_COLUMNS = new Set([
  */
 const CLOUD_NON_PORTABLE_COLUMN_PATTERN =
   /(?:^|_)(?:totp|otp|mfa|recovery_codes?|backup_codes?|passkey|webauthn|refresh_(?:tokens?|secrets?|keys?|hash(?:es)?)|(?:password|passcode|pin|otp|secret|key|auth|login|hash)_salt|salt_(?:hash|value)|verifier|(?:code|reset|backup_code|otp|pin|key|verifier)_hash)(?:_|$)/;
-// A bare `hash`, `salt` or `refresh` is deliberately not matched: content,
-// spec and manifest digests (`content_hash`), a seasoning `salt` and a
-// `refresh_interval` / `auto_refresh` setting are ordinary data and must
-// migrate. Whatever the pattern still withholds is listed in
+// A bare `hash` or `refresh` is deliberately not matched on its own: content,
+// spec and manifest digests (`content_hash`) and a `refresh_interval` /
+// `auto_refresh` setting are ordinary data and must migrate. A `salt` column
+// migrates alone but withholds its table beside a hash-like column
+// (`isCloudNonPortable`). Whatever is withheld is listed in
 // `plan.skipped.omittedTables` and must be acknowledged at completion.
 const MAX_REPORTED_ISSUES = 50;
 const DEFAULT_BATCH_SIZE = 500;
@@ -166,6 +167,10 @@ class IssueCollector {
   }
 }
 
+/** A salt next to a hash is password-style credential storage. */
+const SALT_COLUMN_PATTERN = /(?:^|_)salt(?:_|$)/;
+const HASH_LIKE_COLUMN_PATTERN = /(?:^|_)(?:hash|digest)(?:_|$)/;
+
 function isCloudNonPortable(
   table: Pick<ManifestTable, 'name' | 'columns'>,
 ): boolean {
@@ -173,7 +178,12 @@ function isCloudNonPortable(
     containsNonPortableRows(table) ||
     table.columns.some((column) =>
       CLOUD_NON_PORTABLE_COLUMN_PATTERN.test(column),
-    )
+    ) ||
+    // A `salt` alone is ordinary data and migrates; with any hash-like
+    // column in the same table (`hash`, `*_hash`, `digest`) the table is
+    // withheld and must be acknowledged at completion.
+    (table.columns.some((column) => SALT_COLUMN_PATTERN.test(column)) &&
+      table.columns.some((column) => HASH_LIKE_COLUMN_PATTERN.test(column)))
   );
 }
 
