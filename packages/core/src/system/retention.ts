@@ -255,6 +255,7 @@ const RETENTION_TASKS_KEY = Symbol.for('smrt.retention-tasks');
 const RESERVED_TASK_NAMES = new Set([
   'changes',
   'ai-usage',
+  'ai-transcripts',
   'contexts',
   'dispatch',
   'run-once-claims',
