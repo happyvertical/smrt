@@ -132,8 +132,11 @@ itself, so labels are recorded when the verdict is known. Rules:
 
 ## Report (`smrt ai:usage`)
 
-`reportAiUsage(db, { by, since, until, tenantId })` groups by `prompt`, `model`,
-`tier`, `class`, `tenant`, `fusion`, `source`. It reads bounded keyset pages and
+`reportAiUsage(db, { by, since, until, tenantId, transcripts? })` groups by
+`prompt`, `model`, `tier`, `class`, `tenant`, `fusion`, `source`, `template`
+(the `templateHash` tag, #4781). `transcripts: true` adds `transcripts` to each
+bucket and the totals: calls (distinct `call_id`) with a transcript row of
+the same tenant, looked up per page by id; never content, so not audited. It reads bounded keyset pages and
 aggregates in memory so the median and tag dimensions stay portable. Pages
 are keyed on `id` within the `created_at` window: correct, but on very large
 windows each page rescans the window; keyset on `(created_at, id)` is a
@@ -166,7 +169,11 @@ a call for prompt tuning; usage rows stay metadata-only.
   (smrt.config < `config()` < env `SMRT_INFERENCE_TRANSCRIPTS=1|0`). Read
   from the process config only (`resolveAiTranscriptConfig()`): instance
   `inference` options, resolvers and tenant settings cannot turn it on or
-  change it (owner decision: no tenant override). Invalid values throw
+  change it (owner decision: no tenant override). One app-level layer
+  sits under the env (#4781): `setAiTranscriptAppSettings({ enabled?,
+  sample?, maxBytes? } | null)` (globalThis, no `prompts`), fed by
+  smrt-inference's stored app row; `getInferenceTranscriptsConfig(app)`
+  computes the merge. Invalid values throw
   (`assertInferenceTranscriptsConfig()`, also in `assertInferenceConfig()`).
 - **Disabled means untouched.** Clients are not wrapped, no `callId` is
   minted, call options are byte-identical (the #4750 parity contract). So
