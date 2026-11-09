@@ -9,6 +9,34 @@
 
 import './__smrt-register__.js';
 
+// Billing host glue: checkout, signed idempotent webhook, portal link (#4786)
+export {
+  BILLING_ENV,
+  type BillingAuth,
+  type BillingCheckoutLineItem,
+  type BillingCheckoutResult,
+  type BillingCheckoutSessionInput,
+  type BillingEnvConfig,
+  type BillingEnvOptions,
+  type BillingHost,
+  BillingHostError,
+  type BillingHostErrorCode,
+  type BillingHostOptions,
+  type BillingLogger,
+  type BillingPlanPurchaseContext,
+  type BillingPortalResult,
+  type BillingProviderPort,
+  type BillingProviderWebhookEvent,
+  type BillingSubscriptionState,
+  type BillingUrls,
+  type BillingWebhookOutcome,
+  type BillingWebhookResponse,
+  createBillingHost,
+  DEFAULT_WEBHOOK_TOLERANCE_SECONDS,
+  MAX_WEBHOOK_TOLERANCE_SECONDS,
+  priceEnvName,
+  readBillingEnv,
+} from './billing/index.js';
 export {
   SubscriptionPlanCollection,
   SubscriptionPlanVersionCollection,

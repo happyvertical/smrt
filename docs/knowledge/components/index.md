@@ -21,6 +21,7 @@
 * [@happyvertical/smrt-config](/components/smrt-config.md) - Centralized configuration management for SMRT modules
 * [@happyvertical/smrt-content](/components/smrt-content.md) - Content processing module for SMRT framework - handles documents, web content, and media
 * [@happyvertical/smrt-core](/components/smrt-core.md) - Core SMRT framework for business objects, persistence, and generated REST, CLI, MCP, and AI interfaces
+* [@happyvertical/smrt-desktop-launcher](/components/smrt-desktop-launcher.md) - Launcher core for SMRT desktop assistant plugins: injected provider, fixed diagnostics and stdio lifecycle
 * [@happyvertical/smrt-desktop](/components/smrt-desktop.md) - Versioned sidecar manifest for SMRT desktop apps
 * [@happyvertical/smrt-dev-mcp](/components/smrt-dev-mcp.md) - Development MCP server for SMRT framework knowledge, review context, architecture context, and code generation
 * [@happyvertical/smrt-education](/components/smrt-education.md) - Tenant-aware learning catalog models and authorized catalog access for SMRT
@@ -76,6 +77,7 @@
 * [@happyvertical/smrt-types](/components/smrt-types.md) - Shared type definitions for the HAVE SDK
 * [@happyvertical/smrt-ui](/components/smrt-ui.md) - Domain-agnostic Svelte 5 UI runtime for SMRT: primitives, i18n client, theme system, and module UI registry
 * [@happyvertical/smrt-users](/components/smrt-users.md) - Multi-tenant user management for the SMRT framework - users, tenants, roles, permissions, groups
+* [@happyvertical/smrt-vault-relay](/components/smrt-vault-relay.md) - Blind snapshot relay: device-signed, per-account encrypted blob store gated by backup.vault
 * [@happyvertical/smrt-video](/components/smrt-video.md) - Video content management for AI-powered video production in the SMRT ecosystem
 * [@happyvertical/smrt-vitest](/components/smrt-vitest.md) - Vitest plugin for automatic cross-package manifest loading in SMRT tests
 * [@happyvertical/smrt-voice](/components/smrt-voice.md) - Voice profile management for AI-powered voice synthesis and cloning in the SMRT ecosystem

@@ -53,6 +53,7 @@
     }
   },
   "devDependencies": {
+    "@happyvertical/accounting": "catalog:",
     "@happyvertical/smrt-features": "workspace:*",
     "@happyvertical/smrt-vitest": "workspace:*",
     "@sveltejs/package": "^2.5.8",

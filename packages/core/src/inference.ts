@@ -599,6 +599,27 @@ export function getInferenceConfig(): InferenceConfig | undefined {
   return mergeInferenceConfigs(project, global, inferenceConfigFromEnv());
 }
 
+/**
+ * The process-level `inference.transcripts` block with an app settings layer
+ * (#4781) between `config()` and the environment: smrt.config < `config()` <
+ * `app` < `SMRT_INFERENCE_TRANSCRIPTS`. `app` is the operator's stored
+ * app-level setting (smrt-inference's settings panel), never a tenant value;
+ * the environment variable still wins over it.
+ */
+export function getInferenceTranscriptsConfig(
+  app?: InferenceTranscriptsConfig | null,
+): InferenceTranscriptsConfig | undefined {
+  const project = getSmrtModuleConfig<Record<string, unknown>>('smrt', {})
+    .inference as InferenceConfig | undefined;
+  const global = globalSignalConfig.toJSON().inference;
+  return mergeInferenceConfigs(
+    project,
+    global,
+    app ? { transcripts: app } : undefined,
+    inferenceConfigFromEnv(),
+  )?.transcripts;
+}
+
 /** Validate a config block, failing loudly on unknown tiers. */
 export function assertInferenceConfig(
   value: InferenceConfig | undefined,

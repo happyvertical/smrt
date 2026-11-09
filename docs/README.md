@@ -33,3 +33,7 @@ Validate the repository README system before building the site:
 pnpm check:readmes
 pnpm docs:site:build
 ```
+
+The build fails on broken internal links. Pull request validation runs the same
+build (`Docs Site Build`, part of `Required CI`) whenever a change touches its
+inputs; see [CI architecture](../.github/CI.md).

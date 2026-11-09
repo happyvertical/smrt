@@ -8,7 +8,7 @@
  * and wires each callback to its own permission-checked server action.
  *
  * The default view is the whole screen for a one-provider app. Advanced
- * (tier ladder, `auto`'s default tier, aliases, fusions) is collapsed and
+ * (tier ladder, `auto`'s default tier, aliases, fusions, transcripts) is collapsed and
  * not rendered until opened. Keys leave only through `onSaveKey`; the panel
  * never receives one back (`defaults.keySet` says whether one is stored).
  */
@@ -31,6 +31,9 @@ import type {
   InferenceTestResultView,
   InferenceTierChange,
   InferenceTierView,
+  InferenceTranscriptLinkFilters,
+  InferenceTranscriptSettingsChange,
+  InferenceTranscriptSettingsView,
   InferenceUsageDimension,
   InferenceUsageView,
 } from '../types.js';
@@ -44,6 +47,7 @@ import InferenceAliasEditor from './InferenceAliasEditor.svelte';
 import InferenceDefaultView from './InferenceDefaultView.svelte';
 import InferenceFusionList from './InferenceFusionList.svelte';
 import InferenceTierRow from './InferenceTierRow.svelte';
+import InferenceTranscriptSettings from './InferenceTranscriptSettings.svelte';
 import InferenceUsageTable from './InferenceUsageTable.svelte';
 
 export interface InferenceSettingsPanelProps {
@@ -63,6 +67,25 @@ export interface InferenceSettingsPanelProps {
   fusions?: InferenceFusionView[];
   /** Usage report (`usage()`); the Usage tab shows when this or `onUsageGroupBy` is set. */
   usage?: InferenceUsageView | null;
+  /**
+   * The app's transcript setting (`getTranscriptSettings()`, #4781), shown
+   * in Advanced and, when off, as a status line in the Usage tab.
+   */
+  transcripts?: InferenceTranscriptSettingsView | null;
+  /**
+   * The host is a platform admin that may change app-level settings
+   * (#4781). Only then is the transcript setting editable (with
+   * `onSaveTranscripts`); tenants cannot override it. Default `false`.
+   */
+  appEditable?: boolean;
+  /**
+   * The host's transcript route for a Usage-tab row (#4781). Rows with
+   * stored transcripts link their count and outcome labels there; the panel
+   * renders no transcript content.
+   */
+  transcriptHref?: (
+    filters: InferenceTranscriptLinkFilters,
+  ) => string | null | undefined;
   /**
    * Which scope Advanced edits write. `tenant` restricts choices to the
    * allow-list (display only; the server enforces it) and makes aliases and
@@ -96,6 +119,8 @@ export interface InferenceSettingsPanelProps {
   ) => Promise<InferenceTestResultView>;
   onSaveFusion?: (change: InferenceFusionChange) => void;
   onUsageGroupBy?: (by: InferenceUsageDimension[]) => void;
+  /** Writes the app row (never a tenant row). Used only with `appEditable`. */
+  onSaveTranscripts?: (change: InferenceTranscriptSettingsChange) => void;
 }
 
 const {
@@ -107,6 +132,9 @@ const {
   aliases = [],
   fusions = [],
   usage = null,
+  transcripts = null,
+  appEditable = false,
+  transcriptHref,
   scope = 'app',
   advancedOpen = false,
   busy = false,
@@ -123,6 +151,7 @@ const {
   onTestCandidate,
   onSaveFusion,
   onUsageGroupBy,
+  onSaveTranscripts,
 }: InferenceSettingsPanelProps = $props();
 
 let tab = $state<'settings' | 'usage'>('settings');
@@ -182,7 +211,13 @@ function tierAllowed(tier: InferenceSettingsTier): boolean {
 
   {#if tab === 'usage' && showUsage}
     <div role="tabpanel">
-      <InferenceUsageTable {usage} {busy} {onUsageGroupBy} />
+      <InferenceUsageTable
+        {usage}
+        {busy}
+        transcriptsEnabled={transcripts ? transcripts.enabled : null}
+        {transcriptHref}
+        {onUsageGroupBy}
+      />
     </div>
   {:else}
     <div role={showUsage ? 'tabpanel' : undefined} class="isp-settings">
@@ -288,6 +323,18 @@ function tierAllowed(tier: InferenceSettingsTier): boolean {
                 {onSaveFusion}
               />
             </section>
+
+            {#if transcripts}
+              <section class="isp-section">
+                <h3>Transcripts</h3>
+                <InferenceTranscriptSettings
+                  settings={transcripts}
+                  editable={appEditable && !!onSaveTranscripts}
+                  {busy}
+                  {onSaveTranscripts}
+                />
+              </section>
+            {/if}
           {/key}
         </div>
       {/if}

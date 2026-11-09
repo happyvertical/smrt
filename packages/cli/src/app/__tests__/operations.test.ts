@@ -53,6 +53,10 @@ import {
   type CommandRunner,
   resolveConfiguredRuntime,
 } from '../runtime.js';
+import {
+  decryptSnapshot,
+  type SnapshotKeyProvider,
+} from '../snapshot-framing.js';
 
 const TOKEN = 'bootstrap-token-must-never-print-0123456789';
 const ROTATED_TOKEN = 'rotated-token-must-never-print-9876543210';
@@ -268,6 +272,31 @@ function fakeInitialize(status: { value: 'available' | 'claimed' }) {
 function allOutput(fixture: Fixture): string {
   return [...fixture.output.stdout, ...fixture.output.stderr].join('');
 }
+
+const SNAPSHOT_CONTEXT = {
+  accountId: 'account-1',
+  deviceId: 'device-1',
+  sequence: 3n,
+};
+const SNAPSHOT_KEY = Buffer.alloc(32, 7);
+const SNAPSHOT_KEY_ID = 'ab'.repeat(16);
+
+/** In-memory vault key custody double (#4797). */
+const snapshotKeys: SnapshotKeyProvider = {
+  async sealingKey() {
+    return {
+      ...SNAPSHOT_CONTEXT,
+      generation: 1n,
+      keyId: SNAPSHOT_KEY_ID,
+      key: new Uint8Array(SNAPSHOT_KEY),
+    };
+  },
+  async openingKey({ generation, keyId }) {
+    return generation === 1n && keyId === SNAPSHOT_KEY_ID
+      ? new Uint8Array(SNAPSHOT_KEY)
+      : undefined;
+  },
+};
 
 function expectNoLocks(fixture: Fixture): void {
   expect(existsSync(join(fixture.stateRoot(), 'operation.lock'))).toBe(false);
@@ -1178,6 +1207,108 @@ describe('smrt app backup', () => {
     expect(existsSync(nestedStorageDestination)).toBe(false);
   });
 
+  it('writes one encrypted snapshot file with --encrypted and restores it to a candidate', async () => {
+    const fixture = makeFixture();
+    await fixture.run(['setup']);
+    writeFileSync(join(fixture.data, 'marker.txt'), 'plaintext-marker');
+    const destination = join(fixture.root, 'backups', 'first.hvsnap');
+    expect(await fixture.run(['backup', '--encrypted', destination])).toBe(1);
+    expect(fixture.stderrJson().message).toBe(
+      'Encrypted snapshots need a vault key provider, and none is configured for this installation.',
+    );
+    expect(existsSync(destination)).toBe(false);
+
+    expect(
+      await fixture.run(['backup', '--', '--encrypted', destination], {
+        snapshotKeys,
+      }),
+    ).toBe(0);
+    const report = fixture.stdoutJson() as Record<string, unknown>;
+    expect(report).toMatchObject({
+      schemaVersion: 1,
+      status: 'backed-up',
+      destination,
+      encrypted: true,
+      snapshot: {
+        format: 'hvsf-v1',
+        kind: 'data-root',
+        generation: '1',
+        sequence: '3',
+        // The producing device is printed so a lost laptop's file can be
+        // matched to its origin on another machine.
+        deviceId: 'device-1',
+        keyId: SNAPSHOT_KEY_ID,
+      },
+    });
+    expect(JSON.stringify(report)).not.toContain('digest');
+    expect(statSync(destination).isFile()).toBe(true);
+    expect(statSync(destination).mode & 0o777).toBe(0o600);
+    expect(readFileSync(destination).includes('plaintext-marker')).toBe(false);
+    expect(readdirSync(join(fixture.root, 'backups'))).toEqual([
+      'first.hvsnap',
+    ]);
+    expectNoLocks(fixture);
+
+    const candidate = join(fixture.root, 'candidate');
+    await decryptSnapshot({
+      source: destination,
+      destination: candidate,
+      context: SNAPSHOT_CONTEXT,
+      keys: snapshotKeys,
+      expectedKind: 'data-root',
+    });
+    expect(readdirSync(candidate).sort()).toEqual(
+      readdirSync(fixture.data).sort(),
+    );
+    expect(readFileSync(join(candidate, 'marker.txt'), 'utf8')).toBe(
+      'plaintext-marker',
+    );
+
+    expect(
+      await fixture.run(['backup', '--encrypted', destination], {
+        snapshotKeys,
+      }),
+    ).toBe(1);
+    expect(fixture.stderrJson().message).toBe(
+      `Backup destination already exists: ${destination}`,
+    );
+  });
+
+  it('refuses an unknown option instead of writing a plaintext backup to a path named after it', async () => {
+    const fixture = makeFixture();
+    await fixture.run(['setup']);
+    const before = readdirSync(fixture.root).sort();
+    for (const flag of ['--encrypt', '--encrypted=true', '--Encrypted', '-e']) {
+      for (const args of [
+        ['backup', flag],
+        ['backup', flag, join(fixture.root, 'backups', 'x')],
+        ['backup', join(fixture.root, 'backups', 'x'), flag],
+      ]) {
+        expect(await fixture.run(args, { snapshotKeys })).toBe(1);
+        expect(String(fixture.stderrJson().message)).toContain(
+          `Unknown option for app backup: ${JSON.stringify(flag)}`,
+        );
+      }
+    }
+    expect(readdirSync(fixture.root).sort()).toEqual(before);
+    expect(existsSync(join(fixture.root, 'backups'))).toBe(false);
+    expect(existsSync(join(fixture.app, '--encrypt'))).toBe(false);
+    expect(existsSync(join(process.cwd(), '--encrypt'))).toBe(false);
+    expectNoLocks(fixture);
+  });
+
+  it('defaults an encrypted backup to a .hvsnap file beside local storage', async () => {
+    const fixture = makeFixture();
+    await fixture.run(['setup']);
+    expect(await fixture.run(['backup', '--encrypted'], { snapshotKeys })).toBe(
+      0,
+    );
+    const { destination } = fixture.stdoutJson() as { destination: string };
+    expect(destination.startsWith(join(fixture.root, 'backups'))).toBe(true);
+    expect(destination.endsWith('.hvsnap')).toBe(true);
+    expect(statSync(destination).isFile()).toBe(true);
+  });
+
   it('preserves a destination created by a contender before ownership is acquired', async () => {
     const fixture = makeFixture();
     await fixture.run(['setup']);
@@ -1411,6 +1542,95 @@ describe('smrt app export / import', () => {
       'Stop deployed web/workers and set SMRT_MAINTENANCE_MODE=true before importing.',
     );
     expect(allOutput(fixture)).not.toContain(DB_PASSWORD);
+  });
+
+  it('exports an encrypted bundle with --encrypted that decrypts to the logical bundle', async () => {
+    const { fixture } = await seededApplication();
+    const bundle = join(fixture.root, 'exports', 'app.json.hvsnap');
+    expect(await fixture.run(['export', '--encrypted', bundle])).toBe(1);
+    expect(existsSync(bundle)).toBe(false);
+
+    expect(
+      await fixture.run(['export', '--encrypted', bundle], { snapshotKeys }),
+    ).toBe(0);
+    expect(fixture.stdoutJson()).toMatchObject({
+      schemaVersion: 1,
+      status: 'exported',
+      path: bundle,
+      tableCount: 2,
+      encrypted: true,
+      snapshot: {
+        kind: 'export-bundle',
+        generation: '1',
+        sequence: '3',
+        deviceId: 'device-1',
+      },
+    });
+    expect(statSync(bundle).mode & 0o777).toBe(0o600);
+    expect(readFileSync(bundle).includes('First')).toBe(false);
+    expect(readdirSync(join(fixture.root, 'exports'))).toEqual([
+      'app.json.hvsnap',
+    ]);
+
+    const restored = join(fixture.root, 'restored', 'app.json');
+    await decryptSnapshot({
+      source: bundle,
+      destination: restored,
+      context: SNAPSHOT_CONTEXT,
+      keys: snapshotKeys,
+      expectedKind: 'export-bundle',
+    });
+    const parsed = JSON.parse(readFileSync(restored, 'utf8'));
+    expect(parsed).toMatchObject({ schemaVersion: 2, application: 'ops-app' });
+    expect(readFileSync(restored, 'utf8')).not.toContain(TOKEN);
+
+    expect(
+      await fixture.run(['import', '--encrypted', bundle], { snapshotKeys }),
+    ).toBe(1);
+    expect(fixture.stderrJson().message).toBe(
+      'Encrypted bundles cannot be imported directly yet; decrypt the snapshot first.',
+    );
+    mkdirSync(join(fixture.app, 'scripts'), { recursive: true });
+    writeFileSync(
+      join(fixture.app, 'scripts', 'smrt-portability.mjs'),
+      'export async function exportApplication(context) { return { path: context.path }; }\n',
+    );
+    expect(
+      await fixture.run(
+        ['export', '--encrypted', join(fixture.root, 'custom.hvsnap')],
+        { snapshotKeys },
+      ),
+    ).toBe(1);
+    expect(fixture.stderrJson().message).toBe(
+      'Encrypted export is not available with a custom scripts/smrt-portability.mjs adapter.',
+    );
+  });
+
+  it('refuses an unknown export or import option instead of exporting plaintext to a path named after it', async () => {
+    const { fixture } = await seededApplication();
+    const destination = join(fixture.root, 'exports', 'app.json');
+    for (const [operation, flag] of [
+      ['export', '--encrypt'],
+      ['export', '--encrypted=1'],
+      ['import', '--encrypt'],
+    ] as const) {
+      expect(
+        await fixture.run([operation, flag, destination], { snapshotKeys }),
+      ).toBe(1);
+      expect(String(fixture.stderrJson().message)).toContain(
+        `Unknown option for app ${operation}: ${JSON.stringify(flag)}`,
+      );
+      expect(
+        await fixture.run([operation, destination, flag], { snapshotKeys }),
+      ).toBe(1);
+    }
+    expect(await fixture.run(['export', '--encrypt'], { snapshotKeys })).toBe(
+      1,
+    );
+    expect(existsSync(join(fixture.root, 'exports'))).toBe(false);
+    expect(existsSync(destination)).toBe(false);
+    expect(existsSync(join(fixture.app, '--encrypt'))).toBe(false);
+    expect(existsSync(join(process.cwd(), '--encrypt'))).toBe(false);
   });
 
   it("keeps the application's scripts/smrt-portability.mjs adapter as the extension point", async () => {

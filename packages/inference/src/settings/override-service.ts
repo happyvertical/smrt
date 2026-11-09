@@ -20,6 +20,7 @@ import {
   normalizeDefaultTier,
   normalizeFusionDefinition,
   normalizeTierTarget,
+  normalizeTranscriptSettings,
   parseInferenceBinding,
 } from './targets.js';
 
@@ -159,6 +160,8 @@ export function normalizeBindingValue(
       return normalizeTierTarget(binding, value);
     case 'default-tier':
       return normalizeDefaultTier(binding, value);
+    case 'transcripts':
+      return normalizeTranscriptSettings(binding, value);
     case 'alias':
       return normalizeAliasDefinition(binding, value);
     case 'fusion':
@@ -255,6 +258,13 @@ export class InferenceOverrideService {
       throw new InferenceBindingValueError(
         binding,
         'aliases and fusions are defined at the app scope only',
+      );
+    }
+    // Tenants cannot override transcripts (owner decision, #4781).
+    if (scopeType === 'tenant' && parsed?.kind === 'transcripts') {
+      throw new InferenceBindingValueError(
+        binding,
+        'the transcript setting is app scope only',
       );
     }
     await this.require({

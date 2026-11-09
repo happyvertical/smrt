@@ -298,8 +298,9 @@ app's `package.json` scripts are one-liners:
 | `smrt app start` / `stop` | Local: run the production build on loopback; readiness is proven by app id, process instance, and configuration fingerprint |
 | `smrt app doctor` | Secret-free findings (`invalid-runtime-profile`, `unsafe-local-bind`, `runtime-path-unavailable`, `migration-required`, …); exits 1 on any error (default operation) |
 | `smrt app open` | Open the app, or the pending onboarding launch file |
-| `smrt app backup [destination]` | Local: copy the validated data root to a new private directory outside the checkout |
-| `smrt app export [path]` / `import <path>` | Logical, asset-aware bundle; import requires an empty target (deployed: `SMRT_MAINTENANCE_MODE=true`) |
+| `smrt app backup [--encrypted] [destination]` | Local: copy the validated data root to a new private directory outside the checkout; `--encrypted` writes one encrypted snapshot file instead and needs a vault key provider, which the stock binary does not yet supply ([format](agents/encrypted-snapshots.md)); any other `-`/`--` option is refused rather than taken as a path |
+| `smrt app backup --encrypted --target <name>` / `smrt app backups targets\|list\|prune` | Local: store the encrypted snapshot on a configured local directory, your own Google Drive, or the vault relay (needs the `backup.vault` entitlement); retention per target; configuration holds no secrets and credentials come from an injected credential store ([targets](agents/backup-targets.md)) |
+| `smrt app export [--encrypted] [path]` / `import <path>` | Logical, asset-aware bundle, optionally as an encrypted snapshot; import takes a plaintext bundle and requires an empty target (deployed: `SMRT_MAINTENANCE_MODE=true`) |
 | `smrt app migrate` | Establish local storage custody, then `smrt db:migrate`, under the operation lock |
 | `smrt app worker [task\|schedule]` | Deployed: imports `.smrt/runtime/register.js`, then runs the jobs runner until SIGTERM. The kind defaults to `task`; any other value is a usage error before anything starts |
 | `smrt app dev\|build\|vite [args]` | Run the app's installed Vite with `.env` loaded (shell wins); `build` validates `./mcp-apps` first |

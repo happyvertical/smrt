@@ -85,6 +85,8 @@ export {
   InferenceSettingsService,
   type InferenceSettingsServiceOptions,
   type InferenceTierSettingsRow,
+  type InferenceTranscriptSettings,
+  type InferenceUsageReportDimension,
   type RegisteredFusionLike,
 } from './settings/settings-service.js';
 export {
@@ -94,10 +96,18 @@ export {
   type InferenceBindingId,
   InferenceBindingValueError,
   type InferenceMode,
+  type InferenceTranscriptSettingsValue,
   inferenceTargetRef,
   isAllowedByList,
   matchesAllowPattern,
+  normalizeTranscriptSettings,
   parseInferenceBinding,
   stripKeyMembers,
+  TRANSCRIPTS_BINDING,
   tierBinding,
 } from './settings/targets.js';
+export {
+  applyStoredTranscriptSettings,
+  loadInferenceTranscriptSettings,
+  storedTranscriptSettings,
+} from './settings/transcripts.js';

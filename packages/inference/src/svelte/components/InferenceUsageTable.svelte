@@ -1,27 +1,64 @@
 <script lang="ts">
 /**
- * The Usage tab: `reportAiUsage()` buckets (#4751) by model, tier and/or
- * prompt key. Renders only the dimensions the report was grouped by, so it
- * works with the model dimension alone.
+ * The Usage tab: `reportAiUsage()` buckets (#4751) by model, tier, prompt
+ * key, fusion and/or template hash. Renders only the dimensions the report
+ * was grouped by, so it works with the model dimension alone. With
+ * transcript counts (#4781) each row shows how many calls have a stored
+ * transcript and links them (and each outcome label) to the host's
+ * transcript route; transcript content is never rendered here.
  */
-import type { InferenceUsageDimension, InferenceUsageView } from '../types.js';
-import { usageColumns } from '../types.js';
+import type {
+  InferenceTranscriptLinkFilters,
+  InferenceUsageDimension,
+  InferenceUsageView,
+} from '../types.js';
+import { transcriptLinkFilters, usageColumns } from '../types.js';
 
 interface InferenceUsageTableProps {
   usage: InferenceUsageView | null;
   busy: boolean;
+  /** Whether the app stores transcripts; `false` shows the status line. */
+  transcriptsEnabled?: boolean | null;
+  transcriptHref?: (
+    filters: InferenceTranscriptLinkFilters,
+  ) => string | null | undefined;
   onUsageGroupBy?: (by: InferenceUsageDimension[]) => void;
 }
 
-const { usage, busy, onUsageGroupBy }: InferenceUsageTableProps = $props();
+const {
+  usage,
+  busy,
+  transcriptsEnabled = null,
+  transcriptHref,
+  onUsageGroupBy,
+}: InferenceUsageTableProps = $props();
 
 const DIMENSIONS: Array<{ id: InferenceUsageDimension; label: string }> = [
   { id: 'model', label: 'Model' },
   { id: 'tier', label: 'Tier' },
   { id: 'prompt', label: 'Prompt key' },
+  { id: 'fusion', label: 'Fusion' },
+  { id: 'template', label: 'Template' },
 ];
 
 const columns = $derived(usage ? usageColumns(usage) : []);
+const showTranscripts = $derived(
+  !!usage?.buckets.some((bucket) => typeof bucket.transcripts === 'number'),
+);
+
+function href(
+  key: Record<string, string | null | undefined>,
+  outcome?: string,
+): string | null {
+  if (!usage || !transcriptHref) return null;
+  return transcriptHref(transcriptLinkFilters(usage, key, outcome)) || null;
+}
+
+function outcomeEntries(
+  value: Record<string, number> | undefined,
+): Array<[string, number]> {
+  return Object.entries(value ?? {});
+}
 
 function regroup(event: Event): void {
   const form = (event.currentTarget as HTMLInputElement).form;
@@ -31,16 +68,14 @@ function regroup(event: Event): void {
     .map(String) as InferenceUsageDimension[];
   onUsageGroupBy(by.length > 0 ? by : ['model']);
 }
-
-function outcomes(value: Record<string, number> | undefined): string {
-  const entries = Object.entries(value ?? {});
-  return entries.length > 0
-    ? entries.map(([label, count]) => `${label} ${count}`).join(', ')
-    : '–';
-}
 </script>
 
 <div class="iut" data-testid="inference-usage">
+  {#if transcriptsEnabled === false}
+    <p class="iut-label" role="status" data-testid="inference-transcripts-off">
+      Transcripts are off; turn them on with <code>inference.transcripts.enabled</code> (Advanced, Transcripts) or <code>SMRT_INFERENCE_TRANSCRIPTS=1</code>.
+    </p>
+  {/if}
   {#if onUsageGroupBy}
     <form class="iut-group">
       <span class="iut-label">Group by</span>
@@ -72,6 +107,7 @@ function outcomes(value: Record<string, number> | undefined): string {
           <th scope="col">Tokens</th>
           <th scope="col">Est. cost</th>
           <th scope="col">Outcomes</th>
+          {#if showTranscripts}<th scope="col">Transcripts</th>{/if}
         </tr>
       </thead>
       <tbody>
@@ -86,7 +122,21 @@ function outcomes(value: Record<string, number> | undefined): string {
               ${bucket.estimatedCost.toFixed(4)}
               {#if bucket.uncostedCalls}<span class="iut-label">({bucket.uncostedCalls} uncosted)</span>{/if}
             </td>
-            <td>{outcomes(bucket.outcomes)}</td>
+            <td>
+              {#each outcomeEntries(bucket.outcomes) as [label, count], position (label)}
+                {@const link = (bucket.transcripts ?? 0) > 0 ? href(bucket.key, label) : null}
+                {#if position > 0}, {/if}
+                {#if link}<a href={link} data-testid="inference-transcript-outcome-link">{label} {count}</a>{:else}{label} {count}{/if}
+              {:else}
+                –
+              {/each}
+            </td>
+            {#if showTranscripts}
+              {@const link = (bucket.transcripts ?? 0) > 0 ? href(bucket.key) : null}
+              <td data-testid="inference-transcript-count">
+                {#if link}<a href={link} data-testid="inference-transcript-link">{bucket.transcripts}</a>{:else}{bucket.transcripts ?? 0}{/if}
+              </td>
+            {/if}
           </tr>
         {/each}
       </tbody>

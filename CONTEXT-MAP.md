@@ -6,12 +6,12 @@ SMRT is a multi-context monorepo. Use this map to find the package-level contrac
 | --- | --- | --- |
 | Framework foundations | `core`, `config`, `cli`, `types`, `scanner`, `tenancy`, `inference`, `vitest` | Package `AGENTS.md` files, [`docs/adr/0003-smrt-add-declarative-package-install.md`](docs/adr/0003-smrt-add-declarative-package-install.md) |
 | AI inference | `core` (tiers, seams, usage), `inference` (`@happyvertical/smrt-inference`: chains, fusions, bindings, settings, hosted gate), `prompts`, `secrets`, `features`, `subscriptions` | [Inference guide](docs/content/inference.md), [`packages/inference/AGENTS.md`](packages/inference/AGENTS.md), [`packages/core/agents/inference.md`](packages/core/agents/inference.md) |
-| Agent runtime, identity, and communications | `agents`, `approvals`, `jobs`, `users`, `profiles`, `personas`, `messages`, `chat`, `secrets` | [`packages/messages/CONTEXT.md`](packages/messages/CONTEXT.md), package `AGENTS.md` files, [`docs/adr/0001-persona-scoped-messaging.md`](docs/adr/0001-persona-scoped-messaging.md) |
+| Agent runtime, identity, and communications | `agents`, `approvals`, `jobs`, `users`, `profiles`, `personas`, `messages`, `chat`, `secrets`, `vault-relay` | [`packages/messages/CONTEXT.md`](packages/messages/CONTEXT.md), package `AGENTS.md` files, [`docs/adr/0001-persona-scoped-messaging.md`](docs/adr/0001-persona-scoped-messaging.md) |
 | Content and media | `content`, `assets`, `images`, `video`, `voice`, `social` | Package `AGENTS.md` files |
 | Business capabilities | `bookings`, `commerce`, `expenses`, `timesheets`, `human-resources`, `products`, `ads`, `affiliates`, `ledgers`, `analytics`, `reports`, `subscriptions` | Package `AGENTS.md` files |
 | Domain capabilities | `events`, `places`, `facts`, `sites`, `properties`, `tags` | Package `AGENTS.md` files |
 | Mobile | `smrt-mobile`, `smrt-android`, `smrt-ios`, `smrt-mobile-contract` | Package `AGENTS.md` files |
-| Desktop | `smrt-desktop` | [Sidecar manifest](packages/smrt-desktop/README.md) |
+| Desktop | `smrt-desktop`, `smrt-desktop-launcher` | [Sidecar manifest](packages/smrt-desktop/README.md), [Launcher core](packages/smrt-desktop-launcher/README.md) |
 | Web and application tooling | `smrt-web`, `smrt-svelte`, `preferences`, `smrt-ui`, `smrt-app-cli`, `smrt-dev-mcp`, `smrt-app-mcp`, `planner`, templates | Package `AGENTS.md` files, [`docs/adr/0003-smrt-add-declarative-package-install.md`](docs/adr/0003-smrt-add-declarative-package-install.md) |
 | Admin Shell | `smrt-svelte` workspace and shell surfaces | Root `CONTEXT.md` |
 

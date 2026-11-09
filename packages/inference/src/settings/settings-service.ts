@@ -13,7 +13,12 @@ import { getDefaultAIKeyEnvName } from '@happyvertical/smrt-config';
 import {
   type AiUsageReport,
   type AiUsageReportDimension,
+  config as coreConfig,
+  DEFAULT_RETENTION_POLICY,
+  DEFAULT_TRANSCRIPT_MAX_BYTES,
+  DEFAULT_TRANSCRIPT_SAMPLE,
   getInferenceConfig,
+  getInferenceTranscriptsConfig,
   INFERENCE_PRESET_IDS,
   INFERENCE_PRESETS,
   INFERENCE_TIERS,
@@ -22,6 +27,8 @@ import {
   type InferenceConfig,
   type InferenceTarget,
   type InferenceTier,
+  type InferenceTranscriptsConfig,
+  type RetentionPolicy,
   reportAiUsage,
   resolveAutoTier,
   type SmrtClassOptions,
@@ -62,9 +69,15 @@ import {
   describeInferenceTarget,
   INFERENCE_BINDING_NAME_PATTERN,
   InferenceBindingValueError,
+  type InferenceTranscriptSettingsValue,
   stripKeyMembers,
+  TRANSCRIPTS_BINDING,
   tierBinding,
 } from './targets.js';
+import {
+  applyStoredTranscriptSettings,
+  storedTranscriptSettings,
+} from './transcripts.js';
 
 /** Which level supplied an effective value. */
 export type InferenceSettingsLevel = 'default' | 'config' | 'app' | 'tenant';
@@ -140,6 +153,35 @@ export interface InferenceFusionSetting {
   editable: boolean;
 }
 
+/**
+ * The app's transcript setting (#4781), for the panel's Advanced section.
+ * App level only: tenants cannot override it, so it is the same for every
+ * tenant. Never carries transcript content.
+ */
+export interface InferenceTranscriptSettings {
+  binding: typeof TRANSCRIPTS_BINDING;
+  /** Effective values: config < app row < `SMRT_INFERENCE_TRANSCRIPTS`. */
+  enabled: boolean;
+  sample: number;
+  maxBytes: number;
+  /** Which level supplied `enabled`. */
+  supplyingLevel: 'default' | 'config' | 'app' | 'env';
+  /** The app row's stored value (`null`: none). */
+  appValue: InferenceTranscriptSettingsValue | null;
+  /** What reverting the app row produces (config and env only). */
+  appRevert: { enabled: boolean; sample: number; maxBytes: number };
+  /** `SMRT_INFERENCE_TRANSCRIPTS` forces `enabled` to this (`null`: unset). */
+  envEnabled: boolean | null;
+  /**
+   * Days transcripts are kept by the retention sweep
+   * (`retention.aiTranscripts.maxAgeDays`); `null` when the sweep skips
+   * them. Read-only here: the sweep runs with its caller's policy.
+   */
+  retentionDays: number | null;
+  /** Prompt keys with their own sample rate in config (read-only). */
+  promptOverrides: string[];
+}
+
 /** One provider choice for the default view. */
 export interface InferenceProviderOption {
   id: string;
@@ -192,6 +234,15 @@ export interface InferenceSettingsServiceOptions {
    * Registered fusions. Default: #4753's process registry (`defineFusion()`).
    */
   registryFusions?: () => Iterable<RegisteredFusionLike>;
+  /**
+   * The transcript config with an app layer (#4781). Default core's
+   * `getInferenceTranscriptsConfig()` (config < app < env).
+   */
+  transcriptsConfig?: (
+    app: InferenceTranscriptsConfig | null,
+  ) => InferenceTranscriptsConfig | undefined;
+  /** The retention policy the sweep runs with. Default core `config().retention`. */
+  retention?: () => RetentionPolicy | undefined;
 }
 
 /** #4753's process registry as {@link RegisteredFusionLike} entries. */
@@ -303,6 +354,26 @@ function bindingRefersTo(
     );
   }
   return false;
+}
+
+/** Usage tab dimensions (`usage()`). */
+export type InferenceUsageReportDimension = Extract<
+  AiUsageReportDimension,
+  'model' | 'tier' | 'prompt' | 'fusion' | 'template'
+>;
+
+/** Days the retention sweep keeps transcripts under `policy`, or `null`. */
+function transcriptRetentionDays(
+  policy: RetentionPolicy | undefined,
+): number | null {
+  if (policy?.enabled === false || policy?.aiTranscripts === false) {
+    return null;
+  }
+  return (
+    policy?.aiTranscripts?.maxAgeDays ??
+    DEFAULT_RETENTION_POLICY.aiTranscripts.maxAgeDays ??
+    null
+  );
 }
 
 const PRESET_LABELS: Record<string, string> = {
@@ -863,16 +934,90 @@ export class InferenceSettingsService {
   }
 
   /**
-   * The Usage tab: `reportAiUsage()` (#4751) grouped by model, tier and/or
-   * prompt key. Pass `by: ['model']` where tier and prompt tags do not exist
-   * yet; NULL dimensions are their own bucket, never dropped.
+   * The app's transcript setting (#4781): effective values, the stored app
+   * row, its revert preview, the env override and the retention window.
+   * The same for every tenant (no tenant override).
+   */
+  async getTranscriptSettings(): Promise<InferenceTranscriptSettings> {
+    const appRows = await this.overrides.getScopeMap(
+      'app',
+      APP_INFERENCE_SCOPE_ID,
+    );
+    const appValue = storedTranscriptSettings(appRows);
+    const merged =
+      this.options.transcriptsConfig ?? getInferenceTranscriptsConfig;
+    const resolved = (layer: InferenceTranscriptsConfig | null) => {
+      const value = merged(layer);
+      return {
+        enabled: value?.enabled === true,
+        sample: value?.sample ?? DEFAULT_TRANSCRIPT_SAMPLE,
+        maxBytes: value?.maxBytes ?? DEFAULT_TRANSCRIPT_MAX_BYTES,
+      };
+    };
+    const effective = resolved(appValue);
+    const appRevert = resolved(null);
+    // The env wins over every layer: if forcing either value through the
+    // app layer gives the same answer, the env decided it.
+    const forcedOn = resolved({ enabled: true }).enabled;
+    const forcedOff = resolved({ enabled: false }).enabled;
+    const envEnabled = forcedOn === forcedOff ? forcedOn : null;
+    const config = merged(null);
+    const supplyingLevel =
+      envEnabled !== null
+        ? 'env'
+        : appValue?.enabled !== undefined
+          ? 'app'
+          : config?.enabled !== undefined
+            ? 'config'
+            : 'default';
+    return {
+      binding: TRANSCRIPTS_BINDING,
+      ...effective,
+      supplyingLevel,
+      appValue,
+      appRevert,
+      envEnabled,
+      retentionDays: transcriptRetentionDays(
+        (this.options.retention ?? (() => coreConfig.toJSON().retention))(),
+      ),
+      promptOverrides: Object.keys(config?.prompts ?? {}).sort(),
+    };
+  }
+
+  /**
+   * Store (or, with `null`, remove) the app's transcript setting. Always
+   * the app row: there is no tenant scope. Goes through the authorizer
+   * (request `{ binding: 'transcripts', scopeType: 'app' }`); on success the
+   * value is installed as core's app settings layer in this process.
+   */
+  async setTranscriptSettings(request: {
+    settings: InferenceTranscriptSettingsValue | null;
+  }): Promise<void> {
+    await this.writes.setValue(
+      TRANSCRIPTS_BINDING,
+      'app',
+      APP_INFERENCE_SCOPE_ID,
+      request.settings,
+    );
+    applyStoredTranscriptSettings(
+      await this.overrides.getScopeMap('app', APP_INFERENCE_SCOPE_ID),
+    );
+  }
+
+  /**
+   * The Usage tab: `reportAiUsage()` (#4751) grouped by model, tier, prompt
+   * key, fusion and/or template hash. Pass `by: ['model']` where tier and
+   * prompt tags do not exist yet; NULL dimensions are their own bucket,
+   * never dropped. `transcripts: true` adds per-bucket transcript counts
+   * (#4781; ids only, never content).
    */
   usage(
     options: {
-      by?: Array<Extract<AiUsageReportDimension, 'model' | 'tier' | 'prompt'>>;
+      by?: InferenceUsageReportDimension[];
       since?: Date;
       until?: Date;
       tenantId?: string | null;
+      transcripts?: boolean;
     } = {},
   ): Promise<AiUsageReport> {
     return reportAiUsage(this.overrides.db, {

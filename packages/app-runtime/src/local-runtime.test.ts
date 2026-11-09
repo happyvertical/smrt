@@ -36,6 +36,7 @@ import {
   initializeLocalApplicationRuntime,
   LocalRuntimeError,
   MIGRATION_FAILED_MESSAGE,
+  prepareApplicationStateRoot,
   prepareLocalDatabaseStorage,
   resolveLocalRuntimePaths,
   validateApplicationId,
@@ -1173,30 +1174,62 @@ describe('local application runtime', () => {
     ).toBe(0o644);
   });
 
-  it('recovers from an interrupted temporary secret publication', async () => {
+  it('recovers from an interrupted first-run temporary secret publication', async () => {
     const directories = await localDirectories('stale-secret-temp');
+    // A first run that stopped after claiming the root but before the seed
+    // existed: no bootstrap table yet, so this is still a fresh installation.
+    await prepareLocalDatabaseStorage({ appId: 'lolaus', ...directories });
+    const secrets = join(directories.dataDirectory, 'secrets');
+    await mkdir(secrets, { mode: 0o700 });
+    const staleTemp = join(secrets, '.application.secret.tmp-interrupted');
+    await writeFile(staleTemp, 'partial', { mode: 0o600 });
+
     const initialized = await initializeLocalApplicationRuntime({
       appId: 'lolaus',
       ...directories,
     });
-    const secretPath = initialized.runtime.paths.applicationSecret;
-    await rm(secretPath);
-    const staleTemp = join(
-      initialized.runtime.paths.secrets,
-      '.application.secret.tmp-interrupted',
+    expect(initialized.diagnostics).toMatchObject({
+      runtime: { profile: 'local' },
+    });
+    expect(
+      await readFile(initialized.runtime.paths.applicationSecret, 'utf8'),
+    ).toMatch(/^[A-Za-z0-9_-]{43}\n$/);
+    await expect(stat(staleTemp)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('does not treat a seed that appears while the first seed is published as new', async () => {
+    const directories = await localDirectories('seed-race');
+    // This location remembers a different installation, as after a deleted
+    // data root that was never cleaned up.
+    const stateRoot = prepareApplicationStateRoot({
+      appId: 'lolaus',
+      dataDirectory: directories.dataDirectory,
+      sourceRoot: directories.sourceRoot,
+    });
+    await writeFile(
+      join(stateRoot, 'installation.json'),
+      `${JSON.stringify({
+        schemaVersion: 1,
+        installationId: '11111111-1111-8111-8111-111111111111',
+        epoch: 1,
+        activationId: 'a'.repeat(32),
+        previousInstallationId: null,
+        status: 'active',
+      })}\n`,
+      { mode: 0o600 },
     );
-    await writeFile(staleTemp, 'partial', { mode: 0o600 });
+    // A sync tool that ignores the lock drops a foreign seed at publish time.
+    filesystemInterleave.beforeLink = async () => {
+      await writeFile(
+        join(directories.dataDirectory, 'secrets', 'application.secret'),
+        `${'B'.repeat(43)}\n`,
+        { mode: 0o600, flag: 'wx' },
+      );
+    };
 
     await expect(
-      initializeLocalApplicationRuntime({
-        appId: 'lolaus',
-        ...directories,
-      }),
-    ).resolves.toMatchObject({
-      diagnostics: { runtime: { profile: 'local' } },
-    });
-    expect(await readFile(secretPath, 'utf8')).toMatch(/^[A-Za-z0-9_-]{43}\n$/);
-    await expect(stat(staleTemp)).rejects.toMatchObject({ code: 'ENOENT' });
+      initializeLocalApplicationRuntime({ appId: 'lolaus', ...directories }),
+    ).rejects.toMatchObject({ code: 'installation_unverified' });
   });
 
   it('refuses a symlinked ancestor that redirects storage into the source tree', async () => {
@@ -2276,8 +2309,19 @@ describe('local application runtime', () => {
       expect(calls).toBe(1);
       expect(maximumActive).toBe(1);
       releaseFirst?.();
-      await expect(Promise.all([first, second])).resolves.toHaveLength(2);
-      expect(calls).toBe(2);
+      // The alias serialized behind the first run, then was refused: its
+      // state root (hashed from the path as spelled) never took custody of
+      // the data root, so it is an unverified arrival (#4704).
+      const [firstResult, secondResult] = await Promise.allSettled([
+        first,
+        second,
+      ]);
+      expect(firstResult.status).toBe('fulfilled');
+      expect(secondResult).toMatchObject({
+        status: 'rejected',
+        reason: { code: 'installation_unverified' },
+      });
+      expect(calls).toBe(1);
       expect(maximumActive).toBe(1);
     },
   );
