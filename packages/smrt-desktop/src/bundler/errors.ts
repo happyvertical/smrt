@@ -107,6 +107,8 @@ const OWN_CODES = {
     'The written manifests do not round-trip through the contract parsers',
   bundle_changed_while_measuring:
     'The bundle changed while it was being started for measurement',
+  measured_process_survived:
+    'A process started by the measured sidecar was still running after it was stopped',
   // budget
   size_budget_exceeded: 'The installed size is above the configured budget',
   // child_failed
@@ -132,6 +134,7 @@ const OWN_CATEGORY: Record<OwnCodeName, BundleErrorCategory> = {
   build_step_required: 'verification',
   manifest_round_trip: 'verification',
   bundle_changed_while_measuring: 'verification',
+  measured_process_survived: 'verification',
   size_budget_exceeded: 'budget',
   pnpm_failed: 'child_failed',
   smoke_start_failed: 'child_failed',

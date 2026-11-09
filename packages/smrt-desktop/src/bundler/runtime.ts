@@ -5,7 +5,7 @@
  * `child_process`, `http` and `net`.
  */
 
-import { spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { promises as fsp, readFileSync } from 'node:fs';
 import { request as httpRequest } from 'node:http';
 import { createServer } from 'node:net';
@@ -18,6 +18,7 @@ import {
   type MeasureChild,
   type MeasureSeams,
   measureBundle,
+  type SpawnRequest,
 } from './measure.js';
 import { acquireNodeBinary } from './node-dist.js';
 import { nodeTreeFs, type TreeFs } from './paths.js';
@@ -94,28 +95,159 @@ async function diskUsage(root: string): Promise<number | undefined> {
   return total;
 }
 
+interface ProcessRow {
+  readonly pid: number;
+  readonly ppid: number;
+  readonly pgid: number;
+  /** `ps` state; a leading `Z` is a zombie (already dead). */
+  readonly stat: string;
+}
+
+/** The process table (`ps -A -o pid=,ppid=,pgid=,stat=`), or `undefined`. */
+function processTable(): Promise<ProcessRow[] | undefined> {
+  return new Promise((resolve) => {
+    execFile(
+      'ps',
+      ['-A', '-o', 'pid=,ppid=,pgid=,stat='],
+      { timeout: 5000, maxBuffer: 16 * 1024 * 1024, windowsHide: true },
+      (error, stdout) => {
+        if (error !== null) {
+          resolve(undefined);
+          return;
+        }
+        const rows: ProcessRow[] = [];
+        for (const line of stdout.split('\n')) {
+          const match = /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\S+)/.exec(line);
+          if (match !== null) {
+            rows.push({
+              pid: Number(match[1]),
+              ppid: Number(match[2]),
+              pgid: Number(match[3]),
+              stat: match[4] as string,
+            });
+          }
+        }
+        resolve(rows.length === 0 ? undefined : rows);
+      },
+    );
+  });
+}
+
+/** Every process below `root` in the parent chain (not `root` itself). */
+export function descendantsOf(
+  rows: readonly ProcessRow[],
+  root: number,
+): number[] {
+  const children = new Map<number, number[]>();
+  for (const row of rows) {
+    const list = children.get(row.ppid) ?? [];
+    list.push(row.pid);
+    children.set(row.ppid, list);
+  }
+  const found: number[] = [];
+  const seen = new Set<number>([root]);
+  const queue = [root];
+  for (let index = 0; index < queue.length; index += 1) {
+    for (const child of children.get(queue[index] as number) ?? []) {
+      if (!seen.has(child)) {
+        seen.add(child);
+        found.push(child);
+        queue.push(child);
+      }
+    }
+  }
+  return found;
+}
+
+function probe(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as { code?: unknown } | null)?.code === 'EPERM';
+  }
+}
+
+/**
+ * Spawn a measured sidecar as a process group leader (POSIX) and return a
+ * handle whose `kill` signals the whole group plus every descendant seen in
+ * the process table (a grandchild that called `setsid` or was spawned
+ * `detached` is in another group but still has the child above it until it
+ * dies), and whose `alive` reports whether anything is left.
+ *
+ * Residual: a process that double-forks away (its parent exits first, so it
+ * is re-parented) AND leaves the group is not found. Windows has no process
+ * group semantics here: `kill` stops the direct child only, `alive` reports
+ * nothing (a job object is a tracked follow-up).
+ */
+export function spawnMeasuredChild(
+  request: SpawnRequest,
+  posix: boolean = process.platform !== 'win32',
+): MeasureChild {
+  const child = spawn(request.command, [...request.args], {
+    cwd: request.cwd,
+    env: { ...request.env },
+    stdio: 'ignore',
+    shell: false,
+    windowsHide: true,
+    detached: posix,
+  });
+  const exit = new Promise<unknown>((resolve) => {
+    child.on('error', () => resolve(undefined));
+    child.on('close', (code, signal) => resolve({ code, signal }));
+  });
+  const pid = child.pid;
+  if (!posix || pid === undefined) {
+    return {
+      kill: (signal) => {
+        child.kill(signal);
+      },
+      exit,
+    };
+  }
+  const known = new Set<number>();
+  const refresh = async (): Promise<void> => {
+    const rows = await processTable();
+    if (rows === undefined) return;
+    for (const descendant of descendantsOf(rows, pid)) known.add(descendant);
+  };
+  const signal = (name: 'SIGTERM' | 'SIGKILL'): void => {
+    try {
+      process.kill(-pid, name);
+    } catch {
+      // The group is already gone.
+    }
+    for (const other of known) {
+      try {
+        process.kill(other, name);
+      } catch {
+        // Already gone.
+      }
+    }
+  };
+  return {
+    async kill(name) {
+      await refresh();
+      signal(name);
+    },
+    exit,
+    async alive() {
+      const rows = await processTable();
+      if (rows === undefined) {
+        return probe(-pid) || [...known].some(probe);
+      }
+      return rows.some(
+        (row) =>
+          !row.stat.startsWith('Z') && (row.pgid === pid || known.has(row.pid)),
+      );
+    },
+  };
+}
+
 /** `MeasureSeams` backed by the real machine. */
 export function createNodeMeasureSeams(): MeasureSeams {
   return {
-    spawn(request): MeasureChild {
-      const child = spawn(request.command, [...request.args], {
-        cwd: request.cwd,
-        env: { ...request.env },
-        stdio: 'ignore',
-        shell: false,
-        windowsHide: true,
-      });
-      const exit = new Promise<unknown>((resolve) => {
-        child.on('error', () => resolve(undefined));
-        child.on('close', (code, signal) => resolve({ code, signal }));
-      });
-      return {
-        kill: (signal) => {
-          child.kill(signal);
-        },
-        exit,
-      };
-    },
+    spawn: (request) => spawnMeasuredChild(request),
     version(request): Promise<string> {
       return new Promise((resolve) => {
         const child = spawn(request.command, [...request.args], {

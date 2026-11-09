@@ -1142,9 +1142,35 @@ canonical report (or a failure document), so it pipes cleanly.
 | `--require-verified-pins` | the release and signing path: refuse a Node pin whose provenance is not `gpg-verified` (`node_pin_unverified`, exit 4) before any work; without it an unverified pin only warns (see Node pin provenance) |
 | `--features <a,b>` | feature groups to keep in addition to the configuration's defaults |
 | `--max-size <MiB>` | installed-size budget; exceeding it exits 6 and publishes nothing, but still prints the report |
-| `--measure`, `--measure-data <dir>` | start the bundle on this machine and record installed size and cold start (host target only) |
+| `--measure`, `--measure-data <dir>` | start the bundle on this machine and record installed size and cold start (host target only); this **runs the app's dependency code**, see Measuring runs the app |
 | `--offline` | `pnpm install --offline` and no Node download (needs the pnpm store and the Node cache) |
 | `--keep-sourcemaps`, `--force`, `--json` | keep `*.map`; replace an earlier bundle (or empty directory) at `--out`; JSON on stdout |
+
+### Measuring runs the app
+
+Everything the bundler does on the build host is inert (nothing is compiled
+and no package script runs) **except `--measure`, which starts the bundled
+sidecar**: the app's own code and every dependency it loads run as the build
+user, with the build host's network and `HOME` (and the other location
+variables of the child environment allowlist: `USERPROFILE`, `APPDATA`,
+`XDG_*`, temp directories, and the proxy variables, which may embed
+credentials) passed through, so the app can read what that user can read,
+including `~/.npmrc`. `NODE_OPTIONS`, `NODE_PATH` and every other variable are
+not passed. Only measure bundles of apps and locks you would run
+anyway, preferably in a disposable build environment, and never measure a
+bundle whose dependencies you have not reviewed.
+
+Stopping the measured process is part of the guarantee that the bundle is
+unchanged when it is signed. On POSIX the sidecar is started as a **process
+group leader**; stopping it sends SIGTERM to the whole group and to every
+descendant seen in the process table (including one started `detached`, which
+is in another group), waits, then SIGKILLs what is left, and the bundle fails
+(`measured_process_survived`, exit 5) if any process of the group or tree is
+still running. The digests of `binaries/` and `resources/` are checked after
+that. Limits: a process that double-forks away and leaves the group is not
+found; and **on Windows only the direct child is stopped and nothing is
+verified** (a job object is a tracked follow-up), so do not measure untrusted
+apps on Windows. The cross-target case is not measurable at all.
 
 ### Node pin provenance
 
@@ -1423,7 +1449,7 @@ deterministic as the app build; its hash is recorded, not rebuilt.
 | 2 | `usage` | bad flag, unsupported target, unpinned Node version, `--measure` for a cross target |
 | 3 | `invalid_input` | missing app files, bad configuration, a non-registry dependency, a pnpmfile, config dependency or a `pnpm-workspace.yaml` key outside the allowlist, no `--bridge`, `--out` not empty |
 | 4 | `provenance` | Node checksum mismatch, redirect or HTTP error from nodejs.org, lockfile drift, integrity failure, an unverified Node pin under `--require-verified-pins` |
-| 5 | `verification` | wrong-architecture native, symlink, secret, removed package imported, a relative import whose target is not in the bundle, install script, `gypfile` or `binding.gyp` without a prebuilt addon for the target, manifests that do not round-trip |
+| 5 | `verification` | wrong-architecture native, symlink, secret, removed package imported, a process left running after `--measure`, a relative import whose target is not in the bundle, install script, `gypfile` or `binding.gyp` without a prebuilt addon for the target, manifests that do not round-trip |
 | 6 | `budget` | `--max-size` exceeded |
 | 7 | `child_failed` | pnpm failed, the measured start did not answer its health route |
 | 8 | `io` | a file operation failed |
@@ -1460,7 +1486,7 @@ below did.
 | B9 | Secrets in the bundle | deny-list fails the bundle, content scan of the build, maps dropped, only registry lines of `.npmrc` reach staging (no credentials) | `fails when the build output contains a .env file`; `fails on a private key in the build output`; `fails on a .smrt data directory inside the build`; `finds the OpenAI, Google, npm and Stripe token shapes and reports only ids`; `does not flag ordinary code or look-alikes`; `never copies the app .npmrc into the output`; `drops source maps unless asked`; `keeps a canary token out of the output, the report and the child environment` |
 | B10 | Build-host environment leaking into children | child environment allowlist, forced `npm_config_ignore_scripts`, `NODE_OPTIONS`/`npm_config_*`/`LD_*` dropped | `passes only allowlisted environment names to pnpm`; `drops NODE_OPTIONS and npm_config_* from the child environment`; `forces ignore-scripts in the child environment`; `never leaks a canary token, whatever the variable name` |
 | B11 | Environment injection into the sidecar at run time | the manifest empties `NODE_OPTIONS` and `NODE_PATH` | `writes a sidecar manifest that neutralises NODE_OPTIONS and NODE_PATH` |
-| B12 | Manifest reproducibility and validity, and a measured app altering the bundle's own metadata | canonical serializers, re-parsed with the contract parsers, byte round trip, cross-check, no timestamps; `tauri.bundle.json` and the file list are written after the measured start and the output root is checked afterwards | `writes manifests the contract parsers accept and that round-trip byte for byte`; `produces identical files and report for identical inputs`; `orders the file list independently of readdir order`; `sets every modification time to the epoch floor or SOURCE_DATE_EPOCH`; `writes tauri.bundle.json and the file list only after the measured start`; `fails when the measured start plants or changes a file in the bundle root` |
+| B12 | Manifest reproducibility and validity, and a measured app altering the bundle's own metadata | canonical serializers, re-parsed with the contract parsers, byte round trip, cross-check, no timestamps; `tauri.bundle.json` and the file list are written after the measured start and the output root is checked afterwards; the measured process group and its descendants are stopped and verified gone before the digests are re-checked (POSIX) | `writes manifests the contract parsers accept and that round-trip byte for byte`; `produces identical files and report for identical inputs`; `orders the file list independently of readdir order`; `sets every modification time to the epoch floor or SOURCE_DATE_EPOCH`; `writes tauri.bundle.json and the file list only after the measured start`; `fails when the measured start plants or changes a file in the bundle root`; `does not take the exit of the child for the end of its group`; `fails the bundle when a process is still running after SIGKILL`; `leaves no grandchild running, grouped or detached`; `leaves no grandchild running even when everything ignores SIGTERM` |
 | B13 | Bridge not self-contained, swapped or a link | verified regular file, size cap, built-ins only, hash recorded | `rejects a bridge bundle that imports a bare package`; `rejects a bridge that is a symlink`; `records the bridge sha256 and byte count` |
 | B14 | A removed package, or a file pruning removed, is still needed (availability) | reachability scan, relative imports checked against the pruned tree, files reached modules refer to protected from pruning, acknowledgements recorded, host start (a bundle built without `--measure` has no runtime check) | `fails when a reached file imports a relative path that is not in the bundle`; `fails on a missing relative import in the application build, and lets a lazy one be acknowledged`; `keeps a file a reached module imports from a directory that pruning removes by name`; `keeps data files a reached module reads by a literal path, and still prunes docs nobody names`; `records what the import scan covered, including bare imports that resolved to nothing`; `fails when the build statically imports a removed package`; `requires acknowledgement for a dynamic import of a removed package`; `ignores a build-time file of a kept package that nothing loads`; `bundles, verifies and measures a fixture app for the host triple` (opt-in end to end) |
 

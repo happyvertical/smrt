@@ -25,9 +25,20 @@ import { BundleError } from './errors.js';
 import type { BundleMeasurements, SeriesStats } from './report.js';
 
 export interface MeasureChild {
-  kill(signal: 'SIGTERM' | 'SIGKILL'): void;
+  /**
+   * Signal the child AND everything it started: on POSIX the child is a
+   * process group leader and the whole group, plus the descendants seen in
+   * the process table, is signalled.
+   */
+  kill(signal: 'SIGTERM' | 'SIGKILL'): void | Promise<void>;
   /** Resolves when the process has exited (never rejects). */
   readonly exit: Promise<unknown>;
+  /**
+   * True while any process of the child's group or tree is still running
+   * (zombies do not count). Absent where the platform cannot tell (Windows,
+   * until a job object is used); a missing method means "assume none".
+   */
+  alive?(): boolean | Promise<boolean>;
 }
 
 export interface SpawnRequest {
@@ -113,9 +124,19 @@ export function summarizeSeries(samples: readonly number[]): SeriesStats {
   };
 }
 
-async function stop(
+const SURVIVOR_GRACE_MS = 2000;
+
+/**
+ * Stop a measured child and everything it started, then verify that nothing
+ * is left. The child's exit says nothing about processes it spawned (a
+ * detached grandchild keeps running and could edit the bundle after its
+ * digests were checked), so the whole group is signalled with SIGTERM, given
+ * `graceMs`, and then killed with SIGKILL; a process that is still there
+ * after that fails the bundle (`measured_process_survived`).
+ */
+export async function stopMeasuredProcess(
   child: MeasureChild,
-  seams: MeasureSeams,
+  seams: Pick<MeasureSeams, 'now' | 'sleep'>,
   graceMs: number,
 ): Promise<void> {
   let exited = false;
@@ -127,21 +148,29 @@ async function stop(
       exited = true;
     },
   );
+  const alive = async (): Promise<boolean> =>
+    child.alive === undefined ? false : await child.alive();
+  const settled = async (): Promise<boolean> => exited && !(await alive());
+  const waitUntil = async (done: () => Promise<boolean>, ms: number) => {
+    const deadline = seams.now() + ms;
+    while (!(await done()) && seams.now() < deadline) await seams.sleep(25);
+  };
+
   try {
-    child.kill('SIGTERM');
+    await child.kill('SIGTERM');
   } catch {
     // Already gone.
   }
-  const deadline = seams.now() + graceMs;
-  while (!exited && seams.now() < deadline) await seams.sleep(25);
-  if (!exited) {
+  await waitUntil(settled, graceMs);
+  if (!(await settled())) {
     try {
-      child.kill('SIGKILL');
+      await child.kill('SIGKILL');
     } catch {
       // Already gone.
     }
-    await child.exit.catch(() => undefined);
+    await waitUntil(settled, SURVIVOR_GRACE_MS);
   }
+  if (await alive()) throw new BundleError('measured_process_survived');
 }
 
 /** One start: spawn to first 2xx, in milliseconds. */
@@ -190,7 +219,11 @@ async function timeOneStart(
       await seams.sleep(pollMs);
     }
   } finally {
-    await stop(child, seams, request.killGraceMs ?? DEFAULT_KILL_GRACE_MS);
+    await stopMeasuredProcess(
+      child,
+      seams,
+      request.killGraceMs ?? DEFAULT_KILL_GRACE_MS,
+    );
   }
 }
 
