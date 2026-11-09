@@ -20,7 +20,9 @@
  *
  * Idempotency: provisioning runs under `runOnce()` per `(tenantId, userId,
  * generation)`, so concurrent deliveries create one key; the generation
- * advances on every revoke, so a later re-provision runs again. Lifecycle
+ * advances on every revoke, so a later re-provision runs again. The tenant
+ * project is looked up on the gateway (`listProjects`) before one is
+ * created, so a crash between create and persist never makes a second. Lifecycle
  * operations run one at a time per process and, on PostgreSQL, under a
  * per-tenant advisory lock across processes. A revoke ends local
  * use of the key whatever the gateway answers; deletions the gateway could
@@ -156,25 +158,26 @@ export interface HostedGatewayConfig {
 /** Default deadline of one gateway admin call. */
 export const HOSTED_GATEWAY_ADMIN_TIMEOUT_MS = 30_000;
 
+/** The `AIAdminInterface` calls provisioning uses. */
+export const HOSTED_GATEWAY_ADMIN_METHODS = [
+  'createProject',
+  'createVirtualKey',
+  'updateVirtualKey',
+  'deleteVirtualKey',
+  'listProjects',
+] as const;
+
 /**
- * The admin calls provisioning uses. `createProject` and `createVirtualKey`
- * are `AIAdminInterface`; `updateVirtualKey` and `deleteVirtualKey` are
- * feature-detected because `@happyvertical/ai` does not ship them yet
- * (happyvertical/sdk#1494): without them budget sync and gateway revocation
- * report `unsupported`.
+ * The admin surface provisioning uses (`@happyvertical/ai` >= 0.111.7,
+ * happyvertical/sdk#1494). Plan changes send only `budget` to
+ * `updateVirtualKey` (Bifrost refuses `models` / `metadata`, LiteLLM
+ * `providerConfigs`, with `ADMIN_UNSUPPORTED_FIELD`); `deleteVirtualKey`
+ * resolving `false` means the key is already gone.
  */
-export interface HostedGatewayAdmin
-  extends Pick<AIAdminInterface, 'createProject' | 'createVirtualKey'> {
-  updateVirtualKey?(
-    id: string,
-    options: {
-      budget?: AIAdminBudget;
-      models?: string[];
-      isActive?: boolean;
-    },
-  ): Promise<AIVirtualKey>;
-  deleteVirtualKey?(id: string): Promise<boolean>;
-}
+export type HostedGatewayAdmin = Pick<
+  AIAdminInterface,
+  (typeof HOSTED_GATEWAY_ADMIN_METHODS)[number]
+>;
 
 /** Environment variables {@link hostedGatewayConfigFromEnv} reads. */
 export const HOSTED_GATEWAY_ENV = {
@@ -352,7 +355,7 @@ export function resetHostedGatewayConfig(): void {
 /**
  * The `ai.admin` surface of the configured gateway provider, built through
  * `getAI()` of `@happyvertical/ai`. Throws `HOSTED_GATEWAY_UNSUPPORTED` when
- * the installed SDK's provider exposes no admin surface.
+ * the installed SDK's provider lacks any of {@link HOSTED_GATEWAY_ADMIN_METHODS}.
  */
 export async function createHostedGatewayAdmin(
   config: HostedGatewayConfig,
@@ -378,19 +381,18 @@ export async function createHostedGatewayAdmin(
             : {}),
         })
       : await getAI({ type: 'litellm', ...common });
-  const admin = ai.admin as HostedGatewayAdmin | undefined;
-  if (
-    !admin ||
-    typeof admin.createProject !== 'function' ||
-    typeof admin.createVirtualKey !== 'function'
-  ) {
+  const admin = ai.admin as Partial<HostedGatewayAdmin> | undefined;
+  const missing = HOSTED_GATEWAY_ADMIN_METHODS.filter(
+    (method) => typeof admin?.[method] !== 'function',
+  );
+  if (!admin || missing.length > 0) {
     throw new HostedInferenceError(
-      `The ${config.provider} provider of @happyvertical/ai exposes no admin surface.`,
+      `The ${config.provider} provider of @happyvertical/ai lacks admin calls: ${missing.join(', ')} (needs @happyvertical/ai >= 0.111.7).`,
       'HOSTED_GATEWAY_UNSUPPORTED',
-      { provider: config.provider },
+      { provider: config.provider, missing },
     );
   }
-  return admin;
+  return admin as HostedGatewayAdmin;
 }
 
 // ---------------------------------------------------------------------------
@@ -399,9 +401,16 @@ export async function createHostedGatewayAdmin(
 
 /** A gateway key SMRT no longer uses but could not delete yet. */
 export interface HostedPendingGatewayRevocation {
+  /** The key's non-secret handle; `null` when the gateway returned none. */
   keyId: string | null;
   keyAlias: string;
-  /** Why it is pending: the SDK has no delete call, or the call failed. */
+  /**
+   * Why it is pending: `failed` the delete call failed; `orphaned` a failed
+   * provision may have left it; `unsupported` no admin client was usable or
+   * the key has no id (entries recorded before `@happyvertical/ai` 0.111.7
+   * also carry it). Entries with a `keyId` are retried; without one only an
+   * operator can revoke the key (by alias) and acknowledge it.
+   */
   reason: 'unsupported' | 'failed' | 'orphaned';
   since: string;
 }
@@ -424,8 +433,8 @@ export interface HostedInferenceState {
   /** The user's provider config before provisioning; dropped on revoke. */
   prior: InferenceProviderConfig | null;
   /**
-   * Keys SMRT stopped using whose gateway deletion is still owed (no SDK
-   * delete call, a failed call, or a key left by a failed provision).
+   * Keys SMRT stopped using whose gateway deletion is still owed (a failed
+   * delete, no usable admin or key id, or a key left by a failed provision).
    * Retried by `revoke()` and `reconcileTenant()`; never holds a key value.
    */
   pendingGatewayRevocations?: HostedPendingGatewayRevocation[];
@@ -484,8 +493,8 @@ export type HostedGatewayRevokeStatus =
 export interface RevokeHostedInferenceResult extends HostedInferenceDescriptor {
   revoked: boolean;
   /**
-   * `revoked`: the gateway deleted the key; `missing`: it no longer existed;
-   * `unsupported`: the SDK has no delete call (happyvertical/sdk#1494) or the
+   * `revoked`: the gateway deleted the key; `missing`: it no longer existed
+   * (already revoked); `unsupported`: no admin client is configured or the
    * gateway returned no key id; `failed`: the delete call failed. For
    * `unsupported` and `failed` SMRT has already stopped using the key and
    * records it in `pendingGatewayRevocations` (and the audit log) for a
@@ -497,7 +506,10 @@ export interface RevokeHostedInferenceResult extends HostedInferenceDescriptor {
   restored?: 'prior' | 'off' | 'kept';
 }
 
-/** Budget sync outcome. */
+/**
+ * Budget sync outcome. `unsupported`: the grant has no gateway key id to
+ * update (the stored budget stays, so a later sync retries).
+ */
 export type HostedBudgetSyncStatus = 'updated' | 'unchanged' | 'unsupported';
 
 /** Result of {@link HostedInferenceProvisioner.syncBudget}. */
@@ -631,6 +643,11 @@ export interface HostedInferenceProvisioner {
 const STATE_PREFIX = `${HOSTED_INFERENCE_SECRET_CATEGORY}:user:`;
 const PROJECT_NAME = `${HOSTED_INFERENCE_SECRET_CATEGORY}:project`;
 const RUN_ONCE_ACTOR_PROJECT = 'smrt-inference-hosted';
+
+/** Gateway project name of a tenant (also how a lost project is found). */
+function hostedProjectName(tenantId: string): string {
+  return `smrt tenant ${tenantId}`;
+}
 
 /** Secret name of a user's hosted state. */
 export function hostedInferenceStateSecretName(userId: string): string {
@@ -1083,19 +1100,17 @@ export function createHostedInferenceProvisioner(
 
   /**
    * Try to delete a key on the gateway. Never throws: the outcome says
-   * whether SMRT still owes the deletion.
+   * whether SMRT still owes the deletion (`missing`, the SDK's `false`, is
+   * an already revoked key: nothing is owed).
    */
   const deleteGatewayKey = async (
     admin: HostedGatewayAdmin | undefined,
     keyId: string | null,
   ): Promise<'revoked' | 'missing' | 'unsupported' | 'failed'> => {
-    if (!keyId || typeof admin?.deleteVirtualKey !== 'function') {
-      return 'unsupported';
-    }
+    if (!keyId || !admin) return 'unsupported';
     try {
-      const deleteKey = admin.deleteVirtualKey.bind(admin);
       return (await withDeadline(
-        () => deleteKey(keyId),
+        () => admin.deleteVirtualKey(keyId),
         deadlineMs(),
         'deleteVirtualKey',
       ))
@@ -1106,7 +1121,46 @@ export function createHostedInferenceProvisioner(
     }
   };
 
-  /** The tenant's gateway project, created once (runOnce) on first use. */
+  /**
+   * A project this provisioner created for the tenant earlier but never
+   * recorded (a crash or failed write between create and persist): the
+   * gateway's projects for the tenant carrying SMRT's name (and, on LiteLLM,
+   * id prefix). The lowest id wins so every process adopts the same one.
+   * A failed lookup throws: creating blind could make a second project.
+   */
+  const findTenantProject = async (
+    tenantId: string,
+    gateway: HostedGatewayConfig,
+    admin: HostedGatewayAdmin,
+  ): Promise<string | undefined> => {
+    let projects: AIAdminProject[];
+    try {
+      projects = await withDeadline(
+        () => admin.listProjects({ tenantId }),
+        deadlineMs(),
+        'listProjects',
+      );
+    } catch (error) {
+      throw gatewayFailure('listProjects', error);
+    }
+    const ids = (Array.isArray(projects) ? projects : [])
+      .filter(
+        (project) =>
+          project?.tenantId === tenantId &&
+          project.name === hostedProjectName(tenantId) &&
+          (gateway.provider !== 'litellm' ||
+            project.id?.startsWith(`smrt-${tenantId}-`)),
+      )
+      .map((project) => text(project.id))
+      .filter((id): id is string => !!id)
+      .sort();
+    return ids[0];
+  };
+
+  /**
+   * The tenant's gateway project: the stored record, else one found on the
+   * gateway ({@link findTenantProject}), else created once (runOnce).
+   */
   const ensureProject = async (
     tenantId: string,
     gateway: HostedGatewayConfig,
@@ -1139,25 +1193,29 @@ export function createHostedInferenceProvisioner(
         content: { provider: gateway.provider, baseUrl: gateway.baseUrl },
       },
       async () => {
-        let project: AIAdminProject;
-        try {
-          project = await withDeadline(
-            () =>
-              admin.createProject({
-                // LiteLLM requires an id, unique per attempt so a retry after a
-                // failed attempt never collides with the team that attempt left.
-                id: `smrt-${tenantId}-${nonce()}`,
-                name: `smrt tenant ${tenantId}`,
-                tenantId,
-                metadata: { smrt: HOSTED_INFERENCE_FEATURE_KEY, tenantId },
-              }),
-            deadlineMs(),
-            'createProject',
-          );
-        } catch (error) {
-          throw gatewayFailure('createProject', error);
+        const found = await findTenantProject(tenantId, gateway, admin);
+        let projectId = found;
+        if (!projectId) {
+          let project: AIAdminProject;
+          try {
+            project = await withDeadline(
+              () =>
+                admin.createProject({
+                  // LiteLLM requires an id, unique per attempt so a retry after
+                  // a failed attempt never collides with the team it left.
+                  id: `smrt-${tenantId}-${nonce()}`,
+                  name: hostedProjectName(tenantId),
+                  tenantId,
+                  metadata: { smrt: HOSTED_INFERENCE_FEATURE_KEY, tenantId },
+                }),
+              deadlineMs(),
+              'createProject',
+            );
+          } catch (error) {
+            throw gatewayFailure('createProject', error);
+          }
+          projectId = text(project?.id);
         }
-        const projectId = text(project?.id);
         if (!projectId) {
           throw new HostedInferenceError(
             'Gateway createProject returned no project id.',
@@ -1179,6 +1237,7 @@ export function createHostedInferenceProvisioner(
               operation: 'inference.hosted.project',
               projectId,
               provider: gateway.provider,
+              ...(found ? { adopted: true } : {}),
             },
           },
         );
@@ -1188,22 +1247,48 @@ export function createHostedInferenceProvisioner(
     return result.projectId;
   };
 
-  /** Retry owed gateway deletions; returns the state to store (or same). */
+  /**
+   * Retry owed gateway deletions. Returns the state to store (the same
+   * object when nothing settled) and the entries that settled, with the
+   * gateway's answer (`revoked`, or `missing`: already gone).
+   */
   const retryPending = async (
     state: HostedInferenceState,
-  ): Promise<HostedInferenceState> => {
+  ): Promise<{
+    state: HostedInferenceState;
+    settled: Array<{
+      keyId: string;
+      keyAlias: string;
+      gateway: 'revoked' | 'missing';
+    }>;
+  }> => {
     const pending = state.pendingGatewayRevocations ?? [];
-    if (pending.length === 0) return state;
+    // Entries without a key id cannot be deleted by SMRT: skip the client.
+    if (!pending.some((entry) => entry.keyId)) return { state, settled: [] };
     const admin = await optionalAdmin();
     const remaining: HostedPendingGatewayRevocation[] = [];
+    const settled: Array<{
+      keyId: string;
+      keyAlias: string;
+      gateway: 'revoked' | 'missing';
+    }> = [];
     for (const entry of pending) {
       const outcome = await deleteGatewayKey(admin, entry.keyId);
-      if (outcome === 'unsupported' || outcome === 'failed') {
+      if (outcome === 'revoked' || outcome === 'missing') {
+        settled.push({
+          keyId: entry.keyId as string,
+          keyAlias: entry.keyAlias,
+          gateway: outcome,
+        });
+      } else {
         remaining.push(entry);
       }
     }
-    if (remaining.length === pending.length) return state;
-    return { ...state, pendingGatewayRevocations: remaining };
+    if (settled.length === 0) return { state, settled };
+    return {
+      state: { ...state, pendingGatewayRevocations: remaining },
+      settled,
+    };
   };
 
   /**
@@ -1347,8 +1432,8 @@ export function createHostedInferenceProvisioner(
         // Keep the user's own config to restore on revoke; a leftover
         // hosted binding is never a prior.
         const prior = current && current.source !== 'hosted' ? current : null;
-        // Unique per attempt: a failed attempt's key (which a create-only
-        // SDK cannot delete) never blocks the retry's alias.
+        // Unique per attempt: a failed attempt's key (whose delete may be
+        // still owed) never blocks the retry's alias.
         const keyAlias = `smrt-${tenantId}-${userId}-g${generation}-${nonce()}`;
         const models = keyModels(gateway);
         const request: CreateAIVirtualKeyOptions = {
@@ -1379,8 +1464,11 @@ export function createHostedInferenceProvisioner(
         } catch (error) {
           createError = error;
         }
-        const keyId = text(key?.id) ?? null;
         const apiKey = text(key?.key);
+        // The persisted handle must never be the key itself (an SDK before
+        // 0.111.7 could echo LiteLLM's key as its id).
+        const returnedId = text(key?.id);
+        const keyId = returnedId && returnedId !== apiKey ? returnedId : null;
         /**
          * After the claim rolled back (a delete inside its transaction would
          * wait on it on single-connection adapters): delete the new key or
@@ -1535,16 +1623,18 @@ export function createHostedInferenceProvisioner(
     if (!uncertainAt && sameBudget(state.budget, budget)) {
       return { ...describeState(tenantId, userId, state), sync: 'unchanged' };
     }
-    const admin = await getAdmin(gatewayConfig());
-    if (!state.keyId || typeof admin.updateVirtualKey !== 'function') {
-      // Recorded state keeps the old budget so a later sync retries.
+    if (!state.keyId) {
+      // No handle to update: the recorded state keeps the old budget.
       return { ...describeState(tenantId, userId, state), sync: 'unsupported' };
     }
+    const admin = await getAdmin(gatewayConfig());
     try {
-      const update = admin.updateVirtualKey.bind(admin);
       const keyId = state.keyId;
+      // Budget only: models and metadata are not updatable on every
+      // gateway (ADMIN_UNSUPPORTED_FIELD), and a plan change is a budget.
       await withDeadline(
-        () => update(keyId, { budget: toGatewayBudget(budget) }),
+        () =>
+          admin.updateVirtualKey(keyId, { budget: toGatewayBudget(budget) }),
         deadlineMs(),
         'updateVirtualKey',
       );
@@ -1608,10 +1698,13 @@ export function createHostedInferenceProvisioner(
   ): Promise<HostedInferenceState | undefined> => {
     const state = await readState(secrets, userId);
     if (!state?.pendingGatewayRevocations?.length) return state;
-    const retried = await retryPending(state);
-    if (retried === state) return state;
+    const { state: retried, settled } = await retryPending(state);
+    if (settled.length === 0) return state;
+    // Each settled entry closes an earlier `manualGatewayRevocation` audit
+    // record for the same alias and key id.
     await writeState(secrets, userId, retried, {
       operation: 'inference.hosted.revoke-retry',
+      settled,
       remaining: retried.pendingGatewayRevocations?.length ?? 0,
     });
     return retried;
@@ -1952,8 +2045,8 @@ export function provisionHostedInference(
 /**
  * Revoke a user's hosted inference (downgrade, deletion): stop using the key
  * (restore the user's prior provider config, or mode `off`), retire the
- * state, and delete the gateway key when the SDK can (otherwise it is kept
- * as an owed deletion and audited). Idempotent.
+ * state, and delete the gateway key (a failed delete is kept as an owed
+ * deletion, audited, and retried by revoke or reconcile). Idempotent.
  */
 export function revokeHostedInference(
   options: HostedInferenceProvisionerOptions & {
