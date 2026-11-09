@@ -196,15 +196,22 @@ describe('lifecycle snapshot key provider', () => {
     expect(await snapshotAccountTrustFromLifecycle(laptop)).toEqual({
       minimumGeneration: 1n,
       revokedDeviceIds: [],
+      rotationPending: false,
     });
 
-    // A revocation names the device at once, but the floor only moves when
-    // the rotation that excludes it publishes its effective generation.
+    // A revocation names the device at once but it still holds the current
+    // key until the rotation that excludes it: restore must wait for that.
     await laptop.revokeDevice('phone');
+    expect(await snapshotAccountTrustFromLifecycle(laptop)).toMatchObject({
+      revokedDeviceIds: ['phone'],
+      rotationPending: true,
+    });
+    // The floor moves once the rotation publishes the effective generation.
     await laptop.rotate({ recoverySecret: RECOVERY_SECRET });
     const trust = await snapshotAccountTrustFromLifecycle(laptop);
     expect(trust.revokedDeviceIds).toEqual(['phone']);
     expect(trust.minimumGeneration).toBe(2n);
+    expect(trust.rotationPending).toBe(false);
 
     await expect(snapshotAccountTrustFromLifecycle(device())).rejects.toThrow(
       'no vault account state',
