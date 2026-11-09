@@ -121,6 +121,11 @@ export {
   sanitizeShellSettingsDelta,
 } from './admin-shell/settings-delta.js';
 export {
+  isShellSettingsSection,
+  SHELL_SETTINGS_SECTIONS,
+  type ShellSettingsSection,
+} from './admin-shell/settings-sections.js';
+export {
   isShellIconName,
   SHELL_DEFAULT_SECTION_ICON,
   SHELL_ICON_PATHS,

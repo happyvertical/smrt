@@ -7,10 +7,13 @@
  */
 
 export {
+  isShellSettingsSection,
+  SHELL_SETTINGS_SECTIONS,
   type ShellLayout,
   ShellLayoutController,
   ShellLayoutEditor,
   type ShellSectionActionsContext,
+  type ShellSettingsSection,
   tryUseShellLayout,
   useShellLayout,
 } from '../workspace/index.js';
@@ -31,6 +34,7 @@ export {
   registerRuntimeDiagnosticsWebMcp,
 } from './runtime-diagnostics-webmcp.js';
 export { default as ShellSettingsPage } from './ShellSettingsPage.svelte';
+export type { ShellSettingsMenuItem } from './settings-menu-item.js';
 export type { ShellUser } from './shell-user.js';
 export type {
   AppShellAccountMenu,

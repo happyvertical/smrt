@@ -111,6 +111,16 @@ export const M = defineMessages({
   'ui.shell_settings_page.heading': 'Settings',
   'ui.shell_settings_page.description':
     'Adjust appearance, your account, and the workspace layout.',
+  'ui.shell_settings_page.back': 'All settings',
+  'ui.shell_settings_page.menu_label': 'Settings sections',
+  'ui.shell_settings_page.appearance_description':
+    'Theme and light or dark color scheme.',
+  'ui.shell_settings_page.account_description':
+    'Who you are signed in as, and sign out.',
+  'ui.shell_settings_page.layout_description':
+    'Show or hide workspace areas and reset the layout.',
+  'ui.shell_settings_page.shortcuts_description':
+    'Keyboard shortcuts for the workspace areas.',
   'ui.hotkey_input.capture_title': 'Press a key to capture it',
   'ui.hotkey_input.conflicts_with': 'Conflicts with',
   'ui.shell_settings_panel.shell_settings': 'Shell settings',

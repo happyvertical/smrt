@@ -52,8 +52,8 @@ describe('application shell', () => {
     expect(layout).toContain('phoneTabBar');
     expect(layout).toContain("chrome={!page.route.id?.startsWith('/setup')}");
     expect(layout).not.toContain('TODO(');
-    expect(read('settings/+page.svelte')).toContain(
-      '<ShellSettingsPage onSignOut={signOut} />',
+    expect(read('settings/[section=settingsSection]/+page.svelte')).toContain(
+      'onSignOut={signOut}',
     );
     expect(read('../lib/sign-out.ts')).toContain("method: 'POST'");
     expect(read('sign-out/+server.ts')).toContain(
@@ -72,7 +72,15 @@ describe('application shell', () => {
   });
 
   it('mounts the shipped settings page inside the shell', () => {
-    expect(read('settings/+page.svelte')).toContain('<ShellSettingsPage');
+    expect(read('settings/+page.svelte')).toContain(
+      '<ShellSettingsPage basePath="/settings"',
+    );
+    const section = read('settings/[section=settingsSection]/+page.svelte');
+    expect(section).toContain('<ShellSettingsPage');
+    expect(section).toContain('section={page.params.section');
+    expect(read('../params/settingsSection.ts')).toContain(
+      'isShellSettingsSection',
+    );
   });
 });
 

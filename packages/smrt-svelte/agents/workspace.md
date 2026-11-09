@@ -246,6 +246,15 @@ dialog and the global shortcut, so it mounts once. Planner-style hosts that
 rendered their own `header.end` assistant toggle should pass `dockToggles`
 (`dock:assistant`) and `user` instead.
 
+Sectioned settings: `ShellSettingsPage basePath="/settings"` lists the
+sections (`SHELL_SETTINGS_SECTIONS`, Shortcuts only when hotkeys are
+available, plus `extraSections` the host adds) as a menu linking to
+`${basePath}/${id}`; with `section="layout"` (or children for a host section,
+with `title`) it renders that one page with a back link. `ShellSettingsPanel`
+takes the same `section` prop. Without `basePath` the page stays the one-page
+Appearance + Account + Layout mode. `isShellSettingsSection()` is a ready
+SvelteKit param matcher for the `[section]` route.
+
 Async sign-out (#3860): `onSignOut?: () => void | Promise<void>` (AppShell,
 `WorkspaceAccountMenu`, `ShellSettingsPage`/`ShellSettingsPanel`) is awaited.
 While pending the control is busy (`aria-busy`) and disabled, so a second

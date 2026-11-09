@@ -108,7 +108,10 @@ It is the ground-up alternative to `smrt-start`.
 - The root layout is `AppShell` from `@happyvertical/smrt-svelte/app` with a
   small explicit `nav`; `/setup` and `/settings` mount that package's
   `OwnerSetupForm` and `ShellSettingsPage`. Generated REST routes do not imply
-  page routes.
+  page routes. Settings is a section menu: `/settings` lists the sections and
+  each is its own page (`/settings/[section=settingsSection]` for the built-in
+  Appearance, Account, Layout and Shortcuts, via the `isShellSettingsSection`
+  param matcher; host sections get a static route beside it).
 - Session user and sign-out: `+layout.server.ts` (`createSessionLayoutLoad()`)
   returns `session.user` (`{ id, email, name? }` only, never the record or
   tokens). The root layout passes it as AppShell `user` (account menu) with

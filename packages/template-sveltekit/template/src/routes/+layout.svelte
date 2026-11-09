@@ -12,7 +12,7 @@
   // not automatically imply a human-facing page.
   const nav: ShellNavItem[] = [
     { href: '/', label: 'Notes', icon: 'book', description: 'Your workspace notes' },
-    { href: '/settings', label: 'Settings', icon: 'settings', description: 'Workspace layout and shortcuts' },
+    { href: '/settings', label: 'Settings', icon: 'settings', description: 'Appearance, account and layout' },
   ];
 
   // Generated read-only WebMCP tools, only in browsers that expose WebMCP.
