@@ -562,6 +562,54 @@ posixOnly(
       });
     });
 
+    describe('a newer shell is not a tampered shell', () => {
+      const raw = async (reply: Record<string, unknown>) => {
+        const net = await import('node:net');
+        const path = `${dir}/c-aaaa0000bbbb1111cccc2222dddd3333.sock`;
+        const server = net.createServer((socket) => {
+          socket.on('error', () => {});
+          socket.on('data', () => socket.end(`${JSON.stringify(reply)}\n`));
+        });
+        await new Promise<void>((resolve) => server.listen(path, resolve));
+        chmodSync(path, 0o600);
+        writeRecord(recordText({ control: { kind: 'unix', path } }));
+        return server;
+      };
+
+      it('reports an unrecognised error code as failed(unknown), never untrusted_state', async () => {
+        const server = await raw({ v: 1, ok: false, code: 'rate_limited' });
+        try {
+          expect(await make().ensureReady()).toEqual({
+            state: 'failed',
+            code: 'unknown',
+          });
+          expect(spawnShell).not.toHaveBeenCalled();
+        } finally {
+          server.close();
+        }
+      });
+
+      it('reports an unrecognised failure code as failed(unknown), never untrusted_state', async () => {
+        const server = await raw({
+          v: 1,
+          ok: true,
+          state: 'failed',
+          instanceNonce: NONCE_B,
+          productId: PRODUCT,
+          code: 'disk_on_fire',
+        });
+        try {
+          expect(await make().status()).toEqual({
+            state: 'failed',
+            code: 'unknown',
+          });
+          expect(spawnShell).not.toHaveBeenCalled();
+        } finally {
+          server.close();
+        }
+      });
+    });
+
     describe('untrusted state never spawns', () => {
       const expectUntrusted = async (
         overrides: Partial<FileRendezvousOptions> = {},

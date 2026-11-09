@@ -124,6 +124,22 @@ describe('instance record v1', () => {
     ).toBe('invalid_field');
   });
 
+  it('reads a failure code from a newer shell as unknown, not as tampering', () => {
+    const record = parse({
+      state: 'failed',
+      origin: undefined,
+      failure: 'disk_on_fire',
+    });
+    expect(record.failure).toBe('unknown');
+    for (const bad of [5, null, 'Not A Code', TOKEN]) {
+      expect(
+        failure(() =>
+          parse({ state: 'failed', origin: undefined, failure: bad }),
+        ).code,
+      ).toBe('invalid_field');
+    }
+  });
+
   it('rejects missing and unknown fields', () => {
     for (const key of [
       'productId',

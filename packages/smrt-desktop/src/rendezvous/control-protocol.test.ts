@@ -236,12 +236,69 @@ describe('control responses', () => {
     expect(bad({ ok: 'yes' })).toBe('invalid_control_message');
   });
 
-  it('rejects an unknown error code, extra keys and unknown ops', () => {
+  it('reads an unrecognised error or failure code as internal or unknown (a newer shell)', () => {
     expect(
-      code(() =>
-        parseControlResponse('status', '{"v":1,"ok":false,"code":"teapot"}'),
+      parseControlResponse('status', '{"v":1,"ok":false,"code":"teapot"}'),
+    ).toEqual({ v: 1, ok: false, code: 'internal' });
+    expect(
+      parseControlResponse(
+        'status',
+        JSON.stringify({
+          ...ready,
+          state: 'failed',
+          origin: undefined,
+          code: 'disk_on_fire',
+        }),
       ),
-    ).toBe('invalid_control_message');
+    ).toMatchObject({ state: 'failed', code: 'unknown' });
+  });
+
+  it('still rejects malformed error and failure codes', () => {
+    for (const bad of [
+      5,
+      null,
+      ['internal'],
+      { code: 'internal' },
+      '',
+      'Not A Code',
+      'x'.repeat(65),
+      TOKEN,
+    ]) {
+      expect(
+        code(() =>
+          parseControlResponse(
+            'status',
+            JSON.stringify({ v: 1, ok: false, code: bad }),
+          ),
+        ),
+      ).toBe('invalid_control_message');
+    }
+    // A client-only code is malformed from a shell, not newer.
+    for (const bad of [
+      5,
+      null,
+      ['unknown'],
+      'Not A Code',
+      TOKEN,
+      'launch_failed',
+    ]) {
+      expect(
+        code(() =>
+          parseControlResponse(
+            'status',
+            JSON.stringify({
+              ...ready,
+              state: 'failed',
+              origin: undefined,
+              code: bad,
+            }),
+          ),
+        ),
+      ).toBe('invalid_control_message');
+    }
+  });
+
+  it('rejects extra keys and unknown ops', () => {
     expect(
       code(() =>
         parseControlResponse(
@@ -324,10 +381,12 @@ describe('extending the protocol with another op', () => {
         '{"v":1,"ok":false,"code":"instance_mismatch"}',
       ),
     ).toEqual({ v: 1, ok: false, code: 'instance_mismatch' });
+    // Reading is lenient (a newer peer), writing is strict.
     expect(
-      code(() =>
-        codec.parseResponse('ping', '{"v":1,"ok":false,"code":"forbidden"}'),
-      ),
+      codec.parseResponse('ping', '{"v":1,"ok":false,"code":"forbidden"}'),
+    ).toEqual({ v: 1, ok: false, code: 'internal' });
+    expect(
+      code(() => codec.encodeResponse({ v: 1, ok: false, code: 'forbidden' })),
     ).toBe('invalid_control_message');
     expect(codec.encodeResponse({ v: 1, ok: true, n: 3 } as never)).toBe(
       '{"v":1,"ok":true,"n":3}\n',

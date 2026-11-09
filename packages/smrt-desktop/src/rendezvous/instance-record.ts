@@ -13,7 +13,10 @@ import {
   parseStrictJson,
 } from '../internal/strict-json.js';
 import { type ControlEndpoint, parseControlEndpoint } from './endpoint.js';
-import { isShellFailureCode, type ShellFailureCode } from './failure-code.js';
+import {
+  normalizeShellFailureCode,
+  type ShellFailureCode,
+} from './failure-code.js';
 
 /** File name of the instance record in the private state directory. */
 export const INSTANCE_RECORD_FILENAME = 'instance.json';
@@ -124,8 +127,11 @@ function validateInstanceRecord(input: unknown): InstanceRecordV1 {
   } else if (origin !== undefined) {
     throw invalid('origin');
   }
+  let failureCode: ShellFailureCode | undefined;
   if (state === 'failed') {
-    if (!isShellFailureCode(failure)) throw invalid('failure');
+    // A code from a newer shell reads as `unknown`, never as tampering.
+    failureCode = normalizeShellFailureCode(failure);
+    if (failureCode === undefined) throw invalid('failure');
   } else if (failure !== undefined) {
     throw invalid('failure');
   }
@@ -142,7 +148,7 @@ function validateInstanceRecord(input: unknown): InstanceRecordV1 {
     control,
     state: state as InstanceState,
     ...(state === 'ready' ? { origin: origin as string } : {}),
-    ...(state === 'failed' ? { failure: failure as ShellFailureCode } : {}),
+    ...(failureCode === undefined ? {} : { failure: failureCode }),
   });
 }
 

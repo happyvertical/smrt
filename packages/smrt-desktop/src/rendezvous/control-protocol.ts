@@ -6,7 +6,11 @@ import {
   isRecord,
   parseStrictJson,
 } from '../internal/strict-json.js';
-import { isShellFailureCode, type ShellFailureCode } from './failure-code.js';
+import {
+  isForwardCompatibleCode,
+  normalizeShellFailureCode,
+  type ShellFailureCode,
+} from './failure-code.js';
 import { isInstanceNonce } from './instance-record.js';
 
 /**
@@ -181,23 +185,33 @@ export function createControlCodec<
     return deepFreeze(spec.parseRequest(fields));
   };
 
-  const parseResponse = (op: string, line: string): Res => {
+  // `lenient` is for reading what a peer sent: an unrecognised error code
+  // reads as `internal`. Encoding is strict: a server never emits a code that
+  // is not in its own list.
+  const parseWith = (op: string, line: string, lenient: boolean): Res => {
     const spec = byOp.get(op);
     if (spec === undefined) throw new DesktopContractError('unsupported_op');
     const fields = decodeLine(line);
     if (!parseOkField(fields)) {
       if (!hasClosedKeys(fields, ['v', 'ok', 'code'])) throw invalidMessage();
-      if (typeof fields.code !== 'string' || !codes.includes(fields.code)) {
-        throw invalidMessage('code');
-      }
-      return deepFreeze({
-        v: 1,
-        ok: false,
-        code: fields.code,
-      } as unknown as Res);
+      if (typeof fields.code !== 'string') throw invalidMessage('code');
+      // A code this client does not know (a newer shell) is `internal`, which
+      // the rendezvous reports as the `unknown` failure; it is not tampering.
+      // Malformed shapes and a codec without `internal` still reject.
+      const code = codes.includes(fields.code)
+        ? fields.code
+        : lenient &&
+            isForwardCompatibleCode(fields.code) &&
+            codes.includes('internal')
+          ? 'internal'
+          : undefined;
+      if (code === undefined) throw invalidMessage('code');
+      return deepFreeze({ v: 1, ok: false, code } as unknown as Res);
     }
     return deepFreeze(spec.parseResponse(fields));
   };
+  const parseResponse = (op: string, line: string): Res =>
+    parseWith(op, line, true);
 
   return {
     ops: [...byOp.keys()],
@@ -214,7 +228,7 @@ export function createControlCodec<
       let lastError: unknown = invalidMessage();
       for (const spec of byOp.values()) {
         try {
-          const parsed = parseResponse(spec.op, text);
+          const parsed = parseWith(spec.op, text, false);
           return `${JSON.stringify(parsed)}\n`;
         } catch (error) {
           lastError = error;
@@ -266,6 +280,13 @@ function identityFields(fields: Fields): {
   return { instanceNonce: fields.instanceNonce, productId: fields.productId };
 }
 
+/** An unrecognised (newer) shell code reads as `unknown`; junk is rejected. */
+function failureCodeField(value: unknown): ShellFailureCode {
+  const code = normalizeShellFailureCode(value);
+  if (code === undefined) throw invalidMessage('code');
+  return code;
+}
+
 /** Parse the `ok: true` body shared by `status` and `ensure-ready`. */
 export function parseInstanceStateResponse(
   fields: Fields,
@@ -289,14 +310,13 @@ export function parseInstanceStateResponse(
       return { v: 1, ok: true, state: 'starting', instanceNonce, productId };
     case 'failed':
       if (!hasClosedKeys(fields, [...base, 'code'])) throw invalidMessage();
-      if (!isShellFailureCode(fields.code)) throw invalidMessage('code');
       return {
         v: 1,
         ok: true,
         state: 'failed',
         instanceNonce,
         productId,
-        code: fields.code,
+        code: failureCodeField(fields.code),
       };
     default:
       throw invalidMessage('state');
