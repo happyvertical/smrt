@@ -393,6 +393,36 @@ export interface InferenceResolver {
   mode?(
     request: InferenceModeRequest,
   ): InferenceModeState | undefined | Promise<InferenceModeState | undefined>;
+  /**
+   * Optional (#4800): the fusion definition `key` runs for `request`, from a
+   * layer the resolver stores (smrt-inference's override resolver answers
+   * from app-scope override rows; never a tenant's). `undefined` defers to
+   * `inference.fusions`, then the executor's `defineFusion()` registry. An
+   * answer here shadows a config fusion of the same name, as a stored
+   * binding shadows config for tiers and aliases. Never calls a model; the
+   * executor re-validates the answer before it runs.
+   */
+  lookupFusion?(
+    key: string,
+    request: InferenceRequest,
+    context: InferenceResolverContext,
+  ):
+    | InferenceFusionDefinition
+    | undefined
+    | Promise<InferenceFusionDefinition | undefined>;
+}
+
+/** Where a looked-up fusion definition came from (#4800). */
+export type InferenceFusionSource = 'resolver' | 'config';
+
+/** Output of {@link lookupInferenceFusion}. */
+export interface InferenceFusionLookup {
+  definition: InferenceFusionDefinition;
+  /**
+   * `resolver`: the registered resolver's stored layer (an app override
+   * row); `config`: `inference.fusions`.
+   */
+  source: InferenceFusionSource;
 }
 
 const RESOLVER_KEY = Symbol.for('smrt.inference.resolver');
@@ -840,6 +870,45 @@ export async function resolveInferenceMode(
   return state;
 }
 
+/**
+ * The fusion definition a `{ fusion: key }` target runs (#4800): the
+ * registered (or given) resolver's optional `lookupFusion()` first, then
+ * `inference.fusions.<key>` from the merged config. `undefined` when
+ * neither defines it; the executor then reads its `defineFusion()`
+ * registry. Only the shape is checked here (an object with a `seats`
+ * array); the executor validates the definition before running it. Never
+ * calls a model.
+ */
+export async function lookupInferenceFusion(
+  key: string,
+  request: InferenceRequest,
+  options: ResolveInferenceOptions = {},
+): Promise<InferenceFusionLookup | undefined> {
+  const inference = 'config' in options ? options.config : getInferenceConfig();
+  const resolver = options.resolver ?? getInferenceResolver();
+  if (typeof resolver.lookupFusion === 'function') {
+    const context: InferenceResolverContext = {
+      config: inference,
+      resolveFromConfig: (next) => resolveInferenceFromConfig(next, inference),
+    };
+    const answer = await resolver.lookupFusion(key, { ...request }, context);
+    if (answer !== undefined && answer !== null) {
+      const record = asRecord(answer);
+      if (!record || !Array.isArray(record.seats)) {
+        throw new Error(
+          `Inference resolver returned an invalid definition for fusion "${key}"; expected { mode, seats }.`,
+        );
+      }
+      return { definition: answer, source: 'resolver' };
+    }
+  }
+  const fusions = inference?.fusions;
+  if (fusions && Object.hasOwn(fusions, key) && fusions[key] !== undefined) {
+    return { definition: fusions[key], source: 'config' };
+  }
+  return undefined;
+}
+
 function isLoopbackEndpoint(baseUrl: unknown): boolean {
   if (typeof baseUrl !== 'string' || baseUrl.trim() === '') return false;
   try {
@@ -1059,6 +1128,15 @@ export interface InferenceExecutionContext {
     runId: string,
     listener: (event: InferenceUsageObservation) => void,
   ): () => void;
+  /**
+   * The fusion definition `key` runs for this call (#4800):
+   * {@link lookupInferenceFusion} with the instance's resolver and request,
+   * so a resolver's stored layer (app override rows) reaches the executor.
+   * `undefined` means neither the resolver nor config defines it; the
+   * executor then reads its own registry. Absent on older cores: read
+   * `config.fusions`.
+   */
+  lookupFusion?(key: string): Promise<InferenceFusionLookup | undefined>;
 }
 
 /**

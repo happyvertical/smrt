@@ -289,6 +289,46 @@ describe('inference executor seam', () => {
       className: 'Issue4752SeamNote',
     });
 
+    // #4800: the fusion lookup asks the resolver first (with the instance's
+    // request), then the merged `inference.fusions`, else undefined.
+    await expect(context?.lookupFusion?.('review')).resolves.toBeUndefined();
+    const stored = {
+      mode: 'single' as const,
+      seats: [{ prompt: 'stored.prompt', target: 'cheap' as const }],
+    };
+    const lookupSeen: unknown[] = [];
+    setInferenceResolver({
+      resolve: () => undefined,
+      lookupFusion: (key, request) => {
+        lookupSeen.push({ key, request });
+        return key === 'review' ? stored : undefined;
+      },
+    });
+    await expect(context?.lookupFusion?.('review')).resolves.toEqual({
+      definition: stored,
+      source: 'resolver',
+    });
+    expect(lookupSeen[0]).toMatchObject({
+      key: 'review',
+      request: { tier: 'best', className: 'Issue4752SeamNote' },
+    });
+    setInferenceResolver({
+      resolve: () => undefined,
+      lookupFusion: () => ({ seats: 'no' }) as never,
+    });
+    await expect(context?.lookupFusion?.('review')).rejects.toThrow(
+      'invalid definition for fusion "review"',
+    );
+    setInferenceResolver(undefined);
+    config({
+      inference: { fusions: { review: stored } },
+    } as never);
+    await expect(context?.lookupFusion?.('review')).resolves.toEqual({
+      definition: stored,
+      source: 'config',
+    });
+    config.reset();
+
     // The gate decision goes through the decision client and records usage
     // with the run tags.
     const result = await context?.decide?.(
