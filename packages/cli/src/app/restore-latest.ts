@@ -57,6 +57,7 @@ import {
   decryptSnapshot,
   readSnapshotHeader,
   type SnapshotKeyProvider,
+  type SnapshotOpenContext,
 } from './snapshot-framing.js';
 
 /** Usage of `smrt app restore-latest`. */
@@ -559,14 +560,20 @@ export async function restoreLatest(
           `The latest snapshot is sealed under key generation ${header.generation}, below generation ${trust.minimumGeneration} that the adopted account head requires after a device revocation, so it is not restored. A device that is still enrolled must publish a new snapshot first.`,
         );
       }
+      // Optional at open (A2), never here: the relay path must always bind
+      // the snapshot to the sequence it was offered at (rollback) and to its
+      // producing device, and enforce the generation floor. `Required<…>`
+      // makes dropping either a compile error; restore-latest.test.ts refuses
+      // a relay that serves another sequence or device.
+      const context: Required<SnapshotOpenContext> = {
+        accountId: vault.accountId,
+        deviceId: latest.deviceId,
+        sequence: BigInt(latest.sequence),
+      };
       await decryptSnapshot({
         source: download,
         destination: candidate,
-        context: {
-          accountId: vault.accountId,
-          deviceId: latest.deviceId,
-          sequence: BigInt(latest.sequence),
-        },
+        context,
         keys,
         minimumGeneration: trust.minimumGeneration,
         expectedKind: 'data-root',
