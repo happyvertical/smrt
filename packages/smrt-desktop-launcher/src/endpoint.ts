@@ -2,21 +2,25 @@
  * Validation and probing of the local instance endpoint.
  *
  * The credential is only ever sent to an origin that passed
- * {@link validateOrigin}: plain-HTTP loopback with an explicit port and
- * nothing else. Redirects are never followed.
+ * {@link validateOrigin}: plain HTTP to the literal `127.0.0.1` with an
+ * explicit port and nothing else (the same target the Rust supervisor probes;
+ * `localhost` and `[::1]` are refused because another local user can listen
+ * on them while the product's instance does not). Redirects are never
+ * followed, and the default transport ignores proxy settings.
  *
  * @packageDocumentation
  */
 
 import { LauncherFailure } from './failure.js';
+import type { ProbeFetch, ProbeInit, ProbeResponse } from './loopback-fetch.js';
 import type { InstalledRuntime, InstanceEndpoint } from './provider.js';
 
-const LOOPBACK_HOSTS = new Set(['127.0.0.1', '[::1]', 'localhost']);
+const LOOPBACK_HOST = '127.0.0.1';
 
 /** Per-request probe budget in milliseconds. */
 export const PROBE_TIMEOUT_MS = 5_000;
 
-/** Require exactly `http://<loopback>:<port>`; returns the origin. */
+/** Require exactly `http://127.0.0.1:<port>`; returns the origin. */
 export function validateOrigin(value: unknown): string {
   const invalid = (): never => {
     throw new LauncherFailure('unexpected_endpoint');
@@ -32,7 +36,7 @@ export function validateOrigin(value: unknown): string {
   }
   if (
     url.protocol !== 'http:' ||
-    !LOOPBACK_HOSTS.has(url.hostname) ||
+    url.hostname !== LOOPBACK_HOST ||
     url.port === '' ||
     url.port === '0' ||
     url.username ||
@@ -46,12 +50,12 @@ export function validateOrigin(value: unknown): string {
 
 /** Fetch with no redirects and a hard timeout; any failure is `stale_instance`. */
 async function probe(
-  fetchImpl: typeof fetch,
+  fetchImpl: ProbeFetch,
   url: string,
-  init: RequestInit,
+  init: ProbeInit,
   signal: AbortSignal,
   timeoutMs: number,
-): Promise<Response> {
+): Promise<ProbeResponse> {
   try {
     return await fetchImpl(url, {
       ...init,
@@ -63,7 +67,7 @@ async function probe(
   }
 }
 
-async function drain(response: Response): Promise<void> {
+async function drain(response: ProbeResponse): Promise<void> {
   await response.body?.cancel().catch(() => undefined);
 }
 
@@ -73,7 +77,7 @@ async function drain(response: Response): Promise<void> {
  * that is gone: `stale_instance`.
  */
 export async function probeHealth(
-  fetchImpl: typeof fetch,
+  fetchImpl: ProbeFetch,
   origin: string,
   install: InstalledRuntime,
   signal: AbortSignal,
@@ -102,7 +106,7 @@ export async function probeHealth(
  * - anything else: the credential was authenticated; the bridge takes over
  */
 export async function probeCredential(
-  fetchImpl: typeof fetch,
+  fetchImpl: ProbeFetch,
   origin: string,
   install: InstalledRuntime,
   token: string,
@@ -125,6 +129,12 @@ export async function probeCredential(
     timeoutMs,
   );
   await drain(response);
+  // The default transport returns a redirect instead of failing on it, and
+  // `fetch` with `redirect: 'error'` throws; both mean the credential was
+  // not accepted by the route it was meant for.
+  if (response.status >= 300 && response.status <= 399) {
+    throw new LauncherFailure('stale_instance');
+  }
   if (response.status === 401 || response.status === 403) {
     throw new LauncherFailure('credential_invalid');
   }

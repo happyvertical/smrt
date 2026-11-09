@@ -5,10 +5,10 @@ description: "Launcher core for SMRT desktop assistant plugins: injected provide
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-08T21:55:41Z"
+  at: "2026-11-09T05:08:33Z"
 audience: "internal"
 evidence_level: "manifest-described"
-source_revision: "sha256:f2caf67212e0c338f46f344b53a79db04c356f305c0c7ac52e91f5dcedc5c229"
+source_revision: "sha256:b9105d15bb113c06f2dad1d24c5db9589a4de64a32b3dae036e37fa63da7a4af"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/smrt-desktop-launcher/package.json"

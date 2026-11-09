@@ -15,6 +15,9 @@ three provider methods. Do not edit those packages from here.
 - The credential is requested only after the runtime and the endpoint have
   passed their checks, and reaches the bridge only through its environment.
   Never put it in argv, files, logs or the launcher's own stdout.
+- Probes go to the literal `127.0.0.1` through `src/loopback-fetch.ts` (a
+  dedicated `node:http` agent). Never use global `fetch` for them: an
+  environment proxy (`NODE_USE_ENV_PROXY`) would receive the bearer token.
 - Never resolve an executable through `PATH`, never use a shell, and build the
   child environment from scratch.
 
