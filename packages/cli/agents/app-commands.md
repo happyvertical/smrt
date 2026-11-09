@@ -111,6 +111,24 @@ config loading; `bin/smrt.js` imports `dist/` in-process so SIGTERM reaches
   injected `deps.snapshotKeys` provider; without one the flag fails closed.
   Plaintext stays the default. Format, limits and restore primitives:
   [encrypted-snapshots.md](encrypted-snapshots.md).
+- **Cloud migration** (#4806, `cloud-migration.ts`, library only; hosted
+  routes and `smrt app cloud` commands are follow-ups): built on a
+  `smrt-cloud-link-v1` link (app-runtime README). `planCloudMigration`
+  checks and remaps a local bundle before anything is written. The per-user
+  target (planned with `perUser` identities, linked after import) is a
+  byte-preserving `importApplication` into an empty database; the shared
+  target goes through hosted `sync/apply` (`runSharedCloudMigration`) and
+  refuses foreign-tenant, global, tenantless, colliding, embedded-identity and
+  `file:`/`asset-local:` values anywhere, and stops on any
+  `conflict`/`rejected`. The journal is bound to bundle digest, origin, link,
+  tenant and batch contents (resume with the same batch size).
+  `beginCloudMigration` checks custody and the link, then retires the
+  location before export; `completeCloudMigration` verifies a fresh target
+  export itself and needs a bundle exported after retirement, an `applied`
+  journal (shared) and acknowledged changed columns (never `id`/`tenant_id`).
+  `exportTenantBundle` selects by ID only global rows (`cloudIdentityRows`);
+  `downgradeCloudBundle` refuses foreign-tenant rows and reverse-maps into a
+  `local` bundle `app import` accepts.
 - **Process identity**: `app.pid` is trusted only when the live command
   line's last two tokens are a path with basename `smrt-web.mjs` and exactly
   `--smrt-instance=<record instance>` (an app started by the template's former
