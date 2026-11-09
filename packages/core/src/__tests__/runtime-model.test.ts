@@ -51,7 +51,9 @@ const qn = (ctor: typeof SmrtObject) =>
 async function migrate(db: Db, name: string) {
   const statements = await planRuntimeModelDDL(name, 'sqlite', async (t) => {
     const r = await db.query(`SELECT name FROM pragma_table_info(?)`, [t]);
-    return r.rows.length ? r.rows.map((x: { name: string }) => x.name) : null;
+    return r.rows.length
+      ? r.rows.map((x: Record<string, any>) => String(x.name))
+      : null;
   });
   for (const s of statements) await db.query(s);
   return statements;
