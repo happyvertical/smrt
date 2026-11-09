@@ -3,15 +3,18 @@
 Binding behavior for core's inference tiers (epic #4749). Core owns the names
 and the seam ([core inference.md](../core/agents/inference.md)); this package
 owns alias chains, classified fallback, ladder degradation and
-`smrt doctor --ai` (#4752), the fusion interpreter (#4753), and the settings
-panel with layered binding storage (#4754).
+`smrt doctor --ai` (#4752), the fusion interpreter (#4753), the settings
+panel with layered binding storage (#4754), per-user and per-tenant
+bindings (#4756), candidate capability checks (#4758), and hosted
+provisioning and the spend gate (#4759, #4760). App-author guide:
+[docs/content/inference.md](../../docs/content/inference.md).
 
 ## Entries
 
 - Root (browser-safe): importing it calls `registerInference()`, which sets
   the executor (`alias`, `candidates`, `fusion`) and a validating resolver
   (`setInferenceResolver()`). The resolver binds nothing: it validates chain
-  config, then defers to a resolver registered earlier (#4666 per-user
+  config, then defers to a resolver registered earlier (#4756 per-user
   bindings, `./resolver`) or to core's built-in config resolution. No aliases and no chain
   targets means no change in behavior. `browser-safe.test.ts` holds the graph
   free of `node:`, the AI SDK and smrt-config by walking its import graph;
@@ -157,7 +160,8 @@ call, `pair` 3, `handoff` 2) from `inference.fusions` (wins) or
 `defineFusion()`. SMRT ships the interpreter, never a fusion. Seats are
 smrt-prompts keys run through `createChainClient()`; a dead seat never
 aborts a `pair`, all seats dead throws `InferenceFusionError`; each run writes
-one `_smrt_ai_runs` row. Tenant-level fusions stay deferred. Details:
+one `_smrt_ai_runs` row. Fusions are defined at app scope only; a tenant
+may bind a tier to an allow-listed fusion, never define one. Details:
 [agents/fusions.md](agents/fusions.md).
 
 ## Doctor (`src/node.ts`)

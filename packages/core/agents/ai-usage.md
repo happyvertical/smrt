@@ -1,4 +1,4 @@
-# AI usage observability (#4751, #4753)
+# AI usage observability (#3077, #4751, #4753, #4760)
 
 `_smrt_ai_usage` answers "how does model X do on prompt Y". Sources:
 `src/adapters/ai-usage.ts` (persistence), `src/adapters/ai-usage-recorder.ts`
@@ -88,8 +88,8 @@ Source: `src/system/ai-runs.ts`. One row per multi-call run (a fusion):
 `mode`, `tenant_id` / `class_name` (the instance's, like a usage row),
 `prompt_key` of the entry call, `seats` that ran, `degraded_seats` (died or
 answered through a substitution), `status` (`ok | degraded | failed`),
-`duration` and `details` (JSON: per-seat persona, prompt, status, target and
-model labels, token usage, substitutions, failure class; gate verdict). Never
+`duration` and `details` (JSON, per seat: `persona` (the seat name), prompt,
+status, target and model labels, token usage, substitutions, failure class; gate verdict). Never
 prompts, inputs, outputs or keys. Seat usage rows also carry the `fusionKey`
 and `seat` tags (`seat: 'gate'` for the gate's decision row).
 
