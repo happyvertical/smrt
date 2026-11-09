@@ -559,3 +559,18 @@ When consumer registration owns external packages (`smrtDependencies`), its
 canonical/provider-context export. The SvelteKit registration module continues
 to delegate external imports there; external bindings also add no discovery
 metadata and do not depend on CLI inclusion.
+
+## Provider-facing tool schemas (`toProviderToolSchema`)
+
+Generated MCP input schemas are valid draft 2020-12 but model providers accept
+less: a `<model>_get` tool declares a top-level `anyOf` (id or slug) and OpenAI
+and Anthropic both answer 400 for the WHOLE request when any one tool carries
+it ("schema must have type 'object' and not have 'oneOf'/'anyOf'/... at the top
+level"; "input_schema does not support oneOf, allOf, or anyOf at the top
+level"), so one app model broke every model call. Any code that hands generated
+tools to a provider (an assistant, an agent loop) must pass each `inputSchema`
+through `toProviderToolSchema()` (`src/generators/provider-tool-schema.ts`): it
+inlines local `$ref`/`$defs`, drops `$schema`, and removes top-level
+`anyOf`/`oneOf`/`allOf`/`not`/`enum`/`const`, keeping `required` alternatives as
+a description sentence. MCP clients keep the original schema. Test:
+`src/generators/__tests__/provider-tool-schema.test.ts`.

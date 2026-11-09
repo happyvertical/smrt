@@ -184,6 +184,11 @@ const NODE_ONLY_GROUPS: ReadonlyArray<{
   },
   {
     reason:
+      'Provider tool-schema preparation sits with the Node-side generators; browsers never send generated tools to a provider (#4872)',
+    names: ['toProviderToolSchema'],
+  },
+  {
+    reason:
       'Test-database helper; belongs behind `@happyvertical/smrt-core/testing`',
     names: ['getTestDatabase'],
   },
