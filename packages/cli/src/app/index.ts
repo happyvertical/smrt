@@ -178,6 +178,11 @@ export {
   writeEncryptedSnapshot,
 } from './snapshot-framing.js';
 export {
+  createLifecycleSnapshotKeys,
+  type LifecycleSnapshotKeysOptions,
+  type SnapshotKeyLifecycle,
+} from './snapshot-keys.js';
+export {
   parseTokenLifetime,
   runTokenOperation,
   TOKEN_USAGE,
