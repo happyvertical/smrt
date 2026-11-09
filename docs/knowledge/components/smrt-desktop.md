@@ -1,14 +1,14 @@
 ---
 type: "Component"
 title: "@happyvertical/smrt-desktop"
-description: "Versioned sidecar manifest and bundle manifest, the runtime bundler and the assistant-plugin launcher core for SMRT desktop apps"
+description: "Versioned sidecar manifest and the runtime bundler for SMRT desktop apps"
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-09T16:41:35Z"
+  at: "2026-11-09T17:07:59Z"
 audience: "internal"
 evidence_level: "manifest-described"
-source_revision: "sha256:3f63ebd45e2e233203ff9bce6bf5a1b804171c6e20d7555435033dc3443dfcb0"
+source_revision: "sha256:80d3715b48ba85b63109b454dd0123ed7506db92e22c8e8e96b44b4ffbf8a561"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/smrt-desktop/package.json"
@@ -43,5 +43,4 @@ sources:
 
 - `.`
 - `./bundler`
-- `./launcher`
 - `./package.json`

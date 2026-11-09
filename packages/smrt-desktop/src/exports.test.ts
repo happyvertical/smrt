@@ -10,14 +10,9 @@ const read = (path: string) => readFileSync(resolve(packageDir, path), 'utf8');
 
 /** The runtime exports of the package root. Adding a name is deliberate. */
 const ROOT_EXPORTS = [
-  'BUNDLE_MANIFEST_FILENAME',
-  'DesktopContractError',
   'RESERVED_ENV_KEYS',
-  'assertBundleMatchesSidecar',
   'buildSidecarEnv',
-  'parseBundleManifest',
   'parseSidecarManifest',
-  'serializeBundleManifest',
   'serializeSidecarManifest',
 ];
 
@@ -32,23 +27,14 @@ describe('the package root exports an explicit list', () => {
 });
 
 describe('the package subpaths', () => {
-  it('declares exactly the root, bundler and launcher entries', () => {
+  it('declares exactly the root and bundler entries', () => {
     const exports = JSON.parse(read('package.json')).exports;
-    expect(Object.keys(exports)).toEqual([
-      '.',
-      './bundler',
-      './launcher',
-      './package.json',
-    ]);
+    expect(Object.keys(exports)).toEqual(['.', './bundler', './package.json']);
   });
 
-  it('builds the bundler and launcher as their own entries', () => {
-    const config = read('vite.config.ts');
-    expect(config).toContain(
+  it('builds the bundler as its own entry', () => {
+    expect(read('vite.config.ts')).toContain(
       "{ name: 'bundler', source: 'src/bundler/index.ts' }",
-    );
-    expect(config).toContain(
-      "{ name: 'launcher', source: 'src/launcher/index.ts' }",
     );
   });
 });

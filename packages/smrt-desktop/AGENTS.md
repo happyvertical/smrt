@@ -8,28 +8,11 @@ portable path rules, and trusted package boundary are documented in
 [README.md](README.md). Keep the Node 26 example and test cases aligned with
 the parser.
 
-The package also publishes the bundle manifest (`smrt-bundle.json`, written
-by the bundler) and `DesktopContractError` (fixed value-free messages keyed by
-a closed code). `examples/*.json` are fixtures shared with the Rust wrapper's
-tests: change them only together with the parsers, the tests and the README.
-Shared helpers (strict JSON, grammars, absolute paths) live in `src/internal`;
-`src/testing` is test-only. The root export is an explicit list (no
-`export *`; `exports.test.ts` lists it).
-
-The assistant-plugin launcher core lives in `src/launcher` behind the
-Node-only `./launcher` entry (diagnostics, trust checks and the stdio
-lifecycle around an injected `LauncherProvider`, #4729). Diagnostics are
-constants (`diagnostics.ts`); never interpolate a path, origin, provider
-message or child output into one, and exit codes are public. The credential
-is requested only after the runtime and the endpoint have passed their checks
-and reaches the bridge only through its environment: never in argv, files,
-logs or the launcher's stdout. Probes go to the literal `127.0.0.1` through
-`loopback-fetch.ts` (a dedicated `node:http` agent); never use global `fetch`
-for them, because an environment proxy would receive the bearer token. Never
-resolve an executable through `PATH`, never use a shell, and build the child
-environment from scratch. The credential comes from app-runtime's token store
-(`openLocalMcpTokenStore().issue()`) called by the provider; do not import
-app-runtime into this package, add a credential helper or a channel here.
+`examples/*.json` are fixtures shared with the Rust wrapper's tests: change them
+only together with the parser, the tests and the README. Shared helpers (strict
+JSON, grammars, absolute paths) live in `src/internal`; `src/testing` is
+test-only. The root export is an explicit list (no `export *`;
+`exports.test.ts` lists it).
 
 Owner sign-in and local MCP credentials are app-runtime's (`claimOwner()`, the
 loopback onboarding URL, `openLocalMcpTokenStore`); do not rebuild them in this

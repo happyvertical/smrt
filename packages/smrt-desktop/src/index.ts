@@ -1,25 +1,12 @@
 /**
- * `@happyvertical/smrt-desktop`: the versioned sidecar manifest and the bundle
- * manifest the runtime bundler writes. The bundler is `./bundler`
- * (`smrt desktop bundle`); the assistant-plugin launcher core is `./launcher`.
+ * `@happyvertical/smrt-desktop`: the versioned sidecar manifest the runtime
+ * bundler writes and the Tauri wrapper reads. The bundler is `./bundler`
+ * (`smrt desktop bundle`).
  *
  * The root is an explicit list of named exports: a new internal export cannot
  * become public by accident.
  */
 
-export type {
-  DesktopContractErrorCode,
-  DesktopContractErrorOptions,
-  InstallErrorCode,
-} from './errors.js';
-export { DesktopContractError } from './errors.js';
-export type { BundleManifestV1 } from './install/index.js';
-export {
-  assertBundleMatchesSidecar,
-  BUNDLE_MANIFEST_FILENAME,
-  parseBundleManifest,
-  serializeBundleManifest,
-} from './install/index.js';
 export type {
   DesktopFs,
   FileHandleLike,

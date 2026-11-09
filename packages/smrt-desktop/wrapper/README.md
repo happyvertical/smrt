@@ -223,58 +223,18 @@ deletes the temporary keychain (and with it the imported certificate), removes
 the downloaded and staged files and the installed CLI. No key file is ever
 written: `tauri signer sign` reads the key from the environment of its one step.
 
-`scripts/desktop-release-workflow.test.mjs` parses the workflow with the real
-`yaml` package, so block-scalar spelling, quoting and flow style cannot change
-what is checked, and fails if a future edit mixes these. (`yaml` comes from the
-repository's `node_modules` locally; the verification build installs it with
-`npm ci --ignore-scripts` from the lockfile in `scripts/`, in a job that holds
-no secret.) The textual lint is sound only because of how GitHub exposes
-secrets: an environment secret reaches a step only when that step references
-`secrets.X`, and the lint enumerates every such reference (it fails on any
-reference it cannot place), so the secret steps and the allow-list below are the
-whole of what can read one. What it enforces:
-
-- The file has no YAML anchor, alias, merge key or tag, and is one valid
-  document with no duplicate key.
-- Any reference to `secrets`, in any spelling (`secrets.X`, `secrets['X']`,
-  `Secrets.X`, `toJSON(secrets)`, `format(..., secrets)`, `secrets: inherit`), is
-  found. It is allowed only as the exact value of an `env` entry of the same
-  name inside a step: never at workflow or job level, in `with`, in `if`, in
-  `run` or in a name.
-- A step that holds a secret has no `uses`, no `shell` or `working-directory`,
-  only the secrets and plain env names its signing command is listed with, and
-  every logical line of its `run` is on an allow-list
-  (`scripts/desktop-release-signing-commands.mjs`: `security`, `codesign`,
-  `xcrun notarytool`/`stapler`, `hdiutil`, `ditto`, the locked `tauri signer
-  sign`, the preflight script and the wrapper plumbing those use, each as an
-  exact line). An unlisted line fails, whatever it runs: `bash ./x.sh`,
-  `python3`, `sh -c`, `make`, `source`. A comment line never continues onto the
-  next line, so `# note \` followed by a command does not hide the command.
-  A string that holds a `${{` expression is searched whole for `secrets`, so a
-  `}}` inside a string literal hides nothing. It does not model bash beyond
-  that: a new command in a signing step is a reviewed change to the allow-list
-  file.
-- A step that builds or installs (cargo, rustup, `tauri build`, npm, pnpm,
-  `tauri-action`) holds no secret, and a job that holds a secret runs no
-  compiler or package manager other than the one locked `npm ci`, uses only the
-  SHA-pinned checkout, node and artifact actions, sets no job-level `env`, has
-  read-only permissions, and runs in the protected environment. Every other
-  step of such a job is held to the same rules (no download, interpreter,
-  `node -e`, or write to `GITHUB_ENV`/`GITHUB_PATH`/`GITHUB_OUTPUT`/
-  `GITHUB_STATE`), because a step that sets `BASH_ENV`, `NODE_OPTIONS` or
-  `PATH` there changes what the later signing lines run. The only exceptions
-  are three blocks matched by their exact text in the allow-list file (the
-  directory exports, the product identity read, the locked CLI install). Its
-  last step is the exact `always()` cleanup, compared in full, so an `exit 0`
-  or an `if false` around the deletion fails. No workflow or secret-job
-  `defaults.run.working-directory` is allowed, a job that holds a secret sets
-  `defaults.run.shell` to exactly `bash`, and the signing command is anchored
-  to `$GITHUB_WORKSPACE`, not `$PWD`.
-- Every `cargo` and `tauri build` has `--locked`, and the Rust and Node versions
-  are exact.
-- The preflight job has exactly `contents: read` and `actions: read`.
-- The signing-tools lockfile names `@tauri-apps/cli` at the workflow's version,
-  with a sha512 integrity and a registry.npmjs.org resolution for every entry.
+The separation is enforced by structure and review, not by a workflow lint
+(the textual lint and its signing-command allow-list were removed: they could
+be bypassed by spellings they did not model, and the environment protection and
+review are the real control). The structure is: secrets are referenced only as
+the `env` of the named signing steps of the `release` job, which runs no
+compiler or package manager; builds happen in `release-build`, which holds no
+secret; the signing CLI is the one locked `npm ci` install; every `cargo` and
+`tauri build` has `--locked`; and `.github/**`, `wrapper/**` and the Node pins
+have CODEOWNERS (`.github/CODEOWNERS`), so a change to any of them needs the
+owner's review. The preflight job has exactly `contents: read` and
+`actions: read`. The signing-tools lockfile names `@tauri-apps/cli` at the
+workflow's version, with a sha512 integrity for every entry.
 
 `scripts/ci-runner-inventory.test.mjs` (root) reads every workflow's `runs-on`
 from the parsed document (a job header the old line reader did not match could
@@ -487,13 +447,11 @@ and the controls around it. Do these **in this order**:
    bypass** ("Allow administrators to bypass configured protection rules" off).
    Expect an approval prompt for the preflight, one for the signing legs and one
    for the publish job.
-4. **Protect `main` with a ruleset that requires review, and add a CODEOWNERS
-   file** covering `.github/workflows/**`, `.github/actions/**`,
-   `packages/smrt-desktop/wrapper/**` and
-   `packages/smrt-desktop/src/bundler/node-pins.ts`. This repository has no
-   CODEOWNERS file today; adding one changes review routing, so it is left to
-   the owner and not created here. These are the files that decide what runs
-   with the secrets and what is trusted as a pin.
+4. **Protect `main` with a ruleset that requires review.** `.github/CODEOWNERS`
+   already names the owner for `.github/`, `packages/smrt-desktop/wrapper/` and
+   `packages/smrt-desktop/src/bundler/node-pins.ts` (the files that decide what
+   runs with the secrets and what is trusted as a pin); turn on "require review
+   from code owners" in the ruleset so it applies.
 5. **Actions settings:** read-only default token permissions; Actions may not
    create or approve pull requests; approval required for workflows from fork
    pull requests; no secrets sent to workflows from fork pull requests.

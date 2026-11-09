@@ -1,7 +1,7 @@
 {
   "name": "@happyvertical/smrt-desktop",
   "version": "0.60.15",
-  "description": "Versioned sidecar manifest and bundle manifest, the runtime bundler and the assistant-plugin launcher core for SMRT desktop apps",
+  "description": "Versioned sidecar manifest and the runtime bundler for SMRT desktop apps",
   "author": "HappyVertical",
   "license": "MIT",
   "type": "module",
@@ -21,10 +21,6 @@
     "./bundler": {
       "types": "./dist/bundler.d.ts",
       "import": "./dist/bundler.js"
-    },
-    "./launcher": {
-      "types": "./dist/launcher.d.ts",
-      "import": "./dist/launcher.js"
     },
     "./package.json": "./package.json"
   },

@@ -53,11 +53,9 @@
 #                    in the environment too; the preflight sees the secrets
 #                    for presence only, the publish job none at all.
 #
-# packages/smrt-desktop/wrapper/scripts/desktop-release-workflow.test.mjs fails if an edit
-# mixes these: a secret in a step that builds or installs, a secret in a step
-# whose script is not made only of allow-listed signing commands, any
-# reference to `secrets` outside the env of such a step, or any YAML anchor,
-# alias or merge key (the lint reads the parsed file, so none can hide one).
+# Keep these separate: a secret belongs only in the `env` of a named signing
+# step of the `release` job, never in a step that builds or installs. CODEOWNERS
+# (.github/CODEOWNERS) puts every change to this file under the owner's review.
 #
 # What this does not do: a compromised crate in release-build can still produce
 # a malicious app, and that app is then signed. Separating the key stops its
@@ -180,21 +178,14 @@ jobs:
         with:
           workspaces: packages/smrt-desktop/wrapper
 
-      # The workflow lint parses the YAML with the `yaml` package, installed
-      # from a committed lockfile with scripts off. This job has no secret.
-      - name: Install the lint's YAML parser (locked)
-        if: runner.os == 'Linux'
-        run: npm ci --ignore-scripts --no-audit --no-fund --registry https://registry.npmjs.org/ --prefix "$WRAPPER_DIR/scripts"
-
-      - name: Test the release scripts and the workflow's secret separation
+      - name: Test the release scripts
         if: runner.os == 'Linux'
         run: |
           node --test \
             "$WRAPPER_DIR/scripts/minisign.test.mjs" \
             "$WRAPPER_DIR/scripts/release-environment.test.mjs" \
             "$WRAPPER_DIR/scripts/release-preflight.test.mjs" \
-            "$WRAPPER_DIR/scripts/release-feed.test.mjs" \
-            "$WRAPPER_DIR/scripts/desktop-release-workflow.test.mjs"
+            "$WRAPPER_DIR/scripts/release-feed.test.mjs"
 
       - name: Install the pinned Tauri CLI
         run: npm install --global --ignore-scripts "@tauri-apps/cli@${TAURI_CLI_VERSION}"

@@ -9,7 +9,6 @@ import {
 } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { parseBundleManifest } from '../install/bundle-manifest.js';
 import {
   parseSidecarManifest,
   serializeSidecarManifest,
@@ -69,7 +68,7 @@ describe('runBundle layout', () => {
     const files = [...readTree(item.outDir).keys()];
     expect(files).toContain('binaries/smrt-start-node-aarch64-apple-darwin');
     expect(files).toContain('resources/sidecar-manifest.json');
-    expect(files).toContain('resources/smrt-bundle.json');
+    expect(files).not.toContain('resources/smrt-bundle.json');
     expect(files).toContain('resources/app/package.json');
     expect(files).toContain('resources/app/build/index.js');
     expect(files).toContain('resources/app/build/client/app.js');
@@ -178,21 +177,9 @@ describe('runBundle layout', () => {
       join(item.outDir, 'resources/sidecar-manifest.json'),
       'utf8',
     );
-    const bundleText = readFileSync(
-      join(item.outDir, 'resources/smrt-bundle.json'),
-      'utf8',
-    );
     const sidecar = parseSidecarManifest(sidecarText);
-    const bundle = parseBundleManifest(bundleText);
     expect(serializeSidecarManifest(sidecar)).toBe(sidecarText);
-    expect(bundle.node.executable).toBe(sidecar.executable);
-    expect(bundle.node.executable).toBe('smrt-start-node');
-    expect(bundle.target).toBe('aarch64-apple-darwin');
-    expect(bundle.bridge).toMatchObject({
-      entry: 'bridge/smrt-mcp-bridge.mjs',
-      envPrefix: 'SMRT_START',
-      mcpPath: '/api/mcp',
-    });
+    expect(sidecar.executable).toBe('smrt-start-node');
     expect(sidecar.args).toEqual(['app/build/index.js']);
     expect(sidecarText.endsWith('\n')).toBe(true);
   });

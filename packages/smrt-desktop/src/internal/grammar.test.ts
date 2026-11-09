@@ -4,15 +4,11 @@ import {
   isChannel,
   isDisplayText,
   isEnvPrefix,
-  isIsoUtcTimestamp,
-  isLoopbackOrigin,
   isLoopbackRoute,
   isPortablePath,
   isSemver,
   isSlug,
   isTargetTriple,
-  isUuidV4,
-  parseLoopbackOrigin,
 } from './grammar.js';
 
 const cases: [string, (value: unknown) => boolean, unknown[], unknown[]][] = [
@@ -98,18 +94,6 @@ const cases: [string, (value: unknown) => boolean, unknown[], unknown[]][] = [
     ['', 'smrt', '1A', '_A', 'A-B', 'A'.repeat(33)],
   ],
   [
-    'uuidV4',
-    isUuidV4,
-    ['3f1c9c2e-5b7a-4d3e-9a1b-0c2d3e4f5a6b'],
-    [
-      '',
-      '3F1C9C2E-5B7A-4D3E-9A1B-0C2D3E4F5A6B',
-      '3f1c9c2e-5b7a-1d3e-9a1b-0c2d3e4f5a6b',
-      '3f1c9c2e-5b7a-4d3e-ca1b-0c2d3e4f5a6b',
-      '3f1c9c2e5b7a4d3e9a1b0c2d3e4f5a6b',
-    ],
-  ],
-  [
     'loopbackRoute',
     isLoopbackRoute,
     ['/', '/api/mcp', '/api/_runtime/health', '/a/b/', '/~v1/x.y'],
@@ -162,25 +146,6 @@ const cases: [string, (value: unknown) => boolean, unknown[], unknown[]][] = [
       7,
     ],
   ],
-  [
-    'isoUtc',
-    isIsoUtcTimestamp,
-    [
-      '2026-01-02T03:04:05Z',
-      '2026-01-02T03:04:05.123Z',
-      '2024-02-29T00:00:00Z',
-    ],
-    [
-      '',
-      '2026-01-02',
-      '2026-01-02T03:04:05',
-      '2026-01-02T03:04:05+00:00',
-      '2026-02-30T00:00:00Z',
-      '2026-13-01T00:00:00Z',
-      '2026-01-02T25:00:00Z',
-      5,
-    ],
-  ],
 ];
 
 describe.each(cases)('%s grammar', (_name, predicate, valid, invalid) => {
@@ -189,45 +154,5 @@ describe.each(cases)('%s grammar', (_name, predicate, valid, invalid) => {
   });
   it.each(invalid)('rejects %j', (value) => {
     expect(predicate(value)).toBe(false);
-  });
-});
-
-describe('loopback origin', () => {
-  it.each([
-    ['http://127.0.0.1:1', 1],
-    ['http://127.0.0.1:8080', 8080],
-    ['http://127.0.0.1:65535', 65535],
-  ])('accepts %s', (origin, port) => {
-    expect(parseLoopbackOrigin(origin)).toBe(port);
-    expect(isLoopbackOrigin(origin)).toBe(true);
-  });
-
-  it.each([
-    'http://localhost:8080',
-    'http://[::1]:8080',
-    'http://127.0.0.2:8080',
-    'https://127.0.0.1:8080',
-    'http://127.0.0.1',
-    'http://127.0.0.1:',
-    'http://127.0.0.1:0',
-    'http://127.0.0.1:00080',
-    'http://127.0.0.1:65536',
-    'http://127.0.0.1:99999',
-    'http://127.0.0.1:123456',
-    'http://127.0.0.1:8080/',
-    'http://127.0.0.1:8080/x',
-    'http://127.0.0.1:8080?x=1',
-    'http://127.0.0.1:8080#f',
-    'http://user@127.0.0.1:8080',
-    'http://127.0.0.1:8080 ',
-    ' http://127.0.0.1:8080',
-    'HTTP://127.0.0.1:8080',
-    'http://0x7f.0.0.1:8080',
-    '',
-    8080,
-    null,
-  ])('rejects %j', (origin) => {
-    expect(parseLoopbackOrigin(origin)).toBeNull();
-    expect(isLoopbackOrigin(origin)).toBe(false);
   });
 });

@@ -17,7 +17,7 @@
  *  8. `bridge`      the pre-bundled bridge file, node-only imports.
  *  9. `node`        pinned Node binary, verified against the target.
  * 10. `natives`     every native file in the output against the target.
- * 11. `manifests`   sidecar manifest, `smrt-bundle.json`; re-parsed
+ * 11. `manifests`   sidecar manifest; re-parsed
  *                   with the contract parsers and cross-checked.
  * 12. `report`      file digests and the report body, size budget.
  * 13. `measure`     optional: host start and cold start timing.
@@ -38,12 +38,6 @@
 
 import { builtinModules } from 'node:module';
 import { posix, win32 } from 'node:path';
-import {
-  assertBundleMatchesSidecar,
-  type BundleManifestV1,
-  parseBundleManifest,
-  serializeBundleManifest,
-} from '../install/bundle-manifest.js';
 import type { FileHandleLike } from '../internal/fs-seam.js';
 import { O_NOFOLLOW, O_NONBLOCK, O_RDONLY } from '../internal/fs-seam.js';
 import {
@@ -1166,26 +1160,7 @@ export async function runBundle(
     });
     let fileListText = '';
     await stage('manifests', async () => {
-      const bundle: BundleManifestV1 = {
-        version: 1,
-        productId: plan.product.productId,
-        bundleId: plan.product.bundleId,
-        displayName: plan.product.displayName,
-        productVersion: plan.product.productVersion,
-        channel: plan.product.channel,
-        target: plan.target.triple,
-        sidecarManifest: 'sidecar-manifest.json',
-        node: { executable: plan.sidecar.executable },
-        bridge: {
-          entry: BRIDGE_ENTRY,
-          envPrefix: bridgeConfig.envPrefix,
-          mcpPath: bridgeConfig.mcpPath,
-          serverName: plan.product.productId,
-          serverVersion: plan.product.productVersion,
-        },
-      };
       const sidecarPath = at(resourcesDir, 'sidecar-manifest.json');
-      const bundlePath = at(resourcesDir, 'smrt-bundle.json');
       try {
         await writeNewFile(
           sidecarPath,
@@ -1196,23 +1171,11 @@ export async function runBundle(
             platform,
           },
         );
-        await writeNewFile(bundlePath, serializeBundleManifest(bundle), 0o644, {
-          fs,
-          platform,
-        });
         const sidecarText = await readRegularText(sidecarPath, MAX_SMALL_TEXT, {
           fs,
         });
-        const bundleText = await readRegularText(bundlePath, MAX_SMALL_TEXT, {
-          fs,
-        });
         const parsedSidecar = parseSidecarManifest(sidecarText);
-        const parsedBundle = parseBundleManifest(bundleText);
-        assertBundleMatchesSidecar(parsedBundle, parsedSidecar);
-        if (
-          serializeSidecarManifest(parsedSidecar) !== sidecarText ||
-          serializeBundleManifest(parsedBundle) !== bundleText
-        ) {
+        if (serializeSidecarManifest(parsedSidecar) !== sidecarText) {
           throw new BundleError('manifest_round_trip');
         }
       } catch (error) {
