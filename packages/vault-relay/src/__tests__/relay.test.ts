@@ -1,0 +1,783 @@
+import { randomBytes } from 'node:crypto';
+import { readdir } from 'node:fs/promises';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { HEADER_SIGNATURE } from '../auth.js';
+import { sha256Hex } from '../encoding.js';
+import { VaultRelayStore } from '../metadata-store.js';
+import {
+  adminRequest,
+  BASE,
+  createHarness,
+  downloadSnapshot,
+  type Harness,
+  newDevice,
+  registerDevice,
+  signed,
+  type TestDevice,
+  uploadSnapshot,
+} from './helpers.js';
+
+let h: Harness;
+let a1: TestDevice;
+let a2: TestDevice;
+let b1: TestDevice;
+
+beforeEach(async () => {
+  h = await createHarness();
+  a1 = newDevice('acct-a', 'device-a1');
+  a2 = newDevice('acct-a', 'device-a2');
+  b1 = newDevice('acct-b', 'device-b1');
+  for (const device of [a1, a2, b1]) await registerDevice(h, device);
+});
+
+afterEach(async () => {
+  await h.close();
+});
+
+async function errorCode(response: Response): Promise<string> {
+  return ((await response.json()) as { error: string }).error;
+}
+
+describe('round trip', () => {
+  it('stores, lists, and returns a multi-chunk blob byte for byte', async () => {
+    const blob = randomBytes(10_000);
+    const commit = await uploadSnapshot(h, a1, 1, blob);
+    expect(commit.status).toBe(201);
+    const latest = await h.relay.handle(
+      signed(h, a2, 'GET', '/v1/snapshots/latest'),
+    );
+    expect(latest.status).toBe(200);
+    const meta = (await latest.json()) as Record<string, unknown>;
+    expect(meta).toMatchObject({
+      sequence: 1,
+      byteSize: 10_000,
+      chunkCount: 3,
+      sha256: sha256Hex(blob),
+      deviceId: 'device-a1',
+    });
+    expect(Buffer.from(await downloadSnapshot(h, a2, 1))).toEqual(blob);
+  });
+
+  it('serves health and readiness without authentication', async () => {
+    expect((await h.relay.handle(new Request(`${BASE}/healthz`))).status).toBe(
+      200,
+    );
+    expect((await h.relay.handle(new Request(`${BASE}/readyz`))).status).toBe(
+      200,
+    );
+  });
+
+  it('reports not ready when the schema is missing', async () => {
+    await h.db.query('DROP TABLE vault_relay_nonces');
+    const response = await h.relay.handle(new Request(`${BASE}/readyz`));
+    expect(response.status).toBe(503);
+  });
+});
+
+describe('authentication', () => {
+  it('rejects an unsigned request', async () => {
+    const response = await h.relay.handle(new Request(`${BASE}/v1/snapshots`));
+    expect(response.status).toBe(401);
+    expect(h.entitlements.calls).toEqual([]);
+  });
+
+  it('rejects a replayed request', async () => {
+    const nonce = randomBytes(18).toString('base64url');
+    const first = await h.relay.handle(
+      signed(h, a1, 'GET', '/v1/snapshots', { nonce }),
+    );
+    expect(first.status).toBe(200);
+    const replay = await h.relay.handle(
+      signed(h, a1, 'GET', '/v1/snapshots', { nonce }),
+    );
+    expect(replay.status).toBe(401);
+  });
+
+  it('rejects a timestamp outside the skew window', async () => {
+    for (const offset of [-30_001, 30_001]) {
+      const response = await h.relay.handle(
+        signed(h, a1, 'GET', '/v1/snapshots', {
+          timestamp: h.clock.now + offset,
+        }),
+      );
+      expect(response.status).toBe(401);
+    }
+  });
+
+  it('rejects a signature over a different path or a forged signature', async () => {
+    const otherPath = await h.relay.handle(
+      signed(h, a1, 'GET', '/v1/snapshots', { signedPath: '/v1/snapshots/1' }),
+    );
+    expect(otherPath.status).toBe(401);
+    const forged = signed(h, a1, 'GET', '/v1/snapshots');
+    forged.headers.set(
+      HEADER_SIGNATURE,
+      Buffer.alloc(64).toString('base64url'),
+    );
+    expect((await h.relay.handle(forged)).status).toBe(401);
+  });
+
+  it('binds the body: a body that differs from the signed digest is refused', async () => {
+    const body = JSON.stringify({
+      sequence: 1,
+      byteSize: 10,
+      chunkSize: 10,
+      sha256: sha256Hex('x'),
+    });
+    const response = await h.relay.handle(
+      signed(h, a1, 'POST', '/v1/uploads', {
+        body,
+        signedDigest: sha256Hex('something else'),
+      }),
+    );
+    expect(response.status).toBe(400);
+    expect(await errorCode(response)).toBe('content_digest_mismatch');
+  });
+
+  it('rejects a revoked device from the next request on', async () => {
+    expect(
+      (await h.relay.handle(signed(h, a2, 'GET', '/v1/snapshots'))).status,
+    ).toBe(200);
+    expect(await h.relay.revokeDevice('acct-a', 'device-a2')).toBe(true);
+    expect(
+      (await h.relay.handle(signed(h, a2, 'GET', '/v1/snapshots'))).status,
+    ).toBe(401);
+    // A revoked id cannot be re-activated, even with its old key.
+    expect(
+      await h.relay.registerDevice('acct-a', 'device-a2', a2.publicKey),
+    ).toBe('conflict');
+  });
+
+  it('rejects a device signing as another account', async () => {
+    const response = await h.relay.handle(
+      signed(h, b1, 'GET', '/v1/snapshots', { claimAccount: 'acct-a' }),
+    );
+    expect(response.status).toBe(401);
+  });
+
+  it('rejects a key registered under the same device id in another account', async () => {
+    const impostor = newDevice('acct-a', 'device-b1');
+    const response = await h.relay.handle(
+      signed(h, { ...impostor, accountId: 'acct-a' }, 'GET', '/v1/snapshots'),
+    );
+    expect(response.status).toBe(401);
+  });
+
+  it('rejects malformed identity headers before any lookup', async () => {
+    const response = await h.relay.handle(
+      signed(h, a1, 'GET', '/v1/snapshots', {
+        headers: { 'x-vault-account': '../acct-a' },
+      }),
+    );
+    expect(response.status).toBe(401);
+  });
+});
+
+describe('cross-account isolation', () => {
+  it("never serves or deletes another account's snapshot", async () => {
+    expect((await uploadSnapshot(h, a1, 1, randomBytes(100))).status).toBe(201);
+    for (const [method, path] of [
+      ['GET', '/v1/snapshots/1'],
+      ['GET', '/v1/snapshots/1/chunks/0'],
+      ['DELETE', '/v1/snapshots/1'],
+    ] as const) {
+      const response = await h.relay.handle(signed(h, b1, method, path));
+      expect(response.status).toBe(404);
+    }
+    const list = await h.relay.handle(signed(h, b1, 'GET', '/v1/snapshots'));
+    expect(await list.json()).toEqual({ snapshots: [] });
+    expect(
+      (await h.relay.handle(signed(h, a1, 'GET', '/v1/snapshots/1'))).status,
+    ).toBe(200);
+  });
+
+  it("cannot write into or commit another account's upload", async () => {
+    const begin = await h.relay.handle(
+      signed(h, a1, 'POST', '/v1/uploads', {
+        body: JSON.stringify({
+          sequence: 1,
+          byteSize: 4,
+          chunkSize: 4,
+          sha256: sha256Hex('abcd'),
+        }),
+      }),
+    );
+    const { uploadId } = (await begin.json()) as { uploadId: string };
+    const put = await h.relay.handle(
+      signed(h, b1, 'PUT', `/v1/uploads/${uploadId}/chunks/0`, {
+        body: 'abcd',
+      }),
+    );
+    expect(put.status).toBe(404);
+    const commit = await h.relay.handle(
+      signed(h, b1, 'POST', `/v1/uploads/${uploadId}/commit`),
+    );
+    expect(commit.status).toBe(404);
+    const abort = await h.relay.handle(
+      signed(h, b1, 'DELETE', `/v1/uploads/${uploadId}`),
+    );
+    expect(abort.status).toBe(404);
+  });
+});
+
+describe('quotas and request bounds', () => {
+  it('refuses a snapshot larger than the byte quota', async () => {
+    const response = await h.relay.handle(
+      signed(h, a1, 'POST', '/v1/uploads', {
+        body: JSON.stringify({
+          sequence: 1,
+          byteSize: 1_000_001,
+          chunkSize: 4096,
+          sha256: sha256Hex('x'),
+        }),
+      }),
+    );
+    expect(response.status).toBe(413);
+    expect(await errorCode(response)).toBe('quota_exceeded');
+  });
+
+  it('counts pending uploads against the byte quota', async () => {
+    const begin = (sequence: number) =>
+      h.relay.handle(
+        signed(h, a1, 'POST', '/v1/uploads', {
+          body: JSON.stringify({
+            sequence,
+            byteSize: 600_000,
+            chunkSize: 4096,
+            sha256: sha256Hex('x'),
+          }),
+        }),
+      );
+    expect((await begin(1)).status).toBe(201);
+    const second = await begin(2);
+    expect(second.status).toBe(413);
+    expect(await errorCode(second)).toBe('quota_exceeded');
+  });
+
+  it('enforces the snapshot-count quota', async () => {
+    const policy = {
+      quota: { maxBytes: 1_000_000, maxSnapshots: 2 },
+      retention: { keepLast: 1, keepWithinMs: 60 * 60 * 1000 },
+      limits: { maxChunkBytes: 4096 },
+    };
+    const local = await createHarness({ policy });
+    try {
+      const device = newDevice('acct-a', 'device-a1');
+      await registerDevice(local, device);
+      expect(
+        (await uploadSnapshot(local, device, 1, randomBytes(10))).status,
+      ).toBe(201);
+      expect(
+        (await uploadSnapshot(local, device, 2, randomBytes(10))).status,
+      ).toBe(201);
+      const third = await uploadSnapshot(local, device, 3, randomBytes(10));
+      expect(third.status).toBe(413);
+    } finally {
+      await local.close();
+    }
+  });
+
+  it('refuses a chunk size above the configured bound', async () => {
+    const response = await h.relay.handle(
+      signed(h, a1, 'POST', '/v1/uploads', {
+        body: JSON.stringify({
+          sequence: 1,
+          byteSize: 10_000,
+          chunkSize: 4097,
+          sha256: sha256Hex('x'),
+        }),
+      }),
+    );
+    expect(response.status).toBe(413);
+    expect(await errorCode(response)).toBe('chunk_too_large');
+  });
+
+  it('refuses a chunk whose declared length is not the expected size, before reading it', async () => {
+    const begin = await h.relay.handle(
+      signed(h, a1, 'POST', '/v1/uploads', {
+        body: JSON.stringify({
+          sequence: 1,
+          byteSize: 100,
+          chunkSize: 100,
+          sha256: sha256Hex('x'),
+        }),
+      }),
+    );
+    const { uploadId } = (await begin.json()) as { uploadId: string };
+    const tooBig = await h.relay.handle(
+      signed(h, a1, 'PUT', `/v1/uploads/${uploadId}/chunks/0`, {
+        body: randomBytes(100),
+        headers: { 'content-length': '1000000000' },
+      }),
+    );
+    expect(tooBig.status).toBe(413);
+    const wrong = await h.relay.handle(
+      signed(h, a1, 'PUT', `/v1/uploads/${uploadId}/chunks/0`, {
+        body: randomBytes(99),
+      }),
+    );
+    expect(wrong.status).toBe(400);
+    expect(await errorCode(wrong)).toBe('unexpected_body_length');
+    const outOfRange = await h.relay.handle(
+      signed(h, a1, 'PUT', `/v1/uploads/${uploadId}/chunks/1`, {
+        body: randomBytes(100),
+      }),
+    );
+    expect(outOfRange.status).toBe(404);
+  });
+
+  it('requires a declared length for a request body', async () => {
+    const request = signed(h, a1, 'POST', '/v1/uploads', {
+      body: '{}',
+    });
+    const stream = new Request(request.url, {
+      method: 'POST',
+      headers: [...request.headers].filter(
+        ([name]) => name !== 'content-length',
+      ),
+      body: new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('{}'));
+          controller.close();
+        },
+      }),
+      duplex: 'half',
+    } as RequestInit);
+    const response = await h.relay.handle(stream);
+    expect(response.status).toBe(411);
+  });
+
+  it('refuses a body on a bodiless route', async () => {
+    const response = await h.relay.handle(
+      signed(
+        h,
+        a1,
+        'POST',
+        '/v1/uploads/00000000-0000-4000-8000-000000000000/commit',
+        { body: 'x' },
+      ),
+    );
+    expect(response.status).toBe(413);
+    expect(await errorCode(response)).toBe('body_too_large');
+  });
+});
+
+describe('atomic publish and sequences', () => {
+  async function beginUpload(
+    device: TestDevice,
+    sequence: number,
+    blob: Uint8Array,
+  ) {
+    const response = await h.relay.handle(
+      signed(h, device, 'POST', '/v1/uploads', {
+        body: JSON.stringify({
+          sequence,
+          byteSize: blob.length,
+          chunkSize: 4096,
+          sha256: sha256Hex(blob),
+        }),
+      }),
+    );
+    return {
+      response,
+      body: (await response.clone().json()) as { uploadId: string },
+    };
+  }
+
+  it('never makes a partial upload latest', async () => {
+    expect((await uploadSnapshot(h, a1, 1, randomBytes(100))).status).toBe(201);
+    const blob = randomBytes(5000);
+    const { body } = await beginUpload(a1, 2, blob);
+    const first = await h.relay.handle(
+      signed(h, a1, 'PUT', `/v1/uploads/${body.uploadId}/chunks/0`, {
+        body: blob.subarray(0, 4096),
+      }),
+    );
+    expect(first.status).toBe(200);
+    const commit = await h.relay.handle(
+      signed(h, a1, 'POST', `/v1/uploads/${body.uploadId}/commit`),
+    );
+    expect(commit.status).toBe(409);
+    expect(await errorCode(commit)).toBe('incomplete_upload');
+    const latest = await h.relay.handle(
+      signed(h, a1, 'GET', '/v1/snapshots/latest'),
+    );
+    expect(((await latest.json()) as { sequence: number }).sequence).toBe(1);
+    expect(
+      (await h.relay.handle(signed(h, a1, 'GET', '/v1/snapshots/2'))).status,
+    ).toBe(404);
+    const list = (await (
+      await h.relay.handle(signed(h, a1, 'GET', '/v1/snapshots'))
+    ).json()) as { snapshots: Array<{ sequence: number }> };
+    expect(list.snapshots.map((s) => s.sequence)).toEqual([1]);
+  });
+
+  it('refuses to publish a blob whose ciphertext digest differs from the declared one', async () => {
+    const blob = randomBytes(100);
+    const response = await h.relay.handle(
+      signed(h, a1, 'POST', '/v1/uploads', {
+        body: JSON.stringify({
+          sequence: 1,
+          byteSize: 100,
+          chunkSize: 100,
+          sha256: sha256Hex('not the blob'),
+        }),
+      }),
+    );
+    const { uploadId } = (await response.json()) as { uploadId: string };
+    await h.relay.handle(
+      signed(h, a1, 'PUT', `/v1/uploads/${uploadId}/chunks/0`, { body: blob }),
+    );
+    const commit = await h.relay.handle(
+      signed(h, a1, 'POST', `/v1/uploads/${uploadId}/commit`),
+    );
+    expect(commit.status).toBe(422);
+    expect(
+      (await h.relay.handle(signed(h, a1, 'GET', '/v1/snapshots/latest')))
+        .status,
+    ).toBe(404);
+  });
+
+  it('refuses to overwrite or roll back a sequence', async () => {
+    expect((await uploadSnapshot(h, a1, 5, randomBytes(10))).status).toBe(201);
+    for (const sequence of [5, 3]) {
+      const response = await uploadSnapshot(h, a2, sequence, randomBytes(10));
+      expect(response.status).toBe(409);
+      expect(await errorCode(response)).toBe('stale_sequence');
+    }
+    // Deleting the latest does not lower the high-water mark.
+    expect(
+      (await h.relay.handle(signed(h, a1, 'DELETE', '/v1/snapshots/5'))).status,
+    ).toBe(204);
+    const again = await uploadSnapshot(h, a1, 5, randomBytes(10));
+    expect(again.status).toBe(409);
+    expect((await uploadSnapshot(h, a1, 6, randomBytes(10))).status).toBe(201);
+  });
+
+  it('refuses a duplicate pending sequence and a stale commit after a newer publish', async () => {
+    const older = randomBytes(10);
+    const { body: first } = await beginUpload(a1, 7, older);
+    const { response: dup } = await beginUpload(a2, 7, randomBytes(10));
+    expect(dup.status).toBe(409);
+    expect(await errorCode(dup)).toBe('sequence_exists');
+
+    expect((await uploadSnapshot(h, a2, 8, randomBytes(10))).status).toBe(201);
+    await h.relay.handle(
+      signed(h, a1, 'PUT', `/v1/uploads/${first.uploadId}/chunks/0`, {
+        body: older,
+      }),
+    );
+    const stale = await h.relay.handle(
+      signed(h, a1, 'POST', `/v1/uploads/${first.uploadId}/commit`),
+    );
+    expect(stale.status).toBe(409);
+    expect(await errorCode(stale)).toBe('stale_sequence');
+    const latest = await h.relay.handle(
+      signed(h, a1, 'GET', '/v1/snapshots/latest'),
+    );
+    expect(((await latest.json()) as { sequence: number }).sequence).toBe(8);
+  });
+});
+
+describe('retention and expiry', () => {
+  it('keeps the newest snapshots and frees quota for pruned ones', async () => {
+    for (let sequence = 1; sequence <= 5; sequence++) {
+      h.clock.now += 1000;
+      expect(
+        (await uploadSnapshot(h, a1, sequence, randomBytes(100))).status,
+      ).toBe(201);
+    }
+    const list = (await (
+      await h.relay.handle(signed(h, a1, 'GET', '/v1/snapshots'))
+    ).json()) as { snapshots: Array<{ sequence: number }> };
+    expect(list.snapshots.map((s) => s.sequence)).toEqual([5, 4, 3]);
+    const view = await h.relay.operatorView('acct-a');
+    expect(view.usage).toMatchObject({ usedBytes: 300, usedSnapshots: 3 });
+  });
+
+  it('keeps snapshots inside the age window beyond keepLast', async () => {
+    const local = await createHarness({
+      policy: {
+        quota: { maxBytes: 1_000_000, maxSnapshots: 10 },
+        retention: { keepLast: 1, keepWithinMs: 10_000 },
+        limits: { maxChunkBytes: 4096 },
+      },
+    });
+    try {
+      const device = newDevice('acct-a', 'device-a1');
+      await registerDevice(local, device);
+      await uploadSnapshot(local, device, 1, randomBytes(10));
+      local.clock.now += 20_000;
+      await uploadSnapshot(local, device, 2, randomBytes(10));
+      local.clock.now += 1_000;
+      await uploadSnapshot(local, device, 3, randomBytes(10));
+      const view = await local.relay.operatorView('acct-a');
+      expect(view.snapshots.map((s) => s.sequence)).toEqual([3, 2]);
+    } finally {
+      await local.close();
+    }
+  });
+
+  it('expires abandoned uploads and releases their reservation', async () => {
+    await h.relay.handle(
+      signed(h, a1, 'POST', '/v1/uploads', {
+        body: JSON.stringify({
+          sequence: 1,
+          byteSize: 900_000,
+          chunkSize: 4096,
+          sha256: sha256Hex('x'),
+        }),
+      }),
+    );
+    h.clock.now += 60_001;
+    expect(await h.relay.sweepExpired()).toBe(1);
+    const view = await h.relay.operatorView('acct-a');
+    expect(view.usage).toMatchObject({ usedBytes: 0, usedSnapshots: 0 });
+    expect((await uploadSnapshot(h, a1, 2, randomBytes(10))).status).toBe(201);
+  });
+
+  it('removes chunk objects when a snapshot is deleted', async () => {
+    await uploadSnapshot(h, a1, 1, randomBytes(9000));
+    await h.relay.handle(signed(h, a1, 'DELETE', '/v1/snapshots/1'));
+    const files = await readdir(h.storeRoot, {
+      recursive: true,
+      withFileTypes: true,
+    });
+    expect(files.filter((entry) => entry.isFile())).toEqual([]);
+  });
+});
+
+describe('admin surface', () => {
+  it('requires the operator token', async () => {
+    for (const token of ['', 'wrong-token-wrong-token-wrong-token-1234']) {
+      const response = await h.relay.handleAdmin(
+        adminRequest('GET', '/admin/v1/accounts/acct-a', undefined, token),
+      );
+      expect(response.status).toBe(401);
+    }
+    // Device routes never answer admin paths.
+    const response = await h.relay.handle(
+      adminRequest('GET', '/admin/v1/accounts/acct-a'),
+    );
+    expect(response.status).toBe(404);
+  });
+
+  it('registers and revokes devices for the account layer', async () => {
+    const device = newDevice('acct-c', 'device-c1');
+    const put = await h.relay.handleAdmin(
+      adminRequest('PUT', '/admin/v1/accounts/acct-c/devices/device-c1', {
+        publicKey: device.publicKey,
+      }),
+    );
+    expect(put.status).toBe(201);
+    const again = await h.relay.handleAdmin(
+      adminRequest('PUT', '/admin/v1/accounts/acct-c/devices/device-c1', {
+        publicKey: device.publicKey,
+      }),
+    );
+    expect(again.status).toBe(200);
+    const other = newDevice('acct-c', 'device-c1');
+    const conflict = await h.relay.handleAdmin(
+      adminRequest('PUT', '/admin/v1/accounts/acct-c/devices/device-c1', {
+        publicKey: other.publicKey,
+      }),
+    );
+    expect(conflict.status).toBe(409);
+    const revoke = await h.relay.handleAdmin(
+      adminRequest('DELETE', '/admin/v1/accounts/acct-c/devices/device-c1'),
+    );
+    expect(revoke.status).toBe(204);
+  });
+
+  it('reconciles usage counters from snapshot rows', async () => {
+    await uploadSnapshot(h, a1, 1, randomBytes(100));
+    await h.db.query(
+      "UPDATE vault_relay_accounts SET used_bytes = 999999 WHERE account_id = 'acct-a'",
+    );
+    const response = await h.relay.handleAdmin(
+      adminRequest('POST', '/admin/v1/accounts/acct-a/reconcile'),
+    );
+    expect(await response.json()).toMatchObject({
+      usage: { usedBytes: 100, usedSnapshots: 1 },
+    });
+  });
+});
+
+describe('concurrent writes', () => {
+  async function begin(
+    harness: Harness,
+    device: TestDevice,
+    sequence: number,
+    blob: Uint8Array,
+  ): Promise<string> {
+    const response = await harness.relay.handle(
+      signed(harness, device, 'POST', '/v1/uploads', {
+        body: JSON.stringify({
+          sequence,
+          byteSize: blob.length,
+          chunkSize: 4096,
+          sha256: sha256Hex(blob),
+        }),
+      }),
+    );
+    expect(response.status).toBe(201);
+    return ((await response.json()) as { uploadId: string }).uploadId;
+  }
+
+  it('discards a chunk that lands after its upload was aborted', async () => {
+    let onPut: (() => Promise<void>) | null = null;
+    const local = await createHarness({
+      wrapObjects: (store) => ({
+        ...store,
+        get: (key) => store.get(key),
+        delete: (key) => store.delete(key),
+        check: () => store.check(),
+        async put(key, data) {
+          await store.put(key, data);
+          const hook = onPut;
+          onPut = null;
+          await hook?.();
+        },
+      }),
+    });
+    try {
+      const device = newDevice('acct-a', 'device-a1');
+      await registerDevice(local, device);
+      const blob = randomBytes(100);
+      const uploadId = await begin(local, device, 1, blob);
+      onPut = async () => {
+        const abort = await local.relay.handle(
+          signed(local, device, 'DELETE', `/v1/uploads/${uploadId}`),
+        );
+        expect(abort.status).toBe(204);
+      };
+      const put = await local.relay.handle(
+        signed(local, device, 'PUT', `/v1/uploads/${uploadId}/chunks/0`, {
+          body: blob,
+        }),
+      );
+      expect(put.status).toBe(404);
+      const files = await readdir(local.storeRoot, {
+        recursive: true,
+        withFileTypes: true,
+      });
+      expect(files.filter((entry) => entry.isFile())).toEqual([]);
+      const rows = await local.db.query('SELECT * FROM vault_relay_chunks');
+      expect(rows.rows).toEqual([]);
+      const view = await local.relay.operatorView('acct-a');
+      expect(view.usage).toMatchObject({ usedBytes: 0, usedSnapshots: 0 });
+    } finally {
+      await local.close();
+    }
+  });
+
+  it('cleans up a chunk recorded while a concurrent removal missed it', async () => {
+    // Simulates PostgreSQL READ COMMITTED: the remover deletes the upload and
+    // lists chunk rows before this insert commits, so it never sees the row.
+    class RacingStore extends VaultRelayStore {
+      override async addChunk(
+        ...args: Parameters<VaultRelayStore['addChunk']>
+      ): Promise<boolean> {
+        const added = await super.addChunk(...args);
+        const [accountId, uploadId] = args;
+        await this.deleteSnapshotRow(accountId, uploadId, 'pending');
+        return added;
+      }
+    }
+    const local = await createHarness({
+      createStore: (db) => new RacingStore(db),
+    });
+    try {
+      const device = newDevice('acct-a', 'device-a1');
+      await registerDevice(local, device);
+      const blob = randomBytes(100);
+      const uploadId = await begin(local, device, 1, blob);
+      const put = await local.relay.handle(
+        signed(local, device, 'PUT', `/v1/uploads/${uploadId}/chunks/0`, {
+          body: blob,
+        }),
+      );
+      expect(put.status).toBe(404);
+      const files = await readdir(local.storeRoot, {
+        recursive: true,
+        withFileTypes: true,
+      });
+      expect(files.filter((entry) => entry.isFile())).toEqual([]);
+      const rows = await local.db.query('SELECT * FROM vault_relay_chunks');
+      expect(rows.rows).toEqual([]);
+    } finally {
+      await local.close();
+    }
+  });
+
+  it('never replaces a chunk once stored; an identical retry is idempotent', async () => {
+    const blob = randomBytes(100);
+    const uploadId = await begin(h, a1, 1, blob);
+    const put = (body: Uint8Array) =>
+      h.relay.handle(
+        signed(h, a1, 'PUT', `/v1/uploads/${uploadId}/chunks/0`, { body }),
+      );
+    expect((await put(blob)).status).toBe(200);
+    expect((await put(blob)).status).toBe(200);
+    const other = await put(randomBytes(100));
+    expect(other.status).toBe(409);
+    expect(await errorCode(other)).toBe('chunk_exists');
+    expect(
+      (
+        await h.relay.handle(
+          signed(h, a1, 'POST', `/v1/uploads/${uploadId}/commit`),
+        )
+      ).status,
+    ).toBe(201);
+    // After publish the upload is gone: no write reaches the snapshot.
+    const late = await put(randomBytes(100));
+    expect(late.status).toBe(404);
+    expect(Buffer.from(await downloadSnapshot(h, a1, 1))).toEqual(blob);
+    const files = await readdir(h.storeRoot, {
+      recursive: true,
+      withFileTypes: true,
+    });
+    expect(files.filter((entry) => entry.isFile())).toHaveLength(1);
+  });
+
+  it('cannot delete a snapshot that was published while its removal was pending', async () => {
+    const blob = randomBytes(10);
+    const uploadId = await begin(h, a1, 1, blob);
+    await h.relay.handle(
+      signed(h, a1, 'PUT', `/v1/uploads/${uploadId}/chunks/0`, { body: blob }),
+    );
+    const store = new VaultRelayStore(h.db);
+    const [stale] = await store.stalePending(h.clock.now + 1, 10);
+    expect(stale.uploadId).toBe(uploadId);
+    // The commit wins the race against an expiry sweep that already listed it.
+    await h.relay.handle(
+      signed(h, a1, 'POST', `/v1/uploads/${uploadId}/commit`),
+    );
+    expect(
+      await store.deleteSnapshotRow('acct-a', uploadId, 'pending'),
+    ).toBeNull();
+    expect(
+      (await h.relay.handle(signed(h, a1, 'GET', '/v1/snapshots/1'))).status,
+    ).toBe(200);
+  });
+
+  it('refuses to re-create a published and deleted sequence at the store', async () => {
+    expect((await uploadSnapshot(h, a1, 3, randomBytes(10))).status).toBe(201);
+    await h.relay.handle(signed(h, a1, 'DELETE', '/v1/snapshots/3'));
+    const store = new VaultRelayStore(h.db);
+    const created = await store.createPending({
+      accountId: 'acct-a',
+      sequence: 3,
+      uploadId: '00000000-0000-4000-8000-000000000003',
+      deviceId: 'device-a1',
+      byteSize: 10,
+      chunkSize: 10,
+      chunkCount: 1,
+      sha256: sha256Hex('x'),
+      createdAt: h.clock.now,
+    });
+    expect(created).toBe(false);
+    const view = await h.relay.operatorView('acct-a');
+    expect(view.usage).toMatchObject({ usedBytes: 0, usedSnapshots: 0 });
+  });
+});
