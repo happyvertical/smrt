@@ -37,8 +37,8 @@ describe('the bundler entry is separate', () => {
     expect(files).toContain(join('install', 'bundle-manifest.ts'));
   });
 
-  it('is not reachable from the browser-safe webview entry', () => {
-    const files = reachable('webview/index.ts');
+  it('is not reachable from the launcher entry', () => {
+    const files = reachable('launcher/index.ts');
     expect(files.filter((file) => file.startsWith(`bundler${'/'}`))).toEqual(
       [],
     );

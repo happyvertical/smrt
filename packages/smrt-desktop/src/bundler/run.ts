@@ -223,7 +223,7 @@ const WARN_BYTES = 400 * 1024 * 1024;
 const BRIDGE_ENTRY = 'bridge/smrt-mcp-bridge.mjs';
 /**
  * Environment every sidecar manifest carries. `NODE_OPTIONS` and `NODE_PATH`
- * are emptied because the shell passes the parent's environment through.
+ * are emptied because the wrapper passes the parent's environment through.
  * `SMRT_APP_ID` fixes the application identity: the runtime otherwise reads
  * `package.json` from its working directory, which is the resource root and
  * holds none (the app's lives under `app/`).

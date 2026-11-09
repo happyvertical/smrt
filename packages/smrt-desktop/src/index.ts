@@ -1,147 +1,30 @@
+/**
+ * `@happyvertical/smrt-desktop`: the versioned sidecar manifest and the bundle
+ * manifest the runtime bundler writes. The bundler is `./bundler`
+ * (`smrt desktop bundle`); the assistant-plugin launcher core is `./launcher`.
+ *
+ * The root is an explicit list of named exports: a new internal export cannot
+ * become public by accident.
+ */
+
 export type {
-  AcquireCredentialRequest,
-  AcquireCredentialResult,
-  AcquireCredentialSuccess,
-  AcquireOptions,
-  BridgeFrame,
-  BridgeHandoff,
-  BridgeStdio,
-  ControlChannelCredentialProviderOptions,
-  ControlChannelSendOptions,
-  CredentialControlCodec,
-  CredentialControlRequest,
-  CredentialControlResponse,
-  CredentialCustody,
-  CredentialFailureCode,
-  CredentialFrame,
-  CredentialLease,
-  CredentialProvider,
-  HandoffDirection,
-  HandoffFrame,
-  LauncherFrame,
-  ParseMintResponseOptions,
-  RefreshFrame,
-  SecretItemStore,
-  SendAcquireRequest,
-  SlotRecordV1,
-  SlotState,
-  SpawnBridgeOptions,
-  StoredCredential,
-  UnavailableFrame,
-} from './credentials/index.js';
-export {
-  CREDENTIAL_CONTROL_ERROR_CODES,
-  CREDENTIAL_ITEM_PREFIX,
-  containsSecret,
-  createControlChannelCredentialProvider,
-  createControlChannelSend,
-  createCredentialCustody,
-  credentialControlCodec,
-  credentialControlOp,
-  credentialItemName,
-  encodeHandoffFrame,
-  HANDOFF_FRAME_MAX_BYTES,
-  HandoffFrameDecoder,
-  isCredentialFailureCode,
-  MAX_MINT_RESPONSE_BYTES,
-  MIN_CREDENTIAL_LIFETIME_MS,
-  newSlotId,
-  newSlotRecord,
-  parseAcquireCredentialResponse,
-  parseHandoffFrame,
-  parseMintResponse,
-  parseSlotRecord,
-  readSlotRecord,
-  SLOT_RECORD_FILENAME,
-  serializeSlotRecord,
-  spawnBridgeWithCredential,
-  writeSlotRecord,
-} from './credentials/index.js';
-export type {
-  CredentialErrorCode,
   DesktopContractErrorCode,
   DesktopContractErrorOptions,
   InstallErrorCode,
-  RendezvousErrorCode,
 } from './errors.js';
 export { DesktopContractError } from './errors.js';
-export type {
-  BundleManifestV1,
-  InstallationPlatform,
-  InstallationRecordV1,
-  LocateInstallationOptions,
-  LocationOptions,
-  VerifiedInstallation,
-} from './install/index.js';
+export type { BundleManifestV1 } from './install/index.js';
 export {
   assertBundleMatchesSidecar,
   BUNDLE_MANIFEST_FILENAME,
-  DESKTOP_SHELL_DIRNAME,
-  INSTALLATION_RECORD_FILENAME,
-  locateInstallation,
   parseBundleManifest,
-  parseInstallationRecord,
-  resolveAppLocalDataDir,
-  resolveDesktopShellDir,
   serializeBundleManifest,
-  serializeInstallationRecord,
 } from './install/index.js';
 export type {
   DesktopFs,
   FileHandleLike,
   StatsLike,
 } from './internal/fs-seam.js';
-export type {
-  ClientFailureCode,
-  ControlCodec,
-  ControlEndpoint,
-  ControlErrorResponse,
-  ControlOpSpec,
-  ControlRequest,
-  ControlResponse,
-  CoreControlErrorCode,
-  CoreControlRequest,
-  CoreControlResponse,
-  EnsureReadyOptions,
-  EnsureReadyRequest,
-  EnsureReadyResult,
-  FileRendezvousOptions,
-  InstanceRecordV1,
-  InstanceState,
-  InstanceStateResponse,
-  RendezvousClock,
-  RendezvousFailureCode,
-  RendezvousFs,
-  RendezvousResult,
-  ShellFailureCode,
-  ShellLaunch,
-  StatusRequest,
-  SupervisorRendezvous,
-  VettedEndpoint,
-} from './rendezvous/index.js';
-export {
-  CLIENT_FAILURE_CODES,
-  CONTROL_PROTOCOL_VERSION,
-  CORE_CONTROL_ERROR_CODES,
-  coreControlCodec,
-  createFileRendezvous,
-  DEFAULT_ENSURE_READY_TIMEOUT_MS,
-  INSTANCE_RECORD_FILENAME,
-  isControlPipeName,
-  isControlSocketPath,
-  isInstanceNonce,
-  isRendezvousFailureCode,
-  isShellFailureCode,
-  MAX_CONTROL_MESSAGE_BYTES,
-  MAX_ENSURE_READY_TIMEOUT_MS,
-  MAX_UNIX_SOCKET_PATH_BYTES,
-  parseControlEndpoint,
-  parseInstanceRecord,
-  SHELL_BACKGROUND_FLAG,
-  SHELL_FAILURE_CODES,
-  serializeInstanceRecord,
-} from './rendezvous/index.js';
-export { SecretString } from './secret-string.js';
 export type { SidecarManifestV1 } from './sidecar-manifest.js';
 export {
   buildSidecarEnv,

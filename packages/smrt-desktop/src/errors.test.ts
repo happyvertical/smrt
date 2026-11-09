@@ -27,7 +27,6 @@ describe('DesktopContractError', () => {
 
   it('has a distinct, non-empty, value-free message for every code', () => {
     const codes: DesktopContractErrorCode[] = [
-      'invalid_secret',
       'not_installed',
       'unsupported_contract',
       'identity_mismatch',
@@ -39,16 +38,6 @@ describe('DesktopContractError', () => {
       'sidecar_mismatch',
       'invalid_environment',
       'unsupported_platform',
-      'invalid_control_message',
-      'control_message_too_large',
-      'unsupported_op',
-      'invalid_endpoint',
-      'untrusted_endpoint',
-      'control_unreachable',
-      'control_indeterminate',
-      'control_timeout',
-      'control_aborted',
-      'control_server_failed',
     ];
     const messages = codes.map(desktopContractErrorMessage);
     expect(new Set(messages).size).toBe(codes.length);

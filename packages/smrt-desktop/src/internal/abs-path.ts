@@ -144,7 +144,7 @@ export interface TrustWalkOptions {
  * with an execute bit when `executable`.
  *
  * Windows ACLs cannot be read from Node, so there only existence, file kind
- * and reparse points are checked; real ACL checks belong to the native shell.
+ * and reparse points are checked; real ACL checks belong to the native wrapper.
  */
 export async function assertTrustedChain(
   root: AbsolutePath,

@@ -26,7 +26,7 @@ export const BUNDLE_MANIFEST_FILENAME = 'smrt-bundle.json';
  * Static identity and resource-relative layout of an installed SMRT desktop
  * product, written by the runtime bundler next to `sidecar-manifest.json`.
  * It holds no absolute path: those only exist once the app is installed, and
- * are recorded in `installation.json`.
+ * are not recorded by this package.
  */
 export interface BundleManifestV1 {
   readonly version: 1;

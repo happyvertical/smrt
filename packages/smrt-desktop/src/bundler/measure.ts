@@ -14,7 +14,7 @@
  * timing logic is tested without a process. The probe never follows a
  * redirect and gives each request 500 ms; one start gets 60 s overall. The
  * child environment is built by the caller from the sidecar manifest with the
- * same `buildSidecarEnv` the Rust shell mirrors.
+ * same `buildSidecarEnv` the Rust wrapper mirrors.
  */
 
 import {

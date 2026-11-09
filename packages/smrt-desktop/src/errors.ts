@@ -6,15 +6,9 @@
  * show. Callers branch on `code`; `field` names a schema field (never a value)
  * when a document field was the cause.
  *
- * Each contract owns one `*_ERROR_MESSAGES` table below. The public code union
- * is derived from the tables, so adding a code means adding a table row and
- * nothing else.
+ * The public code union is derived from the table below, so adding a code
+ * means adding a table row and nothing else.
  */
-
-/** Codes shared by the foundations (`SecretString`, grammars, locations). */
-const COMMON_ERROR_MESSAGES = {
-  invalid_secret: 'Secret value must be a non-empty string without NUL',
-} as const;
 
 /** Contract (a): the installed-product bundle (`smrt-bundle.json`, etc.). */
 const INSTALL_ERROR_MESSAGES = {
@@ -36,77 +30,10 @@ const INSTALL_ERROR_MESSAGES = {
   unsupported_platform: 'Desktop platform is not supported',
 } as const;
 
-/**
- * Contract (b): the supervisor rendezvous (`instance.json` and the control
- * channel). Document-level failures reuse the shared `invalid_json`,
- * `duplicate_keys`, `invalid_document`, `invalid_field` and
- * `unsupported_contract` codes above.
- */
-const RENDEZVOUS_ERROR_MESSAGES = {
-  invalid_control_message:
-    'Control channel message must be a single JSON object with exactly the documented fields',
-  control_message_too_large: 'Control channel message exceeds the size limit',
-  unsupported_op: 'Control channel operation is not supported',
-  invalid_endpoint: 'Control channel endpoint is not valid',
-  untrusted_endpoint: 'Control channel endpoint failed the trust checks',
-  control_unreachable: 'Control channel has no listener',
-  control_indeterminate:
-    'Control channel accepted the connection but gave no usable answer',
-  control_timeout: 'Control channel did not answer in time',
-  control_aborted: 'Control channel request was aborted',
-  control_server_failed: 'Control channel server could not be started',
-} as const;
-
-/**
- * Contract (c): the native credential handoff. Messages describe what is
- * wrong, never the offending value: the inputs of every code here may carry a
- * bearer token.
- */
-const CREDENTIAL_ERROR_MESSAGES = {
-  credential_unavailable:
-    'No credential is available; open the desktop app and connect the assistant',
-  credential_invalid:
-    'The stored credential is expired, revoked or malformed; open the desktop app to reconnect',
-  instance_mismatch: 'Request does not match the running desktop app instance',
-  invalid_mint_response:
-    'Credential response does not match the documented success reply',
-  invalid_handoff_frame: 'Credential handoff frame is not valid',
-  handoff_frame_too_large: 'Credential handoff frame exceeds the size limit',
-  handoff_failed: 'Credential handoff to the bridge process failed',
-  slot_unavailable: 'The credential slot is unavailable',
-  credential_forbidden:
-    'The desktop app refused the credential request; sign in as the owner',
-  credential_rejected: 'The desktop app rejected the credential request',
-  credential_request_failed:
-    'The credential request did not complete; try again',
-  native_rejected: 'The desktop shell rejected the credential',
-  invalid_native_response:
-    'The desktop shell answered with an unexpected reply',
-} as const;
-
-const ERROR_MESSAGES = {
-  ...COMMON_ERROR_MESSAGES,
-  ...INSTALL_ERROR_MESSAGES,
-  ...RENDEZVOUS_ERROR_MESSAGES,
-  ...CREDENTIAL_ERROR_MESSAGES,
-} as const;
+const ERROR_MESSAGES = INSTALL_ERROR_MESSAGES;
 
 /** Closed set of codes for contract (a), the installed-product bundle. */
 export type InstallErrorCode = keyof typeof INSTALL_ERROR_MESSAGES;
-
-/**
- * Closed set of codes for contract (b), the supervisor rendezvous.
- *
- * @experimental
- */
-export type RendezvousErrorCode = keyof typeof RENDEZVOUS_ERROR_MESSAGES;
-
-/**
- * Closed set of codes for contract (c), the native credential handoff.
- *
- * @experimental
- */
-export type CredentialErrorCode = keyof typeof CREDENTIAL_ERROR_MESSAGES;
 
 /** Every code a `DesktopContractError` can carry. */
 export type DesktopContractErrorCode = keyof typeof ERROR_MESSAGES;

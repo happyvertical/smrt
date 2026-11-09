@@ -1,23 +1,15 @@
 # @happyvertical/smrt-desktop
 
-Versioned JSON contracts for a runtime bundled with an s-m-r-t desktop app.
-The runtime bundler writes the sidecar manifest and the desktop supervisor
-consumes it before launching the packaged executable. The installed-product
-contracts below let other programs on the same machine (an assistant launcher,
-a plugin) find and verify that installed app. The package has no runtime
-dependencies and uses only Node built-ins.
+Versioned JSON contracts, the runtime bundler and the assistant-plugin
+launcher core for s-m-r-t desktop apps. The runtime bundler writes the sidecar
+manifest and the bundle manifest; the Tauri wrapper (`wrapper/`) reads the
+sidecar manifest before launching the packaged executable. The launcher core
+(`./launcher`) is what a Claude Desktop or ChatGPT plugin runs. The package has
+no runtime dependencies and uses only Node built-ins.
 
-> **Stability.** Contract (a), the installed-product bundle and the sidecar
-> manifest, is stable. Contracts **(b) supervisor rendezvous** and **(c) native
-> credential handoff are EXPERIMENTAL.** The TypeScript half exists (parsers,
-> the client, the vetting rules, the reference handler); the server half does
-> not: the control server, the `instance.json` writer, `--smrt-background`,
-> keychain custody, the peer-credential check and the pipe DACL are an unbuilt
-> Rust follow-up, and nothing here has run against a real shell. Names, wire
-> fields and result states of (b) and (c) may change in any release; every
-> exported type and function of those contracts carries an `@experimental`
-> TSDoc tag. The reference server and test doubles are a separate Node-only
-> subpath, `@happyvertical/smrt-desktop/testing`.
+Owner sign-in is app-runtime's loopback onboarding URL and `claimOwner()`, and
+local MCP credentials are app-runtime's token store
+(`openLocalMcpTokenStore`); this package does not duplicate either.
 
 ## Node 26 and adapter-node example
 
@@ -25,7 +17,7 @@ This [manifest](examples/node26-sidecar.json) describes a stock Node 26 sidecar
 and a SvelteKit adapter-node build, in the layout `smrt desktop bundle` writes:
 the sidecar is product-scoped (`<productId>-node`, never a bare `node`), the
 app sits under `app/` in the resource directory, and `env` empties the
-`NODE_OPTIONS` and `NODE_PATH` the shell would otherwise inherit from the
+`NODE_OPTIONS` and `NODE_PATH` the wrapper would otherwise inherit from the
 parent process. Mount the app-runtime health handler at `/api/_runtime/health`
 and use the local runtime profile.
 
@@ -97,9 +89,9 @@ Three locations are never conflated:
 
 #### Data root and roaming
 
-> **Assumed decision D7, pending owner confirmation.** The shell resolves the
+> **Assumed decision D7, pending owner confirmation.** The wrapper resolves the
 > sidecar data directory (`SMRT_DATA_DIR`) and its own log
-> (`<app_local_data_dir>/.desktop-shell/supervisor.log`) under Tauri's
+> (`<app_local_data_dir>/.desktop-wrapper/supervisor.log`) under Tauri's
 > `app_local_data_dir` on every platform, the same root the installed-product
 > contracts already use for private state. Alternative: keep Tauri's
 > `app_data_dir`, which on Windows is the roaming `%APPDATA%` profile.
@@ -148,28 +140,12 @@ The bundler and supervisor enforce executable provenance and filesystem
 containment, including symlink handling. Argument policies belong to the
 packaging tool and runtime being launched.
 
-## Installed-product contracts
+## Bundle manifest and errors
 
-Three files and one channel describe an installed desktop product to the rest
-of the machine. This package defines the files for the installed product
-itself (below), then the supervisor rendezvous (`instance.json` and the
-owner-only control channel). The native credential handoff is a separate
-contract with its own section.
-
-| Artifact | Written by | Read by | Contains |
-| --- | --- | --- | --- |
-| `sidecar-manifest.json` | bundler | supervisor, `locateInstallation` | what to run (see above) |
-| `smrt-bundle.json` | bundler | `locateInstallation`, launcher, plugin generator | identity and resource-relative layout |
-| `installation.json` | desktop shell, at every start | `locateInstallation` | absolute paths the shell runs from |
-| `instance.json` | desktop shell, on every phase change | `createFileRendezvous` | the running instance: nonce, control endpoint, state, origin |
-| control channel | desktop shell (server) | `createFileRendezvous`, launcher | `status`, `ensure-ready`, and the credential contract's `acquire-credential` (owner-only socket or pipe) |
-| `mcp-slot.json` | desktop shell | shell, `acquire-credential` handler | non-secret credential slot metadata (see the credential handoff) |
-
-`smrt-bundle.json` is static trusted package content (same trust class as the
-sidecar manifest, sealed by the bundle's code signature). `installation.json`
-is a hint written into the private state directory: a consumer never trusts it
-alone, it re-reads the bundle manifest from the recorded resource directory and
-re-verifies every path (see `locateInstallation`).
+The bundler writes `smrt-bundle.json` next to `sidecar-manifest.json`. In this
+repository the bundler is its only producer and nothing reads it back yet; it
+is kept as the self-describing record of what was bundled (identity, target and
+resource-relative layout), and the plugin generator is its intended reader.
 
 All v1 documents share these rules: strict JSON (duplicate keys at any depth
 rejected, closed schema, unknown fields rejected), `version: 1` (an
@@ -179,45 +155,23 @@ diagnostic on every failure.
 
 ### Errors
 
-Parsers and `locateInstallation` throw `DesktopContractError` with a `code`
-from a closed union (`InstallErrorCode` for this contract, `RendezvousErrorCode`
-for the rendezvous). The `message` is
-fixed text keyed by the code: it never contains a path, origin, pid or secret,
-so a caught error is safe to log. When a document field was the cause, `field`
-names the schema field (for example `bridge.entry`), never the value.
-The older sidecar manifest parser predates this type and still throws plain
-`Error`s with its own fixed messages; its behavior is unchanged.
+Parsers throw `DesktopContractError` with a `code` from the closed
+`InstallErrorCode` union. The `message` is fixed text keyed by the code: it
+never contains a path, origin, pid or secret, so a caught error is safe to log.
+When a document field was the cause, `field` names the schema field (for
+example `bridge.entry`), never the value. The older sidecar manifest parser
+predates this type and still throws plain `Error`s with its own fixed
+messages; its behavior is unchanged.
 
 | Code | Meaning |
 | --- | --- |
-| `not_installed` | no record, or the recorded app is gone: open the app once |
-| `identity_mismatch` | product, version, target or platform differ from what was recorded or expected; benign after an update until the app restarts |
+| `not_installed` | the product is not installed |
+| `identity_mismatch` | product, version, target or platform differ from what was expected |
 | `untrusted_path` | a symlink, foreign owner, group/other-writable path, wrong file kind, or a layout that escapes the install root |
 | `unsupported_contract` | a `version` other than 1 |
 | `invalid_json`, `duplicate_keys`, `invalid_document`, `invalid_field` | malformed document |
 | `sidecar_mismatch` | the bundle manifest and the sidecar manifest disagree on the Node executable |
-| `invalid_environment`, `unsupported_platform` | `resolveAppLocalDataDir` could not derive a location |
-| `invalid_secret` | `SecretString` was given an unusable value |
-| `invalid_control_message`, `control_message_too_large`, `unsupported_op` | a control-channel message violated the protocol (see below) |
-| `invalid_endpoint`, `untrusted_endpoint` | a control endpoint is malformed, or its directory failed the trust checks |
-| `control_unreachable`, `control_timeout`, `control_aborted`, `control_server_failed` | control-channel transport outcomes |
-
-The credential handoff adds `CredentialErrorCode`; see
-[Credential error codes](#credential-error-codes).
-
-### SecretString
-
-`SecretString` wraps a value that must not leak. It redacts through
-`toString`, template literals, `JSON.stringify`, `util.inspect`/`console.log`
-and `Symbol.toPrimitive`. The value lives in a `#private` field, so the
-instance has no own properties: spreading, `Object.assign` and
-`structuredClone` yield an empty object. The constructor rejects non-strings,
-empty strings, NUL and unpaired surrogates (`invalid_secret`). `equals` is
-constant time (both sides are SHA-256 hashed before a `timingSafeEqual`, so
-neither contents nor length influence the timing). `reveal()` is the only
-accessor and exists for exactly one caller, the final handoff of the value to
-the process that needs it. Keep every other use out of the code base and grep
-for `reveal(` in review.
+| `invalid_environment`, `unsupported_platform` | a location could not be derived |
 
 ### Bundle manifest v1 (`smrt-bundle.json`)
 
@@ -285,857 +239,212 @@ manifest of a product must use the same name as its bundle manifest. The
 parser does not forbid `node`; the product-scoped name is a convention the
 bundler enforces.
 
-### Installation record v1 (`installation.json`)
+## Launcher (`@happyvertical/smrt-desktop/launcher`)
 
-The desktop shell writes it on every start, after it holds the single-instance
-lock and before it spawns the sidecar, into the private state directory (next
-section). Because it is rewritten on each start it heals itself when the app is
-moved or updated. [examples/installation.json](examples/installation.json) is
-the reference; the Rust shell's tests use the same fixture.
+The core of the node-less launcher from #4729 (epic #4669). A Claude Desktop or
+ChatGPT desktop plugin starts a small native executable; that executable runs
+`runLauncher()` with a provider supplied by the desktop wrapper. The launcher
+checks the bundled runtime, confirms the local instance and credential, starts
+the bundled `smrt-mcp-bridge` on the product's own Node, and forwards stdio
+until either side goes away.
 
-| Field | Meaning |
-| --- | --- |
-| `productId`, `bundleId`, `productVersion`, `target` | identity, copied from the bundle manifest |
-| `platform` | `darwin`, `win32` or `linux`; selects the path rules below |
-| `installRoot` | `X.app`, the install directory, or `/usr` for `.deb`/`.rpm` |
-| `executableDir` | directory of the shell binary and the `externalBin` sidecars |
-| `resourceDir` | Tauri resource directory (holds `smrt-bundle.json`) |
-| `shellExecutable` | the shell binary, used to start the app without a window |
-| `recordedAt` | ISO-8601 UTC, informational only |
-
-The four paths must be normalized absolute paths of the record's platform:
-`/a/b` on macOS and Linux, `X:\a\b` on Windows. Everything else is rejected:
-relative and drive-relative paths (`C:foo`), UNC (`\\server\share`) and
-device (`\\?\`, `\\.\`) prefixes, forward slashes on Windows, backslashes on
-POSIX, NUL, empty, `.` and `..` segments, trailing separators, Windows device
-names (`CON`, `NUL`, ...), Windows-illegal characters and trailing dots or
-spaces. The parser also enforces the layout: `executableDir` and `resourceDir`
-are inside `installRoot` (or equal to it), compared by whole segments (never by
-string prefix; case-insensitively for ASCII on Windows), `shellExecutable` is a
-direct child of `executableDir`, `installRoot` is not a filesystem root, and on
-macOS `installRoot` ends in `.app`, `executableDir` is
-`<installRoot>/Contents/MacOS` and `resourceDir` is
-`<installRoot>/Contents/Resources`. A layout violation is `untrusted_path`.
-
-Layouts:
-
-- macOS: `X.app`; sidecars and the shell binary in `Contents/MacOS`, resources
-  in `Contents/Resources`.
-- Windows (NSIS or MSI): the install directory; the shell binary, sidecars
-  (`<executable>.exe`) and, by default, resources sit there.
-- Linux `.deb`/`.rpm`: `installRoot` is `/usr`, `executableDir` is `/usr/bin`
-  and `resourceDir` is `/usr/lib/<product>`; there is no single install root.
-- Linux AppImage is **not supported** in v1: its resources live under a
-  per-run `/tmp/.mount_*` that does not exist while the app is closed, so
-  nothing stable can be recorded or verified.
-
-### locateInstallation
+It does not find installed products or start the desktop app; the provider
+does. For the credential, `acquireTokenStoreCredential` (below) issues a
+short-lived owner token from app-runtime's local MCP token store. Native
+executable packaging is separate.
 
 ```ts
-import { locateInstallation } from '@happyvertical/smrt-desktop';
+import { runLauncher } from '@happyvertical/smrt-desktop/launcher';
 
-const install = await locateInstallation({
-  productId: 'smrt-notes',
-  bundleId: 'com.happyvertical.smrt-notes',
+process.exitCode = await runLauncher({
+  provider, // a LauncherProvider
+  productId: 'hearthos', // baked in when the plugin is generated
 });
-// install.nodePath, install.bridgePath, install.shellExecutable, ...
 ```
 
-The caller knows `productId` and `bundleId` (compiled in, or from a public file
-shipped with the plugin). The function:
+Set `process.exitCode` and let the event loop drain; do not call
+`process.exit()` before stdout and stderr have flushed.
 
-1. Computes the private state directory from `bundleId`, requires it to be a
-   real directory (not a symlink) owned by the current user with no group or
-   other permission bits, and reads `installation.json` with the private-file
-   rules below. Absent means `not_installed`: a credential can only exist after
-   the owner signed in through the app, so the app has necessarily run once and
-   written its record. There is no scan of well-known install locations in v1.
-2. Requires the record's `productId`, `bundleId` and `platform` to equal the
-   caller's expectation (`identity_mismatch`).
-3. Re-reads `smrt-bundle.json` and the sidecar manifest from the recorded
-   `resourceDir`, parses them, and requires `productId`, `bundleId`,
-   `productVersion` and `target` to equal the record (`identity_mismatch`:
-   the app was updated and has not restarted yet; start the shell and retry).
-   It then cross-checks the bundle against the sidecar manifest.
-4. Re-derives `nodePath` (`<executableDir>/<node.executable>`, plus `.exe` on
-   Windows) and `bridgePath` (`<resourceDir>/<bridge.entry>`) and requires
-   them to stay inside `installRoot`.
-5. Walks every path component from `installRoot` down to the manifests, the
-   Node sidecar, the bridge and the shell binary. No component may be a
-   symlink and `installRoot` must resolve to itself, so no ancestor is one
-   either. On POSIX every component must be owned by the current user or root
-   and not be group or other writable; the files must be regular files, and the
-   Node sidecar and shell binary must carry an execute bit. Windows is
-   lexical-only in TypeScript (see below). A missing file is `not_installed`;
-   anything wrong is `untrusted_path`.
-6. Returns a frozen `VerifiedInstallation`: `bundle`, `sidecar`, `platform`,
-   `installRoot`, `executableDir`, `resourceDir`, `shellExecutable`,
-   `shellDirectory`, `nodePath`, `bridgePath` and `healthRoute`.
+### Provider interface
 
-Options `platform`, `env`, `homeDirectory`, `currentUid` and `fs` are test
-seams. A consumer that spawns anything from the result should still re-run its
-own checks right before the spawn: the walk narrows but cannot close the window
-between verification and use.
+`LauncherProvider` has three methods. Each receives an `AbortSignal` that is
+aborted on shutdown or when the method exceeds `providerTimeoutMs` (default
+30 s). Each either resolves or rejects with `LauncherProviderError(code)`. Any
+other rejection is an `internal` error, and provider messages are never
+printed.
 
-Residual risk: the ownership and write-permission checks run on `installRoot`
-and everything below it. The directories above `installRoot` are only checked
-for symlinks, not for ownership or write permission, and the usual macOS
-location is not owner-only (`/Applications` is `root:admin`, mode 0775). A
-member of the `admin` group, or any process running as one, can therefore
-rename or replace the install between locate and spawn. The walk does not
-defend against a writer of an ancestor directory. A direct-parent
-"group-writable and not sticky" rejection was considered and not added,
-because it would reject the default `/Applications` install on a normal Mac.
+| Method | Responsibility | Failure codes |
+| --- | --- | --- |
+| `resolveInstall({ productId })` | Return the installed product: `contract` (currently `1`), `productId`, trusted `root`, absolute `nodePath` and `bridgePath` inside it, `healthRoute`, bridge `envPrefix`, optional `mcpPath`, `serverName`, `serverVersion`. | `missing_install`, `unsupported_contract` |
+| `connectInstance(install)` | Find or start the supervisor-owned instance and return its current loopback `origin`. | `stale_instance`, `unexpected_endpoint` |
+| `acquireCredential(install, instance)` | Hand over the owner-issued bearer as `{ token, release? }`. The token uses only `A-Z a-z 0-9 . _ ~ -`, which holds for local MCP tokens. `release` runs at most once: as soon as the bridge has started, or when the launch fails or is abandoned (including a credential that arrives after a timeout or signal). | `credential_unavailable`, `credential_invalid` |
 
-### Private state directory
+### Credential from the local token store
 
-Private state lives in `<app_local_data_dir>/.desktop-shell/` (mode 0700, owned
-by the current user; the shell creates it). `resolveAppLocalDataDir(bundleId,
-{ platform, env, home })` computes `app_local_data_dir` exactly as Tauri does:
-
-- macOS: `~/Library/Application Support/<bundleId>`
-- Windows: `%LOCALAPPDATA%\<bundleId>`
-- Linux: `${XDG_DATA_HOME:-~/.local/share}/<bundleId>` (a relative
-  `XDG_DATA_HOME` is ignored, as the XDG specification says)
-
-Windows uses the machine-local `LOCALAPPDATA`, never the roaming `APPDATA`: a
-pid, socket or install path must not follow a user to another machine.
-`resolveDesktopShellDir` appends `.desktop-shell`. Missing or non-absolute
-environment values fail closed (`invalid_environment`) and never fall back to a
-guess.
-
-Custody rules for files in that directory, implemented by the internal
-`readPrivateFile` and `writePrivateFileAtomic` helpers all contracts reuse:
-
-- Files are mode 0600. Readers open with `O_RDONLY|O_NOFOLLOW` and validate
-  `fstat` on the open descriptor (regular file, owned by the current user,
-  `mode & 0o077 === 0`, size cap), never `stat` then `open`.
-- Writers use `tmp (O_CREAT|O_EXCL|O_NOFOLLOW, 0600) -> write -> fsync -> rename
-  -> fsync(dir)`; a failed write removes only a temp file it created, and an
-  existing symlink at the destination is replaced, never followed.
-- `O_NOFOLLOW` covers only the final path component, so the directory itself is
-  checked with `lstat` (a symlink or wrong owner or mode is rejected).
-- Clients never delete or repair records they did not write.
-
-**Windows limitation (design finding F8).** Node cannot read Windows ACLs, and
-POSIX uid and mode bits do not exist there. On Windows the TypeScript checks are
-lexical (the path rules above), existence and file kind, and reparse-point
-(symlink or junction) rejection; custody relies on the default ACLs of
-`%LOCALAPPDATA%`. Real ACL and SID verification belongs in the native shell.
-This is a documented residual risk, not a guarantee.
-
-### Supervisor rendezvous
-
-> **EXPERIMENTAL (contract b).** Only the client half is implemented. The
-> server half (control server, `instance.json` writer, `--smrt-background`,
-> peer-credential check, pipe DACL) is an unbuilt Rust follow-up; see the
-> threat table for which half closes which threat.
-
-A launcher that needs the app running asks `createFileRendezvous` for the
-supervisor's state instead of guessing from pids or ports.
+`acquireTokenStoreCredential` is the helper an `acquireCredential`
+implementation uses. It opens the store through the `openStore` you give it
+(normally `openLocalMcpTokenStore({ appId, dataDirectory, sourceRoot })` from
+`@happyvertical/smrt-app-runtime`, #4726), issues one token with the scopes
+you name (each must be held by the owner) and an eight hour default lifetime,
+and returns `{ token, release }`. The launcher calls `release` as soon as the
+bridge has started, while the bridge keeps using the token, so `release` only
+closes the store and does **not** revoke the token. Pick `expiresInSeconds` to
+cover the session; nothing refreshes or revokes the token at launcher exit, and
+the owner can revoke it earlier from the store (`smrt app token`).
+A store that cannot be opened, or refuses to issue, is
+`credential_unavailable`; the cause is never echoed. The store is injected, so
+this package imports nothing from app-runtime, and the helper adds no channel,
+file or keychain of its own.
 
 ```ts
-import {
-  createFileRendezvous,
-  locateInstallation,
-} from '@happyvertical/smrt-desktop';
+import { openLocalMcpTokenStore } from '@happyvertical/smrt-app-runtime';
+import { acquireTokenStoreCredential } from '@happyvertical/smrt-desktop/launcher';
 
-const rendezvous = createFileRendezvous({
-  locate: () => locateInstallation({ productId, bundleId }),
-});
-const result = await rendezvous.ensureReady({ timeoutMs: 60_000 });
-if (result.state === 'ready') connectTo(result.origin);
+const acquireCredential = () =>
+  acquireTokenStoreCredential({
+    openStore: () => openLocalMcpTokenStore({ appId, dataDirectory }),
+    scopes: ['mcp:use'], // whatever the product's MCP route requires
+    label: 'Desktop launcher',
+  });
 ```
 
-**Authority is the control channel, not a file.** The shell serves an
-owner-only channel (a Unix domain socket on macOS and Linux, a named pipe on
-Windows) and publishes `instance.json` in the private state directory as a
-pointer and a cache. A client trusts an instance only after the channel
-answers `status` with the `instanceNonce` recorded in `instance.json`. It
-never infers liveness from the pid or from a file existing, so a stale record
-left by a crash, a recycled pid or a record written by someone else cannot
-make a dead instance look alive.
+The store opens the product's SQLite file without taking the writer lease (a
+running app is the expected case). On Windows secure SQLite acquisition is
+still refused (happyvertical/sdk#1498), so this credential path is refused
+there too.
 
-**Instance record v1** (`instance.json`, written atomically by the shell with
-the private-file rules above; fixture `examples/instance.json`):
+### Launch sequence
 
-| Field | Meaning |
-| --- | --- |
-| `version` | `1` |
-| `productId`, `bundleId` | identity; must equal the installation's |
-| `instanceNonce` | 32 lowercase hex characters, new for every shell process |
-| `pid` | the shell process id; diagnostic only, never used for liveness |
-| `shellVersion` | semantic version of the shell binary |
-| `startedAt`, `updatedAt` | ISO-8601 UTC; process start and last phase change |
-| `control` | `{kind:'unix', path}` or `{kind:'pipe', name}` |
-| `state` | `starting`, `ready` or `failed` |
-| `origin` | present if and only if `ready`; exactly `http://127.0.0.1:<1..65535>` (no `localhost`, no IPv6, no path, userinfo or leading zeros) |
-| `failure` | present if and only if `failed`; a shell failure code |
+1. `resolveInstall`. Check the contract version and field shapes, and that the
+   product is the one the launcher was built for.
+2. Verify the files (below). Nothing is executed yet.
+3. `connectInstance`. The origin must be exactly `http://127.0.0.1:<port>`,
+   the literal address the supervisor listens on and probes: no `localhost`,
+   no `[::1]`, no HTTPS, userinfo, path, query or fragment. A name or the IPv6
+   loopback can be claimed by another local user while the instance listens
+   elsewhere, and the credential probe would hand them the bearer token.
+4. `GET <origin><healthRoute>` must answer 2xx. Redirects are refused. The
+   probes connect straight to `127.0.0.1` over a dedicated `node:http` agent
+   and ignore proxy settings (`NODE_USE_ENV_PROXY`, `HTTP_PROXY`), unlike
+   global `fetch`, which an environment proxy can route (and the token with
+   it). A replacement `fetch` option must do the same.
+5. `acquireCredential`. The credential is requested only now, so a bad
+   install or the wrong endpoint never causes a handoff.
+6. An authenticated JSON-RPC `ping` to the MCP endpoint. 401 or 403 means the
+   credential is invalid or revoked; 404 or 405 means the wrong endpoint; 5xx
+   or no answer means a stale instance.
+7. Verify the files again, then spawn the bridge.
 
-The shell rewrites it on every phase change (`ready` only after the
-supervisor's confirmation window). On orderly quit it removes the socket and
-leaves the record, because deleting it would race a newly starting shell: the
-next client finds the endpoint gone, treats the record as stale and starts the
-shell. Clients never write, rename or delete the record, a socket, a lease or
-a lock.
+Every network probe has a timeout (`probeTimeoutMs`, default 5 s).
 
-**Endpoint names are unguessable, not well known.** The socket or pipe name
-contains 128 random bits chosen per shell start and is published only inside
-the 0700 private directory (`deriveControlEndpoint`): POSIX
-`<directory>/c-<32 hex>.sock`, Windows
-`\\.\pipe\smrt-<16 hex of sha256(bundleId)>-<32 hex>`. A name nobody can
-predict makes a pre-created endpoint unlikely to be the recorded one; it is
-defense in depth and not a guarantee, because a same-user process can read the
-record (see the residual risks) and a name proves nothing about who listens
-behind it. **Windows pipe vetting is not implemented in TypeScript**: the
-client only checks the pipe name grammar and the instance nonce. Verifying the
-pipe's server (`GetNamedPipeServerProcessId`, the owner and the DACL, and
-`FILE_FLAG_FIRST_PIPE_INSTANCE` at creation) is the Rust shell's follow-up. Until
-a shell supplies that check (`vetPipe`, below) a Windows `ready` result carries
-no vetted endpoint handle. `sun_path` is 104 bytes on macOS, so the
-private state directory under `~/Library/Application Support` is normally too
-long for the socket: the shell places it in a short per-user 0700 directory
-(the per-user temp directory on macOS, `$XDG_RUNTIME_DIR` on Linux) and names
-that path in the record. A client accepts any directory that passes the checks
-below, so this is the shell's choice.
+### Trust checks
 
-**Control protocol v1.** One UTF-8 JSON object per line (`\n`-terminated), at
-most 4096 bytes excluding the terminator, closed schema, duplicate keys
-rejected, unknown `v` or `op` rejected, one request per connection (the server
-closes after its answer). This contract defines two operations; the credential
-handoff adds a third (`acquire-credential`, see
-[Control channel: `acquire-credential`](#control-channel-acquire-credential))
-without changing `coreControlCodec`, because operations are data
-(`ControlOpSpec`), a codec is built from a list of them (`createControlCodec`,
-from the `/testing` subpath), and handlers register in an open registry
-(`createControlHandlerRegistry`, also `/testing`).
+- `nodePath`, `bridgePath` and `root` are absolute and already normalised (no
+  `..`, `.`, empty segments or NUL). A bare name such as `node` is rejected;
+  `PATH` is never consulted and no shell is used.
+- Both files lie strictly inside `root` and are reached without a symlink
+  anywhere below it.
+- On POSIX, every directory from `root` down and both files are owned by the
+  current user or root and are not writable by group or others. The Node file
+  is executable; the bridge is readable. On Windows the bundler's install
+  location and ACLs are the boundary.
+- The provider's answer is copied before it is checked, so the provider
+  cannot change it afterwards.
 
-| Request | Answer |
-| --- | --- |
-| `{"v":1,"op":"status"}` | the current state, immediately |
-| `{"v":1,"op":"ensure-ready","timeoutMs":N}` | the state once `ready` or `failed`, or `starting` after `N` ms (1 to 600000) |
+The launcher runs the canonical, symlink-free paths it verified, with `root`
+as the working directory, so repointing a symlinked `root` after the final
+check does not change what runs.
 
-Success answers are `{"v":1,"ok":true,"state":"ready","instanceNonce":"...",
-"productId":"...","origin":"http://127.0.0.1:N"}`, the same with
-`"state":"starting"` (no origin), or `"state":"failed","code":"<failure code>"`.
-Refusals are `{"v":1,"ok":false,"code":"unsupported_version" |
-"unsupported_op" | "bad_request" | "too_large" | "forbidden" | "internal"}`.
-No answer carries a bearer or any secret.
+A same-user process can still swap a file between the final check and the
+spawn. That user can already read the credential, so the check protects
+against other users and mis-resolved paths, not a hostile process running as
+the same user.
 
-**Peer identity.** The real check belongs to the Rust shell: it reads the
-peer's credentials before it reads a byte (`SO_PEERCRED` on Linux,
-`getpeereid` on macOS, `GetNamedPipeClientProcessId` plus the token user SID on
-Windows), creates the Windows pipe with `FILE_FLAG_FIRST_PIPE_INSTANCE`,
-`PIPE_REJECT_REMOTE_CLIENTS` and a current-user-only DACL, and creates the
-socket with mode 0600. Node can do none of this: a `net.Socket` cannot report
-its peer's uid or SID, and a client cannot learn who owns the listening end. So
-`sendControlRequest` and the TypeScript test-double server
-(`serveControlChannelForTests`) perform no peer verification. What they do instead:
+### What the endpoint checks do not prove
 
-- the reference server refuses to listen unless the socket's directory is a
-  real directory owned by the user with mode 0700, never replaces an existing
-  path, and chmods the socket 0600, so only the same OS user can connect;
-- a same-user process is not excluded by any of this (see "Same-user
-  processes" in the residual risks): it can read the 0600 `instance.json`
-  (nonce, origin and endpoint), reach the owner-only channel and speak the
-  protocol. The nonce proves the *server* is the recorded instance; it does
-  not authenticate the *caller*;
-- the client, before connecting, requires the recorded socket's directory to
-  be a real 0700 directory owned by the user and the socket itself to be a
-  socket (not a symlink) owned by the user with no group or other permission
-  bits, and requires the peer to prove it is the recorded instance by echoing
-  the `instanceNonce`;
-- on Windows the TypeScript checks are the pipe name grammar and the nonce,
-  and nothing else: no owner, SID or ACL check exists in this package, and
-  `vetPipe` is the injection point for the shell's (finding F8, residual risk).
+Loopback and a 2xx health route show that something local answered, not that
+it is the product's own instance. Another local user who takes over a stale
+port could answer the probes and then receive the credential. `connectInstance`
+is the identity boundary: it must only report an origin the wrapper itself
+started or verified. The launcher does not add an instance nonce; if the
+wrapper publishes one, the health probe is the place to check it.
 
-**Result type.** `status()` and `ensureReady()` resolve with a closed union
-(`RendezvousResult`):
+### The bridge process
 
-| `state` | Meaning |
-| --- | --- |
-| `ready` | the channel proved the recorded instance and reported `ready`; carries `origin`, `instanceNonce`, `productId` and, when the endpoint was vetted, the opaque `endpoint` handle (below) |
-| `starting` | `status()` only: the instance is up and not ready yet |
-| `failed` | the instance or this client failed; carries a `code` (below) |
-| `not_installed` | `locate()` found no installed product |
-| `not_running` | no live instance (`status()`, or `ensureReady({start:false})`) |
-| `untrusted_state` | the installation, record, directory, socket or peer failed a custody or protocol check; nothing was started |
-| `unresponsive` | something holds the control endpoint (it accepted the connection, or never answered) but gave no usable answer, for example a saturated server dropping connections past its limit; nothing was started, try again later. If it persists the shell is wedged: quit the app or kill the shell process by hand (a client never does) |
-| `timeout` | not ready within the budget |
+The launcher runs `<nodePath> <bridgePath> --env-prefix=<PREFIX>
+--mcp-path=<path> [--name=… --version=…]` with `cwd` set to `root`, no shell,
+and an environment built from scratch:
 
-Cancelling with the `AbortSignal` rejects with the signal's reason. A result
-never contains a bearer, a pid or a path.
+- `<PREFIX>_SERVER_URL`: the validated origin.
+- `<PREFIX>_TOKEN`: the credential.
+- `<PREFIX>_CLI_CONFIG`: the null device, so the bridge reads no ambient
+  config file.
 
-**Vetted endpoint.** The credential flow must talk to the endpoint the
-rendezvous vetted, not to one a launcher re-derived. A `ready` result therefore
-carries `endpoint`, a `VettedEndpoint`: an opaque branded handle that only the
-vetting code can mint (a run-time registry, not just the type, so a look-alike
-object is rejected) and that serializes as `{}`, with no path or pipe name in
-it. `createControlChannelSend(endpoint)` accepts nothing else and throws
-`invalid_endpoint` for a raw `ControlEndpoint`, a copy or a missing handle.
-That is a guided path, not a barrier: only `createControlChannelSend` enforces
-the handle, `createControlChannelCredentialProvider({ send })` accepts any
-`send` and `credentialControlCodec` is exported, so code that wants to can
-still talk to an arbitrary endpoint. The
-handle is issued after the checks of step 3 and the nonce proof of step 4, for
-that record's endpoint only. It states what was true at that moment: the
-connect that follows is not atomic with the check, which is why the credential
-reply is also bound to the instance (the `instanceNonce` echo, below).
+Nothing else is inherited: no `PATH`, `NODE_OPTIONS`, proxy settings or
+unrelated secrets. This is the configuration the existing `smrt-mcp-bridge`
+reads. The credential is therefore in the bridge's environment, readable by
+the same user and by no one else on a normal system. A descriptor-based handoff
+would need a bridge change and is not part of this slice.
 
-- POSIX: issued after the private-directory, socket type, owner and mode checks.
-- Windows: **not issued by default.** The package cannot check a pipe's server
-  or DACL, so `ready` has no `endpoint` and the credential flow fails closed.
-  A shell that can check the pipe passes `vetPipe(endpoint)`; a handle is issued
-  only when it returns `true`, and `false` or a throw is `untrusted_state`. The
-  function belongs to the shell and is exercised in this package only against a
-  stub.
+### Diagnostics and exit codes
 
-**Failure codes** (`RendezvousFailureCode`, closed). The Rust supervisor today
-reports `Failed(String)`, free text for the tray. A client must not branch on
-it, so the channel and `instance.json` carry a code. The Rust follow-up adds a
-`FailureCode` enum with these exact wire names; until then
-`failureCodeFromSupervisorMessage` maps the current texts for Node-based shells
-and test doubles:
+Failures write one line to stderr, `smrt-desktop-launcher: <code>: <fixed
+text>`, and exit with a stable code. The text is constant: no path, origin,
+credential, provider message or child output is interpolated. The launcher
+writes nothing else to stdout or stderr itself.
 
-| Code | Reported by | Meaning (current supervisor text it replaces) |
+| Exit | Code | Meaning |
 | --- | --- | --- |
-| `lease_held` | shell | another live process holds the runtime writer lease or operation lock ("...writer lease or operation lock") |
-| `restart_exhausted` | shell | restart budget spent ("gave up after N restarts"); only the tray Restart recovers |
-| `sidecar_missing` | shell | the sidecar could not be launched ("could not start the sidecar") |
-| `health_failed` | shell | never healthy, or the health route redirects ("did not become healthy", "health route redirects") |
-| `port_unavailable` | shell | no loopback port could be selected or bound ("port was taken", "could not select a loopback port") |
-| `stop_unconfirmed` | shell | the previous child's exit could not be confirmed ("could not be stopped") |
-| `internal_error` | shell | the supervisor itself failed ("internal supervisor error") |
-| `unknown` | shell | anything else |
-| `launch_failed` | client | the client could not start the shell binary |
-| `instance_mismatch` | client | the channel answered for another instance or product than recorded, or the record and channel disagree on state or origin (after one re-read) |
-| `identity_mismatch` | client | the installed product's identity differs from the record (benign after an update until the app restarts) |
-| `unsupported_contract` | client | a record or channel speaks a contract version this client rejects |
+| 0 | | The host closed stdin, or the bridge exited cleanly. |
+| 10 | `missing_install` | No installed product, or a different product. |
+| 11 | `unsupported_contract` | Unknown contract version or malformed install. |
+| 12 | `stale_instance` | The instance is gone, unhealthy or did not answer in time. |
+| 13 | `credential_unavailable` | Custody holds no credential. |
+| 14 | `credential_invalid` | Rejected, revoked, expired, mismatched or malformed credential. |
+| 15 | `unexpected_endpoint` | Not a loopback origin, or not this product's MCP route. |
+| 16 | `untrusted_runtime` | A path or file failed the trust checks. |
+| 17 | `bridge_start_failed` | The bridge process could not be started. |
+| 18 | `bridge_exited` | The bridge exited non-zero or was killed. |
+| 20 | `internal` | Unexpected failure. |
+| 128+n | | Shutdown by `SIGHUP` (129), `SIGINT` (130) or `SIGTERM` (143). |
 
-**Newer shells.** A failure code this client has never heard of (a newer shell
-added one), in an answer or in `instance.json`, is read as `unknown`, and an
-unrecognised refusal code as `internal` (also `failed(unknown)`): version skew
-is not tampering and does not become `untrusted_state`. What is still rejected,
-as `untrusted_state`, is a malformed shape: a non-string, a string that is not a
-short lowercase snake_case word, or a client-only code (`launch_failed`,
-`instance_mismatch`, `identity_mismatch`, `unsupported_contract`) reported by a
-shell. Reading is lenient and writing is strict, for both kinds of code: a
-codec's `encodeResponse` rejects (`invalid_control_message`) an `ok: false`
-code outside its own error-code list and a `failed` state answer whose `code`
-is outside `SHELL_FAILURE_CODES`, and `serializeInstanceRecord` rejects
-(`invalid_field`) a `failure` outside that list. Nothing is rewritten on the
-way out. Only reading normalizes: the same `failed` answer or `instance.json`
-parsed from a peer yields `unknown`.
+### Stdio lifecycle
 
-**`ensureReady({ timeoutMs = 60000, start = true, signal })`:**
+- Host stdin is piped to the bridge and the bridge's stdout and stderr to the
+  host. Stream pipes provide backpressure in both directions.
+- Host stdin closing ends the bridge's stdin. The bridge is given
+  `shutdownGraceMs` (default 5 s) to exit, then receives `SIGTERM`, then
+  `SIGKILL`. The launcher exits 0.
+- `SIGTERM`, `SIGINT` and `SIGHUP` stop forwarding, signal the bridge with the
+  same escalation, wait for it, and exit `128 + n`. A second signal kills the
+  bridge immediately. A signal during startup abandons the provider call and
+  starts no child.
+- If the bridge dies, forwarding stops and the launcher exits (0 or 18). If the
+  host stops reading stdout, the bridge is stopped.
+- The bridge always has a pipe to the launcher, so if the launcher is killed
+  outright the bridge sees end of input and exits by itself.
+- The launcher waits for the bridge's output to flush. `outputFlushTimeoutMs`
+  (default 2 s) bounds that wait: pipes held open by stray grandchildren are
+  cut, and output a stalled host never read is dropped. A second signal skips
+  the wait.
 
-1. `locate()` the installation (contract a). `not_installed` and the locate
-   errors map to the results above.
-2. Read `instance.json` with the private-file rules. Absent: go to step 5.
-3. Vet the endpoint (directory, socket type, owner, mode). Failure:
-   `untrusted_state`. An untrusted record means someone tampered with the
-   private directory, so no second shell is started on top of it.
-4. Ask `status`. Only proof that nobody listens (the socket is missing, or the
-   connection is refused: `ENOENT`, `ENOTDIR`, `ECONNREFUSED`) means the record
-   is stale: go to step 5. *Platform limit:* on macOS/BSD a unix `connect()` to
-   a socket whose accept queue is full also fails with `ECONNREFUSED` (Linux
-   returns `EAGAIN`, which is read as `unresponsive`), so a live shell that is
-   wedged and has a full backlog can be classed stale there and a second shell
-   spawned. Node cannot tell the two apart. The writer lease below is then the
-   only exclusion: the second shell fails `lease_held`, writes nothing and
-   leaves the record alone. A connection that was accepted and then reset,
-   closed or left unanswered is not stale: the server drops connections past
-   `maxConnections`, and an `ensure-ready` long poll can hold a slot for up to
-   600 s, so a busy instance looks exactly like that. It reports
-   `unresponsive` (from `status`), or, inside `ensureReady`, keeps asking
-   `status` until the budget ends and then returns `unresponsive` (or
-   `timeout`, if this call had already seen a nonce-verified `starting`: the
-   instance was alive and booting and the budget simply ran out); it never
-   starts a second shell on top of it. A holder that stays `unresponsive` is
-   a wedged shell the client must not repair: recovery is manual, so quit the
-   app (tray Quit) or kill the shell process, after which the record goes
-   stale and the next `ensureReady` starts a fresh instance. A nonce, product or origin
-   disagreement is re-read once, then `instance_mismatch`. `ready` is returned. `failed(code)` is
-   returned and never retried: a live shell that failed is not a reason to
-   start another. `starting` waits with `ensure-ready` for the remaining
-   budget.
-5. With `start: false`: `not_running`. Otherwise spawn the shell executable
-   once with `--smrt-background` (no shell, detached, ignored stdio, hidden
-   window, `cwd` the install root, environment limited to an allowlist such as
-   `HOME`, `LOCALAPPDATA`, `XDG_*`, `DBUS_SESSION_BUS_ADDRESS`, `DISPLAY`;
-   never the launcher's environment wholesale), then poll with backoff until
-   `ready`, `failed`, `untrusted_state`, the budget (`timeout`) or the signal.
+### Credential redaction
 
-**One writer.** A client only reads, talks to the channel and spawns the shell
-binary. Racing launchers may each spawn the shell, and nothing in this contract
-promises that only one shell process exists. The single-instance plugin
-usually helps (it forwards the second start to the first and exits), but it is
-not a lock the contract can lean on: where it cannot run, for example Linux
-without a D-Bus session bus, there is no process-level lock at all. The only
-exclusion that exists on every platform is the **runtime writer lease**
-(`writer.lease`), so the writer rule is keyed to it, not to the plugin:
+The credential is held in memory only. It never appears in argv, a file, a
+URL or a launcher diagnostic. Bridge stdout and stderr pass through a
+streaming filter that replaces the exact credential with `[REDACTED]`, even
+when split across chunks. It holds back only a trailing partial match, so
+ordinary output is not delayed; a stream that ends inside such a match
+(four or more bytes of the credential) emits `[REDACTED]` rather than a
+prefix.
 
-- a shell publishes or rewrites `instance.json` only while it holds the runtime
-  writer lease, and takes the lease before its first write (`starting`);
-- a shell that cannot take the lease, or finds it held by another live writer
-  (`lease_held`), writes nothing and does not touch the existing record: the
-  record belongs to the holder, whose control channel (answering with its own
-  `instanceNonce`) is the only authority. It ends `failed` in its own tray and
-  log;
-- a shell that loses the lease mid-run stops rewriting the record.
-
-This is a requirement on the Rust shell, which does not implement it yet; the
-TypeScript reference shell has no lease and, as a test double, does not model
-it. The runtime lease, not this contract, is the backstop. Within one
-`createFileRendezvous` object concurrent calls share a single in-flight spawn.
-
-**What a client must never do:** delete or "repair" `instance.json`, a socket,
-`writer.lease` or `operation.lock`; retry a `failed(lease_held)`; infer
-liveness from a pid; or put anything from the channel into a log line beyond
-the closed result states.
-
-**Test doubles live in a subpath, not the root.** The reference server is a
-test double and is exported only from `@happyvertical/smrt-desktop/testing`
-(Node-only; the root and `./webview` never import it, and a test lists both
-export sets): `createReferenceSupervisor` (a pure `starting` / `ready` /
-`failed` state machine), `createReferenceRegistry`, `startReferenceShell` (binds
-a fresh endpoint, serves `status` and `ensure-ready`, republishes `instance.json`
-on every phase change and leaves it on `close()`), `serveControlChannelForTests`
-with a handler registry, and the low-level plumbing they are built from
-(`createControlCodec`, `sendControlRequest`, `deriveControlEndpoint`,
-`shellLaunchEnvironment`, `failureCodeFromSupervisorMessage`). It models the
-Rust shell's observable behavior, not its peer checks or its single-instance
-lock, and it is **not a production server**: on Windows it only listens (no pipe
-DACL, no first-instance flag, no peer SID check, so any local process could
-connect), hence `serveControlChannelForTests` and `startReferenceShell` refuse to
-start on `win32` unless `insecureForTests: true` is passed. A failed
-`instance.json` write does not stop later phases from being published
-(`startReferenceShell` takes an `onWriteError` callback, and `flush()` / `close()`
-rethrow the first failure not yet reported), so a test double never sits
-silently at `starting`. `sendControlRequest` connects to whatever endpoint it is
-given and vets nothing; a launcher uses `createFileRendezvous`, whose `ready`
-result carries the vetted handle.
-
-### Native credential handoff
-
-> **EXPERIMENTAL (contract c).** The keychain custody, the four Tauri commands,
-> the control server and its peer check are an unbuilt Rust follow-up; the
-> remote IPC capability is deliberately not granted (see "Webview helper").
-
-The owner mints a local MCP bearer in the signed-in desktop webview (#4726).
-The bearer must reach the MCP bridge that an assistant host (Claude, ChatGPT)
-spawns, without ever sitting in argv, in the environment, in browser storage,
-in a log, or in a file other than the OS secret store. Everything in this
-section is exported from the package root except the webview helper, which is
-the browser-safe subpath `@happyvertical/smrt-desktop/webview`, and the
-reference handler, registry and in-memory secret store, which are test doubles
-in `@happyvertical/smrt-desktop/testing` (`createCredentialControlHandler`,
-`createCredentialReferenceRegistry`, `registerAcquireCredential`,
-`referenceControlContext`, `encodeAcquireCredentialResponse`,
-`createMemorySecretItemStore`).
-
-```text
-owner webview --fetch POST /api/local/mcp-credentials (cookie, same origin)--> sidecar
-      |  raw response text
-      +--invoke('desktop-credential-put', { slotId, body })--> shell (Rust)
-                          validates, stores in the OS secret store, marks the slot
-launcher --control channel: acquire-credential(instanceNonce, origin)--> shell --> token
-launcher --inherited anonymous pipe, fd 3: { token, origin }--> bridge
-                          (the bridge asks for a refresh over the same pipe)
-```
-
-This package contains the contract and a reference implementation of each
-step the shell mirrors in Rust (parsers, the custody layer, the
-`acquire-credential` handler) plus the parts that run in JavaScript (the
-webview helper, the provider, the fd 3 codec and the bridge spawn helper). The
-OS keychain implementation, the Tauri commands and the control socket are the
-shell's (see the follow-up list at the end of this section).
-
-#### Slot record (`mcp-slot.json`)
-
-One slot per installation in v1. The record holds no secret:
-
-```json
-{
-  "version": 1,
-  "slotId": "2c70f518-b95a-445b-a75e-8126ae7c032a",
-  "scopes": ["notes.read"],
-  "expiresAt": "2026-12-01T12:00:00Z",
-  "state": "minted"
-}
-```
-
-- `slotId`: opaque lowercase UUIDv4 chosen by the desktop app, never by the
-  server. `newSlotId()` generates it; the record is written (`writeSlotRecord`:
-  temp file, fsync, rename, fsync the directory, mode 0600) **before the first
-  request** for that id, as #4726 requires, so a lost response can be retried
-  with the same id.
-- `scopes`: permission slugs (1 to 64, each up to 128 printable ASCII
-  characters without space, `"` or `\`, no duplicates).
-- `expiresAt`: `null` while the slot is only reserved, then the expiry of the
-  credential committed to custody.
-- `state`: `minted` (id reserved; a credential is committed once `expiresAt` is
-  set), `revoking` (disconnect started, the server revoke not yet confirmed:
-  the shell stops serving the credential at once and retries the revoke), or
-  `revoked` (the server confirmed; permanent for the id, so the next connect
-  uses a new id).
-
-`parseSlotRecord` / `serializeSlotRecord` are strict (closed schema, duplicate
-keys rejected, `version: 1` only) and `readSlotRecord` opens with
-`O_NOFOLLOW` and validates the descriptor like every private state file. See
-[`examples/mcp-slot.json`](examples/mcp-slot.json) (shared with the Rust tests).
-
-#### Lifecycle
-
-- **Mint.** The webview POSTs `{ action: 'put', id, scopes, expiresInSeconds }`
-  to `/api/local/mcp-credentials` (the #4726 route: the `put` action is sent as a
-  `POST`). The success reply `{ id, token, scopes, expiresAt }` goes, as raw text,
-  to `desktop-credential-put`. `parseMintResponse(body, slotId)` is the
-  reference validator the shell mirrors: strict JSON, exactly those four keys,
-  `id` equal to the slot, the token matches `^smrt_mcp_[A-Za-z0-9_-]{43}$`, the
-  scopes are valid, `expiresAt` is at least 60 seconds ahead, body at most
-  12 KiB. The token becomes a `SecretString` immediately.
-- **Rotate.** A new PUT on the same slot id replaces the bearer atomically; only
-  the latest committed write verifies on the server (#4726). Custody replaces
-  the item atomically, the `acquire-credential` handler reads custody on every
-  call, and running bridges see a 401 and ask for a refresh over fd 3. Rotate
-  when the remaining lifetime drops below `max(lifetime / 4, 24 h)`.
-- **Retry.** A network error, an unreadable response body, a 5xx, 408 or 429
-  repeats the PUT with the **same** slot id (bounded, three attempts by
-  default). A native rejection after a 200 also retries the PUT, because a
-  fresh PUT replaces the lost bearer without leaving a second active one. A 409
-  `slot_unavailable` (revoked slot) asks the shell for a **new** slot id
-  (`desktop-credential-slot { action: 'replace' }`), at most twice. 403 and
-  other 4xx are not retried.
-- **Revoke (disconnect).** The server revoke comes first (`{ action: 'revoke',
-  id }`; a `revoked` reply and a 409 both count as done), then
-  `desktop-credential-forget { slotId, revoked: true }` makes the shell delete
-  the item and mark the slot `revoked`. If the server cannot be reached the
-  helper still tells the shell (`revoked: false`) so the slot becomes `revoking`
-  and the credential is no longer served; the next connect or disconnect
-  finishes the revoke first. A credential is therefore never forgotten while
-  the server still honors it.
-- **Expiry.** A credential within 30 seconds of `expiresAt` is treated as
-  expired: `acquire-credential` answers `credential_invalid` ("open the app to
-  reconnect") rather than hand out a bearer that dies in flight.
-
-#### Webview helper (`@happyvertical/smrt-desktop/webview`)
-
-```ts
-import { invoke } from '@tauri-apps/api/core';
-import {
-  connectDesktopAssistant,
-  disconnectDesktopAssistant,
-  getDesktopAssistantStatus,
-} from '@happyvertical/smrt-desktop/webview';
-
-const status = await connectDesktopAssistant({
-  invoke,
-  fetch: window.fetch.bind(window),
-  scopes: ['notes.read'],
-  expiresInSeconds: 30 * 24 * 60 * 60,
-});
-// { state: 'connected', slotId, scopes, expiresAt }  (never a token)
-```
-
-`fetch` and Tauri `invoke` are injected, so the helper has no dependency and
-imports no Node built-in (the build and a test check the dist file). It sends
-the request with `credentials: 'same-origin'`, `cache: 'no-store'`,
-`redirect: 'error'` and `referrerPolicy: 'no-referrer'` to a relative URL (no
-`location`, no `URL`), hands `await res.text()` untouched to
-`desktop-credential-put`, and returns only non-secret status. It does not touch
-`localStorage`, `sessionStorage`, IndexedDB, cookies, `console`, `location`,
-`history` or URL construction (a test booby-traps those globals), and every
-rejection from `fetch` or `invoke` is replaced by a `DesktopContractError`
-with a fixed message (the original, which could echo a body, is dropped, never
-chained).
-
-The helper calls four native commands. **No command returns a token to
-JavaScript**:
-
-| Command | Arguments | Returns (non-secret) |
-| --- | --- | --- |
-| `desktop-credential-slot` | `{ action: 'ensure' \| 'replace' }` | `{ slotId, state, scopes, expiresAt }`; persists a new slot before returning |
-| `desktop-credential-put` | `{ slotId, body }` (raw response text) | `{ status: 'active', scopes, expiresAt }` |
-| `desktop-credential-status` | `{}` | the slot (as above) or `null` |
-| `desktop-credential-forget` | `{ slotId, revoked }` | `{ status: 'revoked' \| 'revoking' }` |
-
-**These commands are specified, not granted.** Today the shell grants the
-sidecar origin no IPC at all: `shell/capabilities/default.json` has no `remote`
-block and no permissions, and the shell registers no command handler. Two tests
-keep it that way (`src/shell-capabilities.test.ts` and the Rust
-`shell/tests/capabilities.rs`, which CI runs): they fail if any capability gains
-`remote`. Do not add the capability on its own. Granting remote content access
-to IPC reverses the posture that remote content gets no IPC (owner decision D1
-of the design), and it is only as safe as the three things below, which must
-land **in the same change as the capability, never after it**:
-
-1. **A command allowlist (`AppManifest`).** `build.rs` declares the four
-   commands with `tauri_build::AppManifest::new().commands(&[...])` and the
-   capability references only their generated permissions (no `core:*` default
-   set). Without it every command in `invoke_handler` is invokable by whatever
-   origin a capability matches; with it a command nobody listed is not.
-2. **`on_navigation` pinned to the ready origin.** The `main` window is built in
-   code (`WebviewWindowBuilder::from_config(...).on_navigation(...)`, because a
-   window created from `tauri.conf.json` cannot take a navigation handler) and
-   allows only the splash page and the supervisor's current ready origin,
-   `http://127.0.0.1:<port>`, compared whole (scheme, host and port). Today
-   `app.rs` navigates with no restriction, and a link or redirect inside the
-   sidecar page can land the webview on any other loopback page (another local
-   service, another port).
-3. **The origin check inside every command.** Each handler compares the
-   invoking webview's URL origin with the supervisor's *current* ready origin
-   (exact string equality, re-read at call time, so a restart on a new port
-   invalidates the old one), checks that `slotId` is the persisted slot, and
-   that the body is at most 12 KiB and valid per `parseMintResponse`.
-
-The capability itself must name the exact ready origin and no pattern. The
-port is chosen at run time, so it cannot be a static `remote.urls` entry. It is
-added once the supervisor reports `ready`, for that origin only, with
-`Manager::add_capability` (the `dynamic-acl` feature, on by default in the
-pinned Tauri 2) from a `CapabilityBuilder` limited to the `main` window and the
-four permissions, and it is replaced on a restart. A static entry that matches
-a range of loopback ports is not an alternative: it matches every port, so
-with it any page on any loopback port the webview reaches can call every
-registered command, and precondition 2 is then the only thing standing between
-a sidecar's neighbour and the keychain. This section is the contract for that
-work; none of it is implemented in this package, and the commands themselves
-are the shell's follow-up.
-
-#### Control channel: `acquire-credential`
-
-`createCredentialControlHandler({ custody, slot, current })` is the reference
-handler. It takes a request `{ v: 1, op: 'acquire-credential', instanceNonce,
-origin }` and returns `{ ok: true, lease }` or `{ ok: false, code }`, and it
-never throws. It is written against a minimal structural `ControlContext {
-instanceNonce, origin }` and imports nothing from the control protocol; the
-wiring below registers it. Checks, in order:
-
-1. `instance_mismatch` when the nonce or origin differs from the running
-   instance (or the instance is not ready). Custody is not touched, so a stale
-   launcher cannot trigger a keychain read.
-2. `credential_unavailable` when there is no slot, the slot has no committed
-   credential, custody holds no item, or the store fails.
-3. `credential_invalid` when the slot is `revoking` or `revoked`, the item is
-   malformed, or the credential is expired.
-
-`encodeAcquireCredentialResponse` / `parseAcquireCredentialResponse` are the
-wire form (`{"v":1,"ok":true,"instanceNonce":"…","origin":"…","token":"…","expiresAt":"…"}` or
-`{"v":1,"ok":false,"code":"…"}`); the bearer appears in a success reply and
-nowhere else.
-
-**On the wire.** The op is added to contract (b)'s extension points, not to its
-core. `credentialControlOp` is the `ControlOpSpec` (request closed to `v`,
-`op`, `instanceNonce`, `origin`; the success body is parsed by
-`parseAcquireCredentialResponse`), and `credentialControlCodec` is
-`createControlCodec` over `status`, `ensure-ready` and `acquire-credential`
-with the extra error codes `credential_unavailable`, `credential_invalid` and
-`instance_mismatch`. `coreControlCodec` is unchanged: a core-only client cannot
-build the request, and a core-only server answers it `unsupported_op`. The
-codec encodes the success body with `encodeAcquireCredentialResponse` (a
-`SecretString` would serialize as `[REDACTED]` through the generic path) and
-re-parses its own line, so the bearer is revealed in one place and appears in
-the `ok: true` body of this op and nowhere else; no rendezvous type
-(`RendezvousResult`, `InstanceStateResponse`, `instance.json`) can carry it.
-
-A server wires it with `createCredentialReferenceRegistry(supervisor, {
-custody, slot })`, which registers `status`, `ensure-ready` and the handler,
-passing `current: referenceControlContext(supervisor)` so the nonce and origin
-the handler compares against are the serving instance's own (and `null`, hence
-`instance_mismatch`, while it is not `ready`). Hand the registry and the codec
-to `startReferenceShell({ ..., registry, codec: credentialControlCodec })`; a
-different server uses `registerAcquireCredential(registry, handler)` on a
-registry typed `ControlHandlerRegistry<CredentialControlRequest,
-CredentialControlResponse>`. `src/credentials/end-to-end.test.ts` runs the
-whole path over a real unix socket.
-
-`createControlChannelCredentialProvider({ send })` is the launcher side. `send`
-is injected (`createControlChannelSend(result.endpoint)` implements it over the
-rendezvous transport and `credentialControlCodec`, and accepts only the vetted
-handle of a `ready` result; that vetting is enforced by this helper alone, and
-the provider will take any `send`); the provider validates the nonce and origin before
-sending, applies a timeout (default 2 s) and the caller's `AbortSignal`,
-decodes the reply strictly, requires the reply to **echo the requested
-`instanceNonce`** (`instance_mismatch` otherwise: the reply is bound to the
-instance `status` proved, not just to whatever answered on the endpoint),
-requires the reply origin to equal the requested origin, and refuses an
-expired bearer. Every transport
-or parse failure is `credential_unavailable` with the cause dropped.
-
-#### fd 3 frame protocol and bridge spawn
-
-The launcher hands the bearer to the bridge over an anonymous pipe inherited
-at descriptor 3 (a socketpair on POSIX, a named pipe on Windows via libuv's
-extra stdio, so both directions work everywhere). argv carries only the
-non-secret `--credential-fd=3`, and the environment is built from scratch.
-
-NDJSON, one frame per line, at most 2048 bytes including the newline, `"v":1`,
-closed schemas, duplicate keys rejected. Each side accepts only the other
-side's frames (`parseHandoffFrame(line, direction)`):
-
-| Direction | Frame |
-| --- | --- |
-| launcher to bridge | `{"v":1,"type":"credential","seq":0,"origin":"http://127.0.0.1:N","token":"smrt_mcp_…","expiresAt":"…"}`; `seq` 0 is the initial frame, a higher `seq` is a refresh after rotation, expiry or a sidecar port change |
-| launcher to bridge | `{"v":1,"type":"unavailable","seq":N,"code":"credential_invalid" \| "credential_unavailable" \| "instance_mismatch"}` |
-| bridge to launcher | `{"v":1,"type":"refresh"}` after a 401, a 403 or a refused connection (the bridge rate-limits it to one per ten seconds) |
-
-`HandoffFrameDecoder` reassembles frames from pipe chunks, bounds buffering at
-the cap and poisons itself on the first violation.
-`spawnBridgeWithCredential({ command, args, env, lease, refresh })` spawns the
-child with `stdio: [..., 'pipe']`, no shell, and exactly the given `env`; it
-refuses (`handoff_failed`) if the bearer appears in the command, the arguments,
-the environment or the working directory, refuses a lease whose origin is not
-`http://127.0.0.1:<port>`, writes the initial frame before the child can read,
-answers `refresh` requests through the `refresh` callback (typically
-`provider.acquire` after a `status` check), serializes concurrent requests, and
-closes the pipe when the child exits or misbehaves.
-
-The bridge side (`--credential-fd` in app-cli) is out of scope here: it needs
-only `parseHandoffFrame`/`HandoffFrameDecoder` (or the 30 lines duplicated),
-and when `--credential-fd` is present it must ignore `<PREFIX>_TOKEN`,
-`<PREFIX>_SERVER_URL` and config files, pin the origin from the frame and keep
-refusing redirects. It must also mark fd 3 close-on-exec (`FD_CLOEXEC`) as soon
-as it has read the frame, or never spawn child processes while fd 3 is open;
-otherwise a child inherits the descriptor and the unread or refresh channel.
-
-#### SecretString rules
-
-The bearer is a `SecretString` from the moment it is parsed. `reveal()` is
-called in exactly three source files, enforced by a test that scans the
-sources: `credentials/custody.ts` (serializing the item), `credentials/
-control-handler.ts` (the control wire reply) and `credentials/handoff-frame.ts`
-(the fd 3 frame and the argv/env guard `containsSecret`). Results, leases and
-stored credentials contain a `SecretString`, so `JSON.stringify`,
-`util.inspect`, `console.log`, template literals and `structuredClone` of any
-of them are safe. `SecretItemStore` buffers are zeroed after use (JavaScript
-strings cannot be, see the residual risks).
-
-#### Credential error codes
-
-All are `DesktopContractError` codes with fixed, value-free messages; `field`
-is a static schema name.
-
-| Code | Meaning |
-| --- | --- |
-| `credential_unavailable` | no slot, never minted, custody missing or failing, transport failure: connect the assistant in the app |
-| `credential_invalid` | expired, revoked or revoking, or a malformed stored item: reconnect in the app |
-| `instance_mismatch` | the request names another app instance, origin or malformed nonce |
-| `invalid_mint_response` | the mint reply is not the documented success reply (`field` names the part) |
-| `invalid_handoff_frame`, `handoff_frame_too_large` | fd 3 frame violations |
-| `handoff_failed` | the bridge could not be spawned safely, or the pipe is closed |
-| `slot_unavailable` | the server keeps refusing new slot ids, or a pending revoke is unconfirmed |
-| `credential_forbidden` | not the signed-in owner (403) |
-| `credential_rejected` | other 4xx, or invalid helper input |
-| `credential_request_failed` | network or server failure after the retry budget, or aborted |
-| `native_rejected` | the shell rejected the body or a command failed |
-| `invalid_native_response` | a native command replied outside its schema |
-
-#### Threat model
-
-Every row names the mitigation and the exact tests (`file: test name`) that
-close it. Rows whose enforcement point is the Rust shell or contract (b) say
-so; those parts are not claimed closed by this package.
-
-| # | Threat | Mitigation | Closing test(s) |
-| --- | --- | --- | --- |
-| T1 | Same-user malware reads the keychain item | **TypeScript (built):** the custody layer over an injected `SecretItemStore` touches only `mcp-credential.<uuid>` names; the in-memory store is a test double and is not a keychain. **Rust shell (not built):** the OS secret store itself (macOS: created by the signed shell, `WhenUnlockedThisDeviceOnly`, non-synchronizable). Neither half stops a same-user process: it can read `instance.json`, connect to the owner-only channel and call `acquire-credential`, and the shell itself reads the keychain on its behalf, so no keychain ACL prompt applies. Windows/Linux likewise have no same-user boundary. Residual (see "Same-user processes"); revoke/rotate is the recovery. Scopes and lifetime are bounded by the owner. | `credentials/custody.test.ts`: `T1: custody only touches mcp-credential.<uuid> item names`. Item attributes are asserted in the shell's macOS test (Rust, not built). |
-| T2 | Another OS user | **TypeScript (built):** private directory 0700, files 0600, readers validate `fstat` (owner, mode), and the rendezvous client vets the socket's directory, type, owner and mode before connecting. **Rust shell (not built):** the control server's peer-credential check (`SO_PEERCRED`, `getpeereid`, `GetNamedPipeClientProcessId` plus the token SID) and the Windows pipe DACL; the TypeScript test-double server has neither and only listens on Windows. | `credentials/slot-record.test.ts`: `T2: readSlotRecord rejects a foreign-owned, group-readable or symlinked record`. Peer-credential rejection is a Rust test (not built). |
-| T3 | Token in argv / `ps` | The bearer is never an argument (`--credential-fd=3` only); the spawn helper refuses a command, argument or cwd that contains it. | `credentials/bridge-spawn.test.ts`: `T3: argv and env passed to the spawner never contain the token`; `T3/T4: refuses to spawn when the token is in argv, env, command or cwd`; `T3: ps shows no token in the child command line` (real child). |
-| T4 | Token in the environment (`/proc/<pid>/environ`) | The child environment is exactly what the launcher passes, never inherited; the bridge in fd mode ignores `<PREFIX>_TOKEN`. | `credentials/bridge-spawn.test.ts`: `T4: the child environment as the OS reports it holds no token` (`/proc/<pid>/environ` on Linux, `ps eww` on macOS, real child with a real fd 3 pipe); `delivers the initial frame over fd 3 and keeps the token out of argv and env`; `credentials/end-to-end.test.ts`: `hands the minted token from the shell to the bridge over fd 3 and nowhere else`. |
-| T5 | Crash dumps and logs | The token lives in a `SecretString` until the three reveal sites; diagnostics are fixed text; buffers are zeroed. | `credentials/leak.test.ts`: `T5: SecretString is not serialized by JSON, inspect, String, template, structuredClone or console`; `T5: errors built with secrets in their context do not retain them`; `T5: every credential error message is fixed, value-free text`; the describe `T5/T11: every exported parser and handler, fed token-bearing invalid input`; `reveal() is called only by custody serialization, the wire encoders and the secret guard`. |
-| T6 | Webview XSS reaching the IPC command | **TypeScript (built):** no command returns a token; the helper never stores, logs or builds URLs from the body. **Rust shell (not built):** the four commands, their origin check (the invoking webview's origin equals the current ready origin), slot id and body checks, and the three preconditions that must land with any remote capability (an `AppManifest` allowlist, `on_navigation` pinned to the ready origin, the origin check). Until then the sidecar origin has no IPC at all, which is asserted. XSS in this origin already holds the session cookie and can mint itself, so the IPC path grants nothing new. | `webview/webview.test.ts`: `T6: touches no storage, cookie, console, URL or location API`; `T6: has no path to those APIs in its source or its import closure`; `mints with a same-origin POST and passes the RAW response text only to the put command`; `shell-capabilities.test.ts`: `has no capability with a remote block, and the default one grants nothing`. Origin/slot/body rejection is a Rust test (not built). |
-| T7 | Replay after rotation | Server: only the latest write verifies (`app-runtime/src/local-mcp-tokens.test.ts`: `mints, rotates, expires and revokes a private owner slot without colliding with operator tokens`). Custody replaces atomically and the handler reads it on every call; the pipe delivers the new bearer on refresh. | `credentials/control-handler.test.ts`: `T7: after rotation the handler returns only the latest bearer`; `credentials/bridge-spawn.test.ts`: `T7: a refresh request after a simulated 401 delivers the rotated token`; `credentials/custody.test.ts`: `replaces atomically: a later put wins and old bytes are gone`; over a real socket, `credentials/end-to-end.test.ts`: `yields only the latest token after a rotation`. |
-| T8 | Confused deputy via the control channel | **TypeScript (built):** `acquire-credential` is bound to the current `instanceNonce` and `origin` and refuses before touching custody; the reply echoes the nonce and the provider rejects a mismatch; the credential flow only accepts the endpoint handle the rendezvous vetted; the test-double server answers one request per connection. This defeats a stale or wrong-instance caller, not a same-user one: the nonce and origin are readable by any process of the same OS user (0600 `instance.json`), so they do not bound that caller. **Rust shell (not built):** the real control server and its peer check, which today would be uid/SID only (see "Same-user processes"). | `credentials/control-handler.test.ts`: `T8: wrong nonce or origin yields instance_mismatch without touching custody`; `credentials/provider.test.ts`: `binds the reply to the instance status proved: rejects a reply that echoes another nonce, or none`; over a real socket, `credentials/end-to-end.test.ts`: `answers a wrong instance nonce or origin with instance_mismatch`, `only takes the endpoint the rendezvous vetted: a raw endpoint or a look-alike is refused`. Foreign peer is a Rust test (not built). |
-| T9 | TOCTOU on state files | Readers open `O_NOFOLLOW` and validate the descriptor; writers use temp (`O_EXCL`) plus rename; clients never repair or delete. | `credentials/slot-record.test.ts`: `T9: a symlink swapped in for the record is never followed or repaired`; `persists the slot before the first request can be made` (write order); the stage-1 `internal/private-file.test.ts`. |
-| T10 | Windows named-pipe squatting | **TypeScript (built):** a random per-start pipe name; the provider opens no endpoint of its own; `createControlChannelSend` takes only a vetted handle (a guided path: the provider takes any `send`), and on Windows a `ready` result has none unless the shell injects `vetPipe` (fail closed). **TypeScript does not vet pipes**: there is no owner, SID or DACL check in this package. **Rust shell (not built):** `FILE_FLAG_FIRST_PIPE_INSTANCE`, the DACL and the server pid/SID check, and the `vetPipe` function itself. | `credentials/provider.test.ts`: `T10: talks only through the injected send and never opens an endpoint itself`; `rendezvous/file-rendezvous-win32.test.ts`: `returns ready WITHOUT a vetted endpoint when the shell supplied no vetting function (fail closed)`. Name grammar belongs to contract (b)'s tests; the "second `CreateNamedPipe` fails" test is a Windows Rust test (not built). Residual: a Node client cannot query the server pid/SID. |
-| T11 | Token in error messages | Code-only errors; parsers never echo input; the webview helper replaces every `fetch`/`invoke` rejection with a fixed code and does not chain it. | `credentials/mint-response.test.ts`: `T11: never echoes the body or the token in any failure`; `webview/webview.test.ts`: `T11: a token-bearing malformed body yields a fixed-code error without the token`; `credentials/leak.test.ts`: `the webview helper maps token-bearing failures to fixed codes` and the `T5/T11` describe. |
-| T12 | Port squatting after ready | The credential is released only for the nonce and origin the channel confirms; the provider requires the reply to echo the requested nonce and its origin to equal the requested origin. | `credentials/control-handler.test.ts`: `T12: an origin that differs from the running instance never gets a token`; `credentials/provider.test.ts`: `T12: rejects a lease whose origin differs from the origin it asked about`, `binds the reply to the instance status proved: rejects a reply that echoes another nonce, or none`. Nonce echo in the health route is optional (design D5). |
-| T13 | Credential sent to a non-owned endpoint | Origin grammar `http://127.0.0.1:<1..65535>` everywhere (no `localhost`, no `[::1]`, no https, no path or userinfo); the bridge pins the origin from the frame. | `credentials/handoff-frame.test.ts`: `T13: only the exact loopback origin grammar is accepted`; `credentials/provider.test.ts`: `T13: only the loopback origin grammar is ever accepted in a reply`; `credentials/bridge-spawn.test.ts`: `T13: refuses a lease for a non-loopback origin`. |
-| T14 | Roaming profile copies state to another machine | State lives only under `app_local_data_dir` (`LOCALAPPDATA`, never `APPDATA`). | Stage-1 `install/locations.test.ts`: `uses LOCALAPPDATA and never the roaming APPDATA on Windows`. |
-
-#### Residual risks
-
-- **Webview JavaScript.** The bearer exists as an immutable JS string in the
-  page realm between `res.text()` and garbage collection. Script running in
-  that realm (XSS, a compromised dependency) can wrap `fetch`, `Response.text`
-  or `invoke` and read it, and the WebView network inspector shows it while
-  devtools are open. The mitigations are a strict CSP, devtools off in release
-  builds, no storage, and the argument that the same script could mint its own
-  token with the session cookie. The stronger option (design D1-B: the shell
-  mints natively with the webview cookie so the token never enters JS) is not
-  implemented.
-- **Same-user processes.** Any process of the same OS user can read the 0600
-  `instance.json` (instance nonce, origin, control endpoint), connect to the
-  owner-only control channel and call `acquire-credential`. The shell reads the
-  keychain itself, so the macOS keychain ACL never prompts for that caller, and
-  the nonce is not a secret against it. On Windows and Linux any same-user
-  process can additionally read the OS store entry directly, and
-  `ptrace`/`task_for_pid` (restricted by Yama and the hardened runtime, not
-  eliminated) can read the launcher or bridge memory. The recovery is
-  revoke/rotate of the slot (a rotation invalidates a token a stranger
-  obtained). Follow-up (optional, Rust shell): verify the peer's code identity
-  before reading custody (macOS audit token plus `SecCode` validation against
-  the bundled binaries; on Windows the peer image path), which would let the
-  shell refuse unrelated same-user callers. Until then this is a stated
-  residual risk. The fd 3 pipe removes the bearer from `argv` and `environ`;
-  it removes it from child processes only if the bridge marks fd 3
-  close-on-exec (or never spawns children while it is open). It never removes
-  it from memory.
-- **Memory.** JavaScript strings cannot be zeroed; `SecretString` limits
-  accidental serialization, not memory inspection or a heap snapshot.
-- **The control channel** relies on peer-uid/SID checks in the shell. The
-  reference handler cannot enforce them.
-- **Bridge behavior** (ignoring env in fd mode, pinning the origin, rate
-  limiting refresh) is app-cli's and is not enforced by this package.
-
-#### Shell and elsewhere (follow-ups, not in this package)
-
-- Rust shell: the OS secret store behind `SecretItemStore` (shared with the
-  vault keys of #4792), the four commands, and the three preconditions plus the
-  exact-origin `desktop-credential` capability (in one change, see above), a
-  per-slot mutex, the control server and
-  its peer-credential checks, mirrors of `parseSlotRecord`/`parseMintResponse`
-  tested against `examples/mcp-slot.json`.
-- app-cli: `--credential-fd` mode using the frame codec (a dependency on this
-  package, or a copy of the 30-line codec).
-- #4729: env to fd 3, narrow the origin grammar, wire the control channel.
-
-### Mapping to `LauncherProvider`
-
-One table maps this package onto the launcher (#4791). `connectInstance` maps a
-`RendezvousResult` from `createFileRendezvous(...).ensureReady()`;
-`acquireCredential` maps the credential provider.
-
-| Source | Result | `LauncherProvider` outcome |
-| --- | --- | --- |
-| `ensureReady()` | `ready` | `{ origin }`; keep `instanceNonce`, `origin` and `endpoint` for the credential request |
-| `ensureReady()` | `not_installed` | `missing_install` |
-| `ensureReady()` | `failed` with `unsupported_contract` | `unsupported_contract` |
-| `ensureReady()` | every other `failed`, `not_running`, `untrusted_state`, `unresponsive`, `timeout` | `stale_instance` |
-| `provider.acquire(...)` | a lease | `{ token, release }` (see the notes below) |
-| `provider.acquire(...)` | `credential_unavailable` | "connect the assistant in the app" (never connected) |
-| `provider.acquire(...)` | `credential_invalid` | "connect the assistant in the app" (expired or revoked: reconnect) |
-| `provider.acquire(...)` | `instance_mismatch` | the rendezvous answer went stale: re-run `ensureReady` once and retry |
-| `provider.acquire(...)` | any other `DesktopContractError` | a launcher fault, not a user action |
-
-`unexpected_endpoint` cannot arise from a `ready` result: the origin grammar
-(`http://127.0.0.1:<port>`) is enforced by the record and protocol parsers, and
-a violation surfaces as `untrusted_state`.
-
-- `acquireCredential(context)` builds the provider once per instance with
-  `createControlChannelCredentialProvider({ send: createControlChannelSend(endpoint) })`,
-  where `endpoint` is the `endpoint` handle of the `ready` result (absent on
-  Windows until the shell supplies `vetPipe`: map that to "cannot hand off the
-  credential here" rather than reading `instance.json` yourself), and calls `provider.acquire({ instanceNonce, origin,
-  signal })` with the nonce and origin the rendezvous reported for the same
-  instance. It returns `{ token: lease.token.reveal(), release }` **only** as
-  long as #4791 still passes the bearer as `<PREFIX>_TOKEN`. Once #4729 moves
-  to fd 3, use `spawnBridgeWithCredential` instead and drop the env handoff;
-  the launcher's `childEnvironment` must then contain no token.
-- #4791 accepts `localhost` origins; this contract allows only
-  `http://127.0.0.1:<port>`, so #4729 has to narrow `LOOPBACK_HOSTS`.
-- `release` has nothing to release for the pipe handoff: closing the
-  `BridgeHandoff` closes fd 3.
+Only that exact byte string is matched. The credential alphabet
+(`A-Za-z0-9_-`) passes through JSON string escaping and URL percent-encoding
+unchanged, so a copy embedded in JSON or a URL as written is still caught. A
+copy in any other encoding is **not** caught: base64, hex, `\uXXXX` escapes,
+a copy split by inserted characters, a truncated or case-changed copy. The
+filter is a safety net against accidental echo, not a guarantee against a
+bridge that transforms the credential; the bridge is trusted not to emit it.
 
 ### Versioning
 
@@ -1143,7 +452,6 @@ Each artifact carries `version: 1`. A parser accepts a declared set of
 versions; an unknown one is `unsupported_contract`. An incompatible change is a
 new integer, never a silent reinterpretation. Optional additions within v1 are
 not made: unknown fields are errors, so every addition is a version decision.
-
 ## Runtime bundler
 
 `smrt desktop bundle` (the Node-only `@happyvertical/smrt-desktop/bundler`
@@ -1269,7 +577,7 @@ under `binaries/` or `resources/`, fails the bundle
 
 Merge `tauri.bundle.json` into the Tauri configuration and build with
 `tauri build --target <the same triple>`. The sidecar manifest always carries
-`NODE_ENV=production`, empty `NODE_OPTIONS` and `NODE_PATH` (the shell passes
+`NODE_ENV=production`, empty `NODE_OPTIONS` and `NODE_PATH` (the wrapper passes
 the parent environment through) and `SMRT_APP_ID=<productId>`: the app runtime
 otherwise reads `package.json` from its working directory, which is the
 resource root and holds none. Because the sidecar is named per product, a
@@ -1308,7 +616,7 @@ and out-of-grammar values are errors, and no error echoes a value):
 **deleted**, never shipped, and recorded in the report) and `maxSizeMB` (MiB)
 are optional.
 
-`sidecar.args` is what the shell passes to the bundled Node binary, so it ships
+`sidecar.args` is what the wrapper passes to the bundled Node binary, so it ships
 to every end user. Node flags are an **allowlist**, not a denylist (Node has too
 many options that load code or change trust, such as `--conditions`/`-C`,
 `--security-revert`, `--insecure-http-parser`, `--experimental-config-file` and
@@ -1321,8 +629,8 @@ is not a flag is the entry script (a portable relative path ending in `.js`,
 `.mjs` or `.cjs`); after it come only plain values (portable paths or digits)
 for the script, never flags. To allow another Node flag, add it to
 `SIDECAR_NODE_FLAG_ALLOWLIST` with a reason. This guards the product
-configuration; the sidecar manifest parser the shell uses accepts any valid
-text arguments, so the shell must treat `sidecar-manifest.json` as trusted
+configuration; the sidecar manifest parser the wrapper uses accepts any valid
+text arguments, so the wrapper must treat `sidecar-manifest.json` as trusted
 build output.
 
 ### Targets
@@ -1578,7 +886,7 @@ report is the list to sign.
 
 - **No first-run schema.** s-m-r-t apps never create tables at run time
   (`smrt db:migrate` does), so a sidecar started on an empty data directory
-  exits with `DB_SCHEMA_MISSING`. The desktop shell needs a prepare step
+  exits with `DB_SCHEMA_MISSING`. The desktop wrapper needs a prepare step
   before the first start, or the runtime needs a supported way to migrate
   itself. `--measure-data` works around it for measurement only: prepare a
   directory with `SMRT_APP_ID=<id> SMRT_DATA_DIR=<dir> smrt app migrate` in

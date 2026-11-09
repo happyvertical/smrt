@@ -1,7 +1,7 @@
 /**
  * `@happyvertical/smrt-desktop/bundler`: the runtime bundler (Node only).
  *
- * This entry is separate from the package root and from `./webview` on
+ * This entry is separate from the package root and from `./launcher` on
  * purpose: it uses `node:fs`, `node:child_process`, `node:http` and friends,
  * and nothing that is bundled into a browser may import it.
  */

@@ -1,14 +1,14 @@
 # =============================================================================
-# Desktop build and release (Tauri 2 shell, epic #4663 item 5, issue #4836)
+# Desktop build and release (Tauri 2 wrapper, epic #4663 item 5, issue #4836)
 # =============================================================================
 # Two separate paths share this file; nothing connects them except the code.
 #
 # 1. verify-build (pull_request, push to main, workflow_dispatch)
 #    UNSIGNED. Runs only when desktop-owned paths change. `contents: read`, no
 #    secrets. There is no product in this repository, so it compiles and links
-#    the reusable shell for four targets (cargo release build through
+#    the reusable wrapper for four targets (cargo release build through
 #    `tauri build --no-bundle`) and packages nothing. Pull requests upload
-#    nothing at all; main and dispatch builds keep the unsigned shell binary
+#    nothing at all; main and dispatch builds keep the unsigned wrapper binary
 #    for three days so a human can look at it. This is policy copied from
 #    ergot's capture-desktop-artifacts.yml (path-filtered pull requests,
 #    uploads only from main or manual dispatch, short retention).
@@ -21,11 +21,11 @@
 #    product inputs exist, and each target refuses a bundle that does not match
 #    the committed, gpg-verified Node pin. Nothing here generates, defaults or
 #    invents a key, certificate, identity or secret. Until the owner supplies
-#    them (see "Release pipeline" in packages/smrt-desktop/shell/README.md)
+#    them (see "Release pipeline" in packages/smrt-desktop/wrapper/README.md)
 #    this path stops at its preflight.
 #
 # SECRET CUSTODY. Compiling and signing are different JOBS, not just different
-# steps, because a build script or proc macro in the shell's Cargo.lock can
+# steps, because a build script or proc macro in the wrapper's Cargo.lock can
 # write anywhere on the runner (the global npm directory, ~/.cargo, a PATH
 # shim) and the next step on the same runner would run it with the key.
 #
@@ -46,14 +46,14 @@
 #                      - sign updater payloads   -> TAURI_SIGNING_PRIVATE_KEY(+_PASSWORD)
 #                    The Tauri CLI is installed in a step with no secrets, by
 #                    `npm ci --ignore-scripts` from the committed, integrity-
-#                    pinned shell/signing-tools lockfile, and run by absolute
+#                    pinned wrapper/signing-tools lockfile, and run by absolute
 #                    path. An always() step removes the temporary keychain, the
 #                    certificate file and the installed tool.
 #   release-preflight, release-publish
 #                    in the environment too; the preflight sees the secrets
 #                    for presence only, the publish job none at all.
 #
-# packages/smrt-desktop/shell/scripts/desktop-release-workflow.test.mjs fails if an edit
+# packages/smrt-desktop/wrapper/scripts/desktop-release-workflow.test.mjs fails if an edit
 # mixes these: a secret in a step that builds or installs, a secret in a step
 # whose script is not made only of allow-listed signing commands, any
 # reference to `secrets` outside the env of such a step, or any YAML anchor,
@@ -116,7 +116,7 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: '0'
-  SHELL_DIR: packages/smrt-desktop/shell
+  WRAPPER_DIR: packages/smrt-desktop/wrapper
   # Exact Tauri CLI release (at least two weeks old when pinned).
   TAURI_CLI_VERSION: 2.12.4
   # Exact toolchains, never "stable" or a major line: what builds and signs
@@ -138,16 +138,16 @@ jobs:
         include:
           - label: macos-arm64
             runner: macos-15
-            binary: smrt-desktop-shell
+            binary: smrt-desktop-wrapper
           - label: macos-x64
             runner: macos-15-intel
-            binary: smrt-desktop-shell
+            binary: smrt-desktop-wrapper
           - label: windows-x64
             runner: windows-latest
-            binary: smrt-desktop-shell.exe
+            binary: smrt-desktop-wrapper.exe
           - label: linux-x64
             runner: ubuntu-latest
-            binary: smrt-desktop-shell
+            binary: smrt-desktop-wrapper
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -178,43 +178,43 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
-          workspaces: packages/smrt-desktop/shell
+          workspaces: packages/smrt-desktop/wrapper
 
       # The workflow lint parses the YAML with the `yaml` package, installed
       # from a committed lockfile with scripts off. This job has no secret.
       - name: Install the lint's YAML parser (locked)
         if: runner.os == 'Linux'
-        run: npm ci --ignore-scripts --no-audit --no-fund --registry https://registry.npmjs.org/ --prefix "$SHELL_DIR/scripts"
+        run: npm ci --ignore-scripts --no-audit --no-fund --registry https://registry.npmjs.org/ --prefix "$WRAPPER_DIR/scripts"
 
       - name: Test the release scripts and the workflow's secret separation
         if: runner.os == 'Linux'
         run: |
           node --test \
-            "$SHELL_DIR/scripts/minisign.test.mjs" \
-            "$SHELL_DIR/scripts/release-environment.test.mjs" \
-            "$SHELL_DIR/scripts/release-preflight.test.mjs" \
-            "$SHELL_DIR/scripts/release-feed.test.mjs" \
-            "$SHELL_DIR/scripts/desktop-release-workflow.test.mjs"
+            "$WRAPPER_DIR/scripts/minisign.test.mjs" \
+            "$WRAPPER_DIR/scripts/release-environment.test.mjs" \
+            "$WRAPPER_DIR/scripts/release-preflight.test.mjs" \
+            "$WRAPPER_DIR/scripts/release-feed.test.mjs" \
+            "$WRAPPER_DIR/scripts/desktop-release-workflow.test.mjs"
 
       - name: Install the pinned Tauri CLI
         run: npm install --global --ignore-scripts "@tauri-apps/cli@${TAURI_CLI_VERSION}"
 
       # No product bundle exists in this repository, so there is no
-      # externalBin, no resources and nothing to package: the shell is
+      # externalBin, no resources and nothing to package: the wrapper is
       # compiled and linked, and `--no-bundle` stops there. A product build
       # (tauri.bundle.json from `smrt desktop bundle`) happens only in the
       # release path below. This is a compile/link smoke, not a product build.
       # `--locked` refuses a Cargo.lock that would need to change.
-      - name: Build the shell without a product (unsigned)
-        working-directory: packages/smrt-desktop/shell
+      - name: Build the wrapper without a product (unsigned)
+        working-directory: packages/smrt-desktop/wrapper
         run: tauri build --no-bundle -- --locked
 
-      - name: Upload the unsigned shell binary (verification only)
+      - name: Upload the unsigned wrapper binary (verification only)
         if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: desktop-shell-unsigned-${{ matrix.label }}
-          path: packages/smrt-desktop/shell/target/release/${{ matrix.binary }}
+          name: desktop-wrapper-unsigned-${{ matrix.label }}
+          path: packages/smrt-desktop/wrapper/target/release/${{ matrix.binary }}
           if-no-files-found: error
           retention-days: 3
 
@@ -275,7 +275,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
         run: |
-          node "$SHELL_DIR/scripts/release-environment.mjs" \
+          node "$WRAPPER_DIR/scripts/release-environment.mjs" \
             --repo "$REPO" \
             --environment desktop-release
 
@@ -294,9 +294,9 @@ jobs:
           PRODUCT_DIR: ${{ inputs.product_dir }}
           BRIDGE_PATH: ${{ inputs.bridge_path }}
         run: |
-          node "$SHELL_DIR/scripts/release-preflight.mjs" \
+          node "$WRAPPER_DIR/scripts/release-preflight.mjs" \
             --secrets \
-            --config "$SHELL_DIR/tauri.conf.json" \
+            --config "$WRAPPER_DIR/tauri.conf.json" \
             --inputs "$PRODUCT_DIR" "$BRIDGE_PATH"
 
   # Runs the product's own code, so it holds no secrets, no environment and
@@ -368,7 +368,7 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  # Compiles the shell with the verified bundle. This is the job that runs
+  # Compiles the wrapper with the verified bundle. This is the job that runs
   # every crate's build script and every proc macro in Cargo.lock, so it has
   # NO environment, NO secrets and only `contents: read`, on a fresh
   # GitHub-hosted runner (never the signing-runner variable). It builds cold:
@@ -393,20 +393,20 @@ jobs:
           - target: aarch64-apple-darwin
             runner: macos-15
             bundles: app
-            artifact_path: packages/smrt-desktop/shell/target/aarch64-apple-darwin/release/bundle/macos
+            artifact_path: packages/smrt-desktop/wrapper/target/aarch64-apple-darwin/release/bundle/macos
           - target: x86_64-apple-darwin
             runner: macos-15
             bundles: app
-            artifact_path: packages/smrt-desktop/shell/target/x86_64-apple-darwin/release/bundle/macos
+            artifact_path: packages/smrt-desktop/wrapper/target/x86_64-apple-darwin/release/bundle/macos
           - target: x86_64-pc-windows-msvc
             runner: windows-latest
             bundles: nsis
-            artifact_path: packages/smrt-desktop/shell/target/x86_64-pc-windows-msvc/release/bundle/nsis/*-setup.exe
+            artifact_path: packages/smrt-desktop/wrapper/target/x86_64-pc-windows-msvc/release/bundle/nsis/*-setup.exe
           # AppImage is excluded: the launcher does not support it in v1.
           - target: x86_64-unknown-linux-gnu
             runner: ubuntu-latest
             bundles: deb
-            artifact_path: packages/smrt-desktop/shell/target/x86_64-unknown-linux-gnu/release/bundle/deb/*.deb
+            artifact_path: packages/smrt-desktop/wrapper/target/x86_64-unknown-linux-gnu/release/bundle/deb/*.deb
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -447,13 +447,13 @@ jobs:
         env:
           TARGET: ${{ matrix.target }}
         run: |
-          node "$SHELL_DIR/scripts/release-preflight.mjs" \
-            --config "$SHELL_DIR/tauri.conf.json" \
+          node "$WRAPPER_DIR/scripts/release-preflight.mjs" \
+            --config "$WRAPPER_DIR/tauri.conf.json" \
             --bundle "$RUNNER_TEMP/desktop-bundle" \
             --target "$TARGET" \
             --node-pins packages/smrt-desktop/src/bundler/node-pins.ts \
-            --write-overlay "$SHELL_DIR/tauri.release.json" \
-            --stage "$SHELL_DIR"
+            --write-overlay "$WRAPPER_DIR/tauri.release.json" \
+            --stage "$WRAPPER_DIR"
 
       - name: Install Tauri Linux system dependencies
         if: runner.os == 'Linux'
@@ -480,7 +480,7 @@ jobs:
 
       # No secret exists in this job. `--locked` goes to cargo.
       - name: Build the unsigned bundles
-        working-directory: packages/smrt-desktop/shell
+        working-directory: packages/smrt-desktop/wrapper
         env:
           TARGET: ${{ matrix.target }}
           BUNDLES: ${{ matrix.bundles }}
@@ -591,8 +591,8 @@ jobs:
         env:
           TARGET: ${{ matrix.target }}
         run: |
-          node "$SHELL_DIR/scripts/release-preflight.mjs" \
-            --config "$SHELL_DIR/tauri.conf.json" \
+          node "$WRAPPER_DIR/scripts/release-preflight.mjs" \
+            --config "$WRAPPER_DIR/tauri.conf.json" \
             --bundle "$RUNNER_TEMP/desktop-bundle" \
             --target "$TARGET" \
             --node-pins packages/smrt-desktop/src/bundler/node-pins.ts \
@@ -612,7 +612,7 @@ jobs:
       # PATH. (The Linux leg signs nothing and does not need it.)
       - name: Install the locked Tauri CLI
         if: runner.os != 'Linux'
-        run: npm ci --ignore-scripts --no-audit --no-fund --registry https://registry.npmjs.org/ --prefix "$SHELL_DIR/signing-tools"
+        run: npm ci --ignore-scripts --no-audit --no-fund --registry https://registry.npmjs.org/ --prefix "$WRAPPER_DIR/signing-tools"
 
       # SECRET STEP 1 of 3 (macOS): the certificate and its password only.
       # Imports the .p12 into a temporary keychain that the always() step
@@ -734,7 +734,7 @@ jobs:
             payloads=("$SIGNED_DIR"/nsis/*-setup.exe)
           fi
           test "${#payloads[@]}" -eq 1
-          "$GITHUB_WORKSPACE/$SHELL_DIR/signing-tools/node_modules/.bin/tauri" signer sign "${payloads[0]}"
+          "$GITHUB_WORKSPACE/$WRAPPER_DIR/signing-tools/node_modules/.bin/tauri" signer sign "${payloads[0]}"
 
       # A build that came out unsigned or un-notarized must not stand as a
       # release. This runs BEFORE the leg is uploaded, so a failure here keeps
@@ -759,11 +759,11 @@ jobs:
         env:
           TARGET: ${{ matrix.target }}
         run: |
-          node "$SHELL_DIR/scripts/release-feed.mjs" leg \
+          node "$WRAPPER_DIR/scripts/release-feed.mjs" leg \
             --target "$TARGET" \
             --bundle-dir "$SIGNED_DIR" \
             --overlay "$OVERLAY_FILE" \
-            --pubkey-config "$SHELL_DIR/tauri.conf.json" \
+            --pubkey-config "$WRAPPER_DIR/tauri.conf.json" \
             --out .desktop-leg
 
       - name: Upload the leg
@@ -786,7 +786,7 @@ jobs:
           if [ "$RUNNER_OS" = macOS ]; then
             security delete-keychain "$RUNNER_TEMP/desktop-signing.keychain-db" || true
           fi
-          rm -rf "$SHELL_DIR/signing-tools/node_modules"
+          rm -rf "$WRAPPER_DIR/signing-tools/node_modules"
           rm -rf "$RUNNER_TEMP"/desktop-* .desktop-leg
 
   # The only job that can write the release. It needs every leg, so a failed
@@ -838,12 +838,12 @@ jobs:
         env:
           REPO: ${{ github.repository }}
         run: |
-          node "$SHELL_DIR/scripts/release-feed.mjs" feed \
+          node "$WRAPPER_DIR/scripts/release-feed.mjs" feed \
             --legs .desktop-legs \
             --targets aarch64-apple-darwin,x86_64-apple-darwin,x86_64-pc-windows-msvc,x86_64-unknown-linux-gnu \
             --repo "$REPO" \
             --tag "$RELEASE_TAG" \
-            --pubkey-config "$SHELL_DIR/tauri.conf.json" \
+            --pubkey-config "$WRAPPER_DIR/tauri.conf.json" \
             --out .desktop-publish
 
       - name: Publish to the rolling release

@@ -187,7 +187,7 @@ describe('measureBundle', () => {
     expect(bare.templates).toEqual(Array(4).fill(undefined));
   });
 
-  it('starts the sidecar the way the shell does', async () => {
+  it('starts the sidecar the way the wrapper does', async () => {
     const h = harness({ bootMs: 10 });
     await measureBundle({ ...request, runs: 1 }, h.seams);
     const first = h.spawns[0];
