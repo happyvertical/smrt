@@ -11,7 +11,8 @@
 //   --config <tauri.conf>     the committed config carries a real updater key
 //   --inputs <dir> <bridge>   the product inputs are safe repo-relative paths
 //   --bundle <dir>            a `smrt desktop bundle` output that is complete,
-//                             unmodified, has no file the digest list does not
+//                             unmodified, has only the expected top-level
+//                             entries, no file the digest list does not
 //                             name, no symlink, and whose Node pin matches the
 //                             COMMITTED pin record (see --node-pins)
 //   --target <triple>         with --bundle: the Rust target it must be for
@@ -296,6 +297,50 @@ function walkTree(bundleDir, root, problems) {
   return found;
 }
 
+const ROOT_DIRECTORIES = Object.freeze(['binaries', 'resources']);
+const ROOT_FILES = Object.freeze([
+  'tauri.bundle.json',
+  'bundle-report.json',
+  'bundle-files.sha256',
+]);
+
+/**
+ * The bundle ROOT, listed with lstat so nothing is followed. The root may
+ * hold exactly `binaries/` and `resources/` (real directories) and the three
+ * metadata files (regular files); a symlink, any other kind of entry or an
+ * extra name is a problem. Names of offending entries are never echoed.
+ * (The two directories themselves are walked by `walkTree`.)
+ */
+function checkBundleRoot(bundleDir) {
+  const problems = [];
+  try {
+    if (!lstatSync(bundleDir).isDirectory()) {
+      return ['the bundle root is not a real directory'];
+    }
+    const names = readdirSync(bundleDir);
+    if (names.length > MAX_TREE_ENTRIES) throw new Error('too many entries');
+    for (const name of names) {
+      const stat = lstatSync(join(bundleDir, name));
+      if (stat.isSymbolicLink()) {
+        problems.push('the bundle root holds a symlink');
+      } else if (ROOT_DIRECTORIES.includes(name)) {
+        if (!stat.isDirectory()) {
+          problems.push('binaries/ or resources/ is not a real directory');
+        }
+      } else if (ROOT_FILES.includes(name)) {
+        if (!stat.isFile()) {
+          problems.push('a bundle metadata file is not a regular file');
+        }
+      } else {
+        problems.push('the bundle root holds an unexpected entry');
+      }
+    }
+  } catch {
+    return ['the bundle root is missing or cannot be listed'];
+  }
+  return [...new Set(problems)];
+}
+
 /**
  * Verify a `smrt desktop bundle` output and return the Tauri config overlay
  * built from it. `files` is injectable for tests. `trust` carries the pin
@@ -322,6 +367,13 @@ export function checkBundle(bundleDir, target, files = {}, trust = {}) {
 
   if (!Object.hasOwn(NODE_DIST, target)) {
     fail('the expected target is not a supported Rust triple');
+  }
+
+  // Before anything in the bundle is read: its root holds exactly the
+  // expected entries and no symlink.
+  const rootProblems = checkBundleRoot(bundleDir);
+  if (rootProblems.length > 0) {
+    return { problems: [...problems, ...rootProblems] };
   }
 
   let report;
@@ -512,6 +564,9 @@ export function checkBundle(bundleDir, target, files = {}, trust = {}) {
  * `<destDir>/resources`. Each file is read once, hashed again and written with
  * `wx` (never over an existing path or through a symlink), so nothing that was
  * not verified, and nothing that changed since, reaches the build.
+ *
+ * A workflow artifact does not carry the executable bit, so every file under
+ * `binaries/` (the Node sidecar) is staged 0755 and every other file 0644.
  */
 export function stageBundle(bundleDir, verified, destDir) {
   for (const { path, sha256 } of verified) {
@@ -526,7 +581,7 @@ export function stageBundle(bundleDir, verified, destDir) {
     mkdirSync(dirname(to), { recursive: true });
     writeFileSync(to, bytes, {
       flag: 'wx',
-      mode: stat.mode & 0o111 ? 0o755 : 0o644,
+      mode: path.startsWith('binaries/') ? 0o755 : 0o644,
     });
   }
 }

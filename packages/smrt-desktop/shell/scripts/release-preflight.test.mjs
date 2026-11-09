@@ -129,8 +129,6 @@ function writeBundle(overrides = {}) {
   return dir;
 }
 
-const chmodExec = (path) => chmodSync(path, 0o755);
-
 const check = (dir, trust = trustedPins(), target = TARGET) =>
   checkBundle(dir, target, {}, trust);
 
@@ -461,6 +459,72 @@ describe('bundle: every file on disk is verified', () => {
   });
 });
 
+describe('bundle: the root holds only the expected entries', () => {
+  const rootProblems = (dir) => {
+    const { problems, overlay } = check(dir);
+    assert.equal(overlay, undefined);
+    return problems;
+  };
+
+  it('refuses an unexpected top-level file', () => {
+    const dir = writeBundle();
+    writeFileSync(join(dir, 'extra.json'), '{}');
+    assert.ok(rootProblems(dir).some((p) => p.includes('unexpected entry')));
+  });
+
+  it('refuses an unexpected top-level directory', () => {
+    const dir = writeBundle();
+    mkdirSync(join(dir, 'tauri.conf.d'));
+    assert.ok(rootProblems(dir).some((p) => p.includes('unexpected entry')));
+  });
+
+  it('refuses a symlink at the root, even one named like a real entry', () => {
+    const named = writeBundle();
+    writeFileSync(join(named, 'real.json'), '{}');
+    rmSync(join(named, 'tauri.bundle.json'));
+    symlinkSync('real.json', join(named, 'tauri.bundle.json'));
+    assert.ok(rootProblems(named).some((p) => p.includes('symlink')));
+
+    const other = writeBundle();
+    symlinkSync('../../packages/smrt-desktop/shell', join(other, 'x'));
+    assert.ok(rootProblems(other).some((p) => p.includes('symlink')));
+  });
+
+  it('refuses a symlink in a nested directory', () => {
+    const dir = writeBundle();
+    mkdirSync(join(dir, 'binaries/sub'));
+    symlinkSync('/etc', join(dir, 'binaries/sub/etc'));
+    assert.ok(rootProblems(dir).some((p) => p.includes('symlink')));
+  });
+
+  it('refuses a directory for a metadata file and a file for binaries/', () => {
+    const meta = writeBundle();
+    rmSync(join(meta, 'bundle-report.json'));
+    mkdirSync(join(meta, 'bundle-report.json'));
+    assert.ok(rootProblems(meta).some((p) => p.includes('regular file')));
+
+    const bin = writeBundle();
+    rmSync(join(bin, 'binaries'), { recursive: true });
+    writeFileSync(join(bin, 'binaries'), 'x');
+    assert.ok(rootProblems(bin).some((p) => p.includes('real directory')));
+  });
+
+  it('refuses a bundle root that is itself a symlink', () => {
+    const real = writeBundle();
+    const holder = mkdtempSync(join(tmpdir(), 'preflight-link-'));
+    dirs.push(holder);
+    const link = join(holder, 'bundle');
+    symlinkSync(real, link);
+    assert.ok(rootProblems(link).some((p) => p.includes('real directory')));
+  });
+
+  it('reports nothing about names it refuses', () => {
+    const dir = writeBundle();
+    writeFileSync(join(dir, 'secret-looking-name'), 'x');
+    assert.ok(!rootProblems(dir).join('\n').includes('secret-looking-name'));
+  });
+});
+
 describe('bundle: the Node sidecar against the committed pin', () => {
   const nodeReport = (changes) => ({
     node: {
@@ -659,10 +723,11 @@ describe('parseNodePins', () => {
 });
 
 describe('stageBundle', () => {
-  it('copies exactly the verified files and keeps the executable bit', () => {
+  it('copies exactly the verified files and marks binaries/ executable', () => {
     const dir = writeBundle();
     const { verified } = check(dir);
-    chmodExec(join(dir, 'binaries/acme-node-aarch64-apple-darwin'));
+    // An artifact drops the executable bit: nothing here is executable.
+    chmodSync(join(dir, 'binaries/acme-node-aarch64-apple-darwin'), 0o644);
     writeFileSync(join(dir, 'resources/unlisted'), 'x');
     const dest = mkdtempSync(join(tmpdir(), 'stage-'));
     dirs.push(dest);
@@ -674,7 +739,11 @@ describe('stageBundle', () => {
     assert.equal(existsSync(join(dest, 'resources/unlisted')), false);
     assert.ok(
       lstatSync(join(dest, 'binaries/acme-node-aarch64-apple-darwin')).mode &
-        0o111,
+        0o100,
+    );
+    assert.equal(
+      lstatSync(join(dest, 'resources/sidecar-manifest.json')).mode & 0o111,
+      0,
     );
   });
 

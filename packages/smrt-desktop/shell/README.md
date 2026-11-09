@@ -213,6 +213,19 @@ the trusted checkout (main), not against what the bundle says about itself:
   template, extra `files`, entitlements or any other key in the bundle cannot
   reach it. The overlay's product name and version are also validated (safe
   characters, semantic version).
+- The bundle never travels as an archive. The bundle job uploads the bundle
+  directory itself (`upload-artifact` stores file contents, follows a symlink
+  and stores the target's bytes as a regular file, and drops permissions); the
+  signing job downloads it into an empty directory under `$RUNNER_TEMP`, never
+  the checkout. There is no `tar` member that could be written through an
+  earlier symlink member over trusted files (`tauri.conf.json`, the preflight
+  script, the pin table, `~/.cargo/config.toml`). Because permissions do not
+  survive, staging marks every file under `binaries/` executable.
+- The bundle root is listed with `lstat` before anything in it is read. It may
+  hold only `binaries/` and `resources/` (real directories) and
+  `tauri.bundle.json`, `bundle-report.json` and `bundle-files.sha256` (regular
+  files); a symlink, an unexpected entry or a root that is itself a symlink
+  fails.
 - `binaries/` and `resources/` are walked with `lstat`. Any symlink or other
   non-regular file fails; so does any file the digest list
   (`bundle-files.sha256`) does not name and any listed file that is missing or
@@ -256,10 +269,12 @@ runner. That job has no environment, installs with no pnpm cache and no Turbo
 cache shim (it saves nothing a trusted run could restore), and the signing job
 restores no cargo cache either: it builds cold with the pinned Tauri toolchain.
 
-macOS signing runs on the runner named by the repository variable
-`DESKTOP_MACOS_SIGNING_RUNNER` (a runner label, or a JSON array of labels for a
-self-hosted runner), default `macos-14`. Both macOS targets build there; the
-x64 target is cross-compiled. Nothing assumes a self-hosted runner may be used.
+macOS signing runs on the runner named by the repository (or organization)
+variable `DESKTOP_MACOS_SIGNING_RUNNER` (a runner label, or a JSON array of
+labels for a self-hosted runner), default `macos-14`. It is a repository-level
+variable because the runner is chosen before the `desktop-release` environment
+applies; see Owner setup, step 5. Both macOS targets build there; the x64
+target is cross-compiled. Nothing assumes a self-hosted runner may be used.
 
 ### All or nothing publishing
 
@@ -303,10 +318,18 @@ Do these in order:
    `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID`, `TAURI_SIGNING_PRIVATE_KEY`
    and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. If any of them also exists as a
    repository or organization secret, delete that copy.
-5. If the macOS runner is not the default, set the **`DESKTOP_MACOS_SIGNING_RUNNER`
-   variable in the same environment** (an environment variable is visible only
-   to the jobs that use the environment). Without it the signing legs use
-   `macos-14`.
+5. If the macOS runner is not the default, set **`DESKTOP_MACOS_SIGNING_RUNNER`
+   as a repository (or organization) variable, not in the environment.** The
+   workflow reads it in `strategy.matrix` and `runs-on`, which GitHub evaluates
+   *before* the job's environment is bound, so an environment-level variable of
+   that name is invisible there and the legs would silently run on `macos-14`.
+   The variable selects the runner label for the two macOS signing legs before
+   any environment protection applies, so anyone who can edit repository
+   variables can choose where the signing key lands. A self-hosted runner
+   therefore needs these protections before it is named: it must be ephemeral
+   (or wipe the keychain and the workspace after every job), and its runner
+   group must be restricted to this repository and to this workflow. Without
+   the variable the signing legs use the GitHub-hosted `macos-14`.
 6. Commit the updater public key as `plugins.updater.pubkey` in
    `tauri.conf.json` (see Owner inputs below).
 7. Have a maintainer run `scripts/update-node-pins.mjs` with `gpg` so the
@@ -331,7 +354,9 @@ matrix) and the signing half of #4836 are `status: blocked` on them.
    Losing the private key strands every installed copy.
 3. **macOS arm64 runner confirmation**: either keep GitHub-hosted `macos-14` or
    state that the self-hosted runner used for ergot may be reused for signing
-   and set `DESKTOP_MACOS_SIGNING_RUNNER` to it (in the environment).
+   and set the repository variable `DESKTOP_MACOS_SIGNING_RUNNER` to it (a
+   repository or organization variable; see Owner setup, step 5, for the
+   runner protections it needs).
 4. **Product identity strings** (bundle identifier, display name) in the
    product's `smrt-desktop.json`, plus real product icons: the icons in
    `icons/` are placeholders and no product icons are supplied by the bundle.

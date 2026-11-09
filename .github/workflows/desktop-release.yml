@@ -273,14 +273,19 @@ jobs:
             --target "$TARGET" \
             --out "$RUNNER_TEMP/bundle/$TARGET" \
             --require-verified-pins
-          # A tar keeps the executable bit that an artifact upload drops.
-          tar -C "$RUNNER_TEMP/bundle" -cf "$RUNNER_TEMP/bundle-$TARGET.tar" "$TARGET"
 
+      # The bundle goes up as a DIRECTORY, not an archive. upload-artifact
+      # stores file contents only (it follows a symlink and uploads what it
+      # points to as a regular file) and drops permissions, so the signing
+      # leg never extracts an archive made by this untrusted job. Hidden files
+      # are included (node_modules/.pnpm); the digest list in the bundle
+      # catches anything that goes missing.
       - name: Upload the bundle for signing
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: desktop-bundle-${{ matrix.target }}
-          path: ${{ runner.temp }}/bundle-${{ matrix.target }}.tar
+          path: ${{ runner.temp }}/bundle/${{ matrix.target }}
+          include-hidden-files: true
           if-no-files-found: error
           retention-days: 1
 
@@ -290,10 +295,14 @@ jobs:
   release:
     name: Sign and verify (${{ matrix.target }})
     needs: [release-preflight, release-bundle]
-    # macOS signing runs on the runner named by the repository variable
-    # DESKTOP_MACOS_SIGNING_RUNNER (a label, or a JSON array of labels for a
-    # self-hosted runner); the default is the GitHub-hosted macos-14. The
-    # self-hosted runner is not assumed.
+    # macOS signing runs on the runner named by the REPOSITORY (or
+    # organization) variable DESKTOP_MACOS_SIGNING_RUNNER (a label, or a JSON
+    # array of labels for a self-hosted runner); the default is the
+    # GitHub-hosted macos-14. strategy.matrix and runs-on are evaluated before
+    # the environment is bound, so an environment variable of that name is not
+    # visible here. A self-hosted runner must be ephemeral (or wipe keychain
+    # and workspace per job) and in a runner group restricted to this
+    # repository and workflow. See the Release pipeline README.
     runs-on: ${{ fromJSON(startsWith(matrix.runner, '[') && matrix.runner || format('["{0}"]', matrix.runner)) }}
     timeout-minutes: 90
     environment: desktop-release
@@ -325,11 +334,20 @@ jobs:
         with:
           persist-credentials: false
 
+      # The bundle comes from the untrusted bundle job. It is downloaded into
+      # an empty directory under RUNNER_TEMP, never into the checkout, and is
+      # never extracted from an archive: the artifact is a plain directory of
+      # files, so there is no tar member to write through a symlink.
+      - name: Prepare an empty bundle directory
+        run: |
+          rm -rf "$RUNNER_TEMP/desktop-bundle"
+          mkdir -p "$RUNNER_TEMP/desktop-bundle"
+
       - name: Download the bundle
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: desktop-bundle-${{ matrix.target }}
-          path: .desktop-bundle-download
+          path: ${{ runner.temp }}/desktop-bundle
 
       - name: Set up Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
@@ -339,19 +357,20 @@ jobs:
       # Re-verify the bundle after the artifact hop against the COMMITTED Node
       # pin record of this (main) checkout, never against the bundle's own
       # claim. Fails closed on a pin that is not committed and gpg-verified, a
-      # placeholder identity, another target, a changed, unlisted or symlinked
-      # file or any extra Tauri key. Then writes the config overlay from an
+      # placeholder identity, another target, a top-level entry other than
+      # binaries/, resources/ and the three metadata files, a changed,
+      # unlisted or symlinked file or any extra Tauri key. The artifact drops
+      # the executable bit, so staging marks everything under binaries/
+      # executable. Then writes the config overlay from an
       # allowlist and copies exactly the verified files next to
       # tauri.conf.json (the paths in tauri.bundle.json are relative to it).
       - name: Preflight the bundle, write the overlay and stage the files
         env:
           TARGET: ${{ matrix.target }}
         run: |
-          mkdir -p .desktop-bundle
-          tar -C .desktop-bundle -xf ".desktop-bundle-download/bundle-$TARGET.tar"
           node "$SHELL_DIR/scripts/release-preflight.mjs" \
             --config "$SHELL_DIR/tauri.conf.json" \
-            --bundle ".desktop-bundle/$TARGET" \
+            --bundle "$RUNNER_TEMP/desktop-bundle" \
             --target "$TARGET" \
             --node-pins packages/smrt-desktop/src/bundler/node-pins.ts \
             --write-overlay "$SHELL_DIR/tauri.release.json" \
