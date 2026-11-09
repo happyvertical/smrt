@@ -60,7 +60,15 @@ export interface CredentialLease {
 }
 
 export type AcquireCredentialResult =
-  | { readonly ok: true; readonly lease: CredentialLease }
+  | {
+      readonly ok: true;
+      /**
+       * The instance that answered, echoed so the reply is bound to the
+       * instance `status` proved: a provider rejects a mismatch.
+       */
+      readonly instanceNonce: string;
+      readonly lease: CredentialLease;
+    }
   | { readonly ok: false; readonly code: CredentialFailureCode };
 
 export interface CredentialControlHandlerOptions {
@@ -139,6 +147,7 @@ export function createCredentialControlHandler(
       }
       return Object.freeze({
         ok: true,
+        instanceNonce: current.instanceNonce,
         lease: Object.freeze({
           token: credential.token,
           origin: current.origin,
@@ -157,9 +166,16 @@ export function createCredentialControlHandler(
   };
 }
 
-const successKeys = ['v', 'ok', 'origin', 'token', 'expiresAt'];
+const successKeys = [
+  'v',
+  'ok',
+  'instanceNonce',
+  'origin',
+  'token',
+  'expiresAt',
+];
 /** Success reply as the control codec decodes it: the bearer already wrapped. */
-const decodedSuccessKeys = ['v', 'ok', 'lease'];
+const decodedSuccessKeys = ['v', 'ok', 'instanceNonce', 'lease'];
 const decodedLeaseKeys = ['token', 'origin', 'expiresAt'];
 const failureKeys = ['v', 'ok', 'code'];
 
@@ -180,6 +196,7 @@ export function encodeAcquireCredentialResponse(
   return JSON.stringify({
     v: 1,
     ok: true,
+    instanceNonce: result.instanceNonce,
     origin: lease.origin,
     token,
     expiresAt: lease.expiresAt,
@@ -189,7 +206,7 @@ export function encodeAcquireCredentialResponse(
 /**
  * Strictly decode an `acquire-credential` reply (a JSON line, the object the
  * control transport parsed, or the control codec's decoded form
- * `{ v, ok: true, lease }`, which is re-validated field by field) into a
+ * `{ v, ok: true, instanceNonce, lease }`, which is re-validated field by field) into a
  * result whose bearer is a `SecretString`. Any deviation (unknown key, bad origin, bad token, bad
  * timestamp, unknown code) throws a value-free `credential_unavailable`.
  */
@@ -217,6 +234,7 @@ export function parseAcquireCredentialResponse(
   if (hasClosedKeys(value, decodedSuccessKeys)) {
     const lease = value.lease;
     if (
+      !isInstanceNonce(value.instanceNonce) ||
       !isRecord(lease) ||
       !hasClosedKeys(lease, decodedLeaseKeys) ||
       !(lease.token instanceof SecretString) ||
@@ -228,6 +246,7 @@ export function parseAcquireCredentialResponse(
     }
     return Object.freeze({
       ok: true,
+      instanceNonce: value.instanceNonce,
       lease: Object.freeze({
         token: lease.token,
         origin: lease.origin,
@@ -237,6 +256,7 @@ export function parseAcquireCredentialResponse(
   }
   if (
     !hasClosedKeys(value, successKeys) ||
+    !isInstanceNonce(value.instanceNonce) ||
     !isLoopbackOrigin(value.origin) ||
     !isMcpToken(value.token) ||
     !isIsoUtcTimestamp(value.expiresAt)
@@ -245,6 +265,7 @@ export function parseAcquireCredentialResponse(
   }
   return Object.freeze({
     ok: true,
+    instanceNonce: value.instanceNonce,
     lease: Object.freeze({
       token: new SecretString(value.token),
       origin: value.origin,

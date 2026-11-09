@@ -149,10 +149,14 @@ posixOnly(
           origin: ORIGIN,
           instanceNonce: shell.supervisor.instanceNonce,
           productId: PRODUCT,
+          endpoint: expect.any(Object),
         });
         expect(Object.isFrozen(result)).toBe(true);
         expect(spawnShell).not.toHaveBeenCalled();
-        expect(await make().status()).toEqual(result);
+        expect(await make().status()).toMatchObject({
+          state: 'ready',
+          instanceNonce: shell.supervisor.instanceNonce,
+        });
       });
 
       it('reports starting from status and waits on ensure-ready', async () => {

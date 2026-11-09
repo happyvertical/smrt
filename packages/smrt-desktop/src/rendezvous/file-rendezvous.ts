@@ -26,6 +26,7 @@ import {
   type InstanceRecordV1,
   parseInstanceRecord,
 } from './instance-record.js';
+import { issueVettedEndpoint, type VettedEndpoint } from './vetted-endpoint.js';
 
 /** The non-secret flag that starts the shell without showing a window. */
 export const SHELL_BACKGROUND_FLAG = '--smrt-background';
@@ -38,7 +39,8 @@ export const DEFAULT_ENSURE_READY_TIMEOUT_MS = 60_000;
  * non-secret instance nonce, never a bearer, a pid or a path.
  *
  * - `ready`: the control channel answered for the recorded instance and
- *   reported `ready`. `origin` is exactly `http://127.0.0.1:<port>`.
+ *   reported `ready`. `origin` is exactly `http://127.0.0.1:<port>`. `endpoint`
+ *   is the vetted channel handle (see `RendezvousResult` below).
  * - `starting`: (`status` only) the instance is up and not ready yet.
  * - `failed`: the instance, or this client, failed with a typed `code`. A
  *   `failed` outcome is returned, never retried by the client.
@@ -59,6 +61,14 @@ export type RendezvousResult =
       readonly origin: string;
       readonly instanceNonce: string;
       readonly productId: string;
+      /**
+       * The control endpoint the rendezvous vetted, for the credential flow
+       * (`createControlChannelSend`). Opaque: no path, no name. Absent on
+       * Windows unless the shell supplied `vetPipe`: this package cannot
+       * check a pipe's owner or DACL, so without a vetting function there is
+       * no handle and the credential flow fails closed.
+       */
+      readonly endpoint?: VettedEndpoint;
     }
   | { readonly state: 'starting'; readonly instanceNonce: string }
   | { readonly state: 'failed'; readonly code: RendezvousFailureCode }
@@ -141,6 +151,18 @@ export interface FileRendezvousOptions {
   readonly connectTimeoutMs?: number;
   /** Response timeout of a `status` request. Default 2000. */
   readonly statusTimeoutMs?: number;
+  /**
+   * Windows only: the shell's check of a named pipe (the server's owner or
+   * process via `GetNamedPipeServerProcessId`, and the DACL). Node cannot do
+   * this and this package implements no pipe vetting of its own. Without it a
+   * `ready` result on Windows carries no `endpoint` handle (the credential
+   * flow then fails closed); a function that returns `false` or throws makes
+   * the pipe `untrusted_state`. Ignored on POSIX, where the directory and
+   * socket checks are done here.
+   */
+  readonly vetPipe?: (
+    endpoint: Extract<ControlEndpoint, { readonly kind: 'pipe' }>,
+  ) => boolean | Promise<boolean>;
   /** Effective uid. Defaults to `process.getuid()`; ignored on Windows. */
   readonly currentUid?: number;
   /** Defaults to `process.platform`. */
@@ -239,6 +261,7 @@ type Probe =
       readonly origin: string;
       readonly instanceNonce: string;
       readonly productId: string;
+      readonly endpoint: VettedEndpoint | undefined;
     }
   | { readonly kind: 'starting'; readonly instanceNonce: string }
   | { readonly kind: 'failed'; readonly code: RendezvousFailureCode }
@@ -383,14 +406,30 @@ export function createFileRendezvous(
     }
   }
 
-  /** `'ok'`, `'stale'` (nothing there) or `'untrusted'`. */
+  /**
+   * `'vetted'`, `'unvetted'` (a Windows pipe nobody checked: usable for
+   * `status`, never handed to the credential flow), `'stale'` (nothing there)
+   * or `'untrusted'`.
+   */
   async function vetEndpoint(
     endpoint: ControlEndpoint,
-  ): Promise<'ok' | 'stale' | 'untrusted'> {
+  ): Promise<'vetted' | 'unvetted' | 'stale' | 'untrusted'> {
     if ((endpoint.kind === 'pipe') !== (platform === 'win32')) {
       return 'untrusted';
     }
-    if (endpoint.kind === 'pipe') return 'ok';
+    if (endpoint.kind === 'pipe') {
+      // TypeScript implements no pipe vetting: the name grammar is checked by
+      // the parser and that is all. A shell that can check the server's
+      // identity and DACL injects it; otherwise there is no vetted handle.
+      if (options.vetPipe === undefined) return 'unvetted';
+      try {
+        return (await options.vetPipe(endpoint)) === true
+          ? 'vetted'
+          : 'untrusted';
+      } catch {
+        return 'untrusted';
+      }
+    }
     try {
       await assertPrivateDirectory(
         controlSocketDirectory(endpoint.path),
@@ -411,7 +450,7 @@ export function createFileRendezvous(
       ) {
         return 'untrusted';
       }
-      return 'ok';
+      return 'vetted';
     } catch (error) {
       const code = (error as { code?: unknown } | null)?.code;
       return code === 'ENOENT' || code === 'ENOTDIR' ? 'stale' : 'untrusted';
@@ -422,6 +461,7 @@ export function createFileRendezvous(
     record: InstanceRecordV1,
     installation: VerifiedInstallation,
     response: ControlResponse,
+    endpoint: VettedEndpoint | undefined,
   ): Probe | 'disagree' {
     if (!response.ok) {
       switch (response.code) {
@@ -454,6 +494,7 @@ export function createFileRendezvous(
               origin: answer.origin,
               instanceNonce: answer.instanceNonce,
               productId: answer.productId,
+              endpoint,
             }
           : 'disagree';
       case 'starting':
@@ -482,6 +523,9 @@ export function createFileRendezvous(
       const vetted = await vetEndpoint(record.control);
       if (vetted === 'stale') return ABSENT;
       if (vetted === 'untrusted') return UNTRUSTED;
+      // Minted only here, after the checks, for exactly this record's endpoint.
+      const endpoint =
+        vetted === 'vetted' ? issueVettedEndpoint(record.control) : undefined;
 
       let response: ControlResponse;
       try {
@@ -525,7 +569,7 @@ export function createFileRendezvous(
         return UNTRUSTED;
       }
 
-      const interpreted = interpret(record, installation, response);
+      const interpreted = interpret(record, installation, response, endpoint);
       if (interpreted !== 'disagree') return interpreted;
       // The shell may have restarted between the read and the connect.
       if (attempt >= 1) return failureOf('instance_mismatch');
@@ -541,6 +585,9 @@ export function createFileRendezvous(
           origin: result.origin,
           instanceNonce: result.instanceNonce,
           productId: result.productId,
+          ...(result.endpoint === undefined
+            ? {}
+            : { endpoint: result.endpoint }),
         });
       case 'starting':
         return frozen({

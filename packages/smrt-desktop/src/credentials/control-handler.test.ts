@@ -259,6 +259,7 @@ describe('acquire-credential reference handler', () => {
       expect(JSON.parse(wire)).toEqual({
         v: 1,
         ok: true,
+        instanceNonce: NONCE,
         origin: ORIGIN,
         token: CANARY_TOKEN,
         expiresAt: FUTURE,
@@ -291,6 +292,7 @@ describe('acquire-credential reference handler', () => {
         {
           v: 1,
           ok: true,
+          instanceNonce: NONCE,
           origin: ORIGIN,
           token: CANARY_TOKEN,
           expiresAt: FUTURE,
@@ -302,6 +304,7 @@ describe('acquire-credential reference handler', () => {
         {
           v: 1,
           ok: true,
+          instanceNonce: NONCE,
           origin: 'http://localhost:1',
           token: CANARY_TOKEN,
           expiresAt: FUTURE,
@@ -309,11 +312,46 @@ describe('acquire-credential reference handler', () => {
       ],
       [
         'bad token',
-        { v: 1, ok: true, origin: ORIGIN, token: 'nope', expiresAt: FUTURE },
+        {
+          v: 1,
+          ok: true,
+          instanceNonce: NONCE,
+          origin: ORIGIN,
+          token: 'nope',
+          expiresAt: FUTURE,
+        },
       ],
       [
         'bad expiry',
-        { v: 1, ok: true, origin: ORIGIN, token: CANARY_TOKEN, expiresAt: 'x' },
+        {
+          v: 1,
+          ok: true,
+          instanceNonce: NONCE,
+          origin: ORIGIN,
+          token: CANARY_TOKEN,
+          expiresAt: 'x',
+        },
+      ],
+      [
+        'missing instance echo',
+        {
+          v: 1,
+          ok: true,
+          origin: ORIGIN,
+          token: CANARY_TOKEN,
+          expiresAt: FUTURE,
+        },
+      ],
+      [
+        'malformed instance echo',
+        {
+          v: 1,
+          ok: true,
+          instanceNonce: 'short',
+          origin: ORIGIN,
+          token: CANARY_TOKEN,
+          expiresAt: FUTURE,
+        },
       ],
       [
         'failure with token',
