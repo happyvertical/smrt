@@ -171,7 +171,7 @@ describe('the /testing subpath', () => {
       import: './dist/testing.js',
     });
     expect(read('vite.config.ts')).toContain(
-      "{ name: 'testing', source: 'src/reference/index.ts' }",
+      "{ name: 'testing', source: 'src/testing.ts' }",
     );
   });
 

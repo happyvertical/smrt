@@ -9,7 +9,7 @@ export default createPackageConfig('smrt-desktop', {
     { name: 'bundler', source: 'src/bundler/index.ts' },
     // Node-only reference servers and test doubles (`/testing`). Not a
     // production surface: the real server, writer and custody are the shell's.
-    { name: 'testing', source: 'src/reference/index.ts' },
+    { name: 'testing', source: 'src/testing.ts' },
   ],
   // Test-only fixtures must not ship as published types.
   dtsExclude: ['src/testing/**', 'src/**/testing/**'],
