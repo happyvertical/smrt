@@ -289,6 +289,7 @@ export {
 export {
   AgentSchedule,
   AgentScheduleCollection,
+  type ScheduleAdmissionReconfiguration,
   type ScheduleStatus,
 } from './schedule.js';
 // Generic SmrtObject collection -> DataSurface adapter (#2905).

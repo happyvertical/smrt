@@ -394,3 +394,11 @@ source and current completion/event evidence cannot be replaced or deleted;
 managed source money/payer/context and linked refund facts cannot be edited
 around the position. Caller rollback includes both evidence and source revision.
 Expenses with no supplier-payable authority keep their existing behavior.
+
+## Reviewed expense allocations
+
+A reviewed original may be attributed through immutable, fully reconciled portions
+to multiple authorized same-tenant cost objects, without cloning its spend or
+receipt evidence. See [the allocation contract](agents/reviewed-allocations.md)
+for current actor/target authority, retries, corrections, reporting and canonical
+draft-to-issued billing reservations. Existing unsplit expense APIs remain valid.

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "executable": "binaries/node",
+  "executable": "node",
   "args": ["build/index.js"],
   "healthRoute": "/api/_runtime/health",
   "dataDirectory": "runtime"

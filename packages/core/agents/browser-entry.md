@@ -73,3 +73,9 @@ not emit it), and a `browser` mapping; `browser-field.test.ts` checks all three.
 - The whole browser entry does not yet evaluate unbundled: several modules
   read `process.env` at module scope, and `@happyvertical/utils` imports
   CommonJS `pluralize` itself (#4534).
+
+Legacy STI discovery uses the same Node-host capability before resolving installed
+or workspace package paths (#4766). Without a filesystem, uncached optional
+dependencies remain absent; bundled/static/cached manifest entries still supply
+the complete available STI field metadata. Required schema/registration lookups
+keep their existing explicit errors rather than manufacturing missing metadata.

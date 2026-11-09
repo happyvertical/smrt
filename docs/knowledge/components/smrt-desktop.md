@@ -5,10 +5,10 @@ description: "Versioned sidecar manifest for SMRT desktop apps"
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T17:39:51Z"
+  at: "2026-11-08T21:49:53Z"
 audience: "internal"
 evidence_level: "manifest-described"
-source_revision: "sha256:e12f0a6c9e9d167e0f17775f2be0fa2a1dee881aff99b2cf2780019be2552567"
+source_revision: "sha256:d91524a1468a37374a679ecebe99a8a85efd5b6b9f4e1762d57207853e092c8e"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/smrt-desktop/package.json"

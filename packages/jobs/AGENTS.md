@@ -20,6 +20,14 @@ Status: `pending → running → completed/failed/cancelled`.
 
 Polling-based execution engine. Config: `concurrency` (5), `pollInterval` (1s), `idlePollInterval` (defaults to 20× `pollInterval`), `heartbeatInterval` (30s, telemetry only), `leaseTtlMs` (30s), `leaseTickMs` (10s), `shutdownTimeout` (30s). Empty claims back off exponentially to `idlePollInterval`; any claimed work, capacity pressure, or poll error resets to `pollInterval`. Every delay is capped at the effective worker lease TTL, including an oversized base interval; recovery sweep spacing stays TTL-bounded (plus query/event-loop time). Polling intervals must be finite positive milliseconds within the Node timer range. `stop()` waits (within `shutdownTimeout`) for an in-flight poll as well as active jobs; a poll that resumes after `stop()` began returns before claiming, and over-claimed rows are released both before and after the drain (#3148).
 
+Optional `tenantIds` scopes both atomic ready claims and orphan recovery before
+ownership or terminal-state writes (`undefined` means all; `[]` means none;
+`null` includes global jobs). Recovery also respects configured queues. Scoped
+runners default `retention` to `false`, since the system-wide maintenance sweep
+has no tenant filter; opt into that sweep only in an authorized maintenance host.
+`ClaimReadyOptions` and `ListReadyOptions` accept the same tenant scope. Queue
+lease advertising remains queue-level; it does not prove per-tenant availability.
+
 1. `start()` calls `assertReady()` (fail fast if `_smrt_workers` unmigrated), registers a seeded `SmrtWorker` lease, and adds its worker key to the process-global live set — all **before** polling
 2. Polls `claimReady()` to atomically claim at most the free slots (`concurrency - active`) of pending jobs (`runAt <= NOW`, ordered by `priority DESC, runAt ASC, created_at ASC, id ASC`). On PostgreSQL the candidates come from a `MATERIALIZED` CTE joined to the UPDATE; never claim with `WHERE id IN (SELECT … LIMIT n FOR UPDATE SKIP LOCKED)` — a nested-loop semi join rescans it per outer row and takes the whole backlog (#3145). The runner also never starts more than the free slots and returns any surplus claim to `pending` with its attempt restored
 3. Claim sets `status='running'`, `workerId=<incarnation key>`, heartbeat/start timestamps, and increments `attempts`
@@ -61,7 +69,7 @@ Handlers receive `context.signal`, a plain `AbortSignal` (pass it to `fetch` or 
 
 Cooperative only: aborting changes no lifecycle state, retry policy, terminal-write guard or event. A handler that ignores the signal behaves exactly as before; one that rejects with the abort reason cannot overwrite `cancelled`/`failed` (the `WHERE worker_id=? AND status='running'` guard drops its terminal write). Not aborted on runner shutdown. `isRunnerExecutionContext` and MCP-task invocations are unchanged; they receive the same `signal`.
 
-**Why no dedup key / usage record here:** a caller dedup key and per-attempt usage live in `smrt-education` (generation jobs are unique on `(tenant_id, request_key)` with replay; generation usage records hold input/output tokens, cost and `usageJson`). Jobs only owns execution and cancellation.
+**Domain request identity / usage:** `smrt-education` still owns generation request replay and per-attempt usage. The generic store dedupe key below only reserves one nonterminal job; it never replaces domain idempotency or usage records.
 
 ## Worker liveness & recovery (#1474)
 
@@ -76,11 +84,10 @@ Recovery keys on **worker-process liveness**, never per-job heartbeat freshness 
 
 ## ScheduleRunner
 
-Polls `_smrt_agent_schedules` every 60s for due entries. Creates SmrtJob with `queue='agents'`, `priority=75`. Wires to TaskRunner events for completion/failure tracking. Slot reconciliation keys on worker liveness (it has no in-process active-job set, so the lease/live-set is its whole mechanism).
-
-The job is enqueued **before** `next_run` is advanced and `running_count` is incremented: a transient enqueue failure (tenant-cap hit, DB blip) therefore leaves `next_run` and `status='active'` untouched so the same due slot is retried on the next poll, rather than losing the slot and disabling the schedule.
-
-`next_run` is always recomputed from *now*, never from the previous `next_run` — this is **fire-once-forward**: runs that came due while the runner was down are not caught up, only the next future occurrence fires. There is no missed-run backfill.
+Transactional schedule admission, tenant/type scopes, dedicated queues,
+occurrence metadata, retry/slot semantics, graceful drain, and tenant-partitioned
+nonterminal job keys are documented in [safe scheduling](agents/scheduling.md).
+Run `smrt db:migrate` before using the new job provenance and dedupe-slot schema.
 
 Custom cron parser (`getNextCronDate(cron, timezone?)`): 5-field (minute hour dom month dow); `*`, ranges, lists, steps supported, each list term matched on its own. Fields match the wall clock of the schedule's IANA `timezone` (`Intl.DateTimeFormat`, DST-correct, no dependency); the re-arm passes the row's `timezone`, and a NULL/blank zone falls back to the column default `UTC`. Unknown zones throw `Invalid cron timezone`; the runner moves a row whose cron or zone is invalid to `status='error'` with `last_error`, since retrying it every poll cannot succeed. Only an omitted argument uses the host process zone (legacy; `smrt-reports` still relies on it). DST follows Vixie cron: fixed-time crons (no `*` in minute or hour) run once per day, a gap-skipped wall time runs shifted forward by the gap, a repeated one only at its first occurrence; wildcard crons follow elapsed time (gap minutes skipped, the repeated hour runs again) (#3859).
 

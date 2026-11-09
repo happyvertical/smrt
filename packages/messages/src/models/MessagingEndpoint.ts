@@ -8,7 +8,7 @@ import {
   SmrtObject,
   smrt,
 } from '@happyvertical/smrt-core';
-import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy/decorators';
 import type { MessagingChannel, MessagingEndpointOptions } from '../types.js';
 
 @TenantScoped({ mode: 'required' })

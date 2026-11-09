@@ -1,3 +1,13 @@
+import {
+  allocationTargetAmount,
+  type ExpenseAllocationAuthority,
+  type ExpenseAllocationResult,
+  type ReviewExpenseAllocationInput,
+  reviewExpenseAllocation,
+  type WithdrawExpenseAllocationInput,
+  type WithdrawExpenseAllocationResult,
+  withdrawExpenseAllocation,
+} from '../expense-allocation.js';
 /**
  * ExpenseCollection — queries, per-currency totals, and commitment drawdown.
  *
@@ -314,23 +324,44 @@ export class ExpenseCollection extends SmrtCollection<Expense> {
   ): Promise<CurrencyTotals> {
     const statuses = options.reviewStatuses ?? ['reviewed'];
     if (statuses.length === 0) return {};
-    const rows = (await this.list({
-      where: {
-        ...(options.where ?? {}),
-        reviewStatus: [...statuses],
-        duplicateOfId: null,
-      },
-      select: [...AMOUNT_FIELDS],
-    })) as unknown as AmountRow[];
-
+    const where = { ...(options.where ?? {}) };
+    const targetFilter: Record<string, unknown> = {};
+    for (const key of Object.keys(where)) {
+      if (/^cost(ObjectType|ObjectId|CodeRef)/.test(key)) {
+        targetFilter[key] = where[key];
+        delete where[key];
+      }
+    }
+    const rows = await this.list({
+      where: { ...where, reviewStatus: [...statuses], duplicateOfId: null },
+    });
     const totals: CurrencyTotals = {};
     const seen = new Set<string>();
     for (const row of rows) {
-      if (seen.has(row.id)) continue;
+      if (!row.id || seen.has(row.id)) continue;
       seen.add(row.id);
-      addTo(totals, row.currency, toMinorUnits(row.amount));
+      const amount = Object.keys(targetFilter).length
+        ? await allocationTargetAmount(row, targetFilter)
+        : toMinorUnits(row.amount);
+      if (amount !== null) addTo(totals, row.currency, amount);
     }
     return totals;
+  }
+
+  /** Review a complete allocation through ambient reviewer and mandatory host authority. */
+  async reviewAllocation(
+    input: ReviewExpenseAllocationInput,
+    authority: ExpenseAllocationAuthority,
+  ): Promise<ExpenseAllocationResult> {
+    return reviewExpenseAllocation(this.db, input, authority);
+  }
+
+  /** Audit withdrawal of entirely unreserved portions before correcting the original source. */
+  async withdrawAllocation(
+    input: WithdrawExpenseAllocationInput,
+    authority: ExpenseAllocationAuthority,
+  ): Promise<WithdrawExpenseAllocationResult> {
+    return withdrawExpenseAllocation(this.db, input, authority);
   }
 
   /**

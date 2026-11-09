@@ -5,10 +5,10 @@ description: "Commerce models for the SMRT framework - contracts, fulfillments, 
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-06T07:55:27Z"
+  at: "2026-11-08T01:15:12Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:df81c61c30a297cbc88414f36a109ce506c11d7a0a007850994d60b9108bf9fa"
+source_revision: "sha256:d70e91243dd5976391d17d2011d6c2f45418f85e3db36b0f8ed3a2a00c5787cd"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/commerce/package.json"
@@ -53,33 +53,36 @@ sources:
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/commerce/agents/invoice-quantity.md"
     title: "@happyvertical/smrt-commerce packages/commerce/agents/invoice-quantity.md"
   - id: "agents-14"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/commerce/agents/invoice-source-binding.md"
+    title: "@happyvertical/smrt-commerce packages/commerce/agents/invoice-source-binding.md"
+  - id: "agents-15"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/commerce/agents/money-calculator.md"
     title: "@happyvertical/smrt-commerce packages/commerce/agents/money-calculator.md"
-  - id: "agents-15"
+  - id: "agents-16"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/commerce/agents/money-model.md"
     title: "@happyvertical/smrt-commerce packages/commerce/agents/money-model.md"
-  - id: "agents-16"
+  - id: "agents-17"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/commerce/agents/money-upgrade.md"
     title: "@happyvertical/smrt-commerce packages/commerce/agents/money-upgrade.md"
-  - id: "agents-17"
+  - id: "agents-18"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/commerce/agents/observed-purchase-prices.md"
     title: "@happyvertical/smrt-commerce packages/commerce/agents/observed-purchase-prices.md"
-  - id: "agents-18"
+  - id: "agents-19"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/commerce/agents/ordinary-accounting.md"
     title: "@happyvertical/smrt-commerce packages/commerce/agents/ordinary-accounting.md"
-  - id: "agents-19"
+  - id: "agents-20"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/commerce/agents/payment-allocations.md"
     title: "@happyvertical/smrt-commerce packages/commerce/agents/payment-allocations.md"
-  - id: "agents-20"
+  - id: "agents-21"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/commerce/agents/purchasing-ui.md"
     title: "@happyvertical/smrt-commerce packages/commerce/agents/purchasing-ui.md"
-  - id: "agents-21"
+  - id: "agents-22"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/commerce/agents/quote-ui.md"
     title: "@happyvertical/smrt-commerce packages/commerce/agents/quote-ui.md"
-  - id: "agents-22"
+  - id: "agents-23"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/commerce/agents/received-sales-contract-money.md"
     title: "@happyvertical/smrt-commerce packages/commerce/agents/received-sales-contract-money.md"
-  - id: "agents-23"
+  - id: "agents-24"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/commerce/agents/tax-codes.md"
     title: "@happyvertical/smrt-commerce packages/commerce/agents/tax-codes.md"
 ---
@@ -108,6 +111,7 @@ sources:
 - `packages/commerce/agents/estimate-conversion.md`
 - `packages/commerce/agents/historical-sales.md`
 - `packages/commerce/agents/invoice-quantity.md`
+- `packages/commerce/agents/invoice-source-binding.md`
 - `packages/commerce/agents/money-calculator.md`
 - `packages/commerce/agents/money-model.md`
 - `packages/commerce/agents/money-upgrade.md`

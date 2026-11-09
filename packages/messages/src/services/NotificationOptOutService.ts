@@ -2,8 +2,8 @@ import {
   isUniqueViolationError,
   type SmrtClassOptions,
 } from '@happyvertical/smrt-core';
-import { withTenant } from '@happyvertical/smrt-tenancy';
 import { NotificationOptOutCollection } from '../collections/NotificationOptOutCollection.js';
+import { withTenant } from '../host.js';
 import {
   NOTIFICATION_DELIVERY_CHANNELS,
   type NotificationDeliveryChannel,

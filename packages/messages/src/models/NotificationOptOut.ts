@@ -8,7 +8,7 @@ import {
   SmrtObject,
   smrt,
 } from '@happyvertical/smrt-core';
-import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy/decorators';
 import type { NotificationDeliveryChannel } from './NotificationDelivery.js';
 
 /** `*` (everything in the tenant) or a host key such as `project:<uuid>`. */

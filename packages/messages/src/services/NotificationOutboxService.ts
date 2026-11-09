@@ -2,11 +2,17 @@ import {
   isUniqueViolationError,
   type SmrtClassOptions,
 } from '@happyvertical/smrt-core';
-import { withSystemContext, withTenant } from '@happyvertical/smrt-tenancy';
 import { AccountCollection } from '../collections/AccountCollection.js';
 import { EmailCollection } from '../collections/EmailCollection.js';
 import { MessageCollection } from '../collections/MessageCollection.js';
 import { NotificationDeliveryCollection } from '../collections/NotificationDeliveryCollection.js';
+import {
+  normalizeIdentityEmail,
+  readNotificationProfile,
+  withSystemContext,
+  withTenant,
+} from '../host.js';
+import { assertNotificationProfileRecipientSchema } from '../migrations/profileRecipients.js';
 import { EmailAccount } from '../models/EmailAccount.js';
 import type { Message } from '../models/Message.js';
 import type {
@@ -14,11 +20,18 @@ import type {
   NotificationDeliveryChannel,
   NotificationDeliveryTransition,
 } from '../models/NotificationDelivery.js';
+import { assertNotificationRecipientIdentity } from '../notification-recipient-identity.js';
 import {
   assertMessagingPermission,
   type MessagingPrincipal,
   SEND_MESSAGES_PERMISSION,
 } from '../permissions.js';
+import {
+  ProtectedNotificationHandoffError,
+  protectedNotificationMetadata,
+  withProtectedNotificationHandoff,
+} from '../protected-notification-handoff.js';
+import type { SendEmailAttachment, SendEmailOptions } from '../types.js';
 
 // ─────────────────────────────────────────────────────────────────────────
 // Transport seam
@@ -41,6 +54,8 @@ export interface NotificationTransportRequest {
   message: Message;
   /** Stable per delivery; pass it to providers that dedupe on a key. */
   idempotencyKey: string;
+  /** Host-authorized send-time bytes; never file paths or remote URLs. */
+  attachments?: SendEmailAttachment[];
 }
 
 /**
@@ -80,8 +95,11 @@ export interface NotificationTransport {
 export const messageSendTransport: NotificationTransport = {
   name: 'message-send',
   idempotent: false,
-  async send({ message }) {
-    const result = await message.send();
+  async send({ message, attachments }) {
+    const options: SendEmailOptions | undefined = attachments
+      ? { attachments }
+      : undefined;
+    const result = await message.send(options);
     if (result.success) {
       return {
         status: 'accepted',
@@ -168,6 +186,12 @@ export interface NotificationRecipientRequest {
   channel: NotificationDeliveryChannel;
 }
 
+export interface NotificationProfileRecipientRequest {
+  tenantId: string;
+  recipientProfileId: string;
+  channel: 'email';
+}
+
 export interface NotificationRecipient {
   address: string;
   name?: string;
@@ -175,6 +199,11 @@ export interface NotificationRecipient {
 
 export interface NotificationSuppressionRequest
   extends NotificationRecipientRequest {
+  kind: string;
+  sourceRef: string;
+}
+export interface NotificationProfileSuppressionRequest
+  extends NotificationProfileRecipientRequest {
   kind: string;
   sourceRef: string;
 }
@@ -190,6 +219,10 @@ export interface NotificationOutboxOptions {
   resolveRecipient(
     request: NotificationRecipientRequest,
   ): Promise<NotificationRecipient | null> | NotificationRecipient | null;
+  /** Resource-aware authorization for a current tenant-owned external contact. No address input. */
+  resolveProfileRecipient?(
+    request: NotificationProfileRecipientRequest,
+  ): Promise<NotificationRecipient | null> | NotificationRecipient | null;
   /** The sending `EmailAccount` id for a tenant (deployment setup). */
   resolveSenderAccountId(request: {
     tenantId: string;
@@ -200,10 +233,33 @@ export interface NotificationOutboxOptions {
   isSuppressed?(
     request: NotificationSuppressionRequest,
   ): Promise<boolean> | boolean;
+  /** External contacts have their own opt-out policy; never infer a User preference or fabricate a User ID. */
+  isProfileSuppressed?(
+    request: NotificationProfileSuppressionRequest,
+  ): Promise<boolean> | boolean;
   /** Provider seam; defaults to {@link messageSendTransport}. */
   transport?: NotificationTransport;
   /**
-   * When set, enqueue and reconcile require `messages.send` in the tenant.
+   * Resolve and authorize current immutable document bytes before each fresh
+   * provider handoff. A failure is a pre-handoff rejection, never a silent
+   * attachment omission. Reconciliation does not need document access.
+   */
+  resolveAttachments?(
+    request: NotificationTransportRequest,
+  ): Promise<SendEmailAttachment[]> | SendEmailAttachment[];
+  /** Trusted server map. Protected rows cannot be dispatched without their exact policy. */
+  dispatchPolicies?: Readonly<
+    Record<
+      string,
+      {
+        resolveAttachments(
+          request: NotificationTransportRequest,
+        ): Promise<SendEmailAttachment[]> | SendEmailAttachment[];
+      }
+    >
+  >;
+  /**
+   * When set, enqueue, dispatch and reconcile require `messages.send` in the tenant.
    * Omit only for trusted system code that performs its own authorization.
    */
   principal?: MessagingPrincipal;
@@ -219,7 +275,10 @@ export interface NotificationOutboxOptions {
 
 export interface NotificationEmailInput {
   tenantId: string;
-  recipientUserId: string;
+  /** Exactly one recipient reference is required. Existing User calls remain unchanged. */
+  recipientUserId?: string;
+  /** External contact; requires email, a trusted protected policy and explicit schema maintenance. */
+  recipientProfileId?: string;
   /** Idempotency key for the event, e.g. `project-question:<id>:asked`. */
   sourceRef: string;
   /** Host-defined type, e.g. `project-question.asked`. */
@@ -232,6 +291,10 @@ export interface NotificationEmailInput {
   path: string;
   /** Do not send before this time (default: now). */
   notBefore?: Date;
+  /** Required trusted server policy; cannot be downgraded after enqueue. */
+  requiredDispatchPolicy?: string;
+  /** Host-approved immutable resource/version/digest and destination binding. */
+  dispatchPolicyBinding?: Record<string, unknown>;
 }
 
 export interface NotificationEnqueueResult {
@@ -246,6 +309,7 @@ export type NotificationDispatchOutcome =
   | 'failed'
   | 'uncertain'
   | 'cancelled'
+  | 'blocked'
   | 'lease-lost';
 
 export interface NotificationDispatchReport {
@@ -261,6 +325,8 @@ export interface NotificationDispatchReport {
 export interface NotificationDispatchOptions {
   /** Tenants to dispatch; omit to discover due rows across all tenants. */
   tenantIds?: readonly string[];
+  /** Exact delivery selection, applied before query limits and lease acquisition. Empty selects none. */
+  deliveryIds?: readonly string[];
   /** Maximum rows to lease in this call (default 25, max 200). */
   limit?: number;
 }
@@ -381,6 +447,14 @@ export function buildNotificationLink(baseUrl: string, path: string): string {
  * at any point. See `packages/messages/agents/notification-outbox.md`.
  */
 export class NotificationOutboxService {
+  /** Additive dispatch contracts hosts can require before activating a sender. */
+  static readonly capabilities = Object.freeze({
+    deliverySelection: true,
+    attachments: true,
+    requiredPolicy: true,
+    protectedCanonicalSend: true,
+    profileRecipients: true,
+  } as const);
   private readonly transport: NotificationTransport;
   private readonly leaseMs: number;
   private readonly maxAttempts: number;
@@ -425,7 +499,62 @@ export class NotificationOutboxService {
     input: NotificationEmailInput,
   ): Promise<NotificationEnqueueResult> {
     const tenantId = requireText(input.tenantId, 'tenant');
-    const recipientUserId = requireText(input.recipientUserId, 'recipient');
+    if (
+      input.kind?.startsWith('protected:') &&
+      input.kind !== `protected:${input.requiredDispatchPolicy}`
+    )
+      throw new Error(
+        'Protected notification kinds require their exact dispatch policy.',
+      );
+    const requiredDispatchPolicy =
+      input.requiredDispatchPolicy === undefined
+        ? ''
+        : requireText(input.requiredDispatchPolicy, 'dispatch policy');
+    if (
+      requiredDispatchPolicy &&
+      !this.dispatchPolicy(requiredDispatchPolicy)
+    ) {
+      throw new NotificationOutboxDeniedError(
+        'permission',
+        'Required notification dispatch policy is unavailable.',
+      );
+    }
+    if (
+      requiredDispatchPolicy &&
+      (!input.dispatchPolicyBinding ||
+        typeof input.dispatchPolicyBinding !== 'object' ||
+        Array.isArray(input.dispatchPolicyBinding) ||
+        !Object.keys(input.dispatchPolicyBinding).length)
+    ) {
+      throw new Error(
+        'Protected notification requires an approved dispatch policy binding.',
+      );
+    }
+    const dispatchPolicyBinding = JSON.stringify(
+      input.dispatchPolicyBinding ?? {},
+    );
+    const profilePath = input.recipientProfileId !== undefined;
+    if (profilePath === (input.recipientUserId !== undefined))
+      throw new NotificationOutboxDeniedError(
+        'recipient',
+        'Choose exactly one typed recipient.',
+      );
+    const recipientUserId = profilePath
+      ? null
+      : requireText(input.recipientUserId, 'recipient');
+    const recipientProfileId = profilePath
+      ? requireText(input.recipientProfileId, 'profile recipient')
+      : null;
+    const recipientKind = profilePath ? 'profile' : 'user';
+    assertNotificationRecipientIdentity({
+      recipientKind,
+      recipientUserId,
+      recipientProfileId,
+      channel: 'email',
+      kind: input.kind,
+      requiredDispatchPolicy,
+    });
+
     const sourceRef = requireText(input.sourceRef, 'sourceRef');
     const kind = requireText(input.kind, 'kind');
     const subject = requireText(input.subject, 'subject');
@@ -435,6 +564,10 @@ export class NotificationOutboxService {
     }
     const channel: NotificationDeliveryChannel = 'email';
     this.authorize(tenantId);
+    if (profilePath)
+      await assertNotificationProfileRecipientSchema(
+        (await this.collection()).db,
+      );
     const href = buildNotificationLink(this.options.linkBaseUrl, input.path);
 
     return withTenant({ tenantId }, async () => {
@@ -442,18 +575,30 @@ export class NotificationOutboxService {
       const findExisting = async () =>
         (
           await deliveries.list({
-            where: { tenantId, recipientUserId, channel, sourceRef },
+            where: {
+              tenantId,
+              recipientKind,
+              recipientUserId,
+              recipientProfileId,
+              channel,
+              sourceRef,
+            },
             limit: 1,
           })
         )[0];
       const existing = await findExisting();
-      if (existing) return { delivery: existing, created: false };
+      if (existing) {
+        if (recipientProfileId) await this.validateProfileDelivery(existing);
+        return { delivery: existing, created: false };
+      }
 
-      const recipient = await this.options.resolveRecipient({
-        tenantId,
-        recipientUserId,
-        channel,
-      });
+      const recipient = recipientProfileId
+        ? await this.resolveProfile({ tenantId, recipientProfileId, channel })
+        : await this.options.resolveRecipient({
+            tenantId,
+            recipientUserId: recipientUserId as string,
+            channel,
+          });
       const address = recipient?.address?.trim();
       if (!address || /[\s,;<>]/u.test(address) || !address.includes('@')) {
         throw new NotificationOutboxDeniedError(
@@ -464,7 +609,10 @@ export class NotificationOutboxService {
       const accountId = await this.requireSenderAccount(tenantId);
       const suppressed = await this.isSuppressed({
         tenantId,
-        recipientUserId,
+        ...(recipientUserId ? { recipientUserId } : {}),
+        ...(recipientProfileId
+          ? { recipientProfileId, recipientKind: 'profile' as const }
+          : {}),
         channel,
         kind,
         sourceRef,
@@ -475,9 +623,13 @@ export class NotificationOutboxService {
           _insertOnly: true,
           tenantId,
           recipientUserId,
+          recipientProfileId,
+          recipientKind,
           channel,
           sourceRef,
           kind,
+          requiredDispatchPolicy,
+          dispatchPolicyBinding,
           subject,
           textBody: text,
           href,
@@ -518,10 +670,76 @@ export class NotificationOutboxService {
         'Notification dispatch limit must be a positive integer.',
       );
     }
-    const candidates = await this.findDue(options.tenantIds, limit);
+    let tenantIds = options.tenantIds;
+    if (this.options.principal && tenantIds === undefined) {
+      const tenantId = this.options.principal.tenantId;
+      if (!tenantId) {
+        throw new NotificationOutboxDeniedError(
+          'permission',
+          'A messaging principal must select explicit dispatch tenants.',
+        );
+      }
+      tenantIds = [tenantId];
+    }
+    if (tenantIds !== undefined) {
+      tenantIds = [
+        ...new Set(tenantIds.map((id) => requireText(id, 'tenant'))),
+      ];
+      // Authorize every requested scope before discovering or leasing any row.
+      for (const tenantId of tenantIds) this.authorize(tenantId);
+    }
+    const deliveryIds =
+      options.deliveryIds === undefined
+        ? undefined
+        : [...new Set(options.deliveryIds)];
+    if (
+      deliveryIds?.some(
+        (id) => typeof id !== 'string' || !UUID_PATTERN.test(id),
+      )
+    ) {
+      throw new Error('Notification dispatch delivery ids must be UUIDs.');
+    }
     const report: NotificationDispatchReport = { leased: 0, outcomes: [] };
-    for (const candidate of candidates) {
+    if (tenantIds?.length === 0 || deliveryIds?.length === 0) return report;
+    for await (const candidate of this.findDue(tenantIds, limit, deliveryIds)) {
       if (report.leased >= limit) break;
+      this.authorize(candidate.tenantId);
+      if (
+        (candidate.kind.startsWith('protected:') &&
+          candidate.kind !== `protected:${candidate.requiredDispatchPolicy}`) ||
+        (candidate.requiredDispatchPolicy &&
+          !this.dispatchPolicy(candidate.requiredDispatchPolicy))
+      ) {
+        const lastError =
+          'Blocked: required notification dispatch policy is unavailable.';
+        if (candidate.lastError !== lastError)
+          await withTenant({ tenantId: candidate.tenantId }, () =>
+            candidate.transition({ lastError }),
+          );
+        report.outcomes.push({
+          deliveryId: candidate.id as string,
+          tenantId: candidate.tenantId,
+          outcome: 'blocked',
+        });
+        continue;
+      }
+      try {
+        await withTenant({ tenantId: candidate.tenantId }, () =>
+          this.validateProfileDelivery(candidate),
+        );
+      } catch (cause) {
+        const lastError = `Blocked: ${errorText(cause)}`;
+        if (candidate.lastError !== lastError)
+          await withTenant({ tenantId: candidate.tenantId }, () =>
+            candidate.transition({ lastError }),
+          );
+        report.outcomes.push({
+          deliveryId: candidate.id as string,
+          tenantId: candidate.tenantId,
+          outcome: 'blocked',
+        });
+        continue;
+      }
       const outcome = await withTenant({ tenantId: candidate.tenantId }, () =>
         this.dispatchOne(candidate),
       );
@@ -650,54 +868,196 @@ export class NotificationOutboxService {
     return account.id as string;
   }
 
-  private async isSuppressed(
-    request: NotificationSuppressionRequest,
-  ): Promise<boolean> {
-    return Boolean(await this.options.isSuppressed?.(request));
+  private async isSuppressed(request: {
+    tenantId: string;
+    channel: NotificationDeliveryChannel;
+    kind: string;
+    sourceRef: string;
+    recipientUserId?: string;
+    recipientProfileId?: string;
+    recipientKind?: 'profile';
+  }): Promise<boolean> {
+    if (request.recipientProfileId)
+      return Boolean(
+        await this.options.isProfileSuppressed?.({
+          tenantId: request.tenantId,
+          recipientProfileId: request.recipientProfileId,
+          channel: 'email',
+          kind: request.kind,
+          sourceRef: request.sourceRef,
+        }),
+      );
+    if (!request.recipientUserId)
+      throw new NotificationOutboxDeniedError(
+        'recipient',
+        'Missing typed suppression recipient.',
+      );
+    return Boolean(
+      await this.options.isSuppressed?.({
+        tenantId: request.tenantId,
+        recipientUserId: request.recipientUserId,
+        channel: request.channel,
+        kind: request.kind,
+        sourceRef: request.sourceRef,
+      }),
+    );
   }
 
-  private async findDue(
+  private async resolveProfile(
+    request: NotificationProfileRecipientRequest,
+  ): Promise<NotificationRecipient> {
+    const db = (await this.collection()).db;
+    const profile = await readNotificationProfile(
+      db,
+      request.tenantId,
+      request.recipientProfileId,
+    );
+    const resolved = await this.options.resolveProfileRecipient?.(request);
+    const address = profile?.email ? normalizeIdentityEmail(profile.email) : '';
+    if (
+      !profile ||
+      profile.tenantId !== request.tenantId ||
+      !address ||
+      containsControlCharacter(address) ||
+      !/^[^\s@,;<>]+@[^\s@,;<>]+\.[^\s@,;<>]+$/u.test(address) ||
+      !resolved?.address ||
+      normalizeIdentityEmail(resolved.address) !== address
+    )
+      throw new NotificationOutboxDeniedError(
+        'recipient',
+        'Current tenant-owned profile email is not authorized.',
+      );
+    if (resolved.name && containsControlCharacter(resolved.name))
+      throw new NotificationOutboxDeniedError(
+        'recipient',
+        'Malformed profile recipient display name.',
+      );
+    return { address, name: resolved.name?.trim() ?? '' };
+  }
+  private async validateProfileDelivery(
+    delivery: NotificationDelivery,
+  ): Promise<void> {
+    assertNotificationRecipientIdentity(delivery);
+    if (delivery.recipientKind !== 'profile') return;
+    await assertNotificationProfileRecipientSchema(
+      (await this.collection()).db,
+    );
+    const current = await this.resolveProfile({
+      tenantId: delivery.tenantId,
+      recipientProfileId: delivery.recipientProfileId as string,
+      channel: 'email',
+    });
+    if (
+      current.address !== delivery.recipientAddress ||
+      (current.name ?? '') !== delivery.recipientName
+    )
+      throw new NotificationOutboxDeniedError(
+        'recipient',
+        'Approved profile recipient changed; review again.',
+      );
+  }
+  private dispatchPolicy(id: string) {
+    const policies = this.options.dispatchPolicies;
+    if (!policies || !Object.hasOwn(policies, id)) return undefined;
+    const policy = policies[id];
+    return typeof policy?.resolveAttachments === 'function'
+      ? policy
+      : undefined;
+  }
+
+  private async *findDue(
     tenantIds: readonly string[] | undefined,
     limit: number,
-  ): Promise<NotificationDelivery[]> {
+    deliveryIds?: readonly string[],
+  ): AsyncGenerator<NotificationDelivery> {
     const now = this.now();
-    const read = async (tenantFilter: { tenantId?: string }) => {
-      const deliveries = await this.collection();
-      const [due, expired] = await Promise.all([
-        deliveries.list({
-          where: {
-            ...tenantFilter,
-            status: 'pending',
-            'nextAttemptAt <=': now,
-          },
-          orderBy: 'nextAttemptAt ASC',
-          limit,
-        }),
-        deliveries.list({
-          where: {
-            ...tenantFilter,
-            status: 'sending',
-            'leaseExpiresAt <=': now,
-          },
-          orderBy: 'leaseExpiresAt ASC',
-          limit,
-        }),
-      ]);
-      return [...expired, ...due];
-    };
-
-    const rows =
-      tenantIds === undefined
-        ? await withSystemContext(() => read({}))
-        : (
-            await Promise.all(
-              [...new Set(tenantIds.filter(Boolean))].map((tenantId) =>
-                withTenant({ tenantId }, () => read({ tenantId })),
-              ),
+    const visited = new Set<string>();
+    // Each page is bounded; a blocked prefix cannot consume the lease budget.
+    // Expired leases precede pending rows, including across explicit scopes.
+    for (const phase of [
+      { status: 'sending', column: 'lease_expires_at' },
+      { status: 'pending', column: 'next_attempt_at' },
+    ] as const) {
+      for (const tenantId of tenantIds ?? [undefined]) {
+        let cursor: { id: string; cursor_at: string } | undefined;
+        for (;;) {
+          const read = async () => {
+            const deliveries = await this.collection();
+            const table = `"${deliveries.tableName.replaceAll('"', '""')}"`;
+            const conditions = ['status = ?', `${phase.column} <= ?`];
+            const values: unknown[] = [phase.status, now.toISOString()];
+            if (tenantId !== undefined) {
+              conditions.push('tenant_id = ?');
+              values.push(tenantId);
+            }
+            if (deliveryIds) {
+              conditions.push(
+                `id IN (${deliveryIds.map(() => '?').join(',')})`,
+              );
+              values.push(...deliveryIds);
+            }
+            if (cursor) {
+              conditions.push(
+                `(${phase.column} > ? OR (${phase.column} = ? AND id > ?))`,
+              );
+              values.push(cursor.cursor_at, cursor.cursor_at, cursor.id);
+            }
+            // Capture the cursor in this same query, before hydration or writes.
+            // PostgreSQL Date hydration loses microseconds; CAST preserves the
+            // physical timestamp so equal/sub-ms rows cannot repeat forever.
+            const result = await deliveries.db.query(
+              `SELECT id, CAST(${phase.column} AS TEXT) AS cursor_at FROM ${table}
+               WHERE ${conditions.join(' AND ')}
+               ORDER BY ${phase.column} ASC, id ASC LIMIT ?`,
+              ...values,
+              limit,
+            );
+            const positions = result.rows as Array<{
+              id: string;
+              cursor_at: string;
+            }>;
+            if (
+              positions.some(
+                (row) =>
+                  typeof row.id !== 'string' ||
+                  !UUID_PATTERN.test(row.id) ||
+                  typeof row.cursor_at !== 'string' ||
+                  !row.cursor_at,
+              )
             )
-          ).flat();
-    // Recover lapsed leases first, then oldest due.
-    return rows.slice(0, limit * 2);
+              throw new Error('Invalid notification dispatch cursor.');
+            if (!positions.length) return { positions, rows: [] };
+            const rows = await deliveries.list({
+              where: {
+                ...(tenantId === undefined ? {} : { tenantId }),
+                id: positions.map((row) => row.id),
+              },
+              limit: positions.length,
+            });
+            const byId = new Map(rows.map((row) => [row.id, row]));
+            return {
+              positions,
+              rows: positions.flatMap((row) => {
+                const delivery = byId.get(row.id);
+                return delivery ? [delivery] : [];
+              }),
+            };
+          };
+          const page =
+            tenantId === undefined
+              ? await withSystemContext(read)
+              : await withTenant({ tenantId }, read);
+          if (!page.positions.length) break;
+          cursor = page.positions[page.positions.length - 1];
+          for (const row of page.rows) {
+            if (!row.id || visited.has(row.id)) continue;
+            visited.add(row.id);
+            yield row;
+          }
+          if (page.positions.length < limit) break;
+        }
+      }
+    }
   }
 
   /** Lease one candidate and carry it to an outcome; null when not leased. */
@@ -748,7 +1108,15 @@ export class NotificationOutboxService {
       if (
         await this.isSuppressed({
           tenantId: delivery.tenantId,
-          recipientUserId: delivery.recipientUserId,
+          ...(delivery.recipientUserId
+            ? { recipientUserId: delivery.recipientUserId }
+            : {}),
+          ...(delivery.recipientProfileId
+            ? {
+                recipientProfileId: delivery.recipientProfileId,
+                recipientKind: 'profile' as const,
+              }
+            : {}),
           channel: delivery.channel,
           kind: delivery.kind,
           sourceRef: delivery.sourceRef,
@@ -760,8 +1128,57 @@ export class NotificationOutboxService {
         });
       }
 
+      await this.validateProfileDelivery(delivery);
       const message = await this.ensureMessage(delivery, leaseToken);
       if (!message) return 'lease-lost';
+      const request: NotificationTransportRequest = {
+        delivery,
+        message,
+        idempotencyKey: notificationDeliveryCorrelationId(
+          delivery.id as string,
+        ),
+      };
+      const resolver = delivery.requiredDispatchPolicy
+        ? this.dispatchPolicy(delivery.requiredDispatchPolicy)
+            ?.resolveAttachments
+        : this.options.resolveAttachments;
+      if (delivery.requiredDispatchPolicy && !resolver)
+        throw new Error(
+          'Required notification dispatch policy is unavailable.',
+        );
+      if (resolver) {
+        const attachments = await resolver(request);
+        if (
+          !Array.isArray(attachments) ||
+          (delivery.requiredDispatchPolicy && attachments.length === 0) ||
+          attachments.some(
+            (attachment) =>
+              !attachment ||
+              typeof attachment.filename !== 'string' ||
+              !attachment.filename.trim() ||
+              /[\r\n\0]/.test(attachment.filename) ||
+              !(attachment.content instanceof Uint8Array) ||
+              (attachment.contentType !== undefined &&
+                (typeof attachment.contentType !== 'string' ||
+                  !attachment.contentType.trim() ||
+                  /[\r\n\0]/.test(attachment.contentType))) ||
+              (attachment.contentId !== undefined &&
+                (typeof attachment.contentId !== 'string' ||
+                  /[\r\n\0]/.test(attachment.contentId))) ||
+              (attachment.contentDisposition !== undefined &&
+                !['attachment', 'inline'].includes(
+                  attachment.contentDisposition,
+                )),
+          )
+        )
+          throw new Error(
+            'Notification attachment resolver returned malformed bytes or metadata.',
+          );
+        request.attachments = attachments.map((attachment) => ({
+          ...attachment,
+          content: Uint8Array.from(attachment.content),
+        }));
+      }
       if (
         !(await delivery.transition(
           { handedOffAt: this.now() },
@@ -773,17 +1190,21 @@ export class NotificationOutboxService {
 
       let outcome: NotificationTransportOutcome;
       try {
-        outcome = await this.transport.send({
-          delivery,
-          message,
-          idempotencyKey: notificationDeliveryCorrelationId(
-            delivery.id as string,
-          ),
-        });
+        outcome = await withProtectedNotificationHandoff(
+          request,
+          this.now,
+          async () => {
+            await this.validateProfileDelivery(delivery);
+            return this.transport.send(request);
+          },
+        );
       } catch (error) {
         // A throw after handoff says nothing about whether the provider
         // accepted the message.
-        outcome = { status: 'unknown', error: errorText(error) };
+        outcome =
+          error instanceof ProtectedNotificationHandoffError
+            ? { status: 'rejected', retryable: true, error: errorText(error) }
+            : { status: 'unknown', error: errorText(error) };
       }
       return this.applyOutcome(delivery, leaseToken, outcome);
     } catch (error) {
@@ -938,7 +1359,7 @@ export class NotificationOutboxService {
   ): Promise<Message | null> {
     if (delivery.messageId) {
       const message = await this.loadMessage(delivery.messageId);
-      if (message) return message;
+      if (message) return this.protectCanonicalMessage(delivery, message);
     }
     const messageId = await notificationDeliveryMessageId(
       delivery.id as string,
@@ -967,6 +1388,14 @@ export class NotificationOutboxService {
                 : {}),
             },
           ]),
+          ...(delivery.requiredDispatchPolicy
+            ? {
+                metadata: protectedNotificationMetadata(
+                  delivery.id!,
+                  delivery.requiredDispatchPolicy,
+                ),
+              }
+            : {}),
           sendStatus: 'pending',
           // Delivery is owned by the outbox's attempt budget, not the message's.
           maxRetries: 0,
@@ -988,6 +1417,34 @@ export class NotificationOutboxService {
         return null;
       }
     }
+    return this.protectCanonicalMessage(delivery, message);
+  }
+
+  /** Backfill the non-authorizing durable marker on an existing protected canonical row. */
+  private async protectCanonicalMessage(
+    delivery: NotificationDelivery,
+    message: Message,
+  ): Promise<Message> {
+    if (delivery.requiredDispatchPolicy) {
+      const existing = message.getMetadata();
+      const protectedMarker = JSON.parse(
+        protectedNotificationMetadata(
+          delivery.id!,
+          delivery.requiredDispatchPolicy,
+        ),
+      );
+      if (!existing.__smrtProtectedOutbox) {
+        message.setMetadata({ ...existing, ...protectedMarker });
+        await message.save();
+      }
+    }
     return message;
   }
+}
+
+function containsControlCharacter(value: string): boolean {
+  return [...value].some((char) => {
+    const code = char.codePointAt(0) as number;
+    return code < 32 || code === 127;
+  });
 }

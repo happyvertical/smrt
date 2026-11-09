@@ -39,6 +39,7 @@ import {
   startRetentionSweeper,
 } from './retention.js';
 import {
+  jobTenantScope,
   SMRT_JOB_PORTABLE_SELECT_COLUMNS,
   type SmrtJob,
   SmrtJobCollection,
@@ -101,6 +102,8 @@ export interface TaskRunnerConfig {
   concurrency?: number;
   /** Queues to process (default: ['default']) */
   queues?: string[];
+  /** Limit claims and orphan recovery to these tenants; [] selects none. */
+  tenantIds?: readonly (string | null)[];
   /** Base polling interval in milliseconds, capped at the effective lease TTL. */
   pollInterval?: number;
   /**
@@ -223,7 +226,10 @@ export class JobCancelledError extends Error {
 /**
  * Default configuration
  */
-const DEFAULT_CONFIG: Required<TaskRunnerConfig> = {
+type ResolvedTaskRunnerConfig = Required<Omit<TaskRunnerConfig, 'tenantIds'>> &
+  Pick<TaskRunnerConfig, 'tenantIds'>;
+
+const DEFAULT_CONFIG: ResolvedTaskRunnerConfig = {
   id: '',
   authorizeMcpTask: async () => false,
   concurrency: 5,
@@ -250,6 +256,10 @@ const DEFAULT_CONFIG: Required<TaskRunnerConfig> = {
  * - Embedded mode (in-process) or standalone (CLI)
  */
 export class TaskRunner extends EventEmitter {
+  /** Tenant selection is applied before claims and recovery ownership writes. */
+  static readonly capabilities = Object.freeze({
+    tenantSelection: true,
+  } as const);
   readonly id: string;
   /**
    * Per-incarnation-unique worker key. Stored as the `worker_id` on claimed
@@ -259,7 +269,7 @@ export class TaskRunner extends EventEmitter {
    * events/logs.
    */
   private readonly workerKey: string;
-  private readonly config: Required<TaskRunnerConfig>;
+  private readonly config: ResolvedTaskRunnerConfig;
   private readonly maxIdlePollIntervalMs: number;
   private readonly effectiveLeaseTtlMs: number;
   private collection: SmrtJobCollection | null = null;
@@ -293,6 +303,12 @@ export class TaskRunner extends EventEmitter {
       ...config,
       id: config.id || `runner_${createId().slice(0, 8)}`,
     };
+    jobTenantScope(this.config.tenantIds);
+    if (this.config.tenantIds !== undefined) {
+      this.config.tenantIds = [...this.config.tenantIds];
+      // The default retention sweep is system-wide maintenance, not tenant work.
+      if (config.retention === undefined) this.config.retention = false;
+    }
     this.id = this.config.id;
     this.workerKey = createWorkerKey(this.id);
     for (const [name, value] of [
@@ -552,6 +568,7 @@ export class TaskRunner extends EventEmitter {
     const claimed = await this.collection.claimReady({
       workerId: this.workerKey,
       queues: this.config.queues,
+      tenantIds: this.config.tenantIds,
       limit: available,
     });
 
@@ -1397,11 +1414,15 @@ export class TaskRunner extends EventEmitter {
     const freshLeaseKeys = await this.workerCollection.freshLeaseWorkerKeys();
     // Worker-internal cross-tenant recovery scan; SmrtJob is @TenantScoped
     // (S5 #1402) so this raw read needs an explicit opt-in.
+    const scope = jobTenantScope(this.config.tenantIds);
+    const queuePredicate = this.config.queues.length
+      ? ` AND queue IN (${this.config.queues.map(() => '?').join(', ')})`
+      : '';
     const running = await this.collection.query(
       `SELECT ${SMRT_JOB_PORTABLE_SELECT_COLUMNS}
          FROM _smrt_jobs
-        WHERE status = 'running'`,
-      [],
+        WHERE status = 'running'${scope.sql}${queuePredicate}`,
+      [...scope.params, ...this.config.queues],
       { allowRawOnTenantScoped: true },
     );
     if (running.length === 0) return;

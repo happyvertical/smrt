@@ -212,3 +212,21 @@ collection's CRUD grants (#3878); `deriveOperationPermissionSlug()` resolves
 them for class and catalog-slug callers. Catalog generation merges optional
 `databaseActions` into the target grant's PostgreSQL bindings. CRUD grants
 cannot themselves be aliased. See core's [generator contract](../../core/agents/generators.md#custom-action-permission-aliases-3878).
+
+## Portable metadata registry (#4765)
+
+Browser-safe packages import `registerPermissionDefinitions` and its existing
+`PermissionDefinition` / PostgreSQL binding types from
+`@happyvertical/smrt-users/permission-registry`. This entry imports only shared
+metadata storage. It does not load Users models, catalog database sync, operator
+services, PostgreSQL policy generation or Core filesystem discovery.
+
+The old package-root and PermissionCatalogService exports re-export the exact
+same function. Both paths share the existing process-global Map/counter; each
+returned disposer removes only its own registration and may be called repeatedly.
+Definitions retain their original references and normalization/conflict rules
+remain in the server catalog. No second catalog or no-op browser registration is
+introduced. Metadata registration and catalog sync do not grant a user, role,
+tenant or resource permission. Existing persisted grants/current authority checks
+remain required. Use the public portable entry rather than private service paths
+when a model package needs declarations without the server runtime.

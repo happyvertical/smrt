@@ -119,8 +119,9 @@ they are (review is method-only; see below). Help lives in
   state: a recorded expense is `unreviewed`, i.e. awaiting review.
 - **Cost object is not dereferenced on save.** `getCostObject()` resolves it
   through the registry and returns `null` for a foreign-tenant row. One cost
-  object per expense (columns, not a `SmrtPolymorphicAssociation` join) so a
-  cost can never roll up into two jobs.
+  original cost object per expense. Reviewed relational allocation revisions
+  can attribute that source to multiple targets; target totals count portions
+  instead of the original attribution. See [reviewed allocations](agents/reviewed-allocations.md).
 
 ## Optional financial facts
 
@@ -230,3 +231,15 @@ methods. Unknown basis or unreconciled refund remains unknown and blocks new
 settlement. A settlement records evidence; it executes no bank/provider/journal
 operation. Preserve explicit chronological prefixes and same-day ordering.
 See README and `agents/supplier-payable-test-matrix.md` for the full contract.
+
+## Reviewed allocations (#4746)
+
+See [reviewed allocations](agents/reviewed-allocations.md) and its
+[behavior matrix](agents/allocation-test-matrix.md). Source accounting remains
+singular; immutable portions own attribution and canonical billing identities.
+
+Unbilled `withdrawAllocation` audits a full return to the original unsplit target,
+requires source/all-old/restored-target authority, refuses any active billing
+claim, and permits later explicit source correction without losing history.
+Revision kind/predecessor + typed source snapshots preserve old portion facts
+when the active head is null; receipt provenance stays frozen after withdrawal.

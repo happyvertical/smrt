@@ -204,6 +204,7 @@ async function setupDb(): Promise<DatabaseInterface> {
       slug TEXT,
       context TEXT,
       tenant_id TEXT,
+      dedupe_key TEXT,
       queue TEXT NOT NULL,
       object_type TEXT NOT NULL,
       object_id TEXT,

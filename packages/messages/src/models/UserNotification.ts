@@ -8,7 +8,7 @@ import {
   SmrtObject,
   smrt,
 } from '@happyvertical/smrt-core';
-import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy/decorators';
 
 /** How much a notification matters to its recipient. */
 export type UserNotificationSeverity = 'info' | 'success' | 'warning' | 'error';

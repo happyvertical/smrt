@@ -34,6 +34,10 @@
       "types": "./dist/svelte/index.d.ts",
       "svelte": "./dist/svelte/index.js",
       "import": "./dist/svelte/index.js"
+    },
+    "./permission-registry": {
+      "types": "./dist/permission-registry.d.ts",
+      "import": "./dist/permission-registry.js"
     }
   },
   "files": [

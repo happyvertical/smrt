@@ -11,6 +11,7 @@ import {
   crossPackageRef,
   field,
   foreignKey,
+  isPostgresDatabase,
   isUniqueViolationError,
   SmrtObject,
   type SmrtSaveOptions,
@@ -166,6 +167,10 @@ export class ExpenseReceipt extends SmrtObject {
    *   immutable column.
    */
   override async save(options?: SmrtSaveOptions): Promise<this> {
+    return this.withTransaction(() => this.saveValidated(options));
+  }
+
+  private async saveValidated(options?: SmrtSaveOptions): Promise<this> {
     const label = this.id || '<new>';
     this.tenantId = normalizeTenantId(this.tenantId);
     this.contentSha256 = normalizeSha256(
@@ -187,6 +192,7 @@ export class ExpenseReceipt extends SmrtObject {
       );
     }
 
+    await this.assertUnallocatedSource();
     const persisted = this.id
       ? (((await this.db.get(this.tableName, { id: this.id })) as
           | Record<string, unknown>
@@ -239,6 +245,60 @@ export class ExpenseReceipt extends SmrtObject {
    * re-read; if that re-read fails too, the original error is kept rather
    * than guessed at.
    */
+  /** Allocation review freezes the original receipt graph as provenance. */
+  private async assertUnallocatedSource(): Promise<void> {
+    const { ExpenseCollection } = await import(
+      '../collections/ExpenseCollection.js'
+    );
+    const source = await (await ExpenseCollection.create({ db: this.db })).get(
+      { id: this.expenseId },
+      { cache: false },
+    );
+    if (source) {
+      if (isPostgresDatabase(this.db))
+        await this.db.query(
+          `SELECT id FROM expenses WHERE id = ? AND tenant_id IS NOT DISTINCT FROM ? FOR UPDATE`,
+          source.id,
+          source.tenantId,
+        );
+      await source.loadFromId();
+      const historicalAllocation =
+        !source.activeAllocationRevisionId &&
+        (await this.db.tableExists('expense_allocation_revisions'))
+          ? await this.db.get('expense_allocation_revisions', {
+              source_expense_id: source.id,
+              tenant_id: source.tenantId,
+            })
+          : null;
+      if (source.activeAllocationRevisionId || historicalAllocation)
+        throw new ExpenseError(
+          'EXPENSE_RECEIPT_INVALID',
+          'Allocated expense receipt evidence is immutable.',
+        );
+    }
+  }
+
+  /** Preserve reviewed allocation provenance through model and junction deletion. */
+  override async delete(
+    options: { expectedUpdatedAt?: Date | string } = {},
+  ): Promise<void> {
+    return this.withTransaction(async () => {
+      const persisted = this.id
+        ? await this.db.get(this.tableName, { id: this.id })
+        : null;
+      if (persisted) {
+        const originalId = this.expenseId;
+        this.expenseId = String(persisted.expense_id);
+        try {
+          await this.assertUnallocatedSource();
+        } finally {
+          this.expenseId = originalId;
+        }
+      }
+      await super.delete(options);
+    });
+  }
+
   private async classifyInsertConflict(error: unknown): Promise<unknown> {
     const info = classifyDatabaseError(error);
     const columns = violatedColumns(error);

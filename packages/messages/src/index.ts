@@ -150,6 +150,8 @@ export {
   NotificationOutboxDeniedError,
   type NotificationOutboxOptions,
   NotificationOutboxService,
+  type NotificationProfileRecipientRequest,
+  type NotificationProfileSuppressionRequest,
   type NotificationRecipient,
   type NotificationRecipientRequest,
   type NotificationReconcileOutcome,
@@ -225,4 +227,16 @@ export type {
 ensureBuiltinMessagingProvidersRegistered();
 ensureMessagingPermissionsRegistered();
 
+export {
+  assertNotificationProfileRecipientSchema,
+  migrateNotificationProfileRecipients,
+  type NotificationProfileRecipientEngine,
+  type NotificationProfileRecipientPlan,
+  planNotificationProfileRecipients,
+} from './migrations/profileRecipients.js';
+export {
+  type NotificationRecipientIdentity,
+  PROFILE_NOTIFICATION_POLICY_PREFIX,
+  profileNotificationPolicy,
+} from './notification-recipient-identity.js';
 export { MailboxRecipe, NotificationsRecipe, SlackRecipe } from './recipes.js';

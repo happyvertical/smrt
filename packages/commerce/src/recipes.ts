@@ -339,6 +339,7 @@ export class InvoicingRecipe extends SmrtRecipe {
       fields: {
         sourceType: { visibility: 'hidden' },
         sourceId: { visibility: 'hidden' },
+        sourceReservationId: { visibility: 'hidden' },
         periodStart: { visibility: 'hidden' },
         periodEnd: { visibility: 'hidden' },
         revenueAccountId: { visibility: 'hidden' },

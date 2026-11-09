@@ -151,3 +151,16 @@ reads provider-supplied paths or advances sync checkpoints. Keep this path
 provider-neutral and exclude arbitrary headers/credentials from its snapshot.
 IMAP lookup must include folder/UIDVALIDITY/UID verification; sender Message-ID
 is a lookup hint, never the durable delivery identity.
+
+Protected notification Emails carry durable delivery provenance. Their canonical
+`send`/`retrySend`, ordinary save/delete, and default EmailSender handoff are
+constrained by `protected-notification-handoff.ts` (package-private, never a root
+export). Only the outbox enters its exact one-use scope after current trusted
+policy/byte validation. Preserve old-row/constructor identity checks, current
+persisted lease checks at the actual provider boundary, copied byte buffers and
+unknown-outcome marker protection. See the outbox contract and shared protected
+handoff suite (SQLite and migrated PostgreSQL).
+
+## Protected external contacts
+
+Profile email uses exclusive `recipientProfileId` plus `resolveProfileRecipient`, a reserved `profileNotificationPolicy` and exact current tenant-owned public Profile email. No User account is required. Before activating profiles, run normal framework schema migration and public `planNotificationProfileRecipients` / `migrateNotificationProfileRecipients`; runtime verifies physical constraints and never applies DDL. Legacy User notification and opt-out paths remain User-only. See [profile recipient contract and matrix](agents/profile-recipients.md).
