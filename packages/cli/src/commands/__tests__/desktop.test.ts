@@ -66,6 +66,7 @@ const report = {
     count: 3,
     bytes: 3 * 1024 * 1024,
     listSha256: '7'.repeat(64),
+    tauriBundleSha256: '8'.repeat(64),
     breakdown: {
       nodeBinary: 1048576,
       nodeModules: 1048576,
