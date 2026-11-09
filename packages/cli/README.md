@@ -197,6 +197,13 @@ framework file, knowledge bundle and skills are written at the root. A package
 installed at different versions is listed once with each version. Pass `--here`
 to document only the current directory.
 
+`docs:agents` also keeps a short block between `<!-- smrt:agents:begin -->` and
+`<!-- smrt:agents:end -->` in the root `AGENTS.md` (created when absent, with a
+`CLAUDE.md` importing it only when that is absent too), pointing agents at the
+intent index and the framework reference. Only the text between the markers is
+ever rewritten; a damaged marker pair is refused with a warning. Pass
+`--no-agents-block` to skip it; `--dry-run` prints it on stderr.
+
 Review and architecture prompt bundles include package guidance and modules
 matched by file or focus hints. Add `--complete` to either context command to
 include every module for the selected packages. These commands still build the

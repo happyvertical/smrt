@@ -38,3 +38,39 @@ keeps `version` (the highest, equal to the page's `package_version`) and gains
 bundles are byte-identical to before. `checkOkfBundleFreshness` takes
 `installRoots` (the dev-mcp knowledge check passes the same list) and compares
 the page against the highest installed version.
+
+## Managed AGENTS.md block (#4878)
+
+After the bundle and skills, `docs:agents` maintains one section in the docs
+root's `AGENTS.md` (`src/commands/docs-agents-block.ts`), delimited by
+`<!-- smrt:agents:begin -->` / `<!-- smrt:agents:end -->`. AGENTS.md is the
+user's file, so:
+
+- **Only the marked text changes.** Everything outside survives byte for byte:
+  BOM, LF or CRLF (the dominant ending is used for the block), a missing final
+  newline. Hand edits between the markers are replaced, by design.
+- **Placement.** Directly after the first H1 (ATX or one-line setext, outside
+  code fences and frontmatter); with no H1, at the top, after a leading YAML
+  frontmatter block and BOM.
+- **Refusal.** A begin without an end, an end without a begin, an end before the
+  begin, or more than one of either: nothing is written and a warning is
+  printed; the exit status is unchanged. Markers are matched as plain text
+  everywhere, code fences included (refusing is safe, guessing is not).
+- **Idempotent.** An unchanged result is not written (mtime stable).
+- **Content** (at most 15 lines, harness-neutral): the installed
+  `@happyvertical/smrt-cli` (else `smrt-core`) version, the relative paths of
+  the framework reference and `<bundle>/intents/index.md` (omitted with a note
+  when no intents were exported), the framework-first rule, `smrt docs:agents`,
+  and `smrt-dev-mcp review --directory . --format summary`. Paths are relative
+  to AGENTS.md's directory, forward slashes.
+- **Files.** A missing AGENTS.md is created (`# <root package name>` + block);
+  `CLAUDE.md` containing `@AGENTS.md` is created only beside a freshly created
+  AGENTS.md and only when absent. An existing CLAUDE.md without an `@AGENTS.md`
+  import (a symlink to AGENTS.md counts as importing) gets a warning and is
+  never edited. Writes use `containedPath`/`assertNotSymlink`; a symlinked
+  AGENTS.md is refused.
+- **Options.** `--no-agents-block` skips it; `--dry-run` reports on stderr
+  (stdout carries the framework document) and writes nothing.
+- **Reuse.** Exports: `renderAgentsBlock`, `mergeAgentsBlock`,
+  `applyAgentsBlock`, `checkAgentsBlock(root)` (`present | missing | refused`,
+  for `smrt doctor`) and the marker constants.

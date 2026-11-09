@@ -29,8 +29,15 @@ import { compareVersions } from '@happyvertical/smrt-dev-mcp/knowledge';
 import type { DomainKnowledgeModuleDoc } from '@happyvertical/smrt-types';
 import type { CLICommand } from '../cli-generator.js';
 import {
+  type AgentsBlockInputs,
+  type AgentsBlockResult,
+  applyAgentsBlock,
+  renderAgentsBlock,
+} from './docs-agents-block.js';
+import {
   type BundleExportResult,
   exportKnowledgeBundle,
+  filterInstalledIntents,
   isBundleSafePackage,
   loadIntentRows,
   renderIntentSection,
@@ -97,7 +104,27 @@ interface DocsHandlerOptions {
   'dry-run'?: boolean;
   complete?: boolean;
   'no-install-skills'?: boolean;
+  'no-agents-block'?: boolean;
   here?: boolean;
+}
+
+/** Reports the AGENTS.md block outcome; warnings always go to stderr. */
+function reportAgentsBlock(result: AgentsBlockResult, dryRun: boolean): void {
+  const out = dryRun ? console.error : console.log;
+  const verb = dryRun ? 'would be ' : '';
+  const where = relativePath(process.cwd(), result.path) || result.path;
+  if (result.status === 'refused') {
+    // The warning below carries the reason.
+  } else if (result.status === 'unchanged') {
+    out(`   AGENTS.md block unchanged (${where})`);
+  } else {
+    out(`   AGENTS.md block ${verb}${result.status} (${where})`);
+  }
+  if (result.claude === 'created') {
+    out(`   CLAUDE.md ${verb}created (imports AGENTS.md)`);
+  }
+  if (dryRun) out(`\n${result.block}\n`);
+  for (const warning of result.warnings) console.error(`   ⚠️  ${warning}`);
 }
 
 function createDocsCommand(config: DocsCommandOptions): CLICommand {
@@ -122,6 +149,12 @@ function createDocsCommand(config: DocsCommandOptions): CLICommand {
         type: 'boolean',
         description:
           'Do not install the smrt agent skills into .claude/skills and .agents/skills (installed by default)',
+        default: false,
+      },
+      'no-agents-block': {
+        type: 'boolean',
+        description:
+          'Do not insert or refresh the smrt block (between <!-- smrt:agents:begin --> markers) in AGENTS.md',
         default: false,
       },
       here: {
@@ -218,8 +251,49 @@ function createDocsCommand(config: DocsCommandOptions): CLICommand {
           },
         );
 
+        const agentsBlockInputs = (
+          intentsExported: boolean,
+        ): AgentsBlockInputs => {
+          const versioned =
+            bundlePackages.find(
+              (pkg) => pkg.name === '@happyvertical/smrt-cli',
+            ) ??
+            bundlePackages.find(
+              (pkg) => pkg.name === '@happyvertical/smrt-core',
+            );
+          const bundleRel = relativePath(
+            resolvePath(docsRoot.root),
+            resolvePath(dirname(outputPath), bundleDirName),
+          );
+          return {
+            version: versioned?.version,
+            versionPackage: versioned?.name,
+            frameworkPath: relativePath(
+              resolvePath(docsRoot.root),
+              resolvePath(outputPath),
+            ),
+            intentIndexPath: intentsExported
+              ? `${bundleRel}/intents/index.md`
+              : undefined,
+          };
+        };
+
         if (dryRun) {
           console.log(content);
+          // stdout carries the document, so the block report goes to stderr.
+          if (!options['no-agents-block']) {
+            const result = applyAgentsBlock({
+              root: docsRoot.root,
+              block: renderAgentsBlock(
+                agentsBlockInputs(
+                  filterInstalledIntents(intentRows, installedVersions).length >
+                    0 && intentSource !== null,
+                ),
+              ),
+              dryRun: true,
+            });
+            reportAgentsBlock(result, true);
+          }
           return;
         }
 
@@ -302,6 +376,17 @@ function createDocsCommand(config: DocsCommandOptions): CLICommand {
               generatedBy: config.generatedBy,
             });
 
+        // AGENTS.md block (#4878): never fails the command.
+        let agentsBlock: AgentsBlockResult | null = null;
+        if (!options['no-agents-block']) {
+          agentsBlock = applyAgentsBlock({
+            root: docsRoot.root,
+            block: renderAgentsBlock(
+              agentsBlockInputs((bundle?.intents ?? 0) > 0),
+            ),
+          });
+        }
+
         const totalPackages = packages.length + sdkPackages.length;
         console.log(`\n✅ Generated ${outputPath}`);
         console.log(`   ${totalPackages} packages documented`);
@@ -349,6 +434,7 @@ function createDocsCommand(config: DocsCommandOptions): CLICommand {
             `   ${written.length} agent skill files written (${[...new Set(written.map((result) => result.skill))].join(', ')})`,
           );
         }
+        if (agentsBlock) reportAgentsBlock(agentsBlock, false);
         console.log('');
       } catch (error) {
         console.error('\n❌ Failed to generate agent documentation:');

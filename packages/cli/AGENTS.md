@@ -312,8 +312,8 @@ skipping it: agents/db-drop-framework-base-tables.md.
 - `src/loaders/` — class-loader, local-loader, npm-loader, git-loader, template-loader
 - `src/discovery/manifest-discovery.ts` — manifest auto-discovery
 - `src/commands/docs-claude.ts` — downstream AGENTS.md generation + Claude alias; no object scanning
-- `src/commands/docs-knowledge-bundle.ts` — knowledge-bundle half of `docs:agents`
-- `src/commands/docs-skills-install.ts` — skill-installation half of `docs:agents` (#4708)
+- `src/commands/docs-knowledge-bundle.ts`, `docs-skills-install.ts` (#4708) — bundle and skill halves of `docs:agents`
+- `src/commands/docs-agents-block.ts` — AGENTS.md block (#4878)
 
 ## docs:agents knowledge bundle (consumer contract)
 
@@ -331,7 +331,7 @@ Skill install (#4708): unless `--no-install-skills`, `docs:agents` also writes t
 `@happyvertical/smrt-dev-mcp` to `.claude/skills/smrt-catalog/SKILL.md` and `.agents/skills/smrt-catalog/SKILL.md`
 under the working directory (skipped on `--dry-run`). The copy carries a `<!-- smrt-generated: … smrt-dev-mcp@<version> … -->`
 marker after the frontmatter: a rerun replaces a marked copy, a copy without the marker is left alone with a warning.
-pnpm workspace roots (output, skills at the root; `--here`): `agents/docs-agents.md`. The shipped text names `.agents/smrt-knowledge/`; the installer substitutes the real bundle dir (`docs:claude`, custom `--output`). Only the smrt repository itself (root package `@happyvertical/smrt`) also gets `smrt-contribute`; an unmarked copy byte-identical to the shipped skill counts as current. Destinations go through `containedPath` and are refused when any path segment is a symlink.
+Workspace roots, AGENTS.md block: `agents/docs-agents.md`. The shipped text names `.agents/smrt-knowledge/`; the installer substitutes the real bundle dir (`docs:claude`, custom `--output`). Only the smrt repository itself (root package `@happyvertical/smrt`) also gets `smrt-contribute`; an unmarked copy byte-identical to the shipped skill counts as current. Destinations go through `containedPath` and are refused when any path segment is a symlink.
 
 ## Gotchas
 
