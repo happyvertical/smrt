@@ -42,6 +42,13 @@ const report = {
     archiveSha256: '4'.repeat(64),
     binarySha256: '5'.repeat(64),
     machine: 'arm64',
+    pin: {
+      verification: 'unverified',
+      source: 'https://nodejs.org/dist/v26.8.1/SHASUMS256.txt',
+      retrieved: '2026-11-09T00:43:17Z',
+      shasumsSha256: 'a'.repeat(64),
+      signerFingerprints: [],
+    },
   },
   bridge: {
     file: 'bridge/smrt-mcp-bridge.mjs',
@@ -140,6 +147,7 @@ describe('desktop bundle option parsing', () => {
       'measure-data': 'prepared',
       offline: true,
       'keep-sourcemaps': true,
+      'require-verified-pins': true,
       force: true,
       json: true,
     };
@@ -164,6 +172,7 @@ describe('desktop bundle option parsing', () => {
         maxSizeMB: 350,
         keepSourceMaps: true,
         offline: true,
+        requireVerifiedPins: true,
         force: true,
         measure: true,
         measureDataDir: 'prepared',
@@ -370,6 +379,7 @@ describe('desktop bundle command definition', () => {
         'out',
         'product-id',
         'product-version',
+        'require-verified-pins',
         'target',
       ].sort(),
     );

@@ -60,7 +60,9 @@ model imports at run time (such as `@oxc-project/runtime`) must never be in it.
 The CLI command (`packages/cli/src/commands/desktop.ts`) stays a thin wrapper.
 `e2e.test.ts` (real pnpm, nodejs.org, a real start) runs only with
 `SMRT_DESKTOP_BUNDLE_E2E=1`. The Node pins are unverified against the release
-signature until `scripts/update-node-pins.mjs` is run with `gpg`.
+signature until `scripts/update-node-pins.mjs` is run with `gpg`; each pin's
+provenance is recorded in the report and `--require-verified-pins` refuses an
+unverified one (a test fails if a pin says `gpg-verified` without evidence).
 
 Keep the package free of runtime dependencies and use Node built-ins only.
 

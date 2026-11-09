@@ -33,6 +33,13 @@ export function sampleBundleReport(): BundleReportV1 {
       archiveSha256: sha('4'),
       binarySha256: sha('5'),
       machine: 'arm64',
+      pin: {
+        verification: 'unverified',
+        source: 'https://nodejs.org/dist/v26.8.1/SHASUMS256.txt',
+        retrieved: '2026-11-09T00:43:17Z',
+        shasumsSha256: sha('a'),
+        signerFingerprints: [],
+      },
     },
     bridge: { file: 'bridge/smrt-mcp-bridge.mjs', sha256: sha('6'), bytes: 10 },
     features: {

@@ -1139,11 +1139,38 @@ canonical report (or a failure document), so it pipes cleanly.
 | `--bridge <file>` | the **pre-bundled** single-file MCP bridge (see Bridge) |
 | `--product-id`, `--bundle-id`, `--display-name`, `--product-version`, `--channel` | product identity; flags win over the configuration; the version defaults to the app's `package.json`, the channel to `stable` |
 | `--node-version`, `--node-archive`, `--node-cache` | exact pinned Node version (default: newest pinned 26.x), an offline archive (still checked against the pin), the download cache |
+| `--require-verified-pins` | the release and signing path: refuse a Node pin whose provenance is not `gpg-verified` (`node_pin_unverified`, exit 4) before any work; without it an unverified pin only warns (see Node pin provenance) |
 | `--features <a,b>` | feature groups to keep in addition to the configuration's defaults |
 | `--max-size <MiB>` | installed-size budget; exceeding it exits 6 and publishes nothing, but still prints the report |
 | `--measure`, `--measure-data <dir>` | start the bundle on this machine and record installed size and cold start (host target only) |
 | `--offline` | `pnpm install --offline` and no Node download (needs the pnpm store and the Node cache) |
 | `--keep-sourcemaps`, `--force`, `--json` | keep `*.map`; replace an earlier bundle (or empty directory) at `--out`; JSON on stdout |
+
+### Node pin provenance
+
+The Node binary is trusted through the SHA-256 pins in
+`src/bundler/node-pins.ts`. Each pinned version also has a provenance record:
+`verification` (`gpg-verified` or `unverified`), the `SHASUMS256.txt` URL, the
+retrieval time, the SHA-256 of the `SHASUMS256.txt` the hashes came from and,
+for a verified pin, the primary-key fingerprints that signed it. Only
+`scripts/update-node-pins.mjs`, run by a maintainer with `gpg` and the public
+Node.js release keys from `https://github.com/nodejs/release-keys`, can write
+`gpg-verified`; the header of the script lists the exact commands. A record
+that says `gpg-verified` without fingerprints or digest counts as unverified,
+and the repository tests fail on it.
+
+**Status: the only pin, Node 26.8.1, is `unverified`.** It was copied from the
+TLS-served `SHASUMS256.txt` on a machine without `gpg`, so the signature check
+is blocked until a maintainer runs the script where `gpg` exists. Until then:
+
+- every bundle records the provenance it used in `bundle-report.json`
+  (`node.pin`: `verification`, `source`, `retrieved`, `shasumsSha256`,
+  `signerFingerprints`), and an unverified pin adds a `WARNING:` line to the
+  warnings the CLI prints on stderr (and returns in `BundleResult.warnings`);
+- `--require-verified-pins` (`requireVerifiedPins` in the API) refuses an
+  unverified pin before any work: `node_pin_unverified`, exit 4. Use it for
+  every bundle that will be released or signed. Packaging and signing (item 4)
+  can also call `assertVerifiedNodePin(report)` on an existing report.
 
 ### Output
 
@@ -1365,7 +1392,7 @@ deterministic as the app build; its hash is recorded, not rebuilt.
 | 1 | `internal` | a bug; the message never carries a path or a secret |
 | 2 | `usage` | bad flag, unsupported target, unpinned Node version, `--measure` for a cross target |
 | 3 | `invalid_input` | missing app files, bad configuration, a non-registry dependency, a pnpmfile, config dependency or a `pnpm-workspace.yaml` key outside the allowlist, no `--bridge`, `--out` not empty |
-| 4 | `provenance` | Node checksum mismatch, redirect or HTTP error from nodejs.org, lockfile drift, integrity failure |
+| 4 | `provenance` | Node checksum mismatch, redirect or HTTP error from nodejs.org, lockfile drift, integrity failure, an unverified Node pin under `--require-verified-pins` |
 | 5 | `verification` | wrong-architecture native, symlink, secret, removed package imported, install script without a prebuilt binary, manifests that do not round-trip |
 | 6 | `budget` | `--max-size` exceeded |
 | 7 | `child_failed` | pnpm failed, the measured start did not answer its health route |
@@ -1392,7 +1419,7 @@ below did.
 
 | # | Threat | Mitigation | Closing tests |
 | --- | --- | --- | --- |
-| B1 | Node binary provenance: tampered download, redirect, poisoned cache, wrong version or architecture | committed SHA-256 pins (produced by `scripts/update-node-pins.mjs`), constant HTTPS URL, redirects refused, size caps, hash on every use including cache hits | `rejects a Node archive whose sha256 differs from the pin`; `re-verifies a cached archive and refuses a poisoned cache entry`; `refuses an unpinned Node version before any network or file access`; `refuses any redirect from the dist host`; `aborts a download larger than the cap`; `refuses to run with TLS verification disabled`; `rejects a Node binary built for another architecture` |
+| B1 | Node binary provenance: tampered download, redirect, poisoned cache, wrong version or architecture, a pin that was never checked against the release signature | committed SHA-256 pins (produced by `scripts/update-node-pins.mjs`), constant HTTPS URL, redirects refused, size caps, hash on every use including cache hits; per-pin provenance recorded in the report, a loud warning for an unverified pin and a hard refusal under `--require-verified-pins` | `fails the suite when a pin says gpg-verified without its evidence`; `keeps the unverified pins to the one known, tracked entry`; `refuses the release and signing path while the pin is unverified, before any work`; `refuses a pin that claims gpg verification without its evidence`; `records the provenance of the pin it used and warns loudly while that pin is unverified`; `rejects a Node archive whose sha256 differs from the pin`; `re-verifies a cached archive and refuses a poisoned cache entry`; `refuses an unpinned Node version before any network or file access`; `refuses any redirect from the dist host`; `aborts a download larger than the cap`; `refuses to run with TLS verification disabled`; `rejects a Node binary built for another architecture` |
 | B2 | Archive extraction: tar slip, link members, pax overrides, bombs | one-member reader, output name is ours, header checksums, gzip and member caps | `extracts only the named member and writes nothing else`; `rejects a symlink or hardlink member with the wanted name`; `ignores ../ and absolute member names (they never match)`; `stops a gzip bomb at the expansion cap`; `rejects a header with a bad checksum`; `honours a pax path record for the Node member` |
 | B3 | npm integrity, lockfile drift, dependency confusion | `--frozen-lockfile`, only registry specifiers and resolutions, lockfile and manifest hashes recorded, failure output never echoed | `builds the exact pnpm argv for each target`; `rejects link:, file:, git and tarball production dependencies`; `rejects production dependencies that are not registry packages`; `rejects a lockfile package resolved from a tarball URL or git`; `records lockfile and package.json hashes`; `classifies a failed install by its output without echoing it`; `fails when package.json drifts from the lockfile` (opt-in end to end) |
 | B4 | Code running on the build host during the install: lifecycle scripts, pnpm hooks, a different pnpm | scripts never run (host or cross), staged manifest has no scripts, `packageManager` or `devEngines`, `--ignore-pnpmfile` and `pm-on-fail=ignore`, `pnpmfile`/`globalPnpmfile`/`configDependencies` and every other `pnpm-workspace.yaml` key outside the allowlist fail the bundle, a workspace file in the install and probe directories stops pnpm reading an ancestor's, only registry lines of `.npmrc` are staged (none with `${...}`), side-effects cache off, install-script packages without a prebuilt binary fail | `never passes a flag that enables scripts for any target`; `never runs scripts: the staged package.json has none and argv is the frozen form`; `always ignores pnpmfile hooks and never lets pnpm switch versions`; `removes packageManager and devEngines so pnpm cannot switch to another version`; `probes the version from a bare directory outside the install directory`; `gives the install and the version probe their own workspace file when the app has none`; `ignores pnpm configuration in an ancestor of --out` (opt-in end to end); `refuses the path, TLS or network key %s and reports only its name`; `fails closed on %s`; `refuses the non-registry specifier %s under overrides and catalogs`; `drops a registry URL that expands an environment variable`; `fails on pnpmfile, global-pnpmfile and config-dependencies keys without echoing values`; `stages only registry and boolean lines of .npmrc and records their hash`; `fails a package with an install script and no prebuilt binary`; `allows the closed list of harmless postinstall packages` |
@@ -1413,9 +1440,11 @@ unless `SMRT_DESKTOP_BUNDLE_E2E=1` (it needs network, pnpm and nodejs.org).
 **Residual risks.** The lockfile is trusted reviewed input (a lockfile with
 valid integrity for malicious tarballs is out of scope). The Node pins in
 `src/bundler/node-pins.ts` were copied from nodejs.org over HTTPS and the
-downloaded archive matched them, but **the release signature was not
-verified**; run `scripts/update-node-pins.mjs` (needs `gpg`) and review its
-diff before shipping. Non-literal `import(x)` is invisible to the scan. The
+downloaded archive matched them, but **the release signature has not been
+verified** (blocked on a machine with `gpg`; the pin's provenance says
+`unverified`, the report records that, and `--require-verified-pins` refuses
+it): run `scripts/update-node-pins.mjs` with `gpg` and review its diff before
+shipping. Non-literal `import(x)` is invisible to the scan. The
 glibc symbol-version floor of Linux natives is not checked. Windows ACLs of the
 output directory are not checked. Windows bundles carry no Node LICENSE file
 (the standalone `node.exe` has no archive to take it from). macOS signing and

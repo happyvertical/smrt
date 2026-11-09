@@ -29,7 +29,17 @@ export type {
   SpawnRequest,
 } from './measure.js';
 export { measureBundle, median, summarizeSeries } from './measure.js';
-export { NODE_PINS, pinnedVersions } from './node-pins.js';
+export type {
+  NodePinProvenance,
+  NodePinVerification,
+} from './node-pins.js';
+export {
+  isGpgVerified,
+  lookupPinProvenance,
+  NODE_PIN_PROVENANCE,
+  NODE_PINS,
+  pinnedVersions,
+} from './node-pins.js';
 export type {
   BundleEnvironment,
   BundleOptionsInput,
@@ -53,9 +63,11 @@ export {
 export type {
   BundleMeasurements,
   BundleReportV1,
+  ReportNodePin,
   SeriesStats,
 } from './report.js';
 export {
+  assertVerifiedNodePin,
   BUNDLE_FILES_FILENAME,
   BUNDLE_REPORT_FILENAME,
   formatFileList,

@@ -128,6 +128,12 @@ export interface BundleOptionsInput {
   readonly measureDataDir?: string;
   /** Default `fail` (design O5). */
   readonly secretContentPolicy?: SecretContentPolicy;
+  /**
+   * The release and signing path (`--require-verified-pins`): refuse a Node
+   * pin that is not `gpg-verified` (`node_pin_unverified`, exit 4). Without
+   * it an unverified pin only warns.
+   */
+  readonly requireVerifiedPins?: boolean;
 }
 
 export interface BundleEnvironment {
@@ -185,6 +191,8 @@ export interface BundlePlan {
   /** Absolute path of the prepared data directory `--measure` copies. */
   readonly measureDataDir?: string;
   readonly secretContentPolicy: SecretContentPolicy;
+  /** Refuse a Node pin that is not gpg-verified (release and signing path). */
+  readonly requireVerifiedPins: boolean;
 }
 
 function invalid(field: string): never {
@@ -415,6 +423,13 @@ export async function createBundlePlan(
     invalid('secretContentPolicy');
   }
 
+  if (
+    input.requireVerifiedPins !== undefined &&
+    typeof input.requireVerifiedPins !== 'boolean'
+  ) {
+    invalid('requireVerifiedPins');
+  }
+
   // --- Output directory ----------------------------------------------------
   const outResolved = resolvePath(input.outDir, 'out');
   // The final component is never followed: a symlink there is refused, only
@@ -491,6 +506,7 @@ export async function createBundlePlan(
     measure: input.measure === true,
     ...(measureDataDir === undefined ? {} : { measureDataDir }),
     secretContentPolicy,
+    requireVerifiedPins: input.requireVerifiedPins === true,
   };
   return deepFreeze(plan);
 }
