@@ -13,10 +13,18 @@
  * check. Format, limits and failure modes: `agents/encrypted-snapshots.md`.
  *
  * Keys come from an injected {@link SnapshotKeyProvider}; this module never
- * stores, derives or logs them.
+ * stores or logs them. It derives one purpose subkey per operation
+ * (HKDF-SHA256, info `smrt-hvsf-v1`) and seals and opens every envelope with
+ * that subkey only, so an HVSF envelope never authenticates under the raw
+ * vault data key or for another consumer of the same data key.
  */
 
-import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import {
+  createHash,
+  hkdfSync,
+  randomBytes,
+  timingSafeEqual,
+} from 'node:crypto';
 import type { FileHandle } from 'node:fs/promises';
 import { link, lstat, mkdir, open, rename, rm, unlink } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
@@ -52,6 +60,21 @@ export interface SnapshotSealingKey extends SnapshotContext {
   key: Uint8Array;
 }
 
+/**
+ * Expected context for opening a snapshot. Only `accountId` is required (it
+ * names the vault key). A restore on a new device, which has neither the
+ * producing device ID nor the sequence, omits both and takes them from the
+ * file; a caller that knows them (for example to enforce rollback protection)
+ * passes them and the snapshot must match exactly.
+ */
+export interface SnapshotOpenContext {
+  accountId: string;
+  /** Producing device; defaults to the one recorded in the clear header. */
+  deviceId?: string;
+  /** Snapshot sequence; defaults to the clear header's (no rollback check). */
+  sequence?: bigint;
+}
+
 /** Which key a stored snapshot needs. Values are read from its clear header. */
 export interface SnapshotKeyReference {
   accountId: string;
@@ -83,11 +106,21 @@ export class EncryptedSnapshotError extends Error {
 
 /** File extension used for default encrypted snapshot destinations. */
 export const ENCRYPTED_SNAPSHOT_EXTENSION = '.hvsnap';
-/** Clear file header size. */
+/**
+ * Fixed part of the clear header. The producing device ID (1 to 255 UTF-8
+ * bytes, length in the fixed part) follows it immediately.
+ */
 export const SNAPSHOT_HEADER_BYTES = 72;
+/** Offset of the device ID length (u16) inside the fixed header. */
+const HEADER_DEVICE_LENGTH_OFFSET = 6;
+const MAX_DEVICE_ID_BYTES = 255;
 /** Largest plaintext a v1 vault envelope accepts. */
 const ENVELOPE_MAX_DECODED_BYTES = 8 * 1024 * 1024;
-/** Header copy, record type and record index precede every payload. */
+/**
+ * Fixed header copy, record type and record index precede every payload. The
+ * device ID is not copied: the envelope context authenticates it, and the
+ * copied length bytes bind how much of the file it occupies.
+ */
 const PAYLOAD_PREFIX_BYTES = SNAPSHOT_HEADER_BYTES + 1 + 4;
 /** Manifest payload: prefix, total length and SHA-256 digest. */
 const MANIFEST_PAYLOAD_BYTES = PAYLOAD_PREFIX_BYTES + 8 + 32;
@@ -118,6 +151,8 @@ const KIND_CODES: Record<SnapshotKind, number> = {
 };
 const KEY_ID_PATTERN = /^[0-9a-f]{32}$/;
 const KEY_BYTES = 32;
+/** HKDF `info` that binds the derived subkey to HVSF v1. */
+export const SNAPSHOT_SUBKEY_INFO = 'smrt-hvsf-v1';
 
 /** Parsed clear header. Trust it only after {@link decryptSnapshot} succeeds. */
 export interface SnapshotHeader {
@@ -125,6 +160,8 @@ export interface SnapshotHeader {
   kind: SnapshotKind;
   generation: bigint;
   sequence: bigint;
+  /** Producing device; lets a new device restore from the file alone. */
+  deviceId: string;
   keyId: string;
   /** 32 hex digits, random per snapshot. */
   snapshotId: string;
@@ -139,6 +176,8 @@ export interface EncryptedSnapshotSummary {
   kind: SnapshotKind;
   generation: string;
   sequence: string;
+  /** Device that produced the snapshot (clear in the file header). */
+  deviceId: string;
   keyId: string;
   snapshotId: string;
   chunkCount: number;
@@ -152,9 +191,20 @@ function contextIdBytes(value: unknown, label: string): number {
     throw new EncryptedSnapshotError(`Snapshot ${label} must be a string`);
   }
   const length = Buffer.byteLength(value, 'utf8');
-  if (length < 1 || length > 255) {
+  if (length < 1 || length > MAX_DEVICE_ID_BYTES) {
     throw new EncryptedSnapshotError(
       `Snapshot ${label} must be 1 to 255 UTF-8 bytes`,
+    );
+  }
+  return length;
+}
+
+/** A device ID is stored in the clear and printed, so no control characters. */
+function deviceIdBytes(value: unknown): number {
+  const length = contextIdBytes(value, 'device ID');
+  if (/\p{Cc}/u.test(value as string)) {
+    throw new EncryptedSnapshotError(
+      'Snapshot device ID must not contain control characters',
     );
   }
   return length;
@@ -174,7 +224,7 @@ function assertContext(context: SnapshotContext): number {
   assertUint64(context.sequence, 'sequence');
   return (
     contextIdBytes(context.accountId, 'account ID') +
-    contextIdBytes(context.deviceId, 'device ID')
+    deviceIdBytes(context.deviceId)
   );
 }
 
@@ -183,6 +233,22 @@ function assertKey(key: unknown): Uint8Array {
     throw new EncryptedSnapshotError('Snapshot key must be 32 bytes');
   }
   return key;
+}
+
+/**
+ * Derive the HVSF v1 purpose subkey from a raw vault data key (HKDF-SHA256,
+ * empty salt, info `smrt-hvsf-v1`). The caller zeroes the result.
+ */
+export function deriveSnapshotSubkey(dataKey: Uint8Array): Uint8Array {
+  return new Uint8Array(
+    hkdfSync(
+      'sha256',
+      assertKey(dataKey),
+      Buffer.alloc(0),
+      SNAPSHOT_SUBKEY_INFO,
+      KEY_BYTES,
+    ),
+  );
 }
 
 function chunkCountFor(totalLength: number, chunkSize: number): number {
@@ -195,11 +261,16 @@ function chunkLength(header: SnapshotHeader, index: number): number {
     : header.totalLength - header.chunkSize * (header.chunkCount - 1);
 }
 
+/** Fixed 72-byte part of the clear header. */
 function encodeHeader(header: SnapshotHeader): Buffer {
   const bytes = Buffer.alloc(SNAPSHOT_HEADER_BYTES);
   MAGIC.copy(bytes, 0);
   bytes[4] = FORMAT_VERSION;
   bytes[5] = KIND_CODES[header.kind];
+  bytes.writeUInt16BE(
+    Buffer.byteLength(header.deviceId, 'utf8'),
+    HEADER_DEVICE_LENGTH_OFFSET,
+  );
   bytes.writeBigUInt64BE(header.generation, 8);
   bytes.writeBigUInt64BE(header.sequence, 16);
   Buffer.from(header.keyId, 'hex').copy(bytes, 24);
@@ -211,19 +282,53 @@ function encodeHeader(header: SnapshotHeader): Buffer {
 }
 
 /**
- * Parse and bound-check a clear header. Every limit is checked here, before
- * any allocation that depends on the header.
+ * Total clear header length (fixed part plus device ID) declared by the first
+ * {@link SNAPSHOT_HEADER_BYTES} bytes of a file. Bounds-checked here so a
+ * caller can read the rest of the header without trusting the file further.
+ */
+export function snapshotHeaderLength(fixed: Uint8Array): number {
+  const bytes = Buffer.from(fixed.buffer, fixed.byteOffset, fixed.length);
+  if (
+    bytes.length < SNAPSHOT_HEADER_BYTES ||
+    !bytes.subarray(0, 4).equals(MAGIC)
+  ) {
+    throw new EncryptedSnapshotError('Not an encrypted SMRT snapshot');
+  }
+  const deviceLength = bytes.readUInt16BE(HEADER_DEVICE_LENGTH_OFFSET);
+  if (deviceLength < 1 || deviceLength > MAX_DEVICE_ID_BYTES) {
+    throw new EncryptedSnapshotError('Snapshot device ID length is invalid');
+  }
+  return SNAPSHOT_HEADER_BYTES + deviceLength;
+}
+
+/**
+ * Parse and bound-check a clear header: the fixed part plus the device ID,
+ * exactly {@link snapshotHeaderLength} bytes. Every limit is checked here,
+ * before any allocation that depends on the header.
  */
 export function parseSnapshotHeader(bytes: Uint8Array): SnapshotHeader {
   const header = Buffer.from(bytes);
   if (
-    header.length !== SNAPSHOT_HEADER_BYTES ||
+    header.length < SNAPSHOT_HEADER_BYTES ||
     !header.subarray(0, 4).equals(MAGIC)
   ) {
     throw new EncryptedSnapshotError('Not an encrypted SMRT snapshot');
   }
-  if (header[4] !== FORMAT_VERSION || header[6] !== 0 || header[7] !== 0) {
+  if (header[4] !== FORMAT_VERSION) {
     throw new EncryptedSnapshotError('Unsupported encrypted snapshot format');
+  }
+  if (header.length !== snapshotHeaderLength(header)) {
+    throw new EncryptedSnapshotError('Snapshot header length is invalid');
+  }
+  let deviceId: string;
+  try {
+    deviceId = new TextDecoder('utf-8', { fatal: true }).decode(
+      header.subarray(SNAPSHOT_HEADER_BYTES),
+    );
+    deviceIdBytes(deviceId);
+  } catch (error) {
+    if (error instanceof EncryptedSnapshotError) throw error;
+    throw new EncryptedSnapshotError('Snapshot device ID is not valid UTF-8');
   }
   const kind = (Object.keys(KIND_CODES) as SnapshotKind[]).find(
     (candidate) => KIND_CODES[candidate] === header[5],
@@ -258,6 +363,7 @@ export function parseSnapshotHeader(bytes: Uint8Array): SnapshotHeader {
     kind,
     generation,
     sequence: header.readBigUInt64BE(16),
+    deviceId,
     keyId: header.subarray(24, 40).toString('hex'),
     snapshotId: header.subarray(40, 56).toString('hex'),
     chunkSize,
@@ -272,6 +378,7 @@ function summary(header: SnapshotHeader, digest: string) {
     kind: header.kind,
     generation: header.generation.toString(),
     sequence: header.sequence.toString(),
+    deviceId: header.deviceId,
     keyId: header.keyId,
     snapshotId: header.snapshotId,
     chunkCount: header.chunkCount,
@@ -344,7 +451,7 @@ export async function writeEncryptedSnapshot(
 ): Promise<EncryptedSnapshotSummary> {
   const { sealing } = options;
   try {
-    const key = assertKey(sealing?.key);
+    const dataKey = assertKey(sealing?.key);
     assertContext(sealing);
     const generation = assertUint64(sealing.generation, 'key generation', 1n);
     if (
@@ -380,6 +487,7 @@ export async function writeEncryptedSnapshot(
       kind: options.kind,
       generation,
       sequence: sealing.sequence,
+      deviceId: sealing.deviceId,
       keyId: sealing.keyId,
       snapshotId: randomBytes(16).toString('hex'),
       chunkSize,
@@ -398,6 +506,7 @@ export async function writeEncryptedSnapshot(
 
     await mkdir(dirname(options.destination), { recursive: true, mode: 0o700 });
     const temporary = temporarySibling(options.destination, 'tmp');
+    const key = deriveSnapshotSubkey(dataKey);
     const payload = Buffer.alloc(PAYLOAD_PREFIX_BYTES + chunkSize);
     headerBytes.copy(payload, 0);
     payload[SNAPSHOT_HEADER_BYTES] = RECORD_CHUNK;
@@ -406,8 +515,10 @@ export async function writeEncryptedSnapshot(
     try {
       handle = await open(temporary, 'wx', 0o600);
       const output = handle;
+      const deviceBytes = Buffer.from(sealing.deviceId, 'utf8');
       await writeAll(output, headerBytes);
-      let written = headerBytes.length;
+      await writeAll(output, deviceBytes);
+      let written = headerBytes.length + deviceBytes.length;
       const writeRecord = async (plaintext: Uint8Array) => {
         const envelope = sealVaultSnapshot(plaintext, {
           key,
@@ -484,6 +595,7 @@ export async function writeEncryptedSnapshot(
       return summary(header, digest.toString('hex'));
     } finally {
       payload.fill(0);
+      key.fill(0);
       await handle?.close().catch(() => undefined);
       await unlink(temporary).catch(() => undefined);
     }
@@ -496,8 +608,11 @@ export async function writeEncryptedSnapshot(
 export interface OpenSnapshotOptions {
   /** Encrypted snapshot file. */
   source: string;
-  /** Trusted expected context, supplied independently of the file. */
-  context: SnapshotContext;
+  /**
+   * Trusted expected context, supplied independently of the file. Device and
+   * sequence are optional; see {@link SnapshotOpenContext}.
+   */
+  context: SnapshotOpenContext;
   keys: Pick<SnapshotKeyProvider, 'openingKey'>;
   /** Reject snapshots sealed with an older key generation. */
   minimumGeneration?: bigint;
@@ -536,9 +651,19 @@ async function* openSnapshotChunks(
   options: OpenSnapshotOptions,
   onHeader: (header: SnapshotHeader) => void,
 ): AsyncGenerator<Buffer, string> {
-  const contextBytes = assertContext(options.context);
+  if (!options.context || typeof options.context !== 'object') {
+    throw new EncryptedSnapshotError('Snapshot context is required');
+  }
+  const accountBytes = contextIdBytes(options.context.accountId, 'account ID');
+  if (options.context.deviceId !== undefined) {
+    deviceIdBytes(options.context.deviceId);
+  }
+  if (options.context.sequence !== undefined) {
+    assertUint64(options.context.sequence, 'sequence');
+  }
   const handle = await open(options.source, 'r');
   let key: Uint8Array | undefined;
+  let openingKey: Uint8Array | undefined;
   try {
     const stat = await handle.stat();
     if (!stat.isFile()) {
@@ -547,11 +672,36 @@ async function* openSnapshotChunks(
     if (stat.size < SNAPSHOT_HEADER_BYTES) {
       throw new EncryptedSnapshotError('Not an encrypted SMRT snapshot');
     }
-    const headerBytes = await readExact(handle, SNAPSHOT_HEADER_BYTES, 0);
-    const header = parseSnapshotHeader(headerBytes);
-    if (header.sequence !== options.context.sequence) {
+    const fixedBytes = await readExact(handle, SNAPSHOT_HEADER_BYTES, 0);
+    const headerLength = snapshotHeaderLength(fixedBytes);
+    if (stat.size < headerLength) {
+      throw new EncryptedSnapshotError('Encrypted snapshot is truncated');
+    }
+    const header = parseSnapshotHeader(
+      Buffer.concat([
+        fixedBytes,
+        await readExact(
+          handle,
+          headerLength - SNAPSHOT_HEADER_BYTES,
+          SNAPSHOT_HEADER_BYTES,
+        ),
+      ]),
+    );
+    if (
+      options.context.deviceId !== undefined &&
+      options.context.deviceId !== header.deviceId
+    ) {
+      throw new EncryptedSnapshotError('Snapshot device does not match');
+    }
+    if (
+      options.context.sequence !== undefined &&
+      options.context.sequence !== header.sequence
+    ) {
       throw new EncryptedSnapshotError('Snapshot sequence does not match');
     }
+    const headerBytes = fixedBytes;
+    const contextBytes =
+      accountBytes + Buffer.byteLength(header.deviceId, 'utf8');
     if (
       options.minimumGeneration !== undefined &&
       header.generation < options.minimumGeneration
@@ -565,7 +715,7 @@ async function* openSnapshotChunks(
     }
     const envelopeOverhead = ENVELOPE_FIXED_BYTES + contextBytes;
     let expectedSize =
-      SNAPSHOT_HEADER_BYTES + 4 + envelopeOverhead + MANIFEST_PAYLOAD_BYTES;
+      headerLength + 4 + envelopeOverhead + MANIFEST_PAYLOAD_BYTES;
     if (header.chunkCount > 0) {
       expectedSize +=
         header.chunkCount * (4 + envelopeOverhead + PAYLOAD_PREFIX_BYTES) +
@@ -588,14 +738,17 @@ async function* openSnapshotChunks(
         'No key is available for this snapshot generation',
       );
     }
-    const openingKey = assertKey(key);
+    const subkey = deriveSnapshotSubkey(assertKey(key));
+    openingKey = subkey;
     const keyIdBytes = headerBytes.subarray(24, 40);
+    // The clear device and sequence are only a starting point: the envelope
+    // context authenticates them, so an edited header fails to open.
     const context = {
       accountId: options.context.accountId,
-      deviceId: options.context.deviceId,
-      sequence: options.context.sequence,
+      deviceId: header.deviceId,
+      sequence: header.sequence,
     };
-    let position = SNAPSHOT_HEADER_BYTES;
+    let position = headerLength;
     const openRecord = async (
       index: number,
       payloadLength: number,
@@ -623,7 +776,7 @@ async function* openSnapshotChunks(
         payload = openVaultSnapshot(envelope, {
           context,
           resolveKey: (recordKeyId) =>
-            recordKeyId === header.keyId ? openingKey : undefined,
+            recordKeyId === header.keyId ? subkey : undefined,
         });
       } catch (error) {
         throw new EncryptedSnapshotError(
@@ -691,18 +844,31 @@ async function* openSnapshotChunks(
     return digest.toString('hex');
   } finally {
     if (key instanceof Uint8Array) key.fill(0);
+    openingKey?.fill(0);
     await handle.close();
   }
 }
 
-/** Read a snapshot's clear header without authenticating it. */
+/**
+ * Read a snapshot's clear header (including the producing device ID) without
+ * authenticating it. Treat every field as a hint until a restore succeeds.
+ */
 export async function readSnapshotHeader(
   source: string,
 ): Promise<SnapshotHeader> {
   const handle = await open(source, 'r');
   try {
+    const fixed = await readExact(handle, SNAPSHOT_HEADER_BYTES, 0);
+    const length = snapshotHeaderLength(fixed);
     return parseSnapshotHeader(
-      await readExact(handle, SNAPSHOT_HEADER_BYTES, 0),
+      Buffer.concat([
+        fixed,
+        await readExact(
+          handle,
+          length - SNAPSHOT_HEADER_BYTES,
+          SNAPSHOT_HEADER_BYTES,
+        ),
+      ]),
     );
   } finally {
     await handle.close();
