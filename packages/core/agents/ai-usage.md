@@ -1,4 +1,4 @@
-# AI usage observability (#3077, #4751, #4753, #4760, #4780)
+# AI usage observability (#3077, #4751, #4753, #4760, #4780, #4782)
 
 `_smrt_ai_usage` answers "how does model X do on prompt Y". Sources:
 `src/adapters/ai-usage.ts` (persistence), `src/adapters/ai-usage-recorder.ts`
@@ -250,3 +250,44 @@ a call for prompt tuning; usage rows stay metadata-only.
   `ensureAiUsageSystemTableCompatibility()`. Tests:
   `issue-4780-ai-transcripts.test.ts`, PostgreSQL lane
   `issue-4780-ai-transcripts-postgres.optional.test.ts`.
+
+## Comparing prompt versions and models (#4782)
+
+Source: `src/system/ai-prompt-compare.ts`. Read-only helpers over the usage
+rows of one prompt key; no model judges anything (labels come from
+`recordAiUsageOutcome()`).
+
+- **Scope.** Both take `tenantId` (`null` = global rows) or
+  `allowCrossTenant: true`, else throw `AiUsageScopeError`
+  (`AI_USAGE_TENANT_REQUIRED`) before any query. The tenant is a predicate
+  on every query (usage, labels, runs, transcripts), so other tenants' rows
+  are neither read nor counted; cross-tenant joins key on `(tenant, id)`
+  because run and call ids are free text another tenant can reuse.
+- `compareAiPromptRuns(db, { promptKey, a, b, since?, until?, tenantId |
+  allowCrossTenant, transcriptLimit? = 50 (max 500) })`. A side is exactly
+  one of `{ templateHash }` (the tag), `{ model }` (`provider:model` or the
+  bare model id) or `{ tier }` (`tier_resolved`, else `tier_requested`).
+  Per side: `calls`, `blocked` (beside calls), tokens, `estimatedCost` /
+  `costedCalls` / `uncostedCalls` / `meanCost`, `latencyMs` p50/p90/p95/p99
+  (nearest rank), `fallbackCalls`/`fallbackRate` (non-empty `substitutions`),
+  `degradedCalls`/`degradedRate` (the row's `_smrt_ai_runs` run is
+  `degraded | failed`), `outcomes`, `labels`, `scoredLabels`, `meanScore`,
+  `callIds`, `transcriptCount` and `transcripts` (ids, call ids, labels,
+  worst score; worst-labelled first, unlabelled last). Rates are per usage
+  row, the unit `ai:usage` counts. Label counting follows `reportAiUsage()`:
+  a usage label on its row, a run or call label once per side.
+- Accounting: `rows` (every row of the prompt in scope), `unmatched`
+  (neither side), `inBoth` (totalled on both), `excluded.externalAgent`.
+  `costBasis` is the report's.
+- Transcript content is never read here, so no audit event; `smrt
+  ai:compare --transcripts N` reads the N worst-labelled per side through
+  `listAiTranscripts()` (audited, in each row's own tenant).
+- `listAiPromptTemplateHistory(db, { promptKey, since?, until?, tenantId |
+  allowCrossTenant })`: per `templateHash` tag (`null` = recorded without
+  one), `firstSeen`, `lastSeen`, `calls`, `blocked`, `layers`, `models`,
+  newest `lastSeen` first.
+- Queries: keyset pages on `id` over `idx_smrt_ai_usage_prompt_key`; label,
+  run and transcript joins are `IN` lists of at most 500 ids on their
+  indexed columns. No new table or index. Tests:
+  `issue-4782-ai-prompt-compare.test.ts`, PostgreSQL lane
+  `issue-4782-ai-prompt-compare-postgres.optional.test.ts`.
