@@ -71,8 +71,7 @@ Consumer guide: [docs/content/inference-settings.md](../../../docs/content/infer
   "Resolver composition"). App-row fusions are not yet visible to the
   executor (it reads the process config and the `defineFusion()` registry):
   a tier bound to a fusion defined only in an app row fails loudly
-  (`fusion-unknown`) until stored fusions reach the executor (#4749
-  follow-up).
+  (`fusion-unknown`) until stored fusions reach the executor (#4800).
 - **Panel** (`src/svelte`): built like `PromptSettingsPanel` (presentational,
   `svelte` optional peer, prune script, two-project Vitest, `svelte-check`,
   named `$props()` interfaces, types free of core). The default view is the
