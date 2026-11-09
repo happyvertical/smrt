@@ -554,6 +554,9 @@ export function attachAiUsageRecorder<T extends object>(
 ): T & { onUsage: (event: unknown) => Promise<void> } {
   const inner = unwrapAiUsageSink((aiConfig as { onUsage?: unknown }).onUsage);
   const onUsage = async (event: unknown): Promise<void> => {
+    // Transcript capture (#4780) reads the raw event before the caller's
+    // (possibly async) callback; the recorder observes it again, harmlessly.
+    observeAiTranscriptUsage(event);
     try {
       if (inner) await inner(event);
     } finally {

@@ -287,6 +287,30 @@ describe('AI call transcripts (#4780)', () => {
       expect(firstCall.usageTags.callId).toBe(stored[0]?.call_id);
     });
 
+    it('sees substitutions before a slow caller onUsage settles', async () => {
+      enable();
+      const instance = new Probe({
+        ai: {
+          ...BASE_AI,
+          // A caller callback that settles after the call has resolved.
+          onUsage: () => new Promise((resolve) => setTimeout(resolve, 50)),
+        },
+        db,
+      } as never);
+      await instance.initialize();
+      eventTags = {
+        substitutions: JSON.stringify([
+          { from: 'great', to: 'good', reason: 'quota' },
+        ]),
+      };
+      await (await instance.client()).message('fell back');
+      const stored = await transcriptRows();
+      expect(stored).toHaveLength(1);
+      expect(JSON.parse(String(stored[0]?.response)).capture).toBe(
+        'substituted',
+      );
+    });
+
     it('never stores transcript: false, even for a failure', async () => {
       enable({ sample: 1 });
       const ai = await (await probe()).client();

@@ -484,6 +484,8 @@ export class SmrtClass {
   private _tierAiClients = new Map<string, Map<string, Promise<AIClient>>>();
   /** Transcript wrappers (#4780) per raw client, built while enabled. */
   private readonly _aiTranscriptClients = new WeakMap<object, unknown>();
+  /** Tier-target keys this instance built clients with, masked (#4780). */
+  private readonly _aiTranscriptKeys = new Set<string>();
   /** `getCapabilities()` answers per client (#4758). */
   private readonly _aiCapabilityAnswers = new WeakMap<
     object,
@@ -865,6 +867,10 @@ export class SmrtClass {
             const existingOnUsage = unwrapAiUsageSink(configuredOnUsage);
             const sinkAttribution = aiUsageSinkAttribution(configuredOnUsage);
             aiConfig.onUsage = async (event: unknown) => {
+              // Transcript capture (#4780) reads the raw event synchronously,
+              // before the caller's (possibly async) callback, so the call
+              // knows its substitutions and run before it resolves.
+              observeAiTranscriptUsage(event);
               // Record even when the caller's callback throws; its error
               // still propagates (#3077).
               try {
@@ -1081,7 +1087,7 @@ export class SmrtClass {
 
   /** Credential values transcripts must never contain. */
   private aiTranscriptSecrets(): string[] {
-    const secrets: string[] = [];
+    const secrets: string[] = [...this._aiTranscriptKeys];
     for (const source of [
       this._aiClientConfig,
       this.options.ai as Record<string, unknown> | undefined,
@@ -1577,6 +1583,9 @@ export class SmrtClass {
       );
     }
     const identity = inferenceTargetIdentity(target);
+    // A bound key (a user's BYO key, a hosted gateway key) is masked in
+    // transcripts like the configured one (#4780).
+    if (identity.apiKey) this._aiTranscriptKeys.add(identity.apiKey);
     if (Object.keys(identity).length === 0)
       return this.requireConfiguredAi(tier);
 
@@ -1625,6 +1634,8 @@ export class SmrtClass {
     const usageConfig =
       this._aiUsageResolvedConfig ?? this.mergeAiUsageConfig(config.toJSON());
     tierConfig.onUsage = async (event: unknown) => {
+      // Synchronously, before the caller's callback (#4780).
+      observeAiTranscriptUsage(event);
       try {
         if (typeof userOnUsage === 'function') {
           await (userOnUsage as (usageEvent: unknown) => unknown)(event);
