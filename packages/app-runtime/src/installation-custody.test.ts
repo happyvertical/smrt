@@ -38,6 +38,7 @@ import {
   LocalRuntimeError,
   openLocalMcpTokenStore,
   prepareApplicationStateRoot,
+  RESEED_CONFIRMATION_MESSAGE,
   recoverInstallationSeed,
   reseedInstallation,
   resolveApplicationStateRoot,
@@ -491,7 +492,10 @@ describe('installation custody', () => {
         epoch: 1,
       });
 
-      const outcome = await reseedInstallation(copy);
+      const outcome = await reseedInstallation({
+        ...copy,
+        confirmDestroySeed: true,
+      });
       expect(outcome).toMatchObject({
         declaration: 'reseed',
         status: 'in-custody',
@@ -572,9 +576,9 @@ describe('installation custody', () => {
         `${JSON.stringify({ schemaVersion: 1, pid: process.ppid, instance: 'a'.repeat(32) })}\n`,
         { mode: 0o600 },
       );
-      await expect(reseedInstallation(copy)).rejects.toThrow(
-        /Another application writer is active/,
-      );
+      await expect(
+        reseedInstallation({ ...copy, confirmDestroySeed: true }),
+      ).rejects.toThrow(/Another application writer is active/);
       await expect(
         restoreInstallation({ ...copy, originRetired: true }),
       ).rejects.toThrow(/Another application writer is active/);
@@ -685,6 +689,42 @@ describe('installation custody', () => {
       await stop(await boot(options));
     });
 
+    it('never destroys a healthy seed or revokes tokens without explicit confirmation', async () => {
+      const { at } = await machine('reseed-confirm');
+      const options = await at('data');
+      const { token } = await ownedInstallation(options);
+      const seed = await readFile(seedOf(options), 'utf8');
+      const dataRecord = await readFile(dataRecordOf(options), 'utf8');
+      const stateRecord = await readFile(stateRecordOf(options), 'utf8');
+
+      for (const confirmDestroySeed of [
+        undefined,
+        false,
+        'yes',
+        1,
+        'true',
+      ] as unknown[]) {
+        await expect(
+          reseedInstallation({
+            ...options,
+            confirmDestroySeed,
+          } as never),
+        ).rejects.toThrow(/--confirm-destroy-seed/);
+      }
+      await expect(reseedInstallation(options as never)).rejects.toThrow(
+        RESEED_CONFIRMATION_MESSAGE,
+      );
+
+      // Nothing moved: seed, records, status and the token are untouched.
+      expect(await readFile(seedOf(options), 'utf8')).toBe(seed);
+      expect(await readFile(dataRecordOf(options), 'utf8')).toBe(dataRecord);
+      expect(await readFile(stateRecordOf(options), 'utf8')).toBe(stateRecord);
+      expect(await inspectInstallationCustody(options)).toMatchObject({
+        status: 'in-custody',
+      });
+      expect(await verifyToken(options, token)).not.toBeNull();
+    });
+
     it('re-seeds a lost seed with no backup: new identities, tokens invalidated, data kept', async () => {
       const { at } = await machine('lost-seed');
       const options = await at('data');
@@ -692,7 +732,10 @@ describe('installation custody', () => {
       const identity = await identityOf(options);
       await rm(seedOf(options));
 
-      const outcome = await reseedInstallation(options);
+      const outcome = await reseedInstallation({
+        ...options,
+        confirmDestroySeed: true,
+      });
       expect(outcome).toMatchObject({
         previousInstallationId: identity.deviceId,
         effects: {
@@ -746,7 +789,10 @@ describe('installation custody', () => {
         /private file/,
       );
 
-      const outcome = await reseedInstallation(options);
+      const outcome = await reseedInstallation({
+        ...options,
+        confirmDestroySeed: true,
+      });
       expect(outcome).toMatchObject({
         previousInstallationId: identity.deviceId,
         effects: { identityChanged: true },
@@ -761,7 +807,10 @@ describe('installation custody', () => {
       const { token } = await ownedInstallation(options);
       const identity = await identityOf(options);
 
-      const outcome = await reseedInstallation(options);
+      const outcome = await reseedInstallation({
+        ...options,
+        confirmDestroySeed: true,
+      });
       expect(outcome.effects).toEqual({
         identityChanged: true,
         seedKeyedTokensInvalidated: true,
@@ -954,7 +1003,10 @@ describe('installation custody', () => {
       });
       await inside;
       let settled = false;
-      const reseeding = reseedInstallation(options).finally(() => {
+      const reseeding = reseedInstallation({
+        ...options,
+        confirmDestroySeed: true,
+      }).finally(() => {
         settled = true;
       });
       await new Promise((resolve) => setTimeout(resolve, 300));
@@ -981,7 +1033,11 @@ describe('installation custody', () => {
       const refusal = await boot(copy).catch((error: Error) => error);
       seen.push(String((refusal as Error).message));
       seen.push(JSON.stringify(await inspectInstallationCustody(copy)));
-      seen.push(JSON.stringify(await reseedInstallation(copy)));
+      seen.push(
+        JSON.stringify(
+          await reseedInstallation({ ...copy, confirmDestroySeed: true }),
+        ),
+      );
       await rm(seedOf(copy));
       const missing = await boot(copy).catch((error: Error) => error);
       seen.push(String((missing as Error).message));

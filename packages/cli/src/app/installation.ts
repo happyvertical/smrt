@@ -5,7 +5,7 @@
  * ```
  * smrt app installation [status]
  * smrt app installation restore --origin-retired
- * smrt app installation reseed
+ * smrt app installation reseed --confirm-destroy-seed
  * smrt app installation recover-seed <seed-file> [--unverified]
  * smrt app installation retire
  * ```
@@ -18,6 +18,7 @@
 import { resolve } from 'node:path';
 import {
   inspectInstallationCustody,
+  RESEED_CONFIRMATION_MESSAGE,
   recoverInstallationSeed,
   reseedInstallation,
   restoreInstallation,
@@ -29,7 +30,7 @@ import { type AppContext, preparedStateRoot } from './runtime.js';
 
 /** Usage text for `smrt app installation`. */
 export const INSTALLATION_USAGE =
-  'Usage: smrt app installation [status] | restore --origin-retired | reseed | recover-seed <seed-file> [--unverified] | retire';
+  'Usage: smrt app installation [status] | restore --origin-retired | reseed --confirm-destroy-seed | recover-seed <seed-file> [--unverified] | retire';
 
 const SUBCOMMANDS = [
   'status',
@@ -41,7 +42,7 @@ const SUBCOMMANDS = [
 
 const NOTICES: Record<string, string> = {
   restore:
-    'Same installation: seed, identities and tokens are unchanged. Keep the origin stopped or deleted; two active origins need "reseed" on one of them.',
+    'Same installation: seed, identities and tokens are unchanged. Keep the origin stopped or deleted; two active origins need "reseed --confirm-destroy-seed" on one of them.',
   reseed:
     'Independent installation: device, tenant, owner, profile and membership derivations changed and seed-keyed tokens no longer work. Existing rows keep their IDs; sessions are untouched. The previous seed was not kept.',
   'recover-seed':
@@ -72,10 +73,13 @@ export async function runInstallationOperation(
   }
   let originRetired = false;
   let unverified = false;
+  let confirmDestroySeed = false;
   const positional: string[] = [];
   for (const arg of rest) {
     if (arg === '--origin-retired' && subcommand === 'restore') {
       originRetired = true;
+    } else if (arg === '--confirm-destroy-seed' && subcommand === 'reseed') {
+      confirmDestroySeed = true;
     } else if (arg === '--unverified' && subcommand === 'recover-seed') {
       unverified = true;
     } else if (arg.startsWith('--')) {
@@ -94,6 +98,10 @@ export async function runInstallationOperation(
     throw new Error(
       `installation ${subcommand} takes ${subcommand === 'recover-seed' ? 'exactly one seed file' : 'no arguments'}. ${INSTALLATION_USAGE}`,
     );
+  }
+  // Irreversible, so refuse before the operation lock or any state is touched.
+  if (subcommand === 'reseed' && !confirmDestroySeed) {
+    throw new Error(RESEED_CONFIRMATION_MESSAGE);
   }
   await assertLocalOperation(context, 'app:installation');
   const options = {
@@ -115,7 +123,7 @@ export async function runInstallationOperation(
         subcommand === 'restore'
           ? await restoreInstallation({ ...declared, originRetired })
           : subcommand === 'reseed'
-            ? await reseedInstallation(declared)
+            ? await reseedInstallation({ ...declared, confirmDestroySeed })
             : subcommand === 'retire'
               ? await retireInstallation(declared)
               : await recoverInstallationSeed({

@@ -1665,7 +1665,7 @@ async function pathExists(path: string): Promise<boolean> {
 }
 
 const INSTALLATION_SEED_MISSING_MESSAGE =
-  'The installation seed is missing from an initialized data root; nothing was changed. Restore it from a backup with "smrt app installation recover-seed <file>", or accept new identities with "smrt app installation reseed".';
+  'The installation seed is missing from an initialized data root; nothing was changed. Restore it from a backup with "smrt app installation recover-seed <file>", or accept new identities with "smrt app installation reseed --confirm-destroy-seed".';
 
 function installationUnverified(
   report: InstallationCustodyReport,
@@ -1678,7 +1678,7 @@ function installationUnverified(
     : '';
   return new LocalRuntimeError(
     'installation_unverified',
-    `This data root is not in this location's custody (${report.status}); nothing was changed. Run "smrt app installation status", then declare it a move with "restore --origin-retired" or an independent copy with "reseed".${location}`,
+    `This data root is not in this location's custody (${report.status}); nothing was changed. Run "smrt app installation status", then declare it a move with "restore --origin-retired" or an independent copy with "reseed --confirm-destroy-seed".${location}`,
   );
 }
 

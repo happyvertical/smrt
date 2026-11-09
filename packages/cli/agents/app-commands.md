@@ -14,7 +14,7 @@ template's scripts so an app's `package.json` scripts become one-liners.
 | `smrt-mcp-apps.mjs validate-if-present && …smrt-vite.mjs build` | `smrt app build [vite args]` |
 | `scripts/smrt-web.mjs` | `bin/smrt-web.mjs` (spawned by `start`) |
 | — (new, #3413) | `smrt app token [create] --scopes … [--expires 30d] [--label …]`, `token list`, `token revoke <id>` |
-| — (new, #4704) | `smrt app installation [status]`, `restore --origin-retired`, `reseed`, `recover-seed <file> [--unverified]`, `retire` |
+| — (new, #4704) | `smrt app installation [status]`, `restore --origin-retired`, `reseed --confirm-destroy-seed`, `recover-seed <file> [--unverified]`, `retire` |
 | helper modules | `@happyvertical/smrt-cli/app` (side-effect-free subpath) |
 
 ## Source

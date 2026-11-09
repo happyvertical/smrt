@@ -90,7 +90,7 @@ Application infrastructure composition for the validated runtime profiles in
   `installation.json` stays at the location; matching `activationId`s mean
   in custody. Unattributable arrivals fail closed (`installation_unverified`)
   until `restore` (asserts origin retired; epoch +1), `reseed` (new seed,
-  identities and seed-keyed tokens change), `recover-seed` or `retire`
+  identities and seed-keyed tokens change; needs `confirmDestroySeed`), `recover-seed` or `retire`
   (`smrt app installation`). A fresh seed always establishes custody; a
   pre-existing seed never does. Record and seed reads use `O_NOFOLLOW`, owner
   and mode checks; writes are atomic. The state root must persist with the

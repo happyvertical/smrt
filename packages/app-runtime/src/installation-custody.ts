@@ -266,6 +266,21 @@ export interface RestoreInstallationOptions extends InstallationCustodyOptions {
   originRetired: boolean;
 }
 
+/** Refusal text of {@link reseedInstallation} without confirmation. */
+export const RESEED_CONFIRMATION_MESSAGE =
+  'Re-seeding permanently destroys this installation seed (it is not kept), changes the device, tenant, owner, profile and membership identities and revokes every active local MCP token. Nothing was changed. Back up secrets/application.secret first if you may need the old identity, then confirm with --confirm-destroy-seed.';
+
+/** Options for {@link reseedInstallation}. */
+export interface ReseedInstallationOptions extends InstallationCustodyOptions {
+  /**
+   * Must be `true`: the operator confirms the current seed is destroyed (it
+   * is not kept), every derived identity changes, and active local MCP tokens
+   * are revoked. Re-seeding is irreversible without a backup of the seed, so
+   * it never runs on a default.
+   */
+  confirmDestroySeed: boolean;
+}
+
 /** Options for {@link recoverInstallationSeed}. */
 export interface RecoverInstallationSeedOptions
   extends InstallationCustodyOptions {
@@ -746,10 +761,17 @@ export async function restoreInstallation(
  * MCP tokens are revoked so `smrt app token list` stays truthful; sessions and
  * all application data are untouched. The previous seed is not retained.
  * Re-running after an interruption simply generates another seed.
+ *
+ * Irreversible, so it needs `confirmDestroySeed: true` (the CLI's
+ * `--confirm-destroy-seed`), the counterpart of `restore`'s `originRetired`.
  */
 export async function reseedInstallation(
-  options: InstallationCustodyOptions,
+  options: ReseedInstallationOptions,
 ): Promise<InstallationCustodyOutcome> {
+  // Checked before the lock, the state root or any file is touched.
+  if (options.confirmDestroySeed !== true) {
+    throw new Error(RESEED_CONFIRMATION_MESSAGE);
+  }
   return withInstallationExclusive(options, async ({ paths, stateRoot }) => {
     // A seed that is unreadable (lax mode, a link) is exactly what reseed is
     // for: treat it as unavailable rather than failing.
