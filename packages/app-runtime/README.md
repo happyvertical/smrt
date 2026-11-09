@@ -221,13 +221,18 @@ directory mode:
 | Declaration | Use it when | Seed | Identities | Seed-keyed tokens | Epoch |
 |---|---|---|---|---|---|
 | `restoreInstallation` (`restore --origin-retired`) | The same installation moved or was restored and the origin is stopped or deleted | kept | unchanged | still valid | +1 |
-| `reseedInstallation` (`reseed`) | A copy whose origin stays active; a lost seed with no backup; planned rotation | **replaced** (old one not kept) | **device, tenant, owner, profile, membership derivations change** | **invalidated**; active local MCP tokens are revoked | 1 (`previousInstallationId` names the old one) |
+| `reseedInstallation` (`reseed --confirm-destroy-seed`) | A copy whose origin stays active; a lost seed with no backup; planned rotation | **replaced** (old one not kept) | **device, tenant, owner, profile, membership derivations change** | **invalidated**; active local MCP tokens are revoked | 1 (`previousInstallationId` names the old one) |
 | `recoverInstallationSeed` (`recover-seed <file>`) | The seed was lost or replaced and a backup exists | restored from backup, which must derive the recorded installation | unchanged | still valid | unchanged |
 | `retireInstallation` (`retire`) | After moving away from this location | kept | unchanged | unchanged | unchanged; this location cannot start until `restore` |
 
 `restore` requires the explicit assertion `originRetired: true`: the runtime
 cannot see another machine, so it records the claim rather than verifying it.
-A copy whose origin stays active must be re-seeded instead. Re-seeding keeps
+A copy whose origin stays active must be re-seeded instead. `reseed` is
+irreversible (the seed is not kept, identities change and active local MCP
+tokens are revoked), so it likewise requires an explicit
+`confirmDestroySeed: true` / `--confirm-destroy-seed` even when the seed is
+healthy, and refuses before touching any state without it; back up
+`secrets/application.secret` first if you may need the old identity. Re-seeding keeps
 all application data: existing rows keep the IDs they were created with and
 only new derivations use the new seed, so the copy becomes a distinct sync
 device. A pending owner invitation was keyed by the old seed; run

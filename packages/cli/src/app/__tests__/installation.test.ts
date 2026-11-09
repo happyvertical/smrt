@@ -186,7 +186,16 @@ describe('smrt app installation', () => {
       'utf8',
     );
 
-    const reseeded = await run(copy, ['reseed']);
+    // Destroying the seed is never the default.
+    const unconfirmed = await run(copy, ['reseed']);
+    expect(unconfirmed.code).toBe(1);
+    expect(JSON.parse(unconfirmed.stderr)).toMatchObject({ status: 'error' });
+    expect(unconfirmed.stderr).toContain('--confirm-destroy-seed');
+    expect(
+      readFileSync(join(copy, 'secrets', 'application.secret'), 'utf8'),
+    ).toBe(seed);
+
+    const reseeded = await run(copy, ['reseed', '--confirm-destroy-seed']);
     expect(reseeded.code).toBe(0);
     const outcome = JSON.parse(reseeded.stdout) as Record<string, unknown>;
     expect(outcome).toMatchObject({
@@ -251,6 +260,9 @@ describe('smrt app installation', () => {
       ['frobnicate'],
       ['restore', '--bogus'],
       ['reseed', 'extra'],
+      ['reseed', '--confirm-destroy-seed', 'extra'],
+      ['restore', '--confirm-destroy-seed'],
+      ['status', '--confirm-destroy-seed'],
       ['recover-seed'],
       ['status', '--origin-retired'],
     ]) {
