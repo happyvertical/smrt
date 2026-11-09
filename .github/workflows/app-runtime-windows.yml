@@ -59,6 +59,13 @@ jobs:
       run:
         shell: bash
     steps:
+      # Windows runners default to core.autocrlf=true, which checks text files
+      # out with CRLF. Generated-file verification (for example
+      # smrt-mobile-contract's committed Kotlin) compares bytes against LF
+      # output and reports "stale". Check out LF, as every other runner does.
+      - name: Keep LF line endings
+        run: git config --global core.autocrlf false
+
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
