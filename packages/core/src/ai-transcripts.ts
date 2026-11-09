@@ -224,13 +224,34 @@ function parseEmbeddedJson(value: string): unknown {
   }
 }
 
+/**
+ * Before JSON text is parsed, a bare JSON number equal to an all-digit
+ * secret or sensitive value is replaced by its quoted mask: `JSON.parse`
+ * would round one past 2^53 (a 19-digit card number) and the exact leaf
+ * match would miss it. Quoted strings are left to the leaf pass.
+ */
+function maskBareNumbers(
+  value: string,
+  replacements: ReadonlyArray<Replacement>,
+): string {
+  let out = value;
+  for (const [, mask, raw] of replacements) {
+    if (!/^\d+$/.test(raw)) continue;
+    out = out.replace(
+      new RegExp(`(?<!["\\w.\\-])${raw}(?![\\w."])`, 'g'),
+      JSON.stringify(mask),
+    );
+  }
+  return out;
+}
+
 function redactValue(
   value: unknown,
   replacements: ReadonlyArray<Replacement>,
   seen: WeakSet<object>,
 ): unknown {
   if (typeof value === 'string') {
-    const embedded = parseEmbeddedJson(value);
+    const embedded = parseEmbeddedJson(maskBareNumbers(value, replacements));
     if (embedded !== undefined) {
       // Field-aware pass over the parsed tree (leaves, numbers, keys), then
       // the serialized values (an object-valued sensitive field echoed
@@ -255,6 +276,22 @@ function redactValue(
   }
   if (!value || typeof value !== 'object') return value;
   if (seen.has(value)) return '[Circular]';
+  // A whole sensitive object or array (an object-valued field echoed
+  // verbatim) is masked before its children are touched: masking a child
+  // first would change it and hide the match.
+  const blobs = replacements.filter(
+    ([, , raw]) => raw.startsWith('{') || raw.startsWith('['),
+  );
+  if (blobs.length > 0) {
+    let serialized: string | undefined;
+    try {
+      serialized = JSON.stringify(value);
+    } catch {
+      serialized = undefined;
+    }
+    const blob = blobs.find(([, , raw]) => raw === serialized);
+    if (blob) return blob[1];
+  }
   seen.add(value);
   if (Array.isArray(value)) {
     return value.map((item) => redactValue(item, replacements, seen));

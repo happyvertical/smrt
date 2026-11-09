@@ -537,7 +537,13 @@ describe('AI call transcripts (#4780)', () => {
     });
 
     it('masks sensitive numbers, keys and whole values inside JSON text', () => {
-      const creds = { user: 'svc', token: 'opaque-token-value-77' };
+      // `password` alone would be masked by field name; the whole object
+      // must still be matched first so `token` never survives.
+      const creds = {
+        user: 'svc',
+        password: 'secret-password-1',
+        token: 'opaque-token-value-77',
+      };
       const [message] = redactAiTranscriptMessages(
         [
           {
@@ -565,6 +571,7 @@ describe('AI call transcripts (#4780)', () => {
       expect(text).not.toContain(':123');
       expect(text).not.toContain('opaque-key-as-key');
       expect(text).not.toContain('opaque-token-value-77');
+      expect(text).not.toContain('secret-password-1');
       expect(JSON.parse(text)).toMatchObject({
         pin: '[REDACTED:pin]',
         cvv: '[REDACTED:cvv]',
@@ -572,6 +579,31 @@ describe('AI call transcripts (#4780)', () => {
         '[REDACTED]': 1,
         echoed: '[REDACTED:creds]',
       });
+    });
+
+    it('masks a bare JSON number past 2^53 by its digits', () => {
+      const card = '4111111111111111111';
+      const [message, second] = redactAiTranscriptMessages(
+        [
+          {
+            role: 'assistant',
+            content: `{"card":${card},"note":"${card}","n":${card}5}`,
+          },
+          {
+            role: 'assistant',
+            content: `{"list":[${card},2]}`,
+          },
+        ],
+        { sensitive: [{ field: 'card', value: card }] },
+      );
+      const text = String(message?.content);
+      expect(JSON.parse(text)).toMatchObject({
+        card: '[REDACTED:card]',
+        note: '[REDACTED:card]',
+      });
+      // A different number that merely starts with the digits is kept.
+      expect(typeof JSON.parse(text).n).toBe('number');
+      expect(String(second?.content)).toBe('{"list":["[REDACTED:card]",2]}');
     });
 
     it('masks credential fields inside serialized tool arguments', async () => {
