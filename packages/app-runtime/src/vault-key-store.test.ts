@@ -85,6 +85,20 @@ describe('file vault key store', () => {
     );
   });
 
+  it('skips only the synthetic POSIX mode check on Windows', async () => {
+    const shared = join(root, 'shared');
+    mkdirSync(shared, { mode: 0o750 });
+    chmodSync(shared, 0o750);
+    const store = createFileVaultKeyStore(shared, { platform: 'win32' });
+    await store.set('device-secret', new Uint8Array(randomBytes(32)));
+    expect(await store.get('device-secret')).not.toBeNull();
+    const linked = join(root, 'linked');
+    symlinkSync(shared, linked);
+    await expect(
+      createFileVaultKeyStore(linked, { platform: 'win32' }).get('x'),
+    ).rejects.toThrow('Vault key store directory lacks owner-only custody');
+  });
+
   it('backs a full lifecycle across separate store instances', async () => {
     const directory = join(root, 'keys');
     const first = createVaultKeyLifecycle({
@@ -95,11 +109,11 @@ describe('file vault key store', () => {
       deviceId: 'desktop',
       recoverySecret: 'synthetic recovery credential',
     });
-    const key = await first.openCurrentKey();
+    const key = await first.openSealingKey();
     const reopened = createVaultKeyLifecycle({
       store: createFileVaultKeyStore(directory),
     });
-    expect(await reopened.openCurrentKey()).toEqual(key);
+    expect(await reopened.openSealingKey()).toEqual(key);
     for (const name of readdirSync(directory)) {
       expect(statSync(join(directory, name)).mode & 0o777).toBe(0o600);
     }

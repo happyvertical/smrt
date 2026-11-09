@@ -556,89 +556,218 @@ custody, rotation and revocation. The lifecycle runs one operation at a time.
 Processes that share a store must serialize their calls, for example under
 the application's operation lock.
 
+### Account authority and signed heads
+
+Account state moves between devices only in a signed **account head**. Account
+state means the current key, a commitment to every data key, the active
+devices and the revocations.
+
+An Ed25519 **account authority** key signs every head. Its random seed is
+wrapped under the recovery secret as an `HVRK` record at generation 0, called
+the authority record. A device opens it only while the user has entered the
+recovery secret. So a stolen device secret alone cannot:
+
+- advance the generation,
+- choose a key,
+- add a device, or
+- revoke one.
+
+Only these operations sign a head, and each takes the recovery secret:
+
+- `initializeAccount`
+- `enrollDevice`
+- `enrollFromRecovery`
+- `rotate`
+
+Heads are signed over a length-prefixed encoding with domain tags. Each data
+key is committed with HKDF-SHA256 over the account, generation and key ID.
+Each recovery record is committed by its SHA-256 digest. Keys are identified
+by `(generation, keyId)`.
+
+A device applies a head, from a grant or from `acceptAccountHead(head)`, by
+these rules:
+
+- **Newer head that contains the local one:** the device adopts it. Containing
+  means it lists every key entry identically, every revocation, and every
+  device as active or revoked.
+- **Older head the local one contains:** it is stale and changes nothing.
+- **Anything else:** it is fork evidence. The device keeps the evidence, and
+  its revocations take effect at once. Sealing then fails with
+  `generation_conflict` until the device adopts a head that contains the
+  evidence. Any device can produce that head with
+  `rotate({ recoverySecret })`, which merges every branch.
+
+A head that revokes the receiving device fails with `device_revoked`.
+
+`accountHead()` returns the adopted head and authority record for the relay
+to publish. The relay is blind and untrusted. It only carries heads, grants
+and records.
+
 ### Custody
 
 `VaultKeyStore` is the custody seam: `get`, `set` and `delete` named byte
 items, with atomic replacement. The desktop shell injects an OS keychain
 provider. Headless and development installs use `createFileVaultKeyStore(dir)`
-from `@happyvertical/smrt-app-runtime/vault-key-store`. The directory must be
-absolute. It is created with mode 0700 and must be a real directory owned by
-the current user. Items are mode 0600 files replaced by atomic rename. Keep
-the directory outside the application state root, so plain-data exports and
-backups never include it.
+from `@happyvertical/smrt-app-runtime/vault-key-store`.
 
-The store holds the device secret, the device's wrapped record and the
-recovery record for each generation, and the device registry. The registry
-holds only IDs, generations, key IDs, timestamps and public keys. Secrets and
-wrapped keys never pass through process arguments. Errors are
-`VaultKeyLifecycleError` values with a stable `code` and a fixed message.
-Never log enrollment requests: they carry the pairing secret.
+- The directory must be absolute. It is created with mode 0700 and must be a
+  real directory owned by the current user.
+- Items are mode 0600 files replaced by atomic rename.
+- On Windows, POSIX modes are synthetic, so the mode check is skipped and
+  the profile ACLs apply.
+- Keep the directory outside the application state root, so plain-data
+  exports and backups never include it.
+
+The store holds the following:
+
+- the device secret
+- per key, the device's wrapped record (`key.<generation>.<keyId>`) and the
+  recovery record (`recovery.<generation>.<keyId>`)
+- the authority record
+- the device registry
+
+The registry holds only IDs, digests, signatures, timestamps and public keys.
+Secrets and wrapped keys never pass through process arguments.
+
+The lifecycle zeroes the device secret and authority seed after each
+operation. Callers must zero the `key` bytes returned by `openSealingKey` and
+`openReadingKey`. JavaScript strings cannot be zeroed, so drop references to
+the recovery secret promptly.
+
+Errors are `VaultKeyLifecycleError` values with a stable `code` and a fixed
+message.
+
+### Sealing and reading
+
+- `openSealingKey()` is the only path for sealing new data. It refuses with:
+  - `rotation_required` while a local revocation is pending
+  - `generation_conflict` after fork evidence
+  - `key_missing` when the device does not yet hold the current key
+
+  It never falls back to an older key.
+- `openReadingKey({ generation, keyId })` opens a held key named by stored
+  data. It is not gated, because reading old data during a pending rotation
+  is legitimate. Never seal with it.
+
+An encrypted-snapshot `SnapshotKeyProvider` maps onto the lifecycle as
+follows:
+
+- `sealingKey()` takes the key from `openSealingKey()` and adds its own
+  snapshot sequence.
+- `openingKey(ref)` checks `ref.accountId` against `status().accountId`, then
+  returns `(await openReadingKey(ref)).key`, or `undefined` on `key_missing`.
 
 ### Enrollment
 
 1. The new device calls `createEnrollmentRequest({ accountId, deviceId })`.
-   It creates its own 32-byte device secret and returns a JSON request with
-   its X25519 public key and a single-use pairing secret. Show it to an
-   enrolled device only over the pairing channel, such as a QR code.
-2. The enrolled device calls `enrollDevice(request)`. The request must name
-   the enroller's account and a device ID and public key that are not
-   enrolled or revoked. The enroller records the device and returns a grant.
-3. The new device calls `acceptEnrollment(grant)`. It accepts only an
-   enrollment grant for its own pending request, sealed with the pairing
-   secret, and records the account's devices.
+   It returns the request and a device code. The request holds the device's
+   X25519 public key, a random nonce and an `expiresAt` at most 15 minutes
+   ahead (default 10). It is not secret. Show it, for example as a QR code,
+   together with the device code.
+2. The enrolled device calls `enrollDevice(request, { confirmationCode,
+   recoverySecret })`. The user types or confirms the device code from the
+   new device's screen. On a code mismatch, an expired request or a wrong
+   secret, it writes nothing. Otherwise it signs a head that adds the
+   device. It returns the grant and an account code.
+3. The new device calls `acceptEnrollment(grant, { confirmationCode })` with
+   the account code read from the enroller's screen. It accepts only:
+   - a grant for its own unexpired request,
+   - whose head lists both devices, and
+   - whose keys match the head's commitments.
 
-A grant carries every generation the sender holds. Each data key is sealed
-to the recipient with `sealVaultDeviceTransfer` from
+Each code is 12 base32 characters (60 bits) derived from the request nonce:
+
+- The device code binds the account, device ID, public key and expiry. So a
+  relay cannot substitute the new device's key.
+- The account code binds the authority key, the signed head and the new
+  device's key. So someone who sees the QR code cannot pull the device into
+  another vault.
+
+Each data key in a grant is sealed to the recipient with
+`sealVaultDeviceTransfer` from
 `@happyvertical/smrt-app-runtime/vault-device-transfer`. The seal combines an
 ephemeral and a static X25519 agreement through HKDF-SHA256. The HKDF info
 binds the sender ID, both public keys, the ephemeral key and a SHA-256 digest
-of every other grant field (devices, revocations, recovery records, header).
-A change to any of them fails authentication. Enrollment uses the pairing
-secret as the HKDF salt. The resulting key wraps the data key as
-a `HVDK` record behind the `HVDT` `01` prefix and the ephemeral public key.
-The authenticated context binds the account, the recipient device, the
-generation and the key ID. The device secret never leaves the device: the
-X25519 private key is derived from it with HKDF info
-`smrt-vault-device-agreement-v1`.
+of every other grant field, including the head and the authority record. A
+change to any of them fails authentication.
 
-On a fresh machine, `enrollFromRecovery({ accountId, deviceId, generation,
-keyId, recoveryRecord, recoverySecret })` opens the recovery record and
-writes the same registry. That device starts with only its own entry and the
-supplied generation. Another enrolled device can send it older generations
-later.
+The resulting key wraps the data key as an `HVDK` record behind the `HVDT`
+`01` prefix and the ephemeral public key. The authenticated context binds
+the account, the recipient device, the generation and the key ID. The device
+secret never leaves the device: the X25519 private key is derived from it
+with HKDF info `smrt-vault-device-agreement-v1`.
+
+Devices learn of each other only from signed heads. A device enrolled
+anywhere reaches every peer with the next head or grant. Rotation then seals
+for every active device in its head.
+
+On a fresh machine, use `enrollFromRecovery({ accountId, deviceId, head,
+authorityRecord, recoveryRecord, recoverySecret })`. Take the head and
+records from the relay. The call checks the following:
+
+- the head's signature against the authority opened with the secret
+- the recovery record against the head's digest
+- the recovered key against the head's commitment
+
+It then signs a head that adds the device. The generation and key ID come
+only from the head.
+
+**Trust requirement:** the relay must serve the latest head. An older
+authentic head cannot be detected until the device meets a peer. At that
+point it surfaces as a fork on both sides. Until then the device may seal
+under a stale generation. Show the head's `headIssuedAt` and
+`headIssuerDeviceId` from `status()` and ask the user to confirm them before
+writing.
 
 ### Rotation and revocation
 
-`rotate({ recoverySecret })` first checks the recovery secret against the
-current recovery record. It then prepares the next generation with
-`prepareVaultKeyGeneration`, records the candidate, and writes the new
-records. Only then does it commit. The commit marks earlier generations
-read-only and returns a new recovery record and one update grant for each
-other active device. A crash at any point leaves the current generation
-usable. The next `rotate` call resumes a complete candidate or replaces an
-incomplete one. A registry holds at most 1024 generations; past that,
-`rotate` refuses with `generation_limit`. Every registry write is validated
-first, so a device never saves state it cannot read back.
+`rotate({ recoverySecret, newRecoverySecret? })` opens the authority with the
+recovery secret before it changes anything. It then:
 
-Another device applies an update grant with `acceptDeviceGrant(grant)`. The
-sender must be active in its registry. The current generation never moves
-backwards. A different key for a generation the device already holds is
-rejected as `generation_conflict`. `createDeviceGrant(deviceId)` re-sends the
-held generations to an active device.
+1. prepares the next generation with `prepareVaultKeyGeneration`
+2. records the candidate and writes its records
+3. signs and commits a head that makes every pending revocation effective at
+   the new generation
+4. returns the head, the authority record, the new recovery record and one
+   update grant for each other active device
 
-`revokeDevice(deviceId)` removes the device from the active list and keeps a
-revocation record. `openCurrentKey()` then refuses with `rotation_required`
-until a rotation excludes the device. A revoked device gets no new
-generation. Other devices reject its grants once they know of the
-revocation. It keeps any generation it had already opened, so use the
-rotation before writing new snapshots. `openGenerationKey(generation)` opens
-read-only generations for old snapshots. `recoveryRecord(generation)` returns
-the stored recovery record for publication.
+A crash at any point leaves the adopted head usable. The next `rotate` call
+resumes a complete candidate or replaces an incomplete one. A head holds at
+most 1024 key entries. Past that, `rotate` refuses with `generation_limit`.
 
-Registries are per device. Update grants propagate revocations but never add
-devices, so a rotating device reaches only the devices it enrolled or learned
-at its own enrollment. Use `createDeviceGrant` from a device that knows the
-others. Registry synchronization belongs to the relay.
+Passing `newRecoverySecret` re-wraps the same authority seed and wraps the
+new recovery record under the new secret. Peers receive the new authority
+record with the grant, and only the new secret then authorizes changes. Older
+recovery records stay under the old secret.
+
+The relay keeps old authority records, so a **leaked** secret keeps its
+authority. Today the remedy is a new account. Authority re-keying is tracked
+in #4807.
+
+`revokeDevice(deviceId)` needs no secret. It records a local pending
+revocation, so this device refuses to seal (`rotation_required`) and refuses
+to enroll until a `rotate` publishes the revocation. Other devices keep
+sealing until they receive that rotation. Unsigned revocations are never
+broadcast, because a stolen device could use them to lock the others out.
+
+A pending revocation clears only when an adopted head revokes that exact
+device ID and public key. If another device rotates without having seen the
+local revocation, its new key still reaches the device you meant to revoke.
+Rotate from the device that revoked.
+
+A revoked device gets no new generation. Peers reject its grants once they
+know of the revocation. It keeps any generation it had already opened.
+`recoveryRecord({ generation, keyId })` returns a held recovery record for
+publication.
+
+### Threat model notes
+
+- Whoever holds the recovery secret is the account. Typing it on a device
+  gives that device's malware authority.
+- A stolen device secret alone can only replay authentic heads and keys, or
+  send grants that are rejected.
+- Concurrent changes by two holders of the recovery secret fork the account.
+  Sealing stops until a merge rotation.
 
 ### Product rules
 

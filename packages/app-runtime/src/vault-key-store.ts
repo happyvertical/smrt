@@ -31,6 +31,8 @@ export function assertVaultKeyStoreItemName(name: string): void {
 export interface FileVaultKeyStoreOptions {
   /** Testable uid override; it cannot disable the ownership check. */
   currentUid?: number;
+  /** Testable platform override. */
+  platform?: NodeJS.Platform;
 }
 
 function errorCode(error: unknown): string | undefined {
@@ -44,7 +46,9 @@ function errorCode(error: unknown): string | undefined {
  *
  * The directory must be absolute, is created with mode 0700 when absent, and
  * must be a real directory owned by the current user with no group or other
- * permissions. Items are mode 0600 files replaced by atomic rename. Keep the
+ * permissions (on Windows, where POSIX modes are synthetic, the mode check
+ * is skipped and the profile ACLs apply). Items are mode 0600 files
+ * replaced by atomic rename. Keep the
  * directory outside the application state root so plain-data exports and
  * backups never include it.
  */
@@ -56,6 +60,9 @@ export function createFileVaultKeyStore(
     throw new Error('Vault key store directory must be an absolute path');
   }
   const currentUid = options.currentUid ?? process.getuid?.();
+  // Windows reports synthetic POSIX modes; custody there rests on the
+  // profile directory's ACLs, and desktop shells inject a keychain instead.
+  const checkMode = (options.platform ?? process.platform) !== 'win32';
   let prepared: Promise<void> | undefined;
 
   async function verifyDirectory(): Promise<void> {
@@ -69,7 +76,7 @@ export function createFileVaultKeyStore(
       details.isSymbolicLink() ||
       !details.isDirectory() ||
       (currentUid !== undefined && details.uid !== currentUid) ||
-      (details.mode & 0o077) !== 0
+      (checkMode && (details.mode & 0o077) !== 0)
     ) {
       throw new Error('Vault key store directory lacks owner-only custody');
     }
@@ -102,7 +109,7 @@ export function createFileVaultKeyStore(
         if (
           !details.isFile() ||
           (currentUid !== undefined && details.uid !== currentUid) ||
-          (details.mode & 0o077) !== 0 ||
+          (checkMode && (details.mode & 0o077) !== 0) ||
           details.size > MAX_ITEM_BYTES
         ) {
           throw new Error('Vault key store item lacks owner-only custody');
