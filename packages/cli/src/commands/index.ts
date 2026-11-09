@@ -2,6 +2,7 @@
  * CLI Commands - Export all command modules
  */
 
+export { aiCompareCommand, promptsHistoryCommand } from './ai-compare.js';
 export { aiTranscriptCommand } from './ai-transcript.js';
 export { aiUsageCommand } from './ai-usage.js';
 export { configExportCommand } from './config-export.js';
