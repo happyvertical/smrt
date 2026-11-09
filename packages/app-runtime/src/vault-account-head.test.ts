@@ -121,6 +121,30 @@ describe('vault account heads', () => {
     ]);
   });
 
+  it('merges revocations at the earliest effective generation', () => {
+    const base = head();
+    const revocation = (effectiveGeneration: bigint) => ({
+      ...base,
+      devices: base.devices.filter((device) => device.deviceId !== 'b'),
+      revokedDevices: [
+        {
+          deviceId: 'b',
+          publicKey: key(2),
+          revokedAt: base.issuedAt,
+          effectiveGeneration,
+        },
+      ],
+    });
+    const early = revocation(2n);
+    const late = revocation(3n);
+    const merged = unionState([late, early]);
+    expect(merged.revokedDevices[0].effectiveGeneration).toBe(2n);
+    expect(unionState([early, late])).toEqual(merged);
+    expect(containsState(merged, late)).toBe(true);
+    expect(containsState(merged, early)).toBe(true);
+    expect(containsState(late, early)).toBe(false);
+  });
+
   it('derives request-bound confirmation codes', () => {
     const request = {
       accountId: 'account',

@@ -584,8 +584,8 @@ key is committed with HKDF-SHA256 over the account, generation and key ID.
 Each recovery record is committed by its SHA-256 digest. Keys are identified
 by `(generation, keyId)`.
 
-A device applies a head, from a grant or from `acceptAccountHead(head)`, by
-these rules:
+A device applies a head, from a grant or from
+`acceptAccountHead(head, authorityRecord?)`, by these rules:
 
 - **Newer head that contains the local one:** the device adopts it. Containing
   means it lists every key entry identically, every revocation, and every
@@ -596,12 +596,22 @@ these rules:
   `generation_conflict` until the device adopts a head that contains the
   evidence. Any device can produce that head with
   `rotate({ recoverySecret })`, which merges every branch.
+  - A device revoked on two branches keeps the earlier effective
+    generation.
+  - Two devices enrolled on different branches under one ID or key are both
+    revoked; enroll the right one again.
 
 A head that revokes the receiving device fails with `device_revoked`.
 
 `accountHead()` returns the adopted head and authority record for the relay
 to publish. The relay is blind and untrusted. It only carries heads, grants
 and records.
+
+A device opens the authority only from the stored record whose digest the
+adopted head signs. A device that learns a head without that record cannot
+sign until it receives the record, from `acceptAccountHead` or a grant.
+Grants carry the record when the sender holds it, and enrollment grants
+always do.
 
 ### Custody
 
@@ -613,8 +623,9 @@ from `@happyvertical/smrt-app-runtime/vault-key-store`.
 - The directory must be absolute. It is created with mode 0700 and must be a
   real directory owned by the current user.
 - Items are mode 0600 files replaced by atomic rename.
-- On Windows, POSIX modes are synthetic, so the mode check is skipped and
-  the profile ACLs apply.
+- On Windows, POSIX modes are synthetic and there is no uid, so the file
+  store performs no custody check. Place the directory under the user's
+  profile, and prefer the shell's keychain provider there.
 - Keep the directory outside the application state root, so plain-data
   exports and backups never include it.
 

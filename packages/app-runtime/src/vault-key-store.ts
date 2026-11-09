@@ -46,8 +46,9 @@ function errorCode(error: unknown): string | undefined {
  *
  * The directory must be absolute, is created with mode 0700 when absent, and
  * must be a real directory owned by the current user with no group or other
- * permissions (on Windows, where POSIX modes are synthetic, the mode check
- * is skipped and the profile ACLs apply). Items are mode 0600 files
+ * permissions. On Windows, where POSIX modes are synthetic and there is no
+ * uid, no custody check applies: place the directory under the user's
+ * profile and prefer a keychain provider. Items are mode 0600 files
  * replaced by atomic rename. Keep the
  * directory outside the application state root so plain-data exports and
  * backups never include it.

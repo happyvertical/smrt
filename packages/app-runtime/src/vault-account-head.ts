@@ -46,6 +46,13 @@ export const MAX_HEAD_DEVICES = 64;
 export const MAX_HEAD_REVOKED_DEVICES = 256;
 export const MAX_HEAD_GENERATIONS = 1024;
 
+/** Fork evidence may union two branches' heads. */
+export const EVIDENCE_LIMITS = {
+  generations: 2 * MAX_HEAD_GENERATIONS,
+  devices: 2 * MAX_HEAD_DEVICES,
+  revokedDevices: 2 * MAX_HEAD_REVOKED_DEVICES,
+};
+
 /** Malformed, oversized or unauthenticated head input. */
 export class VaultHeadError extends Error {
   override readonly name = 'VaultHeadError';
@@ -500,27 +507,60 @@ function generationKey(entry: { generation: bigint; keyId: string }) {
   return `${entry.generation}:${entry.keyId}`;
 }
 
-/** Structural checks shared by heads and fork evidence. */
-export function assertConsistentState(state: {
-  generations: VaultHeadGeneration[];
-  devices: VaultHeadDevice[];
-  revokedDevices: VaultHeadRevocation[];
-}): void {
+function deviceKey(device: { deviceId: string; publicKey: string }) {
+  return `${device.deviceId}\u0000${device.publicKey}`;
+}
+
+export interface VaultStateLimits {
+  generations: number;
+  devices: number;
+  revokedDevices: number;
+}
+
+export const HEAD_LIMITS: VaultStateLimits = {
+  generations: MAX_HEAD_GENERATIONS,
+  devices: MAX_HEAD_DEVICES,
+  revokedDevices: MAX_HEAD_REVOKED_DEVICES,
+};
+
+/**
+ * Structural checks shared by heads and fork evidence: unique key entries,
+ * active devices distinct by ID and key, revocations unique, and no device
+ * both active and revoked. Two branches may revoke one ID under two keys.
+ */
+export function assertConsistentState(
+  state: {
+    generations: VaultHeadGeneration[];
+    devices: VaultHeadDevice[];
+    revokedDevices: VaultHeadRevocation[];
+  },
+  limits: VaultStateLimits = HEAD_LIMITS,
+  /** Fork evidence may hold one ID enrolled differently on two branches. */
+  distinctActive = true,
+): void {
   if (
-    state.generations.length > MAX_HEAD_GENERATIONS ||
-    state.devices.length > MAX_HEAD_DEVICES ||
-    state.revokedDevices.length > MAX_HEAD_REVOKED_DEVICES ||
+    state.generations.length > limits.generations ||
+    state.devices.length > limits.devices ||
+    state.revokedDevices.length > limits.revokedDevices ||
     new Set(state.generations.map(generationKey)).size !==
-      state.generations.length
+      state.generations.length ||
+    new Set(state.revokedDevices.map(deviceKey)).size !==
+      state.revokedDevices.length ||
+    new Set(state.devices.map(deviceKey)).size !== state.devices.length ||
+    (distinctActive &&
+      (new Set(state.devices.map((device) => device.deviceId)).size !==
+        state.devices.length ||
+        new Set(state.devices.map((device) => device.publicKey)).size !==
+          state.devices.length)) ||
+    state.devices.some((device) =>
+      state.revokedDevices.some(
+        (revoked) =>
+          revoked.deviceId === device.deviceId ||
+          revoked.publicKey === device.publicKey,
+      ),
+    )
   ) {
     reject();
-  }
-  const ids = new Set<string>();
-  const keys = new Set<string>();
-  for (const device of [...state.devices, ...state.revokedDevices]) {
-    if (ids.has(device.deviceId) || keys.has(device.publicKey)) reject();
-    ids.add(device.deviceId);
-    keys.add(device.publicKey);
   }
 }
 
@@ -626,7 +666,8 @@ function sameDevice(
 /**
  * True when `outer` already reflects everything `inner` says: every key
  * entry identically, every revocation, and every device as active or
- * revoked. Heads on one branch always contain their predecessors.
+ * revoked. A revocation that takes effect no later counts as contained.
+ * Heads on one branch always contain their predecessors.
  */
 export function containsState(outer: HeadState, inner: HeadState): boolean {
   const entries = new Map(
@@ -645,7 +686,7 @@ export function containsState(outer: HeadState, inner: HeadState): boolean {
       outer.revokedDevices.some(
         (known) =>
           sameDevice(known, device) &&
-          known.effectiveGeneration === device.effectiveGeneration,
+          known.effectiveGeneration <= device.effectiveGeneration,
       ),
     ) &&
     inner.devices.every(
@@ -656,7 +697,11 @@ export function containsState(outer: HeadState, inner: HeadState): boolean {
   );
 }
 
-/** Union of several authentic states; revocations remove active devices. */
+/**
+ * Union of several authentic states. Revocations remove active devices, and
+ * a device revoked on two branches keeps the earlier effective generation,
+ * so every merge of the same branches is identical.
+ */
 export function unionState(states: HeadState[]): HeadState {
   const generations = new Map<string, VaultHeadGeneration>();
   const revoked = new Map<string, VaultHeadRevocation>();
@@ -668,12 +713,15 @@ export function unionState(states: HeadState[]): HeadState {
       }
     }
     for (const device of state.revokedDevices) {
-      const key = `${device.deviceId}\u0000${device.publicKey}`;
-      if (!revoked.has(key)) revoked.set(key, device);
+      const known = revoked.get(deviceKey(device));
+      if (!known || device.effectiveGeneration < known.effectiveGeneration) {
+        revoked.set(deviceKey(device), device);
+      }
     }
     for (const device of state.devices) {
-      const key = `${device.deviceId}\u0000${device.publicKey}`;
-      if (!devices.has(key)) devices.set(key, device);
+      if (!devices.has(deviceKey(device))) {
+        devices.set(deviceKey(device), device);
+      }
     }
   }
   const revokedList = [...revoked.values()];
@@ -695,4 +743,22 @@ export function unionState(states: HeadState[]): HeadState {
 
 export function sameDigest(left: Uint8Array, right: Uint8Array): boolean {
   return left.length === right.length && timingSafeEqual(left, right);
+}
+
+/**
+ * Active devices that share an ID or public key with another active device.
+ * Branches can enroll two devices under one ID; a merge revokes them all,
+ * because neither branch's claim can be preferred safely.
+ */
+export function collidingDevices(
+  devices: readonly VaultHeadDevice[],
+): VaultHeadDevice[] {
+  return devices.filter((device) =>
+    devices.some(
+      (other) =>
+        other !== device &&
+        (other.deviceId === device.deviceId ||
+          other.publicKey === device.publicKey),
+    ),
+  );
 }

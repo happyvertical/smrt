@@ -1035,6 +1035,118 @@ describe('vault key lifecycle: recovery secret rotation', () => {
   });
 });
 
+describe('vault key lifecycle: review regressions', () => {
+  it('threat: a head learned without its authority record never revives the old secret', async () => {
+    const { laptop, phone } = await family();
+    const rotated = await laptop.lifecycle.rotate({
+      recoverySecret: RECOVERY_SECRET,
+      newRecoverySecret: NEW_RECOVERY_SECRET,
+    });
+    // The phone learns the head from the relay without the record.
+    await phone.lifecycle.acceptAccountHead(rotated.head);
+    await expectCode(
+      phone.lifecycle.rotate({ recoverySecret: RECOVERY_SECRET }),
+      'recovery_rejected',
+    );
+    expect((await phone.lifecycle.accountHead()).authorityRecord).toBeNull();
+    // With the record, only the new secret authorizes.
+    await phone.lifecycle.acceptAccountHead(
+      rotated.head,
+      rotated.authorityRecord,
+    );
+    await expectCode(
+      phone.lifecycle.rotate({ recoverySecret: RECOVERY_SECRET }),
+      'recovery_rejected',
+    );
+    expect(
+      (await phone.lifecycle.rotate({ recoverySecret: NEW_RECOVERY_SECRET }))
+        .generation,
+    ).toBe(3n);
+  });
+
+  it('settles a recovery-secret rotation interrupted after its commit', async () => {
+    const { laptop } = await family();
+    laptop.store.failOnSet = (name) => name === 'authority';
+    await expect(
+      laptop.lifecycle.rotate({
+        recoverySecret: RECOVERY_SECRET,
+        newRecoverySecret: NEW_RECOVERY_SECRET,
+      }),
+    ).rejects.toThrow('simulated crash');
+    laptop.store.failOnSet = undefined;
+    expect((await laptop.lifecycle.status())?.currentGeneration).toBe(2n);
+    await expectCode(
+      laptop.lifecycle.rotate({ recoverySecret: RECOVERY_SECRET }),
+      'recovery_rejected',
+    );
+    await laptop.lifecycle.rotate({ recoverySecret: NEW_RECOVERY_SECRET });
+    expect(laptop.store.items.has('authority-next')).toBe(false);
+  });
+
+  it('retries initialization and enrollment after a crash before the registry', async () => {
+    const laptop = device();
+    laptop.store.failOnSet = (name) => name === 'registry';
+    const input = {
+      accountId: ACCOUNT,
+      deviceId: 'laptop',
+      recoverySecret: RECOVERY_SECRET,
+    };
+    await expect(laptop.lifecycle.initializeAccount(input)).rejects.toThrow(
+      'simulated crash',
+    );
+    laptop.store.failOnSet = undefined;
+    await laptop.lifecycle.initializeAccount(input);
+
+    const joiner = device();
+    const { request, deviceCode } =
+      await joiner.lifecycle.createEnrollmentRequest({
+        accountId: ACCOUNT,
+        deviceId: 'phone',
+      });
+    const { grant, accountCode } = await laptop.lifecycle.enrollDevice(
+      request,
+      { confirmationCode: deviceCode, recoverySecret: RECOVERY_SECRET },
+    );
+    joiner.store.failOnSet = (name) => name === 'registry';
+    await expect(
+      joiner.lifecycle.acceptEnrollment(grant, {
+        confirmationCode: accountCode,
+      }),
+    ).rejects.toThrow('simulated crash');
+    joiner.store.failOnSet = undefined;
+    const status = await joiner.lifecycle.acceptEnrollment(grant, {
+      confirmationCode: accountCode,
+    });
+    expect(status.deviceId).toBe('phone');
+  });
+
+  it('merges branches that enrolled one device ID twice by revoking both', async () => {
+    const { laptop, phone } = await family();
+    await enroll(laptop.lifecycle, 'watch');
+    await enroll(phone.lifecycle, 'watch');
+    const forked = await laptop.lifecycle.acceptAccountHead(
+      (await phone.lifecycle.accountHead()).head,
+    );
+    expect(forked.conflict).toBe(true);
+    const merged = await laptop.lifecycle.rotate({
+      recoverySecret: RECOVERY_SECRET,
+    });
+    const status = await laptop.lifecycle.status();
+    expect(status?.conflict).toBe(false);
+    expect(
+      status?.revokedDevices.map((entry) => entry.deviceId).sort(),
+    ).toEqual(['watch', 'watch']);
+    expect(merged.grants.map((grant) => grant.recipientDeviceId)).toEqual([
+      'phone',
+      'tablet',
+    ]);
+    const atPhone = await phone.lifecycle.acceptDeviceGrant(
+      grantFor(merged.grants, 'phone'),
+    );
+    expect(atPhone.conflict).toBe(false);
+  });
+});
+
 describe('vault key lifecycle: grant integrity', () => {
   it('threat: every grant field is authenticated, not only the wrapped keys', async () => {
     const { laptop, phone } = await family();

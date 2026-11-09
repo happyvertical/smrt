@@ -6,8 +6,10 @@ import {
   authorityKeyId,
   authorityPublicKey,
   codesMatch,
+  collidingDevices,
   containsState,
   deviceCode,
+  EVIDENCE_LIMITS,
   encodeFields,
   headDigest,
   keyCommitment,
@@ -27,6 +29,7 @@ import {
   type VaultForkEvidence,
   type VaultHead,
   type VaultHeadDevice,
+  VaultHeadError,
   type VaultHeadGeneration,
   type VaultHeadRevocation,
 } from './vault-account-head.js';
@@ -211,8 +214,11 @@ export interface VaultDeviceGrant {
   requestNonce: string | null;
   /** The sender's adopted signed head; the only source of account state. */
   head: VaultAccountHead;
-  /** The authority seed wrapped under the recovery secret (base64url). */
-  authorityRecord: string;
+  /**
+   * The authority seed wrapped under the recovery secret (base64url), when
+   * the sender holds the record its head signs; required for enrollment.
+   */
+  authorityRecord: string | null;
   generations: Array<{
     generation: string;
     keyId: string;
@@ -243,17 +249,22 @@ export interface VaultReadingKey {
 /** Records to publish to the relay; none is secret in the clear. */
 export interface VaultPublication {
   head: VaultAccountHead;
-  /** Authority seed wrapped under the recovery secret. */
-  authorityRecord: Uint8Array;
+  /**
+   * Authority seed wrapped under the recovery secret; null while this device
+   * has not received the record its adopted head signs.
+   */
+  authorityRecord: Uint8Array | null;
 }
 
 export interface VaultInitializeResult extends VaultPublication {
+  authorityRecord: Uint8Array;
   generation: bigint;
   keyId: string;
   recoveryRecord: Uint8Array;
 }
 
 export interface VaultRotationResult extends VaultPublication {
+  authorityRecord: Uint8Array;
   generation: bigint;
   keyId: string;
   recoveryRecord: Uint8Array;
@@ -302,7 +313,11 @@ export interface VaultKeyLifecycle {
   }): Promise<VaultKeyLifecycleStatus>;
   createDeviceGrant(deviceId: string): Promise<VaultDeviceGrant>;
   acceptDeviceGrant(grant: VaultDeviceGrant): Promise<VaultKeyLifecycleStatus>;
-  acceptAccountHead(head: VaultAccountHead): Promise<VaultKeyLifecycleStatus>;
+  /** Apply a head from the relay, with its authority record when known. */
+  acceptAccountHead(
+    head: VaultAccountHead,
+    authorityRecord?: Uint8Array | null,
+  ): Promise<VaultKeyLifecycleStatus>;
   revokeDevice(deviceId: string): Promise<VaultKeyLifecycleStatus>;
   rotate(input: {
     recoverySecret: string;
@@ -471,15 +486,16 @@ function parseEvidence(value: unknown): VaultForkEvidence {
   const record = plainRecord(value);
   const evidence: VaultForkEvidence = {
     sequence: parseGeneration(record.sequence),
-    generations: list(record.generations, MAX_HEAD_GENERATIONS).map(
+    generations: list(record.generations, EVIDENCE_LIMITS.generations).map(
       parseHeadGeneration,
     ),
-    devices: list(record.devices, MAX_HEAD_DEVICES).map(parseHeadDevice),
-    revokedDevices: list(record.revokedDevices, MAX_HEAD_REVOKED_DEVICES).map(
-      parseHeadRevocation,
-    ),
+    devices: list(record.devices, EVIDENCE_LIMITS.devices).map(parseHeadDevice),
+    revokedDevices: list(
+      record.revokedDevices,
+      EVIDENCE_LIMITS.revokedDevices,
+    ).map(parseHeadRevocation),
   };
-  assertConsistentState(evidence);
+  assertConsistentState(evidence, EVIDENCE_LIMITS, false);
   return evidence;
 }
 
@@ -584,7 +600,12 @@ export function parseVaultDeviceRegistry(text: string): VaultDeviceRegistry {
     }
     return registry;
   } catch (error) {
-    if (error instanceof VaultKeyLifecycleError) fail('invalid_state');
+    if (
+      error instanceof VaultKeyLifecycleError ||
+      error instanceof VaultHeadError
+    ) {
+      fail('invalid_state');
+    }
     throw error;
   }
 }
@@ -659,10 +680,8 @@ function applyHead(
   registry: VaultDeviceRegistry,
   head: VaultHead,
 ): VaultDeviceRegistry {
-  if (
-    head.accountId !== registry.accountId ||
-    head.authorityPublicKey !== registry.head.authorityPublicKey
-  ) {
+  if (head.accountId !== registry.accountId) fail('account_mismatch');
+  if (head.authorityPublicKey !== registry.head.authorityPublicKey) {
     fail('grant_rejected');
   }
   const self = registry.head.devices.find(
@@ -737,7 +756,9 @@ function grantBindingDigest(
         ? new Uint8Array(0)
         : Buffer.from(grant.requestNonce, 'base64url'),
       headDigest(head),
-      sha256(Buffer.from(grant.authorityRecord, 'base64url')),
+      grant.authorityRecord === null
+        ? new Uint8Array(0)
+        : sha256(Buffer.from(grant.authorityRecord, 'base64url')),
     ]),
     count,
     ...entries.map((entry) =>
@@ -797,9 +818,10 @@ function parseGrant(value: unknown): {
           ? null
           : fixedBytesText(record.requestNonce, NONCE_BYTES),
       head: serializeHead(head),
-      authorityRecord: encode(
-        decodeBytes(record.authorityRecord, MAX_RECORD_BYTES),
-      ),
+      authorityRecord:
+        record.authorityRecord === null
+          ? null
+          : encode(decodeBytes(record.authorityRecord, MAX_RECORD_BYTES)),
       generations,
     };
     if ((grant.kind === 'enrollment') !== (grant.requestNonce !== null)) {
@@ -897,20 +919,13 @@ export function createVaultKeyLifecycle({
     return (await store.get(name)) ?? fail('invalid_state');
   }
 
+  /**
+   * The registry is written last, so its absence means no state is in use.
+   * Items an interrupted attempt left behind are unreferenced; keys are
+   * named by random key ID, so a retry never replaces a different key.
+   */
   async function assertUninitialized(): Promise<void> {
-    if (
-      (await store.get(REGISTRY_ITEM)) !== null ||
-      (await store.get(AUTHORITY_ITEM)) !== null
-    ) {
-      fail('already_initialized');
-    }
-  }
-
-  /** Refuse to overwrite key material a previous attempt left behind. */
-  async function assertAbsent(names: string[]): Promise<void> {
-    for (const name of names) {
-      if ((await store.get(name)) !== null) fail('invalid_state');
-    }
+    if ((await store.get(REGISTRY_ITEM)) !== null) fail('already_initialized');
   }
 
   function openOwnKey(
@@ -989,38 +1004,63 @@ export function createVaultKeyLifecycle({
     return opened.key;
   }
 
+  /** The stored authority record whose digest the adopted head signs. */
+  async function headAuthorityRecord(
+    registry: VaultDeviceRegistry,
+  ): Promise<Uint8Array | null> {
+    for (const name of [AUTHORITY_ITEM, AUTHORITY_NEXT_ITEM]) {
+      const record = await store.get(name);
+      if (
+        record !== null &&
+        digestText(record) === registry.head.authorityRecordDigest
+      ) {
+        return record;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Open the authority with the recovery secret. Only the record the
+   * adopted head signs is accepted, so a superseded secret never signs.
+   */
   async function authoritySeed(
     registry: VaultDeviceRegistry,
     recoverySecret: unknown,
   ): Promise<Uint8Array> {
-    for (const name of [AUTHORITY_ITEM, AUTHORITY_NEXT_ITEM]) {
-      const record = await store.get(name);
-      if (record === null) continue;
-      const seed = await openAuthority(
+    const record = await headAuthorityRecord(registry);
+    const seed =
+      record &&
+      (await openAuthority(
         record,
         registry.accountId,
         registry.head.authorityPublicKey,
         recoverySecret,
-      );
-      if (seed) return seed;
-    }
-    fail('recovery_rejected');
+      ));
+    return seed ?? fail('recovery_rejected');
   }
 
-  /** The stored authority record the adopted head signs, if any. */
-  async function headAuthorityRecord(
-    registry: VaultDeviceRegistry,
-  ): Promise<Uint8Array> {
-    let fallback: Uint8Array | null = null;
-    for (const name of [AUTHORITY_ITEM, AUTHORITY_NEXT_ITEM]) {
-      const record = await store.get(name);
-      if (record === null) continue;
-      if (digestText(record) === registry.head.authorityRecordDigest) {
-        return record;
-      }
-      fallback ??= record;
+  /** Finish or discard an interrupted recovery-secret rotation. */
+  async function settleAuthority(registry: VaultDeviceRegistry) {
+    const next = await store.get(AUTHORITY_NEXT_ITEM);
+    if (next === null) return;
+    if (digestText(next) === registry.head.authorityRecordDigest) {
+      await store.set(AUTHORITY_ITEM, next);
     }
-    return fallback ?? fail('invalid_state');
+    await store.delete(AUTHORITY_NEXT_ITEM);
+  }
+
+  /** Keep a received authority record when the adopted head signs it. */
+  async function keepAuthorityRecord(
+    registry: VaultDeviceRegistry,
+    record: Uint8Array | null,
+  ) {
+    if (
+      record !== null &&
+      digestText(record) === registry.head.authorityRecordDigest
+    ) {
+      await store.set(AUTHORITY_ITEM, record);
+    }
   }
 
   function verifyCommitment(
@@ -1044,6 +1084,11 @@ export function createVaultKeyLifecycle({
     const held = registry.head.generations.filter((entry) =>
       registry.keys.some((key) => sameReference(key, entry)),
     );
+    const authorityRecord = await headAuthorityRecord(registry);
+    // A new device needs the record to hold authority later.
+    if (requestNonce !== null && authorityRecord === null) {
+      fail('invalid_state');
+    }
     const grant: VaultDeviceGrant = {
       format: GRANT_FORMAT,
       version: GRANT_VERSION,
@@ -1055,7 +1100,7 @@ export function createVaultKeyLifecycle({
       issuedAt: isoNow(),
       requestNonce,
       head: serializeHead(registry.head),
-      authorityRecord: encode(await headAuthorityRecord(registry)),
+      authorityRecord: authorityRecord && encode(authorityRecord),
       generations: [],
     };
     for (const entry of held) {
@@ -1256,7 +1301,6 @@ export function createVaultKeyLifecycle({
             },
             seed,
           );
-          await assertAbsent([keyItem(entry), recoveryItem(entry)]);
           await store.set(keyItem(entry), prepared.deviceRecord);
           await store.set(recoveryItem(entry), prepared.recoveryRecord);
           await store.set(AUTHORITY_ITEM, authorityRecord);
@@ -1351,6 +1395,10 @@ export function createVaultKeyLifecycle({
         if (!existing && registry.head.devices.length >= MAX_HEAD_DEVICES) {
           fail('device_conflict');
         }
+        if (!existing && registry.head.sequence >= MAX_GENERATION) {
+          fail('generation_limit');
+        }
+        await settleAuthority(registry);
         const secret = await deviceSecret(false);
         try {
           let next = registry;
@@ -1448,6 +1496,7 @@ export function createVaultKeyLifecycle({
             deviceId: grant.senderDeviceId,
             publicKey: grant.senderPublicKey,
           };
+          if (grant.authorityRecord === null) fail('grant_rejected');
           const authorityRecord = decodeBytes(
             grant.authorityRecord,
             MAX_RECORD_BYTES,
@@ -1475,12 +1524,6 @@ export function createVaultKeyLifecycle({
             };
             // Validate before writing any key material.
             parseVaultDeviceRegistry(serializeVaultDeviceRegistry(registry));
-            await assertAbsent(
-              opened.flatMap(({ entry }) => [
-                keyItem(entry),
-                recoveryItem(entry),
-              ]),
-            );
             for (const { entry, key, recoveryRecord } of opened) {
               await storeKey(registry, secret, entry, key, recoveryRecord);
             }
@@ -1504,7 +1547,13 @@ export function createVaultKeyLifecycle({
         const recoveryRecord = bytesInput(input.recoveryRecord);
         await assertUninitialized();
         const head = verifiedHead(input.head, 'recovery_rejected');
-        if (head.accountId !== accountId) fail('recovery_rejected');
+        if (
+          head.accountId !== accountId ||
+          digestText(authorityRecord) !== head.authorityRecordDigest
+        ) {
+          fail('recovery_rejected');
+        }
+        if (head.sequence >= MAX_GENERATION) fail('generation_limit');
         const seed = await openAuthority(
           authorityRecord,
           accountId,
@@ -1512,6 +1561,8 @@ export function createVaultKeyLifecycle({
           input.recoverySecret,
         );
         if (seed === null) fail('recovery_rejected');
+        let recovered: { keyId: string; key: Uint8Array } | undefined;
+        let secret: Uint8Array | undefined;
         try {
           if (
             head.devices.some((device) => device.deviceId === deviceId) ||
@@ -1530,7 +1581,6 @@ export function createVaultKeyLifecycle({
           if (digestText(recoveryRecord) !== entry.recoveryDigest) {
             fail('recovery_rejected');
           }
-          let recovered: { keyId: string; key: Uint8Array };
           try {
             recovered = await openVaultRecoveryKey(
               recoveryRecord,
@@ -1540,63 +1590,59 @@ export function createVaultKeyLifecycle({
           } catch {
             fail('recovery_rejected');
           }
-          const secret = await deviceSecret(true);
-          try {
-            if (
-              recovered.keyId !== entry.keyId ||
-              !verifyCommitment(accountId, entry, recovered.key)
-            ) {
-              fail('recovery_rejected');
-            }
-            const reference = {
-              generation: entry.generation,
-              keyId: entry.keyId,
-            };
-            const registry: VaultDeviceRegistry = {
-              accountId,
-              deviceId,
-              // Joining is itself a signed change, so a stale head served
-              // by the relay surfaces as a fork at the first peer.
-              head: signHead(
-                {
-                  ...head,
-                  sequence: head.sequence + 1n,
-                  issuedAt: isoNow(),
-                  issuerDeviceId: deviceId,
-                  devices: [
-                    ...head.devices,
-                    {
-                      deviceId,
-                      publicKey: encode(deriveVaultDevicePublicKey(secret)),
-                      enrolledAt: isoNow(),
-                    },
-                  ],
-                },
-                seed,
-              ),
-              conflict: null,
-              keys: [reference],
-              pendingRevocations: [],
-              pendingRotation: null,
-            };
-            parseVaultDeviceRegistry(serializeVaultDeviceRegistry(registry));
-            await assertAbsent([keyItem(reference), recoveryItem(reference)]);
-            await storeKey(
-              registry,
-              secret,
-              reference,
-              recovered.key,
-              recoveryRecord,
-            );
-            await store.set(AUTHORITY_ITEM, authorityRecord);
-            await saveRegistry(registry);
-            await store.delete(ENROLLMENT_ITEM);
-            return toStatus(registry);
-          } finally {
-            recovered.key.fill(0);
-            secret.fill(0);
+          if (
+            recovered.keyId !== entry.keyId ||
+            !verifyCommitment(accountId, entry, recovered.key)
+          ) {
+            fail('recovery_rejected');
           }
+          secret = await deviceSecret(true);
+          const reference = {
+            generation: entry.generation,
+            keyId: entry.keyId,
+          };
+          const registry: VaultDeviceRegistry = {
+            accountId,
+            deviceId,
+            // Joining is itself a signed change, so a stale head served by
+            // the relay surfaces as a fork at the first peer.
+            head: signHead(
+              {
+                ...head,
+                sequence: head.sequence + 1n,
+                issuedAt: isoNow(),
+                issuerDeviceId: deviceId,
+                devices: [
+                  ...head.devices,
+                  {
+                    deviceId,
+                    publicKey: encode(deriveVaultDevicePublicKey(secret)),
+                    enrolledAt: isoNow(),
+                  },
+                ],
+              },
+              seed,
+            ),
+            conflict: null,
+            keys: [reference],
+            pendingRevocations: [],
+            pendingRotation: null,
+          };
+          parseVaultDeviceRegistry(serializeVaultDeviceRegistry(registry));
+          await storeKey(
+            registry,
+            secret,
+            reference,
+            recovered.key,
+            recoveryRecord,
+          );
+          await store.set(AUTHORITY_ITEM, authorityRecord);
+          await saveRegistry(registry);
+          await store.delete(ENROLLMENT_ITEM);
+          return toStatus(registry);
         } finally {
+          recovered?.key.fill(0);
+          secret?.fill(0);
           seed.fill(0);
         }
       }),
@@ -1620,11 +1666,16 @@ export function createVaultKeyLifecycle({
         }
       }),
 
-    acceptAccountHead: (input) =>
+    acceptAccountHead: (input, authorityRecord) =>
       serial(async () => {
+        const record =
+          authorityRecord === undefined || authorityRecord === null
+            ? null
+            : bytesInput(authorityRecord);
         const registry = await requireRegistry();
         const next = applyHead(registry, verifiedHead(input, 'grant_rejected'));
         if (next !== registry) await saveRegistry(next);
+        await keepAuthorityRecord(next, record);
         return toStatus(next);
       }),
 
@@ -1657,8 +1708,9 @@ export function createVaultKeyLifecycle({
           fail('grant_rejected');
         }
         const secret = await deviceSecret(false);
-        const opened = openGrant(grant, head, secret);
+        let opened: ReturnType<typeof openGrant> = [];
         try {
+          opened = openGrant(grant, head, secret);
           const known = knownGenerations(next);
           const fresh = opened.filter(
             ({ entry }) =>
@@ -1683,15 +1735,12 @@ export function createVaultKeyLifecycle({
           for (const { entry, key, recoveryRecord } of fresh) {
             await storeKey(merged, secret, entry, key, recoveryRecord);
           }
-          const authorityRecord = decodeBytes(
-            grant.authorityRecord,
-            MAX_RECORD_BYTES,
+          await keepAuthorityRecord(
+            merged,
+            grant.authorityRecord === null
+              ? null
+              : decodeBytes(grant.authorityRecord, MAX_RECORD_BYTES),
           );
-          if (
-            digestText(authorityRecord) === merged.head.authorityRecordDigest
-          ) {
-            await store.set(AUTHORITY_ITEM, authorityRecord);
-          }
           if (fresh.length > 0) await saveRegistry(merged);
           return toStatus(merged);
         } finally {
@@ -1744,27 +1793,56 @@ export function createVaultKeyLifecycle({
         ) {
           fail('generation_limit');
         }
-        const pendingRevocations = registry.pendingRevocations.filter(
-          (entry) =>
-            !state.revokedDevices.some((device) => sameDevice(device, entry)),
-        );
-        if (
-          state.revokedDevices.length + pendingRevocations.length >
-          MAX_HEAD_REVOKED_DEVICES
-        ) {
-          fail('invalid_state');
-        }
         const nextGeneration = maxGeneration + 1n;
         const nextSequence =
           (evidence && evidence.sequence > local.sequence
             ? evidence.sequence
             : local.sequence) + 1n;
+        if (nextSequence > MAX_GENERATION) fail('generation_limit');
+        // Pending local revocations take effect now. Devices two branches
+        // enrolled under one ID or key are all revoked: neither claim can be
+        // preferred safely, and the user can enroll the right one again.
+        const pendingRevocations = registry.pendingRevocations.filter(
+          (entry) =>
+            !state.revokedDevices.some((device) => sameDevice(device, entry)),
+        );
+        const active = state.devices.filter(
+          (device) =>
+            !pendingRevocations.some((entry) => touches(entry, device)),
+        );
+        const colliding = collidingDevices(active);
+        const self = local.devices.find(
+          (device) => device.deviceId === registry.deviceId,
+        ) as VaultHeadDevice;
+        if (colliding.some((device) => touches(device, self))) {
+          fail('device_conflict');
+        }
+        const revokedAt = isoNow();
+        const revokedDevices: VaultHeadRevocation[] = [
+          ...state.revokedDevices,
+          ...[...pendingRevocations, ...colliding].map((entry) => ({
+            deviceId: entry.deviceId,
+            publicKey: entry.publicKey,
+            revokedAt: 'revokedAt' in entry ? entry.revokedAt : revokedAt,
+            effectiveGeneration: nextGeneration,
+          })),
+        ];
+        const devices = active.filter((device) => !colliding.includes(device));
+        if (
+          devices.length > MAX_HEAD_DEVICES ||
+          revokedDevices.length > MAX_HEAD_REVOKED_DEVICES
+        ) {
+          fail('invalid_state');
+        }
         const newSecret = input?.newRecoverySecret;
         const effectiveSecret = newSecret ?? input?.recoverySecret;
+        await settleAuthority(registry);
         const seed = await authoritySeed(registry, input?.recoverySecret);
         const secret = await deviceSecret(false);
         try {
-          let authorityRecord = await headAuthorityRecord(registry);
+          let authorityRecord = (await headAuthorityRecord(
+            registry,
+          )) as Uint8Array;
           if (newSecret !== undefined) {
             authorityRecord = await wrapAuthority(
               seed,
@@ -1830,42 +1908,38 @@ export function createVaultKeyLifecycle({
           } finally {
             key.fill(0);
           }
-          const revokedDevices: VaultHeadRevocation[] = [
-            ...state.revokedDevices,
-            ...pendingRevocations.map((entry) => ({
-              ...entry,
-              effectiveGeneration: candidate.generation,
-            })),
-          ];
-          const head = signHead(
-            {
-              accountId: registry.accountId,
-              sequence: nextSequence,
-              issuedAt: isoNow(),
-              issuerDeviceId: registry.deviceId,
-              current: {
-                generation: candidate.generation,
-                keyId: candidate.keyId,
-              },
-              generations: [
-                ...state.generations,
-                {
+          let head: VaultHead;
+          try {
+            head = signHead(
+              {
+                accountId: registry.accountId,
+                sequence: nextSequence,
+                issuedAt: isoNow(),
+                issuerDeviceId: registry.deviceId,
+                current: {
                   generation: candidate.generation,
                   keyId: candidate.keyId,
-                  keyCommitment: commitment,
-                  recoveryDigest: digestText(recoveryRecord),
                 },
-              ],
-              devices: state.devices.filter(
-                (device) =>
-                  !revokedDevices.some((entry) => touches(entry, device)),
-              ),
-              revokedDevices,
-              authorityPublicKey: local.authorityPublicKey,
-              authorityRecordDigest: digestText(authorityRecord),
-            },
-            seed,
-          );
+                generations: [
+                  ...state.generations,
+                  {
+                    generation: candidate.generation,
+                    keyId: candidate.keyId,
+                    keyCommitment: commitment,
+                    recoveryDigest: digestText(recoveryRecord),
+                  },
+                ],
+                devices,
+                revokedDevices,
+                authorityPublicKey: local.authorityPublicKey,
+                authorityRecordDigest: digestText(authorityRecord),
+              },
+              seed,
+            );
+          } catch (error) {
+            if (error instanceof VaultHeadError) fail('invalid_state');
+            throw error;
+          }
           const committed: VaultDeviceRegistry = {
             ...registry,
             head,
