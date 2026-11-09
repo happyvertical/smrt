@@ -625,6 +625,9 @@ export class VaultRelay {
         highWaterSequence: usage.highWaterSequence,
       });
     }
+    // The device picks the sequence and a commit raises the mark for good, so
+    // bound the step before reserving anything.
+    this.assertSequenceStep(sequence, usage?.highWaterSequence ?? 0);
     // Reserve before inserting, so a failure in between can only over-count.
     const reserved = await this.store.reserve(
       device.accountId,
@@ -668,6 +671,22 @@ export class VaultRelay {
       chunkCount,
       expiresAt: iso(now + limits.uploadTtlMs),
     });
+  }
+
+  /**
+   * A sequence may not jump more than `maxSequenceJump` above the account's
+   * high-water mark. Without the bound, one commit at the largest safe
+   * integer would make every later upload `stale_sequence` with no way back
+   * short of editing the database.
+   */
+  private assertSequenceStep(sequence: number, highWater: number): void {
+    const { maxSequenceJump } = this.policy.limits;
+    if (sequence - highWater > maxSequenceJump) {
+      throw new RelayError(400, 'sequence_too_far', {
+        highWaterSequence: highWater,
+        maxSequenceJump,
+      });
+    }
   }
 
   private async pendingUpload(
@@ -785,9 +804,17 @@ export class VaultRelay {
     }
 
     if (
-      !(await this.store.advanceHighWater(device.accountId, record.sequence))
+      !(await this.store.advanceHighWater(
+        device.accountId,
+        record.sequence,
+        this.policy.limits.maxSequenceJump,
+      ))
     ) {
       await this.removeSnapshot(record, device.handle, 'pending');
+      const latest = await this.store.getUsage(device.accountId);
+      if (latest && record.sequence > latest.highWaterSequence) {
+        this.assertSequenceStep(record.sequence, latest.highWaterSequence);
+      }
       throw new RelayError(409, 'stale_sequence');
     }
     const now = this.now();
@@ -939,6 +966,68 @@ export class VaultRelay {
     return this.store.revokeDevice(accountId, deviceId, this.now());
   }
 
+  /**
+   * Operator reset of an account's sequence high-water mark, for an account
+   * whose mark was pushed out of reach (every later upload is
+   * `stale_sequence`). The new mark must not be above the current one. Any
+   * snapshot or pending upload above it is refused with its sequence listed,
+   * unless `removeSnapshotsAbove` is set, in which case those rows and their
+   * objects are deleted first. Every call that changes anything is logged with
+   * the previous mark, the new mark, and the removed sequences.
+   */
+  async resetHighWater(
+    accountId: string,
+    highWaterSequence: number,
+    options: { removeSnapshotsAbove?: boolean } = {},
+  ): Promise<{
+    previous: number;
+    highWaterSequence: number;
+    removed: number[];
+  }> {
+    if (!isIdentifier(accountId)) throw new RelayError(404, 'not_found');
+    if (!Number.isSafeInteger(highWaterSequence) || highWaterSequence < 0) {
+      throw new RelayError(400, 'invalid_request', {
+        field: 'highWaterSequence',
+      });
+    }
+    const usage = await this.store.getUsage(accountId);
+    if (!usage) throw new RelayError(404, 'no_account');
+    if (highWaterSequence > usage.highWaterSequence) {
+      throw new RelayError(409, 'not_a_reset', {
+        highWaterSequence: usage.highWaterSequence,
+      });
+    }
+    const handle = accountHandle(accountId);
+    const above = (await this.store.listSnapshots(accountId)).filter(
+      (record) => record.sequence > highWaterSequence,
+    );
+    if (above.length > 0 && options.removeSnapshotsAbove !== true) {
+      throw new RelayError(409, 'snapshots_above_high_water', {
+        sequences: above.map((record) => record.sequence),
+      });
+    }
+    for (const record of above) {
+      await this.removeSnapshot(record, handle, record.status);
+    }
+    if (!(await this.store.resetHighWater(accountId, highWaterSequence))) {
+      // A snapshot appeared above the new mark, or the mark moved: nothing
+      // was reset, so the operator can look again.
+      throw new RelayError(409, 'high_water_changed');
+    }
+    this.logger.warn('high_water_reset', {
+      account: handle,
+      previous: usage.highWaterSequence,
+      to: highWaterSequence,
+      removed: above.length,
+      removedSequences: above.map((record) => record.sequence).join(','),
+    });
+    return {
+      previous: usage.highWaterSequence,
+      highWaterSequence,
+      removed: above.map((record) => record.sequence),
+    };
+  }
+
   /** Sizes, dates, and device state for one account; never content. */
   async operatorView(accountId: string): Promise<OperatorAccountView> {
     const [usage, snapshots, devices] = await Promise.all([
@@ -1023,6 +1112,27 @@ export class VaultRelay {
       if (!isIdentifier(m[1])) throw new RelayError(404, 'not_found');
       await this.store.reconcileUsage(m[1]);
       return json(200, { usage: await this.store.getUsage(m[1]) });
+    }
+    m = /^\/admin\/v1\/accounts\/([^/]+)\/high-water$/.exec(path);
+    if (m && method === 'POST') {
+      if (!isIdentifier(m[1])) throw new RelayError(404, 'not_found');
+      const input = parseJsonObject(
+        await readBoundedBody(request, MAX_JSON_BODY_BYTES),
+      );
+      if (
+        input.removeSnapshotsAbove !== undefined &&
+        typeof input.removeSnapshotsAbove !== 'boolean'
+      ) {
+        throw new RelayError(400, 'invalid_request', {
+          field: 'removeSnapshotsAbove',
+        });
+      }
+      return json(
+        200,
+        await this.resetHighWater(m[1], input.highWaterSequence as number, {
+          removeSnapshotsAbove: input.removeSnapshotsAbove === true,
+        }),
+      );
     }
     m = /^\/admin\/v1\/accounts\/([^/]+)\/devices\/([^/]+)$/.exec(path);
     if (m) {

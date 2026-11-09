@@ -8,6 +8,7 @@ import {
   adminRequest,
   BASE,
   createHarness,
+  DEFAULT_POLICY,
   downloadSnapshot,
   type Harness,
   newDevice,
@@ -476,6 +477,275 @@ describe('atomic publish and sequences', () => {
       signed(h, a1, 'GET', '/v1/snapshots/latest'),
     );
     expect(((await latest.json()) as { sequence: number }).sequence).toBe(8);
+  });
+});
+
+describe('sequence step cap and high-water reset', () => {
+  const MAX = Number.MAX_SAFE_INTEGER;
+
+  async function begin(device: TestDevice, sequence: number) {
+    return h.relay.handle(
+      signed(h, device, 'POST', '/v1/uploads', {
+        body: JSON.stringify({
+          sequence,
+          byteSize: 10,
+          chunkSize: 4096,
+          sha256: sha256Hex('x'),
+        }),
+      }),
+    );
+  }
+
+  it('refuses a sequence more than the step cap above the high-water mark', async () => {
+    // New account: the mark is 0, so 1000 is the largest first sequence.
+    const far = await begin(a1, 1001);
+    expect(far.status).toBe(400);
+    expect(await far.json()).toEqual({
+      error: 'sequence_too_far',
+      highWaterSequence: 0,
+      maxSequenceJump: 1000,
+    });
+    for (const sequence of [MAX, MAX - 1, 2 ** 40]) {
+      expect((await begin(a1, sequence)).status).toBe(400);
+    }
+    // The refusal reserved nothing and poisoned nothing.
+    expect(await h.relay.operatorView('acct-a')).toMatchObject({
+      usage: { highWaterSequence: 0, usedBytes: 0, usedSnapshots: 0 },
+      snapshots: [],
+    });
+
+    expect((await uploadSnapshot(h, a1, 1000, randomBytes(10))).status).toBe(
+      201,
+    );
+    expect((await begin(a1, 2001)).status).toBe(400);
+    expect((await uploadSnapshot(h, a1, 2000, randomBytes(10))).status).toBe(
+      201,
+    );
+    expect((await uploadSnapshot(h, a1, 2001, randomBytes(10))).status).toBe(
+      201,
+    );
+    expect(await h.relay.operatorView('acct-a')).toMatchObject({
+      usage: { highWaterSequence: 2001 },
+    });
+  });
+
+  it('keeps the account usable after an attempt at the maximum sequence', async () => {
+    expect((await begin(a1, MAX)).status).toBe(400);
+    expect((await uploadSnapshot(h, a1, 1, randomBytes(10))).status).toBe(201);
+    expect((await uploadSnapshot(h, a1, 2, randomBytes(10))).status).toBe(201);
+  });
+
+  it('applies the configured step cap', async () => {
+    const local = await createHarness({
+      policy: {
+        ...DEFAULT_POLICY,
+        limits: { ...DEFAULT_POLICY.limits, maxSequenceJump: 3 },
+      },
+    });
+    try {
+      const device = newDevice('acct-a', 'device-a1');
+      await registerDevice(local, device);
+      expect(local.relay.policy.limits.maxSequenceJump).toBe(3);
+      expect(
+        (await uploadSnapshot(local, device, 4, randomBytes(10))).status,
+      ).toBe(400);
+      expect(
+        (await uploadSnapshot(local, device, 3, randomBytes(10))).status,
+      ).toBe(201);
+      expect(
+        (await uploadSnapshot(local, device, 7, randomBytes(10))).status,
+      ).toBe(400);
+      expect(
+        (await uploadSnapshot(local, device, 6, randomBytes(10))).status,
+      ).toBe(201);
+    } finally {
+      await local.close();
+    }
+  });
+
+  it('enforces the cap again at commit, in the same statement as the advance', async () => {
+    const store = new VaultRelayStore(h.db);
+    await store.ensureAccount('acct-a', h.clock.now);
+    expect(await store.advanceHighWater('acct-a', 1001, 1000)).toBe(false);
+    expect(await store.advanceHighWater('acct-a', MAX, 1000)).toBe(false);
+    expect((await store.getUsage('acct-a'))?.highWaterSequence).toBe(0);
+    expect(await store.advanceHighWater('acct-a', 1000, 1000)).toBe(true);
+    expect(await store.advanceHighWater('acct-a', 999, 1000)).toBe(false);
+
+    // A pending upload that was begun under a larger cap cannot slip past a
+    // smaller one at commit: the pending row is dropped, nothing advances.
+    const { relay } = h;
+    const begun = await begin(a2, 1500);
+    expect(begun.status).toBe(201);
+    const { uploadId } = (await begun.json()) as { uploadId: string };
+    const blob = new Uint8Array(10);
+    await h.db.query(
+      'UPDATE vault_relay_snapshots SET sha256 = ? WHERE upload_id = ?',
+      sha256Hex(blob),
+      uploadId,
+    );
+    await relay.handle(
+      signed(h, a2, 'PUT', `/v1/uploads/${uploadId}/chunks/0`, { body: blob }),
+    );
+    // Simulate the cap having been lowered after begin.
+    (relay.policy.limits as { maxSequenceJump: number }).maxSequenceJump = 100;
+    const commit = await relay.handle(
+      signed(h, a2, 'POST', `/v1/uploads/${uploadId}/commit`),
+    );
+    expect(commit.status).toBe(400);
+    expect(await errorCode(commit)).toBe('sequence_too_far');
+    expect((await store.getUsage('acct-a'))?.highWaterSequence).toBe(1000);
+    expect((await relay.operatorView('acct-a')).snapshots).toEqual([]);
+  });
+
+  async function poison() {
+    // A mark that is already out of reach, as left by a relay that predates
+    // the cap: one committed snapshot at the largest safe integer.
+    expect((await uploadSnapshot(h, a1, 1, randomBytes(10))).status).toBe(201);
+    await h.db.query(
+      'UPDATE vault_relay_snapshots SET sequence = ? WHERE account_id = ?',
+      MAX,
+      'acct-a',
+    );
+    await h.db.query(
+      'UPDATE vault_relay_accounts SET high_water_sequence = ? WHERE account_id = ?',
+      MAX,
+      'acct-a',
+    );
+    const stuck = await uploadSnapshot(h, a1, 2, randomBytes(10));
+    expect(stuck.status).toBe(409);
+    expect(await errorCode(stuck)).toBe('stale_sequence');
+  }
+
+  it('recovers a poisoned account through the admin reset, audited', async () => {
+    await poison();
+    h.logger.lines.length = 0;
+
+    // Nothing is deleted by accident: the snapshot above the new mark blocks.
+    const refused = await h.relay.handleAdmin(
+      adminRequest('POST', '/admin/v1/accounts/acct-a/high-water', {
+        highWaterSequence: 0,
+      }),
+    );
+    expect(refused.status).toBe(409);
+    expect(await refused.json()).toEqual({
+      error: 'snapshots_above_high_water',
+      sequences: [MAX],
+    });
+    expect((await h.relay.operatorView('acct-a')).snapshots).toHaveLength(1);
+    expect(h.logger.lines.some((l) => l.event === 'high_water_reset')).toBe(
+      false,
+    );
+
+    const reset = await h.relay.handleAdmin(
+      adminRequest('POST', '/admin/v1/accounts/acct-a/high-water', {
+        highWaterSequence: 0,
+        removeSnapshotsAbove: true,
+      }),
+    );
+    expect(reset.status).toBe(200);
+    expect(await reset.json()).toEqual({
+      previous: MAX,
+      highWaterSequence: 0,
+      removed: [MAX],
+    });
+    const view = await h.relay.operatorView('acct-a');
+    expect(view).toMatchObject({
+      usage: { highWaterSequence: 0, usedBytes: 0, usedSnapshots: 0 },
+      snapshots: [],
+    });
+    const files = await readdir(h.storeRoot, {
+      recursive: true,
+      withFileTypes: true,
+    });
+    expect(files.filter((entry) => entry.isFile())).toEqual([]);
+    expect((await uploadSnapshot(h, a1, 1, randomBytes(10))).status).toBe(201);
+
+    const audit = h.logger.lines.filter((l) => l.event === 'high_water_reset');
+    expect(audit).toHaveLength(1);
+    expect(audit[0]).toMatchObject({
+      level: 'warn',
+      fields: { previous: MAX, to: 0, removed: 1, removedSequences: `${MAX}` },
+    });
+    // The audit line carries the hashed handle, never the account id.
+    expect(JSON.stringify(h.logger.lines)).not.toContain('acct-a');
+  });
+
+  it('resets to a mark that keeps the snapshots at or below it', async () => {
+    for (const sequence of [5, 6, 7]) {
+      expect(
+        (await uploadSnapshot(h, a1, sequence, randomBytes(10))).status,
+      ).toBe(201);
+    }
+    const reset = await h.relay.handleAdmin(
+      adminRequest('POST', '/admin/v1/accounts/acct-a/high-water', {
+        highWaterSequence: 6,
+        removeSnapshotsAbove: true,
+      }),
+    );
+    expect(await reset.json()).toEqual({
+      previous: 7,
+      highWaterSequence: 6,
+      removed: [7],
+    });
+    const view = await h.relay.operatorView('acct-a');
+    expect(view.snapshots.map((s) => s.sequence)).toEqual([6, 5]);
+    expect(view.usage).toMatchObject({ highWaterSequence: 6 });
+    expect((await uploadSnapshot(h, a1, 6, randomBytes(10))).status).toBe(409);
+    expect((await uploadSnapshot(h, a1, 7, randomBytes(10))).status).toBe(201);
+  });
+
+  it('keeps the reset to the admin listener and validates it', async () => {
+    expect((await uploadSnapshot(h, a1, 3, randomBytes(10))).status).toBe(201);
+    const path = '/admin/v1/accounts/acct-a/high-water';
+    // Not reachable by a device, not by a wrong token, not without a token.
+    expect(
+      (
+        await h.relay.handle(
+          signed(h, a1, 'POST', path, {
+            body: JSON.stringify({ highWaterSequence: 0 }),
+          }),
+        )
+      ).status,
+    ).toBe(404);
+    for (const token of ['', 'wrong-token-wrong-token-wrong-token-1234']) {
+      expect(
+        (
+          await h.relay.handleAdmin(
+            adminRequest('POST', path, { highWaterSequence: 0 }, token),
+          )
+        ).status,
+      ).toBe(401);
+    }
+    for (const [body, status] of [
+      [{}, 400],
+      [{ highWaterSequence: -1 }, 400],
+      [{ highWaterSequence: 1.5 }, 400],
+      [{ highWaterSequence: '0' }, 400],
+      [{ highWaterSequence: 1, removeSnapshotsAbove: 'yes' }, 400],
+      // Raising is not a reset.
+      [{ highWaterSequence: 4 }, 409],
+    ] as const) {
+      const response = await h.relay.handleAdmin(
+        adminRequest('POST', path, body),
+      );
+      expect(response.status, JSON.stringify(body)).toBe(status);
+    }
+    expect(
+      (
+        await h.relay.handleAdmin(
+          adminRequest('POST', '/admin/v1/accounts/unknown/high-water', {
+            highWaterSequence: 0,
+          }),
+        )
+      ).status,
+    ).toBe(404);
+    expect((await h.relay.handleAdmin(adminRequest('GET', path))).status).toBe(
+      404,
+    );
+    expect((await h.relay.operatorView('acct-a')).usage).toMatchObject({
+      highWaterSequence: 3,
+    });
   });
 });
 

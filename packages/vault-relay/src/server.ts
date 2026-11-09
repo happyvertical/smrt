@@ -120,6 +120,11 @@ export function loadServerConfig(
                 integer(env, 'VAULT_RELAY_MAX_CLOCK_SKEW_SECONDS') * 1000,
             }
           : {}),
+        ...(env.VAULT_RELAY_MAX_SEQUENCE_JUMP
+          ? {
+              maxSequenceJump: integer(env, 'VAULT_RELAY_MAX_SEQUENCE_JUMP'),
+            }
+          : {}),
       },
     },
     port: integer(env, 'VAULT_RELAY_PORT', 8080),

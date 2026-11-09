@@ -40,6 +40,14 @@ Rules the relay enforces:
   sequence ever published for the account, including deleted ones. A commit
   fails with `409 stale_sequence` if a higher sequence was published first, and
   that upload is discarded. Two uploads cannot share a sequence.
+- **Sequences cannot jump far.** The device picks its sequence and a commit
+  raises the high-water mark for good, so a begin or commit more than
+  `maxSequenceJump` above the current mark (default **1000**, a safe default
+  chosen here, not an owner input; set `VAULT_RELAY_MAX_SEQUENCE_JUMP`) is
+  `400 sequence_too_far` with `highWaterSequence` and `maxSequenceJump`. A
+  brand-new account starts from a mark of 0, so its first sequence is at most
+  the cap. One commit at the largest safe integer can therefore no longer
+  make every later upload `stale_sequence`.
 - **Publish is atomic.** Pending uploads are never listed, never `latest`, and
   never downloadable. Abandoned uploads expire after the upload TTL.
 - **Quotas count pending uploads.** Bytes and snapshot count are reserved when
@@ -97,6 +105,7 @@ Served on a separate listener, which must stay cluster-internal, and only when
 | `PUT /admin/v1/accounts/:account/devices/:device` | Register a device key: `{ publicKey }` (raw 32-byte Ed25519 key, base64url). Idempotent for the same key. A revoked id, or a different key under an existing id, is `409`. |
 | `DELETE /admin/v1/accounts/:account/devices/:device` | Revoke a device. Effective on its next request. |
 | `GET /admin/v1/accounts/:account` | Usage, snapshot sizes and dates, device states. Never content. |
+| `POST /admin/v1/accounts/:account/high-water` | Reset the sequence high-water mark of an account whose mark was pushed out of reach: `{ highWaterSequence, removeSnapshotsAbove? }`. The new mark may not exceed the current one. A snapshot or pending upload above it is refused (`409 snapshots_above_high_water`, sequences listed) unless `removeSnapshotsAbove` is `true`, which deletes those rows and their objects first. Logged as `high_water_reset` (hashed account handle, previous and new mark, removed sequences). |
 | `POST /admin/v1/accounts/:account/reconcile` | Recompute quota counters from snapshot rows. Run it while the account is quiet: a reconcile racing an upload can under-count until the next reconcile. |
 | `POST /admin/v1/sweep` | Expire abandoned uploads and old nonces (also runs every minute). |
 
@@ -141,7 +150,7 @@ without them (except the admin token, see its row). Values are not chosen here.
 
 Optional technical settings: `VAULT_RELAY_PORT` (8080), `VAULT_RELAY_ADMIN_PORT`
 (8081), `VAULT_RELAY_MAX_CHUNK_BYTES` (8454144), `VAULT_RELAY_UPLOAD_TTL_SECONDS`
-(86400), `VAULT_RELAY_MAX_CLOCK_SKEW_SECONDS` (300). With `VAULT_RELAY_STORAGE=filesystem`,
+(86400), `VAULT_RELAY_MAX_CLOCK_SKEW_SECONDS` (300), `VAULT_RELAY_MAX_SEQUENCE_JUMP` (1000). With `VAULT_RELAY_STORAGE=filesystem`,
 `VAULT_RELAY_STORAGE_PATH` is required.
 
 The deployment also needs, from the owner: the namespace, the public domain and
@@ -189,6 +198,7 @@ horizontally: every security check is a conditional database statement.
 | Quota or size abuse | Atomic conditional reservation; declared length checked before buffering; chunk cap | `relay.test.ts` quotas and request bounds |
 | Partial upload becoming latest | Pending status; commit verifies every chunk and the whole digest | `relay.test.ts` atomic publish |
 | Sequence rollback or overwrite | Account high-water mark advanced conditionally; unique (account, sequence) | `relay.test.ts` atomic publish |
+| One commit pins the high-water mark out of reach, so every later upload is stale | Step cap at begin and inside the advance statement; operator reset on the admin listener, audited | `relay.test.ts` sequence step cap and high-water reset |
 | Entitlement bypass, off or lapsed plan | `requireFeature('backup.vault')` per request from server-side grants; fails closed | `entitlements.test.ts` |
 | Leakage through logs, listings, or storage | Logs carry route, status, and a hashed account handle only; operator view is sizes and dates | `blind-operator.test.ts` |
 | Path traversal in object keys | Keys derived from hash, server UUID, and index; regex and containment checks | `storage-and-config.test.ts` |

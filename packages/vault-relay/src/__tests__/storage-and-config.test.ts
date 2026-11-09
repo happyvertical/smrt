@@ -170,6 +170,32 @@ describe('policy and environment configuration', () => {
     VAULT_RELAY_RETENTION_KEEP_WITHIN_DAYS: '30',
   };
 
+  it('bounds the sequence step by default and reads an override', () => {
+    expect(resolvePolicy(policy).limits.maxSequenceJump).toBe(1000);
+    expect(
+      loadServerConfig(env).policy.limits?.maxSequenceJump,
+    ).toBeUndefined();
+    expect(
+      resolvePolicy(
+        loadServerConfig({
+          ...env,
+          VAULT_RELAY_MAX_SEQUENCE_JUMP: '50',
+        }).policy,
+      ).limits.maxSequenceJump,
+    ).toBe(50);
+    for (const bad of ['-1', '1.5', 'many']) {
+      expect(() =>
+        loadServerConfig({ ...env, VAULT_RELAY_MAX_SEQUENCE_JUMP: bad }),
+      ).toThrow();
+    }
+    // Zero would forbid every upload, so the policy refuses it.
+    expect(() =>
+      resolvePolicy(
+        loadServerConfig({ ...env, VAULT_RELAY_MAX_SEQUENCE_JUMP: '0' }).policy,
+      ),
+    ).toThrow('maxSequenceJump');
+  });
+
   it('reads a complete environment', () => {
     const config = loadServerConfig(env);
     expect(config.policy.retention.keepWithinMs).toBe(30 * 86_400_000);

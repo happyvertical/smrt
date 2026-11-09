@@ -488,16 +488,44 @@ export class VaultRelayStore {
   /**
    * Raise the account's sequence high-water mark to `sequence`. Fails when a
    * higher sequence is already published, so a stale upload can never become
-   * latest and an old sequence can never be republished.
+   * latest and an old sequence can never be republished, and when `sequence`
+   * is more than `maxJump` above the mark, so one commit can never push the
+   * mark out of reach of every later upload.
    */
   async advanceHighWater(
     accountId: string,
     sequence: number,
+    maxJump: number,
   ): Promise<boolean> {
     const updated = await this.db.query(
       `UPDATE vault_relay_accounts SET high_water_sequence = ?
         WHERE account_id = ? AND high_water_sequence <= ?
+          AND ? - high_water_sequence <= ?
         RETURNING account_id`,
+      sequence,
+      accountId,
+      sequence,
+      sequence,
+      maxJump,
+    );
+    return updated.rows.length === 1;
+  }
+
+  /**
+   * Operator reset: lower the high-water mark to `sequence`, only while the
+   * mark is not already below it and no snapshot row (pending or committed)
+   * sits above it, so the mark never ends up beneath a stored sequence.
+   */
+  async resetHighWater(accountId: string, sequence: number): Promise<boolean> {
+    const updated = await this.db.query(
+      `UPDATE vault_relay_accounts SET high_water_sequence = ?
+        WHERE account_id = ? AND high_water_sequence >= ?
+          AND NOT EXISTS (
+            SELECT 1 FROM vault_relay_snapshots
+             WHERE account_id = ? AND sequence > ?)
+        RETURNING account_id`,
+      sequence,
+      accountId,
       sequence,
       accountId,
       sequence,
