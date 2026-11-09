@@ -24,10 +24,11 @@ import {
   unlink,
 } from 'node:fs/promises';
 import { platform } from 'node:os';
-import { isAbsolute, parse, relative, resolve, sep } from 'node:path';
+import { isAbsolute, parse, relative, resolve, sep, win32 } from 'node:path';
 import { promisify } from 'node:util';
 import { Worker } from 'node:worker_threads';
 import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
+import { custodyContext } from './custody-context.js';
 import type {
   LocalRuntimePaths,
   ResolveLocalRuntimePathsOptions,
@@ -56,6 +57,24 @@ import {
 
 /** The owner-bootstrap table; its presence proves the runtime initialized. */
 export const BOOTSTRAP_TABLE = '_smrt_local_owner_bootstrap';
+
+import { lookupWindowsEnvironment } from './windows-acl-inspector.js';
+import {
+  inspectWindowsChain,
+  missingEntry,
+  preparePrivateWindowsTree,
+  verifyWindowsFile,
+  type WindowsCustodyRuntime,
+  walkWindowsChain,
+  windowsCanonicalIdentity,
+} from './windows-custody.js';
+import {
+  foldWindowsCase,
+  isInsideWindowsPath,
+  validateWindowsApplicationId,
+  validateWindowsPath,
+  WINDOWS_DERIVED_PATH_RESERVE,
+} from './windows-paths.js';
 
 export const SECRET_FILE_NAME = 'application.secret';
 export const DATABASE_FILE_NAME = 'application.sqlite';
@@ -160,6 +179,10 @@ async function preflightLocalApplicationRootOnce(
   sourceRoot: string,
   appId: string,
 ): Promise<void> {
+  if (isWindowsCustody()) {
+    preflightWindowsRoot(root, sourceRoot, appId);
+    return;
+  }
   requireNoFollowSupport();
   const canonicalSourceRoot = await realpath(sourceRoot);
   const currentUid = process.getuid?.();
@@ -581,6 +604,7 @@ async function prepareDedicatedRoot(
 export async function acquireInitializationLock(
   root: string,
 ): Promise<LocalInitializationLock> {
+  if (isWindowsCustody()) return acquireWindowsInitializationLock(root);
   const currentUid = process.getuid?.();
   if (currentUid === undefined) {
     throw unsafeFilesystemEntry(
@@ -1493,6 +1517,9 @@ function normalizeFilesystemIdentity(
   value: string,
   runtimePlatform: NodeJS.Platform = platform(),
 ): string {
+  if (runtimePlatform === 'win32') {
+    return foldWindowsCase(win32.resolve(value));
+  }
   const normalized = resolve(value);
   return usesCaseInsensitivePathGuards(runtimePlatform)
     ? normalized.toLowerCase()
@@ -1508,7 +1535,16 @@ export function defaultApplicationDataRoot(
     return resolve(runtimeHome, 'Library', 'Application Support');
   }
   if (runtimePlatform === 'win32') {
-    return resolve(env.LOCALAPPDATA ?? env.APPDATA ?? runtimeHome);
+    // Machine-local only. Never the roaming profile (APPDATA can be folder
+    // redirected to a network share) and never the home directory.
+    const base = lookupWindowsEnvironment(env, 'LOCALAPPDATA');
+    if (base === undefined || base === '') {
+      throw new LocalRuntimeError(
+        'invalid_configuration',
+        'LOCALAPPDATA is not set, so the Windows application data directory cannot be determined (the roaming APPDATA directory and the home directory are never used). Set dataDirectory explicitly.',
+      );
+    }
+    return validateWindowsPath(base, 'LOCALAPPDATA');
   }
   return resolve(env.XDG_DATA_HOME ?? resolve(runtimeHome, '.local', 'share'));
 }
@@ -1520,6 +1556,9 @@ export function isInside(
 ): boolean {
   const normalizedParent = normalizeFilesystemIdentity(parent, runtimePlatform);
   const normalizedChild = normalizeFilesystemIdentity(child, runtimePlatform);
+  if (runtimePlatform === 'win32') {
+    return isInsideWindowsPath(normalizedParent, normalizedChild);
+  }
   const path = relative(normalizedParent, normalizedChild);
   return path === '' || (!path.startsWith('..') && !isAbsolute(path));
 }
@@ -1570,6 +1609,10 @@ export async function validateLocalStorageCustody(
   sourceRoot: string,
   appId: string,
 ): Promise<void> {
+  if (isWindowsCustody()) {
+    validateWindowsStorage(paths, sourceRoot, appId);
+    return;
+  }
   await preflightLocalApplicationRoot(paths.root, sourceRoot, appId);
   const canonicalSourceRoot = await realpath(sourceRoot);
   await validateRootMarker(
@@ -1589,4 +1632,131 @@ export async function validateLocalStorageCustody(
       `Local application database must be a current-user-owned mode-0600 file: ${paths.database}`,
     );
   }
+}
+
+function isWindowsCustody(): boolean {
+  return custodyContext().platform === 'win32';
+}
+
+/**
+ * Windows read-only preflight: W1 on the root and appId, the source-tree
+ * overlap guard on canonical paths, W3/W4 on every existing component, W6 on
+ * the chain and on any marker (plus `extraFiles`), then the same
+ * dedicated-root marker rules as POSIX. One inspector call in total.
+ */
+function preflightWindowsRoot(
+  root: string,
+  sourceRoot: string,
+  appId: string,
+  extraFiles: readonly string[] = [],
+): void {
+  const rt = custodyContext().windows;
+  validateWindowsApplicationId(appId);
+  const normalizedRoot = validateWindowsPath(
+    root,
+    'Local application data root',
+    WINDOWS_DERIVED_PATH_RESERVE,
+  );
+  const canonicalSourceRoot = rt.realpath(win32.resolve(sourceRoot));
+  if (
+    isInsideWindowsPath(canonicalSourceRoot, normalizedRoot) ||
+    isInsideWindowsPath(normalizedRoot, canonicalSourceRoot)
+  ) {
+    throw unsafeFilesystemEntry(
+      'Local application data must remain outside the canonical source tree.',
+    );
+  }
+  const chain = walkWindowsChain(rt, normalizedRoot, 'directory');
+  if (!chain.complete) {
+    inspectWindowsChain(rt, chain, { custodyRoot: normalizedRoot });
+    // A read-only validation of stored files has nothing to validate here.
+    if (extraFiles.length > 0) throw missingEntry(normalizedRoot);
+    return;
+  }
+  const finalName = `${ROOT_MARKER_PREFIX}${appId}`;
+  const pendingName = `${finalName}.pending`;
+  const entries = rt.readdir(normalizedRoot);
+  const hasFinalMarker = entries.includes(finalName);
+  const hasPendingMarker = entries.includes(pendingName);
+  const markers = [
+    ...(hasFinalMarker ? [win32.join(normalizedRoot, finalName)] : []),
+    ...(hasPendingMarker ? [win32.join(normalizedRoot, pendingName)] : []),
+  ];
+  const files = [...new Set([...markers, ...extraFiles])];
+  inspectWindowsChain(rt, chain, { custodyRoot: normalizedRoot, files });
+  for (const file of files) {
+    verifyWindowsFile(rt, file, {
+      size: markers.includes(file) ? 0 : undefined,
+    });
+  }
+  if (hasFinalMarker) return;
+  if (hasPendingMarker) {
+    const permitted = new Set([
+      pendingName,
+      DATABASE_FILE_NAME,
+      `${DATABASE_FILE_NAME}-shm`,
+      `${DATABASE_FILE_NAME}-wal`,
+    ]);
+    if (entries.some((entry) => !permitted.has(entry))) {
+      throw unsafeFilesystemEntry(
+        'Interrupted local application root contains unexpected artifacts.',
+      );
+    }
+    return;
+  }
+  if (entries.length > 0) {
+    throw unsafeFilesystemEntry(
+      'Existing local application data root is populated but has no valid ownership marker.',
+    );
+  }
+}
+
+/** `validateLocalDatabaseStorage()` on Windows: one read-only inspection. */
+function validateWindowsStorage(
+  paths: { root: string; database: string },
+  sourceRoot: string,
+  appId: string,
+): void {
+  const root = validateWindowsPath(
+    paths.root,
+    'Local application data root',
+    WINDOWS_DERIVED_PATH_RESERVE,
+  );
+  preflightWindowsRoot(root, sourceRoot, appId, [
+    win32.join(root, `${ROOT_MARKER_PREFIX}${appId}`),
+    validateWindowsPath(paths.database, 'Local application database'),
+  ]);
+}
+
+/**
+ * The Windows initialization lease: the beside-data `.smrt-lease-<key>`
+ * directory and its SQLite lock file, created under the W6 rule and locked
+ * with the lock-only worker (the lease file holds no data, so this needs no
+ * secure-file support from the SDK). There are no legacy `/tmp` leases: no
+ * release ever initialized on Windows. The key hashes the case-folded
+ * realpath-canonical root, so spellings of one directory share one lease.
+ */
+async function acquireWindowsInitializationLock(
+  root: string,
+): Promise<LocalInitializationLock> {
+  const rt: WindowsCustodyRuntime = custodyContext().windows;
+  const normalizedRoot = validateWindowsPath(
+    root,
+    'Local application data root',
+    WINDOWS_DERIVED_PATH_RESERVE,
+  );
+  const key = createHash('sha256')
+    .update(windowsCanonicalIdentity(rt, normalizedRoot))
+    .digest('hex')
+    .slice(0, 32);
+  const leaseDirectory = win32.join(
+    win32.dirname(normalizedRoot),
+    `${LEASE_DIRECTORY_PREFIX}${key}`,
+  );
+  const leaseFile = win32.join(leaseDirectory, 'initialization.sqlite');
+  preparePrivateWindowsTree(rt, {
+    directory: leaseDirectory,
+    file: { path: leaseFile },
+  });
+  return acquireInitializationDatabaseLease(leaseFile, leaseDirectory, true);
 }

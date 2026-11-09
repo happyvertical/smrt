@@ -35,10 +35,11 @@ directory remain retryable once the migration is fixed.
 
 The path resolver selects the current user's OS application-data directory
 (`~/Library/Application Support` on macOS, `%LOCALAPPDATA%` on Windows, or
-`$XDG_DATA_HOME` / `~/.local/share` on Linux). Secure initialization currently
-requires Node to expose nonzero `O_NOFOLLOW` and `O_DIRECTORY` filesystem
-flags; it fails closed on platforms without that custody support and therefore
-does not yet claim Windows runtime support. The data root contains a mode-0600
+`$XDG_DATA_HOME` / `~/.local/share` on Linux). On macOS and Linux, secure
+initialization requires Node to expose nonzero `O_NOFOLLOW` and `O_DIRECTORY`
+filesystem flags and fails closed without them. Windows has its own custody
+rule (see [Windows](#windows)); opening the database there is still refused
+until `@happyvertical/sql` supports it. The data root contains a mode-0600
 SQLite database, a user-owned asset directory, and generated mode-0600
 application secret material. The root must be a dedicated application
 directory: placing it inside the source checkout or choosing an ancestor is
@@ -124,6 +125,184 @@ principals while the application retains control of that directory. Hostile
 code already running as the same user is outside this boundary; isolating
 same-account processes requires an OS sandbox and a descriptor-relative SQLite
 VFS.
+
+### Windows
+
+Node exposes neither `O_NOFOLLOW`, `uid`, nor mode bits on Windows, and it cannot
+read an owner or a DACL, so POSIX custody does not translate. Windows has its
+own, explicit rule (smrt#4837). It is implemented in `src/windows-paths.ts`
+(lexical), `src/windows-sddl.ts` (SDDL parser and access decision),
+`src/windows-acl-inspector.ts` (PowerShell attestation) and
+`src/windows-custody.ts` (chain walk, creation, identity); every filesystem and
+ACL effect goes through one seam, so the whole rule is tested on any platform
+with an in-memory machine and, separately, on a real runner.
+
+**Status.** The initialization lease, the operator state root
+(`prepareApplicationStateRoot`, writer lease, operation lock), the read-only
+preflight and `validateLocalDatabaseStorage()` work on Windows. **Opening the
+SQLite database does not.** `prepareLocalDatabaseStorage()`,
+`initializeLocalApplicationRuntime()`, `openLocalMcpTokenStore()` and the
+acquisition inside the runtime throw `WindowsDatabaseAcquisitionUnsupportedError`
+(a `LocalRuntimeError` with `code: 'invalid_configuration'`,
+`reason: 'windows_secure_sqlite_unsupported'`) after the read-only preflight and
+**before any directory or file is created**. The SDK's secure SQLite path
+(`@happyvertical/sql` `secureFile`) refuses `win32` and has no way for the
+caller to supply a Windows verifier; the runtime does not route around it with
+another driver. The gate is a single call (`refuseWindowsDatabaseAcquisition`)
+to remove once the SDK ships that API. Because the gate sits before the lease,
+the Windows lease is not reachable from the public entry points until then; it
+is exercised directly by the tests.
+
+**The rule.** A path is in Windows custody only when all of this holds:
+
+1. **Lexical (W1).** The only accepted form is `X:\seg\seg` (forward slashes
+   are converted). UNC (`\\server`, `\\wsl$`, `\\wsl.localhost`), `\\?\`,
+   `\\.\`, drive-relative `X:foo`, rooted `\foo`, `.`/`..`, `:` anywhere after
+   the drive (alternate data streams, `::$DATA`), `< > " | ? *`, control
+   characters and NUL, segments ending in a dot or space, and the device names
+   `CON PRN AUX NUL COM0-9 LPT0-9 COM¹²³ LPT¹²³ CONIN$ CONOUT$` (with or without
+   an extension) are refused. The path plus the longest path the runtime derives
+   beneath it must stay within 240 UTF-16 units, so nothing depends on
+   `LongPathsEnabled`. The same segment rule applies to `appId` on Windows only:
+   `con`, `nul`, `com1`, `con.app` and `foo.` are valid POSIX ids but name a
+   device or alias another directory there.
+2. **Base directory (W2).** The default root is `%LOCALAPPDATA%\<appId>`. A
+   missing, relative, UNC or `\\?\` `LOCALAPPDATA` is an error. The runtime
+   never falls back to the roaming `APPDATA` (which can be folder-redirected to
+   a network share) or to the home directory; the operator state root and the
+   desktop shell use the same machine-local base.
+3. **No reparse point (W3).** Every component from the drive root to the leaf is
+   a real directory (a regular file for the leaf of a file check): not a
+   symbolic link or junction (`lstat`) and without the `ReparsePoint` attribute,
+   which also catches volume mount points and cloud placeholders. Custodied
+   entries must not be `Offline` or recall-on-access.
+4. **Canonical identity (W4).** `realpath.native` of each component must equal
+   the component, compared ordinally except for the drive-letter case. That
+   refuses junction ancestors, `subst` and mapped drives, 8.3 short names and
+   user-typed case variants of an existing directory (it fails closed rather
+   than folding case). Case folding is used only where a merge is the safe
+   direction: the writer-lease key, the state-root identity and the overlap
+   guards.
+5. **Handle identity (W5).** `O_NOFOLLOW` cannot be passed from Node on Windows,
+   so a followed link is *detected*: an opened file must match `lstat` on bigint
+   `dev`, `ino` and `birthtimeNs` and kind (NTFS file ids routinely exceed
+   2^53, so the `number` form would lose the difference), before and after the
+   open, and must have exactly one link. The `lstat` identity of every chain
+   component is re-read after its ACL is inspected.
+6. **Access control (W6).** This is the actual custody property; nothing above
+   is a guarantee without it, because a directory created under `C:\` inherits an
+   ACE that lets every local user modify it.
+   - *Trusted principals:* the current user, `SYSTEM` and `BUILTIN\Administrators`
+     (trusted the way uid 0 is on POSIX; objects created by an elevated admin are
+     owned by Administrators). Ancestor owners may also be `TrustedInstaller`.
+   - *Custodied* (the data root and everything under it, the lease directory and
+     file, the state root and its files): the owner is trusted, a DACL is
+     present (a NULL DACL is refused), and every allow ACE names a trusted
+     principal or `OWNER RIGHTS`. Inherit-only allow ACEs may also name
+     `CREATOR OWNER`. Deny ACEs are accepted. Any other ACE type (object,
+     conditional, callback, audit) or anything the parser does not recognise is
+     refused.
+   - *Ancestors* above the custody root: the sticky-directory analogue. A
+     principal that is not trusted must not hold `DELETE`, `WRITE_DAC`,
+     `WRITE_OWNER`, `FILE_DELETE_CHILD`, `GENERIC_ALL` or `GENERIC_WRITE`;
+     creating siblings (`FILE_ADD_FILE`, `FILE_ADD_SUBDIRECTORY`) is tolerated,
+     because it cannot replace our child.
+   - *Creation:* every component the runtime creates is re-inspected afterwards
+     under the custodied rule (its DACL was inherited from a parent the runtime
+     does not control). On failure exactly the components that attempt created
+     are removed and the call fails closed; pre-existing components are never
+     removed. This is how `C:\smrt-data` and `D:\apps\x` are refused.
+   - *Volume:* a local fixed disk (`Win32_LogicalDisk.DriveType` 3) formatted
+     NTFS. FAT32, exFAT, network, removable and RAM drives have no usable ACLs.
+     ReFS is refused for now (its 128-bit file ids are not handled).
+7. **Explicit roots.** An explicitly configured root that already exists must
+   already satisfy W6. The runtime only verifies; it never edits an ACL. To
+   create a private root outside `%LOCALAPPDATA%`, run (substituting the path):
+
+   ```bat
+   mkdir D:\Apps\MyApp
+   icacls D:\Apps\MyApp /inheritance:r /grant:r "%USERNAME%:(OI)(CI)F" "SYSTEM:(OI)(CI)F" "Administrators:(OI)(CI)F"
+   ```
+
+**The attestation.** Node cannot read a DACL, so the runtime asks Windows
+PowerShell 5.1, the Windows twin of the macOS `ls -lde` ACL check. The
+executable is `<SystemRoot>\System32\WindowsPowerShell\v1.0\powershell.exe` by
+absolute path, never found on `PATH`. The argv is constant (`-NoLogo -NoProfile
+-NonInteractive -InputFormat None -EncodedCommand <fixed script>`) and contains
+no path. The paths for one check travel together in the `SMRT_CUSTODY_PATHS`
+environment variable, newline separated, so there is nothing for the PowerShell
+parser to interpret; the script uses `-LiteralPath` only (no wildcard
+expansion), no `Invoke-Expression`, and a minimal environment (`PATH` is not
+passed). It prints one compact ASCII JSON document without paths. The call is
+bounded (10 s, 256 KiB, `shell: false`, hidden window). **Any failure is a
+refusal**: PowerShell missing, blocked by AppLocker/WDAC/Constrained Language
+Mode, a timeout, a non-zero exit, oversized or non-ASCII output, non-JSON, a
+different number of answers than paths, or a missing user SID. There is no
+"unverified" or best-effort mode. The cost is one PowerShell start (roughly a
+second, not measured) per check, at most three per startup; the check is
+synchronous (it blocks the event loop) because the operator state root is.
+SDDL parsing and the access decision are pure TypeScript.
+
+**Threat table.** Each row is closed by named tests in
+`src/windows-custody.test.ts` (any platform) and, where a real Windows
+behaviour is involved, `src/windows-custody.win32.test.ts` (Windows runner only).
+
+| # | Threat | Closed by | Closing tests |
+|---|--------|-----------|---------------|
+| WT1 | Another local user reads or replaces the database, secret, markers, leases or state | W6 custodied rule; default root under the user profile | `W6 policy (WT1 other users, WT3 inherited access)` (foreign owner, Everyone, Users, Interactive, Authenticated Users, a domain admin, another local user, NULL/absent DACL, conditional/object/callback/audit ACEs); `refuses an existing root owned by another user before creating anything (WT1)`; `refuses a lease directory planted by another user (WT1, WT2)`; `rejects a database explicitly shared with Users` |
+| WT2 | A junction, symlink or mount point planted in a shared parent at a missing component | W3, W4, post-create W6 | `refuses a symbolic link or junction at an ancestor and at the leaf (WT2)`; `refuses a reparse point that lstat cannot see as a link (WT2, WT7)`; `refuses a directory planted by another user at a missing component, and leaves it alone (WT2)`; real: `refuses a junction at an ancestor and at the root (WT2)` |
+| WT3 | A root created under a parent whose inheritable ACL grants others access (`C:\`, `D:\`) | post-create re-inspection under the custodied rule, with rollback | `removes a root created under C:\ whose inherited ACL admits other users`; `never removes a directory it did not create`; `holds a directory it created to the custodied rule even above the root`; `creates a file and removes it again when its inherited ACL is wrong`; `refuses a lease beside a root whose parent would expose it (WT3)`; `refuses a state base whose inherited ACL admits other users (WT3)`; real: `refuses a directory under C:\ ...` |
+| WT4 | Hard-link games on the database, secret, markers or lease | `nlink === 1` and handle identity (W5) | `refuses a file with a second hard link (WT4, W5)`; `refuses a handle that is not the file lstat saw, even when the ids round to one number (W5)`; `rejects a database with a second hard link`; `refuses a state marker with a second hard link`; `refuses a path that was swapped while its ACL was being read (TOCTOU)` |
+| WT5 | 8.3 aliases, case variants, alternate data streams, trailing dot or space, device names, `\\?\`, UNC, WSL | W1 and W4 | `W1 lexical rule (WT5: aliases, devices, streams)` (every form listed); `appId against Windows device names (WT5)`; `refuses a path that resolves through an 8.3 short name (WT7)`; `refuses a case variant of an existing directory (WT5, D6)`; `refuses to lease through a case variant of an existing parent (D6)`; real: `refuses an 8.3 short-name spelling of a long directory (WT5)` |
+| WT6 | Roaming profile or folder redirection | W2: `LOCALAPPDATA` only | `data root base (WT6: roaming profile)` (missing, empty, APPDATA only, relative, share, device path); `puts the state beside the data under LOCALAPPDATA, never the home directory` |
+| WT7 | OneDrive or cloud folder, network share, mapped or `subst` drive, FAT/exFAT/ReFS/removable volume | W3 attributes, W4, volume check | `refuses a reparse point ...`; `refuses a path that resolves through a subst drive / a mapped network drive (WT7)`; `refuses a root on FAT, exFAT, ReFS, network, removable or RAM volumes (WT7, D7)`; real: `refuses a subst drive (WT7)` |
+| WT8 | Inspector unavailable, blocked or returning garbage | fail closed | `inspector failures (WT8)` (missing PowerShell, timeout, non-zero exit, buffer overflow, oversized, non-JSON, empty, count mismatch, missing/invalid user, non-ASCII, wrong shape, no `SystemRoot`); `creates nothing when the inspector is unavailable`; `refuses an inspector that answers for a different number of paths` |
+| WT9 | Command injection through a path into the inspector | constant argv, paths in the environment, `-LiteralPath`, ASCII output | `inspector invocation (WT9: no injection through the path)` (identical argv across calls and no path in it, hostile paths verbatim in the environment, absolute executable, `shell: false`, bounded, allow-listed environment without `PATH`, encoded script equals the reviewed script, no dynamic evaluation); real: `inspects a path full of shell and wildcard characters literally (WT9)` |
+| L1 | Two processes sharing a data root derive different leases (case or alias spelling) | lease keyed by the case-folded realpath identity | `derives one lease for every spelling of a data root`; `shares one lock identity across spellings and aliases of one directory` |
+| L2 | A Windows process also takes a legacy `/tmp` lease | none exists on Windows | `takes exactly one beside-data lease, never a legacy /tmp lease` |
+| S1 | Case variants of one data directory get two state roots and so two writer leases | state-root identity hashes the case-folded root on Windows | `gives case variants of one data directory one state root (one lock domain)` |
+| S2 | The state root silently skips its owner checks when no identity is known | the check now throws on every platform | `throws instead of skipping the owner checks when no uid is known` |
+| G1 | A half-built root left behind on a platform that cannot finish | database acquisition is refused with a named error before any directory is created | `refuses before the lease creates a single directory or file`; `refuses initializeLocalApplicationRuntime the same way`; `refuses acquireLocalDatabase before any filesystem access`; `refuses to open the token store, after validating the stored root` |
+
+Out of scope, as on POSIX: hostile code already running as the same user, and
+Administrators or SYSTEM (trusted like uid 0). Setting or repairing ACLs,
+encrypting the database at rest, network shares, and Linux-in-WSL data roots on
+DrvFs/9p (POSIX uid and mode there are synthesized) are not handled here.
+
+**Not verified on Windows.** Everything above was written and tested without a
+Windows machine: the in-memory machine proves the policy and the control flow,
+not the operating system. Unverified until the real-Windows tests have run: how
+libuv reports non-symlink reparse tags and `nlink`; `realpath.native` on 8.3,
+`subst` and mapped drives; `fs.open` on a directory; the default DACLs of `C:\`,
+`C:\Users`, a secondary volume root and `%LOCALAPPDATA%` (the SDDL fixtures
+are from memory, and the first real run prints the true ones); the owner of
+objects created on the GitHub Windows runner (Administrators versus the user);
+PowerShell 5.1 start-up cost, whether it starts with the minimal environment,
+and which calls survive Constrained Language Mode; whether `-InputFormat None`
+is accepted; and whether the monorepo installs and Vitest runs on
+`windows-latest`.
+
+**Decisions assumed, pending owner confirmation** (each is reversible):
+
+- *D1* The custody functions were extracted from `index.ts` into
+  `src/local-custody.ts` first, as a no-behaviour-change commit.
+- *D4* The PowerShell cost is accepted: fixed argv, paths in the environment,
+  fail closed, no "unverified" opt-out.
+- *D7* ReFS, and any volume without ACL support, is refused.
+- *D8* #4837 stays open: Windows database acquisition is refused with a named
+  error until `@happyvertical/sql` accepts a caller-supplied Windows verifier.
+- *D9* The `app-runtime-windows` workflow is added but is not a required check.
+- *D10* The trusted-account set is exactly the current user, `SYSTEM` and
+  `BUILTIN\Administrators` (plus `TrustedInstaller` for ancestors). A corporate
+  image that adds domain-admin or backup-operator ACEs to `%LOCALAPPDATA%` fails
+  closed.
+- Following the design's recommendations: the SDK takes a caller-supplied
+  verifier rather than owning the inspector (D2); there is no best-effort mode
+  (D3); canonical comparison is ordinal except for the drive letter (D6).
+- Known and not fixed here: on case-insensitive macOS volumes the state-root
+  identity still hashes the path as spelled, so two spellings of one data
+  directory get two state roots. Folding it would rename every existing macOS
+  state root, which is a cross-process contract, so it needs its own change.
 
 Owner onboarding binds to `127.0.0.1` by default and accepts only loopback IP
 literals (`127.0.0.0/8` or `::1`), avoiding hostname-resolution ambiguity.

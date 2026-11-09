@@ -11,7 +11,7 @@
 import { createHash, createHmac, randomBytes } from 'node:crypto';
 import { realpath } from 'node:fs/promises';
 import { homedir, platform } from 'node:os';
-import { parse, resolve } from 'node:path';
+import { parse, resolve, win32 } from 'node:path';
 import {
   type ResolvedApplicationRuntime,
   type RuntimeProviderOverrides,
@@ -85,6 +85,11 @@ import {
   applicationStateRootSource,
   prepareApplicationStateRoot,
 } from './state-root.js';
+import {
+  validateWindowsApplicationId,
+  validateWindowsPath,
+  WINDOWS_DERIVED_PATH_RESERVE,
+} from './windows-paths.js';
 
 export * from './application-identity.js';
 export * from './cloud-link.js';
@@ -226,7 +231,7 @@ export async function prepareLocalDatabaseStorage(
   options: ResolveLocalRuntimePathsOptions,
 ): Promise<LocalRuntimePaths> {
   const paths = resolveLocalRuntimePaths(options);
-  const sourceRoot = resolve(options.sourceRoot ?? process.cwd());
+  const sourceRoot = resolveSourceRoot(options);
   const appId = validateApplicationId(options.appId);
   await preflightLocalApplicationRoot(paths.root, sourceRoot, appId);
   const initializationLock = await acquireInitializationLock(paths.root);
@@ -267,7 +272,7 @@ export async function validateLocalDatabaseStorage(
   options: ResolveLocalRuntimePathsOptions,
 ): Promise<LocalRuntimePaths> {
   const paths = resolveLocalRuntimePaths(options);
-  const sourceRoot = resolve(options.sourceRoot ?? process.cwd());
+  const sourceRoot = resolveSourceRoot(options);
   const appId = validateApplicationId(options.appId);
   await validateLocalStorageCustody(paths, sourceRoot, appId);
   return paths;
@@ -297,9 +302,7 @@ export async function openLocalMcpTokenStore(
   options: OpenLocalMcpTokenStoreOptions,
 ): Promise<OpenedLocalMcpTokenStore> {
   const paths = await validateLocalDatabaseStorage(options);
-  const canonicalSourceRoot = await realpath(
-    resolve(options.sourceRoot ?? process.cwd()),
-  );
+  const canonicalSourceRoot = await realpath(resolveSourceRoot(options));
   // Uncached: `close()` must never close a connection another caller in
   // this process (for example the web runtime) shares.
   const db = await getDatabase({
@@ -592,13 +595,16 @@ export function resolveLocalRuntimePaths(
   const runtimePlatform = options.platform ?? platform();
   const runtimeHome = options.homeDirectory ?? homedir();
   const env = options.env ?? process.env;
+  if (runtimePlatform === 'win32') {
+    return resolveWindowsRuntimePaths(options, appId, runtimeHome, env);
+  }
   const defaultRoot = defaultApplicationDataRoot(
     runtimePlatform,
     runtimeHome,
     env,
   );
   const root = resolve(options.dataDirectory ?? resolve(defaultRoot, appId));
-  const sourceRoot = resolve(options.sourceRoot ?? process.cwd());
+  const sourceRoot = resolveSourceRoot(options);
 
   if (
     sameFilesystemPath(root, runtimeHome, runtimePlatform) ||
@@ -618,6 +624,53 @@ export function resolveLocalRuntimePaths(
     assets: resolve(root, 'assets'),
     secrets: resolve(root, 'secrets'),
     applicationSecret: resolve(root, 'secrets', SECRET_FILE_NAME),
+  });
+}
+
+/** The absolute source checkout, resolved with the flavour of the platform. */
+function resolveSourceRoot(options: ResolveLocalRuntimePathsOptions): string {
+  const runtimePlatform = options.platform ?? platform();
+  const source = options.sourceRoot ?? process.cwd();
+  return runtimePlatform === 'win32' ? win32.resolve(source) : resolve(source);
+}
+
+/**
+ * The Windows branch of {@link resolveLocalRuntimePaths}: the Windows lexical
+ * rule (W1) applies to the root *before* resolution can fold aliases away, the
+ * appId must be a plain NTFS name, and the default root is the machine-local
+ * `%LOCALAPPDATA%` (never the roaming profile or the home directory).
+ */
+function resolveWindowsRuntimePaths(
+  options: ResolveLocalRuntimePathsOptions,
+  appId: string,
+  runtimeHome: string,
+  env: NodeJS.ProcessEnv,
+): LocalRuntimePaths {
+  validateWindowsApplicationId(appId);
+  const root = validateWindowsPath(
+    options.dataDirectory ??
+      win32.join(defaultApplicationDataRoot('win32', runtimeHome, env), appId),
+    'Local application data directory',
+    WINDOWS_DERIVED_PATH_RESERVE,
+  );
+  const sourceRoot = resolveSourceRoot({ ...options, platform: 'win32' });
+  if (
+    sameFilesystemPath(root, runtimeHome, 'win32') ||
+    sameFilesystemPath(root, win32.parse(root).root, 'win32') ||
+    isInside(sourceRoot, root, 'win32') ||
+    isInside(root, sourceRoot, 'win32')
+  ) {
+    throw new LocalRuntimeError(
+      'invalid_configuration',
+      'Local application data must be a dedicated directory that does not overlap the source tree.',
+    );
+  }
+  return Object.freeze({
+    root,
+    database: win32.join(root, DATABASE_FILE_NAME),
+    assets: win32.join(root, 'assets'),
+    secrets: win32.join(root, 'secrets'),
+    applicationSecret: win32.join(root, 'secrets', SECRET_FILE_NAME),
   });
 }
 
@@ -644,7 +697,7 @@ export async function initializeLocalApplicationRuntime(
     providers: options.providers,
   });
   const paths = resolveLocalRuntimePaths(options);
-  const sourceRoot = resolve(options.sourceRoot ?? process.cwd());
+  const sourceRoot = resolveSourceRoot(options);
   const appId = validateApplicationId(options.appId);
   await preflightLocalApplicationRoot(paths.root, sourceRoot, appId);
   const initializationLock = await acquireInitializationLock(paths.root);
