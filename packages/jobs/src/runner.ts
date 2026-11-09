@@ -259,6 +259,16 @@ const DEFAULT_CONFIG: ResolvedTaskRunnerConfig = {
  * - Job context logging for visibility
  * - Embedded mode (in-process) or standalone (CLI)
  */
+/**
+ * A rejection from one of a job's own state writes, as opposed to a listener
+ * or telemetry call that threw after the write committed.
+ */
+class UnpersistedJobWriteError extends Error {
+  constructor(readonly writeError: unknown) {
+    super('Job state write could not be persisted');
+  }
+}
+
 export class TaskRunner extends EventEmitter {
   /** Tenant selection is applied before claims and recovery ownership writes. */
   static readonly capabilities = Object.freeze({
@@ -283,6 +293,15 @@ export class TaskRunner extends EventEmitter {
   private lastRecoverySweepAt = 0;
   private running = false;
   private activeJobs = new Map<string, SmrtJob>();
+  /**
+   * Rows this runner still owns as `running` because their terminal or retry
+   * write could not be persisted, with the `last_error` to record. The owner
+   * is alive, so liveness-based recovery would never touch them; this runner's
+   * own sweep settles them (#4735).
+   */
+  private unsettledJobs = new Map<string, string>();
+  /** Orphans whose recovery failure was already logged; one line per job. */
+  private recoveryFailuresLogged = new Set<string>();
   /** Per-job cooperative cancellation controllers, alive while the job runs. */
   private jobAborts = new Map<string, AbortController>();
   /** Over-claimed job ids whose release back to `pending` has not landed. */
@@ -745,9 +764,15 @@ export class TaskRunner extends EventEmitter {
       } catch (persistenceError) {
         // The handler already returned successfully. A terminal persistence
         // failure is an operator fault, not a business execution failure: the
-        // transaction left the owned row running and must not relabel it or
-        // schedule a retry through handleJobError().
-        this.reportUnpersistedJobWrite(job, 'completion', persistenceError);
+        // transaction left the owned row running, and it must not be retried
+        // through handleJobError(). The recovery sweep settles it as failed,
+        // with its event, saying what happened.
+        this.reportUnpersistedJobWrite(
+          job,
+          'completion',
+          persistenceError,
+          `Job handler returned but its completion could not be persisted (${redactErrorForPersistence(persistenceError)}); settled as failed by recovery, not retried.`,
+        );
         return;
       }
 
@@ -767,7 +792,18 @@ export class TaskRunner extends EventEmitter {
       try {
         await this.handleJobError(job, error as Error);
       } catch (handlerError) {
-        this.reportUnpersistedJobWrite(job, 'failure', handlerError);
+        if (handlerError instanceof UnpersistedJobWriteError) {
+          this.reportUnpersistedJobWrite(
+            job,
+            'failure',
+            handlerError.writeError,
+            `${redactErrorForPersistence(error)} (the failure could not be persisted when it happened: ${redactErrorForPersistence(handlerError.writeError)}; settled as failed by recovery, not retried.)`,
+          );
+        } else {
+          // A listener or telemetry call threw after the write committed:
+          // the row is not stranded, so this is only a runner error.
+          this.emit('runner:error', handlerError as Error);
+        }
       }
     } finally {
       if (timeoutHandle) clearTimeout(timeoutHandle);
@@ -798,22 +834,50 @@ export class TaskRunner extends EventEmitter {
 
   /**
    * A job's terminal (or retry) write could not be persisted. The state and
-   * its event commit together or not at all, so the row is still `running`
-   * and stale-job recovery will settle it once the fault clears; nothing here
-   * relabels it. What must not happen is silence (#4735): `runner:error` is
-   * only heard by a caller that listens, so say it at error level with the
-   * job id as well.
+   * its event commit together or not at all, so the row is still `running`.
+   *
+   * It must not be silent (#4735): `runner:error` is only heard by a caller
+   * that listens, so say it at error level with the job id as well. And it
+   * must not stay `running` for good: the owning worker is alive, so
+   * liveness-based recovery would skip the row until this process stops.
+   * `settleAs` records the `last_error` this runner's own recovery sweep
+   * settles it with, atomically with its event, once the fault clears.
    */
   private reportUnpersistedJobWrite(
     job: SmrtJob,
     write: 'completion' | 'failure' | 'stale recovery',
     cause: unknown,
+    settleAs?: string,
   ): void {
     const error = cause instanceof Error ? cause : new Error(String(cause));
-    this.logger.error(
-      `Job ${job.id} (${job.getDescription()}) ${write} could not be persisted; the row stays running until stale-job recovery: ${redactErrorForPersistence(error)}`,
-    );
+    const jobId = job.id;
+    if (settleAs && jobId) this.unsettledJobs.set(jobId, settleAs);
+    const firstReport =
+      write !== 'stale recovery' ||
+      !jobId ||
+      !this.recoveryFailuresLogged.has(jobId);
+    if (firstReport) {
+      if (write === 'stale recovery' && jobId) {
+        this.recoveryFailuresLogged.add(jobId);
+      }
+      const next =
+        write === 'stale recovery'
+          ? 'it stays running and each recovery sweep retries it'
+          : "it stays running until this runner's next recovery sweep settles it as failed";
+      this.logger.error(
+        `Job ${jobId} (${job.getDescription()}) ${write} could not be persisted; ${next}: ${redactErrorForPersistence(error)}`,
+      );
+    }
     this.emit('runner:error', error);
+  }
+
+  /** Tag a rejection from a job's own state write (see the caller's catch). */
+  private async persistJobWrite<T>(write: () => Promise<T>): Promise<T> {
+    try {
+      return await write();
+    } catch (cause) {
+      throw new UnpersistedJobWriteError(cause);
+    }
   }
 
   /**
@@ -1177,14 +1241,16 @@ export class TaskRunner extends EventEmitter {
       const nextRunAt = new Date(Date.now() + delay);
 
       // Conditional: don't resurrect a row that recovery already failed.
-      const applied = await this.writeOwnedJob(jobId, {
-        status: 'pending',
-        last_error: safeMessage,
-        run_at: nextRunAt.toISOString(),
-        worker_id: null,
-        worker_heartbeat: null,
-        updated_at: new Date().toISOString(),
-      });
+      const applied = await this.persistJobWrite(() =>
+        this.writeOwnedJob(jobId, {
+          status: 'pending',
+          last_error: safeMessage,
+          run_at: nextRunAt.toISOString(),
+          worker_id: null,
+          worker_heartbeat: null,
+          updated_at: new Date().toISOString(),
+        }),
+      );
       if (!applied) return;
 
       job.status = 'pending';
@@ -1206,15 +1272,17 @@ export class TaskRunner extends EventEmitter {
       const completedAt = new Date();
       const snapshot = terminalSnapshot(job);
       const event = snapshot
-        ? await transitionTerminalJob(this.db as DatabaseInterface, {
-            job: snapshot,
-            status: 'failed',
-            completedAt,
-            expectedStatuses: ['running'],
-            expectedWorkerId: this.workerKey,
-            lastError: safeMessage,
-            failureKind: isTimeout ? 'timeout' : 'execution',
-          })
+        ? await this.persistJobWrite(() =>
+            transitionTerminalJob(this.db as DatabaseInterface, {
+              job: snapshot,
+              status: 'failed',
+              completedAt,
+              expectedStatuses: ['running'],
+              expectedWorkerId: this.workerKey,
+              lastError: safeMessage,
+              failureKind: isTimeout ? 'timeout' : 'execution',
+            }),
+          )
         : null;
       if (!event) return;
 
@@ -1470,15 +1538,34 @@ export class TaskRunner extends EventEmitter {
       [...scope.params, ...this.config.queues],
       { allowRawOnTenantScoped: true },
     );
+    // Forget rows that are no longer running: settled by a peer, cancelled,
+    // or committed after all.
+    const runningIds = new Set(running.map((job) => job.id));
+    for (const jobId of this.unsettledJobs.keys()) {
+      if (!runningIds.has(jobId)) this.unsettledJobs.delete(jobId);
+    }
+    for (const jobId of this.recoveryFailuresLogged) {
+      if (!runningIds.has(jobId)) this.recoveryFailuresLogged.delete(jobId);
+    }
     if (running.length === 0) return;
 
     // A job is orphaned iff its owning worker is not alive: not live in this
     // process AND no fresh database lease. The live set takes precedence over a
     // stale lease (a worker whose lease lapsed while its loop was blocked is
     // still alive here); a runner also never recovers its own active jobs.
+    // The exception is a row this runner itself could not settle (#4735): it
+    // finished here, nothing will run it again, and no other worker may touch
+    // it while this one is alive.
     const orphans = running.filter((job) => {
       const jobId = job.id;
       if (jobId && this.activeJobs.has(jobId)) return false;
+      if (
+        jobId &&
+        this.unsettledJobs.has(jobId) &&
+        job.workerId === this.workerKey
+      ) {
+        return true;
+      }
       return !isWorkerAlive(job.workerId, freshLeaseKeys);
     });
     if (orphans.length === 0) return;
@@ -1491,6 +1578,8 @@ export class TaskRunner extends EventEmitter {
     for (const job of orphans) {
       const snapshot = terminalSnapshot(job);
       if (!snapshot) continue;
+      const lastError =
+        (job.id ? this.unsettledJobs.get(job.id) : undefined) ?? errorMessage;
       let event: SmrtJobEvent | null;
       try {
         event = await transitionTerminalJob(this.db, {
@@ -1500,7 +1589,7 @@ export class TaskRunner extends EventEmitter {
           expectedStatuses: ['running'],
           expectedWorkerId: job.workerId ?? null,
           clearWorker: true,
-          lastError: errorMessage,
+          lastError,
           failureKind: 'stale-recovery',
         });
       } catch (persistenceError) {
@@ -1509,13 +1598,17 @@ export class TaskRunner extends EventEmitter {
         this.reportUnpersistedJobWrite(job, 'stale recovery', persistenceError);
         continue;
       }
+      if (job.id) {
+        this.unsettledJobs.delete(job.id);
+        this.recoveryFailuresLogged.delete(job.id);
+      }
       if (!event) continue;
       job.status = 'failed';
       job.completedAt = recoveredAt;
-      job.lastError = errorMessage;
+      job.lastError = lastError;
       job.workerId = null;
       job.workerHeartbeat = null;
-      const error = new Error(errorMessage);
+      const error = new Error(lastError);
       this.emitPersistedJobEvent(job, event);
       this.emit('job:failed', job, error);
     }

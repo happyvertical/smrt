@@ -73,6 +73,7 @@ function canonicalProbeType(): string {
 }
 
 afterEach(() => {
+  vi.restoreAllMocks();
   // Release any still-hanging handler so its promise settles and nothing leaks
   // into the next test.
   releaseHang?.();
@@ -80,6 +81,15 @@ afterEach(() => {
   retryCalls = 0;
   ObjectRegistry.configureCollectionCache(100);
 });
+
+/** Capture what the runner logs at error level; restored after each test. */
+function captureConsoleErrors(): string[] {
+  const lines: string[] = [];
+  vi.spyOn(console, 'error').mockImplementation((...parts: unknown[]) => {
+    lines.push(parts.map(String).join(' '));
+  });
+  return lines;
+}
 
 describe('TaskRunner remediation (#1401)', () => {
   it('does not emit an unhandled rejection when the error path throws (#1)', async () => {
@@ -107,12 +117,21 @@ describe('TaskRunner remediation (#1401)', () => {
     const onUnhandled = (reason: unknown) => unhandled.push(reason);
     process.on('unhandledRejection', onUnhandled);
 
-    const runner = createTaskRunner({ concurrency: 1, pollInterval: 10 });
+    // A short lease tick so the runner's own recovery sweep runs in-test.
+    const runner = createTaskRunner({
+      concurrency: 1,
+      pollInterval: 10,
+      leaseTickMs: 25,
+    });
     await runner.initialize(db);
 
     const runnerError = new Promise<Error>((resolve) => {
       runner.once('runner:error', (error) => resolve(error as Error));
     });
+    const settled = new Promise<SmrtJob>((resolve) => {
+      runner.once('job:failed', (failed) => resolve(failed as SmrtJob));
+    });
+    const errorLines = captureConsoleErrors();
 
     await runner.start();
     try {
@@ -120,6 +139,21 @@ describe('TaskRunner remediation (#1401)', () => {
       // event...
       const error = await runnerError;
       expect(error.message).toContain('failure-write exploded');
+      // ...says so at error level with the job id (#4735)...
+      expect(
+        errorLines.some(
+          (line) =>
+            line.includes(job.id ?? 'missing-id') &&
+            line.includes('failure could not be persisted'),
+        ),
+      ).toBe(true);
+      // ...and its own recovery sweep settles the row it still owns, keeping
+      // the handler's error, instead of leaving it running until a restart.
+      expect((await settled).id).toBe(job.id);
+      const persisted = await collection.get({ id: job.id ?? '' });
+      expect(persisted?.status).toBe('failed');
+      expect(persisted?.lastError).toContain('boom');
+      expect(persisted?.lastError).toContain('could not be persisted');
       // ...and after a tick for any pending microtasks to flush...
       await new Promise((r) => setTimeout(r, 50));
       // ...no unhandled rejection escaped to the process.
@@ -130,7 +164,7 @@ describe('TaskRunner remediation (#1401)', () => {
     }
   });
 
-  it('does not relabel or retry a successful handler when completion persistence fails', async () => {
+  it('settles a successful handler as failed, never retried, when completion persistence fails', async () => {
     const db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
     const collection = await SmrtJobCollection.create({ db });
     const job = await collection.create({
@@ -148,7 +182,12 @@ describe('TaskRunner remediation (#1401)', () => {
         SELECT RAISE(FAIL, 'completion event rejected');
       END`);
 
-    const runner = createTaskRunner({ concurrency: 1, pollInterval: 10 });
+    // A short lease tick so the runner's own recovery sweep runs in-test.
+    const runner = createTaskRunner({
+      concurrency: 1,
+      pollInterval: 10,
+      leaseTickMs: 25,
+    });
     await runner.initialize(db);
     let completed = 0;
     let retried = 0;
@@ -158,15 +197,17 @@ describe('TaskRunner remediation (#1401)', () => {
     runner.on('job:retrying', () => {
       retried += 1;
     });
+    const failures: SmrtJob[] = [];
+    const settled = new Promise<SmrtJob>((resolve) => {
+      runner.on('job:failed', (failed) => {
+        failures.push(failed as SmrtJob);
+        resolve(failed as SmrtJob);
+      });
+    });
     const runnerError = new Promise<Error>((resolve) => {
       runner.once('runner:error', resolve);
     });
-    const errorLines: string[] = [];
-    const consoleError = vi
-      .spyOn(console, 'error')
-      .mockImplementation((...parts: unknown[]) => {
-        errorLines.push(parts.map(String).join(' '));
-      });
+    const errorLines = captureConsoleErrors();
 
     await runner.start();
     try {
@@ -180,12 +221,62 @@ describe('TaskRunner remediation (#1401)', () => {
             line.includes('completion could not be persisted'),
         ),
       ).toBe(true);
-      consoleError.mockRestore();
+
+      // The handler is never retried or reported completed. The row it left
+      // `running` belongs to this live worker, so liveness-based recovery
+      // would skip it; the runner's own sweep settles it, with its event.
+      expect((await settled).id).toBe(job.id);
       const persisted = await collection.get({ id: job.id ?? '' });
-      expect(persisted?.status).toBe('running');
+      expect(persisted?.status).toBe('failed');
       expect(persisted?.attempts).toBe(1);
+      expect(persisted?.lastError).toMatch(/completion could not be persisted/);
+      const events = await SmrtJobEventCollection.create({ db });
+      const page = await events.listTerminalOutcomes({ tenantId: null });
+      expect(
+        page.outcomes
+          .filter((entry) => entry.jobId === job.id)
+          .map((entry) => entry.status),
+      ).toEqual(['failed']);
+      await new Promise((r) => setTimeout(r, 100));
+      expect(failures).toHaveLength(1);
       expect(completed).toBe(0);
       expect(retried).toBe(0);
+    } finally {
+      await runner.stop();
+    }
+  });
+
+  it('does not report a committed failure as unpersisted when a listener throws', async () => {
+    const db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    const collection = await SmrtJobCollection.create({ db });
+    const job = await collection.create({
+      objectType: canonicalProbeType(),
+      method: 'alwaysThrows',
+      args: {},
+      maxAttempts: 1,
+    });
+    await job.save();
+
+    const runner = createTaskRunner({ concurrency: 1, pollInterval: 10 });
+    await runner.initialize(db);
+    runner.on('job:failed', () => {
+      throw new Error('listener exploded');
+    });
+    const runnerError = new Promise<Error>((resolve) => {
+      runner.once('runner:error', (error) => resolve(error as Error));
+    });
+    const errorLines = captureConsoleErrors();
+
+    await runner.start();
+    try {
+      expect((await runnerError).message).toBe('listener exploded');
+      // The failure and its event committed before the listener ran.
+      expect((await collection.get({ id: job.id ?? '' }))?.status).toBe(
+        'failed',
+      );
+      expect(
+        errorLines.some((line) => line.includes('could not be persisted')),
+      ).toBe(false);
     } finally {
       await runner.stop();
     }
