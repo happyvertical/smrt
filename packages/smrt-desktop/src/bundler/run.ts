@@ -90,7 +90,12 @@ import type {
   AcquiredNodeBinary,
   AcquireNodeBinaryOptions,
 } from './node-dist.js';
-import { pinnedVersions } from './node-pins.js';
+import {
+  isGpgVerified,
+  lookupPinProvenance,
+  type NodePinProvenance,
+  pinnedVersions,
+} from './node-pins.js';
 import { type BundlePlan, hostTriple } from './options.js';
 import {
   assertResolvesToItself,
@@ -179,6 +184,11 @@ export interface BundleSeams {
   ): Promise<string>;
   /** Required when `plan.measure` is set. Owns the clock and the process. */
   measure?(input: MeasureInput): Promise<BundleMeasurements>;
+  /**
+   * The provenance of a pinned Node release (default: the committed table).
+   * A test seam; production uses `lookupPinProvenance`.
+   */
+  nodePinProvenance?(version: string): NodePinProvenance;
   /** Called when a stage starts. A throw fails that stage (test seam). */
   onStage?(stage: BundleStage): void | Promise<void>;
   /** Keep the staging directory on failure (debugging only). */
@@ -441,6 +451,31 @@ export async function runBundle(
   if (plan.bridge === undefined) throw new BundleError('bridge_config_missing');
   const bridgeConfig = plan.bridge;
   const bridgeFile = plan.bridgeFile;
+
+  // The Node pin: its provenance is recorded in the report, a release or
+  // signing bundle (`requireVerifiedPins`) refuses one that was never
+  // verified against the release signature, and any other bundle warns. This
+  // runs before any work so a refusal costs nothing.
+  const nodeVersion =
+    plan.node.version ??
+    pinnedVersions().find((candidate) => candidate.startsWith('26.')) ??
+    pinnedVersions()[0];
+  if (nodeVersion === undefined) throw new BundleError('internal');
+  const nodePin: NodePinProvenance = (() => {
+    try {
+      return (seams.nodePinProvenance ?? lookupPinProvenance)(nodeVersion);
+    } catch (error) {
+      throw BundleError.from(error, 'node');
+    }
+  })();
+  if (!isGpgVerified(nodePin)) {
+    if (plan.requireVerifiedPins) {
+      throw new BundleError('node_pin_unverified', { stage: 'node' }, 'node');
+    }
+    warnings.push(
+      `WARNING: the Node ${nodeVersion} pin is NOT verified against the Node.js release signature (gpg). Do not release or sign this bundle; build it with --require-verified-pins to refuse unverified pins`,
+    );
+  }
 
   const parent = parentPath(plan.outDir, platform);
   if (parent === null) throw new BundleTreeError('invalid_option');
@@ -925,11 +960,7 @@ export async function runBundle(
 
     // -- 9. node -----------------------------------------------------------
     const nodeInfo = await stage('node', async () => {
-      const version =
-        plan.node.version ??
-        pinnedVersions().find((candidate) => candidate.startsWith('26.')) ??
-        pinnedVersions()[0];
-      if (version === undefined) throw new BundleError('internal');
+      const version = nodeVersion;
       await ensureDirectories(outRoot, ['binaries'], { fs, platform });
       const destination = at(
         binariesDir,
@@ -1206,6 +1237,15 @@ export async function runBundle(
           archiveSha256: nodeInfo.acquired.archiveSha256,
           binarySha256: nodeInfo.acquired.sha256,
           machine: spec.native.machine,
+          pin: {
+            verification: isGpgVerified(nodePin)
+              ? 'gpg-verified'
+              : 'unverified',
+            source: nodePin.source,
+            retrieved: nodePin.retrieved,
+            shasumsSha256: nodePin.shasumsSha256,
+            signerFingerprints: [...nodePin.signerFingerprints].sort(),
+          },
         },
         bridge: {
           file: BRIDGE_ENTRY,

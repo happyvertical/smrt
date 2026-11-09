@@ -18,6 +18,7 @@ import { BUNDLE_STAGES, BundleError } from './errors.js';
 import { machoThin } from './native/testing/native-fixtures.js';
 import { nodeTreeFs, type TreeFs } from './paths.js';
 import {
+  assertVerifiedNodePin,
   BUNDLE_FILES_FILENAME,
   BUNDLE_REPORT_FILENAME,
   parseBundleReport,
@@ -630,6 +631,90 @@ describe('Node acquisition', () => {
     expect(seen.offline).toBe(true);
     expect(seen.version).toBe('26.8.1');
     expect(item.calls[0]?.args).toContain('--offline');
+  });
+});
+
+describe('Node pin provenance', () => {
+  const verifiedPin = {
+    verification: 'gpg-verified' as const,
+    source: 'https://nodejs.org/dist/v26.8.1/SHASUMS256.txt',
+    retrieved: '2026-12-01T00:00:00Z',
+    shasumsSha256: 'c'.repeat(64),
+    signerFingerprints: ['B'.repeat(40), 'A'.repeat(40)],
+  };
+
+  it('records the provenance of the pin it used and warns loudly while that pin is unverified', async () => {
+    const item = fixture();
+    const result = await runBundle(await item.plan(), item.seams());
+    expect(result.report.node.pin).toEqual({
+      verification: 'unverified',
+      source: 'https://nodejs.org/dist/v26.8.1/SHASUMS256.txt',
+      retrieved: '2026-11-09T00:43:17Z',
+      shasumsSha256:
+        '4f1c377505ddc3a872821cd333b72d9743673a41c939508d877e8cd8d4379336',
+      signerFingerprints: [],
+    });
+    const warning = result.warnings.find((w) => w.startsWith('WARNING'));
+    expect(warning).toContain('NOT verified');
+    expect(warning).toContain('--require-verified-pins');
+    expect(
+      parseBundleReport(
+        readFileSync(join(item.outDir, BUNDLE_REPORT_FILENAME), 'utf8'),
+      ).node.pin.verification,
+    ).toBe('unverified');
+  });
+
+  it('refuses the release and signing path while the pin is unverified, before any work', async () => {
+    const item = fixture();
+    const error = await failure(
+      runBundle(await item.plan({ requireVerifiedPins: true }), item.seams()),
+    );
+    expect(error.code).toBe('node_pin_unverified');
+    expect(error.category).toBe('provenance');
+    expect(error.exitCode).toBe(4);
+    expect(error.origin).toBe('node');
+    expect(item.calls).toEqual([]);
+    assertNothingLeft(item);
+  });
+
+  it('refuses a pin that claims gpg verification without its evidence', async () => {
+    const item = fixture();
+    const error = await failure(
+      runBundle(await item.plan({ requireVerifiedPins: true }), {
+        ...item.seams(),
+        nodePinProvenance: () => ({ ...verifiedPin, signerFingerprints: [] }),
+      }),
+    );
+    expect(error.code).toBe('node_pin_unverified');
+    assertNothingLeft(item);
+  });
+
+  it('bundles on the release path with a verified pin and records signers and digest, sorted, with no warning', async () => {
+    const item = fixture();
+    const result = await runBundle(
+      await item.plan({ requireVerifiedPins: true }),
+      { ...item.seams(), nodePinProvenance: () => verifiedPin },
+    );
+    expect(result.report.node.pin).toEqual({
+      ...verifiedPin,
+      signerFingerprints: ['A'.repeat(40), 'B'.repeat(40)],
+    });
+    expect(result.warnings.some((w) => w.startsWith('WARNING'))).toBe(false);
+    assertVerifiedNodePin(
+      parseBundleReport(
+        readFileSync(join(item.outDir, BUNDLE_REPORT_FILENAME), 'utf8'),
+      ),
+    );
+  });
+
+  it('still refuses an unpinned version with the usage error', async () => {
+    const item = fixture();
+    const error = await failure(
+      runBundle(await item.plan({ nodeVersion: '26.0.0' }), item.seams()),
+    );
+    expect(error.code).toBe('unpinned_version');
+    expect(error.exitCode).toBe(2);
+    expect(item.calls).toEqual([]);
   });
 });
 

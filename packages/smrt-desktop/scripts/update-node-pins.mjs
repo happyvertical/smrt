@@ -1,49 +1,74 @@
 #!/usr/bin/env node
 // @ts-check
 /**
- * Maintainer script: record the SHA-256 pins for one Node.js release in
- * `src/bundler/node-pins.ts`.
+ * Maintainer script: record the SHA-256 pins, and their provenance, for one
+ * Node.js release in `src/bundler/node-pins.ts`.
  *
  * MAINTAINER-ONLY. It needs the network (or local copies of the signed files)
  * and `gpg`. It is NOT run by `npm test`, by CI, or by `smrt desktop bundle`;
  * only the pure parts exported below (`parseShasums`, `selectPins`,
- * `parseGpgStatus`, `renderPinsBlock`, `mergePinsSource`) are unit tested,
- * offline (`src/bundler/update-node-pins.test.ts`).
+ * `parseGpgStatus`, `renderPinsBlock`, `mergePinsSource`, `download` with an
+ * injected fetch) are unit tested, offline (`src/bundler/update-node-pins.test.ts`).
  *
  * Why a script and committed pins (no GPG at bundle time): bundling must work
  * on any build host, including Windows, without a `gpg` binary, and an
  * unsigned `SHASUMS256.txt` fetched at bundle time is no provenance at all.
  * The signature is checked here, once, by a maintainer; the resulting hashes
- * are committed, and the pull request diff shows exactly what changed. Review
- * of that diff is the trust anchor.
+ * and the provenance record (verification status, signer fingerprints, the
+ * SHA-256 of the signed `SHASUMS256.txt`, the retrieval time) are committed,
+ * and the pull request diff shows exactly what changed. Review of that diff is
+ * the trust anchor. A bundle built with `--require-verified-pins` (the release
+ * and signing path) refuses any pin whose record is not `gpg-verified`.
  *
- * Procedure (what a maintainer runs):
+ * STATUS: the committed 26.8.1 pin is `unverified`. Verifying it needs `gpg`,
+ * which the machine that recorded it did not have. Run the commands below on
+ * a machine with `gpg` and commit the diff.
  *
- *   1. Build a GnuPG home that contains ONLY the Node.js release keys, taken
- *      from https://github.com/nodejs/release-keys at a commit you have
- *      reviewed, and write the expected PRIMARY key fingerprints (40 hex
- *      chars, one per line, `#` comments allowed) to a file. Example:
+ * Commands (what a maintainer runs; replace 26.8.1 with the version):
+ *
+ *   1. Get the public Node.js release keys and review them. The keys are
+ *      published at https://github.com/nodejs/release-keys ; pin the checkout
+ *      to a commit you have reviewed against the "Release keys" list in the
+ *      README of https://github.com/nodejs/node :
+ *        git clone https://github.com/nodejs/release-keys
+ *        git -C release-keys log -1            # note the commit in the PR text
  *        export GNUPGHOME="$(mktemp -d)"; chmod 700 "$GNUPGHOME"
- *        gpg --import release-keys/*.asc        # from the reviewed checkout
- *        gpg --list-keys --with-colons | awk -F: '$1=="fpr"{print $10}' ...
- *   2. Run:
- *        node packages/smrt-desktop/scripts/update-node-pins.mjs 26.8.1 \
- *          --gnupghome "$GNUPGHOME" --fingerprints release-key-fingerprints.txt
- *      It downloads (HTTPS, redirects refused, size-capped)
+ *        gpg --import release-keys/keys/*.asc  # layout: check the checkout
+ *   2. Write the expected PRIMARY key fingerprints (40 hex characters, one per
+ *      line, `#` comments allowed) of the releasers, from that GnuPG home:
+ *        gpg --with-colons --list-keys \
+ *          | awk -F: '$1=="pub"{p=1;next} p&&$1=="fpr"{print $10;p=0}' \
+ *          > release-key-fingerprints.txt
+ *      Review the file against the Node.js README list; the signature below
+ *      only counts when its signer is in this file.
+ *   3. Run the script. It downloads (HTTPS, redirects refused, size capped,
+ *      30 s timeout)
  *        https://nodejs.org/dist/v26.8.1/SHASUMS256.txt
  *        https://nodejs.org/dist/v26.8.1/SHASUMS256.txt.sig
  *      or reads local copies with `--shasums <file> --sig <file>`, runs
- *      `gpg --homedir <dir> --status-fd=1 --verify <sig> <shasums>`, requires a
- *      VALIDSIG whose primary-key fingerprint is in your fingerprints file,
- *      extracts the six lines this repo needs (macOS/Linux tarballs and the
- *      Windows `node.exe` files, as listed by `requiredDistFiles`), and
- *      rewrites ONLY the generated block of `src/bundler/node-pins.ts`
- *      (existing versions are kept). Add `--dry-run` to print the block.
- *   3. Review the diff and commit it. A pin is never edited by hand.
+ *        gpg --homedir "$GNUPGHOME" --status-fd=1 --verify \
+ *            SHASUMS256.txt.sig SHASUMS256.txt
+ *      requires a VALIDSIG whose primary-key fingerprint is in the file and
+ *      no BADSIG/ERRSIG/EXPSIG/EXPKEYSIG/REVKEYSIG, extracts the six lines
+ *      this repo needs (the macOS/Linux tarballs and the Windows `node.exe`
+ *      files, as listed by `requiredDistFiles`) and rewrites ONLY the
+ *      generated block of `src/bundler/node-pins.ts`, with
+ *      `verification: 'gpg-verified'`, the signer fingerprints, the digest of
+ *      `SHASUMS256.txt` and the retrieval time (existing versions are kept):
+ *        node packages/smrt-desktop/scripts/update-node-pins.mjs 26.8.1 \
+ *          --gnupghome "$GNUPGHOME" --fingerprints release-key-fingerprints.txt
+ *      Add `--dry-run` to print the block instead of writing it.
+ *   4. Cross-check the clear-signed copy by hand (optional, same keys):
+ *        curl -fsSO https://nodejs.org/dist/v26.8.1/SHASUMS256.txt.asc
+ *        gpg --homedir "$GNUPGHOME" --verify SHASUMS256.txt.asc
+ *   5. Run `pnpm exec biome format --write packages/smrt-desktop/src/bundler/node-pins.ts`
+ *      (it should change nothing), review the diff and commit it, quoting the
+ *      release-keys commit. A pin is never edited by hand.
  *
- * `--unverified` skips the signature check and stamps the entry
- * "signature: NOT VERIFIED" so the gap is visible in review. Use it only to
- * stage a pin that a second maintainer will re-run with the real check.
+ * `--unverified` skips the signature check and records
+ * `verification: 'unverified'` (no fingerprints) so the gap is visible in
+ * review and a release bundle refuses the pin. Use it only to stage a pin
+ * that a maintainer with `gpg` will re-run with the real check.
  *
  * Node's per-version LICENSE (design section 2.5, Windows has no archive to
  * take it from) is not handled here; see the bundler design notes.
@@ -75,10 +100,15 @@ const VERSION = /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/;
 const SHA256 = /^[0-9a-f]{64}$/;
 export const DIST_BASE = 'https://nodejs.org/dist';
 const MAX_FETCH_BYTES = 1024 * 1024;
+/** Overall time one download (headers and body) may take. */
+export const FETCH_TIMEOUT_MS = 30_000;
 
 export const BEGIN_MARKER =
   '// BEGIN GENERATED PINS (scripts/update-node-pins.mjs)';
 export const END_MARKER = '// END GENERATED PINS';
+const PINS_OPEN = 'const NODE_PINS_DATA: NodePinTable = {';
+const PROVENANCE_OPEN =
+  'const NODE_PIN_PROVENANCE_DATA: NodePinProvenanceTable = {';
 
 /**
  * The files in SHASUMS256.txt this repo pins: one per supported target
@@ -218,22 +248,83 @@ export function isTrustedSignature(parsed, trusted) {
 }
 
 /**
- * @typedef {object} PinRecord
- * @property {string} version
- * @property {string[]} comment   comment lines (without the leading `//`)
- * @property {Array<[string, string]>} pins
+ * @typedef {object} Provenance
+ * @property {'gpg-verified' | 'unverified'} verification
+ * @property {string} source          the `SHASUMS256.txt` URL
+ * @property {string} retrieved       `YYYY-MM-DDTHH:MM:SSZ`
+ * @property {string} shasumsSha256   digest of the exact file the pins came from
+ * @property {string[]} signerFingerprints  upper-case primary fingerprints
  */
 
 /**
- * Render the generated block (markers included).
+ * @typedef {object} PinRecord
+ * @property {string} version
+ * @property {Array<[string, string]>} pins
+ * @property {Provenance} provenance
+ */
+
+const SOURCE_URL =
+  /^https:\/\/nodejs\.org\/dist\/v\d+\.\d+\.\d+\/SHASUMS256\.txt$/;
+const RETRIEVED = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
+const FINGERPRINT = /^[0-9A-F]{40}$/;
+
+/**
+ * Why a provenance record cannot stand for what it claims (fixed labels;
+ * empty when it is sound). Mirrors `pinProvenanceProblems` in `node-pins.ts`;
+ * a test keeps the two in step.
+ * @param {unknown} value
+ * @returns {string[]}
+ */
+export function provenanceProblems(value) {
+  if (value === null || typeof value !== 'object') return ['not an object'];
+  const record = /** @type {Record<string, unknown>} */ (value);
+  /** @type {string[]} */
+  const problems = [];
+  const verification = record.verification;
+  if (verification !== 'gpg-verified' && verification !== 'unverified') {
+    problems.push('verification');
+  }
+  if (typeof record.source !== 'string' || !SOURCE_URL.test(record.source)) {
+    problems.push('source');
+  }
+  if (
+    typeof record.retrieved !== 'string' ||
+    !RETRIEVED.test(record.retrieved)
+  ) {
+    problems.push('retrieved');
+  }
+  if (
+    typeof record.shasumsSha256 !== 'string' ||
+    !SHA256.test(record.shasumsSha256)
+  ) {
+    problems.push('shasumsSha256');
+  }
+  const fingerprints = record.signerFingerprints;
+  const fingerprintsOk =
+    Array.isArray(fingerprints) &&
+    fingerprints.every(
+      (fpr) => typeof fpr === 'string' && FINGERPRINT.test(fpr),
+    ) &&
+    new Set(fingerprints).size === fingerprints.length;
+  if (!fingerprintsOk) problems.push('signerFingerprints');
+  else if (verification === 'gpg-verified' && fingerprints.length === 0) {
+    problems.push('signerFingerprints');
+  } else if (verification === 'unverified' && fingerprints.length > 0) {
+    problems.push('signerFingerprints');
+  }
+  return problems;
+}
+
+/**
+ * Render the generated block (markers included): the pin table, then the
+ * provenance table, in the exact form the formatter leaves alone.
  * @param {PinRecord[]} records  rendered in the order given
  * @returns {string}
  */
 export function renderPinsBlock(records) {
-  const lines = [BEGIN_MARKER, 'const NODE_PINS_DATA: NodePinTable = {'];
+  const lines = [BEGIN_MARKER, PINS_OPEN];
   for (const record of records) {
     assertVersion(record.version);
-    for (const text of record.comment) lines.push(`  // ${text}`.trimEnd());
     lines.push(`  '${record.version}': {`);
     for (const [file, hash] of record.pins) {
       if (!/^[A-Za-z0-9._/-]+$/.test(file) || !SHA256.test(hash)) {
@@ -244,13 +335,40 @@ export function renderPinsBlock(records) {
     }
     lines.push('  },');
   }
+  lines.push('};', PROVENANCE_OPEN);
+  for (const record of records) {
+    if (provenanceProblems(record.provenance).length > 0) {
+      throw new Error('refusing to render a malformed provenance record');
+    }
+    const { provenance } = record;
+    lines.push(
+      `  '${record.version}': {`,
+      `    verification: '${provenance.verification}',`,
+      `    source: '${provenance.source}',`,
+      `    retrieved: '${provenance.retrieved}',`,
+      '    shasumsSha256:',
+      `      '${provenance.shasumsSha256}',`,
+    );
+    const fingerprints = provenance.signerFingerprints;
+    if (fingerprints.length === 0) lines.push('    signerFingerprints: [],');
+    else if (fingerprints.length === 1) {
+      // One 40-character entry fits the formatter's line width.
+      lines.push(`    signerFingerprints: ['${fingerprints[0]}'],`);
+    } else {
+      lines.push('    signerFingerprints: [');
+      for (const fpr of fingerprints) lines.push(`      '${fpr}',`);
+      lines.push('    ],');
+    }
+    lines.push('  },');
+  }
   lines.push('};', END_MARKER);
   return lines.join('\n');
 }
 
 /**
  * Read the records out of the generated block of an existing source file, so
- * older versions survive a regeneration.
+ * older versions survive a regeneration. Strict: anything that is not exactly
+ * the generated form throws.
  * @param {string} source
  * @returns {PinRecord[]}
  */
@@ -260,30 +378,100 @@ export function parsePinsBlock(source) {
   if (start === -1 || end === -1 || end < start) {
     throw new Error('node-pins.ts has no generated block');
   }
-  const body = source.slice(start, end);
-  /** @type {PinRecord[]} */
-  const records = [];
-  const re =
-    /((?: {2}\/\/[^\n]*\n)*) {2}'(\d+\.\d+\.\d+)': \{\n((?: {4}'[^'\n]+':\n {6}'[0-9a-f]{64}',\n)+) {2}\},\n/g;
-  let consumed = 0;
-  for (let m = re.exec(body); m !== null; m = re.exec(body)) {
-    const comment = (m[1] ?? '')
-      .split('\n')
-      .filter((l) => l !== '')
-      .map((l) => l.replace(/^ {2}\/\/ ?/, ''));
+  const lines = source.slice(start, end).split('\n');
+  let at = 0;
+  const bad = () => new Error('node-pins.ts generated block is not in the expected form');
+  /** @param {string} expected */
+  const expect = (expected) => {
+    if (lines[at] !== expected) throw bad();
+    at += 1;
+  };
+  /** @param {RegExp} pattern @returns {RegExpExecArray} */
+  const take = (pattern) => {
+    const match = pattern.exec(lines[at] ?? '');
+    if (match === null) throw bad();
+    at += 1;
+    return match;
+  };
+  const peekIs = (/** @type {string} */ line) => lines[at] === line;
+
+  expect(BEGIN_MARKER);
+  expect(PINS_OPEN);
+  /** @type {Map<string, Array<[string, string]>>} */
+  const pinsByVersion = new Map();
+  while (!peekIs('};')) {
+    const version = /** @type {string} */ (
+      take(/^ {2}'(\d+\.\d+\.\d+)': \{$/)[1]
+    );
+    if (pinsByVersion.has(version)) throw bad();
     /** @type {Array<[string, string]>} */
     const pins = [];
-    const pinRe = / {4}'([^'\n]+)':\n {6}'([0-9a-f]{64})',\n/g;
-    for (let p = pinRe.exec(m[3] ?? ''); p !== null; p = pinRe.exec(m[3] ?? '')) {
-      pins.push([/** @type {string} */ (p[1]), /** @type {string} */ (p[2])]);
+    while (!peekIs('  },')) {
+      const file = /** @type {string} */ (take(/^ {4}'([^'\n]+)':$/)[1]);
+      const hash = /** @type {string} */ (take(/^ {6}'([0-9a-f]{64})',$/)[1]);
+      pins.push([file, hash]);
     }
-    records.push({ version: /** @type {string} */ (m[2]), comment, pins });
-    consumed += m[0].length;
+    if (pins.length === 0) throw bad();
+    expect('  },');
+    pinsByVersion.set(version, pins);
   }
-  // Everything between the two lines of the markers must have been understood.
-  const framing = `${BEGIN_MARKER}\nconst NODE_PINS_DATA: NodePinTable = {\n`;
-  if (!body.startsWith(framing) || body.length - framing.length - '};\n'.length !== consumed) {
-    throw new Error('node-pins.ts generated block is not in the expected form');
+  expect('};');
+  expect(PROVENANCE_OPEN);
+  /** @type {PinRecord[]} */
+  const records = [];
+  while (!peekIs('};')) {
+    const version = /** @type {string} */ (
+      take(/^ {2}'(\d+\.\d+\.\d+)': \{$/)[1]
+    );
+    const verification = /** @type {string} */ (
+      take(/^ {4}verification: '([a-z-]+)',$/)[1]
+    );
+    const sourceUrl = /** @type {string} */ (take(/^ {4}source: '([^'\n]+)',$/)[1]);
+    const retrieved = /** @type {string} */ (
+      take(/^ {4}retrieved: '([^'\n]+)',$/)[1]
+    );
+    expect('    shasumsSha256:');
+    const shasumsSha256 = /** @type {string} */ (
+      take(/^ {6}'([0-9a-f]{64})',$/)[1]
+    );
+    /** @type {string[]} */
+    const signerFingerprints = [];
+    const single = /^ {4}signerFingerprints: \[(?:'([0-9A-F]{40})')?\],$/.exec(
+      lines[at] ?? '',
+    );
+    if (single !== null) {
+      at += 1;
+      if (single[1] !== undefined) signerFingerprints.push(single[1]);
+    } else {
+      expect('    signerFingerprints: [');
+      while (!peekIs('    ],')) {
+        signerFingerprints.push(
+          /** @type {string} */ (take(/^ {6}'([0-9A-F]{40})',$/)[1]),
+        );
+      }
+      expect('    ],');
+      if (signerFingerprints.length < 2) throw bad();
+    }
+    expect('  },');
+    const pins = pinsByVersion.get(version);
+    if (pins === undefined) throw bad();
+    pinsByVersion.delete(version);
+    const provenance = {
+      verification: /** @type {'gpg-verified' | 'unverified'} */ (
+        verification
+      ),
+      source: sourceUrl,
+      retrieved,
+      shasumsSha256,
+      signerFingerprints,
+    };
+    if (provenanceProblems(provenance).length > 0) throw bad();
+    records.push({ version, pins, provenance });
+  }
+  expect('};');
+  // Every version must have both halves, and only the closing blank remains.
+  if (pinsByVersion.size > 0 || at !== lines.length - 1 || lines[at] !== '') {
+    throw bad();
   }
   return records;
 }
@@ -318,44 +506,56 @@ export function mergePinsSource(source, record) {
 }
 
 /**
- * The provenance comment for a freshly generated record.
+ * The provenance record for a freshly generated entry. A verified record
+ * carries the signer fingerprints; an unverified one never does.
  * @param {{ version: string; shasumsSha256: string; retrieved: string;
- *           source: string; signature: string }} info
- * @returns {string[]}
+ *           signerFingerprints: string[] }} info
+ * @returns {Provenance}
  */
-export function provenanceComment(info) {
-  return [
-    info.version,
-    `  source: ${info.source}`,
-    `  retrieved: ${info.retrieved}`,
-    `  SHASUMS256.txt sha256: ${info.shasumsSha256}`,
-    `  signature: ${info.signature}`,
-  ];
+export function buildProvenance(info) {
+  assertVersion(info.version);
+  const verified = info.signerFingerprints.length > 0;
+  return {
+    verification: verified ? 'gpg-verified' : 'unverified',
+    source: `${DIST_BASE}/v${info.version}/SHASUMS256.txt`,
+    retrieved: info.retrieved,
+    shasumsSha256: info.shasumsSha256,
+    signerFingerprints: [...new Set(info.signerFingerprints)].sort(),
+  };
 }
 
 /* ------------------------------------------------------------------ */
-/* Maintainer-only I/O below. Never imported by tests beyond this line. */
+/* Maintainer-only I/O below.                                           */
 /* ------------------------------------------------------------------ */
 
 /**
- * HTTPS GET with redirects refused and a size cap.
+ * HTTPS GET with redirects refused, a size cap and an overall timeout (the
+ * connection and the whole body). `fetchImpl` is a test seam.
  * @param {string} url
+ * @param {{ fetchImpl?: typeof fetch; timeoutMs?: number }} [options]
  * @returns {Promise<Buffer>}
  */
-async function download(url) {
+export async function download(url, options = {}) {
   if (!url.startsWith('https://')) throw new Error('refusing a non-https URL');
-  const response = await fetch(url, { redirect: 'error' });
-  if (response.status !== 200 || response.body === null) {
-    throw new Error(`download failed with HTTP ${response.status}`);
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const signal = AbortSignal.timeout(options.timeoutMs ?? FETCH_TIMEOUT_MS);
+  try {
+    const response = await fetchImpl(url, { redirect: 'error', signal });
+    if (response.status !== 200 || response.body === null) {
+      throw new Error(`download failed with HTTP ${response.status}`);
+    }
+    const chunks = [];
+    let total = 0;
+    for await (const chunk of response.body) {
+      total += chunk.length;
+      if (total > MAX_FETCH_BYTES) throw new Error('download too large');
+      chunks.push(Buffer.from(chunk));
+    }
+    return Buffer.concat(chunks);
+  } catch (error) {
+    if (signal.aborted) throw new Error('download timed out');
+    throw error;
   }
-  const chunks = [];
-  let total = 0;
-  for await (const chunk of response.body) {
-    total += chunk.length;
-    if (total > MAX_FETCH_BYTES) throw new Error('download too large');
-    chunks.push(Buffer.from(chunk));
-  }
-  return Buffer.concat(chunks);
 }
 
 /**
@@ -364,7 +564,9 @@ async function download(url) {
  */
 export function parseArgs(argv) {
   const [version, ...rest] = argv;
-  if (!version) throw new Error('usage: update-node-pins.mjs <version> [options]');
+  if (!version) {
+    throw new Error('usage: update-node-pins.mjs <version> [options]');
+  }
   assertVersion(version);
   /** @type {Map<string, string | true>} */
   const options = new Map();
@@ -391,6 +593,27 @@ export function parseArgs(argv) {
   return { version, options };
 }
 
+/** @param {string} home @param {string} sigFile @param {string} shasumsFile */
+function runGpgVerify(home, sigFile, shasumsFile) {
+  try {
+    execFileSync('gpg', ['--version'], { stdio: 'ignore' });
+  } catch {
+    throw new Error(
+      'gpg is not installed; run this on a machine with gpg (or use --unverified, which a release bundle refuses)',
+    );
+  }
+  try {
+    return execFileSync(
+      'gpg',
+      ['--homedir', home, '--status-fd=1', '--verify', sigFile, shasumsFile],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] },
+    );
+  } catch (error) {
+    // gpg exits non-zero for a bad signature but still writes status lines.
+    return String(/** @type {{ stdout?: unknown }} */ (error).stdout ?? '');
+  }
+}
+
 async function main() {
   const { version, options } = parseArgs(process.argv.slice(2));
   const shasumsPath = options.get('--shasums');
@@ -402,12 +625,15 @@ async function main() {
       : await download(`${base}/SHASUMS256.txt`);
   const unverified = options.get('--unverified') === true;
 
-  let signature = 'NOT VERIFIED (--unverified)';
+  /** @type {string[]} */
+  let signerFingerprints = [];
   if (!unverified) {
     const home = options.get('--gnupghome');
     const fingerprintsPath = options.get('--fingerprints');
     if (typeof home !== 'string' || typeof fingerprintsPath !== 'string') {
-      throw new Error('--gnupghome and --fingerprints are required (or --unverified)');
+      throw new Error(
+        '--gnupghome and --fingerprints are required (or --unverified)',
+      );
     }
     const trusted = parseFingerprints(readFileSync(fingerprintsPath, 'utf8'));
     if (trusted.length === 0) throw new Error('fingerprints file is empty');
@@ -421,22 +647,11 @@ async function main() {
       const sigFile = join(work, 'SHASUMS256.txt.sig');
       writeFileSync(shasumsFile, shasums);
       writeFileSync(sigFile, sig);
-      let status = '';
-      try {
-        status = execFileSync(
-          'gpg',
-          ['--homedir', home, '--status-fd=1', '--verify', sigFile, shasumsFile],
-          { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] },
-        );
-      } catch (error) {
-        // gpg exits non-zero for a bad signature but still writes status lines.
-        status = String(/** @type {{ stdout?: unknown }} */ (error).stdout ?? '');
-      }
-      const parsed = parseGpgStatus(status);
+      const parsed = parseGpgStatus(runGpgVerify(home, sigFile, shasumsFile));
       if (!isTrustedSignature(parsed, trusted)) {
         throw new Error('signature check failed; refusing to record pins');
       }
-      signature = `verified with gpg (primary key ${parsed.validPrimaryFingerprints[0]})`;
+      signerFingerprints = parsed.validPrimaryFingerprints;
     } finally {
       rmSync(work, { recursive: true, force: true });
     }
@@ -445,14 +660,13 @@ async function main() {
   const pins = selectPins(version, parseShasums(shasums.toString('utf8')));
   const record = {
     version,
-    comment: provenanceComment({
+    pins,
+    provenance: buildProvenance({
       version,
-      source: typeof shasumsPath === 'string' ? `local copy of ${base}/SHASUMS256.txt` : `${base}/SHASUMS256.txt`,
       retrieved: new Date().toISOString().replace(/\.\d{3}Z$/, 'Z'),
       shasumsSha256: createHash('sha256').update(shasums).digest('hex'),
-      signature,
+      signerFingerprints,
     }),
-    pins,
   };
   const out = resolve(
     typeof options.get('--out') === 'string'
@@ -467,7 +681,9 @@ async function main() {
   const temp = `${out}.tmp-${process.pid}`;
   writeFileSync(temp, next, { flag: 'wx' });
   renameSync(temp, out);
-  process.stdout.write(`recorded ${pins.length} pins for Node ${version} in ${out}\n`);
+  process.stdout.write(
+    `recorded ${pins.length} pins for Node ${version} (${record.provenance.verification}) in ${out}\n`,
+  );
   process.stdout.write('review the diff, then run biome format on the file\n');
 }
 

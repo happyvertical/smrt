@@ -141,6 +141,7 @@ posixOnly('createBundlePlan', () => {
       force: false,
       measure: false,
       secretContentPolicy: 'fail',
+      requireVerifiedPins: false,
       node: {},
     });
     expect(result.features.enabled).toEqual(['ai-providers']);
@@ -262,6 +263,7 @@ posixOnly('createBundlePlan', () => {
       ['features', { features: ['toolchain'] }],
       ['features', { features: ['nope'] }],
       ['secretContentPolicy', { secretContentPolicy: 'off' as 'fail' }],
+      ['requireVerifiedPins', { requireVerifiedPins: 'yes' as never }],
       ['nodeArchive', { nodeArchive: '' }],
       ['nodeCache', { nodeCache: 'a\0b' }],
     ])('rejects an invalid %s', async (name, input) => {

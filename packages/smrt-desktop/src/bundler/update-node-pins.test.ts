@@ -6,13 +6,19 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 // @ts-expect-error plain ESM script with JSDoc types; only its pure exports run.
 import * as script from '../../scripts/update-node-pins.mjs';
-import { NODE_PINS } from './node-pins.js';
+import {
+  NODE_PIN_PROVENANCE,
+  NODE_PINS,
+  pinProvenanceProblems,
+} from './node-pins.js';
 import { nodeDistFile, TARGETS } from './targets.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const pinsSource = readFileSync(join(here, 'node-pins.ts'), 'utf8');
 
 const H = (c: string) => c.repeat(64);
+const FPR_A = 'A'.repeat(40);
+const FPR_B = 'B'.repeat(40);
 
 function shasumsFor(version: string, extra = ''): string {
   const lines = script
@@ -131,14 +137,13 @@ describe('update-node-pins (offline parts)', () => {
     );
     const record = {
       version: '26.9.0',
-      comment: script.provenanceComment({
+      pins,
+      provenance: script.buildProvenance({
         version: '26.9.0',
-        source: 'https://nodejs.org/dist/v26.9.0/SHASUMS256.txt',
         retrieved: '2026-12-01T00:00:00Z',
         shasumsSha256: H('9'),
-        signature: 'verified with gpg (primary key X)',
+        signerFingerprints: [FPR_A],
       }),
-      pins,
     };
     const merged = script.mergePinsSource(pinsSource, record);
     const versions = script
@@ -160,7 +165,45 @@ describe('update-node-pins (offline parts)', () => {
       pins: pins.slice().reverse(),
     });
     expect(script.parsePinsBlock(reRun)).toHaveLength(2);
-    expect(merged).toContain('signature: verified with gpg');
+    expect(merged).toContain("verification: 'gpg-verified'");
+    expect(merged).toContain(`signerFingerprints: ['${FPR_A}']`);
+    // The 26.8.1 record is untouched and still unverified.
+    const kept = script
+      .parsePinsBlock(merged)
+      .find((r: { version: string }) => r.version === '26.8.1');
+    expect(kept.provenance.verification).toBe('unverified');
+  });
+
+  it('round-trips verified records with one, two and no signer fingerprints', () => {
+    const pins = script.selectPins(
+      '26.9.0',
+      script.parseShasums(shasumsFor('26.9.0')),
+    );
+    const make = (version: string, signerFingerprints: string[]) => ({
+      version,
+      pins: script.selectPins(
+        version,
+        script.parseShasums(shasumsFor(version)),
+      ),
+      provenance: script.buildProvenance({
+        version,
+        retrieved: '2026-12-01T00:00:00Z',
+        shasumsSha256: H('9'),
+        signerFingerprints,
+      }),
+    });
+    void pins;
+    const records = [
+      make('26.11.0', [FPR_A, FPR_B]),
+      make('26.10.0', [FPR_A]),
+      make('26.9.0', []),
+    ];
+    const block = script.renderPinsBlock(records);
+    const parsed = script.parsePinsBlock(`${block}\n`);
+    expect(parsed).toEqual(records);
+    expect(parsed[2].provenance.verification).toBe('unverified');
+    expect(parsed[1].provenance.verification).toBe('gpg-verified');
+    expect(block).toContain(`      '${FPR_A}',\n      '${FPR_B}',`);
   });
 
   it('refuses a source without markers or with a hand-edited block', () => {
@@ -173,6 +216,112 @@ describe('update-node-pins (offline parts)', () => {
     expect(() =>
       script.parsePinsBlock(pinsSource.replace('6e577fd0d9db', '6E577FD0D9DB')),
     ).toThrow();
+    // Flipping the status by hand, without signer fingerprints, is refused.
+    expect(() =>
+      script.parsePinsBlock(
+        pinsSource.replace(
+          "verification: 'unverified'",
+          "verification: 'gpg-verified'",
+        ),
+      ),
+    ).toThrow();
+    // A provenance record without its pins (or the reverse) is refused.
+    expect(() =>
+      script.parsePinsBlock(
+        pinsSource.replace(
+          "'26.8.1': {\n    verification",
+          "'26.8.2': {\n    verification",
+        ),
+      ),
+    ).toThrow();
+  });
+
+  it('agrees with the runtime check on what makes a record sound', () => {
+    const base = {
+      verification: 'gpg-verified',
+      source: 'https://nodejs.org/dist/v26.8.1/SHASUMS256.txt',
+      retrieved: '2026-12-01T00:00:00Z',
+      shasumsSha256: H('9'),
+      signerFingerprints: [FPR_A],
+    };
+    const samples: unknown[] = [
+      base,
+      { ...base, verification: 'unverified' },
+      { ...base, verification: 'unverified', signerFingerprints: [] },
+      { ...base, signerFingerprints: [] },
+      { ...base, signerFingerprints: [FPR_A, FPR_A] },
+      { ...base, signerFingerprints: ['a'.repeat(40)] },
+      { ...base, shasumsSha256: 'abc' },
+      { ...base, source: 'http://nodejs.org/dist/v26.8.1/SHASUMS256.txt' },
+      { ...base, source: 'https://example.com/SHASUMS256.txt' },
+      { ...base, retrieved: 'yesterday' },
+      { ...base, verification: 'verified' },
+      null,
+      'x',
+    ];
+    for (const sample of samples) {
+      expect(script.provenanceProblems(sample)).toEqual(
+        pinProvenanceProblems(sample),
+      );
+    }
+    expect(script.provenanceProblems(base)).toEqual([]);
+    expect(script.provenanceProblems(samples[3])).toEqual([
+      'signerFingerprints',
+    ]);
+  });
+
+  it('refuses to render a record that claims verification without signers', () => {
+    const pins = script.selectPins(
+      '1.2.3',
+      script.parseShasums(shasumsFor('1.2.3')),
+    );
+    const provenance = {
+      verification: 'gpg-verified',
+      source: 'https://nodejs.org/dist/v1.2.3/SHASUMS256.txt',
+      retrieved: '2026-12-01T00:00:00Z',
+      shasumsSha256: H('9'),
+      signerFingerprints: [],
+    };
+    expect(() =>
+      script.renderPinsBlock([{ version: '1.2.3', pins, provenance }]),
+    ).toThrow(/malformed provenance/);
+  });
+
+  it('keeps the committed provenance in step with the committed pins', () => {
+    const records = script.parsePinsBlock(pinsSource);
+    expect(
+      Object.fromEntries(
+        records.map((r: { version: string; provenance: unknown }) => [
+          r.version,
+          r.provenance,
+        ]),
+      ),
+    ).toEqual(JSON.parse(JSON.stringify(NODE_PIN_PROVENANCE)));
+  });
+
+  it('gives every download an overall timeout and refuses redirects', async () => {
+    let seen: { redirect?: string; signal?: AbortSignal } = {};
+    const hanging = ((_url: string, init: RequestInit) => {
+      seen = init as typeof seen;
+      return new Promise((_resolve, reject) => {
+        init.signal?.addEventListener('abort', () =>
+          reject(new Error('aborted')),
+        );
+      });
+    }) as unknown as typeof fetch;
+    await expect(
+      script.download('https://nodejs.org/dist/x', {
+        fetchImpl: hanging,
+        timeoutMs: 20,
+      }),
+    ).rejects.toThrow('download timed out');
+    expect(seen.redirect).toBe('error');
+    expect(seen.signal).toBeInstanceOf(AbortSignal);
+    expect(script.FETCH_TIMEOUT_MS).toBeGreaterThan(0);
+    expect(script.FETCH_TIMEOUT_MS).toBeLessThanOrEqual(60_000);
+    await expect(script.download('http://nodejs.org/x')).rejects.toThrow(
+      /non-https/,
+    );
   });
 
   it('refuses to render a malformed pin', () => {
@@ -230,14 +379,18 @@ describe('update-node-pins (offline parts)', () => {
         ],
         { encoding: 'utf8' },
       );
-      expect(stdout).toContain('recorded 6 pins for Node 26.9.0');
+      expect(stdout).toContain('recorded 6 pins for Node 26.9.0 (unverified)');
       const written = readFileSync(out, 'utf8');
       const records = script.parsePinsBlock(written);
       expect(records.map((r: { version: string }) => r.version)).toEqual([
         '26.9.0',
         '26.8.1',
       ]);
-      expect(written).toContain('signature: NOT VERIFIED (--unverified)');
+      const fresh = records[0] as {
+        provenance: { verification: string; signerFingerprints: string[] };
+      };
+      expect(fresh.provenance.verification).toBe('unverified');
+      expect(fresh.provenance.signerFingerprints).toEqual([]);
       // Without --unverified and without gpg inputs the script refuses.
       expect(() =>
         execFileSync(

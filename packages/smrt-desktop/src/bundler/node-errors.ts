@@ -35,6 +35,8 @@ const NODE_DIST_ERROR_MESSAGES = {
     'The Node distribution file does not match its committed SHA-256 pin',
   cache_tampered:
     'A cached Node distribution file does not match its committed SHA-256 pin and was removed',
+  node_pin_unverified:
+    'The committed Node pin is not verified against the Node.js release signature (gpg); a release or signing bundle needs a verified pin',
   // verification (archive content)
   archive_invalid: 'The Node archive is not a valid gzip-compressed tar file',
   archive_truncated: 'The Node archive ends before the expected content',
@@ -77,6 +79,7 @@ const CATEGORY: Record<NodeDistErrorCode, NodeDistErrorCategory> = {
   download_too_large: 'provenance',
   checksum_mismatch: 'provenance',
   cache_tampered: 'provenance',
+  node_pin_unverified: 'provenance',
   archive_invalid: 'verification',
   archive_truncated: 'verification',
   archive_too_large: 'verification',

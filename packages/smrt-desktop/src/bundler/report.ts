@@ -58,6 +58,14 @@ export interface ReportPackage {
   readonly path: string;
 }
 
+export interface ReportNodePin {
+  readonly verification: 'gpg-verified' | 'unverified';
+  readonly source: string;
+  readonly retrieved: string;
+  readonly shasumsSha256: string;
+  readonly signerFingerprints: readonly string[];
+}
+
 export interface ReportNative {
   readonly path: string;
   readonly format: 'macho' | 'macho-fat' | 'elf' | 'pe';
@@ -103,6 +111,14 @@ export interface BundleReportV1 {
     readonly archiveSha256: string;
     readonly binarySha256: string;
     readonly machine: string;
+    /**
+     * How the committed pin of this release was checked: `gpg-verified` only
+     * when a maintainer verified `SHASUMS256.txt.sig` with the Node.js release
+     * keys (signer fingerprints, digest of the signed file and retrieval time
+     * recorded); `unverified` means the hashes were copied over TLS only and
+     * the bundle must not be released or signed.
+     */
+    readonly pin: ReportNodePin;
   };
   readonly bridge: {
     readonly file: string;
@@ -211,6 +227,20 @@ const relPath = prim(
     !v.includes('\0') &&
     v.split('/').every((s) => s.length > 0 && s !== '.' && s !== '..'),
 );
+
+/** `base` plus a cross-field check on the whole object. */
+function refine(
+  base: Node,
+  accept: (value: Record<string, unknown>) => boolean,
+): Node {
+  return {
+    check(value, path) {
+      base.check(value, path);
+      if (!accept(value as Record<string, unknown>)) fail(path);
+    },
+    order: (value) => base.order(value),
+  };
+}
 
 type Field = readonly [key: string, node: Node, optional?: boolean];
 
@@ -332,6 +362,31 @@ const SCHEMA = obj([
       ['archiveSha256', sha],
       ['binarySha256', sha],
       ['machine', oneOf('arm64', 'x86_64')],
+      [
+        'pin',
+        refine(
+          obj([
+            ['verification', oneOf('gpg-verified', 'unverified')],
+            ['source', text(256)],
+            ['retrieved', text(32)],
+            ['shasumsSha256', sha],
+            [
+              'signerFingerprints',
+              arr(
+                prim((v) => typeof v === 'string' && /^[0-9A-F]{40}$/.test(v)),
+                {
+                  max: 16,
+                  sortKey: (v) => v as string,
+                },
+              ),
+            ],
+          ]),
+          // `gpg-verified` names its signers; `unverified` claims none.
+          (pin) =>
+            (pin.verification === 'gpg-verified') ===
+            (pin.signerFingerprints as unknown[]).length > 0,
+        ),
+      ],
     ]),
   ],
   [
@@ -515,4 +570,20 @@ export function formatFileList(entries: readonly FileDigest[]): string {
 
 export function sha256Hex(data: Uint8Array | string): string {
   return createHash('sha256').update(data).digest('hex');
+}
+
+/**
+ * The release and signing gate for a bundle that already exists: throws
+ * `node_pin_unverified` (exit 4) unless the report's Node pin is
+ * `gpg-verified` with signer fingerprints. Packaging and signing (item 4)
+ * call this on `bundle-report.json` before they sign anything.
+ */
+export function assertVerifiedNodePin(report: BundleReportV1): void {
+  const { pin } = report.node;
+  if (
+    pin.verification !== 'gpg-verified' ||
+    pin.signerFingerprints.length === 0
+  ) {
+    throw new BundleError('node_pin_unverified', { stage: 'node' }, 'node');
+  }
 }

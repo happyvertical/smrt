@@ -33,6 +33,7 @@ export interface DesktopBundleCliOptions {
   'measure-data'?: string;
   offline?: boolean;
   'keep-sourcemaps'?: boolean;
+  'require-verified-pins'?: boolean;
   force?: boolean;
   json?: boolean;
 }
@@ -146,6 +147,7 @@ export function parseDesktopBundleOptions(
     ...optional('keepSourceMaps', flag('keep-sourcemaps')),
     ...optional('offline', flag('offline')),
     ...optional('force', flag('force')),
+    ...optional('requireVerifiedPins', flag('require-verified-pins')),
     ...optional('measure', flag('measure')),
     ...optional('measureDataDir', text(options, 'measure-data')),
   };
@@ -237,7 +239,7 @@ export async function runDesktopBundle(
       [
         `Bundle written to ${result.outDir}`,
         `  product   ${report.product.productId}@${report.product.productVersion} (${report.target})`,
-        `  node      ${report.node.version} (${report.node.distFile})`,
+        `  node      ${report.node.version} (${report.node.distFile}, pin ${report.node.pin.verification})`,
         `  size      ${formatBytes(report.files.bytes)} in ${report.files.count} files`,
         `            node ${formatBytes(breakdown.nodeBinary)}, node_modules ${formatBytes(breakdown.nodeModules)}, app build ${formatBytes(breakdown.appBuild)}, other ${formatBytes(breakdown.other)}`,
         `  packages  ${report.packages.length} kept, ${report.features.removedPackages.length} removed`,
@@ -362,6 +364,12 @@ export const desktopCommands: Record<string, CLICommand> = {
       'keep-sourcemaps': {
         type: 'boolean',
         description: 'Keep *.map files',
+        default: false,
+      },
+      'require-verified-pins': {
+        type: 'boolean',
+        description:
+          'Release and signing path: refuse a Node pin that is not verified against the Node.js release signature with gpg (exit 4); without it an unverified pin only warns',
         default: false,
       },
       force: {

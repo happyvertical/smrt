@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { BundleError } from './errors.js';
 import {
+  assertVerifiedNodePin,
   type BundleReportV1,
   formatFileList,
   parseBundleReport,
@@ -153,6 +154,84 @@ describe('bundle report schema', () => {
     ).toThrow(BundleError);
     expect(() => parseBundleReport('{')).toThrow(BundleError);
     expect(() => parseBundleReport('[]')).toThrow(BundleError);
+  });
+});
+
+describe('Node pin provenance in the report', () => {
+  it('requires the pin member and keeps it closed', () => {
+    reject((r) => {
+      delete r.node.pin;
+    });
+    reject((r) => {
+      r.node.pin.extra = 1;
+    });
+    reject((r) => {
+      r.node.pin.shasumsSha256 = 'abc';
+    });
+    reject((r) => {
+      r.node.pin.verification = 'verified';
+    });
+  });
+
+  it('refuses a report that claims gpg verification without signers, or signers without verification', () => {
+    reject((r) => {
+      r.node.pin.verification = 'gpg-verified';
+    });
+    reject((r) => {
+      r.node.pin.signerFingerprints = ['A'.repeat(40)];
+    });
+    reject((r) => {
+      r.node.pin.verification = 'gpg-verified';
+      r.node.pin.signerFingerprints = ['a'.repeat(40)];
+    });
+    reject((r) => {
+      r.node.pin.verification = 'gpg-verified';
+      r.node.pin.signerFingerprints = ['B'.repeat(40), 'A'.repeat(40)];
+    });
+  });
+
+  it('accepts a verified pin with sorted signer fingerprints', () => {
+    const report = sample();
+    const verified: BundleReportV1 = {
+      ...report,
+      node: {
+        ...report.node,
+        pin: {
+          ...report.node.pin,
+          verification: 'gpg-verified',
+          signerFingerprints: ['A'.repeat(40), 'B'.repeat(40)],
+        },
+      },
+    };
+    expect(parseBundleReport(serializeBundleReport(verified))).toEqual(
+      verified,
+    );
+  });
+
+  it('refuses an unverified or hand-flipped report on the release and signing gate', () => {
+    expect(() => assertVerifiedNodePin(sample())).toThrow(
+      expect.objectContaining({ code: 'node_pin_unverified', exitCode: 4 }),
+    );
+    const report = sample();
+    // Not reachable through the parser; the gate does not trust its input.
+    const flipped = {
+      ...report,
+      node: {
+        ...report.node,
+        pin: { ...report.node.pin, verification: 'gpg-verified' },
+      },
+    } as BundleReportV1;
+    expect(() => assertVerifiedNodePin(flipped)).toThrow(
+      expect.objectContaining({ code: 'node_pin_unverified' }),
+    );
+    const verified = {
+      ...flipped,
+      node: {
+        ...flipped.node,
+        pin: { ...flipped.node.pin, signerFingerprints: ['A'.repeat(40)] },
+      },
+    } as BundleReportV1;
+    expect(() => assertVerifiedNodePin(verified)).not.toThrow();
   });
 });
 
