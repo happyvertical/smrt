@@ -981,7 +981,10 @@ smrt desktop bundle --app . --out dist/desktop/aarch64-apple-darwin \
 ```
 
 `--out` must not exist (or be empty) unless `--force`, and its parent must
-exist. Everything is built in a staging directory beside `--out` and published
+exist. `--force` replaces only an empty directory or the output of an earlier
+bundle run (the five names below with a `bundle-report.json` that parses); any
+other directory, a symlink or a file is refused (`destination_exists`) and left
+alone. Everything is built in a staging directory beside `--out` and published
 by one `rename`; on any failure the staging directory is removed and `--out`
 is untouched. Progress goes to stderr; with `--json` stdout carries only the
 canonical report (or a failure document), so it pipes cleanly.
@@ -1000,7 +1003,7 @@ canonical report (or a failure document), so it pipes cleanly.
 | `--max-size <MiB>` | installed-size budget; exceeding it exits 6 and publishes nothing, but still prints the report |
 | `--measure`, `--measure-data <dir>` | start the bundle on this machine and record installed size and cold start (host target only) |
 | `--offline` | `pnpm install --offline` and no Node download (needs the pnpm store and the Node cache) |
-| `--keep-sourcemaps`, `--force`, `--json` | keep `*.map`; replace an existing `--out`; JSON on stdout |
+| `--keep-sourcemaps`, `--force`, `--json` | keep `*.map`; replace an earlier bundle (or empty directory) at `--out`; JSON on stdout |
 
 ### Output
 
@@ -1019,6 +1022,13 @@ canonical report (or a failure document), so it pipes cleanly.
   bundle-files.sha256                        "<sha256>  <path>" for every file under binaries/ and resources/
   bundle-report.json                         provenance and verification record (not a resource)
 ```
+
+The three top-level files are written after `--measure`'s start, never before:
+the started app runs from the bundle and must not be able to change them. The
+report records the hash of `tauri.bundle.json` (`files.tauriBundleSha256`), and
+a measured start that leaves anything in the output root, or changes a file
+under `binaries/` or `resources/`, fails the bundle
+(`bundle_changed_while_measuring`).
 
 Merge `tauri.bundle.json` into the Tauri configuration and build with
 `tauri build --target <the same triple>`. The sidecar manifest always carries
@@ -1071,9 +1081,42 @@ are optional.
 
 Not supported: musl, `universal-apple-darwin` (Node ships no universal
 binary), 32-bit anything. Cross bundling works: the install is
-`--frozen-lockfile --prod --ignore-scripts` with `--os/--cpu/--libc` and
-`--config.node-linker=hoisted`, and natives come from prebuilt optional
-packages, so nothing is compiled or executed on the build host.
+`--frozen-lockfile --prod --ignore-scripts --ignore-pnpmfile` with
+`--os/--cpu/--libc`, `--config.node-linker=hoisted` and
+`--config.pm-on-fail=ignore`, and natives come from prebuilt optional
+packages. No package script, no pnpm hook and no other pnpm version runs on the
+build host, and nothing is compiled there; the only code that runs is the host's
+own pnpm and, with `--measure`, the bundled app.
+
+### What the install takes from the app
+
+The install runs in a staging directory that gets files from the app, not the
+app's directory itself:
+
+- `package.json` without `scripts`, `packageManager` and `devEngines`. The
+  last two make pnpm 10 and 11 download and run another pnpm than the host's;
+  the report's `host.pnpm` is the version probed from an empty directory, so
+  it is the pnpm that really ran, and a differing `packageManager` only warns.
+- `pnpm-lock.yaml`, `pnpm-workspace.yaml` (if any, verbatim, hash recorded)
+  and `patches/`.
+- `.npmrc` **filtered**: only `registry=`, `@scope:registry=` (an `http(s)` URL
+  without credentials) and the booleans `auto-install-peers`,
+  `dedupe-peer-dependents`, `exclude-links-from-lockfile` and
+  `strict-peer-dependencies` are staged; the SHA-256 of what was staged is
+  `inputs.npmrcSha256`. Every other line is dropped with a count in the
+  warnings. **Credentials are not read from the app**: for a private
+  registry, put the `_authToken` line (a literal token; `${VAR}` is not
+  expanded because the child environment is an allowlist) in the build user's
+  own `~/.npmrc`, which pnpm reads.
+
+A `pnpmfile` or `global-pnpmfile` line in `.npmrc`, a `pnpmfile`,
+`globalPnpmfile` or `configDependencies` setting in `pnpm-workspace.yaml` (at
+any depth, in any spelling, including a quoted key written with an escape) or
+under the `pnpm` field of `package.json` fails the bundle before anything is
+installed (`unsafe_install_config`, exit 3): those settings make pnpm load
+JavaScript during the install, which `--ignore-scripts` does not stop.
+`--ignore-pnpmfile` is passed as well, so a `.pnpmfile.cjs` or a hook in the
+build user's global pnpm configuration is not loaded either.
 
 ### Features and the size budget
 
@@ -1122,7 +1165,8 @@ root unless `main`/`exports`/`bin` points into them, tooling config, static
 libraries and prebuilds for other platforms. A secret deny-list (`.env*`,
 `.npmrc`, `*.pem`, `*.key`, `.git`, `.smrt`, `*.sqlite*`, …) **fails** the
 bundle wherever it matches, and the application build is scanned for private
-keys and common token shapes. The installed size is the sum of every file
+keys and common token shapes (GitHub, Anthropic, OpenAI `sk-`/`sk-proj-`, Google
+`AIza`, npm `npm_`, Stripe `sk_live_`/`rk_live_`, Slack and AWS access keys). The installed size is the sum of every file
 under `binaries/` and `resources/`; above 400 MiB without a `maxSizeMB` the
 bundler warns.
 
@@ -1145,7 +1189,7 @@ deterministic as the app build; its hash is recorded, not rebuilt.
 | 0 | ok | bundle published, every check green |
 | 1 | `internal` | a bug; the message never carries a path or a secret |
 | 2 | `usage` | bad flag, unsupported target, unpinned Node version, `--measure` for a cross target |
-| 3 | `invalid_input` | missing app files, bad configuration, a non-registry dependency, no `--bridge`, `--out` not empty |
+| 3 | `invalid_input` | missing app files, bad configuration, a non-registry dependency, a pnpmfile or config dependency, no `--bridge`, `--out` not empty |
 | 4 | `provenance` | Node checksum mismatch, redirect or HTTP error from nodejs.org, lockfile drift, integrity failure |
 | 5 | `verification` | wrong-architecture native, symlink, secret, removed package imported, install script without a prebuilt binary, manifests that do not round-trip |
 | 6 | `budget` | `--max-size` exceeded |
@@ -1176,15 +1220,15 @@ below did.
 | B1 | Node binary provenance: tampered download, redirect, poisoned cache, wrong version or architecture | committed SHA-256 pins (produced by `scripts/update-node-pins.mjs`), constant HTTPS URL, redirects refused, size caps, hash on every use including cache hits | `rejects a Node archive whose sha256 differs from the pin`; `re-verifies a cached archive and refuses a poisoned cache entry`; `refuses an unpinned Node version before any network or file access`; `refuses any redirect from the dist host`; `aborts a download larger than the cap`; `refuses to run with TLS verification disabled`; `rejects a Node binary built for another architecture` |
 | B2 | Archive extraction: tar slip, link members, pax overrides, bombs | one-member reader, output name is ours, header checksums, gzip and member caps | `extracts only the named member and writes nothing else`; `rejects a symlink or hardlink member with the wanted name`; `ignores ../ and absolute member names (they never match)`; `stops a gzip bomb at the expansion cap`; `rejects a header with a bad checksum`; `honours a pax path record for the Node member` |
 | B3 | npm integrity, lockfile drift, dependency confusion | `--frozen-lockfile`, only registry specifiers and resolutions, lockfile and manifest hashes recorded, failure output never echoed | `builds the exact pnpm argv for each target`; `rejects link:, file:, git and tarball production dependencies`; `rejects production dependencies that are not registry packages`; `rejects a lockfile package resolved from a tarball URL or git`; `records lockfile and package.json hashes`; `classifies a failed install by its output without echoing it`; `fails when package.json drifts from the lockfile` (opt-in end to end) |
-| B4 | Lifecycle scripts running on the build host, side-effect cache | scripts never run (host or cross), staged manifest has none, side-effects cache off, install-script packages without a prebuilt binary fail | `never passes a flag that enables scripts for any target`; `never runs scripts: the staged package.json has none and argv is the frozen form`; `fails a package with an install script and no prebuilt binary`; `allows the closed list of harmless postinstall packages` |
-| B5 | Path traversal and symlink escape while copying | lstat walk, `O_NOFOLLOW` open with identity check, validated segments, `O_EXCL` writes, real containment | `rejects a build directory outside the application`; `rejects a symlink anywhere in the tree without following it`; `rejects FIFOs and, under policy, skips them`; `refuses a file replaced by a different inode between lstat and open`; `refuses a file swapped for a symlink after the walk (O_NOFOLLOW)`; `refuses to write through anything already at the destination` |
-| B6 | TOCTOU on the output directory | private staging next to the output, single `rename`, existing output must be empty or is moved aside, never recursively deleted unless created by this run | `replaces an empty output directory but refuses a non-empty one`; `refuses an output that is a symlink or a file`; `publishes by rename and leaves no staging behind`; `moves a previous bundle aside before deleting it when replacing`; `refuses a non-empty output directory that appears before publishing`; `removes staging and leaves the output untouched when the build fails` |
-| B7 | Wrong-architecture or wrong-libc binaries | header parsers over every file by magic bytes, extension rule, libc from `DT_NEEDED`, exceptions delete | `accepts thin arm64 and x86_64 addons (MH_BUNDLE and MH_DYLIB)`; `rejects a fat header whose slice header disagrees`; `rejects a Java class file mistaken for fat Mach-O`; `rejects a musl addon on a gnu target (DT_NEEDED)`; `rejects PE32 (even with an x64 machine) and ARM64EC DLLs`; `rejects a .node file that is not a native binary`; `returns a fixed reason for every prefix of every sample`; `rejects a native binary for another architecture` |
+| B4 | Code running on the build host during the install: lifecycle scripts, pnpm hooks, a different pnpm | scripts never run (host or cross), staged manifest has no scripts, `packageManager` or `devEngines`, `--ignore-pnpmfile` and `pm-on-fail=ignore`, `pnpmfile`/`globalPnpmfile`/`configDependencies` fail the bundle, only registry lines of `.npmrc` are staged, side-effects cache off, install-script packages without a prebuilt binary fail | `never passes a flag that enables scripts for any target`; `never runs scripts: the staged package.json has none and argv is the frozen form`; `always ignores pnpmfile hooks and never lets pnpm switch versions`; `removes packageManager and devEngines so pnpm cannot switch to another version`; `probes the version from an empty directory outside the install directory`; `finds them nested, quoted, in flow style, kebab-cased or in another case`; `fails closed on a quoted key spelled with an escape`; `fails on pnpmfile, global-pnpmfile and config-dependencies keys without echoing values`; `stages only registry and boolean lines of .npmrc and records their hash`; `fails a package with an install script and no prebuilt binary`; `allows the closed list of harmless postinstall packages` |
+| B5 | Path traversal and symlink escape while copying | lstat walk, `O_NOFOLLOW` open with identity check, validated segments, `O_EXCL` writes, real containment | `rejects a build directory outside the application`; `rejects a symlink anywhere in the tree without following it`; `rejects FIFOs and, under policy, skips them`; `refuses a file replaced by a different inode between lstat and open`; `refuses a file swapped for a symlink after the walk (O_NOFOLLOW)`; `refuses an ancestor swapped for a symlink during the walk`; `refuses a file opened through a symlinked ancestor even if its identity matches`; `refuses to write through anything already at the destination` |
+| B6 | TOCTOU on the output directory, and `--force` deleting something that is not a bundle | private staging next to the output, single `rename`; an existing output must be empty, or with `--force` empty or the output of an earlier bundle run (checked when planning and again on the directory after it is moved aside), and only then is it deleted | `replaces an empty output directory but refuses a non-empty one`; `refuses an output that is a symlink or a file`; `publishes by rename and leaves no staging behind`; `moves a previous bundle aside before deleting it when replacing`; `refuses a directory holding unrelated files and leaves it untouched`; `refuses a bundle layout whose report does not parse, or with extra names`; `refuses a bundle-shaped directory with no report and one whose parts are links`; `refuses a symlink at the output`; `accepts an empty directory and a real earlier bundle`; `checks again after moving the directory aside and puts it back`; `refuses --force on a directory that holds unrelated files`; `refuses a non-empty output directory that appears before publishing`; `removes staging and leaves the output untouched when the build fails` |
+| B7 | Wrong-architecture or wrong-libc binaries | header parsers over every file by magic bytes, extension rule, libc from the ELF interpreter and `DT_NEEDED` (musl includes the unversioned `libc.so`; an addon naming no recognised libc and a library outside the glibc-companion list is `unknown` and refused), exceptions delete | `accepts thin arm64 and x86_64 addons (MH_BUNDLE and MH_DYLIB)`; `rejects a fat header whose slice header disagrees`; `rejects a Java class file mistaken for fat Mach-O`; `rejects a musl addon on a gnu target (DT_NEEDED)`; `rejects a musl addon that needs the unversioned libc.so on a gnu target`; `fails closed on an addon whose needed libraries name no recognised libc`; `keeps accepting addons that need only glibc companions or the GCC runtime`; `rejects PE32 (even with an x64 machine) and ARM64EC DLLs`; `rejects a .node file that is not a native binary`; `returns a fixed reason for every prefix of every sample`; `rejects a native binary for another architecture` |
 | B8 | A `.node` that is a symlink or shares an inode with the store | links refused in source and output, outputs are fresh copies, natives need `nlink` 1 | `fails symlinks, special files and hardlinked natives`; `refuses hard-linked files by default and copies them as independent files when allowed` |
-| B9 | Secrets in the bundle | deny-list fails the bundle, content scan of the build, maps dropped, `.npmrc` used only in staging | `fails when the build output contains a .env file`; `fails on a private key in the build output`; `fails on a .smrt data directory inside the build`; `never copies the app .npmrc into the output`; `drops source maps unless asked`; `keeps a canary token out of the output, the report and the child environment` |
+| B9 | Secrets in the bundle | deny-list fails the bundle, content scan of the build, maps dropped, only registry lines of `.npmrc` reach staging (no credentials) | `fails when the build output contains a .env file`; `fails on a private key in the build output`; `fails on a .smrt data directory inside the build`; `finds the OpenAI, Google, npm and Stripe token shapes and reports only ids`; `does not flag ordinary code or look-alikes`; `never copies the app .npmrc into the output`; `drops source maps unless asked`; `keeps a canary token out of the output, the report and the child environment` |
 | B10 | Build-host environment leaking into children | child environment allowlist, forced `npm_config_ignore_scripts`, `NODE_OPTIONS`/`npm_config_*`/`LD_*` dropped | `passes only allowlisted environment names to pnpm`; `drops NODE_OPTIONS and npm_config_* from the child environment`; `forces ignore-scripts in the child environment`; `never leaks a canary token, whatever the variable name` |
 | B11 | Environment injection into the sidecar at run time | the manifest empties `NODE_OPTIONS` and `NODE_PATH` | `writes a sidecar manifest that neutralises NODE_OPTIONS and NODE_PATH` |
-| B12 | Manifest reproducibility and validity | canonical serializers, re-parsed with the contract parsers, byte round trip, cross-check, no timestamps | `writes manifests the contract parsers accept and that round-trip byte for byte`; `produces identical files and report for identical inputs`; `orders the file list independently of readdir order`; `sets every modification time to the epoch floor or SOURCE_DATE_EPOCH` |
+| B12 | Manifest reproducibility and validity, and a measured app altering the bundle's own metadata | canonical serializers, re-parsed with the contract parsers, byte round trip, cross-check, no timestamps; `tauri.bundle.json` and the file list are written after the measured start and the output root is checked afterwards | `writes manifests the contract parsers accept and that round-trip byte for byte`; `produces identical files and report for identical inputs`; `orders the file list independently of readdir order`; `sets every modification time to the epoch floor or SOURCE_DATE_EPOCH`; `writes tauri.bundle.json and the file list only after the measured start`; `fails when the measured start plants or changes a file in the bundle root` |
 | B13 | Bridge not self-contained, swapped or a link | verified regular file, size cap, built-ins only, hash recorded | `rejects a bridge bundle that imports a bare package`; `rejects a bridge that is a symlink`; `records the bridge sha256 and byte count` |
 | B14 | A removed package is still needed (availability) | reachability scan, acknowledgements recorded, host start | `fails when the build statically imports a removed package`; `requires acknowledgement for a dynamic import of a removed package`; `ignores a build-time file of a kept package that nothing loads`; `bundles, verifies and measures a fixture app for the host triple` (opt-in end to end) |
 

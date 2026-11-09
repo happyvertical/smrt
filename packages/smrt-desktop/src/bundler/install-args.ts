@@ -1,4 +1,5 @@
 import { NodeDistError } from './node-errors.js';
+import { BundleTreeError } from './tree-errors.js';
 
 /**
  * Exact `pnpm install` argv for a bundle plan, plus the pure checks around it.
@@ -7,9 +8,12 @@ import { NodeDistError } from './node-errors.js';
  * string is ever placed in argv (paths go through `cwd`), so the list can be
  * run without a shell on every platform. Lifecycle scripts NEVER run, host or
  * cross: `--ignore-scripts` is unconditional and there is no option to turn it
- * off. Natives in scope ship as prebuilt optional packages; a package that
- * needs a build step is reported by `findBuildStepPackages` and fails the
- * bundle.
+ * off. Neither does any JavaScript the app configures for pnpm itself:
+ * `--ignore-pnpmfile` is unconditional and the app's `configDependencies`,
+ * `pnpmfile` and `globalPnpmfile` settings fail the bundle (`--ignore-scripts`
+ * does not cover pnpmfile hooks). Natives in scope ship as prebuilt optional
+ * packages; a package that needs a build step is reported by
+ * `findBuildStepPackages` and fails the bundle.
  *
  * The functions here do no I/O. The post-install checks work on a directory
  * listing (`TreeEntry[]`) and package facts the orchestrator collects through
@@ -45,10 +49,20 @@ export const FIXED_INSTALL_ARGS: readonly string[] = Object.freeze([
   '--frozen-lockfile',
   '--prod',
   '--ignore-scripts',
+  // pnpm hooks (`.pnpmfile.cjs`, `pnpmfile`, `globalPnpmfile`, config
+  // dependencies) are JavaScript pnpm loads during install; `--ignore-scripts`
+  // does not stop them.
+  '--ignore-pnpmfile',
 ]);
 
-/** Trailing config flags: hoisted layout, no host-built natives, real copies. */
+/**
+ * Trailing config flags: hoisted layout, no host-built natives, real copies,
+ * and never switch to (download and run) the pnpm the app's `packageManager`
+ * or `devEngines` names. `pm-on-fail` is the pnpm 11 setting; pnpm 10 has no
+ * such setting, so the staged manifest also drops both fields.
+ */
 export const FIXED_INSTALL_CONFIG_ARGS: readonly string[] = Object.freeze([
+  '--config.pm-on-fail=ignore',
   '--config.node-linker=hoisted',
   '--config.side-effects-cache=false',
   '--config.package-import-method=copy',
@@ -203,15 +217,153 @@ export function isRegistryResolution(resolution: unknown): boolean {
 }
 
 /**
- * The staging copy of `package.json` for the install: lifecycle scripts are
- * removed so nothing in the app's own manifest can run. Returns a new object;
- * `devDependencies` are left for pnpm's `--prod` to ignore.
+ * The staging copy of `package.json` for the install. Removed:
+ * - `scripts`, so nothing in the app's own manifest can run;
+ * - `packageManager` and `devEngines`, which make pnpm 10 and 11 download and
+ *   run a different pnpm than the one the bundler probed and recorded (neither
+ *   field is part of the lockfile).
+ * Returns a new object; `devDependencies` are left for pnpm's `--prod` to
+ * ignore.
  */
-export function stripLifecycleScripts<T extends Record<string, unknown>>(
+export function stageManifest<T extends Record<string, unknown>>(
   manifest: T,
-): Omit<T, 'scripts'> {
-  const { scripts: _scripts, ...rest } = manifest;
+): Omit<T, 'scripts' | 'packageManager' | 'devEngines'> {
+  const {
+    scripts: _scripts,
+    packageManager: _packageManager,
+    devEngines: _devEngines,
+    ...rest
+  } = manifest;
   return rest;
+}
+
+/* ---------------- pnpm configuration that would load code ---------------- */
+
+/**
+ * Settings that make pnpm load JavaScript while installing. Matched after
+ * lowercasing and removing `-` and `_`, so `global-pnpmfile` and
+ * `globalPnpmfile` are the same setting.
+ */
+const CODE_LOADING_SETTINGS: ReadonlyArray<readonly [string, string]> = [
+  ['configdependencies', 'configDependencies'],
+  ['globalpnpmfile', 'globalPnpmfile'],
+  ['pnpmfile', 'pnpmfile'],
+];
+
+const normalizeKey = (key: string): string =>
+  key.toLowerCase().replace(/[-_]/g, '');
+
+/**
+ * Static names of the code-loading settings mentioned in `key`. `globalPnpmfile`
+ * contains `pnpmfile`, so it is reported alone.
+ */
+function codeLoadingSettingsIn(key: string): string[] {
+  const normalized = normalizeKey(key);
+  const hits = CODE_LOADING_SETTINGS.filter(([needle]) =>
+    normalized.includes(needle),
+  ).map(([, name]) => name);
+  return hits.includes('globalPnpmfile')
+    ? hits.filter((name) => name !== 'pnpmfile')
+    : hits;
+}
+
+/**
+ * Code-loading settings in the app's `pnpm-workspace.yaml`, as static setting
+ * names (never file text). It is a conservative text scan, not a YAML parser,
+ * and fails closed: a setting is found wherever its name appears outside a
+ * full-line comment (block key, flow mapping, quoted key, anchor), and a
+ * backslash escape, which could spell a key without writing it, is reported as
+ * `escaped YAML key`.
+ */
+export function findWorkspaceCodeLoading(yaml: string): string[] {
+  const found = new Set<string>();
+  const body = yaml
+    .split(/\r?\n/)
+    .filter((line) => !line.trimStart().startsWith('#'))
+    .join('\n');
+  for (const name of codeLoadingSettingsIn(body)) found.add(name);
+  if (body.includes('\\')) found.add('escaped YAML key');
+  return [...found].sort();
+}
+
+/**
+ * Code-loading settings anywhere under the manifest's `pnpm` field (any depth)
+ * or at its top level.
+ */
+export function findManifestCodeLoading(
+  manifest: Readonly<Record<string, unknown>>,
+): string[] {
+  const found = new Set<string>();
+  const visit = (value: unknown, depth: number): void => {
+    if (depth > 32 || value === null || typeof value !== 'object') return;
+    for (const [key, child] of Object.entries(value)) {
+      for (const name of codeLoadingSettingsIn(key)) found.add(name);
+      visit(child, depth + 1);
+    }
+  };
+  visit(manifest.pnpm, 0);
+  for (const key of Object.keys(manifest)) {
+    for (const name of codeLoadingSettingsIn(key)) found.add(name);
+  }
+  return [...found].sort();
+}
+
+/** Boolean resolution settings the lockfile records, so a frozen install needs them. */
+const NPMRC_BOOLEAN_KEYS = new Set([
+  'auto-install-peers',
+  'dedupe-peer-dependents',
+  'exclude-links-from-lockfile',
+  'strict-peer-dependencies',
+]);
+const NPMRC_SCOPED_REGISTRY = /^@[a-z0-9][a-z0-9._~-]*:registry$/;
+const NPMRC_URL = /^https?:\/\/[^\s@]+$/;
+
+export interface StagedNpmrc {
+  /** The `.npmrc` text to place in the install directory (maybe empty). */
+  readonly text: string;
+  /** Lines that were not carried over (comments and blanks excluded). */
+  readonly dropped: number;
+}
+
+/**
+ * The part of the app's `.npmrc` that reaches pnpm: `registry`,
+ * `@scope:registry` (an `http(s)` URL without credentials) and four boolean
+ * resolution settings. Everything else is dropped, including every `_auth*`
+ * line (credentials come from the build user's own `~/.npmrc`) and anything
+ * that expands an environment variable. A `pnpmfile`, `global-pnpmfile` or
+ * `config-dependencies` key fails the bundle (`unsafe_install_config`).
+ */
+export function stageNpmrc(text: string): StagedNpmrc {
+  const kept: string[] = [];
+  const unsafe = new Set<string>();
+  let dropped = 0;
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (line.length === 0 || line.startsWith('#') || line.startsWith(';')) {
+      continue;
+    }
+    const eq = line.indexOf('=');
+    const key = (eq === -1 ? line : line.slice(0, eq)).trim();
+    const value = eq === -1 ? '' : line.slice(eq + 1).trim();
+    for (const name of codeLoadingSettingsIn(key)) unsafe.add(name);
+    const registry =
+      (key === 'registry' || NPMRC_SCOPED_REGISTRY.test(key)) &&
+      NPMRC_URL.test(value);
+    const boolean =
+      NPMRC_BOOLEAN_KEYS.has(key) && /^(?:true|false)$/.test(value);
+    if (registry || boolean) kept.push(`${key}=${value}`);
+    else dropped += 1;
+  }
+  if (unsafe.size > 0) {
+    throw new BundleTreeError('unsafe_install_config', {
+      field: '.npmrc',
+      subjects: [...unsafe].sort(),
+    });
+  }
+  return {
+    text: kept.length === 0 ? '' : `${kept.join('\n')}\n`,
+    dropped,
+  };
 }
 
 /* ---------------- post-install checks (directory listing seam) ---------------- */

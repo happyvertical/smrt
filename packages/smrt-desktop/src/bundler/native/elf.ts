@@ -168,17 +168,49 @@ async function readNeeded(
   return names;
 }
 
+/**
+ * `DT_NEEDED` sonames that say nothing about the C library by themselves:
+ * the glibc companion libraries (all version-suffixed, so a musl system does
+ * not provide them under these names) and the GCC runtime. A file whose
+ * needed list holds only these (and no libc) is reported `none`. Anything else
+ * with no recognised libc is `unknown`, which a gnu target refuses.
+ */
+const LIBC_NEUTRAL_SONAMES: ReadonlySet<string> = new Set([
+  'libatomic.so.1',
+  'libdl.so.2',
+  'libgcc_s.so.1',
+  'libm.so.6',
+  'libnsl.so.1',
+  'libpthread.so.0',
+  'libresolv.so.2',
+  'librt.so.1',
+  'libstdc++.so.6',
+  'libutil.so.1',
+]);
+
+const baseName = (name: string): string =>
+  name.slice(name.lastIndexOf('/') + 1);
+
 function libcOf(interpreter: string | undefined, needed: string[]): NativeLibc {
   const names = interpreter === undefined ? needed : [interpreter, ...needed];
+  // musl's C library is `libc.so` (unversioned) outside Alpine, and
+  // `libc.musl-<arch>.so.1` on it; its loader is `ld-musl-<arch>.so.1`.
   const isMusl = (name: string) =>
-    name.includes('ld-musl-') || /(?:^|\/)libc\.musl-/.test(name);
+    name.includes('ld-musl-') ||
+    /(?:^|\/)libc\.musl-/.test(name) ||
+    baseName(name) === 'libc.so';
   if (names.some(isMusl)) return 'musl';
   const isGlibc = (name: string) =>
     /(?:^|\/)ld-linux[^/]*\.so\.\d+$/.test(name) ||
     /(?:^|\/)ld\.so\.\d+$/.test(name) ||
     /(?:^|\/)libc\.so\.6$/.test(name);
   if (names.some(isGlibc)) return 'glibc';
-  return interpreter === undefined ? 'none' : 'unknown';
+  if (interpreter !== undefined) return 'unknown';
+  // No interpreter, no recognised libc: fine only if nothing is needed or
+  // everything needed is a libc-neutral system library.
+  return needed.every((name) => LIBC_NEUTRAL_SONAMES.has(baseName(name)))
+    ? 'none'
+    : 'unknown';
 }
 
 /** Parse an ELF64 little-endian file. */

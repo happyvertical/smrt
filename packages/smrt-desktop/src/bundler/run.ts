@@ -17,11 +17,13 @@
  *  8. `bridge`      the pre-bundled bridge file, node-only imports.
  *  9. `node`        pinned Node binary, verified against the target.
  * 10. `natives`     every native file in the output against the target.
- * 11. `manifests`   sidecar manifest, `smrt-bundle.json`, overlay; re-parsed
+ * 11. `manifests`   sidecar manifest, `smrt-bundle.json`; re-parsed
  *                   with the contract parsers and cross-checked.
- * 12. `report`      file digests, `bundle-files.sha256`, report, size budget.
+ * 12. `report`      file digests and the report body, size budget.
  * 13. `measure`     optional: host start and cold start timing.
- * 14. `publish`     write the report, normalise mtimes, one atomic `rename`.
+ * 14. `publish`     write `tauri.bundle.json`, `bundle-files.sha256` and the
+ *                   report (after the measured start, which must not be able
+ *                   to alter them), normalise mtimes, one atomic `rename`.
  *
  * Everything is built in a staging directory beside the output. On any
  * failure staging is removed and the output path is untouched. Every external
@@ -65,7 +67,11 @@ import {
   buildPnpmInstallArgs,
   findBuildStepPackages,
   findDisallowedDependencies,
-  stripLifecycleScripts,
+  findManifestCodeLoading,
+  findWorkspaceCodeLoading,
+  type StagedNpmrc,
+  stageManifest,
+  stageNpmrc,
 } from './install-args.js';
 import { findNonRegistryLockfilePackages } from './lockfile.js';
 import {
@@ -86,6 +92,7 @@ import type {
 import { pinnedVersions } from './node-pins.js';
 import { type BundlePlan, hostTriple } from './options.js';
 import {
+  assertResolvesToItself,
   copyTree,
   createStaging,
   disposeStaging,
@@ -370,6 +377,8 @@ function createWalker(
               O_RDONLY | O_NOFOLLOW | O_NONBLOCK,
             );
             try {
+              // The root is canonical, so the file must resolve to itself.
+              await assertResolvesToItself(fs, absolute, absolute, entry.rel);
               return await fileHandleReader(toFileHandleLike(handle));
             } catch (error) {
               await handle.close().catch(() => undefined);
@@ -511,7 +520,37 @@ export async function runBundle(
           subjects: disallowed.map((item) => item.name),
         });
       }
-      return { packageJson, lockfile, workspace, npmrc, config, manifest };
+      // pnpm loads JavaScript for these settings during the install, which
+      // `--ignore-scripts` does not cover: refuse them before any work.
+      const workspaceHooks =
+        workspace === undefined
+          ? []
+          : findWorkspaceCodeLoading(Buffer.from(workspace).toString('utf8'));
+      if (workspaceHooks.length > 0) {
+        throw new BundleTreeError('unsafe_install_config', {
+          field: 'pnpm-workspace.yaml',
+          subjects: workspaceHooks,
+        });
+      }
+      const manifestHooks = findManifestCodeLoading(manifest);
+      if (manifestHooks.length > 0) {
+        throw new BundleTreeError('unsafe_install_config', {
+          field: 'package.json',
+          subjects: manifestHooks,
+        });
+      }
+      const stagedNpmrc: StagedNpmrc | undefined =
+        npmrc === undefined
+          ? undefined
+          : stageNpmrc(Buffer.from(npmrc).toString('utf8'));
+      return {
+        packageJson,
+        lockfile,
+        workspace,
+        stagedNpmrc,
+        config,
+        manifest,
+      };
     });
 
     const dependencies = {
@@ -574,11 +613,12 @@ export async function runBundle(
 
     // -- 3. install --------------------------------------------------------
     const childEnv = buildChildEnv(seams.env, {}, { platform });
+    let npmrcSha256: string | undefined;
     const pnpmVersion = await stage('install', async () => {
       await fs.mkdir(installDir, 0o700);
       await writeNewFile(
         at(installDir, 'package.json'),
-        json(stripLifecycleScripts(inputs.manifest)),
+        json(stageManifest(inputs.manifest)),
         0o600,
         { fs, platform },
       );
@@ -599,12 +639,23 @@ export async function runBundle(
           { fs, platform },
         );
       }
-      if (inputs.npmrc !== undefined) {
-        // Used by pnpm for scoped registries; never copied to the output.
-        await writeNewFile(at(installDir, '.npmrc'), inputs.npmrc, 0o600, {
-          fs,
-          platform,
-        });
+      if (inputs.stagedNpmrc !== undefined) {
+        // Registry and boolean resolution lines only (credentials and every
+        // other key are not staged); never copied to the output.
+        if (inputs.stagedNpmrc.text.length > 0) {
+          await writeNewFile(
+            at(installDir, '.npmrc'),
+            inputs.stagedNpmrc.text,
+            0o600,
+            { fs, platform },
+          );
+          npmrcSha256 = sha256Hex(inputs.stagedNpmrc.text);
+        }
+        if (inputs.stagedNpmrc.dropped > 0) {
+          warnings.push(
+            `${inputs.stagedNpmrc.dropped} .npmrc line(s) were not used: only registry and a few boolean resolution settings are staged; credentials come from the user-level .npmrc`,
+          );
+        }
       }
       const patchesStats = await lstatOrUndefined(
         fs,
@@ -628,7 +679,14 @@ export async function runBundle(
         );
       }
 
-      const version = await seams.pnpmVersion(childEnv, installDir);
+      // Probe from an empty directory: inside the install directory pnpm would
+      // honour the app's packageManager and report the pnpm it switched to,
+      // not the host's.
+      await fs.mkdir(at(stagingRoot, 'probe'), 0o700);
+      const version = await seams.pnpmVersion(
+        childEnv,
+        at(stagingRoot, 'probe'),
+      );
       const wanted = inputs.manifest.packageManager;
       if (
         typeof wanted === 'string' &&
@@ -957,6 +1015,16 @@ export async function runBundle(
         ? {}
         : { ownerClaimRoute: plan.sidecar.ownerClaimRoute }),
     };
+    // `tauri.bundle.json` and `bundle-files.sha256` are written at publish,
+    // AFTER the measured start: the started app runs with the bundle root as
+    // its parent and must not be able to alter either.
+    const tauriBundleText = json({
+      bundle: {
+        externalBin: [`binaries/${plan.sidecar.executable}`],
+        resources: { 'resources/': './' },
+      },
+    });
+    let fileListText = '';
     await stage('manifests', async () => {
       const bundle: BundleManifestV1 = {
         version: 1,
@@ -1013,17 +1081,6 @@ export async function runBundle(
         }
         throw new BundleError('manifest_round_trip');
       }
-      await writeNewFile(
-        at(outRoot, 'tauri.bundle.json'),
-        json({
-          bundle: {
-            externalBin: [`binaries/${plan.sidecar.executable}`],
-            resources: { 'resources/': './' },
-          },
-        }),
-        0o644,
-        { fs, platform },
-      );
     });
 
     // -- 12. report --------------------------------------------------------
@@ -1063,10 +1120,7 @@ export async function runBundle(
     let report = await stage('report', async () => {
       const digests = await digestOutput();
       const list = formatFileList(digests.entries);
-      await writeNewFile(at(outRoot, BUNDLE_FILES_FILENAME), list, 0o644, {
-        fs,
-        platform,
-      });
+      fileListText = list;
 
       const removedPackages = segmentation.result.removed
         .map((item) => ({
@@ -1120,6 +1174,7 @@ export async function runBundle(
           ...(inputs.workspace === undefined
             ? {}
             : { workspaceYamlSha256: sha256Hex(inputs.workspace) }),
+          ...(npmrcSha256 === undefined ? {} : { npmrcSha256 }),
           ...(patchesDigest === undefined
             ? {}
             : { patchesSha256: patchesDigest }),
@@ -1162,6 +1217,7 @@ export async function runBundle(
           count: digests.entries.length,
           bytes: digests.bytes,
           listSha256: sha256Hex(list),
+          tauriBundleSha256: sha256Hex(tauriBundleText),
           breakdown: digests.breakdown,
         },
       };
@@ -1200,6 +1256,12 @@ export async function runBundle(
           files: { count: report.files.count, bytes: report.files.bytes },
         });
         // The start may have written into the bundle; refuse a changed bundle.
+        // Nothing but binaries/ and resources/ exists in the root yet, so
+        // anything else there was planted by the measured app.
+        const rootNames = (await fs.readdir(outRoot)).sort(compare);
+        if (rootNames.join('/') !== 'binaries/resources') {
+          throw new BundleError('bundle_changed_while_measuring');
+        }
         const after = await digestOutput();
         if (
           sha256Hex(formatFileList(after.entries)) !== report.files.listSha256
@@ -1212,6 +1274,24 @@ export async function runBundle(
 
     // -- 14. publish -------------------------------------------------------
     await stage('publish', async () => {
+      await writeNewFile(
+        at(outRoot, 'tauri.bundle.json'),
+        tauriBundleText,
+        0o644,
+        {
+          fs,
+          platform,
+        },
+      );
+      await writeNewFile(
+        at(outRoot, BUNDLE_FILES_FILENAME),
+        fileListText,
+        0o644,
+        {
+          fs,
+          platform,
+        },
+      );
       await writeNewFile(
         at(outRoot, BUNDLE_REPORT_FILENAME),
         serializeBundleReport(report),

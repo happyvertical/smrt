@@ -96,6 +96,8 @@ export interface FixtureOptions {
   config?: Record<string, unknown>;
   lockfile?: string;
   npmrc?: string;
+  /** Written as the app's `pnpm-workspace.yaml`. */
+  workspaceYaml?: string;
   envFile?: string;
   appManifest?: Record<string, unknown>;
   bridge?: string | Buffer;
@@ -106,6 +108,10 @@ export interface FakePnpmCall {
   readonly args: readonly string[];
   readonly env: Readonly<Record<string, string>>;
   readonly hadNpmrc: boolean;
+  /** The `.npmrc` text pnpm was given, if any. */
+  readonly npmrc?: string;
+  /** The `pnpm-workspace.yaml` text pnpm was given, if any. */
+  readonly workspace?: string;
   /** The staged `package.json` pnpm was given. */
   readonly manifest: Record<string, unknown>;
 }
@@ -117,6 +123,8 @@ export interface Fixture {
   readonly bridgeFile: string;
   readonly cacheDir: string;
   readonly calls: FakePnpmCall[];
+  /** Working directories `pnpmVersion` was asked to probe from. */
+  readonly versionCwds: string[];
   plan(
     input?: Partial<BundleOptionsInput>,
   ): ReturnType<typeof createBundlePlan>;
@@ -188,6 +196,7 @@ export function createFixture(options: FixtureOptions = {}): Fixture {
   const bridgeFile = join(root, 'bridge.mjs');
   const cacheDir = join(root, 'cache');
   const calls: FakePnpmCall[] = [];
+  const versionCwds: string[] = [];
   const packages = options.packages ?? DEFAULT_PACKAGES;
 
   mkdirSync(join(root, 'dist'), { recursive: true });
@@ -251,6 +260,9 @@ export function createFixture(options: FixtureOptions = {}): Fixture {
     put(join(appDir, 'build', rel), data);
   }
   if (options.npmrc !== undefined) put(join(appDir, '.npmrc'), options.npmrc);
+  if (options.workspaceYaml !== undefined) {
+    put(join(appDir, 'pnpm-workspace.yaml'), options.workspaceYaml);
+  }
   if (options.envFile !== undefined) put(join(appDir, '.env'), options.envFile);
   put(
     bridgeFile,
@@ -264,6 +276,17 @@ export function createFixture(options: FixtureOptions = {}): Fixture {
       args: [...request.args],
       env: { ...request.env },
       hadNpmrc: existsSync(join(request.cwd, '.npmrc')),
+      ...(existsSync(join(request.cwd, '.npmrc'))
+        ? { npmrc: readFileSync(join(request.cwd, '.npmrc'), 'utf8') }
+        : {}),
+      ...(existsSync(join(request.cwd, 'pnpm-workspace.yaml'))
+        ? {
+            workspace: readFileSync(
+              join(request.cwd, 'pnpm-workspace.yaml'),
+              'utf8',
+            ),
+          }
+        : {}),
       manifest: JSON.parse(
         readFileSync(join(request.cwd, 'package.json'), 'utf8'),
       ),
@@ -301,6 +324,7 @@ export function createFixture(options: FixtureOptions = {}): Fixture {
     bridgeFile,
     cacheDir,
     calls,
+    versionCwds,
     plan(input = {}) {
       return createBundlePlan({
         appDir,
@@ -323,7 +347,10 @@ export function createFixture(options: FixtureOptions = {}): Fixture {
         defaultNodeCacheDir: cacheDir,
         acquireNode: acquire,
         runPnpm: fakeRunPnpm,
-        pnpmVersion: async () => '11.25.0',
+        pnpmVersion: async (_env, cwd) => {
+          versionCwds.push(cwd);
+          return '11.25.0';
+        },
         ...overrides,
       };
     },

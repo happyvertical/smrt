@@ -7,65 +7,9 @@ import {
   serializeBundleReport,
   validateBundleReport,
 } from './report.js';
+import { sampleBundleReport, sha } from './testing/report-fixture.js';
 
-const sha = (c: string): string => c.repeat(64);
-
-function sample(): BundleReportV1 {
-  return {
-    version: 1,
-    tool: { name: '@happyvertical/smrt-desktop', version: '0.60.14' },
-    product: {
-      productId: 'smrt-start',
-      bundleId: 'com.happyvertical.smrt-start',
-      displayName: 'SMRT Start',
-      productVersion: '1.2.3',
-      channel: 'stable',
-    },
-    target: 'aarch64-apple-darwin',
-    host: {
-      platform: 'darwin',
-      arch: 'arm64',
-      node: '26.8.1',
-      pnpm: '11.25.0',
-    },
-    inputs: {
-      packageJsonSha256: sha('1'),
-      lockfileSha256: sha('2'),
-      buildTreeSha256: sha('3'),
-    },
-    node: {
-      version: '26.8.1',
-      distFile: 'node-v26.8.1-darwin-arm64.tar.gz',
-      archiveSha256: sha('4'),
-      binarySha256: sha('5'),
-      machine: 'arm64',
-    },
-    bridge: { file: 'bridge/smrt-mcp-bridge.mjs', sha256: sha('6'), bytes: 10 },
-    features: {
-      enabled: ['ai-providers'],
-      removedPackages: [],
-      acknowledgedDynamicImports: [],
-    },
-    packages: [
-      { name: 'a', version: '1.0.0', path: 'resources/app/node_modules/a' },
-      { name: 'b', version: '1.0.0', path: 'resources/app/node_modules/b' },
-    ],
-    natives: [],
-    nativeExceptions: [],
-    pruned: {
-      files: 1,
-      bytes: 2,
-      removedPackageFiles: 3,
-      removedPackageBytes: 4,
-    },
-    files: {
-      count: 2,
-      bytes: 20,
-      listSha256: sha('7'),
-      breakdown: { nodeBinary: 10, nodeModules: 5, appBuild: 4, other: 1 },
-    },
-  };
-}
+const sample = sampleBundleReport;
 
 function reject(mutate: (report: Record<string, any>) => void): void {
   const copy = JSON.parse(JSON.stringify(sample()));
@@ -107,6 +51,7 @@ describe('bundle report schema', () => {
       inputs: {
         ...sample().inputs,
         workspaceYamlSha256: sha('a'),
+        npmrcSha256: sha('c'),
         patchesSha256: sha('b'),
       },
       measurements: {
@@ -143,6 +88,12 @@ describe('bundle report schema', () => {
     });
     reject((r) => {
       r.version = 2;
+    });
+    reject((r) => {
+      delete r.files.tauriBundleSha256;
+    });
+    reject((r) => {
+      r.inputs.npmrcSha256 = 'abc';
     });
     reject((r) => {
       r.inputs.lockfileSha256 = 'abc';

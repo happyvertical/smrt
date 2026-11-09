@@ -9,6 +9,7 @@ import {
   readdirSync,
   readFileSync,
   realpathSync,
+  renameSync,
   rmSync,
   statSync,
   symlinkSync,
@@ -40,6 +41,7 @@ import {
   withStagedPublish,
   writeNewFile,
 } from './paths.js';
+import { writeEarlierBundle } from './testing/report-fixture.js';
 import { BundleTreeError } from './tree-errors.js';
 
 const posixOnly = process.platform === 'win32' ? describe.skip : describe;
@@ -670,6 +672,53 @@ posixOnly('walking and copying on a real filesystem', () => {
       );
     });
 
+    it('refuses an ancestor swapped for a symlink during the walk', async () => {
+      put('a/b/file.txt', 'honest');
+      const evil = join(base, 'evil');
+      mkdirSync(join(evil, 'b'), { recursive: true });
+      writeFileSync(join(evil, 'b/file.txt'), 'stolen');
+      let swapped = false;
+      const fs: TreeFs = {
+        ...nodeTreeFs,
+        async lstat(path) {
+          // After the directory identity check, before the child is looked at.
+          if (path === join(src, 'a/b/file.txt') && !swapped) {
+            swapped = true;
+            renameSync(join(src, 'a'), join(base, 'a.moved'));
+            symlinkSync(evil, join(src, 'a'));
+          }
+          return nodeTreeFs.lstat(path);
+        },
+      };
+      const error = await walkTree({ root: src, fs }).catch((e) => e);
+      expect(swapped).toBe(true);
+      expect(error).toBeInstanceOf(BundleTreeError);
+      expect(error.code).toBe('entry_changed');
+    });
+
+    it('refuses a file opened through a symlinked ancestor even if its identity matches', async () => {
+      const file = put('a/file.txt', 'honest');
+      const evil = join(base, 'evil');
+      mkdirSync(evil);
+      writeFileSync(join(evil, 'file.txt'), 'stolen');
+      const fs: TreeFs = {
+        ...nodeTreeFs,
+        async open(path, flags, mode) {
+          if (path !== file) return nodeTreeFs.open(path, flags, mode);
+          const original = await nodeTreeFs.lstat(file);
+          renameSync(join(src, 'a'), join(base, 'a.moved'));
+          symlinkSync(evil, join(src, 'a'));
+          const handle = await nodeTreeFs.open(path, flags, mode);
+          // The attacker also controls what the descriptor reports.
+          return { ...handle, stat: async () => original };
+        },
+      };
+      expect(await codeOf(copyTree({ root: src, destRoot: out, fs }))).toBe(
+        'symlink_refused',
+      );
+      expect(existsSync(join(out, 'a/file.txt'))).toBe(false);
+    });
+
     it('refuses a directory replaced between its listing and its re-check', async () => {
       put('d/a.txt');
       let dirLstats = 0;
@@ -839,8 +888,7 @@ posixOnly('staging and publish', () => {
   });
 
   it('moves a previous bundle aside before deleting it when replacing', async () => {
-    mkdirSync(join(parent, 'bundle'));
-    writeFileSync(join(parent, 'bundle/old'), 'old');
+    writeEarlierBundle(join(parent, 'bundle'));
     const staging = await createStaging(parent);
     writeFileSync(join(staging.path, 'new'), 'new');
     await publishStaging(staging, join(parent, 'bundle'), {
@@ -848,13 +896,108 @@ posixOnly('staging and publish', () => {
       randomSuffix: () => 'aside',
     });
     expect(names()).toEqual(['bundle']);
-    expect(existsSync(join(parent, 'bundle/old'))).toBe(false);
+    expect(existsSync(join(parent, 'bundle/resources'))).toBe(false);
     expect(readFileSync(join(parent, 'bundle/new'), 'utf8')).toBe('new');
   });
 
+  describe('replacing with existing: replace', () => {
+    const replace = async (): Promise<string> => {
+      const staging = await createStaging(parent);
+      writeFileSync(join(staging.path, 'new'), 'new');
+      const code = await codeOf(
+        publishStaging(staging, join(parent, 'bundle'), {
+          existing: 'replace',
+          randomSuffix: () => 'aside',
+        }),
+      );
+      if (code !== 'ok') await disposeStaging(staging);
+      return code;
+    };
+
+    it('refuses a directory holding unrelated files and leaves it untouched', async () => {
+      mkdirSync(join(parent, 'bundle'));
+      writeFileSync(join(parent, 'bundle/thesis.docx'), 'precious');
+      expect(await replace()).toBe('destination_exists');
+      expect(readFileSync(join(parent, 'bundle/thesis.docx'), 'utf8')).toBe(
+        'precious',
+      );
+      expect(names()).toEqual(['bundle']);
+    });
+
+    it('refuses a bundle layout whose report does not parse, or with extra names', async () => {
+      writeEarlierBundle(join(parent, 'bundle'));
+      writeFileSync(join(parent, 'bundle/bundle-report.json'), '{"version":1}');
+      expect(await replace()).toBe('destination_exists');
+      writeEarlierBundle(join(parent, 'bundle'));
+      writeFileSync(join(parent, 'bundle/notes.txt'), 'mine');
+      expect(await replace()).toBe('destination_exists');
+      expect(readFileSync(join(parent, 'bundle/notes.txt'), 'utf8')).toBe(
+        'mine',
+      );
+      expect(existsSync(join(parent, 'bundle/resources/old.txt'))).toBe(true);
+    });
+
+    it('refuses a bundle-shaped directory with no report and one whose parts are links', async () => {
+      mkdirSync(join(parent, 'bundle/resources'), { recursive: true });
+      expect(await replace()).toBe('destination_exists');
+      rmSync(join(parent, 'bundle'), { recursive: true });
+      writeEarlierBundle(join(parent, 'bundle'));
+      mkdirSync(join(parent, 'elsewhere'));
+      writeFileSync(join(parent, 'elsewhere/keep'), 'keep');
+      rmSync(join(parent, 'bundle/resources'), { recursive: true });
+      symlinkSync(join(parent, 'elsewhere'), join(parent, 'bundle/resources'));
+      expect(await replace()).toBe('destination_exists');
+      expect(readFileSync(join(parent, 'elsewhere/keep'), 'utf8')).toBe('keep');
+    });
+
+    it('refuses a symlink at the output', async () => {
+      mkdirSync(join(parent, 'real'));
+      writeFileSync(join(parent, 'real/keep'), 'keep');
+      symlinkSync(join(parent, 'real'), join(parent, 'bundle'));
+      expect(await replace()).toBe('destination_exists');
+      expect(readFileSync(join(parent, 'real/keep'), 'utf8')).toBe('keep');
+    });
+
+    it('accepts an empty directory and a real earlier bundle', async () => {
+      mkdirSync(join(parent, 'bundle'));
+      expect(await replace()).toBe('ok');
+      expect(readFileSync(join(parent, 'bundle/new'), 'utf8')).toBe('new');
+      rmSync(join(parent, 'bundle'), { recursive: true });
+      writeEarlierBundle(join(parent, 'bundle'));
+      expect(await replace()).toBe('ok');
+      expect(names()).toEqual(['bundle']);
+    });
+
+    it('checks again after moving the directory aside and puts it back', async () => {
+      // A file appears between the first check and the rename.
+      writeEarlierBundle(join(parent, 'bundle'));
+      const fs: TreeFs = {
+        ...nodeTreeFs,
+        async rename(from, to) {
+          if (from === join(parent, 'bundle')) {
+            writeFileSync(join(parent, 'bundle/late.txt'), 'late');
+          }
+          return nodeTreeFs.rename(from, to);
+        },
+      };
+      const staging = await createStaging(parent);
+      expect(
+        await codeOf(
+          publishStaging(staging, join(parent, 'bundle'), {
+            existing: 'replace',
+            fs,
+          }),
+        ),
+      ).toBe('destination_exists');
+      expect(readFileSync(join(parent, 'bundle/late.txt'), 'utf8')).toBe(
+        'late',
+      );
+      await disposeStaging(staging);
+    });
+  });
+
   it('restores the previous bundle if the final rename fails', async () => {
-    mkdirSync(join(parent, 'bundle'));
-    writeFileSync(join(parent, 'bundle/old'), 'old');
+    writeEarlierBundle(join(parent, 'bundle'));
     const staging = await createStaging(parent);
     const fs: TreeFs = {
       ...nodeTreeFs,
@@ -873,7 +1016,9 @@ posixOnly('staging and publish', () => {
         }),
       ),
     ).toBe('publish_failed');
-    expect(readFileSync(join(parent, 'bundle/old'), 'utf8')).toBe('old');
+    expect(readFileSync(join(parent, 'bundle/resources/old.txt'), 'utf8')).toBe(
+      'old',
+    );
     await disposeStaging(staging);
   });
 
