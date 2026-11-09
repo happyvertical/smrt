@@ -22,6 +22,7 @@ import type {
   SmrtAiUsageEvent,
 } from '@happyvertical/smrt-types';
 import type { DatabaseInterface } from '@happyvertical/sql';
+import { observeAiTranscriptUsage } from '../ai-transcripts.js';
 import type { AiUsageConfig } from '../config.js';
 import { config } from '../config.js';
 import { AiUsagePersistenceHandler } from './ai-usage.js';
@@ -514,6 +515,9 @@ export function createAiUsageRecorder(
   }
 
   const recorder: AiUsageRecorder = async (event: unknown) => {
+    // Transcript capture (#4780) reads the raw event first, whatever the
+    // usage config says.
+    observeAiTranscriptUsage(event);
     if (handlers.length === 0) return;
     try {
       const normalized = normalizeAiUsageEvent(event, options.aiConfig, {

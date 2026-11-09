@@ -28,6 +28,7 @@ import {
 } from './db-errors';
 import {
   assertFiniteUnitInterval,
+  type DecisionOptions,
   type EvaluateOptions,
   type EvaluationResult,
 } from './decisions';
@@ -610,6 +611,14 @@ export interface AiOperationOptions extends AITextCompletionOptions {
    * 'tools→none'`. Not forwarded to `ai.message()`.
    */
   toolUse?: AiToolUse;
+
+  /**
+   * Transcript directive (#4780), only while the app enables
+   * `inference.transcripts`: `true` always stores this call's transcript,
+   * `false` never does; omitted, successes are sampled. Not forwarded to
+   * `ai.message()`.
+   */
+  transcript?: boolean;
 }
 
 /** See {@link AiOperationOptions.toolUse}. */
@@ -2075,6 +2084,39 @@ export class SmrtObject extends SmrtClass {
       }
     }
     return { sensitive, readPermissions };
+  }
+
+  /**
+   * Values of this object's `sensitive` fields, masked wherever they appear
+   * in a stored AI transcript (#4780): `describe()` / `do()` embed the
+   * object's data in the prompt, so its sensitive values could reach one.
+   */
+  protected override aiTranscriptSensitiveValues(): Array<{
+    field: string;
+    value: string;
+  }> {
+    const values: Array<{ field: string; value: string }> = [];
+    let sensitive: Set<string>;
+    try {
+      sensitive = this.getPublicFieldPolicies().sensitive;
+    } catch {
+      return values;
+    }
+    for (const field of sensitive) {
+      const value = (this as unknown as Record<string, unknown>)[field];
+      if (typeof value === 'string' && value.trim() !== '') {
+        values.push({ field, value });
+      } else if (typeof value === 'number' || typeof value === 'bigint') {
+        values.push({ field, value: String(value) });
+      } else if (value && typeof value === 'object') {
+        try {
+          values.push({ field, value: JSON.stringify(value) });
+        } catch {
+          // An unserializable value cannot appear in a prompt verbatim.
+        }
+      }
+    }
+    return values;
   }
 
   /**
@@ -5263,7 +5305,10 @@ export class SmrtObject extends SmrtClass {
         signal: options.signal,
         timeout: options.timeout,
         usageTags: { operation: 'decision', className: this._className },
-      },
+        ...(options.transcript !== undefined
+          ? { transcript: options.transcript }
+          : {}),
+      } as DecisionOptions,
     );
     // `decision` was already resolved above, so a missing result would be an
     // internal contract violation rather than a legacy-route fallback.

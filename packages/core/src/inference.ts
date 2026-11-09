@@ -270,6 +270,37 @@ export interface InferenceConfig {
    * replaced whole by the highest layer defining it. SMRT ships none.
    */
   fusions?: Record<string, InferenceFusionDefinition>;
+  /**
+   * Opt-in AI call transcripts (#4780), app-level only: read from the
+   * process config (smrt.config < `config()` < `SMRT_INFERENCE_TRANSCRIPTS`),
+   * never from instance options, resolvers or tenant settings. Off by default.
+   */
+  transcripts?: InferenceTranscriptsConfig;
+}
+
+/** Per-prompt transcript sampling override (#4780). */
+export interface InferenceTranscriptPromptConfig {
+  /** Capture rate for successful calls of this prompt key, 0..1. */
+  sample?: number;
+}
+
+/**
+ * Transcript capture config (#4780). Scalars take the highest layer that sets
+ * them; `prompts` entries are replaced whole per key.
+ */
+export interface InferenceTranscriptsConfig {
+  /** Store transcripts at all. Default `false`. */
+  enabled?: boolean;
+  /**
+   * Capture rate for successful calls, drawn per call, 0..1. Default `0.1`.
+   * Failed calls, calls with substitutions, degraded or failed fusion runs
+   * and calls passing `transcript: true` are always captured.
+   */
+  sample?: number;
+  /** Per-row byte cap over request + response + tool events. Default 65536. */
+  maxBytes?: number;
+  /** Sampling overrides by prompt key. */
+  prompts?: Record<string, InferenceTranscriptPromptConfig>;
 }
 
 /** Input to an {@link InferenceResolver}. */
@@ -469,7 +500,21 @@ function inferenceConfigFromEnv(): InferenceConfig | undefined {
       };
     }
   }
-  return out.defaultTier || out.tiers ? out : undefined;
+  // SMRT_INFERENCE_TRANSCRIPTS=1|true|on enables transcripts (#4780);
+  // 0|false|off disables them over any config layer.
+  const transcripts = readEnv('SMRT_INFERENCE_TRANSCRIPTS')?.toLowerCase();
+  if (transcripts !== undefined) {
+    if (['1', 'true', 'on', 'yes'].includes(transcripts)) {
+      out.transcripts = { enabled: true };
+    } else if (['0', 'false', 'off', 'no'].includes(transcripts)) {
+      out.transcripts = { enabled: false };
+    } else {
+      throw new Error(
+        `SMRT_INFERENCE_TRANSCRIPTS must be 1/true/on or 0/false/off; got "${transcripts}".`,
+      );
+    }
+  }
+  return out.defaultTier || out.tiers || out.transcripts ? out : undefined;
 }
 
 /**
@@ -507,6 +552,28 @@ export function mergeInferenceConfigs(
         merged.fusions ??= {};
         merged.fusions[name] = fusion as InferenceFusionDefinition;
       }
+    }
+    const transcripts = asRecord(record.transcripts);
+    if (transcripts) {
+      const next: InferenceTranscriptsConfig = {
+        ...(merged.transcripts ?? {}),
+      };
+      for (const key of ['enabled', 'sample', 'maxBytes'] as const) {
+        if (transcripts[key] !== undefined) {
+          (next as Record<string, unknown>)[key] = transcripts[key];
+        }
+      }
+      const prompts = asRecord(transcripts.prompts);
+      if (prompts) {
+        for (const [key, prompt] of Object.entries(prompts)) {
+          if (prompt === undefined) continue;
+          next.prompts = {
+            ...(next.prompts ?? {}),
+            [key]: prompt as InferenceTranscriptPromptConfig,
+          };
+        }
+      }
+      merged.transcripts = next;
     }
     const tiers = asRecord(record.tiers);
     if (tiers) {
@@ -570,6 +637,58 @@ export function assertInferenceConfig(
     if (!asRecord(fusion)) {
       throw new Error(`inference.fusions.${name} must be an object.`);
     }
+  }
+  assertInferenceTranscriptsConfig(value.transcripts);
+}
+
+function assertSampleRate(value: unknown, path: string): void {
+  if (
+    value !== undefined &&
+    (typeof value !== 'number' ||
+      !Number.isFinite(value) ||
+      value < 0 ||
+      value > 1)
+  ) {
+    throw new Error(`${path} must be a number from 0 to 1.`);
+  }
+}
+
+/** Minimum `inference.transcripts.maxBytes`: room for a truncation envelope. */
+export const MIN_TRANSCRIPT_MAX_BYTES = 1024;
+
+/** Validate `inference.transcripts` (#4780), failing loudly. */
+export function assertInferenceTranscriptsConfig(value: unknown): void {
+  if (value === undefined) return;
+  const record = asRecord(value);
+  if (!record) throw new Error('inference.transcripts must be an object.');
+  if (record.enabled !== undefined && typeof record.enabled !== 'boolean') {
+    throw new Error('inference.transcripts.enabled must be a boolean.');
+  }
+  assertSampleRate(record.sample, 'inference.transcripts.sample');
+  if (
+    record.maxBytes !== undefined &&
+    (typeof record.maxBytes !== 'number' ||
+      !Number.isSafeInteger(record.maxBytes) ||
+      record.maxBytes < MIN_TRANSCRIPT_MAX_BYTES)
+  ) {
+    throw new Error(
+      `inference.transcripts.maxBytes must be an integer of at least ${MIN_TRANSCRIPT_MAX_BYTES}.`,
+    );
+  }
+  if (record.prompts !== undefined && !asRecord(record.prompts)) {
+    throw new Error('inference.transcripts.prompts must be an object.');
+  }
+  for (const [key, prompt] of Object.entries(asRecord(record.prompts) ?? {})) {
+    const entry = asRecord(prompt);
+    if (!entry) {
+      throw new Error(
+        `inference.transcripts.prompts.${key} must be an object.`,
+      );
+    }
+    assertSampleRate(
+      entry.sample,
+      `inference.transcripts.prompts.${key}.sample`,
+    );
   }
 }
 

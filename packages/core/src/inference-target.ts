@@ -21,7 +21,9 @@ import {
   attachAiUsageRecorder,
   type CreateAiUsageRecorderOptions,
   createAiUsageRecorder,
+  resolveAiUsageTenantId,
 } from './adapters/ai-usage-recorder.js';
+import { maybeWithAiTranscripts } from './ai-transcripts.js';
 import {
   InferenceBindingError,
   type InferenceLatency,
@@ -186,6 +188,14 @@ export interface ResolveInferenceTargetOptions {
   appBindings?: boolean;
   /** Names the caller in binding errors. Default `className` or `getAI`. */
   owner?: string;
+  /**
+   * Transcript directive for clients passed to the result's `instrument()`
+   * (#4780): `false` never stores a transcript (chat, whose conversations
+   * smrt-chat already stores), `true` always does; omitted, successes are
+   * sampled. Transcripts go to `usage.db` and only while the app enables
+   * `inference.transcripts`.
+   */
+  transcript?: boolean;
 }
 
 /** Result of {@link resolveInferenceTarget}. */
@@ -213,6 +223,13 @@ export interface ResolvedInferenceTarget {
    * client.getCapabilities())`.
    */
   capabilities: InferenceCapabilities;
+  /**
+   * Wrap the client the site builds from `options` for transcript capture
+   * (#4780): `getAI(options)` then `instrument(client)`. Returns the client
+   * unchanged while the app does not enable `inference.transcripts`, or when
+   * the site passed `transcript: false`.
+   */
+  instrument<T>(client: T): T;
 }
 
 /**
@@ -334,12 +351,36 @@ export async function resolveInferenceTarget(
     typeof clientOptions?.[key] === 'string'
       ? (clientOptions[key] as string)
       : undefined;
+  const transcriptTenant =
+    options.usage?.tenantId !== undefined
+      ? options.usage.tenantId
+      : options.tenantId;
+  const instrument = <T>(client: T): T =>
+    options.transcript === false
+      ? client
+      : maybeWithAiTranscripts(client, () => ({
+          db: options.usage?.db ?? null,
+          className: options.usage?.className ?? options.className,
+          tenantId: () => resolveAiUsageTenantId(transcriptTenant) ?? null,
+          ...((field('provider') ?? field('type'))
+            ? { provider: field('provider') ?? field('type') }
+            : {}),
+          ...((field('model') ?? field('defaultModel'))
+            ? { model: field('model') ?? field('defaultModel') }
+            : {}),
+          secrets: () => {
+            const key = field('apiKey');
+            return key ? [key] : [];
+          },
+          ...(options.transcript === true ? { transcript: true } : {}),
+        }));
   return {
     options: clientOptions,
     resolution,
     bound,
     ...(source ? { source } : {}),
     usageTags,
+    instrument,
     capabilities: detectInferenceCapabilities({
       provider: field('provider') ?? field('type'),
       model: field('model') ?? field('defaultModel'),
