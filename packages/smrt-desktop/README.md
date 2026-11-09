@@ -514,6 +514,7 @@ its peer's uid or SID, and a client cannot learn who owns the listening end. So
 | `not_installed` | `locate()` found no installed product |
 | `not_running` | no live instance (`status()`, or `ensureReady({start:false})`) |
 | `untrusted_state` | the installation, record, directory, socket or peer failed a custody or protocol check; nothing was started |
+| `unresponsive` | something holds the control endpoint (it accepted the connection, or never answered) but gave no usable answer, for example a saturated server dropping connections past its limit; nothing was started, try again later |
 | `timeout` | not ready within the budget |
 
 Cancelling with the `AbortSignal` rejects with the signal's reason. A result
@@ -559,9 +560,16 @@ that is not in its own list.
 3. Vet the endpoint (directory, socket type, owner, mode). Failure:
    `untrusted_state`. An untrusted record means someone tampered with the
    private directory, so no second shell is started on top of it.
-4. Ask `status`. No listener (missing, refused, no answer) means the record is
-   stale: go to step 5. A nonce, product or origin disagreement is re-read
-   once, then `instance_mismatch`. `ready` is returned. `failed(code)` is
+4. Ask `status`. Only proof that nobody listens (the socket is missing, or the
+   connection is refused: `ENOENT`, `ENOTDIR`, `ECONNREFUSED`) means the record
+   is stale: go to step 5. A connection that was accepted and then reset,
+   closed or left unanswered is not stale: the server drops connections past
+   `maxConnections`, and an `ensure-ready` long poll can hold a slot for up to
+   600 s, so a busy instance looks exactly like that. It reports
+   `unresponsive` (from `status`), or, inside `ensureReady`, keeps asking
+   `status` until the budget ends and then returns `unresponsive`; it never
+   starts a second shell on top of it. A nonce, product or origin
+   disagreement is re-read once, then `instance_mismatch`. `ready` is returned. `failed(code)` is
    returned and never retried: a live shell that failed is not a reason to
    start another. `starting` waits with `ensure-ready` for the remaining
    budget.
@@ -594,6 +602,10 @@ endpoint, serves `status` and `ensure-ready`, republishes `instance.json` on
 every phase change and leaves it on `close()`), and `serveControlChannel` with a
 handler registry. It models the Rust shell's observable behavior, not its
 peer checks or its single-instance lock.
+A failed `instance.json` write does not stop later phases from being published
+(`startReferenceShell` takes an `onWriteError` callback, and `flush()` / `close()`
+rethrow the first failure not yet reported), so a test double never sits
+silently at `starting`.
 
 ### Native credential handoff
 
@@ -942,7 +954,7 @@ One table maps this package onto the launcher (#4791). `connectInstance` maps a
 | `ensureReady()` | `ready` | `{ origin }`; keep `instanceNonce` and `origin` for the credential request |
 | `ensureReady()` | `not_installed` | `missing_install` |
 | `ensureReady()` | `failed` with `unsupported_contract` | `unsupported_contract` |
-| `ensureReady()` | every other `failed`, `not_running`, `untrusted_state`, `timeout` | `stale_instance` |
+| `ensureReady()` | every other `failed`, `not_running`, `untrusted_state`, `unresponsive`, `timeout` | `stale_instance` |
 | `provider.acquire(...)` | a lease | `{ token, release }` (see the notes below) |
 | `provider.acquire(...)` | `credential_unavailable` | "connect the assistant in the app" (never connected) |
 | `provider.acquire(...)` | `credential_invalid` | "connect the assistant in the app" (expired or revoked: reconnect) |

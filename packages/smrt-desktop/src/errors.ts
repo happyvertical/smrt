@@ -49,7 +49,9 @@ const RENDEZVOUS_ERROR_MESSAGES = {
   unsupported_op: 'Control channel operation is not supported',
   invalid_endpoint: 'Control channel endpoint is not valid',
   untrusted_endpoint: 'Control channel endpoint failed the trust checks',
-  control_unreachable: 'Control channel could not be reached',
+  control_unreachable: 'Control channel has no listener',
+  control_indeterminate:
+    'Control channel accepted the connection but gave no usable answer',
   control_timeout: 'Control channel did not answer in time',
   control_aborted: 'Control channel request was aborted',
   control_server_failed: 'Control channel server could not be started',

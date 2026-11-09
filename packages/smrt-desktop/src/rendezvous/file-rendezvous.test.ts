@@ -21,7 +21,10 @@ import {
   PRODUCT,
   SHELL_EXECUTABLE,
 } from '../testing/rendezvous-fixture.js';
-import { createControlHandlerRegistry } from './control-transport.js';
+import {
+  createControlHandlerRegistry,
+  sendControlRequest,
+} from './control-transport.js';
 import { SHELL_FAILURE_CODES } from './failure-code.js';
 import {
   createFileRendezvous,
@@ -239,7 +242,7 @@ posixOnly(
         expect(existsSync(stale)).toBe(true);
       });
 
-      it('treats an unanswered status as stale and spawns', async () => {
+      it('does not treat a listener that never answers as stale, and does not spawn', async () => {
         const server = await import('node:net');
         const path = `${dir}/c-1111222233334444555566667777aaaa.sock`;
         const hung = server.createServer((socket) =>
@@ -254,11 +257,76 @@ posixOnly(
           }).ensureReady({
             timeoutMs: 200,
           });
-          expect(result).toEqual({ state: 'timeout' });
-          expect(spawnShell).toHaveBeenCalledTimes(1);
+          expect(result).toEqual({ state: 'unresponsive' });
+          expect(spawnShell).not.toHaveBeenCalled();
+          expect(await make({ statusTimeoutMs: 50 }).status()).toEqual({
+            state: 'unresponsive',
+          });
         } finally {
           hung.close();
         }
+      });
+
+      it('does not treat a connection that is closed or ended after connecting as stale', async () => {
+        const net = await import('node:net');
+        const drops: Array<
+          [string, string, (socket: import('node:net').Socket) => void]
+        > = [
+          ['close', 'aaaaaaaa', (socket) => socket.destroy()],
+          ['end', 'bbbbbbbb', (socket) => socket.end()],
+        ];
+        for (const [name, hex, drop] of drops) {
+          const path = `${dir}/c-${hex}2222333344445555dddd7777.sock`;
+          const dropper = net.createServer((socket) => {
+            socket.on('error', () => {});
+            drop(socket);
+          });
+          await new Promise<void>((resolve) => dropper.listen(path, resolve));
+          chmodSync(path, 0o600);
+          try {
+            writeRecord(recordText({ control: { kind: 'unix', path } }));
+            expect(await make().ensureReady({ timeoutMs: 120 }), name).toEqual({
+              state: 'unresponsive',
+            });
+            expect(spawnShell, name).not.toHaveBeenCalled();
+          } finally {
+            dropper.close();
+          }
+        }
+      });
+
+      it('never spawns a second shell while a saturated server drops new connections', async () => {
+        // The server serves at most two connections at once, and two
+        // ensure-ready long polls hold both slots (a held slot can last up to
+        // 600 s). A third client is connected and then dropped: that is a
+        // busy instance, not a dead one.
+        const supervisor = createReferenceSupervisor({ productId: PRODUCT });
+        const shell = await boot({ supervisor, maxConnections: 2 });
+        const hold = new AbortController();
+        const held = [0, 1].map(() =>
+          sendControlRequest(
+            shell.endpoint,
+            { v: 1, op: 'ensure-ready', timeoutMs: 30_000 },
+            { timeoutMs: 40_000, signal: hold.signal },
+          ).catch(() => undefined),
+        );
+        await sleep(100);
+
+        const result = await make().ensureReady({ timeoutMs: 400 });
+        expect(result).toEqual({ state: 'unresponsive' });
+        expect(await make().status()).toEqual({ state: 'unresponsive' });
+        expect(spawnShell).not.toHaveBeenCalled();
+
+        // Once a slot frees up, the same instance is found alive and ready.
+        supervisor.ready(ORIGIN);
+        await shell.flush();
+        await Promise.all(held);
+        hold.abort();
+        expect(await make().ensureReady({ timeoutMs: 2000 })).toMatchObject({
+          state: 'ready',
+          origin: ORIGIN,
+        });
+        expect(spawnShell).not.toHaveBeenCalled();
       });
 
       it('starts the shell with the background flag, an allowlisted environment and no shell', async () => {
