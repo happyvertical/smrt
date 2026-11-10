@@ -33,7 +33,7 @@
     "preview": "vite preview",
     "start": "node build",
     "clean": "rm -rf dist build .svelte-kit",
-    "test": "vitest run",
+    "test": "vitest run && vitest run -c vitest.dom.config.ts",
     "typecheck": "svelte-kit sync && tsc --noEmit -p tsconfig.json && svelte-check --tsconfig ./tsconfig.json",
     "prepack": "node ../../scripts/prepack-package.js"
   },

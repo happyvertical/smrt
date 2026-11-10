@@ -23,7 +23,8 @@ SvelteKit or `src/lib`). README has the route and JSON contracts.
 | `src/lib/server/catalog.ts`, `policy.ts`, `mcp-server.ts` | Merged tool catalog, the one policy, the `/mcp` server. |
 | `src/lib/server/http.ts`, `events.ts` | Route plumbing; in-process event bus for SSE. |
 | `src/lib/server/inference.ts`, `inference-registry.ts` | smrt-inference host + controller over shell.db and the runtime's master key; `asOwner` runs a settings request as the verified owner; `installShellInference` registers the user resolver (the assistant's key source). |
-| `src/lib/server/assistant/`, `src/lib/assistant/` | Assistant: turn loop, hold, config, routes (`mountAssistantRoutes`), thread store; dock UI, pure reducer/stream parser, `guidance/system.md`. |
+| `src/lib/server/assistant/`, `src/lib/assistant/` | Assistant: turn loop, hold, config, routes (`mountAssistantRoutes`), thread store; chat column UI (`AssistantPanel`), pure reducer/stream parser, `guidance/system.md`. |
+| `src/routes/+layout.svelte`, `src/lib/ui/layout.ts`, `src/lib/ui/menu.ts` | Shell layout over smrt-svelte `AppShell`: left sidebar (the person's app only), the chat column (`panel`), footer voice/assistant toggles, user menu (Approvals with count, History, Theme, Settings, Sign out). Plugin mode (iframe or `?embed=plugin`) has no chat or toggles. Chat open state is per owner in localStorage. |
 | `src/lib/server/agent-cli/`, `assistant/agent-turn.ts`, `onboarding.ts` | Local agent CLI engine (detect, sign-in, locked-down turn, stream mapping), the `assistant` preference (engine, onboarding), onboarding routes; UI `routes/welcome`, `components/ConnectAi.svelte`, `routes/settings/assistant`. |
 | `src/routes/settings/` | Settings menu (`ShellSettingsPage`), built-in sections, owner-only `inference/` (panel + actions over the shared controller). |
 | `src/routes/` | `/api/shell/*`, `/api/app/[...path]`, `/api/events`, `/mcp`, `/setup`, health. UI pages are placeholders. |
@@ -117,7 +118,7 @@ SvelteKit or `src/lib`). README has the route and JSON contracts.
 
 ## Tests and build
 
-`vitest run` (in-process, SQLite, temp dirs; `test-support.ts` seeds an owner
+`vitest run` then `vitest run -c vitest.dom.config.ts` (the layout's jsdom component tests, `*.dom.test.ts`, over smrt-svelte's built `dist`; rebuild smrt-svelte first). Node suite: in-process, SQLite, temp dirs; `test-support.ts` seeds an owner
 and a member; it opens the real driver because the vitest setup would
 pre-create tables). `pnpm build` (tsc engine, `svelte-kit sync`, `vite build`;
 the smrt() plugin generates `src/routes/api/{apps,approvals,_changes,_events,

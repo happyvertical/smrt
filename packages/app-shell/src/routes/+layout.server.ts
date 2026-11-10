@@ -6,6 +6,7 @@ import {
 } from '$lib/server/agent-cli/service';
 import { principalFromLocals } from '$lib/server/owner';
 import { DEPENDS } from '$lib/ui/events';
+import { isPluginRequest } from '$lib/ui/layout';
 import { loadDescription } from '$lib/ui/load';
 import { needsWelcome } from '$lib/ui/onboarding-client';
 import type { LayoutServerLoad } from './$types';
@@ -21,7 +22,13 @@ const sessionLoad = createSessionLayoutLoad();
 export const load: LayoutServerLoad = async (event) => {
   event.depends(DEPENDS.shell);
   const { session } = sessionLoad(event);
-  if (!session.authenticated) return { session, description: null };
+  // As a plugin view in Claude, Codex or ChatGPT the shell has no chat of its
+  // own (the host app is the chat).
+  const embedded = isPluginRequest({
+    secFetchDest: event.request.headers.get('sec-fetch-dest'),
+    embed: event.url.searchParams.get('embed'),
+  });
+  if (!session.authenticated) return { session, description: null, embedded };
   const result = await loadDescription(event.fetch);
   const description = result.ok ? result.description : null;
   // First run: an owner with an empty app who has not finished or skipped the
@@ -40,7 +47,13 @@ export const load: LayoutServerLoad = async (event) => {
         onboarding: settings.onboarding,
       })
     )
-      redirect(303, '/welcome');
+      // The embed flag survives the redirect (the iframe header does anyway).
+      redirect(
+        303,
+        event.url.searchParams.get('embed') === 'plugin'
+          ? '/welcome?embed=plugin'
+          : '/welcome',
+      );
   }
-  return { session, description };
+  return { session, description, embedded };
 };

@@ -5,13 +5,12 @@ import { tick } from 'svelte';
 import { goto, invalidateAll } from '$app/navigation';
 import { page } from '$app/state';
 import ConnectAi from '$lib/components/ConnectAi.svelte';
+import { ASSISTANT_OPEN_EVENT } from '$lib/ui/layout';
 import {
   completeFresh,
   OnboardingError,
   skipOnboarding,
 } from '$lib/ui/onboarding-client';
-
-const OPEN_KEY = 'smrt-app-shell:assistant-open';
 
 let step = $state<1 | 2>(page.url.searchParams.get('step') === '2' ? 2 : 1);
 let ready = $state(false);
@@ -33,15 +32,11 @@ async function finish() {
   try {
     await completeFresh();
     // Land in the shell with the assistant open and ready to use.
-    try {
-      localStorage.setItem(OPEN_KEY, '1');
-    } catch {
-      // storage is optional
-    }
     await invalidateAll();
     await goto('/');
-    // The dock is already mounted: ask it to open.
-    window.dispatchEvent(new CustomEvent('smrt-app-shell:open-assistant'));
+    // The layout is already mounted: ask it to open the chat column (it keeps
+    // that choice for this owner).
+    window.dispatchEvent(new CustomEvent(ASSISTANT_OPEN_EVENT));
   } catch (e) {
     error = e instanceof OnboardingError ? e.message : 'Something went wrong.';
   } finally {
