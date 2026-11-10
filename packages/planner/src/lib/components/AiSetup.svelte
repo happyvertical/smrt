@@ -75,12 +75,12 @@ const handsFreeAvailable = $derived(voice.status === 'ready');
 </script>
 
 {#if aiState.notice}
-  <p class="smrt-ai-setup__notice" data-smrt-part="notice" role="status">{aiState.notice}</p>
+  <p class="smrt-ai-setup__notice"  role="status" data-smrt-component="AiSetup">{aiState.notice}</p>
 {/if}
 
 <div class="smrt-ai-setup__root" data-smrt-component="AiSetup">
   {#if show.includes('think')}
-    <section class="smrt-ai-setup__card" data-smrt-part="card" data-state={capabilityState('think')} aria-labelledby="ai-think">
+    <section class="smrt-ai-setup__card" data-smrt-part="item" data-state={capabilityState('think')} aria-labelledby="ai-think">
       <header>
         <span class="smrt-ai-setup__badge" data-smrt-part="icon"><Icon path={THINK_ICON} size={22} /></span>
         <div>
@@ -284,7 +284,7 @@ const handsFreeAvailable = $derived(voice.status === 'ready');
   {/if}
 
   {#if show.includes('hear')}
-    <section class="smrt-ai-setup__card" data-smrt-part="card" data-state={capabilityState('hear')} aria-labelledby="ai-hear">
+    <section class="smrt-ai-setup__card" data-smrt-part="item" data-state={capabilityState('hear')} aria-labelledby="ai-hear">
       <header>
         <span class="smrt-ai-setup__badge" data-smrt-part="icon"><Icon path={HEAR_ICON} size={22} /></span>
         <div>
@@ -385,7 +385,7 @@ const handsFreeAvailable = $derived(voice.status === 'ready');
   {/if}
 
   {#if show.includes('speak')}
-    <section class="smrt-ai-setup__card" data-smrt-part="card" data-state={capabilityState('speak')} aria-labelledby="ai-speak">
+    <section class="smrt-ai-setup__card" data-smrt-part="item" data-state={capabilityState('speak')} aria-labelledby="ai-speak">
       <header>
         <span class="smrt-ai-setup__badge" data-smrt-part="icon"><Icon path={SPEAK_ICON} size={22} /></span>
         <div>
@@ -474,6 +474,9 @@ const handsFreeAvailable = $derived(voice.status === 'ready');
     padding: 0;
     cursor: pointer;
   }
+  .smrt-ai-setup__card[data-state='off'] .smrt-ai-setup__badge::after {
+    content: '';
+  }
 }
 
 @layer smrt.theme {
@@ -502,7 +505,6 @@ const handsFreeAvailable = $derived(voice.status === 'ready');
     opacity: 0.5;
   }
   .smrt-ai-setup__card[data-state='off'] .smrt-ai-setup__badge::after {
-    content: '';
     border-top: 2px solid currentColor;
   }
   .smrt-ai-setup__sub,

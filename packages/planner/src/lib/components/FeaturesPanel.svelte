@@ -62,7 +62,7 @@ function toggle(id: string, on: boolean) {
   />
 
   {#if groups.length > 1}
-    <div class="smrt-features-panel__chips" data-smrt-part="chips" role="group" aria-label="Browse by group">
+    <div class="smrt-features-panel__chips" data-smrt-part="list" role="group" aria-label="Browse by group">
       <ToggleButton pressed={groupId === null} onclick={() => (groupId = null)}>
         All
       </ToggleButton>
@@ -102,7 +102,7 @@ function toggle(id: string, on: boolean) {
   {:else}
     <p class="smrt-features-panel__meta" data-smrt-part="meta">No features match "{query}".</p>
   {/each}
-  <p class="smrt-features-panel__notice smrt-features-panel__meta" data-smrt-part="notice" role="status" aria-live="polite">{notice}</p>
+  <p class="smrt-features-panel__notice smrt-features-panel__meta" data-smrt-part="status" role="status" aria-live="polite">{notice}</p>
 
   <Disclosure title="Single records">
     <RecordFeatures />

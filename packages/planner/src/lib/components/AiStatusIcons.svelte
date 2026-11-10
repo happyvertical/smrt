@@ -52,6 +52,9 @@ const icons: Record<CapabilityId, string> = {
     height: 0;
     transform: rotate(-45deg);
   }
+  .smrt-ai-status-icons__cap[data-state='off']::after {
+    content: '';
+  }
 }
 
 @layer smrt.theme {
@@ -87,7 +90,6 @@ const icons: Record<CapabilityId, string> = {
     opacity: 0.5;
   }
   .smrt-ai-status-icons__cap[data-state='off']::after {
-    content: '';
     border-top: 2px solid currentColor;
   }
 }

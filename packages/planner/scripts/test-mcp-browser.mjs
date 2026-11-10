@@ -81,7 +81,7 @@ await themed.getByText('Themed',{exact:false}).first().waitFor({timeout:15000});
 await themed.getByRole('tab',{name:'Theme'}).click();
 await themed.waitForFunction(()=>{const themes=[...document.querySelectorAll('[data-theme]')].map(e=>e.getAttribute('data-theme'));return themes.length>0&&themes.every(t=>t==='glass');},undefined,{timeout:10000});
 if((await themed.evaluate(()=>window.__calls.length))!==0)throw Error('a stored browser theme changed the Kitchen plan');
-await themed.locator('button.preset').filter({hasText:'Material'}).first().click();
+await themed.locator('[data-smrt-component="ThemeSection"] [data-smrt-part="option"]').filter({hasText:'Material'}).first().click();
 await themed.waitForFunction(()=>window.__calls.some(c=>c.commands[0].input.document.theme?.preset==='material'),undefined,{timeout:10000});
 const styled = await browser.newPage();
 styled.on('pageerror',e=>errors.push(e.message));

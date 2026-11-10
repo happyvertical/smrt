@@ -44,7 +44,7 @@ const nameOf = (product: ModelRecord) =>
 </script>
 
 <section class="smrt-product-media__root" aria-label="Product images" data-smrt-component="ProductMedia">
-  <div class="smrt-product-media__heading" data-smrt-part="heading">
+  <div class="smrt-product-media__heading" data-smrt-part="header">
     <h3>Product images</h3>
     <p>Images stay in this browser demo and are linked through ProductAsset.</p>
     {#if !gallery}

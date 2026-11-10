@@ -18,7 +18,7 @@ const section = $derived(getSection(data.id));
 {#if section}
   <main>
     <header>
-      <div class="smrt-recipe-page__bar" data-smrt-part="toolbar">
+      <div class="smrt-recipe-page__bar" data-smrt-part="actions">
         <p class="smrt-recipe-page__meta" data-smrt-part="meta"><a href={appHref('/')}>Planner</a> / {section.label} options</p>
         <SectionIcons section={section.id} label={section.label} current="options" />
       </div>

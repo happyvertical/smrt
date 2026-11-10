@@ -95,7 +95,7 @@ onDestroy(() => controller.destroy());
 </script>
 
 {#snippet heading(_widget: OverviewWidget, title: string)}
-  <span class="smrt-section-overview__heading" data-smrt-part="heading">{title}</span>
+  <span class="smrt-section-overview__heading" data-smrt-part="header">{title}</span>
 {/snippet}
 
 <!-- Drawn once its widgets' components resolve, so a recipe widget never

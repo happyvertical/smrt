@@ -70,12 +70,12 @@ try {
   await page.getByRole('button', { name: /Bakery/ }).click();
   await page.getByRole('button', { name: 'Use this cookbook' }).click();
   await page.getByRole('dialog', { name: 'Kitchen edit needs attention' }).waitFor({ timeout: 20000 });
-  if (!(await page.locator('.shell-host').evaluate((element) => element.hasAttribute('inert')))) throw Error('app was not locked during ambiguous edit');
+  if (!(await page.locator('[data-smrt-component="PlannerLayout"]').evaluate((element) => element.hasAttribute('inert')))) throw Error('app was not locked during ambiguous edit');
   const draft = await page.locator('#bridge-draft').inputValue();
   if (!draft.includes('bakery') && !draft.includes('commerce.')) throw Error(`preview draft was not preserved: ${draft.slice(0, 300)}`);
   await page.getByRole('button', { name: 'Retry same edit' }).click();
   await page.getByRole('dialog', { name: 'Kitchen edit needs attention' }).waitFor({ state: 'detached', timeout: 20000 });
-  if ((await page.locator('.shell-host').getAttribute('inert')) !== null) throw Error('app stayed locked after retry');
+  if ((await page.locator('[data-smrt-component="PlannerLayout"]').getAttribute('inert')) !== null) throw Error('app stayed locked after retry');
   if (calls.length !== 2 || calls[0].id !== calls[1].id || calls[0].expectedRevision !== 1) {
     throw Error('preview retry changed its batch id or revision');
   }

@@ -127,7 +127,7 @@ const rates = (code: SampleTaxCode) =>
   <ul>
     {#each others as code (code.id)}
       <li data-tax-code={code.code}>
-        <span class="smrt-app-settings__name" data-smrt-part="name">{code.name}</span>
+        <span class="smrt-app-settings__name" data-smrt-part="title">{code.name}</span>
         <span class="smrt-app-settings__rates" data-smrt-part="description">{rates(code)}</span>
       </li>
     {/each}

@@ -50,7 +50,7 @@ function toggle(id: string) {
     {#if selection.ids.length === 0}
       <p>Nothing selected yet. Choose a package below.</p>
     {:else}
-      <ul class="smrt-packages-page__chips" data-smrt-part="chips">
+      <ul class="smrt-packages-page__chips" data-smrt-part="list">
         {#each selection.ids as id (id)}
           <li>
             <a href={appHref(`/packages/${id}/`)}>{humanize(id)}</a>
@@ -61,7 +61,7 @@ function toggle(id: string) {
         Clear selection
       </button>
     {/if}
-    <p class="smrt-packages-page__notice" role="status" aria-live="polite" data-smrt-part="notice">{notice}</p>
+    <p class="smrt-packages-page__notice" role="status" aria-live="polite" data-smrt-part="status">{notice}</p>
   </section>
 
   <section aria-label="Package catalog">
@@ -79,7 +79,7 @@ function toggle(id: string) {
       {#each results as pkg (pkg.id)}
         {@const selected = selection.has(pkg.id)}
         {@const lockedBy = selection.requiredBy(pkg.id)}
-        <li class:smrt-packages-page__selected={selected} animate:flip={{ duration: motionDuration('medium2', 300) }} data-smrt-part="card">
+        <li class:smrt-packages-page__selected={selected} animate:flip={{ duration: motionDuration('medium2', 300) }} data-smrt-part="item">
           <h3>
             <a href={appHref(`/packages/${pkg.id}/`)}>{humanize(pkg.id)}</a>
           </h3>

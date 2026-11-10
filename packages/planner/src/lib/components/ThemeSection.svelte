@@ -124,7 +124,7 @@ const cssPending = $derived.by(() => {
     <div class="smrt-theme-section__cards" role="group" aria-label="Theme look" data-smrt-part="grid">
       {#each themePresets as preset (preset.id)}
         {@const palette = context.state.resolvedScheme === 'dark' ? preset.dark : preset.light}
-        <button type="button" class="smrt-theme-section__choice smrt-theme-section__preset" data-smrt-part="card"
+        <button type="button" class="smrt-theme-section__choice smrt-theme-section__preset" data-smrt-part="option"
           class:smrt-theme-section__selected={!custom && (cookbookStore.theme?.preset ?? 'glass') === preset.id}
           aria-pressed={!custom && (cookbookStore.theme?.preset ?? 'glass') === preset.id}
           onclick={() => context?.setPreset(preset.id)}
@@ -132,22 +132,22 @@ const cssPending = $derived.by(() => {
           style:--smrt-planner-preview-surface={palette.surface}
           style:--smrt-planner-preview-primary={palette.primary}
           style:--smrt-planner-preview-ink={palette.onSurface}>
-          <span class="smrt-theme-section__name" data-smrt-part="name"><span class="smrt-theme-section__icon" aria-hidden="true" data-smrt-part="icon">{icons[preset.id]}</span>{preset.label}</span>
-          <span class="smrt-theme-section__preview" aria-hidden="true" data-smrt-part="preview">
+          <span class="smrt-theme-section__name" data-smrt-part="title"><span class="smrt-theme-section__icon" aria-hidden="true" data-smrt-part="icon">{icons[preset.id]}</span>{preset.label}</span>
+          <span class="smrt-theme-section__preview" aria-hidden="true" data-smrt-part="panel">
             <span class="smrt-theme-section__preview-sidebar" data-smrt-part="panel"><span></span><span></span><span></span></span>
-            <span class="smrt-theme-section__preview-main" data-smrt-part="main"><span class="smrt-theme-section__preview-title" data-smrt-part="title"></span><span class="smrt-theme-section__preview-body" data-smrt-part="body"><span></span><span></span></span></span>
+            <span class="smrt-theme-section__preview-main" data-smrt-part="body"><span class="smrt-theme-section__preview-title" data-smrt-part="title"></span><span class="smrt-theme-section__preview-body" data-smrt-part="body"><span></span><span></span></span></span>
           </span>
         </button>
       {/each}
     </div>
     <div class="smrt-theme-section__cards smrt-theme-section__schemes" role="group" aria-label="Appearance" data-smrt-part="grid">
       {#each schemes as scheme (scheme.id)}
-        <button type="button" class="smrt-theme-section__choice smrt-theme-section__scheme" data-smrt-part="card"
+        <button type="button" class="smrt-theme-section__choice smrt-theme-section__scheme" data-smrt-part="option"
           class:smrt-theme-section__selected={context.state.colorScheme === scheme.id}
           aria-pressed={context.state.colorScheme === scheme.id}
           onclick={() => context?.setColorScheme(scheme.id)}>
-          <span class="smrt-theme-section__name" data-smrt-part="name"><span class="smrt-theme-section__icon" aria-hidden="true" data-smrt-part="icon">{scheme.icon}</span>{scheme.label}</span>
-          <span class="smrt-theme-section__hint" data-smrt-part="hint">{scheme.hint}</span>
+          <span class="smrt-theme-section__name" data-smrt-part="title"><span class="smrt-theme-section__icon" aria-hidden="true" data-smrt-part="icon">{scheme.icon}</span>{scheme.label}</span>
+          <span class="smrt-theme-section__hint" data-smrt-part="description">{scheme.hint}</span>
         </button>
       {/each}
     </div>
@@ -202,7 +202,7 @@ const cssPending = $derived.by(() => {
     {#if custom}<Button variant="secondary" onclick={resetToPreset}>Reset brand colour</Button>{/if}
   </div>
   {#if invalid}<p class="smrt-theme-section__error" role="alert" data-smrt-part="error">Use a hex colour like #c2410c.</p>{/if}
-  <a class="smrt-theme-section__advanced" href={advancedStylesHref} data-smrt-part="card">
+  <a class="smrt-theme-section__advanced" href={advancedStylesHref} data-smrt-part="item">
     <span class="smrt-theme-section__advanced-icon" aria-hidden="true" data-smrt-part="icon">{'{}'}</span>
     <span><strong>Advanced Styles</strong><small>{cssPending ? 'This cookbook has custom CSS waiting for your approval' : 'Edit custom CSS for your app'}</small></span>
     <span class="smrt-theme-section__arrow" aria-hidden="true" data-smrt-part="icon">→</span>
@@ -359,6 +359,9 @@ const cssPending = $derived.by(() => {
   .smrt-theme-section__arrow {
     margin-inline-start: auto;
   }
+  .smrt-theme-section__wheel::after {
+    content: '';
+  }
 }
 
 @layer smrt.theme {
@@ -433,7 +436,6 @@ const cssPending = $derived.by(() => {
     box-shadow: 0 0 0 1px var(--smrt-hairline-color);
   }
   .smrt-theme-section__wheel::after {
-    content: '';
     border: 2px solid white;
     border-radius: 50%;
     background: var(--smrt-planner-picked-color);

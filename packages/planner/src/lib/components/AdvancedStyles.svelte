@@ -78,7 +78,7 @@ onDestroy(() => {
 
 <section class="smrt-advanced-styles__root" aria-labelledby="advanced-styles-title" data-smrt-component="AdvancedStyles">
   <a class="smrt-advanced-styles__back" href={backHref} data-sveltekit-reload={backHref.startsWith('/') ? true : undefined} data-smrt-part="nav">← Back to Theme</a>
-  <div class="smrt-advanced-styles__heading" data-smrt-part="heading">
+  <div class="smrt-advanced-styles__heading" data-smrt-part="header">
     <div>
       <h1 id="advanced-styles-title">Advanced Styles</h1>
       <p>Make this app your own with CSS. Changes appear as you type and are saved with your cookbook.</p>
@@ -86,19 +86,19 @@ onDestroy(() => {
     <span class="smrt-advanced-styles__live" data-smrt-part="status"><span aria-hidden="true"></span>Live preview</span>
   </div>
   {#if pending}
-    <div class="smrt-advanced-styles__pending" data-smrt-part="notice" role="status">
+    <div class="smrt-advanced-styles__pending" data-smrt-part="status" role="status">
       <p>This cookbook brings its own CSS. It is not applied until you review and approve it.</p>
       <button type="button" onclick={() => approveCustomCss(css)}>Apply these styles</button>
     </div>
   {/if}
   <label for="advanced-css">Custom CSS</label>
-  <div class="smrt-advanced-styles__editor" data-smrt-part="main">
-    <pre bind:this={highlight} aria-hidden="true"><code>{#each tokens as token}<span data-smrt-part="token" class:smrt-advanced-styles__comment={token.kind === 'comment'} class:smrt-advanced-styles__selector={token.kind === 'selector'} class:smrt-advanced-styles__property={token.kind === 'property'} class:smrt-advanced-styles__value={token.kind === 'value'} class:smrt-advanced-styles__punctuation={token.kind === 'punctuation'}>{token.text}</span>{/each}</code></pre>
+  <div class="smrt-advanced-styles__editor" data-smrt-part="body">
+    <pre bind:this={highlight} aria-hidden="true"><code>{#each tokens as token}<span data-smrt-part="label" class:smrt-advanced-styles__comment={token.kind === 'comment'} class:smrt-advanced-styles__selector={token.kind === 'selector'} class:smrt-advanced-styles__property={token.kind === 'property'} class:smrt-advanced-styles__value={token.kind === 'value'} class:smrt-advanced-styles__punctuation={token.kind === 'punctuation'}>{token.text}</span>{/each}</code></pre>
     <textarea id="advanced-css" bind:this={editor} value={draftCss} oninput={(event) => editCss(event.currentTarget.value)}
       onscroll={syncScroll} spellcheck="false" maxlength="65536" wrap="off"
       placeholder="/* Add your app styles here */" aria-describedby="advanced-css-help"></textarea>
   </div>
-  <p id="advanced-css-help" class="smrt-advanced-styles__help" data-smrt-part="hint">Ask your agent to write styles here, or start with a selector like <code>.smrt-admin-shell</code>. Clearing the editor removes your custom styles. Styles apply only inside the app shell and cannot load files from other sites; add <code>?styles=off</code> to the address to turn them off.</p>
+  <p id="advanced-css-help" class="smrt-advanced-styles__help" data-smrt-part="description">Ask your agent to write styles here, or start with a selector like <code>.smrt-admin-shell</code>. Clearing the editor removes your custom styles. Styles apply only inside the app shell and cannot load files from other sites; add <code>?styles=off</code> to the address to turn them off.</p>
 </section>
 
 <style>

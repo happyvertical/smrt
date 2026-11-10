@@ -470,7 +470,7 @@ function flushOnHide() {
   />
 {/snippet}
 
-<div class="smrt-planner-layout__root" inert={liveLocked}>
+<div class="smrt-planner-layout__root" inert={liveLocked} data-smrt-component="PlannerLayout">
 <AppShell
   storageKey={SHELL_STORAGE_KEY}
   {title}
@@ -528,15 +528,15 @@ function flushOnHide() {
     </ShellDockTool>
   {/snippet}
   {#if cookbookStore.persist === 'memory'}
-    <p class="smrt-planner-layout__notice" role="status" data-smrt-part="notice">
+    <p class="smrt-planner-layout__notice" role="status" data-smrt-part="status">
       This browser is not saving your cookbook, so it is kept in memory only. Export it from the Planner's Export tab to keep a copy.
     </p>
   {/if}
   {#if cookbookStore.loadNotice}
-    <p class="smrt-planner-layout__notice" role="status" data-smrt-part="notice">{cookbookStore.loadNotice}</p>
+    <p class="smrt-planner-layout__notice" role="status" data-smrt-part="status">{cookbookStore.loadNotice}</p>
   {/if}
   {#if cookbookStore.unavailableNotice}
-    <p class="smrt-planner-layout__notice" role="status" data-smrt-part="notice">
+    <p class="smrt-planner-layout__notice" role="status" data-smrt-part="status">
       {cookbookStore.unavailableNotice}
       <button type="button" onclick={() => cookbookStore.removeUnavailable()}>
         Remove them

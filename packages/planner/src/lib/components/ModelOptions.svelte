@@ -74,7 +74,7 @@ function setOrder(name: string, raw: string) {
 
 <form class="smrt-model-options__root" onsubmit={save} aria-label={`Options for ${model.name}`} data-smrt-component="ModelOptions">
   <svelte:element this={`h${Math.min(headingLevel, 6)}`}>{model.name} options</svelte:element>
-  <p class="smrt-model-options__hint" data-smrt-part="hint">
+  <p class="smrt-model-options__hint" data-smrt-part="description">
     Stored in the <code>{model.collection}</code> table. Switch fields on or
     off and set their label, help, default and order. Saved as field policies.
   </p>
@@ -152,7 +152,7 @@ function setOrder(name: string, raw: string) {
   {/each}
 
   {#if hiddenByRecipe.length}
-    <p class="smrt-model-options__hint" data-smrt-part="hint">
+    <p class="smrt-model-options__hint" data-smrt-part="description">
       Hidden by the recipe: {hiddenByRecipe.join(', ')}.
     </p>
   {/if}

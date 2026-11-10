@@ -19,7 +19,7 @@ let { icon, title, description, actions }: SectionHeadingProps = $props();
 
 <header class="smrt-section-heading__root" data-smrt-component="SectionHeading">
   <span class="smrt-section-heading__icon" data-smrt-part="icon"><ShellSectionIcon name={icon} size={28} /></span>
-  <div class="smrt-section-heading__heading" data-smrt-part="heading">
+  <div class="smrt-section-heading__heading" data-smrt-part="header">
     <h1>{title}</h1>
     {#if description}<p>{description}</p>{/if}
   </div>
