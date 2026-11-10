@@ -141,8 +141,8 @@ function cancelEditing() {
 }
 </script>
 
-<div class="governance-manager" data-smrt-component="ContentGovernanceManager">
-  <div class="governance-manager__header">
+<div class="smrt-content-governance-manager__root" data-smrt-component="ContentGovernanceManager">
+  <div class="smrt-content-governance-manager__header" data-smrt-part="header">
     <div>
       <h3>{t(M['content.governance_manager.content_governance'])}</h3>
       <p>{t(M['content.governance_manager.manage_governed_content'])}</p>
@@ -155,11 +155,11 @@ function cancelEditing() {
   {#if loading}
     <p>{t(M['content.governance_manager.loading_governance_definitions'])}</p>
   {:else if error}
-    <p class="error">{error}</p>
+    <p class="smrt-content-governance-manager__error" data-smrt-part="error">{error}</p>
   {:else if definitions}
-    <div class="governance-manager__grid">
+    <div class="smrt-content-governance-manager__grid" data-smrt-part="grid">
       <section>
-        <div class="section-header">
+        <div class="smrt-content-governance-manager__section-header" data-smrt-part="header">
           <h4>Policies</h4>
           <Button variant="primary" type="button" onclick={() => {
             editMode = 'policy';
@@ -177,14 +177,14 @@ function cancelEditing() {
             />
           {/key}
         {/if}
-        <div class="list">
+        <div class="smrt-content-governance-manager__list" data-smrt-part="list">
           {#each definitions.effective.policies as policy (policy.key)}
-            <article class="card">
+            <article class="smrt-content-governance-manager__card" data-smrt-part="card">
               <div>
                 <strong>{policy.label}</strong>
                 <span>{policy.key} · {policy.kind}</span>
               </div>
-              <div class="actions">
+              <div class="smrt-content-governance-manager__actions" data-smrt-part="actions">
                 <Button variant="secondary" type="button" onclick={() => {
                   editMode = 'policy';
                   editingPolicy = policy;
@@ -203,7 +203,7 @@ function cancelEditing() {
       </section>
 
       <section>
-        <div class="section-header">
+        <div class="smrt-content-governance-manager__section-header" data-smrt-part="header">
           <h4>Profiles</h4>
           <Button variant="primary" type="button" onclick={() => {
             editMode = 'profile';
@@ -222,14 +222,14 @@ function cancelEditing() {
             />
           {/key}
         {/if}
-        <div class="list">
+        <div class="smrt-content-governance-manager__list" data-smrt-part="list">
           {#each definitions.effective.profiles as profile (profile.key)}
-            <article class="card">
+            <article class="smrt-content-governance-manager__card" data-smrt-part="card">
               <div>
                 <strong>{profile.label}</strong>
                 <span>{profile.key} · {profile.requirements.length} requirement(s)</span>
               </div>
-              <div class="actions">
+              <div class="smrt-content-governance-manager__actions" data-smrt-part="actions">
                 <Button variant="secondary" type="button" onclick={() => {
                   editMode = 'profile';
                   editingProfile = profile;
@@ -248,7 +248,7 @@ function cancelEditing() {
       </section>
 
       <section>
-        <div class="section-header">
+        <div class="smrt-content-governance-manager__section-header" data-smrt-part="header">
           <h4>Assignments</h4>
           <Button variant="primary" type="button" onclick={() => {
             editMode = 'assignment';
@@ -267,9 +267,9 @@ function cancelEditing() {
             />
           {/key}
         {/if}
-        <div class="list">
+        <div class="smrt-content-governance-manager__list" data-smrt-part="list">
           {#each definitions.effective.assignments as assignment (assignment.key)}
-            <article class="card">
+            <article class="smrt-content-governance-manager__card" data-smrt-part="card">
               <div>
                 <strong>{assignment.label || assignment.contentType}</strong>
                 <span>
@@ -277,7 +277,7 @@ function cancelEditing() {
                   {assignment.contentVariant ? ` · ${assignment.contentVariant}` : ''}
                 </span>
               </div>
-              <div class="actions">
+              <div class="smrt-content-governance-manager__actions" data-smrt-part="actions">
                 <Button variant="secondary" type="button" onclick={() => {
                   editMode = 'assignment';
                   editingAssignment = assignment;
@@ -300,50 +300,50 @@ function cancelEditing() {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .governance-manager {
+@layer smrt.structure {
+  .smrt-content-governance-manager__root {
     display: grid;
     gap: 1rem;
   }
-
-  .governance-manager__header,
-  .section-header,
-  .actions {
+  .smrt-content-governance-manager__header,
+  .smrt-content-governance-manager__section-header,
+  .smrt-content-governance-manager__actions {
     display: flex;
     justify-content: space-between;
     align-items: center;
     gap: 0.75rem;
     flex-wrap: wrap;
   }
-
-  .governance-manager__grid {
+  .smrt-content-governance-manager__grid {
     display: grid;
     gap: 1rem;
   }
-
-  .list {
+  .smrt-content-governance-manager__list {
     display: grid;
     gap: 0.75rem;
     margin-top: 0.75rem;
   }
-
-  .card {
-    border: var(--smrt-hairline);
-    border-radius: 0.75rem;
+  .smrt-content-governance-manager__card {
     padding: 0.85rem;
     display: flex;
     justify-content: space-between;
     gap: 0.75rem;
     flex-wrap: wrap;
   }
-
-  .card div:first-child {
+  .smrt-content-governance-manager__card div:first-child {
     display: grid;
     gap: 0.35rem;
   }
+}
 
-  .error {
+@layer smrt.theme {
+  .smrt-content-governance-manager__card {
+    border: var(--smrt-hairline);
+    border-radius: 0.75rem;
+  }
+  .smrt-content-governance-manager__error {
     color: var(--smrt-color-error);
   }
 }
+
 </style>

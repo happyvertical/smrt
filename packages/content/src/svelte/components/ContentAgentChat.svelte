@@ -449,18 +449,18 @@ async function handleSendMessage(content: string) {
 }
 </script>
 
-<div class="content-agent-chat-container" data-smrt-component="ContentAgentChat">
+<div class="smrt-content-agent-chat__root" data-smrt-component="ContentAgentChat">
   {#if loadingSession && !threads.length}
-    <div class="loading-state">{t(M['content.content_agent_chat.loading_ai_assistant'])}</div>
+    <div class="smrt-content-agent-chat__loading-state" data-smrt-part="status">{t(M['content.content_agent_chat.loading_ai_assistant'])}</div>
   {:else if error && !session}
-    <div class="error-state">
+    <div class="smrt-content-agent-chat__error-state" data-smrt-part="error">
       <p>{error}</p>
       {#if canRetrySessionLoad}
         <Button variant="primary" type="button" onclick={loadSession}>Retry</Button>
       {/if}
     </div>
   {:else if session}
-    <div class="model-bar">
+    <div class="smrt-content-agent-chat__model-bar" data-smrt-part="toolbar">
       <Select class="smrt-select model-select" bind:value={selectedModelId}>
         {#each availableAIModels as model}
           <option value={model.id}>{model.label}</option>
@@ -468,15 +468,15 @@ async function handleSendMessage(content: string) {
       </Select>
     </div>
     
-    <div class="chat-main">
-      <div class="agent-chat-host">
+    <div class="smrt-content-agent-chat__main" data-smrt-part="body">
+      <div class="smrt-content-agent-chat__host" data-smrt-part="host">
         {#if loadingMessages || isCreatingTopic}
-           <div class="loading-state">
-             <span class="spinner"></span> {t(M['content.content_agent_chat.loading_topic'])}
+           <div class="smrt-content-agent-chat__loading-state" data-smrt-part="status">
+             <span class="smrt-content-agent-chat__spinner" data-smrt-part="spinner"></span> {t(M['content.content_agent_chat.loading_topic'])}
            </div>
         {:else}
           {#if !resolvedCurrentProfileId}
-            <div class="loading-state">{t(M['content.content_agent_chat.loading_participant'])}</div>
+            <div class="smrt-content-agent-chat__loading-state" data-smrt-part="status">{t(M['content.content_agent_chat.loading_participant'])}</div>
           {:else}
           <AgentChat 
             session={session} 
@@ -491,9 +491,9 @@ async function handleSendMessage(content: string) {
       </div>
     </div>
 
-    <div class="topic-footer">
+    <div class="smrt-content-agent-chat__footer" data-smrt-part="footer">
       {#if showNewTopicInput}
-        <div class="new-topic-row">
+        <div class="smrt-content-agent-chat__new-topic-row" data-smrt-part="row">
           <Input
             class="new-topic-input"
             type="text"
@@ -531,135 +531,143 @@ async function handleSendMessage(content: string) {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .content-agent-chat-container {
+@layer smrt.structure {
+  .smrt-content-agent-chat__root {
     display: flex;
     flex-direction: column;
     height: 100%;
-    background: var(--smrt-color-surface);
     overflow: hidden;
   }
-
-  .loading-state, .error-state {
+  .smrt-content-agent-chat__loading-state, .smrt-content-agent-chat__error-state {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     height: 100%;
     padding: 2rem;
-    text-align: center;
-    color: var(--smrt-color-outline);
   }
-
-  .spinner {
+  .smrt-content-agent-chat__spinner {
     display: inline-block;
     width: 16px;
     height: 16px;
+    margin-right: var(--smrt-spacing-2);
+  }
+  .smrt-content-agent-chat__model-bar {
+    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+  }
+  .smrt-content-agent-chat__root :global(.smrt-select) {
+    width: 100%;
+    padding: var(--smrt-spacing-1) var(--smrt-spacing-2);
+    cursor: pointer;
+  }
+  .smrt-content-agent-chat__root :global(.smrt-select:disabled) {
+    cursor: not-allowed;
+  }
+  .smrt-content-agent-chat__main {
+    flex: 1;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .smrt-content-agent-chat__host {
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+  }
+  .smrt-content-agent-chat__host > :global(*) {
+    height: 100%;
+  }
+  .smrt-content-agent-chat__footer {
+    display: flex;
+    align-items: center;
+    gap: var(--smrt-spacing-2);
+    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+  }
+  .smrt-content-agent-chat__footer :global(.smrt-select) {
+    flex: 1;
+  }
+  .smrt-content-agent-chat__footer :global(.topic-action-btn) {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--smrt-spacing-1);
+    padding: var(--smrt-spacing-1) var(--smrt-spacing-2);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .smrt-content-agent-chat__footer :global(.topic-cancel-btn) {
+    padding: var(--smrt-spacing-1) var(--smrt-spacing-2);
+  }
+  .smrt-content-agent-chat__new-topic-row {
+    display: flex;
+    align-items: center;
+    gap: var(--smrt-spacing-2);
+    width: 100%;
+  }
+  .smrt-content-agent-chat__new-topic-row :global(.new-topic-input) {
+    flex: 1;
+    padding: var(--smrt-spacing-1) var(--smrt-spacing-2);
+  }
+}
+
+@layer smrt.theme {
+  .smrt-content-agent-chat__root {
+    background: var(--smrt-color-surface);
+  }
+  .smrt-content-agent-chat__loading-state, .smrt-content-agent-chat__error-state {
+    text-align: center;
+    color: var(--smrt-color-outline);
+  }
+  .smrt-content-agent-chat__spinner {
     border: 2px solid var(--smrt-color-outline-variant);
     border-top-color: var(--smrt-color-primary);
     border-radius: var(--smrt-radius-full);
     animation: spin 1s linear infinite;
-    margin-right: var(--smrt-spacing-2);
     vertical-align: middle;
   }
-  
   @keyframes spin {
-    to { transform: rotate(360deg); }
+    to {
+      transform: rotate(360deg);
+    }
   }
-
-  .model-bar {
-    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+  .smrt-content-agent-chat__model-bar {
     background: var(--smrt-color-surface-container-lowest);
   }
-
-  .content-agent-chat-container :global(.smrt-select) {
-    width: 100%;
-    padding: var(--smrt-spacing-1) var(--smrt-spacing-2);
+  .smrt-content-agent-chat__root :global(.smrt-select) {
     border-radius: var(--smrt-radius-md);
     border: none;
     background: var(--smrt-color-surface-container-low);
     color: var(--smrt-color-on-surface);
     font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
     outline: none;
-    cursor: pointer;
   }
-
-  .content-agent-chat-container :global(.smrt-select:disabled) {
+  .smrt-content-agent-chat__root :global(.smrt-select:disabled) {
     background: var(--smrt-color-surface-container);
     color: var(--smrt-color-on-surface-variant);
-    cursor: not-allowed;
     opacity: 0.7;
   }
-
-  .content-agent-chat-container :global(.smrt-select:focus) {
+  .smrt-content-agent-chat__root :global(.smrt-select:focus) {
     background: var(--smrt-color-surface-variant);
   }
-
-  .chat-main {
-    flex: 1;
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
-  }
-
-  .agent-chat-host {
-    flex: 1;
-    overflow: hidden;
-    position: relative;
-  }
-  
-  .agent-chat-host > :global(*) {
-    height: 100%;
-  }
-
-  .topic-footer {
-    display: flex;
-    align-items: center;
-    gap: var(--smrt-spacing-2);
-    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+  .smrt-content-agent-chat__footer {
     background: var(--smrt-color-surface-container-lowest);
   }
-
-  .topic-footer :global(.smrt-select) {
-    flex: 1;
-  }
-
-  .topic-footer :global(.topic-action-btn) {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--smrt-spacing-1);
-    padding: var(--smrt-spacing-1) var(--smrt-spacing-2);
+  .smrt-content-agent-chat__footer :global(.topic-action-btn) {
     border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-sm);
     background: none;
     color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
-    cursor: pointer;
-    white-space: nowrap;
     transition: background 0.15s;
   }
-
-  .topic-footer :global(.topic-action-btn:hover:not(:disabled)) {
+  .smrt-content-agent-chat__footer :global(.topic-action-btn:hover:not(:disabled)) {
     background: var(--smrt-color-surface-variant);
     color: var(--smrt-color-primary);
   }
-
-  .topic-footer :global(.topic-cancel-btn) {
-    padding: var(--smrt-spacing-1) var(--smrt-spacing-2);
+  .smrt-content-agent-chat__footer :global(.topic-cancel-btn) {
     border: none;
     color: var(--smrt-color-outline);
   }
-
-  .new-topic-row {
-    display: flex;
-    align-items: center;
-    gap: var(--smrt-spacing-2);
-    width: 100%;
-  }
-
-  .new-topic-row :global(.new-topic-input) {
-    flex: 1;
-    padding: var(--smrt-spacing-1) var(--smrt-spacing-2);
+  .smrt-content-agent-chat__new-topic-row :global(.new-topic-input) {
     border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-sm);
     font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
@@ -667,9 +675,9 @@ async function handleSendMessage(content: string) {
     background: var(--smrt-color-surface);
     color: var(--smrt-color-on-surface);
   }
-
-  .new-topic-row :global(.new-topic-input:focus) {
+  .smrt-content-agent-chat__new-topic-row :global(.new-topic-input:focus) {
     border-color: var(--smrt-color-primary);
   }
 }
+
 </style>

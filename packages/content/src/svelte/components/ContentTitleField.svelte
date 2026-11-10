@@ -85,7 +85,7 @@ function handleInput(event: Event & { currentTarget: HTMLTextAreaElement }) {
 
 <svelte:window onresize={fitHeight} />
 
-<span class="content-title-field-shell" data-smrt-component="ContentTitleField">
+<span class="smrt-content-title-field__root" data-smrt-component="ContentTitleField">
   <Textarea
     bind:this={field}
     class="content-title-field"
@@ -106,16 +106,25 @@ function handleInput(event: Event & { currentTarget: HTMLTextAreaElement }) {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .content-title-field-shell {
+@layer smrt.structure {
+  .smrt-content-title-field__root {
     display: block;
   }
-
-  .content-title-field-shell :global(.content-title-field) {
+  .smrt-content-title-field__root :global(.content-title-field) {
     display: block;
     width: 100%;
     min-height: 0;
     box-sizing: border-box;
+    padding: 0.1em 0.2em;
+    margin-inline: -0.2em;
+    resize: none;
+    overflow: hidden;
+    field-sizing: content;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-content-title-field__root :global(.content-title-field) {
     border: 0;
     border-radius: var(--smrt-radius-sm);
     background: transparent;
@@ -125,38 +134,29 @@ function handleInput(event: Event & { currentTarget: HTMLTextAreaElement }) {
     font-weight: var(--smrt-typography-weight-bold, 720);
     line-height: 1.12;
     letter-spacing: 0;
-    padding: 0.1em 0.2em;
-    margin-inline: -0.2em;
-    resize: none;
-    overflow: hidden;
-    field-sizing: content;
     transition: background-color 150ms;
   }
-
   /* Inside a heading, look like that heading. */
-  :global(:is(h1, h2, h3)) > .content-title-field-shell :global(.content-title-field) {
+  :global(:is(h1, h2, h3)) > .smrt-content-title-field__root :global(.content-title-field) {
     font: inherit;
     letter-spacing: inherit;
   }
-
-  .content-title-field-shell :global(.content-title-field)::placeholder {
+  .smrt-content-title-field__root :global(.content-title-field)::placeholder {
     color: color-mix(in srgb, var(--smrt-color-on-surface-variant) 70%, transparent);
   }
-
   /* Editable on hover and focus: a quiet field background, then an outline. */
-  .content-title-field-shell :global(.content-title-field):hover:not(:disabled) {
+  .smrt-content-title-field__root :global(.content-title-field):hover:not(:disabled) {
     background: var(--smrt-color-surface-container-low, rgb(0 0 0 / 4%));
   }
-
-  .content-title-field-shell :global(.content-title-field):focus {
+  .smrt-content-title-field__root :global(.content-title-field):focus {
     outline: 2px solid var(--smrt-color-primary);
     outline-offset: 2px;
     background: var(--smrt-color-surface-container-low, rgb(0 0 0 / 4%));
   }
-
-  .content-title-field-shell :global(.content-title-field[aria-invalid='true']) {
+  .smrt-content-title-field__root :global(.content-title-field[aria-invalid='true']) {
     outline: 2px solid var(--smrt-color-error);
     outline-offset: 2px;
   }
 }
+
 </style>

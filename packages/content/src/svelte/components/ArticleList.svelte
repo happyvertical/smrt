@@ -43,7 +43,7 @@ const {
 </script>
 
 {#if articles.length === 0}
-  <div class="empty-state" role="status" aria-live="polite" data-smrt-component="ArticleList">
+  <div class="smrt-article-list__root" role="status" aria-live="polite" data-smrt-component="ArticleList">
     <p>{emptyMessage}</p>
   </div>
 {:else}
@@ -64,15 +64,20 @@ const {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .empty-state {
-    text-align: center;
+@layer smrt.structure {
+  .smrt-article-list__root {
     padding: var(--smrt-spacing-3xl, 3rem);
+  }
+}
+
+@layer smrt.theme {
+  .smrt-article-list__root {
+    text-align: center;
     color: var(--smrt-color-on-surface-variant);
   }
-
-  .empty-state p {
+  .smrt-article-list__root p {
     font: var(--smrt-typography-body-large-font, 1.125rem / 1.5 sans-serif);
   }
 }
+
 </style>

@@ -221,7 +221,9 @@ describe('ContentEditor component', () => {
       },
     });
 
-    const refZone = target.querySelectorAll('.drop-zone')[1] as HTMLElement;
+    const refZone = target.querySelectorAll(
+      '.smrt-content-editor__drop-zone',
+    )[1] as HTMLElement;
 
     refZone.dispatchEvent(
       createDropEvent({
@@ -359,7 +361,9 @@ describe('ContentEditor component', () => {
       },
     });
 
-    const imageZone = target.querySelectorAll('.drop-zone')[0] as HTMLElement;
+    const imageZone = target.querySelectorAll(
+      '.smrt-content-editor__drop-zone',
+    )[0] as HTMLElement;
 
     imageZone.dispatchEvent(
       createDropEvent({
@@ -379,7 +383,7 @@ describe('ContentEditor component', () => {
 
     await vi.waitFor(() => {
       const image = target.querySelector(
-        '.media-item-image',
+        '.smrt-content-editor__media-item-image',
       ) as HTMLImageElement | null;
       expect(image).not.toBeNull();
       expect(image?.getAttribute('src')).toBe('https://example.com/image.jpg');
@@ -423,7 +427,9 @@ describe('ContentEditor component', () => {
     ) as HTMLElement | null;
     expect(chatStub?.dataset.apiBaseUrl).toBe('/tenant/api/v2');
 
-    const imageZone = target.querySelectorAll('.drop-zone')[0] as HTMLElement;
+    const imageZone = target.querySelectorAll(
+      '.smrt-content-editor__drop-zone',
+    )[0] as HTMLElement;
 
     imageZone.dispatchEvent(
       createDropEvent({
@@ -480,11 +486,13 @@ describe('ContentEditor component', () => {
     });
 
     await vi.waitFor(() =>
-      expect(target.querySelector('.body-editor-surface')?.innerHTML).toContain(
-        'Existing',
-      ),
+      expect(
+        target.querySelector('.smrt-content-body-editor__surface')?.innerHTML,
+      ).toContain('Existing'),
     );
-    expect(target.querySelector('.format-select')).toBeNull();
+    expect(
+      target.querySelector('.smrt-content-body-editor__format-select'),
+    ).toBeNull();
   });
 
   it('can switch the body save format to markdown', async () => {
@@ -503,13 +511,13 @@ describe('ContentEditor component', () => {
     });
 
     await vi.waitFor(() =>
-      expect(target.querySelector('.body-editor-surface')?.innerHTML).toContain(
-        'Existing',
-      ),
+      expect(
+        target.querySelector('.smrt-content-body-editor__surface')?.innerHTML,
+      ).toContain('Existing'),
     );
 
     const formatSelect = target.querySelector(
-      '.format-select select',
+      '.smrt-content-body-editor__format-select select',
     ) as HTMLSelectElement | null;
     expect(formatSelect).not.toBeNull();
     if (!formatSelect) {
@@ -556,7 +564,7 @@ describe('ContentEditor component', () => {
     });
 
     const bodySurface = target.querySelector(
-      '.body-editor-surface',
+      '.smrt-content-body-editor__surface',
     ) as HTMLElement | null;
     expect(bodySurface).not.toBeNull();
     if (!bodySurface) {
@@ -617,7 +625,7 @@ describe('ContentEditor component', () => {
     });
 
     const bodySurface = target.querySelector(
-      '.body-editor-surface',
+      '.smrt-content-body-editor__surface',
     ) as HTMLElement | null;
     expect(bodySurface).not.toBeNull();
     if (!bodySurface) {
@@ -676,9 +684,11 @@ describe('ContentEditor component', () => {
       },
     });
 
-    const mediaItem = target.querySelector('.media-item') as HTMLElement | null;
+    const mediaItem = target.querySelector(
+      '.smrt-content-editor__media-item',
+    ) as HTMLElement | null;
     const bodySurface = target.querySelector(
-      '.body-editor-surface',
+      '.smrt-content-body-editor__surface',
     ) as HTMLElement | null;
     expect(mediaItem).not.toBeNull();
     expect(bodySurface).not.toBeNull();
@@ -737,9 +747,10 @@ describe('ContentEditor component', () => {
     });
 
     await vi.waitFor(() =>
-      expect(target.querySelectorAll('.body-editor-surface img').length).toBe(
-        2,
-      ),
+      expect(
+        target.querySelectorAll('.smrt-content-body-editor__surface img')
+          .length,
+      ).toBe(2),
     );
 
     const nextButton = Array.from(target.querySelectorAll('button')).find(
@@ -750,7 +761,7 @@ describe('ContentEditor component', () => {
     flushSync();
 
     const selected = target.querySelector(
-      '.body-editor-surface img[data-smrt-selected="true"]',
+      '.smrt-content-body-editor__surface img[data-smrt-selected="true"]',
     ) as HTMLImageElement | null;
     expect(selected?.getAttribute('src')).toBe('https://example.com/b.jpg');
   });
@@ -777,7 +788,7 @@ describe('ContentEditor component', () => {
     });
 
     const bodyImage = target.querySelector(
-      '.body-editor-surface img',
+      '.smrt-content-body-editor__surface img',
     ) as HTMLImageElement | null;
     expect(bodyImage).not.toBeNull();
     bodyImage?.dispatchEvent(
@@ -844,7 +855,7 @@ describe('ContentEditor component', () => {
     });
 
     const bodySurface = target.querySelector(
-      '.body-editor-surface',
+      '.smrt-content-body-editor__surface',
     ) as HTMLElement | null;
     const bodyImage = bodySurface?.querySelector(
       'img',
@@ -893,7 +904,7 @@ describe('ContentEditor component', () => {
     });
 
     const bodyImage = target.querySelector(
-      '.body-editor-surface img',
+      '.smrt-content-body-editor__surface img',
     ) as HTMLImageElement | null;
     expect(bodyImage).not.toBeNull();
     bodyImage?.dispatchEvent(
@@ -939,7 +950,9 @@ describe('ContentEditor component', () => {
       },
     });
 
-    const refZone = target.querySelectorAll('.drop-zone')[1] as HTMLElement;
+    const refZone = target.querySelectorAll(
+      '.smrt-content-editor__drop-zone',
+    )[1] as HTMLElement;
     const file = new File(['reference body'], 'source.pdf', {
       type: 'application/pdf',
     });
@@ -1146,7 +1159,9 @@ describe('ContentEditor component', () => {
   it('removes the chat sidebar container and layout column when hidden', () => {
     const target = renderEditor({ hideChat: true });
 
-    expect(target.querySelector('.editor-sidebar-col')).toBeNull();
+    expect(
+      target.querySelector('.smrt-content-editor__sidebar-col'),
+    ).toBeNull();
     expect(
       target.querySelector(
         '[data-testid="content-editor-agent-chat-disabled"]',
@@ -1154,8 +1169,8 @@ describe('ContentEditor component', () => {
     ).toBeNull();
     expect(
       target
-        .querySelector('.editor-grid')
-        ?.classList.contains('editor-grid--with-sidebar'),
+        .querySelector('.smrt-content-editor__grid')
+        ?.classList.contains('smrt-content-editor__grid--with-sidebar'),
     ).toBe(false);
   });
 

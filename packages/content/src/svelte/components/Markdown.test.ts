@@ -39,7 +39,7 @@ describe('Markdown component', () => {
         '# Heading\n\nThis is **bold** and *italic* with `code`.\n\n- One\n- Two',
     });
 
-    const root = target.querySelector('.markdown-content.article-body');
+    const root = target.querySelector('.smrt-markdown__root.article-body');
     expect(root).not.toBeNull();
     expect(root?.querySelector('h1')?.textContent).toBe('Heading');
     expect(root?.querySelector('strong')?.textContent).toBe('bold');
@@ -57,7 +57,7 @@ describe('Markdown component', () => {
       content: '<script>alert("xss")</script>\n\n**safe**',
     });
 
-    const root = target.querySelector('.markdown-content');
+    const root = target.querySelector('.smrt-markdown__root');
     expect(root?.innerHTML).toContain(
       '&lt;script&gt;alert("xss")&lt;/script&gt;',
     );
@@ -71,7 +71,7 @@ describe('Markdown component', () => {
         '[Docs](https://example.com)\n\n![Alt](https://example.com/a.jpg)',
     });
 
-    const root = target.querySelector('.markdown-content');
+    const root = target.querySelector('.smrt-markdown__root');
     expect(root?.querySelector('a')?.getAttribute('href')).toBe(
       'https://example.com',
     );

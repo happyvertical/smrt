@@ -115,7 +115,7 @@ function handleSubmit() {
 }
 </script>
 
-<section class="manager" data-smrt-component="ContentContributionTypeManager">
+<section class="smrt-content-contribution-type-manager__root" data-smrt-component="ContentContributionTypeManager">
   <header>
     <div>
       <h3>{t(M['content.contribution_type_manager.heading'])}</h3>
@@ -124,15 +124,15 @@ function handleSubmit() {
     <Button variant="ghost" type="button" onclick={() => (editing = {})}>{t(M['content.contribution_type_manager.add_type'])}</Button>
   </header>
 
-  <div class="layout">
-    <div class="list">
+  <div class="smrt-content-contribution-type-manager__layout" data-smrt-part="layout">
+    <div class="smrt-content-contribution-type-manager__list" data-smrt-part="list">
       {#each types as type (type.id ?? type.key)}
-        <article class="card">
+        <article class="smrt-content-contribution-type-manager__card" data-smrt-part="item">
           <div>
             <strong>{type.label}</strong>
             <div>{type.key}</div>
           </div>
-          <div class="actions">
+          <div class="smrt-content-contribution-type-manager__actions" data-smrt-part="actions">
             <Button variant="secondary" type="button" onclick={() => (editing = type)}>Edit</Button>
             {#if onDelete && type.id}
               <Button variant="danger" type="button" onclick={() => onDelete?.(type)}>Delete</Button>
@@ -142,7 +142,7 @@ function handleSubmit() {
       {/each}
     </div>
 
-    <div class="editor-shell">
+    <div class="smrt-content-contribution-type-manager__editor-shell" data-smrt-part="panel">
       <Form
         class="editor"
         onsubmit={(event) => {
@@ -159,7 +159,7 @@ function handleSubmit() {
           <Input type="text" bind:value={draft.label} required />
         </label>
 
-        <div class="checkbox-grid">
+        <div class="smrt-content-contribution-type-manager__checkbox-grid" data-smrt-part="grid">
           <label>
             <!-- raw-primitive-allow: native checkbox; no Provider-free checkbox primitive (Toggle is a switch with different semantics, CheckboxInput requires a Provider) -->
             <input type="checkbox" bind:checked={draft.enabled} /> Enabled
@@ -178,7 +178,7 @@ function handleSubmit() {
           </label>
         </div>
 
-        <div class="checkbox-grid">
+        <div class="smrt-content-contribution-type-manager__checkbox-grid" data-smrt-part="grid">
           <label>
             <!-- raw-primitive-allow: native checkbox; no Provider-free checkbox primitive (Toggle is a switch with different semantics, CheckboxInput requires a Provider) -->
             <input
@@ -215,7 +215,7 @@ function handleSubmit() {
           </Select>
         </label>
 
-        <div class="checkbox-grid">
+        <div class="smrt-content-contribution-type-manager__checkbox-grid" data-smrt-part="grid">
           <label>
             <!-- raw-primitive-allow: native checkbox; no Provider-free checkbox primitive (Toggle is a switch with different semantics, CheckboxInput requires a Provider) -->
             <input type="checkbox" bind:checked={draft.promotion.autoPromoteTrusted} /> {t(M['content.contribution_type_manager.auto_promote_trusted'])}
@@ -259,7 +259,7 @@ function handleSubmit() {
           <Textarea bind:value={draft.intakeRules.quarantineTextPatterns} rows={2}></Textarea>
         </label>
 
-        <div class="actions">
+        <div class="smrt-content-contribution-type-manager__actions" data-smrt-part="actions">
           <Button variant="primary" type="submit">{t(M['content.contribution_type_manager.save_type'])}</Button>
         </div>
       </Form>
@@ -269,46 +269,48 @@ function handleSubmit() {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .manager,
-  .layout,
-  .list,
-  .editor-shell :global(.editor) {
+@layer smrt.structure {
+  .smrt-content-contribution-type-manager__root,
+  .smrt-content-contribution-type-manager__layout,
+  .smrt-content-contribution-type-manager__list,
+  .smrt-content-contribution-type-manager__editor-shell :global(.editor) {
     display: grid;
     gap: 1rem;
   }
-
-  .layout {
+  .smrt-content-contribution-type-manager__layout {
     grid-template-columns: minmax(14rem, 20rem) minmax(0, 1fr);
   }
-
-  .card,
-  .editor-shell :global(.editor) {
-    border: var(--smrt-hairline);
-    border-radius: 0.75rem;
+  .smrt-content-contribution-type-manager__card,
+  .smrt-content-contribution-type-manager__editor-shell :global(.editor) {
     padding: 0.9rem;
-    background: var(--smrt-color-surface);
   }
-
-  .card,
-  .actions,
-  .checkbox-grid,
+  .smrt-content-contribution-type-manager__card,
+  .smrt-content-contribution-type-manager__actions,
+  .smrt-content-contribution-type-manager__checkbox-grid,
   header {
     display: flex;
     justify-content: space-between;
     gap: 0.75rem;
     flex-wrap: wrap;
   }
-
-  .editor-shell label {
+  .smrt-content-contribution-type-manager__editor-shell label {
     display: grid;
     gap: 0.35rem;
   }
-
   @media (max-width: 720px) {
-    .layout {
+    .smrt-content-contribution-type-manager__layout {
       grid-template-columns: 1fr;
     }
   }
 }
+
+@layer smrt.theme {
+  .smrt-content-contribution-type-manager__card,
+  .smrt-content-contribution-type-manager__editor-shell :global(.editor) {
+    border: var(--smrt-hairline);
+    border-radius: 0.75rem;
+    background: var(--smrt-color-surface);
+  }
+}
+
 </style>

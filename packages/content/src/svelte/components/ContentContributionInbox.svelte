@@ -127,46 +127,47 @@ $effect(() => {
 });
 </script>
 
-<section class="inbox" data-smrt-component="ContentContributionInbox">
-  <header class="inbox__header">
+<section class="smrt-content-contribution-inbox__root" data-smrt-component="ContentContributionInbox">
+  <header class="smrt-content-contribution-inbox__header" data-smrt-part="header">
     <div>
       <h3>{t(M['content.contribution_inbox.heading'])}</h3>
       <p>{t(M['content.contribution_inbox.intro'])}</p>
     </div>
-    <span class="pill">{contributions.length}</span>
+    <span class="smrt-content-contribution-inbox__pill" data-smrt-part="badge">{contributions.length}</span>
   </header>
 
   {#if contributions.length === 0}
-    <p class="empty-copy">{emptyMessage}</p>
+    <p class="smrt-content-contribution-inbox__empty" data-smrt-part="empty">{emptyMessage}</p>
   {:else}
-    <div class="inbox__layout">
-      <div class="inbox__list">
+    <div class="smrt-content-contribution-inbox__layout" data-smrt-part="body">
+      <div class="smrt-content-contribution-inbox__list" data-smrt-part="list">
         {#each contributions as contribution (contribution.id)}
           <!-- raw-primitive-allow: large pressable selection card wrapping a title and metadata with a selected state -->
           <button
             type="button"
-            class:selected={selectedContribution?.id === contribution.id}
+            class:smrt-content-contribution-inbox__selected={selectedContribution?.id === contribution.id}
+            data-smrt-part="item"
             onclick={() => onSelect?.(contribution)}
           >
             <strong>{contribution.title || contribution.contributionTypeKey || 'Untitled submission'}</strong>
             <span>{contribution.contributorName || contribution.contributorEmail || 'Unknown contributor'}</span>
-            <span class="pill">{workflowStatus(contribution)}</span>
+            <span class="smrt-content-contribution-inbox__pill" data-smrt-part="badge">{workflowStatus(contribution)}</span>
           </button>
         {/each}
       </div>
 
       {#if selectedContribution}
-        <article class="inbox__detail">
+        <article class="smrt-content-contribution-inbox__detail" data-smrt-part="panel">
           <header>
             <div>
               <h4>{selectedContribution.title || 'Untitled submission'}</h4>
               <p>{selectedContribution.contributorName || selectedContribution.contributorEmail || 'Unknown contributor'}</p>
             </div>
-            <span class="pill">{workflowStatus(selectedContribution)}</span>
+            <span class="smrt-content-contribution-inbox__pill" data-smrt-part="badge">{workflowStatus(selectedContribution)}</span>
           </header>
 
           {#if selectedContribution.body}
-            <div class="body-preview">
+            <div class="smrt-content-contribution-inbox__preview" data-smrt-part="preview">
               {selectedContribution.body}
             </div>
           {/if}
@@ -207,9 +208,9 @@ $effect(() => {
               <Textarea name="editorNote" bind:value={note} rows={4}></Textarea>
             </label>
 
-            <div class="actions">
+            <div class="smrt-content-contribution-inbox__actions" data-smrt-part="actions">
               {#if onApprove || workflowFormAction}
-                <label class="inline">
+                <label class="smrt-content-contribution-inbox__inline" data-smrt-part="field">
                   {t(M['content.contribution_inbox.promote_to'])}
                   <Select name="targetStatus" bind:value={targetStatus}>
                     <option value="draft">draft</option>
@@ -260,79 +261,82 @@ $effect(() => {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .inbox,
-  .inbox__header,
-  .inbox__layout,
-  .inbox__detail,
-  .inbox__detail :global(.form) {
+@layer smrt.structure {
+  .smrt-content-contribution-inbox__root,
+  .smrt-content-contribution-inbox__header,
+  .smrt-content-contribution-inbox__layout,
+  .smrt-content-contribution-inbox__detail,
+  .smrt-content-contribution-inbox__detail :global(.form) {
     display: grid;
     gap: 1rem;
   }
-
-  .inbox__layout {
+  .smrt-content-contribution-inbox__layout {
     grid-template-columns: minmax(14rem, 20rem) minmax(0, 1fr);
   }
-
-  .inbox__list {
+  .smrt-content-contribution-inbox__list {
     display: grid;
     gap: 0.5rem;
   }
-
-  .inbox__list button,
-  .inbox__detail {
-    border: var(--smrt-hairline);
-    border-radius: 0.75rem;
+  .smrt-content-contribution-inbox__list button,
+  .smrt-content-contribution-inbox__detail {
     padding: 0.85rem;
-    background: var(--smrt-color-surface);
   }
-
-  .inbox__list button {
+  .smrt-content-contribution-inbox__list button {
     display: grid;
     gap: 0.35rem;
-    text-align: left;
   }
-
-  .inbox__list button.selected {
-    border-color: var(--smrt-color-primary);
-    box-shadow: 0 0 0 1px var(--smrt-color-primary);
-  }
-
-  .body-preview {
+  .smrt-content-contribution-inbox__preview {
     padding: 0.85rem;
-    border-radius: 0.75rem;
-    background: var(--smrt-color-surface-container);
     white-space: pre-wrap;
   }
-
   dl div {
     display: flex;
     justify-content: space-between;
     gap: 1rem;
   }
-
-  .actions,
-  .inline {
+  .smrt-content-contribution-inbox__actions,
+  .smrt-content-contribution-inbox__inline {
     display: flex;
     gap: 0.75rem;
     align-items: center;
     flex-wrap: wrap;
   }
-
-  .pill {
+  .smrt-content-contribution-inbox__pill {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     min-width: 1.75rem;
     padding: 0.15rem 0.5rem;
-    border-radius: var(--smrt-radius-full);
-    background: var(--smrt-color-primary-container);
   }
-
   @media (max-width: 720px) {
-    .inbox__layout {
+    .smrt-content-contribution-inbox__layout {
       grid-template-columns: 1fr;
     }
   }
 }
+
+@layer smrt.theme {
+  .smrt-content-contribution-inbox__list button,
+  .smrt-content-contribution-inbox__detail {
+    border: var(--smrt-hairline);
+    border-radius: 0.75rem;
+    background: var(--smrt-color-surface);
+  }
+  .smrt-content-contribution-inbox__list button {
+    text-align: left;
+  }
+  .smrt-content-contribution-inbox__list button.smrt-content-contribution-inbox__selected {
+    border-color: var(--smrt-color-primary);
+    box-shadow: 0 0 0 1px var(--smrt-color-primary);
+  }
+  .smrt-content-contribution-inbox__preview {
+    border-radius: 0.75rem;
+    background: var(--smrt-color-surface-container);
+  }
+  .smrt-content-contribution-inbox__pill {
+    border-radius: var(--smrt-radius-full);
+    background: var(--smrt-color-primary-container);
+  }
+}
+
 </style>

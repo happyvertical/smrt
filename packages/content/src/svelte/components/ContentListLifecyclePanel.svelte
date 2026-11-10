@@ -172,7 +172,7 @@ function retryPreview() {
 </script>
 
 <section
-  class="lifecycle"
+  class="smrt-content-list-lifecycle-panel__root"
   aria-label={mode === 'trash'
     ? t(M['content.content_list.trash_actions'])
     : t(M['content.content_list.lifecycle_actions'])}
@@ -219,12 +219,12 @@ function retryPreview() {
   {/if}
 </section>
 {#if mode === 'trash' && matchingSelectionTooLarge}
-  <p class="selection-limit" role="status">
+  <p class="smrt-content-list-lifecycle-panel__selection-limit" role="status">
     {t(M['content.content_list.empty_trash_limit'], { count: selectionLimit })}
   </p>
 {/if}
 {#if lastResult}
-  <div class="lifecycle-result" aria-live="polite">
+  <div class="smrt-content-list-lifecycle-panel__result" aria-live="polite">
     <p>
       {t(M['content.content_list.lifecycle_completed_summary'], {
         accepted: lastResult.accepted,
@@ -257,7 +257,7 @@ function retryPreview() {
   onClose={close}
   ariaDescribedBy="content-lifecycle-summary"
 >
-  <div class="preview" aria-live="polite" aria-busy={busy}>
+  <div class="smrt-content-list-lifecycle-panel__preview" aria-live="polite" aria-busy={busy}>
     {#if snapshot.status === 'previewing'}
       <p id="content-lifecycle-summary">
         {t(M['content.content_list.lifecycle_resolving'])}
@@ -306,7 +306,7 @@ function retryPreview() {
     {/if}
 
     {#if snapshot.error}
-      <p class="error" role="alert">{snapshot.error}</p>
+      <p class="smrt-content-list-lifecycle-panel__error" role="alert">{snapshot.error}</p>
     {/if}
     {#if snapshot.status === 'succeeded' && snapshot.summary}
       <p role="status">
@@ -323,7 +323,7 @@ function retryPreview() {
       {/if}
     {/if}
 
-    <div class="actions">
+    <div class="smrt-content-list-lifecycle-panel__actions">
       <Button variant="ghost" type="button" disabled={busy} onclick={close}>
         {snapshot.status === 'succeeded'
           ? t(M['content.content_list.lifecycle_close'])
@@ -352,39 +352,37 @@ function retryPreview() {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .lifecycle,
-  .actions {
+@layer smrt.structure {
+  .smrt-content-list-lifecycle-panel__root,
+  .smrt-content-list-lifecycle-panel__actions {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
     gap: 0.5rem;
   }
-
-  .preview {
+  .smrt-content-list-lifecycle-panel__preview {
     display: grid;
     gap: 0.75rem;
   }
-
-  .preview p {
+  .smrt-content-list-lifecycle-panel__preview p {
     margin: 0;
   }
-
-  .lifecycle-result p {
+  .smrt-content-list-lifecycle-panel__result p {
     margin: 0.5rem 0 0;
   }
-
-  .selection-limit {
+  .smrt-content-list-lifecycle-panel__selection-limit {
     margin: 0.5rem 0 0;
   }
-
-  .actions {
+  .smrt-content-list-lifecycle-panel__actions {
     justify-content: flex-end;
     margin-top: 0.5rem;
   }
+}
 
-  .error {
+@layer smrt.theme {
+  .smrt-content-list-lifecycle-panel__error {
     color: var(--smrt-color-error);
   }
 }
+
 </style>

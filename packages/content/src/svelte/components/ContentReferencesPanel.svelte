@@ -90,14 +90,14 @@ function removeReference(id: string) {
 }
 </script>
 
-<div class="content-references-panel" data-smrt-component="ContentReferencesPanel">
+<div class="smrt-content-references-panel__root" data-smrt-component="ContentReferencesPanel">
   {#if visibleReferences.length}
-    <div class="reference-list">
+    <div class="smrt-content-references-panel__list" data-smrt-part="list">
       {#each visibleReferences as reference, index (reference.id || getSafeReferenceUrl(reference) || `${getReferenceLabel(reference)}-${index}`)}
         {@const safeUrl = getSafeReferenceUrl(reference)}
         {@const referenceId = typeof reference.id === 'string' ? reference.id : ''}
-        <div class="reference-row">
-          <div class="reference-copy">
+        <div class="smrt-content-references-panel__row" data-smrt-part="row">
+          <div class="smrt-content-references-panel__copy" data-smrt-part="copy">
             <strong>{getReferenceLabel(reference)}</strong>
             {#if safeUrl}
               <a href={safeUrl} target="_blank" rel="noreferrer">{safeUrl}</a>
@@ -114,10 +114,10 @@ function removeReference(id: string) {
       {/each}
     </div>
   {:else}
-    <p class="empty-state">{t(M['content.content_references_panel.no_references'])}</p>
+    <p class="smrt-content-references-panel__empty" data-smrt-part="empty">{t(M['content.content_references_panel.no_references'])}</p>
   {/if}
 
-  <div class="reference-input-row">
+  <div class="smrt-content-references-panel__input-row" data-smrt-part="input">
     <Input
       type="text"
       aria-label={t(M['content.content_references_panel.add_reference_by_id_or_url'])}
@@ -138,7 +138,7 @@ function removeReference(id: string) {
   </div>
 
   {#if children}
-    <div class="reference-extras">
+    <div class="smrt-content-references-panel__extras" data-smrt-part="panel">
       {@render children()}
     </div>
   {/if}
@@ -146,95 +146,100 @@ function removeReference(id: string) {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .content-references-panel {
+@layer smrt.structure {
+  .smrt-content-references-panel__root {
     display: grid;
     gap: 0.875rem;
     padding: 1rem;
-    border: 1px dashed color-mix(in srgb, var(--smrt-color-outline) 45%, transparent);
-    border-radius: 0.5rem;
   }
-
-  .empty-state {
+  .smrt-content-references-panel__empty {
     margin: 0;
-    color: var(--smrt-color-on-surface-variant);
-    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    font-style: italic;
   }
-
-  .reference-list {
+  .smrt-content-references-panel__list {
     display: grid;
     gap: 0.65rem;
   }
-
-  .reference-row {
+  .smrt-content-references-panel__row {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 1rem;
     padding: 0.75rem;
-    border: 1px solid color-mix(in srgb, var(--smrt-color-outline) 28%, transparent);
-    border-radius: 0.5rem;
-    background: var(--smrt-color-surface-container-low);
   }
-
-  .reference-copy {
+  .smrt-content-references-panel__copy {
     display: grid;
     gap: 0.2rem;
     min-width: 0;
   }
-
-  .reference-copy strong,
-  .reference-copy a {
+  .smrt-content-references-panel__copy strong,
+  .smrt-content-references-panel__copy a {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-
-  .reference-copy strong {
-    color: var(--smrt-color-on-surface);
-    font-size: var(--smrt-typography-title-small-size, 0.875rem);
-  }
-
-  .reference-copy a {
-    color: var(--smrt-color-primary);
-    font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
-    text-decoration: none;
-  }
-
-  .reference-input-row {
+  .smrt-content-references-panel__input-row {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     gap: 0.5rem;
   }
-
-  .reference-extras {
+  .smrt-content-references-panel__extras {
     display: grid;
     gap: 0.65rem;
   }
-
-  .content-references-panel :global(.reference-button) {
+  .smrt-content-references-panel__root :global(.reference-button) {
     min-height: 2.5rem;
+    padding: 0.55rem 0.875rem;
+    cursor: pointer;
+  }
+  /* Match the Input primitive's height/radius to the sibling reference-button so
+  the two grid columns of .smrt-content-references-panel__input-row align (the primitive's base
+  .input has no min-height). */
+  .smrt-content-references-panel__root :global([data-smrt-component="Input"]) {
+    min-height: 2.5rem;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-content-references-panel__root {
+    border: 1px dashed color-mix(in srgb, var(--smrt-color-outline) 45%, transparent);
+    border-radius: 0.5rem;
+  }
+  .smrt-content-references-panel__empty {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+    font-style: italic;
+  }
+  .smrt-content-references-panel__row {
+    border: 1px solid color-mix(in srgb, var(--smrt-color-outline) 28%, transparent);
+    border-radius: 0.5rem;
+    background: var(--smrt-color-surface-container-low);
+  }
+  .smrt-content-references-panel__copy strong {
+    color: var(--smrt-color-on-surface);
+    font-size: var(--smrt-typography-title-small-size, 0.875rem);
+  }
+  .smrt-content-references-panel__copy a {
+    color: var(--smrt-color-primary);
+    font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
+    text-decoration: none;
+  }
+  .smrt-content-references-panel__root :global(.reference-button) {
     border: 1px solid color-mix(in srgb, var(--smrt-color-outline) 50%, transparent);
     border-radius: 0.5rem;
     background: var(--smrt-color-surface-container);
     color: var(--smrt-color-on-surface);
     font: inherit;
-    padding: 0.55rem 0.875rem;
-    cursor: pointer;
     font-weight: var(--smrt-typography-weight-semibold, 600);
   }
-
-  .content-references-panel :global(.reference-button:hover) {
+  .smrt-content-references-panel__root :global(.reference-button:hover) {
     background: var(--smrt-color-surface-container-high);
   }
-
   /* Match the Input primitive's height/radius to the sibling reference-button so
-     the two grid columns of .reference-input-row align (the primitive's base
-     .input has no min-height). */
-  .content-references-panel :global([data-smrt-component="Input"]) {
-    min-height: 2.5rem;
+  the two grid columns of .smrt-content-references-panel__input-row align (the primitive's base
+  .input has no min-height). */
+  .smrt-content-references-panel__root :global([data-smrt-component="Input"]) {
     border-radius: 0.5rem;
   }
 }
+
 </style>

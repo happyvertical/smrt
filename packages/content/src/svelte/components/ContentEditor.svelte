@@ -417,7 +417,7 @@ let evidenceBusy = $state<string | null>(null);
 let evidenceError = $state<string | null>(null);
 let evidenceNotice = $state<string | null>(null);
 // Surfaces reference-drop / image-attach failures that were previously
-// swallowed by empty catch blocks (#1387 #6), reusing the evidence-message
+// swallowed by empty catch blocks (#1387 #6), reusing the smrt-content-editor__evidence-message
 // error styling for a consistent in-editor notice.
 let editorError = $state<string | null>(null);
 let bulkEvidenceStatus = $state<FactEvidenceStatus>('supports');
@@ -1016,8 +1016,8 @@ function removeAsset(id: string) {
 }
 </script>
 
-<div class="form-container" data-smrt-component="ContentEditor">
-  <div class="editor-grid" class:editor-grid--with-sidebar={showChatSidebar}>
+<div class="smrt-content-editor__root" data-smrt-component="ContentEditor">
+  <div class="smrt-content-editor__grid" class:smrt-content-editor__grid--with-sidebar={showChatSidebar} data-smrt-part="shell">
     <!-- LEFT COLUMN (Document Canvas) -->
     <Form
       id={formId}
@@ -1025,7 +1025,7 @@ function removeAsset(id: string) {
       onsubmit={handleSubmit}
     >
       {#if editorError}
-        <div class="editor-message editor-message--error" role="alert" aria-live="assertive">
+        <div class="smrt-content-editor__message smrt-content-editor__message--error" role="alert" aria-live="assertive" data-smrt-part="message">
           <span>{editorError}</span>
           <Button
             variant="ghost"
@@ -1041,10 +1041,10 @@ function removeAsset(id: string) {
           </Button>
         </div>
       {/if}
-      <div class="editor-toolbar">
-        <div class="editor-toolbar-left">
+      <div class="smrt-content-editor__toolbar" data-smrt-part="toolbar">
+        <div class="smrt-content-editor__toolbar-left" data-smrt-part="controls">
           {#if !simpleMode}
-          <div class="mui-field">
+          <div class="smrt-content-editor__field" data-smrt-part="field">
             <Select id="type-select" name="type" bind:value={formData.type} class="mui-input">
               <option value="article">Article</option>
               <option value="document">Document</option>
@@ -1052,7 +1052,7 @@ function removeAsset(id: string) {
             </Select>
             <label for="type-select">Type</label>
           </div>
-          <div class="mui-field">
+          <div class="smrt-content-editor__field" data-smrt-part="field">
             <Select id="state-select" name="state" bind:value={formData.state} class="mui-input">
               <option value="active">Active</option>
               <option value="highlighted">Highlighted</option>
@@ -1061,7 +1061,7 @@ function removeAsset(id: string) {
             <label for="state-select">State</label>
           </div>
           {/if}
-          <div class="mui-field">
+          <div class="smrt-content-editor__field" data-smrt-part="field">
             <Select id="status-select" name="status" aria-label={t(M['content.content_fields.status'])} bind:value={formData.status} class="mui-input">
               <option value="draft">Draft</option>
               <option value="published">Published</option>
@@ -1069,13 +1069,13 @@ function removeAsset(id: string) {
             </Select>
             <label for="status-select">Status</label>
           </div>
-          <div class="mui-field">
+          <div class="smrt-content-editor__field" data-smrt-part="field">
             <Input id="publish-date-input" name="publish_date" aria-label={simpleMode ? optionalLabel(t(M['content.content_fields.publish_date'])) : t(M['content.content_editor.publish_date'])} type="datetime-local" bind:value={formData.publish_date} class="mui-input" />
             <label for="publish-date-input">{simpleMode ? optionalLabel(t(M['content.content_fields.publish_date'])) : t(M['content.content_editor.publish_date'])}</label>
           </div>
         </div>
         {#if showActions}
-          <div class="editor-toolbar-right">
+          <div class="smrt-content-editor__toolbar-right" data-smrt-part="actions">
             <Button variant="primary" type="submit" class="save-button" disabled={saveDisabled}>{content ? 'Update Content' : 'Save Content'}</Button>
             <Button variant="secondary" type="button" onclick={handleCancel}>
               Cancel
@@ -1085,7 +1085,7 @@ function removeAsset(id: string) {
       </div>
 
       {#if saveNotice}
-        <p class="save-notice">{saveNotice}</p>
+        <p class="smrt-content-editor__save-notice" data-smrt-part="notice">{saveNotice}</p>
       {/if}
 
       <Input
@@ -1099,8 +1099,8 @@ function removeAsset(id: string) {
       />
 
       {#if showUndoBanner}
-        <div class="undo-banner">
-          <span class="undo-banner__text">
+        <div class="smrt-content-editor__undo-banner" data-smrt-part="banner">
+          <span class="smrt-content-editor__undo-banner-text" data-smrt-part="message">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14l-4-4 4-4"/><path d="M5 10h11a4 4 0 0 1 0 8h-1"/></svg>
             {t(M['content.content_editor.ai_updated_fields'], {
               count: lastAppliedFields.length,
@@ -1118,7 +1118,7 @@ function removeAsset(id: string) {
         </div>
       {/if}
 
-      <div class="document-body-section">
+      <div class="smrt-content-editor__document-body-section" data-smrt-part="body">
         <ContentBodyEditor
           bind:this={bodyEditor}
           value={formData.body || ''}
@@ -1132,7 +1132,7 @@ function removeAsset(id: string) {
           onResolveImage={resolveBodyDropImage}
         />
 
-        <div class="document-body-media-row">
+        <div class="smrt-content-editor__document-body-media-row" data-smrt-part="preview">
           <ContentImageChooser
             body={formData.body || ''}
             format={formData.bodyFormat}
@@ -1142,7 +1142,7 @@ function removeAsset(id: string) {
         </div>
 
         {#if showInlineImageUploader}
-          <div class="inline-uploader-container body-inline-uploader">
+          <div class="smrt-content-editor__inline-uploader-container smrt-content-editor__body-inline-uploader" data-smrt-part="panel">
             <ImageUploader
               apiBaseUrl={normalizeApiBaseUrl(apiBaseUrl)}
               allowedTabs={['gallery', 'upload', 'external']}
@@ -1155,44 +1155,47 @@ function removeAsset(id: string) {
       </div>
 
       <!-- Images & Media -->
-      <details class="editor-drawer" open>
-          <summary class="editor-drawer-header">
+      <details class="smrt-content-editor__drawer" open data-smrt-part="drawer">
+          <summary class="smrt-content-editor__drawer-header" data-smrt-part="drawer-header">
             Images & Media
-            <svg class="drawer-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+            <svg class="smrt-content-editor__drawer-icon" data-smrt-part="icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
           </summary>
           <!-- svelte-ignore a11y_no_static_element_interactions -->
           <div
-            class="editor-drawer-content drop-zone"
-            class:drop-zone-active={imageDragOver}
+            class="smrt-content-editor__drawer-content smrt-content-editor__drop-zone"
+            class:smrt-content-editor__drop-zone--active={imageDragOver}
             ondragover={handleImageDragOver}
             ondragleave={handleImageDragLeave}
             ondrop={handleImageDrop}
+            data-smrt-part="drawer-body"
           >
              {#if imageDragOver}
-               <div class="drop-overlay">
+               <div class="smrt-content-editor__drop-overlay" data-smrt-part="overlay">
                  <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
                </div>
              {/if}
-             <div class="media-gallery">
+             <div class="smrt-content-editor__media-gallery" data-smrt-part="list">
                 {#if formData.assets && formData.assets.length > 0}
-                  <div class="media-grid">
+                  <div class="smrt-content-editor__media-grid" data-smrt-part="grid">
                     {#each formData.assets as asset, index (asset.id || `asset-${index}`)}
                       {@const assetId = typeof asset.id === 'string' ? asset.id : ''}
                       {#if !(assetId && brokenAssetImages[assetId])}
                       <div
-                        class="media-item"
-                        class:is-thumbnail={assetId === formData.thumbnailAssetId}
+                        class="smrt-content-editor__media-item"
+                        class:smrt-content-editor__media-item--thumbnail={assetId === formData.thumbnailAssetId}
                         draggable="true"
                         title={t(M['content.content_editor.drag_into_body'])}
                         ondragstart={(event) => handleAttachedImageDragStart(event, asset)}
+                        data-smrt-part="item"
                       >
                         <img
-                          class="media-item-image"
+                          class="smrt-content-editor__media-item-image"
+                          data-smrt-part="preview"
                           src={getAssetImageSource(asset)}
                           alt={asset.name || 'Asset image'}
                           onerror={() => hideBrokenAssetImage(assetId)}
                         />
-                        <div class="media-item-overlay">
+                        <div class="smrt-content-editor__media-item-overlay" data-smrt-part="overlay">
                            {#if assetId && assetId !== formData.thumbnailAssetId}
                              <Button variant="ghost" size="sm" type="button" class="btn-make-thumbnail" aria-label={t(M['content.content_editor.make_thumbnail'])} title={t(M['content.content_editor.make_thumbnail'])} onclick={() => setThumbnail(assetId)}>
                                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
@@ -1205,14 +1208,14 @@ function removeAsset(id: string) {
                            {/if}
                         </div>
                         {#if assetId === formData.thumbnailAssetId}
-                          <div class="thumbnail-badge">Thumbnail</div>
+                          <div class="smrt-content-editor__thumbnail-badge" data-smrt-part="badge">Thumbnail</div>
                         {/if}
                       </div>
                       {/if}
                     {/each}
                   </div>
                 {:else}
-                  <p class="no-media-text">{t(M['content.content_editor.no_images_attached'])}</p>
+                  <p class="smrt-content-editor__no-media-text" data-smrt-part="empty">{t(M['content.content_editor.no_images_attached'])}</p>
                 {/if}
                 {#if !showImageUploader}
                   <Button variant="ghost" type="button" class="add-image-btn" onclick={() => showImageUploader = true} style="margin-top: 1rem;">
@@ -1226,7 +1229,7 @@ function removeAsset(id: string) {
                 {/if}
 
                 {#if showImageUploader}
-                  <div class="inline-uploader-container">
+                  <div class="smrt-content-editor__inline-uploader-container" data-smrt-part="panel">
                     <ImageUploader 
                       apiBaseUrl={normalizeApiBaseUrl(apiBaseUrl)}
                       allowedTabs={['gallery', 'upload', 'external']} 
@@ -1240,12 +1243,12 @@ function removeAsset(id: string) {
       </details>
 
       <!-- Metadata Panel ("Details", collapsed, in simple mode) -->
-      <details class="editor-drawer" open={!simpleMode}>
-        <summary class="editor-drawer-header">
+      <details class="smrt-content-editor__drawer" open={!simpleMode} data-smrt-part="drawer">
+        <summary class="smrt-content-editor__drawer-header" data-smrt-part="drawer-header">
           {#if simpleMode}{t(M['content.content_fields.details'])}{:else}Metadata{/if}
-          <svg class="drawer-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          <svg class="smrt-content-editor__drawer-icon" data-smrt-part="icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
         </summary>
-        <div class="editor-drawer-content">
+        <div class="smrt-content-editor__drawer-content" data-smrt-part="drawer-body">
           <label>
             {simpleMode ? optionalLabel(t(M['content.content_fields.author'])) : 'Author:'}
             <Input type="text" name="author" aria-label={optionalLabel(t(M['content.content_fields.author']))} bind:value={formData.author} placeholder={t(M['content.content_editor.author_name_placeholder'])} />
@@ -1270,45 +1273,46 @@ function removeAsset(id: string) {
 
       <!-- References Panel (hidden in simple mode) -->
       {#if !simpleMode}
-      <details class="editor-drawer" open>
-          <summary class="editor-drawer-header">
+      <details class="smrt-content-editor__drawer" open data-smrt-part="drawer">
+          <summary class="smrt-content-editor__drawer-header" data-smrt-part="drawer-header">
             References
-            <svg class="drawer-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+            <svg class="smrt-content-editor__drawer-icon" data-smrt-part="icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
           </summary>
           <!-- svelte-ignore a11y_no_static_element_interactions -->
           <div
-            class="editor-drawer-content drop-zone"
-            class:drop-zone-active={refDragOver}
+            class="smrt-content-editor__drawer-content smrt-content-editor__drop-zone"
+            class:smrt-content-editor__drop-zone--active={refDragOver}
             ondragover={handleRefDragOver}
             ondragleave={handleRefDragLeave}
             ondrop={handleRefDrop}
+            data-smrt-part="drawer-body"
           >
             {#if refDragOver}
-              <div class="drop-overlay">
+              <div class="smrt-content-editor__drop-overlay" data-smrt-part="overlay">
                 <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
               </div>
             {/if}
-            <div class="references-section">
-               <div class="references-list">
+            <div class="smrt-content-editor__references-section" data-smrt-part="section">
+               <div class="smrt-content-editor__references-list" data-smrt-part="list">
                   {#each formData.referenceIds as refId}
-                    <div class="reference-badge">
-                      <span class="ref-id">{refId}</span>
+                    <div class="smrt-content-editor__reference-badge" data-smrt-part="badge">
+                      <span class="smrt-content-editor__ref-id" data-smrt-part="label">{refId}</span>
                       <Button variant="ghost" size="sm" type="button" class="remove-ref-btn" aria-label={t(M['content.content_editor.remove'])} title={t(M['content.content_editor.remove'])} onclick={() => removeReference(refId)}>×</Button>
                     </div>
                   {/each}
                   {#if formData.referenceIds.length === 0 && auditReferences.length === 0}
-                    <span class="no-refs">{t(M['content.content_editor.no_references'])}</span>
+                    <span class="smrt-content-editor__no-refs" data-smrt-part="empty">{t(M['content.content_editor.no_references'])}</span>
                   {/if}
                </div>
                {#if auditReferences.length > 0}
-                 <div class="reference-detail-list">
+                 <div class="smrt-content-editor__reference-detail-list" data-smrt-part="list">
                    {#if evidenceError}
-                     <p class="evidence-message evidence-message--error">{evidenceError}</p>
+                     <p class="smrt-content-editor__evidence-message smrt-content-editor__evidence-message--error" data-smrt-part="message">{evidenceError}</p>
                    {/if}
                    {#if evidenceNotice}
-                     <p class="evidence-message evidence-message--notice">{evidenceNotice}</p>
+                     <p class="smrt-content-editor__evidence-message smrt-content-editor__evidence-message--notice" data-smrt-part="message">{evidenceNotice}</p>
                    {/if}
-                   <div class="evidence-bulk-toolbar">
+                   <div class="smrt-content-editor__evidence-bulk-toolbar" data-smrt-part="toolbar">
                      <span>{t(M['content.content_editor.evidence_items_selected'], {
                        count: selectedEvidenceCount,
                        itemLabel: t(
@@ -1347,8 +1351,8 @@ function removeAsset(id: string) {
                      {@const resourceClaims = getResourceClaimsForReference(reference)}
                      {@const resourceClaimsExpanded = isReferenceClaimsExpanded(reference, referenceIndex)}
                      {@const visibleResourceClaims = resourceClaimsExpanded ? resourceClaims : resourceClaims.slice(0, 6)}
-                     <div class="reference-detail">
-                       <div class="reference-detail-header">
+                     <div class="smrt-content-editor__reference-detail" data-smrt-part="item">
+                       <div class="smrt-content-editor__reference-detail-header" data-smrt-part="header">
                          <div>
                            <strong>{getReferenceLabel(reference)}</strong>
                            {#if getReferenceUrl(reference)}
@@ -1357,7 +1361,7 @@ function removeAsset(id: string) {
                              </a>
                            {/if}
                          </div>
-                         <div class="reference-detail-actions">
+                         <div class="smrt-content-editor__reference-detail-actions" data-smrt-part="actions">
                            <span>{t(M['content.content_editor.evidence_claims'], {
                              count: resourceClaims.length,
                              claimLabel: t(
@@ -1379,12 +1383,12 @@ function removeAsset(id: string) {
                          </div>
                        </div>
                        {#if resourceClaims.length > 0}
-                         <div class="resource-claim-list">
+                         <div class="smrt-content-editor__resource-claim-list" data-smrt-part="list">
                            {#each visibleResourceClaims as claim, claimIndex (getResourceClaimKey(claim, claimIndex))}
                              {@const evidenceIds = getResourceClaimEvidenceIds(claim)}
-                             <details class="resource-claim">
+                             <details class="smrt-content-editor__resource-claim" data-smrt-part="item">
                                <summary>
-                                 <label class="evidence-select">
+                                 <label class="smrt-content-editor__evidence-select" data-smrt-part="label">
                                    <!-- raw-primitive-allow: native checkbox; no Provider-free checkbox primitive (Toggle is a switch with different semantics, CheckboxInput requires a Provider) -->
                                    <input
                                      type="checkbox"
@@ -1392,13 +1396,13 @@ function removeAsset(id: string) {
                                      disabled={evidenceIds.length === 0}
                                      onchange={() => toggleResourceClaimSelection(claim)}
                                    />
-                                   <span class={`evidence-status evidence-status--${claim.status || 'supports'}`}>
+                                   <span class={`smrt-content-editor__evidence-status smrt-content-editor__evidence-status--${claim.status || 'supports'}`} data-smrt-part="status">
                                      {getEvidenceStatusIcon(claim.status)}
                                    </span>
                                  </label>
                                  <strong>{claim.fact?.textRefined || claim.fact?.textRaw || claim.quote}</strong>
                                </summary>
-                               <div class="resource-claim-body">
+                               <div class="smrt-content-editor__resource-claim-body" data-smrt-part="body">
                                  {#if claim.quote}
                                    <p>{claim.quote}</p>
                                  {/if}
@@ -1427,14 +1431,14 @@ function removeAsset(id: string) {
                                    {/if}
                                  </dl>
                                  {#each claim.evidence ?? [] as evidence (evidence.id ?? evidence.evidenceKey)}
-                                   <div class="evidence-detail">
+                                   <div class="smrt-content-editor__evidence-detail" data-smrt-part="body">
                                      <span>{evidence.extractionMethod || 'extracted evidence'}</span>
                                      {#if evidence.quote}
                                        <p>{evidence.quote}</p>
                                      {/if}
                                    </div>
                                  {/each}
-                                 <div class="resource-claim-actions">
+                                 <div class="smrt-content-editor__resource-claim-actions" data-smrt-part="actions">
                                    {#each evidenceStatuses as status}
                                      <Button
                                        variant="ghost"
@@ -1468,7 +1472,7 @@ function removeAsset(id: string) {
                    {/each}
                  </div>
                {/if}
-               <div class="add-reference-row">
+               <div class="smrt-content-editor__add-reference-row" data-smrt-part="row">
                   <Input type="text" bind:value={newReferenceId} placeholder={t(M['content.content_editor.reference_id_or_url_placeholder'])} />
                   <Button variant="ghost" type="button" class="add-reference-button" onclick={addReference}>Add</Button>
                </div>
@@ -1488,8 +1492,8 @@ function removeAsset(id: string) {
     </Form>
 
     {#if showChatSidebar}
-      <aside class="editor-sidebar-col">
-        <div class="chat-sidebar-section">
+      <aside class="smrt-content-editor__sidebar-col" data-smrt-part="sidebar">
+        <div class="smrt-content-editor__chat-sidebar-section" data-smrt-part="panel">
           {#if showAgentChat}
             <ContentAgentChat
               {apiBaseUrl}
@@ -1504,8 +1508,9 @@ function removeAsset(id: string) {
             />
           {:else}
             <div
-              class="chat-sidebar-empty-state"
+              class="smrt-content-editor__chat-sidebar-empty-state"
               data-testid="content-editor-agent-chat-disabled"
+              data-smrt-part="empty"
             >
               <h3>{t(M['content.content_editor.agent_chat_unavailable'])}</h3>
               <p>
@@ -1522,560 +1527,637 @@ function removeAsset(id: string) {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .form-container {
+@layer smrt.structure {
+  .smrt-content-editor__root {
     width: 100%;
     margin: 0 auto;
     padding: 1rem 0;
   }
-
-  .editor-grid {
+  .smrt-content-editor__grid {
     display: grid;
     grid-template-columns: 1fr;
     gap: 2rem;
     align-items: start;
     width: 100%;
   }
-
   @media (min-width: 1024px) {
-    .editor-grid--with-sidebar {
+    .smrt-content-editor__grid--with-sidebar {
       grid-template-columns: 1fr auto;
     }
-    .editor-sidebar-col {
+    .smrt-content-editor__sidebar-col {
       width: 380px;
     }
   }
-
-  .form-container :global(.document-title-input) {
+  .smrt-content-editor__root :global(.document-title-input) {
     width: 100%;
-    font-size: var(--smrt-typography-display-medium-size, 2.5rem);
-    font-weight: var(--smrt-typography-weight-bold, 800);
-    line-height: var(--smrt-typography-display-medium-line-height, 1.2);
     padding: 0;
     margin-bottom: 2rem;
-    border: none;
-    outline: none;
-    background: transparent;
-    color: var(--smrt-color-on-surface);
     resize: none;
-    font-family: inherit;
   }
-
-  .form-container :global(.document-title-input)::placeholder {
-    color: var(--smrt-color-outline-variant);
-  }
-
-  .document-body-section {
+  .smrt-content-editor__document-body-section {
     display: flex;
     flex-direction: column;
     gap: 0.85rem;
     margin-bottom: 2rem;
   }
-
-  .document-body-media-row {
+  .smrt-content-editor__document-body-media-row {
     display: flex;
     justify-content: flex-end;
     min-height: 2.75rem;
   }
-
-  .editor-toolbar {
+  .smrt-content-editor__toolbar {
     display: flex;
     align-items: center;
     justify-content: space-between;
     padding-bottom: 1.5rem;
     margin-bottom: 1.5rem;
-    border-bottom: var(--smrt-hairline);
   }
-
-  .editor-toolbar-left {
+  .smrt-content-editor__toolbar-left {
     display: flex;
     align-items: center;
     gap: 1rem;
   }
-
-  .editor-toolbar-right {
+  .smrt-content-editor__toolbar-right {
     display: flex;
     align-items: center;
     gap: 0.75rem;
   }
-
-  .mui-field {
+  .smrt-content-editor__field {
     position: relative;
     display: inline-flex;
     margin-top: 0.5rem;
   }
-
-  .mui-field label {
+  .smrt-content-editor__field label {
     position: absolute;
     top: -0.5rem;
     left: 0.5rem;
-    background: var(--smrt-color-surface); /* Matches main surface background */
+    /* Matches main surface background */
     padding: 0 0.25rem;
-    font-size: var(--smrt-typography-label-small-size, 0.65rem);
-    font-weight: var(--smrt-typography-weight-semibold, 600);
-    color: var(--smrt-color-outline);
-    pointer-events: none;
-    text-transform: uppercase;
-    letter-spacing: var(--smrt-typography-label-small-tracking, 0.05em);
     z-index: 1;
+    pointer-events: none;
   }
-
-  .mui-field :global(.mui-input) {
+  .smrt-content-editor__field :global(.mui-input) {
     padding: 0.5rem 0.75rem;
-    border-radius: 0.375rem;
-    border: var(--smrt-hairline);
-    background: transparent;
-    color: var(--smrt-color-on-surface);
-    font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
-    font-weight: var(--smrt-typography-weight-medium, 500);
     width: auto;
-    font-family: inherit;
     box-sizing: border-box;
-    transition: border-color 0.2s;
   }
-
-  .mui-field :global(.mui-input:focus) {
-    outline: none;
-    border-color: var(--smrt-color-primary);
-  }
-
-  .form-container :global(.editor-main-col) {
+  .smrt-content-editor__root :global(.editor-main-col) {
     display: flex;
     flex-direction: column;
-    background: transparent;
     width: 100%;
   }
-
-  .editor-sidebar-col {
+  .smrt-content-editor__sidebar-col {
     display: flex;
     flex-direction: column;
     gap: 1.25rem;
     position: sticky;
     top: 2rem;
   }
-
-  .editor-drawer {
+  .smrt-content-editor__drawer {
     margin: 0 0 2rem 0;
     padding: 0;
   }
-
-  .editor-drawer-header {
+  .smrt-content-editor__drawer-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     padding: 0 0 1.25rem 0;
-    font-size: var(--smrt-typography-headline-small-size, 1.5rem);
-    font-weight: var(--smrt-typography-weight-bold, 700);
-    color: var(--smrt-color-on-surface);
     cursor: pointer;
-    list-style: none; /* Hide default triangle */
+    list-style: none;
+    /* Hide default triangle */
     user-select: none;
-    transition: color 0.2s;
     margin: 0;
   }
-  
   /* Hide the default details marker */
-  .editor-drawer-header::-webkit-details-marker {
+  .smrt-content-editor__drawer-header::-webkit-details-marker {
     display: none;
   }
-
-  .editor-drawer-header:hover {
-    color: var(--smrt-color-primary);
-  }
-
-  .drawer-icon {
-    color: var(--smrt-color-outline);
-    transition: transform 0.3s ease;
-  }
-
-  .editor-drawer[open] .drawer-icon {
-    transform: rotate(180deg);
-  }
-
-  .editor-drawer-content {
+  .smrt-content-editor__drawer-content {
     padding: 0;
     display: flex;
     flex-direction: column;
     gap: 1.25rem;
   }
-
-  .chat-sidebar-section {
+  .smrt-content-editor__chat-sidebar-section {
     height: 600px;
-    background: var(--smrt-color-surface);
-    border-radius: 1rem;
-    border: var(--smrt-hairline);
     overflow: hidden;
   }
-
-  .chat-sidebar-empty-state {
+  .smrt-content-editor__chat-sidebar-empty-state {
     display: grid;
     gap: 0.75rem;
     align-content: start;
     padding: 1.25rem;
     height: 100%;
     box-sizing: border-box;
-    background: var(--smrt-color-surface-container-low);
-    color: var(--smrt-color-on-surface);
   }
-
-  .chat-sidebar-empty-state h3,
-  .chat-sidebar-empty-state p {
+  .smrt-content-editor__chat-sidebar-empty-state h3,
+  .smrt-content-editor__chat-sidebar-empty-state p {
     margin: 0;
   }
-
-  .form-container h3 {
+  .smrt-content-editor__root h3 {
     margin: 0;
-    color: var(--smrt-color-on-surface);
-    font-size: var(--smrt-typography-headline-small-size, 1.5rem);
   }
-
-  .form-container label {
+  .smrt-content-editor__root label {
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
-    color: var(--smrt-color-on-surface-variant);
-    font-weight: var(--smrt-typography-weight-medium, 500);
-    font-size: var(--smrt-typography-label-large-size, 0.875rem);
   }
-
-  .references-section {
+  .smrt-content-editor__references-section {
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
-    background: var(--smrt-color-surface-container-low);
-    border: var(--smrt-hairline);
     padding: 1rem;
-    border-radius: 0.5rem;
   }
-
-  .references-list {
+  .smrt-content-editor__references-list {
     display: flex;
     flex-wrap: wrap;
     gap: 0.5rem;
   }
-
-  .reference-badge {
+  .smrt-content-editor__reference-badge {
     display: flex;
     align-items: center;
-    background: var(--smrt-color-surface);
-    border: var(--smrt-hairline-strong);
-    border-radius: var(--smrt-radius-full);
     padding: 0.25rem 0.25rem 0.25rem 0.75rem;
-    font-size: var(--smrt-typography-label-large-size, 0.875rem);
-    color: var(--smrt-color-on-surface);
   }
-
-  .reference-badge :global(.remove-ref-btn) {
-    background: none;
-    border: none;
-    color: var(--smrt-color-outline);
+  .smrt-content-editor__reference-badge :global(.remove-ref-btn) {
     cursor: pointer;
-    font-size: var(--smrt-typography-title-medium-size, 1.125rem);
-    line-height: 1;
     padding: 0 0.25rem;
     margin-left: 0.25rem;
   }
-
-  .reference-badge :global(.remove-ref-btn:hover) {
-    color: var(--smrt-color-error);
-  }
-
-  .no-refs {
-    color: var(--smrt-color-outline);
-    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    font-style: italic;
-  }
-
-  .reference-detail-list,
-  .resource-claim-list {
+  .smrt-content-editor__reference-detail-list,
+  .smrt-content-editor__resource-claim-list {
     display: flex;
     flex-direction: column;
     gap: 0.65rem;
   }
-
-  .reference-detail {
-    border: var(--smrt-hairline);
-    background: var(--smrt-color-surface);
-    border-radius: 0.5rem;
+  .smrt-content-editor__reference-detail {
     padding: 0.75rem;
   }
-
-  .reference-detail-header {
+  .smrt-content-editor__reference-detail-header {
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
     gap: 0.75rem;
-    color: var(--smrt-color-on-surface);
   }
-
-  .reference-detail-header div,
-  .resource-claim summary {
+  .smrt-content-editor__reference-detail-header div,
+  .smrt-content-editor__resource-claim summary {
     display: flex;
     gap: 0.25rem;
   }
-
-  .reference-detail-header div {
+  .smrt-content-editor__reference-detail-header div {
     flex-direction: column;
   }
-
-  .reference-detail-actions {
+  .smrt-content-editor__reference-detail-actions {
     align-items: flex-end;
     display: flex;
     flex-direction: column;
     gap: 0.35rem;
     white-space: nowrap;
   }
-
-  .references-section :global(.evidence-action-button) {
-    background: var(--smrt-color-surface);
-    border: var(--smrt-hairline);
-    border-radius: 0.375rem;
-    color: var(--smrt-color-on-surface);
+  .smrt-content-editor__references-section :global(.evidence-action-button) {
     cursor: pointer;
-    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
-    font-weight: var(--smrt-typography-weight-semibold, 600);
     padding: 0.25rem 0.5rem;
   }
-
-  .references-section :global(.evidence-action-button:disabled) {
+  .smrt-content-editor__references-section :global(.evidence-action-button:disabled) {
     cursor: not-allowed;
-    opacity: 0.55;
   }
-
-  .evidence-bulk-toolbar {
+  .smrt-content-editor__evidence-bulk-toolbar {
     align-items: center;
-    background: var(--smrt-color-surface);
-    border: var(--smrt-hairline);
-    border-radius: 0.5rem;
     display: flex;
     flex-wrap: wrap;
     gap: 0.5rem;
     padding: 0.5rem;
   }
-
-  .evidence-bulk-toolbar span,
-  .evidence-message {
-    color: var(--smrt-color-on-surface-variant);
-    font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
-  }
-
-  .evidence-bulk-toolbar :global([data-smrt-component="Select"]) {
-    border: var(--smrt-hairline);
-    border-radius: 0.375rem;
+  .smrt-content-editor__evidence-bulk-toolbar :global([data-smrt-component="Select"]) {
     padding: 0.25rem 0.5rem;
   }
-
-  .evidence-message {
+  .smrt-content-editor__evidence-message {
     margin: 0;
   }
-
-  .evidence-message--error {
-    color: var(--smrt-color-error);
-  }
-
-  .evidence-message--notice {
-    color: var(--smrt-color-primary);
-  }
-
-  .editor-message {
+  .smrt-content-editor__message {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: var(--smrt-spacing-2, 0.5rem);
     margin: 0 0 var(--smrt-spacing-3, 0.75rem);
     padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
-    border-radius: var(--smrt-radius-md, 0.5rem);
-    font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
   }
-
-  .editor-message--error {
-    color: var(--smrt-color-on-error-container);
-    background: color-mix(in srgb, var(--smrt-color-error) 12%, transparent);
-  }
-
-  .editor-message :global(.editor-message__dismiss) {
-    border: none;
-    background: transparent;
-    color: inherit;
+  .smrt-content-editor__message :global(.editor-message__dismiss) {
     cursor: pointer;
-    font-size: var(--smrt-typography-title-medium-size, 1.1rem);
-    line-height: 1;
     padding: 0 0.25rem;
   }
-
-  .reference-detail-header a,
-  .reference-detail-header span,
-  .resource-claim-body {
-    color: var(--smrt-color-on-surface-variant);
-    font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
-  }
-
-  .references-section :global(.resource-claim-more) {
+  .smrt-content-editor__references-section :global(.resource-claim-more) {
     align-self: flex-start;
-    border: 0;
-    background: transparent;
     padding: 0;
     cursor: pointer;
-    color: var(--smrt-color-on-surface-variant);
-    font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
-    font-weight: var(--smrt-typography-weight-semibold, 600);
   }
-
-  .resource-claim-list {
+  .smrt-content-editor__resource-claim-list {
     margin-top: 0.75rem;
   }
-
-  .resource-claim {
-    border-top: var(--smrt-hairline);
+  .smrt-content-editor__resource-claim {
     padding-top: 0.65rem;
   }
-
-  .resource-claim summary {
+  .smrt-content-editor__resource-claim summary {
     align-items: flex-start;
     cursor: pointer;
     list-style: none;
   }
-
-  .resource-claim summary::-webkit-details-marker {
+  .smrt-content-editor__resource-claim summary::-webkit-details-marker {
     display: none;
   }
-
-  .evidence-select {
+  .smrt-content-editor__evidence-select {
     align-items: center;
     display: flex;
     gap: 0.35rem;
     margin-top: 0.1rem;
   }
-
-  .evidence-status {
+  .smrt-content-editor__evidence-status {
     align-items: center;
-    border: var(--smrt-hairline);
-    border-radius: var(--smrt-radius-full);
     display: inline-flex;
-    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
-    font-weight: var(--smrt-typography-weight-bold, 800);
     height: 1.35rem;
     justify-content: center;
-    line-height: 1;
     width: 1.35rem;
   }
-
-  .evidence-status--supports {
-    background: var(--smrt-color-success-container);
-    color: var(--smrt-color-on-success-container);
-  }
-
-  .evidence-status--contradicts,
-  .evidence-status--invalid {
-    background: var(--smrt-color-error-container);
-    color: var(--smrt-color-on-error-container);
-  }
-
-  .evidence-status--unclear {
-    background: var(--smrt-color-warning-container);
-    color: var(--smrt-color-on-warning-container);
-  }
-
-  .evidence-status--irrelevant {
-    background: var(--smrt-color-surface-container);
-    color: var(--smrt-color-on-surface-variant);
-  }
-
-  .resource-claim-body {
+  .smrt-content-editor__resource-claim-body {
     padding: 0.5rem 0 0 2.6rem;
   }
-
-  .resource-claim-body p {
+  .smrt-content-editor__resource-claim-body p {
     margin: 0.25rem 0 0;
   }
-
-  .resource-claim-body dl {
+  .smrt-content-editor__resource-claim-body dl {
     display: grid;
     gap: 0.25rem;
     grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
     margin: 0.5rem 0;
   }
-
-  .resource-claim-body dl div {
+  .smrt-content-editor__resource-claim-body dl div {
     display: flex;
     flex-direction: column;
     gap: 0.1rem;
   }
-
-  .resource-claim-body dt {
-    color: var(--smrt-color-outline);
-    font-size: var(--smrt-typography-label-small-size, 0.7rem);
-    font-weight: var(--smrt-typography-weight-bold, 700);
-    text-transform: uppercase;
-  }
-
-  .resource-claim-body dd {
+  .smrt-content-editor__resource-claim-body dd {
     margin: 0;
   }
-
-  .evidence-detail {
-    border-left: 2px solid var(--smrt-color-outline-variant);
+  .smrt-content-editor__evidence-detail {
     margin-top: 0.5rem;
     padding-left: 0.65rem;
   }
-
-  .evidence-detail span {
-    color: var(--smrt-color-outline);
-    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
-    font-weight: var(--smrt-typography-weight-bold, 700);
-  }
-
-  .resource-claim-actions {
+  .smrt-content-editor__resource-claim-actions {
     display: flex;
     flex-wrap: wrap;
     gap: 0.4rem;
     margin-top: 0.65rem;
   }
-
-  .add-reference-row {
+  .smrt-content-editor__add-reference-row {
     display: flex;
     gap: 0.5rem;
   }
-  
-  .add-reference-row :global([data-smrt-component="Input"]) {
+  .smrt-content-editor__add-reference-row :global([data-smrt-component="Input"]) {
     flex: 1;
   }
-
-  .add-reference-row :global(.add-reference-button) {
-    background: var(--smrt-color-surface);
-    border: var(--smrt-hairline-strong);
-    color: var(--smrt-color-on-surface-variant);
+  .smrt-content-editor__add-reference-row :global(.add-reference-button) {
     padding: 0 1rem;
-    border-radius: 0.5rem;
     cursor: pointer;
-    font-weight: var(--smrt-typography-weight-medium, 500);
   }
-
-  .add-reference-row :global(.add-reference-button:hover) {
-    background: var(--smrt-color-surface-container-low);
-  }
-  
-  .media-gallery :global(.add-image-btn) {
+  .smrt-content-editor__media-gallery :global(.add-image-btn) {
     display: flex;
     align-items: center;
     gap: 0.5rem;
+    padding: 0.75rem 1.25rem;
+    cursor: pointer;
+  }
+  .smrt-content-editor__toolbar-right :global(.save-button) {
+    padding: 0.75rem 1.5rem;
+    cursor: pointer;
+  }
+  .smrt-content-editor__inline-uploader-container {
+    width: 100%;
+    min-height: 400px;
+    /* Reduced for inline view */
+    max-height: 60vh;
+    overflow-y: auto;
+    margin-top: 1rem;
+  }
+  .smrt-content-editor__undo-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.625rem 1rem;
+  }
+  .smrt-content-editor__undo-banner-text {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .smrt-content-editor__undo-banner-text svg {
+    flex-shrink: 0;
+  }
+  .smrt-content-editor__undo-banner :global(.undo-banner__btn) {
+    padding: 0.375rem 0.875rem;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  /* Media Gallery */
+  .smrt-content-editor__media-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 0.75rem;
+  }
+  .smrt-content-editor__media-item {
+    position: relative;
+    overflow: hidden;
+  }
+  .smrt-content-editor__media-item[draggable='true'] {
+    cursor: grab;
+  }
+  .smrt-content-editor__media-item[draggable='true']:active {
+    cursor: grabbing;
+  }
+  .smrt-content-editor__media-item-image {
+    width: 100%;
+    height: 120px;
+    object-fit: cover;
+    display: block;
+  }
+  .smrt-content-editor__media-item-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+  }
+  .smrt-content-editor__media-item:hover .smrt-content-editor__media-item-overlay {
+    opacity: 1;
+  }
+  .smrt-content-editor__media-item-overlay :global(.btn-make-thumbnail),
+  .smrt-content-editor__media-item-overlay :global(.btn-remove-asset) {
+    padding: 0.4rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .smrt-content-editor__thumbnail-badge {
+    position: absolute;
+    top: 0.25rem;
+    left: 0.25rem;
+    padding: 0.15rem 0.4rem;
+  }
+  /* ── Drag & Drop Zones ── */
+  .smrt-content-editor__drop-zone {
+    position: relative;
+    padding: 1.5rem;
+  }
+  .smrt-content-editor__drop-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    pointer-events: none;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-content-editor__root :global(.document-title-input) {
+    font-size: var(--smrt-typography-display-medium-size, 2.5rem);
+    font-weight: var(--smrt-typography-weight-bold, 800);
+    line-height: var(--smrt-typography-display-medium-line-height, 1.2);
+    border: none;
+    outline: none;
+    background: transparent;
+    color: var(--smrt-color-on-surface);
+    font-family: inherit;
+  }
+  .smrt-content-editor__root :global(.document-title-input)::placeholder {
+    color: var(--smrt-color-outline-variant);
+  }
+  .smrt-content-editor__toolbar {
+    border-bottom: var(--smrt-hairline);
+  }
+  .smrt-content-editor__field label {
+    background: var(--smrt-color-surface);
+    font-size: var(--smrt-typography-label-small-size, 0.65rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+    color: var(--smrt-color-outline);
+    text-transform: uppercase;
+    letter-spacing: var(--smrt-typography-label-small-tracking, 0.05em);
+  }
+  .smrt-content-editor__field :global(.mui-input) {
+    border-radius: 0.375rem;
+    border: var(--smrt-hairline);
+    background: transparent;
+    color: var(--smrt-color-on-surface);
+    font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
+    font-weight: var(--smrt-typography-weight-medium, 500);
+    font-family: inherit;
+    transition: border-color 0.2s;
+  }
+  .smrt-content-editor__field :global(.mui-input:focus) {
+    outline: none;
+    border-color: var(--smrt-color-primary);
+  }
+  .smrt-content-editor__root :global(.editor-main-col) {
+    background: transparent;
+  }
+  .smrt-content-editor__drawer-header {
+    font-size: var(--smrt-typography-headline-small-size, 1.5rem);
+    font-weight: var(--smrt-typography-weight-bold, 700);
+    color: var(--smrt-color-on-surface);
+    transition: color 0.2s;
+  }
+  .smrt-content-editor__drawer-header:hover {
+    color: var(--smrt-color-primary);
+  }
+  .smrt-content-editor__drawer-icon {
+    color: var(--smrt-color-outline);
+    transition: transform 0.3s ease;
+  }
+  .smrt-content-editor__drawer[open] .smrt-content-editor__drawer-icon {
+    transform: rotate(180deg);
+  }
+  .smrt-content-editor__chat-sidebar-section {
+    background: var(--smrt-color-surface);
+    border-radius: 1rem;
+    border: var(--smrt-hairline);
+  }
+  .smrt-content-editor__chat-sidebar-empty-state {
+    background: var(--smrt-color-surface-container-low);
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-content-editor__root h3 {
+    color: var(--smrt-color-on-surface);
+    font-size: var(--smrt-typography-headline-small-size, 1.5rem);
+  }
+  .smrt-content-editor__root label {
+    color: var(--smrt-color-on-surface-variant);
+    font-weight: var(--smrt-typography-weight-medium, 500);
+    font-size: var(--smrt-typography-label-large-size, 0.875rem);
+  }
+  .smrt-content-editor__references-section {
+    background: var(--smrt-color-surface-container-low);
+    border: var(--smrt-hairline);
+    border-radius: 0.5rem;
+  }
+  .smrt-content-editor__reference-badge {
+    background: var(--smrt-color-surface);
+    border: var(--smrt-hairline-strong);
+    border-radius: var(--smrt-radius-full);
+    font-size: var(--smrt-typography-label-large-size, 0.875rem);
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-content-editor__reference-badge :global(.remove-ref-btn) {
+    background: none;
+    border: none;
+    color: var(--smrt-color-outline);
+    font-size: var(--smrt-typography-title-medium-size, 1.125rem);
+    line-height: 1;
+  }
+  .smrt-content-editor__reference-badge :global(.remove-ref-btn:hover) {
+    color: var(--smrt-color-error);
+  }
+  .smrt-content-editor__no-refs {
+    color: var(--smrt-color-outline);
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+    font-style: italic;
+  }
+  .smrt-content-editor__reference-detail {
+    border: var(--smrt-hairline);
+    background: var(--smrt-color-surface);
+    border-radius: 0.5rem;
+  }
+  .smrt-content-editor__reference-detail-header {
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-content-editor__references-section :global(.evidence-action-button) {
+    background: var(--smrt-color-surface);
+    border: var(--smrt-hairline);
+    border-radius: 0.375rem;
+    color: var(--smrt-color-on-surface);
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+  }
+  .smrt-content-editor__references-section :global(.evidence-action-button:disabled) {
+    opacity: 0.55;
+  }
+  .smrt-content-editor__evidence-bulk-toolbar {
+    background: var(--smrt-color-surface);
+    border: var(--smrt-hairline);
+    border-radius: 0.5rem;
+  }
+  .smrt-content-editor__evidence-bulk-toolbar span,
+  .smrt-content-editor__evidence-message {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
+  }
+  .smrt-content-editor__evidence-bulk-toolbar :global([data-smrt-component="Select"]) {
+    border: var(--smrt-hairline);
+    border-radius: 0.375rem;
+  }
+  .smrt-content-editor__evidence-message--error {
+    color: var(--smrt-color-error);
+  }
+  .smrt-content-editor__evidence-message--notice {
+    color: var(--smrt-color-primary);
+  }
+  .smrt-content-editor__message {
+    border-radius: var(--smrt-radius-md, 0.5rem);
+    font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
+  }
+  .smrt-content-editor__message--error {
+    color: var(--smrt-color-on-error-container);
+    background: color-mix(in srgb, var(--smrt-color-error) 12%, transparent);
+  }
+  .smrt-content-editor__message :global(.editor-message__dismiss) {
+    border: none;
+    background: transparent;
+    color: inherit;
+    font-size: var(--smrt-typography-title-medium-size, 1.1rem);
+    line-height: 1;
+  }
+  .smrt-content-editor__reference-detail-header a,
+  .smrt-content-editor__reference-detail-header span,
+  .smrt-content-editor__resource-claim-body {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
+  }
+  .smrt-content-editor__references-section :global(.resource-claim-more) {
+    border: 0;
+    background: transparent;
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+  }
+  .smrt-content-editor__resource-claim {
+    border-top: var(--smrt-hairline);
+  }
+  .smrt-content-editor__evidence-status {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-full);
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
+    font-weight: var(--smrt-typography-weight-bold, 800);
+    line-height: 1;
+  }
+  .smrt-content-editor__evidence-status--supports {
+    background: var(--smrt-color-success-container);
+    color: var(--smrt-color-on-success-container);
+  }
+  .smrt-content-editor__evidence-status--contradicts,
+  .smrt-content-editor__evidence-status--invalid {
+    background: var(--smrt-color-error-container);
+    color: var(--smrt-color-on-error-container);
+  }
+  .smrt-content-editor__evidence-status--unclear {
+    background: var(--smrt-color-warning-container);
+    color: var(--smrt-color-on-warning-container);
+  }
+  .smrt-content-editor__evidence-status--irrelevant {
+    background: var(--smrt-color-surface-container);
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-content-editor__resource-claim-body dt {
+    color: var(--smrt-color-outline);
+    font-size: var(--smrt-typography-label-small-size, 0.7rem);
+    font-weight: var(--smrt-typography-weight-bold, 700);
+    text-transform: uppercase;
+  }
+  .smrt-content-editor__evidence-detail {
+    border-left: 2px solid var(--smrt-color-outline-variant);
+  }
+  .smrt-content-editor__evidence-detail span {
+    color: var(--smrt-color-outline);
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
+    font-weight: var(--smrt-typography-weight-bold, 700);
+  }
+  .smrt-content-editor__add-reference-row :global(.add-reference-button) {
+    background: var(--smrt-color-surface);
+    border: var(--smrt-hairline-strong);
+    color: var(--smrt-color-on-surface-variant);
+    border-radius: 0.5rem;
+    font-weight: var(--smrt-typography-weight-medium, 500);
+  }
+  .smrt-content-editor__add-reference-row :global(.add-reference-button:hover) {
+    background: var(--smrt-color-surface-container-low);
+  }
+  .smrt-content-editor__media-gallery :global(.add-image-btn) {
     background: var(--smrt-color-surface, white);
     border: var(--smrt-hairline-strong);
-    padding: 0.75rem 1.25rem;
     border-radius: var(--smrt-radius-md, 0.5rem);
     color: var(--smrt-color-on-surface-variant);
     font-weight: var(--smrt-typography-weight-medium, 500);
-    cursor: pointer;
     transition: all 0.2s;
   }
-
-  .media-gallery :global(.add-image-btn:hover) {
+  .smrt-content-editor__media-gallery :global(.add-image-btn:hover) {
     border-color: var(--smrt-color-primary);
     color: var(--smrt-color-on-surface);
     background: var(--smrt-color-surface-container-low);
   }
-
-  .editor-toolbar-right :global(.save-button) {
+  .smrt-content-editor__toolbar-right :global(.save-button) {
     background: linear-gradient(
       135deg,
       var(--smrt-color-primary) 0%,
@@ -2083,52 +2165,34 @@ function removeAsset(id: string) {
     );
     color: var(--smrt-color-on-primary);
     border: none;
-    padding: 0.75rem 1.5rem;
     border-radius: 0.5rem;
     font-weight: var(--smrt-typography-weight-semibold, 600);
-    cursor: pointer;
     transition: transform 0.2s, box-shadow 0.2s;
   }
-
-  .editor-toolbar-right :global(.save-button:hover) {
+  .smrt-content-editor__toolbar-right :global(.save-button:hover) {
     transform: translateY(-1px);
     box-shadow: 0 4px 6px -1px color-mix(in srgb, var(--smrt-color-primary) 40%, transparent);
   }
-
-  .editor-toolbar-right :global(.save-button:disabled) {
+  .smrt-content-editor__toolbar-right :global(.save-button:disabled) {
     opacity: 0.65;
     transform: none;
     box-shadow: none;
   }
-
-  .save-notice {
+  .smrt-content-editor__save-notice {
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     color: var(--smrt-color-primary);
   }
-
-  .inline-uploader-container {
-    width: 100%;
-    min-height: 400px; /* Reduced for inline view */
-    max-height: 60vh;
-    overflow-y: auto;
+  .smrt-content-editor__inline-uploader-container {
     background: var(--smrt-color-surface);
     border: var(--smrt-hairline);
-    margin-top: 1rem;
     border-radius: 0.75rem;
     box-shadow: var(--smrt-elevation-2, 0 4px 6px -1px color-mix(in srgb, var(--smrt-color-shadow) 5%, transparent), 0 2px 4px -1px color-mix(in srgb, var(--smrt-color-shadow) 3%, transparent));
     /* Svelte built-in slide animations will be handled if implemented */
   }
-
-  .body-inline-uploader {
+  .smrt-content-editor__body-inline-uploader {
     background: var(--smrt-color-surface-container);
   }
-
-  .undo-banner {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem;
-    padding: 0.625rem 1rem;
+  .smrt-content-editor__undo-banner {
     background: linear-gradient(
       135deg,
       var(--smrt-color-primary-container) 0%,
@@ -2138,171 +2202,103 @@ function removeAsset(id: string) {
     border-radius: 0.5rem;
     animation: undo-slide-in 0.3s ease-out;
   }
-
   @keyframes undo-slide-in {
-    from { opacity: 0; transform: translateY(-8px); }
-    to { opacity: 1; transform: translateY(0); }
+    from {
+      opacity: 0;
+      transform: translateY(-8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
-
-  .undo-banner__text {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
+  .smrt-content-editor__undo-banner-text {
     font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
     font-weight: var(--smrt-typography-weight-medium, 500);
     color: var(--smrt-color-primary);
   }
-
-  .undo-banner__text svg {
-    flex-shrink: 0;
-  }
-
-  .undo-banner :global(.undo-banner__btn) {
+  .smrt-content-editor__undo-banner :global(.undo-banner__btn) {
     background: var(--smrt-color-surface);
     color: var(--smrt-color-primary);
     border: var(--smrt-hairline-strong);
-    padding: 0.375rem 0.875rem;
     border-radius: 0.375rem;
     font-size: var(--smrt-typography-label-large-size, 0.8125rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
-    cursor: pointer;
-    white-space: nowrap;
     transition: all 0.15s ease;
   }
-
-  .undo-banner :global(.undo-banner__btn:hover) {
+  .smrt-content-editor__undo-banner :global(.undo-banner__btn:hover) {
     background: var(--smrt-color-surface-variant);
     border-color: var(--smrt-color-primary);
   }
-
-  /* Media Gallery */
-  .media-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-    gap: 0.75rem;
-  }
-
-  .media-item {
-    position: relative;
+  .smrt-content-editor__media-item {
     border-radius: 0.5rem;
-    overflow: hidden;
     border: 2px solid transparent;
     background: var(--smrt-color-surface-container-high);
     transition: border-color 0.2s;
   }
-
-  .media-item[draggable='true'] {
-    cursor: grab;
-  }
-
-  .media-item[draggable='true']:active {
-    cursor: grabbing;
-  }
-
-  .media-item.is-thumbnail {
+  .smrt-content-editor__media-item.smrt-content-editor__media-item--thumbnail {
     border-color: var(--smrt-color-primary);
   }
-
-  .media-item-image {
-    width: 100%;
-    height: 120px;
-    object-fit: cover;
-    display: block;
-  }
-
-  .media-item-overlay {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    gap: 0.5rem;
-    align-items: center;
-    justify-content: center;
+  .smrt-content-editor__media-item-overlay {
     background: color-mix(in srgb, var(--smrt-color-scrim) 50%, transparent);
-    opacity: 0;
     transition: opacity 0.2s;
   }
-
-  .media-item:hover .media-item-overlay {
-    opacity: 1;
-  }
-
-  .media-item-overlay :global(.btn-make-thumbnail),
-  .media-item-overlay :global(.btn-remove-asset) {
-    padding: 0.4rem;
+  .smrt-content-editor__media-item-overlay :global(.btn-make-thumbnail),
+  .smrt-content-editor__media-item-overlay :global(.btn-remove-asset) {
     border: none;
     border-radius: 0.375rem;
     background: color-mix(in srgb, var(--smrt-color-surface) 90%, transparent);
     color: var(--smrt-color-on-surface);
-    cursor: pointer;
     transition: background 0.15s, transform 0.15s;
-    display: flex;
-    align-items: center;
-    justify-content: center;
   }
-
-  .media-item-overlay :global(.btn-make-thumbnail:hover),
-  .media-item-overlay :global(.btn-remove-asset:hover) {
+  .smrt-content-editor__media-item-overlay :global(.btn-make-thumbnail:hover),
+  .smrt-content-editor__media-item-overlay :global(.btn-remove-asset:hover) {
     transform: scale(1.1);
     background: var(--smrt-color-surface);
   }
-
-  .media-item-overlay :global(.btn-remove-asset:hover:not(:disabled):not(.disabled)) {
+  .smrt-content-editor__media-item-overlay :global(.btn-remove-asset:hover:not(:disabled):not(.disabled)) {
     background: var(--smrt-color-error-container);
     color: var(--smrt-color-error);
     border-color: var(--smrt-color-error);
   }
-
-  .thumbnail-badge {
-    position: absolute;
-    top: 0.25rem;
-    left: 0.25rem;
+  .smrt-content-editor__thumbnail-badge {
     background: var(--smrt-color-primary);
     color: var(--smrt-color-on-primary);
     font-size: var(--smrt-typography-label-small-size, 0.65rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
-    padding: 0.15rem 0.4rem;
     border-radius: 0.25rem;
     text-transform: uppercase;
     letter-spacing: var(--smrt-typography-label-small-tracking, 0.03em);
   }
-
   /* ── Drag & Drop Zones ── */
-  .drop-zone {
-    position: relative;
+  .smrt-content-editor__drop-zone {
     transition: border-color 0.2s, background 0.2s;
     border: 2px dashed var(--smrt-color-outline-variant);
     border-radius: 0.75rem;
-    padding: 1.5rem;
   }
-
-  .drop-zone-active {
+  .smrt-content-editor__drop-zone--active {
     border-color: var(--smrt-color-primary);
     background: color-mix(in srgb, var(--smrt-color-primary) 6%, transparent);
   }
-
-  .drop-overlay {
-    position: absolute;
-    inset: 0;
-    z-index: 10;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 0.75rem;
+  .smrt-content-editor__drop-overlay {
     background: color-mix(in srgb, var(--smrt-color-primary) 12%, var(--smrt-color-surface, white) 88%);
     border-radius: 0.5rem;
-    pointer-events: none;
     animation: drop-pulse 0.3s ease-out;
   }
-
-  .drop-overlay svg {
+  .smrt-content-editor__drop-overlay svg {
     color: var(--smrt-color-primary);
     opacity: 0.8;
   }
-
   @keyframes drop-pulse {
-    from { opacity: 0; transform: scale(0.96); }
-    to { opacity: 1; transform: scale(1); }
+    from {
+      opacity: 0;
+      transform: scale(0.96);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
   }
 }
+
 </style>

@@ -61,7 +61,7 @@ function updateField(key: string, value: unknown) {
 }
 </script>
 
-<div class="content-status-fields" class:simple data-smrt-component="ContentStatusFields">
+<div class="smrt-content-status-fields__root" class:smrt-content-status-fields__simple={simple} data-smrt-component="ContentStatusFields">
   {#if shown.has('type')}
     <FormGroup label={t(M['content.content_fields.type'])} id="{idPrefix}-type">
       <Select name="type" value={data.type || 'article'} onchange={(event) => updateField('type', event.currentTarget.value)}>
@@ -105,30 +105,33 @@ function updateField(key: string, value: unknown) {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .content-status-fields {
+@layer smrt.structure {
+  .smrt-content-status-fields__root {
     display: flex;
     align-items: end;
     flex-wrap: wrap;
     gap: 0.75rem;
   }
-
-  .content-status-fields :global(.form-group) {
+  .smrt-content-status-fields__root :global(.form-group) {
     display: grid;
     gap: 0.35rem;
     min-width: 8.5rem;
     margin: 0;
   }
-
-  .content-status-fields :global(.form-label) {
+  .smrt-content-status-fields__root :global(.form-label) {
     margin: 0;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-content-status-fields__root :global(.form-label) {
     color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
   }
-
-  .content-status-fields.simple :global(.form-label) {
+  .smrt-content-status-fields__root.smrt-content-status-fields__simple :global(.form-label) {
     font-size: var(--smrt-typography-label-large-size, 0.875rem);
   }
 }
+
 </style>

@@ -1088,24 +1088,24 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
 }
 </script>
 
-<div class="factual-workflow" data-smrt-component="ContentGovernancePanel">
+<div class="smrt-content-governance-panel__root" data-smrt-component="ContentGovernancePanel">
   {#if isSectionVisible('factAudit')}
-    <details class="editor-drawer" open={(factAudit?.counts.total ?? 0) > 0}>
-    <summary class="editor-drawer-header">
+    <details class="smrt-content-governance-panel__drawer" data-smrt-part="drawer" open={(factAudit?.counts.total ?? 0) > 0}>
+    <summary class="smrt-content-governance-panel__drawer-header" data-smrt-part="drawer-header">
       <div style="display: flex; align-items: center; gap: 0.5rem;">
         {t(M['content.governance_panel.article_claim_audit'])}
         {#if factAuditBusy}
-          <span class="section-status" style="font-size: 0.875rem; font-weight: 400; color: var(--smrt-color-outline);">Repairing...</span>
+          <span class="smrt-content-governance-panel__section-status" data-smrt-part="status" style="font-size: 0.875rem; font-weight: 400; color: var(--smrt-color-outline);">Repairing...</span>
         {/if}
       </div>
-      <svg class="drawer-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+      <svg class="smrt-content-governance-panel__drawer-icon" data-smrt-part="icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
     </summary>
-    <div class="editor-drawer-content">
+    <div class="smrt-content-governance-panel__drawer-body" data-smrt-part="drawer-body">
       {#if !savedContentId}
-        <p class="empty-copy">{t(M['content.governance_panel.save_to_audit_claims'])}</p>
+        <p class="smrt-content-governance-panel__empty-copy" data-smrt-part="empty">{t(M['content.governance_panel.save_to_audit_claims'])}</p>
       {:else}
-        <div class="claim-audit-toolbar">
-          <div class="claim-audit-counts">
+        <div class="smrt-content-governance-panel__claim-audit-toolbar" data-smrt-part="toolbar">
+          <div class="smrt-content-governance-panel__claim-audit-counts" data-smrt-part="meta">
             <span><strong>{factAudit?.counts.total ?? 0}</strong> {t(M['content.governance_panel.article_claims'])}</span>
             <span><strong>{factAudit?.counts.supported ?? 0}</strong> supported</span>
             <span><strong>{factAudit?.counts.unsupported ?? 0}</strong> unsupported</span>
@@ -1129,12 +1129,12 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
             {factAuditBusy ? 'Repairing...' : 'Repair audit'}
           </Button>
         </div>
-        <p class="claim-audit-help">
+        <p class="smrt-content-governance-panel__claim-audit-help" data-smrt-part="hint">
           {t(M['content.governance_panel.article_claims_help'])}
         </p>
 
         {#if actionableFactAuditWarnings.length}
-          <div class="claim-audit-warnings">
+          <div class="smrt-content-governance-panel__claim-audit-warnings" data-smrt-part="warning">
             {#each actionableFactAuditWarnings as warning}
               <p>{warning}</p>
             {/each}
@@ -1142,7 +1142,7 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
         {/if}
 
         {#if !factAudit || factAudit.counts.total === 0}
-          <p class="empty-copy">
+          <p class="smrt-content-governance-panel__empty-copy" data-smrt-part="empty">
             {t(M['content.governance_panel.no_claim_audit_generated'])}
           </p>
         {:else}
@@ -1155,12 +1155,12 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
             {@const groupKey = group[0] as keyof typeof factAuditGroups}
             {@const groupClaims = factAuditGroups[groupKey]}
             {#if groupClaims.length > 0}
-              <div class="claim-audit-group">
-                <div class="section-caption">{t(M['content.governance_panel.group_article_claims'], { group: group[1] })}</div>
+              <div class="smrt-content-governance-panel__claim-audit-group" data-smrt-part="section">
+                <div class="smrt-content-governance-panel__section-caption" data-smrt-part="caption">{t(M['content.governance_panel.group_article_claims'], { group: group[1] })}</div>
                 {#each groupClaims as claim (claim.id ?? claim.claimQuote ?? claim.fact.textRefined)}
-                  <details class="claim-audit-item">
+                  <details class="smrt-content-governance-panel__claim-audit-item" data-smrt-part="item">
                     <summary>
-                      <label class="claim-audit-select">
+                      <label class="smrt-content-governance-panel__claim-audit-select" data-smrt-part="select">
                         <!-- raw-primitive-allow: native checkbox; no Provider-free checkbox primitive (Toggle is a switch with different semantics, CheckboxInput requires a Provider) -->
                         <input
                           type="checkbox"
@@ -1169,13 +1169,13 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
                           onchange={() => toggleClaimSelection(claim)}
                         />
                       </label>
-                      <span class={`pill pill--${claim.supportStatus === 'supported' ? 'passed' : claim.supportStatus === 'contradicted' ? 'failed' : 'flagged'}`}>
+                      <span class={`smrt-content-governance-panel__pill smrt-content-governance-panel__pill--${claim.supportStatus === 'supported' ? 'passed' : claim.supportStatus === 'contradicted' ? 'failed' : 'flagged'}`} data-smrt-part="badge">
                         {claim.supportStatus.replace('_', ' ')}
                       </span>
                       <strong>{claim.fact.textRefined || claim.claimQuote || claim.id}</strong>
                     </summary>
-                    <div class="claim-audit-item__body">
-                      <div class="claim-audit-item__actions">
+                    <div class="smrt-content-governance-panel__claim-audit-item-body" data-smrt-part="body">
+                      <div class="smrt-content-governance-panel__claim-audit-item-actions" data-smrt-part="actions">
                         <Button
                           variant="secondary"
                           type="button"
@@ -1195,18 +1195,18 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
                         <p><strong>{t(M['content.governance_panel.support_assessment_label'])}</strong> {claim.rationale}</p>
                       {/if}
                       {#if claim.evidence?.length}
-                        <div class="claim-audit-evidence">
-                          <div class="section-caption">{t(M['content.governance_panel.claim_excerpt'])}</div>
+                        <div class="smrt-content-governance-panel__claim-audit-evidence" data-smrt-part="list">
+                          <div class="smrt-content-governance-panel__section-caption" data-smrt-part="caption">{t(M['content.governance_panel.claim_excerpt'])}</div>
                           {#each claim.evidence as evidence (evidence.id ?? evidence.evidenceKey)}
                             <p>{evidence.quote || evidence.locator || evidence.sourceTitle}</p>
                           {/each}
                         </div>
                       {/if}
                       {#if claim.matchedFacts?.length}
-                        <div class="claim-audit-evidence">
-                          <div class="section-caption">{t(M['content.governance_panel.based_on_source_evidence'])}</div>
+                        <div class="smrt-content-governance-panel__claim-audit-evidence" data-smrt-part="list">
+                          <div class="smrt-content-governance-panel__section-caption" data-smrt-part="caption">{t(M['content.governance_panel.based_on_source_evidence'])}</div>
                           {#each claim.matchedFacts as matched (matched.fact.id ?? matched.fact.textRefined)}
-                            <div class="claim-audit-match">
+                            <div class="smrt-content-governance-panel__claim-audit-match" data-smrt-part="item">
                               <strong>{t(M['content.governance_panel.source_claim_label'])} {matched.fact.textRefined || matched.fact.textRaw || matched.fact.id}</strong>
                               {#each matched.evidence ?? [] as evidence (evidence.id ?? evidence.evidenceKey)}
                                 <span>
@@ -1238,31 +1238,31 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
   {/if}
 
   {#if isSectionVisible('facts') && (showFactCatalog || selectedFactsResolved.length > 0)}
-    <details class="editor-drawer" open={selectedFactsResolved.length > 0}>
-      <summary class="editor-drawer-header">
+    <details class="smrt-content-governance-panel__drawer" data-smrt-part="drawer" open={selectedFactsResolved.length > 0}>
+      <summary class="smrt-content-governance-panel__drawer-header" data-smrt-part="drawer-header">
         <div style="display: flex; align-items: center; gap: 0.5rem;">
           {t(M['content.governance_panel.manual_fact_links'])}
           {#if syncingFacts}
-            <span class="section-status" style="font-size: 0.875rem; font-weight: 400; color: var(--smrt-color-outline);">{t(M['content.governance_panel.saving_links'])}</span>
+            <span class="smrt-content-governance-panel__section-status" data-smrt-part="status" style="font-size: 0.875rem; font-weight: 400; color: var(--smrt-color-outline);">{t(M['content.governance_panel.saving_links'])}</span>
           {/if}
         </div>
-        <svg class="drawer-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+        <svg class="smrt-content-governance-panel__drawer-icon" data-smrt-part="icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
       </summary>
-      <div class="editor-drawer-content">
+      <div class="smrt-content-governance-panel__drawer-body" data-smrt-part="drawer-body">
         {#if governanceState && !governanceState.factLinkingEnabled}
-          <p class="empty-copy">
+          <p class="smrt-content-governance-panel__empty-copy" data-smrt-part="empty">
             {t(M['content.governance_panel.fact_linking_not_enabled'])}
           </p>
         {:else}
-          <div class="selected-facts">
-            <div class="section-caption">{t(M['content.governance_panel.manually_linked_facts'])}</div>
+          <div class="smrt-content-governance-panel__selected-facts" data-smrt-part="list">
+            <div class="smrt-content-governance-panel__section-caption" data-smrt-part="caption">{t(M['content.governance_panel.manually_linked_facts'])}</div>
             {#if selectedFactsResolved.length === 0}
-              <p class="empty-copy">{t(M['content.governance_panel.no_manually_linked_facts'])}</p>
+              <p class="smrt-content-governance-panel__empty-copy" data-smrt-part="empty">{t(M['content.governance_panel.no_manually_linked_facts'])}</p>
             {:else}
-              <div class="fact-chip-list">
+              <div class="smrt-content-governance-panel__fact-chip-list" data-smrt-part="list">
                 {#each selectedFactsResolved as fact (fact.id ?? fact.textRefined)}
-                  <div class="fact-chip">
-                    <div class="fact-chip__body">
+                  <div class="smrt-content-governance-panel__fact-chip" data-smrt-part="item">
+                    <div class="smrt-content-governance-panel__fact-chip-body" data-smrt-part="body">
                       <strong>{fact.textRefined}</strong>
                       <span>
                         {fact.status} · confidence {formatPercent(fact.confidence)}
@@ -1284,7 +1284,7 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
           </div>
 
           {#if showFactCatalog}
-            <div class="fact-search">
+            <div class="smrt-content-governance-panel__fact-search" data-smrt-part="search">
               <Input
                 type="text"
                 bind:value={factQuery}
@@ -1296,20 +1296,20 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
             </div>
 
             {#if catalogError}
-              <p class="workflow-error" role="alert" aria-live="assertive">{catalogError}</p>
+              <p class="smrt-content-governance-panel__workflow-error" data-smrt-part="error" role="alert" aria-live="assertive">{catalogError}</p>
             {/if}
 
-            <div class="fact-catalog">
-              <div class="section-caption">{t(M['content.governance_panel.fact_catalog'])}</div>
+            <div class="smrt-content-governance-panel__fact-catalog" data-smrt-part="panel">
+              <div class="smrt-content-governance-panel__section-caption" data-smrt-part="caption">{t(M['content.governance_panel.fact_catalog'])}</div>
               {#if catalogLoading}
-                <p class="empty-copy">{t(M['content.governance_panel.loading_facts'])}</p>
+                <p class="smrt-content-governance-panel__empty-copy" data-smrt-part="empty">{t(M['content.governance_panel.loading_facts'])}</p>
               {:else if catalogFacts.length === 0}
-                <p class="empty-copy">{t(M['content.governance_panel.no_facts_matched'])}</p>
+                <p class="smrt-content-governance-panel__empty-copy" data-smrt-part="empty">{t(M['content.governance_panel.no_facts_matched'])}</p>
               {:else}
-                <div class="fact-catalog__list">
+                <div class="smrt-content-governance-panel__fact-catalog-list" data-smrt-part="list">
                   {#each catalogFacts as fact (fact.id ?? fact.textRefined)}
-                    <div class="fact-result">
-                      <div class="fact-result__body">
+                    <div class="smrt-content-governance-panel__fact-result" data-smrt-part="item">
+                      <div class="smrt-content-governance-panel__fact-result-body" data-smrt-part="body">
                         <strong>{fact.textRefined}</strong>
                         <span>
                           {fact.status} · {fact.domain || 'general'} · confidence {formatPercent(fact.confidence)}
@@ -1330,14 +1330,14 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
               {/if}
 
               {#if catalogFacts.length > 0 || catalogPage > 1}
-                <div class="fact-pagination" aria-label={t(M['content.governance_panel.fact_catalog_pagination'])}>
+                <div class="smrt-content-governance-panel__fact-pagination" data-smrt-part="pagination" aria-label={t(M['content.governance_panel.fact_catalog_pagination'])}>
                   <span>
                     Page {catalogPage}
                     {#if catalogFacts.length > 0}
                       · {factCatalogRangeStart}-{factCatalogRangeEnd}
                     {/if}
                   </span>
-                  <div class="fact-pagination__actions">
+                  <div class="smrt-content-governance-panel__fact-pagination-actions" data-smrt-part="actions">
                     <Button
                       variant="ghost"
                       size="sm"
@@ -1367,33 +1367,33 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
   {/if}
 
   {#if isSectionVisible('reviews')}
-    <details class="editor-drawer">
-    <summary class="editor-drawer-header">
+    <details class="smrt-content-governance-panel__drawer" data-smrt-part="drawer">
+    <summary class="smrt-content-governance-panel__drawer-header" data-smrt-part="drawer-header">
       <div style="display: flex; align-items: center; gap: 0.5rem;">
         Review
         {#if workflowLoading}
-          <span class="section-status" style="font-size: 0.875rem; font-weight: 400; color: var(--smrt-color-outline);">Loading...</span>
+          <span class="smrt-content-governance-panel__section-status" data-smrt-part="status" style="font-size: 0.875rem; font-weight: 400; color: var(--smrt-color-outline);">Loading...</span>
         {/if}
       </div>
-      <svg class="drawer-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+      <svg class="smrt-content-governance-panel__drawer-icon" data-smrt-part="icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
     </summary>
-    <div class="editor-drawer-content">
+    <div class="smrt-content-governance-panel__drawer-body" data-smrt-part="drawer-body">
 
     {#if workflowError}
-      <p class="workflow-error" role="alert" aria-live="assertive">{workflowError}</p>
+      <p class="smrt-content-governance-panel__workflow-error" data-smrt-part="error" role="alert" aria-live="assertive">{workflowError}</p>
     {/if}
 
     {#if workflowNotice}
-      <p class="workflow-notice" role="status" aria-live="polite">{workflowNotice}</p>
+      <p class="smrt-content-governance-panel__workflow-notice" data-smrt-part="notice" role="status" aria-live="polite">{workflowNotice}</p>
     {/if}
 
     {#if !savedContentId}
-      <p class="empty-copy">
+      <p class="smrt-content-governance-panel__empty-copy" data-smrt-part="empty">
         {t(M['content.governance_panel.save_to_run_governance'])}
       </p>
     {:else}
       {#if reviewProfiles.length > 0}
-        <label class="workflow-field">
+        <label class="smrt-content-governance-panel__workflow-field" data-smrt-part="field">
           {t(M['content.governance_panel.review_profile'])}
           <Select bind:value={activeReviewProfileKey}>
             {#each reviewProfiles as profile (profile.profileKey)}
@@ -1406,21 +1406,21 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
       {/if}
 
       {#if activeReviewProfile}
-        <div class="review-profile-card">
-          <div class="review-profile-card__header">
+        <div class="smrt-content-governance-panel__review-profile-card" data-smrt-part="panel">
+          <div class="smrt-content-governance-panel__review-profile-card-header" data-smrt-part="header">
             <strong>{formatProfileLabel(activeReviewProfile.profileKey)}</strong>
-            <div class="review-profile-card__badges">
-              <span class={`pill ${activeReviewProfile.ready ? 'pill--passed' : 'pill--failed'}`}>
+            <div class="smrt-content-governance-panel__review-profile-card-badges" data-smrt-part="badge">
+              <span class={`smrt-content-governance-panel__pill ${activeReviewProfile.ready ? 'smrt-content-governance-panel__pill--passed' : 'smrt-content-governance-panel__pill--failed'}`} data-smrt-part="badge">
                 {activeReviewProfile.ready ? 'Blocking-ready' : 'Blocking issues'}
               </span>
-              <span class={`pill ${activeReviewProfile.complete ? 'pill--neutral' : 'pill--flagged'}`}>
+              <span class={`smrt-content-governance-panel__pill ${activeReviewProfile.complete ? 'smrt-content-governance-panel__pill--neutral' : 'smrt-content-governance-panel__pill--flagged'}`} data-smrt-part="badge">
                 {activeReviewProfile.complete ? 'All reviews run' : 'Reviews missing'}
               </span>
             </div>
           </div>
 
           {#if activeUnsatisfiedRequirements.length > 0}
-            <div class="review-profile-callout">
+            <div class="smrt-content-governance-panel__review-profile-callout" data-smrt-part="warning">
               <strong>{t(M['content.governance_panel.needs_attention'])}</strong>
               <span>
                 {t(M['content.governance_panel.requirements_need_attention'], { count: activeUnsatisfiedRequirements.length })}
@@ -1429,20 +1429,20 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
           {/if}
 
           {#if activeReviewProfile.requirements?.length === 0}
-            <p class="empty-copy">{t(M['content.governance_panel.no_review_requirements'])}</p>
+            <p class="smrt-content-governance-panel__empty-copy" data-smrt-part="empty">{t(M['content.governance_panel.no_review_requirements'])}</p>
           {:else}
-            <div class="review-profile-list">
+            <div class="smrt-content-governance-panel__review-profile-list" data-smrt-part="list">
               {#each activeReviewProfile.requirements as requirement (requirement.policyKey)}
-                <div class="review-profile-item">
-                  <div class="review-profile-item__body">
+                <div class="smrt-content-governance-panel__review-profile-item" data-smrt-part="item">
+                  <div class="smrt-content-governance-panel__review-profile-item-body" data-smrt-part="body">
                     <strong>{requirement.label}</strong>
                     <span>{getRequirementStateCopy(requirement)}</span>
                   </div>
-                  <div class="review-profile-item__meta">
+                  <div class="smrt-content-governance-panel__review-profile-item-meta" data-smrt-part="meta">
                     {#if requirement.blocking}
-                      <span class="pill pill--neutral">Blocking</span>
+                      <span class="smrt-content-governance-panel__pill smrt-content-governance-panel__pill--neutral" data-smrt-part="badge">Blocking</span>
                     {/if}
-                    <span class={`pill pill--${getRequirementStateTone(requirement)}`}>
+                    <span class={`smrt-content-governance-panel__pill smrt-content-governance-panel__pill--${getRequirementStateTone(requirement)}`} data-smrt-part="badge">
                       {getRequirementStateLabel(requirement)}
                     </span>
                   </div>
@@ -1453,7 +1453,7 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
         </div>
       {/if}
 
-      <div class="review-actions">
+      <div class="smrt-content-governance-panel__review-actions" data-smrt-part="actions">
         {#each activeProfileReviewActions as action (action.policyKey ?? action.kind)}
           <Button
             variant="primary"
@@ -1470,9 +1470,9 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
         {/each}
       </div>
 
-      <div class="workflow-field-group">
+      <div class="smrt-content-governance-panel__workflow-field-group" data-smrt-part="controls">
         {#if availableCustomPolicies.length > 0}
-          <label class="workflow-field">
+          <label class="smrt-content-governance-panel__workflow-field" data-smrt-part="field">
             {t(M['content.governance_panel.app_review_policy'])}
             <Select bind:value={activeCustomPolicyKey}>
               {#each availableCustomPolicies as policy (policy.key)}
@@ -1484,7 +1484,7 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
           </label>
         {/if}
 
-        <label class="workflow-field">
+        <label class="smrt-content-governance-panel__workflow-field" data-smrt-part="field">
           {customReviewButtonLabel}
           <Textarea
             rows={3}
@@ -1514,28 +1514,28 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
         </Button>
       </div>
 
-      <div class="review-list">
-        <div class="section-caption">{t(M['content.governance_panel.recent_reviews'])}</div>
+      <div class="smrt-content-governance-panel__review-list" data-smrt-part="list">
+        <div class="smrt-content-governance-panel__section-caption" data-smrt-part="caption">{t(M['content.governance_panel.recent_reviews'])}</div>
         {#if reviews.length === 0}
-          <p class="empty-copy">{t(M['content.governance_panel.no_reviews_run'])}</p>
+          <p class="smrt-content-governance-panel__empty-copy" data-smrt-part="empty">{t(M['content.governance_panel.no_reviews_run'])}</p>
         {:else}
           {#each reviews as review (review.id ?? `${review.kind}-${review.createdAt}`)}
-            <div class="review-card">
-              <div class="review-card__header">
+            <div class="smrt-content-governance-panel__review-card" data-smrt-part="item">
+              <div class="smrt-content-governance-panel__review-card-header" data-smrt-part="header">
                 <strong>{review.policyKey || review.kind}</strong>
-                <span class={`pill pill--${getReviewTone(review)}`}>
+                <span class={`smrt-content-governance-panel__pill smrt-content-governance-panel__pill--${getReviewTone(review)}`} data-smrt-part="badge">
                   {review.status || 'pending'}
                 </span>
               </div>
               <p>{review.summary || 'Review completed.'}</p>
               {#if review.findings && review.findings.length > 0}
-                <div class="review-findings">
+                <div class="smrt-content-governance-panel__review-findings" data-smrt-part="list">
                   {#each review.findings.slice(0, 2) as finding (`${review.id}-${finding.title ?? finding.detail}`)}
-                    <div class="review-finding">
-                      <span class={`pill pill--${getFindingTone(finding.severity)}`}>
+                    <div class="smrt-content-governance-panel__review-finding" data-smrt-part="item">
+                      <span class={`smrt-content-governance-panel__pill smrt-content-governance-panel__pill--${getFindingTone(finding.severity)}`} data-smrt-part="badge">
                         {finding.severity || 'warning'}
                       </span>
-                      <div class="review-finding__body">
+                      <div class="smrt-content-governance-panel__review-finding-body" data-smrt-part="body">
                         <strong>{finding.title || 'Finding'}</strong>
                         <span>{finding.detail || 'No detail provided.'}</span>
                       </div>
@@ -1558,57 +1558,57 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
   {/if}
 
   {#if isSectionVisible('transparency')}
-    <details class="editor-drawer">
-    <summary class="editor-drawer-header">
+    <details class="smrt-content-governance-panel__drawer" data-smrt-part="drawer">
+    <summary class="smrt-content-governance-panel__drawer-header" data-smrt-part="drawer-header">
       <div style="display: flex; align-items: center; gap: 0.5rem;">
         Transparency
         {#if transparencyLoading}
-          <span class="section-status" style="font-size: 0.875rem; font-weight: 400; color: var(--smrt-color-outline);">Loading...</span>
+          <span class="smrt-content-governance-panel__section-status" data-smrt-part="status" style="font-size: 0.875rem; font-weight: 400; color: var(--smrt-color-outline);">Loading...</span>
         {/if}
       </div>
-      <svg class="drawer-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+      <svg class="smrt-content-governance-panel__drawer-icon" data-smrt-part="icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
     </summary>
-    <div class="editor-drawer-content">
+    <div class="smrt-content-governance-panel__drawer-body" data-smrt-part="drawer-body">
 
     {#if !savedContentId}
-      <p class="empty-copy">
+      <p class="smrt-content-governance-panel__empty-copy" data-smrt-part="empty">
         {t(M['content.governance_panel.save_to_preview_transparency'])}
       </p>
     {:else if governanceState && !governanceState.transparencyEnabled}
-      <p class="empty-copy">
+      <p class="smrt-content-governance-panel__empty-copy" data-smrt-part="empty">
         {t(M['content.governance_panel.transparency_snapshots_not_enabled'])}
       </p>
     {:else if !transparencyPreview}
-      <p class="empty-copy">{t(M['content.governance_panel.no_transparency_preview'])}</p>
+      <p class="smrt-content-governance-panel__empty-copy" data-smrt-part="empty">{t(M['content.governance_panel.no_transparency_preview'])}</p>
     {:else}
-      <p class="section-caption">
+      <p class="smrt-content-governance-panel__section-caption" data-smrt-part="caption">
         {t(M['content.governance_panel.transparency_preview_explainer'])}
       </p>
 
-      <div class="transparency-stats">
-        <div class="transparency-stat">
+      <div class="smrt-content-governance-panel__transparency-stats" data-smrt-part="list">
+        <div class="smrt-content-governance-panel__transparency-stat" data-smrt-part="item">
           <strong>{transparencyPreview.factsUsed.length}</strong>
           <span>{t(M['content.governance_panel.facts_used'])}</span>
         </div>
-        <div class="transparency-stat">
+        <div class="smrt-content-governance-panel__transparency-stat" data-smrt-part="item">
           <strong>{transparencyPreview.references.length}</strong>
           <span>References</span>
         </div>
-        <div class="transparency-stat">
+        <div class="smrt-content-governance-panel__transparency-stat" data-smrt-part="item">
           <strong>{transparencyPreview.otherExtractedFacts.length}</strong>
           <span>{t(M['content.governance_panel.other_extracted_facts'])}</span>
         </div>
-        <div class="transparency-stat">
+        <div class="smrt-content-governance-panel__transparency-stat" data-smrt-part="item">
           <strong>{transparencyPreview.corrections.length}</strong>
           <span>{t(M['content.governance_panel.public_corrections'])}</span>
         </div>
       </div>
 
-      <div class="transparency-grid">
-        <div class="transparency-card">
-          <div class="transparency-card__header">
+      <div class="smrt-content-governance-panel__transparency-grid" data-smrt-part="list">
+        <div class="smrt-content-governance-panel__transparency-card" data-smrt-part="panel">
+          <div class="smrt-content-governance-panel__transparency-card-header" data-smrt-part="header">
             <strong>{t(M['content.governance_panel.current_preview'])}</strong>
-            <span class="pill pill--neutral">{transparencyPreview.snapshotKind}</span>
+            <span class="smrt-content-governance-panel__pill smrt-content-governance-panel__pill--neutral" data-smrt-part="badge">{transparencyPreview.snapshotKind}</span>
           </div>
           <span>
             {#if transparencyPreview.generation.publicPrompt}
@@ -1618,19 +1618,19 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
             {/if}
           </span>
           {#if transparencyPreview.generation.publicPrompt}
-            <p class="transparency-card__prompt">
+            <p class="smrt-content-governance-panel__transparency-card-prompt" data-smrt-part="copy">
               {transparencyPreview.generation.publicPrompt}
             </p>
           {/if}
 
-          <div class="transparency-list">
-            <div class="transparency-list__section">
-              <div class="section-caption">{t(M['content.governance_panel.facts_used_in_article'])}</div>
+          <div class="smrt-content-governance-panel__transparency-list" data-smrt-part="list">
+            <div class="smrt-content-governance-panel__transparency-list-section" data-smrt-part="section">
+              <div class="smrt-content-governance-panel__section-caption" data-smrt-part="caption">{t(M['content.governance_panel.facts_used_in_article'])}</div>
               {#if transparencyPreview.factsUsed.length === 0}
-                <p class="empty-copy">{t(M['content.governance_panel.no_used_facts_public'])}</p>
+                <p class="smrt-content-governance-panel__empty-copy" data-smrt-part="empty">{t(M['content.governance_panel.no_used_facts_public'])}</p>
               {:else}
                 {#each transparencyPreview.factsUsed.slice(0, 3) as fact (fact.id ?? fact.textRefined ?? fact.textRaw)}
-                  <div class="transparency-list__item">
+                  <div class="smrt-content-governance-panel__transparency-list-item" data-smrt-part="item">
                     <strong>{fact.textRefined || fact.textRaw || fact.id}</strong>
                     <span>
                       {fact.relationship || 'linked'}
@@ -1643,13 +1643,13 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
               {/if}
             </div>
 
-            <div class="transparency-list__section">
-              <div class="section-caption">{t(M['content.governance_panel.source_material'])}</div>
+            <div class="smrt-content-governance-panel__transparency-list-section" data-smrt-part="section">
+              <div class="smrt-content-governance-panel__section-caption" data-smrt-part="caption">{t(M['content.governance_panel.source_material'])}</div>
               {#if transparencyPreview.references.length === 0}
-                <p class="empty-copy">{t(M['content.governance_panel.no_references_public'])}</p>
+                <p class="smrt-content-governance-panel__empty-copy" data-smrt-part="empty">{t(M['content.governance_panel.no_references_public'])}</p>
               {:else}
                 {#each transparencyPreview.references.slice(0, 3) as reference (reference.id ?? reference.url ?? reference.title)}
-                  <div class="transparency-list__item">
+                  <div class="smrt-content-governance-panel__transparency-list-item" data-smrt-part="item">
                     <strong>{getTransparencyReferenceLabel(reference)}</strong>
                     <span>
                       {t(M['content.governance_panel.reference_fact_counts'], { used: reference.usedFactIds.length, extracted: reference.extractedFacts.length })}
@@ -1661,11 +1661,11 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
           </div>
         </div>
 
-        <div class="transparency-card">
-          <div class="transparency-card__header">
+        <div class="smrt-content-governance-panel__transparency-card" data-smrt-part="panel">
+          <div class="smrt-content-governance-panel__transparency-card-header" data-smrt-part="header">
             <strong>{t(M['content.governance_panel.latest_published_snapshot'])}</strong>
             {#if publishedTransparency?.publicationVersion?.version !== null && publishedTransparency?.publicationVersion?.version !== undefined}
-              <span class="pill pill--passed">v{publishedTransparency.publicationVersion.version}</span>
+              <span class="smrt-content-governance-panel__pill smrt-content-governance-panel__pill--passed" data-smrt-part="badge">v{publishedTransparency.publicationVersion.version}</span>
             {/if}
           </div>
 
@@ -1677,7 +1677,7 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
               {t(M['content.governance_panel.timeline_and_corrections'], { events: publishedTransparency.versionHistory.length, corrections: publishedTransparency.corrections.length })}
             </span>
           {:else}
-            <p class="empty-copy">
+            <p class="smrt-content-governance-panel__empty-copy" data-smrt-part="empty">
               {t(M['content.governance_panel.no_published_snapshot'])}
             </p>
           {/if}
@@ -1689,16 +1689,16 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
   {/if}
 
   {#if savedContentId && isSectionVisible('corrections')}
-      <details class="editor-drawer">
-        <summary class="editor-drawer-header">
+      <details class="smrt-content-governance-panel__drawer" data-smrt-part="drawer">
+        <summary class="smrt-content-governance-panel__drawer-header" data-smrt-part="drawer-header">
           <div style="display: flex; align-items: center; gap: 0.5rem;">
             Corrections
           </div>
-          <svg class="drawer-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          <svg class="smrt-content-governance-panel__drawer-icon" data-smrt-part="icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
         </summary>
-        <div class="editor-drawer-content">
+        <div class="smrt-content-governance-panel__drawer-body" data-smrt-part="drawer-body">
 
-        <label class="workflow-field">
+        <label class="smrt-content-governance-panel__workflow-field" data-smrt-part="field">
           Summary
           <Input
             type="text"
@@ -1707,7 +1707,7 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
           />
         </label>
 
-        <label class="workflow-field">
+        <label class="smrt-content-governance-panel__workflow-field" data-smrt-part="field">
           {t(M['content.governance_panel.related_fact'])}
           <Select bind:value={correctionFactId}>
             <option value="">{t(M['content.governance_panel.general_correction'])}</option>
@@ -1717,7 +1717,7 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
           </Select>
         </label>
 
-        <label class="workflow-field">
+        <label class="smrt-content-governance-panel__workflow-field" data-smrt-part="field">
           {t(M['content.governance_panel.corrected_fact_text'])}
           <Textarea
             rows={4}
@@ -1726,7 +1726,7 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
           ></Textarea>
         </label>
 
-        <label class="workflow-field">
+        <label class="smrt-content-governance-panel__workflow-field" data-smrt-part="field">
           {t(M['content.governance_panel.public_note'])}
           <Textarea
             rows={3}
@@ -1735,7 +1735,7 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
           ></Textarea>
         </label>
 
-        <label class="checkbox-row">
+        <label class="smrt-content-governance-panel__checkbox-row" data-smrt-part="field">
           <!-- raw-primitive-allow: native checkbox; no Provider-free checkbox primitive (Toggle is a switch with different semantics, CheckboxInput requires a Provider) -->
           <input type="checkbox" bind:checked={publishCorrection} />
           {t(M['content.governance_panel.publish_immediately'])}
@@ -1750,16 +1750,16 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
           {correctionBusy ? 'Issuing correction...' : 'Issue Correction'}
         </Button>
 
-        <div class="review-list">
-          <div class="section-caption">{t(M['content.governance_panel.published_history'])}</div>
+        <div class="smrt-content-governance-panel__review-list" data-smrt-part="list">
+          <div class="smrt-content-governance-panel__section-caption" data-smrt-part="caption">{t(M['content.governance_panel.published_history'])}</div>
           {#if corrections.length === 0}
-            <p class="empty-copy">{t(M['content.governance_panel.no_corrections_issued'])}</p>
+            <p class="smrt-content-governance-panel__empty-copy" data-smrt-part="empty">{t(M['content.governance_panel.no_corrections_issued'])}</p>
           {:else}
             {#each corrections as correction (correction.id ?? `${correction.correctionType}-${correction.createdAt}`)}
-              <div class="review-card">
-                <div class="review-card__header">
+              <div class="smrt-content-governance-panel__review-card" data-smrt-part="item">
+                <div class="smrt-content-governance-panel__review-card-header" data-smrt-part="header">
                   <strong>{correction.correctionType}</strong>
-                  <span class={`pill pill--${correction.status}`}>{correction.status}</span>
+                  <span class={`smrt-content-governance-panel__pill smrt-content-governance-panel__pill--${correction.status}`} data-smrt-part="badge">{correction.status}</span>
                 </div>
                 <p>{correction.summary}</p>
                 <span>{formatTimestamp(correction.publishedAt)}</span>
@@ -1775,8 +1775,8 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
   {/if}
 
   {#if savedContentId && isSectionVisible('versions')}
-      <details class="editor-drawer">
-        <summary class="editor-drawer-header">
+      <details class="smrt-content-governance-panel__drawer" data-smrt-part="drawer">
+        <summary class="smrt-content-governance-panel__drawer-header" data-smrt-part="drawer-header">
           <div style="display: flex; align-items: center; justify-content: space-between; flex: 1;">
             <div style="display: flex; align-items: center; gap: 0.5rem;">
               Versions
@@ -1790,25 +1790,25 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
               {versionBusy ? 'Working...' : 'Create Snapshot'}
             </Button>
           </div>
-          <svg class="drawer-icon" style="margin-left: 1rem;" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          <svg class="smrt-content-governance-panel__drawer-icon" data-smrt-part="icon" style="margin-left: 1rem;" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
         </summary>
-        <div class="editor-drawer-content">
+        <div class="smrt-content-governance-panel__drawer-body" data-smrt-part="drawer-body">
 
         {#if versions.length === 0}
-          <p class="empty-copy">{t(M['content.governance_panel.no_versions_saved'])}</p>
+          <p class="smrt-content-governance-panel__empty-copy" data-smrt-part="empty">{t(M['content.governance_panel.no_versions_saved'])}</p>
         {:else}
-          <div class="review-list">
+          <div class="smrt-content-governance-panel__review-list" data-smrt-part="list">
             {#each versions as version (version.id ?? `version-${version.version ?? 0}`)}
-              <div class="review-card">
-                <div class="review-card__header">
+              <div class="smrt-content-governance-panel__review-card" data-smrt-part="item">
+                <div class="smrt-content-governance-panel__review-card-header" data-smrt-part="header">
                   <strong>v{version.version}</strong>
-                  <span class="pill pill--neutral">{version.kind}</span>
+                  <span class="smrt-content-governance-panel__pill smrt-content-governance-panel__pill--neutral" data-smrt-part="badge">{version.kind}</span>
                 </div>
                 <p>{version.summary || 'Snapshot saved'}</p>
                 {#if getVersionProvenanceCopy(version)}
                   <span>{getVersionProvenanceCopy(version)}</span>
                 {/if}
-                <div class="version-card__footer">
+                <div class="smrt-content-governance-panel__version-card-footer" data-smrt-part="footer">
                   <span>{formatTimestamp(version.createdAt)}</span>
                   <Button
                     variant="secondary"
@@ -1849,441 +1849,418 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .editor-drawer {
+@layer smrt.structure {
+  .smrt-content-governance-panel__drawer {
     margin: 0 0 2rem 0;
     padding: 0;
   }
-
-  .editor-drawer-header {
+  .smrt-content-governance-panel__drawer-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     padding: 0 0 1.25rem 0;
-    font-size: var(--smrt-typography-headline-small-size, 1.5rem);
-    font-weight: var(--smrt-typography-weight-bold, 700);
-    color: var(--smrt-color-on-surface);
     cursor: pointer;
-    list-style: none; /* Hide default triangle */
+    list-style: none;
+    /* Hide default triangle */
     user-select: none;
-    transition: color 0.2s;
     margin: 0;
   }
-  
   /* Hide the default details marker */
-  .editor-drawer-header::-webkit-details-marker {
+  .smrt-content-governance-panel__drawer-header::-webkit-details-marker {
     display: none;
   }
-
-  .editor-drawer-header:hover {
-    color: var(--smrt-color-primary);
-  }
-
-  .drawer-icon {
-    color: var(--smrt-color-outline);
-    transition: transform 0.3s ease;
-  }
-
-  .editor-drawer[open] .drawer-icon {
-    transform: rotate(180deg);
-  }
-
-  .editor-drawer-content {
+  .smrt-content-governance-panel__drawer-body {
     padding: 0;
     display: flex;
     flex-direction: column;
     gap: 1.5rem;
   }
-
-  .factual-workflow {
+  .smrt-content-governance-panel__root {
     container-type: inline-size;
     container-name: governance-panel;
     display: flex;
     flex-direction: column;
     gap: 1.25rem;
   }
-
-  .workflow-grid {
+  .smrt-content-governance-panel__workflow-grid {
     display: grid;
     gap: 1.25rem;
   }
-
   @container governance-panel (min-width: 56rem) {
-    .workflow-grid {
+    .smrt-content-governance-panel__workflow-grid {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
   }
-
-  .workflow-section {
-    background: var(--smrt-color-surface-container-low);
-    border: var(--smrt-hairline);
-    border-radius: 0.75rem;
+  .smrt-content-governance-panel__workflow-section {
     padding: 1rem;
     display: flex;
     flex-direction: column;
     gap: 0.9rem;
   }
-
-  .workflow-section__header {
+  .smrt-content-governance-panel__workflow-section-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 1rem;
   }
-
-  .workflow-field-group {
+  .smrt-content-governance-panel__workflow-field-group {
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
   }
-
-  .section-status,
-  .section-caption,
-  .empty-copy,
-  .claim-audit-help,
-  .review-card span,
-  .claim-audit-counts,
-  .claim-audit-item span,
-  .fact-result span,
-  .fact-chip span {
-    color: var(--smrt-color-on-surface-variant);
-    font-size: var(--smrt-typography-body-medium-size, 0.85rem);
-  }
-
-  .fact-search,
-  .fact-pagination,
-  .fact-pagination__actions,
-  .claim-audit-toolbar,
-  .claim-audit-counts,
-  .review-actions,
-  .version-card__footer {
+  .smrt-content-governance-panel__fact-search,
+  .smrt-content-governance-panel__fact-pagination,
+  .smrt-content-governance-panel__fact-pagination-actions,
+  .smrt-content-governance-panel__claim-audit-toolbar,
+  .smrt-content-governance-panel__claim-audit-counts,
+  .smrt-content-governance-panel__review-actions,
+  .smrt-content-governance-panel__version-card-footer {
     display: flex;
     gap: 0.75rem;
     align-items: center;
   }
-
-  .fact-pagination {
+  .smrt-content-governance-panel__fact-pagination {
     justify-content: space-between;
     flex-wrap: wrap;
-    color: var(--smrt-color-on-surface-variant);
-    font-size: var(--smrt-typography-body-medium-size, 0.85rem);
   }
-
-  .workflow-field {
+  .smrt-content-governance-panel__workflow-field {
     display: flex;
     flex-direction: column;
     gap: 0.4rem;
-    color: var(--smrt-color-on-surface-variant);
-    font-size: var(--smrt-typography-label-large-size, 0.875rem);
-    font-weight: var(--smrt-typography-weight-medium, 500);
   }
-
-  .fact-chip-list,
-  .fact-catalog__list,
-  .claim-audit-group,
-  .claim-audit-item__body,
-  .claim-audit-evidence,
-  .claim-audit-match,
-  .review-list {
+  .smrt-content-governance-panel__fact-chip-list,
+  .smrt-content-governance-panel__fact-catalog-list,
+  .smrt-content-governance-panel__claim-audit-group,
+  .smrt-content-governance-panel__claim-audit-item-body,
+  .smrt-content-governance-panel__claim-audit-evidence,
+  .smrt-content-governance-panel__claim-audit-match,
+  .smrt-content-governance-panel__review-list {
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
   }
-
-  .claim-audit-toolbar {
+  .smrt-content-governance-panel__claim-audit-toolbar {
     justify-content: space-between;
     flex-wrap: wrap;
   }
-
-  .claim-audit-counts {
+  .smrt-content-governance-panel__claim-audit-counts {
     flex-wrap: wrap;
   }
-
-  .claim-audit-warnings {
-    border-radius: 0.6rem;
-    background: color-mix(in srgb, var(--smrt-color-warning) 12%, transparent);
-    color: var(--smrt-color-on-warning-container);
+  .smrt-content-governance-panel__claim-audit-warnings {
     padding: 0.75rem 0.9rem;
   }
-
-  .claim-audit-warnings p,
-  .claim-audit-item p {
+  .smrt-content-governance-panel__claim-audit-warnings p,
+  .smrt-content-governance-panel__claim-audit-item p {
     margin: 0;
   }
-
-  .claim-audit-item {
-    border: var(--smrt-hairline);
-    border-radius: 0.6rem;
-    background: var(--smrt-color-surface);
+  .smrt-content-governance-panel__claim-audit-item {
     padding: 0.75rem;
   }
-
-  .claim-audit-item summary {
+  .smrt-content-governance-panel__claim-audit-item summary {
     cursor: pointer;
     display: flex;
     align-items: center;
     gap: 0.6rem;
   }
-
-  .claim-audit-item__body {
+  .smrt-content-governance-panel__claim-audit-item-body {
     padding-top: 0.75rem;
   }
-
-  .claim-audit-select {
+  .smrt-content-governance-panel__claim-audit-select {
     display: inline-flex;
-    line-height: 1;
   }
-
-  .claim-audit-item__actions {
+  .smrt-content-governance-panel__claim-audit-item-actions {
     display: flex;
     justify-content: flex-end;
   }
-
-  .review-profile-list {
+  .smrt-content-governance-panel__review-profile-list {
     display: flex;
     flex-direction: column;
     gap: 0.6rem;
   }
-
-  .fact-chip,
-  .fact-result,
-  .review-card {
-    background: var(--smrt-color-surface);
-    border: var(--smrt-hairline);
-    border-radius: 0.75rem;
+  .smrt-content-governance-panel__fact-chip,
+  .smrt-content-governance-panel__fact-result,
+  .smrt-content-governance-panel__review-card {
     padding: 0.85rem;
   }
-
-  .fact-chip,
-  .fact-result,
-  .review-card__header,
-  .version-card__footer {
+  .smrt-content-governance-panel__fact-chip,
+  .smrt-content-governance-panel__fact-result,
+  .smrt-content-governance-panel__review-card-header,
+  .smrt-content-governance-panel__version-card-footer {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
     gap: 0.75rem;
   }
-
-  .fact-chip__body,
-  .fact-result__body {
+  .smrt-content-governance-panel__fact-chip-body,
+  .smrt-content-governance-panel__fact-result-body {
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
   }
-
-  .fact-chip :global(.fact-chip__remove) {
-    background: transparent;
-    color: var(--smrt-color-error);
+  .smrt-content-governance-panel__fact-chip :global(.fact-chip__remove) {
     padding: 0;
   }
-
-  .fact-chip :global(.fact-chip__remove:hover:not(:disabled):not(.disabled)) {
-    background: transparent;
-  }
-
-  .review-card {
+  .smrt-content-governance-panel__review-card {
     display: flex;
     flex-direction: column;
     gap: 0.4rem;
   }
-
-  .review-card__header {
+  .smrt-content-governance-panel__review-card-header {
     align-items: center;
   }
-
-  .review-profile-card {
+  .smrt-content-governance-panel__review-profile-card {
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
-    background: var(--smrt-color-surface);
-    border: var(--smrt-hairline);
-    border-radius: 0.75rem;
     padding: 0.85rem;
   }
-
-  .review-profile-card__header,
-  .review-profile-item,
-  .review-profile-item__meta {
+  .smrt-content-governance-panel__review-profile-card-header,
+  .smrt-content-governance-panel__review-profile-item,
+  .smrt-content-governance-panel__review-profile-item-meta {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 0.75rem;
   }
-
-  .review-profile-card__badges {
+  .smrt-content-governance-panel__review-profile-card-badges {
     display: flex;
     align-items: center;
     gap: 0.5rem;
     flex-wrap: wrap;
     justify-content: flex-end;
   }
-
-  .review-profile-callout {
+  .smrt-content-governance-panel__review-profile-callout {
     display: flex;
     flex-direction: column;
     gap: 0.3rem;
-    border-radius: 0.65rem;
-    border: 1px solid color-mix(in srgb, var(--smrt-color-warning) 28%, transparent);
-    background: color-mix(in srgb, var(--smrt-color-warning) 10%, transparent);
     padding: 0.75rem;
   }
-
-  .review-profile-item {
+  .smrt-content-governance-panel__review-profile-item {
     padding: 0.65rem 0.75rem;
-    border: var(--smrt-hairline);
-    border-radius: 0.65rem;
-    background: var(--smrt-color-surface-container-low);
   }
-
-  .review-profile-item__body {
+  .smrt-content-governance-panel__review-profile-item-body {
     display: flex;
     flex-direction: column;
     gap: 0.2rem;
   }
-
-  .review-findings {
+  .smrt-content-governance-panel__review-findings {
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
   }
-
-  .review-finding {
+  .smrt-content-governance-panel__review-finding {
     display: flex;
     align-items: flex-start;
     gap: 0.6rem;
   }
-
-  .review-finding__body {
+  .smrt-content-governance-panel__review-finding-body {
     display: flex;
     flex-direction: column;
     gap: 0.15rem;
   }
-
-  .transparency-grid {
+  .smrt-content-governance-panel__transparency-grid {
     display: grid;
     gap: 1rem;
   }
-
   @container governance-panel (min-width: 56rem) {
-    .transparency-grid {
+    .smrt-content-governance-panel__transparency-grid {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
   }
-
-  .transparency-stats {
+  .smrt-content-governance-panel__transparency-stats {
     display: grid;
     gap: 0.75rem;
     grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   }
-
-  .transparency-stat,
-  .transparency-card,
-  .transparency-list__item {
-    background: var(--smrt-color-surface);
-    border: var(--smrt-hairline);
-    border-radius: 0.75rem;
-  }
-
-  .transparency-stat {
+  .smrt-content-governance-panel__transparency-stat {
     padding: 0.8rem;
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
   }
-
-  .transparency-card {
+  .smrt-content-governance-panel__transparency-card {
     padding: 0.9rem;
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
   }
-
-  .transparency-card__header {
+  .smrt-content-governance-panel__transparency-card-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 0.75rem;
   }
-
-  .transparency-card__prompt {
+  .smrt-content-governance-panel__transparency-card-prompt {
     margin: 0;
-    color: var(--smrt-color-on-surface-variant);
     white-space: pre-wrap;
   }
-
-  .transparency-list {
+  .smrt-content-governance-panel__transparency-list {
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
   }
-
-  .transparency-list__section {
+  .smrt-content-governance-panel__transparency-list-section {
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
   }
-
-  .transparency-list__item {
+  .smrt-content-governance-panel__transparency-list-item {
     padding: 0.7rem 0.8rem;
     display: flex;
     flex-direction: column;
     gap: 0.2rem;
   }
-
-  .pill {
-    border-radius: var(--smrt-radius-full);
+  .smrt-content-governance-panel__pill {
     padding: 0.2rem 0.55rem;
+  }
+  .smrt-content-governance-panel__checkbox-row {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+  }
+  .smrt-content-governance-panel__workflow-error,
+  .smrt-content-governance-panel__workflow-notice {
+    margin: 0;
+    padding: 0.75rem 0.9rem;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-content-governance-panel__drawer-header {
+    font-size: var(--smrt-typography-headline-small-size, 1.5rem);
+    font-weight: var(--smrt-typography-weight-bold, 700);
+    color: var(--smrt-color-on-surface);
+    transition: color 0.2s;
+  }
+  .smrt-content-governance-panel__drawer-header:hover {
+    color: var(--smrt-color-primary);
+  }
+  .smrt-content-governance-panel__drawer-icon {
+    color: var(--smrt-color-outline);
+    transition: transform 0.3s ease;
+  }
+  .smrt-content-governance-panel__drawer[open] .smrt-content-governance-panel__drawer-icon {
+    transform: rotate(180deg);
+  }
+  .smrt-content-governance-panel__workflow-section {
+    background: var(--smrt-color-surface-container-low);
+    border: var(--smrt-hairline);
+    border-radius: 0.75rem;
+  }
+  .smrt-content-governance-panel__section-status,
+  .smrt-content-governance-panel__section-caption,
+  .smrt-content-governance-panel__empty-copy,
+  .smrt-content-governance-panel__claim-audit-help,
+  .smrt-content-governance-panel__review-card span,
+  .smrt-content-governance-panel__claim-audit-counts,
+  .smrt-content-governance-panel__claim-audit-item span,
+  .smrt-content-governance-panel__fact-result span,
+  .smrt-content-governance-panel__fact-chip span {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-medium-size, 0.85rem);
+  }
+  .smrt-content-governance-panel__fact-pagination {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-medium-size, 0.85rem);
+  }
+  .smrt-content-governance-panel__workflow-field {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-label-large-size, 0.875rem);
+    font-weight: var(--smrt-typography-weight-medium, 500);
+  }
+  .smrt-content-governance-panel__claim-audit-warnings {
+    border-radius: 0.6rem;
+    background: color-mix(in srgb, var(--smrt-color-warning) 12%, transparent);
+    color: var(--smrt-color-on-warning-container);
+  }
+  .smrt-content-governance-panel__claim-audit-item {
+    border: var(--smrt-hairline);
+    border-radius: 0.6rem;
+    background: var(--smrt-color-surface);
+  }
+  .smrt-content-governance-panel__claim-audit-select {
+    line-height: 1;
+  }
+  .smrt-content-governance-panel__fact-chip,
+  .smrt-content-governance-panel__fact-result,
+  .smrt-content-governance-panel__review-card {
+    background: var(--smrt-color-surface);
+    border: var(--smrt-hairline);
+    border-radius: 0.75rem;
+  }
+  .smrt-content-governance-panel__fact-chip :global(.fact-chip__remove) {
+    background: transparent;
+    color: var(--smrt-color-error);
+  }
+  .smrt-content-governance-panel__fact-chip :global(.fact-chip__remove:hover:not(:disabled):not(.disabled)) {
+    background: transparent;
+  }
+  .smrt-content-governance-panel__review-profile-card {
+    background: var(--smrt-color-surface);
+    border: var(--smrt-hairline);
+    border-radius: 0.75rem;
+  }
+  .smrt-content-governance-panel__review-profile-callout {
+    border-radius: 0.65rem;
+    border: 1px solid color-mix(in srgb, var(--smrt-color-warning) 28%, transparent);
+    background: color-mix(in srgb, var(--smrt-color-warning) 10%, transparent);
+  }
+  .smrt-content-governance-panel__review-profile-item {
+    border: var(--smrt-hairline);
+    border-radius: 0.65rem;
+    background: var(--smrt-color-surface-container-low);
+  }
+  .smrt-content-governance-panel__transparency-stat,
+  .smrt-content-governance-panel__transparency-card,
+  .smrt-content-governance-panel__transparency-list-item {
+    background: var(--smrt-color-surface);
+    border: var(--smrt-hairline);
+    border-radius: 0.75rem;
+  }
+  .smrt-content-governance-panel__transparency-card-prompt {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-content-governance-panel__pill {
+    border-radius: var(--smrt-radius-full);
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     font-weight: var(--smrt-typography-weight-bold, 700);
     text-transform: capitalize;
   }
-
-  .pill--passed {
+  .smrt-content-governance-panel__pill--passed {
     background: color-mix(in srgb, var(--smrt-color-success) 14%, transparent);
     color: var(--smrt-color-on-success-container);
   }
-
-  .pill--flagged {
+  .smrt-content-governance-panel__pill--flagged {
     background: color-mix(in srgb, var(--smrt-color-warning) 16%, transparent);
     color: var(--smrt-color-on-warning-container);
   }
-
-  .pill--failed,
-  .pill--draft,
-  .pill--retracted {
+  .smrt-content-governance-panel__pill--failed,
+  .smrt-content-governance-panel__pill--draft,
+  .smrt-content-governance-panel__pill--retracted {
     background: color-mix(in srgb, var(--smrt-color-error) 14%, transparent);
     color: var(--smrt-color-on-error-container);
   }
-
-  .pill--published,
-  .pill--neutral {
+  .smrt-content-governance-panel__pill--published,
+  .smrt-content-governance-panel__pill--neutral {
     background: color-mix(in srgb, var(--smrt-color-primary) 14%, transparent);
     color: var(--smrt-color-on-primary-container);
   }
-
-  .checkbox-row {
-    display: flex;
-    align-items: center;
-    gap: 0.55rem;
+  .smrt-content-governance-panel__checkbox-row {
     color: var(--smrt-color-on-surface);
   }
-
-  .workflow-error,
-  .workflow-notice {
-    margin: 0;
+  .smrt-content-governance-panel__workflow-error,
+  .smrt-content-governance-panel__workflow-notice {
     border-radius: 0.6rem;
-    padding: 0.75rem 0.9rem;
     font-size: var(--smrt-typography-body-medium-size, 0.9rem);
   }
-
-  .workflow-error {
+  .smrt-content-governance-panel__workflow-error {
     background: color-mix(in srgb, var(--smrt-color-error) 10%, transparent);
     color: var(--smrt-color-on-error-container);
   }
-
-  .workflow-notice {
+  .smrt-content-governance-panel__workflow-notice {
     background: color-mix(in srgb, var(--smrt-color-primary) 10%, transparent);
     color: var(--smrt-color-on-primary-container);
   }
 }
+
 </style>

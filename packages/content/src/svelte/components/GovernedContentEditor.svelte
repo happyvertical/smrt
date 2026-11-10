@@ -314,18 +314,18 @@ function handleSave(data: ContentData) {
 }
 </script>
 
-<div class="governed-editor" data-smrt-component="GovernedContentEditor">
+<div class="smrt-governed-content-editor__root" data-smrt-component="GovernedContentEditor">
   {#if publishReadinessState}
-    <div class={`publish-readiness-card publish-readiness-card--${publishReadinessState.level}`}>
-      <div class="publish-readiness-card__header">
+    <div class={`smrt-governed-content-editor__card smrt-governed-content-editor__card--${publishReadinessState.level}`} data-smrt-part="card">
+      <div class="smrt-governed-content-editor__header" data-smrt-part="header">
         <strong>{publishReadinessState.title}</strong>
-        <span class="publish-readiness-card__profile">
+        <span class="smrt-governed-content-editor__profile" data-smrt-part="profile">
           {activeReviewProfileKey}
         </span>
       </div>
       <p>{publishReadinessState.message}</p>
       {#if publishReadinessState.details.length > 0}
-        <ul class="publish-readiness-card__list">
+        <ul class="smrt-governed-content-editor__list" data-smrt-part="list">
           {#each publishReadinessState.details as detail}
             <li>{detail}</li>
           {/each}
@@ -377,62 +377,63 @@ function handleSave(data: ContentData) {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .governed-editor {
+@layer smrt.structure {
+  .smrt-governed-content-editor__root {
     display: flex;
     flex-direction: column;
     gap: 1.25rem;
   }
-
-  .publish-readiness-card {
-    border-radius: 0.75rem;
+  .smrt-governed-content-editor__card {
     padding: 1rem;
-    border: var(--smrt-hairline);
-    background: var(--smrt-color-surface-container-low);
     display: flex;
     flex-direction: column;
     gap: 0.65rem;
   }
-
-  .publish-readiness-card--ready {
-    border-color: color-mix(in srgb, var(--smrt-color-primary) 35%, transparent);
-  }
-
-  .publish-readiness-card--advisory {
-    border-color: color-mix(in srgb, var(--smrt-color-tertiary) 45%, transparent);
-  }
-
-  .publish-readiness-card--blocked {
-    border-color: color-mix(in srgb, var(--smrt-color-error) 45%, transparent);
-  }
-
-  .publish-readiness-card__header {
+  .smrt-governed-content-editor__header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 0.75rem;
   }
+  .smrt-governed-content-editor__card p {
+    margin: 0;
+  }
+  .smrt-governed-content-editor__list {
+    margin: 0;
+    padding-left: 1.25rem;
+  }
+}
 
-  .publish-readiness-card__header strong {
+@layer smrt.theme {
+  .smrt-governed-content-editor__card {
+    border-radius: 0.75rem;
+    border: var(--smrt-hairline);
+    background: var(--smrt-color-surface-container-low);
+  }
+  .smrt-governed-content-editor__card--ready {
+    border-color: color-mix(in srgb, var(--smrt-color-primary) 35%, transparent);
+  }
+  .smrt-governed-content-editor__card--advisory {
+    border-color: color-mix(in srgb, var(--smrt-color-tertiary) 45%, transparent);
+  }
+  .smrt-governed-content-editor__card--blocked {
+    border-color: color-mix(in srgb, var(--smrt-color-error) 45%, transparent);
+  }
+  .smrt-governed-content-editor__header strong {
     color: var(--smrt-color-on-surface);
   }
-
-  .publish-readiness-card__profile {
+  .smrt-governed-content-editor__profile {
     font-size: var(--smrt-typography-label-medium-size, 0.8rem);
     color: var(--smrt-color-on-surface-variant);
     text-transform: uppercase;
     letter-spacing: var(--smrt-typography-label-medium-tracking, 0.04em);
   }
-
-  .publish-readiness-card p {
-    margin: 0;
+  .smrt-governed-content-editor__card p {
     color: var(--smrt-color-on-surface-variant);
   }
-
-  .publish-readiness-card__list {
-    margin: 0;
-    padding-left: 1.25rem;
+  .smrt-governed-content-editor__list {
     color: var(--smrt-color-on-surface-variant);
   }
 }
+
 </style>
