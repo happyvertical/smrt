@@ -96,7 +96,7 @@
     "packages/content/src/svelte/routes/ContentGovernanceRoute.svelte": 3,
     "packages/content/src/svelte/routes/ContentWorkspaceRoute.svelte": 5,
     "packages/content/src/svelte/routes/PublishedArticleRoute.svelte": 7,
-    "packages/events/src/svelte/components/MeetingView.svelte": 8,
+    "packages/events/src/svelte/components/MeetingView.svelte": 9,
     "packages/features/src/svelte/components/FeatureSettingsPanel.svelte": 1,
     "packages/fields/src/svelte/components/FieldPolicyGearButton.svelte": 1,
     "packages/fields/src/svelte/components/FieldPolicyGearProvider.svelte": 2,

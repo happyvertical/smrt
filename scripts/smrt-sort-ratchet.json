@@ -309,14 +309,6 @@
       "unsorted": true,
       "internalClasses": 11
     },
-    "packages/comments/src/svelte/ModerationQueue.svelte": {
-      "unsorted": true,
-      "internalClasses": 1
-    },
-    "packages/comments/src/svelte/RecordComments.svelte": {
-      "unsorted": true,
-      "internalClasses": 1
-    },
     "packages/commerce/src/svelte/components/CustomerDetail.svelte": {
       "unsorted": true,
       "internalClasses": 4
@@ -593,86 +585,6 @@
       "unsorted": true,
       "internalClasses": 10
     },
-    "packages/events/src/svelte/components/MeetingView.svelte": {
-      "unsorted": true,
-      "internalClasses": 22
-    },
-    "packages/expenses/src/svelte/components/ExpenseAmountInput.svelte": {
-      "unsorted": true,
-      "internalClasses": 2
-    },
-    "packages/expenses/src/svelte/components/ExpenseForm.svelte": {
-      "unsorted": true,
-      "internalClasses": 2
-    },
-    "packages/expenses/src/svelte/components/ExpenseList.svelte": {
-      "unsorted": true,
-      "internalClasses": 1
-    },
-    "packages/expenses/src/svelte/components/ExpenseReceiptCapture.svelte": {
-      "unsorted": true,
-      "internalClasses": 1
-    },
-    "packages/expenses/src/svelte/components/ExpenseReviewPanel.svelte": {
-      "unsorted": true,
-      "internalClasses": 2
-    },
-    "packages/expenses/src/svelte/components/ExpenseReviewQueue.svelte": {
-      "unsorted": true,
-      "internalClasses": 2
-    },
-    "packages/expenses/src/svelte/playground/ExpenseWorkflowPreview.svelte": {
-      "unsorted": true,
-      "internalClasses": 1
-    },
-    "packages/features/src/svelte/components/FeatureSettingsPanel.svelte": {
-      "unsorted": true,
-      "internalClasses": 15
-    },
-    "packages/fields/src/svelte/components/FieldInput.svelte": {
-      "unsorted": true,
-      "internalClasses": 1
-    },
-    "packages/fields/src/svelte/components/FieldPolicyControlPanel.svelte": {
-      "unsorted": true,
-      "internalClasses": 6
-    },
-    "packages/fields/src/svelte/components/FieldPolicyEditor.svelte": {
-      "unsorted": true,
-      "internalClasses": 6
-    },
-    "packages/fields/src/svelte/components/FieldPolicyGearButton.svelte": {
-      "unsorted": true,
-      "internalClasses": 1
-    },
-    "packages/fields/src/svelte/components/FieldPolicyGearProvider.svelte": {
-      "unsorted": true,
-      "internalClasses": 2
-    },
-    "packages/fields/src/svelte/components/FieldPolicySuggestionQueue.svelte": {
-      "unsorted": true,
-      "internalClasses": 3
-    },
-    "packages/fields/src/svelte/components/FormHelp.svelte": {
-      "unsorted": true,
-      "internalClasses": 10
-    },
-    "packages/fields/src/svelte/components/ObjectForm.svelte": {
-      "unsorted": true,
-      "internalClasses": 4
-    },
-    "packages/fields/src/svelte/components/PolicyField.svelte": {
-      "unsorted": true,
-      "internalClasses": 4
-    },
-    "packages/fields/src/svelte/playground/FieldPolicyFormPreview.svelte": {
-      "unsorted": true,
-      "internalClasses": 8
-    },
-    "packages/fields/src/svelte/playground/ObjectFormPreview.svelte": {
-      "unsorted": true,
-      "internalClasses": 2
-    },
     "packages/images/src/svelte/components/AssetsGallery.svelte": {
       "unsorted": true,
       "internalClasses": 15
@@ -692,58 +604,6 @@
     "packages/images/src/svelte/routes/ImageStudioRoute.svelte": {
       "unsorted": true,
       "internalClasses": 12
-    },
-    "packages/inference/src/svelte/components/InferenceAliasEditor.svelte": {
-      "unsorted": true,
-      "internalClasses": 7
-    },
-    "packages/inference/src/svelte/components/InferenceDefaultView.svelte": {
-      "unsorted": true,
-      "internalClasses": 12
-    },
-    "packages/inference/src/svelte/components/InferenceFusionList.svelte": {
-      "unsorted": true,
-      "internalClasses": 6
-    },
-    "packages/inference/src/svelte/components/InferenceSettingsPanel.svelte": {
-      "unsorted": true,
-      "internalClasses": 10
-    },
-    "packages/inference/src/svelte/components/InferenceTierRow.svelte": {
-      "unsorted": true,
-      "internalClasses": 9
-    },
-    "packages/inference/src/svelte/components/InferenceTranscriptSettings.svelte": {
-      "unsorted": true,
-      "internalClasses": 4
-    },
-    "packages/inference/src/svelte/components/InferenceUsageTable.svelte": {
-      "unsorted": true,
-      "internalClasses": 4
-    },
-    "packages/ingestion/src/svelte/components/ActionReview.svelte": {
-      "unsorted": true,
-      "internalClasses": 2
-    },
-    "packages/ingestion/src/svelte/components/ArgumentFields.svelte": {
-      "unsorted": true,
-      "internalClasses": 3
-    },
-    "packages/ingestion/src/svelte/components/EvidenceViewer.svelte": {
-      "unsorted": true,
-      "internalClasses": 1
-    },
-    "packages/ingestion/src/svelte/components/InboxView.svelte": {
-      "unsorted": true,
-      "internalClasses": 4
-    },
-    "packages/ingestion/src/svelte/components/ReviewView.svelte": {
-      "unsorted": true,
-      "internalClasses": 5
-    },
-    "packages/ingestion/src/svelte/components/TriageView.svelte": {
-      "unsorted": true,
-      "internalClasses": 7
     },
     "packages/jobs/src/svelte/components/JobActions.svelte": {
       "unsorted": true,
@@ -888,10 +748,6 @@
     "packages/messages/src/svelte/components/ThreadView.svelte": {
       "unsorted": true,
       "internalClasses": 9
-    },
-    "packages/personas/src/svelte/components/DirectiveReviewQueue.svelte": {
-      "unsorted": true,
-      "internalClasses": 11
     },
     "packages/planner/src/lib/components/AdvancedStyles.svelte": {
       "unsorted": true,
@@ -1212,38 +1068,6 @@
     "packages/projects/src/svelte/ServiceEvidenceList.svelte": {
       "unsorted": true,
       "internalClasses": 1
-    },
-    "packages/prompts/src/svelte/components/PromptSettingsPanel.svelte": {
-      "unsorted": true,
-      "internalClasses": 17
-    },
-    "packages/reports/src/svelte/ReportConfirmation.svelte": {
-      "unsorted": true,
-      "internalClasses": 5
-    },
-    "packages/reports/src/svelte/ReportDetail.svelte": {
-      "unsorted": true,
-      "internalClasses": 15
-    },
-    "packages/reports/src/svelte/ReportPicker.svelte": {
-      "unsorted": true,
-      "internalClasses": 1
-    },
-    "packages/reports/src/svelte/ReportResult.svelte": {
-      "unsorted": true,
-      "internalClasses": 12
-    },
-    "packages/reports/src/svelte/RuntimeReportWidgetOptions.svelte": {
-      "unsorted": true,
-      "internalClasses": 1
-    },
-    "packages/reports/src/svelte/SavedReportCard.svelte": {
-      "unsorted": true,
-      "internalClasses": 13
-    },
-    "packages/reports/src/svelte/SavedReports.svelte": {
-      "unsorted": true,
-      "internalClasses": 10
     },
     "packages/sales/src/svelte/components/AttributionConflictQueue.svelte": {
       "unsorted": true,
@@ -2065,10 +1889,6 @@
       "unsorted": true,
       "internalClasses": 59
     },
-    "packages/social/src/svelte/components/SocialAccountSettings.svelte": {
-      "unsorted": true,
-      "internalClasses": 12
-    },
     "packages/subscriptions/src/svelte/PlanPicker.svelte": {
       "unsorted": false,
       "internalClasses": 1
@@ -2080,14 +1900,6 @@
     "packages/subscriptions/src/svelte/UsageThresholds.svelte": {
       "unsorted": false,
       "internalClasses": 1
-    },
-    "packages/tenancy/src/svelte/components/TenantCard.svelte": {
-      "unsorted": true,
-      "internalClasses": 15
-    },
-    "packages/tenancy/src/svelte/components/TenantSwitcher.svelte": {
-      "unsorted": true,
-      "internalClasses": 3
     },
     "packages/timesheets/src/svelte/components/DurationDisplay.svelte": {
       "unsorted": true,
@@ -2156,10 +1968,6 @@
     "packages/users/src/svelte/components/UserMenu.svelte": {
       "unsorted": true,
       "internalClasses": 13
-    },
-    "packages/webhooks/src/svelte/WebhookAdmin.svelte": {
-      "unsorted": true,
-      "internalClasses": 1
     }
   }
 }
