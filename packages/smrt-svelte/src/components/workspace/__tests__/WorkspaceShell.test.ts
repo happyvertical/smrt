@@ -283,8 +283,9 @@ describe('WorkspaceShell', () => {
     });
 
     try {
-      const closeBtn =
-        container.querySelector<HTMLButtonElement>('.inspector-close');
+      const closeBtn = container.querySelector<HTMLButtonElement>(
+        'button[data-smrt-component="Button"][aria-label="Close inspector"]',
+      );
       expect(closeBtn).not.toBeNull();
       closeBtn?.click();
       expect(closed).toBe(true);
@@ -304,7 +305,11 @@ describe('WorkspaceShell', () => {
     });
 
     try {
-      expect(container.querySelector('.inspector-close')).toBeNull();
+      expect(
+        container.querySelector(
+          'button[data-smrt-component="Button"][aria-label="Close inspector"]',
+        ),
+      ).toBeNull();
     } finally {
       unmount(component);
     }
@@ -343,8 +348,9 @@ describe('WorkspaceShell', () => {
     });
 
     try {
-      const toggle =
-        container.querySelector<HTMLButtonElement>('.shell-toggle');
+      const toggle = container.querySelector<HTMLButtonElement>(
+        'button[data-smrt-component="Button"][aria-label$=" sidebar"]',
+      );
       expect(toggle).not.toBeNull();
       expect(toggle?.getAttribute('aria-expanded')).toBe('true');
       toggle?.click();
@@ -365,7 +371,11 @@ describe('WorkspaceShell', () => {
     });
 
     try {
-      expect(container.querySelector('.shell-toggle')).toBeNull();
+      expect(
+        container.querySelector(
+          'button[data-smrt-component="Button"][aria-label$=" sidebar"]',
+        ),
+      ).toBeNull();
     } finally {
       unmount(component);
     }
@@ -641,8 +651,9 @@ describe('WorkspaceShell', () => {
         await tick();
         expect(controls.getMobileNavOpen()).toBe(false);
 
-        const hamburger =
-          container.querySelector<HTMLButtonElement>('.mobile-menu');
+        const hamburger = container.querySelector<HTMLButtonElement>(
+          'button[data-smrt-component="Button"][aria-label$=" navigation"]',
+        );
         expect(hamburger).not.toBeNull();
         hamburger?.click();
         await tick();
@@ -725,8 +736,9 @@ describe('WorkspaceShell', () => {
     });
 
     try {
-      const hamburger =
-        container.querySelector<HTMLButtonElement>('.mobile-menu');
+      const hamburger = container.querySelector<HTMLButtonElement>(
+        'button[data-smrt-component="Button"][aria-label$=" navigation"]',
+      );
       expect(hamburger).not.toBeNull();
       // Simulate keyboard-driven opening of the drawer.
       hamburger?.focus();

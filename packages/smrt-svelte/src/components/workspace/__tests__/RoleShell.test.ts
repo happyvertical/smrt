@@ -393,8 +393,9 @@ describe('RoleShell', () => {
 
       // The toggle button only renders when `onToggleCollapsed` is provided —
       // clicking it should invoke our callback.
-      const toggle =
-        container.querySelector<HTMLButtonElement>('.shell-toggle');
+      const toggle = container.querySelector<HTMLButtonElement>(
+        'button[data-smrt-component="Button"][aria-label$=" sidebar"]',
+      );
       expect(toggle).not.toBeNull();
       toggle?.click();
       expect(toggled).toBe(1);

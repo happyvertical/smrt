@@ -317,7 +317,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
         <Button
           variant="ghost"
           size="sm"
-          class="shell-toggle"
+          class="smrt-workspace-shell__shell-toggle"
           onclick={handleCollapseToggle}
           aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           aria-expanded={!collapsed}
@@ -348,7 +348,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
         <Button
           variant="ghost"
           size="sm"
-          class="mobile-menu"
+          class="smrt-workspace-shell__mobile-menu"
           onclick={toggleMobileNav}
           aria-label={mobileNavOpen ? 'Close navigation' : 'Open navigation'}
           aria-expanded={mobileNavOpen}
@@ -404,7 +404,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
               <Button
                 variant="ghost"
                 size="sm"
-                class="inspector-close"
+                class="smrt-workspace-shell__inspector-close"
                 onclick={handleInspectorClose}
                 aria-label={t(M['ui.workspace_shell.close_inspector'])}
               >
@@ -503,7 +503,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
   Svelte scoping into the child <button> with `.smrt-workspace-shell
   :global(.class)` (#1589). Button owns focus-visible, so those rules are
   dropped. The responsive `display` toggles below are preserved. */
-  .smrt-workspace-shell :global(.shell-toggle) {
+  .smrt-workspace-shell :global(.smrt-workspace-shell__shell-toggle) {
     width: 2rem;
     height: 2rem;
     display: inline-flex;
@@ -588,7 +588,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
     height: 0.55rem;
     flex-shrink: 0;
   }
-  .smrt-workspace-shell :global(.mobile-menu) {
+  .smrt-workspace-shell :global(.smrt-workspace-shell__mobile-menu) {
     display: none;
     width: 2.35rem;
     height: 2.35rem;
@@ -621,7 +621,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
     justify-content: space-between;
     padding: 0.85rem 1rem;
   }
-  .smrt-workspace-shell :global(.inspector-close) {
+  .smrt-workspace-shell :global(.smrt-workspace-shell__inspector-close) {
     width: 2rem;
     height: 2rem;
     display: inline-flex;
@@ -699,7 +699,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
     .smrt-workspace-shell .smrt-workspace-shell__brand-row {
       justify-content: center;
     }
-    .smrt-workspace-shell :global(.shell-toggle) {
+    .smrt-workspace-shell :global(.smrt-workspace-shell__shell-toggle) {
       display: none;
     }
     .smrt-workspace-shell .smrt-workspace-shell__brand .smrt-workspace-shell__subtitle,
@@ -713,10 +713,10 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
     .smrt-workspace-shell.smrt-workspace-shell__sidebar-collapsed {
       grid-template-columns: 1fr;
     }
-    .smrt-workspace-shell :global(.mobile-menu) {
+    .smrt-workspace-shell :global(.smrt-workspace-shell__mobile-menu) {
       display: inline-flex;
     }
-    .smrt-workspace-shell :global(.shell-toggle) {
+    .smrt-workspace-shell :global(.smrt-workspace-shell__shell-toggle) {
       display: none;
     }
     .smrt-workspace-sidebar {
@@ -809,7 +809,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
   Svelte scoping into the child <button> with `.smrt-workspace-shell
   :global(.class)` (#1589). Button owns focus-visible, so those rules are
   dropped. The responsive `display` toggles below are preserved. */
-  .smrt-workspace-shell :global(.shell-toggle) {
+  .smrt-workspace-shell :global(.smrt-workspace-shell__shell-toggle) {
     border: var(--smrt-hairline);
     background: var(--smrt-color-surface-container);
     color: var(--smrt-color-on-surface);
@@ -818,7 +818,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
       background-color 150ms ease,
       color 150ms ease;
   }
-  .smrt-workspace-shell :global(.shell-toggle):hover {
+  .smrt-workspace-shell :global(.smrt-workspace-shell__shell-toggle):hover {
     background: var(--smrt-color-surface-container-high);
   }
   .smrt-workspace-shell__shell-toggle-glyph {
@@ -872,7 +872,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
   .smrt-workspace-shell__mode-badge[data-status='attention'] .smrt-workspace-shell__mode-dot {
     background: var(--smrt-color-warning);
   }
-  .smrt-workspace-shell :global(.mobile-menu) {
+  .smrt-workspace-shell :global(.smrt-workspace-shell__mobile-menu) {
     border: var(--smrt-hairline);
     background: var(--smrt-color-surface);
     color: var(--smrt-color-on-surface);
@@ -893,7 +893,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
     color: var(--smrt-color-on-surface);
     font-size: var(--smrt-typography-title-medium-size, 0.95rem);
   }
-  .smrt-workspace-shell :global(.inspector-close) {
+  .smrt-workspace-shell :global(.smrt-workspace-shell__inspector-close) {
     border: 1px solid transparent;
     background: transparent;
     color: var(--smrt-color-on-surface-variant);
@@ -904,7 +904,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
       background-color 150ms ease,
       color 150ms ease;
   }
-  .smrt-workspace-shell :global(.inspector-close):hover {
+  .smrt-workspace-shell :global(.smrt-workspace-shell__inspector-close):hover {
     background: var(--smrt-color-surface-container-high);
     color: var(--smrt-color-on-surface);
   }
