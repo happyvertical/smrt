@@ -5,10 +5,10 @@ description: "Hierarchical place management with geo integration and SMRT framew
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-10T01:08:46Z"
+  at: "2026-11-10T01:55:44Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:dacaf7c449000bd878e9f66e333e1663f37ebe78d26237f0c40a1cb1279f10e4"
+source_revision: "sha256:9cc7840fa53f0ce4b3b0f729dc20865e02daa7f896a3625f12ba0292216bdbf4"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/places/package.json"
@@ -24,7 +24,7 @@ sources:
 
 - Directory: `packages/places`
 - Private: no
-- Object source: `manifest`
+- Object source: `domain-artifact`
 - Evidence level: `source-inspected`
 
 ## Documentation
@@ -66,20 +66,10 @@ sources:
 
 ## MCP tools
 
-- `create_places`: create on `@happyvertical/smrt-places:Place`
-- `create_places`: create on `@happyvertical/smrt-places:PlaceCollection`
-- `create_placetypes`: create on `@happyvertical/smrt-places:PlaceType`
-- `create_placetypes`: create on `@happyvertical/smrt-places:PlaceTypeCollection`
-- `delete_places`: delete on `@happyvertical/smrt-places:PlaceCollection`
-- `delete_placetypes`: delete on `@happyvertical/smrt-places:PlaceTypeCollection`
-- `get_places`: get on `@happyvertical/smrt-places:Place`
-- `get_places`: get on `@happyvertical/smrt-places:PlaceCollection`
-- `get_placetypes`: get on `@happyvertical/smrt-places:PlaceType`
-- `get_placetypes`: get on `@happyvertical/smrt-places:PlaceTypeCollection`
-- `list_places`: list on `@happyvertical/smrt-places:Place`
-- `list_places`: list on `@happyvertical/smrt-places:PlaceCollection`
-- `list_placetypes`: list on `@happyvertical/smrt-places:PlaceType`
-- `list_placetypes`: list on `@happyvertical/smrt-places:PlaceTypeCollection`
-- `update_places`: update on `@happyvertical/smrt-places:Place`
-- `update_places`: update on `@happyvertical/smrt-places:PlaceCollection`
-- `update_placetypes`: update on `@happyvertical/smrt-places:PlaceTypeCollection`
+- `place_create`: create on `@happyvertical/smrt-places:Place`
+- `place_get`: get on `@happyvertical/smrt-places:Place`
+- `place_list`: list on `@happyvertical/smrt-places:Place`
+- `place_update`: update on `@happyvertical/smrt-places:Place`
+- `placetype_create`: create on `@happyvertical/smrt-places:PlaceType`
+- `placetype_get`: get on `@happyvertical/smrt-places:PlaceType`
+- `placetype_list`: list on `@happyvertical/smrt-places:PlaceType`

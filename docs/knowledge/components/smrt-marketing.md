@@ -5,10 +5,10 @@ description: "Cross-channel campaign coordination, immutable performance evidenc
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-10T01:08:46Z"
+  at: "2026-11-10T01:55:44Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:514b5e943cb001d58eab399e3b8cf539f76727c96503ff0208eab62f25648c9d"
+source_revision: "sha256:e128fbefd0504a038ef657ab4b8fd8bcfef2f4ab56fe72d1e36237b35c769fc9"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/marketing/package.json"
@@ -24,7 +24,7 @@ sources:
 
 - Directory: `packages/marketing`
 - Private: no
-- Object source: `scanner`
+- Object source: `domain-artifact`
 - Evidence level: `source-inspected`
 
 ## Documentation
@@ -54,18 +54,21 @@ sources:
 
 - `Campaign` (collection `campaigns`, extends `SmrtObject`)
 - `CampaignChannel` (collection `campaignchannels`, extends `SmrtObject`)
+- `CampaignChannelCollection` (collection `campaignchannels`, extends `SmrtCollection`)
+- `CampaignCollection` (collection `campaigns`, extends `SmrtCollection`)
 - `CampaignMetricSnapshot` (collection `campaignmetricsnapshots`, extends `SmrtObject`)
+- `CampaignMetricSnapshotCollection` (collection `campaignmetricsnapshots`, extends `SmrtCollection`)
 
 ## MCP tools
 
-- `create_campaignchannels`: create on `@happyvertical/smrt-marketing:CampaignChannel`
-- `create_campaignmetricsnapshots`: create on `@happyvertical/smrt-marketing:CampaignMetricSnapshot`
-- `create_campaigns`: create on `@happyvertical/smrt-marketing:Campaign`
-- `get_campaignchannels`: get on `@happyvertical/smrt-marketing:CampaignChannel`
-- `get_campaignmetricsnapshots`: get on `@happyvertical/smrt-marketing:CampaignMetricSnapshot`
-- `get_campaigns`: get on `@happyvertical/smrt-marketing:Campaign`
-- `list_campaignchannels`: list on `@happyvertical/smrt-marketing:CampaignChannel`
-- `list_campaignmetricsnapshots`: list on `@happyvertical/smrt-marketing:CampaignMetricSnapshot`
-- `list_campaigns`: list on `@happyvertical/smrt-marketing:Campaign`
-- `update_campaignchannels`: update on `@happyvertical/smrt-marketing:CampaignChannel`
-- `update_campaigns`: update on `@happyvertical/smrt-marketing:Campaign`
+- `campaign_create`: create on `@happyvertical/smrt-marketing:Campaign`
+- `campaign_get`: get on `@happyvertical/smrt-marketing:Campaign`
+- `campaign_list`: list on `@happyvertical/smrt-marketing:Campaign`
+- `campaign_update`: update on `@happyvertical/smrt-marketing:Campaign`
+- `campaignchannel_create`: create on `@happyvertical/smrt-marketing:CampaignChannel`
+- `campaignchannel_get`: get on `@happyvertical/smrt-marketing:CampaignChannel`
+- `campaignchannel_list`: list on `@happyvertical/smrt-marketing:CampaignChannel`
+- `campaignchannel_update`: update on `@happyvertical/smrt-marketing:CampaignChannel`
+- `campaignmetricsnapshot_create`: create on `@happyvertical/smrt-marketing:CampaignMetricSnapshot`
+- `campaignmetricsnapshot_get`: get on `@happyvertical/smrt-marketing:CampaignMetricSnapshot`
+- `campaignmetricsnapshot_list`: list on `@happyvertical/smrt-marketing:CampaignMetricSnapshot`

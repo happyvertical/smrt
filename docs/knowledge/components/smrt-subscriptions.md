@@ -5,10 +5,10 @@ description: "Tenant subscriptions, entitlement resolution, usage thresholds, an
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-10T01:08:46Z"
+  at: "2026-11-10T01:55:44Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:af951ae164901d31727a198002bc0188c2f8822a455f415adeaef6d06c2c7234"
+source_revision: "sha256:48d3599db9578e435280b3dd42751090babf37fc1f9fc84da681314f14dc5579"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/subscriptions/package.json"
@@ -24,7 +24,7 @@ sources:
 
 - Directory: `packages/subscriptions`
 - Private: no
-- Object source: `scanner`
+- Object source: `domain-artifact`
 - Evidence level: `source-inspected`
 
 ## Documentation
@@ -54,44 +54,59 @@ sources:
 ## Models
 
 - `BillingAdjustment` (collection `billingadjustments`, extends `SmrtObject`)
+- `BillingAdjustmentCollection` (collection `billingadjustments`, extends `SmrtCollection`)
 - `BillingCheckoutSession` (collection `billingcheckoutsessions`, extends `SmrtObject`)
+- `BillingCheckoutSessionCollection` (collection `billingcheckoutsessions`, extends `SmrtCollection`)
 - `ClientCharge` (collection `clientcharges`, extends `SmrtObject`)
+- `ClientChargeCollection` (collection `clientcharges`, extends `SmrtCollection`)
 - `CreditGrant` (collection `creditgrants`, extends `SmrtObject`)
+- `CreditGrantCollection` (collection `creditgrants`, extends `SmrtCollection`)
 - `PriceBook` (collection `pricebooks`, extends `SmrtObject`)
 - `PriceBookAssignment` (collection `pricebookassignments`, extends `SmrtObject`)
+- `PriceBookAssignmentCollection` (collection `pricebookassignments`, extends `SmrtCollection`)
+- `PriceBookCollection` (collection `pricebooks`, extends `SmrtCollection`)
 - `PricingRule` (collection `pricingrules`, extends `SmrtObject`)
+- `PricingRuleCollection` (collection `pricingrules`, extends `SmrtCollection`)
 - `RetailCharge` (collection `retailcharges`, extends `SmrtObject`)
+- `RetailChargeCollection` (collection `retailcharges`, extends `SmrtCollection`)
 - `SpendingPolicy` (collection `spendingpolicies`, extends `SmrtObject`)
+- `SpendingPolicyCollection` (collection `spendingpolicies`, extends `SmrtCollection`)
 - `SubscriptionPlan` (collection `subscriptionplans`, extends `SmrtObject`)
+- `SubscriptionPlanCollection` (collection `subscriptionplans`, extends `SmrtCollection`)
 - `SubscriptionPlanVersion` (collection `subscriptionplanversions`, extends `SmrtObject`)
+- `SubscriptionPlanVersionCollection` (collection `subscriptionplanversions`, extends `SmrtCollection`)
 - `TenantSubscription` (collection `tenantsubscriptions`, extends `SmrtObject`)
+- `TenantSubscriptionCollection` (collection `tenantsubscriptions`, extends `SmrtCollection`)
 - `TenantUsageMetric` (collection `tenantusagemetrics`, extends `SmrtObject`)
+- `TenantUsageMetricCollection` (collection `tenantusagemetrics`, extends `SmrtCollection`)
 
 ## MCP tools
 
-- `create_pricingrules`: create on `@happyvertical/smrt-subscriptions:PricingRule`
-- `create_spendingpolicies`: create on `@happyvertical/smrt-subscriptions:SpendingPolicy`
-- `delete_pricingrules`: delete on `@happyvertical/smrt-subscriptions:PricingRule`
-- `delete_spendingpolicies`: delete on `@happyvertical/smrt-subscriptions:SpendingPolicy`
-- `get_billingadjustments`: get on `@happyvertical/smrt-subscriptions:BillingAdjustment`
-- `get_clientcharges`: get on `@happyvertical/smrt-subscriptions:ClientCharge`
-- `get_creditgrants`: get on `@happyvertical/smrt-subscriptions:CreditGrant`
-- `get_pricingrules`: get on `@happyvertical/smrt-subscriptions:PricingRule`
-- `get_retailcharges`: get on `@happyvertical/smrt-subscriptions:RetailCharge`
-- `get_spendingpolicies`: get on `@happyvertical/smrt-subscriptions:SpendingPolicy`
-- `get_subscriptionplans`: get on `@happyvertical/smrt-subscriptions:SubscriptionPlan`
-- `get_subscriptionplanversions`: get on `@happyvertical/smrt-subscriptions:SubscriptionPlanVersion`
-- `get_tenantsubscriptions`: get on `@happyvertical/smrt-subscriptions:TenantSubscription`
-- `get_tenantusagemetrics`: get on `@happyvertical/smrt-subscriptions:TenantUsageMetric`
-- `list_billingadjustments`: list on `@happyvertical/smrt-subscriptions:BillingAdjustment`
-- `list_clientcharges`: list on `@happyvertical/smrt-subscriptions:ClientCharge`
-- `list_creditgrants`: list on `@happyvertical/smrt-subscriptions:CreditGrant`
-- `list_pricingrules`: list on `@happyvertical/smrt-subscriptions:PricingRule`
-- `list_retailcharges`: list on `@happyvertical/smrt-subscriptions:RetailCharge`
-- `list_spendingpolicies`: list on `@happyvertical/smrt-subscriptions:SpendingPolicy`
-- `list_subscriptionplans`: list on `@happyvertical/smrt-subscriptions:SubscriptionPlan`
-- `list_subscriptionplanversions`: list on `@happyvertical/smrt-subscriptions:SubscriptionPlanVersion`
-- `list_tenantsubscriptions`: list on `@happyvertical/smrt-subscriptions:TenantSubscription`
-- `list_tenantusagemetrics`: list on `@happyvertical/smrt-subscriptions:TenantUsageMetric`
-- `update_pricingrules`: update on `@happyvertical/smrt-subscriptions:PricingRule`
-- `update_spendingpolicies`: update on `@happyvertical/smrt-subscriptions:SpendingPolicy`
+- `billingadjustment_get`: get on `@happyvertical/smrt-subscriptions:BillingAdjustment`
+- `billingadjustment_list`: list on `@happyvertical/smrt-subscriptions:BillingAdjustment`
+- `clientcharge_get`: get on `@happyvertical/smrt-subscriptions:ClientCharge`
+- `clientcharge_list`: list on `@happyvertical/smrt-subscriptions:ClientCharge`
+- `creditgrant_get`: get on `@happyvertical/smrt-subscriptions:CreditGrant`
+- `creditgrant_list`: list on `@happyvertical/smrt-subscriptions:CreditGrant`
+- `pricingrule_create`: create on `@happyvertical/smrt-subscriptions:PricingRule`
+- `pricingrule_delete`: delete on `@happyvertical/smrt-subscriptions:PricingRule`
+- `pricingrule_get`: get on `@happyvertical/smrt-subscriptions:PricingRule`
+- `pricingrule_getterms`: getTerms on `@happyvertical/smrt-subscriptions:PricingRule`
+- `pricingrule_list`: list on `@happyvertical/smrt-subscriptions:PricingRule`
+- `pricingrule_setterms`: setTerms on `@happyvertical/smrt-subscriptions:PricingRule`
+- `pricingrule_update`: update on `@happyvertical/smrt-subscriptions:PricingRule`
+- `retailcharge_get`: get on `@happyvertical/smrt-subscriptions:RetailCharge`
+- `retailcharge_list`: list on `@happyvertical/smrt-subscriptions:RetailCharge`
+- `spendingpolicy_create`: create on `@happyvertical/smrt-subscriptions:SpendingPolicy`
+- `spendingpolicy_delete`: delete on `@happyvertical/smrt-subscriptions:SpendingPolicy`
+- `spendingpolicy_get`: get on `@happyvertical/smrt-subscriptions:SpendingPolicy`
+- `spendingpolicy_list`: list on `@happyvertical/smrt-subscriptions:SpendingPolicy`
+- `spendingpolicy_update`: update on `@happyvertical/smrt-subscriptions:SpendingPolicy`
+- `subscriptionplan_get`: get on `@happyvertical/smrt-subscriptions:SubscriptionPlan`
+- `subscriptionplan_list`: list on `@happyvertical/smrt-subscriptions:SubscriptionPlan`
+- `subscriptionplanversion_get`: get on `@happyvertical/smrt-subscriptions:SubscriptionPlanVersion`
+- `subscriptionplanversion_list`: list on `@happyvertical/smrt-subscriptions:SubscriptionPlanVersion`
+- `tenantsubscription_get`: get on `@happyvertical/smrt-subscriptions:TenantSubscription`
+- `tenantsubscription_list`: list on `@happyvertical/smrt-subscriptions:TenantSubscription`
+- `tenantusagemetric_get`: get on `@happyvertical/smrt-subscriptions:TenantUsageMetric`
+- `tenantusagemetric_list`: list on `@happyvertical/smrt-subscriptions:TenantUsageMetric`

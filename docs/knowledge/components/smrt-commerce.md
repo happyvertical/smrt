@@ -5,10 +5,10 @@ description: "Commerce models for the SMRT framework - contracts, fulfillments, 
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-10T01:08:46Z"
+  at: "2026-11-10T01:55:44Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:1e7acce3c4626de10096d2519ca89f977c942a1550fa315f93371e2c43c22804"
+source_revision: "sha256:d70e91243dd5976391d17d2011d6c2f45418f85e3db36b0f8ed3a2a00c5787cd"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/commerce/package.json"
@@ -93,7 +93,7 @@ sources:
 
 - Directory: `packages/commerce`
 - Private: no
-- Object source: `scanner`
+- Object source: `domain-artifact`
 - Evidence level: `source-inspected`
 
 ## Documentation
@@ -155,150 +155,145 @@ sources:
 
 ## Models
 
-- `Agreement` (collection `agreements`, extends `SalesContract`)
+- `Agreement` (collection `contracts`, extends `SalesContract`, STI table)
 - `BillingAccount` (collection `billingaccounts`, extends `SmrtObject`)
+- `BillingAccountCollection` (collection `billingaccounts`, extends `SmrtCollection`)
 - `BillingLineSource` (collection `billinglinesources`, extends `SmrtObject`)
+- `BillingLineSourceCollection` (collection `billinglinesources`, extends `SmrtCollection`)
 - `BillingPaymentAttempt` (collection `billingpaymentattempts`, extends `SmrtObject`)
+- `BillingPaymentAttemptCollection` (collection `billingpaymentattempts`, extends `SmrtCollection`)
 - `BillingPeriodClose` (collection `billingperiodcloses`, extends `SmrtObject`)
-- `Cart` (collection `carts`, extends `SalesContract`)
+- `BillingPeriodCloseCollection` (collection `billingperiodcloses`, extends `SmrtCollection`)
+- `Cart` (collection `contracts`, extends `SalesContract`, STI table)
 - `Contract` (collection `contracts`, extends `SmrtObject`, STI table)
+- `ContractCollection` (collection `contracts`, extends `SmrtCollection`)
 - `ContractLineItem` (collection `contractlineitems`, extends `SmrtObject`, STI table)
+- `ContractLineItemCollection` (collection `contractlineitems`, extends `SmrtCollection`)
 - `Customer` (collection `customers`, extends `SmrtObject`)
+- `CustomerCollection` (collection `customers`, extends `SmrtCollection`)
 - `DocumentTax` (collection `documenttaxes`, extends `SmrtObject`)
-- `Estimate` (collection `estimates`, extends `SalesContract`)
+- `DocumentTaxCollection` (collection `documenttaxes`, extends `SmrtCollection`)
+- `Estimate` (collection `contracts`, extends `SalesContract`, STI table)
 - `Fulfillment` (collection `fulfillments`, extends `SmrtObject`)
+- `FulfillmentCollection` (collection `fulfillments`, extends `SmrtCollection`)
 - `FulfillmentLineItem` (collection `fulfillmentlineitems`, extends `SmrtObject`)
+- `FulfillmentLineItemCollection` (collection `fulfillmentlineitems`, extends `SmrtCollection`)
 - `HistoricalCustomerFunds` (collection `historicalcustomerfundses`, extends `SmrtObject`)
 - `HistoricalCustomerFundsAllocation` (collection `historicalcustomerfundsallocations`, extends `SmrtObject`)
+- `HistoricalCustomerFundsAllocationCollection` (collection `historicalcustomerfundsallocations`, extends `SmrtCollection`)
+- `HistoricalCustomerFundsCollection` (collection `historicalcustomerfundses`, extends `SmrtCollection`)
 - `HistoricalSalesLine` (collection `historicalsaleslines`, extends `SmrtObject`)
+- `HistoricalSalesLineCollection` (collection `historicalsaleslines`, extends `SmrtCollection`)
 - `Invoice` (collection `invoices`, extends `SmrtObject`)
+- `InvoiceCollection` (collection `invoices`, extends `SmrtCollection`)
 - `InvoiceLineItem` (collection `invoicelineitems`, extends `SmrtObject`)
-- `Lease` (collection `leases`, extends `SalesContract`)
-- `LicenseSale` (collection `licensesales`, extends `SalesContract`)
-- `Order` (collection `orders`, extends `SalesContract`)
+- `InvoiceLineItemCollection` (collection `invoicelineitems`, extends `SmrtCollection`)
+- `Lease` (collection `contracts`, extends `SalesContract`, STI table)
+- `LicenseSale` (collection `contracts`, extends `SalesContract`, STI table)
+- `Order` (collection `contracts`, extends `SalesContract`, STI table)
 - `Payment` (collection `payments`, extends `SmrtObject`)
 - `PaymentAllocation` (collection `paymentallocations`, extends `SmrtObject`)
+- `PaymentAllocationCollection` (collection `paymentallocations`, extends `SmrtCollection`)
+- `PaymentCollection` (collection `payments`, extends `SmrtCollection`)
 - `PaymentInstrument` (collection `paymentinstruments`, extends `SmrtObject`)
+- `PaymentInstrumentCollection` (collection `paymentinstruments`, extends `SmrtCollection`)
 - `PaymentIntent` (collection `paymentintents`, extends `SmrtObject`)
+- `PaymentIntentCollection` (collection `paymentintents`, extends `SmrtCollection`)
 - `Payout` (collection `payouts`, extends `SmrtObject`)
-- `ProductionOrder` (collection `productionorders`, extends `PurchaseContract`)
-- `PurchaseContract` (collection `purchasecontracts`, extends `Contract`)
-- `PurchaseOrder` (collection `purchaseorders`, extends `PurchaseContract`)
+- `PayoutCollection` (collection `payouts`, extends `SmrtCollection`)
+- `ProductionOrder` (collection `contracts`, extends `PurchaseContract`, STI table)
+- `PurchaseContract` (collection `contracts`, extends `Contract`, STI table)
+- `PurchaseContractCollection` (collection `contracts`, extends `SmrtCollection`)
+- `PurchaseOrder` (collection `contracts`, extends `PurchaseContract`, STI table)
 - `PurchasePriceObservation` (collection `purchasepriceobservations`, extends `SmrtObject`)
-- `SalesContract` (collection `salescontracts`, extends `Contract`)
-- `SupplierQuote` (collection `supplierquotes`, extends `PurchaseContract`)
+- `PurchasePriceObservationCollection` (collection `purchasepriceobservations`, extends `SmrtCollection`)
+- `SalesContract` (collection `contracts`, extends `Contract`, STI table)
+- `SalesContractCollection` (collection `contracts`, extends `SmrtCollection`)
+- `SupplierQuote` (collection `contracts`, extends `PurchaseContract`, STI table)
 - `TaxCode` (collection `taxcodes`, extends `SmrtObject`)
+- `TaxCodeCollection` (collection `taxcodes`, extends `SmrtCollection`)
 - `TaxComponent` (collection `taxcomponents`, extends `SmrtObject`)
+- `TaxComponentCollection` (collection `taxcomponents`, extends `SmrtCollection`)
 - `TaxSettings` (collection `taxsettingses`, extends `SmrtObject`)
+- `TaxSettingsCollection` (collection `taxsettingses`, extends `SmrtCollection`)
 - `TaxSummaryReport` (collection `taxsummaryreports`, extends `SmrtReport`)
+- `TaxSummaryReportCollection` (collection `taxsummaryreports`, extends `SmrtReportCollection`)
 - `TenantPaymentAccount` (collection `tenantpaymentaccounts`, extends `SmrtObject`)
+- `TenantPaymentAccountCollection` (collection `tenantpaymentaccounts`, extends `SmrtCollection`)
 - `TenantPaymentDispute` (collection `tenantpaymentdisputes`, extends `SmrtObject`)
+- `TenantPaymentDisputeCollection` (collection `tenantpaymentdisputes`, extends `SmrtCollection`)
 - `TenantPaymentWebhookEvent` (collection `tenantpaymentwebhookevents`, extends `SmrtObject`)
+- `TenantPaymentWebhookEventCollection` (collection `tenantpaymentwebhookevents`, extends `SmrtCollection`)
 - `Vendor` (collection `vendors`, extends `SmrtObject`)
-- `WholesaleOrder` (collection `wholesaleorders`, extends `SalesContract`)
+- `VendorCollection` (collection `vendors`, extends `SmrtCollection`)
+- `WholesaleOrder` (collection `contracts`, extends `SalesContract`, STI table)
 
 ## MCP tools
 
-- `create_agreements`: create on `@happyvertical/smrt-commerce:Agreement`
-- `create_carts`: create on `@happyvertical/smrt-commerce:Cart`
-- `create_estimates`: create on `@happyvertical/smrt-commerce:Estimate`
-- `create_leases`: create on `@happyvertical/smrt-commerce:Lease`
-- `create_licensesales`: create on `@happyvertical/smrt-commerce:LicenseSale`
-- `create_orders`: create on `@happyvertical/smrt-commerce:Order`
-- `create_productionorders`: create on `@happyvertical/smrt-commerce:ProductionOrder`
-- `create_purchasecontracts`: create on `@happyvertical/smrt-commerce:PurchaseContract`
-- `create_purchaseorders`: create on `@happyvertical/smrt-commerce:PurchaseOrder`
-- `create_salescontracts`: create on `@happyvertical/smrt-commerce:SalesContract`
-- `create_supplierquotes`: create on `@happyvertical/smrt-commerce:SupplierQuote`
-- `create_wholesaleorders`: create on `@happyvertical/smrt-commerce:WholesaleOrder`
-- `delete_agreements`: delete on `@happyvertical/smrt-commerce:Agreement`
-- `delete_carts`: delete on `@happyvertical/smrt-commerce:Cart`
-- `delete_estimates`: delete on `@happyvertical/smrt-commerce:Estimate`
-- `delete_leases`: delete on `@happyvertical/smrt-commerce:Lease`
-- `delete_licensesales`: delete on `@happyvertical/smrt-commerce:LicenseSale`
-- `delete_orders`: delete on `@happyvertical/smrt-commerce:Order`
-- `delete_productionorders`: delete on `@happyvertical/smrt-commerce:ProductionOrder`
-- `delete_purchasecontracts`: delete on `@happyvertical/smrt-commerce:PurchaseContract`
-- `delete_purchaseorders`: delete on `@happyvertical/smrt-commerce:PurchaseOrder`
-- `delete_salescontracts`: delete on `@happyvertical/smrt-commerce:SalesContract`
-- `delete_supplierquotes`: delete on `@happyvertical/smrt-commerce:SupplierQuote`
-- `delete_wholesaleorders`: delete on `@happyvertical/smrt-commerce:WholesaleOrder`
-- `get_agreements`: get on `@happyvertical/smrt-commerce:Agreement`
-- `get_carts`: get on `@happyvertical/smrt-commerce:Cart`
-- `get_contractlineitems`: get on `@happyvertical/smrt-commerce:ContractLineItem`
-- `get_contracts`: get on `@happyvertical/smrt-commerce:Contract`
-- `get_customers`: get on `@happyvertical/smrt-commerce:Customer`
-- `get_documenttaxes`: get on `@happyvertical/smrt-commerce:DocumentTax`
-- `get_estimates`: get on `@happyvertical/smrt-commerce:Estimate`
-- `get_fulfillmentlineitems`: get on `@happyvertical/smrt-commerce:FulfillmentLineItem`
-- `get_fulfillments`: get on `@happyvertical/smrt-commerce:Fulfillment`
-- `get_historicalcustomerfundsallocations`: get on `@happyvertical/smrt-commerce:HistoricalCustomerFundsAllocation`
-- `get_historicalcustomerfundses`: get on `@happyvertical/smrt-commerce:HistoricalCustomerFunds`
-- `get_historicalsaleslines`: get on `@happyvertical/smrt-commerce:HistoricalSalesLine`
-- `get_invoicelineitems`: get on `@happyvertical/smrt-commerce:InvoiceLineItem`
-- `get_invoices`: get on `@happyvertical/smrt-commerce:Invoice`
-- `get_leases`: get on `@happyvertical/smrt-commerce:Lease`
-- `get_licensesales`: get on `@happyvertical/smrt-commerce:LicenseSale`
-- `get_orders`: get on `@happyvertical/smrt-commerce:Order`
-- `get_paymentallocations`: get on `@happyvertical/smrt-commerce:PaymentAllocation`
-- `get_paymentinstruments`: get on `@happyvertical/smrt-commerce:PaymentInstrument`
-- `get_paymentintents`: get on `@happyvertical/smrt-commerce:PaymentIntent`
-- `get_payments`: get on `@happyvertical/smrt-commerce:Payment`
-- `get_payouts`: get on `@happyvertical/smrt-commerce:Payout`
-- `get_productionorders`: get on `@happyvertical/smrt-commerce:ProductionOrder`
-- `get_purchasecontracts`: get on `@happyvertical/smrt-commerce:PurchaseContract`
-- `get_purchaseorders`: get on `@happyvertical/smrt-commerce:PurchaseOrder`
-- `get_salescontracts`: get on `@happyvertical/smrt-commerce:SalesContract`
-- `get_supplierquotes`: get on `@happyvertical/smrt-commerce:SupplierQuote`
-- `get_taxcodes`: get on `@happyvertical/smrt-commerce:TaxCode`
-- `get_taxcomponents`: get on `@happyvertical/smrt-commerce:TaxComponent`
-- `get_taxsettingses`: get on `@happyvertical/smrt-commerce:TaxSettings`
-- `get_taxsummaryreports`: get on `@happyvertical/smrt-commerce:TaxSummaryReport`
-- `get_tenantpaymentaccounts`: get on `@happyvertical/smrt-commerce:TenantPaymentAccount`
-- `get_vendors`: get on `@happyvertical/smrt-commerce:Vendor`
-- `get_wholesaleorders`: get on `@happyvertical/smrt-commerce:WholesaleOrder`
-- `list_agreements`: list on `@happyvertical/smrt-commerce:Agreement`
-- `list_carts`: list on `@happyvertical/smrt-commerce:Cart`
-- `list_contractlineitems`: list on `@happyvertical/smrt-commerce:ContractLineItem`
-- `list_contracts`: list on `@happyvertical/smrt-commerce:Contract`
-- `list_customers`: list on `@happyvertical/smrt-commerce:Customer`
-- `list_documenttaxes`: list on `@happyvertical/smrt-commerce:DocumentTax`
-- `list_estimates`: list on `@happyvertical/smrt-commerce:Estimate`
-- `list_fulfillmentlineitems`: list on `@happyvertical/smrt-commerce:FulfillmentLineItem`
-- `list_fulfillments`: list on `@happyvertical/smrt-commerce:Fulfillment`
-- `list_historicalcustomerfundsallocations`: list on `@happyvertical/smrt-commerce:HistoricalCustomerFundsAllocation`
-- `list_historicalcustomerfundses`: list on `@happyvertical/smrt-commerce:HistoricalCustomerFunds`
-- `list_historicalsaleslines`: list on `@happyvertical/smrt-commerce:HistoricalSalesLine`
-- `list_invoicelineitems`: list on `@happyvertical/smrt-commerce:InvoiceLineItem`
-- `list_invoices`: list on `@happyvertical/smrt-commerce:Invoice`
-- `list_leases`: list on `@happyvertical/smrt-commerce:Lease`
-- `list_licensesales`: list on `@happyvertical/smrt-commerce:LicenseSale`
-- `list_orders`: list on `@happyvertical/smrt-commerce:Order`
-- `list_paymentallocations`: list on `@happyvertical/smrt-commerce:PaymentAllocation`
-- `list_paymentinstruments`: list on `@happyvertical/smrt-commerce:PaymentInstrument`
-- `list_paymentintents`: list on `@happyvertical/smrt-commerce:PaymentIntent`
-- `list_payments`: list on `@happyvertical/smrt-commerce:Payment`
-- `list_payouts`: list on `@happyvertical/smrt-commerce:Payout`
-- `list_productionorders`: list on `@happyvertical/smrt-commerce:ProductionOrder`
-- `list_purchasecontracts`: list on `@happyvertical/smrt-commerce:PurchaseContract`
-- `list_purchaseorders`: list on `@happyvertical/smrt-commerce:PurchaseOrder`
-- `list_salescontracts`: list on `@happyvertical/smrt-commerce:SalesContract`
-- `list_supplierquotes`: list on `@happyvertical/smrt-commerce:SupplierQuote`
-- `list_taxcodes`: list on `@happyvertical/smrt-commerce:TaxCode`
-- `list_taxcomponents`: list on `@happyvertical/smrt-commerce:TaxComponent`
-- `list_taxsummaryreports`: list on `@happyvertical/smrt-commerce:TaxSummaryReport`
-- `list_tenantpaymentaccounts`: list on `@happyvertical/smrt-commerce:TenantPaymentAccount`
-- `list_vendors`: list on `@happyvertical/smrt-commerce:Vendor`
-- `list_wholesaleorders`: list on `@happyvertical/smrt-commerce:WholesaleOrder`
-- `update_agreements`: update on `@happyvertical/smrt-commerce:Agreement`
-- `update_carts`: update on `@happyvertical/smrt-commerce:Cart`
-- `update_estimates`: update on `@happyvertical/smrt-commerce:Estimate`
-- `update_leases`: update on `@happyvertical/smrt-commerce:Lease`
-- `update_licensesales`: update on `@happyvertical/smrt-commerce:LicenseSale`
-- `update_orders`: update on `@happyvertical/smrt-commerce:Order`
-- `update_productionorders`: update on `@happyvertical/smrt-commerce:ProductionOrder`
-- `update_purchasecontracts`: update on `@happyvertical/smrt-commerce:PurchaseContract`
-- `update_purchaseorders`: update on `@happyvertical/smrt-commerce:PurchaseOrder`
-- `update_salescontracts`: update on `@happyvertical/smrt-commerce:SalesContract`
-- `update_supplierquotes`: update on `@happyvertical/smrt-commerce:SupplierQuote`
-- `update_wholesaleorders`: update on `@happyvertical/smrt-commerce:WholesaleOrder`
+- `agreement_get`: get on `@happyvertical/smrt-commerce:Agreement`
+- `agreement_list`: list on `@happyvertical/smrt-commerce:Agreement`
+- `cart_get`: get on `@happyvertical/smrt-commerce:Cart`
+- `cart_list`: list on `@happyvertical/smrt-commerce:Cart`
+- `contract_get`: get on `@happyvertical/smrt-commerce:Contract`
+- `contract_list`: list on `@happyvertical/smrt-commerce:Contract`
+- `contractlineitem_get`: get on `@happyvertical/smrt-commerce:ContractLineItem`
+- `contractlineitem_list`: list on `@happyvertical/smrt-commerce:ContractLineItem`
+- `customer_get`: get on `@happyvertical/smrt-commerce:Customer`
+- `customer_list`: list on `@happyvertical/smrt-commerce:Customer`
+- `documenttax_get`: get on `@happyvertical/smrt-commerce:DocumentTax`
+- `documenttax_list`: list on `@happyvertical/smrt-commerce:DocumentTax`
+- `estimate_get`: get on `@happyvertical/smrt-commerce:Estimate`
+- `estimate_list`: list on `@happyvertical/smrt-commerce:Estimate`
+- `fulfillment_get`: get on `@happyvertical/smrt-commerce:Fulfillment`
+- `fulfillment_list`: list on `@happyvertical/smrt-commerce:Fulfillment`
+- `fulfillmentlineitem_get`: get on `@happyvertical/smrt-commerce:FulfillmentLineItem`
+- `fulfillmentlineitem_list`: list on `@happyvertical/smrt-commerce:FulfillmentLineItem`
+- `historicalcustomerfunds_get`: get on `@happyvertical/smrt-commerce:HistoricalCustomerFunds`
+- `historicalcustomerfunds_list`: list on `@happyvertical/smrt-commerce:HistoricalCustomerFunds`
+- `historicalcustomerfundsallocation_get`: get on `@happyvertical/smrt-commerce:HistoricalCustomerFundsAllocation`
+- `historicalcustomerfundsallocation_list`: list on `@happyvertical/smrt-commerce:HistoricalCustomerFundsAllocation`
+- `historicalsalesline_get`: get on `@happyvertical/smrt-commerce:HistoricalSalesLine`
+- `historicalsalesline_list`: list on `@happyvertical/smrt-commerce:HistoricalSalesLine`
+- `invoice_get`: get on `@happyvertical/smrt-commerce:Invoice`
+- `invoice_list`: list on `@happyvertical/smrt-commerce:Invoice`
+- `invoicelineitem_get`: get on `@happyvertical/smrt-commerce:InvoiceLineItem`
+- `invoicelineitem_list`: list on `@happyvertical/smrt-commerce:InvoiceLineItem`
+- `lease_get`: get on `@happyvertical/smrt-commerce:Lease`
+- `lease_list`: list on `@happyvertical/smrt-commerce:Lease`
+- `licensesale_get`: get on `@happyvertical/smrt-commerce:LicenseSale`
+- `licensesale_list`: list on `@happyvertical/smrt-commerce:LicenseSale`
+- `order_get`: get on `@happyvertical/smrt-commerce:Order`
+- `order_list`: list on `@happyvertical/smrt-commerce:Order`
+- `payment_get`: get on `@happyvertical/smrt-commerce:Payment`
+- `payment_list`: list on `@happyvertical/smrt-commerce:Payment`
+- `paymentallocation_get`: get on `@happyvertical/smrt-commerce:PaymentAllocation`
+- `paymentallocation_list`: list on `@happyvertical/smrt-commerce:PaymentAllocation`
+- `paymentinstrument_get`: get on `@happyvertical/smrt-commerce:PaymentInstrument`
+- `paymentinstrument_list`: list on `@happyvertical/smrt-commerce:PaymentInstrument`
+- `paymentintent_get`: get on `@happyvertical/smrt-commerce:PaymentIntent`
+- `paymentintent_list`: list on `@happyvertical/smrt-commerce:PaymentIntent`
+- `payout_get`: get on `@happyvertical/smrt-commerce:Payout`
+- `payout_list`: list on `@happyvertical/smrt-commerce:Payout`
+- `productionorder_get`: get on `@happyvertical/smrt-commerce:ProductionOrder`
+- `productionorder_list`: list on `@happyvertical/smrt-commerce:ProductionOrder`
+- `purchasecontract_get`: get on `@happyvertical/smrt-commerce:PurchaseContract`
+- `purchasecontract_list`: list on `@happyvertical/smrt-commerce:PurchaseContract`
+- `purchaseorder_get`: get on `@happyvertical/smrt-commerce:PurchaseOrder`
+- `purchaseorder_list`: list on `@happyvertical/smrt-commerce:PurchaseOrder`
+- `salescontract_get`: get on `@happyvertical/smrt-commerce:SalesContract`
+- `salescontract_list`: list on `@happyvertical/smrt-commerce:SalesContract`
+- `supplierquote_get`: get on `@happyvertical/smrt-commerce:SupplierQuote`
+- `supplierquote_list`: list on `@happyvertical/smrt-commerce:SupplierQuote`
+- `taxcode_get`: get on `@happyvertical/smrt-commerce:TaxCode`
+- `taxcode_list`: list on `@happyvertical/smrt-commerce:TaxCode`
+- `taxcomponent_get`: get on `@happyvertical/smrt-commerce:TaxComponent`
+- `taxcomponent_list`: list on `@happyvertical/smrt-commerce:TaxComponent`
+- `taxsettings_get`: get on `@happyvertical/smrt-commerce:TaxSettings`
+- `taxsummaryreport_get`: get on `@happyvertical/smrt-commerce:TaxSummaryReport`
+- `taxsummaryreport_list`: list on `@happyvertical/smrt-commerce:TaxSummaryReport`
+- `tenantpaymentaccount_get`: get on `@happyvertical/smrt-commerce:TenantPaymentAccount`
+- `tenantpaymentaccount_list`: list on `@happyvertical/smrt-commerce:TenantPaymentAccount`
+- `vendor_get`: get on `@happyvertical/smrt-commerce:Vendor`
+- `vendor_list`: list on `@happyvertical/smrt-commerce:Vendor`
+- `wholesaleorder_get`: get on `@happyvertical/smrt-commerce:WholesaleOrder`
+- `wholesaleorder_list`: list on `@happyvertical/smrt-commerce:WholesaleOrder`

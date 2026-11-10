@@ -5,10 +5,10 @@ description: "Video content management for AI-powered video production in the SM
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-10T01:08:46Z"
+  at: "2026-11-10T01:55:44Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:c968bfb244ff2843605d1de114ae9fa1ece00b83d70cca03e24c3f061c5a544e"
+source_revision: "sha256:865f423b1f0ae219631164f7a8bb5924f24ee24f8132b4873a75611d60d5ce47"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/video/package.json"
@@ -24,7 +24,7 @@ sources:
 
 - Directory: `packages/video`
 - Private: no
-- Object source: `scanner`
+- Object source: `domain-artifact`
 - Evidence level: `source-inspected`
 
 ## Documentation
@@ -57,56 +57,61 @@ sources:
 ## Models
 
 - `Character` (collection `characters`, extends `SmrtObject`, STI table)
-- `CharacterAsset` (collection `characterassets`, extends `Asset`)
+- `CharacterAsset` (collection `assets`, extends `Asset`, STI table)
+- `CharacterCollection` (collection `characters`, extends `SmrtCollection`)
 - `CharacterOwnedAsset` (collection `characterownedassets`, extends `SmrtObject`)
-- `CharacterOwnedAssetCollection` (collection `characterownedassetcollections`, extends `SmrtJunction`)
+- `CharacterOwnedAssetCollection` (collection `characterownedassets`, extends `SmrtJunction`)
 - `CompositeJob` (collection `compositejobs`, extends `SmrtObject`, STI table)
 - `Performer` (collection `performers`, extends `SmrtObject`, STI table)
-- `PerformerAsset` (collection `performerassets`, extends `Asset`)
+- `PerformerAsset` (collection `assets`, extends `Asset`, STI table)
 - `PerformerOwnedAsset` (collection `performerownedassets`, extends `SmrtObject`)
-- `PerformerOwnedAssetCollection` (collection `performerownedassetcollections`, extends `SmrtJunction`)
+- `PerformerOwnedAssetCollection` (collection `performerownedassets`, extends `SmrtJunction`)
 - `Scene` (collection `scenes`, extends `SmrtObject`, STI table)
-- `SceneAsset` (collection `sceneassets`, extends `Asset`)
+- `SceneAsset` (collection `assets`, extends `Asset`, STI table)
 - `SceneOwnedAsset` (collection `sceneownedassets`, extends `SmrtObject`)
-- `SceneOwnedAssetCollection` (collection `sceneownedassetcollections`, extends `SmrtJunction`)
-- `VideoComposition` (collection `videocompositions`, extends `Content`, STI table)
-- `VideoCompositionAsset` (collection `videocompositionassets`, extends `Asset`)
-- `VideoSequence` (collection `videosequences`, extends `Content`, STI table)
-- `VideoSequenceAsset` (collection `videosequenceassets`, extends `Asset`)
-- `VideoShot` (collection `videoshots`, extends `Content`, STI table)
-- `VideoShotAsset` (collection `videoshotassets`, extends `Asset`)
+- `SceneOwnedAssetCollection` (collection `sceneownedassets`, extends `SmrtJunction`)
+- `VideoComposition` (collection `contents`, extends `Content`, STI table)
+- `VideoCompositionAsset` (collection `assets`, extends `Asset`, STI table)
+- `VideoCompositionCollection` (collection `contents`, extends `SmrtCollection`)
+- `VideoSequence` (collection `contents`, extends `Content`, STI table)
+- `VideoSequenceAsset` (collection `assets`, extends `Asset`, STI table)
+- `VideoSequenceCollection` (collection `contents`, extends `SmrtCollection`)
+- `VideoShot` (collection `contents`, extends `Content`, STI table)
+- `VideoShotAsset` (collection `assets`, extends `Asset`, STI table)
 - `VideoShotCharacter` (collection `videoshotcharacters`, extends `SmrtObject`, STI table)
+- `VideoShotCharacterCollection` (collection `videoshotcharacters`, extends `SmrtCollection`)
+- `VideoShotCollection` (collection `contents`, extends `SmrtCollection`)
 - `VideoWorkflow` (collection `videoworkflows`, extends `SmrtObject`, STI table)
 
 ## MCP tools
 
-- `get_characterassets`: get on `@happyvertical/smrt-video:CharacterAsset`
-- `get_characters`: get on `@happyvertical/smrt-video:Character`
-- `get_compositejobs`: get on `@happyvertical/smrt-video:CompositeJob`
-- `get_performerassets`: get on `@happyvertical/smrt-video:PerformerAsset`
-- `get_performers`: get on `@happyvertical/smrt-video:Performer`
-- `get_sceneassets`: get on `@happyvertical/smrt-video:SceneAsset`
-- `get_scenes`: get on `@happyvertical/smrt-video:Scene`
-- `get_videocompositionassets`: get on `@happyvertical/smrt-video:VideoCompositionAsset`
-- `get_videocompositions`: get on `@happyvertical/smrt-video:VideoComposition`
-- `get_videosequenceassets`: get on `@happyvertical/smrt-video:VideoSequenceAsset`
-- `get_videosequences`: get on `@happyvertical/smrt-video:VideoSequence`
-- `get_videoshotassets`: get on `@happyvertical/smrt-video:VideoShotAsset`
-- `get_videoshotcharacters`: get on `@happyvertical/smrt-video:VideoShotCharacter`
-- `get_videoshots`: get on `@happyvertical/smrt-video:VideoShot`
-- `get_videoworkflows`: get on `@happyvertical/smrt-video:VideoWorkflow`
-- `list_characterassets`: list on `@happyvertical/smrt-video:CharacterAsset`
-- `list_characters`: list on `@happyvertical/smrt-video:Character`
-- `list_compositejobs`: list on `@happyvertical/smrt-video:CompositeJob`
-- `list_performerassets`: list on `@happyvertical/smrt-video:PerformerAsset`
-- `list_performers`: list on `@happyvertical/smrt-video:Performer`
-- `list_sceneassets`: list on `@happyvertical/smrt-video:SceneAsset`
-- `list_scenes`: list on `@happyvertical/smrt-video:Scene`
-- `list_videocompositionassets`: list on `@happyvertical/smrt-video:VideoCompositionAsset`
-- `list_videocompositions`: list on `@happyvertical/smrt-video:VideoComposition`
-- `list_videosequenceassets`: list on `@happyvertical/smrt-video:VideoSequenceAsset`
-- `list_videosequences`: list on `@happyvertical/smrt-video:VideoSequence`
-- `list_videoshotassets`: list on `@happyvertical/smrt-video:VideoShotAsset`
-- `list_videoshotcharacters`: list on `@happyvertical/smrt-video:VideoShotCharacter`
-- `list_videoshots`: list on `@happyvertical/smrt-video:VideoShot`
-- `list_videoworkflows`: list on `@happyvertical/smrt-video:VideoWorkflow`
+- `character_get`: get on `@happyvertical/smrt-video:Character`
+- `character_list`: list on `@happyvertical/smrt-video:Character`
+- `characterasset_get`: get on `@happyvertical/smrt-video:CharacterAsset`
+- `characterasset_list`: list on `@happyvertical/smrt-video:CharacterAsset`
+- `compositejob_get`: get on `@happyvertical/smrt-video:CompositeJob`
+- `compositejob_list`: list on `@happyvertical/smrt-video:CompositeJob`
+- `performer_get`: get on `@happyvertical/smrt-video:Performer`
+- `performer_list`: list on `@happyvertical/smrt-video:Performer`
+- `performerasset_get`: get on `@happyvertical/smrt-video:PerformerAsset`
+- `performerasset_list`: list on `@happyvertical/smrt-video:PerformerAsset`
+- `scene_get`: get on `@happyvertical/smrt-video:Scene`
+- `scene_list`: list on `@happyvertical/smrt-video:Scene`
+- `sceneasset_get`: get on `@happyvertical/smrt-video:SceneAsset`
+- `sceneasset_list`: list on `@happyvertical/smrt-video:SceneAsset`
+- `videocomposition_get`: get on `@happyvertical/smrt-video:VideoComposition`
+- `videocomposition_list`: list on `@happyvertical/smrt-video:VideoComposition`
+- `videocompositionasset_get`: get on `@happyvertical/smrt-video:VideoCompositionAsset`
+- `videocompositionasset_list`: list on `@happyvertical/smrt-video:VideoCompositionAsset`
+- `videosequence_get`: get on `@happyvertical/smrt-video:VideoSequence`
+- `videosequence_list`: list on `@happyvertical/smrt-video:VideoSequence`
+- `videosequenceasset_get`: get on `@happyvertical/smrt-video:VideoSequenceAsset`
+- `videosequenceasset_list`: list on `@happyvertical/smrt-video:VideoSequenceAsset`
+- `videoshot_get`: get on `@happyvertical/smrt-video:VideoShot`
+- `videoshot_list`: list on `@happyvertical/smrt-video:VideoShot`
+- `videoshotasset_get`: get on `@happyvertical/smrt-video:VideoShotAsset`
+- `videoshotasset_list`: list on `@happyvertical/smrt-video:VideoShotAsset`
+- `videoshotcharacter_get`: get on `@happyvertical/smrt-video:VideoShotCharacter`
+- `videoshotcharacter_list`: list on `@happyvertical/smrt-video:VideoShotCharacter`
+- `videoworkflow_get`: get on `@happyvertical/smrt-video:VideoWorkflow`
+- `videoworkflow_list`: list on `@happyvertical/smrt-video:VideoWorkflow`

@@ -5,10 +5,10 @@ description: "Approval decision gate for the SMRT framework: revision-bound, sin
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-10T01:08:46Z"
+  at: "2026-11-10T01:55:44Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:bf37937a5368b4d154d06454f975a75ebcedc5ba393c36d1aa67973fcb211da7"
+source_revision: "sha256:0bacde778f71bde01a3ac42abcfa0970ba95c54bd33368d05ed60dc4bef4054d"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/approvals/package.json"
@@ -27,7 +27,7 @@ sources:
 
 - Directory: `packages/approvals`
 - Private: no
-- Object source: `scanner`
+- Object source: `domain-artifact`
 - Evidence level: `source-inspected`
 
 ## Documentation
@@ -57,23 +57,17 @@ sources:
 ## Models
 
 - `ApprovalEvent` (collection `approvalevents`, extends `SmrtObject`)
-- `ApprovalEventCollection` (collection `approvaleventcollections`, extends `SmrtCollection`)
+- `ApprovalEventCollection` (collection `approvalevents`, extends `SmrtCollection`)
 - `ApprovalPolicy` (collection `approvalpolicies`, extends `SmrtObject`)
-- `ApprovalPolicyCollection` (collection `approvalpolicycollections`, extends `SmrtCollection`)
+- `ApprovalPolicyCollection` (collection `approvalpolicies`, extends `SmrtCollection`)
 - `ApprovalRequest` (collection `approvalrequests`, extends `SmrtObject`)
-- `ApprovalRequestCollection` (collection `approvalrequestcollections`, extends `SmrtCollection`)
+- `ApprovalRequestCollection` (collection `approvalrequests`, extends `SmrtCollection`)
 
 ## MCP tools
 
-- `get_approvaleventcollections`: get on `@happyvertical/smrt-approvals:ApprovalEventCollection`
-- `get_approvalevents`: get on `@happyvertical/smrt-approvals:ApprovalEvent`
-- `get_approvalpolicies`: get on `@happyvertical/smrt-approvals:ApprovalPolicy`
-- `get_approvalpolicycollections`: get on `@happyvertical/smrt-approvals:ApprovalPolicyCollection`
-- `get_approvalrequestcollections`: get on `@happyvertical/smrt-approvals:ApprovalRequestCollection`
-- `get_approvalrequests`: get on `@happyvertical/smrt-approvals:ApprovalRequest`
-- `list_approvaleventcollections`: list on `@happyvertical/smrt-approvals:ApprovalEventCollection`
-- `list_approvalevents`: list on `@happyvertical/smrt-approvals:ApprovalEvent`
-- `list_approvalpolicies`: list on `@happyvertical/smrt-approvals:ApprovalPolicy`
-- `list_approvalpolicycollections`: list on `@happyvertical/smrt-approvals:ApprovalPolicyCollection`
-- `list_approvalrequestcollections`: list on `@happyvertical/smrt-approvals:ApprovalRequestCollection`
-- `list_approvalrequests`: list on `@happyvertical/smrt-approvals:ApprovalRequest`
+- `approvalevent_get`: get on `@happyvertical/smrt-approvals:ApprovalEvent`
+- `approvalevent_list`: list on `@happyvertical/smrt-approvals:ApprovalEvent`
+- `approvalpolicy_get`: get on `@happyvertical/smrt-approvals:ApprovalPolicy`
+- `approvalpolicy_list`: list on `@happyvertical/smrt-approvals:ApprovalPolicy`
+- `approvalrequest_get`: get on `@happyvertical/smrt-approvals:ApprovalRequest`
+- `approvalrequest_list`: list on `@happyvertical/smrt-approvals:ApprovalRequest`

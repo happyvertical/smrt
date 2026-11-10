@@ -5,10 +5,10 @@ description: "Site lifecycle management for multi-tenant SMRT networks"
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-10T01:08:46Z"
+  at: "2026-11-10T01:55:44Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:39eba3bc15bb7794ea7339877b1cccb323077a668fab08f226e00d1bc21c6859"
+source_revision: "sha256:e957a649b560c73fb0d275f97490b43c8c067f7cf9d267514cd9a6a82ee8b936"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/sites/package.json"
@@ -24,7 +24,7 @@ sources:
 
 - Directory: `packages/sites`
 - Private: no
-- Object source: `scanner`
+- Object source: `domain-artifact`
 - Evidence level: `source-inspected`
 
 ## Documentation
@@ -52,12 +52,14 @@ sources:
 
 - `Site` (collection `sites`, extends `SmrtObject`)
 - `SiteAgentBinding` (collection `siteagentbindings`, extends `SmrtObject`)
+- `SiteAgentBindingCollection` (collection `siteagentbindings`, extends `SmrtCollection`)
+- `SiteCollection` (collection `sites`, extends `SmrtCollection`)
 
 ## MCP tools
 
-- `create_sites`: create on `@happyvertical/smrt-sites:Site`
-- `get_siteagentbindings`: get on `@happyvertical/smrt-sites:SiteAgentBinding`
-- `get_sites`: get on `@happyvertical/smrt-sites:Site`
-- `list_siteagentbindings`: list on `@happyvertical/smrt-sites:SiteAgentBinding`
-- `list_sites`: list on `@happyvertical/smrt-sites:Site`
-- `update_sites`: update on `@happyvertical/smrt-sites:Site`
+- `site_create`: create on `@happyvertical/smrt-sites:Site`
+- `site_get`: get on `@happyvertical/smrt-sites:Site`
+- `site_list`: list on `@happyvertical/smrt-sites:Site`
+- `site_update`: update on `@happyvertical/smrt-sites:Site`
+- `siteagentbinding_get`: get on `@happyvertical/smrt-sites:SiteAgentBinding`
+- `siteagentbinding_list`: list on `@happyvertical/smrt-sites:SiteAgentBinding`
