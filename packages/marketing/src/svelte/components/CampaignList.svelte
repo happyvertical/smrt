@@ -18,29 +18,29 @@ export interface Props {
 let { campaigns = [], selectedCampaignId, locale, onSelect }: Props = $props();
 </script>
 
-<div class="campaign-list" data-smrt-component="CampaignList">
+<div class="smrt-campaign-list__root" data-smrt-component="CampaignList">
   {#if campaigns.length === 0}
-    <p class="empty">No campaigns yet.</p>
+    <p class="smrt-campaign-list__empty" data-smrt-part="empty">No campaigns yet.</p>
   {:else}
     <table>
-      <thead>
+      <thead data-smrt-part="header">
         <tr>
           <th scope="col">Campaign</th>
           <th scope="col">Status</th>
           <th scope="col">Schedule</th>
-          <th scope="col" class="number">Spend / budget</th>
-          <th scope="col" class="number">Channels</th>
-          {#if onSelect}<th scope="col"><span class="visually-hidden">Actions</span></th>{/if}
+          <th scope="col" class="smrt-campaign-list__number">Spend / budget</th>
+          <th scope="col" class="smrt-campaign-list__number">Channels</th>
+          {#if onSelect}<th scope="col"><span class="smrt-campaign-list__visually-hidden" data-smrt-part="label">Actions</span></th>{/if}
         </tr>
       </thead>
-      <tbody>
+      <tbody data-smrt-part="body">
         {#each campaigns as campaign (campaign.id)}
-          <tr class:selected={campaign.id === selectedCampaignId}>
+          <tr class:smrt-campaign-list__selected={campaign.id === selectedCampaignId} data-smrt-part="row">
             <td>
-              <span class="name">{campaign.name}</span>
-              <span class="secondary">{campaign.campaignKey}</span>
+              <span class="smrt-campaign-list__name">{campaign.name}</span>
+              <span class="smrt-campaign-list__secondary">{campaign.campaignKey}</span>
               {#if campaign.objective}
-                <span class="secondary">{humanizeKey(campaign.objective)}</span>
+                <span class="smrt-campaign-list__secondary">{humanizeKey(campaign.objective)}</span>
               {/if}
             </td>
             <td>
@@ -49,17 +49,17 @@ let { campaigns = [], selectedCampaignId, locale, onSelect }: Props = $props();
               </Badge>
             </td>
             <td>{formatDateRange(campaign.startAt, campaign.endAt, locale)}</td>
-            <td class="number">
-              <span class="name">
+            <td class="smrt-campaign-list__number">
+              <span class="smrt-campaign-list__name">
                 {formatCents(campaign.spendCents ?? 0, campaign.currency, locale)}
               </span>
-              <span class="secondary">
+              <span class="smrt-campaign-list__secondary">
                 of {formatCents(campaign.budgetCents, campaign.currency, locale)}
               </span>
             </td>
-            <td class="number">{campaign.channelCount ?? 0}</td>
+            <td class="smrt-campaign-list__number">{campaign.channelCount ?? 0}</td>
             {#if onSelect}
-              <td class="action">
+              <td class="smrt-campaign-list__action" data-smrt-part="actions">
                 <Button
                   variant={campaign.id === selectedCampaignId ? 'primary' : 'secondary'}
                   size="sm"
@@ -78,70 +78,95 @@ let { campaigns = [], selectedCampaignId, locale, onSelect }: Props = $props();
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .campaign-list {
-    width: 100%;
-    overflow-x: auto;
-  }
+@layer smrt.structure {
 
-  .empty {
-    margin: 0;
-    color: var(--smrt-color-on-surface-variant);
-    font: var(--smrt-typography-body-medium-font);
-  }
+.smrt-campaign-list__root {
+width: 100%;
+overflow-x: auto;
 
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    color: var(--smrt-color-on-surface);
-    font: var(--smrt-typography-body-medium-font);
-  }
-
-  th,
-  td {
-    padding: var(--smrt-spacing-3);
-    border-bottom: var(--smrt-hairline);
-    text-align: left;
-    vertical-align: top;
-  }
-
-  th {
-    background: var(--smrt-color-surface-container);
-    font-weight: var(--smrt-typography-weight-semibold);
-    white-space: nowrap;
-  }
-
-  tr.selected td {
-    background: var(--smrt-color-primary-container);
-  }
-
-  .name,
-  .secondary {
-    display: block;
-  }
-
-  .name {
-    font-weight: var(--smrt-typography-weight-medium);
-  }
-
-  .secondary {
-    color: var(--smrt-color-on-surface-variant);
-    font: var(--smrt-typography-body-small-font);
-  }
-
-  .number,
-  .action {
-    text-align: right;
-    white-space: nowrap;
-  }
-
-  .visually-hidden {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip: rect(0 0 0 0);
-    white-space: nowrap;
-  }
 }
+.smrt-campaign-list__empty {
+margin: 0;
+
+}
+table {
+width: 100%;
+
+}
+th,
+  td {
+padding: var(--smrt-spacing-3);
+
+}
+th {
+white-space: nowrap;
+
+}
+.smrt-campaign-list__name,
+  .smrt-campaign-list__secondary {
+display: block;
+
+}
+.smrt-campaign-list__number,
+  .smrt-campaign-list__action {
+white-space: nowrap;
+
+}
+.smrt-campaign-list__visually-hidden {
+position: absolute;
+width: 1px;
+height: 1px;
+overflow: hidden;
+clip: rect(0 0 0 0);
+white-space: nowrap;
+
+}
+
+}
+@layer smrt.theme {
+
+.smrt-campaign-list__empty {
+color: var(--smrt-color-on-surface-variant);
+font: var(--smrt-typography-body-medium-font);
+
+}
+table {
+border-collapse: collapse;
+color: var(--smrt-color-on-surface);
+font: var(--smrt-typography-body-medium-font);
+
+}
+th,
+  td {
+border-bottom: var(--smrt-hairline);
+text-align: left;
+vertical-align: top;
+
+}
+th {
+background: var(--smrt-color-surface-container);
+font-weight: var(--smrt-typography-weight-semibold);
+
+}
+tr.smrt-campaign-list__selected td {
+background: var(--smrt-color-primary-container);
+
+}
+.smrt-campaign-list__name {
+font-weight: var(--smrt-typography-weight-medium);
+
+}
+.smrt-campaign-list__secondary {
+color: var(--smrt-color-on-surface-variant);
+font: var(--smrt-typography-body-small-font);
+
+}
+.smrt-campaign-list__number,
+  .smrt-campaign-list__action {
+text-align: right;
+
+}
+
+}
+
 </style>
