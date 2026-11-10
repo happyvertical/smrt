@@ -18,8 +18,8 @@ const section = $derived(getSection(data.id));
 {#if section}
   <main>
     <header>
-      <div class="bar">
-        <p class="meta"><a href={appHref('/')}>Planner</a> / {section.label} options</p>
+      <div class="smrt-recipe-page__bar" data-smrt-part="toolbar">
+        <p class="smrt-recipe-page__meta" data-smrt-part="meta"><a href={appHref('/')}>Planner</a> / {section.label} options</p>
         <SectionIcons section={section.id} label={section.label} current="options" />
       </div>
       <h1>{section.label} options</h1>
@@ -33,7 +33,7 @@ const section = $derived(getSection(data.id));
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
+@layer smrt.structure {
   main {
     display: grid;
     gap: var(--smrt-spacing-6);
@@ -41,24 +41,24 @@ const section = $derived(getSection(data.id));
     margin-inline: auto;
     padding: var(--smrt-spacing-6);
   }
-
   header {
     display: grid;
     gap: var(--smrt-spacing-3);
   }
-
-  .bar {
+  .smrt-recipe-page__bar {
     display: flex;
     align-items: center;
   }
-
   h1,
   p {
     margin: 0;
   }
+}
 
-  .meta {
+@layer smrt.theme {
+  .smrt-recipe-page__meta {
     color: var(--smrt-color-on-surface-variant);
   }
 }
+
 </style>

@@ -204,7 +204,7 @@ $effect(() => {
 {/if}
 
 {#snippet view()}
-<div class="planner" bind:this={root}>
+<div class="smrt-planner-controls__root" bind:this={root} data-smrt-component="PlannerControls">
   <Tabs tabs={items} {active} onchange={select} aria-label="Planner">
     {#if reachable.includes('specs')}
       <div hidden={active !== 'specs'}><SpecsPanel /></div>
@@ -219,8 +219,8 @@ $effect(() => {
       <div hidden={active !== 'features'}><FeaturesPanel /></div>
     {/if}
     {#if reachable.includes('layout')}
-      <div hidden={active !== 'layout'} class="pane">
-        <p class="meta">
+      <div hidden={active !== 'layout'} class="smrt-planner-controls__pane" data-smrt-part="panel">
+        <p class="smrt-planner-controls__meta" data-smrt-part="meta">
           Reorder, move or hide navigation entries and choose which panels show.
           The layout is saved with the cookbook.
         </p>
@@ -248,43 +248,56 @@ $effect(() => {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .planner :global(.tab-panel) {
+@layer smrt.structure {
+  .smrt-planner-controls__root :global(.tab-panel) {
     padding-top: var(--smrt-spacing-4);
   }
-
-  /* The strip persists across configure-page route changes; the panel below
-     crossfades with the content. smrt-ui's Tabs owns the classes (`tabs-nav`
-     for button tabs, `tabs-links` for link tabs; one strip per Tabs). Named
-     only while a transition runs, as in Planner.svelte. */
-  :global([data-smrt-view-transition]) .planner :global(.tabs-nav),
-  :global([data-smrt-view-transition]) .planner :global(.tabs-links) {
-    view-transition-name: planner-tabs;
-  }
-
   /* Phones: smrt-ui's Tabs strip scrolls sideways but shows no sign of it,
-     so the last tab (Export) is easy to miss. Tabs snap into place, and where
-     scroll-driven animations exist a fade at the trailing edge says more
-     follow, lifting as the strip reaches its end (an inactive timeline, a
-     strip that fits, leaves the fade at its initial 0). The real home for
-     this is smrt-ui's Tabs. */
-  .planner :global(.smrt-tabs__nav) {
-    scroll-snap-type: x proximity;
+  so the last tab (Export) is easy to miss. Tabs snap into place, and where
+  scroll-driven animations exist a fade at the trailing edge says more
+  follow, lifting as the strip reaches its end (an inactive timeline, a
+  strip that fits, leaves the fade at its initial 0). The real home for
+  this is smrt-ui's Tabs. */
+  .smrt-planner-controls__root :global(.smrt-tabs__nav) {
     overscroll-behavior-x: contain;
   }
-
-  .planner :global(.smrt-tabs__tab-button) {
+  .smrt-planner-controls__root :global(.smrt-tabs__nav) {
+    scroll-snap-type: x proximity;
+  }
+  .smrt-planner-controls__root :global(.smrt-tabs__tab-button) {
     scroll-snap-align: start;
   }
+  .smrt-planner-controls__pane {
+    display: grid;
+    gap: var(--smrt-spacing-3);
+  }
+  /* `display: grid` would otherwise override the inactive pane's `hidden`. */
+  .smrt-planner-controls__pane[hidden] {
+    display: none;
+  }
+  .smrt-planner-controls__meta {
+    margin: 0;
+  }
+}
 
+@layer smrt.theme {
+  /* The strip persists across configure-page route changes; the panel below
+  crossfades with the content. smrt-ui's Tabs owns the classes (`tabs-nav`
+  for button tabs, `tabs-links` for link tabs; one strip per Tabs). Named
+  only while a transition runs, as in Planner.svelte. */
+  :global([data-smrt-view-transition]) .smrt-planner-controls__root :global(.tabs-nav),
+  :global([data-smrt-view-transition]) .smrt-planner-controls__root :global(.tabs-links) {
+    view-transition-name: planner-tabs;
+  }
+  /* The length below feeds only the mask gradient (a paint edge), so it is
+  theme with the animation that drives it. */
   @property --smrt-planner-controls-tabs-fade {
     syntax: '<length>';
     inherits: false;
     initial-value: 0rem;
   }
-
   @supports (animation-timeline: scroll()) {
-    .planner :global(.smrt-tabs__nav) {
+    .smrt-planner-controls__root :global(.smrt-tabs__nav) {
       mask-image: linear-gradient(
         to right,
         black calc(100% - var(--smrt-planner-controls-tabs-fade)),
@@ -293,7 +306,7 @@ $effect(() => {
       animation: planner-tabs-fade linear both;
       animation-timeline: scroll(self inline);
     }
-
+    /* Stays with the `animation` above; keyframes values are exempt. */
     @keyframes planner-tabs-fade {
       from {
         --smrt-planner-controls-tabs-fade: 3rem;
@@ -303,20 +316,9 @@ $effect(() => {
       }
     }
   }
-
-  .pane {
-    display: grid;
-    gap: var(--smrt-spacing-3);
-  }
-
-  /* `display: grid` would otherwise override the inactive pane's `hidden`. */
-  .pane[hidden] {
-    display: none;
-  }
-
-  .meta {
-    margin: 0;
+  .smrt-planner-controls__meta {
     color: var(--smrt-color-on-surface-variant);
   }
 }
+
 </style>

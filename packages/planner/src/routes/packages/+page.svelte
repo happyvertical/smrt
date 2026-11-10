@@ -36,7 +36,7 @@ function toggle(id: string) {
 
 <main>
   <header>
-    <p class="meta"><a href={appHref('/')}>Planner</a> / All packages</p>
+    <p class="smrt-packages-page__meta" data-smrt-part="meta"><a href={appHref('/')}>Planner</a> / All packages</p>
     <h1>All packages</h1>
     <p>
       The whole catalog, a package at a time. Recipes on the Planner page are
@@ -45,29 +45,29 @@ function toggle(id: string) {
     </p>
   </header>
 
-  <section aria-label="Your selection" class="selection">
+  <section aria-label="Your selection" class="smrt-packages-page__selection" data-smrt-part="summary">
     <h2>Your app</h2>
     {#if selection.ids.length === 0}
       <p>Nothing selected yet. Choose a package below.</p>
     {:else}
-      <ul class="chips">
+      <ul class="smrt-packages-page__chips" data-smrt-part="chips">
         {#each selection.ids as id (id)}
           <li>
             <a href={appHref(`/packages/${id}/`)}>{humanize(id)}</a>
           </li>
         {/each}
       </ul>
-      <button type="button" class="secondary" onclick={() => selection.clear()}>
+      <button type="button" class="smrt-packages-page__secondary" onclick={() => selection.clear()} data-smrt-part="action">
         Clear selection
       </button>
     {/if}
-    <p class="notice" role="status" aria-live="polite">{notice}</p>
+    <p class="smrt-packages-page__notice" role="status" aria-live="polite" data-smrt-part="notice">{notice}</p>
   </section>
 
   <section aria-label="Package catalog">
     <h2>Packages <small>{results.length} of {catalog.packages.length}</small></h2>
-    <label class="search">
-      <span class="visually-hidden">Search packages</span>
+    <label class="smrt-packages-page__search" data-smrt-part="search">
+      <span class="smrt-packages-page__visually-hidden" data-smrt-part="label">Search packages</span>
       <input
         type="search"
         placeholder="Search packages, models and fields"
@@ -75,16 +75,16 @@ function toggle(id: string) {
       />
     </label>
 
-    <ul class="cards">
+    <ul class="smrt-packages-page__cards" data-smrt-part="list">
       {#each results as pkg (pkg.id)}
         {@const selected = selection.has(pkg.id)}
         {@const lockedBy = selection.requiredBy(pkg.id)}
-        <li class:selected animate:flip={{ duration: motionDuration('medium2', 300) }}>
+        <li class:smrt-packages-page__selected={selected} animate:flip={{ duration: motionDuration('medium2', 300) }} data-smrt-part="card">
           <h3>
             <a href={appHref(`/packages/${pkg.id}/`)}>{humanize(pkg.id)}</a>
           </h3>
-          <p class="description">{pkg.description}</p>
-          <p class="meta">
+          <p class="smrt-packages-page__description" data-smrt-part="description">{pkg.description}</p>
+          <p class="smrt-packages-page__meta" data-smrt-part="meta">
             {#if exposedModels(pkg).length}
               {exposedModels(pkg).length} models · {surfaceCount(pkg)} generated surfaces
             {:else}
@@ -92,7 +92,7 @@ function toggle(id: string) {
             {/if}
           </p>
           {#if pkg.dependencies.length}
-            <p class="meta">
+            <p class="smrt-packages-page__meta" data-smrt-part="meta">
               Needs: {pkg.dependencies.map(humanize).join(', ')}
             </p>
           {/if}
@@ -109,7 +109,7 @@ function toggle(id: string) {
           />
         </li>
       {:else}
-        <li class="none">No packages match "{query}".</li>
+        <li class="smrt-packages-page__none" data-smrt-part="empty">No packages match "{query}".</li>
       {/each}
     </ul>
   </section>
@@ -117,7 +117,7 @@ function toggle(id: string) {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
+@layer smrt.structure {
   main {
     display: grid;
     gap: var(--smrt-spacing-6);
@@ -125,34 +125,20 @@ function toggle(id: string) {
     margin-inline: auto;
     padding: var(--smrt-spacing-6);
   }
-
   h1,
   h2,
   h3,
   p {
     margin: 0;
   }
-
   header,
-  .selection {
+  .smrt-packages-page__selection {
     display: grid;
     gap: var(--smrt-spacing-2);
     justify-items: start;
   }
-
-  header p,
-  .meta,
-  .description,
-  small {
-    color: var(--smrt-color-on-surface-variant);
-  }
-
-  small {
-    font-weight: 400;
-  }
-
-  .chips,
-  .cards {
+  .smrt-packages-page__chips,
+  .smrt-packages-page__cards {
     display: flex;
     flex-wrap: wrap;
     gap: var(--smrt-spacing-3);
@@ -160,68 +146,36 @@ function toggle(id: string) {
     padding: 0;
     list-style: none;
   }
-
-  .chips a {
+  .smrt-packages-page__chips a {
     display: inline-block;
     padding: var(--smrt-spacing-1) var(--smrt-spacing-3);
-    border-radius: var(--smrt-radius-large);
-    background: var(--smrt-color-primary-container);
-    color: var(--smrt-color-on-primary-container);
-    text-decoration: none;
   }
-
-  .cards {
+  .smrt-packages-page__cards {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
   }
-
-  .cards li {
+  .smrt-packages-page__cards li {
     display: grid;
     align-content: start;
     gap: var(--smrt-spacing-2);
     padding: var(--smrt-spacing-4);
-    border: var(--smrt-hairline);
-    border-radius: var(--smrt-radius-large);
   }
-
-  .cards li.selected {
-    border-color: var(--smrt-color-primary);
-  }
-
-  .cards li.none {
-    border: 0;
-  }
-
-  .description {
+  .smrt-packages-page__description {
     display: -webkit-box;
     overflow: hidden;
-    -webkit-box-orient: vertical;
     -webkit-line-clamp: 3;
     line-clamp: 3;
+    -webkit-box-orient: vertical;
   }
-
-
-  .search input {
+  .smrt-packages-page__search input {
     width: min(100%, 28rem);
     padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
-    border: var(--smrt-control-border);
-    border-radius: var(--smrt-radius-medium);
-    background: var(--smrt-surface-control);
-    color: var(--smrt-color-on-surface);
-    font: inherit;
   }
-
-  button.secondary {
+  button.smrt-packages-page__secondary {
     padding: var(--smrt-spacing-1) var(--smrt-spacing-3);
-    border: var(--smrt-control-border);
-    border-radius: var(--smrt-radius-medium);
-    background: transparent;
-    color: var(--smrt-color-on-surface);
-    font: inherit;
     cursor: pointer;
   }
-
-  .visually-hidden {
+  .smrt-packages-page__visually-hidden {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -229,4 +183,47 @@ function toggle(id: string) {
     clip-path: inset(50%);
   }
 }
+
+@layer smrt.theme {
+  header p,
+  .smrt-packages-page__meta,
+  .smrt-packages-page__description,
+  small {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  small {
+    font-weight: 400;
+  }
+  .smrt-packages-page__chips a {
+    border-radius: var(--smrt-radius-large);
+    background: var(--smrt-color-primary-container);
+    color: var(--smrt-color-on-primary-container);
+    text-decoration: none;
+  }
+  .smrt-packages-page__cards li {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-large);
+  }
+  .smrt-packages-page__cards li.smrt-packages-page__selected {
+    border-color: var(--smrt-color-primary);
+  }
+  .smrt-packages-page__cards li.smrt-packages-page__none {
+    border: 0;
+  }
+  .smrt-packages-page__search input {
+    border: var(--smrt-control-border);
+    border-radius: var(--smrt-radius-medium);
+    background: var(--smrt-surface-control);
+    color: var(--smrt-color-on-surface);
+    font: inherit;
+  }
+  button.smrt-packages-page__secondary {
+    border: var(--smrt-control-border);
+    border-radius: var(--smrt-radius-medium);
+    background: transparent;
+    color: var(--smrt-color-on-surface);
+    font: inherit;
+  }
+}
+
 </style>
