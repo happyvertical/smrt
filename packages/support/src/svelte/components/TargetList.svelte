@@ -37,25 +37,25 @@ function formatDue(iso: string | null): string {
 </script>
 
 {#if targets.length === 0}
-  <p class="target-list-empty" data-smrt-component="TargetList">{emptyMessage}</p>
+  <p class="smrt-target-list__empty" data-smrt-component="TargetList" data-smrt-part="empty">{emptyMessage}</p>
 {:else}
-  <ul class="target-list" data-smrt-component="TargetList">
+  <ul class="smrt-target-list__root" data-smrt-component="TargetList">
     {#each targets as target (target.id)}
-      <li class="target-list-row">
-        <span class="target-list-main">
-          <span class="target-list-type">
+      <li class="smrt-target-list__row" data-smrt-part="row">
+        <span class="smrt-target-list__main" data-smrt-part="body">
+          <span class="smrt-target-list__type" data-smrt-part="title">
             {humanizeStatus(target.targetType)}
             {#if target.cycle > 0}
-              <span class="target-list-cycle">cycle {target.cycle}</span>
+              <span class="smrt-target-list__cycle" data-smrt-part="cycle">cycle {target.cycle}</span>
             {/if}
           </span>
           {#if target.dueAt}
-            <span class="target-list-due">due {formatDue(target.dueAt)}</span>
+            <span class="smrt-target-list__due">due {formatDue(target.dueAt)}</span>
           {/if}
         </span>
-        <span class="target-list-meta">
+        <span class="smrt-target-list__meta" data-smrt-part="meta">
           {#if target.paused}
-            <span class="target-list-paused">paused</span>
+            <span class="smrt-target-list__paused">paused</span>
           {/if}
           <StatusBadge
             status={targetStatusBadgeKey(target.status)}
@@ -70,63 +70,77 @@ function formatDue(iso: string | null): string {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .target-list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.375rem;
-  }
+@layer smrt.structure {
 
-  .target-list-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem;
-  }
+.smrt-target-list__root {
+list-style: none;
+margin: 0;
+padding: 0;
+display: flex;
+flex-direction: column;
+gap: 0.375rem;
 
-  .target-list-main {
-    display: flex;
-    flex-direction: column;
-    gap: 0.125rem;
-    min-width: 0;
-  }
-
-  .target-list-type {
-    font-weight: 500;
-    text-transform: capitalize;
-  }
-
-  .target-list-cycle {
-    font-size: 0.75rem;
-    font-weight: 400;
-    text-transform: none;
-    color: var(--smrt-color-on-surface-variant, inherit);
-    margin-left: 0.375rem;
-  }
-
-  .target-list-due,
-  .target-list-paused {
-    font-size: 0.75rem;
-    color: var(--smrt-color-on-surface-variant, inherit);
-  }
-
-  .target-list-paused {
-    font-style: italic;
-  }
-
-  .target-list-meta {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    flex-shrink: 0;
-  }
-
-  .target-list-empty {
-    color: var(--smrt-color-on-surface-variant, inherit);
-    padding: 1rem 0;
-  }
 }
+.smrt-target-list__row {
+display: flex;
+align-items: center;
+justify-content: space-between;
+gap: 0.75rem;
+
+}
+.smrt-target-list__main {
+display: flex;
+flex-direction: column;
+gap: 0.125rem;
+min-width: 0;
+
+}
+.smrt-target-list__cycle {
+margin-left: 0.375rem;
+
+}
+.smrt-target-list__meta {
+display: flex;
+align-items: center;
+gap: 0.5rem;
+flex-shrink: 0;
+
+}
+.smrt-target-list__empty {
+padding: 1rem 0;
+
+}
+
+}
+@layer smrt.theme {
+
+.smrt-target-list__type {
+font-weight: 500;
+text-transform: capitalize;
+
+}
+.smrt-target-list__cycle {
+font-size: 0.75rem;
+font-weight: 400;
+text-transform: none;
+color: var(--smrt-color-on-surface-variant, inherit);
+
+}
+.smrt-target-list__due,
+  .smrt-target-list__paused {
+font-size: 0.75rem;
+color: var(--smrt-color-on-surface-variant, inherit);
+
+}
+.smrt-target-list__paused {
+font-style: italic;
+
+}
+.smrt-target-list__empty {
+color: var(--smrt-color-on-surface-variant, inherit);
+
+}
+
+}
+
 </style>

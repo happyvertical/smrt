@@ -2125,22 +2125,6 @@
       "unsorted": true,
       "internalClasses": 3
     },
-    "packages/support/src/svelte/components/CaseDetail.svelte": {
-      "unsorted": true,
-      "internalClasses": 18
-    },
-    "packages/support/src/svelte/components/CaseQueue.svelte": {
-      "unsorted": true,
-      "internalClasses": 11
-    },
-    "packages/support/src/svelte/components/RoutingRationale.svelte": {
-      "unsorted": true,
-      "internalClasses": 9
-    },
-    "packages/support/src/svelte/components/TargetList.svelte": {
-      "unsorted": true,
-      "internalClasses": 9
-    },
     "packages/tenancy/src/svelte/components/TenantCard.svelte": {
       "unsorted": true,
       "internalClasses": 15
