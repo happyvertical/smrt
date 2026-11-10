@@ -9,6 +9,7 @@ import { type Approval, ApprovalCollection } from '../objects/Approval.ts';
 import { discardNow, publishApproved } from './drafts.ts';
 import { publish } from './events.ts';
 import { getHost, getShellDb } from './host.ts';
+import { publicChangeResult } from './results.ts';
 
 /** What an approval runs once the owner says yes. */
 export type ApprovalAction =
@@ -111,7 +112,11 @@ function view(row: Approval): ApprovalView {
     requestedBy: row.requestedBy,
     decidedBy: row.decidedBy,
     decidedAt: iso(row.decidedAt),
-    result: parseJson(row.result),
+    result:
+      parseJson(row.command) &&
+      (parseJson(row.command) as ApprovalAction).kind === 'command'
+        ? publicChangeResult(parseJson(row.result))
+        : parseJson(row.result),
     createdAt: iso(row.createdAt),
   };
 }
@@ -302,10 +307,12 @@ export async function decideApproval(
       else if (action.kind === 'discard-draft')
         result = await discardNow(action.draftId);
       else if (action.kind === 'command')
-        result = await host.execute(action.command, {
-          author: row.requestedBy || decidedBy,
-          approved: true,
-        });
+        result = publicChangeResult(
+          await host.execute(action.command, {
+            author: row.requestedBy || decidedBy,
+            approved: true,
+          }),
+        );
       else if (action.kind === 'tool')
         result = await host.callAppTool(action.name, action.args, {
           approved: true,

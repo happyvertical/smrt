@@ -3,7 +3,7 @@
  * every change after version `n` in one step ("undo this publish": send the
  * version before the publish's first one; `publish` on the History rows says
  * which versions a publish made). Default copy `live`.
- * -> the change result { version, summary, undid, statements, snapshot,
+ * -> the change result { version, summary, undid, statements,
  *    appRestartMs }; 409 when a version in the span was purged by clean up.
  *    When any undone change converted a field's type it is an Approval: 202
  *    `{ status: 'pending_approval', approvalId, summary, preview }`.

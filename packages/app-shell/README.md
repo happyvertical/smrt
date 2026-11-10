@@ -80,7 +80,7 @@ owner). Writes must be same-origin `application/json`. Errors are
 |---|---|---|
 | `GET /api/shell/describe?target=` | | `{ mode: 'live'\|'draft', draft: DraftInfo \| null, frozen, name, version, recipes, models: { [Model]: { kind: 'app'\|'shipped-subclass', label, table, className, extends, fields: { [name]: FieldDef }, ownFields: string[], methods: { [name]: { description, params } } } }, pendingApprovals }` (see [Draft then publish](#draft-then-publish-the-shell)) |
 | `GET /api/shell/history?target=` | | `{ mode, versions: { version, parent, author, summary, createdAt, purged, current, publish: { draftId, name } \| null }[] }` oldest first |
-| `POST /api/shell/undo?target=` | none | change result `{ version, summary, statements, snapshot, appRestartMs, ... }`; 409 if purged; **202** `PendingApproval` (with `preview.replaced`, the rows that would be overwritten) when the change being undone converted a field's type |
+| `POST /api/shell/undo?target=` | none | change result `{ version, summary, statements, appRestartMs, ... }`; 409 if purged; **202** `PendingApproval` (with `preview.replaced`, the rows that would be overwritten) when the change being undone converted a field's type |
 | `GET /api/shell/approvals?status=` | | `{ approvals: ApprovalView[], pending }`; `status` is `pending`, `approved`, `denied` or `failed` |
 | `POST /api/shell/approvals/<id>` | `{ approve: boolean }` | `{ id, status: 'approved'\|'denied'\|'failed', result?, error? }`; 404 unknown, 409 already decided |
 | `GET /api/shell/records/<Model>?limit=&target=` | | `{ records: object[] }` |

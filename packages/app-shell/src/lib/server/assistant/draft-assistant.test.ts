@@ -156,6 +156,9 @@ describe('API engine (scripted model)', () => {
       TurnEvent,
       { type: 'tool_result' }
     >[];
+    expect(results.find((r) => r.name === 'app_removefield')?.summary).toBe(
+      'remove Chore.points',
+    );
     expect(results.find((r) => r.name === 'app_removefield')?.copy).toBe(
       'draft',
     );
@@ -312,6 +315,11 @@ describe.each([
         (m) => m.tool?.name === 'app_removefield',
       )?.tool?.copy,
     ).toBe('draft');
+    expect(
+      events.find(
+        (e) => e.type === 'tool_result' && e.name === 'app_removefield',
+      ),
+    ).toMatchObject({ summary: 'remove Chore.points' });
     expect(stop).toBe('complete'); // a draft change needs no approval
     expect(events.some((e) => e.type === 'approval_required')).toBe(false);
     expect(live.version).toBe(liveVersion);

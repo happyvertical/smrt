@@ -75,3 +75,65 @@ describe('assistant copy labels', () => {
     );
   });
 });
+
+it('reopens old tool chips as human lines without JSON, SQL or snapshot paths', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input) => {
+      const path = String(input);
+      return new Response(
+        JSON.stringify(
+          path.includes('/status')
+            ? { configured: true }
+            : path.endsWith('/old?target=live')
+              ? {
+                  messages: [
+                    {
+                      id: '1',
+                      seq: 1,
+                      role: 'tool',
+                      content: '',
+                      tool: {
+                        id: '1',
+                        name: 'app_addfield',
+                        ok: true,
+                        summary:
+                          '{"data":{"summary":"add Product.notes","statements":["ALTER TABLE products"],"snapshot":"/private/tmp/app.db"}}',
+                      },
+                    },
+                    {
+                      id: '2',
+                      seq: 2,
+                      role: 'tool',
+                      content: '',
+                      tool: {
+                        id: '2',
+                        name: 'app_describe',
+                        ok: true,
+                        summary: '{"data":{"mode":"live"',
+                      },
+                    },
+                  ],
+                }
+              : { threads: [{ id: 'old' }], approvals: [] },
+        ),
+      );
+    }),
+  );
+  container = document.createElement('div');
+  document.body.append(container);
+  component = mount(AssistantPanel, {
+    target: container,
+    props: { open: true },
+  });
+  await vi.waitFor(() =>
+    expect(container.textContent).toContain('add Product.notes'),
+  );
+  expect(container.textContent).toContain('Checked the app structure');
+  for (const chip of container.querySelectorAll('.chip')) {
+    expect(chip.textContent).not.toMatch(/[{}]|ALTER TABLE|\/private/);
+    expect(chip.getAttribute('title')).not.toMatch(
+      /[{}]|ALTER TABLE|\/private/,
+    );
+  }
+});

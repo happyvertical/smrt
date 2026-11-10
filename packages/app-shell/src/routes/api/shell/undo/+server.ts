@@ -1,7 +1,7 @@
 /**
  * `POST /api/shell/undo?target=live|draft` (no body): undo the last change of
  * that copy (default `live`; refused, naming the draft, while a draft is open).
- * -> the change result { version, summary, statements, snapshot,
+ * -> the change result { version, summary, statements,
  *    appRestartMs, ... }; 409 when the change was purged by clean up.
  *    Undoing a type change would overwrite newer data with the archived
  *    originals, so that one is an Approval: 202

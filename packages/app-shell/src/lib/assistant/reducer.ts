@@ -7,6 +7,8 @@ import type {
   TurnStop,
 } from './events.ts';
 
+import { toolSummary } from './tool-summary.ts';
+
 export type ApprovalState =
   | 'pending'
   | 'approved'
@@ -205,7 +207,7 @@ export function reduce(state: DockState, action: Action): DockState {
             id: `m${seq}`,
             name: m.tool.name,
             state: m.tool.ok ? 'ok' : 'error',
-            summary: m.tool.summary,
+            summary: toolSummary(m.tool.name, m.tool.summary, m.tool.ok),
             ...(m.tool.copy ? { copy: m.tool.copy } : {}),
           });
       }
@@ -332,7 +334,7 @@ function onEvent(state: DockState, e: TurnEvent): DockState {
           (i) => ({
             ...(i as Extract<Item, { kind: 'tool' }>),
             state: e.ok ? 'ok' : 'error',
-            summary: e.summary,
+            summary: toolSummary(e.name, e.summary, e.ok),
             ...(e.copy ? { copy: e.copy } : {}),
           }),
         ),

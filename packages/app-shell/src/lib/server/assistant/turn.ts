@@ -15,6 +15,7 @@
 import type { AIMessage, AITool, AIToolCall } from '@happyvertical/ai';
 import { toProviderToolSchema } from '@happyvertical/smrt-core';
 import type { TurnEvent, TurnStop } from '../../assistant/events.ts';
+import { toolSummary } from '../../assistant/tool-summary.ts';
 import type { AssistantThread } from '../../objects/AssistantThread.ts';
 import { getApprovalView } from '../approvals.ts';
 import type { CatalogResponse, CatalogTool } from '../catalog.ts';
@@ -272,7 +273,7 @@ export async function runTurn(options: RunTurnOptions): Promise<TurnStop> {
             : '';
       return {
         ok,
-        summary: oneLine(text),
+        summary: toolSummary(call.name, text, ok),
         content: `${where}${text}`,
         ...(copy ? { copy } : {}),
       };

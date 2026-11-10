@@ -11,8 +11,10 @@
 // has been told (by the tool result) not to retry.
 //
 // Wire contract is unchanged (TurnEvent), so the dock needs no engine code.
+
 import type { AIToolCall } from '@happyvertical/ai';
 import type { TurnEvent, TurnStop } from '../../assistant/events.ts';
+import { toolSummary } from '../../assistant/tool-summary.ts';
 import type { AssistantThread } from '../../objects/AssistantThread.ts';
 import type { AgentCredentials } from '../agent-cli/credentials.ts';
 import type { AgentCliLocation } from '../agent-cli/detect.ts';
@@ -71,10 +73,6 @@ export function agentSystemPrompt(mode: ModeContext = LIVE_MODE): string {
 
 function cut(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max)} [cut]` : text;
-}
-function oneLine(text: string, max = 160): string {
-  const flat = text.replace(/\s+/g, ' ').trim();
-  return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
 }
 
 export interface AgentTurnOptions {
@@ -261,7 +259,7 @@ export async function runAgentTurn(
         }
         const summary = approvalId
           ? 'Waiting for your decision'
-          : oneLine(text);
+          : toolSummary(name, event.text, event.ok);
         // Which copy it acted on (the /mcp scope=assistant request resolved it
         // from the same state), so the card and the closing note can say so.
         const mode = approvalId ? null : await assistantMode(options.principal);

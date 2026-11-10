@@ -9,7 +9,6 @@ import {
   ApprovalRequiredError,
   type Command,
   EngineError,
-  type ExecuteResult,
   isStructuralCommand,
 } from '../../engine/index.ts';
 import {
@@ -18,9 +17,10 @@ import {
   requestApproval,
 } from './approvals.ts';
 import { getDraftSlot, hostFor } from './host.ts';
+import { type PublicExecuteResult, publicChangeResult } from './results.ts';
 import type { Target } from './target.ts';
 
-export type BuilderResult = ExecuteResult | PendingApproval;
+export type BuilderResult = PublicExecuteResult | PendingApproval;
 
 /** The refusal for a structural request that names the live copy while a draft is open. */
 async function refuseLiveStructure(): Promise<never> {
@@ -43,7 +43,7 @@ export async function runCommand(
   if (target === 'live' && host.frozen && isStructuralCommand(command))
     await refuseLiveStructure();
   try {
-    return await host.execute(command, { author });
+    return publicChangeResult(await host.execute(command, { author }));
   } catch (e) {
     if (e instanceof ApprovalRequiredError) {
       // Only the live host asks (the draft's autoApprove never throws this).
