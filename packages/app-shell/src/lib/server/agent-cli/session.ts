@@ -137,7 +137,10 @@ function claudeSpec(
   };
 }
 
-/** Codex features that reach the machine or the wider world. */
+/**
+ * Codex features that reach the machine or the wider world, all switched off.
+ * Every name is one `codex features list` prints for 0.162.1.
+ */
 const CODEX_DISABLED_FEATURES = [
   'shell_tool',
   'unified_exec',
@@ -145,6 +148,7 @@ const CODEX_DISABLED_FEATURES = [
   'plugins',
   'hooks',
   'multi_agent',
+  'multi_agent_v2',
   'view_image',
   'image_generation',
   'browser_use',
@@ -153,7 +157,20 @@ const CODEX_DISABLED_FEATURES = [
   'memories',
   'skill_search',
   'tool_suggest',
+  'goals',
+  'code_mode',
+  'code_mode_host',
+  'request_permissions_tool',
 ] as const;
+
+/**
+ * Codex 0.162.1 speaks the older streamable-HTTP handshake unless this
+ * (still "under development") feature is on; the shell's `/mcp` route accepts
+ * only the 2026-07-28 protocol. Checked with `codex app-server` against the
+ * route: with it the server's tools list and a tool call work, without it the
+ * server never connects.
+ */
+const CODEX_MODERN_MCP_FEATURE = 'mcp_2026_07_28';
 
 function codexSpec(
   input: SpecInput,
@@ -184,6 +201,8 @@ function codexSpec(
       '--ignore-user-config',
       '--ignore-rules',
       ...CODEX_DISABLED_FEATURES.flatMap((f) => ['--disable', f]),
+      '--enable',
+      CODEX_MODERN_MCP_FEATURE,
       ...overrides.flatMap(([k, v]) => ['-c', `${k}=${v}`]),
       ...(input.resumeId ? [input.resumeId] : []),
       '-',

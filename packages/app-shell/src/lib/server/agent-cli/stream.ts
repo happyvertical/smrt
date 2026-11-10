@@ -125,11 +125,18 @@ export function claudeParser() {
   };
 }
 
-const CODEX_FORBIDDEN_ITEMS: ReadonlySet<string> = new Set([
-  'command_execution',
-  'local_shell_call',
-  'file_change',
-  'web_search',
+/**
+ * The only item kinds a turn through the shell's tools produces. Anything
+ * else (a command, a file change, a web search, a sub-agent call, a kind a
+ * newer Codex adds) is treated as forbidden: fail closed.
+ */
+const CODEX_ALLOWED_ITEMS: ReadonlySet<string> = new Set([
+  'agent_message',
+  'reasoning',
+  'mcp_tool_call',
+  'todo_list',
+  'error',
+  'user_message',
 ]);
 
 /** Codex `exec --json`: whole items, no text deltas. */
@@ -155,18 +162,26 @@ export function codexParser() {
     if (!item || !(type === 'item.started' || type === 'item.completed'))
       return [];
     const kind = str(item.type);
-    if (CODEX_FORBIDDEN_ITEMS.has(kind))
-      return [{ type: 'forbidden', what: kind }];
+    if (!CODEX_ALLOWED_ITEMS.has(kind))
+      return [{ type: 'forbidden', what: kind || 'an item' }];
     if (kind === 'agent_message' && type === 'item.completed' && str(item.text))
       return [{ type: 'message', text: str(item.text) }];
     if (kind === 'mcp_tool_call') {
+      // Only the shell's own server.
+      if (str(item.server) !== MCP_SERVER_NAME)
+        return [
+          {
+            type: 'forbidden',
+            what: `a tool of ${str(item.server) || 'another server'}`,
+          },
+        ];
       const id = str(item.id);
       if (type === 'item.started')
         return [
           {
             type: 'tool_use',
             id,
-            name: str(item.tool),
+            name: shellToolName(str(item.tool)),
             args: JSON.stringify(item.arguments ?? {}),
           },
         ];

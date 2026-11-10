@@ -4,11 +4,7 @@
 // merged server, bearer-token auth, the one policy) over loopback HTTP.
 import { randomBytes } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
-import { createServer, type Server } from 'node:http';
-import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
-import { createLocalMcpTokenAuth } from '@happyvertical/smrt-app-mcp/auth';
-import { mountMcpRoute } from '@happyvertical/smrt-app-mcp/sveltekit';
 import {
   afterAll,
   afterEach,
@@ -24,19 +20,20 @@ import { installStub, tempDir } from '../agent-cli/test-support.ts';
 import type { AgentTool } from '../agent-cli/tools.ts';
 import { decideApproval, getApprovalView } from '../approvals.ts';
 import { getHost } from '../host.ts';
-import { createShellMcpServer } from '../mcp-server.ts';
 import { runAs } from '../owner.ts';
 import { callTool } from '../policy.ts';
 import { openShell, type ShellHarness } from '../test-support.ts';
 import { type AgentEngineDeps, runAgentTurn } from './agent-turn.ts';
+import { startTestMcp, type TestMcp } from './test-mcp.ts';
 import { createThread, viewMessages } from './threads.ts';
 
 let h: ShellHarness;
-let server: Server;
+let mcp: TestMcp;
 let mcpUrl = '';
-let live: string | null = null; // the one valid token
 const minted: string[] = [];
 let revoked = 0;
+// The one valid token, as the test route sees it.
+const live = () => mcp.token();
 
 beforeAll(async () => {
   h = await openShell();
@@ -46,46 +43,12 @@ beforeAll(async () => {
       fields: { title: { type: 'text' } },
     }),
   );
-  const handler = mountMcpRoute(createShellMcpServer(), {
-    checkOrigin: true,
-    auth: () =>
-      createLocalMcpTokenAuth({
-        verify: async (token) =>
-          live && token === live
-            ? {
-                id: h.owner.id,
-                tenantId: h.owner.tenantId,
-                scopes: ['assistant.use'],
-              }
-            : null,
-      }),
-    bindPrincipal: (p, run) =>
-      runAs({ id: p.id as string, tenantId: p.tenantId as string }, () =>
-        run(p),
-      ),
-  });
-  server = createServer(async (req, res) => {
-    const chunks: Buffer[] = [];
-    for await (const c of req) chunks.push(c as Buffer);
-    const url = new URL(req.url ?? '/', mcpUrl);
-    const response = await handler({
-      request: new Request(url, {
-        method: req.method,
-        headers: req.headers as Record<string, string>,
-        body: chunks.length ? Buffer.concat(chunks) : undefined,
-      }),
-      url,
-      locals: {},
-    } as never);
-    res.writeHead(response.status, Object.fromEntries(response.headers));
-    res.end(Buffer.from(await response.arrayBuffer()));
-  });
-  await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
-  mcpUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}/mcp`;
+  mcp = await startTestMcp(h.owner);
+  mcpUrl = mcp.url;
 });
 
 afterAll(async () => {
-  server.close();
+  await mcp.close();
   await h.close();
 });
 
@@ -101,13 +64,14 @@ function setup(tool: AgentTool, extra: Partial<AgentEngineDeps> = {}) {
     locate: async () => ({ path, extraPath: [nodeDir()] }),
     credentials: {
       async mint() {
-        live = `smrt_mcp_${randomBytes(32).toString('base64url')}`;
-        minted.push(live);
-        return live;
+        const token = `smrt_mcp_${randomBytes(32).toString('base64url')}`;
+        mcp.setToken(token);
+        minted.push(token);
+        return token;
       },
       async revoke() {
         revoked += 1;
-        live = null;
+        mcp.setToken(null);
       },
     },
     stateDir: async () => stateDir,
@@ -227,6 +191,15 @@ describe.each(['claude-code', 'codex'] as const)('%s engine', (tool) => {
     expect(textOf(events)).toContain('All done.');
   });
 
+  it('reaches the app builder tools too, under the token’s own scope', async () => {
+    const { events, stop } = await turn(tool, 'tool app_describe {}');
+    expect(stop).toBe('complete');
+    expect(events.find((e) => e.type === 'tool_result')).toMatchObject({
+      name: 'app_describe',
+      ok: true,
+    });
+  });
+
   it('holds a risky call for approval: the card shows, nothing is applied', async () => {
     const host = await getHost();
     await callTool(h.owner, 'chore_create', { title: `risky-${tool}` });
@@ -341,7 +314,7 @@ describe.each(['claude-code', 'codex'] as const)('%s engine', (tool) => {
     await turn(tool, 'say ok');
     await turn(tool, 'fail');
     expect(revoked).toBe(before + 2);
-    expect(live).toBeNull();
+    expect(live()).toBeNull();
   });
 
   it('a missing CLI is a typed error before anything runs', async () => {
@@ -392,25 +365,26 @@ describe('the /mcp route itself', () => {
     // No bearer: no session either, so no principal and no tools.
     const anon = await (await rpc('tools/list', undefined, null)).text();
     expect(anon).not.toContain('chore_create');
-    live = `smrt_mcp_${'a'.repeat(43)}`;
+    mcp.setToken(`smrt_mcp_${'a'.repeat(43)}`);
     expect(
       (await rpc('tools/list', undefined, `smrt_mcp_${'b'.repeat(43)}`)).status,
     ).toBe(401);
-    const good = live;
-    live = null;
+    const good = live() as string;
+    mcp.setToken(null);
     expect((await rpc('tools/list', undefined, good)).status).toBe(401);
   });
 
   it('does not offer approval_decide, and calling it does nothing', async () => {
-    live = `smrt_mcp_${'c'.repeat(43)}`;
-    const listed = await (await rpc('tools/list', undefined, live)).text();
+    const token = `smrt_mcp_${'c'.repeat(43)}`;
+    mcp.setToken(token);
+    const listed = await (await rpc('tools/list', undefined, token)).text();
     expect(listed).toContain('chore_create');
     expect(listed).not.toContain('approval_decide');
     const called = await (
-      await rpc('tools/call', 'approval_decide', live)
+      await rpc('tools/call', 'approval_decide', token)
     ).text();
     expect(called).not.toMatch(/"approved"/);
-    live = null;
+    mcp.setToken(null);
   });
 });
 

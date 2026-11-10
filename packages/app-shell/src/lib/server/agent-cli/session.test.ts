@@ -236,6 +236,46 @@ describe('stream parsers', () => {
     expect(codex).toEqual([{ type: 'forbidden', what: 'command_execution' }]);
   });
 
+  it('Codex: anything but the shell’s own tools and messages is forbidden', () => {
+    const parse = codexParser();
+    for (const type of [
+      'command_execution',
+      'file_change',
+      'web_search',
+      'collab_tool_call',
+      'something_new',
+    ])
+      expect(
+        parse(JSON.stringify({ type: 'item.started', item: { type } })),
+      ).toEqual([{ type: 'forbidden', what: type }]);
+    // an MCP call on any other server
+    expect(
+      parse(
+        JSON.stringify({
+          type: 'item.started',
+          item: { id: 'i', type: 'mcp_tool_call', server: 'other', tool: 'x' },
+        }),
+      )[0],
+    ).toMatchObject({ type: 'forbidden' });
+    // and the shell's own is fine
+    expect(
+      parse(
+        JSON.stringify({
+          type: 'item.started',
+          item: {
+            id: 'i',
+            type: 'mcp_tool_call',
+            server: 'smrt',
+            tool: 'app_describe',
+            arguments: {},
+          },
+        }),
+      ),
+    ).toEqual([
+      { type: 'tool_use', id: 'i', name: 'app_describe', args: '{}' },
+    ]);
+  });
+
   it('Codex: messages, MCP calls, failures; noise is ignored', () => {
     const parse = codexParser();
     expect(parse('not json')).toEqual([]);
