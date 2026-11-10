@@ -178,7 +178,9 @@ describe('toast dismissal interactions', () => {
       await unmount();
       vi.advanceTimersByTime(1000);
       expect(count).toBe(0);
-      expect(document.querySelector('.viewport')).toBeNull();
+      expect(
+        document.querySelector('[data-smrt-component="ToastViewport"]'),
+      ).toBeNull();
     } finally {
       vi.useRealTimers();
     }
@@ -194,6 +196,8 @@ describe('toast dismissal interactions', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
     expect(screen.queryByText('Legacy')).not.toBeInTheDocument();
     await unmount();
-    expect(document.querySelector('.viewport')).toBeNull();
+    expect(
+      document.querySelector('[data-smrt-component="ToastViewport"]'),
+    ).toBeNull();
   });
 });

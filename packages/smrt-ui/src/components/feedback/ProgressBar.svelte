@@ -57,14 +57,14 @@ const autoStatus = $derived.by(() => {
 const barColorClass = $derived.by(() => {
   switch (autoStatus) {
     case 'healthy':
-      return 'color-primary';
+      return 'smrt-progress-bar__primary';
     case 'warning':
-      return 'color-tertiary';
+      return 'smrt-progress-bar__tertiary';
     case 'critical':
     case 'over':
-      return 'color-error';
+      return 'smrt-progress-bar__error';
     default:
-      return 'color-primary';
+      return 'smrt-progress-bar__primary';
   }
 });
 
@@ -76,18 +76,19 @@ const displayLabel = $derived.by(() => {
 });
 </script>
 
-<div class="progress-container" class:sm={size === 'sm'} class:lg={size === 'lg'} data-smrt-component="ProgressBar">
+<div class="smrt-progress-bar__root" class:smrt-progress-bar__sm={size === 'sm'} class:smrt-progress-bar__lg={size === 'lg'} data-smrt-component="ProgressBar">
   {#if showLabel || showValue}
-    <div class="progress-header">
-      <span class="progress-label">{displayLabel}</span>
+    <div class="smrt-progress-bar__header" data-smrt-part="header">
+      <span class="smrt-progress-bar__label" data-smrt-part="label">{displayLabel}</span>
       {#if value > max}
-        <span class="over-badge">{t(M['ui.progress_bar.over_by'], { amount: Math.round(value - max).toLocaleString() })}</span>
+        <span class="smrt-progress-bar__over" data-smrt-part="meta">{t(M['ui.progress_bar.over_by'], { amount: Math.round(value - max).toLocaleString() })}</span>
       {/if}
     </div>
   {/if}
 
   <div
-    class="progress-track"
+    class="smrt-progress-bar__track"
+    data-smrt-part="track"
     role="progressbar"
     aria-label={label?.trim() ? label : t(M['ui.progress_bar.label'])}
     aria-valuenow={value}
@@ -95,7 +96,8 @@ const displayLabel = $derived.by(() => {
     aria-valuemax={max}
   >
     <div
-      class="progress-bar {barColorClass}"
+      class="smrt-progress-bar__indicator {barColorClass}"
+      data-smrt-part="indicator"
       style:width="{percentage}%"
     ></div>
   </div>
@@ -103,63 +105,69 @@ const displayLabel = $derived.by(() => {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .progress-container {
+@layer smrt.structure {
+  .smrt-progress-bar__root {
     width: 100%;
   }
-
-  .progress-header {
+  .smrt-progress-bar__header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     margin-bottom: var(--smrt-spacing-2);
   }
+  .smrt-progress-bar__track {
+    width: 100%;
+    height: 4px;
+    overflow: hidden;
+  }
+  .smrt-progress-bar__sm .smrt-progress-bar__track {
+    height: 2px;
+  }
+  .smrt-progress-bar__lg .smrt-progress-bar__track {
+    height: 8px;
+  }
+  .smrt-progress-bar__indicator {
+    height: 100%;
+  }
+}
 
-  .progress-label {
+@layer smrt.theme {
+  .smrt-progress-bar__label {
     font: var(--smrt-typography-label-large-font);
     color: var(--smrt-color-on-surface-variant);
   }
-
-  .sm .progress-label {
+  .smrt-progress-bar__sm .smrt-progress-bar__label {
     font: var(--smrt-typography-label-medium-font);
   }
-
-  .over-badge {
+  .smrt-progress-bar__over {
     font: var(--smrt-typography-label-small-font);
     font-weight: var(--smrt-typography-weight-semibold, 600);
     color: var(--smrt-color-error);
   }
-
-  .progress-track {
-    width: 100%;
-    height: 4px;
+  .smrt-progress-bar__track {
     background-color: var(--smrt-color-surface-container-highest);
     border-radius: var(--smrt-radius-sm);
-    overflow: hidden;
   }
-
-  .sm .progress-track {
-    height: 2px;
-  }
-
-  .lg .progress-track {
-    height: 8px;
+  .smrt-progress-bar__lg .smrt-progress-bar__track {
     border-radius: var(--smrt-radius-sm);
   }
-
-  .progress-bar {
-    height: 100%;
+  .smrt-progress-bar__indicator {
     transition: width var(--smrt-duration-medium2, 300ms) var(--smrt-easing-standard, cubic-bezier(0.4, 0, 0.2, 1));
   }
-
   @media (prefers-reduced-motion: reduce) {
-    .progress-bar {
+    .smrt-progress-bar__indicator {
       transition: none;
     }
   }
-
-  .color-primary { background-color: var(--smrt-color-primary); }
-  .color-tertiary { background-color: var(--smrt-color-tertiary); }
-  .color-error { background-color: var(--smrt-color-error); }
+  .smrt-progress-bar__primary {
+    background-color: var(--smrt-color-primary);
+  }
+  .smrt-progress-bar__tertiary {
+    background-color: var(--smrt-color-tertiary);
+  }
+  .smrt-progress-bar__error {
+    background-color: var(--smrt-color-error);
+  }
 }
+
 </style>

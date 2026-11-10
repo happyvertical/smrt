@@ -101,67 +101,68 @@ function getTypeLabel(type: string): string {
 }
 </script>
 
-<div class="day-view" data-smrt-component="DayView">
-  <header class="day-header">
-    <a href={calendarUrl} class="back-link">
+<div class="smrt-day-view__root" data-smrt-component="DayView">
+  <header class="smrt-day-view__header" data-smrt-part="header">
+    <a href={calendarUrl} class="smrt-day-view__back" data-smrt-part="back">
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
         <path d="M10 12L6 8L10 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
       {t(M['ui.day_view.back_to_calendar'])}
     </a>
-    <h1 class="date-title">{formattedDate}</h1>
+    <h1 class="smrt-day-view__title" data-smrt-part="title">{formattedDate}</h1>
 
     {#if forecast}
-      <div class="weather-summary">
-        <span class="weather-icon">{forecast.icon}</span>
-        <span class="weather-temps">
-          <span class="high">{forecast.high}°</span>
-          <span class="low">{forecast.low}°</span>
+      <div class="smrt-day-view__weather" data-smrt-part="weather">
+        <span class="smrt-day-view__weather-icon" data-smrt-part="weather-icon">{forecast.icon}</span>
+        <span class="smrt-day-view__temps" data-smrt-part="temps">
+          <span class="smrt-day-view__high" data-smrt-part="high">{forecast.high}°</span>
+          <span class="smrt-day-view__low" data-smrt-part="low">{forecast.low}°</span>
         </span>
       </div>
     {/if}
   </header>
 
-  <div class="day-content">
+  <div class="smrt-day-view__content" data-smrt-part="body">
     {#if !events || events.length === 0}
-      <div class="empty-state">
-        <span class="empty-icon">{'\u{1F4C5}'}</span>
-        <p class="empty-text">{t(M['ui.day_view.no_events'])}</p>
+      <div class="smrt-day-view__empty-state" data-smrt-part="empty">
+        <span class="smrt-day-view__empty-icon" data-smrt-part="empty-icon">{'\u{1F4C5}'}</span>
+        <p class="smrt-day-view__empty-text" data-smrt-part="empty-text">{t(M['ui.day_view.no_events'])}</p>
       </div>
     {:else if groupedEvents()}
       {#each Object.entries(groupedEvents()!) as [type, typeEvents]}
-        <section class="event-group">
-          <h2 class="group-title">
-            <span class="group-icon">{getEventIcon(type as DayEventDetail['type'])}</span>
+        <section class="smrt-day-view__group" data-smrt-part="group">
+          <h2 class="smrt-day-view__group-title" data-smrt-part="group-title">
+            <span class="smrt-day-view__group-icon" data-smrt-part="group-icon">{getEventIcon(type as DayEventDetail['type'])}</span>
             {getTypeLabel(type)}
-            <span class="group-count">({typeEvents.length})</span>
+            <span class="smrt-day-view__group-count" data-smrt-part="count">({typeEvents.length})</span>
           </h2>
 
-          <div class="event-list">
+          <div class="smrt-day-view__events" data-smrt-part="events">
             {#each typeEvents as event}
               {@const url = getEventUrl(event)}
               {#if url}
-                <a href={url} class="event-card event-card--link" onclick={() => onEventClick?.(event.type, event.name)}>
-                  <div class="event-time">{event.startTime}</div>
-                  <div class="event-details">
-                    <span class="event-name">{event.name}</span>
+                <a href={url} class="smrt-day-view__event smrt-day-view__event--link" data-smrt-part="event" onclick={() => onEventClick?.(event.type, event.name)}>
+                  <div class="smrt-day-view__time" data-smrt-part="time">{event.startTime}</div>
+                  <div class="smrt-day-view__details" data-smrt-part="details">
+                    <span class="smrt-day-view__name" data-smrt-part="name">{event.name}</span>
                     {#if event.venue}
-                      <span class="event-venue">{event.venue}</span>
+                      <span class="smrt-day-view__venue" data-smrt-part="venue">{event.venue}</span>
                     {/if}
                   </div>
-                  <span class="event-arrow">→</span>
+                  <span class="smrt-day-view__arrow" data-smrt-part="arrow">→</span>
                 </a>
               {:else}
                 <button
                   type="button"
-                  class="event-card event-card--button"
+                  class="smrt-day-view__event smrt-day-view__event--button"
+                  data-smrt-part="event"
                   onclick={() => onEventClick?.(event.type, event.name)}
                 >
-                  <div class="event-time">{event.startTime}</div>
-                  <div class="event-details">
-                    <span class="event-name">{event.name}</span>
+                  <div class="smrt-day-view__time" data-smrt-part="time">{event.startTime}</div>
+                  <div class="smrt-day-view__details" data-smrt-part="details">
+                    <span class="smrt-day-view__name" data-smrt-part="name">{event.name}</span>
                     {#if event.venue}
-                      <span class="event-venue">{event.venue}</span>
+                      <span class="smrt-day-view__venue" data-smrt-part="venue">{event.venue}</span>
                     {/if}
                   </div>
                 </button>
@@ -176,150 +177,186 @@ function getTypeLabel(type: string): string {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.structure {
+  .smrt-day-view__header {
+    padding: var(--smrt-spacing-6, 1.5rem);
+  }
+  .smrt-day-view__back {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--smrt-spacing-1, 0.25rem);
+    margin-bottom: var(--smrt-spacing-4, 1rem);
+  }
+  .smrt-day-view__title {
+    margin: 0;
+  }
+  .smrt-day-view__weather {
+    display: flex;
+    align-items: center;
+    gap: var(--smrt-spacing-2, 0.5rem);
+    margin-top: var(--smrt-spacing-2, 0.5rem);
+  }
+  .smrt-day-view__temps {
+    display: flex;
+    gap: var(--smrt-spacing-1, 0.25rem);
+  }
+  .smrt-day-view__content {
+    padding: var(--smrt-spacing-6, 1.5rem);
+  }
+  .smrt-day-view__empty-state {
+    padding: var(--smrt-spacing-12, 3rem) var(--smrt-spacing-6, 1.5rem);
+  }
+  .smrt-day-view__empty-icon {
+    display: block;
+    margin-bottom: var(--smrt-spacing-4, 1rem);
+  }
+  .smrt-day-view__empty-text {
+    margin: 0;
+  }
+  .smrt-day-view__group {
+    margin-bottom: var(--smrt-spacing-8, 2rem);
+  }
+  .smrt-day-view__group:last-child {
+    margin-bottom: 0;
+  }
+  .smrt-day-view__group-title {
+    display: flex;
+    align-items: center;
+    gap: var(--smrt-spacing-2, 0.5rem);
+    margin: 0 0 var(--smrt-spacing-4, 1rem) 0;
+  }
+  .smrt-day-view__events {
+    display: flex;
+    flex-direction: column;
+    gap: var(--smrt-spacing-2, 0.5rem);
+  }
+  .smrt-day-view__event {
+    display: flex;
+    align-items: center;
+    gap: var(--smrt-spacing-4, 1rem);
+    padding: var(--smrt-spacing-4, 1rem);
+  }
+  .smrt-day-view__time {
+    flex-shrink: 0;
+    width: 80px;
+  }
+  .smrt-day-view__details {
+    flex: 1;
+    min-width: 0;
+  }
+  .smrt-day-view__name {
+    display: block;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .smrt-day-view__venue {
+    display: block;
+    margin-top: var(--smrt-spacing-1);
+  }
+  .smrt-day-view__arrow {
+    flex-shrink: 0;
+  }
+  @media (max-width: 640px) {
+    .smrt-day-view__header {
+      padding: var(--smrt-spacing-4, 1rem);
+    }
+    .smrt-day-view__content {
+      padding: var(--smrt-spacing-4, 1rem);
+    }
+    .smrt-day-view__event {
+      flex-wrap: wrap;
+    }
+    .smrt-day-view__time {
+      width: 100%;
+    }
+    .smrt-day-view__details {
+      width: 100%;
+    }
+  }
+}
+
 @layer smrt.theme {
-  .day-view {
+  .smrt-day-view__root {
     --smrt-day-view-bg: var(--smrt-color-surface);
     --smrt-day-view-border: var(--smrt-color-outline-variant);
     --smrt-day-view-header-bg: var(--smrt-color-surface-container-low);
     --smrt-day-view-card-hover: var(--smrt-color-surface-container-low);
-
     background: var(--smrt-day-view-bg);
   }
-
   /*
-   * Dark mode. Reference the base `--smrt-color-*` tokens, which already swap
-   * to dark values under the active dark scheme (issue #1431 — the old
-   * `--smrt-color-*-dark` tokens were never emitted).
-   */
-  :global([data-theme="dark"]) .day-view {
+  * Dark mode. Reference the base `--smrt-color-*` tokens, which already swap
+  * to dark values under the active dark scheme (issue #1431 — the old
+  * `--smrt-color-*-dark` tokens were never emitted).
+  */
+  :global([data-theme="dark"]) .smrt-day-view__root {
     --smrt-day-view-bg: var(--smrt-color-surface);
     --smrt-day-view-border: var(--smrt-color-outline-variant);
     --smrt-day-view-header-bg: var(--smrt-color-surface-container-low);
     --smrt-day-view-card-hover: var(--smrt-color-surface-container-high);
   }
-
   @media (prefers-color-scheme: dark) {
-    :global(:root:not([data-theme="light"])) .day-view {
+    :global(:root:not([data-theme="light"])) .smrt-day-view__root {
       --smrt-day-view-bg: var(--smrt-color-surface);
       --smrt-day-view-border: var(--smrt-color-outline-variant);
       --smrt-day-view-header-bg: var(--smrt-color-surface-container-low);
       --smrt-day-view-card-hover: var(--smrt-color-surface-container-high);
     }
   }
-
-  .day-header {
-    padding: var(--smrt-spacing-6, 1.5rem);
+  .smrt-day-view__header {
     background: var(--smrt-day-view-header-bg);
     border-bottom: 1px solid var(--smrt-day-view-border);
   }
-
-  .back-link {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--smrt-spacing-1, 0.25rem);
+  .smrt-day-view__back {
     color: var(--smrt-color-primary);
     text-decoration: none;
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    margin-bottom: var(--smrt-spacing-4, 1rem);
     transition: color var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
-
-  .back-link:hover {
+  .smrt-day-view__back:hover {
     color: var(--smrt-color-on-primary-container);
   }
-
-  .date-title {
-    margin: 0;
+  .smrt-day-view__title {
     font-size: var(--smrt-typography-headline-small-size, 1.5rem);
     font-weight: var(--smrt-typography-headline-small-weight, 600);
     color: var(--smrt-color-on-surface);
   }
-
-  .weather-summary {
-    display: flex;
-    align-items: center;
-    gap: var(--smrt-spacing-2, 0.5rem);
-    margin-top: var(--smrt-spacing-2, 0.5rem);
-  }
-
-  .weather-icon {
+  .smrt-day-view__weather-icon {
     font-size: var(--smrt-typography-headline-small-size);
   }
-
-  .weather-temps {
-    display: flex;
-    gap: var(--smrt-spacing-1, 0.25rem);
+  .smrt-day-view__temps {
     font-size: var(--smrt-typography-title-medium-size, 1.125rem);
   }
-
-  .high {
+  .smrt-day-view__high {
     font-weight: var(--smrt-typography-title-medium-weight, 600);
   }
-
-  .low {
+  .smrt-day-view__low {
     color: var(--smrt-color-on-surface-variant);
   }
-
-  .day-content {
-    padding: var(--smrt-spacing-6, 1.5rem);
-  }
-
-  .empty-state {
+  .smrt-day-view__empty-state {
     text-align: center;
-    padding: var(--smrt-spacing-12, 3rem) var(--smrt-spacing-6, 1.5rem);
     color: var(--smrt-color-on-surface-variant);
   }
-
-  .empty-icon {
+  .smrt-day-view__empty-icon {
     font-size: var(--smrt-typography-display-medium-size);
-    display: block;
-    margin-bottom: var(--smrt-spacing-4, 1rem);
     opacity: 0.5;
   }
-
-  .empty-text {
-    margin: 0;
+  .smrt-day-view__empty-text {
     font-size: var(--smrt-typography-title-medium-size, 1.125rem);
   }
-
-  .event-group {
-    margin-bottom: var(--smrt-spacing-8, 2rem);
-  }
-
-  .event-group:last-child {
-    margin-bottom: 0;
-  }
-
-  .group-title {
-    display: flex;
-    align-items: center;
-    gap: var(--smrt-spacing-2, 0.5rem);
-    margin: 0 0 var(--smrt-spacing-4, 1rem) 0;
+  .smrt-day-view__group-title {
     font-size: var(--smrt-typography-title-medium-size, 1.125rem);
     font-weight: var(--smrt-typography-title-medium-weight, 600);
     color: var(--smrt-color-on-surface);
   }
-
-  .group-icon {
+  .smrt-day-view__group-icon {
     font-size: var(--smrt-typography-title-large-size);
   }
-
-  .group-count {
+  .smrt-day-view__group-count {
     font-weight: var(--smrt-typography-body-medium-weight, 400);
     color: var(--smrt-color-on-surface-variant);
   }
-
-  .event-list {
-    display: flex;
-    flex-direction: column;
-    gap: var(--smrt-spacing-2, 0.5rem);
-  }
-
-  .event-card {
-    display: flex;
-    align-items: center;
-    gap: var(--smrt-spacing-4, 1rem);
-    padding: var(--smrt-spacing-4, 1rem);
+  .smrt-day-view__event {
     background: var(--smrt-day-view-bg);
     border: 1px solid var(--smrt-day-view-border);
     border-radius: var(--smrt-radius-medium);
@@ -327,75 +364,35 @@ function getTypeLabel(type: string): string {
     color: var(--smrt-color-on-surface);
     transition: all var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
-
-  .event-card--link:hover {
+  .smrt-day-view__event--link:hover {
     background: var(--smrt-day-view-card-hover);
     border-color: var(--smrt-hairline-strong-color);
   }
-
-  .event-card--link:hover .event-arrow {
+  .smrt-day-view__event--link:hover .smrt-day-view__arrow {
     transform: translateX(4px);
     transition: transform var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
-
-  .event-time {
-    flex-shrink: 0;
-    width: 80px;
+  .smrt-day-view__time {
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     font-weight: var(--smrt-typography-body-medium-weight, 500);
     color: var(--smrt-color-on-surface-variant);
   }
-
-  .event-details {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .event-name {
-    display: block;
+  .smrt-day-view__name {
     font-weight: var(--smrt-typography-body-medium-weight, 500);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
-
-  .event-venue {
-    display: block;
+  .smrt-day-view__venue {
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     color: var(--smrt-color-on-surface-variant);
-    margin-top: var(--smrt-spacing-1);
   }
-
-  .event-arrow {
-    flex-shrink: 0;
+  .smrt-day-view__arrow {
     color: var(--smrt-color-on-surface-variant);
     transition: transform var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
-
   @media (max-width: 640px) {
-    .day-header {
-      padding: var(--smrt-spacing-4, 1rem);
-    }
-
-    .date-title {
+    .smrt-day-view__title {
       font-size: var(--smrt-typography-title-medium-size, 1.25rem);
-    }
-
-    .day-content {
-      padding: var(--smrt-spacing-4, 1rem);
-    }
-
-    .event-card {
-      flex-wrap: wrap;
-    }
-
-    .event-time {
-      width: 100%;
-    }
-
-    .event-details {
-      width: 100%;
     }
   }
 }
+
 </style>

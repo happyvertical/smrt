@@ -468,7 +468,9 @@ $effect(() => {
   const key = focusKey;
   void tick().then(() => {
     root
-      ?.querySelector<HTMLElement>(`.cv-strip [data-cv-day="${key}"]`)
+      ?.querySelector<HTMLElement>(
+        `.smrt-calendar-view__strip [data-cv-day="${key}"]`,
+      )
       ?.scrollIntoView?.({ block: 'nearest', inline: 'center' });
   });
 });
@@ -480,7 +482,7 @@ $effect(() => {
   {@const note = spanNote(entry)}
   {#if item.href}
     <a
-      class="cv-row"
+      class="smrt-calendar-view__row" data-smrt-part="row"
       data-tone={toneFor(item)}
       style={itemStyle(item)}
       href={item.href}
@@ -489,12 +491,12 @@ $effect(() => {
       {#if itemContent}
         {@render itemContent(item, { time })}
       {:else}
-        <span class="cv-row-time">{time}</span>
-        <span class="cv-row-main">
-          <span class="cv-row-title">{item.title}</span>
+        <span class="smrt-calendar-view__row-time" data-smrt-part="row-time">{time}</span>
+        <span class="smrt-calendar-view__row-main" data-smrt-part="row-main">
+          <span class="smrt-calendar-view__row-title" data-smrt-part="row-title">{item.title}</span>
           {#if item.label || note}
-            <span class="cv-row-meta">
-              {#if item.label}<span class="cv-row-label">{item.label}</span>{/if}
+            <span class="smrt-calendar-view__row-meta" data-smrt-part="row-meta">
+              {#if item.label}<span class="smrt-calendar-view__row-label" data-smrt-part="row-label">{item.label}</span>{/if}
               {#if note}<span>{note}</span>{/if}
             </span>
           {/if}
@@ -504,7 +506,7 @@ $effect(() => {
   {:else}
     <button
       type="button"
-      class="cv-row"
+      class="smrt-calendar-view__row" data-smrt-part="row"
       data-tone={toneFor(item)}
       style={itemStyle(item)}
       onclick={() => activateItem(item)}
@@ -512,12 +514,12 @@ $effect(() => {
       {#if itemContent}
         {@render itemContent(item, { time })}
       {:else}
-        <span class="cv-row-time">{time}</span>
-        <span class="cv-row-main">
-          <span class="cv-row-title">{item.title}</span>
+        <span class="smrt-calendar-view__row-time" data-smrt-part="row-time">{time}</span>
+        <span class="smrt-calendar-view__row-main" data-smrt-part="row-main">
+          <span class="smrt-calendar-view__row-title" data-smrt-part="row-title">{item.title}</span>
           {#if item.label || note}
-            <span class="cv-row-meta">
-              {#if item.label}<span class="cv-row-label">{item.label}</span>{/if}
+            <span class="smrt-calendar-view__row-meta" data-smrt-part="row-meta">
+              {#if item.label}<span class="smrt-calendar-view__row-label" data-smrt-part="row-label">{item.label}</span>{/if}
               {#if note}<span>{note}</span>{/if}
             </span>
           {/if}
@@ -529,23 +531,23 @@ $effect(() => {
 
 <div
   bind:this={root}
-  class="cv {className}"
-  class:cv--agenda={view === 'agenda'}
+  class="smrt-calendar-view__root {className}"
+  class:smrt-calendar-view__agenda-view={view === 'agenda'}
   data-view={view} data-smrt-component="CalendarView"
 >
-  <header class="cv-header">
+  <header class="smrt-calendar-view__header" data-smrt-part="header">
     <svelte:element
       this={`h${headingLevel}`}
-      class="cv-title"
+      class="smrt-calendar-view__title" data-smrt-part="title"
       id="cv-title-{uid}"
       aria-live="polite"
     >
       {monthTitle}
     </svelte:element>
-    <div class="cv-nav">
+    <div class="smrt-calendar-view__nav" data-smrt-part="nav">
       <button
         type="button"
-        class="cv-icon-btn"
+        class="smrt-calendar-view__icon-btn" data-smrt-part="previous"
         aria-label={t(M[isWeek ? 'ui.calendar.previous_week' : 'ui.calendar.previous_month'])}
         onclick={() => stepPeriod(-1)}
       >
@@ -553,12 +555,12 @@ $effect(() => {
           <path d="M12 15L7 10L12 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
         </svg>
       </button>
-      <button type="button" class="cv-today-btn" onclick={goToday}>
+      <button type="button" class="smrt-calendar-view__today-btn" data-smrt-part="today" onclick={goToday}>
         {t(M['ui.calendar.today'])}
       </button>
       <button
         type="button"
-        class="cv-icon-btn"
+        class="smrt-calendar-view__icon-btn" data-smrt-part="next"
         aria-label={t(M[isWeek ? 'ui.calendar.next_week' : 'ui.calendar.next_month'])}
         onclick={() => stepPeriod(1)}
       >
@@ -571,23 +573,23 @@ $effect(() => {
 
   {#if view === 'month' || view === 'week'}
     <div
-      class="cv-grid"
+      class="smrt-calendar-view__grid" data-smrt-part="grid"
       role="grid"
       aria-labelledby="cv-title-{uid}"
       tabindex="-1"
       onkeydown={onGridKeydown}
     >
-      <div class="cv-weekdays" role="row">
+      <div class="smrt-calendar-view__weekdays" data-smrt-part="weekdays" role="row">
         {#each weekdays as weekday (weekday.long)}
-          <div class="cv-weekday" role="columnheader">
+          <div class="smrt-calendar-view__weekday" data-smrt-part="weekday" role="columnheader">
             <span aria-hidden="true">{weekday.short}</span>
-            <span class="cv-sr">{weekday.long}</span>
+            <span class="smrt-calendar-view__sr" data-smrt-part="label">{weekday.long}</span>
           </div>
         {/each}
       </div>
       {#each weeks as week (week.days[0].key)}
         <div
-          class="cv-week"
+          class="smrt-calendar-view__week" data-smrt-part="week"
           role="row"
           style="grid-template-rows: var(--smrt-calendar-view-daynum-h) {week.lanes > 0
             ? `repeat(${week.lanes}, var(--smrt-calendar-view-band-row))`
@@ -596,17 +598,17 @@ $effect(() => {
           {#each week.days as day, column (day.key)}
             {@const href = dayHref?.(day.key)}
             <div
-              class="cv-day"
-              class:cv-day--out={!isWeek && !day.inMonth}
-              class:cv-day--today={day.key === today}
-              class:cv-day--selected={day.key === selected}
+              class="smrt-calendar-view__day" data-smrt-part="day"
+              class:smrt-calendar-view__day--out={!isWeek && !day.inMonth}
+              class:smrt-calendar-view__day--today={day.key === today}
+              class:smrt-calendar-view__day--selected={day.key === selected}
               role="gridcell"
               aria-selected={day.key === selected}
               style="grid-column: {column + 1};"
             >
               {#if href}
                 <a
-                  class="cv-daynum"
+                  class="smrt-calendar-view__daynum" data-smrt-part="daynum"
                   {href}
                   data-cv-day={day.key}
                   tabindex={day.key === focusKey ? 0 : -1}
@@ -622,7 +624,7 @@ $effect(() => {
               {:else}
                 <button
                   type="button"
-                  class="cv-daynum"
+                  class="smrt-calendar-view__daynum" data-smrt-part="daynum"
                   data-cv-day={day.key}
                   tabindex={day.key === focusKey ? 0 : -1}
                   aria-label={dayLabel(day.key, day.all.length)}
@@ -634,14 +636,14 @@ $effect(() => {
                 </button>
               {/if}
               <div
-                class="cv-day-body"
+                class="smrt-calendar-view__day-body" data-smrt-part="day-body"
                 style="padding-top: calc({week.lanes} * var(--smrt-calendar-view-band-row));"
                 aria-hidden="true"
               >
                 {#each day.visible as entry (entry.item.id)}
                   {#if entry.item.href}
                     <a
-                      class="cv-chip"
+                      class="smrt-calendar-view__chip" data-smrt-part="chip"
                       data-tone={toneFor(entry.item)}
                       style={itemStyle(entry.item)}
                       href={entry.item.href}
@@ -649,42 +651,42 @@ $effect(() => {
                       title={entry.item.title}
                       onclick={() => activateItem(entry.item)}
                     >
-                      <span class="cv-chip-time">{timeFormat.format(entry.startMs)}</span>
-                      <span class="cv-chip-title">{entry.item.title}</span>
+                      <span class="smrt-calendar-view__chip-time" data-smrt-part="chip-time">{timeFormat.format(entry.startMs)}</span>
+                      <span class="smrt-calendar-view__chip-title" data-smrt-part="chip-title">{entry.item.title}</span>
                     </a>
                   {:else}
                     <button
                       type="button"
-                      class="cv-chip"
+                      class="smrt-calendar-view__chip" data-smrt-part="chip"
                       data-tone={toneFor(entry.item)}
                       style={itemStyle(entry.item)}
                       tabindex="-1"
                       title={entry.item.title}
                       onclick={() => activateItem(entry.item)}
                     >
-                      <span class="cv-chip-time">{timeFormat.format(entry.startMs)}</span>
-                      <span class="cv-chip-title">{entry.item.title}</span>
+                      <span class="smrt-calendar-view__chip-time" data-smrt-part="chip-time">{timeFormat.format(entry.startMs)}</span>
+                      <span class="smrt-calendar-view__chip-title" data-smrt-part="chip-title">{entry.item.title}</span>
                     </button>
                   {/if}
                 {/each}
                 {#if day.hiddenCount > 0}
                   {#if href}
-                    <a class="cv-more" {href} tabindex="-1">
-                      <span class="cv-more-long">{t(M['ui.calendar.more'], { count: day.hiddenCount })}</span>
-                      <span class="cv-more-short">{t(M['ui.calendar.more_short'], { count: day.hiddenCount })}</span>
+                    <a class="smrt-calendar-view__more" data-smrt-part="more" {href} tabindex="-1">
+                      <span class="smrt-calendar-view__more-long" data-smrt-part="more-long">{t(M['ui.calendar.more'], { count: day.hiddenCount })}</span>
+                      <span class="smrt-calendar-view__more-short" data-smrt-part="more-short">{t(M['ui.calendar.more_short'], { count: day.hiddenCount })}</span>
                     </a>
                   {:else}
                     <button
                       type="button"
-                      class="cv-more"
+                      class="smrt-calendar-view__more" data-smrt-part="more"
                       tabindex="-1"
                       onclick={() => {
                         selectDay(day.key);
                         void focusDay(day.key);
                       }}
                     >
-                      <span class="cv-more-long">{t(M['ui.calendar.more'], { count: day.hiddenCount })}</span>
-                      <span class="cv-more-short">{t(M['ui.calendar.more_short'], { count: day.hiddenCount })}</span>
+                      <span class="smrt-calendar-view__more-long" data-smrt-part="more-long">{t(M['ui.calendar.more'], { count: day.hiddenCount })}</span>
+                      <span class="smrt-calendar-view__more-short" data-smrt-part="more-short">{t(M['ui.calendar.more_short'], { count: day.hiddenCount })}</span>
                     </button>
                   {/if}
                 {/if}
@@ -695,9 +697,9 @@ $effect(() => {
             {@const item = band.entry.item}
             {#if item.href}
               <a
-                class="cv-band"
-                class:cv-band--before={band.continuesBefore}
-                class:cv-band--after={band.continuesAfter}
+                class="smrt-calendar-view__band" data-smrt-part="band"
+                class:smrt-calendar-view__band--before={band.continuesBefore}
+                class:smrt-calendar-view__band--after={band.continuesAfter}
                 data-tone={toneFor(item)}
                 style="{itemStyle(item)} grid-column: {band.column + 1} / span {band.span}; grid-row: {band.lane + 2};"
                 href={item.href}
@@ -711,9 +713,9 @@ $effect(() => {
             {:else}
               <button
                 type="button"
-                class="cv-band"
-                class:cv-band--before={band.continuesBefore}
-                class:cv-band--after={band.continuesAfter}
+                class="smrt-calendar-view__band" data-smrt-part="band"
+                class:smrt-calendar-view__band--before={band.continuesBefore}
+                class:smrt-calendar-view__band--after={band.continuesAfter}
                 data-tone={toneFor(item)}
                 style="{itemStyle(item)} grid-column: {band.column + 1} / span {band.span}; grid-row: {band.lane + 2};"
                 tabindex="-1"
@@ -730,12 +732,12 @@ $effect(() => {
     </div>
 
     {#if selected && !dayHref && (isWeek ? visibleWeekKeys.includes(selected) : sameMonth(selected, current))}
-      <section class="cv-day-panel" aria-labelledby="cv-day-{uid}">
-        <div class="cv-day-panel-head">
-          <h3 class="cv-day-title" id="cv-day-{uid}">{longDate(selected)}</h3>
+      <section class="smrt-calendar-view__day-panel" data-smrt-part="day-panel" aria-labelledby="cv-day-{uid}">
+        <div class="smrt-calendar-view__day-panel-head" data-smrt-part="day-panel-head">
+          <h3 class="smrt-calendar-view__day-title" data-smrt-part="day-title" id="cv-day-{uid}">{longDate(selected)}</h3>
           <button
             type="button"
-            class="cv-icon-btn"
+            class="smrt-calendar-view__icon-btn" data-smrt-part="close"
             aria-label={t(M['ui.calendar.close_day'], { date: longDate(selected) })}
             onclick={closeDay}
           >
@@ -745,9 +747,9 @@ $effect(() => {
           </button>
         </div>
         {#if selectedEntries.length === 0}
-          <p class="cv-empty">{t(M['ui.calendar.nothing_day'])}</p>
+          <p class="smrt-calendar-view__empty" data-smrt-part="empty">{t(M['ui.calendar.nothing_day'])}</p>
         {:else}
-          <ul class="cv-rows">
+          <ul class="smrt-calendar-view__rows" data-smrt-part="rows">
             {#each selectedEntries as entry (entry.item.id)}
               <li>{@render itemRow(entry, selected)}</li>
             {/each}
@@ -757,7 +759,7 @@ $effect(() => {
     {/if}
   {:else}
     <div
-      class="cv-strip"
+      class="smrt-calendar-view__strip" data-smrt-part="strip"
       role="toolbar"
       tabindex="-1"
       aria-label={t(M['ui.calendar.days_in'], { month: monthTitle })}
@@ -768,8 +770,8 @@ $effect(() => {
         {@const weekday = weekdays[(weekdayOfKey(key) - weekStartsOn + 7) % 7]}
         <button
           type="button"
-          class="cv-strip-day"
-          class:cv-strip-day--today={key === today}
+          class="smrt-calendar-view__strip-day" data-smrt-part="strip-day"
+          class:smrt-calendar-view__strip-day--today={key === today}
           data-cv-day={key}
           tabindex={key === focusKey ? 0 : -1}
           aria-label={dayLabel(key, count)}
@@ -777,25 +779,25 @@ $effect(() => {
           aria-current={key === today ? 'date' : undefined}
           onclick={() => selectDay(key)}
         >
-          <span class="cv-strip-weekday" aria-hidden="true">{weekday.narrow}</span>
-          <span class="cv-strip-num" aria-hidden="true">{parseKey(key).day}</span>
-          <span class="cv-strip-dot" class:cv-strip-dot--on={count > 0} aria-hidden="true"></span>
+          <span class="smrt-calendar-view__strip-weekday" data-smrt-part="strip-weekday" aria-hidden="true">{weekday.narrow}</span>
+          <span class="smrt-calendar-view__strip-num" data-smrt-part="strip-num" aria-hidden="true">{parseKey(key).day}</span>
+          <span class="smrt-calendar-view__strip-dot" data-smrt-part="strip-dot" class:smrt-calendar-view__strip-dot--on={count > 0} aria-hidden="true"></span>
         </button>
       {/each}
     </div>
 
     {#if agendaDays.length === 0}
-      <p class="cv-empty">{t(M[isWeek ? 'ui.calendar.nothing_week' : 'ui.calendar.nothing_month'])}</p>
+      <p class="smrt-calendar-view__empty" data-smrt-part="empty">{t(M[isWeek ? 'ui.calendar.nothing_week' : 'ui.calendar.nothing_month'])}</p>
     {:else}
-      <ol class="cv-agenda">
+      <ol class="smrt-calendar-view__agenda" data-smrt-part="agenda">
         {#each agendaDays as day (day.key)}
           <li
-            class="cv-agenda-day"
-            class:cv-agenda-day--today={day.key === today}
+            class="smrt-calendar-view__agenda-day" data-smrt-part="agenda-day"
+            class:smrt-calendar-view__agenda-day--today={day.key === today}
             data-cv-agenda-day={day.key}
             aria-labelledby="cv-agenda-{uid}-{day.key}"
           >
-            <h3 class="cv-agenda-date" id="cv-agenda-{uid}-{day.key}">
+            <h3 class="smrt-calendar-view__agenda-date" data-smrt-part="agenda-date" id="cv-agenda-{uid}-{day.key}">
               {#if dayHref?.(day.key)}
                 <a href={dayHref(day.key)}>{longDate(day.key)}</a>
               {:else}
@@ -803,9 +805,9 @@ $effect(() => {
               {/if}
             </h3>
             {#if day.entries.length === 0}
-              <p class="cv-empty">{t(M['ui.calendar.nothing_day'])}</p>
+              <p class="smrt-calendar-view__empty" data-smrt-part="empty">{t(M['ui.calendar.nothing_day'])}</p>
             {:else}
-              <ul class="cv-rows">
+              <ul class="smrt-calendar-view__rows" data-smrt-part="rows">
                 {#each day.entries as entry (entry.item.id)}
                   <li>{@render itemRow(entry, day.key)}</li>
                 {/each}
@@ -820,90 +822,46 @@ $effect(() => {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .cv {
-    --smrt-calendar-view-border: var(--smrt-color-outline-variant);
-    --smrt-calendar-view-surface: var(--smrt-color-surface);
-    --smrt-calendar-view-muted: var(--smrt-color-on-surface-variant);
-    --smrt-calendar-view-text: var(--smrt-color-on-surface);
+@layer smrt.structure {
+  .smrt-calendar-view__root {
     --smrt-calendar-view-daynum-h: 2.75rem;
     --smrt-calendar-view-band-row: 1.625rem;
     --smrt-calendar-view-target: 2.75rem;
-    color: var(--smrt-calendar-view-text);
-    background: var(--smrt-calendar-view-surface);
-    border: 1px solid var(--smrt-calendar-view-border);
-    border-radius: var(--smrt-radius-large);
     overflow: hidden;
     min-width: 0;
     container-type: inline-size;
   }
-
-  [data-tone='primary'] { --smrt-calendar-view-tone: var(--smrt-color-primary); --smrt-calendar-view-fill: var(--smrt-color-primary-container); --smrt-calendar-view-ink: var(--smrt-color-on-primary-container); }
-  [data-tone='secondary'] { --smrt-calendar-view-tone: var(--smrt-color-secondary); --smrt-calendar-view-fill: var(--smrt-color-secondary-container); --smrt-calendar-view-ink: var(--smrt-color-on-secondary-container); }
-  [data-tone='tertiary'] { --smrt-calendar-view-tone: var(--smrt-color-tertiary); --smrt-calendar-view-fill: var(--smrt-color-tertiary-container); --smrt-calendar-view-ink: var(--smrt-color-on-tertiary-container); }
-  [data-tone='success'] { --smrt-calendar-view-tone: var(--smrt-color-success); --smrt-calendar-view-fill: var(--smrt-color-success-container); --smrt-calendar-view-ink: var(--smrt-color-on-success-container); }
-  [data-tone='warning'] { --smrt-calendar-view-tone: var(--smrt-color-warning); --smrt-calendar-view-fill: var(--smrt-color-warning-container); --smrt-calendar-view-ink: var(--smrt-color-on-warning-container); }
-  [data-tone='error'] { --smrt-calendar-view-tone: var(--smrt-color-error); --smrt-calendar-view-fill: var(--smrt-color-error-container); --smrt-calendar-view-ink: var(--smrt-color-on-error-container); }
-  [data-tone='neutral'] { --smrt-calendar-view-tone: var(--smrt-color-outline); --smrt-calendar-view-fill: var(--smrt-color-surface-container-high); --smrt-calendar-view-ink: var(--smrt-color-on-surface); }
-
-  /* An explicit item color wins over the tone. */
-  [style*='--smrt-calendar-view-item'] { --smrt-calendar-view-tone: var(--smrt-calendar-view-item); --smrt-calendar-view-fill: color-mix(in srgb, var(--smrt-calendar-view-item) 22%, var(--smrt-calendar-view-surface)); --smrt-calendar-view-ink: var(--smrt-calendar-view-text); }
-
-  .cv-header {
+  .smrt-calendar-view__header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: var(--smrt-spacing-2, 0.5rem);
     padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
-    background: var(--smrt-color-surface-container-low);
-    border-bottom: 1px solid var(--smrt-calendar-view-border);
   }
-
-  .cv-title {
+  .smrt-calendar-view__title {
     margin: 0;
     overflow-wrap: anywhere;
-    font-size: var(--smrt-typography-title-large-size, 1.25rem);
-    font-weight: var(--smrt-typography-title-large-weight, 600);
-    line-height: 1.2;
     min-width: 0;
   }
-
-  .cv-nav {
+  .smrt-calendar-view__nav {
     display: flex;
     align-items: center;
     gap: var(--smrt-spacing-2, 0.5rem);
     flex-shrink: 0;
   }
-
-  .cv-icon-btn,
-  .cv-today-btn {
+  .smrt-calendar-view__icon-btn,
+  .smrt-calendar-view__today-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     min-width: var(--smrt-calendar-view-target);
     min-height: var(--smrt-calendar-view-target);
-    border: 1px solid transparent;
-    border-radius: var(--smrt-radius-medium);
-    background: transparent;
-    color: var(--smrt-calendar-view-muted);
-    font: inherit;
     cursor: pointer;
   }
-
-  .cv-today-btn {
+  .smrt-calendar-view__today-btn {
     padding: 0 var(--smrt-spacing-3, 0.75rem);
-    border-color: var(--smrt-calendar-view-border);
-    color: var(--smrt-color-primary);
-    font-weight: 500;
   }
-
-  .cv-icon-btn:hover,
-  .cv-today-btn:hover {
-    background: var(--smrt-color-surface-container-high);
-    color: var(--smrt-calendar-view-text);
-  }
-
-  .cv-sr {
+  .smrt-calendar-view__sr {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -912,105 +870,334 @@ $effect(() => {
     overflow: hidden;
     clip: rect(0 0 0 0);
     white-space: nowrap;
-    border: 0;
   }
-
-  button:focus-visible,
-  a:focus-visible {
-    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
-    outline-offset: var(--smrt-focus-ring-offset);
-  }
-
-  /* ---- Month grid ---- */
-
-  .cv-grid {
-    outline: none;
-  }
-
-  .cv-weekdays,
-  .cv-week {
+  .smrt-calendar-view__weekdays,
+  .smrt-calendar-view__week {
     display: grid;
     grid-template-columns: repeat(7, minmax(0, 1fr));
   }
-
-  .cv-weekday {
+  .smrt-calendar-view__weekday {
     padding: var(--smrt-spacing-2, 0.5rem) 0;
-    text-align: center;
-    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
-    font-weight: 500;
-    color: var(--smrt-calendar-view-muted);
-    border-bottom: 1px solid var(--smrt-calendar-view-border);
   }
-
-  .cv-week {
+  .smrt-calendar-view__week {
     position: relative;
-    border-bottom: 1px solid var(--smrt-calendar-view-border);
   }
-
-  .cv-week:last-child {
-    border-bottom: 0;
-  }
-
-  .cv-day {
+  .smrt-calendar-view__day {
     grid-row: 1 / -1;
     display: flex;
     flex-direction: column;
     min-width: 0;
     min-height: 6.5rem;
-    border-right: 1px solid var(--smrt-calendar-view-border);
   }
-
-  .cv-day:nth-child(7) {
-    border-right: 0;
-  }
-
-  .cv-day--out .cv-daynum {
-    color: var(--smrt-calendar-view-muted);
-    opacity: 0.7;
-  }
-
-  .cv-day--selected {
-    background: var(--smrt-color-surface-container);
-    box-shadow: inset 0 0 0 2px var(--smrt-color-primary);
-  }
-
-  .cv-daynum {
+  .smrt-calendar-view__daynum {
     display: flex;
     align-items: flex-start;
     justify-content: flex-end;
     height: var(--smrt-calendar-view-daynum-h);
     min-height: var(--smrt-calendar-view-target);
     padding: var(--smrt-spacing-2, 0.5rem);
-    border: 0;
-    background: transparent;
-    color: inherit;
-    font: inherit;
-    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    text-decoration: none;
     cursor: pointer;
     width: 100%;
   }
-
-  .cv-day--today .cv-daynum {
-    font-weight: 700;
-    color: var(--smrt-color-primary);
-  }
-
-  .cv-day-body {
+  .smrt-calendar-view__day-body {
     display: flex;
     flex-direction: column;
     gap: 2px;
     padding: 0 var(--smrt-spacing-1, 0.25rem) var(--smrt-spacing-1, 0.25rem);
     min-width: 0;
   }
-
-  .cv-chip,
-  .cv-more {
+  .smrt-calendar-view__chip,
+  .smrt-calendar-view__more {
     display: flex;
     gap: 0.25rem;
     align-items: baseline;
     min-width: 0;
     padding: 1px var(--smrt-spacing-1, 0.25rem);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .smrt-calendar-view__chip::before {
+    /* The tone dot exists only because of this generated content. */
+    content: '';
+    flex-shrink: 0;
+    align-self: center;
+    width: 0.5rem;
+    height: 0.5rem;
+  }
+  .smrt-calendar-view__chip,
+  .smrt-calendar-view__more {
+    overflow: hidden;
+  }
+  .smrt-calendar-view__chip-time {
+    flex-shrink: 0;
+  }
+  .smrt-calendar-view__more-short {
+    display: none;
+  }
+  /* Narrow grids (a phone forced into month mode): dots and titles only. */
+  @container (max-width: 40rem) {
+    .smrt-calendar-view__chip-time,
+    .smrt-calendar-view__more-long {
+      display: none;
+    }
+    .smrt-calendar-view__more-short {
+      display: inline;
+    }
+  }
+  .smrt-calendar-view__chip-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .smrt-calendar-view__band {
+    z-index: 1;
+    align-self: center;
+    margin: 0 var(--smrt-spacing-1, 0.25rem);
+    height: calc(var(--smrt-calendar-view-band-row) - 4px);
+    padding: 0 var(--smrt-spacing-2, 0.5rem);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: pointer;
+    min-width: 0;
+  }
+  .smrt-calendar-view__band--before {
+    margin-inline-start: 0;
+  }
+  .smrt-calendar-view__band--after {
+    margin-inline-end: 0;
+  }
+  /* ---- Day panel and agenda rows ---- */
+  .smrt-calendar-view__day-panel {
+    padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem) var(--smrt-spacing-3, 0.75rem);
+  }
+  .smrt-calendar-view__day-panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--smrt-spacing-2, 0.5rem);
+  }
+  .smrt-calendar-view__day-title,
+  .smrt-calendar-view__agenda-date {
+    margin: 0;
+  }
+  .smrt-calendar-view__rows {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--smrt-spacing-2, 0.5rem);
+  }
+  .smrt-calendar-view__row {
+    display: flex;
+    align-items: center;
+    gap: var(--smrt-spacing-3, 0.75rem);
+    width: 100%;
+    min-height: var(--smrt-calendar-view-target);
+    padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
+    cursor: pointer;
+  }
+  .smrt-calendar-view__row-time {
+    flex: 0 0 4.5rem;
+  }
+  .smrt-calendar-view__row-main {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .smrt-calendar-view__row-title {
+    overflow-wrap: anywhere;
+  }
+  .smrt-calendar-view__row-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--smrt-spacing-2, 0.5rem);
+  }
+  /* Tone is a fill with its own ink, never a text color (brand rule). */
+  .smrt-calendar-view__row-label {
+    padding: 0 0.375rem;
+  }
+  .smrt-calendar-view__empty {
+    margin: var(--smrt-spacing-2, 0.5rem) 0;
+  }
+  /* ---- Agenda ---- */
+  .smrt-calendar-view__strip {
+    display: flex;
+    gap: var(--smrt-spacing-2, 0.5rem);
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x proximity;
+    padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
+  }
+  .smrt-calendar-view__strip-day {
+    flex: 0 0 var(--smrt-calendar-view-target);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    min-height: 3.5rem;
+    padding: var(--smrt-spacing-1, 0.25rem) 0;
+    cursor: pointer;
+    scroll-snap-align: center;
+  }
+  .smrt-calendar-view__strip-dot {
+    width: 0.375rem;
+    height: 0.375rem;
+  }
+  .smrt-calendar-view__agenda {
+    list-style: none;
+    margin: 0;
+    padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem) var(--smrt-spacing-3, 0.75rem);
+    display: flex;
+    flex-direction: column;
+    gap: var(--smrt-spacing-4, 1rem);
+  }
+  .smrt-calendar-view__agenda-day {
+    display: flex;
+    flex-direction: column;
+    gap: var(--smrt-spacing-2, 0.5rem);
+    scroll-margin-top: var(--smrt-spacing-4, 1rem);
+  }
+  .smrt-calendar-view__agenda-view .smrt-calendar-view__empty {
+    padding: 0 var(--smrt-spacing-3, 0.75rem);
+  }
+  .smrt-calendar-view__agenda .smrt-calendar-view__empty {
+    padding: 0;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-calendar-view__root {
+    --smrt-calendar-view-border: var(--smrt-color-outline-variant);
+    --smrt-calendar-view-surface: var(--smrt-color-surface);
+    --smrt-calendar-view-muted: var(--smrt-color-on-surface-variant);
+    --smrt-calendar-view-text: var(--smrt-color-on-surface);
+    color: var(--smrt-calendar-view-text);
+    background: var(--smrt-calendar-view-surface);
+    border: 1px solid var(--smrt-calendar-view-border);
+    border-radius: var(--smrt-radius-large);
+  }
+  [data-tone='primary'] {
+    --smrt-calendar-view-tone: var(--smrt-color-primary);
+    --smrt-calendar-view-fill: var(--smrt-color-primary-container);
+    --smrt-calendar-view-ink: var(--smrt-color-on-primary-container);
+  }
+  [data-tone='secondary'] {
+    --smrt-calendar-view-tone: var(--smrt-color-secondary);
+    --smrt-calendar-view-fill: var(--smrt-color-secondary-container);
+    --smrt-calendar-view-ink: var(--smrt-color-on-secondary-container);
+  }
+  [data-tone='tertiary'] {
+    --smrt-calendar-view-tone: var(--smrt-color-tertiary);
+    --smrt-calendar-view-fill: var(--smrt-color-tertiary-container);
+    --smrt-calendar-view-ink: var(--smrt-color-on-tertiary-container);
+  }
+  [data-tone='success'] {
+    --smrt-calendar-view-tone: var(--smrt-color-success);
+    --smrt-calendar-view-fill: var(--smrt-color-success-container);
+    --smrt-calendar-view-ink: var(--smrt-color-on-success-container);
+  }
+  [data-tone='warning'] {
+    --smrt-calendar-view-tone: var(--smrt-color-warning);
+    --smrt-calendar-view-fill: var(--smrt-color-warning-container);
+    --smrt-calendar-view-ink: var(--smrt-color-on-warning-container);
+  }
+  [data-tone='error'] {
+    --smrt-calendar-view-tone: var(--smrt-color-error);
+    --smrt-calendar-view-fill: var(--smrt-color-error-container);
+    --smrt-calendar-view-ink: var(--smrt-color-on-error-container);
+  }
+  [data-tone='neutral'] {
+    --smrt-calendar-view-tone: var(--smrt-color-outline);
+    --smrt-calendar-view-fill: var(--smrt-color-surface-container-high);
+    --smrt-calendar-view-ink: var(--smrt-color-on-surface);
+  }
+  /* An explicit item color wins over the tone. */
+  [style*='--smrt-calendar-view-item'] {
+    --smrt-calendar-view-tone: var(--smrt-calendar-view-item);
+    --smrt-calendar-view-fill: color-mix(in srgb, var(--smrt-calendar-view-item) 22%, var(--smrt-calendar-view-surface));
+    --smrt-calendar-view-ink: var(--smrt-calendar-view-text);
+  }
+  .smrt-calendar-view__header {
+    background: var(--smrt-color-surface-container-low);
+    border-bottom: 1px solid var(--smrt-calendar-view-border);
+  }
+  .smrt-calendar-view__title {
+    font-size: var(--smrt-typography-title-large-size, 1.25rem);
+    font-weight: var(--smrt-typography-title-large-weight, 600);
+    line-height: 1.2;
+  }
+  .smrt-calendar-view__icon-btn,
+  .smrt-calendar-view__today-btn {
+    border: 1px solid transparent;
+    border-radius: var(--smrt-radius-medium);
+    background: transparent;
+    color: var(--smrt-calendar-view-muted);
+    font: inherit;
+  }
+  .smrt-calendar-view__today-btn {
+    border-color: var(--smrt-calendar-view-border);
+    color: var(--smrt-color-primary);
+    font-weight: 500;
+  }
+  .smrt-calendar-view__icon-btn:hover,
+  .smrt-calendar-view__today-btn:hover {
+    background: var(--smrt-color-surface-container-high);
+    color: var(--smrt-calendar-view-text);
+  }
+  .smrt-calendar-view__sr {
+    border: 0;
+  }
+  button:focus-visible,
+  a:focus-visible {
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: var(--smrt-focus-ring-offset);
+  }
+  /* ---- Month grid ---- */
+  .smrt-calendar-view__grid {
+    outline: none;
+  }
+  .smrt-calendar-view__weekday {
+    text-align: center;
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
+    font-weight: 500;
+    color: var(--smrt-calendar-view-muted);
+    border-bottom: 1px solid var(--smrt-calendar-view-border);
+  }
+  .smrt-calendar-view__week {
+    border-bottom: 1px solid var(--smrt-calendar-view-border);
+  }
+  .smrt-calendar-view__week:last-child {
+    border-bottom: 0;
+  }
+  .smrt-calendar-view__day {
+    border-right: 1px solid var(--smrt-calendar-view-border);
+  }
+  .smrt-calendar-view__day:nth-child(7) {
+    border-right: 0;
+  }
+  .smrt-calendar-view__day--out .smrt-calendar-view__daynum {
+    color: var(--smrt-calendar-view-muted);
+    opacity: 0.7;
+  }
+  .smrt-calendar-view__day--selected {
+    background: var(--smrt-color-surface-container);
+    box-shadow: inset 0 0 0 2px var(--smrt-color-primary);
+  }
+  .smrt-calendar-view__daynum {
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+    text-decoration: none;
+  }
+  .smrt-calendar-view__day--today .smrt-calendar-view__daynum {
+    font-weight: 700;
+    color: var(--smrt-color-primary);
+  }
+  .smrt-calendar-view__chip,
+  .smrt-calendar-view__more {
     border: 0;
     border-radius: var(--smrt-radius-small);
     background: transparent;
@@ -1020,71 +1207,29 @@ $effect(() => {
     line-height: 1.4;
     text-align: start;
     text-decoration: none;
-    cursor: pointer;
-    white-space: nowrap;
   }
-
-  .cv-chip::before {
-    content: '';
-    flex-shrink: 0;
-    align-self: center;
-    width: 0.5rem;
-    height: 0.5rem;
+  .smrt-calendar-view__chip::before {
     border-radius: 50%;
     background: var(--smrt-calendar-view-tone);
   }
-
-  .cv-chip:hover,
-  .cv-more:hover {
+  .smrt-calendar-view__chip:hover,
+  .smrt-calendar-view__more:hover {
     background: var(--smrt-color-surface-container-high);
   }
-
-  .cv-chip,
-  .cv-more {
-    overflow: hidden;
-  }
-
-  .cv-chip-time {
+  .smrt-calendar-view__chip-time {
     color: var(--smrt-calendar-view-muted);
-    flex-shrink: 0;
   }
-
-  .cv-more-short {
-    display: none;
-  }
-
   /* Narrow grids (a phone forced into month mode): dots and titles only. */
   @container (max-width: 40rem) {
-    .cv-chip-time,
-    .cv-more-long {
-      display: none;
-    }
-
-    .cv-more-short {
-      display: inline;
-    }
-
-    .cv-title {
+    .smrt-calendar-view__title {
       font-size: var(--smrt-typography-title-medium-size, 1rem);
     }
   }
-
-  .cv-chip-title {
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .cv-more {
+  .smrt-calendar-view__more {
     color: var(--smrt-color-primary);
     font-weight: 500;
   }
-
-  .cv-band {
-    z-index: 1;
-    align-self: center;
-    margin: 0 var(--smrt-spacing-1, 0.25rem);
-    height: calc(var(--smrt-calendar-view-band-row) - 4px);
-    padding: 0 var(--smrt-spacing-2, 0.5rem);
+  .smrt-calendar-view__band {
     border: 0;
     border-radius: var(--smrt-radius-small);
     background: var(--smrt-calendar-view-fill);
@@ -1096,67 +1241,29 @@ $effect(() => {
     line-height: calc(var(--smrt-calendar-view-band-row) - 4px);
     text-align: start;
     text-decoration: none;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    cursor: pointer;
-    min-width: 0;
   }
-
-  .cv-band--before {
-    margin-inline-start: 0;
+  .smrt-calendar-view__band--before {
     border-start-start-radius: 0;
     border-end-start-radius: 0;
     box-shadow: none;
   }
-
-  .cv-band--after {
-    margin-inline-end: 0;
+  .smrt-calendar-view__band--after {
     border-start-end-radius: 0;
     border-end-end-radius: 0;
   }
-
   /* ---- Day panel and agenda rows ---- */
-
-  .cv-day-panel {
+  .smrt-calendar-view__day-panel {
     border-top: 1px solid var(--smrt-calendar-view-border);
-    padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem) var(--smrt-spacing-3, 0.75rem);
   }
-
-  .cv-day-panel-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--smrt-spacing-2, 0.5rem);
-  }
-
-  .cv-day-title,
-  .cv-agenda-date {
-    margin: 0;
+  .smrt-calendar-view__day-title,
+  .smrt-calendar-view__agenda-date {
     font-size: var(--smrt-typography-title-small-size, 0.9375rem);
     font-weight: 600;
   }
-
-  .cv-agenda-date a {
+  .smrt-calendar-view__agenda-date a {
     color: inherit;
   }
-
-  .cv-rows {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: var(--smrt-spacing-2, 0.5rem);
-  }
-
-  .cv-row {
-    display: flex;
-    align-items: center;
-    gap: var(--smrt-spacing-3, 0.75rem);
-    width: 100%;
-    min-height: var(--smrt-calendar-view-target);
-    padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
+  .smrt-calendar-view__row {
     border: 1px solid var(--smrt-calendar-view-border);
     border-inline-start: 4px solid var(--smrt-calendar-view-tone);
     border-radius: var(--smrt-radius-medium);
@@ -1165,142 +1272,71 @@ $effect(() => {
     font: inherit;
     text-align: start;
     text-decoration: none;
-    cursor: pointer;
   }
-
-  .cv-row:hover {
+  .smrt-calendar-view__row:hover {
     background: var(--smrt-color-surface-container-low);
   }
-
-  .cv-row-time {
-    flex: 0 0 4.5rem;
+  .smrt-calendar-view__row-time {
     color: var(--smrt-calendar-view-muted);
     font-size: var(--smrt-typography-body-small-size, 0.8125rem);
   }
-
-  .cv-row-main {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-  }
-
-  .cv-row-title {
+  .smrt-calendar-view__row-title {
     font-weight: 500;
-    overflow-wrap: anywhere;
   }
-
-  .cv-row-meta {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--smrt-spacing-2, 0.5rem);
+  .smrt-calendar-view__row-meta {
     color: var(--smrt-calendar-view-muted);
     font-size: var(--smrt-typography-body-small-size, 0.8125rem);
   }
-
   /* Tone is a fill with its own ink, never a text color (brand rule). */
-  .cv-row-label {
-    padding: 0 0.375rem;
+  .smrt-calendar-view__row-label {
     border-radius: var(--smrt-radius-small);
     background: var(--smrt-calendar-view-fill);
     color: var(--smrt-calendar-view-ink);
     font-weight: 500;
   }
-
-  .cv-empty {
-    margin: var(--smrt-spacing-2, 0.5rem) 0;
+  .smrt-calendar-view__empty {
     color: var(--smrt-calendar-view-muted);
   }
-
   /* ---- Agenda ---- */
-
-  .cv-strip {
-    display: flex;
-    gap: var(--smrt-spacing-2, 0.5rem);
-    overflow-x: auto;
-    overscroll-behavior-x: contain;
-    scroll-snap-type: x proximity;
-    padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
+  .smrt-calendar-view__strip {
     border-bottom: 1px solid var(--smrt-calendar-view-border);
     scrollbar-width: none;
   }
-
-  .cv-strip-day {
-    flex: 0 0 var(--smrt-calendar-view-target);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 2px;
-    min-height: 3.5rem;
-    padding: var(--smrt-spacing-1, 0.25rem) 0;
+  .smrt-calendar-view__strip-day {
     border: 1px solid transparent;
     border-radius: var(--smrt-radius-medium);
     background: transparent;
     color: inherit;
     font: inherit;
-    cursor: pointer;
-    scroll-snap-align: center;
   }
-
-  .cv-strip-day[aria-pressed='true'] {
+  .smrt-calendar-view__strip-day[aria-pressed='true'] {
     background: var(--smrt-color-primary);
     color: var(--smrt-color-on-primary);
   }
-
-  .cv-strip-day--today:not([aria-pressed='true']) {
+  .smrt-calendar-view__strip-day--today:not([aria-pressed='true']) {
     border-color: var(--smrt-color-primary);
   }
-
-  .cv-strip-weekday {
+  .smrt-calendar-view__strip-weekday {
     font-size: var(--smrt-typography-label-small-size, 0.6875rem);
     opacity: 0.8;
   }
-
-  .cv-strip-num {
+  .smrt-calendar-view__strip-num {
     font-weight: 600;
   }
-
-  .cv-strip-dot {
-    width: 0.375rem;
-    height: 0.375rem;
+  .smrt-calendar-view__strip-dot {
     border-radius: 50%;
   }
-
-  .cv-strip-dot--on {
+  .smrt-calendar-view__strip-dot--on {
     background: currentColor;
   }
-
-  .cv-agenda {
-    list-style: none;
-    margin: 0;
-    padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem) var(--smrt-spacing-3, 0.75rem);
-    display: flex;
-    flex-direction: column;
-    gap: var(--smrt-spacing-4, 1rem);
-  }
-
-  .cv-agenda-day {
-    display: flex;
-    flex-direction: column;
-    gap: var(--smrt-spacing-2, 0.5rem);
-    scroll-margin-top: var(--smrt-spacing-4, 1rem);
-  }
-
-  .cv-agenda-day--today .cv-agenda-date {
+  .smrt-calendar-view__agenda-day--today .smrt-calendar-view__agenda-date {
     color: var(--smrt-color-primary);
   }
-
-  .cv--agenda .cv-empty {
-    padding: 0 var(--smrt-spacing-3, 0.75rem);
-  }
-
-  .cv-agenda .cv-empty {
-    padding: 0;
-  }
-
   @media (prefers-reduced-motion: reduce) {
-    .cv-strip {
+    .smrt-calendar-view__strip {
       scroll-behavior: auto;
     }
   }
 }
+
 </style>
