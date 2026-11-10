@@ -9,7 +9,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { existsSync, realpathSync } from 'node:fs';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { registerHooks } from 'node:module';
 import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -45,7 +45,7 @@ const DEFAULT_READINESS_MODULES: Readonly<
   secrets: { environment: BUILTIN_ENVIRONMENT_SECRETS },
 });
 
-/** Prove `SMRT_ASSETS_DIR` is an absolute directory the process can write. */
+/** Prove `SMRT_ASSETS_DIR` is an existing absolute directory the process can write. */
 async function checkLocalFilesReadiness(
   environment: Record<string, string | undefined>,
 ): Promise<void> {
@@ -55,7 +55,9 @@ async function checkLocalFilesReadiness(
   }
   const probe = join(root, `.readiness-${randomUUID()}`);
   try {
-    await mkdir(root, { recursive: true });
+    // The directory must already exist (a mounted volume): creating it here
+    // would let a missing mount pass on ephemeral container storage.
+    if (!(await stat(root)).isDirectory()) throw new Error('not a directory');
     await writeFile(probe, 'ready', { mode: 0o600 });
     if ((await readFile(probe, 'utf8')) !== 'ready') {
       throw new Error('mismatch');

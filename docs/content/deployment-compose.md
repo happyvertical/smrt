@@ -146,7 +146,7 @@ setting is unset, a default for the configured provider:
 | Provider | Default readiness |
 |---|---|
 | authentication `password` | `@happyvertical/smrt-users` (the PostgreSQL password schema) |
-| assets `local-files` | `SMRT_ASSETS_DIR` is an absolute directory the process can write |
+| assets `local-files` | `SMRT_ASSETS_DIR` is an existing absolute directory (a mounted volume) the process can write |
 | secrets `environment` | every variable listed in `SMRT_SECRETS_REQUIRED` (comma list, optional) is set |
 
 These are working stand-ins for trying an app out, not production providers:

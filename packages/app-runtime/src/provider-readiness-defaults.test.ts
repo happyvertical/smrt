@@ -18,8 +18,12 @@ describe('default stand-in readiness (#4864)', () => {
     expect(await readdir(root)).toEqual([]);
   });
 
-  it('fails the asset probe on a missing or relative directory', async () => {
-    for (const dir of [undefined, 'relative/path']) {
+  it('fails the asset probe on a missing, relative or nonexistent directory', async () => {
+    for (const dir of [
+      undefined,
+      'relative/path',
+      join(tmpdir(), `missing-${Date.now()}`),
+    ]) {
       const probe = createProviderReadinessProbe(
         'assets',
         context('local-files'),
