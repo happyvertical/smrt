@@ -37,17 +37,17 @@ const {
 }: Props = $props();
 </script>
 
-<div class="membership-list" data-smrt-component="MembershipList">
+<div class="smrt-membership-list__root" data-smrt-component="MembershipList">
   {#if loading}
-    <div class="loading">
-      <div class="spinner"></div>
+    <div class="smrt-membership-list__loading" data-smrt-part="status">
+      <div class="smrt-membership-list__spinner" data-smrt-part="indicator"></div>
       <span>{t(M['ui.membership_list.loading'])}</span>
     </div>
   {:else if memberships.length === 0}
     {#if empty}
       {@render empty()}
     {:else}
-      <div class="empty">{emptyMessage}</div>
+      <div class="smrt-membership-list__empty" data-smrt-part="empty">{emptyMessage}</div>
     {/if}
   {:else}
     {#each memberships as { membership, tenant, role } (membership.id)}
@@ -64,39 +64,44 @@ const {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .membership-list {
+@layer smrt.structure {
+  .smrt-membership-list__root {
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
   }
-
-  .loading {
+  .smrt-membership-list__loading {
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 0.75rem;
     padding: 2rem;
-    color: var(--smrt-color-on-surface-variant);
   }
-
-  .spinner {
+  .smrt-membership-list__spinner {
     width: 1.25rem;
     height: 1.25rem;
+  }
+  .smrt-membership-list__empty {
+    padding: 2rem;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-membership-list__loading {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-membership-list__spinner {
     border: 2px solid var(--smrt-color-outline-variant);
     border-top-color: var(--smrt-color-primary);
     border-radius: var(--smrt-radius-full);
     animation: spin 0.6s linear infinite;
   }
-
   @keyframes spin {
     to {
       transform: rotate(360deg);
     }
   }
-
-  .empty {
-    padding: 2rem;
+  .smrt-membership-list__empty {
     text-align: center;
     color: var(--smrt-color-on-surface-variant);
     background: var(--smrt-color-surface-variant);
@@ -104,4 +109,5 @@ const {
     border-radius: 0.5rem;
   }
 }
+
 </style>
