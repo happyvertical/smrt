@@ -344,7 +344,8 @@ and always reports what it will not touch:
   and, if NULLs exist, the change is reported (comment SQL + `advisory`) instead
   of emitting an ALTER that would abort the atomic batch.
 - **Relaxing.** `DROP NOT NULL` on a column the manifest declares nullable is
-  executable by default on engines with `ALTER COLUMN` (PostgreSQL, DuckDB): it
+  executable by default on PostgreSQL (DuckDB rejects `ALTER COLUMN` on indexed
+  tables, so it stays opt-in there): it
   loses no data and rejects no row, and the manifest is already trusted to
   tighten columns (`SET NOT NULL`), so a package release that relaxes a column
   must not strand consumers on manual drift (#4897). `DROP DEFAULT`, orphan

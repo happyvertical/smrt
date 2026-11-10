@@ -1075,7 +1075,7 @@ for (const { name, type, engine } of engines) {
         ).toEqual([]);
       });
 
-      it('drops NOT NULL on a manifest-nullable column by default; DROP DEFAULT still needs relaxColumns', async () => {
+      it('relaxes a live column stricter than the manifest only when relaxColumns is set', async () => {
         await db.query(
           "CREATE TABLE items (id TEXT PRIMARY KEY, note TEXT NOT NULL, kind TEXT DEFAULT 'a')",
         );
@@ -1087,20 +1087,21 @@ for (const { name, type, engine } of engines) {
           }),
         };
 
-        // DROP NOT NULL loses no data and rejects no row: executable without
-        // the opt-in, and not manual drift. DROP DEFAULT stays advisory.
-        const byDefault = await comparer().compare(manifest);
-        expect(getSQLFromDiff(byDefault)).toEqual([
-          'ALTER TABLE "items" ALTER COLUMN "note" DROP NOT NULL',
+        const reportOnly = await comparer().compare(manifest);
+        expect(reportOnly.changes.map((c) => c.alteration).sort()).toEqual([
+          'drop_default',
+          'drop_not_null',
         ]);
-        expect(hasActionableChanges(byDefault)).toBe(true);
-        const defaultAdvisory = byDefault.changes.find(
-          (c) => c.alteration === 'drop_default',
-        );
-        expect(defaultAdvisory && isAdvisoryOnlyChange(defaultAdvisory)).toBe(
-          true,
-        );
-        expect(defaultAdvisory?.advisory?.severity).toBe('info');
+        expect(reportOnly.changes.every(isAdvisoryOnlyChange)).toBe(true);
+        expect(hasActionableChanges(reportOnly)).toBe(false);
+        expect(
+          reportOnly.changes.find((c) => c.alteration === 'drop_not_null')
+            ?.advisory?.severity,
+        ).toBe('warning');
+        expect(
+          reportOnly.changes.find((c) => c.alteration === 'drop_default')
+            ?.advisory?.severity,
+        ).toBe('info');
 
         const relaxed = await comparer({ relaxColumns: true }).compare(
           manifest,
@@ -1111,32 +1112,6 @@ for (const { name, type, engine } of engines) {
         ]);
         await applyStatements(db, getSQLFromDiff(relaxed));
         await db.query("INSERT INTO items (id) VALUES ('i1')");
-        expect((await comparer().compare(manifest)).changes).toEqual([]);
-      });
-
-      it('applies the default NOT NULL relaxation once, keeps rows, and is untouched on a second run and on a fresh table', async () => {
-        await db.query(
-          'CREATE TABLE items (id TEXT PRIMARY KEY, note TEXT NOT NULL)',
-        );
-        await db.query("INSERT INTO items (id, note) VALUES ('i1', 'keep')");
-        const manifest = {
-          items: schema('items', {
-            id: { type: 'TEXT', primaryKey: true },
-            note: { type: 'TEXT' },
-          }),
-        };
-        const first = await comparer().compare(manifest);
-        await applyStatements(db, getSQLFromDiff(first));
-        await db.query("INSERT INTO items (id) VALUES ('i2')");
-        const rows = await db.query('SELECT id, note FROM items ORDER BY id');
-        expect(rows.rows.map((r: Record<string, unknown>) => r.note)).toEqual([
-          'keep',
-          null,
-        ]);
-        expect((await comparer().compare(manifest)).changes).toEqual([]);
-
-        await db.query('DROP TABLE items');
-        await db.query('CREATE TABLE items (id TEXT PRIMARY KEY, note TEXT)');
         expect((await comparer().compare(manifest)).changes).toEqual([]);
       });
 
@@ -1304,7 +1279,7 @@ describe('SchemaComparer PostgreSQL SQL shape for #2369 (mocked adapter)', () =>
     ]);
     // DROP NOT NULL on a manifest-nullable column is executable by default
     // (#4897: a package release that relaxes a column); DROP DEFAULT
-    // still needs relaxColumns.
+    // still needs relaxColumns. DuckDB and SQLite stay opt-in.
     expect(getSQLFromDiff(reportOnly)).toContain(
       `ALTER TABLE "items" ALTER COLUMN "note" DROP NOT NULL`,
     );
@@ -1321,6 +1296,33 @@ describe('SchemaComparer PostgreSQL SQL shape for #2369 (mocked adapter)', () =>
         `ALTER TABLE "items" ALTER COLUMN "note" DROP DEFAULT`,
         `ALTER TABLE "items" ALTER COLUMN "note" DROP NOT NULL`,
       ]),
+    );
+  });
+
+  it('PostgreSQL: default DROP NOT NULL relaxation leaves nothing to do once applied, and a matching table is untouched (#4897)', async () => {
+    const manifest = {
+      items: schema('items', {
+        id: { type: 'TEXT', primaryKey: true, notNull: true },
+        note: { type: 'TEXT' },
+      }),
+    };
+    const stale = {
+      id: { type: 'text', notNull: true, primaryKey: true },
+      note: { type: 'text', notNull: true },
+    };
+    const relaxedLive = {
+      id: { type: 'text', notNull: true, primaryKey: true },
+      note: { type: 'text', notNull: false },
+    };
+    const first = await pgComparer(stale).compare(manifest);
+    expect(getSQLFromDiff(first)).toEqual([
+      `ALTER TABLE "items" ALTER COLUMN "note" DROP NOT NULL`,
+    ]);
+    expect(first.changes.some(isAdvisoryOnlyChange)).toBe(false);
+    // After the statement runs the live column is nullable: a second run, and a
+    // table that was already (or freshly) nullable, produce no change.
+    expect((await pgComparer(relaxedLive).compare(manifest)).changes).toEqual(
+      [],
     );
   });
 

@@ -327,7 +327,7 @@ export interface DriftReport {
  *   engines that support `ALTER COLUMN`.
  * - `drop_not_null` / `drop_default`: the live column is stricter than the
  *   manifest (relaxing). `drop_not_null` on a manifest-nullable column is
- *   executable by default on engines that support `ALTER COLUMN` (#4897: it
+ *   executable by default on PostgreSQL (#4897: it
  *   loses no data and rejects no row). Everything else — `drop_default`,
  *   orphan columns, SQLite — is an advisory until the caller opts in
  *   (`DiffOptions.relaxColumns`).
