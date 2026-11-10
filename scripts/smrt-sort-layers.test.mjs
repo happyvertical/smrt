@@ -80,6 +80,61 @@ test('split preserves declaration values, selector order, nesting, scoping, comm
   assert.equal(codemodSource(result.source).source, result.source);
 });
 
+test('writer formats a rule with nested media and comments exactly', () => {
+  const input = '<style>\n@layer smrt.theme { /* keep */ .thing { display:flex; color:red; } @media (width > 2px) { .thing { padding:0; background:blue; } } }\n</style>';
+  assert.equal(codemodSource(input).source, `<style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+
+@layer smrt.structure {
+  /* keep */
+  .thing {
+    display:flex;
+  }
+  @media (width > 2px) {
+    .thing {
+      padding:0;
+    }
+  }
+}
+
+@layer smrt.theme {
+  /* keep */
+  .thing {
+    color:red;
+  }
+  @media (width > 2px) {
+    .thing {
+      background:blue;
+    }
+  }
+}
+\n</style>`);
+});
+
+test('format mode preserves multi-selector membership and is idempotent', () => {
+  const input = '<style>\n@layer smrt.structure {\n.a,\n  .b {\ndisplay: grid;\ngap: 1px;\n\n}\n}\n@layer smrt.theme { .a,\n .b {color:red} }\n</style>';
+  const output = `<style>
+@layer smrt.structure {
+  .a,
+  .b {
+    display: grid;
+    gap: 1px;
+  }
+}
+
+@layer smrt.theme {
+  .a,
+  .b {
+    color:red;
+  }
+}
+</style>`;
+  assert.equal(codemodSource(input, { format: true }).source, output);
+  assert.equal(codemodSource(output, { format: true }).source, output);
+  const records = (text) => declarationRecords(text).map(({ line, path, ...record }) => ({ ...record, path: path.map((part) => part.replace(/\s+/g, ' ')) }));
+  assert.deepEqual(records(output), records(input));
+});
+
 test('keyframes remain with theme animation including role and geometry declarations', () => {
   const result = codemodSource(unsorted('.thing{animation:spin 1s;display:block}@keyframes spin{to{transform:rotate(1turn);width:10px;opacity:0}}'));
   assert.deepEqual(result.todos, []);
@@ -151,6 +206,8 @@ test('CLI check/write/report are scoped, idempotent, and validate input before m
     assert.equal(run(['--write', file]).status, 0);
     assert.equal(readFileSync(file, 'utf8'), output);
     assert.equal(run(['--check', file]).status, 0);
+    assert.equal(run(['--format', file]).status, 0);
+    assert.equal(readFileSync(file, 'utf8'), output);
     for (const args of [[], ['--write'], ['--write', '--report'], ['--file'], ['--nope'], ['--check', '--write', file], ['--package', 'missing'], ['--write', file, '--report', file]]) assert.equal(run(args).status, 1);
     const repository = run(['--report']);
     assert.equal(repository.status, 1); // Pending changes/TODOs remain reportable debt.

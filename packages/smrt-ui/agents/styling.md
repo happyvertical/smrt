@@ -292,6 +292,8 @@ followed by a JSON output path). It never enables a repository-wide `--write`.
 `--write` exits 1 when TODOs remain, even after writing the mechanical split.
 A second run leaves the output unchanged and reports the remaining TODO markers.
 Already sorted files are not reclassified.
+The codemod output is the canonical formatting for sorted layers.
+Use `--format` with an explicit selection to reformat already-sorted layers without reclassification.
 
 The codemod puts `display`, `flex`, `grid-template-columns`, `gap`, `padding`,
 `margin`, `width`, `height`, `position`, `inset`, `overflow`, `clip`, `white-space`,

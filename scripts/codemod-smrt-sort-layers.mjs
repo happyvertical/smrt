@@ -25,13 +25,53 @@ function existingTodos(source, css) {
   });
 }
 
-export function codemodSource(source) {
+function formatLayers(source, css) {
+  const base = source.slice(source.lastIndexOf('\n', css.start - 1) + 1, css.start).match(/^\s*/)[0];
+  const raw = (node) => source.slice(node.start, node.end);
+  const indentText = (text, indent) => text.trim().split('\n').map((line) => indent + line.trim()).join('\n');
+  function render(node, depth) {
+    const indent = base + '  '.repeat(depth);
+    if (!node.block) return indent + raw(node) + (node.type === 'Declaration' || source[node.end] === ';' ? ';' : '');
+    const header = indentText(source.slice(node.start, node.block.start), indent);
+    const lines = [`${header} {`];
+    let cursor = node.block.start + 1;
+    for (const child of node.block.children) {
+      const prefix = source.slice(cursor, child.start).replace(/^\s*;?/, '').trim();
+      if (prefix) lines.push(indentText(prefix, base + '  '.repeat(depth + 1)));
+      lines.push(render(child, depth + 1));
+      cursor = child.end + (source[child.end] === ';' ? 1 : 0);
+    }
+    const tail = source.slice(cursor, node.block.end - 1).trim();
+    if (tail) lines.push(indentText(tail, base + '  '.repeat(depth + 1)));
+    lines.push(`${indent}}`);
+    return lines.join('\n');
+  }
+  const layers = css.children.filter((node) => node.type === 'Atrule' && node.name === 'layer' &&
+    ['smrt.structure', 'smrt.theme'].includes(node.prelude.trim()) && node.block);
+  let output = '';
+  let cursor = 0;
+  let previous;
+  for (const layer of layers) {
+    let gap = source.slice(cursor, layer.start);
+    if (previous && !gap.trim()) gap = '\n\n' + base;
+    output += gap + render(layer, 0).slice(base.length);
+    cursor = layer.end;
+    previous = layer;
+  }
+  return output + source.slice(cursor);
+}
+
+export function codemodSource(source, { format = false } = {}) {
   let ast;
   try { ast = parseComponent(source); }
   catch (error) { return { source, changed: false, todos: [{ line: error.start?.line ?? 1, reason: `Parse/manual review: ${error.message}`, declaration: '', property: null, path: [] }] }; }
   const css = ast.css;
   if (!css || !css.children.some((node) => node.block)) return { source, changed: false, todos: [] };
-  if (hasStructure(css)) return { source, changed: false, todos: existingTodos(source, css) };
+  if (hasStructure(css)) {
+    const output = format ? formatLayers(source, css) : source;
+    return { source: output, changed: output !== source, todos: existingTodos(output, parseComponent(output).css) };
+  }
+  if (format) return { source, changed: false, todos: existingTodos(source, css) };
 
   const raw = (node) => source.slice(node.start, node.end);
   const unresolved = (node, reason) => ({ structure: '', theme: `/* ${TODO_MARKER} ${reason} */\n${raw(node)}${node.type === 'Declaration' ? ';' : ''}` });
@@ -112,7 +152,8 @@ export function codemodSource(source) {
   // Never write syntactically invalid output, even if a future parser adds nodes.
   try {
     const next = parseComponent(output);
-    return { source: output, changed: output !== source, todos: existingTodos(output, next.css) };
+    const formatted = formatLayers(output, next.css);
+    return { source: formatted, changed: formatted !== source, todos: existingTodos(formatted, parseComponent(formatted).css) };
   } catch (error) {
     return { source, changed: false, todos: [{ line: 1, reason: `Output requires manual review: ${error.message}`, declaration: '', property: null, path: [] }] };
   }
@@ -145,6 +186,7 @@ export function reportCounts(result) {
 export function run(args) {
   let write = false;
   let check = false;
+  let format = false;
   let report;
   let reportOnly = false;
   const files = [];
@@ -152,6 +194,7 @@ export function run(args) {
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === '--write') write = true;
+    else if (arg === '--format') format = true;
     else if (arg === '--check') check = true;
     else if (arg === '--report') {
       reportOnly = true;
@@ -164,7 +207,8 @@ export function run(args) {
     } else if (!arg.startsWith('-')) files.push(resolve(arg));
     else throw new Error(`Unknown argument: ${arg}`);
   }
-  if (write && check) throw new Error('Choose --check or --write');
+  if ([write, check, format].filter(Boolean).length > 1) throw new Error('Choose --check, --write or --format');
+  if (format) write = true;
   const repositoryReport = reportOnly && !write && !files.length && !packages.length;
   if (!files.length && !packages.length && !repositoryReport) throw new Error('Select --file PATH or --package NAME explicitly; no implicit repository-wide rewrite');
   const packageFiles = packages.length || repositoryReport ? componentFiles(packages) : [];
@@ -172,7 +216,7 @@ export function run(args) {
   if (selected.some((file) => !file.endsWith('.svelte'))) throw new Error('Only .svelte files are supported');
   if (report && selected.includes(report)) throw new Error('Report must not overwrite an input component');
   // Read/parse all inputs before any writes: a bad path cannot partially apply a slice.
-  const results = selected.map((file) => ({ file, ...codemodSource(readFileSync(file, 'utf8')) }));
+  const results = selected.map((file) => ({ file, ...codemodSource(readFileSync(file, 'utf8'), { format }) }));
   const summary = { version: 1, files: results.map((result) => ({ file: relativeFile(result.file), changed: result.changed, todos: result.todos, ...reportCounts(result) })) };
   for (const result of results) if (write && result.changed) writeFileSync(result.file, result.source);
   if (report) writeFileSync(report, `${JSON.stringify(summary, null, 2)}\n`);
