@@ -5,10 +5,10 @@ description: "DEPRECATED compatibility shim over @happyvertical/smrt-sales — r
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-10T02:12:11Z"
+  at: "2026-11-10T22:32:35Z"
 audience: "internal"
 evidence_level: "manifest-described"
-source_revision: "sha256:c6a6a68c23abba757c2762baff99818db8c19dd7956301771d53a8a87c9a0362"
+source_revision: "sha256:be10ee7a79e59c0cb037b08999c3046277ceef3fe240d32f8dc0609b1a91c291"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/affiliates/package.json"
@@ -24,7 +24,7 @@ sources:
 
 - Directory: `packages/affiliates`
 - Private: no
-- Object source: `none`
+- Object source: `domain-artifact`
 - Evidence level: `manifest-described`
 
 ## Documentation

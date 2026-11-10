@@ -5,10 +5,10 @@ description: "Svelte 5 components for SMRT user management - auth, users, tenant
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-10T18:42:28Z"
+  at: "2026-11-10T22:32:35Z"
 audience: "internal"
 evidence_level: "manifest-described"
-source_revision: "sha256:6670bd7c8bbbd87f61f2fc017d87d6f3a97ec2690560d5151e84ba53594ccd7c"
+source_revision: "sha256:08974f5c3ef29cf88c8d6ed05d0180c52ab7ef5e76b570f679eb9c727b900ae8"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/smrt-svelte/package.json"

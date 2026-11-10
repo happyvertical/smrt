@@ -66,6 +66,8 @@ type ShellActivityPatch = Partial<Omit<ShellActivity, 'id'>>;
 
 export interface ShellStateOptions {
   config?: ShellPanelDefaults;
+  /** AppShell: phone navigation opens on demand, apart from desktop preferences. */
+  phoneNavigation?: boolean;
   settings?: ShellSettingsDelta;
   settingsAdapter?: ShellSettingsAdapter;
   storageKey?: string;
@@ -77,6 +79,7 @@ export interface ShellStateOptions {
 
 export class ShellState {
   readonly config: ResolvedShellConfig;
+  private readonly phoneNavigation: boolean;
   readonly adapter: ShellSettingsAdapter | null;
 
   settings = $state<ShellSettingsDelta>({});
@@ -143,6 +146,7 @@ export class ShellState {
   private activityListeners = new Set<ActivityListener>();
 
   constructor(options: ShellStateOptions = {}) {
+    this.phoneNavigation = options.phoneNavigation === true;
     this.config = resolveShellConfig(options.config);
     this.adapter =
       options.settingsAdapter ??
@@ -172,6 +176,7 @@ export class ShellState {
   setViewport(viewport: ShellViewport): void {
     untrack(() => {
       if (viewport === this.viewport) return;
+      const wasPhone = this.viewport === 'phone';
       this.viewport = viewport;
       let changed = false;
       const panels = { ...(this.settings.panels ?? {}) };
@@ -191,6 +196,17 @@ export class ShellState {
         if (this.inlineEdges.left && this.panels.left === 'expanded') {
           this.panels.left = 'collapsed';
         }
+      }
+      if (this.phoneNavigation && this.panels.left !== 'hidden') {
+        if (viewport === 'phone') this.panels.left = 'collapsed';
+        else if (wasPhone)
+          this.panels.left = resolveInitialPanelState(
+            'left',
+            this.config.panels.left,
+            this.settings,
+            viewport,
+            this.layoutPanels.left,
+          );
       }
       this.applyInline();
     });
@@ -374,13 +390,22 @@ export class ShellState {
       this.settings = mergeShellSettingsDelta(this.settings, nextDelta);
       for (const edge of PANEL_EDGES) {
         this.revealed.delete(edge);
-        this.panels[edge] = resolveInitialPanelState(
+        const resolved = resolveInitialPanelState(
           edge,
           this.config.panels[edge],
           this.settings,
           this.viewport,
           this.layoutPanels[edge],
         );
+        this.panels[edge] =
+          this.phoneNavigation &&
+          this.viewport === 'phone' &&
+          edge === 'left' &&
+          resolved !== 'hidden'
+            ? this.panels.left === 'expanded'
+              ? 'expanded'
+              : 'collapsed'
+            : resolved;
       }
       this.applyInline();
       this.activeFocusToolId =
@@ -419,6 +444,13 @@ export class ShellState {
           this.viewport,
           after,
         );
+        if (
+          this.phoneNavigation &&
+          this.viewport === 'phone' &&
+          edge === 'left' &&
+          this.panels.left !== 'hidden'
+        )
+          this.panels.left = 'collapsed';
         if (this.panels[edge] === 'expanded') this.closeExclusivePeers(edge);
       }
       this.applyInline();
@@ -508,6 +540,13 @@ export class ShellState {
       if (state === 'expanded') this.closeExclusivePeers(edge);
       this.revealed.delete(edge);
       this.panels[edge] = state;
+      if (
+        this.phoneNavigation &&
+        this.viewport === 'phone' &&
+        edge === 'left' &&
+        state !== 'hidden'
+      )
+        return;
       this.settings = mergeShellSettingsDelta(this.settings, {
         panels: { [edge]: state },
       });

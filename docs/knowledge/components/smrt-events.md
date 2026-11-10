@@ -5,10 +5,10 @@ description: "Hierarchical event management with participant tracking and SMRT f
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-10T02:12:11Z"
+  at: "2026-11-10T22:32:35Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:41ec99384614fb3c4615eab838bde39cab4cb4d5cbe7cec734d8c438abb9b2be"
+source_revision: "sha256:3ac486232565189b74b20ad6b402df1482d37304c78d84a8f8d9f8c307d5d5f0"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/events/package.json"
@@ -24,7 +24,7 @@ sources:
 
 - Directory: `packages/events`
 - Private: no
-- Object source: `manifest`
+- Object source: `domain-artifact`
 - Evidence level: `source-inspected`
 
 ## Documentation
@@ -75,38 +75,18 @@ sources:
 
 ## MCP tools
 
-- `create_eventparticipants`: create on `@happyvertical/smrt-events:EventParticipant`
-- `create_eventparticipants`: create on `@happyvertical/smrt-events:EventParticipantCollection`
-- `create_events`: create on `@happyvertical/smrt-events:Event`
-- `create_events`: create on `@happyvertical/smrt-events:EventCollection`
-- `create_eventserieses`: create on `@happyvertical/smrt-events:EventSeries`
-- `create_eventserieses`: create on `@happyvertical/smrt-events:EventSeriesCollection`
-- `create_eventtypes`: create on `@happyvertical/smrt-events:EventType`
-- `create_eventtypes`: create on `@happyvertical/smrt-events:EventTypeCollection`
-- `delete_eventparticipants`: delete on `@happyvertical/smrt-events:EventParticipantCollection`
-- `delete_events`: delete on `@happyvertical/smrt-events:EventCollection`
-- `delete_eventserieses`: delete on `@happyvertical/smrt-events:EventSeriesCollection`
-- `delete_eventtypes`: delete on `@happyvertical/smrt-events:EventTypeCollection`
-- `get_eventparticipants`: get on `@happyvertical/smrt-events:EventParticipant`
-- `get_eventparticipants`: get on `@happyvertical/smrt-events:EventParticipantCollection`
-- `get_events`: get on `@happyvertical/smrt-events:Event`
-- `get_events`: get on `@happyvertical/smrt-events:EventCollection`
-- `get_eventserieses`: get on `@happyvertical/smrt-events:EventSeries`
-- `get_eventserieses`: get on `@happyvertical/smrt-events:EventSeriesCollection`
-- `get_eventtypes`: get on `@happyvertical/smrt-events:EventType`
-- `get_eventtypes`: get on `@happyvertical/smrt-events:EventTypeCollection`
-- `list_eventparticipants`: list on `@happyvertical/smrt-events:EventParticipant`
-- `list_eventparticipants`: list on `@happyvertical/smrt-events:EventParticipantCollection`
-- `list_events`: list on `@happyvertical/smrt-events:Event`
-- `list_events`: list on `@happyvertical/smrt-events:EventCollection`
-- `list_eventserieses`: list on `@happyvertical/smrt-events:EventSeries`
-- `list_eventserieses`: list on `@happyvertical/smrt-events:EventSeriesCollection`
-- `list_eventtypes`: list on `@happyvertical/smrt-events:EventType`
-- `list_eventtypes`: list on `@happyvertical/smrt-events:EventTypeCollection`
-- `update_eventparticipants`: update on `@happyvertical/smrt-events:EventParticipant`
-- `update_eventparticipants`: update on `@happyvertical/smrt-events:EventParticipantCollection`
-- `update_events`: update on `@happyvertical/smrt-events:Event`
-- `update_events`: update on `@happyvertical/smrt-events:EventCollection`
-- `update_eventserieses`: update on `@happyvertical/smrt-events:EventSeries`
-- `update_eventserieses`: update on `@happyvertical/smrt-events:EventSeriesCollection`
-- `update_eventtypes`: update on `@happyvertical/smrt-events:EventTypeCollection`
+- `event_create`: create on `@happyvertical/smrt-events:Event`
+- `event_get`: get on `@happyvertical/smrt-events:Event`
+- `event_list`: list on `@happyvertical/smrt-events:Event`
+- `event_update`: update on `@happyvertical/smrt-events:Event`
+- `eventparticipant_create`: create on `@happyvertical/smrt-events:EventParticipant`
+- `eventparticipant_get`: get on `@happyvertical/smrt-events:EventParticipant`
+- `eventparticipant_list`: list on `@happyvertical/smrt-events:EventParticipant`
+- `eventparticipant_update`: update on `@happyvertical/smrt-events:EventParticipant`
+- `eventseries_create`: create on `@happyvertical/smrt-events:EventSeries`
+- `eventseries_get`: get on `@happyvertical/smrt-events:EventSeries`
+- `eventseries_list`: list on `@happyvertical/smrt-events:EventSeries`
+- `eventseries_update`: update on `@happyvertical/smrt-events:EventSeries`
+- `eventtype_create`: create on `@happyvertical/smrt-events:EventType`
+- `eventtype_get`: get on `@happyvertical/smrt-events:EventType`
+- `eventtype_list`: list on `@happyvertical/smrt-events:EventType`

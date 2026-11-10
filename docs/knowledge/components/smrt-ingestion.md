@@ -5,10 +5,10 @@ description: "Durable tenant-scoped intake and evidence foundations"
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-10T02:12:11Z"
+  at: "2026-11-10T22:32:35Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:9433378bf21210eeab076e4e91330d65d43697ec9fe5a141c955bf1b3df03286"
+source_revision: "sha256:ec8f69f2bf9aa0295dd582ba5e0f7920249b21e3b8661b8148358bcb41509cba"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/ingestion/package.json"
@@ -42,7 +42,7 @@ sources:
 
 - Directory: `packages/ingestion`
 - Private: no
-- Object source: `scanner`
+- Object source: `domain-artifact`
 - Evidence level: `source-inspected`
 
 ## Documentation
@@ -105,4 +105,7 @@ sources:
 - `IntakePlan` (collection `intakeplans`, extends `SmrtObject`)
 - `IntakeProposal` (collection `intakeproposals`, extends `SmrtObject`)
 - `IntakeReviewDecision` (collection `intakereviewdecisions`, extends `SmrtObject`)
-- `ReferenceReviewWorker` (collection `referencereviewworkers`, extends `SmrtObject`)
+
+## Agent surface diagnostics
+
+- Non-static declarations: 7

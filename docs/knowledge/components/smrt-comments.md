@@ -5,10 +5,10 @@ description: "Record comments and mention hooks for SMRT applications"
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-10T02:12:11Z"
+  at: "2026-11-10T22:32:35Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:628572c28e53ba1ae032d023142dc1ca8d204abe15804d6e6558013f6c049b8b"
+source_revision: "sha256:3518712c923918258b48c6a0018d568afbafd6a9470c7d93c2c0ad88743bf3b3"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/comments/package.json"
@@ -30,7 +30,7 @@ sources:
 
 - Directory: `packages/comments`
 - Private: no
-- Object source: `scanner`
+- Object source: `domain-artifact`
 - Evidence level: `source-inspected`
 
 ## Documentation
@@ -57,8 +57,14 @@ sources:
 ## Models
 
 - `Comment` (collection `comments`, extends `SmrtPolymorphicAssociation`)
+- `CommentCollection` (collection `comments`, extends `SmrtCollection`)
 - `CommentReport` (collection `commentreports`, extends `SmrtObject`)
+- `CommentReportCollection` (collection `commentreports`, extends `SmrtCollection`)
 - `CommentRevision` (collection `commentrevisions`, extends `SmrtObject`)
+- `CommentRevisionCollection` (collection `commentrevisions`, extends `SmrtCollection`)
 - `ParticipationBan` (collection `participationbans`, extends `SmrtObject`)
+- `ParticipationBanCollection` (collection `participationbans`, extends `SmrtCollection`)
 - `ParticipationPolicy` (collection `participationpolicies`, extends `SmrtObject`)
+- `ParticipationPolicyCollection` (collection `participationpolicies`, extends `SmrtCollection`)
 - `ParticipationRateBucket` (collection `participationratebuckets`, extends `SmrtObject`)
+- `ParticipationRateBucketCollection` (collection `participationratebuckets`, extends `SmrtCollection`)

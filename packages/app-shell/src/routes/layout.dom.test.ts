@@ -807,3 +807,22 @@ describe('draft bar routes', () => {
     expect(container.textContent).toContain('Start draft');
   });
 });
+
+it('starts the phone drawer closed despite a remembered expanded desktop sidebar and shows the app name', async () => {
+  phone = true;
+  localStorage.setItem(
+    LAYOUT_KEY,
+    JSON.stringify({ panels: { left: 'expanded' } }),
+  );
+  await render();
+  const drawer = q<HTMLElement>('#smrt-admin-shell-left-panel');
+  expect(drawer?.getAttribute('data-state')).toBe('collapsed');
+  expect(drawer?.inert).toBe(true);
+  expect(q('[data-slot="header.start"]')?.textContent).toContain('My app');
+  q<HTMLButtonElement>('button[aria-label="Menu"]')?.click();
+  await flush();
+  expect(drawer?.getAttribute('data-state')).toBe('expanded');
+  expect(JSON.parse(localStorage.getItem(LAYOUT_KEY) ?? '{}').panels.left).toBe(
+    'expanded',
+  );
+});

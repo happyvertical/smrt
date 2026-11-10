@@ -76,7 +76,9 @@ toggles, focus tools, mounted drawer, or edit-mode controls. A default
 `AdminShell` still shows its brand, so its header stays; an app with no
 footer content and no dock tools has no footer and no right strip.
 
-**Phone defaults.** `phone.scrim` and `phone.swipeToClose` are on (pass `false`
+**Phone defaults.** `AppShell` navigation starts closed on phones, independent of the saved desktop sidebar state. Phone open/close gestures do not overwrite that desktop preference. The header renders the full brand title, with CSS ellipsis when space runs out.
+
+ `phone.scrim` and `phone.swipeToClose` are on (pass `false`
 to turn one off). Opening the left or right surface collapses the other
 (`ShellState.closeExclusivePeers`, not persisted), and starting a layout edit
 closes any open surface. The Menu opener is an icon button (hamburger, name

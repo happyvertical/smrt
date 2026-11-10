@@ -5,10 +5,10 @@ description: "HR records for the SMRT framework: who works for an organization, 
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-10T02:12:11Z"
+  at: "2026-11-10T22:32:35Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:fe7ca0dca3f0ce4c8883fc836dcc9ee90cf4cd7e1d6a20e8bfe096e832e4792f"
+source_revision: "sha256:695d78a348ba46d4a35f9daf8cf93216252e6f8b12946b539a60b0e5e7bba1f6"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/human-resources/package.json"
@@ -24,7 +24,7 @@ sources:
 
 - Directory: `packages/human-resources`
 - Private: no
-- Object source: `scanner`
+- Object source: `domain-artifact`
 - Evidence level: `source-inspected`
 
 ## Documentation
@@ -56,13 +56,13 @@ sources:
 
 - `Employment` (collection `employments`, extends `SmrtObject`)
 - `EmploymentChange` (collection `employmentchanges`, extends `SmrtObject`)
-- `EmploymentChangeCollection` (collection `employmentchangecollections`, extends `SmrtCollection`)
-- `EmploymentCollection` (collection `employmentcollections`, extends `SmrtCollection`)
+- `EmploymentChangeCollection` (collection `employmentchanges`, extends `SmrtCollection`)
+- `EmploymentCollection` (collection `employments`, extends `SmrtCollection`)
 - `EmploymentTerm` (collection `employmentterms`, extends `SmrtObject`)
-- `EmploymentTermCollection` (collection `employmenttermcollections`, extends `SmrtCollection`)
+- `EmploymentTermCollection` (collection `employmentterms`, extends `SmrtCollection`)
 - `HeldQualification` (collection `heldqualifications`, extends `SmrtObject`)
 - `HeldQualificationChange` (collection `heldqualificationchanges`, extends `SmrtObject`)
-- `HeldQualificationChangeCollection` (collection `heldqualificationchangecollections`, extends `SmrtCollection`)
-- `HeldQualificationCollection` (collection `heldqualificationcollections`, extends `SmrtCollection`)
+- `HeldQualificationChangeCollection` (collection `heldqualificationchanges`, extends `SmrtCollection`)
+- `HeldQualificationCollection` (collection `heldqualifications`, extends `SmrtCollection`)
 - `Qualification` (collection `qualifications`, extends `SmrtObject`)
-- `QualificationCollection` (collection `qualificationcollections`, extends `SmrtCollection`)
+- `QualificationCollection` (collection `qualifications`, extends `SmrtCollection`)

@@ -535,6 +535,7 @@ function withPhoneDock(base: ShellPanelDefaults | undefined) {
 const shell = untrack(() =>
   createShellState({
     config: withPhoneDock(config),
+    phoneNavigation: true,
     storageKey,
     layoutPanels: normalizeShellLayout(layout).panels,
   }),
@@ -727,7 +728,14 @@ function accountPlacement(
   // edge (start slots and the left sidebar to the start) so it stays inside
   // the viewport on a phone.
   const rendered =
-    resolveSlot(slot, (region) => shell.isRegionVisible(region)) ?? slot;
+    resolveSlot(slot, (region) => {
+      // Match AdminShell: closed phone drawers still own their slots.
+      if (shell.viewport === 'phone' && region === 'leftSidebar')
+        return shell.isEdgeShown('left');
+      if (shell.viewport === 'phone' && region === 'rightSidebar')
+        return shell.isEdgeShown('right');
+      return shell.isRegionVisible(region);
+    }) ?? slot;
   const region = slotRegion(rendered);
   const opensUp = region === 'footer' || rendered.endsWith('.footer');
   const alignStart = rendered.endsWith('.start') || region === 'leftSidebar';
@@ -1129,7 +1137,7 @@ const EDGE_OF_REGION: Record<ShellRegion, PanelEdge> = {
 {/snippet}
 
 {#snippet brandItem()}
-  <ShellBrand {title} {subtitle} {logoSrc} {logoAlt} {homeHref} compact={shell.viewport === 'phone'} />
+  <ShellBrand {title} {subtitle} {logoSrc} {logoAlt} {homeHref} />
 {/snippet}
 
 {#snippet editRegionControl(region: ShellRegion)}
