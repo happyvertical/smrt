@@ -18,7 +18,10 @@ $effect(() => {
 </script>
 
 <div data-smrt-component="ShellStylelessPreview">
-  <label><input type="checkbox" bind:checked={styleless} /> Apply unstyled.css</label>
+  <label>
+    <!-- raw-primitive-allow: native catalogue reset toggle stays visible when SMRT control paint is removed -->
+    <input type="checkbox" bind:checked={styleless} /> Apply unstyled.css
+  </label>
   <AdminShell state={shell} title="Styleless workspace" edgeToggles>
     {#snippet tenantPanel()}<p>Workspace navigation</p>{/snippet}
     {#snippet focusPanel()}<p>Inspector tools</p>{/snippet}
