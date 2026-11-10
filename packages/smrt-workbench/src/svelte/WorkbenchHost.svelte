@@ -636,7 +636,7 @@ function apiTabCount(
 
 <ThemeProvider colorScheme="dark" persist={true} storageKey="smrt-workbench-theme">
   <div
-    class="workbench-shell-root"
+    class="smrt-workbench-host__root"
     data-hydrated={isHydrated ? 'true' : 'false'}
   >
     <AdminShell
@@ -646,7 +646,7 @@ function apiTabCount(
       state={shellState}
     >
       {#snippet topLeftCorner()}
-        <div class="workbench-shell-mark" aria-label="SMRT">
+        <div class="smrt-workbench-host__shell-mark" data-smrt-part="logo" aria-label="SMRT">
           <svg viewBox="0 0 32 32" role="img" aria-label="SMRT">
             <path
               d="M19.7 3.4c1.2 4.1-.3 6.9-2.2 9 2.8-1.1 5-3 6.6-5.5 2.7 4.8 3.1 9.1 1.1 12.9-1.9 3.5-5.3 5.7-9.2 5.7-4 0-7.4-2.2-9.3-5.7-2.1-4-.9-8.5 3.7-13.5-.1 2.8.8 5.1 2.5 6.9 2.5-2.7 4.6-5.8 6.8-9.8Z"
@@ -675,9 +675,9 @@ function apiTabCount(
       {/snippet}
 
       {#snippet appPanel()}
-        <section class="workbench-app-panel" aria-label="Workbench scope">
+        <section class="smrt-workbench-host__app-panel" data-smrt-part="app-panel" aria-label="Workbench scope">
           <div>
-            <p class="eyebrow">{project.scope.projectRoot}</p>
+            <p class="smrt-workbench-host__eyebrow" data-smrt-part="label">{project.scope.projectRoot}</p>
             <h2>{rootNavLabel}</h2>
             <p>
               {project.scope.mode === 'consumer'
@@ -685,7 +685,7 @@ function apiTabCount(
                 : 'Workspace packages and package-owned surfaces discovered for this repository.'}
             </p>
           </div>
-          <dl class="workbench-scope-metrics">
+          <dl class="smrt-workbench-host__scope-metrics" data-smrt-part="stats">
             <div><dt>Packages</dt><dd>{totals.packages}</dd></div>
             <div><dt>Routes</dt><dd>{totals.routes}</dd></div>
             <div><dt>Previews</dt><dd>{totals.playground}</dd></div>
@@ -695,15 +695,15 @@ function apiTabCount(
       {/snippet}
 
       {#snippet tenantPanel()}
-        <div class="workbench-nav-shell">
-          <header class="workbench-nav-header">
-            <div class="workbench-brand">
-              <p class="eyebrow brand-badge">
+        <div class="smrt-workbench-host__nav-shell" data-smrt-part="sidebar">
+          <header class="smrt-workbench-host__nav-header" data-smrt-part="header">
+            <div class="smrt-workbench-host__brand" data-smrt-part="brand">
+              <p class="smrt-workbench-host__eyebrow smrt-workbench-host__badge" data-smrt-part="label">
                 <svg
                   viewBox="0 0 32 32"
                   role="img"
                   aria-label="SMRT"
-                  class="brand-mark"
+                  class="smrt-workbench-host__brand-mark" data-smrt-part="icon"
                 >
                   <path
                     d="M19.7 3.4c1.2 4.1-.3 6.9-2.2 9 2.8-1.1 5-3 6.6-5.5 2.7 4.8 3.1 9.1 1.1 12.9-1.9 3.5-5.3 5.7-9.2 5.7-4 0-7.4-2.2-9.3-5.7-2.1-4-.9-8.5 3.7-13.5-.1 2.8.8 5.1 2.5 6.9 2.5-2.7 4.6-5.8 6.8-9.8Z"
@@ -735,7 +735,7 @@ function apiTabCount(
             </div>
             <button
               type="button"
-              class="workbench-nav-toggle"
+              class="smrt-workbench-host__nav-toggle" data-smrt-part="trigger"
               aria-label="Close navigation"
               aria-expanded={shellState.panels.left === 'expanded'}
               title="Close navigation"
@@ -770,27 +770,27 @@ function apiTabCount(
             </button>
           </header>
 
-          <nav class="nav-tree" aria-label="Workbench navigation">
+          <nav class="smrt-workbench-host__nav-tree" data-smrt-part="list" aria-label="Workbench navigation">
             {#if !isPackageScoped}
               <button
                 type="button"
-                class:active={activeTab === 'packages'}
-                class="root-nav"
+                class:smrt-workbench-host__active={activeTab === 'packages'}
+                class="smrt-workbench-host__root-nav" data-smrt-part="link"
                 onclick={() => selectSection('packages')}
               >
                 <strong>{rootNavLabel}</strong>
                 <span>{totals.packages} cataloged · {totals.routes} routes · {totals.playground} previews</span>
               </button>
 
-              <label class="search">
+              <label class="smrt-workbench-host__search" data-smrt-part="search">
                 <span>Filter packages</span>
                 <input bind:value={searchTerm} placeholder="Package name or description" />
               </label>
             {/if}
 
-            <div class="package-list" data-testid="workbench-package-list">
+            <div class="smrt-workbench-host__package-list" data-smrt-part="list" data-testid="workbench-package-list">
               {#if visiblePackages.length === 0}
-                <div class="empty-panel">
+                <div class="smrt-workbench-host__empty-panel" data-smrt-part="empty">
                   <strong>No packages</strong>
                   <p>No package metadata matched the current filter.</p>
                 </div>
@@ -800,13 +800,13 @@ function apiTabCount(
                   {@const packageIsSelected = packageSummary.name === selectedPackage?.name}
                   {@const packageIsExpanded = packageSummary.name === expandedPackageName}
                   <div
-                    class:package-node={true}
-                    class:package-node--selected={packageIsSelected}
-                    class:package-node--expanded={packageIsExpanded}
+                    class:smrt-workbench-host__package-node={true}
+                    class:smrt-workbench-host__node-selected={packageIsSelected}
+                    class:smrt-workbench-host__node-expanded={packageIsExpanded} data-smrt-part="node"
                   >
                     <button
                       type="button"
-                      class:selected={packageIsSelected}
+                      class:smrt-workbench-host__selected={packageIsSelected}
                       aria-expanded={packageIsExpanded}
                       data-workbench-package={packageSummary.name}
                       onclick={() => selectPackage(packageSummary)}
@@ -816,16 +816,16 @@ function apiTabCount(
                     </button>
 
                     {#if packageIsSelected && packageIsExpanded}
-                      <div class="section-list" aria-label={`${packageSummary.name} sections`}>
+                      <div class="smrt-workbench-host__section-list" data-smrt-part="list" aria-label={`${packageSummary.name} sections`}>
                         {#if packageSummary.docs.length > 0}
                           <div
-                            class="document-entry-list"
+                            class="smrt-workbench-host__document-entry-list" data-smrt-part="list"
                             data-testid="workbench-document-entry-list"
                           >
                             {#each packageSummary.docs as doc (doc.path)}
                               <button
                                 type="button"
-                                class:active={activeTab === 'docs' && doc.path === selectedDocument?.path}
+                                class:smrt-workbench-host__active={activeTab === 'docs' && doc.path === selectedDocument?.path}
                                 aria-pressed={activeTab === 'docs' && doc.path === selectedDocument?.path}
                                 data-workbench-document={doc.title}
                                 onclick={() => selectDocument(doc)}
@@ -836,10 +836,10 @@ function apiTabCount(
                           </div>
                         {/if}
                         {#each sectionTabs as tab}
-                          <div class="section-node">
+                          <div class="smrt-workbench-host__section-node" data-smrt-part="node">
                             <button
                               type="button"
-                              class:active={activeTab === tab.id}
+                              class:smrt-workbench-host__active={activeTab === tab.id}
                               aria-pressed={activeTab === tab.id}
                               onclick={() => selectSection(tab.id)}
                             >
@@ -847,13 +847,13 @@ function apiTabCount(
                             </button>
                             {#if tab.id === 'playground' && selectedPlaygroundEntries.length > 0}
                               <div
-                                class="playground-entry-list"
+                                class="smrt-workbench-host__playground-entry-list" data-smrt-part="list"
                                 data-testid="workbench-playground-entry-list"
                               >
                                 {#each selectedPlaygroundEntries as entry (entry.qualifiedId)}
                                   <button
                                     type="button"
-                                    class:active={activeTab === 'playground' && entry.qualifiedId === selectedPlaygroundEntry?.qualifiedId}
+                                    class:smrt-workbench-host__active={activeTab === 'playground' && entry.qualifiedId === selectedPlaygroundEntry?.qualifiedId}
                                     aria-pressed={activeTab === 'playground' && entry.qualifiedId === selectedPlaygroundEntry?.qualifiedId}
                                     data-workbench-playground-entry={entry.qualifiedId}
                                     onclick={() => selectPlaygroundEntry(entry)}
@@ -865,13 +865,13 @@ function apiTabCount(
                             {/if}
                             {#if tab.id === 'routes' && selectedRoutes.length > 0}
                               <div
-                                class="route-entry-list"
+                                class="smrt-workbench-host__route-entry-list" data-smrt-part="list"
                                 data-testid="workbench-route-entry-list"
                               >
                                 {#each selectedRoutes as route (route.qualifiedId)}
                                   <button
                                     type="button"
-                                    class:active={activeTab === 'routes' && route.qualifiedId === selectedRoute?.qualifiedId}
+                                    class:smrt-workbench-host__active={activeTab === 'routes' && route.qualifiedId === selectedRoute?.qualifiedId}
                                     aria-pressed={activeTab === 'routes' && route.qualifiedId === selectedRoute?.qualifiedId}
                                     data-workbench-route-entry={route.qualifiedId}
                                     onclick={() => selectRoute(route)}
@@ -894,12 +894,12 @@ function apiTabCount(
       {/snippet}
 
       {#snippet systemPanel()}
-        <section class="workbench-system-panel" aria-label="Workbench system">
-          <div class="theme-controls">
+        <section class="smrt-workbench-host__system-panel" data-smrt-part="panel" aria-label="Workbench system">
+          <div class="smrt-workbench-host__theme-controls" data-smrt-part="controls">
             <ThemeSwitcher variant="select" label="Theme" />
             <ColorSchemeToggle />
           </div>
-          <dl class="workbench-system-summary">
+          <dl class="smrt-workbench-host__system-summary" data-smrt-part="summary">
             <div><dt>Scope</dt><dd>{project.scope.mode}</dd></div>
             <div><dt>Packages</dt><dd>{totals.packages}</dd></div>
             <div><dt>Routes</dt><dd>{totals.routes}</dd></div>
@@ -908,10 +908,10 @@ function apiTabCount(
         </section>
       {/snippet}
 
-      <div class="workbench-main">
-      <header class="main-header">
+      <div class="smrt-workbench-host__main" data-smrt-part="main">
+      <header class="smrt-workbench-host__main-header" data-smrt-part="header">
         <div>
-          <p class="eyebrow" data-testid="workbench-scope">{project.scope.projectRoot}</p>
+          <p class="smrt-workbench-host__eyebrow" data-smrt-part="label" data-testid="workbench-scope">{project.scope.projectRoot}</p>
           <h2>{activeTab === 'packages' && !isPackageScoped ? rootNavLabel : selectedPackage?.name || 'No package selected'}</h2>
           {#if activeTab === 'packages' && !isPackageScoped}
             <p>{project.scope.mode === 'consumer' ? 'Installed SMRT packages and local project surfaces discovered for this project.' : 'Workspace packages and package-owned surfaces discovered for this repository.'}</p>
@@ -919,7 +919,7 @@ function apiTabCount(
             <p>{selectedPackage.description}</p>
           {/if}
         </div>
-        <div class="scope-pills">
+        <div class="smrt-workbench-host__scope-pills" data-smrt-part="meta">
           <span>{project.scope.mode}</span>
           {#if scopedPackageName}
             <span>focused</span>
@@ -927,22 +927,22 @@ function apiTabCount(
         </div>
       </header>
 
-      <section class="tab-panel" data-testid={`workbench-tab-${activeTab}`}>
+      <section class="smrt-workbench-host__tab-panel" data-smrt-part="panel" data-testid={`workbench-tab-${activeTab}`}>
         {#if activeTab === 'packages'}
-          <div class="package-index" data-testid="workbench-package-index">
+          <div class="smrt-workbench-host__package-index" data-smrt-part="list" data-testid="workbench-package-index">
             {#each visiblePackages as packageSummary (packageSummary.name)}
               {@const stats = packageStats.get(packageSummary.name)}
               <button
                 type="button"
-                class="package-index-item"
-                class:selected={packageSummary.name === selectedPackage?.name}
+                class="smrt-workbench-host__index-item" data-smrt-part="item"
+                class:smrt-workbench-host__selected={packageSummary.name === selectedPackage?.name}
                 onclick={() => openPackage(packageSummary)}
               >
-                <span class="package-index-copy">
+                <span class="smrt-workbench-host__index-copy" data-smrt-part="body">
                   <strong>{packageSummary.name}</strong>
                   <span>{packageSummary.description || 'No package description published.'}</span>
                 </span>
-                <span class="package-index-meta">
+                <span class="smrt-workbench-host__index-meta" data-smrt-part="meta">
                   <span>{stats?.routes || 0} routes</span>
                   <span>{stats?.playground || 0} previews</span>
                   <span>{packageSummary.version || 'unversioned'}</span>
@@ -951,7 +951,7 @@ function apiTabCount(
             {/each}
           </div>
         {:else if activeTab === 'playground'}
-          <div class="playground-embed">
+          <div class="smrt-workbench-host__playground-embed" data-smrt-part="embed">
             <PlaygroundHost
               embedded={true}
               hideEntryList={true}
@@ -963,16 +963,16 @@ function apiTabCount(
           </div>
         {:else if activeTab === 'routes'}
           {#if selectedRoutes.length === 0}
-            <div class="empty-panel">
+            <div class="smrt-workbench-host__empty-panel" data-smrt-part="empty">
               <strong>No inline routes</strong>
               <p>This package has no workbench route module.</p>
             </div>
           {:else}
-            <div class="route-stage" data-testid="workbench-route-stage">
+            <div class="smrt-workbench-host__route-stage" data-smrt-part="stage" data-testid="workbench-route-stage">
               {#if selectedRoute && RouteComponent && routeComponentId === selectedRoute.qualifiedId}
-                <div class="route-meta">
+                <div class="smrt-workbench-host__route-meta" data-smrt-part="meta">
                   <div>
-                    <p class="eyebrow">{selectedRoute.packageName}</p>
+                    <p class="smrt-workbench-host__eyebrow" data-smrt-part="label">{selectedRoute.packageName}</p>
                     <h3>{selectedRoute.title}</h3>
                     {#if selectedRoute.description}
                       <p>{selectedRoute.description}</p>
@@ -980,13 +980,13 @@ function apiTabCount(
                   </div>
                   <code>{selectedRoute.defaultPath}</code>
                 </div>
-                <div class="route-render">
+                <div class="smrt-workbench-host__route-render" data-smrt-part="render">
                   <RouteComponent {...routeProps(selectedRoute)} />
                 </div>
               {:else if routeIsLoading}
-                <div class="empty-panel"><strong>Loading route</strong></div>
+                <div class="smrt-workbench-host__empty-panel" data-smrt-part="empty"><strong>Loading route</strong></div>
               {:else}
-                <div class="empty-panel">
+                <div class="smrt-workbench-host__empty-panel" data-smrt-part="empty">
                   <strong>Route unavailable</strong>
                   <p>{routeLoadError || 'The selected route could not be rendered.'}</p>
                 </div>
@@ -998,9 +998,9 @@ function apiTabCount(
           {@const restEndpoints = apiRestEndpoints(selectedPackage)}
           {@const cliCommands = apiCliCommands(selectedPackage)}
           {@const mcpTools = apiMcpTools(selectedPackage)}
-          <div class="api-layout">
+          <div class="smrt-workbench-host__api-layout" data-smrt-part="layout">
             <div
-              class="api-tab-list"
+              class="smrt-workbench-host__api-tabs" data-smrt-part="list"
               role="tablist"
               aria-label={`${selectedPackage.name} API surfaces`}
               data-testid="workbench-api-tabs"
@@ -1010,7 +1010,7 @@ function apiTabCount(
                   type="button"
                   role="tab"
                   aria-selected={activeApiTab === apiTab.id}
-                  class:active={activeApiTab === apiTab.id}
+                  class:smrt-workbench-host__active={activeApiTab === apiTab.id}
                   data-testid={`workbench-api-tab-${apiTab.id}`}
                   onclick={() => (activeApiTab = apiTab.id)}
                 >
@@ -1021,14 +1021,14 @@ function apiTabCount(
             </div>
 
             {#if activeApiTab === 'objects'}
-              <section class="api-tab-panel" data-testid="workbench-api-objects">
+              <section class="smrt-workbench-host__api-panel" data-smrt-part="panel" data-testid="workbench-api-objects">
                 <h3>Objects <span>{objects.length}</span></h3>
                 {#if objects.length === 0}
-                  <p class="muted">No object metadata found.</p>
+                  <p class="smrt-workbench-host__muted" data-smrt-part="note">No object metadata found.</p>
                 {:else}
-                  <div class="api-object-list">
+                  <div class="smrt-workbench-host__api-object-list" data-smrt-part="list">
                     {#each objects as object (object.qualifiedName || object.name)}
-                      <article class="api-object-doc">
+                      <article class="smrt-workbench-host__api-object-doc" data-smrt-part="doc">
                         <header>
                           <div>
                             <h4>{object.className || object.name}</h4>
@@ -1043,18 +1043,18 @@ function apiTabCount(
                         {#if object.description}
                           <MarkdownDocument content={object.description} />
                         {:else}
-                          <p class="muted">No TypeDoc summary found for this object.</p>
+                          <p class="smrt-workbench-host__muted" data-smrt-part="note">No TypeDoc summary found for this object.</p>
                         {/if}
                         {#if object.typedocPath}
-                          <p class="muted">TypeDoc: {relativePath(object.typedocPath)}</p>
+                          <p class="smrt-workbench-host__muted" data-smrt-part="note">TypeDoc: {relativePath(object.typedocPath)}</p>
                         {/if}
                         {#if object.sourcePath}
-                          <p class="muted">{relativePath(object.sourcePath)}</p>
+                          <p class="smrt-workbench-host__muted" data-smrt-part="note">{relativePath(object.sourcePath)}</p>
                         {/if}
                         {#if object.fields.length > 0}
                           <details>
                             <summary>{object.fields.length} fields</summary>
-                            <div class="field-table">
+                            <div class="smrt-workbench-host__field-table" data-smrt-part="table">
                               {#each object.fields as field (field.name)}
                                 <div>
                                   <strong>{field.name}</strong>
@@ -1077,12 +1077,12 @@ function apiTabCount(
                 {/if}
               </section>
             {:else if activeApiTab === 'rest'}
-              <section class="api-tab-panel" data-testid="workbench-api-rest">
+              <section class="smrt-workbench-host__api-panel" data-smrt-part="panel" data-testid="workbench-api-rest">
                 <h3>REST <span>{restEndpoints.length}</span></h3>
                 {#if restEndpoints.length === 0}
-                  <p class="muted">No REST endpoints exposed.</p>
+                  <p class="smrt-workbench-host__muted" data-smrt-part="note">No REST endpoints exposed.</p>
                 {:else}
-                  <div class="api-surface-list">
+                  <div class="smrt-workbench-host__api-surface-list" data-smrt-part="list">
                     {#each restEndpoints as endpoint, index (`rest:${index}:${endpoint.method}:${endpoint.path}:${endpoint.action}`)}
                       {@const copyText = `${endpoint.method} ${endpoint.path}`}
                       <div>
@@ -1090,7 +1090,7 @@ function apiTabCount(
                         <span>{endpoint.path}</span>
                         <p>{endpoint.description}</p>
                         {#if endpoint.parameters.length > 0}
-                          <div class="api-parameter-list" aria-label={`${endpoint.method} ${endpoint.path} parameters`}>
+                          <div class="smrt-workbench-host__api-parameter-list" data-smrt-part="list" aria-label={`${endpoint.method} ${endpoint.path} parameters`}>
                             {#each endpoint.parameters as parameter (`${endpoint.method}:${endpoint.path}:${parameter.location}:${parameter.name}`)}
                               <div>
                                 <code>{parameter.name}</code>
@@ -1111,18 +1111,18 @@ function apiTabCount(
                 {/if}
               </section>
             {:else if activeApiTab === 'mcp'}
-              <section class="api-tab-panel" data-testid="workbench-api-mcp">
+              <section class="smrt-workbench-host__api-panel" data-smrt-part="panel" data-testid="workbench-api-mcp">
                 <h3>MCP <span>{mcpTools.length}</span></h3>
                 {#if mcpTools.length === 0}
-                  <p class="muted">No MCP tools exposed.</p>
+                  <p class="smrt-workbench-host__muted" data-smrt-part="note">No MCP tools exposed.</p>
                 {:else}
-                  <div class="api-surface-list">
+                  <div class="smrt-workbench-host__api-surface-list" data-smrt-part="list">
                     {#each mcpTools as tool, index (`mcp:${index}:${tool.toolName}:${tool.action}`)}
                       <div>
                         <code>{tool.toolName}</code>
                         <span>{tool.description}</span>
                         {#if tool.parameters.length > 0}
-                          <div class="api-parameter-list" aria-label={`${tool.toolName} parameters`}>
+                          <div class="smrt-workbench-host__api-parameter-list" data-smrt-part="list" aria-label={`${tool.toolName} parameters`}>
                             {#each tool.parameters as parameter (`${tool.toolName}:${parameter.location}:${parameter.name}`)}
                               <div>
                                 <code>{parameter.name}</code>
@@ -1143,18 +1143,18 @@ function apiTabCount(
                 {/if}
               </section>
             {:else}
-              <section class="api-tab-panel" data-testid="workbench-api-cli">
+              <section class="smrt-workbench-host__api-panel" data-smrt-part="panel" data-testid="workbench-api-cli">
                 <h3>CLI <span>{cliCommands.length}</span></h3>
                 {#if cliCommands.length === 0}
-                  <p class="muted">No CLI commands exposed.</p>
+                  <p class="smrt-workbench-host__muted" data-smrt-part="note">No CLI commands exposed.</p>
                 {:else}
-                  <div class="api-surface-list">
+                  <div class="smrt-workbench-host__api-surface-list" data-smrt-part="list">
                     {#each cliCommands as command, index (`cli:${index}:${command.command}:${command.action}`)}
                       <div>
                         <code>{command.command}</code>
                         <span>{command.description}</span>
                         {#if command.parameters.length > 0}
-                          <div class="api-parameter-list" aria-label={`${command.command} parameters`}>
+                          <div class="smrt-workbench-host__api-parameter-list" data-smrt-part="list" aria-label={`${command.command} parameters`}>
                             {#each command.parameters as parameter (`${command.command}:${parameter.location}:${parameter.name}`)}
                               <div>
                                 <code>{parameter.name}</code>
@@ -1177,33 +1177,33 @@ function apiTabCount(
             {/if}
           </div>
         {:else if activeTab === 'docs' && selectedPackage}
-          <div class="document-list">
+          <div class="smrt-workbench-host__document-list" data-smrt-part="list">
             {#if selectedDocument}
-              <article class="document-view" data-testid="workbench-document-view">
+              <article class="smrt-workbench-host__document-view" data-smrt-part="view" data-testid="workbench-document-view">
                 <header>
                   <h3>{selectedDocument.title}</h3>
                   <button type="button" onclick={() => copyValue(selectedDocument.content || '')}>
                     {copiedValue === (selectedDocument.content || '') ? 'Copied' : 'Copy'}
                   </button>
                 </header>
-                <p class="muted">{relativePath(selectedDocument.path)}</p>
+                <p class="smrt-workbench-host__muted" data-smrt-part="note">{relativePath(selectedDocument.path)}</p>
                 <MarkdownDocument content={selectedDocument.content || ''} />
                 {#if selectedDocument.truncated}
-                  <p class="muted">Document truncated for workbench display.</p>
+                  <p class="smrt-workbench-host__muted" data-smrt-part="note">Document truncated for workbench display.</p>
                 {/if}
               </article>
             {:else}
-              <div class="empty-panel">
+              <div class="smrt-workbench-host__empty-panel" data-smrt-part="empty">
                 <strong>No documents</strong>
                 <p>This package has no README, AGENTS, CHANGELOG, or generated docs entry.</p>
               </div>
             {/if}
           </div>
         {:else if activeTab === 'knowledge' && selectedPackage}
-          <div class="surface-grid">
+          <div class="smrt-workbench-host__surface-grid" data-smrt-part="grid">
             <section>
               <h3>Knowledge Summary</h3>
-              <dl class="definition-list">
+              <dl class="smrt-workbench-host__definition-list" data-smrt-part="definitions">
                 <div><dt>Objects</dt><dd>{selectedPackage.knowledge.objectCount}</dd></div>
                 <div><dt>Relationships</dt><dd>{selectedPackage.knowledge.relationshipCount}</dd></div>
                 <div><dt>Prompts</dt><dd>{selectedPackage.knowledge.promptCount}</dd></div>
@@ -1213,24 +1213,24 @@ function apiTabCount(
             </section>
             <section>
               <h3>Sources</h3>
-              <ul class="file-list">
+              <ul class="smrt-workbench-host__file-list" data-smrt-part="list">
                 <li>{selectedPackage.knowledge.knowledgePath ? relativePath(selectedPackage.knowledge.knowledgePath) : 'smrt-knowledge.json missing'}</li>
                 <li>{selectedPackage.knowledge.manifestPath ? relativePath(selectedPackage.knowledge.manifestPath) : 'manifest missing'}</li>
               </ul>
             </section>
           </div>
         {:else if activeTab === 'specialist' && selectedPackage}
-          <div class="specialist-panel">
+          <div class="smrt-workbench-host__specialist-panel" data-smrt-part="panel">
             <section>
               <h3>Package Specialist Context</h3>
-              <p class="muted">{specialistUri(selectedPackage.name)}</p>
+              <p class="smrt-workbench-host__muted" data-smrt-part="note">{specialistUri(selectedPackage.name)}</p>
               <button type="button" onclick={() => copyValue(specialistUri(selectedPackage.name))}>
                 {copiedValue === specialistUri(selectedPackage.name) ? 'Copied' : 'Copy resource URI'}
               </button>
             </section>
             <section>
               <h3>Source List</h3>
-              <ul class="file-list">
+              <ul class="smrt-workbench-host__file-list" data-smrt-part="list">
                 {#each selectedPackage.docs as doc}
                   <li>{relativePath(doc.path)}</li>
                 {/each}
@@ -1244,7 +1244,7 @@ function apiTabCount(
             </section>
           </div>
         {:else if activeTab === 'scripts' && selectedPackage}
-          <div class="script-list">
+          <div class="smrt-workbench-host__script-list" data-smrt-part="list">
             {#each Object.entries(selectedPackage.scripts) as [scriptName, script]}
               {@const command = commandFor(selectedPackage, scriptName)}
               <div>
@@ -1272,10 +1272,10 @@ function apiTabCount(
             {/each}
           </div>
         {:else if activeTab === 'dependencies' && selectedPackage}
-          <div class="surface-grid">
+          <div class="smrt-workbench-host__surface-grid" data-smrt-part="grid">
             <section>
               <h3>SMRT Dependencies</h3>
-              <div class="chip-list">
+              <div class="smrt-workbench-host__chip-list" data-smrt-part="list">
                 {#each selectedPackage.smrtDependencies as dependency}
                   <code>{dependency}</code>
                 {/each}
@@ -1283,7 +1283,7 @@ function apiTabCount(
             </section>
             <section>
               <h3>SDK Dependencies</h3>
-              <div class="chip-list">
+              <div class="smrt-workbench-host__chip-list" data-smrt-part="list">
                 {#each selectedPackage.sdkDependencies as dependency}
                   <code>{dependency}</code>
                 {/each}
@@ -1291,7 +1291,7 @@ function apiTabCount(
             </section>
             <section>
               <h3>All Dependencies</h3>
-              <div class="dependency-list">
+              <div class="smrt-workbench-host__dependency-list" data-smrt-part="list">
                 {#each dependencyEntries(selectedPackage) as [dependency, version]}
                   <div><span>{dependency}</span><code>{version}</code></div>
                 {/each}
@@ -1299,13 +1299,13 @@ function apiTabCount(
             </section>
           </div>
         {:else if activeTab === 'migrations' && selectedPackage}
-          <div class="document-list">
+          <div class="smrt-workbench-host__document-list" data-smrt-part="list">
             <article>
               <h3>Migrations</h3>
               {#if selectedPackage.migrations.length === 0}
-                <p class="muted">No migration files found.</p>
+                <p class="smrt-workbench-host__muted" data-smrt-part="note">No migration files found.</p>
               {:else}
-                <ul class="file-list">
+                <ul class="smrt-workbench-host__file-list" data-smrt-part="list">
                   {#each selectedPackage.migrations as file}
                     <li>{relativePath(file)}</li>
                   {/each}
@@ -1314,9 +1314,9 @@ function apiTabCount(
             </article>
           </div>
         {:else if activeTab === 'examples' && selectedPackage}
-          <div class="document-list">
+          <div class="smrt-workbench-host__document-list" data-smrt-part="list">
             {#if selectedPackage.examples.length === 0}
-              <div class="empty-panel">
+              <div class="smrt-workbench-host__empty-panel" data-smrt-part="empty">
                 <strong>No examples found</strong>
                 <p>No examples or README code blocks were discovered.</p>
               </div>
@@ -1332,7 +1332,7 @@ function apiTabCount(
                     {/if}
                   </header>
                   {#if example.path}
-                    <p class="muted">{relativePath(example.path)}</p>
+                    <p class="smrt-workbench-host__muted" data-smrt-part="note">{relativePath(example.path)}</p>
                   {/if}
                   {#if example.code}
                     <pre>{example.code}</pre>
@@ -1350,157 +1350,112 @@ function apiTabCount(
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
+@layer smrt.structure {
   :global(body) {
     margin: 0;
     min-height: 100svh;
   }
-
-  .workbench-shell-root {
+  .smrt-workbench-host__root {
     min-height: 100svh;
   }
-
-  .workbench-shell-mark {
+  .smrt-workbench-host__shell-mark {
     display: grid;
     place-items: center;
     min-inline-size: 0;
   }
-
-  .workbench-shell-mark svg {
+  .smrt-workbench-host__shell-mark svg {
     inline-size: 1.35rem;
     block-size: 1.35rem;
   }
-
-  .workbench-app-panel,
-  .workbench-nav-shell,
-  .workbench-system-panel,
-  .search,
-  .package-list,
-  .section-list,
-  .workbench-main,
-  .surface-grid,
-  .document-list,
-  .specialist-panel {
+  .smrt-workbench-host__app-panel,
+  .smrt-workbench-host__nav-shell,
+  .smrt-workbench-host__system-panel,
+  .smrt-workbench-host__search,
+  .smrt-workbench-host__package-list,
+  .smrt-workbench-host__section-list,
+  .smrt-workbench-host__main,
+  .smrt-workbench-host__surface-grid,
+  .smrt-workbench-host__document-list,
+  .smrt-workbench-host__specialist-panel {
     display: grid;
     gap: 0.75rem;
   }
-
-  .workbench-brand h1,
-  .workbench-app-panel h2,
-  .main-header h2,
+  .smrt-workbench-host__brand h1,
+  .smrt-workbench-host__app-panel h2,
+  .smrt-workbench-host__main-header h2,
   h3 {
     margin: 0;
   }
-
-  .workbench-brand p,
-  .workbench-app-panel p,
-  .main-header p,
-  .empty-panel p,
-  .muted {
+  .smrt-workbench-host__brand p,
+  .smrt-workbench-host__app-panel p,
+  .smrt-workbench-host__main-header p,
+  .smrt-workbench-host__empty-panel p,
+  .smrt-workbench-host__muted {
     margin: 0;
-    color: var(--smrt-color-on-surface-variant);
-    line-height: 1.5;
   }
-
-  .workbench-nav-header {
+  .smrt-workbench-host__nav-header {
     display: flex;
     gap: 0.75rem;
     align-items: start;
     justify-content: space-between;
   }
-
-  .workbench-brand {
+  .smrt-workbench-host__brand {
     display: grid;
     gap: 0.15rem;
     min-width: 0;
   }
-
-  .brand-badge {
+  .smrt-workbench-host__badge {
     display: inline-flex;
     gap: 0.45rem;
     align-items: center;
   }
-
-  .brand-mark {
+  .smrt-workbench-host__brand-mark {
     width: 1rem;
     height: 1rem;
     display: block;
   }
-
-  .workbench-nav-toggle {
+  .smrt-workbench-host__nav-toggle {
     display: inline-grid;
     flex: 0 0 auto;
     width: 2rem;
     height: 2rem;
     place-items: center;
     cursor: pointer;
-    border: var(--smrt-hairline);
-    border-radius: 6px;
-    background: var(--smrt-color-surface-container-low);
-    color: var(--smrt-color-on-surface);
   }
-
-  .workbench-nav-toggle:hover {
-    border-color: var(--smrt-color-primary);
-    background: color-mix(in srgb, var(--smrt-color-primary) 12%, transparent);
-  }
-
-  .workbench-nav-toggle svg {
+  .smrt-workbench-host__nav-toggle svg {
     width: 1rem;
     height: 1rem;
   }
-
-  .eyebrow {
+  .smrt-workbench-host__eyebrow {
     margin: 0 0 0.35rem;
-    font-size: 0.72rem;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--smrt-color-primary);
   }
-
-  .theme-controls {
+  .smrt-workbench-host__theme-controls {
     display: flex;
     align-items: flex-end;
     gap: 0.55rem;
   }
-
-  .theme-controls :global([data-smrt-component="ThemeSwitcher"]) {
+  .smrt-workbench-host__theme-controls :global([data-smrt-component="ThemeSwitcher"]) {
     flex: 1;
   }
-
-  .workbench-scope-metrics,
-  .workbench-system-summary {
+  .smrt-workbench-host__scope-metrics,
+  .smrt-workbench-host__system-summary {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 0.75rem;
     margin: 0;
   }
-
-  .workbench-system-summary {
+  .smrt-workbench-host__system-summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-
-  .workbench-scope-metrics div,
-  .workbench-system-summary div {
-    border: var(--smrt-hairline);
-    border-radius: 8px;
-    background: var(--smrt-color-surface-container-low);
+  .smrt-workbench-host__scope-metrics div,
+  .smrt-workbench-host__system-summary div {
     padding: 0.75rem;
   }
-
-  .workbench-scope-metrics dt,
-  .workbench-system-summary dt {
-    color: var(--smrt-color-on-surface-variant);
-    font-size: 0.78rem;
-  }
-
-  .workbench-scope-metrics dd,
-  .workbench-system-summary dd {
+  .smrt-workbench-host__scope-metrics dd,
+  .smrt-workbench-host__system-summary dd {
     margin: 0.2rem 0 0;
-    font-weight: 700;
   }
-
-  .nav-tree {
+  .smrt-workbench-host__nav-tree {
     display: grid;
     align-content: start;
     gap: 0.75rem;
@@ -1508,565 +1463,598 @@ function apiTabCount(
     overflow: auto;
     padding-right: 0.15rem;
   }
-
-  .search span {
-    color: var(--smrt-color-on-surface-variant);
-    font-size: 0.82rem;
-  }
-
-  .search input {
+  .smrt-workbench-host__search input {
     width: 100%;
     box-sizing: border-box;
-    border: var(--smrt-hairline);
-    border-radius: 6px;
-    background: var(--smrt-color-surface-container-high);
-    color: inherit;
     padding: 0.72rem 0.8rem;
   }
-
-  button {
-    font: inherit;
-  }
-
-  .root-nav,
-  .package-node > button {
+  .smrt-workbench-host__root-nav,
+  .smrt-workbench-host__package-node > button {
     display: grid;
     gap: 0.2rem;
     width: 100%;
-    text-align: left;
     cursor: pointer;
-    border-radius: 6px;
-    border: 1px solid transparent;
     padding: 0.75rem 0.85rem;
   }
-
-  .root-nav,
-  .package-node > button {
-    background: var(--smrt-color-surface-container-low);
-    color: inherit;
-  }
-
-  .root-nav.active,
-  .root-nav:hover,
-  .package-node > button.selected,
-  .package-node > button:hover {
-    border-color: var(--smrt-color-primary);
-    background: color-mix(in srgb, var(--smrt-color-primary) 16%, transparent);
-  }
-
-  .root-nav span,
-  .package-node > button span {
-    color: var(--smrt-color-on-surface-variant);
-    font-size: 0.82rem;
-  }
-
-  .package-node {
+  .smrt-workbench-host__package-node {
     display: grid;
     gap: 0.45rem;
   }
-
-  .section-list {
+  .smrt-workbench-host__section-list {
     padding-left: 0.65rem;
-    border-left: var(--smrt-hairline);
     margin-left: 0.65rem;
   }
-
-  .section-node,
-  .playground-entry-list,
-  .route-entry-list,
-  .document-entry-list,
-  .api-object-list,
-  .api-surface-list {
+  .smrt-workbench-host__section-node,
+  .smrt-workbench-host__playground-entry-list,
+  .smrt-workbench-host__route-entry-list,
+  .smrt-workbench-host__document-entry-list,
+  .smrt-workbench-host__api-object-list,
+  .smrt-workbench-host__api-surface-list {
     display: grid;
     gap: 0.25rem;
   }
-
-  .section-list button {
+  .smrt-workbench-host__section-list button {
     cursor: pointer;
-    border: 0;
-    border-radius: 6px;
-    background: transparent;
-    color: var(--smrt-color-on-surface-variant);
     padding: 0.42rem 0.55rem;
-    text-align: left;
   }
-
-  .playground-entry-list,
-  .route-entry-list {
+  .smrt-workbench-host__playground-entry-list,
+  .smrt-workbench-host__route-entry-list {
     padding-left: 0.65rem;
   }
-
-  .playground-entry-list button,
-  .route-entry-list button,
-  .document-entry-list button {
+  .smrt-workbench-host__playground-entry-list button,
+  .smrt-workbench-host__route-entry-list button,
+  .smrt-workbench-host__document-entry-list button {
     padding: 0.32rem 0.5rem;
-    font-size: 0.82rem;
   }
-
-  .playground-entry-list button span,
-  .route-entry-list button span,
-  .document-entry-list button span {
+  .smrt-workbench-host__playground-entry-list button span,
+  .smrt-workbench-host__route-entry-list button span,
+  .smrt-workbench-host__document-entry-list button span {
     display: block;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-
-  .section-list button.active,
-  .section-list button:hover {
-    color: var(--smrt-color-on-surface);
-    background: var(--smrt-color-surface-container-high);
-  }
-
-  .workbench-main {
+  .smrt-workbench-host__main {
     grid-template-columns: minmax(0, 1fr);
     align-content: start;
     padding: 1rem;
     gap: 1rem;
   }
-
-  .main-header {
+  .smrt-workbench-host__main-header {
     display: flex;
     justify-content: space-between;
     gap: 1rem;
     align-items: start;
-    border-bottom: var(--smrt-hairline);
     padding-bottom: 1rem;
   }
-
-  .main-header > div {
+  .smrt-workbench-host__main-header > div {
     min-width: 0;
     overflow-wrap: anywhere;
   }
-
-  .scope-pills,
-  .chip-list {
+  .smrt-workbench-host__scope-pills,
+  .smrt-workbench-host__chip-list {
     display: flex;
     gap: 0.5rem;
     flex-wrap: wrap;
   }
-
-  .scope-pills span,
-  .chip-list code {
-    border: var(--smrt-hairline);
-    border-radius: 999px;
+  .smrt-workbench-host__scope-pills span,
+  .smrt-workbench-host__chip-list code {
     padding: 0.24rem 0.55rem;
-    background: var(--smrt-color-surface-container-low);
-    font-size: 0.78rem;
   }
-
-  .tab-panel {
+  .smrt-workbench-host__tab-panel {
     min-height: 38rem;
   }
-
-  .surface-grid section,
-  .document-list article,
-  .specialist-panel section,
-  .empty-panel,
-  .route-stage,
-  .script-list > div {
-    border: var(--smrt-hairline);
-    border-radius: 8px;
-    background: var(--smrt-color-surface);
+  .smrt-workbench-host__surface-grid section,
+  .smrt-workbench-host__document-list article,
+  .smrt-workbench-host__specialist-panel section,
+  .smrt-workbench-host__empty-panel,
+  .smrt-workbench-host__route-stage,
+  .smrt-workbench-host__script-list > div {
     padding: 1rem;
   }
-
-  .surface-grid {
+  .smrt-workbench-host__surface-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-
-  .surface-grid ul,
-  .file-list {
+  .smrt-workbench-host__surface-grid ul,
+  .smrt-workbench-host__file-list {
     margin: 0.75rem 0 0;
     padding-left: 1.1rem;
-    line-height: 1.65;
   }
-
-  .package-index,
-  .script-list,
-  .dependency-list {
+  .smrt-workbench-host__package-index,
+  .smrt-workbench-host__script-list,
+  .smrt-workbench-host__dependency-list {
     display: grid;
     gap: 0.55rem;
   }
-
-  .package-index {
+  .smrt-workbench-host__package-index {
     gap: 0.7rem;
   }
-
-  .package-index-item {
+  .smrt-workbench-host__index-item {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
     gap: 1rem;
     width: 100%;
     cursor: pointer;
-    border: var(--smrt-hairline);
-    border-radius: 8px;
-    background: var(--smrt-color-surface);
-    color: inherit;
     padding: 0.9rem 1rem;
-    text-align: left;
   }
-
-  .package-index-item.selected,
-  .package-index-item:hover {
-    border-color: var(--smrt-color-primary);
-    background: color-mix(in srgb, var(--smrt-color-primary) 10%, var(--smrt-color-surface));
-  }
-
-  .package-index-copy {
+  .smrt-workbench-host__index-copy {
     display: grid;
     gap: 0.28rem;
     min-width: 0;
   }
-
-  .package-index-copy > span {
-    color: var(--smrt-color-on-surface-variant);
-    line-height: 1.45;
-  }
-
-  .package-index-meta {
+  .smrt-workbench-host__index-meta {
     display: flex;
     gap: 0.45rem;
     flex-wrap: wrap;
     justify-content: flex-end;
   }
-
-  .package-index-meta span {
-    border: var(--smrt-hairline);
-    border-radius: 999px;
+  .smrt-workbench-host__index-meta span {
     padding: 0.22rem 0.5rem;
-    background: var(--smrt-color-surface-container-low);
-    color: var(--smrt-color-on-surface-variant);
-    font-size: 0.76rem;
   }
-
-  .playground-embed {
+  .smrt-workbench-host__playground-embed {
     min-width: 0;
   }
-
-  .route-stage {
+  .smrt-workbench-host__route-stage {
     min-width: 0;
     overflow: hidden;
   }
-
-  .route-meta {
+  .smrt-workbench-host__route-meta {
     display: flex;
     justify-content: space-between;
     gap: 1rem;
     align-items: start;
     margin-bottom: 1rem;
   }
-
-  .route-render {
+  .smrt-workbench-host__route-render {
     overflow: auto;
     max-height: 72vh;
   }
-
-  .api-layout {
+  .smrt-workbench-host__api-layout {
     display: grid;
     gap: 1rem;
     align-items: start;
   }
-
-  .api-tab-list {
+  .smrt-workbench-host__api-tabs {
     display: flex;
     flex-wrap: wrap;
     gap: 0.5rem;
     align-items: center;
-    border-bottom: var(--smrt-hairline);
     padding-bottom: 0.75rem;
   }
-
-  .api-tab-list button {
+  .smrt-workbench-host__api-tabs button {
     display: inline-flex;
     cursor: pointer;
     align-items: center;
     gap: 0.45rem;
-    border: var(--smrt-hairline);
-    border-radius: 999px;
-    background: var(--smrt-color-surface-container-low);
-    color: var(--smrt-color-on-surface-variant);
     padding: 0.42rem 0.75rem;
   }
-
-  .api-tab-list button.active,
-  .api-tab-list button:hover {
-    border-color: var(--smrt-color-primary);
-    background: color-mix(in srgb, var(--smrt-color-primary) 12%, var(--smrt-color-surface));
-    color: var(--smrt-color-on-surface);
-  }
-
-  .api-tab-list strong {
-    color: inherit;
-    font-size: 0.78rem;
-    font-weight: 700;
-  }
-
-  .api-tab-panel {
+  .smrt-workbench-host__api-panel {
     display: grid;
     gap: 1rem;
   }
-
-  .api-layout section {
-    border: var(--smrt-hairline);
-    border-radius: 8px;
-    background: var(--smrt-color-surface);
+  .smrt-workbench-host__api-layout section {
     padding: 1rem;
     scroll-margin-top: 1rem;
   }
-
-  .api-layout h3 span {
+  .smrt-workbench-host__api-layout h3 span {
     margin-left: 0.35rem;
-    color: var(--smrt-color-on-surface-variant);
-    font-size: 0.78rem;
-    font-weight: 500;
   }
-
-  .api-object-list {
+  .smrt-workbench-host__api-object-list {
     gap: 0.75rem;
     margin-top: 0.75rem;
   }
-
-  .api-surface-list {
+  .smrt-workbench-host__api-surface-list {
     gap: 0.55rem;
     margin-top: 0.75rem;
   }
-
-  .api-object-doc {
+  .smrt-workbench-host__api-object-doc {
     display: grid;
     gap: 0.75rem;
-    border: var(--smrt-hairline);
-    border-radius: 8px;
-    background: var(--smrt-color-surface-container-low);
     padding: 0.85rem;
   }
-
-  .api-object-doc header {
+  .smrt-workbench-host__api-object-doc header {
     display: flex;
     justify-content: space-between;
     gap: 1rem;
     align-items: start;
   }
-
-  .api-object-doc h4 {
+  .smrt-workbench-host__api-object-doc h4 {
     margin: 0 0 0.35rem;
   }
-
-  .api-object-doc code,
-  .field-table code {
+  .smrt-workbench-host__api-object-doc code,
+  .smrt-workbench-host__field-table code {
     word-break: break-word;
   }
-
-  .api-object-doc header > span,
-  .field-table span {
-    color: var(--smrt-color-on-surface-variant);
-    font-size: 0.78rem;
-  }
-
-  .api-object-doc details {
-    border-top: var(--smrt-hairline);
+  .smrt-workbench-host__api-object-doc details {
     padding-top: 0.65rem;
   }
-
-  .api-object-doc summary {
+  .smrt-workbench-host__api-object-doc summary {
     cursor: pointer;
-    color: var(--smrt-color-on-surface);
   }
-
-  .api-surface-list > div {
+  .smrt-workbench-host__api-surface-list > div {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr) auto;
     gap: 0.45rem 0.75rem;
     align-items: start;
-    border-bottom: var(--smrt-hairline);
     padding: 0.55rem 0;
   }
-
-  .api-surface-list code {
+  .smrt-workbench-host__api-surface-list code {
     word-break: break-word;
   }
-
-  .api-surface-list span {
+  .smrt-workbench-host__api-surface-list span {
     min-width: 0;
     overflow-wrap: anywhere;
   }
-
-  .api-surface-list > div > p {
+  .smrt-workbench-host__api-surface-list > div > p {
     grid-column: 2 / 3;
     margin: 0;
-    color: var(--smrt-color-on-surface-variant);
-    line-height: 1.4;
   }
-
-  .api-surface-list button {
+  .smrt-workbench-host__api-surface-list button {
     grid-column: 3 / 4;
     grid-row: 1 / 2;
     justify-self: end;
     cursor: pointer;
-    border: var(--smrt-hairline);
-    border-radius: 6px;
-    background: var(--smrt-color-surface-container-low);
-    color: var(--smrt-color-on-surface);
     padding: 0.32rem 0.55rem;
   }
-
-  .api-parameter-list {
+  .smrt-workbench-host__api-parameter-list {
     grid-column: 1 / -1;
     display: grid;
     gap: 0.35rem;
-    border-left: 2px solid var(--smrt-color-outline-variant);
     margin-top: 0.15rem;
     padding: 0.45rem 0 0.2rem 0.65rem;
   }
-
-  .api-parameter-list > div {
+  .smrt-workbench-host__api-parameter-list > div {
     display: grid;
     grid-template-columns: minmax(7rem, auto) minmax(0, 1fr);
     gap: 0.2rem 0.65rem;
     align-items: baseline;
   }
-
-  .api-parameter-list span {
-    color: var(--smrt-color-on-surface-variant);
-    font-size: 0.78rem;
-  }
-
-  .api-parameter-list p {
+  .smrt-workbench-host__api-parameter-list p {
     grid-column: 1 / -1;
     margin: 0;
-    color: var(--smrt-color-on-surface-variant);
-    font-size: 0.78rem;
-    line-height: 1.35;
   }
-
-  .field-table {
+  .smrt-workbench-host__field-table {
     display: grid;
     gap: 0.5rem;
     margin-top: 0.65rem;
   }
-
-  .field-table > div {
+  .smrt-workbench-host__field-table > div {
     display: grid;
     grid-template-columns: minmax(8rem, 1fr) minmax(6rem, auto) auto auto;
     gap: 0.45rem 0.7rem;
     align-items: start;
-    border-bottom: var(--smrt-hairline);
     padding-bottom: 0.5rem;
   }
-
-  .field-table p {
+  .smrt-workbench-host__field-table p {
     grid-column: 1 / -1;
     margin: 0;
-    color: var(--smrt-color-on-surface-variant);
-    line-height: 1.45;
   }
-
-  .document-list pre {
+  .smrt-workbench-host__document-list pre {
     max-height: 30rem;
     overflow: auto;
-    border: var(--smrt-hairline);
-    border-radius: 6px;
     padding: 0.75rem;
-    background: var(--smrt-color-surface-container-lowest);
-    color: var(--smrt-color-on-surface);
     white-space: pre-wrap;
   }
-
-  .document-list header,
-  .script-list > div {
+  .smrt-workbench-host__document-list header,
+  .smrt-workbench-host__script-list > div {
     display: flex;
     justify-content: space-between;
     gap: 1rem;
     align-items: start;
   }
-
-  .document-list button,
-  .script-list button,
-  .specialist-panel button {
+  .smrt-workbench-host__document-list button,
+  .smrt-workbench-host__script-list button,
+  .smrt-workbench-host__specialist-panel button {
     cursor: pointer;
-    border: 1px solid var(--smrt-color-primary);
-    border-radius: 6px;
-    background: var(--smrt-color-primary-container);
-    color: var(--smrt-color-on-primary-container);
     padding: 0.45rem 0.7rem;
   }
-
-  .script-list code,
-  .dependency-list code,
-  .route-meta code {
+  .smrt-workbench-host__script-list code,
+  .smrt-workbench-host__dependency-list code,
+  .smrt-workbench-host__route-meta code {
     word-break: break-word;
   }
-
-  .dependency-list > div {
+  .smrt-workbench-host__dependency-list > div {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     gap: 1rem;
-    border-bottom: var(--smrt-hairline);
     padding: 0.45rem 0;
   }
-
-  .definition-list {
+  .smrt-workbench-host__definition-list {
     display: grid;
     gap: 0.45rem;
     margin: 0.75rem 0 0;
   }
-
-  .definition-list div {
+  .smrt-workbench-host__definition-list div {
     display: flex;
     justify-content: space-between;
     gap: 1rem;
-    border-bottom: var(--smrt-hairline);
     padding-bottom: 0.35rem;
   }
-
-  .definition-list dt {
-    color: var(--smrt-color-on-surface-variant);
-  }
-
-  .definition-list dd {
+  .smrt-workbench-host__definition-list dd {
     margin: 0;
-    font-weight: 700;
   }
-
   @media (max-width: 960px) {
-    .workbench-scope-metrics,
-    .workbench-system-summary,
-    .surface-grid,
-    .api-layout {
+    .smrt-workbench-host__scope-metrics,
+    .smrt-workbench-host__system-summary,
+    .smrt-workbench-host__surface-grid,
+    .smrt-workbench-host__api-layout {
       grid-template-columns: 1fr;
     }
-
-    .package-index-item {
+    .smrt-workbench-host__index-item {
       grid-template-columns: 1fr;
     }
-
-    .package-index-meta {
+    .smrt-workbench-host__index-meta {
       justify-content: flex-start;
     }
-
-    .field-table > div {
+    .smrt-workbench-host__field-table > div {
       grid-template-columns: 1fr;
     }
-
-    .api-surface-list > div {
+    .smrt-workbench-host__api-surface-list > div {
       grid-template-columns: 1fr;
     }
-
-    .api-surface-list > div > p {
+    .smrt-workbench-host__api-surface-list > div > p {
       grid-column: auto;
     }
-
-    .api-surface-list button {
+    .smrt-workbench-host__api-surface-list button {
       grid-column: auto;
       grid-row: auto;
       justify-self: start;
     }
-
-    .api-parameter-list,
-    .api-parameter-list > div {
+    .smrt-workbench-host__api-parameter-list,
+    .smrt-workbench-host__api-parameter-list > div {
       grid-template-columns: 1fr;
     }
   }
 }
+
+@layer smrt.theme {
+  .smrt-workbench-host__brand p,
+  .smrt-workbench-host__app-panel p,
+  .smrt-workbench-host__main-header p,
+  .smrt-workbench-host__empty-panel p,
+  .smrt-workbench-host__muted {
+    color: var(--smrt-color-on-surface-variant);
+    line-height: 1.5;
+  }
+  .smrt-workbench-host__nav-toggle {
+    border: var(--smrt-hairline);
+    border-radius: 6px;
+    background: var(--smrt-color-surface-container-low);
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-workbench-host__nav-toggle:hover {
+    border-color: var(--smrt-color-primary);
+    background: color-mix(in srgb, var(--smrt-color-primary) 12%, transparent);
+  }
+  .smrt-workbench-host__eyebrow {
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--smrt-color-primary);
+  }
+  .smrt-workbench-host__scope-metrics div,
+  .smrt-workbench-host__system-summary div {
+    border: var(--smrt-hairline);
+    border-radius: 8px;
+    background: var(--smrt-color-surface-container-low);
+  }
+  .smrt-workbench-host__scope-metrics dt,
+  .smrt-workbench-host__system-summary dt {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: 0.78rem;
+  }
+  .smrt-workbench-host__scope-metrics dd,
+  .smrt-workbench-host__system-summary dd {
+    font-weight: 700;
+  }
+  .smrt-workbench-host__search span {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: 0.82rem;
+  }
+  .smrt-workbench-host__search input {
+    border: var(--smrt-hairline);
+    border-radius: 6px;
+    background: var(--smrt-color-surface-container-high);
+    color: inherit;
+  }
+  button {
+    font: inherit;
+  }
+  .smrt-workbench-host__root-nav,
+  .smrt-workbench-host__package-node > button {
+    text-align: left;
+    border-radius: 6px;
+    border: 1px solid transparent;
+  }
+  .smrt-workbench-host__root-nav,
+  .smrt-workbench-host__package-node > button {
+    background: var(--smrt-color-surface-container-low);
+    color: inherit;
+  }
+  .smrt-workbench-host__root-nav.smrt-workbench-host__active,
+  .smrt-workbench-host__root-nav:hover,
+  .smrt-workbench-host__package-node > button.smrt-workbench-host__selected,
+  .smrt-workbench-host__package-node > button:hover {
+    border-color: var(--smrt-color-primary);
+    background: color-mix(in srgb, var(--smrt-color-primary) 16%, transparent);
+  }
+  .smrt-workbench-host__root-nav span,
+  .smrt-workbench-host__package-node > button span {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: 0.82rem;
+  }
+  .smrt-workbench-host__section-list {
+    border-left: var(--smrt-hairline);
+  }
+  .smrt-workbench-host__section-list button {
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--smrt-color-on-surface-variant);
+    text-align: left;
+  }
+  .smrt-workbench-host__playground-entry-list button,
+  .smrt-workbench-host__route-entry-list button,
+  .smrt-workbench-host__document-entry-list button {
+    font-size: 0.82rem;
+  }
+  .smrt-workbench-host__section-list button.smrt-workbench-host__active,
+  .smrt-workbench-host__section-list button:hover {
+    color: var(--smrt-color-on-surface);
+    background: var(--smrt-color-surface-container-high);
+  }
+  .smrt-workbench-host__main-header {
+    border-bottom: var(--smrt-hairline);
+  }
+  .smrt-workbench-host__scope-pills span,
+  .smrt-workbench-host__chip-list code {
+    border: var(--smrt-hairline);
+    border-radius: 999px;
+    background: var(--smrt-color-surface-container-low);
+    font-size: 0.78rem;
+  }
+  .smrt-workbench-host__surface-grid section,
+  .smrt-workbench-host__document-list article,
+  .smrt-workbench-host__specialist-panel section,
+  .smrt-workbench-host__empty-panel,
+  .smrt-workbench-host__route-stage,
+  .smrt-workbench-host__script-list > div {
+    border: var(--smrt-hairline);
+    border-radius: 8px;
+    background: var(--smrt-color-surface);
+  }
+  .smrt-workbench-host__surface-grid ul,
+  .smrt-workbench-host__file-list {
+    line-height: 1.65;
+  }
+  .smrt-workbench-host__index-item {
+    border: var(--smrt-hairline);
+    border-radius: 8px;
+    background: var(--smrt-color-surface);
+    color: inherit;
+    text-align: left;
+  }
+  .smrt-workbench-host__index-item.smrt-workbench-host__selected,
+  .smrt-workbench-host__index-item:hover {
+    border-color: var(--smrt-color-primary);
+    background: color-mix(in srgb, var(--smrt-color-primary) 10%, var(--smrt-color-surface));
+  }
+  .smrt-workbench-host__index-copy > span {
+    color: var(--smrt-color-on-surface-variant);
+    line-height: 1.45;
+  }
+  .smrt-workbench-host__index-meta span {
+    border: var(--smrt-hairline);
+    border-radius: 999px;
+    background: var(--smrt-color-surface-container-low);
+    color: var(--smrt-color-on-surface-variant);
+    font-size: 0.76rem;
+  }
+  .smrt-workbench-host__api-tabs {
+    border-bottom: var(--smrt-hairline);
+  }
+  .smrt-workbench-host__api-tabs button {
+    border: var(--smrt-hairline);
+    border-radius: 999px;
+    background: var(--smrt-color-surface-container-low);
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-workbench-host__api-tabs button.smrt-workbench-host__active,
+  .smrt-workbench-host__api-tabs button:hover {
+    border-color: var(--smrt-color-primary);
+    background: color-mix(in srgb, var(--smrt-color-primary) 12%, var(--smrt-color-surface));
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-workbench-host__api-tabs strong {
+    color: inherit;
+    font-size: 0.78rem;
+    font-weight: 700;
+  }
+  .smrt-workbench-host__api-layout section {
+    border: var(--smrt-hairline);
+    border-radius: 8px;
+    background: var(--smrt-color-surface);
+  }
+  .smrt-workbench-host__api-layout h3 span {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: 0.78rem;
+    font-weight: 500;
+  }
+  .smrt-workbench-host__api-object-doc {
+    border: var(--smrt-hairline);
+    border-radius: 8px;
+    background: var(--smrt-color-surface-container-low);
+  }
+  .smrt-workbench-host__api-object-doc header > span,
+  .smrt-workbench-host__field-table span {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: 0.78rem;
+  }
+  .smrt-workbench-host__api-object-doc details {
+    border-top: var(--smrt-hairline);
+  }
+  .smrt-workbench-host__api-object-doc summary {
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-workbench-host__api-surface-list > div {
+    border-bottom: var(--smrt-hairline);
+  }
+  .smrt-workbench-host__api-surface-list > div > p {
+    color: var(--smrt-color-on-surface-variant);
+    line-height: 1.4;
+  }
+  .smrt-workbench-host__api-surface-list button {
+    border: var(--smrt-hairline);
+    border-radius: 6px;
+    background: var(--smrt-color-surface-container-low);
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-workbench-host__api-parameter-list {
+    border-left: 2px solid var(--smrt-color-outline-variant);
+  }
+  .smrt-workbench-host__api-parameter-list span {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: 0.78rem;
+  }
+  .smrt-workbench-host__api-parameter-list p {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: 0.78rem;
+    line-height: 1.35;
+  }
+  .smrt-workbench-host__field-table > div {
+    border-bottom: var(--smrt-hairline);
+  }
+  .smrt-workbench-host__field-table p {
+    color: var(--smrt-color-on-surface-variant);
+    line-height: 1.45;
+  }
+  .smrt-workbench-host__document-list pre {
+    border: var(--smrt-hairline);
+    border-radius: 6px;
+    background: var(--smrt-color-surface-container-lowest);
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-workbench-host__document-list button,
+  .smrt-workbench-host__script-list button,
+  .smrt-workbench-host__specialist-panel button {
+    border: 1px solid var(--smrt-color-primary);
+    border-radius: 6px;
+    background: var(--smrt-color-primary-container);
+    color: var(--smrt-color-on-primary-container);
+  }
+  .smrt-workbench-host__dependency-list > div {
+    border-bottom: var(--smrt-hairline);
+  }
+  .smrt-workbench-host__definition-list div {
+    border-bottom: var(--smrt-hairline);
+  }
+  .smrt-workbench-host__definition-list dt {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-workbench-host__definition-list dd {
+    font-weight: 700;
+  }
+}
+
 </style>

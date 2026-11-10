@@ -133,11 +133,11 @@ function handleCronPreset(preset: string) {
     <h2>{editMode ? 'Edit Schedule' : 'Create Schedule'}</h2>
   {/snippet}
 
-  <div class="schedule-form-shell">
+  <div class="smrt-agent-schedule-form__root">
   <Form class="schedule-form" onsubmit={handleSubmit}>
-    <div class="form-grid">
+    <div class="smrt-agent-schedule-form__grid" data-smrt-part="grid">
       <!-- Agent Type -->
-      <div class="form-field">
+      <div class="smrt-agent-schedule-form__field" data-smrt-part="field">
         <label for="agentType">{t(M['agents.schedule_form.agent_type'])}</label>
         {#if agentTypes.length > 0}
           <Select id="agentType" bind:value={agentType} required disabled={loading}>
@@ -159,7 +159,7 @@ function handleCronPreset(preset: string) {
       </div>
 
       <!-- Agent ID (optional) -->
-      <div class="form-field">
+      <div class="smrt-agent-schedule-form__field" data-smrt-part="field">
         <label for="agentId">{t(M['agents.schedule_form.agent_id'])}</label>
         <Input
           type="text"
@@ -172,7 +172,7 @@ function handleCronPreset(preset: string) {
       </div>
 
       <!-- Method -->
-      <div class="form-field">
+      <div class="smrt-agent-schedule-form__field" data-smrt-part="field">
         <label for="method">Method</label>
         <Input
           type="text"
@@ -185,7 +185,7 @@ function handleCronPreset(preset: string) {
       </div>
 
       <!-- Cron Expression -->
-      <div class="form-field form-field--full">
+      <div class="smrt-agent-schedule-form__field smrt-agent-schedule-form__field-full" data-smrt-part="field">
         <label for="cron">{t(M['agents.schedule_form.cron_schedule'])}</label>
         <Input
           type="text"
@@ -195,7 +195,7 @@ function handleCronPreset(preset: string) {
           required
           disabled={loading}
         />
-        <div class="cron-presets">
+        <div class="smrt-agent-schedule-form__presets" data-smrt-part="presets">
           {#each cronPresets as preset}
             <Button
               variant="secondary"
@@ -211,7 +211,7 @@ function handleCronPreset(preset: string) {
       </div>
 
       <!-- Timezone -->
-      <div class="form-field">
+      <div class="smrt-agent-schedule-form__field" data-smrt-part="field">
         <label for="timezone">Timezone</label>
         <Select id="timezone" bind:value={timezone} disabled={loading}>
           {#each timezones as tz}
@@ -221,7 +221,7 @@ function handleCronPreset(preset: string) {
       </div>
 
       <!-- Max Concurrent -->
-      <div class="form-field">
+      <div class="smrt-agent-schedule-form__field" data-smrt-part="field">
         <label for="maxConcurrent">{t(M['agents.schedule_form.max_concurrent'])}</label>
         <Input
           type="number"
@@ -235,7 +235,7 @@ function handleCronPreset(preset: string) {
       </div>
 
       <!-- Timeout -->
-      <div class="form-field">
+      <div class="smrt-agent-schedule-form__field" data-smrt-part="field">
         <label for="timeout">Timeout (ms)</label>
         <Input
           type="number"
@@ -249,7 +249,7 @@ function handleCronPreset(preset: string) {
       </div>
 
       <!-- Enabled -->
-      <div class="form-field form-field--checkbox">
+      <div class="smrt-agent-schedule-form__field smrt-agent-schedule-form__field-checkbox" data-smrt-part="field">
         <Checkbox
           name="enabled"
           label={t(M['agents.schedule_form.enable_schedule_immediately'])}
@@ -259,7 +259,7 @@ function handleCronPreset(preset: string) {
       </div>
     </div>
 
-    <div class="form-actions">
+    <div class="smrt-agent-schedule-form__actions" data-smrt-part="actions">
       {#if onCancel}
         <Button variant="secondary" onclick={onCancel} disabled={loading}>
           Cancel
@@ -275,58 +275,56 @@ function handleCronPreset(preset: string) {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .schedule-form-shell :global(.schedule-form) {
+@layer smrt.structure {
+  .smrt-agent-schedule-form__root :global(.schedule-form) {
     padding: var(--smrt-spacing-sm, 0.5rem) 0;
   }
-
-  .form-grid {
+  .smrt-agent-schedule-form__grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
     gap: var(--smrt-spacing-md, 1rem);
   }
-
-  .form-field {
+  .smrt-agent-schedule-form__field {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-xs, 0.25rem);
   }
-
-  .form-field--full {
+  .smrt-agent-schedule-form__field-full {
     grid-column: 1 / -1;
   }
-
-  .form-field--checkbox {
+  .smrt-agent-schedule-form__field-checkbox {
     flex-direction: row;
     align-items: center;
     gap: var(--smrt-spacing-sm, 0.5rem);
   }
-
-  .form-field label {
-    font-weight: var(--smrt-typography-weight-medium, 500);
-    font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
-    color: var(--smrt-color-on-surface);
-  }
-
-  .form-field small {
-    font: var(--smrt-typography-body-small-font, 0.75rem / 1.25 sans-serif);
-    color: var(--smrt-color-on-surface-variant);
-  }
-
-  .cron-presets {
+  .smrt-agent-schedule-form__presets {
     display: flex;
     flex-wrap: wrap;
     gap: var(--smrt-spacing-xs, 0.25rem);
     margin-top: var(--smrt-spacing-xs, 0.25rem);
   }
-
-  .form-actions {
+  .smrt-agent-schedule-form__actions {
     display: flex;
     justify-content: flex-end;
     gap: var(--smrt-spacing-sm, 0.5rem);
     margin-top: var(--smrt-spacing-lg, 1.5rem);
     padding-top: var(--smrt-spacing-md, 1rem);
+  }
+}
+
+@layer smrt.theme {
+  .smrt-agent-schedule-form__field label {
+    font-weight: var(--smrt-typography-weight-medium, 500);
+    font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-agent-schedule-form__field small {
+    font: var(--smrt-typography-body-small-font, 0.75rem / 1.25 sans-serif);
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-agent-schedule-form__actions {
     border-top: var(--smrt-hairline);
   }
 }
+
 </style>

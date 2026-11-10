@@ -42,10 +42,10 @@ const visible = $derived(selectedCount > 0);
 </script>
 
 {#if visible}
-  <div class="bulk-actions" data-smrt-component="BulkActions">
-    <div class="selection-info">
-      <span class="count">{selectedCount}</span>
-      <span class="label">{selectedCount === 1 ? 'item' : 'items'} selected</span>
+  <div class="smrt-bulk-actions__root" data-smrt-component="BulkActions">
+    <div class="smrt-bulk-actions__info" data-smrt-part="info">
+      <span class="smrt-bulk-actions__count" data-smrt-part="count">{selectedCount}</span>
+      <span class="smrt-bulk-actions__label" data-smrt-part="label">{selectedCount === 1 ? 'item' : 'items'} selected</span>
       {#if onclear}
         <Button
           variant="ghost"
@@ -59,7 +59,7 @@ const visible = $derived(selectedCount > 0);
       {/if}
     </div>
 
-    <div class="actions">
+    <div class="smrt-bulk-actions__actions" data-smrt-part="actions">
       {#if onapprove}
         <Button variant="primary" onclick={onapprove} disabled={loading}>
           {t(M['projects.bulk_actions.approve_all'])}
@@ -89,64 +89,67 @@ const visible = $derived(selectedCount > 0);
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .bulk-actions {
+@layer smrt.structure {
+  .smrt-bulk-actions__root {
     display: flex;
     justify-content: space-between;
     align-items: center;
     padding: 0.75rem 1rem;
-    background: var(--smrt-color-secondary-container);
-    border: var(--smrt-hairline);
-    border-radius: var(--smrt-radius-medium);
     margin-bottom: 1rem;
   }
-
-  .selection-info {
+  .smrt-bulk-actions__info {
     display: flex;
     align-items: center;
     gap: 0.5rem;
   }
-
-  .count {
-    font-size: var(--smrt-typography-title-medium-size, 1rem);
-    font-weight: var(--smrt-typography-title-medium-weight, 500);
-    color: var(--smrt-color-on-secondary-container);
-  }
-
-  .label {
-    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    color: var(--smrt-color-on-secondary-container);
-  }
-
   /* Keep the bespoke text-link look for the migrated Clear Button. The
-     :global() pierces into the Button child's rendered <button>, which carries
-     its own scope hash (see #1589 scoping rule). */
-  .selection-info :global(.clear-action) {
+  :global() pierces into the Button child's rendered <button>, which carries
+  its own scope hash (see #1589 scoping rule). */
+  .smrt-bulk-actions__info :global(.clear-action) {
     padding: 0.25rem 0.5rem;
-    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
-    text-decoration: underline;
   }
-
-  .actions {
+  .smrt-bulk-actions__actions {
     display: flex;
     gap: 0.5rem;
   }
-
   @media (max-width: 640px) {
-    .bulk-actions {
+    .smrt-bulk-actions__root {
       flex-direction: column;
       gap: 0.75rem;
     }
-
-    .actions {
+    .smrt-bulk-actions__actions {
       width: 100%;
       flex-wrap: wrap;
     }
-
-    .actions :global([data-smrt-component="Button"]) {
+    .smrt-bulk-actions__actions :global([data-smrt-component="Button"]) {
       flex: 1;
       min-width: 100px;
     }
   }
 }
+
+@layer smrt.theme {
+  .smrt-bulk-actions__root {
+    background: var(--smrt-color-secondary-container);
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-medium);
+  }
+  .smrt-bulk-actions__count {
+    font-size: var(--smrt-typography-title-medium-size, 1rem);
+    font-weight: var(--smrt-typography-title-medium-weight, 500);
+    color: var(--smrt-color-on-secondary-container);
+  }
+  .smrt-bulk-actions__label {
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+    color: var(--smrt-color-on-secondary-container);
+  }
+  /* Keep the bespoke text-link look for the migrated Clear Button. The
+  :global() pierces into the Button child's rendered <button>, which carries
+  its own scope hash (see #1589 scoping rule). */
+  .smrt-bulk-actions__info :global(.clear-action) {
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
+    text-decoration: underline;
+  }
+}
+
 </style>

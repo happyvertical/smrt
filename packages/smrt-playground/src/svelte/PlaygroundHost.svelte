@@ -333,7 +333,7 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
 {#snippet entryButton(entry: ResolvedSmrtPlaygroundEntry)}
   <button
     type="button"
-    class:active={entry.qualifiedId === selectedEntry?.qualifiedId}
+    class:smrt-playground-host__active={entry.qualifiedId === selectedEntry?.qualifiedId}
     aria-pressed={entry.qualifiedId === selectedEntry?.qualifiedId}
     data-playground-entry={entry.qualifiedId}
     onclick={() => selectEntry(entry)}
@@ -344,38 +344,38 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
 
 {#snippet playgroundShell()}
   <div
-    class="playground-shell"
-    class:playground-shell--embedded={embedded}
+    class="smrt-playground-host__root"
+    class:smrt-playground-host__root-embedded={embedded}
     data-hydrated={isHydrated ? 'true' : 'false'} data-smrt-component="PlaygroundHost"
   >
     {#if !embedded}
-    <aside class="catalog-nav">
-      <header class="brand">
-        <span class="brand__mark" aria-hidden="true">S</span>
+    <aside class="smrt-playground-host__catalog-nav" data-smrt-part="nav">
+      <header class="smrt-playground-host__brand" data-smrt-part="brand">
+        <span class="smrt-playground-host__brand-mark" data-smrt-part="icon" aria-hidden="true">S</span>
         <div>
           <h1>{title}</h1>
           <p>{subtitle}</p>
         </div>
       </header>
 
-      <label class="search-field">
+      <label class="smrt-playground-host__search" data-smrt-part="search">
         <span>Find a component</span>
         <input bind:value={searchTerm} placeholder="Search" />
       </label>
 
-      <div class="catalog-scroll" data-testid="playground-modules">
+      <div class="smrt-playground-host__catalog-scroll" data-smrt-part="body" data-testid="playground-modules">
         {#if filteredModules.length === 0}
-          <div class="empty-state">
+          <div class="smrt-playground-host__empty" data-smrt-part="empty">
             <strong>No components found</strong>
             <p>Try another component, package, or tag.</p>
           </div>
         {:else}
           <nav aria-label="Component catalog" data-testid="playground-entries">
             {#if filteredFoundation}
-              <section class="foundation-catalog">
+              <section class="smrt-playground-host__foundation-catalog" data-smrt-part="list">
                 <button
                   type="button"
-                  class="foundation-heading"
+                  class="smrt-playground-host__foundation-heading" data-smrt-part="label"
                   data-playground-module={filteredFoundation.packageName}
                   onclick={() => selectModule(filteredFoundation.packageName)}
                 >
@@ -384,7 +384,7 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
                 </button>
 
                 {#each foundationGroups as [group, entries]}
-                  <section class="nav-group">
+                  <section class="smrt-playground-host__nav-group" data-smrt-part="group">
                     <h2>{group}</h2>
                     {#each entries as entry (entry.qualifiedId)}
                       {@render entryButton(entry)}
@@ -395,7 +395,7 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
             {/if}
 
             {#if filteredPackageModules.length > 0}
-              <section class="package-groups">
+              <section class="smrt-playground-host__package-groups" data-smrt-part="list">
                 <h2>Package components</h2>
                 {#each filteredPackageModules as module (module.packageName)}
                   <details open={module.packageName === selectedModule?.packageName}>
@@ -422,28 +422,28 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
         {/if}
       </div>
 
-      <footer class="theme-controls" data-testid="playground-theme-controls">
+      <footer class="smrt-playground-host__theme-controls" data-smrt-part="controls" data-testid="playground-theme-controls">
         <ThemeSwitcher variant="select" label="Theme" />
         <ColorSchemeToggle />
       </footer>
     </aside>
     {/if}
 
-    <svelte:element this={embedded ? 'div' : 'main'} class="workspace">
+    <svelte:element this={embedded ? 'div' : 'main'} class="smrt-playground-host__workspace" data-smrt-part="workspace">
       {#if selectedModule}
-        <header class="workspace-header">
-          <div class="breadcrumbs">
+        <header class="smrt-playground-host__workspace-header" data-smrt-part="header">
+          <div class="smrt-playground-host__breadcrumbs" data-smrt-part="breadcrumbs">
             <span data-testid="playground-selected-module">{selectedModule.displayName}</span>
             <i aria-hidden="true">/</i>
             <strong>{selectedEntry?.title ?? 'Overview'}</strong>
           </div>
 
           {#if selectedEntry && selectedEntry.availableModes.length > 1}
-            <div class="mode-control" role="group" aria-label="Preview mode">
+            <div class="smrt-playground-host__mode-control" data-smrt-part="control" role="group" aria-label="Preview mode">
               {#each selectedEntry.availableModes as mode}
                 <button
                   type="button"
-                  class:active={mode === selectedMode}
+                  class:smrt-playground-host__active={mode === selectedMode}
                   aria-pressed={mode === selectedMode}
                   data-playground-mode={mode}
                   onclick={() => (selectedMode = mode)}
@@ -456,28 +456,28 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
         </header>
 
         {#if selectedEntry}
-          <div class="preview-heading">
+          <div class="smrt-playground-host__preview-heading" data-smrt-part="label">
             <p data-testid="playground-selected-package">{selectedModule.packageName}</p>
             <h2 data-testid="playground-preview-title">{selectedEntry.title}</h2>
             {#if selectedEntry.description}
               <span>{selectedEntry.description}</span>
             {/if}
             {#if selectedModeConfig?.description}
-              <span class="mode-description">{selectedModeConfig.description}</span>
+              <span class="smrt-playground-host__mode-description" data-smrt-part="description">{selectedModeConfig.description}</span>
             {/if}
           </div>
 
-          <section class="preview-panel" data-testid="playground-preview-panel">
-            <div class="preview-stage" data-testid="playground-preview-stage">
+          <section class="smrt-playground-host__preview-panel" data-smrt-part="panel" data-testid="playground-preview-panel">
+            <div class="smrt-playground-host__preview-stage" data-smrt-part="stage" data-testid="playground-preview-stage">
               {#if PreviewComponent && previewComponentEntryId === selectedEntry.qualifiedId}
                 <PreviewComponent {...selectedProps} />
               {:else if previewIsLoading}
-                <div class="preview-state">
-                  <span class="loader" aria-hidden="true"></span>
+                <div class="smrt-playground-host__preview-state" data-smrt-part="status">
+                  <span class="smrt-playground-host__loader" data-smrt-part="progress" aria-hidden="true"></span>
                   <p>Loading {selectedEntry.title}…</p>
                 </div>
               {:else}
-                <div class="preview-state">
+                <div class="smrt-playground-host__preview-state" data-smrt-part="status">
                   <strong>Preview unavailable</strong>
                   <p>{previewLoadError ?? 'Select a component to begin.'}</p>
                 </div>
@@ -485,7 +485,7 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
             </div>
           </section>
         {:else}
-          <section class="package-landing" data-testid="playground-package-landing">
+          <section class="smrt-playground-host__landing" data-smrt-part="landing" data-testid="playground-package-landing">
             <header>
               <p data-testid="playground-selected-package">{selectedModule.packageName}</p>
               <h2>{selectedModule.displayName}</h2>
@@ -495,7 +495,7 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
               <small>{selectedModule.entries.length} component{selectedModule.entries.length === 1 ? '' : 's'}</small>
             </header>
 
-            <div class="package-index">
+            <div class="smrt-playground-host__package-index" data-smrt-part="list">
               <h3>Components</h3>
               {#each selectedModule.entries as entry (entry.qualifiedId)}
                 <button
@@ -503,19 +503,19 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
                   data-playground-landing-entry={entry.qualifiedId}
                   onclick={() => selectEntry(entry)}
                 >
-                  <span class="package-index__copy">
+                  <span class="smrt-playground-host__index-copy" data-smrt-part="body">
                     <strong>{entry.title}</strong>
                     <small>{entry.description ?? entry.id}</small>
                   </span>
-                  <span class="package-index__modes">{entry.availableModes.join(' · ')}</span>
-                  <span class="package-index__arrow" aria-hidden="true">→</span>
+                  <span class="smrt-playground-host__index-modes" data-smrt-part="meta">{entry.availableModes.join(' · ')}</span>
+                  <span class="smrt-playground-host__index-arrow" data-smrt-part="indicator" aria-hidden="true">→</span>
                 </button>
               {/each}
             </div>
           </section>
         {/if}
       {:else}
-        <div class="preview-state full-height">
+        <div class="smrt-playground-host__preview-state smrt-playground-host__full-height" data-smrt-part="status">
           <strong>No playground modules discovered</strong>
           <p>The shared host is ready, but nothing exports playground entries yet.</p>
         </div>
@@ -534,40 +534,24 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
+@layer smrt.structure {
   :global(body) {
     margin: 0;
     min-height: 100vh;
   }
-
   :global(*) {
     box-sizing: border-box;
   }
-
-  .playground-shell {
+  .smrt-playground-host__root {
     display: grid;
     grid-template-columns: 17rem minmax(0, 1fr);
     min-height: 100vh;
-    background: var(--smrt-color-background);
-    color: var(--smrt-color-on-background);
-    font-family: var(--smrt-font-family);
   }
-
-  .playground-shell--embedded {
+  .smrt-playground-host__root-embedded {
     grid-template-columns: 1fr;
     min-height: 0;
   }
-
-  button,
-  input {
-    font: inherit;
-  }
-
-  button {
-    color: inherit;
-  }
-
-  .catalog-nav {
+  .smrt-playground-host__catalog-nav {
     position: sticky;
     top: 0;
     display: flex;
@@ -576,510 +560,520 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
     gap: 1.4rem;
     padding: 1.25rem;
     overflow: hidden;
-    border-right: var(--smrt-hairline);
-    background: var(--smrt-color-surface-container-low);
-    color: var(--smrt-color-on-surface);
   }
-
-  .brand {
+  .smrt-playground-host__brand {
     display: flex;
     min-width: 0;
     align-items: center;
     gap: 0.75rem;
   }
-
-  .brand__mark {
+  .smrt-playground-host__brand-mark {
     display: grid;
     width: 2rem;
     height: 2rem;
     flex: 0 0 auto;
     place-items: center;
-    border-radius: 0.55rem;
-    background: var(--smrt-color-primary);
-    color: var(--smrt-color-on-primary);
-    font-weight: 700;
   }
-
-  .brand > div {
+  .smrt-playground-host__brand > div {
     min-width: 0;
   }
-
-  .brand h1 {
+  .smrt-playground-host__brand h1 {
     margin: 0;
     overflow: hidden;
-    font-size: 0.9rem;
-    letter-spacing: 0.035em;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-
-  .brand p {
+  .smrt-playground-host__brand p {
     margin: 0.12rem 0 0;
     overflow: hidden;
-    color: var(--smrt-color-on-surface-variant);
-    font-size: 0.72rem;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-
-  .search-field {
+  .smrt-playground-host__search {
     display: grid;
     gap: 0.4rem;
   }
-
-  .search-field span {
-    color: var(--smrt-color-on-surface-variant);
-    font-size: 0.72rem;
-  }
-
-  .search-field input {
+  .smrt-playground-host__search input {
     width: 100%;
     padding: 0.65rem 0.75rem;
-    border: var(--smrt-hairline);
-    border-radius: 0.55rem;
-    background: var(--smrt-color-surface);
-    color: var(--smrt-color-on-surface);
   }
-
-  .catalog-scroll {
+  .smrt-playground-host__catalog-scroll {
     flex: 1;
     min-height: 0;
     overflow-y: auto;
-    scrollbar-width: thin;
   }
-
-  .catalog-scroll nav,
-  .foundation-catalog,
-  .nav-group,
-  .package-groups {
+  .smrt-playground-host__catalog-scroll nav,
+  .smrt-playground-host__foundation-catalog,
+  .smrt-playground-host__nav-group,
+  .smrt-playground-host__package-groups {
     display: grid;
   }
-
-  .catalog-scroll nav {
+  .smrt-playground-host__catalog-scroll nav {
     gap: 1.15rem;
   }
-
-  .foundation-catalog {
+  .smrt-playground-host__foundation-catalog {
     gap: 0.95rem;
   }
-
-  .foundation-heading,
-  .nav-group button,
+  .smrt-playground-host__foundation-heading,
+  .smrt-playground-host__nav-group button,
   details button {
     width: 100%;
-    border: 0;
-    background: transparent;
-    text-align: left;
     cursor: pointer;
   }
-
-  .foundation-heading {
+  .smrt-playground-host__foundation-heading {
     display: flex;
     align-items: center;
     justify-content: space-between;
     padding: 0 0 0.7rem;
-    border-bottom: var(--smrt-hairline);
-    font-size: 0.82rem;
-    font-weight: 650;
   }
-
-  .foundation-heading small,
-  details summary small {
-    color: var(--smrt-color-on-surface-variant);
-    font-size: 0.7rem;
-    font-weight: 500;
-  }
-
-  .nav-group {
+  .smrt-playground-host__nav-group {
     gap: 0.12rem;
   }
-
-  .nav-group h2,
-  .package-groups > h2 {
+  .smrt-playground-host__nav-group h2,
+  .smrt-playground-host__package-groups > h2 {
     margin: 0 0 0.35rem;
-    color: var(--smrt-color-on-surface-variant);
-    font-size: 0.66rem;
-    font-weight: 600;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
   }
-
-  .nav-group button,
+  .smrt-playground-host__nav-group button,
   details button {
     padding: 0.52rem 0.6rem;
-    border-radius: 0.45rem;
-    font-size: 0.82rem;
   }
-
-  .nav-group button:hover,
-  .nav-group button.active,
-  details button:hover,
-  details button.active {
-    background: var(--smrt-color-secondary-container);
-    color: var(--smrt-color-on-secondary-container);
-  }
-
-  .package-groups {
+  .smrt-playground-host__package-groups {
     gap: 0.15rem;
     padding-top: 0.4rem;
   }
-
   details summary {
     display: flex;
     align-items: center;
     justify-content: space-between;
     padding: 0.58rem 0.3rem;
     cursor: pointer;
-    font-size: 0.82rem;
     list-style: none;
   }
-
   details summary::-webkit-details-marker {
     display: none;
   }
-
   details > div {
     padding-left: 0.45rem;
   }
-
-  .theme-controls {
+  .smrt-playground-host__theme-controls {
     display: flex;
     align-items: end;
     gap: 0.5rem;
     padding-top: 0.8rem;
-    border-top: var(--smrt-hairline);
   }
-
-  .theme-controls :global(.smrt-theme-switcher__label) {
+  .smrt-playground-host__theme-controls :global(.smrt-theme-switcher__label) {
     display: none;
   }
-
-  .theme-controls :global(.smrt-theme-switcher__select) {
+  .smrt-playground-host__theme-controls :global(.smrt-theme-switcher__select) {
     min-width: 7rem;
     padding-block: 0.48rem;
   }
-
-  .workspace {
+  .smrt-playground-host__workspace {
     display: grid;
     min-width: 0;
     align-content: start;
     gap: 1.25rem;
     padding: 1.25rem clamp(1.25rem, 3vw, 3rem) 3rem;
   }
-
-  .playground-shell--embedded .workspace {
+  .smrt-playground-host__root-embedded .smrt-playground-host__workspace {
     padding: 0;
   }
-
-  .workspace-header {
+  .smrt-playground-host__workspace-header {
     display: flex;
     min-height: 2.75rem;
     align-items: center;
     justify-content: space-between;
     gap: 1rem;
-    border-bottom: var(--smrt-hairline);
   }
-
-  .breadcrumbs {
+  .smrt-playground-host__breadcrumbs {
     display: flex;
     min-width: 0;
     gap: 0.55rem;
-    color: var(--smrt-color-on-surface-variant);
-    font-size: 0.76rem;
   }
-
-  .breadcrumbs span,
-  .breadcrumbs strong {
+  .smrt-playground-host__breadcrumbs span,
+  .smrt-playground-host__breadcrumbs strong {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-
-  .breadcrumbs i {
-    opacity: 0.5;
-  }
-
-  .breadcrumbs strong {
-    color: var(--smrt-color-on-surface);
-  }
-
-  .mode-control {
+  .smrt-playground-host__mode-control {
     display: flex;
     flex: 0 0 auto;
     gap: 0.25rem;
     padding: 0.2rem;
-    border-radius: 999px;
-    background: var(--smrt-color-surface-container);
   }
-
-  .mode-control button {
+  .smrt-playground-host__mode-control button {
     padding: 0.4rem 0.7rem;
-    border: 0;
-    border-radius: 999px;
-    background: transparent;
-    color: var(--smrt-color-on-surface-variant);
     cursor: pointer;
-    font-size: 0.72rem;
-    text-transform: capitalize;
   }
-
-  .mode-control button.active {
-    background: var(--smrt-color-surface);
-    color: var(--smrt-color-on-surface);
-    box-shadow: var(--smrt-elevation-1);
-  }
-
-  .package-landing {
+  .smrt-playground-host__landing {
     width: min(68rem, 100%);
     padding: clamp(1.5rem, 4vw, 3.5rem) 0 2rem;
   }
-
-  .package-landing > header {
+  .smrt-playground-host__landing > header {
     position: relative;
     display: grid;
     gap: 0.55rem;
     padding-bottom: clamp(1.75rem, 4vw, 3rem);
-    border-bottom: var(--smrt-hairline);
   }
-
-  .package-landing > header p {
+  .smrt-playground-host__landing > header p {
     margin: 0;
-    color: var(--smrt-color-primary);
-    font-size: 0.68rem;
-    letter-spacing: 0.08em;
-    text-transform: none;
   }
-
-  .package-landing > header h2 {
+  .smrt-playground-host__landing > header h2 {
     max-width: 48rem;
     margin: 0;
-    font-size: clamp(2rem, 5vw, 4rem);
-    font-weight: 520;
-    letter-spacing: -0.045em;
-    line-height: 1;
   }
-
-  .package-landing > header span {
+  .smrt-playground-host__landing > header span {
     max-width: 42rem;
-    color: var(--smrt-color-on-surface-variant);
-    line-height: 1.55;
   }
-
-  .package-landing > header > small {
+  .smrt-playground-host__landing > header > small {
     position: absolute;
     right: 0;
     bottom: 1rem;
-    color: var(--smrt-color-on-surface-variant);
-    font-size: 0.75rem;
   }
-
-  .package-index {
+  .smrt-playground-host__package-index {
     padding-top: 2rem;
   }
-
-  .package-index > h3 {
+  .smrt-playground-host__package-index > h3 {
     margin: 0 0 0.65rem;
-    color: var(--smrt-color-on-surface-variant);
-    font-size: 0.68rem;
-    font-weight: 600;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
   }
-
-  .package-index > button {
+  .smrt-playground-host__package-index > button {
     display: grid;
     width: 100%;
     grid-template-columns: minmax(0, 1fr) auto 1.5rem;
     align-items: center;
     gap: 1.25rem;
     padding: 1.15rem 0;
-    border: 0;
-    border-bottom: var(--smrt-hairline);
-    background: transparent;
-    text-align: left;
     cursor: pointer;
   }
-
-  .package-index__copy {
+  .smrt-playground-host__index-copy {
     display: grid;
     min-width: 0;
     gap: 0.25rem;
   }
-
-  .package-index__copy strong {
-    font-size: 0.95rem;
-    font-weight: 600;
-  }
-
-  .package-index__copy small,
-  .package-index__modes {
-    color: var(--smrt-color-on-surface-variant);
-    font-size: 0.76rem;
-    line-height: 1.4;
-  }
-
-  .package-index__modes {
-    text-transform: capitalize;
-  }
-
-  .package-index__arrow {
-    color: var(--smrt-color-primary);
-    transition: transform 140ms ease;
-  }
-
-  .package-index > button:hover .package-index__copy strong,
-  .package-index > button:focus-visible .package-index__copy strong {
-    color: var(--smrt-color-primary);
-  }
-
-  .package-index > button:hover .package-index__arrow,
-  .package-index > button:focus-visible .package-index__arrow {
-    transform: translateX(0.2rem);
-  }
-
-  .preview-heading {
+  .smrt-playground-host__preview-heading {
     padding: 1rem 0 0.25rem;
   }
-
-  .preview-heading p {
+  .smrt-playground-host__preview-heading p {
     margin: 0 0 0.35rem;
-    color: var(--smrt-color-primary);
-    font-size: 0.68rem;
-    letter-spacing: 0.08em;
-    text-transform: none;
   }
-
-  .preview-heading h2 {
+  .smrt-playground-host__preview-heading h2 {
     margin: 0;
-    font-size: clamp(1.45rem, 2.6vw, 2.15rem);
-    font-weight: 550;
-    letter-spacing: -0.025em;
   }
-
-  .preview-heading span {
+  .smrt-playground-host__preview-heading span {
     display: block;
     max-width: 48rem;
     margin-top: 0.45rem;
-    color: var(--smrt-color-on-surface-variant);
-    line-height: 1.5;
   }
-
-  .preview-heading .mode-description {
-    font-size: 0.85rem;
-  }
-
-  .preview-panel {
+  .smrt-playground-host__preview-panel {
     min-width: 0;
   }
-
-  .preview-stage {
+  .smrt-playground-host__preview-stage {
     min-width: 0;
     min-height: 30rem;
     padding: clamp(1rem, 2.2vw, 2rem);
     overflow: auto;
-    border: var(--smrt-hairline);
-    border-radius: 1rem;
-    background: var(--smrt-color-surface);
-    color: var(--smrt-color-on-surface);
   }
-
-  .preview-state {
+  .smrt-playground-host__preview-state {
     display: grid;
     min-height: 25rem;
     place-content: center;
     justify-items: center;
     padding: 1rem;
+  }
+  .smrt-playground-host__preview-state p,
+  .smrt-playground-host__empty p {
+    margin: 0.4rem 0 0;
+  }
+  .smrt-playground-host__full-height {
+    min-height: 60vh;
+  }
+  .smrt-playground-host__empty {
+    padding: 1rem 0.25rem;
+  }
+  .smrt-playground-host__loader {
+    width: 1.25rem;
+    height: 1.25rem;
+  }
+  @media (max-width: 900px) {
+    .smrt-playground-host__root {
+      grid-template-columns: 1fr;
+    }
+    .smrt-playground-host__catalog-nav {
+      position: static;
+      height: auto;
+    }
+    .smrt-playground-host__catalog-scroll {
+      max-height: 18rem;
+    }
+    .smrt-playground-host__catalog-scroll nav {
+      grid-template-columns: 1fr;
+    }
+  }
+  @media (max-width: 600px) {
+    .smrt-playground-host__theme-controls :global([data-smrt-component="ThemeSwitcher"]) {
+      display: none;
+    }
+    .smrt-playground-host__workspace-header {
+      align-items: flex-start;
+    }
+    .smrt-playground-host__breadcrumbs {
+      display: grid;
+      gap: 0.15rem;
+    }
+    .smrt-playground-host__breadcrumbs i {
+      display: none;
+    }
+    .smrt-playground-host__landing > header > small {
+      position: static;
+      margin-top: 0.35rem;
+    }
+    .smrt-playground-host__package-index > button {
+      grid-template-columns: minmax(0, 1fr) 1.5rem;
+    }
+    .smrt-playground-host__index-modes {
+      display: none;
+    }
+  }
+}
+
+@layer smrt.theme {
+  .smrt-playground-host__root {
+    background: var(--smrt-color-background);
+    color: var(--smrt-color-on-background);
+    font-family: var(--smrt-font-family);
+  }
+  button,
+  input {
+    font: inherit;
+  }
+  button {
+    color: inherit;
+  }
+  .smrt-playground-host__catalog-nav {
+    border-right: var(--smrt-hairline);
+    background: var(--smrt-color-surface-container-low);
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-playground-host__brand-mark {
+    border-radius: 0.55rem;
+    background: var(--smrt-color-primary);
+    color: var(--smrt-color-on-primary);
+    font-weight: 700;
+  }
+  .smrt-playground-host__brand h1 {
+    font-size: 0.9rem;
+    letter-spacing: 0.035em;
+  }
+  .smrt-playground-host__brand p {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: 0.72rem;
+  }
+  .smrt-playground-host__search span {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: 0.72rem;
+  }
+  .smrt-playground-host__search input {
+    border: var(--smrt-hairline);
+    border-radius: 0.55rem;
+    background: var(--smrt-color-surface);
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-playground-host__catalog-scroll {
+    scrollbar-width: thin;
+  }
+  .smrt-playground-host__foundation-heading,
+  .smrt-playground-host__nav-group button,
+  details button {
+    border: 0;
+    background: transparent;
+    text-align: left;
+  }
+  .smrt-playground-host__foundation-heading {
+    border-bottom: var(--smrt-hairline);
+    font-size: 0.82rem;
+    font-weight: 650;
+  }
+  .smrt-playground-host__foundation-heading small,
+  details summary small {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: 0.7rem;
+    font-weight: 500;
+  }
+  .smrt-playground-host__nav-group h2,
+  .smrt-playground-host__package-groups > h2 {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: 0.66rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .smrt-playground-host__nav-group button,
+  details button {
+    border-radius: 0.45rem;
+    font-size: 0.82rem;
+  }
+  .smrt-playground-host__nav-group button:hover,
+  .smrt-playground-host__nav-group button.smrt-playground-host__active,
+  details button:hover,
+  details button.smrt-playground-host__active {
+    background: var(--smrt-color-secondary-container);
+    color: var(--smrt-color-on-secondary-container);
+  }
+  details summary {
+    font-size: 0.82rem;
+  }
+  .smrt-playground-host__theme-controls {
+    border-top: var(--smrt-hairline);
+  }
+  .smrt-playground-host__workspace-header {
+    border-bottom: var(--smrt-hairline);
+  }
+  .smrt-playground-host__breadcrumbs {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: 0.76rem;
+  }
+  .smrt-playground-host__breadcrumbs i {
+    opacity: 0.5;
+  }
+  .smrt-playground-host__breadcrumbs strong {
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-playground-host__mode-control {
+    border-radius: 999px;
+    background: var(--smrt-color-surface-container);
+  }
+  .smrt-playground-host__mode-control button {
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--smrt-color-on-surface-variant);
+    font-size: 0.72rem;
+    text-transform: capitalize;
+  }
+  .smrt-playground-host__mode-control button.smrt-playground-host__active {
+    background: var(--smrt-color-surface);
+    color: var(--smrt-color-on-surface);
+    box-shadow: var(--smrt-elevation-1);
+  }
+  .smrt-playground-host__landing > header {
+    border-bottom: var(--smrt-hairline);
+  }
+  .smrt-playground-host__landing > header p {
+    color: var(--smrt-color-primary);
+    font-size: 0.68rem;
+    letter-spacing: 0.08em;
+    text-transform: none;
+  }
+  .smrt-playground-host__landing > header h2 {
+    font-size: clamp(2rem, 5vw, 4rem);
+    font-weight: 520;
+    letter-spacing: -0.045em;
+    line-height: 1;
+  }
+  .smrt-playground-host__landing > header span {
+    color: var(--smrt-color-on-surface-variant);
+    line-height: 1.55;
+  }
+  .smrt-playground-host__landing > header > small {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: 0.75rem;
+  }
+  .smrt-playground-host__package-index > h3 {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .smrt-playground-host__package-index > button {
+    border: 0;
+    border-bottom: var(--smrt-hairline);
+    background: transparent;
+    text-align: left;
+  }
+  .smrt-playground-host__index-copy strong {
+    font-size: 0.95rem;
+    font-weight: 600;
+  }
+  .smrt-playground-host__index-copy small,
+  .smrt-playground-host__index-modes {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: 0.76rem;
+    line-height: 1.4;
+  }
+  .smrt-playground-host__index-modes {
+    text-transform: capitalize;
+  }
+  .smrt-playground-host__index-arrow {
+    color: var(--smrt-color-primary);
+    transition: transform 140ms ease;
+  }
+  .smrt-playground-host__package-index > button:hover .smrt-playground-host__index-copy strong,
+  .smrt-playground-host__package-index > button:focus-visible .smrt-playground-host__index-copy strong {
+    color: var(--smrt-color-primary);
+  }
+  .smrt-playground-host__package-index > button:hover .smrt-playground-host__index-arrow,
+  .smrt-playground-host__package-index > button:focus-visible .smrt-playground-host__index-arrow {
+    transform: translateX(0.2rem);
+  }
+  .smrt-playground-host__preview-heading p {
+    color: var(--smrt-color-primary);
+    font-size: 0.68rem;
+    letter-spacing: 0.08em;
+    text-transform: none;
+  }
+  .smrt-playground-host__preview-heading h2 {
+    font-size: clamp(1.45rem, 2.6vw, 2.15rem);
+    font-weight: 550;
+    letter-spacing: -0.025em;
+  }
+  .smrt-playground-host__preview-heading span {
+    color: var(--smrt-color-on-surface-variant);
+    line-height: 1.5;
+  }
+  .smrt-playground-host__preview-heading .smrt-playground-host__mode-description {
+    font-size: 0.85rem;
+  }
+  .smrt-playground-host__preview-stage {
+    border: var(--smrt-hairline);
+    border-radius: 1rem;
+    background: var(--smrt-color-surface);
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-playground-host__preview-state {
     color: var(--smrt-color-on-surface-variant);
     text-align: center;
   }
-
-  .preview-state p,
-  .empty-state p {
-    margin: 0.4rem 0 0;
+  .smrt-playground-host__preview-state p,
+  .smrt-playground-host__empty p {
     line-height: 1.5;
   }
-
-  .full-height {
-    min-height: 60vh;
-  }
-
-  .empty-state {
-    padding: 1rem 0.25rem;
+  .smrt-playground-host__empty {
     color: var(--smrt-color-on-surface-variant);
   }
-
-  .loader {
-    width: 1.25rem;
-    height: 1.25rem;
+  .smrt-playground-host__loader {
     border: 2px solid var(--smrt-color-outline-variant);
     border-top-color: var(--smrt-color-primary);
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
   }
-
   @keyframes spin {
     to {
       transform: rotate(360deg);
     }
   }
-
   @media (max-width: 900px) {
-    .playground-shell {
-      grid-template-columns: 1fr;
-    }
-
-    .catalog-nav {
-      position: static;
-      height: auto;
+    .smrt-playground-host__catalog-nav {
       border-right: 0;
       border-bottom: var(--smrt-hairline);
     }
-
-    .catalog-scroll {
-      max-height: 18rem;
-    }
-
-    .catalog-scroll nav {
-      grid-template-columns: 1fr;
-    }
   }
-
-  @media (max-width: 600px) {
-    .theme-controls :global([data-smrt-component="ThemeSwitcher"]) {
-      display: none;
-    }
-
-    .workspace-header {
-      align-items: flex-start;
-    }
-
-    .breadcrumbs {
-      display: grid;
-      gap: 0.15rem;
-    }
-
-    .breadcrumbs i {
-      display: none;
-    }
-
-    .package-landing > header > small {
-      position: static;
-      margin-top: 0.35rem;
-    }
-
-    .package-index > button {
-      grid-template-columns: minmax(0, 1fr) 1.5rem;
-    }
-
-    .package-index__modes {
-      display: none;
-    }
-  }
-
   @media (prefers-reduced-motion: reduce) {
-    .loader {
+    .smrt-playground-host__loader {
       animation: none;
     }
   }
 }
+
 </style>

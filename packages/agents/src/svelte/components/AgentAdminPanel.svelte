@@ -66,12 +66,12 @@ async function handleSave(newConfig: unknown) {
 		readonly={readonly || !onSave}
 	/>
 {:else}
-	<div class="no-panel" data-smrt-component="AgentAdminPanel">
-		<div class="no-panel-icon">⚙️</div>
-		<p class="no-panel-message">
+	<div class="smrt-agent-admin-panel__root" data-smrt-component="AgentAdminPanel">
+		<div class="smrt-agent-admin-panel__icon" data-smrt-part="icon">⚙️</div>
+		<p class="smrt-agent-admin-panel__message" data-smrt-part="message">
 			{t(M['ui.agent_admin_panel.no_panel_message'])} <code>{agentClass}.{slotId}</code>
 		</p>
-		<p class="no-panel-hint">
+		<p class="smrt-agent-admin-panel__hint" data-smrt-part="hint">
 			{t(M['ui.agent_admin_panel.no_panel_hint'])}
 		</p>
 	</div>
@@ -79,44 +79,54 @@ async function handleSave(newConfig: unknown) {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-	.no-panel {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		justify-content: center;
-		padding: 3rem 2rem;
-		text-align: center;
-		background: var(--smrt-color-surface-container-low);
-		border: 1px dashed var(--smrt-color-outline-variant);
-		border-radius: var(--smrt-radius-medium);
-		min-height: 200px;
-	}
-
-	.no-panel-icon {
-		font-size: var(--smrt-typography-display-medium-size, 2.5rem);
-		margin-bottom: 1rem;
-		opacity: 0.5;
-	}
-
-	.no-panel-message {
-		margin: 0 0 0.5rem 0;
-		font-size: var(--smrt-typography-body-large-size, 0.9375rem);
-		color: var(--smrt-color-on-surface-variant);
-	}
-
-	.no-panel-message code {
-		background: var(--smrt-color-surface-container-high);
-		padding: var(--smrt-spacing-1, 0.125rem) var(--smrt-spacing-2, 0.375rem);
-		border-radius: var(--smrt-radius-small);
-		font-family: var(--smrt-font-family-mono, 'SF Mono', Monaco, Consolas, monospace);
-		font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-	}
-
-	.no-panel-hint {
-		margin: 0;
-		font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
-		color: var(--smrt-color-on-surface-variant);
-	}
+@layer smrt.structure {
+  .smrt-agent-admin-panel__root {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 3rem 2rem;
+    min-height: 200px;
+  }
+  .smrt-agent-admin-panel__icon {
+    margin-bottom: 1rem;
+  }
+  .smrt-agent-admin-panel__message {
+    margin: 0 0 0.5rem 0;
+  }
+  .smrt-agent-admin-panel__message code {
+    padding: var(--smrt-spacing-1, 0.125rem) var(--smrt-spacing-2, 0.375rem);
+  }
+  .smrt-agent-admin-panel__hint {
+    margin: 0;
+  }
 }
+
+@layer smrt.theme {
+  .smrt-agent-admin-panel__root {
+    text-align: center;
+    background: var(--smrt-color-surface-container-low);
+    border: 1px dashed var(--smrt-color-outline-variant);
+    border-radius: var(--smrt-radius-medium);
+  }
+  .smrt-agent-admin-panel__icon {
+    font-size: var(--smrt-typography-display-medium-size, 2.5rem);
+    opacity: 0.5;
+  }
+  .smrt-agent-admin-panel__message {
+    font-size: var(--smrt-typography-body-large-size, 0.9375rem);
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-agent-admin-panel__message code {
+    background: var(--smrt-color-surface-container-high);
+    border-radius: var(--smrt-radius-small);
+    font-family: var(--smrt-font-family-mono, 'SF Mono', Monaco, Consolas, monospace);
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+  }
+  .smrt-agent-admin-panel__hint {
+    font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
+    color: var(--smrt-color-on-surface-variant);
+  }
+}
+
 </style>

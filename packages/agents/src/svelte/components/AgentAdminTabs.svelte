@@ -111,13 +111,13 @@ async function handleSave(config: unknown) {
 }
 </script>
 
-<div class="agent-admin-tabs" data-smrt-component="AgentAdminTabs">
-	<div class="tabs-nav" role="tablist" aria-label={t(M['ui.agent_admin_tabs.tablist_label'])} bind:this={tablistEl}>
+<div class="smrt-agent-admin-tabs__root" data-smrt-component="AgentAdminTabs">
+	<div class="smrt-agent-admin-tabs__nav" data-smrt-part="list" role="tablist" aria-label={t(M['ui.agent_admin_tabs.tablist_label'])} bind:this={tablistEl}>
 		{#each sortedSlots as [slotId, slot]}
 			<!-- raw-primitive-allow: tab control in a hand-rolled ARIA tablist with roving tabindex and bind:this keyboard navigation, driving externally-rendered aria-controls panels; this is a tab role (not a standard action button) and adopting the Tabs primitive would require restructuring the slot/panel wiring -->
 			<button
-				class="tab-button"
-				class:active={activeSlotId === slotId}
+				class="smrt-agent-admin-tabs__tab" data-smrt-part="tab"
+				class:smrt-agent-admin-tabs__active={activeSlotId === slotId}
 				role="tab"
 				aria-selected={activeSlotId === slotId}
 				aria-controls="panel-{slotId}"
@@ -128,24 +128,24 @@ async function handleSave(config: unknown) {
 				onkeydown={(e) => handleKeydown(e, slotId)}
 			>
 				{#if slot.icon}
-					<span class="tab-icon" aria-hidden="true">{slot.icon}</span>
+					<span class="smrt-agent-admin-tabs__icon" data-smrt-part="icon" aria-hidden="true">{slot.icon}</span>
 				{/if}
-				<span class="tab-label">{slot.label}</span>
+				<span class="smrt-agent-admin-tabs__label" data-smrt-part="label">{slot.label}</span>
 			</button>
 		{/each}
 	</div>
 
-	<div class="tab-content">
+	<div class="smrt-agent-admin-tabs__content" data-smrt-part="body">
 		{#if activeSlotId && slots[activeSlotId]}
 			{@const activeSlot = slots[activeSlotId]}
 			<div
 				id="panel-{activeSlotId}"
-				class="tab-panel"
+				class="smrt-agent-admin-tabs__panel" data-smrt-part="panel"
 				role="tabpanel"
 				aria-labelledby="tab-{activeSlotId}"
 			>
 				{#if activeSlot.description}
-					<p class="slot-description">{activeSlot.description}</p>
+					<p class="smrt-agent-admin-tabs__description" data-smrt-part="description">{activeSlot.description}</p>
 				{/if}
 
 				<AgentAdminPanel
@@ -161,7 +161,7 @@ async function handleSave(config: unknown) {
 				/>
 			</div>
 		{:else}
-			<div class="no-slots">
+			<div class="smrt-agent-admin-tabs__empty" data-smrt-part="empty">
 				<p>{t(M['ui.agent_admin_tabs.no_slots'])}</p>
 			</div>
 		{/if}
@@ -170,112 +170,111 @@ async function handleSave(config: unknown) {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.structure {
+  .smrt-agent-admin-tabs__root {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+  .smrt-agent-admin-tabs__nav {
+    display: flex;
+    gap: 0.25rem;
+    padding-bottom: 0;
+  }
+  .smrt-agent-admin-tabs__tab {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    cursor: pointer;
+    margin-bottom: -1px;
+  }
+  .smrt-agent-admin-tabs__tab:disabled {
+    cursor: not-allowed;
+  }
+  .smrt-agent-admin-tabs__label {
+    white-space: nowrap;
+  }
+  .smrt-agent-admin-tabs__content {
+    min-height: 300px;
+  }
+  .smrt-agent-admin-tabs__description {
+    margin: 0 0 1rem 0;
+    padding: 0.75rem 1rem;
+  }
+  .smrt-agent-admin-tabs__empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 200px;
+  }
+  .smrt-agent-admin-tabs__empty p {
+    margin: 0;
+  }
+}
+
 @layer smrt.theme {
-	.agent-admin-tabs {
-		display: flex;
-		flex-direction: column;
-		gap: 1rem;
-	}
-
-	.tabs-nav {
-		display: flex;
-		gap: 0.25rem;
-		border-bottom: var(--smrt-hairline);
-		padding-bottom: 0;
-	}
-
-	.tab-button {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		padding: 0.75rem 1rem;
-		border: none;
-		background: transparent;
-		color: var(--smrt-color-on-surface-variant);
-		font-size: var(--smrt-typography-label-large-size, 0.875rem);
-		font-weight: var(--smrt-typography-weight-medium, 500);
-		cursor: pointer;
-		border-bottom: 2px solid transparent;
-		margin-bottom: -1px;
-		transition:
+  .smrt-agent-admin-tabs__nav {
+    border-bottom: var(--smrt-hairline);
+  }
+  .smrt-agent-admin-tabs__tab {
+    border: none;
+    background: transparent;
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-label-large-size, 0.875rem);
+    font-weight: var(--smrt-typography-weight-medium, 500);
+    border-bottom: 2px solid transparent;
+    transition:
 			color var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease),
 			border-color var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
-	}
-
-	.tab-button:hover:not(:disabled) {
-		color: var(--smrt-color-on-surface);
-	}
-
-	.tab-button.active {
-		color: var(--smrt-color-primary);
-		border-bottom-color: var(--smrt-color-primary);
-	}
-
-	.tab-button:disabled {
-		opacity: 0.38;
-		cursor: not-allowed;
-	}
-
-	.tab-button:focus-visible {
-		outline: 2px solid var(--smrt-color-primary);
-		outline-offset: 2px;
-	}
-
-	.tab-icon {
-		font-size: var(--smrt-typography-title-medium-size, 1rem);
-		opacity: 0.8;
-	}
-
-	.tab-label {
-		white-space: nowrap;
-	}
-
-	.tab-content {
-		min-height: 300px;
-	}
-
-	.tab-panel {
-		animation: fadeIn var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease-out);
-	}
-
-	@keyframes fadeIn {
-		from {
-			opacity: 0;
-			transform: translateY(4px);
-		}
-		to {
-			opacity: 1;
-			transform: translateY(0);
-		}
-	}
-
-	@media (prefers-reduced-motion: reduce) {
-		.tab-panel {
-			animation: none;
-		}
-	}
-
-	.slot-description {
-		margin: 0 0 1rem 0;
-		padding: 0.75rem 1rem;
-		background: var(--smrt-color-primary-container);
-		border-left: 3px solid var(--smrt-color-primary);
-		border-radius: 0 var(--smrt-radius-md) var(--smrt-radius-md) 0;
-		font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-		color: var(--smrt-color-on-primary-container);
-	}
-
-	.no-slots {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		min-height: 200px;
-		color: var(--smrt-color-on-surface-variant);
-		font-size: var(--smrt-typography-body-medium-size, 0.9375rem);
-	}
-
-	.no-slots p {
-		margin: 0;
-	}
+  }
+  .smrt-agent-admin-tabs__tab:hover:not(:disabled) {
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-agent-admin-tabs__tab.smrt-agent-admin-tabs__active {
+    color: var(--smrt-color-primary);
+    border-bottom-color: var(--smrt-color-primary);
+  }
+  .smrt-agent-admin-tabs__tab:disabled {
+    opacity: 0.38;
+  }
+  .smrt-agent-admin-tabs__tab:focus-visible {
+    outline: 2px solid var(--smrt-color-primary);
+    outline-offset: 2px;
+  }
+  .smrt-agent-admin-tabs__icon {
+    font-size: var(--smrt-typography-title-medium-size, 1rem);
+    opacity: 0.8;
+  }
+  .smrt-agent-admin-tabs__panel {
+    animation: fadeIn var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease-out);
+  }
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .smrt-agent-admin-tabs__panel {
+      animation: none;
+    }
+  }
+  .smrt-agent-admin-tabs__description {
+    background: var(--smrt-color-primary-container);
+    border-left: 3px solid var(--smrt-color-primary);
+    border-radius: 0 var(--smrt-radius-md) var(--smrt-radius-md) 0;
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+    color: var(--smrt-color-on-primary-container);
+  }
+  .smrt-agent-admin-tabs__empty {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-medium-size, 0.9375rem);
+  }
 }
+
 </style>

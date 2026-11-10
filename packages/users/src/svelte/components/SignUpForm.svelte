@@ -34,10 +34,38 @@ async function submit() {
   }
 }
 </script>
-<Form class="auth-form" onsubmit={submit} aria-busy={loading||pending}><h2>{t('users.auth.create_account')}</h2>{#if error}<p class="error" role="alert">{t(error)}</p>{/if}<label for="sign-up-email">{t('users.auth.email_address')}</label><Input id="sign-up-email" type="email" bind:value={email} autocomplete="email" required disabled={loading||pending}/><label for="sign-up-password">{t('users.auth.password')}</label><Input id="sign-up-password" type="password" bind:value={password} autocomplete="new-password" required disabled={loading||pending}/><label for="sign-up-confirm">{t('users.auth.confirm_password')}</label><Input id="sign-up-confirm" type="password" bind:value={confirm} autocomplete="new-password" required disabled={loading||pending}/><Button type="submit" fullWidth disabled={!adapter.signUp||loading} loading={pending}>{t('users.auth.create_account')}</Button></Form>
+<Form class="auth-form" onsubmit={submit} aria-busy={loading||pending}><h2>{t('users.auth.create_account')}</h2>{#if error}<p class="smrt-sign-up-form__error" data-smrt-part="error" role="alert">{t(error)}</p>{/if}<label for="sign-up-email">{t('users.auth.email_address')}</label><Input id="sign-up-email" type="email" bind:value={email} autocomplete="email" required disabled={loading||pending}/><label for="sign-up-password">{t('users.auth.password')}</label><Input id="sign-up-password" type="password" bind:value={password} autocomplete="new-password" required disabled={loading||pending}/><label for="sign-up-confirm">{t('users.auth.confirm_password')}</label><Input id="sign-up-confirm" type="password" bind:value={confirm} autocomplete="new-password" required disabled={loading||pending}/><Button type="submit" fullWidth disabled={!adapter.signUp||loading} loading={pending}>{t('users.auth.create_account')}</Button></Form>
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-:global(.auth-form){display:grid;gap:var(--smrt-spacing-sm,.5rem);color:var(--smrt-color-on-surface)}h2{margin:0;font:var(--smrt-typography-title-large-font)}label{font:var(--smrt-typography-label-large-font)}.error{margin:0;padding:var(--smrt-spacing-sm,.5rem);border-radius:var(--smrt-radius-sm,.25rem);background:var(--smrt-color-error-container);color:var(--smrt-color-on-error-container)}
+@layer smrt.structure {
+  :global(.auth-form) {
+    display:grid;
+    gap:var(--smrt-spacing-sm,.5rem);
+  }
+  h2 {
+    margin:0;
+  }
+  .smrt-sign-up-form__error {
+    margin:0;
+    padding:var(--smrt-spacing-sm,.5rem);
+  }
 }
+
+@layer smrt.theme {
+  :global(.auth-form) {
+    color:var(--smrt-color-on-surface);
+  }
+  h2 {
+    font:var(--smrt-typography-title-large-font);
+  }
+  label {
+    font:var(--smrt-typography-label-large-font);
+  }
+  .smrt-sign-up-form__error {
+    border-radius:var(--smrt-radius-sm,.25rem);
+    background:var(--smrt-color-error-container);
+    color:var(--smrt-color-on-error-container);
+  }
+}
+
 </style>

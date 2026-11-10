@@ -19,7 +19,7 @@ const { t } = useI18n();
 </script>
 
 <article
-  class="detail"
+  class="smrt-development-request-detail__root"
   aria-label={t(M['projects.development_request.detail_aria'])} data-smrt-component="DevelopmentRequestDetail"
 >
   <header>
@@ -56,14 +56,13 @@ const { t } = useI18n();
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .detail {
+@layer smrt.structure {
+  .smrt-development-request-detail__root {
     display: grid;
     gap: var(--smrt-spacing-5);
   }
   header {
     align-items: start;
-    border-bottom: var(--smrt-hairline);
     display: flex;
     gap: var(--smrt-spacing-5);
     justify-content: space-between;
@@ -72,11 +71,6 @@ const { t } = useI18n();
   header div {
     display: grid;
     gap: var(--smrt-spacing-1);
-  }
-  header span,
-  dt {
-    color: var(--smrt-color-on-surface-variant);
-    font-size: var(--smrt-typography-label-medium-size);
   }
   h2,
   p,
@@ -94,4 +88,16 @@ const { t } = useI18n();
     gap: var(--smrt-spacing-1);
   }
 }
+
+@layer smrt.theme {
+  header {
+    border-bottom: var(--smrt-hairline);
+  }
+  header span,
+  dt {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-label-medium-size);
+  }
+}
+
 </style>

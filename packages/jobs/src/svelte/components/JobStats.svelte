@@ -29,94 +29,94 @@ const successRateFormatted = $derived(
 );
 </script>
 
-<div class="job-stats" class:compact class:loading data-smrt-component="JobStats">
-  <div class="job-stats__grid">
+<div class="smrt-job-stats__root" class:smrt-job-stats__compact={compact} class:smrt-job-stats__loading={loading} data-smrt-component="JobStats">
+  <div class="smrt-job-stats__grid" data-smrt-part="grid">
     <!-- Total Jobs -->
     <Card padding="sm">
-      <div class="stat-card">
-        <div class="stat-card__value">{stats.total.toLocaleString()}</div>
-        <div class="stat-card__label">{t(M['jobs.job_stats.total_jobs'])}</div>
+      <div class="smrt-job-stats__card" data-smrt-part="card">
+        <div class="smrt-job-stats__stat-value" data-smrt-part="value">{stats.total.toLocaleString()}</div>
+        <div class="smrt-job-stats__stat-label" data-smrt-part="label">{t(M['jobs.job_stats.total_jobs'])}</div>
       </div>
     </Card>
 
     <!-- Pending -->
     <Card padding="sm">
-      <div class="stat-card stat-card--pending">
-        <div class="stat-card__value">{stats.pending.toLocaleString()}</div>
-        <div class="stat-card__label">Pending</div>
+      <div class="smrt-job-stats__card smrt-job-stats__card-pending" data-smrt-part="card">
+        <div class="smrt-job-stats__stat-value" data-smrt-part="value">{stats.pending.toLocaleString()}</div>
+        <div class="smrt-job-stats__stat-label" data-smrt-part="label">Pending</div>
       </div>
     </Card>
 
     <!-- Running -->
     <Card padding="sm">
-      <div class="stat-card stat-card--running">
-        <div class="stat-card__value">{stats.running.toLocaleString()}</div>
-        <div class="stat-card__label">Running</div>
+      <div class="smrt-job-stats__card smrt-job-stats__card-running" data-smrt-part="card">
+        <div class="smrt-job-stats__stat-value" data-smrt-part="value">{stats.running.toLocaleString()}</div>
+        <div class="smrt-job-stats__stat-label" data-smrt-part="label">Running</div>
       </div>
     </Card>
 
     <!-- Completed -->
     <Card padding="sm">
-      <div class="stat-card stat-card--completed">
-        <div class="stat-card__value">{stats.completed.toLocaleString()}</div>
-        <div class="stat-card__label">Completed</div>
+      <div class="smrt-job-stats__card smrt-job-stats__card-completed" data-smrt-part="card">
+        <div class="smrt-job-stats__stat-value" data-smrt-part="value">{stats.completed.toLocaleString()}</div>
+        <div class="smrt-job-stats__stat-label" data-smrt-part="label">Completed</div>
       </div>
     </Card>
 
     <!-- Failed -->
     <Card padding="sm">
-      <div class="stat-card stat-card--failed">
-        <div class="stat-card__value">{stats.failed.toLocaleString()}</div>
-        <div class="stat-card__label">Failed</div>
+      <div class="smrt-job-stats__card smrt-job-stats__card-failed" data-smrt-part="card">
+        <div class="smrt-job-stats__stat-value" data-smrt-part="value">{stats.failed.toLocaleString()}</div>
+        <div class="smrt-job-stats__stat-label" data-smrt-part="label">Failed</div>
       </div>
     </Card>
 
     <!-- Success Rate -->
     <Card padding="sm">
-      <div class="stat-card">
-        <div class="stat-card__value">{successRateFormatted}</div>
-        <div class="stat-card__label">{t(M['jobs.job_stats.success_rate'])}</div>
+      <div class="smrt-job-stats__card" data-smrt-part="card">
+        <div class="smrt-job-stats__stat-value" data-smrt-part="value">{successRateFormatted}</div>
+        <div class="smrt-job-stats__stat-label" data-smrt-part="label">{t(M['jobs.job_stats.success_rate'])}</div>
       </div>
     </Card>
 
     <!-- Avg Duration -->
     <Card padding="sm">
-      <div class="stat-card">
-        <div class="stat-card__value">{formatDuration(stats.avgDuration)}</div>
-        <div class="stat-card__label">{t(M['jobs.job_stats.avg_duration'])}</div>
+      <div class="smrt-job-stats__card" data-smrt-part="card">
+        <div class="smrt-job-stats__stat-value" data-smrt-part="value">{formatDuration(stats.avgDuration)}</div>
+        <div class="smrt-job-stats__stat-label" data-smrt-part="label">{t(M['jobs.job_stats.avg_duration'])}</div>
       </div>
     </Card>
   </div>
 
   {#if queues.length > 0 && !compact}
-    <div class="job-stats__queues">
+    <div class="smrt-job-stats__queues" data-smrt-part="queues">
       <h3>Queues</h3>
-      <div class="queue-list">
+      <div class="smrt-job-stats__queue-list" data-smrt-part="list">
         {#each queues as queue (queue.name)}
           <Card padding="sm">
-            <div class="queue-card">
-              <div class="queue-card__header">
-                <span class="queue-card__name">{queue.name}</span>
-                <span class="queue-card__running">{queue.running} running</span>
+            <div class="smrt-job-stats__queue-card" data-smrt-part="card">
+              <div class="smrt-job-stats__queue-header" data-smrt-part="header">
+                <span class="smrt-job-stats__queue-name" data-smrt-part="name">{queue.name}</span>
+                <span class="smrt-job-stats__queue-running" data-smrt-part="meta">{queue.running} running</span>
               </div>
-              <div class="queue-card__stats">
-                <div class="queue-stat">
-                  <span class="queue-stat__value">{queue.pending}</span>
-                  <span class="queue-stat__label">pending</span>
+              <div class="smrt-job-stats__queue-stats" data-smrt-part="stats">
+                <div class="smrt-job-stats__queue-stat" data-smrt-part="stat">
+                  <span class="smrt-job-stats__queue-stat-value" data-smrt-part="value">{queue.pending}</span>
+                  <span class="smrt-job-stats__queue-stat-label" data-smrt-part="label">pending</span>
                 </div>
-                <div class="queue-stat">
-                  <span class="queue-stat__value">{queue.completed24h}</span>
-                  <span class="queue-stat__label">completed/24h</span>
+                <div class="smrt-job-stats__queue-stat" data-smrt-part="stat">
+                  <span class="smrt-job-stats__queue-stat-value" data-smrt-part="value">{queue.completed24h}</span>
+                  <span class="smrt-job-stats__queue-stat-label" data-smrt-part="label">completed/24h</span>
                 </div>
-                <div class="queue-stat">
-                  <span class="queue-stat__value">{queue.failed24h}</span>
-                  <span class="queue-stat__label">failed/24h</span>
+                <div class="smrt-job-stats__queue-stat" data-smrt-part="stat">
+                  <span class="smrt-job-stats__queue-stat-value" data-smrt-part="value">{queue.failed24h}</span>
+                  <span class="smrt-job-stats__queue-stat-label" data-smrt-part="label">failed/24h</span>
                 </div>
-                <div class="queue-stat">
-                  <span class="queue-stat__value"
+                <div class="smrt-job-stats__queue-stat" data-smrt-part="stat">
+                  <span class="smrt-job-stats__queue-stat-value" data-smrt-part="value"
                     >{formatDuration(queue.avgDuration)}</span
                   >
-                  <span class="queue-stat__label">avg</span>
+                  <span class="smrt-job-stats__queue-stat-label" data-smrt-part="label">avg</span>
                 </div>
               </div>
             </div>
@@ -129,117 +129,107 @@ const successRateFormatted = $derived(
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .job-stats {
+@layer smrt.structure {
+  .smrt-job-stats__root {
     width: 100%;
   }
-
-  .job-stats.loading {
-    opacity: 0.7;
-    pointer-events: none;
-  }
-
-  .job-stats__grid {
+  .smrt-job-stats__grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
     gap: var(--smrt-spacing-md, 1rem);
   }
-
-  .compact .job-stats__grid {
+  .smrt-job-stats__compact .smrt-job-stats__grid {
     grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
     gap: var(--smrt-spacing-sm, 0.5rem);
   }
-
-  .stat-card {
-    text-align: center;
+  .smrt-job-stats__card {
     padding: var(--smrt-spacing-sm, 0.5rem);
   }
-
-  .stat-card__value {
-    font: var(--smrt-typography-headline-small-font, 700 1.5rem / 1.2 sans-serif);
-  }
-
-  .compact .stat-card__value {
-    font: var(--smrt-typography-title-large-font, 1.25rem / 1.25 sans-serif);
-  }
-
-  .stat-card__label {
-    font: var(--smrt-typography-body-small-font, 0.875rem / 1.25 sans-serif);
-    color: var(--smrt-color-on-surface-variant);
+  .smrt-job-stats__stat-label {
     margin-top: var(--smrt-spacing-xs, 0.25rem);
   }
-
-  .stat-card--pending .stat-card__value {
-    color: var(--smrt-color-on-surface);
-  }
-
-  .stat-card--running .stat-card__value {
-    color: var(--smrt-color-primary);
-  }
-
-  .stat-card--completed .stat-card__value {
-    color: var(--smrt-color-tertiary);
-  }
-
-  .stat-card--failed .stat-card__value {
-    color: var(--smrt-color-error);
-  }
-
-  .job-stats__queues {
+  .smrt-job-stats__queues {
     margin-top: var(--smrt-spacing-lg, 1.5rem);
   }
-
-  .job-stats__queues h3 {
+  .smrt-job-stats__queues h3 {
     margin: 0 0 var(--smrt-spacing-md, 1rem) 0;
-    font: var(--smrt-typography-title-medium-font, 600 1rem / 1.5 sans-serif);
   }
-
-  .queue-list {
+  .smrt-job-stats__queue-list {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
     gap: var(--smrt-spacing-md, 1rem);
   }
-
-  .queue-card {
+  .smrt-job-stats__queue-card {
     padding: var(--smrt-spacing-xs, 0.25rem);
   }
-
-  .queue-card__header {
+  .smrt-job-stats__queue-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     margin-bottom: var(--smrt-spacing-sm, 0.5rem);
   }
-
-  .queue-card__name {
-    font-weight: var(--smrt-typography-weight-semibold, 600);
-    font-family: var(--smrt-font-family-mono, ui-monospace, monospace);
-  }
-
-  .queue-card__running {
-    font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
-    color: var(--smrt-color-primary);
-  }
-
-  .queue-card__stats {
+  .smrt-job-stats__queue-stats {
     display: flex;
     gap: var(--smrt-spacing-md, 1rem);
   }
-
-  .queue-stat {
+  .smrt-job-stats__queue-stat {
     display: flex;
     flex-direction: column;
     align-items: center;
   }
+  .smrt-job-stats__root.smrt-job-stats__loading {
+    pointer-events: none;
+  }
+}
 
-  .queue-stat__value {
+@layer smrt.theme {
+  .smrt-job-stats__root.smrt-job-stats__loading {
+    opacity: 0.7;
+  }
+  .smrt-job-stats__card {
+    text-align: center;
+  }
+  .smrt-job-stats__stat-value {
+    font: var(--smrt-typography-headline-small-font, 700 1.5rem / 1.2 sans-serif);
+  }
+  .smrt-job-stats__compact .smrt-job-stats__stat-value {
+    font: var(--smrt-typography-title-large-font, 1.25rem / 1.25 sans-serif);
+  }
+  .smrt-job-stats__stat-label {
+    font: var(--smrt-typography-body-small-font, 0.875rem / 1.25 sans-serif);
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-job-stats__card-pending .smrt-job-stats__stat-value {
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-job-stats__card-running .smrt-job-stats__stat-value {
+    color: var(--smrt-color-primary);
+  }
+  .smrt-job-stats__card-completed .smrt-job-stats__stat-value {
+    color: var(--smrt-color-tertiary);
+  }
+  .smrt-job-stats__card-failed .smrt-job-stats__stat-value {
+    color: var(--smrt-color-error);
+  }
+  .smrt-job-stats__queues h3 {
+    font: var(--smrt-typography-title-medium-font, 600 1rem / 1.5 sans-serif);
+  }
+  .smrt-job-stats__queue-name {
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+    font-family: var(--smrt-font-family-mono, ui-monospace, monospace);
+  }
+  .smrt-job-stats__queue-running {
+    font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
+    color: var(--smrt-color-primary);
+  }
+  .smrt-job-stats__queue-stat-value {
     font-weight: var(--smrt-typography-weight-semibold, 600);
     font: var(--smrt-typography-title-medium-font, 1rem / 1.5 sans-serif);
   }
-
-  .queue-stat__label {
+  .smrt-job-stats__queue-stat-label {
     font: var(--smrt-typography-body-small-font, 0.75rem / 1.25 sans-serif);
     color: var(--smrt-color-on-surface-variant);
   }
 }
+
 </style>

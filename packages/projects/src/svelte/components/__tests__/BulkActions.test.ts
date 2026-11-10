@@ -49,7 +49,9 @@ describe('BulkActions', () => {
     const { container } = render(BulkActions, {
       props: baseProps({ selectedCount: 0 }),
     });
-    expect(container.querySelector('.bulk-actions')).toBeNull();
+    expect(
+      container.querySelector('[data-smrt-component="BulkActions"]'),
+    ).toBeNull();
   });
 
   it('is axe-clean', async () => {

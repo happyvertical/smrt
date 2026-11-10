@@ -9,12 +9,14 @@ import PlaygroundHost from '../svelte/PlaygroundHost.svelte';
 describe('PlaygroundHost workspace landmark', () => {
   it('renders <main> when standalone', () => {
     const { body } = render(PlaygroundHost, { props: { embedded: false } });
-    expect(body).toMatch(/<main[^>]*class="workspace[ "]/);
+    expect(body).toMatch(
+      /<main[^>]*class="smrt-playground-host__workspace[ "]/,
+    );
   });
 
   it('renders a plain <div> when embedded', () => {
     const { body } = render(PlaygroundHost, { props: { embedded: true } });
     expect(body).not.toContain('<main');
-    expect(body).toMatch(/<div[^>]*class="workspace[ "]/);
+    expect(body).toMatch(/<div[^>]*class="smrt-playground-host__workspace[ "]/);
   });
 });

@@ -170,12 +170,12 @@ function getInitials(name: string): string {
 
 <svelte:window onclick={handleClickOutside} onkeydown={handleKeydown} />
 
-<div class="user-menu" id={menuId} data-smrt-component="UserMenu">
+<div class="smrt-user-menu__root" id={menuId} data-smrt-component="UserMenu">
   <!-- raw-primitive-allow: WAI-ARIA menu-button trigger with bind:this focus management, aria-haspopup/aria-expanded/aria-controls and roving-tabindex keyboard nav; structural menu button no primitive owns -->
   <button
     bind:this={triggerButton}
     id="{menuId}-trigger"
-    class="user-menu-trigger"
+    class="smrt-user-menu__trigger" data-smrt-part="trigger"
     onclick={toggle}
     onkeydown={handleTriggerKeydown}
     type="button"
@@ -185,11 +185,11 @@ function getInitials(name: string): string {
     aria-controls={open ? `${menuId}-dropdown` : undefined}
     aria-label={ariaLabel}
   >
-    <span class="avatar" aria-hidden="true">
+    <span class="smrt-user-menu__avatar" data-smrt-part="avatar" aria-hidden="true">
       {getInitials(displayName)}
     </span>
-    <span class="user-name">{displayName}</span>
-    <svg class="chevron" class:open viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+    <span class="smrt-user-menu__user-name" data-smrt-part="name">{displayName}</span>
+    <svg class="smrt-user-menu__chevron" data-smrt-part="indicator" class:smrt-user-menu__open={open} viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
       <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
     </svg>
   </button>
@@ -197,7 +197,7 @@ function getInitials(name: string): string {
   {#if open}
     <div
       id="{menuId}-dropdown"
-      class="dropdown"
+      class="smrt-user-menu__dropdown" data-smrt-part="panel"
       role="menu"
       tabindex={-1}
       aria-orientation="vertical"
@@ -205,17 +205,17 @@ function getInitials(name: string): string {
       onkeydown={handleMenuKeydown}
     >
       {#if userEmail}
-        <div class="user-info" role="none">
-          <span class="user-info-name">{displayName}</span>
-          <span class="user-info-email">{userEmail}</span>
+        <div class="smrt-user-menu__info" data-smrt-part="meta" role="none">
+          <span class="smrt-user-menu__info-name" data-smrt-part="label">{displayName}</span>
+          <span class="smrt-user-menu__info-email" data-smrt-part="email">{userEmail}</span>
         </div>
-        <hr class="divider" />
+        <hr class="smrt-user-menu__divider" data-smrt-part="separator" />
       {/if}
 
       <a
         bind:this={itemEls[0]}
         href={profileUrl}
-        class="dropdown-item"
+        class="smrt-user-menu__item" data-smrt-part="item"
         onclick={() => close(false)}
         use:ripple
         role="menuitem"
@@ -229,7 +229,7 @@ function getInitials(name: string): string {
       <a
         bind:this={itemEls[1]}
         href={settingsUrl}
-        class="dropdown-item"
+        class="smrt-user-menu__item" data-smrt-part="item"
         onclick={() => close(false)}
         use:ripple
         role="menuitem"
@@ -240,11 +240,11 @@ function getInitials(name: string): string {
         </svg>
         Settings
       </a>
-      <hr class="divider" />
+      <hr class="smrt-user-menu__divider" data-smrt-part="separator" />
       <a
         bind:this={itemEls[2]}
         href={signoutUrl}
-        class="dropdown-item danger"
+        class="smrt-user-menu__item smrt-user-menu__danger" data-smrt-part="item"
         onclick={() => close(false)}
         use:ripple
         role="menuitem"
@@ -261,145 +261,144 @@ function getInitials(name: string): string {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .user-menu {
+@layer smrt.structure {
+  .smrt-user-menu__root {
     position: relative;
     display: inline-block;
   }
-
-  .user-menu-trigger {
+  .smrt-user-menu__trigger {
     display: flex;
     align-items: center;
     gap: var(--smrt-spacing-3);
     padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
-    background: transparent;
-    border: none;
-    border-radius: var(--smrt-radius-2xl);
     cursor: pointer;
-    transition: background-color var(--smrt-duration-short3, 200ms) var(--smrt-easing-standard, ease);
-    color: var(--smrt-color-on-surface);
     position: relative;
     overflow: hidden;
   }
-
-  .user-menu-trigger:hover {
-    background-color: var(--smrt-color-surface-container-high);
-  }
-
-  .avatar {
+  .smrt-user-menu__avatar {
     display: flex;
     align-items: center;
     justify-content: center;
     width: 32px;
     height: 32px;
+  }
+  .smrt-user-menu__chevron {
+    width: 18px;
+    height: 18px;
+  }
+  .smrt-user-menu__dropdown {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-top: var(--smrt-spacing-1);
+    min-width: 200px;
+    z-index: var(--smrt-z-index-dropdown, 1000);
+    padding: var(--smrt-spacing-1) 0;
+    overflow: hidden;
+  }
+  .smrt-user-menu__item {
+    display: flex;
+    align-items: center;
+    gap: var(--smrt-spacing-3);
+    padding: var(--smrt-spacing-3) var(--smrt-spacing-4);
+    position: relative;
+    overflow: hidden;
+  }
+  .smrt-user-menu__item svg {
+    width: 18px;
+    height: 18px;
+  }
+  .smrt-user-menu__info {
+    padding: var(--smrt-spacing-3) var(--smrt-spacing-4);
+    display: flex;
+    flex-direction: column;
+    gap: var(--smrt-spacing-1);
+  }
+  .smrt-user-menu__divider {
+    margin: var(--smrt-spacing-1) 0;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-user-menu__trigger {
+    background: transparent;
+    border: none;
+    border-radius: var(--smrt-radius-2xl);
+    transition: background-color var(--smrt-duration-short3, 200ms) var(--smrt-easing-standard, ease);
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-user-menu__trigger:hover {
+    background-color: var(--smrt-color-surface-container-high);
+  }
+  .smrt-user-menu__avatar {
     border-radius: var(--smrt-radius-full, 50%);
     background-color: var(--smrt-color-primary-container);
     color: var(--smrt-color-on-primary-container);
     font: var(--smrt-typography-label-large-font);
     font-weight: var(--smrt-typography-weight-semibold, 600);
   }
-
-  .user-name {
+  .smrt-user-menu__user-name {
     font: var(--smrt-typography-label-large-font);
     font-weight: var(--smrt-typography-weight-medium, 500);
   }
-
-  .chevron {
-    width: 18px;
-    height: 18px;
+  .smrt-user-menu__chevron {
     transition: transform var(--smrt-duration-short3, 200ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1));
     opacity: 0.7;
   }
-
-  .chevron.open {
+  .smrt-user-menu__chevron.smrt-user-menu__open {
     transform: rotate(180deg);
   }
-
-  .dropdown {
-    position: absolute;
-    top: 100%;
-    right: 0;
-    margin-top: var(--smrt-spacing-1);
-    min-width: 200px;
+  .smrt-user-menu__dropdown {
     background-color: var(--smrt-color-surface-container);
     border-radius: var(--smrt-radius-medium);
     box-shadow: var(--smrt-elevation-2);
-    z-index: var(--smrt-z-index-dropdown, 1000);
-    padding: var(--smrt-spacing-1) 0;
-    overflow: hidden;
   }
-
-  .dropdown-item {
-    display: flex;
-    align-items: center;
-    gap: var(--smrt-spacing-3);
-    padding: var(--smrt-spacing-3) var(--smrt-spacing-4);
+  .smrt-user-menu__item {
     font: var(--smrt-typography-body-medium-font);
     color: var(--smrt-color-on-surface);
     text-decoration: none;
     transition: background-color var(--smrt-duration-short3, 200ms) var(--smrt-easing-standard, ease);
-    position: relative;
-    overflow: hidden;
   }
-
-  .dropdown-item:hover {
+  .smrt-user-menu__item:hover {
     background-color: var(--smrt-color-surface-container-highest);
   }
-
-  .dropdown-item svg {
-    width: 18px;
-    height: 18px;
+  .smrt-user-menu__item svg {
     opacity: 0.7;
   }
-
-  .dropdown-item.danger {
+  .smrt-user-menu__item.smrt-user-menu__danger {
     color: var(--smrt-color-error);
   }
-
-  .user-info {
-    padding: var(--smrt-spacing-3) var(--smrt-spacing-4);
-    display: flex;
-    flex-direction: column;
-    gap: var(--smrt-spacing-1);
-  }
-
-  .user-info-name {
+  .smrt-user-menu__info-name {
     font: var(--smrt-typography-body-medium-font);
     font-weight: var(--smrt-typography-weight-medium, 500);
     color: var(--smrt-color-on-surface);
   }
-
-  .user-info-email {
+  .smrt-user-menu__info-email {
     font: var(--smrt-typography-body-small-font);
     color: var(--smrt-color-on-surface-variant);
   }
-
-  .user-menu-trigger:focus-visible {
+  .smrt-user-menu__trigger:focus-visible {
     outline: 2px solid var(--smrt-color-primary);
     outline-offset: 2px;
   }
-
-  .dropdown-item:focus-visible {
+  .smrt-user-menu__item:focus-visible {
     outline: 2px solid var(--smrt-color-primary);
     outline-offset: -2px;
   }
-
-  .divider {
-    margin: var(--smrt-spacing-1) 0;
+  .smrt-user-menu__divider {
     border: none;
     border-top: var(--smrt-hairline);
   }
-
   @media (prefers-reduced-motion: reduce) {
-    .user-menu-trigger,
-    .chevron,
-    .dropdown-item {
+    .smrt-user-menu__trigger,
+    .smrt-user-menu__chevron,
+    .smrt-user-menu__item {
       transition: none;
     }
-    
-    .chevron.open {
+    .smrt-user-menu__chevron.smrt-user-menu__open {
       transform: none;
     }
   }
 }
+
 </style>

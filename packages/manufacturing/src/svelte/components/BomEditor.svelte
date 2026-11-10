@@ -219,17 +219,17 @@ const showActions = $derived(Boolean(onupdate || onremove));
 const ancestors = $derived(bomId ? [bomId] : []);
 </script>
 
-<div class="bom-editor" data-smrt-component="BomEditor">
+<div class="smrt-bom-editor__root" data-smrt-component="BomEditor">
   {#if error}
     <Alert variant="error">{error}</Alert>
   {/if}
 
   {#if lines.length === 0}
-    <p class="bom-editor-empty">{t(M['manufacturing.bom_editor.empty'])}</p>
+    <p class="smrt-bom-editor__empty" data-smrt-part="empty">{t(M['manufacturing.bom_editor.empty'])}</p>
   {:else}
-    <div class="bom-editor-scroll">
-      <table class="bom-editor-table">
-        <caption class="bom-editor-caption">{t(M['manufacturing.bom_editor.caption'])}</caption>
+    <div class="smrt-bom-editor__scroll" data-smrt-part="body">
+      <table class="smrt-bom-editor__table" data-smrt-part="table">
+        <caption class="smrt-bom-editor__caption" data-smrt-part="caption">{t(M['manufacturing.bom_editor.caption'])}</caption>
         <thead>
           <tr>
             <th scope="col">{t(M['manufacturing.bom_editor.component'])}</th>
@@ -254,14 +254,14 @@ const ancestors = $derived(bomId ? [bomId] : []);
             {@const subId = `${uid}-sub-${line.id}`}
             {@const errorId = `${uid}-row-error-${line.id}`}
             <tr>
-              <th scope="row" class="bom-editor-component">{componentText(line)}</th>
+              <th scope="row" class="smrt-bom-editor__component" data-smrt-part="name">{componentText(line)}</th>
               <td>
-                <div class="bom-editor-kind">
+                <div class="smrt-bom-editor__kind" data-smrt-part="meta">
                   <Badge size="sm" variant={line.kind === 'missing' ? 'error' : 'default'}>
                     {t(componentKindLabelKey(line.kind))}
                   </Badge>
                   {#if line.kind === 'assembly'}
-                    <span class="bom-editor-note">
+                    <span class="smrt-bom-editor__note" data-smrt-part="note">
                       {t(
                         line.subBomId
                           ? M['manufacturing.bom_editor.has_bill']
@@ -331,13 +331,13 @@ const ancestors = $derived(bomId ? [bomId] : []);
                   />
                 </td>
               {:else}
-                <td class="bom-editor-number">{line.qtyPerUnit}</td>
+                <td class="smrt-bom-editor__number" data-smrt-part="cell">{line.qtyPerUnit}</td>
                 <td>{line.uom}</td>
-                <td class="bom-editor-number">{line.wastePercent}</td>
+                <td class="smrt-bom-editor__number" data-smrt-part="cell">{line.wastePercent}</td>
               {/if}
               {#if showActions}
                 <td>
-                  <div class="bom-editor-actions">
+                  <div class="smrt-bom-editor__actions" data-smrt-part="actions">
                     {#if onupdate}
                       <Button
                         variant="secondary"
@@ -362,7 +362,7 @@ const ancestors = $derived(bomId ? [bomId] : []);
                     {/if}
                   </div>
                   {#if invalid.length > 0}
-                    <ul class="bom-editor-errors" id={errorId}>
+                    <ul class="smrt-bom-editor__errors" data-smrt-part="errors" id={errorId}>
                       {#each invalid as field (field)}
                         <li>{errorText(field)}</li>
                       {/each}
@@ -373,9 +373,9 @@ const ancestors = $derived(bomId ? [bomId] : []);
             </tr>
             {#if canOpen && open[line.id] && line.subBomId}
               {@const entry = loadedBills[line.subBomId]}
-              <tr class="bom-editor-sub">
+              <tr class="smrt-bom-editor__sub" data-smrt-part="row">
                 <td colspan={showActions ? 6 : 5}>
-                  <div id={subId} class="bom-editor-sub-bill">
+                  <div id={subId} class="smrt-bom-editor__sub-bill" data-smrt-part="panel">
                     {#if entry?.state === 'ready'}
                       <BomStructureTree
                         lines={entry.lines}
@@ -384,9 +384,9 @@ const ancestors = $derived(bomId ? [bomId] : []);
                         label={t(M['manufacturing.bom_editor.sub_bill_label'], { component: line.componentName })}
                       />
                     {:else if entry?.state === 'failed'}
-                      <p class="bom-editor-note" role="alert">{t(M['manufacturing.bom_editor.load_failed'])}</p>
+                      <p class="smrt-bom-editor__note" data-smrt-part="note" role="alert">{t(M['manufacturing.bom_editor.load_failed'])}</p>
                     {:else}
-                      <p class="bom-editor-note" role="status">{t(M['manufacturing.bom_editor.loading'])}</p>
+                      <p class="smrt-bom-editor__note" data-smrt-part="note" role="status">{t(M['manufacturing.bom_editor.loading'])}</p>
                     {/if}
                   </div>
                 </td>
@@ -399,10 +399,10 @@ const ancestors = $derived(bomId ? [bomId] : []);
   {/if}
 
   {#if onadd && components}
-    <section class="bom-editor-add" aria-labelledby="{uid}-add-heading">
-      <h3 id="{uid}-add-heading" class="bom-editor-add-heading">{t(M['manufacturing.bom_editor.add_heading'])}</h3>
+    <section class="smrt-bom-editor__add" data-smrt-part="add" aria-labelledby="{uid}-add-heading">
+      <h3 id="{uid}-add-heading" class="smrt-bom-editor__add-heading" data-smrt-part="title">{t(M['manufacturing.bom_editor.add_heading'])}</h3>
       <Form class="bom-editor-add-form" onsubmit={add}>
-        <div class="field field-component">
+        <div class="smrt-bom-editor__field smrt-bom-editor__field-component" data-smrt-part="field">
           <label for="{uid}-add-component">{t(M['manufacturing.bom_editor.component'])}</label>
           <Select
             id="{uid}-add-component"
@@ -418,7 +418,7 @@ const ancestors = $derived(bomId ? [bomId] : []);
             {/each}
           </Select>
         </div>
-        <div class="field">
+        <div class="smrt-bom-editor__field" data-smrt-part="field">
           <label for="{uid}-add-qty">{t(M['manufacturing.bom_editor.qty_per_unit'])}</label>
           <Input
             id="{uid}-add-qty"
@@ -432,7 +432,7 @@ const ancestors = $derived(bomId ? [bomId] : []);
             aria-describedby={addInvalid.length > 0 ? `${uid}-add-errors` : undefined}
           />
         </div>
-        <div class="field">
+        <div class="smrt-bom-editor__field" data-smrt-part="field">
           <label for="{uid}-add-uom">{t(M['manufacturing.bom_editor.uom'])}</label>
           <Input
             id="{uid}-add-uom"
@@ -444,7 +444,7 @@ const ancestors = $derived(bomId ? [bomId] : []);
             aria-describedby={addInvalid.length > 0 ? `${uid}-add-errors` : undefined}
           />
         </div>
-        <div class="field">
+        <div class="smrt-bom-editor__field" data-smrt-part="field">
           <label for="{uid}-add-waste">{t(M['manufacturing.bom_editor.waste_percent'])}</label>
           <Input
             id="{uid}-add-waste"
@@ -458,12 +458,12 @@ const ancestors = $derived(bomId ? [bomId] : []);
             aria-describedby={addInvalid.length > 0 ? `${uid}-add-errors` : undefined}
           />
         </div>
-        <div class="field field-submit">
+        <div class="smrt-bom-editor__field smrt-bom-editor__field-submit" data-smrt-part="field">
           <Button type="submit" disabled={blocked}>{t(M['manufacturing.bom_editor.add'])}</Button>
         </div>
       </Form>
       {#if addInvalid.length > 0}
-        <ul class="bom-editor-errors" id="{uid}-add-errors">
+        <ul class="smrt-bom-editor__errors" data-smrt-part="errors" id="{uid}-add-errors">
           {#each addInvalid as field (field)}
             <li>{errorText(field)}</li>
           {/each}
@@ -475,23 +475,19 @@ const ancestors = $derived(bomId ? [bomId] : []);
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .bom-editor {
+@layer smrt.structure {
+  .smrt-bom-editor__root {
     display: flex;
     flex-direction: column;
     gap: 1rem;
   }
-
-  .bom-editor-scroll {
+  .smrt-bom-editor__scroll {
     overflow-x: auto;
   }
-
-  .bom-editor-table {
+  .smrt-bom-editor__table {
     width: 100%;
-    border-collapse: collapse;
   }
-
-  .bom-editor-caption {
+  .smrt-bom-editor__caption {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -499,80 +495,86 @@ const ancestors = $derived(bomId ? [bomId] : []);
     clip-path: inset(50%);
     white-space: nowrap;
   }
-
-  .bom-editor-table th,
-  .bom-editor-table td {
+  .smrt-bom-editor__table th,
+  .smrt-bom-editor__table td {
     padding: 0.5rem 0.75rem;
-    text-align: left;
-    vertical-align: top;
-    border-bottom: var(--smrt-hairline);
   }
-
-  .bom-editor-table thead th {
-    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
-    font-weight: var(--smrt-typography-label-medium-weight, 500);
-    color: var(--smrt-color-on-surface-variant, inherit);
-  }
-
-  .bom-editor-component {
-    font-weight: var(--smrt-typography-title-small-weight, 500);
-  }
-
-  .bom-editor-kind,
-  .bom-editor-actions {
+  .smrt-bom-editor__kind,
+  .smrt-bom-editor__actions {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: 0.5rem;
   }
-
-  .bom-editor-number {
-    font-variant-numeric: tabular-nums;
-  }
-
-  .bom-editor-note,
-  .bom-editor-empty {
+  .smrt-bom-editor__note,
+  .smrt-bom-editor__empty {
     margin: 0;
-    color: var(--smrt-color-on-surface-variant, inherit);
   }
-
-  .bom-editor-sub-bill {
+  .smrt-bom-editor__sub-bill {
     padding-left: 1rem;
-    border-left: 2px solid var(--smrt-color-outline-variant, transparent);
   }
-
-  .bom-editor-errors {
+  .smrt-bom-editor__errors {
     margin: 0.25rem 0 0;
     padding-left: 1rem;
-    color: var(--smrt-color-error, inherit);
   }
-
-  .bom-editor-add-heading {
+  .smrt-bom-editor__add-heading {
     margin: 0 0 0.5rem;
-    font-size: var(--smrt-typography-title-small-size, 0.875rem);
-    font-weight: var(--smrt-typography-title-small-weight, 500);
   }
-
-  .bom-editor-add :global(.bom-editor-add-form) {
+  .smrt-bom-editor__add :global(.bom-editor-add-form) {
     display: flex;
     flex-wrap: wrap;
     align-items: flex-end;
     gap: 0.75rem;
   }
-
-  .field {
+  .smrt-bom-editor__field {
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
   }
-
-  .field-component {
+  .smrt-bom-editor__field-component {
     flex: 1 1 14rem;
   }
+}
 
-  .field label {
+@layer smrt.theme {
+  .smrt-bom-editor__table {
+    border-collapse: collapse;
+  }
+  .smrt-bom-editor__table th,
+  .smrt-bom-editor__table td {
+    text-align: left;
+    vertical-align: top;
+    border-bottom: var(--smrt-hairline);
+  }
+  .smrt-bom-editor__table thead th {
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
+    font-weight: var(--smrt-typography-label-medium-weight, 500);
+    color: var(--smrt-color-on-surface-variant, inherit);
+  }
+  .smrt-bom-editor__component {
+    font-weight: var(--smrt-typography-title-small-weight, 500);
+  }
+  .smrt-bom-editor__number {
+    font-variant-numeric: tabular-nums;
+  }
+  .smrt-bom-editor__note,
+  .smrt-bom-editor__empty {
+    color: var(--smrt-color-on-surface-variant, inherit);
+  }
+  .smrt-bom-editor__sub-bill {
+    border-left: 2px solid var(--smrt-color-outline-variant, transparent);
+  }
+  .smrt-bom-editor__errors {
+    color: var(--smrt-color-error, inherit);
+  }
+  .smrt-bom-editor__add-heading {
+    font-size: var(--smrt-typography-title-small-size, 0.875rem);
+    font-weight: var(--smrt-typography-title-small-weight, 500);
+  }
+  .smrt-bom-editor__field label {
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     color: var(--smrt-color-on-surface-variant, inherit);
   }
 }
+
 </style>

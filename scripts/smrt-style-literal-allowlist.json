@@ -162,7 +162,7 @@
     "packages/sales/src/svelte/components/LeadList.svelte": 2,
     "packages/sales/src/svelte/components/OpportunityBoard.svelte": 2,
     "packages/sales/src/svelte/components/ReferralLinkManager.svelte": 2,
-    "packages/smrt-playground/src/svelte/PlaygroundHost.svelte": 5,
+    "packages/smrt-playground/src/svelte/PlaygroundHost.svelte": 6,
     "packages/smrt-svelte/src/browser-ai/svelte/components/DownloadProgress.svelte": 1,
     "packages/smrt-svelte/src/browser-ai/svelte/components/STTTest.svelte": 4,
     "packages/smrt-svelte/src/browser-ai/svelte/components/VoiceInput.svelte": 6,

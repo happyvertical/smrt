@@ -87,13 +87,13 @@ function labour(minutes: number): string {
 </script>
 
 {#if assemblies.length === 0}
-  <p class="assembly-list-empty" data-smrt-component="AssemblyList">
+  <p class="smrt-assembly-list__empty" data-smrt-component="AssemblyList">
     {emptyMessage ?? t(M['manufacturing.assembly_list.empty'])}
   </p>
 {:else}
-  <div class="assembly-list-scroll" data-smrt-component="AssemblyList">
-    <table class="assembly-list">
-      <caption class="assembly-list-caption">{t(M['manufacturing.assembly_list.caption'])}</caption>
+  <div class="smrt-assembly-list__root" data-smrt-component="AssemblyList">
+    <table class="smrt-assembly-list__table" data-smrt-part="table">
+      <caption class="smrt-assembly-list__caption" data-smrt-part="caption">{t(M['manufacturing.assembly_list.caption'])}</caption>
       <thead>
         <tr>
           <th scope="col">
@@ -110,10 +110,10 @@ function labour(minutes: number): string {
             <th scope="col">{t(M['manufacturing.assembly_list.sku'])}</th>
           {/if}
           {#if visible.has('price')}
-            <th scope="col" class="numeric">{t(M['manufacturing.assembly_list.price'])}</th>
+            <th scope="col" class="smrt-assembly-list__numeric" data-smrt-part="cell">{t(M['manufacturing.assembly_list.price'])}</th>
           {/if}
           {#if visible.has('labour')}
-            <th scope="col" class="numeric">{t(M['manufacturing.assembly_list.labour'])}</th>
+            <th scope="col" class="smrt-assembly-list__numeric" data-smrt-part="cell">{t(M['manufacturing.assembly_list.labour'])}</th>
           {/if}
           {#if visible.has('bill')}
             <th scope="col">{t(M['manufacturing.assembly_list.bill'])}</th>
@@ -123,7 +123,7 @@ function labour(minutes: number): string {
       <tbody>
         {#each assemblies as assembly (assembly.id)}
           <tr>
-            <th scope="row" class="assembly-list-name">
+            <th scope="row" class="smrt-assembly-list__name" data-smrt-part="name">
               {#if onselect}
                 <Button
                   variant="ghost"
@@ -142,33 +142,33 @@ function labour(minutes: number): string {
                 {#if assembly.partReference}
                   {assembly.partReference}
                 {:else}
-                  <span class="assembly-list-none">{t(M['manufacturing.assembly_list.none'])}</span>
+                  <span class="smrt-assembly-list__none" data-smrt-part="empty">{t(M['manufacturing.assembly_list.none'])}</span>
                 {/if}
               </td>
             {/if}
             {#if visible.has('sku')}
-              <td class="assembly-list-code">
+              <td class="smrt-assembly-list__code" data-smrt-part="code">
                 {#if assembly.skuCodes.length > 0}
                   {assembly.skuCodes.join(', ')}
                 {:else}
-                  <span class="assembly-list-none">{t(M['manufacturing.assembly_list.none'])}</span>
+                  <span class="smrt-assembly-list__none" data-smrt-part="empty">{t(M['manufacturing.assembly_list.none'])}</span>
                 {/if}
               </td>
             {/if}
             {#if visible.has('price')}
-              <td class="numeric">
+              <td class="smrt-assembly-list__numeric" data-smrt-part="cell">
                 <CurrencyDisplay amount={assembly.price} {currency} unit="cents" size="sm" />
               </td>
             {/if}
             {#if visible.has('labour')}
-              <td class="numeric">{labour(assembly.estimatedLabourMinutes)}</td>
+              <td class="smrt-assembly-list__numeric" data-smrt-part="cell">{labour(assembly.estimatedLabourMinutes)}</td>
             {/if}
             {#if visible.has('bill')}
               <td>
                 {#if assembly.activeBomVersion !== null}
                   {t(M['manufacturing.assembly_list.bill_active'], { version: assembly.activeBomVersion })}
                 {:else}
-                  <span class="assembly-list-none">{t(M['manufacturing.assembly_list.bill_missing'])}</span>
+                  <span class="smrt-assembly-list__none" data-smrt-part="empty">{t(M['manufacturing.assembly_list.bill_missing'])}</span>
                 {/if}
               </td>
             {/if}
@@ -181,17 +181,14 @@ function labour(minutes: number): string {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .assembly-list-scroll {
+@layer smrt.structure {
+  .smrt-assembly-list__root {
     overflow-x: auto;
   }
-
-  .assembly-list {
+  .smrt-assembly-list__table {
     width: 100%;
-    border-collapse: collapse;
   }
-
-  .assembly-list-caption {
+  .smrt-assembly-list__caption {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -199,40 +196,43 @@ function labour(minutes: number): string {
     clip-path: inset(50%);
     white-space: nowrap;
   }
-
-  .assembly-list th,
-  .assembly-list td {
+  .smrt-assembly-list__table th,
+  .smrt-assembly-list__table td {
     padding: 0.5rem 0.75rem;
+  }
+  .smrt-assembly-list__empty {
+    padding: 1rem 0;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-assembly-list__table {
+    border-collapse: collapse;
+  }
+  .smrt-assembly-list__table th,
+  .smrt-assembly-list__table td {
     text-align: left;
     border-bottom: var(--smrt-hairline);
   }
-
-  .assembly-list thead th {
+  .smrt-assembly-list__table thead th {
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     font-weight: var(--smrt-typography-label-medium-weight, 500);
     color: var(--smrt-color-on-surface-variant, inherit);
   }
-
-  .assembly-list .numeric {
+  .smrt-assembly-list__table .smrt-assembly-list__numeric {
     text-align: right;
     font-variant-numeric: tabular-nums;
   }
-
-  .assembly-list-name {
+  .smrt-assembly-list__name {
     font-weight: var(--smrt-typography-title-small-weight, 500);
   }
-
-  .assembly-list-code {
+  .smrt-assembly-list__code {
     font-variant-numeric: tabular-nums;
   }
-
-  .assembly-list-none,
-  .assembly-list-empty {
+  .smrt-assembly-list__none,
+  .smrt-assembly-list__empty {
     color: var(--smrt-color-on-surface-variant, inherit);
   }
-
-  .assembly-list-empty {
-    padding: 1rem 0;
-  }
 }
+
 </style>
