@@ -50,9 +50,9 @@ function getFolderIcon(specialUse?: string): string {
 }
 </script>
 
-<nav class="folder-nav" aria-label={t(M['messages.folder_nav.folders'])} data-smrt-component="FolderNav">
+<nav class="smrt-folder-nav__root" aria-label={t(M['messages.folder_nav.folders'])} data-smrt-component="FolderNav">
   {#if _systemFolders.length > 0}
-    <ul class="folder-list" role="list">
+    <ul class="smrt-folder-nav__list" role="list" data-smrt-part="list">
       {#each _systemFolders as folder (folder.id)}
         <li>
           <Button
@@ -62,10 +62,10 @@ function getFolderIcon(specialUse?: string): string {
             onclick={() => onfolderclick?.(folder)}
             aria-current={folder.id === activeFolderId ? 'true' : undefined}
           >
-            <span class="folder-icon">{getFolderIcon(folder.specialUse)}</span>
-            <span class="folder-name">{folder.name}</span>
+            <span class="smrt-folder-nav__icon" data-smrt-part="icon">{getFolderIcon(folder.specialUse)}</span>
+            <span class="smrt-folder-nav__label" data-smrt-part="label">{folder.name}</span>
             {#if showCounts && folder.unreadCount > 0}
-              <span class="unread-badge">{folder.unreadCount}</span>
+              <span class="smrt-folder-nav__count" data-smrt-part="count">{folder.unreadCount}</span>
             {/if}
           </Button>
         </li>
@@ -75,9 +75,9 @@ function getFolderIcon(specialUse?: string): string {
 
   {#if _userFolders.length > 0}
     {#if _systemFolders.length > 0}
-      <hr class="divider" />
+      <hr class="smrt-folder-nav__divider" />
     {/if}
-    <ul class="folder-list" role="list">
+    <ul class="smrt-folder-nav__list" role="list" data-smrt-part="list">
       {#each _userFolders as folder (folder.id)}
         <li>
           <Button
@@ -87,10 +87,10 @@ function getFolderIcon(specialUse?: string): string {
             onclick={() => onfolderclick?.(folder)}
             aria-current={folder.id === activeFolderId ? 'true' : undefined}
           >
-            <span class="folder-icon">📁</span>
-            <span class="folder-name">{folder.name}</span>
+            <span class="smrt-folder-nav__icon" data-smrt-part="icon">📁</span>
+            <span class="smrt-folder-nav__label" data-smrt-part="label">{folder.name}</span>
             {#if showCounts && folder.unreadCount > 0}
-              <span class="unread-badge">{folder.unreadCount}</span>
+              <span class="smrt-folder-nav__count" data-smrt-part="count">{folder.unreadCount}</span>
             {/if}
           </Button>
         </li>
@@ -101,32 +101,63 @@ function getFolderIcon(specialUse?: string): string {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .folder-nav {
+@layer smrt.structure {
+  .smrt-folder-nav__root {
     display: flex;
     flex-direction: column;
     padding: 0.5rem 0;
   }
-
-  .folder-list {
+  .smrt-folder-nav__list {
     list-style: none;
     margin: 0;
     padding: 0;
   }
-
   /*
-   * Folder rows now render through smrt-ui's <Button variant="ghost" fullWidth>.
-   * The <button> is emitted inside the Button child, so `.folder-list :global(.folder-item)`
-   * anchors on the real `.folder-list` element and pierces the child scope to keep
-   * the nav-row layout, neutral color, hover and active styling (issue #1589). The
-   * active modifier is `folder-item--active`, NOT a Button variant class.
-   */
-  .folder-list :global(.folder-item) {
+  * Folder rows now render through smrt-ui's <Button variant="ghost" fullWidth>.
+  * The <button> is emitted inside the Button child, so `.smrt-folder-nav__list :global(.folder-item)`
+  * anchors on the real `.smrt-folder-nav__list` element and pierces the child scope to keep
+  * the nav-row layout, neutral color, hover and active styling (issue #1589). The
+  * active modifier is `folder-item--active`, NOT a Button variant class.
+  */
+  .smrt-folder-nav__list :global(.folder-item) {
     display: flex;
     align-items: center;
     gap: 0.5rem;
     width: 100%;
     padding: 0.5rem 0.75rem;
+  }
+  .smrt-folder-nav__icon {
+    flex-shrink: 0;
+  }
+  .smrt-folder-nav__label {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .smrt-folder-nav__count {
+    flex-shrink: 0;
+    min-width: 1.25rem;
+    height: 1.25rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 0.25rem;
+  }
+  .smrt-folder-nav__divider {
+    margin: 0.25rem 0.75rem;
+  }
+}
+
+@layer smrt.theme {
+  /*
+  * Folder rows now render through smrt-ui's <Button variant="ghost" fullWidth>.
+  * The <button> is emitted inside the Button child, so `.smrt-folder-nav__list :global(.folder-item)`
+  * anchors on the real `.smrt-folder-nav__list` element and pierces the child scope to keep
+  * the nav-row layout, neutral color, hover and active styling (issue #1589). The
+  * active modifier is `folder-item--active`, NOT a Button variant class.
+  */
+  .smrt-folder-nav__list :global(.folder-item) {
     border: none;
     background: none;
     font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
@@ -135,51 +166,30 @@ function getFolderIcon(specialUse?: string): string {
     transition: background var(--smrt-duration-short2, 150ms);
     text-align: left;
   }
-
-  .folder-list :global(.folder-item):hover {
+  .smrt-folder-nav__list :global(.folder-item):hover {
     background: var(--smrt-color-surface-variant);
   }
-
-  .folder-list :global(.folder-item--active) {
+  .smrt-folder-nav__list :global(.folder-item--active) {
     background: var(--smrt-color-secondary-container);
     font-weight: var(--smrt-typography-weight-medium, 500);
   }
-
-  .folder-list :global(.folder-item):focus-visible {
+  .smrt-folder-nav__list :global(.folder-item):focus-visible {
     outline: 2px solid var(--smrt-color-primary);
     outline-offset: -2px;
   }
-
-  .folder-icon {
-    flex-shrink: 0;
+  .smrt-folder-nav__icon {
     font-size: var(--smrt-typography-body-large-size, 1rem);
   }
-
-  .folder-name {
-    flex: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .unread-badge {
-    flex-shrink: 0;
-    min-width: 1.25rem;
-    height: 1.25rem;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
+  .smrt-folder-nav__count {
     border-radius: var(--smrt-radius-full);
     background: var(--smrt-color-primary);
     color: var(--smrt-color-on-primary);
     font: var(--smrt-typography-label-small-font, 500 0.6875rem / 1 sans-serif);
-    padding: 0 0.25rem;
   }
-
-  .divider {
+  .smrt-folder-nav__divider {
     border: none;
     border-top: var(--smrt-hairline);
-    margin: 0.25rem 0.75rem;
   }
 }
+
 </style>

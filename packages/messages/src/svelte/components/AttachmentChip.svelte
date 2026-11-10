@@ -42,82 +42,97 @@ const _formattedSize = $derived.by(() => {
     onclick={() => onclick?.(attachment)}
     title={`${attachment.filename} (${_formattedSize})`}
   >
-    <span class="icon">{_icon}</span>
-    <span class="name">{attachment.filename}</span>
-    <span class="size">{_formattedSize}</span>
+    <span class="smrt-attachment-chip__icon" data-smrt-part="icon">{_icon}</span>
+    <span class="smrt-attachment-chip__name" data-smrt-part="name">{attachment.filename}</span>
+    <span class="smrt-attachment-chip__size" data-smrt-part="size">{_formattedSize}</span>
   </Button>
 {:else}
-  <span class="chip" title={`${attachment.filename} (${_formattedSize})`} data-smrt-component="AttachmentChip">
-    <span class="icon">{_icon}</span>
-    <span class="name">{attachment.filename}</span>
-    <span class="size">{_formattedSize}</span>
+  <span class="smrt-attachment-chip__root" title={`${attachment.filename} (${_formattedSize})`} data-smrt-component="AttachmentChip">
+    <span class="smrt-attachment-chip__icon" data-smrt-part="icon">{_icon}</span>
+    <span class="smrt-attachment-chip__name" data-smrt-part="name">{attachment.filename}</span>
+    <span class="smrt-attachment-chip__size" data-smrt-part="size">{_formattedSize}</span>
   </span>
 {/if}
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .chip {
+@layer smrt.structure {
+  .smrt-attachment-chip__root {
     display: inline-flex;
     align-items: center;
     gap: 0.375rem;
     padding: 0.25rem 0.625rem;
-    border-radius: var(--smrt-radius-small, 0.25rem);
-    background: var(--smrt-color-surface-variant);
-    color: var(--smrt-color-on-surface-variant);
-    font: var(--smrt-typography-label-medium-font, 500 0.75rem / 1.33 sans-serif);
-    border: none;
     cursor: default;
     max-width: 200px;
   }
-
   /*
-   * The interactive chip now renders through smrt-ui's <Button variant="ghost">.
-   * The <button> is emitted inside the Button child carrying Button's scope hash,
-   * so the local `.chip` rule above no longer reaches it. `:global(.chip--button)`
-   * pierces that scope to give the button the same chip styling plus the
-   * pressable affordances; `chip--button` is a non-colliding modifier (issue
-   * #1589). The non-interactive `<span class="chip">` branch still uses the
-   * scoped `.chip` rule above.
-   */
+  * The interactive chip now renders through smrt-ui's <Button variant="ghost">.
+  * The <button> is emitted inside the Button child carrying Button's scope hash,
+  * so the local `.smrt-attachment-chip__root` rule above no longer reaches it. `:global(.chip--button)`
+  * pierces that scope to give the button the same chip styling plus the
+  * pressable affordances; `chip--button` is a non-colliding modifier (issue
+  * #1589). The non-interactive `<span class="smrt-attachment-chip__root">` branch still uses the
+  * scoped `.smrt-attachment-chip__root` rule above.
+  */
   :global(.chip.chip--button) {
     display: inline-flex;
     align-items: center;
     gap: 0.375rem;
     padding: 0.25rem 0.625rem;
-    border-radius: var(--smrt-radius-small, 0.25rem);
-    background: var(--smrt-color-surface-variant);
-    color: var(--smrt-color-on-surface-variant);
-    font: var(--smrt-typography-label-medium-font, 500 0.75rem / 1.33 sans-serif);
     cursor: pointer;
     max-width: 200px;
-    transition: background var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
-
-  :global(.chip.chip--button):hover {
-    background: color-mix(in srgb, var(--smrt-color-surface-variant) 92%, var(--smrt-color-shadow));
-  }
-
-  :global(.chip.chip--button):focus-visible {
-    outline: 2px solid var(--smrt-color-primary);
-    outline-offset: 1px;
-  }
-
-  .icon {
+  .smrt-attachment-chip__icon {
     flex-shrink: 0;
-    font-size: var(--smrt-typography-label-large-size, 0.875rem);
   }
-
-  .name {
+  .smrt-attachment-chip__name {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-
-  .size {
+  .smrt-attachment-chip__size {
     flex-shrink: 0;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-attachment-chip__root {
+    border-radius: var(--smrt-radius-small, 0.25rem);
+    background: var(--smrt-color-surface-variant);
+    color: var(--smrt-color-on-surface-variant);
+    font: var(--smrt-typography-label-medium-font, 500 0.75rem / 1.33 sans-serif);
+    border: none;
+  }
+  /*
+  * The interactive chip now renders through smrt-ui's <Button variant="ghost">.
+  * The <button> is emitted inside the Button child carrying Button's scope hash,
+  * so the local `.smrt-attachment-chip__root` rule above no longer reaches it. `:global(.chip--button)`
+  * pierces that scope to give the button the same chip styling plus the
+  * pressable affordances; `chip--button` is a non-colliding modifier (issue
+  * #1589). The non-interactive `<span class="smrt-attachment-chip__root">` branch still uses the
+  * scoped `.smrt-attachment-chip__root` rule above.
+  */
+  :global(.chip.chip--button) {
+    border-radius: var(--smrt-radius-small, 0.25rem);
+    background: var(--smrt-color-surface-variant);
+    color: var(--smrt-color-on-surface-variant);
+    font: var(--smrt-typography-label-medium-font, 500 0.75rem / 1.33 sans-serif);
+    transition: background var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
+  }
+  :global(.chip.chip--button):hover {
+    background: color-mix(in srgb, var(--smrt-color-surface-variant) 92%, var(--smrt-color-shadow));
+  }
+  :global(.chip.chip--button):focus-visible {
+    outline: 2px solid var(--smrt-color-primary);
+    outline-offset: 1px;
+  }
+  .smrt-attachment-chip__icon {
+    font-size: var(--smrt-typography-label-large-size, 0.875rem);
+  }
+  .smrt-attachment-chip__size {
     opacity: 0.7;
     font-size: var(--smrt-typography-label-small-size, 0.6875rem);
   }
 }
+
 </style>

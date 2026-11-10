@@ -26,50 +26,51 @@ function methodLabel(method: string): string {
 }
 </script>
 
-<div class="sales-payout-history" data-smrt-component="PayoutHistoryList">
+<div class="smrt-payout-history-list__root" data-smrt-component="PayoutHistoryList">
   {#if payouts.length === 0}
-    <p class="empty">No payouts yet.</p>
+    <p class="smrt-payout-history-list__empty" data-smrt-part="empty">No payouts yet.</p>
   {:else}
-    <ul class="list">
+    <ul class="smrt-payout-history-list__list" data-smrt-part="list">
       {#each payouts as payout (payout.id)}
-        <li class="payout">
-          <div class="payout__head">
-            <span class="payout__period">
+        <li class="smrt-payout-history-list__payout" data-smrt-part="item">
+          <div class="smrt-payout-history-list__header" data-smrt-part="header">
+            <span class="smrt-payout-history-list__period" data-smrt-part="title">
               {formatDate(payout.periodStart, locale)} – {formatDate(payout.periodEnd, locale)}
             </span>
-            <span class="payout__head-right">
-              <span class="payout__method">{methodLabel(payout.payoutMethod)}</span>
+            <span class="smrt-payout-history-list__meta">
+              <span class="smrt-payout-history-list__method">{methodLabel(payout.payoutMethod)}</span>
               <Badge variant={payoutStatusBadgeVariant(payout.status)} size="sm">
                 {payout.status}
               </Badge>
             </span>
           </div>
 
-          <dl class="totals">
-            <div class="totals__item">
+          <dl class="smrt-payout-history-list__totals" data-smrt-part="facts">
+            <div class="smrt-payout-history-list__total">
               <dt>Commissions</dt>
               <dd>{formatCents(payout.commissionTotalCents, payout.currency, locale)}</dd>
             </div>
-            <div class="totals__item">
+            <div class="smrt-payout-history-list__total">
               <dt>Adjustments</dt>
-              <dd class:negative={payout.adjustmentTotalCents < 0}>
+              <dd class:smrt-payout-history-list__negative={payout.adjustmentTotalCents < 0}>
                 {formatCents(payout.adjustmentTotalCents, payout.currency, locale)}
               </dd>
             </div>
-            <div class="totals__item totals__item--net">
+            <div class="smrt-payout-history-list__total smrt-payout-history-list__total--net">
               <dt>Net</dt>
-              <dd class:negative={payout.totalAmountCents < 0}>
+              <dd class:smrt-payout-history-list__negative={payout.totalAmountCents < 0}>
                 {formatCents(payout.totalAmountCents, payout.currency, locale)}
               </dd>
             </div>
           </dl>
 
-          <ol class="timeline">
+          <ol class="smrt-payout-history-list__timeline" data-smrt-part="timeline">
             {#each payoutStatusTimeline(payout.status) as step (step.status)}
               <li
-                class="timeline__step timeline__step--{step.state}"
-                class:timeline__step--failed={step.status === 'failed'}
+                class="smrt-payout-history-list__step smrt-payout-history-list__step--{step.state}"
+                class:smrt-payout-history-list__step--failed={step.status === 'failed'}
                 aria-current={step.state === 'current' ? 'step' : undefined}
+                data-smrt-part="step"
               >
                 {step.status}
               </li>
@@ -77,21 +78,21 @@ function methodLabel(method: string): string {
           </ol>
 
           {#if payout.paymentReference || payout.providerRef || payout.paidAt}
-            <dl class="refs">
+            <dl class="smrt-payout-history-list__refs" data-smrt-part="meta">
               {#if payout.paymentReference}
-                <div class="refs__item">
+                <div class="smrt-payout-history-list__ref">
                   <dt>Payment reference</dt>
                   <dd><code>{payout.paymentReference}</code></dd>
                 </div>
               {/if}
               {#if payout.providerRef}
-                <div class="refs__item">
+                <div class="smrt-payout-history-list__ref">
                   <dt>Provider reference</dt>
                   <dd><code>{payout.providerRef}</code></dd>
                 </div>
               {/if}
               {#if payout.paidAt}
-                <div class="refs__item">
+                <div class="smrt-payout-history-list__ref">
                   <dt>Paid</dt>
                   <dd>{formatDate(payout.paidAt, locale)}</dd>
                 </div>
@@ -100,7 +101,7 @@ function methodLabel(method: string): string {
           {/if}
 
           {#if payout.notes}
-            <p class="notes">{payout.notes}</p>
+            <p class="smrt-payout-history-list__notes" data-smrt-part="note">{payout.notes}</p>
           {/if}
         </li>
       {/each}
@@ -110,14 +111,11 @@ function methodLabel(method: string): string {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .empty {
+@layer smrt.structure {
+  .smrt-payout-history-list__empty {
     margin: 0;
-    color: var(--smrt-color-on-surface-variant);
-    font-style: italic;
   }
-
-  .list {
+  .smrt-payout-history-list__list {
     margin: 0;
     padding: 0;
     list-style: none;
@@ -125,66 +123,33 @@ function methodLabel(method: string): string {
     flex-direction: column;
     gap: var(--smrt-spacing-3, 0.75rem);
   }
-
-  .payout {
+  .smrt-payout-history-list__payout {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-2, 0.5rem);
-    background: var(--smrt-color-surface);
-    border: var(--smrt-hairline);
-    border-radius: var(--smrt-radius-md);
     padding: var(--smrt-spacing-3, 0.75rem);
   }
-
-  .payout__head {
+  .smrt-payout-history-list__header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: var(--smrt-spacing-2, 0.5rem);
   }
-
-  .payout__period {
-    font-weight: var(--smrt-typography-weight-semibold, 600);
-  }
-
-  .payout__head-right {
+  .smrt-payout-history-list__meta {
     display: inline-flex;
     align-items: center;
     gap: var(--smrt-spacing-2, 0.5rem);
   }
-
-  .payout__method {
-    color: var(--smrt-color-on-surface-variant);
-    font-size: var(--smrt-typography-body-small-size, 0.75rem);
-  }
-
-  .totals {
+  .smrt-payout-history-list__totals {
     display: flex;
     flex-wrap: wrap;
     gap: var(--smrt-spacing-4, 1rem);
     margin: 0;
   }
-
-  .totals__item dt {
-    color: var(--smrt-color-on-surface-variant);
-    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-  }
-
-  .totals__item dd {
+  .smrt-payout-history-list__total dd {
     margin: 0;
   }
-
-  .totals__item--net dd {
-    font-weight: var(--smrt-typography-weight-bold, 700);
-  }
-
-  .negative {
-    color: var(--smrt-color-error);
-  }
-
-  .timeline {
+  .smrt-payout-history-list__timeline {
     display: flex;
     flex-wrap: wrap;
     gap: var(--smrt-spacing-1, 0.25rem);
@@ -192,57 +157,84 @@ function methodLabel(method: string): string {
     padding: 0;
     list-style: none;
   }
-
-  .timeline__step {
+  .smrt-payout-history-list__step {
     padding: var(--smrt-spacing-0_5, 0.125rem) var(--smrt-spacing-2, 0.5rem);
-    border-radius: var(--smrt-radius-full);
-    border: var(--smrt-hairline);
-    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
-    color: var(--smrt-color-on-surface-variant);
   }
-
-  .timeline__step--done {
-    background: var(--smrt-color-surface-container);
-  }
-
-  .timeline__step--current {
-    border-color: var(--smrt-color-primary);
-    color: var(--smrt-color-primary);
-    font-weight: var(--smrt-typography-weight-semibold, 600);
-  }
-
-  .timeline__step--current.timeline__step--failed {
-    border-color: var(--smrt-color-error);
-    color: var(--smrt-color-error);
-  }
-
-  .refs {
+  .smrt-payout-history-list__refs {
     display: flex;
     flex-wrap: wrap;
     gap: var(--smrt-spacing-4, 1rem);
     margin: 0;
   }
+  .smrt-payout-history-list__ref dd {
+    margin: 0;
+  }
+  .smrt-payout-history-list__notes {
+    margin: 0;
+  }
+}
 
-  .refs__item dt {
+@layer smrt.theme {
+  .smrt-payout-history-list__empty {
+    color: var(--smrt-color-on-surface-variant);
+    font-style: italic;
+  }
+  .smrt-payout-history-list__payout {
+    background: var(--smrt-color-surface);
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-md);
+  }
+  .smrt-payout-history-list__period {
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+  }
+  .smrt-payout-history-list__method {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-small-size, 0.75rem);
+  }
+  .smrt-payout-history-list__total dt {
     color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     text-transform: uppercase;
     letter-spacing: 0.04em;
   }
-
-  .refs__item dd {
-    margin: 0;
+  .smrt-payout-history-list__total--net dd {
+    font-weight: var(--smrt-typography-weight-bold, 700);
   }
-
+  .smrt-payout-history-list__negative {
+    color: var(--smrt-color-error);
+  }
+  .smrt-payout-history-list__step {
+    border-radius: var(--smrt-radius-full);
+    border: var(--smrt-hairline);
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-payout-history-list__step--done {
+    background: var(--smrt-color-surface-container);
+  }
+  .smrt-payout-history-list__step--current {
+    border-color: var(--smrt-color-primary);
+    color: var(--smrt-color-primary);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+  }
+  .smrt-payout-history-list__step--current.smrt-payout-history-list__step--failed {
+    border-color: var(--smrt-color-error);
+    color: var(--smrt-color-error);
+  }
+  .smrt-payout-history-list__ref dt {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
   code {
     font-family: var(--smrt-font-family-mono, ui-monospace, monospace);
     font-size: var(--smrt-typography-body-small-size, 0.8125rem);
   }
-
-  .notes {
-    margin: 0;
+  .smrt-payout-history-list__notes {
     color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-body-small-size, 0.8125rem);
   }
 }
+
 </style>

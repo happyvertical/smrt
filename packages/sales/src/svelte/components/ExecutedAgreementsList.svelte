@@ -26,25 +26,25 @@ export interface Props {
 let { agreements = [], locale, artifactHref }: Props = $props();
 </script>
 
-<div class="sales-agreements" data-smrt-component="ExecutedAgreementsList">
+<div class="smrt-executed-agreements-list__root" data-smrt-component="ExecutedAgreementsList">
   {#if agreements.length === 0}
-    <p class="empty">No agreements yet.</p>
+    <p class="smrt-executed-agreements-list__empty" data-smrt-part="empty">No agreements yet.</p>
   {:else}
     <table>
-      <thead>
+      <thead data-smrt-part="header">
         <tr>
           <th scope="col">Version</th>
           <th scope="col">Status</th>
           <th scope="col">Effective</th>
           <th scope="col">Commission plan</th>
-          <th scope="col" class="num">Clearing</th>
+          <th scope="col" class="smrt-executed-agreements-list__number">Clearing</th>
           <th scope="col">Approval</th>
           <th scope="col">Executed artifact</th>
         </tr>
       </thead>
-      <tbody>
+      <tbody data-smrt-part="body">
         {#each agreements as agreement (agreement.id)}
-          <tr>
+          <tr data-smrt-part="row">
             <td>v{agreement.version}</td>
             <td>
               <Badge variant={agreementStatusBadgeVariant(agreement.status)} size="sm">
@@ -63,7 +63,7 @@ let { agreements = [], locale, artifactHref }: Props = $props();
             <td>
               <code>{formatPlanRef(agreement.planKey, agreement.planVersion)}</code>
             </td>
-            <td class="num">{agreement.clearingDays} days</td>
+            <td class="smrt-executed-agreements-list__number">{agreement.clearingDays} days</td>
             <td>{agreement.approvalMode}</td>
             <td>
               {#if agreement.signedDocumentAssetId}
@@ -77,12 +77,16 @@ let { agreements = [], locale, artifactHref }: Props = $props();
                   <code title={agreement.signedDocumentAssetId}>signed asset</code>
                 {/if}
                 {#if agreement.signedDocumentSha256}
-                  <code class="hash" title={agreement.signedDocumentSha256}>
+                  <code
+                    class="smrt-executed-agreements-list__hash"
+                    data-smrt-part="hash"
+                    title={agreement.signedDocumentSha256}
+                  >
                     {agreement.signedDocumentSha256.slice(0, 12)}…
                   </code>
                 {/if}
                 {#if agreement.auditTrailAssetId}
-                  <span class="separator">·</span>
+                  <span class="smrt-executed-agreements-list__separator">·</span>
                   {#if artifactHref}
                     <a
                       href={artifactHref(agreement.id, 'audit_trail')}
@@ -106,60 +110,67 @@ let { agreements = [], locale, artifactHref }: Props = $props();
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .sales-agreements {
+@layer smrt.structure {
+  .smrt-executed-agreements-list__root {
     width: 100%;
     overflow-x: auto;
   }
-
-  .empty {
+  .smrt-executed-agreements-list__empty {
     margin: 0;
+  }
+  table {
+    width: 100%;
+  }
+  th {
+    padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
+    white-space: nowrap;
+  }
+  td {
+    padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
+  }
+  .smrt-executed-agreements-list__number {
+    white-space: nowrap;
+  }
+  .smrt-executed-agreements-list__hash {
+    margin-left: var(--smrt-spacing-1, 0.25rem);
+  }
+  .smrt-executed-agreements-list__separator {
+    margin: 0 var(--smrt-spacing-1, 0.25rem);
+  }
+}
+
+@layer smrt.theme {
+  .smrt-executed-agreements-list__empty {
     color: var(--smrt-color-on-surface-variant);
     font-style: italic;
   }
-
   table {
-    width: 100%;
     border-collapse: collapse;
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
   }
-
   th {
-    padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
     text-align: left;
     font-weight: var(--smrt-typography-weight-semibold, 600);
     background: var(--smrt-color-surface-container);
     border-bottom: var(--smrt-hairline);
-    white-space: nowrap;
   }
-
   td {
-    padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
     border-bottom: var(--smrt-hairline);
     vertical-align: top;
   }
-
-  .num {
+  .smrt-executed-agreements-list__number {
     text-align: right;
-    white-space: nowrap;
   }
-
   code {
     font-family: var(--smrt-font-family-mono, ui-monospace, monospace);
     font-size: var(--smrt-typography-body-small-size, 0.8125rem);
   }
-
-  .hash {
-    margin-left: var(--smrt-spacing-1, 0.25rem);
+  .smrt-executed-agreements-list__hash {
     color: var(--smrt-color-on-surface-variant);
   }
-
-  .separator {
-    margin: 0 var(--smrt-spacing-1, 0.25rem);
-  }
-
   a {
     color: var(--smrt-color-primary);
   }
 }
+
 </style>

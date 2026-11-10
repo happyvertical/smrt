@@ -63,8 +63,8 @@ export interface Props {
   }
 </script>
 
-<div class="forward-form" data-smrt-component="ForwardForm">
-  <div class="forward-header">{t(M['messages.forward_form.header'])}</div>
+<div class="smrt-forward-form__root" data-smrt-component="ForwardForm">
+  <div class="smrt-forward-form__header" data-smrt-part="header">{t(M['messages.forward_form.header'])}</div>
 
   <RecipientInput
     label="To"
@@ -78,17 +78,17 @@ export interface Props {
     rows={3}
   />
 
-  <div class="forwarded-original">
-    <pre class="forwarded-text">{forwardedBlock}</pre>
+  <div class="smrt-forward-form__body" data-smrt-part="body">
+    <pre class="smrt-forward-form__content" data-smrt-part="content">{forwardedBlock}</pre>
   </div>
 
   {#if sendError}
-    <div class="send-error" role="alert" aria-live="assertive">
+    <div class="smrt-forward-form__message" role="alert" aria-live="assertive">
       {sendError}
     </div>
   {/if}
 
-  <div class="actions">
+  <div class="smrt-forward-form__actions" data-smrt-part="actions">
     <Button
       variant="primary"
       disabled={isSending || to.length === 0}
@@ -104,61 +104,67 @@ export interface Props {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .forward-form {
+@layer smrt.structure {
+  .smrt-forward-form__root {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-2);
     padding: var(--smrt-spacing-3);
+  }
+  .smrt-forward-form__body {
+    padding: var(--smrt-spacing-2);
+    max-height: 300px;
+    overflow-y: auto;
+  }
+  .smrt-forward-form__content {
+    margin: 0;
+    white-space: pre-wrap;
+  }
+  .smrt-forward-form__message {
+    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+  }
+  .smrt-forward-form__actions {
+    display: flex;
+    gap: var(--smrt-spacing-2);
+  }
+}
+
+@layer smrt.theme {
+  .smrt-forward-form__root {
     border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-md);
     background: var(--smrt-color-surface);
     font-family: var(--smrt-font-family, system-ui);
   }
-
-  .forward-header {
+  .smrt-forward-form__header {
     font-size: var(--smrt-typography-title-small-size);
     color: var(--smrt-color-on-surface-variant);
     font-weight: var(--smrt-typography-weight-medium, 500);
   }
-
-  .forwarded-original {
-    padding: var(--smrt-spacing-2);
+  .smrt-forward-form__body {
     background: var(--smrt-color-surface-variant);
     border-radius: var(--smrt-radius-sm);
-    max-height: 300px;
-    overflow-y: auto;
   }
-
-  .forwarded-text {
-    margin: 0;
+  .smrt-forward-form__content {
     font-size: var(--smrt-typography-body-small-size);
     color: var(--smrt-color-on-surface-variant);
-    white-space: pre-wrap;
     font-family: var(--smrt-font-family, system-ui);
   }
-
-  .send-error {
-    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+  .smrt-forward-form__message {
     border-radius: var(--smrt-radius-sm);
     background: var(--smrt-color-error-container);
     color: var(--smrt-color-on-error-container);
     font-size: var(--smrt-typography-body-small-size);
   }
-
-  .actions {
-    display: flex;
-    gap: var(--smrt-spacing-2);
-  }
-
   /*
-   * Forward now uses Button's primary variant directly (dead .btn-primary CSS
-   * removed). The Cancel button keeps its neutral on-surface-variant text via
-   * `.actions :global(.btn-text)` (Button's ghost uses the primary color) —
-   * issue #1589.
-   */
-  .actions :global(.btn-text) {
+  * Forward now uses Button's primary variant directly (dead .btn-primary CSS
+  * removed). The Cancel button keeps its neutral on-surface-variant text via
+  * `.smrt-forward-form__actions :global(.btn-text)` (Button's ghost uses the primary color) —
+  * issue #1589.
+  */
+  .smrt-forward-form__actions :global(.btn-text) {
     color: var(--smrt-color-on-surface-variant);
   }
 }
+
 </style>

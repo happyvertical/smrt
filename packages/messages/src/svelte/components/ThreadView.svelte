@@ -98,13 +98,14 @@ const _sortedMessages = $derived(
 );
 </script>
 
-<div class="thread-view" role="list" aria-label={t(M['messages.thread_view.conversation_thread'])} data-smrt-component="ThreadView">
+<div class="smrt-thread-view__root" role="list" aria-label={t(M['messages.thread_view.conversation_thread'])} data-smrt-component="ThreadView">
   {#each _sortedMessages as message, i (message.id)}
     <div
-      class="thread-message"
-      class:thread-message--active={message.id === activeMessageId}
-      class:thread-message--collapsed={collapsed.has(message.id)}
+      class="smrt-thread-view__message"
+      class:smrt-thread-view__active={message.id === activeMessageId}
+      class:smrt-thread-view__collapsed={collapsed.has(message.id)}
       role="listitem"
+      data-smrt-part="row"
     >
       {#if collapsed.has(message.id)}
         <Button
@@ -113,20 +114,20 @@ const _sortedMessages = $derived(
           class="collapsed-header"
           onclick={() => toggleCollapse(message.id)}
         >
-          <span class="collapsed-sender">
+          <span class="smrt-thread-view__sender" data-smrt-part="sender">
             {message.senderName || message.senderAddress}
           </span>
-          <span class="collapsed-preview">
+          <span class="smrt-thread-view__preview" data-smrt-part="preview">
             {message.body?.slice(0, 80) || '(no content)'}...
           </span>
-          <span class="collapsed-date">
+          <span class="smrt-thread-view__date" data-smrt-part="time">
             {typeof message.date === 'string'
               ? new Date(message.date).toLocaleDateString()
               : message.date?.toLocaleDateString() || ''}
           </span>
         </Button>
       {:else}
-        <div class="message-wrapper">
+        <div class="smrt-thread-view__content" data-smrt-part="content">
           {#if messages.length > 1}
             <Button
               variant="ghost"
@@ -162,7 +163,7 @@ const _sortedMessages = $derived(
       {/if}
 
       {#if i < _sortedMessages.length - 1}
-        <div class="thread-connector"></div>
+        <div class="smrt-thread-view__connector"></div>
       {/if}
     </div>
   {/each}
@@ -170,62 +171,83 @@ const _sortedMessages = $derived(
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .thread-view {
+@layer smrt.structure {
+  .smrt-thread-view__root {
     display: flex;
     flex-direction: column;
     gap: 0;
   }
-
-  .thread-message {
+  .smrt-thread-view__message {
     position: relative;
   }
-
-  .thread-message--active {
-    box-shadow: -3px 0 0 0 var(--smrt-color-primary);
-  }
-
-  .thread-connector {
+  .smrt-thread-view__connector {
     width: 2px;
     height: 1rem;
-    background: var(--smrt-color-outline-variant);
     margin-left: 1.5rem;
   }
-
-  .message-wrapper {
+  .smrt-thread-view__content {
     position: relative;
   }
-
   /*
-   * The collapse toggle and collapsed header now render through smrt-ui's
-   * <Button variant="ghost">. The <button> is emitted inside the Button child,
-   * so anchoring on the real `.message-wrapper` / `.thread-message` elements and
-   * piercing with `:global(...)` keeps the original positioning and styling
-   * (issue #1589).
-   */
-  .message-wrapper :global(.collapse-btn) {
+  * The collapse toggle and collapsed header now render through smrt-ui's
+  * <Button variant="ghost">. The <button> is emitted inside the Button child,
+  * so anchoring on the real `.smrt-thread-view__content` / `.smrt-thread-view__message` elements and
+  * piercing with `:global(...)` keeps the original positioning and styling
+  * (issue #1589).
+  */
+  .smrt-thread-view__content :global(.collapse-btn) {
     position: absolute;
     top: 0.75rem;
     right: 0.75rem;
-    border: none;
-    background: none;
-    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
-    color: var(--smrt-color-on-surface-variant);
     z-index: 1;
     padding: 0.25rem;
-    border-radius: var(--smrt-radius-small, 0.25rem);
   }
-
-  .message-wrapper :global(.collapse-btn):hover {
-    background: var(--smrt-color-surface-variant);
-  }
-
-  .thread-message :global(.collapsed-header) {
+  .smrt-thread-view__message :global(.collapsed-header) {
     display: flex;
     align-items: center;
     gap: 0.75rem;
     width: 100%;
     padding: 0.75rem;
+  }
+  .smrt-thread-view__sender {
+    flex-shrink: 0;
+  }
+  .smrt-thread-view__preview {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .smrt-thread-view__date {
+    flex-shrink: 0;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-thread-view__active {
+    box-shadow: -3px 0 0 0 var(--smrt-color-primary);
+  }
+  .smrt-thread-view__connector {
+    background: var(--smrt-color-outline-variant);
+  }
+  /*
+  * The collapse toggle and collapsed header now render through smrt-ui's
+  * <Button variant="ghost">. The <button> is emitted inside the Button child,
+  * so anchoring on the real `.smrt-thread-view__content` / `.smrt-thread-view__message` elements and
+  * piercing with `:global(...)` keeps the original positioning and styling
+  * (issue #1589).
+  */
+  .smrt-thread-view__content :global(.collapse-btn) {
+    border: none;
+    background: none;
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
+    color: var(--smrt-color-on-surface-variant);
+    border-radius: var(--smrt-radius-small, 0.25rem);
+  }
+  .smrt-thread-view__content :global(.collapse-btn):hover {
+    background: var(--smrt-color-surface-variant);
+  }
+  .smrt-thread-view__message :global(.collapsed-header) {
     border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-medium, 0.5rem);
     background: var(--smrt-color-surface-variant);
@@ -233,30 +255,21 @@ const _sortedMessages = $derived(
     color: inherit;
     font: inherit;
   }
-
-  .thread-message :global(.collapsed-header):hover {
+  .smrt-thread-view__message :global(.collapsed-header):hover {
     background: color-mix(in srgb, var(--smrt-color-surface-variant) 92%, var(--smrt-color-shadow));
   }
-
-  .collapsed-sender {
+  .smrt-thread-view__sender {
     font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
     font-weight: var(--smrt-typography-weight-medium, 500);
-    flex-shrink: 0;
   }
-
-  .collapsed-preview {
-    flex: 1;
+  .smrt-thread-view__preview {
     font: var(--smrt-typography-body-small-font, 0.75rem / 1.33 sans-serif);
     color: var(--smrt-color-on-surface-variant);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
-
-  .collapsed-date {
-    flex-shrink: 0;
+  .smrt-thread-view__date {
     font: var(--smrt-typography-label-small-font, 500 0.6875rem / 1 sans-serif);
     color: var(--smrt-color-on-surface-variant);
   }
 }
+
 </style>

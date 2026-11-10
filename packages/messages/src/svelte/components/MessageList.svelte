@@ -60,13 +60,13 @@ function getAccount(accountId: string): AccountData | undefined {
 }
 </script>
 
-<div class="message-list" role="grid" aria-label={t(M['messages.message_list.messages_label'])} data-smrt-component="MessageList">
+<div class="smrt-message-list__root" role="grid" aria-label={t(M['messages.message_list.messages_label'])} data-smrt-component="MessageList">
   {#if loading}
-    <div class="loading" role="status" aria-live="polite">
+    <div class="smrt-message-list__status" data-smrt-part="status" role="status" aria-live="polite">
       <p>{t(M['messages.message_list.loading'])}</p>
     </div>
   {:else if messages.length === 0}
-    <div class="empty" role="status" aria-live="polite">
+    <div class="smrt-message-list__empty" data-smrt-part="empty" role="status" aria-live="polite">
       <p>{emptyMessage}</p>
     </div>
   {:else}
@@ -92,26 +92,33 @@ function getAccount(accountId: string): AccountData | undefined {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .message-list {
+@layer smrt.structure {
+  .smrt-message-list__root {
     display: flex;
     flex-direction: column;
+    overflow: hidden;
+  }
+  .smrt-message-list__status,
+  .smrt-message-list__empty {
+    padding: var(--smrt-spacing-3xl, 3rem);
+  }
+}
+
+@layer smrt.theme {
+  .smrt-message-list__root {
     border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-medium, 0.5rem);
-    overflow: hidden;
     background: var(--smrt-color-surface);
   }
-
-  .loading,
-  .empty {
+  .smrt-message-list__status,
+  .smrt-message-list__empty {
     text-align: center;
-    padding: var(--smrt-spacing-3xl, 3rem);
     color: var(--smrt-color-on-surface-variant);
   }
-
-  .loading p,
-  .empty p {
+  .smrt-message-list__status p,
+  .smrt-message-list__empty p {
     font: var(--smrt-typography-body-large-font, 1.125rem / 1.5 sans-serif);
   }
 }
+
 </style>

@@ -239,19 +239,19 @@ async function saveRoute() {
 }
 </script>
 
-<div class="messaging-settings" data-smrt-component="MessagingSettingsPanel">
+<div class="smrt-messaging-settings-panel__root" data-smrt-component="MessagingSettingsPanel">
   <section>
     <header>
       <div><h3>{t(M['messages.messaging_settings.accounts_title'])}</h3><p>{t(M['messages.messaging_settings.accounts_description'])}</p></div>
       {#if !readonly && onSaveAccount}<Button size="sm" onclick={() => { reset(); openForm = 'account'; }}>{t(M['messages.messaging_settings.add_account'])}</Button>{/if}
     </header>
-    <div class="items">
+    <div class="smrt-messaging-settings-panel__list" data-smrt-part="list">
       {#each accounts as account (account.id)}
         <Button class="item" type="button" onclick={() => editAccount(account)} disabled={readonly}>
           <span><strong>{account.name}</strong><small>{account.providerId} · {account.channel}</small></span>
-          <span class:ok={account.hasCredentials}>{account.hasCredentials ? t(M['messages.messaging_settings.credentials_stored']) : t(M['messages.messaging_settings.credentials_missing'])}</span>
+          <span class:smrt-messaging-settings-panel__ok={account.hasCredentials} data-smrt-part="status">{account.hasCredentials ? t(M['messages.messaging_settings.credentials_stored']) : t(M['messages.messaging_settings.credentials_missing'])}</span>
         </Button>
-      {:else}<p class="empty">{t(M['messages.messaging_settings.no_accounts'])}</p>{/each}
+      {:else}<p class="smrt-messaging-settings-panel__empty" data-smrt-part="empty">{t(M['messages.messaging_settings.no_accounts'])}</p>{/each}
     </div>
   </section>
 
@@ -260,13 +260,13 @@ async function saveRoute() {
       <div><h3>{t(M['messages.messaging_settings.destinations_title'])}</h3><p>{t(M['messages.messaging_settings.destinations_description'])}</p></div>
       {#if !readonly && onSaveEndpoint}<Button size="sm" onclick={() => { reset(); openForm = 'endpoint'; }}>{t(M['messages.messaging_settings.add_destination'])}</Button>{/if}
     </header>
-    <div class="items">
+    <div class="smrt-messaging-settings-panel__list" data-smrt-part="list">
       {#each endpoints as endpoint (endpoint.id)}
         <Button class="item" type="button" onclick={() => replaceEndpoint(endpoint)} disabled={readonly}>
           <span><strong>{endpoint.label}</strong><small>{endpoint.channel}</small></span>
           <span>{endpoint.maskedAddress}</span>
         </Button>
-      {:else}<p class="empty">{t(M['messages.messaging_settings.no_destinations'])}</p>{/each}
+      {:else}<p class="smrt-messaging-settings-panel__empty" data-smrt-part="empty">{t(M['messages.messaging_settings.no_destinations'])}</p>{/each}
     </div>
   </section>
 
@@ -275,13 +275,13 @@ async function saveRoute() {
       <div><h3>{t(M['messages.messaging_settings.routes_title'])}</h3><p>{t(M['messages.messaging_settings.routes_description'])}</p></div>
       {#if !readonly && onSaveRoute}<Button size="sm" onclick={() => { reset(); openForm = 'route'; }}>{t(M['messages.messaging_settings.add_route'])}</Button>{/if}
     </header>
-    <div class="items">
+    <div class="smrt-messaging-settings-panel__list" data-smrt-part="list">
       {#each routes as route (route.id)}
         <Button class="item" type="button" onclick={() => editRoute(route)} disabled={readonly}>
           <span><strong>{route.purpose}</strong><small>{t(M['messages.messaging_settings.priority_value'], { priority: route.priority })}</small></span>
           <span>{accounts.find((account) => account.id === route.accountId)?.name ?? t(M['messages.messaging_settings.missing_account'])} → {endpoints.find((endpoint) => endpoint.id === route.endpointId)?.label ?? t(M['messages.messaging_settings.missing_destination'])}</span>
         </Button>
-      {:else}<p class="empty">{t(M['messages.messaging_settings.no_routes'])}</p>{/each}
+      {:else}<p class="smrt-messaging-settings-panel__empty" data-smrt-part="empty">{t(M['messages.messaging_settings.no_routes'])}</p>{/each}
     </div>
   </section>
 
@@ -308,7 +308,7 @@ async function saveRoute() {
           {/if}
         {/each}
         <h4>{t(M['messages.messaging_settings.credentials'])}</h4>
-        {#if accountId}<p class="secret-note">{t(M['messages.messaging_settings.credentials_note'])}</p>{/if}
+        {#if accountId}<p class="smrt-messaging-settings-panel__note" data-smrt-part="note">{t(M['messages.messaging_settings.credentials_note'])}</p>{/if}
         {#each activeAccountProvider.credentialFields as field (field.id)}
           <label for={`account-secret-${field.id}`}>{field.label}</label>
           {#if field.type === 'select'}
@@ -321,17 +321,17 @@ async function saveRoute() {
           {/if}
         {/each}
       {/if}
-      <label class="checkbox">
+      <label class="smrt-messaging-settings-panel__field" data-smrt-part="field">
         <!-- raw-primitive-allow: native checkbox preserves checkbox semantics without requiring a Provider -->
         <input type="checkbox" bind:checked={accountActive} disabled={saving} />
         {t(M['messages.messaging_settings.account_active'])}
       </label>
-      <div class="actions"><Button variant="secondary" onclick={reset} disabled={saving}>{t(M['messages.messaging_settings.cancel'])}</Button><Button type="submit" disabled={saving || !activeAccountProvider}>{t(M['messages.messaging_settings.save_account'])}</Button></div>
+      <div class="smrt-messaging-settings-panel__actions" data-smrt-part="actions"><Button variant="secondary" onclick={reset} disabled={saving}>{t(M['messages.messaging_settings.cancel'])}</Button><Button type="submit" disabled={saving || !activeAccountProvider}>{t(M['messages.messaging_settings.save_account'])}</Button></div>
     </Form>
   {:else if openForm === 'endpoint'}
     <Form class="editor" onsubmit={saveEndpoint}>
       <h3>{t(M[endpointId ? 'messages.messaging_settings.replace_destination_title' : 'messages.messaging_settings.add_destination_title'])}</h3>
-      {#if endpointId}<p class="secret-note">{t(M['messages.messaging_settings.destination_note'])}</p>{/if}
+      {#if endpointId}<p class="smrt-messaging-settings-panel__note" data-smrt-part="note">{t(M['messages.messaging_settings.destination_note'])}</p>{/if}
       <label for="messaging-endpoint-label">{t(M['messages.messaging_settings.label'])}</label>
       <Input id="messaging-endpoint-label" bind:value={endpointLabel} required disabled={saving} />
       <label for="messaging-endpoint-provider">{t(M['messages.messaging_settings.provider'])}</label>
@@ -352,12 +352,12 @@ async function saveRoute() {
           {/if}
         {/each}
       {/if}
-      <label class="checkbox">
+      <label class="smrt-messaging-settings-panel__field" data-smrt-part="field">
         <!-- raw-primitive-allow: native checkbox preserves checkbox semantics without requiring a Provider -->
         <input type="checkbox" bind:checked={endpointActive} disabled={saving} />
         {t(M['messages.messaging_settings.destination_active'])}
       </label>
-      <div class="actions"><Button variant="secondary" onclick={reset} disabled={saving}>{t(M['messages.messaging_settings.cancel'])}</Button><Button type="submit" disabled={saving || !activeEndpointProvider}>{t(M['messages.messaging_settings.save_destination'])}</Button></div>
+      <div class="smrt-messaging-settings-panel__actions" data-smrt-part="actions"><Button variant="secondary" onclick={reset} disabled={saving}>{t(M['messages.messaging_settings.cancel'])}</Button><Button type="submit" disabled={saving || !activeEndpointProvider}>{t(M['messages.messaging_settings.save_destination'])}</Button></div>
     </Form>
   {:else if openForm === 'route'}
     <Form class="editor" onsubmit={saveRoute}>
@@ -376,35 +376,100 @@ async function saveRoute() {
       <Input id="messaging-route-purpose" bind:value={routePurpose} required disabled={saving} />
       <label for="messaging-route-priority">{t(M['messages.messaging_settings.priority'])}</label>
       <Input id="messaging-route-priority" type="number" bind:value={routePriority} disabled={saving} />
-      <label class="checkbox">
+      <label class="smrt-messaging-settings-panel__field" data-smrt-part="field">
         <!-- raw-primitive-allow: native checkbox preserves checkbox semantics without requiring a Provider -->
         <input type="checkbox" bind:checked={routeEnabled} disabled={saving} />
         {t(M['messages.messaging_settings.route_enabled'])}
       </label>
-      <div class="actions"><Button variant="secondary" onclick={reset} disabled={saving}>{t(M['messages.messaging_settings.cancel'])}</Button><Button type="submit" disabled={saving}>{t(M['messages.messaging_settings.save_route'])}</Button></div>
+      <div class="smrt-messaging-settings-panel__actions" data-smrt-part="actions"><Button variant="secondary" onclick={reset} disabled={saving}>{t(M['messages.messaging_settings.cancel'])}</Button><Button type="submit" disabled={saving}>{t(M['messages.messaging_settings.save_route'])}</Button></div>
     </Form>
   {/if}
 
-  {#if error}<p class="error" role="alert">{error}</p>{/if}
+  {#if error}<p class="smrt-messaging-settings-panel__error" data-smrt-part="message" role="alert">{error}</p>{/if}
 </div>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .messaging-settings { display: grid; gap: 1.5rem; }
-  section { display: grid; gap: 0.75rem; }
-  header { display: flex; align-items: start; justify-content: space-between; gap: 1rem; }
-  h3, h4, p { margin: 0; }
-  header p, small, .secret-note, .empty { color: var(--smrt-color-on-surface-variant); }
-  .items { display: grid; gap: 0.5rem; }
-  :global(.item) { width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: 0.875rem; text-align: left; background: var(--smrt-color-surface); color: inherit; border: var(--smrt-hairline); border-radius: 0.5rem; }
-  :global(.item:not(:disabled)) { cursor: pointer; }
-  :global(.item span:first-child) { display: grid; gap: 0.2rem; }
-  .ok { color: var(--smrt-color-success); }
-  :global(.editor) { display: grid; gap: 0.65rem; padding: 1rem; border: var(--smrt-hairline); border-radius: 0.5rem; background: var(--smrt-color-surface-container-low); }
-  label { font-weight: var(--smrt-typography-weight-semibold, 600); }
-  .checkbox { display: flex; align-items: center; gap: 0.5rem; }
-  .actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 0.5rem; }
-  .error { color: var(--smrt-color-error); }
+@layer smrt.structure {
+  .smrt-messaging-settings-panel__root {
+    display: grid;
+    gap: 1.5rem;
+  }
+  section {
+    display: grid;
+    gap: 0.75rem;
+  }
+  header {
+    display: flex;
+    align-items: start;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+  h3, h4, p {
+    margin: 0;
+  }
+  .smrt-messaging-settings-panel__list {
+    display: grid;
+    gap: 0.5rem;
+  }
+  :global(.item) {
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.875rem;
+  }
+  :global(.item:not(:disabled)) {
+    cursor: pointer;
+  }
+  :global(.item span:first-child) {
+    display: grid;
+    gap: 0.2rem;
+  }
+  :global(.editor) {
+    display: grid;
+    gap: 0.65rem;
+    padding: 1rem;
+  }
+  .smrt-messaging-settings-panel__field {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .smrt-messaging-settings-panel__actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+  }
 }
+
+@layer smrt.theme {
+  header p, small, .smrt-messaging-settings-panel__note, .smrt-messaging-settings-panel__empty {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  :global(.item) {
+    text-align: left;
+    background: var(--smrt-color-surface);
+    color: inherit;
+    border: var(--smrt-hairline);
+    border-radius: 0.5rem;
+  }
+  .smrt-messaging-settings-panel__ok {
+    color: var(--smrt-color-success);
+  }
+  :global(.editor) {
+    border: var(--smrt-hairline);
+    border-radius: 0.5rem;
+    background: var(--smrt-color-surface-container-low);
+  }
+  label {
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+  }
+  .smrt-messaging-settings-panel__error {
+    color: var(--smrt-color-error);
+  }
+}
+
 </style>
