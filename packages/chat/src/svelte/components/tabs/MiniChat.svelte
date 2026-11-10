@@ -73,7 +73,7 @@ $effect(() => {
         {#if !isOwn}
           <Avatar name={msg.senderName} avatarUrl={msg.senderAvatarUrl} size="sm" />
         {/if}
-        <div class="smrt-mini-chat__bubble" data-smrt-part="bubble"
+        <div class="smrt-mini-chat__bubble" data-smrt-part="body"
   class:smrt-mini-chat__bubble--own={isOwn}
 >
           {#if !isOwn}
@@ -157,7 +157,7 @@ $effect(() => {
     min-height: 80px;
   }
   /* :global() targets the Form primitive's rendered <form> (see #1589 scoping trap). */
-  .smrt-mini-chat__root :global([data-smrt-component="Form"]) {
+  :global(:where([data-smrt-component="MiniChat"]) [data-smrt-component="Form"]) {
     display: flex;
     align-items: center;
     gap: var(--smrt-spacing-1);
@@ -165,12 +165,12 @@ $effect(() => {
   }
   /* Layout for the Input primitive's rendered <input> (tokenised styling comes
   from the primitive; this only sizes/shapes it within the input bar). */
-  .smrt-mini-chat__root :global([data-smrt-component="Input"]) {
+  :global(:where([data-smrt-component="MiniChat"]) [data-smrt-component="Input"]) {
     flex: 1;
   }
   /* :global() pierces into the Button child's rendered <button> (see #1589).
   The ancestor is the Form primitive's <form>, also global. */
-  .smrt-mini-chat__root :global([data-smrt-component="Form"] [data-smrt-component="Button"]) {
+  :global(:where([data-smrt-component="MiniChat"]) [data-smrt-component="Form"] [data-smrt-component="Button"]) {
     width: 32px;
     height: 32px;
     padding: 0;
@@ -210,27 +210,27 @@ $effect(() => {
     color: var(--smrt-color-outline);
   }
   /* :global() targets the Form primitive's rendered <form> (see #1589 scoping trap). */
-  .smrt-mini-chat__root :global([data-smrt-component="Form"]) {
+  :global(:where([data-smrt-component="MiniChat"]) [data-smrt-component="Form"]) {
     border-top: var(--smrt-hairline);
     background: var(--smrt-color-surface);
   }
   /* Layout for the Input primitive's rendered <input> (tokenised styling comes
   from the primitive; this only sizes/shapes it within the input bar). */
-  .smrt-mini-chat__root :global([data-smrt-component="Input"]) {
+  :global(:where([data-smrt-component="MiniChat"]) [data-smrt-component="Input"]) {
     border-radius: var(--smrt-radius-full);
   }
   /* :global() pierces into the Button child's rendered <button> (see #1589).
   The ancestor is the Form primitive's <form>, also global. */
-  .smrt-mini-chat__root :global([data-smrt-component="Form"] [data-smrt-component="Button"]) {
+  :global(:where([data-smrt-component="MiniChat"]) [data-smrt-component="Form"] [data-smrt-component="Button"]) {
     background: var(--smrt-color-primary);
     color: var(--smrt-color-on-primary);
     border-radius: var(--smrt-radius-full);
     transition: opacity var(--smrt-duration-short2, 150ms);
   }
-  .smrt-mini-chat__root :global([data-smrt-component="Form"] [data-smrt-component="Button"]:disabled) {
+  :global(:where([data-smrt-component="MiniChat"]) [data-smrt-component="Form"] [data-smrt-component="Button"]:disabled) {
     opacity: 0.4;
   }
-  .smrt-mini-chat__root :global([data-smrt-component="Form"] [data-smrt-component="Button"]:not(:disabled):hover) {
+  :global(:where([data-smrt-component="MiniChat"]) [data-smrt-component="Form"] [data-smrt-component="Button"]:not(:disabled):hover) {
     background: var(--smrt-color-primary);
     opacity: 0.85;
   }
@@ -238,7 +238,7 @@ $effect(() => {
     .smrt-mini-chat__messages {
       scroll-behavior: auto;
     }
-    .smrt-mini-chat__root :global([data-smrt-component="Form"] [data-smrt-component="Button"]) {
+    :global(:where([data-smrt-component="MiniChat"]) [data-smrt-component="Form"] [data-smrt-component="Button"]) {
       transition: none;
     }
   }

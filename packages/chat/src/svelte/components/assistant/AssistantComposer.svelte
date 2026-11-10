@@ -405,9 +405,9 @@ function removeAttachment(id: string) {
     </p>
   {/if}
   {#if stagedAttachments.length > 0}
-    <ul class="smrt-assistant-composer__attachments" data-smrt-part="attachments">
+    <ul class="smrt-assistant-composer__attachments" data-smrt-part="list">
       {#each stagedAttachments as attachment (attachment.id)}
-        <li class="smrt-assistant-composer__chip" data-smrt-part="chip">
+        <li class="smrt-assistant-composer__chip" data-smrt-part="badge">
           <span class="smrt-assistant-composer__chip-name" data-smrt-part="label">{attachment.name}</span>
           <Button
             type="button"
@@ -428,7 +428,7 @@ function removeAttachment(id: string) {
   {#if canDictate}
     <DictationStatus {dictation} sending={autoSendCountdown || autoSendWaiting} />
   {/if}
-  <div class="smrt-assistant-composer__row" data-smrt-part="composer">
+  <div class="smrt-assistant-composer__row" data-smrt-part="panel">
     {#if onupload}
       <!-- raw-primitive-allow: compact icon-only attach control backed by a hidden native file input; opens the OS picker, matching MessageInput's icon-button send control pattern -->
       <Button
@@ -461,7 +461,7 @@ function removeAttachment(id: string) {
       onchange={handleFileChange}
       disabled={disabled || uploading}
       tabindex="-1"
-      aria-label={t(M['chat.assistant_composer.attach_files'])}
+      aria-label={t(M['chat.assistant_composer.attach_files'])} data-smrt-part="input"
       />
     {/if}
     <div
@@ -471,7 +471,7 @@ function removeAttachment(id: string) {
         onLongPress: startDictationFromHold,
         onRelease: () => void dictation.unlock(),
         disabled: !canDictate || disabled || uploading,
-      }}
+      }} data-smrt-part="field"
     >
       <Textarea
         bind:this={textareaComponent}

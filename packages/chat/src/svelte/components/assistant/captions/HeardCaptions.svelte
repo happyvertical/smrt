@@ -43,7 +43,7 @@ const visibleLines = $derived(lines.slice(-Math.max(1, maxLines)));
     {#if interim}
       <!-- A partial transcript is visually useful but should not repeat the
            final phrase in a screen reader's live region. -->
-      <p class="smrt-heard-captions__interim" data-smrt-part="preview" aria-hidden="true">{interim}</p>
+      <p class="smrt-heard-captions__interim" data-smrt-part="message" aria-hidden="true">{interim}</p>
     {/if}
   </section>
 {/snippet}

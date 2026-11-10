@@ -290,9 +290,9 @@ function formatAttachmentSize(bytes: number): string {
 </svelte:head>
 
 <ThemeProvider colorScheme="system" persist={true}>
-  <div class="smrt-assistant-dock-preview__root">
+  <div class="smrt-assistant-dock-preview__root" data-smrt-part="body">
     <header class="smrt-assistant-dock-preview__topbar" data-smrt-part="header">
-      <div class="smrt-assistant-dock-preview__title-block" data-smrt-part="title-block">
+      <div class="smrt-assistant-dock-preview__title-block" data-smrt-part="header">
         <h1>AssistantDock demo</h1>
         <p>
           Type <code>mark order 2 shipped</code> and confirm the proposed
@@ -302,7 +302,7 @@ function formatAttachmentSize(bytes: number): string {
     </header>
 
     <main class="smrt-assistant-dock-preview__workspace" data-smrt-part="body">
-      <section class="smrt-assistant-dock-preview__orders" data-smrt-part="orders">
+      <section class="smrt-assistant-dock-preview__orders" data-smrt-part="panel">
         <h2>Demo orders surface (revision {revision})</h2>
         <table>
           <thead>
@@ -317,14 +317,14 @@ function formatAttachmentSize(bytes: number): string {
               <tr>
                 <td>{row.id}</td>
                 <td>{row.customer}</td>
-                <td class={`smrt-assistant-dock-preview__status smrt-assistant-dock-preview__status-${row.status}`}>{row.status}</td>
+                <td class={`smrt-assistant-dock-preview__status smrt-assistant-dock-preview__status-${row.status}`} data-smrt-part="cell">{row.status}</td>
               </tr>
             {/each}
           </tbody>
         </table>
       </section>
 
-      <section class="smrt-assistant-dock-preview__dock" data-smrt-part="dock">
+      <section class="smrt-assistant-dock-preview__dock" data-smrt-part="panel">
         {#if ready}
           <AssistantThreadList
             threads={controller.threads}
@@ -350,7 +350,7 @@ function formatAttachmentSize(bytes: number): string {
             <p>No data surfaces mounted.</p>
           {/if}
 
-          <div class="smrt-assistant-dock-preview__scroll" data-smrt-part="scroll">
+          <div class="smrt-assistant-dock-preview__scroll" data-smrt-part="body">
             <ul class="smrt-assistant-dock-preview__messages" data-smrt-part="list">
               {#each controller.messages as message (message.id)}
                 <li>
@@ -365,10 +365,10 @@ function formatAttachmentSize(bytes: number): string {
                     {#snippet children()}
                       <p class="smrt-assistant-dock-preview__message" data-smrt-part="message">{message.content}</p>
                       {#if message.attachments && message.attachments.length > 0}
-                        <ul class="smrt-assistant-dock-preview__attachments" data-smrt-part="attachments" aria-label="Attachments">
+                        <ul class="smrt-assistant-dock-preview__attachments" data-smrt-part="list" aria-label="Attachments">
                           {#each message.attachments as attachment (attachment.id)}
                             {@const href = safeAttachmentHref(attachment.url)}
-                            <li class="smrt-assistant-dock-preview__attachment" data-smrt-part="attachment">
+                            <li class="smrt-assistant-dock-preview__attachment" data-smrt-part="item">
                               {#if href}
                                 <a {href} target="_blank" rel="noopener noreferrer">
                                   {attachment.name}

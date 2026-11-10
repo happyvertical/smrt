@@ -92,18 +92,18 @@ function getRoleBadgeLabel(role: string): string {
   <div class="smrt-member-list__content" data-smrt-part="body">
     {#if onlineMembers.length > 0}
       <section class="smrt-member-list__group" data-smrt-part="group">
-        <h3 class="smrt-member-list__group-header" data-smrt-part="group-title">
+        <h3 class="smrt-member-list__group-header" data-smrt-part="title">
           Online
-          <span class="smrt-member-list__group-count" data-smrt-part="group-count">{onlineMembers.length}</span>
+          <span class="smrt-member-list__group-count" data-smrt-part="count">{onlineMembers.length}</span>
         </h3>
         <ul class="smrt-member-list__group-list" data-smrt-part="list" role="list">
           {#each onlineMembers as member (member.id)}
             <li class="smrt-member-list__item" data-smrt-part="row">
-              <div class="smrt-member-list__avatar" data-smrt-part="avatar">
+              <div class="smrt-member-list__avatar" data-smrt-part="icon">
                 {#if member.avatarUrl}
-                  <img class="smrt-member-list__avatar-image" data-smrt-part="avatar-image" src={member.avatarUrl} alt="" />
+                  <img class="smrt-member-list__avatar-image" data-smrt-part="media" src={member.avatarUrl} alt="" />
                 {:else}
-                  <span class="smrt-member-list__avatar-placeholder" data-smrt-part="avatar-image">
+                  <span class="smrt-member-list__avatar-placeholder" data-smrt-part="media">
                     {(member.nickname || member.name).charAt(0).toUpperCase()}
                   </span>
                 {/if}
@@ -114,7 +114,7 @@ function getRoleBadgeLabel(role: string): string {
                   aria-label={getStatusLabel(member.onlineStatus)}
                 ></span>
               </div>
-              <span class="smrt-member-list__info" data-smrt-part="info">
+              <span class="smrt-member-list__info" data-smrt-part="meta">
                 <span class="smrt-member-list__name" data-smrt-part="label">{member.nickname || member.name}</span>
                 {#if getRoleBadgeLabel(member.role)}
                   <span class="smrt-member-list__badge smrt-member-list__badge--{member.role}" data-smrt-part="badge">
@@ -130,18 +130,18 @@ function getRoleBadgeLabel(role: string): string {
 
     {#if awayMembers.length > 0}
       <section class="smrt-member-list__group" data-smrt-part="group">
-        <h3 class="smrt-member-list__group-header" data-smrt-part="group-title">
+        <h3 class="smrt-member-list__group-header" data-smrt-part="title">
           Away
-          <span class="smrt-member-list__group-count" data-smrt-part="group-count">{awayMembers.length}</span>
+          <span class="smrt-member-list__group-count" data-smrt-part="count">{awayMembers.length}</span>
         </h3>
         <ul class="smrt-member-list__group-list" data-smrt-part="list" role="list">
           {#each awayMembers as member (member.id)}
             <li class="smrt-member-list__item" data-smrt-part="row">
-              <div class="smrt-member-list__avatar" data-smrt-part="avatar">
+              <div class="smrt-member-list__avatar" data-smrt-part="icon">
                 {#if member.avatarUrl}
-                  <img class="smrt-member-list__avatar-image" data-smrt-part="avatar-image" src={member.avatarUrl} alt="" />
+                  <img class="smrt-member-list__avatar-image" data-smrt-part="media" src={member.avatarUrl} alt="" />
                 {:else}
-                  <span class="smrt-member-list__avatar-placeholder" data-smrt-part="avatar-image">
+                  <span class="smrt-member-list__avatar-placeholder" data-smrt-part="media">
                     {(member.nickname || member.name).charAt(0).toUpperCase()}
                   </span>
                 {/if}
@@ -152,7 +152,7 @@ function getRoleBadgeLabel(role: string): string {
                   aria-label={getStatusLabel(member.onlineStatus)}
                 ></span>
               </div>
-              <span class="smrt-member-list__info" data-smrt-part="info">
+              <span class="smrt-member-list__info" data-smrt-part="meta">
                 <span class="smrt-member-list__name" data-smrt-part="label">{member.nickname || member.name}</span>
                 {#if getRoleBadgeLabel(member.role)}
                   <span class="smrt-member-list__badge smrt-member-list__badge--{member.role}" data-smrt-part="badge">
@@ -168,18 +168,18 @@ function getRoleBadgeLabel(role: string): string {
 
     {#if offlineMembers.length > 0}
       <section class="smrt-member-list__group" data-smrt-part="group">
-        <h3 class="smrt-member-list__group-header" data-smrt-part="group-title">
+        <h3 class="smrt-member-list__group-header" data-smrt-part="title">
           Offline
-          <span class="smrt-member-list__group-count" data-smrt-part="group-count">{offlineMembers.length}</span>
+          <span class="smrt-member-list__group-count" data-smrt-part="count">{offlineMembers.length}</span>
         </h3>
         <ul class="smrt-member-list__group-list" data-smrt-part="list" role="list">
           {#each offlineMembers as member (member.id)}
             <li class="smrt-member-list__item smrt-member-list__item--offline" data-smrt-part="row">
-              <div class="smrt-member-list__avatar" data-smrt-part="avatar">
+              <div class="smrt-member-list__avatar" data-smrt-part="icon">
                 {#if member.avatarUrl}
-                  <img class="smrt-member-list__avatar-image" data-smrt-part="avatar-image" src={member.avatarUrl} alt="" />
+                  <img class="smrt-member-list__avatar-image" data-smrt-part="media" src={member.avatarUrl} alt="" />
                 {:else}
-                  <span class="smrt-member-list__avatar-placeholder" data-smrt-part="avatar-image">
+                  <span class="smrt-member-list__avatar-placeholder" data-smrt-part="media">
                     {(member.nickname || member.name).charAt(0).toUpperCase()}
                   </span>
                 {/if}
@@ -190,7 +190,7 @@ function getRoleBadgeLabel(role: string): string {
                   aria-label={getStatusLabel(member.onlineStatus)}
                 ></span>
               </div>
-              <span class="smrt-member-list__info" data-smrt-part="info">
+              <span class="smrt-member-list__info" data-smrt-part="meta">
                 <span class="smrt-member-list__name" data-smrt-part="label">{member.nickname || member.name}</span>
                 {#if getRoleBadgeLabel(member.role)}
                   <span class="smrt-member-list__badge smrt-member-list__badge--{member.role}" data-smrt-part="badge">

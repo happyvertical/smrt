@@ -114,7 +114,7 @@ async function submit() {
 >
   {#if answer}
     <p class="smrt-assistant-question-form__summary" data-smrt-part="summary" role="status">
-      <span class="smrt-assistant-question-form__prompt" data-smrt-part="prompt">{question.prompt}</span>
+      <span class="smrt-assistant-question-form__prompt" data-smrt-part="field">{question.prompt}</span>
       {describeAssistantQuestionAnswer(question, answer)}
     </p>
   {:else}

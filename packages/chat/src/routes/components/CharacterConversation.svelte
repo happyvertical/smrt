@@ -519,15 +519,15 @@ onMount(() => {
 </script>
 
 <section class="smrt-character-conversation__root" aria-label={t(M['chat.character_conversation.saved_conversation'])}
-  class:smrt-character-conversation__bottom-left={helperPreferences?.placement === 'bottom-left'}
+  class:smrt-character-conversation__bottom-left={helperPreferences?.placement === 'bottom-left'} data-smrt-component="CharacterConversation"
 >
-  <div class="smrt-character-conversation__stage" data-smrt-part="stage" bind:this={target} aria-label={helperPreferences?.name || t(M['chat.character_conversation.saved_character'])}
+  <div class="smrt-character-conversation__stage" data-smrt-part="panel" bind:this={target} aria-label={helperPreferences?.name || t(M['chat.character_conversation.saved_character'])}
   class:smrt-character-conversation__bottom-left={helperPreferences?.placement === 'bottom-left'}
   class:smrt-character-conversation__bottom-right={helperPreferences?.placement !== 'bottom-left'}
 ></div>
-  {#if helperPreferences}<p class="smrt-character-conversation__name" data-smrt-part="name">{helperPreferences.name}</p>{/if}
+  {#if helperPreferences}<p class="smrt-character-conversation__name" data-smrt-part="title">{helperPreferences.name}</p>{/if}
   {#if unavailable}<p role="status">{unavailable}</p>{/if}
-  <div class="smrt-character-conversation__controls" data-smrt-part="controls">
+  <div class="smrt-character-conversation__controls" data-smrt-part="actions">
     <Button type="button" variant="secondary" aria-pressed={listening} onclick={toggleListening}>
       {listening ? 'Leave listening mode' : 'Listening mode'}
     </Button>
@@ -541,7 +541,7 @@ onMount(() => {
     <CharacterConversationVoice onfinal={sendSpokenTurn} heardSubtitles={helperPreferences?.heardSubtitles ?? true} disabled={!conversationReady || attentionRequired || turnPending} />
   {/if}
   {#if listening && latestReply}
-    <section class="smrt-character-conversation__reply" data-smrt-part="reply" aria-label={t(M['chat.character_conversation.assistant_reply'])} aria-live={audioEnabled && !speechError ? 'off' : 'polite'}>
+    <section class="smrt-character-conversation__reply" data-smrt-part="panel" aria-label={t(M['chat.character_conversation.assistant_reply'])} aria-live={audioEnabled && !speechError ? 'off' : 'polite'}>
       <p>{latestReply}</p>
     </section>
   {/if}

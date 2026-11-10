@@ -254,20 +254,20 @@ onDestroy(() => {
 <main>
   <h1>Watch the app, talk to your assistant</h1>
   <p>Starts with synthetic voice and playback events. To talk to the app, choose Real microphone before starting and say “Mark the project ready.” Browser speech support is required.</p>
-  <section class="smrt-listening-mode__app" data-smrt-part="surface" aria-label="Observed application">
+  <section class="smrt-listening-mode__app" data-smrt-part="body" aria-label="Observed application">
     <h2>Project status</h2>
     <Input aria-label="Project name" value="Listening demo" readonly />
     <Input aria-label="Project status" value={projectStatus} readonly />
     <p>Application revision: <output data-testid="revision">{revision}</output></p>
   </section>
-  <section class="smrt-listening-mode__controls" data-smrt-part="controls" aria-label="Caption controls">
+  <section class="smrt-listening-mode__controls" data-smrt-part="actions" aria-label="Caption controls">
     <Checkbox bind:checked={heardEnabled} label="Show what I said" />
     <Checkbox bind:checked={spokenEnabled} label="Show assistant speech" />
     <Checkbox bind:checked={listeningMode} label="Hide conversation history" />
   </section>
   <Checkbox bind:checked={realMicrophone} disabled={sourceLocked} label="Real microphone and browser speech (opt in)" />
   <p>{realMicrophone ? 'The Start listening button requests browser speech access. Browser speech may use its speech service.' : 'Synthetic mode: no microphone, provider, or audio device.'} Reload to change voice source after starting.</p>
-  <section class="smrt-listening-mode__controls" data-smrt-part="controls" aria-label="Voice controls">
+  <section class="smrt-listening-mode__controls" data-smrt-part="actions" aria-label="Voice controls">
     <DictationButton {dictation} disabled={!ready} label="Start listening" stopLabel="Stop listening" title={realMicrophone ? "Start browser speech recognition" : "Start the synthetic speech source"} />
     <DictationStatus {dictation} />
     <Button disabled={!ready || realMicrophone} onclick={() => speech.emit('Mark the project', false)}>Synthetic interim</Button>

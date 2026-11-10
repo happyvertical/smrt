@@ -43,7 +43,7 @@ const visibleLines = $derived(lines.slice(-Math.max(1, maxLines)));
       {/each}
     </div>
     {#if interim}
-      <p class="smrt-spoken-captions__interim" data-smrt-part="preview" aria-hidden="true">{interim}</p>
+      <p class="smrt-spoken-captions__interim" data-smrt-part="message" aria-hidden="true">{interim}</p>
     {/if}
   </section>
 {/snippet}

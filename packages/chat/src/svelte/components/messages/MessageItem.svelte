@@ -124,7 +124,7 @@ function handleEscape(event: KeyboardEvent) {
     onfocusout={handleFocusOut} data-smrt-component="MessageItem"
   >
     {#if !isOwn}
-      <div class="smrt-message-item__avatar" data-smrt-part="avatar">
+      <div class="smrt-message-item__avatar" data-smrt-part="icon">
         <Avatar
           name={message.senderName}
           avatarUrl={message.senderAvatarUrl}
@@ -139,9 +139,9 @@ function handleEscape(event: KeyboardEvent) {
       {/if}
 
       {#if message.replyTo}
-        <div class="smrt-message-item__reply" data-smrt-part="reply">
-          <span class="smrt-message-item__reply-label" data-smrt-part="reply-label">{message.replyTo.senderName}</span>
-          <span class="smrt-message-item__reply-message" data-smrt-part="reply-message">{message.replyTo.content}</span>
+        <div class="smrt-message-item__reply" data-smrt-part="panel">
+          <span class="smrt-message-item__reply-label" data-smrt-part="label">{message.replyTo.senderName}</span>
+          <span class="smrt-message-item__reply-message" data-smrt-part="message">{message.replyTo.content}</span>
         </div>
       {/if}
 
@@ -152,15 +152,15 @@ function handleEscape(event: KeyboardEvent) {
       />
 
       {#if message.toolCallData}
-        <div class="smrt-message-item__tool" data-smrt-part="tool">
-          <span class="smrt-message-item__tool-name" data-smrt-part="tool-name">
+        <div class="smrt-message-item__tool" data-smrt-part="panel">
+          <span class="smrt-message-item__tool-name" data-smrt-part="title">
             {message.toolCallData.toolName}
           </span>
           <span class="smrt-message-item__status smrt-message-item__{message.toolCallData.status}" data-smrt-part="status">
             {message.toolCallData.status}
           </span>
           {#if message.toolCallData.duration}
-            <span class="smrt-message-item__duration" data-smrt-part="duration">
+            <span class="smrt-message-item__duration" data-smrt-part="meta">
               {message.toolCallData.duration}ms
             </span>
           {/if}
@@ -181,7 +181,7 @@ function handleEscape(event: KeyboardEvent) {
               onclick={() => onreact?.(message.id, reaction.emoji)}
               aria-label="{reaction.emoji} {reaction.count}"
             >
-              <span class="smrt-message-item__emoji" data-smrt-part="emoji">{reaction.emoji}</span>
+              <span class="smrt-message-item__emoji" data-smrt-part="icon">{reaction.emoji}</span>
               <span class="smrt-message-item__count" data-smrt-part="count">{reaction.count}</span>
             </Button>
           {/each}
@@ -191,7 +191,7 @@ function handleEscape(event: KeyboardEvent) {
       <div class="smrt-message-item__meta" data-smrt-part="meta">
         <span class="smrt-message-item__time" data-smrt-part="time">{formattedTime}</span>
         {#if message.isEdited}
-          <span class="smrt-message-item__edited" data-smrt-part="edited">(edited)</span>
+          <span class="smrt-message-item__edited" data-smrt-part="meta">(edited)</span>
         {/if}
       </div>
     </div>
@@ -528,18 +528,6 @@ function handleEscape(event: KeyboardEvent) {
   /* Reveal the keyboard/touch affordance on hover OR when focus is inside the
   row, so it is never strictly hover-only (a11y blocker, T2 #1391). Always
   visible to coarse pointers (touch) which cannot hover. */
-  .smrt-message-item__root:hover > :global([data-smrt-component="Button"]),
-  .smrt-message-item__root:focus-within > :global([data-smrt-component="Button"]) {
-    opacity: 1;
-  }
-  .smrt-message-item__root > :global([data-smrt-component="Button"]:focus-visible) {
-    opacity: 1;
-  }
-  @media (hover: none) {
-    .smrt-message-item__root > :global([data-smrt-component="Button"]) {
-      opacity: 1;
-    }
-  }
   .smrt-message-item__picker {
     /* The picker primitive supplies its own surface + radius; the popover
     wrapper lifts it off the conversation with matching elevation. */

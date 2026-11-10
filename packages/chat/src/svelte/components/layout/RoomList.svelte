@@ -94,13 +94,13 @@ function formatTimestamp(date?: string | Date | null): string {
         onclick={() => toggleGroup('channels')}
         aria-expanded={!collapsedGroups['channels']}
       >
-        <span class="smrt-room-list__group-chevron" data-smrt-part="chevron"
+        <span class="smrt-room-list__group-chevron" data-smrt-part="indicator"
   class:smrt-room-list__group-chevron--collapsed={collapsedGroups['channels']}
 >
           &#9662;
         </span>
-        <span class="smrt-room-list__group-label" data-smrt-part="group-label">Channels</span>
-        <span class="smrt-room-list__group-count" data-smrt-part="group-count">{channels.length}</span>
+        <span class="smrt-room-list__group-label" data-smrt-part="label">Channels</span>
+        <span class="smrt-room-list__group-count" data-smrt-part="count">{channels.length}</span>
       </button>
 
       {#if !collapsedGroups['channels']}
@@ -143,13 +143,13 @@ function formatTimestamp(date?: string | Date | null): string {
         onclick={() => toggleGroup('dms')}
         aria-expanded={!collapsedGroups['dms']}
       >
-        <span class="smrt-room-list__group-chevron" data-smrt-part="chevron"
+        <span class="smrt-room-list__group-chevron" data-smrt-part="indicator"
   class:smrt-room-list__group-chevron--collapsed={collapsedGroups['dms']}
 >
           &#9662;
         </span>
-        <span class="smrt-room-list__group-label" data-smrt-part="group-label">{t(M['chat.room_list.direct_messages'])}</span>
-        <span class="smrt-room-list__group-count" data-smrt-part="group-count">{directMessages.length}</span>
+        <span class="smrt-room-list__group-label" data-smrt-part="label">{t(M['chat.room_list.direct_messages'])}</span>
+        <span class="smrt-room-list__group-count" data-smrt-part="count">{directMessages.length}</span>
       </button>
 
       {#if !collapsedGroups['dms']}
@@ -168,16 +168,16 @@ function formatTimestamp(date?: string | Date | null): string {
                 aria-current={room.id === currentRoomId ? 'true' : undefined}
               >
                 {#if room.avatarUrl}
-                  <img class="smrt-room-list__item-avatar" data-smrt-part="avatar" src={room.avatarUrl} alt="" />
+                  <img class="smrt-room-list__item-avatar" data-smrt-part="media" src={room.avatarUrl} alt="" />
                 {:else}
-                  <span class="smrt-room-list__item-avatar-placeholder" data-smrt-part="avatar">
+                  <span class="smrt-room-list__item-avatar-placeholder" data-smrt-part="icon">
                     {room.name.charAt(0).toUpperCase()}
                   </span>
                 {/if}
                 <span class="smrt-room-list__item-body" data-smrt-part="body">
                   <span class="smrt-room-list__item-name" data-smrt-part="label">{room.name}</span>
                   {#if room.lastMessage}
-                    <span class="smrt-room-list__item-preview" data-smrt-part="preview">{room.lastMessage.content}</span>
+                    <span class="smrt-room-list__item-preview" data-smrt-part="panel">{room.lastMessage.content}</span>
                   {/if}
                 </span>
                 <span class="smrt-room-list__item-meta" data-smrt-part="meta">
@@ -208,13 +208,13 @@ function formatTimestamp(date?: string | Date | null): string {
         onclick={() => toggleGroup('agents')}
         aria-expanded={!collapsedGroups['agents']}
       >
-        <span class="smrt-room-list__group-chevron" data-smrt-part="chevron"
+        <span class="smrt-room-list__group-chevron" data-smrt-part="indicator"
   class:smrt-room-list__group-chevron--collapsed={collapsedGroups['agents']}
 >
           &#9662;
         </span>
-        <span class="smrt-room-list__group-label" data-smrt-part="group-label">Agents</span>
-        <span class="smrt-room-list__group-count" data-smrt-part="group-count">{agentRooms.length}</span>
+        <span class="smrt-room-list__group-label" data-smrt-part="label">Agents</span>
+        <span class="smrt-room-list__group-count" data-smrt-part="count">{agentRooms.length}</span>
       </button>
 
       {#if !collapsedGroups['agents']}
@@ -368,6 +368,9 @@ function formatTimestamp(date?: string | Date | null): string {
   .smrt-room-list__empty p {
     margin: 0;
   }
+  .smrt-room-list__group-chevron--collapsed {
+    transform: rotate(-90deg);
+  }
 }
 
 @layer smrt.theme {
@@ -397,9 +400,6 @@ function formatTimestamp(date?: string | Date | null): string {
   .smrt-room-list__group-chevron {
     font-size: var(--smrt-typography-label-small-size, 0.625rem);
     transition: transform var(--smrt-duration-short2, 150ms);
-  }
-  .smrt-room-list__group-chevron--collapsed {
-    transform: rotate(-90deg);
   }
   .smrt-room-list__group-label {
     text-align: left;

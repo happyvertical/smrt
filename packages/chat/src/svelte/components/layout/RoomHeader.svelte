@@ -55,18 +55,18 @@ const roomTypeLabel = $derived.by(() => {
 </script>
 
 <header class="smrt-room-header__root" aria-label={t(M['chat.room_header.room_label'], { name: room.name })} data-smrt-component="RoomHeader">
-  <div class="smrt-room-header__info" data-smrt-part="info">
+  <div class="smrt-room-header__info" data-smrt-part="meta">
     <div class="smrt-room-header__title" data-smrt-part="title">
       {#if room.roomType !== 'dm'}
         <span class="smrt-room-header__icon" data-smrt-part="icon" aria-hidden="true">{roomIcon}</span>
       {:else if room.avatarUrl}
-        <img class="smrt-room-header__avatar" data-smrt-part="avatar" src={room.avatarUrl} alt="" />
+        <img class="smrt-room-header__avatar" data-smrt-part="media" src={room.avatarUrl} alt="" />
       {:else}
-        <span class="smrt-room-header__avatar-placeholder" data-smrt-part="avatar">
+        <span class="smrt-room-header__avatar-placeholder" data-smrt-part="icon">
           {room.name.charAt(0).toUpperCase()}
         </span>
       {/if}
-      <h1 class="smrt-room-header__heading" data-smrt-part="heading">{room.name}</h1>
+      <h1 class="smrt-room-header__heading" data-smrt-part="title">{room.name}</h1>
       <span class="smrt-room-header__badge" data-smrt-part="badge">{roomTypeLabel}</span>
     </div>
 

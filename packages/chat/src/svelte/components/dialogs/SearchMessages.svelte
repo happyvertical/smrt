@@ -81,7 +81,7 @@ function highlightMatch(text: string, search: string): string {
   const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return safe.replace(
     new RegExp(`(${escaped})`, 'gi'),
-    '<mark class="smrt-search-messages__highlight">$1</mark>',
+    '<mark class="smrt-search-messages__highlight" data-smrt-part="marker">$1</mark>',
   );
 }
 
@@ -175,15 +175,15 @@ $effect(() => {
               <!-- raw-primitive-allow: large pressable search-result card wrapping rich content (avatar, sender, date, multi-line highlighted message excerpt); no Button primitive owns this structural selection-card pattern -->
               <button
                 class="smrt-search-messages__result"
-                data-smrt-part="result"
+                data-smrt-part="status"
                 type="button"
                 onclick={() => onselectresult?.(message.id)}
               >
-                <div class="smrt-search-messages__result-header" data-smrt-part="result-header">
+                <div class="smrt-search-messages__result-header" data-smrt-part="header">
                   {#if message.senderAvatarUrl}
-                    <img class="smrt-search-messages__avatar" data-smrt-part="avatar" src={message.senderAvatarUrl} alt="" />
+                    <img class="smrt-search-messages__avatar" data-smrt-part="media" src={message.senderAvatarUrl} alt="" />
                   {:else}
-                    <span class="smrt-search-messages__avatar-placeholder" data-smrt-part="avatar">
+                    <span class="smrt-search-messages__avatar-placeholder" data-smrt-part="icon">
                       {message.senderName.charAt(0).toUpperCase()}
                     </span>
                   {/if}
@@ -206,7 +206,7 @@ $effect(() => {
       {:else if hasQuery}
         <div class="smrt-search-messages__empty" data-smrt-part="empty" role="status">
           <p class="smrt-search-messages__empty-text" data-smrt-part="message">{t(M['chat.search_messages.no_results'], { query })}</p>
-          <p class="smrt-search-messages__empty-hint" data-smrt-part="hint">{t(M['chat.search_messages.no_results_hint'])}</p>
+          <p class="smrt-search-messages__empty-hint" data-smrt-part="description">{t(M['chat.search_messages.no_results_hint'])}</p>
         </div>
       {:else}
         <div class="smrt-search-messages__empty" data-smrt-part="empty" role="status">
@@ -247,7 +247,7 @@ $effect(() => {
     height: 1rem;
   }
   /* :global() targets the Form primitive's rendered <form> (see #1589 scoping trap). */
-  .smrt-search-messages__root :global([data-smrt-component="Form"]) {
+  :global(:where([data-smrt-component="SearchMessages"]) [data-smrt-component="Form"]) {
     padding: 0.75rem 1rem;
   }
   .smrt-search-messages__input-wrap {
@@ -264,7 +264,7 @@ $effect(() => {
   /* The Input primitive sits inside the bordered .smrt-search-messages__input-wrap, which owns
   the border + focus-within ring — so neutralize the primitive's own chrome
   (border/background/padding/box-shadow) and let it render borderless. */
-  .smrt-search-messages__input-wrap :global([data-smrt-component="Input"]) {
+  :global(:where([data-smrt-component="SearchMessages"]) [data-smrt-component="Input"]) {
     flex: 1;
     padding: 0;
   }
@@ -375,7 +375,7 @@ $effect(() => {
     background: var(--smrt-color-surface-variant);
   }
   /* :global() targets the Form primitive's rendered <form> (see #1589 scoping trap). */
-  .smrt-search-messages__root :global([data-smrt-component="Form"]) {
+  :global(:where([data-smrt-component="SearchMessages"]) [data-smrt-component="Form"]) {
     border-bottom: var(--smrt-hairline);
   }
   .smrt-search-messages__input-wrap {
@@ -394,7 +394,7 @@ $effect(() => {
   /* The Input primitive sits inside the bordered .smrt-search-messages__input-wrap, which owns
   the border + focus-within ring — so neutralize the primitive's own chrome
   (border/background/padding/box-shadow) and let it render borderless. */
-  .smrt-search-messages__input-wrap :global([data-smrt-component="Input"]) {
+  :global(:where([data-smrt-component="SearchMessages"]) [data-smrt-component="Input"]) {
     border: none;
     outline: none;
     background: transparent;
@@ -402,7 +402,7 @@ $effect(() => {
     font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
     color: var(--smrt-color-on-surface);
   }
-  .smrt-search-messages__input-wrap :global([data-smrt-component="Input"]:focus) {
+  :global(:where([data-smrt-component="SearchMessages"]) [data-smrt-component="Input"]:focus) {
     border: none;
     outline: none;
     box-shadow: none;

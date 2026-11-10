@@ -47,18 +47,18 @@ function getInitial(name: string): string {
       <path d="M19 4.5l-7 7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
     </svg>
     {#if readBy.length > 0}
-      <span class="smrt-read-receipts__avatars" data-smrt-part="avatars">
+      <span class="smrt-read-receipts__avatars" data-smrt-part="list">
         {#each readBy.slice(0, 3) as reader}
           {#if reader.avatarUrl}
-            <img class="smrt-read-receipts__mini-avatar" data-smrt-part="avatar" src={reader.avatarUrl} alt={reader.name} />
+            <img class="smrt-read-receipts__mini-avatar" data-smrt-part="media" src={reader.avatarUrl} alt={reader.name} />
           {:else}
-            <span class="smrt-read-receipts__mini-avatar smrt-read-receipts__mini-avatar--initials" data-smrt-part="avatar" title={reader.name}>
+            <span class="smrt-read-receipts__mini-avatar smrt-read-receipts__mini-avatar--initials" data-smrt-part="icon" title={reader.name}>
               {getInitial(reader.name)}
             </span>
           {/if}
         {/each}
         {#if readBy.length > 3}
-          <span class="smrt-read-receipts__mini-avatar smrt-read-receipts__mini-avatar--more" data-smrt-part="avatar">
+          <span class="smrt-read-receipts__mini-avatar smrt-read-receipts__mini-avatar--more" data-smrt-part="icon">
             +{readBy.length - 3}
           </span>
         {/if}

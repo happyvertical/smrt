@@ -111,10 +111,10 @@ function getFileIcon(type: string): string {
   class:smrt-file-upload__disabled={disabled}
 >
   {#if pendingFiles.length > 0}
-    <div class="smrt-file-upload__preview" data-smrt-part="preview" aria-label={t(M['chat.file_upload.preview'])}>
+    <div class="smrt-file-upload__preview" data-smrt-part="panel" aria-label={t(M['chat.file_upload.preview'])}>
       {#each pendingFiles as file, i (file.name + i)}
         <div class="smrt-file-upload__file" data-smrt-part="row">
-          <span class="smrt-file-upload__file-icon" data-smrt-part="file-icon">{getFileIcon(file.type)}</span>
+          <span class="smrt-file-upload__file-icon" data-smrt-part="icon">{getFileIcon(file.type)}</span>
           <div class="smrt-file-upload__file-info" data-smrt-part="body">
             <span class="smrt-file-upload__file-name" data-smrt-part="label">{file.name}</span>
             <span class="smrt-file-upload__file-size" data-smrt-part="meta">{formatSize(file.size)}</span>
@@ -163,7 +163,7 @@ function getFileIcon(type: string): string {
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="smrt-file-upload__dropzone"
-    data-smrt-part="dropzone"
+    data-smrt-part="field"
     ondrop={handleDrop}
     ondragover={handleDragOver}
     ondragleave={handleDragLeave}
@@ -192,7 +192,7 @@ function getFileIcon(type: string): string {
           {t(M['chat.file_upload.drop_files'])}
         {/if}
       </span>
-      <span class="smrt-file-upload__hint" data-smrt-part="hint">{t(M['chat.file_upload.max_size'], { size: formatSize(maxSize) })}</span>
+      <span class="smrt-file-upload__hint" data-smrt-part="description">{t(M['chat.file_upload.max_size'], { size: formatSize(maxSize) })}</span>
     </label>
   </div>
 </div>
@@ -205,7 +205,7 @@ function getFileIcon(type: string): string {
     flex-direction: column;
     gap: var(--smrt-spacing-2);
   }
-  .smrt-file-upload__root.smrt-file-upload__disabled {
+  .smrt-file-upload__disabled {
     pointer-events: none;
   }
   .smrt-file-upload__dropzone {
@@ -277,7 +277,7 @@ function getFileIcon(type: string): string {
 }
 
 @layer smrt.theme {
-  .smrt-file-upload__root.smrt-file-upload__disabled {
+  .smrt-file-upload__disabled {
     opacity: 0.5;
   }
   .smrt-file-upload__dropzone {

@@ -95,7 +95,7 @@ $effect(() => {
 <div class="smrt-agent-chat__root" aria-label={t(M['chat.agent_chat.conversation'])} data-smrt-component="AgentChat">
   <Form onsubmit={(e) => handleSubmit(e)}>
     {#if !isActive}
-      <div class="smrt-agent-chat__notice" data-smrt-part="notice">
+      <div class="smrt-agent-chat__notice" data-smrt-part="status">
         {t(M['chat.agent_chat.inactive_notice'], { status: session.status })}
       </div>
     {:else}
@@ -132,7 +132,7 @@ $effect(() => {
       {@const isToolCall = msg.messageType === 'tool_call' || msg.messageType === 'tool_result'}
 
       {#if isToolCall && msg.toolCallData}
-        <div class="smrt-agent-chat__tool" data-smrt-part="tool">
+        <div class="smrt-agent-chat__tool" data-smrt-part="panel">
           <ToolCallDisplay toolCall={msg.toolCallData} />
         </div>
       {:else}
@@ -144,7 +144,7 @@ $effect(() => {
   class:smrt-agent-chat__msg--agent={!isUser && !isToolCall}
   class:smrt-agent-chat__msg--system={msg.role === 'system'}
 >
-          <div class="smrt-agent-chat__bubble" data-smrt-part="bubble"
+          <div class="smrt-agent-chat__bubble" data-smrt-part="body"
   class:smrt-agent-chat__bubble--user={isUser}
   class:smrt-agent-chat__bubble--agent={!isUser}
 >
@@ -154,15 +154,15 @@ $effect(() => {
               {:else}
                 {#each parseAgentMessageBlocks(msg.content || '') as block}
                   {#if block.type === 'text'}
-                    <span class="smrt-agent-chat__text" data-smrt-part="text">{block.content}</span>
+                    <span class="smrt-agent-chat__text" data-smrt-part="message">{block.content}</span>
                   {:else if block.type === 'fields'}
-                    <div class="smrt-agent-chat__field-update" data-smrt-part="field-update">
+                    <div class="smrt-agent-chat__field-update" data-smrt-part="panel">
                       <span class="smrt-agent-chat__badge" data-smrt-part="badge">{t(M['chat.agent_chat.updated_fields'], { count: Object.keys(block.fields).length, plural: Object.keys(block.fields).length !== 1 ? 's' : '' })}</span>
                       <Button variant="ghost" size="sm" type="button" onclick={() => showDiff(block.fields)}>Diff</Button>
                     </div>
                   {:else if block.type === 'markdown'}
-                    <div class="smrt-agent-chat__markdown" data-smrt-part="markdown">
-                      <pre class="smrt-agent-chat__markdown-content" data-smrt-part="code"><code>{block.content}</code></pre>
+                    <div class="smrt-agent-chat__markdown" data-smrt-part="body">
+                      <pre class="smrt-agent-chat__markdown-content" data-smrt-part="body"><code>{block.content}</code></pre>
                       {#if onapplychange}
                         <Button
                           variant="ghost"
@@ -186,7 +186,7 @@ $effect(() => {
 
     {#if loading}
       <div class="smrt-agent-chat__msg smrt-agent-chat__msg--agent" data-smrt-part="row">
-        <div class="smrt-agent-chat__bubble smrt-agent-chat__bubble--agent smrt-agent-chat__thinking" data-smrt-part="bubble">
+        <div class="smrt-agent-chat__bubble smrt-agent-chat__bubble--agent smrt-agent-chat__thinking" data-smrt-part="body">
           <span class="smrt-agent-chat__thinking-dots" data-smrt-part="indicator">
             <span></span><span></span><span></span>
           </span>
@@ -196,7 +196,7 @@ $effect(() => {
 
     {#if messages.length === 0 && !loading}
       <div class="smrt-agent-chat__empty" data-smrt-part="empty">
-        <span class="smrt-agent-chat__empty-text" data-smrt-part="empty-text">{t(M['chat.agent_chat.empty'])}</span>
+        <span class="smrt-agent-chat__empty-text" data-smrt-part="message">{t(M['chat.agent_chat.empty'])}</span>
       </div>
     {/if}
   </div>
@@ -275,7 +275,7 @@ $effect(() => {
     min-height: 80px;
   }
   /* :global() targets the Form primitive's rendered <form> (see #1589 scoping trap). */
-  .smrt-agent-chat__root :global([data-smrt-component="Form"]) {
+  :global(:where([data-smrt-component="AgentChat"]) [data-smrt-component="Form"]) {
     display: flex;
     align-items: flex-end;
     gap: var(--smrt-spacing-2);
@@ -288,7 +288,7 @@ $effect(() => {
   }
   /* Layout for the Textarea primitive's rendered <textarea> (tokenised styling
   comes from the primitive; this only sizes it within the input bar). */
-  .smrt-agent-chat__root :global([data-smrt-component="Textarea"]) {
+  :global(:where([data-smrt-component="AgentChat"]) [data-smrt-component="Textarea"]) {
     flex: 1;
     resize: none;
     min-height: 34px;
@@ -296,7 +296,7 @@ $effect(() => {
   }
   /* :global() pierces into the Button child's rendered <button> (see #1589).
   The ancestor is the Form primitive's <form>, also global. */
-  .smrt-agent-chat__root :global([data-smrt-component="Form"] [data-smrt-component="Button"]) {
+  :global(:where([data-smrt-component="AgentChat"]) [data-smrt-component="Form"] [data-smrt-component="Button"]) {
     width: 34px;
     height: 34px;
     padding: 0;
@@ -422,7 +422,7 @@ $effect(() => {
     color: var(--smrt-color-outline);
   }
   /* :global() targets the Form primitive's rendered <form> (see #1589 scoping trap). */
-  .smrt-agent-chat__root :global([data-smrt-component="Form"]) {
+  :global(:where([data-smrt-component="AgentChat"]) [data-smrt-component="Form"]) {
     background: var(--smrt-color-surface);
   }
   .smrt-agent-chat__notice {
@@ -433,13 +433,13 @@ $effect(() => {
   }
   /* :global() pierces into the Button child's rendered <button> (see #1589).
   The ancestor is the Form primitive's <form>, also global. */
-  .smrt-agent-chat__root :global([data-smrt-component="Form"] [data-smrt-component="Button"]) {
+  :global(:where([data-smrt-component="AgentChat"]) [data-smrt-component="Form"] [data-smrt-component="Button"]) {
     background: var(--smrt-color-primary);
     color: var(--smrt-color-on-primary);
     border-radius: var(--smrt-radius-full);
     transition: opacity 150ms;
   }
-  .smrt-agent-chat__root :global([data-smrt-component="Form"] [data-smrt-component="Button"]:not(:disabled):hover) {
+  :global(:where([data-smrt-component="AgentChat"]) [data-smrt-component="Form"] [data-smrt-component="Button"]:not(:disabled):hover) {
     background: var(--smrt-color-primary);
     opacity: 0.85;
   }

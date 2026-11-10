@@ -275,7 +275,9 @@ describe('FloatingAssistant decision authority', () => {
     expect(fixture.controller.run?.state).toBe('waiting');
     expect(fixture.controller.run?.waitingFor?.kind).toBe('choice');
     expect(
-      fixture.container.querySelector('[data-smrt-part="run"]'),
+      fixture.container.querySelector(
+        '[data-smrt-component="AssistantDock"] [data-smrt-part="summary"]',
+      ),
     ).toHaveTextContent('Pick a layout');
     await userEvent.click(
       await screen.findByRole('button', { name: /Compact layout/ }),

@@ -64,7 +64,7 @@ function handleInput(event: Event) {
   class:smrt-message-input__disabled={disabled}
 >
   {#if replyTo}
-    <div class="smrt-message-input__reply" data-smrt-part="reply">
+    <div class="smrt-message-input__reply" data-smrt-part="panel">
       <div class="smrt-message-input__reply-body" data-smrt-part="body">
         <span class="smrt-message-input__reply-name" data-smrt-part="label">{replyTo.senderName}</span>
         <span class="smrt-message-input__reply-text" data-smrt-part="message">{replyTo.content}</span>
@@ -84,7 +84,7 @@ function handleInput(event: Event) {
     </div>
   {/if}
 
-  <div class="smrt-message-input__bar" data-smrt-part="composer">
+  <div class="smrt-message-input__bar" data-smrt-part="panel">
     <Textarea
       bind:value={content}
       {placeholder}
@@ -165,7 +165,7 @@ function handleInput(event: Event) {
   /* Layout/sizing for the Textarea primitive's rendered <textarea>; tokenised
   border/focus/placeholder styling comes from the primitive. The height is
   JS-driven (auto-resize), so resize is disabled and capped at max-height. */
-  .smrt-message-input__bar :global([data-smrt-component="Textarea"]) {
+  :global(:where([data-smrt-component="MessageInput"]) [data-smrt-component="Textarea"]) {
     flex: 1;
     resize: none;
     min-height: auto;
