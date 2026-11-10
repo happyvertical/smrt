@@ -91,6 +91,7 @@ import {
   ownValue,
   PlainDataError,
 } from '../plain-data.js';
+import { createProviderReadinessProbe } from '../provider-readiness.js';
 import {
   projectRuntimeDiagnostics,
   type RuntimeDiagnostics,
@@ -263,8 +264,11 @@ export interface SmrtSvelteKitRuntimeOptions {
     | ((context: WriterLeaseContext) => WriterLease)
     | false;
   /**
-   * Deployed provider readiness probes. Required by `self-hosted` and `cloud`;
-   * deployed startup fails closed without them.
+   * Deployed provider readiness probes for `self-hosted` and `cloud`. Omit to
+   * use {@link createProviderReadinessProbe}: the module named by
+   * `SMRT_AUTH_READINESS_MODULE` / `SMRT_ASSETS_READINESS_MODULE` /
+   * `SMRT_SECRETS_READINESS_MODULE`, else the default for the configured
+   * provider. Startup still fails closed when no probe resolves.
    */
   readonly providerReadiness?: ProviderReadinessFactory;
   /** Replace the default subdomain tenant selector. Selection only. */
@@ -773,12 +777,10 @@ export function composeSmrtSvelteKitRuntime(
     if (authenticationProvider === 'owner-bootstrap') {
       throw new Error('Deployed profiles require public authentication.');
     }
-    const readiness = options.providerReadiness;
-    if (!readiness) {
-      throw new Error(
-        `${profile} requires providerReadiness probes for authentication, assets, and secrets.`,
-      );
-    }
+    const readiness: ProviderReadinessFactory =
+      options.providerReadiness ??
+      ((component, context) =>
+        createProviderReadinessProbe(component, context, { environment: env }));
     deployedPromise ??= initializeDeployed({
       profile,
       providers: {

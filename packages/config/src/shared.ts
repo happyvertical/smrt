@@ -205,9 +205,44 @@ export function resolveEffectiveApplicationRuntime(
     !declaresRuntime(config ?? null) &&
     !declaresRuntime(getRuntimeConfig())
   ) {
-    return _resolveApplicationRuntime({ profile: 'local' });
+    return _resolveApplicationRuntime(runtimeFromEnvironment(process.env));
   }
   return resolveRuntimeLayers(config ?? null);
+}
+
+/** Environment variables that select providers when no runtime block exists. */
+export const RUNTIME_ENVIRONMENT_SETTINGS = Object.freeze({
+  profile: 'SMRT_RUNTIME_PROFILE',
+  authentication: 'SMRT_AUTHENTICATION_PROVIDER',
+  assets: 'SMRT_ASSETS_PROVIDER',
+  secrets: 'SMRT_SECRETS_PROVIDER',
+} as const);
+
+/**
+ * The runtime an application gets from its environment when it declares no
+ * `runtime` block: `SMRT_RUNTIME_PROFILE` selects the profile (unset means
+ * `local`) and the optional provider settings select among the providers that
+ * profile allows. Values are validated by the profile resolver, so an unknown
+ * profile or a provider the profile forbids fails closed.
+ */
+function runtimeFromEnvironment(
+  env: Record<string, string | undefined>,
+): ApplicationRuntimeConfig {
+  const setting = (name: string): string | undefined =>
+    env[name]?.trim() || undefined;
+  const profile = setting(RUNTIME_ENVIRONMENT_SETTINGS.profile);
+  if (!profile) return { profile: 'local' };
+  const authentication = setting(RUNTIME_ENVIRONMENT_SETTINGS.authentication);
+  const assets = setting(RUNTIME_ENVIRONMENT_SETTINGS.assets);
+  const secrets = setting(RUNTIME_ENVIRONMENT_SETTINGS.secrets);
+  const providers: Record<string, unknown> = {};
+  if (authentication) providers.authentication = { provider: authentication };
+  if (assets) providers.assets = { provider: assets };
+  if (secrets) providers.secrets = { provider: secrets };
+  return {
+    profile,
+    ...(Object.keys(providers).length > 0 ? { providers } : {}),
+  } as unknown as ApplicationRuntimeConfig;
 }
 
 /** An own `runtime` property whose value is anything but `undefined`. */

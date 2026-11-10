@@ -1637,10 +1637,6 @@ describe('deployed SvelteKit runtime', () => {
         /requires DATABASE_URL/,
       ],
       [
-        { runtime: SELF_HOSTED, env: { DATABASE_URL: 'postgres://db/app' } },
-        /requires providerReadiness/,
-      ],
-      [
         {
           runtime: {
             ...SELF_HOSTED,
@@ -1666,6 +1662,31 @@ describe('deployed SvelteKit runtime', () => {
       await expect(Promise.resolve(runtime.init())).rejects.toThrow(message);
     }
     expect(initializeDeployed).not.toHaveBeenCalled();
+  });
+});
+
+describe('default provider readiness (#4864)', () => {
+  const SELF_HOSTED = resolveApplicationRuntime({ profile: 'self-hosted' });
+  it('wires the environment-named probes when the app passes none', async () => {
+    const initializeDeployed = vi.fn(async (input: any) => {
+      // The probes are the default: no module is configured, so each fails
+      // closed with the setting that would name one.
+      await expect(input.authentication.readiness()).rejects.toThrow(
+        /SMRT_AUTH_READINESS_MODULE must name/,
+      );
+      return {} as never;
+    });
+    const runtime = composeSmrtSvelteKitRuntime(
+      {
+        appId: 'deployed-app',
+        enableTenancy: false,
+        runtime: SELF_HOSTED,
+        env: { DATABASE_URL: 'postgres://db/app' },
+      },
+      { initializeDeployed: initializeDeployed as never },
+    );
+    await runtime.init();
+    expect(initializeDeployed).toHaveBeenCalledOnce();
   });
 });
 

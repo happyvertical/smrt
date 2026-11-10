@@ -9,6 +9,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { existsSync, realpathSync } from 'node:fs';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { registerHooks } from 'node:module';
 import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -24,6 +25,60 @@ export const PROVIDER_READINESS_SETTINGS: Readonly<
   assets: 'SMRT_ASSETS_READINESS_MODULE',
   secrets: 'SMRT_SECRETS_READINESS_MODULE',
 });
+
+const BUILTIN_LOCAL_FILES = 'builtin:local-files';
+const BUILTIN_ENVIRONMENT_SECRETS = 'builtin:environment-secrets';
+
+/**
+ * Readiness modules used when `SMRT_*_READINESS_MODULE` is unset, keyed by the
+ * configured provider. `password` sign-in is probed by the module
+ * `@happyvertical/smrt-users` ships; the two `builtin:` entries are the
+ * stand-in asset store (a directory) and secret store (environment variables)
+ * probed here. Real providers (OIDC, S3-compatible storage, an external
+ * secret store) name their own module through the setting.
+ */
+const DEFAULT_READINESS_MODULES: Readonly<
+  Record<ReadinessComponent, Readonly<Record<string, string>>>
+> = Object.freeze({
+  authentication: { password: '@happyvertical/smrt-users' },
+  assets: { 'local-files': BUILTIN_LOCAL_FILES },
+  secrets: { environment: BUILTIN_ENVIRONMENT_SECRETS },
+});
+
+/** Prove `SMRT_ASSETS_DIR` is an absolute directory the process can write. */
+async function checkLocalFilesReadiness(
+  environment: Record<string, string | undefined>,
+): Promise<void> {
+  const root = environment.SMRT_ASSETS_DIR;
+  if (!root || !isAbsolute(root)) {
+    throw new Error('assets provider readiness check failed.');
+  }
+  const probe = join(root, `.readiness-${randomUUID()}`);
+  try {
+    await mkdir(root, { recursive: true });
+    await writeFile(probe, 'ready', { mode: 0o600 });
+    if ((await readFile(probe, 'utf8')) !== 'ready') {
+      throw new Error('mismatch');
+    }
+  } catch {
+    throw new Error('assets provider readiness check failed.');
+  } finally {
+    await rm(probe, { force: true });
+  }
+}
+
+/** Prove every variable named by `SMRT_SECRETS_REQUIRED` (comma list) is set. */
+async function checkEnvironmentSecretsReadiness(
+  environment: Record<string, string | undefined>,
+): Promise<void> {
+  const required = (environment.SMRT_SECRETS_REQUIRED ?? '')
+    .split(',')
+    .map((name) => name.trim())
+    .filter(Boolean);
+  if (required.some((name) => !environment[name])) {
+    throw new Error('secrets provider readiness check failed.');
+  }
+}
 
 /** Context handed to the provider's probe. */
 export interface ReadinessContext {
@@ -156,7 +211,15 @@ export function createProviderReadinessProbe(
   return async () => {
     const setting = PROVIDER_READINESS_SETTINGS[component];
     const environment = options.environment ?? process.env;
-    const specifier = environment[setting];
+    const specifier =
+      environment[setting] ||
+      DEFAULT_READINESS_MODULES[component]?.[context.provider];
+    if (specifier === BUILTIN_LOCAL_FILES) {
+      return checkLocalFilesReadiness(environment);
+    }
+    if (specifier === BUILTIN_ENVIRONMENT_SECRETS) {
+      return checkEnvironmentSecretsReadiness(environment);
+    }
     if (!specifier) {
       throw new Error(
         `${setting} must name an installed provider readiness module.`,

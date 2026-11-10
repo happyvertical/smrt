@@ -152,5 +152,10 @@ describe('deployed process topology', () => {
     expect(dockerfile).not.toContain('/app/scripts');
     expect(dockerfile).toContain('ENV SMRT_RUNTIME_PROFILE=self-hosted');
     expect(dockerfile).toContain('USER node');
+    // #4863: pnpm is prepared into a Corepack home the node user can read.
+    expect(dockerfile).toContain('ENV COREPACK_HOME=/usr/local/share/corepack');
+    expect(dockerfile).toContain(
+      'chown -R node:node /app /usr/local/share/corepack',
+    );
   });
 });
