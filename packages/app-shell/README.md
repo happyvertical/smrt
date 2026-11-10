@@ -122,7 +122,8 @@ or an outside MCP client) can approve its own call. The risky ones
 ## Settings
 
 `/settings` is the section menu (`ShellSettingsPage`): Appearance, Account,
-Layout and Shortcuts, plus **Inference** (`/settings/inference`), the
+Layout and Shortcuts, plus **Assistant** (`/settings/assistant`: the engine,
+see Onboarding) and **Inference** (`/settings/inference`), the
 `InferenceSettingsPanel` from smrt-inference. Owner only: every load and action
 runs as the verified owner (a member or a stranger gets 403 before any body is
 read). Saving a provider key (`saveKey`) binds it to its endpoint, stores it in
@@ -143,7 +144,7 @@ Owner session required on all of them (401/403); the POST is same-origin.
 
 | Route | Body | Response |
 |---|---|---|
-| `GET /api/assistant/status` | | `{ configured: boolean, code?, message? }`; never a key, provider or endpoint. `code` is `assistant_not_configured` (no API key), `assistant_provider_refused` (subscription provider configured) or `ai_unavailable` (inference off) |
+| `GET /api/assistant/status` | | `{ configured: boolean, engine?, engineLabel?, code?, message?, action? }`; never a key, provider, endpoint or path. `engine` is `api`, `claude-code` or `codex`. `code` is `assistant_not_configured` (no API key), `assistant_provider_refused` (subscription provider configured), `ai_unavailable` (inference off), `agent_cli_missing` or `agent_cli_signed_out` (a local CLI engine that is not ready); `action` is the link that fixes it |
 | `GET /api/assistant/threads` | | `{ threads: { id, title, updatedAt }[] }` newest first |
 | `GET /api/assistant/threads/<id>` | | `{ thread, messages: ThreadMessage[] }`; 404 for a missing or foreign thread |
 | `POST /api/assistant/turn` | `{ message, threadId? }` | `text/event-stream`, `event: turn`, JSON `TurnEvent` (below). **503** `{ type: 'unavailable', configured: false, code, error }` when the assistant cannot run; 409 while another turn is running |
@@ -167,24 +168,106 @@ call, the running tool and any wait.
   wait times out or the client leaves, the model is told it is waiting, the
   turn ends as `waiting`/`aborted`, and the Approval stays pending, unapplied.
   The assistant has no way to set the engine's `approved` flag.
-- **Engine.** `@happyvertical/ai` through core's inference tiers
-  (`resolveInferenceTarget`, tier `good`, override `SMRT_APP_SHELL_ASSISTANT_TIER`).
-  The key is the owner's, pasted once in **Settings > Inference**
-  (`/settings/inference`, see below), or the deployment's: the `ai` block of
-  `smrt.config.ts`, `SMRT_AI_*` or the provider's own variable
-  (`ANTHROPIC_API_KEY`). The saved key wins, then the stored tier bindings, then
-  config/env, so a desktop app launched from Finder works with no environment.
-  The key is read only server side, never logged or sent to the browser.
-  Subscription providers (`claude-cli`, `chatgpt-plan`) are refused. With no
-  key, status/turn answer the typed not-configured state, the dock shows it
-  with a link to Settings, and it checks again each time it is opened, so a
-  saved key needs no restart.
+- **Engines.** Two, chosen by the owner (the non-secret `assistant`
+  preference, `engine` = `api` | `claude-code` | `codex`; default `api`):
+  - **API key** (`api`): `@happyvertical/ai` through core's inference tiers
+    (`resolveInferenceTarget`, tier `good`, override
+    `SMRT_APP_SHELL_ASSISTANT_TIER`). The key is the owner's, pasted once in
+    **Settings > Inference** (`/settings/inference`, see below), or the
+    deployment's: the `ai` block of `smrt.config.ts`, `SMRT_AI_*` or the
+    provider's own variable (`ANTHROPIC_API_KEY`). The saved key wins, then the
+    stored tier bindings, then config/env, so a desktop app launched from
+    Finder works with no environment. The key is read only server side, never
+    logged or sent to the browser. Subscription providers (`claude-cli`,
+    `chatgpt-plan`) are refused here: no in-app subscription login.
+  - **Local agent CLI** (`claude-code`, `codex`): the turn runs through the
+    person's own, already installed and signed-in Claude Code or Codex
+    (`src/lib/server/agent-cli/`, `assistant/agent-turn.ts`). See below.
+  With no usable engine, status/turn answer the typed not-configured state, the
+  dock shows it with a link to fix it, and it checks again each time it is
+  opened, so a saved key or a finished sign-in needs no restart.
 - **Bounds** (`DEFAULT_LIMITS` in `turn.ts`): 8 model rounds, 2048 output
   tokens per call, 60 000 tokens per turn, 4 calls per round, 60 s per model
   call, 180 s of model/tool time per turn, 15 min per approval wait.
 - **Guidance.** `src/lib/assistant/guidance/system.md` (bundled with `?raw`).
 - **Threads** persist in shell.db (`assistant_threads`, `assistant_messages`).
 - **Tests** inject a stub model (`modelFactory` option, `test-helpers.ts`).
+
+### The local agent CLI engine
+
+**Rule (two lines).** No in-app subscription login: this app never offers
+Claude.ai or ChatGPT sign-in and never collects, stores or passes on those
+credentials. The local-CLI engine only runs the person's own, unmodified Claude
+Code or Codex, signed in through the vendor's own flow and billed to them
+([Claude Code legal and compliance](https://code.claude.com/docs/en/legal-and-compliance)).
+Product names appear as plain text, no logos.
+
+- **Detection** (`agent-cli/locate.ts`, `detect.ts`): the executable on PATH,
+  then the usual install places (`~/.local/bin`, `~/.claude/local`, Homebrew,
+  `/usr/local/bin`, npm/pnpm/volta/bun/nvm bins, Windows equivalents), then the
+  person's login shell (`command -v`), so an app started from Finder finds it.
+  Version and sign-in come only from the tool's own commands (`--version`,
+  `claude auth status`, `codex login status`); no credential file or keychain
+  item is read, and the browser sees only installed / version / signed in. Not
+  installed: a link to the vendor's install page, nothing is installed for them.
+  Windows runs a real `.exe` (a `.cmd` shim is not started, there is no shell).
+- **Connect** (`agent-cli/login.ts`): signed out, it starts the tool's own
+  sign-in (`claude auth login`, `codex login`), which opens the vendor's page
+  in the system browser; the app only watches the process end, then asks the
+  status command again.
+- **A turn** (`agent-cli/session.ts`, `assistant/agent-turn.ts`):
+  `claude -p --output-format stream-json --verbose --include-partial-messages`
+  or `codex exec --json`, the prompt on stdin, streamed JSON mapped onto the
+  same `TurnEvent`s (the dock has no engine-specific code). Locked down:
+  - Tools: only the shell's, from `/mcp`, with the same owner policy and
+    Approval gate. Every built-in tool that touches the machine is off (Claude:
+    `--tools ""` plus a strict MCP config; Codex: shell, exec, apps, plugins,
+    hooks, sub-agents, code mode and more disabled, read-only sandbox, approvals
+    never, no web search). The stream is also checked: any other tool, or an
+    unknown Codex item kind, stops the turn.
+  - Token: a short-lived (15 min), owner-bound, `assistant.use`-scoped
+    app-runtime local MCP token, issued under one holder (each turn rotates the
+    last) and revoked when the turn ends. It is in the child's environment only:
+    never argv, a file or a log, and only ever sent to a loopback URL. Claude
+    reads it through `${VAR}` in its MCP header config; Codex through
+    `bearer_token_env_var`.
+  - Environment: an allow-list (`agent-cli/env.ts`); `ANTHROPIC_*`, `OPENAI_*`,
+    `CODEX_*`, `CLAUDE_CODE_*` and `SMRT_*` never reach the child, so the tool
+    uses the person's own login. Working directory: an empty private folder
+    `<data root>/agent-cli/work`. Claude loads none of the person's settings,
+    hooks, skills or plugins; Codex ignores their `config.toml` and rules.
+  - Approvals: a risky call returns `pending_approval` from `/mcp`; the turn
+    shows the card (`approval_required`) and ends `waiting`. Only the owner's
+    decision applies it (`Approval.decide`). The tool is told not to retry.
+  - Bounds: 10 minutes per turn; cancel (the Stop button) and timeout kill the
+    whole process tree. A later turn resumes the tool's own session (stored on
+    the thread's last assistant message), else starts a new one.
+  - Known gaps: Codex still offers its own code-mode `exec` and `apply_patch`
+    tools to the model (no flag removes them; the read-only sandbox and the
+    stream guard are what stop them), and it still reads the person's own global
+    Codex instructions file (its home folder AGENTS.md). Codex 0.162.1 needs `--enable mcp_2026_07_28` to
+    reach `/mcp`. The tool keeps its own session transcript in its own folder.
+- **Tests:** stub CLIs (`agent-cli/test-fixtures/stub-cli.mjs`) over the real
+  `/mcp` route (`assistant/agent-turn.test.ts`); fake binaries on a temp PATH
+  (`agent-cli/detect.test.ts`). An opt-in run against a real installed CLI:
+  `REAL_AGENT_CLI=claude-code|codex npx vitest run
+  src/lib/server/assistant/agent-cli.manual.test.ts` (spends the person's own
+  subscription, one short turn).
+
+## Onboarding
+
+`/welcome` (owner only; an owner with an empty app who has not finished or
+skipped it is sent there once): **1. Connect your AI** (one button per local
+tool, plus Advanced: the full inference setup at `/settings/inference`, which
+links back) and **2. How do you want to start?** (Fresh: an empty app with the
+assistant dock open; Wizard: shown, disabled, coming soon). Skippable. Finished
+or skipped is stored as `onboarding` in the `assistant` preference
+(`agent-cli/settings.ts`, the smrt-preferences store smrt-inference also uses;
+not a member of the `inference` payload, which the settings panel replaces whole,
+and not a tier target of core's inference model). **Settings > Assistant**
+(`/settings/assistant`) switches engine and re-opens the steps. JSON routes
+(owner only, same-origin writes): `GET /api/shell/onboarding[?fresh=1]`,
+`POST /api/shell/onboarding/{connect,engine,complete,skip}` (`lib/server/onboarding.ts`).
 
 ## First-run schema
 

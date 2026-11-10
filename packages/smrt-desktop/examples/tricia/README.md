@@ -86,9 +86,29 @@ node scripts/launch-smoke.mjs --wrapper /path/outside/the/checkout/wrapper-targe
 To use the app, run the staged debug wrapper (`launch-smoke.mjs --keep` leaves
 the layout) and the window opens on the owner setup page.
 
-## The assistant needs an API key
+## The assistant: your own Claude Code or Codex, or an API key
 
-The assistant answers only with an API key (never a subscription login). The
+On first run the owner lands on a short welcome: **Connect your AI**, then
+**How do you want to start?** (Fresh, or the project Wizard, coming soon).
+Connecting uses the Claude Code or Codex already installed and signed in on
+this computer, or starts that tool's own sign-in (it opens the vendor's page in
+your browser). The assistant then runs through that tool, billed to your own
+account, and can only use the app's own tools; a change that needs approval
+waits for your Approve or Deny. If neither is installed, the page links to the
+vendor's install page. **Settings > Assistant** switches the engine and
+re-opens the welcome steps.
+
+No in-app subscription login: Tricia never offers Claude.ai or ChatGPT sign-in
+and never sees those credentials; the local-CLI engine runs your own Claude
+Code or Codex, signed in the way its maker requires
+([Claude Code legal and compliance](https://code.claude.com/docs/en/legal-and-compliance)).
+Details and the lock-down are in the
+[app shell README](../../../app-shell/README.md#the-local-agent-cli-engine).
+
+### Or an API key
+
+Under **Advanced** (or **Settings > Inference**) the owner can use an API key
+instead (no subscription login is ever used for it). The
 owner pastes one once: open **Settings > Inference** (the user menu, or the
 "Open Inference settings" link in the assistant dock), choose the provider and
 save the key. It is sealed in the app's data directory under a master key the

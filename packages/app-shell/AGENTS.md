@@ -23,6 +23,7 @@ SvelteKit or `src/lib`). README has the route and JSON contracts.
 | `src/lib/server/http.ts`, `events.ts` | Route plumbing; in-process event bus for SSE. |
 | `src/lib/server/inference.ts`, `inference-registry.ts` | smrt-inference host + controller over shell.db and the runtime's master key; `asOwner` runs a settings request as the verified owner; `installShellInference` registers the user resolver (the assistant's key source). |
 | `src/lib/server/assistant/`, `src/lib/assistant/` | Assistant: turn loop, hold, config, routes (`mountAssistantRoutes`), thread store; dock UI, pure reducer/stream parser, `guidance/system.md`. |
+| `src/lib/server/agent-cli/`, `assistant/agent-turn.ts`, `onboarding.ts` | Local agent CLI engine (detect, sign-in, locked-down turn, stream mapping), the `assistant` preference (engine, onboarding), onboarding routes; UI `routes/welcome`, `components/ConnectAi.svelte`, `routes/settings/assistant`. |
 | `src/routes/settings/` | Settings menu (`ShellSettingsPage`), built-in sections, owner-only `inference/` (panel + actions over the shared controller). |
 | `src/routes/` | `/api/shell/*`, `/api/app/[...path]`, `/api/events`, `/mcp`, `/setup`, health. UI pages are placeholders. |
 
@@ -88,8 +89,17 @@ SvelteKit or `src/lib`). README has the route and JSON contracts.
   decides approvals (`approval_decide` is not in the catalog, and
   `ASSISTANT_DENIED_TOOLS` repeats it): only the signed-in owner does, in the UI. A risky call is held (`holdForUser`) on its Approval; only the
   owner's `Approval.decide` applies it. The loop is bounded (`DEFAULT_LIMITS`),
-  serial, aborts on disconnect. API key only: `config.ts` refuses
-  `claude-cli`/`chatgpt-plan`; never spawn a CLI. The key is resolved by
+  serial, aborts on disconnect. Two engines (`assistant` preference): `api`
+  (`config.ts` refuses `claude-cli`/`chatgpt-plan`: no in-app subscription
+  login) and a local agent CLI (`claude-code`/`codex`, the person's own signed-in
+  tool; `agent-cli/`, README "The local agent CLI engine"). The CLI engine gets
+  tools only through `/mcp` under a short-lived owner-bound `assistant.use`
+  token in the child env (never argv, file or log), with every machine-touching
+  built-in off, provider keys stripped and the stream guarded; never read a
+  CLI's credential files or keychain, never offer or proxy its login (it opens
+  the vendor's page itself), plain-text product names only. Approvals stay the
+  shell's: `invariants.test.ts` keeps `agent-cli/` and `agent-turn.ts` free of
+  `decideApproval` / `approved: true`. The API key is resolved by
   `resolveInferenceTarget` through the resolver `installShellInference`
   registered: the owner's key saved in Settings, then stored bindings, then
   config/env as `base`. Keys are written only by the owner-only `saveKey`
