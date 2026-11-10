@@ -57,7 +57,10 @@ let plugin = $state(false);
 $effect(() => {
   if (data.embedded) plugin = true;
 });
-const plan = $derived(planLayout({ owner: isOwner, plugin }));
+const onboarding = $derived(
+  !data.onboardingComplete || page.url.pathname === '/welcome',
+);
+const plan = $derived(planLayout({ owner: isOwner && !onboarding, plugin }));
 
 // The chat column's open/closed choice, kept per owner on this device.
 const openKey = $derived(assistantOpenKey(data.session.user?.id));

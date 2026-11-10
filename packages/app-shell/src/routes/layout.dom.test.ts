@@ -39,6 +39,7 @@ function data(overrides: Record<string, unknown> = {}) {
       pendingApprovals: 2,
     } as Description,
     embedded: false,
+    onboardingComplete: true,
     ...overrides,
   };
 }
@@ -757,5 +758,24 @@ describe('draft controls in the content column', () => {
     await vi.waitFor(() =>
       expect(navigation.invalidate).toHaveBeenCalledWith('smrt:records'),
     );
+  });
+});
+
+describe('onboarding chat visibility', () => {
+  it.each([
+    '/welcome',
+    '/settings/assistant',
+  ])('hides the chat while onboarding is unfinished on %s', async (path) => {
+    page.url = new URL(path, 'http://localhost');
+    await render(data({ onboardingComplete: false }));
+    expect(panel()).toBeNull();
+    expect(q('#assistant-input')).toBeNull();
+    expect(container.textContent).not.toContain('The assistant is off');
+    expect(q('[data-testid="content"]')).toBeTruthy();
+  });
+  it('keeps a revisited welcome page free of chat after onboarding', async () => {
+    page.url = new URL('http://localhost/welcome');
+    await render();
+    expect(panel()).toBeNull();
   });
 });

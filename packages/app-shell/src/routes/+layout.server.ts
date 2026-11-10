@@ -30,7 +30,8 @@ export const load: LayoutServerLoad = async (event) => {
     secFetchDest: event.request.headers.get('sec-fetch-dest'),
     embed: event.url.searchParams.get('embed'),
   });
-  if (!session.authenticated) return { session, description: null, embedded };
+  if (!session.authenticated)
+    return { session, description: null, embedded, onboardingComplete: false };
   // Check ownership before reading the saved copy. Signed-in members have no shell.
   const liveResult = await loadDescription(event.fetch, 'live');
   const draftState = liveResult.ok
@@ -51,10 +52,14 @@ export const load: LayoutServerLoad = async (event) => {
   // welcome steps is sent there once. An app that already has models is in
   // use, so it is never interrupted (the steps stay open from Settings).
   const owner = principalFromLocals(event.locals);
+  let onboardingComplete = false;
   if (description && owner) {
     const settings = await asSettingsOwner(owner, () =>
       assistantSettings().read(),
     ).catch(() => null);
+    onboardingComplete =
+      settings?.onboarding != null ||
+      Object.keys(description.models).length > 0;
     if (
       settings &&
       needsWelcome({
@@ -71,5 +76,11 @@ export const load: LayoutServerLoad = async (event) => {
           : '/welcome',
       );
   }
-  return { session, description, liveDescription, embedded };
+  return {
+    session,
+    description,
+    liveDescription,
+    embedded,
+    onboardingComplete,
+  };
 };
