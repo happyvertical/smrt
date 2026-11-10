@@ -89,62 +89,6 @@
       "unsorted": false,
       "internalClasses": 2
     },
-    "packages/assets/src/svelte/ActionBar.svelte": {
-      "unsorted": true,
-      "internalClasses": 4
-    },
-    "packages/assets/src/svelte/AssetDetail.svelte": {
-      "unsorted": true,
-      "internalClasses": 25
-    },
-    "packages/assets/src/svelte/AssetGrid.svelte": {
-      "unsorted": true,
-      "internalClasses": 22
-    },
-    "packages/assets/src/svelte/AssetList.svelte": {
-      "unsorted": true,
-      "internalClasses": 27
-    },
-    "packages/assets/src/svelte/AssetManager.svelte": {
-      "unsorted": true,
-      "internalClasses": 6
-    },
-    "packages/assets/src/svelte/AssetToolbar.svelte": {
-      "unsorted": true,
-      "internalClasses": 6
-    },
-    "packages/assets/src/svelte/components/AttachmentList.svelte": {
-      "unsorted": true,
-      "internalClasses": 3
-    },
-    "packages/assets/src/svelte/components/AttachmentPanel.svelte": {
-      "unsorted": true,
-      "internalClasses": 1
-    },
-    "packages/assets/src/svelte/components/AttachmentUpload.svelte": {
-      "unsorted": true,
-      "internalClasses": 1
-    },
-    "packages/assets/src/svelte/CreateAssetModal.svelte": {
-      "unsorted": true,
-      "internalClasses": 18
-    },
-    "packages/assets/src/svelte/playground/AssetDetailPreview.svelte": {
-      "unsorted": true,
-      "internalClasses": 4
-    },
-    "packages/assets/src/svelte/playground/AttachmentPanelPreview.svelte": {
-      "unsorted": true,
-      "internalClasses": 1
-    },
-    "packages/assets/src/svelte/playground/CreateAssetModalPreview.svelte": {
-      "unsorted": true,
-      "internalClasses": 5
-    },
-    "packages/assets/src/svelte/routes/AssetManagerRoute.svelte": {
-      "unsorted": true,
-      "internalClasses": 11
-    },
     "packages/chat/src/routes/+page.svelte": {
       "unsorted": true,
       "internalClasses": 21
@@ -309,116 +253,8 @@
       "unsorted": true,
       "internalClasses": 11
     },
-    "packages/commerce/src/svelte/components/CustomerDetail.svelte": {
-      "unsorted": true,
-      "internalClasses": 4
-    },
-    "packages/commerce/src/svelte/components/CustomerDirectory.svelte": {
-      "unsorted": true,
-      "internalClasses": 8
-    },
-    "packages/commerce/src/svelte/components/CustomerForm.svelte": {
-      "unsorted": true,
-      "internalClasses": 6
-    },
-    "packages/commerce/src/svelte/components/InvoiceActions.svelte": {
-      "unsorted": true,
-      "internalClasses": 1
-    },
-    "packages/commerce/src/svelte/components/InvoiceAllocationFields.svelte": {
-      "unsorted": true,
-      "internalClasses": 1
-    },
-    "packages/commerce/src/svelte/components/InvoiceCard.svelte": {
-      "unsorted": true,
-      "internalClasses": 15
-    },
-    "packages/commerce/src/svelte/components/InvoiceHeader.svelte": {
-      "unsorted": true,
-      "internalClasses": 13
-    },
-    "packages/commerce/src/svelte/components/InvoiceLineItems.svelte": {
-      "unsorted": true,
-      "internalClasses": 17
-    },
-    "packages/commerce/src/svelte/components/InvoiceRecordScreen.svelte": {
-      "unsorted": true,
-      "internalClasses": 1
-    },
-    "packages/commerce/src/svelte/components/InvoiceReview.svelte": {
-      "unsorted": true,
-      "internalClasses": 1
-    },
-    "packages/commerce/src/svelte/components/InvoiceTotals.svelte": {
-      "unsorted": true,
-      "internalClasses": 9
-    },
-    "packages/commerce/src/svelte/components/MoneyInvoiceEditor.svelte": {
-      "unsorted": true,
-      "internalClasses": 7
-    },
-    "packages/commerce/src/svelte/components/PartyAddressFields.svelte": {
-      "unsorted": true,
-      "internalClasses": 2
-    },
-    "packages/commerce/src/svelte/components/PartyContactFields.svelte": {
-      "unsorted": true,
-      "internalClasses": 8
-    },
-    "packages/commerce/src/svelte/components/PricingVersionDecision.svelte": {
-      "unsorted": true,
-      "internalClasses": 2
-    },
-    "packages/commerce/src/svelte/components/PricingVersionSummary.svelte": {
-      "unsorted": true,
-      "internalClasses": 1
-    },
-    "packages/commerce/src/svelte/components/PurchaseOrderEditor.svelte": {
-      "unsorted": true,
-      "internalClasses": 4
-    },
-    "packages/commerce/src/svelte/components/PurchaseSourceSelector.svelte": {
-      "unsorted": true,
-      "internalClasses": 1
-    },
-    "packages/commerce/src/svelte/components/QuoteEditor.svelte": {
-      "unsorted": true,
-      "internalClasses": 3
-    },
-    "packages/commerce/src/svelte/components/QuoteRevisionComparison.svelte": {
-      "unsorted": true,
-      "internalClasses": 2
-    },
-    "packages/commerce/src/svelte/components/QuoteRevisionHistory.svelte": {
-      "unsorted": true,
-      "internalClasses": 1
-    },
-    "packages/commerce/src/svelte/components/UnbilledItems.svelte": {
-      "unsorted": true,
-      "internalClasses": 22
-    },
-    "packages/commerce/src/svelte/components/VendorDetail.svelte": {
-      "unsorted": true,
-      "internalClasses": 3
-    },
-    "packages/commerce/src/svelte/components/VendorDirectory.svelte": {
-      "unsorted": true,
-      "internalClasses": 8
-    },
-    "packages/commerce/src/svelte/components/VendorForm.svelte": {
-      "unsorted": true,
-      "internalClasses": 5
-    },
-    "packages/commerce/src/svelte/playground/InvoicePreparationPreview.svelte": {
-      "unsorted": true,
-      "internalClasses": 1
-    },
     "packages/commerce/src/svelte/playground/PartyFormPreview.svelte": {
       "unsorted": false,
-      "internalClasses": 1
-    },
-    "packages/commerce/src/svelte/playground/PartySelectPreview.svelte": {
-      "unsorted": true,
       "internalClasses": 1
     },
     "packages/content/src/routes/+layout.svelte": {
@@ -584,26 +420,6 @@
     "packages/content/src/svelte/routes/PublishedArticleRoute.svelte": {
       "unsorted": true,
       "internalClasses": 10
-    },
-    "packages/images/src/svelte/components/AssetsGallery.svelte": {
-      "unsorted": true,
-      "internalClasses": 15
-    },
-    "packages/images/src/svelte/components/ImageEditor.svelte": {
-      "unsorted": true,
-      "internalClasses": 12
-    },
-    "packages/images/src/svelte/components/ImageUploader.svelte": {
-      "unsorted": true,
-      "internalClasses": 28
-    },
-    "packages/images/src/svelte/components/PhotoCutoutSetup.svelte": {
-      "unsorted": true,
-      "internalClasses": 16
-    },
-    "packages/images/src/svelte/routes/ImageStudioRoute.svelte": {
-      "unsorted": true,
-      "internalClasses": 12
     },
     "packages/jobs/src/svelte/components/JobActions.svelte": {
       "unsorted": true,
@@ -960,58 +776,6 @@
     "packages/planner/src/routes/recipes/[id]/help/+page.svelte": {
       "unsorted": true,
       "internalClasses": 2
-    },
-    "packages/products/src/app/App.svelte": {
-      "unsorted": true,
-      "internalClasses": 2
-    },
-    "packages/products/src/app/layouts/AppLayout.svelte": {
-      "unsorted": true,
-      "internalClasses": 15
-    },
-    "packages/products/src/app/pages/DemoPage.svelte": {
-      "unsorted": true,
-      "internalClasses": 15
-    },
-    "packages/products/src/app/pages/LiveProductsPage.svelte": {
-      "unsorted": true,
-      "internalClasses": 4
-    },
-    "packages/products/src/app/pages/ProductsPage.svelte": {
-      "unsorted": true,
-      "internalClasses": 7
-    },
-    "packages/products/src/lib/components/auto-generated/AutoForm.svelte": {
-      "unsorted": true,
-      "internalClasses": 7
-    },
-    "packages/products/src/lib/components/auto-generated/FieldRenderer.svelte": {
-      "unsorted": true,
-      "internalClasses": 5
-    },
-    "packages/products/src/lib/components/LiveProductList.svelte": {
-      "unsorted": true,
-      "internalClasses": 9
-    },
-    "packages/products/src/lib/components/ProductCard.svelte": {
-      "unsorted": true,
-      "internalClasses": 11
-    },
-    "packages/products/src/lib/components/ProductForm.svelte": {
-      "unsorted": true,
-      "internalClasses": 8
-    },
-    "packages/products/src/lib/components/TestComponent.svelte": {
-      "unsorted": true,
-      "internalClasses": 1
-    },
-    "packages/products/src/lib/features/CategoryManager.svelte": {
-      "unsorted": true,
-      "internalClasses": 3
-    },
-    "packages/products/src/lib/features/ProductCatalog.svelte": {
-      "unsorted": true,
-      "internalClasses": 12
     },
     "packages/projects/src/svelte/AssistanceLauncher.svelte": {
       "unsorted": true,
