@@ -12,11 +12,12 @@ let {
 <div class="smrt-usage-thresholds" data-smrt-component="UsageThresholds">
   {#each evaluations as evaluation (`${evaluation.threshold.metricKey}:${evaluation.usage.windowStart.toISOString()}`)}
     <article
-      class:warn={evaluation.state === 'warn'}
-      class:blocked={evaluation.state === 'blocked'}
+      class:smrt-usage-thresholds__warn={evaluation.state === 'warn'}
+      class:smrt-usage-thresholds__blocked={evaluation.state === 'blocked'}
       class="smrt-usage-thresholds__row"
+      data-smrt-part="row"
     >
-      <div class="smrt-usage-thresholds__header">
+      <div class="smrt-usage-thresholds__header" data-smrt-part="header">
         <strong>{evaluation.threshold.label ?? evaluation.threshold.metricKey}</strong>
         <span>{evaluation.usage.quantity} / {evaluation.threshold.limit}</span>
       </div>
@@ -34,38 +35,52 @@ let {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .smrt-usage-thresholds {
-    display: grid;
-    gap: 0.75rem;
-  }
+@layer smrt.structure {
 
-  .smrt-usage-thresholds__row {
-    border: var(--smrt-hairline);
-    border-radius: var(--smrt-radius-md);
-    display: grid;
-    gap: 0.45rem;
-    padding: 0.875rem;
-  }
+.smrt-usage-thresholds {
+display: grid;
+gap: 0.75rem;
 
-  .smrt-usage-thresholds__row.warn {
-    border-color: var(--smrt-color-warning);
-  }
-
-  .smrt-usage-thresholds__row.blocked {
-    border-color: var(--smrt-color-error);
-  }
-
-  .smrt-usage-thresholds__header {
-    align-items: center;
-    display: flex;
-    justify-content: space-between;
-  }
-
-  .smrt-usage-thresholds p {
-    color: var(--smrt-color-on-surface-variant);
-    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    margin: 0;
-  }
 }
+.smrt-usage-thresholds__row {
+display: grid;
+gap: 0.45rem;
+padding: 0.875rem;
+
+}
+.smrt-usage-thresholds__header {
+align-items: center;
+display: flex;
+justify-content: space-between;
+
+}
+.smrt-usage-thresholds p {
+margin: 0;
+
+}
+
+}
+@layer smrt.theme {
+
+.smrt-usage-thresholds__row {
+border: var(--smrt-hairline);
+border-radius: var(--smrt-radius-md);
+
+}
+.smrt-usage-thresholds__row.smrt-usage-thresholds__warn {
+border-color: var(--smrt-color-warning);
+
+}
+.smrt-usage-thresholds__row.smrt-usage-thresholds__blocked {
+border-color: var(--smrt-color-error);
+
+}
+.smrt-usage-thresholds p {
+color: var(--smrt-color-on-surface-variant);
+font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+
+}
+
+}
+
 </style>

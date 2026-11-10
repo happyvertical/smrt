@@ -2069,21 +2069,17 @@
       "unsorted": true,
       "internalClasses": 12
     },
-    "packages/subscriptions/src/svelte/CommercialOverview.svelte": {
-      "unsorted": true,
-      "internalClasses": 2
-    },
     "packages/subscriptions/src/svelte/PlanPicker.svelte": {
-      "unsorted": true,
-      "internalClasses": 2
+      "unsorted": false,
+      "internalClasses": 1
     },
     "packages/subscriptions/src/svelte/SubscriptionSummary.svelte": {
-      "unsorted": true,
+      "unsorted": false,
       "internalClasses": 1
     },
     "packages/subscriptions/src/svelte/UsageThresholds.svelte": {
-      "unsorted": true,
-      "internalClasses": 3
+      "unsorted": false,
+      "internalClasses": 1
     },
     "packages/tenancy/src/svelte/components/TenantCard.svelte": {
       "unsorted": true,
