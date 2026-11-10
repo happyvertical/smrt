@@ -34,6 +34,12 @@ the app's state folder, not the data folder). If the link is lost, stop the
 server and run `smrt app recover` for a new one. Setup is loopback only and
 single use. Health: `GET /api/_runtime/health`.
 
+Desktop: the shell also mounts `GET /api/_runtime/owner-link`
+(`createOwnerLinkHandler`), the route the desktop wrapper opens its window on.
+It is loopback-only and answers 403 without the wrapper's per-launch secret, so
+it does nothing outside the wrapper. Tricia, the packaged desktop product, is
+[`smrt-desktop/examples/tricia`](../smrt-desktop/examples/tricia/README.md).
+
 ## Builder operations (MCP tools and `POST /api/apps/<operation>`)
 
 The same names and parameters on both surfaces. A wrong-shaped argument is a

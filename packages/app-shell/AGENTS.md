@@ -62,7 +62,9 @@ SvelteKit or `src/lib`). README has the route and JSON contracts.
   `<data root>/user-app/` (`app.db`, `snapshots/`, archives inside app.db):
   plain files and directories inside the app-runtime data root, no symlinks, so
   the encrypted backup seals them. `PORT` and `SMRT_DATA_DIR` are honored (the
-  desktop sidecar contract); health is `/api/_runtime/health`.
+  desktop sidecar contract); health is `/api/_runtime/health` and the desktop
+  wrapper's owner link is `/api/_runtime/owner-link` (both app-runtime handlers;
+  the Tricia desktop product is `smrt-desktop/examples/tricia`).
 - **App-subclass rule** lives in the engine (`enableRecipe` creates app
   subclasses of shipped models). The shell never registers user models in its
   own registry.
