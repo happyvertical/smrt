@@ -1,38 +1,6 @@
 {
   "version": 1,
   "files": {
-    "packages/agents/src/svelte/components/AgentAdminPanel.svelte": {
-      "unsorted": true,
-      "internalClasses": 4
-    },
-    "packages/agents/src/svelte/components/AgentAdminTabs.svelte": {
-      "unsorted": true,
-      "internalClasses": 10
-    },
-    "packages/agents/src/svelte/components/AgentDashboard.svelte": {
-      "unsorted": true,
-      "internalClasses": 13
-    },
-    "packages/agents/src/svelte/components/AgentRunHistory.svelte": {
-      "unsorted": true,
-      "internalClasses": 20
-    },
-    "packages/agents/src/svelte/components/AgentScheduleForm.svelte": {
-      "unsorted": true,
-      "internalClasses": 7
-    },
-    "packages/agents/src/svelte/components/AgentScheduleList.svelte": {
-      "unsorted": true,
-      "internalClasses": 34
-    },
-    "packages/agents/src/svelte/components/AgentSettingsForm.svelte": {
-      "unsorted": true,
-      "internalClasses": 3
-    },
-    "packages/agents/src/svelte/components/AgentSettingsShell.svelte": {
-      "unsorted": true,
-      "internalClasses": 17
-    },
     "packages/app-shell/src/lib/assistant/AssistantDock.svelte": {
       "unsorted": true,
       "internalClasses": 25
@@ -605,62 +573,6 @@
       "unsorted": true,
       "internalClasses": 12
     },
-    "packages/jobs/src/svelte/components/JobActions.svelte": {
-      "unsorted": true,
-      "internalClasses": 2
-    },
-    "packages/jobs/src/svelte/components/JobDashboard.svelte": {
-      "unsorted": true,
-      "internalClasses": 8
-    },
-    "packages/jobs/src/svelte/components/JobDetail.svelte": {
-      "unsorted": true,
-      "internalClasses": 12
-    },
-    "packages/jobs/src/svelte/components/JobList.svelte": {
-      "unsorted": true,
-      "internalClasses": 25
-    },
-    "packages/jobs/src/svelte/components/JobStats.svelte": {
-      "unsorted": true,
-      "internalClasses": 21
-    },
-    "packages/manufacturing/src/svelte/components/AssemblyForm.svelte": {
-      "unsorted": true,
-      "internalClasses": 6
-    },
-    "packages/manufacturing/src/svelte/components/AssemblyList.svelte": {
-      "unsorted": true,
-      "internalClasses": 8
-    },
-    "packages/manufacturing/src/svelte/components/BomEditor.svelte": {
-      "unsorted": true,
-      "internalClasses": 18
-    },
-    "packages/manufacturing/src/svelte/components/BomStructureTree.svelte": {
-      "unsorted": true,
-      "internalClasses": 7
-    },
-    "packages/manufacturing/src/svelte/components/OperationForm.svelte": {
-      "unsorted": true,
-      "internalClasses": 6
-    },
-    "packages/manufacturing/src/svelte/components/OperationList.svelte": {
-      "unsorted": true,
-      "internalClasses": 6
-    },
-    "packages/manufacturing/src/svelte/components/ProductionRunList.svelte": {
-      "unsorted": true,
-      "internalClasses": 8
-    },
-    "packages/manufacturing/src/svelte/components/RequirementsTree.svelte": {
-      "unsorted": true,
-      "internalClasses": 4
-    },
-    "packages/manufacturing/src/svelte/components/RequirementsTreeLevel.svelte": {
-      "unsorted": true,
-      "internalClasses": 7
-    },
     "packages/planner/src/lib/components/AdvancedStyles.svelte": {
       "unsorted": true,
       "internalClasses": 12
@@ -924,66 +836,6 @@
     "packages/products/src/lib/features/ProductCatalog.svelte": {
       "unsorted": true,
       "internalClasses": 12
-    },
-    "packages/projects/src/svelte/AssistanceLauncher.svelte": {
-      "unsorted": true,
-      "internalClasses": 1
-    },
-    "packages/projects/src/svelte/components/ApprovalActions.svelte": {
-      "unsorted": true,
-      "internalClasses": 5
-    },
-    "packages/projects/src/svelte/components/BulkActions.svelte": {
-      "unsorted": true,
-      "internalClasses": 5
-    },
-    "packages/projects/src/svelte/components/DevelopmentRequestForm.svelte": {
-      "unsorted": true,
-      "internalClasses": 1
-    },
-    "packages/projects/src/svelte/components/DevelopmentRequestList.svelte": {
-      "unsorted": true,
-      "internalClasses": 11
-    },
-    "packages/projects/src/svelte/components/RejectDialog.svelte": {
-      "unsorted": true,
-      "internalClasses": 8
-    },
-    "packages/projects/src/svelte/DeliveryStatus.svelte": {
-      "unsorted": true,
-      "internalClasses": 2
-    },
-    "packages/projects/src/svelte/DevelopmentBoard.svelte": {
-      "unsorted": true,
-      "internalClasses": 1
-    },
-    "packages/projects/src/svelte/DevelopmentRequestDetail.svelte": {
-      "unsorted": true,
-      "internalClasses": 1
-    },
-    "packages/projects/src/svelte/PreviewApprovalPanel.svelte": {
-      "unsorted": true,
-      "internalClasses": 1
-    },
-    "packages/projects/src/svelte/ProjectBoard.svelte": {
-      "unsorted": true,
-      "internalClasses": 0
-    },
-    "packages/projects/src/svelte/ProjectInterview.svelte": {
-      "unsorted": true,
-      "internalClasses": 9
-    },
-    "packages/projects/src/svelte/ProjectQuestionsAndDecisions.svelte": {
-      "unsorted": true,
-      "internalClasses": 9
-    },
-    "packages/projects/src/svelte/ServiceEvidenceList.svelte": {
-      "unsorted": true,
-      "internalClasses": 1
-    },
-    "packages/smrt-playground/src/svelte/PlaygroundHost.svelte": {
-      "unsorted": true,
-      "internalClasses": 30
     },
     "packages/smrt-svelte/src/browser-ai/svelte/components/DownloadProgress.svelte": {
       "unsorted": true,
@@ -1325,14 +1177,6 @@
       "unsorted": false,
       "internalClasses": 1
     },
-    "packages/smrt-workbench/src/svelte/MarkdownDocument.svelte": {
-      "unsorted": true,
-      "internalClasses": 2
-    },
-    "packages/smrt-workbench/src/svelte/WorkbenchHost.svelte": {
-      "unsorted": true,
-      "internalClasses": 59
-    },
     "packages/subscriptions/src/svelte/PlanPicker.svelte": {
       "unsorted": false,
       "internalClasses": 1
@@ -1344,74 +1188,6 @@
     "packages/subscriptions/src/svelte/UsageThresholds.svelte": {
       "unsorted": false,
       "internalClasses": 1
-    },
-    "packages/timesheets/src/svelte/components/DurationDisplay.svelte": {
-      "unsorted": true,
-      "internalClasses": 5
-    },
-    "packages/timesheets/src/svelte/components/TimeEntryApprovalQueue.svelte": {
-      "unsorted": true,
-      "internalClasses": 12
-    },
-    "packages/timesheets/src/svelte/components/TimeEntryCard.svelte": {
-      "unsorted": true,
-      "internalClasses": 19
-    },
-    "packages/timesheets/src/svelte/components/TimeEntryList.svelte": {
-      "unsorted": true,
-      "internalClasses": 20
-    },
-    "packages/timesheets/src/svelte/components/TimeSummary.svelte": {
-      "unsorted": true,
-      "internalClasses": 9
-    },
-    "packages/users/src/svelte/components/AccountSecurityPanel.svelte": {
-      "unsorted": true,
-      "internalClasses": 1
-    },
-    "packages/users/src/svelte/components/InviteUserModal.svelte": {
-      "unsorted": true,
-      "internalClasses": 5
-    },
-    "packages/users/src/svelte/components/MagicLinkForm.svelte": {
-      "unsorted": true,
-      "internalClasses": 2
-    },
-    "packages/users/src/svelte/components/OidcProviderButtons.svelte": {
-      "unsorted": true,
-      "internalClasses": 2
-    },
-    "packages/users/src/svelte/components/PasskeySignInButton.svelte": {
-      "unsorted": true,
-      "internalClasses": 1
-    },
-    "packages/users/src/svelte/components/SignInForm.svelte": {
-      "unsorted": true,
-      "internalClasses": 1
-    },
-    "packages/users/src/svelte/components/SignUpForm.svelte": {
-      "unsorted": true,
-      "internalClasses": 1
-    },
-    "packages/users/src/svelte/components/UserAvatar.svelte": {
-      "unsorted": true,
-      "internalClasses": 6
-    },
-    "packages/users/src/svelte/components/UserCard.svelte": {
-      "unsorted": true,
-      "internalClasses": 13
-    },
-    "packages/users/src/svelte/components/UserForm.svelte": {
-      "unsorted": true,
-      "internalClasses": 4
-    },
-    "packages/users/src/svelte/components/UserList.svelte": {
-      "unsorted": true,
-      "internalClasses": 4
-    },
-    "packages/users/src/svelte/components/UserMenu.svelte": {
-      "unsorted": true,
-      "internalClasses": 13
     }
   }
 }
