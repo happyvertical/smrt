@@ -113,8 +113,8 @@ function getTypeLabel(type: string): string {
 
     {#if forecast}
       <div class="smrt-day-view__weather" data-smrt-part="weather">
-        <span class="smrt-day-view__weather-icon" data-smrt-part="weather-icon">{forecast.icon}</span>
-        <span class="smrt-day-view__temps" data-smrt-part="temps">
+        <span class="smrt-day-view__weather-icon" data-smrt-part="icon">{forecast.icon}</span>
+        <span class="smrt-day-view__temps" data-smrt-part="meta">
           <span class="smrt-day-view__high" data-smrt-part="high">{forecast.high}°</span>
           <span class="smrt-day-view__low" data-smrt-part="low">{forecast.low}°</span>
         </span>
@@ -125,31 +125,31 @@ function getTypeLabel(type: string): string {
   <div class="smrt-day-view__content" data-smrt-part="body">
     {#if !events || events.length === 0}
       <div class="smrt-day-view__empty-state" data-smrt-part="empty">
-        <span class="smrt-day-view__empty-icon" data-smrt-part="empty-icon">{'\u{1F4C5}'}</span>
-        <p class="smrt-day-view__empty-text" data-smrt-part="empty-text">{t(M['ui.day_view.no_events'])}</p>
+        <span class="smrt-day-view__empty-icon" data-smrt-part="icon">{'\u{1F4C5}'}</span>
+        <p class="smrt-day-view__empty-text" data-smrt-part="description">{t(M['ui.day_view.no_events'])}</p>
       </div>
     {:else if groupedEvents()}
       {#each Object.entries(groupedEvents()!) as [type, typeEvents]}
         <section class="smrt-day-view__group" data-smrt-part="group">
-          <h2 class="smrt-day-view__group-title" data-smrt-part="group-title">
-            <span class="smrt-day-view__group-icon" data-smrt-part="group-icon">{getEventIcon(type as DayEventDetail['type'])}</span>
+          <h2 class="smrt-day-view__group-title" data-smrt-part="title">
+            <span class="smrt-day-view__group-icon" data-smrt-part="icon">{getEventIcon(type as DayEventDetail['type'])}</span>
             {getTypeLabel(type)}
             <span class="smrt-day-view__group-count" data-smrt-part="count">({typeEvents.length})</span>
           </h2>
 
-          <div class="smrt-day-view__events" data-smrt-part="events">
+          <div class="smrt-day-view__events" data-smrt-part="list">
             {#each typeEvents as event}
               {@const url = getEventUrl(event)}
               {#if url}
                 <a href={url} class="smrt-day-view__event smrt-day-view__event--link" data-smrt-part="event" onclick={() => onEventClick?.(event.type, event.name)}>
                   <div class="smrt-day-view__time" data-smrt-part="time">{event.startTime}</div>
-                  <div class="smrt-day-view__details" data-smrt-part="details">
-                    <span class="smrt-day-view__name" data-smrt-part="name">{event.name}</span>
+                  <div class="smrt-day-view__details" data-smrt-part="body">
+                    <span class="smrt-day-view__name" data-smrt-part="title">{event.name}</span>
                     {#if event.venue}
                       <span class="smrt-day-view__venue" data-smrt-part="venue">{event.venue}</span>
                     {/if}
                   </div>
-                  <span class="smrt-day-view__arrow" data-smrt-part="arrow">→</span>
+                  <span class="smrt-day-view__arrow" data-smrt-part="indicator">→</span>
                 </a>
               {:else}
                 <button
@@ -159,8 +159,8 @@ function getTypeLabel(type: string): string {
                   onclick={() => onEventClick?.(event.type, event.name)}
                 >
                   <div class="smrt-day-view__time" data-smrt-part="time">{event.startTime}</div>
-                  <div class="smrt-day-view__details" data-smrt-part="details">
-                    <span class="smrt-day-view__name" data-smrt-part="name">{event.name}</span>
+                  <div class="smrt-day-view__details" data-smrt-part="body">
+                    <span class="smrt-day-view__name" data-smrt-part="title">{event.name}</span>
                     {#if event.venue}
                       <span class="smrt-day-view__venue" data-smrt-part="venue">{event.venue}</span>
                     {/if}

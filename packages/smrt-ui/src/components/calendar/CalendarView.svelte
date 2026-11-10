@@ -482,7 +482,7 @@ $effect(() => {
   {@const note = spanNote(entry)}
   {#if item.href}
     <a
-      class="smrt-calendar-view__row" data-smrt-part="row"
+      class="smrt-calendar-view__row" data-smrt-part="event"
       data-tone={toneFor(item)}
       style={itemStyle(item)}
       href={item.href}
@@ -491,12 +491,12 @@ $effect(() => {
       {#if itemContent}
         {@render itemContent(item, { time })}
       {:else}
-        <span class="smrt-calendar-view__row-time" data-smrt-part="row-time">{time}</span>
-        <span class="smrt-calendar-view__row-main" data-smrt-part="row-main">
-          <span class="smrt-calendar-view__row-title" data-smrt-part="row-title">{item.title}</span>
+        <span class="smrt-calendar-view__row-time" data-smrt-part="time">{time}</span>
+        <span class="smrt-calendar-view__row-main" data-smrt-part="body">
+          <span class="smrt-calendar-view__row-title" data-smrt-part="title">{item.title}</span>
           {#if item.label || note}
-            <span class="smrt-calendar-view__row-meta" data-smrt-part="row-meta">
-              {#if item.label}<span class="smrt-calendar-view__row-label" data-smrt-part="row-label">{item.label}</span>{/if}
+            <span class="smrt-calendar-view__row-meta" data-smrt-part="meta">
+              {#if item.label}<span class="smrt-calendar-view__row-label" data-smrt-part="label">{item.label}</span>{/if}
               {#if note}<span>{note}</span>{/if}
             </span>
           {/if}
@@ -506,7 +506,7 @@ $effect(() => {
   {:else}
     <button
       type="button"
-      class="smrt-calendar-view__row" data-smrt-part="row"
+      class="smrt-calendar-view__row" data-smrt-part="event"
       data-tone={toneFor(item)}
       style={itemStyle(item)}
       onclick={() => activateItem(item)}
@@ -514,12 +514,12 @@ $effect(() => {
       {#if itemContent}
         {@render itemContent(item, { time })}
       {:else}
-        <span class="smrt-calendar-view__row-time" data-smrt-part="row-time">{time}</span>
-        <span class="smrt-calendar-view__row-main" data-smrt-part="row-main">
-          <span class="smrt-calendar-view__row-title" data-smrt-part="row-title">{item.title}</span>
+        <span class="smrt-calendar-view__row-time" data-smrt-part="time">{time}</span>
+        <span class="smrt-calendar-view__row-main" data-smrt-part="body">
+          <span class="smrt-calendar-view__row-title" data-smrt-part="title">{item.title}</span>
           {#if item.label || note}
-            <span class="smrt-calendar-view__row-meta" data-smrt-part="row-meta">
-              {#if item.label}<span class="smrt-calendar-view__row-label" data-smrt-part="row-label">{item.label}</span>{/if}
+            <span class="smrt-calendar-view__row-meta" data-smrt-part="meta">
+              {#if item.label}<span class="smrt-calendar-view__row-label" data-smrt-part="label">{item.label}</span>{/if}
               {#if note}<span>{note}</span>{/if}
             </span>
           {/if}
@@ -579,9 +579,9 @@ $effect(() => {
       tabindex="-1"
       onkeydown={onGridKeydown}
     >
-      <div class="smrt-calendar-view__weekdays" data-smrt-part="weekdays" role="row">
+      <div class="smrt-calendar-view__weekdays" data-smrt-part="row" role="row">
         {#each weekdays as weekday (weekday.long)}
-          <div class="smrt-calendar-view__weekday" data-smrt-part="weekday" role="columnheader">
+          <div class="smrt-calendar-view__weekday" data-smrt-part="cell" role="columnheader">
             <span aria-hidden="true">{weekday.short}</span>
             <span class="smrt-calendar-view__sr" data-smrt-part="label">{weekday.long}</span>
           </div>
@@ -589,7 +589,7 @@ $effect(() => {
       </div>
       {#each weeks as week (week.days[0].key)}
         <div
-          class="smrt-calendar-view__week" data-smrt-part="week"
+          class="smrt-calendar-view__week" data-smrt-part="row"
           role="row"
           style="grid-template-rows: var(--smrt-calendar-view-daynum-h) {week.lanes > 0
             ? `repeat(${week.lanes}, var(--smrt-calendar-view-band-row))`
@@ -598,7 +598,7 @@ $effect(() => {
           {#each week.days as day, column (day.key)}
             {@const href = dayHref?.(day.key)}
             <div
-              class="smrt-calendar-view__day" data-smrt-part="day"
+              class="smrt-calendar-view__day" data-smrt-part="cell"
               class:smrt-calendar-view__day--out={!isWeek && !day.inMonth}
               class:smrt-calendar-view__day--today={day.key === today}
               class:smrt-calendar-view__day--selected={day.key === selected}
@@ -608,7 +608,7 @@ $effect(() => {
             >
               {#if href}
                 <a
-                  class="smrt-calendar-view__daynum" data-smrt-part="daynum"
+                  class="smrt-calendar-view__daynum" data-smrt-part="trigger"
                   {href}
                   data-cv-day={day.key}
                   tabindex={day.key === focusKey ? 0 : -1}
@@ -624,7 +624,7 @@ $effect(() => {
               {:else}
                 <button
                   type="button"
-                  class="smrt-calendar-view__daynum" data-smrt-part="daynum"
+                  class="smrt-calendar-view__daynum" data-smrt-part="trigger"
                   data-cv-day={day.key}
                   tabindex={day.key === focusKey ? 0 : -1}
                   aria-label={dayLabel(day.key, day.all.length)}
@@ -636,14 +636,14 @@ $effect(() => {
                 </button>
               {/if}
               <div
-                class="smrt-calendar-view__day-body" data-smrt-part="day-body"
+                class="smrt-calendar-view__day-body" data-smrt-part="body"
                 style="padding-top: calc({week.lanes} * var(--smrt-calendar-view-band-row));"
                 aria-hidden="true"
               >
                 {#each day.visible as entry (entry.item.id)}
                   {#if entry.item.href}
                     <a
-                      class="smrt-calendar-view__chip" data-smrt-part="chip"
+                      class="smrt-calendar-view__chip" data-smrt-part="event"
                       data-tone={toneFor(entry.item)}
                       style={itemStyle(entry.item)}
                       href={entry.item.href}
@@ -651,29 +651,29 @@ $effect(() => {
                       title={entry.item.title}
                       onclick={() => activateItem(entry.item)}
                     >
-                      <span class="smrt-calendar-view__chip-time" data-smrt-part="chip-time">{timeFormat.format(entry.startMs)}</span>
-                      <span class="smrt-calendar-view__chip-title" data-smrt-part="chip-title">{entry.item.title}</span>
+                      <span class="smrt-calendar-view__chip-time" data-smrt-part="time">{timeFormat.format(entry.startMs)}</span>
+                      <span class="smrt-calendar-view__chip-title" data-smrt-part="title">{entry.item.title}</span>
                     </a>
                   {:else}
                     <button
                       type="button"
-                      class="smrt-calendar-view__chip" data-smrt-part="chip"
+                      class="smrt-calendar-view__chip" data-smrt-part="event"
                       data-tone={toneFor(entry.item)}
                       style={itemStyle(entry.item)}
                       tabindex="-1"
                       title={entry.item.title}
                       onclick={() => activateItem(entry.item)}
                     >
-                      <span class="smrt-calendar-view__chip-time" data-smrt-part="chip-time">{timeFormat.format(entry.startMs)}</span>
-                      <span class="smrt-calendar-view__chip-title" data-smrt-part="chip-title">{entry.item.title}</span>
+                      <span class="smrt-calendar-view__chip-time" data-smrt-part="time">{timeFormat.format(entry.startMs)}</span>
+                      <span class="smrt-calendar-view__chip-title" data-smrt-part="title">{entry.item.title}</span>
                     </button>
                   {/if}
                 {/each}
                 {#if day.hiddenCount > 0}
                   {#if href}
                     <a class="smrt-calendar-view__more" data-smrt-part="more" {href} tabindex="-1">
-                      <span class="smrt-calendar-view__more-long" data-smrt-part="more-long">{t(M['ui.calendar.more'], { count: day.hiddenCount })}</span>
-                      <span class="smrt-calendar-view__more-short" data-smrt-part="more-short">{t(M['ui.calendar.more_short'], { count: day.hiddenCount })}</span>
+                      <span class="smrt-calendar-view__more-long" data-smrt-part="label">{t(M['ui.calendar.more'], { count: day.hiddenCount })}</span>
+                      <span class="smrt-calendar-view__more-short" data-smrt-part="label">{t(M['ui.calendar.more_short'], { count: day.hiddenCount })}</span>
                     </a>
                   {:else}
                     <button
@@ -685,8 +685,8 @@ $effect(() => {
                         void focusDay(day.key);
                       }}
                     >
-                      <span class="smrt-calendar-view__more-long" data-smrt-part="more-long">{t(M['ui.calendar.more'], { count: day.hiddenCount })}</span>
-                      <span class="smrt-calendar-view__more-short" data-smrt-part="more-short">{t(M['ui.calendar.more_short'], { count: day.hiddenCount })}</span>
+                      <span class="smrt-calendar-view__more-long" data-smrt-part="label">{t(M['ui.calendar.more'], { count: day.hiddenCount })}</span>
+                      <span class="smrt-calendar-view__more-short" data-smrt-part="label">{t(M['ui.calendar.more_short'], { count: day.hiddenCount })}</span>
                     </button>
                   {/if}
                 {/if}
@@ -697,7 +697,7 @@ $effect(() => {
             {@const item = band.entry.item}
             {#if item.href}
               <a
-                class="smrt-calendar-view__band" data-smrt-part="band"
+                class="smrt-calendar-view__band" data-smrt-part="event"
                 class:smrt-calendar-view__band--before={band.continuesBefore}
                 class:smrt-calendar-view__band--after={band.continuesAfter}
                 data-tone={toneFor(item)}
@@ -713,7 +713,7 @@ $effect(() => {
             {:else}
               <button
                 type="button"
-                class="smrt-calendar-view__band" data-smrt-part="band"
+                class="smrt-calendar-view__band" data-smrt-part="event"
                 class:smrt-calendar-view__band--before={band.continuesBefore}
                 class:smrt-calendar-view__band--after={band.continuesAfter}
                 data-tone={toneFor(item)}
@@ -732,9 +732,9 @@ $effect(() => {
     </div>
 
     {#if selected && !dayHref && (isWeek ? visibleWeekKeys.includes(selected) : sameMonth(selected, current))}
-      <section class="smrt-calendar-view__day-panel" data-smrt-part="day-panel" aria-labelledby="cv-day-{uid}">
-        <div class="smrt-calendar-view__day-panel-head" data-smrt-part="day-panel-head">
-          <h3 class="smrt-calendar-view__day-title" data-smrt-part="day-title" id="cv-day-{uid}">{longDate(selected)}</h3>
+      <section class="smrt-calendar-view__day-panel" data-smrt-part="panel" aria-labelledby="cv-day-{uid}">
+        <div class="smrt-calendar-view__day-panel-head" data-smrt-part="header">
+          <h3 class="smrt-calendar-view__day-title" data-smrt-part="title" id="cv-day-{uid}">{longDate(selected)}</h3>
           <button
             type="button"
             class="smrt-calendar-view__icon-btn" data-smrt-part="close"
@@ -749,7 +749,7 @@ $effect(() => {
         {#if selectedEntries.length === 0}
           <p class="smrt-calendar-view__empty" data-smrt-part="empty">{t(M['ui.calendar.nothing_day'])}</p>
         {:else}
-          <ul class="smrt-calendar-view__rows" data-smrt-part="rows">
+          <ul class="smrt-calendar-view__rows" data-smrt-part="list">
             {#each selectedEntries as entry (entry.item.id)}
               <li>{@render itemRow(entry, selected)}</li>
             {/each}
@@ -759,7 +759,7 @@ $effect(() => {
     {/if}
   {:else}
     <div
-      class="smrt-calendar-view__strip" data-smrt-part="strip"
+      class="smrt-calendar-view__strip" data-smrt-part="nav"
       role="toolbar"
       tabindex="-1"
       aria-label={t(M['ui.calendar.days_in'], { month: monthTitle })}
@@ -770,7 +770,7 @@ $effect(() => {
         {@const weekday = weekdays[(weekdayOfKey(key) - weekStartsOn + 7) % 7]}
         <button
           type="button"
-          class="smrt-calendar-view__strip-day" data-smrt-part="strip-day"
+          class="smrt-calendar-view__strip-day" data-smrt-part="trigger"
           class:smrt-calendar-view__strip-day--today={key === today}
           data-cv-day={key}
           tabindex={key === focusKey ? 0 : -1}
@@ -779,9 +779,9 @@ $effect(() => {
           aria-current={key === today ? 'date' : undefined}
           onclick={() => selectDay(key)}
         >
-          <span class="smrt-calendar-view__strip-weekday" data-smrt-part="strip-weekday" aria-hidden="true">{weekday.narrow}</span>
-          <span class="smrt-calendar-view__strip-num" data-smrt-part="strip-num" aria-hidden="true">{parseKey(key).day}</span>
-          <span class="smrt-calendar-view__strip-dot" data-smrt-part="strip-dot" class:smrt-calendar-view__strip-dot--on={count > 0} aria-hidden="true"></span>
+          <span class="smrt-calendar-view__strip-weekday" data-smrt-part="label" aria-hidden="true">{weekday.narrow}</span>
+          <span class="smrt-calendar-view__strip-num" data-smrt-part="label" aria-hidden="true">{parseKey(key).day}</span>
+          <span class="smrt-calendar-view__strip-dot" data-smrt-part="indicator" class:smrt-calendar-view__strip-dot--on={count > 0} aria-hidden="true"></span>
         </button>
       {/each}
     </div>
@@ -789,15 +789,15 @@ $effect(() => {
     {#if agendaDays.length === 0}
       <p class="smrt-calendar-view__empty" data-smrt-part="empty">{t(M[isWeek ? 'ui.calendar.nothing_week' : 'ui.calendar.nothing_month'])}</p>
     {:else}
-      <ol class="smrt-calendar-view__agenda" data-smrt-part="agenda">
+      <ol class="smrt-calendar-view__agenda" data-smrt-part="list">
         {#each agendaDays as day (day.key)}
           <li
-            class="smrt-calendar-view__agenda-day" data-smrt-part="agenda-day"
+            class="smrt-calendar-view__agenda-day" data-smrt-part="group"
             class:smrt-calendar-view__agenda-day--today={day.key === today}
             data-cv-agenda-day={day.key}
             aria-labelledby="cv-agenda-{uid}-{day.key}"
           >
-            <h3 class="smrt-calendar-view__agenda-date" data-smrt-part="agenda-date" id="cv-agenda-{uid}-{day.key}">
+            <h3 class="smrt-calendar-view__agenda-date" data-smrt-part="title" id="cv-agenda-{uid}-{day.key}">
               {#if dayHref?.(day.key)}
                 <a href={dayHref(day.key)}>{longDate(day.key)}</a>
               {:else}
@@ -807,7 +807,7 @@ $effect(() => {
             {#if day.entries.length === 0}
               <p class="smrt-calendar-view__empty" data-smrt-part="empty">{t(M['ui.calendar.nothing_day'])}</p>
             {:else}
-              <ul class="smrt-calendar-view__rows" data-smrt-part="rows">
+              <ul class="smrt-calendar-view__rows" data-smrt-part="list">
                 {#each day.entries as entry (entry.item.id)}
                   <li>{@render itemRow(entry, day.key)}</li>
                 {/each}

@@ -310,7 +310,7 @@ const DIGIT_ROWS = [
       aria-describedby={showError ? messageId : undefined}
     >
       {#if prefix}<span class="smrt-numeric-keypad__affix" data-smrt-part="prefix">{prefix}</span>{/if}
-      <span class="smrt-numeric-keypad__entry" data-smrt-part="entry">{typed === '' ? '0' : typed}</span>
+      <span class="smrt-numeric-keypad__entry" data-smrt-part="value">{typed === '' ? '0' : typed}</span>
       {#if unit}<span class="smrt-numeric-keypad__affix" data-smrt-part="unit">{unit}</span>{/if}
     </output>
     <button

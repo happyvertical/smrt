@@ -23,7 +23,7 @@ function handleChange(event: Event & { currentTarget: HTMLInputElement }) {
 <label class="smrt-radio__root" class:smrt-radio__disabled={disabled || group.disabled} data-smrt-hit-target data-smrt-component="Radio">
   <input id={resolvedId} type="radio" name={group.name} {value} disabled={disabled || group.disabled} required={group.required}
     checked={group.value === value} onchange={handleChange} {...rest} />
-  <span class="smrt-radio__mark" data-smrt-part="mark" aria-hidden="true"></span><span class="smrt-radio__label" data-smrt-part="label">{label}</span>
+  <span class="smrt-radio__mark" data-smrt-part="control" aria-hidden="true"></span><span class="smrt-radio__label" data-smrt-part="label">{label}</span>
 </label>
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
@@ -84,6 +84,9 @@ function handleChange(event: Event & { currentTarget: HTMLInputElement }) {
     height: .55rem;
     transform: scale(0);
   }
+  input:checked + .smrt-radio__mark::after {
+    transform: scale(1);
+  }
   .smrt-radio__root {
     min-height: var(--smrt-control-target-min);
     min-width: var(--smrt-control-target-min);
@@ -110,9 +113,6 @@ function handleChange(event: Event & { currentTarget: HTMLInputElement }) {
   }
   input:checked + .smrt-radio__mark {
     border-color: var(--smrt-color-primary);
-  }
-  input:checked + .smrt-radio__mark::after {
-    transform: scale(1);
   }
   input:focus-visible + .smrt-radio__mark {
     outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);

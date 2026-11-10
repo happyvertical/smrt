@@ -271,7 +271,7 @@ onDestroy(() => surfaceRegistration?.cleanup());
   {#if filters}<div class="smrt-collection-toolbar__filters" data-smrt-part="filters">{@render filters()}</div>{/if}
   {#if resultCount !== undefined}<span class="smrt-collection-toolbar__count" data-smrt-part="count" aria-live="polite">{resultCount} {resultCount === 1 ? 'result' : 'results'}</span>{/if}
   <span class="smrt-collection-toolbar__spacer" data-smrt-part="spacer"></span>
-  {#if selectedCount > 0 && bulkActions}<div class="smrt-collection-toolbar__bulk" data-smrt-part="bulk"><span>{selectedCount} selected</span>{@render bulkActions()}</div>{/if}
+  {#if selectedCount > 0 && bulkActions}<div class="smrt-collection-toolbar__bulk" data-smrt-part="actions"><span>{selectedCount} selected</span>{@render bulkActions()}</div>{/if}
   {#if actions}<div class="smrt-collection-toolbar__actions" data-smrt-part="actions">{@render actions()}</div>{/if}
   {#if viewOptions.length > 1}
     <SegmentedControl label="View" {density} options={viewOptions} value={view} interaction={false} onvaluechange={changeView} />

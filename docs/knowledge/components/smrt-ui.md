@@ -5,10 +5,10 @@ description: "Domain-agnostic Svelte 5 UI runtime for SMRT: primitives, i18n cli
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-10T13:05:12Z"
+  at: "2026-11-10T14:46:23Z"
 audience: "internal"
 evidence_level: "manifest-described"
-source_revision: "sha256:27f42cbb00d4fdb2aa641a006d6cac9b479f6f6a0da4573fc8ac078b90f250cd"
+source_revision: "sha256:ce35bb4d968e64878ac3397af4145142ea45e68a1d32c1a1c1e4a2a7a71cb328"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/smrt-ui/package.json"

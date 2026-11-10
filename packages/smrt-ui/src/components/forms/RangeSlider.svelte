@@ -183,7 +183,7 @@ useControlRegistration(() => {
     <input bind:this={maxEl} id={maxId} type="range" name={name ? `${name}[max]` : undefined} min={value.min} {max} {step} {disabled} value={value.max}
       aria-label={maxLabel} aria-valuetext={`${value.max}${unit ?? ''}`} oninput={(event) => setMax(Number(event.currentTarget.value))} />
   </div>
-  <div class="smrt-range-slider__inputs" data-smrt-part="inputs">
+  <div class="smrt-range-slider__inputs" data-smrt-part="control">
     <label for={`${minId}-number`}>{minLabel}<input id={`${minId}-number`} type="number" {min} max={value.max} {step} {disabled} value={value.min} onchange={(event) => setMin(Number(event.currentTarget.value))} /></label>
     <label for={`${maxId}-number`}>{maxLabel}<input id={`${maxId}-number`} type="number" min={value.min} {max} {step} {disabled} value={value.max} onchange={(event) => setMax(Number(event.currentTarget.value))} /></label>
   </div>

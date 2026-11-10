@@ -469,14 +469,12 @@ describe('hands-free in the button and the status line', () => {
     mic.say();
     flushSync();
     expect(screen.getByRole('status')).toHaveTextContent('Writing it down…');
-    expect(
-      container.querySelector('[data-smrt-part="writing"]'),
-    ).not.toBeNull();
+    expect(stop.querySelector('[data-smrt-part="spinner"]')).not.toBeNull();
     await vi.waitFor(() => expect(src.pending.length).toBe(1));
     src.pending[0]?.resolve('hello');
     await vi.waitFor(() => expect(dictation.queued).toBe(0));
     flushSync();
-    expect(container.querySelector('[data-smrt-part="writing"]')).toBeNull();
+    expect(stop.querySelector('[data-smrt-part="spinner"]')).toBeNull();
 
     await userEvent.click(stop);
     await vi.waitFor(() => expect(dictation.state).toBe('idle'));

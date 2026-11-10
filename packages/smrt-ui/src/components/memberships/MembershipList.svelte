@@ -40,7 +40,7 @@ const {
 <div class="smrt-membership-list__root" data-smrt-component="MembershipList">
   {#if loading}
     <div class="smrt-membership-list__loading" data-smrt-part="status">
-      <div class="smrt-membership-list__spinner" data-smrt-part="indicator"></div>
+      <div class="smrt-membership-list__spinner" data-smrt-part="spinner"></div>
       <span>{t(M['ui.membership_list.loading'])}</span>
     </div>
   {:else if memberships.length === 0}

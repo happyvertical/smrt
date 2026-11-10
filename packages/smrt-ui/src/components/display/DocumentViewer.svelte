@@ -243,13 +243,13 @@ function pointerUp(event: PointerEvent): void {
   data-kind={kind ?? undefined}
   data-smrt-component="DocumentViewer"
 >
-  <div class="smrt-document-viewer__controls" data-smrt-part="controls">
+  <div class="smrt-document-viewer__controls" data-smrt-part="actions">
     {#if pdf && pdf.pages > 1}
       <div class="smrt-document-viewer__group" data-smrt-part="row" role="group" aria-label={text.pages}>
         <button
           type="button"
           class="smrt-document-viewer__ctl"
-          data-smrt-part="control"
+          data-smrt-part="action"
           data-control="previous"
           aria-label={text.previousPage}
           disabled={page <= 1}
@@ -257,13 +257,13 @@ function pointerUp(event: PointerEvent): void {
         >
           <span aria-hidden="true">◀</span>
         </button>
-        <span class="smrt-document-viewer__where" data-smrt-part="page-indicator" aria-live="polite">
+        <span class="smrt-document-viewer__where" data-smrt-part="value" aria-live="polite">
           {renderTemplate(text.pageOf, { page, pages: pdf.pages })}
         </span>
         <button
           type="button"
           class="smrt-document-viewer__ctl"
-          data-smrt-part="control"
+          data-smrt-part="action"
           data-control="next"
           aria-label={text.nextPage}
           disabled={page >= pdf.pages}
@@ -278,7 +278,7 @@ function pointerUp(event: PointerEvent): void {
         <button
           type="button"
           class="smrt-document-viewer__ctl"
-          data-smrt-part="control"
+          data-smrt-part="action"
           data-control="zoom-out"
           aria-label={text.zoomOut}
           disabled={zoom <= MIN_ZOOM}
@@ -289,7 +289,7 @@ function pointerUp(event: PointerEvent): void {
         <button
           type="button"
           class="smrt-document-viewer__ctl smrt-document-viewer__fit"
-          data-smrt-part="control"
+          data-smrt-part="action"
           data-control="fit"
           disabled={zoom === MIN_ZOOM}
           onclick={() => (zoom = MIN_ZOOM)}
@@ -299,7 +299,7 @@ function pointerUp(event: PointerEvent): void {
         <button
           type="button"
           class="smrt-document-viewer__ctl"
-          data-smrt-part="control"
+          data-smrt-part="action"
           data-control="zoom-in"
           aria-label={text.zoomIn}
           disabled={zoom >= MAX_ZOOM}
@@ -314,7 +314,7 @@ function pointerUp(event: PointerEvent): void {
   <!-- svelte-ignore a11y_no_static_element_interactions (pinch is a shortcut; zoom out / Fit / zoom in are the controls) -->
   <div
     class="smrt-document-viewer__sheet"
-    data-smrt-part="sheet"
+    data-smrt-part="page"
     data-zoom={zoom}
     bind:clientWidth={width}
     onpointerdown={pointerDown}
@@ -330,7 +330,7 @@ function pointerUp(event: PointerEvent): void {
         <button
           type="button"
           class="smrt-document-viewer__ctl smrt-document-viewer__retry"
-          data-smrt-part="control"
+          data-smrt-part="retry"
           data-control="retry"
           onclick={() => (attempt += 1)}
         >

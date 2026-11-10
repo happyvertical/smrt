@@ -18,7 +18,7 @@ const currentYear = new Date().getFullYear();
 
 <footer class="smrt-footer__root" data-smrt-component="Footer">
   <Container>
-    <div class="smrt-footer__content" data-smrt-part="content">
+    <div class="smrt-footer__content" data-smrt-part="body">
       <p class="smrt-footer__copyright" data-smrt-part="meta">&copy; {currentYear} {t(M['ui.footer.all_rights_reserved'])}</p>
 
       {#if children}

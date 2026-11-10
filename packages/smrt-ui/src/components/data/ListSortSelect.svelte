@@ -89,7 +89,7 @@ function handleChange(event: Event) {
   <select
     {id}
     class="smrt-list-sort-select__control"
-    data-smrt-part="select"
+    data-smrt-part="input"
     value={`${sort.columnId}:${sort.direction}`}
     onchange={handleChange}
   >

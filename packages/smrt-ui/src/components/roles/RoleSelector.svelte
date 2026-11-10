@@ -143,7 +143,7 @@ $effect(() => {
         {/if}
       </span>
     {:else}
-      <span class="smrt-role-selector__placeholder" data-smrt-part="placeholder">{placeholder}</span>
+      <span class="smrt-role-selector__placeholder" data-smrt-part="label">{placeholder}</span>
     {/if}
     <svg class="smrt-role-selector__chevron" data-smrt-part="icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
       <path
@@ -176,7 +176,7 @@ $effect(() => {
           tabindex={-1}
           aria-selected={role.id === value}
         >
-          <div class="smrt-role-selector__option-content" data-smrt-part="content">
+          <div class="smrt-role-selector__option-content" data-smrt-part="body">
             <span class="smrt-role-selector__role-name" data-smrt-part="label">{role.name}</span>
             {#if role.isSystem}
               <span class="smrt-role-selector__system-badge" data-smrt-part="badge">System</span>

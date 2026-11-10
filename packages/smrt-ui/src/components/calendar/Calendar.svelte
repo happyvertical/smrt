@@ -235,7 +235,7 @@ const yearOptions = $derived(() => {
       </button>
     </div>
 
-    <div class="smrt-calendar__selectors" data-smrt-part="selectors">
+    <div class="smrt-calendar__selectors" data-smrt-part="nav">
       <select
         class="smrt-calendar__month"
         data-smrt-part="month"
@@ -263,13 +263,13 @@ const yearOptions = $derived(() => {
   </header>
 
   <div class="smrt-calendar__grid" data-smrt-part="grid">
-    <div class="smrt-calendar__weekdays" data-smrt-part="weekdays">
+    <div class="smrt-calendar__weekdays" data-smrt-part="row">
       {#each DAYS as day}
-        <div class="smrt-calendar__weekday" data-smrt-part="weekday">{day}</div>
+        <div class="smrt-calendar__weekday" data-smrt-part="cell">{day}</div>
       {/each}
     </div>
 
-    <div class="smrt-calendar__days" data-smrt-part="days">
+    <div class="smrt-calendar__days" data-smrt-part="body">
       {#each calendarDays() as { day, month, year, isCurrentMonth, isToday }}
         {@const dayEvents = getEventsForDate(year, month, day)}
         {@const hasEvents = dayEvents.length > 0}
@@ -280,12 +280,12 @@ const yearOptions = $derived(() => {
           class:smrt-calendar__day--other-month={!isCurrentMonth}
           class:smrt-calendar__day--today={isToday}
           class:smrt-calendar__day--has-events={hasEvents}
-          data-smrt-part="day"
+          data-smrt-part="trigger"
           onclick={() => onDateSelect?.(dateStr, hasEvents)}
         >
           <span class="smrt-calendar__day-number" data-smrt-part="label">{day}</span>
           {#if hasEvents}
-            <div class="smrt-calendar__events" data-smrt-part="events">
+            <div class="smrt-calendar__events" data-smrt-part="list">
               {#each dayEvents.slice(0, 3) as event}
                 <span class="smrt-calendar__event" data-smrt-part="event" title={event.name}>{getEventIcon(event.type)}</span>
               {/each}

@@ -81,9 +81,9 @@ function toggle(key: string | number) {
 </script>
 
 {#if loading}
-  <div class="smrt-collection-list__status" role="status" data-smrt-part="status" data-smrt-component="CollectionList"><span class="smrt-collection-list__spinner" data-smrt-part="spinner" aria-hidden="true"></span>Loading…</div>
+  <div class="smrt-collection-list__status" role="status" data-smrt-component="CollectionList"><span class="smrt-collection-list__spinner" data-smrt-part="spinner" aria-hidden="true"></span>Loading…</div>
 {:else if items.length === 0}
-  <div class="smrt-collection-list__empty" data-smrt-part="empty" data-smrt-component="CollectionList">{#if empty}{@render empty()}{:else}No items available{/if}</div>
+  <div class="smrt-collection-list__empty" data-smrt-component="CollectionList">{#if empty}{@render empty()}{:else}No items available{/if}</div>
 {:else}
   <ul class="smrt-collection-list__root smrt-collection-list__{layout} {className}" data-smrt-component="CollectionList">
     {#each items as entry, index (keyOf(entry, index))}
@@ -91,7 +91,7 @@ function toggle(key: string | number) {
       {@const isSelected = selected.has(key)}
       {@const itemTitle = textOf(entry, title) ?? `Item ${index + 1}`}
       <li class:smrt-collection-list__selected={isSelected} data-smrt-part="item">
-        {#if selectable}<label class="smrt-collection-list__select" data-smrt-part="select"><input type="checkbox" checked={isSelected} aria-label={`Select ${itemTitle}`} onchange={() => toggle(key)} /></label>{/if}
+        {#if selectable}<label class="smrt-collection-list__select" data-smrt-part="control"><input type="checkbox" checked={isSelected} aria-label={`Select ${itemTitle}`} onchange={() => toggle(key)} /></label>{/if}
         {#if onitemclick}
           <button type="button" class="smrt-collection-list__main" data-smrt-part="body" onclick={() => onitemclick?.(entry, index)}>
             {#if item}{@render item({ item: entry, index, selected: isSelected })}{:else}<strong>{itemTitle}</strong>{#if description}<span>{textOf(entry, description)}</span>{/if}{/if}

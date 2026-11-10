@@ -14,7 +14,7 @@ const { logo, nav }: Props = $props();
 
 <header class="smrt-header__root" data-smrt-component="Header">
   <Container>
-    <div class="smrt-header__content" data-smrt-part="content">
+    <div class="smrt-header__content" data-smrt-part="body">
       {#if logo}
         <div class="smrt-header__logo" data-smrt-part="title">
           {@render logo()}

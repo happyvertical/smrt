@@ -143,7 +143,7 @@ const gridClasses = $derived.by(() => {
 </script>
 
 {#if header}
-  <div class="smrt-grid__header" data-smrt-part="header" data-smrt-component="Grid">
+  <div class="smrt-grid__header" data-smrt-component="Grid">
     {@render header()}
   </div>
 {/if}

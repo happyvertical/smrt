@@ -142,7 +142,7 @@ useControlRegistration(() => {
   data-smrt-subject-id={interaction === false ? undefined : interaction?.subject?.id} data-smrt-component="RadioGroup">
   {#if label}<legend>{label}{#if required}<span aria-hidden="true"> *</span>{/if}</legend>{/if}
   {#if description}<p id={`${name}-description`} class="smrt-radio-group__description" data-smrt-part="description">{description}</p>{/if}
-  <div class="smrt-radio-group__options" data-smrt-part="options">{@render children()}</div>
+  <div class="smrt-radio-group__options" data-smrt-part="list">{@render children()}</div>
   {#if error}<p class="smrt-radio-group__error" data-smrt-part="error" role="alert">{error}</p>{/if}
 </fieldset>
 <style>

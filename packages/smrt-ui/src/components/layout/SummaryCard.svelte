@@ -79,7 +79,7 @@ const valueColorClass = $derived.by(() => {
     use:ripple data-smrt-component="SummaryCard"
   >
     {@render cardIcon()}
-    <div class="smrt-summary-card__content" data-smrt-part="content">
+    <div class="smrt-summary-card__content" data-smrt-part="body">
       <span class="smrt-summary-card__label" data-smrt-part="label">
         {label}
         {#if count !== undefined}
@@ -95,7 +95,7 @@ const valueColorClass = $derived.by(() => {
 {:else}
   <div class="smrt-summary-card__root" class:smrt-summary-card__highlight={highlight} data-smrt-component="SummaryCard">
     {@render cardIcon()}
-    <div class="smrt-summary-card__content" data-smrt-part="content">
+    <div class="smrt-summary-card__content" data-smrt-part="body">
       <span class="smrt-summary-card__label" data-smrt-part="label">
         {label}
         {#if count !== undefined}

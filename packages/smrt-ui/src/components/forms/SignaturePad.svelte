@@ -329,7 +329,7 @@ useControlRegistration(() => {
     onpointercancel={endStroke}
   ></canvas>
 
-  <p id={hintId} class="smrt-signature-pad__hint" data-smrt-part="hint">{stylusOnly ? text.hintStylus : text.hintAny}</p>
+  <p id={hintId} class="smrt-signature-pad__hint" data-smrt-part="description">{stylusOnly ? text.hintStylus : text.hintAny}</p>
   <p class="smrt-signature-pad__message" data-smrt-part="message" role="status">{padState === 'committed' ? text.committed : ''}</p>
 
   <div class="smrt-signature-pad__actions" data-smrt-part="actions">

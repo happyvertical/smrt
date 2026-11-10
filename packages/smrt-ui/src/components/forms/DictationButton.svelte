@@ -111,10 +111,10 @@ function handleClick() {
     <path d="M12 17v4"></path>
   </svg>
   {#if active}
-    <span class="smrt-dictation-button__dot" data-smrt-part="dot" aria-hidden="true"></span>
+    <span class="smrt-dictation-button__dot" data-smrt-part="indicator" aria-hidden="true"></span>
   {/if}
   {#if writing || (handsFree && dictation.state === 'transcribing')}
-    <span class="smrt-dictation-button__writing" data-smrt-part="writing" aria-hidden="true"></span>
+    <span class="smrt-dictation-button__writing" data-smrt-part="spinner" aria-hidden="true"></span>
   {/if}
 </Button>
 {#if hint !== name}

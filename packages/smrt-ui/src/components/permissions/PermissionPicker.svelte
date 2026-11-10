@@ -160,7 +160,7 @@ function matches(permission: PermissionPickerItem, category: string): boolean {
             <span>{group.label}</span>
             <span class="smrt-permission-picker__count" data-smrt-part="count">{selectedCount} selected</span>
           </summary>
-          <div class="smrt-permission-picker__choices" data-smrt-part="options">
+          <div class="smrt-permission-picker__choices" data-smrt-part="list">
             {#each group.items as permission (permission.id ?? permission.slug)}
               <div class="smrt-permission-picker__choice" data-smrt-part="option" hidden={!matches(permission, group.label)}>
                 <Checkbox

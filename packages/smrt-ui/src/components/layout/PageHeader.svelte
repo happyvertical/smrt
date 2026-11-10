@@ -103,9 +103,9 @@ $effect(() => shell?.report?.({ title: shortTitle ?? title, parents }));
   {/if}
 
   <div class="smrt-page-header__main" data-smrt-part="header">
-    <div class="smrt-page-header__content" data-smrt-part="content">
+    <div class="smrt-page-header__content" data-smrt-part="body">
       {#if backHref}
-        <a href={backHref} class="smrt-page-header__back-link" data-smrt-part="trigger" use:ripple>
+        <a href={backHref} class="smrt-page-header__back-link" data-smrt-part="back" use:ripple>
           <Icon name="chevron-left" size={20} />
           <span>{backLabel}</span>
         </a>
@@ -182,6 +182,9 @@ $effect(() => shell?.report?.({ title: shortTitle ?? title, parents }));
     flex: 1;
     min-width: min(100%, 200px);
   }
+  .smrt-page-header__crumbs li + li::before {
+    content: '/';
+  }
   .smrt-page-header__back-link {
     display: inline-flex;
     align-items: center;
@@ -225,7 +228,6 @@ $effect(() => shell?.report?.({ title: shortTitle ?? title, parents }));
     font-size: 0.84rem;
   }
   .smrt-page-header__crumbs li + li::before {
-    content: '/';
     color: var(--smrt-color-outline);
   }
   .smrt-page-header__crumbs a {

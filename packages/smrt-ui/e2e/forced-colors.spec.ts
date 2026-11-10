@@ -202,7 +202,7 @@ for (const variant of ['static', 'inline'] as const) {
       // Checkbox and radio: checked fills with Highlight.
       const checked = page.locator('.smrt-checkbox__root:has(input:checked)');
       expect(await checked.locator('.smrt-checkbox__box').evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(highlight);
-      const radioDot = page.locator('[data-smrt-component="Radio"]', { hasText: 'Radio B' }).locator('[data-smrt-part="mark"]');
+      const radioDot = page.locator('[data-smrt-component="Radio"]', { hasText: 'Radio B' }).locator('[data-smrt-part="control"]');
       expect(await radioDot.evaluate((el) => getComputedStyle(el, '::after').backgroundColor)).toBe(highlight);
       expect(await radioDot.evaluate((el) => getComputedStyle(el, '::after').transform)).not.toBe('matrix(0, 0, 0, 0, 0, 0)');
 
