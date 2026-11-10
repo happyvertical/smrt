@@ -394,3 +394,31 @@ describe('a stored stop reason is never `complete` while an approval waits', () 
     expect(stops).toContain('waiting');
   });
 });
+
+describe('token mint failure', () => {
+  it('logs the stable code only and tells the owner what to do about a missing permission', async () => {
+    const error = Object.assign(
+      new Error('The local owner does not hold: x.'),
+      { name: 'LocalRuntimeError', code: 'invalid_scope' },
+    );
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { deps } = setup('claude-code');
+    deps.credentials = {
+      mint: async () => {
+        throw error;
+      },
+      revoke: async () => {},
+    };
+    const { events, stop } = await turn('claude-code', 'hi', { deps });
+    expect(stop).toBe('error');
+    const failed = events.find((e) => e.type === 'error');
+    expect(failed).toMatchObject({ code: 'agent_cli_token' });
+    expect(JSON.stringify(failed)).toMatch(/permission/);
+    expect(logged).toHaveBeenCalledWith(
+      'assistant token failed:',
+      'LocalRuntimeError',
+      'invalid_scope',
+    );
+    expect(JSON.stringify(logged.mock.calls)).not.toContain('does not hold');
+  });
+});

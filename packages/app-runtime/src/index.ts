@@ -29,6 +29,7 @@ import {
   PasswordCredentialService,
   type PasswordPolicyOptions,
   RoleCollection,
+  RolePermissionCollection,
   SessionCollection,
   SessionService,
   type Tenant,
@@ -820,6 +821,7 @@ export async function initializeLocalApplicationRuntime(
     }
     await ensureBootstrapTable(db);
     await ensureLocalMcpTokenTable(db);
+    await grantNewPermissionsToExistingOwner(db);
 
     const runtime = new InitializedLocalApplicationRuntime({
       db,
@@ -1558,6 +1560,26 @@ async function findActiveOwners(
       userId: membership.userId as string,
       tenantId: membership.tenantId as string,
     }));
+}
+
+/**
+ * Upgrade path for an owner claimed before a permission existed. Claiming
+ * seeds the owner role over the catalog registered at that moment, so a
+ * permission an app registers in a later release (the shell's `assistant.use`,
+ * a template's `prompts.customize`) had no Permission row and no owner grant,
+ * and nothing granted it on later starts. Each start now adds the catalog
+ * slugs that have no Permission row yet to the system `owner` role. Slugs that
+ * already have a row are never re-granted (a removal stays removed) and no
+ * other role is touched. Registrations must run before the runtime starts.
+ */
+async function grantNewPermissionsToExistingOwner(
+  db: DatabaseInterface,
+): Promise<void> {
+  if (!(await findExistingOwner(db))) return;
+  const grants = await RolePermissionCollection.create({ db });
+  await grants.seedNewCatalogPermissions({
+    roleSlugs: [DEFAULT_ROLE_SLUGS.OWNER],
+  });
 }
 
 async function findExistingOwner(

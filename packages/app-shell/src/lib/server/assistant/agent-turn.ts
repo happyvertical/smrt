@@ -83,6 +83,23 @@ export interface AgentTurnOptions {
 }
 
 /** Run one turn to its end. Never throws for CLI, tool or abort failures. */
+/** The stable `code` of a LocalRuntimeError-shaped failure; never a message. */
+function tokenFailureCode(error: unknown): string | undefined {
+  const code = (error as { code?: unknown } | null)?.code;
+  return typeof code === 'string' && /^[a-z_]{1,48}$/.test(code)
+    ? code
+    : undefined;
+}
+
+/** What the owner sees; a missing permission says what to do about it. */
+export function tokenFailureMessage(code: string | undefined): string {
+  if (code === 'invalid_scope')
+    return 'The assistant could not start: the owner is missing the assistant permission. Restart the app so it can grant it, then try again.';
+  if (code === 'owner_unavailable')
+    return 'The assistant could not start: finish owner setup first.';
+  return 'The assistant could not start. Try again.';
+}
+
 export async function runAgentTurn(
   options: AgentTurnOptions,
 ): Promise<TurnStop> {
@@ -111,12 +128,14 @@ export async function runAgentTurn(
   try {
     token = await deps.credentials.mint();
   } catch (error) {
-    // biome-ignore lint/suspicious/noConsole: class only, never a message
+    const code = tokenFailureCode(error);
+    // biome-ignore lint/suspicious/noConsole: class and stable code only, never a message
     console.error(
       'assistant token failed:',
       error instanceof Error ? error.name : 'unknown',
+      code ?? 'no_code',
     );
-    return fail('agent_cli_token', 'The assistant could not start. Try again.');
+    return fail('agent_cli_token', tokenFailureMessage(code));
   }
 
   // Approvals created (and decided) while the CLI runs, from the in-process bus.
