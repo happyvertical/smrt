@@ -20,6 +20,7 @@
   "include": [
     "__tests__/**/*.ts",
     "fixtures/**/*.ts",
+    "examples/**/*.ts",
     "template/src/**/*.ts"
   ]
 }

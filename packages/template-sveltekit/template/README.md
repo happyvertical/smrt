@@ -1,8 +1,9 @@
 # s-m-r-t SvelteKit starter
 
 This is the small, ground-up starting point for s-m-r-t. It contains
-one Notes object and a profile-aware operational surface for local, self-hosted, and
-managed-cloud environments. It does not provision external providers.
+no example object, an empty home page, and a profile-aware operational surface
+for local, self-hosted, and managed-cloud environments. It does not provision
+external providers.
 
 ## 1. Install and run
 
@@ -69,9 +70,20 @@ objects.
 
 ## 3. Define the first object
 
-`src/lib/objects/Note.ts` is the only example. It exposes the same CRUD action
-set to REST, MCP, WebMCP definitions, and the CLI, while limiting writable REST
-fields and opting into tenant scoping:
+A new app registers no object, so nothing is migrated and the home page is an
+empty state. To add your first one, create `src/lib/objects/Note.ts` (the Note
+example below; the repository keeps it with a ready-made `/notes` page in
+`packages/template-sveltekit/examples/notes`), then export it from
+`src/lib/objects/index.ts`:
+
+```ts
+export { Note, NoteCollection } from './Note.js';
+```
+
+Add a nav entry for your page in `src/routes/+layout.svelte`, then run
+`pnpm db:migrate`. The Note example exposes the same CRUD action set to REST,
+MCP, WebMCP definitions, and the CLI, while limiting writable REST fields and
+opting into tenant scoping:
 
 ```ts
 import {
@@ -106,7 +118,7 @@ export class NoteCollection extends SmrtCollection<Note> {
 ObjectRegistry.registerCollection('Note', NoteCollection);
 ```
 
-Add another class beside it and export the class from
+Add further classes beside it and export each from
 `src/lib/objects/index.ts`. Keep relationship decorators next to `@smrt()`.
 Use `@foreignKey(Target)` for same-package relationships and
 `@crossPackageRef()` for relationships to another package. Keep the explicit
@@ -181,8 +193,8 @@ These are separate records with separate responsibilities:
 - Session binds the authenticated user to an active tenant and publishes the
   resolved permission set for the request.
 
-CRUD permissions are manifest-derived: `notes.read`, `notes.create`,
-`notes.update`, and `notes.delete`. Provisioning code should sync the catalog
+CRUD permissions are manifest-derived (for the Note example: `notes.read`, `notes.create`,
+`notes.update`, and `notes.delete`). Provisioning code should sync the catalog
 and seed roles after the database migration:
 
 ```ts
@@ -255,7 +267,8 @@ include malformed manifest content.
 
 The option stages `src/routes/api/mcp/+server.ts`, one
 `mountMcpAppRoute({ runtime, ... })` call from
-`@happyvertical/smrt-app-mcp/sveltekit` that publishes `Note` to
+`@happyvertical/smrt-app-mcp/sveltekit` that publishes your model (the overlay
+names `Note`; replace it with your own object) to
 principals holding `notes.read` (the signed session's permissions locally),
 refuses browser requests from a foreign `Origin`, and serves a bounded static
 resource with a restrictive CSP and the optional OpenAI display metadata. It
@@ -272,7 +285,7 @@ request nor grants tenant or workflow authority. Register `.app.json` only
 after the host creates an eligible server ID; do not copy runtime extension
 metadata into the portable manifest.
 
-The Note configuration generates:
+Once the Note example is added, its configuration generates:
 
 - REST: `GET`/`POST /api/notes` and
   `GET`/`PUT`/`DELETE /api/notes/[id]`.
@@ -285,7 +298,7 @@ Inspect the registered objects and use the example CLI:
 
 ```bash
 pnpm smrt objects
-pnpm smrt schema Note
+pnpm smrt schema Note   # once the Note example is added
 ```
 
 The CLI's manifest-only `objects` and `schema` commands work directly in this

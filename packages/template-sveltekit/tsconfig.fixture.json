@@ -5,7 +5,11 @@
       "$lib": ["./template/src/lib"],
       // The opt-in MCP Apps overlay is copied into an app's `src/`, so its
       // `$lib` imports resolve against the template first, then the overlay.
-      "$lib/*": ["./template/src/lib/*", "./mcp-apps-template/src/lib/*"],
+      "$lib/*": [
+        "./template/src/lib/*",
+        "./mcp-apps-template/src/lib/*",
+        "./examples/notes/src/lib/*"
+      ],
       "@happyvertical/smrt-virt-web": [
         "./__tests__/setup/smrt-virt-web-stub.ts"
       ],
@@ -18,6 +22,7 @@
     "__tests__/runtimeOperations.test.ts",
     "__tests__/runtimeProfileReference*.ts",
     "fixtures/**/*.ts",
+    "examples/notes/src/lib/**/*.ts",
     "mcp-apps-template/src/**/*.ts",
     // `**` globs skip dot-directories.
     "mcp-apps-template/src/routes/.well-known/oauth-protected-resource/api/mcp/+server.ts",
@@ -27,6 +32,7 @@
   "exclude": [
     // Route modules depend on SvelteKit-generated `$types`; the copied-app
     // browser gate runs `svelte-check` after `svelte-kit sync`.
-    "fixtures/runtime-profile-reference/overlay/src/routes/**/*"
+    "fixtures/runtime-profile-reference/overlay/src/routes/**/*",
+    "examples/notes/src/routes/**/*"
   ]
 }

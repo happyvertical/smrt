@@ -18,6 +18,7 @@
     "index.js",
     "template.config.js",
     "template",
+    "examples",
     "AGENTS.md",
     "mcp-apps-template"
   ],

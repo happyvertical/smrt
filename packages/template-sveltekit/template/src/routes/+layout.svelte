@@ -11,7 +11,6 @@
   // Add application routes here. Generated REST routes live under /api and do
   // not automatically imply a human-facing page.
   const nav: ShellNavItem[] = [
-    { href: '/', label: 'Notes', icon: 'book', description: 'Your workspace notes' },
     { href: '/settings', label: 'Settings', icon: 'settings', description: 'Appearance, account and layout' },
   ];
 

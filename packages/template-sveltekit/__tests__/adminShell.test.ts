@@ -33,7 +33,6 @@ describe('application shell', () => {
     expect(layout).not.toContain('subtitle=');
     expect(layout).not.toContain('tenantLabel');
     expect(layout).not.toContain('appPanelDocs');
-    expect(layout).toContain("icon: 'book'");
     expect(layout).toContain("icon: 'settings'");
   });
 

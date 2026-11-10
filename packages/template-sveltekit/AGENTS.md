@@ -98,10 +98,15 @@ It is the ground-up alternative to `smrt-start`.
   tenant-creation path an app adds should call it too (#4009).
 - App code uses `runtime.getCollection()`/`runtime.classOptions()`, which are
   request-scoped (RLS transaction) and must never be retained.
-- `Note` is the single example object (the canonical Notes starter, matching
-  `smrt-start`) and demonstrates required tenant scope, a REST writable allowlist, shared CRUD action metadata, and the explicit
-  collection registration required by generated CLI/MCP runtime commands.
-- Initial data comes from `+page.server.ts`; loads declare
+- A new app registers no object and opens on an empty home page (no Note, no
+  `notes.*` permissions, no migration). The Note example lives outside the
+  generated app in `examples/notes/` (an `src/`-shaped tree: the object and a
+  `/notes` page) and is not built or registered by default; it demonstrates
+  required tenant scope, a REST writable allowlist, shared CRUD action
+  metadata, and the explicit collection registration generated CLI/MCP runtime
+  commands need. Never move it back under `template/`; tests get it through the
+  reference fixture (`copyRuntimeProfileReference()` copies the example in).
+- The example page loads data in `+page.server.ts`; loads declare
   `depends('smrt:notes')`, mutations call `invalidate('smrt:notes')`, and
   hand-written writes call `assertOperationPermission()` with the session's
   exact permission snapshot.
@@ -135,7 +140,7 @@ It is the ground-up alternative to `smrt-start`.
   for an HTML form post). The layout enables `phoneTabBar` and sets
   `chrome={!page.route.id?.startsWith('/setup')}` so `/setup` renders only the
   chrome-free `OwnerSetupForm` card.
-- The Notes page is built from smrt-ui primitives only (`Button`, `Card`,
+- The example Notes page is built from smrt-ui primitives only (`Button`, `Card`,
   `Form`, `FormGroup`, `Input`, `Textarea`, `EmptyState`): no raw `<form>`,
   `<input>`, or `<button>`, token spacing, and a "Start your first note" empty
   state. The root layout passes only live AppShell props (no `subtitle`,
