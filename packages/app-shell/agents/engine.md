@@ -106,6 +106,36 @@ is documented here; the shell's tables, approvals and UI sit on top.
   and does not contain the live directory (`discardDraftDirectory(dir)` does the
   same for an orphan). A restart reopens a draft with
   `AppHost.open(dir, { store, autoApprove: true })`.
+- **Publish** (`publish.ts` helpers, `host.ts` orchestration). `live.previewPublish(draft)`
+  returns a `PublishPreview`: per-version steps and SQL, definition diff, archive
+  counts and EVERY method in full, from a rehearsal on a fresh copy of the CURRENT
+  live data (live only waits while the copy is taken); `digest` pins the draft's
+  chain. `live.publishDraft(draft, { author, approved: true, expect: digest, draftName? })`
+  refuses without `approved`, without the digest, if the chain or the app it
+  started from changed, or if a `.prepublish` file is lying around. Inside the
+  queue, calls drained: copy live, replay each draft version in order (one short
+  worker per version, its stored definition and steps, the number it will get in
+  live; so add-then-rename works), write the result as ONE file (`VACUUM INTO`),
+  copy the old data to `snapshots/<ts>-0-migrate-prepublish.db`, write
+  `publish-journal.json`, retire the live worker, rename `app.db` (+ `-wal`,
+  `-shm`, `-journal`; main file last) to `<name>.prepublish`, rename the new file
+  in, start the worker, write the versions to the store, then remove journal,
+  asides and rehearsal. The versions are N ordinary live versions numbered after
+  the store's HIGHEST (live may sit on an undone branch), parent-chained,
+  summaries tagged `[draft: name] ...`; archives are keyed by those numbers so
+  `undo` works. Draft records are not carried. Any failure before the store is
+  written renames the asides back (live's `app.db` is byte-for-byte what it
+  was, same version) and restarts the old app; `onStage` lets tests fail each
+  stage. Use a store with the optional atomic `commit(records, current)`; without
+  it a failure mid-append leaves unreachable orphan versions. The queue is held
+  until then, so nothing writes to the new file before the commit.
+- **Boot reconcile** (`reconcilePublish`, every `AppHost.open`, before the app
+  starts; result in `host.recovery`): a journal whose `finalVersion` is the
+  store's current only needs its leftovers removed; any other journal is ROLLED
+  BACK (asides restored, the new file removed), not forward: nothing could have
+  written to the new file, and the draft stays open to publish again. An
+  unreadable journal refuses to start rather than guess. Stray
+  `publish-rehearsal-*` directories are removed.
 - **Queued calls.** `onApp` (records, tools, REST) waits until the change queue
   is idle and stable, then runs in the same synchronous step; it counts
   in-flight calls so a change can wait for them (needed for consistent copies).

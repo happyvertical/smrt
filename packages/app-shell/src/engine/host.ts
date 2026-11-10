@@ -7,7 +7,7 @@
 // The host touches only `dataDir`: app.db, snapshots/*.db, and the archives
 // inside app.db. Plain files, no symlinks.
 import { EventEmitter } from 'node:events';
-import { existsSync, mkdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, renameSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -47,6 +47,25 @@ import {
   writeDraftMarker,
 } from './draft.ts';
 import { ApprovalRequiredError, EngineError } from './errors.ts';
+import {
+  archivedTables,
+  assertNoAside,
+  canonical,
+  chainDigest,
+  type DefinitionDiff,
+  type DraftChain,
+  diffDefinitions,
+  dropAside,
+  listMethods,
+  makeRehearsalDir,
+  moveAside,
+  type PublishMethod,
+  reconcilePublish,
+  removeJournal,
+  removeRehearsal,
+  restoreAside,
+  writeJournal,
+} from './publish.ts';
 import { checkSyntax } from './sandbox.ts';
 import type { VersionRecord, VersionStore } from './store.ts';
 import { AppCallError, AppWorker } from './worker-handle.ts';
@@ -83,6 +102,73 @@ export interface ForkDraftOptions {
    * number. The base record is not a draft version.
    */
   store: VersionStore;
+}
+
+/** Where a publish is, for `PublishOptions.onStage` (tests inject failures there). */
+export type PublishStage =
+  | 'copied'
+  | 'rehearsed'
+  | 'snapshotted'
+  | 'journaled'
+  | 'retired'
+  | 'moved-aside'
+  | 'swapped'
+  | 'respawned'
+  | 'committed';
+
+export interface PublishVersionPreview {
+  /** The number this version gets in live. */
+  version: number;
+  /** Its number in the draft. */
+  draftVersion: number;
+  author: string;
+  summary: string;
+  steps: Step[];
+  /** The SQL the rehearsal ran for it. */
+  statements: string[];
+}
+
+/** What a publish would do, from a rehearsal on a fresh copy of the current live data. */
+export interface PublishPreview {
+  /** Pass this as `PublishOptions.expect`; publish refuses if the draft's chain no longer matches. */
+  digest: string;
+  risky: true;
+  fromVersion: number;
+  toVersion: number;
+  versions: PublishVersionPreview[];
+  /** Live's current definition against the draft's final one. */
+  definition: DefinitionDiff;
+  /** Archived values and tables the changes create (what undo restores from). */
+  archives: { values: number; tables: number };
+  /** EVERY method of the final definition, in full, marked added/changed/unchanged. */
+  methods: PublishMethod[];
+}
+
+export interface PublishOptions {
+  author: string;
+  /** Required: a publish is always risky. Only the shell's approval sets it. */
+  approved?: boolean;
+  /** The `digest` of the preview the owner saw. */
+  expect: string;
+  /** Tags the history summaries: "[draft: <name>] <summary>". */
+  draftName?: string;
+  /**
+   * Called after each stage; throwing aborts and rolls back as if that stage
+   * had failed. For tests. After `committed` the publish is final: errors are ignored.
+   */
+  onStage?: (stage: PublishStage) => void | Promise<void>;
+}
+
+export interface PublishResult {
+  /** The version live is on now. */
+  version: number;
+  /** The versions the publish added, oldest first. */
+  versions: number[];
+  summary: string;
+  /** The retained copy of the data as it was before (snapshots/…-migrate-prepublish.db). */
+  snapshot: string;
+  archives: { values: number; tables: number };
+  appRestartMs: number;
 }
 
 export interface ChangeResult {
@@ -167,6 +253,8 @@ export class AppHost extends EventEmitter {
   private closed = false;
   #autoApprove = false;
   private frozenNow = false;
+  /** What boot did about an interrupted publish: `rolled-back` put the old data back. */
+  recovery: 'none' | 'rolled-forward' | 'rolled-back' = 'none';
   /** Set when this host is a draft copy (its directory holds the draft marker). */
   readonly draft: DraftMarker | null;
   /** Record/tool/REST calls currently inside the worker (see {@link drainInflight}). */
@@ -202,6 +290,8 @@ export class AppHost extends EventEmitter {
 
   private async boot() {
     let cur = await this.store.current();
+    // Finish or undo a publish a crash interrupted, before the app opens.
+    this.recovery = reconcilePublish(this.dataDir, cur);
     if (cur === null) {
       await this.store.append({
         version: 0,
@@ -1072,6 +1162,351 @@ export class AppHost extends EventEmitter {
       throw new EngineError('only a draft can be discarded', 'refused');
     await this.close();
     removeDraftDirectory(this.dataDir);
+  }
+
+  /**
+   * This draft's versions since its base, oldest first, with the base record.
+   * What a publish takes from the draft.
+   */
+  draftChain(): Promise<DraftChain> {
+    const draft = this.draft;
+    if (!draft)
+      return Promise.reject(new EngineError('not a draft', 'refused'));
+    return this.run(async () => {
+      const recs = await this.chain(); // current back to the base
+      const at = recs.findIndex((r) => r.version === draft.baseVersion);
+      if (at < 0)
+        throw new EngineError(
+          'the draft history does not reach its base version',
+          'not_found',
+        );
+      return {
+        baseVersion: draft.baseVersion,
+        base: recs[at],
+        versions: recs.slice(0, at).reverse(),
+      };
+    });
+  }
+
+  /** Checks shared by preview and publish; runs inside the change queue. */
+  private async publishInputs(draft: AppHost) {
+    if (this.draft)
+      throw new EngineError(
+        'a draft cannot be published into a draft',
+        'refused',
+      );
+    if (draft === this || !draft.draft)
+      throw new EngineError('that is not a draft', 'refused');
+    if (!sameDir(draft.draft.liveDir, this.dataDir))
+      throw new EngineError(
+        'that draft was made from another app or location; discard it and start a new one',
+        'refused',
+      );
+    const chain = await draft.draftChain();
+    if (chain.baseVersion !== this.version)
+      throw new EngineError(
+        `the app moved from version ${chain.baseVersion} to ${this.version} since the draft started; discard the draft and start again`,
+        'refused',
+      );
+    const live = await this.store.get(this.version);
+    if (
+      !live ||
+      canonical(live.definition) !== canonical(chain.base.definition) ||
+      canonical(this.def) !== canonical(chain.base.definition)
+    )
+      throw new EngineError(
+        'the app is not what the draft started from; discard the draft and start again',
+        'refused',
+      );
+    if (!chain.versions.length)
+      throw new EngineError('the draft has no changes to publish', 'refused');
+    return { chain, digest: chainDigest(this.version, chain) };
+  }
+
+  /** The version numbers a publish of `chain` would give: after everything live's store holds. */
+  private async nextNumbers(chain: DraftChain) {
+    const max = await this.store.maxVersion();
+    return chain.versions.map((_, i) => max + 1 + i);
+  }
+
+  /**
+   * Replay the draft's versions, in order, onto the copy of live in `dir`: one
+   * short worker per version, with that version's stored definition and steps
+   * and the number it will have in live (archives are keyed by it). Ends by
+   * writing the result as one standalone file, `dir/final/app.db`. Touches
+   * nothing but `dir`.
+   */
+  private async replay(dir: string, chain: DraftChain, numbers: number[]) {
+    const boots: BootInfo[] = [];
+    const allSteps = chain.versions.flatMap((r) => r.migration?.steps ?? []);
+    let archives = { values: 0, tables: 0 };
+    const file = join(dir, 'final', 'app.db');
+    for (let i = 0; i < chain.versions.length; i++) {
+      const rec = chain.versions[i];
+      const errs = validate(rec.definition);
+      if (errs.length)
+        throw new EngineError(
+          `"${rec.summary}" from the draft is invalid: ${errs.join('; ')}`,
+        );
+      const steps = rec.migration?.steps ?? [];
+      const w = new AppWorker(this.workerUrl, {
+        dataDir: dir,
+        def: rec.definition,
+        version: numbers[i],
+        migration: steps.length
+          ? { steps, direction: 'up', version: numbers[i] }
+          : undefined,
+      });
+      try {
+        boots.push(await w.ready);
+        if (i === chain.versions.length - 1) {
+          archives = await w.call(
+            'countArchives',
+            numbers,
+            archivedTables(allSteps),
+          );
+          await w.call('copyTo', file);
+        }
+      } catch (e) {
+        await w.terminate().catch(() => {});
+        throw new EngineError(
+          `"${rec.summary}" from the draft does not apply to the current data, so nothing was published: ${(e as Error).message}`,
+          'migration_failed',
+        );
+      }
+      await w.retire();
+    }
+    return { boots, archives, file };
+  }
+
+  /**
+   * What publishing `draft` would do: the draft's versions replayed on a fresh
+   * copy of the CURRENT live data (the live app is not touched and only waits
+   * while the copy is taken). `digest` pins the answer for `publishDraft`.
+   */
+  async previewPublish(draft: AppHost): Promise<PublishPreview> {
+    const ctx = await this.run(async () => {
+      const { chain, digest } = await this.publishInputs(draft);
+      await this.drainInflight();
+      const numbers = await this.nextNumbers(chain);
+      const dir = makeRehearsalDir(this.dataDir);
+      try {
+        await this.callApp('copyTo', join(dir, 'app.db'));
+      } catch (e) {
+        removeRehearsal(this.dataDir, dir);
+        throw e;
+      }
+      return { chain, digest, numbers, dir, from: this.def, at: this.version };
+    });
+    try {
+      const r = await this.replay(ctx.dir, ctx.chain, ctx.numbers);
+      const final =
+        ctx.chain.versions[ctx.chain.versions.length - 1].definition;
+      return {
+        digest: ctx.digest,
+        risky: true,
+        fromVersion: ctx.at,
+        toVersion: ctx.numbers[ctx.numbers.length - 1],
+        versions: ctx.chain.versions.map((rec, i) => ({
+          version: ctx.numbers[i],
+          draftVersion: rec.version,
+          author: rec.author,
+          summary: rec.summary,
+          steps: rec.migration?.steps ?? [],
+          statements: r.boots[i].statements,
+        })),
+        definition: diffDefinitions(ctx.from, final),
+        archives: r.archives,
+        methods: listMethods(ctx.from, final),
+      };
+    } finally {
+      removeRehearsal(this.dataDir, ctx.dir);
+    }
+  }
+
+  /**
+   * Publish `draft` into live. Always needs `approved: true` and the `expect`
+   * digest of a preview; refuses if the draft's chain, or the app it started
+   * from, is not what that preview was of.
+   *
+   * It rehearses on a fresh copy of the current live data (so records added
+   * since the fork are kept and draft records are not), then swaps the file:
+   * the old data is first copied to snapshots/<ts>-0-migrate-prepublish.db,
+   * live's files are renamed aside and the rehearsed file renamed into place.
+   * The versions land in live as N ordinary versions (numbers after live's
+   * highest, summaries tagged with `draftName`), so `undo` / `undoTo` work.
+   * Any failure before the store is written puts the old files back (live's
+   * `app.db` is byte-for-byte what it was) and leaves the version unchanged.
+   * Live records wait (not fail) while this runs. The caller discards the draft.
+   */
+  publishDraft(draft: AppHost, opts: PublishOptions): Promise<PublishResult> {
+    if (!opts || typeof opts.author !== 'string' || !opts.author)
+      return Promise.reject(new EngineError('publish needs an author'));
+    if (typeof opts.expect !== 'string' || !opts.expect)
+      return Promise.reject(
+        new EngineError('publish needs the digest of a preview', 'refused'),
+      );
+    if (opts.approved !== true)
+      return Promise.reject(
+        new ApprovalRequiredError({
+          summary: 'publish the draft',
+          risky: true,
+          preview: { digest: opts.expect },
+        }),
+      );
+    return this.run(() => this.doPublish(draft, opts));
+  }
+
+  private async persistVersions(records: VersionRecord[], current: number) {
+    if (this.store.commit) return this.store.commit(records, current);
+    for (const r of records) await this.store.append(r);
+    await this.store.setCurrent(current);
+  }
+
+  private async doPublish(
+    draft: AppHost,
+    opts: PublishOptions,
+  ): Promise<PublishResult> {
+    const { chain, digest } = await this.publishInputs(draft);
+    if (digest !== opts.expect)
+      throw new EngineError(
+        'the draft is not what was reviewed (it changed since the preview); review it again',
+        'refused',
+      );
+    const stage = async (s: PublishStage) => {
+      await opts.onStage?.(s);
+    };
+    assertNoAside(this.dataDir);
+    await this.drainInflight();
+    const numbers = await this.nextNumbers(chain);
+    const finalNumber = numbers[numbers.length - 1];
+    const finalDef = chain.versions[chain.versions.length - 1].definition;
+    const tag = opts.draftName
+      ? `[draft: ${opts.draftName.replace(/\s+/g, ' ').trim()}] `
+      : '';
+    const oldVersion = this.version;
+    const dir = makeRehearsalDir(this.dataDir);
+    const t0 = performance.now();
+    let retired = false;
+    let journaled = false;
+    let asideStarted = false;
+    let next: AppWorker | null = null;
+    let snapshot = '';
+    let archives = { values: 0, tables: 0 };
+    try {
+      await this.callApp('copyTo', join(dir, 'app.db'));
+      await stage('copied');
+      const r = await this.replay(dir, chain, numbers);
+      archives = r.archives;
+      await stage('rehearsed');
+      snapshot = join(
+        this.dataDir,
+        'snapshots',
+        `${Date.now()}-0-migrate-prepublish.db`,
+      );
+      await this.callApp('copyTo', snapshot);
+      await stage('snapshotted');
+      writeJournal(this.dataDir, {
+        format: 1,
+        oldVersion,
+        finalVersion: finalNumber,
+        rehearsal: dir,
+        snapshot,
+        startedAt: now(),
+      });
+      journaled = true;
+      await stage('journaled');
+      retired = true;
+      await this.app.retire();
+      await stage('retired');
+      asideStarted = true;
+      moveAside(this.dataDir);
+      await stage('moved-aside');
+      renameSync(r.file, join(this.dataDir, 'app.db'));
+      await stage('swapped');
+      next = this.spawn(finalDef, finalNumber);
+      await next.ready;
+      await stage('respawned');
+      const stamp = now();
+      await this.persistVersions(
+        chain.versions.map((rec, i) => ({
+          version: numbers[i],
+          parent: i === 0 ? oldVersion : numbers[i - 1],
+          author: rec.author,
+          summary: `${tag}${rec.summary}`,
+          definition: structuredClone(rec.definition),
+          migration: rec.migration?.steps.length
+            ? { steps: structuredClone(rec.migration.steps) }
+            : null,
+          createdAt: stamp,
+        })),
+        finalNumber,
+      );
+    } catch (e) {
+      await this.abortPublish(
+        { retired, asideStarted, journaled, next, dir },
+        e,
+      );
+      throw e; // not reached when abortPublish throws its own
+    }
+    // The store has the versions: the publish is final.
+    this.app = next as AppWorker;
+    this.def = structuredClone(finalDef);
+    this.version = finalNumber;
+    this.lastSwapMs = Math.round(performance.now() - t0);
+    try {
+      await opts.onStage?.('committed');
+    } catch {
+      // too late to matter
+    }
+    try {
+      dropAside(this.dataDir);
+      removeJournal(this.dataDir);
+      removeRehearsal(this.dataDir, dir);
+    } catch {
+      // leftovers are removed at the next start (reconcilePublish)
+    }
+    const summary = `${tag}published ${chain.versions.length} change${chain.versions.length === 1 ? '' : 's'}`;
+    this.emit('changed', { version: finalNumber, summary });
+    return {
+      version: finalNumber,
+      versions: numbers,
+      summary,
+      snapshot,
+      archives,
+      appRestartMs: this.lastSwapMs,
+    };
+  }
+
+  /** Undo a failed publish: put live back exactly as it was and start it again. */
+  private async abortPublish(
+    s: {
+      retired: boolean;
+      asideStarted: boolean;
+      journaled: boolean;
+      next: AppWorker | null;
+      dir: string;
+    },
+    cause: unknown,
+  ) {
+    try {
+      if (s.next) await s.next.terminate().catch(() => {});
+      if (s.retired) {
+        await this.app.terminate().catch(() => {});
+        if (s.asideStarted) restoreAside(this.dataDir);
+      }
+      if (s.journaled) removeJournal(this.dataDir);
+      removeRehearsal(this.dataDir, s.dir);
+      if (s.retired) {
+        this.app = this.spawn(this.def, this.version);
+        await this.app.ready.catch(() => {}); // restartApp() can retry
+      }
+    } catch (e2) {
+      throw new EngineError(
+        `${(cause as Error).message}; and putting the old data back failed: ${(e2 as Error).message}. It is restored when the app next starts.`,
+        'migration_failed',
+      );
+    }
   }
 
   list(model: string, limit = 200) {

@@ -60,10 +60,22 @@ export {
   type ForkDraftOptions,
   type HostOptions,
   type MethodResult,
+  type PublishOptions,
+  type PublishPreview,
+  type PublishResult,
+  type PublishStage,
+  type PublishVersionPreview,
   type RestResult,
   type ToolResult,
   type VersionSummary,
 } from './host.ts';
+export type {
+  DefinitionDiff,
+  DraftChain,
+  FieldChange,
+  ModelDiff,
+  PublishMethod,
+} from './publish.ts';
 export {
   checkSyntax,
   type MethodInput,
