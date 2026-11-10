@@ -62,12 +62,12 @@ export interface Props {
   }
 </script>
 
-<div class="recipient-input" data-smrt-component="RecipientInput">
-  <label class="label" for={inputId}>{label}</label>
-  <div class="chips-container">
+<div class="smrt-recipient-input__root" data-smrt-component="RecipientInput">
+  <label class="smrt-recipient-input__label" data-smrt-part="label" for={inputId}>{label}</label>
+  <div class="smrt-recipient-input__body" data-smrt-part="body">
     {#each recipients as recipient, i}
-      <span class="chip" class:invalid={!recipient.isValid}>
-        <span class="chip-text">{recipient.name || recipient.address}</span>
+      <span class="smrt-recipient-input__chip" class:smrt-recipient-input__invalid={!recipient.isValid} data-smrt-part="chip">
+        <span class="smrt-recipient-input__chip-title" data-smrt-part="chip-title">{recipient.name || recipient.address}</span>
         <Button
           variant="ghost"
           size="sm"
@@ -90,91 +90,111 @@ export interface Props {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .recipient-input {
+@layer smrt.structure {
+  .smrt-recipient-input__root {
     display: flex;
     align-items: flex-start;
     gap: var(--smrt-spacing-2);
     padding: var(--smrt-spacing-1) 0;
-    border-bottom: var(--smrt-hairline);
   }
-
-  .label {
-    font-family: var(--smrt-font-family, system-ui);
-    font-size: var(--smrt-typography-label-large-size);
-    color: var(--smrt-color-on-surface-variant);
+  .smrt-recipient-input__label {
     padding-top: var(--smrt-spacing-2);
     min-width: 32px;
   }
-
-  .chips-container {
+  .smrt-recipient-input__body {
     display: flex;
     flex-wrap: wrap;
     gap: var(--smrt-spacing-1);
     flex: 1;
     align-items: center;
   }
-
-  .chip {
+  .smrt-recipient-input__chip {
     display: inline-flex;
     align-items: center;
     gap: var(--smrt-spacing-1);
     padding: var(--smrt-spacing-1) var(--smrt-spacing-1) var(--smrt-spacing-1) var(--smrt-spacing-2);
+  }
+  /*
+  * The chip remove button now renders through smrt-ui's <Button variant="ghost">.
+  * `.smrt-recipient-input__body :global(.chip-remove)` anchors on the real `.smrt-recipient-input__body`
+  * element and pierces the Button child scope to keep the compact icon styling.
+  * `color: inherit` keeps it matching the chip text color (including the invalid
+  * chip's error color) — issue #1589.
+  */
+  .smrt-recipient-input__body :global(.chip-remove) {
+    padding: 0 var(--smrt-spacing-1);
+  }
+  /*
+  * The chip-bar field now renders through smrt-ui's <Input>. This is a naked,
+  * borderless inline field that sits among the recipient chips, so
+  * `.smrt-recipient-input__body :global(.recipient-field)` pierces the Input child scope to
+  * strip the primitive's border / background / block padding / focus box-shadow
+  * and restore the flush inline look (issue #1589).
+  */
+  .smrt-recipient-input__body :global(.recipient-field) {
+    flex: 1;
+    min-width: 120px;
+    padding: var(--smrt-spacing-1) 0;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-recipient-input__root {
+    border-bottom: var(--smrt-hairline);
+  }
+  .smrt-recipient-input__label {
+    font-family: var(--smrt-font-family, system-ui);
+    font-size: var(--smrt-typography-label-large-size);
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-recipient-input__chip {
     border-radius: var(--smrt-radius-sm);
     background: var(--smrt-color-secondary-container);
     color: var(--smrt-color-on-secondary-container);
     font-size: var(--smrt-typography-label-large-size);
     font-family: var(--smrt-font-family, system-ui);
   }
-
-  .chip.invalid {
+  .smrt-recipient-input__chip.smrt-recipient-input__invalid {
     background: var(--smrt-color-error-container);
     color: var(--smrt-color-on-error-container);
   }
-
   /*
-   * The chip remove button now renders through smrt-ui's <Button variant="ghost">.
-   * `.chips-container :global(.chip-remove)` anchors on the real `.chips-container`
-   * element and pierces the Button child scope to keep the compact icon styling.
-   * `color: inherit` keeps it matching the chip text color (including the invalid
-   * chip's error color) — issue #1589.
-   */
-  .chips-container :global(.chip-remove) {
+  * The chip remove button now renders through smrt-ui's <Button variant="ghost">.
+  * `.smrt-recipient-input__body :global(.chip-remove)` anchors on the real `.smrt-recipient-input__body`
+  * element and pierces the Button child scope to keep the compact icon styling.
+  * `color: inherit` keeps it matching the chip text color (including the invalid
+  * chip's error color) — issue #1589.
+  */
+  .smrt-recipient-input__body :global(.chip-remove) {
     background: none;
     border: none;
-    padding: 0 var(--smrt-spacing-1);
     font-size: var(--smrt-typography-label-large-size);
     color: inherit;
     opacity: 0.7;
   }
-
-  .chips-container :global(.chip-remove):hover {
+  .smrt-recipient-input__body :global(.chip-remove):hover {
     opacity: 1;
   }
-
   /*
-   * The chip-bar field now renders through smrt-ui's <Input>. This is a naked,
-   * borderless inline field that sits among the recipient chips, so
-   * `.chips-container :global(.recipient-field)` pierces the Input child scope to
-   * strip the primitive's border / background / block padding / focus box-shadow
-   * and restore the flush inline look (issue #1589).
-   */
-  .chips-container :global(.recipient-field) {
-    flex: 1;
-    min-width: 120px;
+  * The chip-bar field now renders through smrt-ui's <Input>. This is a naked,
+  * borderless inline field that sits among the recipient chips, so
+  * `.smrt-recipient-input__body :global(.recipient-field)` pierces the Input child scope to
+  * strip the primitive's border / background / block padding / focus box-shadow
+  * and restore the flush inline look (issue #1589).
+  */
+  .smrt-recipient-input__body :global(.recipient-field) {
     border: none;
     outline: none;
     box-shadow: none;
     font-family: var(--smrt-font-family, system-ui);
     font-size: var(--smrt-typography-body-medium-size);
-    padding: var(--smrt-spacing-1) 0;
     background: transparent;
     color: var(--smrt-color-on-surface);
   }
-
-  .chips-container :global(.recipient-field):focus {
+  .smrt-recipient-input__body :global(.recipient-field):focus {
     border: none;
     box-shadow: none;
   }
 }
+
 </style>
