@@ -169,7 +169,9 @@ describe('setup workflow', () => {
     });
     await tick();
     expect(
-      document.querySelector('.primary-action button')?.textContent?.trim(),
+      document
+        .querySelector('[data-smrt-part="group"] button')
+        ?.textContent?.trim(),
     ).toBe('Isolate head');
     const input =
       document.querySelector<HTMLInputElement>('input[type="file"]');
@@ -183,12 +185,16 @@ describe('setup workflow', () => {
       expect(button('Continue: segment mouth')).toBeTruthy(),
     );
     expect(
-      document.querySelector('.primary-action button')?.textContent?.trim(),
+      document
+        .querySelector('[data-smrt-part="group"] button')
+        ?.textContent?.trim(),
     ).toBe('Continue: segment mouth');
     await click('Continue: segment mouth');
     await vi.waitFor(() => expect(button('Save character')).toBeTruthy());
     expect(
-      document.querySelector('.primary-action button')?.textContent?.trim(),
+      document
+        .querySelector('[data-smrt-part="group"] button')
+        ?.textContent?.trim(),
     ).toBe('Save character');
     expect(document.body.textContent).toContain(
       'Saving adds this character to your gallery.',
@@ -211,7 +217,9 @@ describe('setup workflow', () => {
     await click('Load saved character');
     await vi.waitFor(() => expect(button('Save character')).toBeTruthy());
     expect(
-      document.querySelector('.primary-action button')?.textContent?.trim(),
+      document
+        .querySelector('[data-smrt-part="group"] button')
+        ?.textContent?.trim(),
     ).toBe('Save character');
     expect(document.querySelectorAll('[aria-current="step"]')).toHaveLength(1);
     expect(
