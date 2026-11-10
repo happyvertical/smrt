@@ -118,34 +118,62 @@ export function codemodSource(source) {
   }
 }
 
+/** Count declarations, including those inside an unresolved wrapper/keyframes. */
+export function reportCounts(result) {
+  if (result.todos.some(({ reason }) => /^(Parse\/manual review|Output requires manual review):/.test(reason))) {
+    return { autoPlacedDeclarations: 0, todoDeclarations: 0, unparseable: true };
+  }
+  const ast = parseComponent(result.source);
+  const nodes = [];
+  const declarations = [];
+  walkCss(ast.css, (node, context) => {
+    if (['Declaration', 'Atrule', 'Rule'].includes(node.type)) nodes.push(node);
+    if (node.type === 'Declaration') declarations.push({ node, layer: context.layer });
+  });
+  const unresolved = (ast.css?.comments ?? [])
+    .filter((comment) => result.source.slice(comment.start, comment.end).includes(TODO_MARKER))
+    .map((comment) => nodes.filter((node) => node.start >= comment.end).sort((a, b) => a.start - b.start)[0])
+    .filter(Boolean);
+  const isTodo = (node) => unresolved.some((parent) => node.start >= parent.start && node.end <= parent.end);
+  return {
+    autoPlacedDeclarations: result.changed ? declarations.filter(({ node, layer }) => /^smrt\.(structure|theme)(\.|$)/.test(layer) && !isTodo(node)).length : 0,
+    todoDeclarations: declarations.filter(({ node }) => isTodo(node)).length,
+    unparseable: false,
+  };
+}
+
 export function run(args) {
   let write = false;
   let check = false;
   let report;
+  let reportOnly = false;
   const files = [];
   const packages = [];
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === '--write') write = true;
     else if (arg === '--check') check = true;
-    else if (['--report', '--file', '--package'].includes(arg)) {
+    else if (arg === '--report') {
+      reportOnly = true;
+      if (args[i + 1] && !args[i + 1].startsWith('--')) report = resolve(args[++i]);
+    } else if (['--file', '--package'].includes(arg)) {
       const value = args[++i];
       if (!value || value.startsWith('--')) throw new Error(`Missing value for ${arg}`);
-      if (arg === '--report') report = resolve(value);
-      else if (arg === '--file') files.push(resolve(value));
+      if (arg === '--file') files.push(resolve(value));
       else packages.push(value);
     } else if (!arg.startsWith('-')) files.push(resolve(arg));
     else throw new Error(`Unknown argument: ${arg}`);
   }
   if (write && check) throw new Error('Choose --check or --write');
-  if (!files.length && !packages.length) throw new Error('Select --file PATH or --package NAME explicitly; no implicit repository-wide rewrite');
-  const packageFiles = packages.length ? componentFiles(packages) : [];
+  const repositoryReport = reportOnly && !write && !files.length && !packages.length;
+  if (!files.length && !packages.length && !repositoryReport) throw new Error('Select --file PATH or --package NAME explicitly; no implicit repository-wide rewrite');
+  const packageFiles = packages.length || repositoryReport ? componentFiles(packages) : [];
   const selected = [...new Set([...files, ...packageFiles])].sort();
   if (selected.some((file) => !file.endsWith('.svelte'))) throw new Error('Only .svelte files are supported');
   if (report && selected.includes(report)) throw new Error('Report must not overwrite an input component');
   // Read/parse all inputs before any writes: a bad path cannot partially apply a slice.
   const results = selected.map((file) => ({ file, ...codemodSource(readFileSync(file, 'utf8')) }));
-  const summary = { version: 1, files: results.map(({ file, changed, todos }) => ({ file: relativeFile(file), changed, todos })) };
+  const summary = { version: 1, files: results.map((result) => ({ file: relativeFile(result.file), changed: result.changed, todos: result.todos, ...reportCounts(result) })) };
   for (const result of results) if (write && result.changed) writeFileSync(result.file, result.source);
   if (report) writeFileSync(report, `${JSON.stringify(summary, null, 2)}\n`);
   console.log(JSON.stringify(summary, null, 2));

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { compareRatchet, inspectFiles } from './check-smrt-sort-layers.mjs';
-import { codemodSource } from './codemod-smrt-sort-layers.mjs';
+import { codemodSource, reportCounts } from './codemod-smrt-sort-layers.mjs';
 import { comparePilot, normalizeRecord } from './compare-smrt-sort-pilot.mjs';
 import { declarationRecords, internalClasses, layerViolations, parseComponent, ROOT } from './smrt-sort-layers-lib.mjs';
 
@@ -123,6 +123,14 @@ test('repeated theme blocks, resets, final semicolon omission and comments survi
   assert.deepEqual(declarationRecords(result.source).filter((r) => r.property === 'padding').map((r) => r.value), ['1px', '2px']);
 });
 
+test('report counts declarations inside TODO wrappers and keyframes without guessing parse failures', () => {
+  const result = codemodSource(unsorted('.thing{display:flex;color:red;opacity:.5} @keyframes spin{to{transform:none;width:1px}} @future x{.thing{padding:0;color:blue}}'));
+  assert.deepEqual(reportCounts(result), { autoPlacedDeclarations: 4, todoDeclarations: 3, unparseable: false });
+  assert.deepEqual(reportCounts(codemodSource(result.source)), { autoPlacedDeclarations: 0, todoDeclarations: 3, unparseable: false });
+  assert.deepEqual(reportCounts(codemodSource('<div/><style>.thing{color:</style>')), { autoPlacedDeclarations: 0, todoDeclarations: 0, unparseable: true });
+  assert.deepEqual(reportCounts(codemodSource('<div/>')), { autoPlacedDeclarations: 0, todoDeclarations: 0, unparseable: false });
+});
+
 test('CLI check/write/report are scoped, idempotent, and validate input before mutation', () => {
   const dir = mkdtempSync(join(tmpdir(), 'smrt-sort-test-'));
   const cli = join(ROOT, 'scripts/codemod-smrt-sort-layers.mjs');
@@ -135,6 +143,7 @@ test('CLI check/write/report are scoped, idempotent, and validate input before m
     assert.equal(run(['--check', '--file', file, '--report', report]).status, 1);
     assert.equal(readFileSync(file, 'utf8'), input);
     assert.equal(JSON.parse(readFileSync(report)).files.length, 1);
+    assert.equal(JSON.parse(readFileSync(report)).files[0].autoPlacedDeclarations, 2);
     assert.equal(run(['--write', file, '--file', join(dir, 'Missing.svelte')]).status, 1);
     assert.equal(readFileSync(file, 'utf8'), input);
     assert.equal(run(['--write', file]).status, 0);
@@ -142,7 +151,13 @@ test('CLI check/write/report are scoped, idempotent, and validate input before m
     assert.equal(run(['--write', file]).status, 0);
     assert.equal(readFileSync(file, 'utf8'), output);
     assert.equal(run(['--check', file]).status, 0);
-    for (const args of [[], ['--write'], ['--file'], ['--nope'], ['--check', '--write', file], ['--package', 'missing'], ['--write', file, '--report', file]]) assert.equal(run(args).status, 1);
+    for (const args of [[], ['--write'], ['--write', '--report'], ['--file'], ['--nope'], ['--check', '--write', file], ['--package', 'missing'], ['--write', file, '--report', file]]) assert.equal(run(args).status, 1);
+    const repository = run(['--report']);
+    assert.equal(repository.status, 1); // Pending changes/TODOs remain reportable debt.
+    const inventory = JSON.parse(repository.stdout).files;
+    assert.ok(inventory.some((entry) => entry.file.startsWith('packages/planner/src/')));
+    assert.ok(inventory.some((entry) => entry.file.startsWith('packages/smrt-ui/src/')));
+    assert.equal(readFileSync(file, 'utf8'), output);
     // Read-only package filter includes exactly that package, never rewrites it.
     const scoped = run(['--check', '--package', 'smrt-ui']);
     assert.equal(scoped.status, 1);

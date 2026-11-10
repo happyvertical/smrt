@@ -286,6 +286,8 @@ node scripts/codemod-smrt-sort-layers.mjs --write --file packages/smrt-ui/src/co
 
 Repeat `--file` for a slice, or use `--package smrt-ui` only when the whole package
 is assigned. A selection is required; no arguments never rewrites the repository.
+For a read-only repository inventory, use `--report` with no selection (optionally
+followed by a JSON output path). It never enables a repository-wide `--write`.
 `--check` (also the default) is read-only and exits 1 for pending changes or TODOs.
 `--write` exits 1 when TODOs remain, even after writing the mechanical split.
 A second run leaves the output unchanged and reports the remaining TODO markers.
@@ -301,7 +303,10 @@ preserved; keyframes stay intact in theme with animation, including declarations
 such as `transform` inside them. Forced-colors paint stays in theme.
 
 The JSON report contains each file's TODO line, selector/wrapper path, declaration,
-and reason. `opacity`, `transform`, `transform-origin`, `visibility`, `content`,
+and reason, plus counts of auto-placed and TODO declarations and an `unparseable`
+flag. TODO declaration counts include declarations inside unresolved wrappers;
+unparseable files have zero classified counts. Already sorted files contribute
+zero auto-placed declarations. `opacity`, `transform`, `transform-origin`, `visibility`, `content`,
 and `pointer-events` need role review; the codemod conservatively reports all
 `pointer-events`, including hit areas. Custom properties such as
 `--smrt-checkbox-hit` need consumer review. Unknown properties, unsupported

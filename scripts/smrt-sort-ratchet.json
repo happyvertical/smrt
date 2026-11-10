@@ -27,7 +27,7 @@
     },
     "packages/agents/src/svelte/components/AgentSettingsForm.svelte": {
       "unsorted": true,
-      "internalClasses": 4
+      "internalClasses": 3
     },
     "packages/agents/src/svelte/components/AgentSettingsShell.svelte": {
       "unsorted": true,
@@ -56,6 +56,62 @@
     "packages/analytics/src/svelte/TrendBadge.svelte": {
       "unsorted": true,
       "internalClasses": 6
+    },
+    "packages/app-shell/src/lib/assistant/AssistantDock.svelte": {
+      "unsorted": true,
+      "internalClasses": 25
+    },
+    "packages/app-shell/src/lib/components/ApprovalCard.svelte": {
+      "unsorted": true,
+      "internalClasses": 11
+    },
+    "packages/app-shell/src/lib/components/ConfirmDialog.svelte": {
+      "unsorted": false,
+      "internalClasses": 5
+    },
+    "packages/app-shell/src/lib/components/FieldInput.svelte": {
+      "unsorted": true,
+      "internalClasses": 7
+    },
+    "packages/app-shell/src/lib/components/MethodRunner.svelte": {
+      "unsorted": true,
+      "internalClasses": 10
+    },
+    "packages/app-shell/src/lib/components/RecordForm.svelte": {
+      "unsorted": false,
+      "internalClasses": 9
+    },
+    "packages/app-shell/src/lib/components/RecordList.svelte": {
+      "unsorted": true,
+      "internalClasses": 14
+    },
+    "packages/app-shell/src/routes/+layout.svelte": {
+      "unsorted": true,
+      "internalClasses": 2
+    },
+    "packages/app-shell/src/routes/+page.svelte": {
+      "unsorted": true,
+      "internalClasses": 14
+    },
+    "packages/app-shell/src/routes/approvals/+page.svelte": {
+      "unsorted": true,
+      "internalClasses": 7
+    },
+    "packages/app-shell/src/routes/history/+page.svelte": {
+      "unsorted": true,
+      "internalClasses": 16
+    },
+    "packages/app-shell/src/routes/m/[model]/[id]/+page.svelte": {
+      "unsorted": false,
+      "internalClasses": 3
+    },
+    "packages/app-shell/src/routes/m/[model]/+page.svelte": {
+      "unsorted": false,
+      "internalClasses": 5
+    },
+    "packages/app-shell/src/routes/m/[model]/new/+page.svelte": {
+      "unsorted": false,
+      "internalClasses": 2
     },
     "packages/assets/src/svelte/ActionBar.svelte": {
       "unsorted": true,
@@ -167,7 +223,11 @@
     },
     "packages/chat/src/svelte/components/assistant/AssistantDock.svelte": {
       "unsorted": true,
-      "internalClasses": 35
+      "internalClasses": 38
+    },
+    "packages/chat/src/svelte/components/assistant/AssistantQuestionForm.svelte": {
+      "unsorted": true,
+      "internalClasses": 5
     },
     "packages/chat/src/svelte/components/assistant/AssistantThreadList.svelte": {
       "unsorted": true,
@@ -233,6 +293,10 @@
       "unsorted": true,
       "internalClasses": 8
     },
+    "packages/chat/src/svelte/components/shared/AiUnavailableNotice.svelte": {
+      "unsorted": true,
+      "internalClasses": 2
+    },
     "packages/chat/src/svelte/components/shared/FileUpload.svelte": {
       "unsorted": true,
       "internalClasses": 18
@@ -269,6 +333,10 @@
       "unsorted": true,
       "internalClasses": 11
     },
+    "packages/comments/src/svelte/ModerationQueue.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
     "packages/comments/src/svelte/RecordComments.svelte": {
       "unsorted": true,
       "internalClasses": 1
@@ -297,21 +365,17 @@
       "unsorted": true,
       "internalClasses": 15
     },
-    "packages/commerce/src/svelte/components/InvoiceEditor.svelte": {
-      "unsorted": true,
-      "internalClasses": 4
-    },
     "packages/commerce/src/svelte/components/InvoiceHeader.svelte": {
       "unsorted": true,
       "internalClasses": 13
     },
-    "packages/commerce/src/svelte/components/InvoiceLineEditor.svelte": {
-      "unsorted": true,
-      "internalClasses": 2
-    },
     "packages/commerce/src/svelte/components/InvoiceLineItems.svelte": {
       "unsorted": true,
       "internalClasses": 17
+    },
+    "packages/commerce/src/svelte/components/InvoiceRecordScreen.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
     },
     "packages/commerce/src/svelte/components/InvoiceReview.svelte": {
       "unsorted": true,
@@ -319,7 +383,11 @@
     },
     "packages/commerce/src/svelte/components/InvoiceTotals.svelte": {
       "unsorted": true,
-      "internalClasses": 11
+      "internalClasses": 9
+    },
+    "packages/commerce/src/svelte/components/MoneyInvoiceEditor.svelte": {
+      "unsorted": true,
+      "internalClasses": 7
     },
     "packages/commerce/src/svelte/components/PartyAddressFields.svelte": {
       "unsorted": true,
@@ -665,21 +733,57 @@
       "unsorted": true,
       "internalClasses": 12
     },
+    "packages/inference/src/svelte/components/InferenceAliasEditor.svelte": {
+      "unsorted": true,
+      "internalClasses": 7
+    },
+    "packages/inference/src/svelte/components/InferenceDefaultView.svelte": {
+      "unsorted": true,
+      "internalClasses": 12
+    },
+    "packages/inference/src/svelte/components/InferenceFusionList.svelte": {
+      "unsorted": true,
+      "internalClasses": 6
+    },
+    "packages/inference/src/svelte/components/InferenceSettingsPanel.svelte": {
+      "unsorted": true,
+      "internalClasses": 10
+    },
+    "packages/inference/src/svelte/components/InferenceTierRow.svelte": {
+      "unsorted": true,
+      "internalClasses": 9
+    },
+    "packages/inference/src/svelte/components/InferenceTranscriptSettings.svelte": {
+      "unsorted": true,
+      "internalClasses": 4
+    },
+    "packages/inference/src/svelte/components/InferenceUsageTable.svelte": {
+      "unsorted": true,
+      "internalClasses": 4
+    },
     "packages/ingestion/src/svelte/components/ActionReview.svelte": {
       "unsorted": true,
-      "internalClasses": 1
+      "internalClasses": 2
+    },
+    "packages/ingestion/src/svelte/components/ArgumentFields.svelte": {
+      "unsorted": true,
+      "internalClasses": 3
     },
     "packages/ingestion/src/svelte/components/EvidenceViewer.svelte": {
       "unsorted": true,
-      "internalClasses": 0
+      "internalClasses": 1
     },
     "packages/ingestion/src/svelte/components/InboxView.svelte": {
       "unsorted": true,
-      "internalClasses": 1
+      "internalClasses": 4
     },
     "packages/ingestion/src/svelte/components/ReviewView.svelte": {
       "unsorted": true,
-      "internalClasses": 2
+      "internalClasses": 5
+    },
+    "packages/ingestion/src/svelte/components/TriageView.svelte": {
+      "unsorted": true,
+      "internalClasses": 7
     },
     "packages/jobs/src/svelte/components/JobActions.svelte": {
       "unsorted": true,
@@ -849,6 +953,218 @@
       "unsorted": true,
       "internalClasses": 11
     },
+    "packages/planner/src/lib/components/AdvancedStyles.svelte": {
+      "unsorted": true,
+      "internalClasses": 12
+    },
+    "packages/planner/src/lib/components/AiModelsPage.svelte": {
+      "unsorted": true,
+      "internalClasses": 3
+    },
+    "packages/planner/src/lib/components/AiSetup.svelte": {
+      "unsorted": true,
+      "internalClasses": 11
+    },
+    "packages/planner/src/lib/components/AiStatusIcons.svelte": {
+      "unsorted": true,
+      "internalClasses": 2
+    },
+    "packages/planner/src/lib/components/AppSettings.svelte": {
+      "unsorted": true,
+      "internalClasses": 9
+    },
+    "packages/planner/src/lib/components/BrowserAssistant.svelte": {
+      "unsorted": true,
+      "internalClasses": 11
+    },
+    "packages/planner/src/lib/components/ChildRecords.svelte": {
+      "unsorted": true,
+      "internalClasses": 12
+    },
+    "packages/planner/src/lib/components/ConnectTools.svelte": {
+      "unsorted": true,
+      "internalClasses": 4
+    },
+    "packages/planner/src/lib/components/CookbooksPanel.svelte": {
+      "unsorted": true,
+      "internalClasses": 16
+    },
+    "packages/planner/src/lib/components/ExportPanel.svelte": {
+      "unsorted": true,
+      "internalClasses": 15
+    },
+    "packages/planner/src/lib/components/FeatureCard.svelte": {
+      "unsorted": true,
+      "internalClasses": 11
+    },
+    "packages/planner/src/lib/components/FeaturesPanel.svelte": {
+      "unsorted": true,
+      "internalClasses": 6
+    },
+    "packages/planner/src/lib/components/FieldInput.svelte": {
+      "unsorted": true,
+      "internalClasses": 4
+    },
+    "packages/planner/src/lib/components/FieldMapForm.svelte": {
+      "unsorted": true,
+      "internalClasses": 4
+    },
+    "packages/planner/src/lib/components/FormWorkspace.svelte": {
+      "unsorted": true,
+      "internalClasses": 8
+    },
+    "packages/planner/src/lib/components/HeaderIconLink.svelte": {
+      "unsorted": true,
+      "internalClasses": 3
+    },
+    "packages/planner/src/lib/components/HelpView.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/planner/src/lib/components/ModelOptions.svelte": {
+      "unsorted": true,
+      "internalClasses": 10
+    },
+    "packages/planner/src/lib/components/ModelPage.svelte": {
+      "unsorted": true,
+      "internalClasses": 2
+    },
+    "packages/planner/src/lib/components/ModelWorkspace.svelte": {
+      "unsorted": true,
+      "internalClasses": 14
+    },
+    "packages/planner/src/lib/components/PackagePage.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/planner/src/lib/components/PlannerReports.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/planner/src/lib/components/ProductMedia.svelte": {
+      "unsorted": true,
+      "internalClasses": 4
+    },
+    "packages/planner/src/lib/components/ProjectControls.svelte": {
+      "unsorted": true,
+      "internalClasses": 3
+    },
+    "packages/planner/src/lib/components/RecipeCards.svelte": {
+      "unsorted": true,
+      "internalClasses": 6
+    },
+    "packages/planner/src/lib/components/RecipeHelp.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/planner/src/lib/components/RecipeOptions.svelte": {
+      "unsorted": true,
+      "internalClasses": 6
+    },
+    "packages/planner/src/lib/components/RecordFeatures.svelte": {
+      "unsorted": true,
+      "internalClasses": 14
+    },
+    "packages/planner/src/lib/components/RecordView.svelte": {
+      "unsorted": true,
+      "internalClasses": 2
+    },
+    "packages/planner/src/lib/components/RelationField.svelte": {
+      "unsorted": true,
+      "internalClasses": 2
+    },
+    "packages/planner/src/lib/components/SectionActions.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/planner/src/lib/components/SectionHeading.svelte": {
+      "unsorted": true,
+      "internalClasses": 3
+    },
+    "packages/planner/src/lib/components/SectionIcons.svelte": {
+      "unsorted": true,
+      "internalClasses": 2
+    },
+    "packages/planner/src/lib/components/SectionOverview.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/planner/src/lib/components/SectionPage.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/planner/src/lib/components/SectionView.svelte": {
+      "unsorted": true,
+      "internalClasses": 2
+    },
+    "packages/planner/src/lib/components/SettingsPanel.svelte": {
+      "unsorted": true,
+      "internalClasses": 2
+    },
+    "packages/planner/src/lib/components/SpecsPanel.svelte": {
+      "unsorted": true,
+      "internalClasses": 3
+    },
+    "packages/planner/src/lib/components/ThemeSection.svelte": {
+      "unsorted": true,
+      "internalClasses": 25
+    },
+    "packages/planner/src/lib/components/VariantGridForm.svelte": {
+      "unsorted": true,
+      "internalClasses": 9
+    },
+    "packages/planner/src/lib/components/VoiceTyping.svelte": {
+      "unsorted": true,
+      "internalClasses": 5
+    },
+    "packages/planner/src/lib/kitchen/LiveKitchenBridge.svelte": {
+      "unsorted": true,
+      "internalClasses": 4
+    },
+    "packages/planner/src/lib/planner/host/HostPlanner.svelte": {
+      "unsorted": true,
+      "internalClasses": 0
+    },
+    "packages/planner/src/lib/planner/Planner.svelte": {
+      "unsorted": true,
+      "internalClasses": 2
+    },
+    "packages/planner/src/lib/planner/PlannerControls.svelte": {
+      "unsorted": true,
+      "internalClasses": 3
+    },
+    "packages/planner/src/lib/planner/PlannerHostAction.svelte": {
+      "unsorted": true,
+      "internalClasses": 2
+    },
+    "packages/planner/src/routes/+layout.svelte": {
+      "unsorted": true,
+      "internalClasses": 2
+    },
+    "packages/planner/src/routes/+page.svelte": {
+      "unsorted": true,
+      "internalClasses": 3
+    },
+    "packages/planner/src/routes/advanced-styles/+page.svelte": {
+      "unsorted": true,
+      "internalClasses": 0
+    },
+    "packages/planner/src/routes/ai/+page.svelte": {
+      "unsorted": true,
+      "internalClasses": 0
+    },
+    "packages/planner/src/routes/packages/+page.svelte": {
+      "unsorted": true,
+      "internalClasses": 11
+    },
+    "packages/planner/src/routes/recipes/[id]/+page.svelte": {
+      "unsorted": true,
+      "internalClasses": 2
+    },
+    "packages/planner/src/routes/recipes/[id]/help/+page.svelte": {
+      "unsorted": true,
+      "internalClasses": 2
+    },
     "packages/products/src/app/App.svelte": {
       "unsorted": true,
       "internalClasses": 2
@@ -945,6 +1261,14 @@
       "unsorted": true,
       "internalClasses": 0
     },
+    "packages/projects/src/svelte/ProjectInterview.svelte": {
+      "unsorted": true,
+      "internalClasses": 9
+    },
+    "packages/projects/src/svelte/ProjectQuestionsAndDecisions.svelte": {
+      "unsorted": true,
+      "internalClasses": 9
+    },
     "packages/projects/src/svelte/ServiceEvidenceList.svelte": {
       "unsorted": true,
       "internalClasses": 1
@@ -952,6 +1276,34 @@
     "packages/prompts/src/svelte/components/PromptSettingsPanel.svelte": {
       "unsorted": true,
       "internalClasses": 17
+    },
+    "packages/reports/src/svelte/ReportConfirmation.svelte": {
+      "unsorted": true,
+      "internalClasses": 5
+    },
+    "packages/reports/src/svelte/ReportDetail.svelte": {
+      "unsorted": true,
+      "internalClasses": 15
+    },
+    "packages/reports/src/svelte/ReportPicker.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/reports/src/svelte/ReportResult.svelte": {
+      "unsorted": true,
+      "internalClasses": 12
+    },
+    "packages/reports/src/svelte/RuntimeReportWidgetOptions.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/reports/src/svelte/SavedReportCard.svelte": {
+      "unsorted": true,
+      "internalClasses": 13
+    },
+    "packages/reports/src/svelte/SavedReports.svelte": {
+      "unsorted": true,
+      "internalClasses": 10
     },
     "packages/sales/src/svelte/components/AttributionConflictQueue.svelte": {
       "unsorted": true,
@@ -1035,13 +1387,17 @@
     },
     "packages/smrt-svelte/src/components/app/AppShell.svelte": {
       "unsorted": true,
-      "internalClasses": 7
+      "internalClasses": 6
     },
     "packages/smrt-svelte/src/components/app/DockToggles.svelte": {
       "unsorted": true,
       "internalClasses": 2
     },
     "packages/smrt-svelte/src/components/app/OwnerSetupForm.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/smrt-svelte/src/components/app/ShellColorSchemeToggle.svelte": {
       "unsorted": true,
       "internalClasses": 1
     },
@@ -1169,9 +1525,9 @@
       "unsorted": true,
       "internalClasses": 0
     },
-    "packages/smrt-svelte/src/components/overview/widgets/ChartWidget.svelte": {
+    "packages/smrt-svelte/src/components/overview/widgets/LineItemsWidget.svelte": {
       "unsorted": true,
-      "internalClasses": 4
+      "internalClasses": 1
     },
     "packages/smrt-svelte/src/components/overview/widgets/MetricWidget.svelte": {
       "unsorted": true,
@@ -1185,13 +1541,21 @@
       "unsorted": true,
       "internalClasses": 1
     },
+    "packages/smrt-svelte/src/components/overview/widgets/RecordTable.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/smrt-svelte/src/components/overview/widgets/RelatedWidget.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
     "packages/smrt-svelte/src/components/overview/widgets/ShortcutsWidget.svelte": {
       "unsorted": true,
       "internalClasses": 1
     },
     "packages/smrt-svelte/src/components/screens/DetailScreen.svelte": {
       "unsorted": true,
-      "internalClasses": 1
+      "internalClasses": 2
     },
     "packages/smrt-svelte/src/components/screens/EditForm.svelte": {
       "unsorted": true,
@@ -1204,6 +1568,14 @@
     "packages/smrt-svelte/src/components/screens/RecipeScreens.svelte": {
       "unsorted": false,
       "internalClasses": 1
+    },
+    "packages/smrt-svelte/src/components/screens/RecordHeader.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
+    "packages/smrt-svelte/src/components/screens/RecordScreen.svelte": {
+      "unsorted": true,
+      "internalClasses": 2
     },
     "packages/smrt-svelte/src/components/settings/SettingsCatalog.svelte": {
       "unsorted": true,
@@ -1333,6 +1705,10 @@
       "unsorted": true,
       "internalClasses": 1
     },
+    "packages/smrt-ui/src/charts/Chart.svelte": {
+      "unsorted": true,
+      "internalClasses": 5
+    },
     "packages/smrt-ui/src/components/calendar/Calendar.svelte": {
       "unsorted": true,
       "internalClasses": 21
@@ -1389,13 +1765,17 @@
       "unsorted": true,
       "internalClasses": 2
     },
+    "packages/smrt-ui/src/components/display/DocumentViewer.svelte": {
+      "unsorted": true,
+      "internalClasses": 9
+    },
     "packages/smrt-ui/src/components/display/Icon.svelte": {
       "unsorted": true,
       "internalClasses": 0
     },
     "packages/smrt-ui/src/components/display/StatusBadge.svelte": {
       "unsorted": true,
-      "internalClasses": 4
+      "internalClasses": 5
     },
     "packages/smrt-ui/src/components/feedback/ConfirmDialog.svelte": {
       "unsorted": true,
@@ -1497,6 +1877,10 @@
       "unsorted": true,
       "internalClasses": 4
     },
+    "packages/smrt-ui/src/components/forms/NumericKeypad.svelte": {
+      "unsorted": true,
+      "internalClasses": 13
+    },
     "packages/smrt-ui/src/components/forms/Radio.svelte": {
       "unsorted": true,
       "internalClasses": 4
@@ -1561,6 +1945,10 @@
       "unsorted": true,
       "internalClasses": 6
     },
+    "packages/smrt-ui/src/components/layout/DescriptionList.svelte": {
+      "unsorted": true,
+      "internalClasses": 1
+    },
     "packages/smrt-ui/src/components/layout/EmptyState.svelte": {
       "unsorted": true,
       "internalClasses": 7
@@ -1588,6 +1976,10 @@
     "packages/smrt-ui/src/components/layout/PageLayout.svelte": {
       "unsorted": true,
       "internalClasses": 4
+    },
+    "packages/smrt-ui/src/components/layout/Stack.svelte": {
+      "unsorted": true,
+      "internalClasses": 9
     },
     "packages/smrt-ui/src/components/layout/SummaryCard.svelte": {
       "unsorted": true,
@@ -1704,6 +2096,10 @@
     "packages/smrt-ui/src/svelte/playground/StylelessPreview.svelte": {
       "unsorted": true,
       "internalClasses": 6
+    },
+    "packages/smrt-ui/src/svelte/playground/TouchToolsPreview.svelte": {
+      "unsorted": true,
+      "internalClasses": 3
     },
     "packages/smrt-ui/src/theme/ThemeProvider.svelte": {
       "unsorted": true,
