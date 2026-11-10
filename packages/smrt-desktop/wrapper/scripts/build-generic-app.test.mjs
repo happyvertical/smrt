@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -78,6 +78,36 @@ test('--out containment is lexical on real paths', () => {
   assert.equal(isInside('/repo', '/repo/out'), true);
   assert.equal(isInside('/repo', '/repository'), false);
   assert.equal(isInside('/repo', '/tmp/out'), false);
+});
+
+test('the generic app bundles without the AI provider SDKs and starts', () => {
+  // @happyvertical/ai >= 0.111.9 loads openai, @anthropic-ai/sdk and
+  // @google/genai only when a provider is created, and smrt-inference reads
+  // its constants from `@happyvertical/ai/types`, so the default bundle can
+  // drop the SDKs. Enabling `ai-providers` would put them back (about 9 MiB)
+  // and a static value import of the `@happyvertical/ai` root in inference
+  // would make a bundle without them crash at start.
+  const read = (...parts) => readFileSync(join(root, ...parts), 'utf8');
+  const config = JSON.parse(
+    read('packages', 'smrt-desktop', 'examples', 'generic-app', 'smrt-desktop.json'),
+  );
+  assert.ok(!(config.features?.default ?? []).includes('ai-providers'));
+  const inference = join(root, 'packages', 'inference', 'src');
+  const stack = [inference];
+  while (stack.length > 0) {
+    const dir = stack.pop();
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) stack.push(path);
+      else if (/\.ts$/.test(entry.name) && !/\.(test|spec)\.ts$/.test(entry.name)) {
+        const staticValueImport =
+          /^import\s+(?!type\b)[^;]*?from\s+'@happyvertical\/ai';/ms.test(
+            readFileSync(path, 'utf8'),
+          );
+        assert.equal(staticValueImport, false, `${path} imports the @happyvertical/ai root`);
+      }
+    }
+  }
 });
 
 test('backdating changes only the publish times', () => {

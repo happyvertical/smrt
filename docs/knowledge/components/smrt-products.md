@@ -5,10 +5,10 @@ description: "SMRT products module: triple-purpose microservice template for sta
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T15:48:19Z"
+  at: "2026-11-10T01:08:46Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:9b43bb99d225c8b957b59a12fc67e8d9d7bc307ea1b26d3d5506d1895eb3c423"
+source_revision: "sha256:afb10309ba6a400ea1c391c68402ecacfaba28c0444dfd38b20447dc7e9853a2"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/products/package.json"
@@ -27,7 +27,7 @@ sources:
 
 - Directory: `packages/products`
 - Private: no
-- Object source: `domain-artifact`
+- Object source: `scanner`
 - Evidence level: `source-inspected`
 
 ## Documentation
@@ -70,27 +70,22 @@ sources:
 ## Models
 
 - `Category` (collection `categories`, extends `SmrtObject`, STI table)
-- `CategoryCollection` (collection `categories`, extends `SmrtCollection`)
-- `Material` (collection `products`, extends `Product`, STI table)
-- `MaterialCollection` (collection `products`, extends `ProductCollection`)
+- `Material` (collection `materials`, extends `Product`)
 - `Product` (collection `products`, extends `SmrtObject`, STI table)
 - `ProductAsset` (collection `productassets`, extends `SmrtObject`)
-- `ProductAssetCollection` (collection `productassets`, extends `SmrtJunction`)
-- `ProductCollection` (collection `products`, extends `SmrtCollection`)
+- `ProductAssetCollection` (collection `productassetcollections`, extends `SmrtJunction`)
 - `ProductVariant` (collection `productvariants`, extends `SmrtObject`)
-- `ProductVariantCollection` (collection `productvariants`, extends `SmrtCollection`)
 - `Sku` (collection `skus`, extends `SmrtObject`)
-- `SkuCollection` (collection `skus`, extends `SmrtCollection`)
 
 ## MCP tools
 
-- `category_get`: get on `@happyvertical/smrt-products:Category`
-- `category_list`: list on `@happyvertical/smrt-products:Category`
-- `material_get`: get on `@happyvertical/smrt-products:Material`
-- `material_list`: list on `@happyvertical/smrt-products:Material`
-- `product_get`: get on `@happyvertical/smrt-products:Product`
-- `product_list`: list on `@happyvertical/smrt-products:Product`
-- `productvariant_get`: get on `@happyvertical/smrt-products:ProductVariant`
-- `productvariant_list`: list on `@happyvertical/smrt-products:ProductVariant`
-- `sku_get`: get on `@happyvertical/smrt-products:Sku`
-- `sku_list`: list on `@happyvertical/smrt-products:Sku`
+- `get_categories`: get on `@happyvertical/smrt-products:Category`
+- `get_materials`: get on `@happyvertical/smrt-products:Material`
+- `get_products`: get on `@happyvertical/smrt-products:Product`
+- `get_productvariants`: get on `@happyvertical/smrt-products:ProductVariant`
+- `get_skus`: get on `@happyvertical/smrt-products:Sku`
+- `list_categories`: list on `@happyvertical/smrt-products:Category`
+- `list_materials`: list on `@happyvertical/smrt-products:Material`
+- `list_products`: list on `@happyvertical/smrt-products:Product`
+- `list_productvariants`: list on `@happyvertical/smrt-products:ProductVariant`
+- `list_skus`: list on `@happyvertical/smrt-products:Sku`

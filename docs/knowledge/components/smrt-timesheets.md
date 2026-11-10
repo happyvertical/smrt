@@ -5,10 +5,10 @@ description: "Shared time entries for the SMRT framework: who worked how long on
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T15:48:19Z"
+  at: "2026-11-10T01:08:46Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:33b3f89bd3d41c7ae0d84d09b08b8d3566ab274ea8138882f952ac2ae402ef8e"
+source_revision: "sha256:cca831c121e9d971aca792f7ac52b9dbe8e648807e0d846c75ca2d16d61aba3c"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/timesheets/package.json"
@@ -27,7 +27,7 @@ sources:
 
 - Directory: `packages/timesheets`
 - Private: no
-- Object source: `domain-artifact`
+- Object source: `scanner`
 - Evidence level: `source-inspected`
 
 ## Documentation
@@ -61,41 +61,39 @@ sources:
 ## Models
 
 - `AttendanceBreak` (collection `attendancebreaks`, extends `SmrtObject`)
-- `AttendanceBreakCollection` (collection `attendancebreaks`, extends `SmrtCollection`)
 - `AttendanceCorrection` (collection `attendancecorrections`, extends `SmrtObject`)
-- `AttendanceCorrectionCollection` (collection `attendancecorrections`, extends `SmrtCollection`)
 - `AttendancePunch` (collection `attendancepunches`, extends `SmrtObject`)
-- `AttendancePunchCollection` (collection `attendancepunches`, extends `SmrtCollection`)
 - `AttendanceReplay` (collection `attendancereplays`, extends `SmrtObject`)
-- `AttendanceReplayCollection` (collection `attendancereplays`, extends `SmrtCollection`)
 - `AttendanceSegment` (collection `attendancesegments`, extends `SmrtObject`)
-- `AttendanceSegmentCollection` (collection `attendancesegments`, extends `SmrtCollection`)
 - `PeriodTimecard` (collection `periodtimecards`, extends `SmrtObject`)
-- `PeriodTimecardCollection` (collection `periodtimecards`, extends `SmrtCollection`)
 - `ServiceChargeSnapshot` (collection `servicechargesnapshots`, extends `SmrtObject`)
-- `ServiceChargeSnapshotCollection` (collection `servicechargesnapshots`, extends `SmrtCollection`)
+- `ServiceChargeSnapshotCollection` (collection `servicechargesnapshotcollections`, extends `SmrtCollection`)
 - `ServiceCompensationSnapshot` (collection `servicecompensationsnapshots`, extends `SmrtObject`)
-- `ServiceCompensationSnapshotCollection` (collection `servicecompensationsnapshots`, extends `SmrtCollection`)
+- `ServiceCompensationSnapshotCollection` (collection `servicecompensationsnapshotcollections`, extends `SmrtCollection`)
 - `ServiceTimeEntry` (collection `servicetimeentries`, extends `SmrtObject`)
-- `ServiceTimeEntryCollection` (collection `servicetimeentries`, extends `SmrtCollection`)
+- `ServiceTimeEntryCollection` (collection `servicetimeentrycollections`, extends `SmrtCollection`)
 - `TimecardAdjustment` (collection `timecardadjustments`, extends `SmrtObject`)
-- `TimecardAdjustmentCollection` (collection `timecardadjustments`, extends `SmrtCollection`)
 - `TimecardReopening` (collection `timecardreopenings`, extends `SmrtObject`)
-- `TimecardReopeningCollection` (collection `timecardreopenings`, extends `SmrtCollection`)
 
 ## MCP tools
 
-- `attendancebreak_get`: get on `@happyvertical/smrt-timesheets:AttendanceBreak`
-- `attendancebreak_list`: list on `@happyvertical/smrt-timesheets:AttendanceBreak`
-- `attendancepunch_get`: get on `@happyvertical/smrt-timesheets:AttendancePunch`
-- `attendancepunch_list`: list on `@happyvertical/smrt-timesheets:AttendancePunch`
-- `attendancesegment_get`: get on `@happyvertical/smrt-timesheets:AttendanceSegment`
-- `attendancesegment_list`: list on `@happyvertical/smrt-timesheets:AttendanceSegment`
-- `servicechargesnapshot_get`: get on `@happyvertical/smrt-timesheets:ServiceChargeSnapshot`
-- `servicechargesnapshot_list`: list on `@happyvertical/smrt-timesheets:ServiceChargeSnapshot`
-- `servicecompensationsnapshot_get`: get on `@happyvertical/smrt-timesheets:ServiceCompensationSnapshot`
-- `servicecompensationsnapshot_list`: list on `@happyvertical/smrt-timesheets:ServiceCompensationSnapshot`
-- `servicetimeentry_get`: get on `@happyvertical/smrt-timesheets:ServiceTimeEntry`
-- `servicetimeentry_list`: list on `@happyvertical/smrt-timesheets:ServiceTimeEntry`
-- `servicetimeentrycollection_forwork`: forWork on `@happyvertical/smrt-timesheets:ServiceTimeEntryCollection`
-- `servicetimeentrycollection_pendingapproval`: pendingApproval on `@happyvertical/smrt-timesheets:ServiceTimeEntryCollection`
+- `forWork_servicetimeentrycollections`: forWork on `@happyvertical/smrt-timesheets:ServiceTimeEntryCollection`
+- `get_attendancebreaks`: get on `@happyvertical/smrt-timesheets:AttendanceBreak`
+- `get_attendancepunches`: get on `@happyvertical/smrt-timesheets:AttendancePunch`
+- `get_attendancesegments`: get on `@happyvertical/smrt-timesheets:AttendanceSegment`
+- `get_servicechargesnapshotcollections`: get on `@happyvertical/smrt-timesheets:ServiceChargeSnapshotCollection`
+- `get_servicechargesnapshots`: get on `@happyvertical/smrt-timesheets:ServiceChargeSnapshot`
+- `get_servicecompensationsnapshotcollections`: get on `@happyvertical/smrt-timesheets:ServiceCompensationSnapshotCollection`
+- `get_servicecompensationsnapshots`: get on `@happyvertical/smrt-timesheets:ServiceCompensationSnapshot`
+- `get_servicetimeentries`: get on `@happyvertical/smrt-timesheets:ServiceTimeEntry`
+- `get_servicetimeentrycollections`: get on `@happyvertical/smrt-timesheets:ServiceTimeEntryCollection`
+- `list_attendancebreaks`: list on `@happyvertical/smrt-timesheets:AttendanceBreak`
+- `list_attendancepunches`: list on `@happyvertical/smrt-timesheets:AttendancePunch`
+- `list_attendancesegments`: list on `@happyvertical/smrt-timesheets:AttendanceSegment`
+- `list_servicechargesnapshotcollections`: list on `@happyvertical/smrt-timesheets:ServiceChargeSnapshotCollection`
+- `list_servicechargesnapshots`: list on `@happyvertical/smrt-timesheets:ServiceChargeSnapshot`
+- `list_servicecompensationsnapshotcollections`: list on `@happyvertical/smrt-timesheets:ServiceCompensationSnapshotCollection`
+- `list_servicecompensationsnapshots`: list on `@happyvertical/smrt-timesheets:ServiceCompensationSnapshot`
+- `list_servicetimeentries`: list on `@happyvertical/smrt-timesheets:ServiceTimeEntry`
+- `list_servicetimeentrycollections`: list on `@happyvertical/smrt-timesheets:ServiceTimeEntryCollection`
+- `pendingApproval_servicetimeentrycollections`: pendingApproval on `@happyvertical/smrt-timesheets:ServiceTimeEntryCollection`

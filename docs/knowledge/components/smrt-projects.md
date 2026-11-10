@@ -5,10 +5,10 @@ description: "Provider-agnostic project management models (Issues, PRs, Reposito
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-08T08:47:12Z"
+  at: "2026-11-10T01:08:46Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:3c3f6e7c9598dff5acd83fc510964b36247e17531480cd38de863c958db84ed6"
+source_revision: "sha256:d72d930ea9d4fc7228776c63de45f43f6fa6b34d3ae4c16fcfa0d8f12019973d"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/projects/package.json"
@@ -24,7 +24,7 @@ sources:
 
 - Directory: `packages/projects`
 - Private: no
-- Object source: `domain-artifact`
+- Object source: `manifest`
 - Evidence level: `source-inspected`
 
 ## Documentation
@@ -105,27 +105,39 @@ sources:
 
 ## MCP tools
 
-- `comment_get`: get on `@happyvertical/smrt-projects:Comment`
-- `comment_list`: list on `@happyvertical/smrt-projects:Comment`
-- `issue_get`: get on `@happyvertical/smrt-projects:Issue`
-- `issue_incorporatefeedback`: incorporateFeedback on `@happyvertical/smrt-projects:Issue`
-- `issue_list`: list on `@happyvertical/smrt-projects:Issue`
-- `issue_sync`: sync on `@happyvertical/smrt-projects:Issue`
-- `label_create`: create on `@happyvertical/smrt-projects:Label`
-- `label_get`: get on `@happyvertical/smrt-projects:Label`
-- `label_list`: list on `@happyvertical/smrt-projects:Label`
-- `project_additem`: addItem on `@happyvertical/smrt-projects:Project`
-- `project_get`: get on `@happyvertical/smrt-projects:Project`
-- `project_list`: list on `@happyvertical/smrt-projects:Project`
-- `project_sync`: sync on `@happyvertical/smrt-projects:Project`
-- `project_updateitemstatus`: updateItemStatus on `@happyvertical/smrt-projects:Project`
-- `projectintegration_get`: get on `@happyvertical/smrt-projects:ProjectIntegration`
-- `projectintegration_list`: list on `@happyvertical/smrt-projects:ProjectIntegration`
-- `pullrequest_get`: get on `@happyvertical/smrt-projects:PullRequest`
-- `pullrequest_list`: list on `@happyvertical/smrt-projects:PullRequest`
-- `pullrequest_merge`: merge on `@happyvertical/smrt-projects:PullRequest`
-- `pullrequest_summarize`: summarize on `@happyvertical/smrt-projects:PullRequest`
-- `pullrequest_sync`: sync on `@happyvertical/smrt-projects:PullRequest`
-- `repository_get`: get on `@happyvertical/smrt-projects:Repository`
-- `repository_list`: list on `@happyvertical/smrt-projects:Repository`
-- `repository_sync`: sync on `@happyvertical/smrt-projects:Repository`
+- `addItem_projects`: addItem on `@happyvertical/smrt-projects:Project`
+- `create_labels`: create on `@happyvertical/smrt-projects:Label`
+- `get_comments`: get on `@happyvertical/smrt-projects:Comment`
+- `get_comments`: get on `@happyvertical/smrt-projects:CommentCollection`
+- `get_issues`: get on `@happyvertical/smrt-projects:Issue`
+- `get_issues`: get on `@happyvertical/smrt-projects:IssueCollection`
+- `get_issues`: get on `@happyvertical/smrt-projects:PullRequest`
+- `get_issues`: get on `@happyvertical/smrt-projects:PullRequestCollection`
+- `get_labels`: get on `@happyvertical/smrt-projects:Label`
+- `get_projectintegrations`: get on `@happyvertical/smrt-projects:ProjectIntegration`
+- `get_projectintegrations`: get on `@happyvertical/smrt-projects:ProjectIntegrationCollection`
+- `get_projects`: get on `@happyvertical/smrt-projects:Project`
+- `get_projects`: get on `@happyvertical/smrt-projects:ProjectCollection`
+- `get_repositories`: get on `@happyvertical/smrt-projects:Repository`
+- `get_repositories`: get on `@happyvertical/smrt-projects:RepositoryCollection`
+- `incorporateFeedback_issues`: incorporateFeedback on `@happyvertical/smrt-projects:Issue`
+- `list_comments`: list on `@happyvertical/smrt-projects:Comment`
+- `list_comments`: list on `@happyvertical/smrt-projects:CommentCollection`
+- `list_issues`: list on `@happyvertical/smrt-projects:Issue`
+- `list_issues`: list on `@happyvertical/smrt-projects:IssueCollection`
+- `list_issues`: list on `@happyvertical/smrt-projects:PullRequest`
+- `list_issues`: list on `@happyvertical/smrt-projects:PullRequestCollection`
+- `list_labels`: list on `@happyvertical/smrt-projects:Label`
+- `list_projectintegrations`: list on `@happyvertical/smrt-projects:ProjectIntegration`
+- `list_projectintegrations`: list on `@happyvertical/smrt-projects:ProjectIntegrationCollection`
+- `list_projects`: list on `@happyvertical/smrt-projects:Project`
+- `list_projects`: list on `@happyvertical/smrt-projects:ProjectCollection`
+- `list_repositories`: list on `@happyvertical/smrt-projects:Repository`
+- `list_repositories`: list on `@happyvertical/smrt-projects:RepositoryCollection`
+- `merge_issues`: merge on `@happyvertical/smrt-projects:PullRequest`
+- `summarize_issues`: summarize on `@happyvertical/smrt-projects:PullRequest`
+- `sync_issues`: sync on `@happyvertical/smrt-projects:Issue`
+- `sync_issues`: sync on `@happyvertical/smrt-projects:PullRequest`
+- `sync_projects`: sync on `@happyvertical/smrt-projects:Project`
+- `sync_repositories`: sync on `@happyvertical/smrt-projects:Repository`
+- `updateItemStatus_projects`: updateItemStatus on `@happyvertical/smrt-projects:Project`

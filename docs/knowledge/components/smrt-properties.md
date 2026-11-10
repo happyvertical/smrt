@@ -5,10 +5,10 @@ description: "Digital property and zone management models for SMRT framework"
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-08T08:47:12Z"
+  at: "2026-11-10T01:08:46Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:94a16946748aba9c645a34208782cfa21d7912e655df9574806a21b5f546626b"
+source_revision: "sha256:da1eb8b1d187f0af04481f796831ba7326f9a087ee911a13739ef16c48b36108"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/properties/package.json"
@@ -24,7 +24,7 @@ sources:
 
 - Directory: `packages/properties`
 - Private: no
-- Object source: `domain-artifact`
+- Object source: `manifest`
 - Evidence level: `source-inspected`
 
 ## Documentation
@@ -58,9 +58,19 @@ sources:
 
 ## MCP tools
 
-- `property_create`: create on `@happyvertical/smrt-properties:Property`
-- `property_get`: get on `@happyvertical/smrt-properties:Property`
-- `property_list`: list on `@happyvertical/smrt-properties:Property`
-- `zone_create`: create on `@happyvertical/smrt-properties:Zone`
-- `zone_get`: get on `@happyvertical/smrt-properties:Zone`
-- `zone_list`: list on `@happyvertical/smrt-properties:Zone`
+- `create_properties`: create on `@happyvertical/smrt-properties:Property`
+- `create_properties`: create on `@happyvertical/smrt-properties:PropertyCollection`
+- `create_zones`: create on `@happyvertical/smrt-properties:Zone`
+- `create_zones`: create on `@happyvertical/smrt-properties:ZoneCollection`
+- `delete_properties`: delete on `@happyvertical/smrt-properties:PropertyCollection`
+- `delete_zones`: delete on `@happyvertical/smrt-properties:ZoneCollection`
+- `get_properties`: get on `@happyvertical/smrt-properties:Property`
+- `get_properties`: get on `@happyvertical/smrt-properties:PropertyCollection`
+- `get_zones`: get on `@happyvertical/smrt-properties:Zone`
+- `get_zones`: get on `@happyvertical/smrt-properties:ZoneCollection`
+- `list_properties`: list on `@happyvertical/smrt-properties:Property`
+- `list_properties`: list on `@happyvertical/smrt-properties:PropertyCollection`
+- `list_zones`: list on `@happyvertical/smrt-properties:Zone`
+- `list_zones`: list on `@happyvertical/smrt-properties:ZoneCollection`
+- `update_properties`: update on `@happyvertical/smrt-properties:PropertyCollection`
+- `update_zones`: update on `@happyvertical/smrt-properties:ZoneCollection`

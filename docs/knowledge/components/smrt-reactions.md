@@ -5,10 +5,10 @@ description: "Tenant-scoped reactions and lightweight polls with shared particip
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T15:48:19Z"
+  at: "2026-11-10T01:08:46Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:6a2cfcba071d8e3d9b95655edac1b6190122f94d55f24b87df53680ffa7e783b"
+source_revision: "sha256:ed3f4ab372aac5c5e67a018c951b42e1c538faa1c132b6e879fd5b336e1806a7"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/reactions/package.json"
@@ -24,7 +24,7 @@ sources:
 
 - Directory: `packages/reactions`
 - Private: no
-- Object source: `domain-artifact`
+- Object source: `scanner`
 - Evidence level: `source-inspected`
 
 ## Documentation
@@ -53,8 +53,5 @@ sources:
 ## Models
 
 - `Poll` (collection `polls`, extends `SmrtPolymorphicAssociation`)
-- `PollCollection` (collection `polls`, extends `SmrtCollection`)
 - `PollVote` (collection `pollvotes`, extends `SmrtObject`)
-- `PollVoteCollection` (collection `pollvotes`, extends `SmrtCollection`)
 - `Reaction` (collection `reactions`, extends `SmrtPolymorphicAssociation`)
-- `ReactionCollection` (collection `reactions`, extends `SmrtCollection`)

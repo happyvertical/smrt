@@ -5,10 +5,10 @@ description: "Advertising delivery and tracking models for SMRT framework"
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T15:48:19Z"
+  at: "2026-11-10T01:08:46Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:c1c82207bb60c26f1be88ca25e8923ea7989d75cd8ab53acb2ddffd009854e28"
+source_revision: "sha256:f511e6bdeccc99349d7987e167e95d8875e71eb9973874d2d243e70d310b682d"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/ads/package.json"
@@ -24,7 +24,7 @@ sources:
 
 - Directory: `packages/ads`
 - Private: no
-- Object source: `domain-artifact`
+- Object source: `manifest`
 - Evidence level: `source-inspected`
 
 ## Documentation
@@ -63,14 +63,39 @@ sources:
 
 ## MCP tools
 
-- `addeliverytier_get`: get on `@happyvertical/smrt-ads:AdDeliveryTier`
-- `addeliverytier_list`: list on `@happyvertical/smrt-ads:AdDeliveryTier`
-- `adevent_create`: create on `@happyvertical/smrt-ads:AdEvent`
-- `adformat_get`: get on `@happyvertical/smrt-ads:AdFormat`
-- `adformat_list`: list on `@happyvertical/smrt-ads:AdFormat`
-- `adgroup_create`: create on `@happyvertical/smrt-ads:AdGroup`
-- `adgroup_get`: get on `@happyvertical/smrt-ads:AdGroup`
-- `adgroup_list`: list on `@happyvertical/smrt-ads:AdGroup`
-- `advariation_create`: create on `@happyvertical/smrt-ads:AdVariation`
-- `advariation_get`: get on `@happyvertical/smrt-ads:AdVariation`
-- `advariation_list`: list on `@happyvertical/smrt-ads:AdVariation`
+- `create_addeliverytiers`: create on `@happyvertical/smrt-ads:AdDeliveryTierCollection`
+- `create_adevents`: create on `@happyvertical/smrt-ads:AdEvent`
+- `create_adevents`: create on `@happyvertical/smrt-ads:AdEventCollection`
+- `create_adformats`: create on `@happyvertical/smrt-ads:AdFormatCollection`
+- `create_adgroups`: create on `@happyvertical/smrt-ads:AdGroup`
+- `create_adgroups`: create on `@happyvertical/smrt-ads:AdGroupCollection`
+- `create_advariations`: create on `@happyvertical/smrt-ads:AdVariation`
+- `create_advariations`: create on `@happyvertical/smrt-ads:AdVariationCollection`
+- `delete_addeliverytiers`: delete on `@happyvertical/smrt-ads:AdDeliveryTierCollection`
+- `delete_adevents`: delete on `@happyvertical/smrt-ads:AdEventCollection`
+- `delete_adformats`: delete on `@happyvertical/smrt-ads:AdFormatCollection`
+- `delete_adgroups`: delete on `@happyvertical/smrt-ads:AdGroupCollection`
+- `delete_advariations`: delete on `@happyvertical/smrt-ads:AdVariationCollection`
+- `get_addeliverytiers`: get on `@happyvertical/smrt-ads:AdDeliveryTier`
+- `get_addeliverytiers`: get on `@happyvertical/smrt-ads:AdDeliveryTierCollection`
+- `get_adevents`: get on `@happyvertical/smrt-ads:AdEventCollection`
+- `get_adformats`: get on `@happyvertical/smrt-ads:AdFormat`
+- `get_adformats`: get on `@happyvertical/smrt-ads:AdFormatCollection`
+- `get_adgroups`: get on `@happyvertical/smrt-ads:AdGroup`
+- `get_adgroups`: get on `@happyvertical/smrt-ads:AdGroupCollection`
+- `get_advariations`: get on `@happyvertical/smrt-ads:AdVariation`
+- `get_advariations`: get on `@happyvertical/smrt-ads:AdVariationCollection`
+- `list_addeliverytiers`: list on `@happyvertical/smrt-ads:AdDeliveryTier`
+- `list_addeliverytiers`: list on `@happyvertical/smrt-ads:AdDeliveryTierCollection`
+- `list_adevents`: list on `@happyvertical/smrt-ads:AdEventCollection`
+- `list_adformats`: list on `@happyvertical/smrt-ads:AdFormat`
+- `list_adformats`: list on `@happyvertical/smrt-ads:AdFormatCollection`
+- `list_adgroups`: list on `@happyvertical/smrt-ads:AdGroup`
+- `list_adgroups`: list on `@happyvertical/smrt-ads:AdGroupCollection`
+- `list_advariations`: list on `@happyvertical/smrt-ads:AdVariation`
+- `list_advariations`: list on `@happyvertical/smrt-ads:AdVariationCollection`
+- `update_addeliverytiers`: update on `@happyvertical/smrt-ads:AdDeliveryTierCollection`
+- `update_adevents`: update on `@happyvertical/smrt-ads:AdEventCollection`
+- `update_adformats`: update on `@happyvertical/smrt-ads:AdFormatCollection`
+- `update_adgroups`: update on `@happyvertical/smrt-ads:AdGroupCollection`
+- `update_advariations`: update on `@happyvertical/smrt-ads:AdVariationCollection`
