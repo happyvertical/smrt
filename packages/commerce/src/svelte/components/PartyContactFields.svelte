@@ -147,7 +147,7 @@ const text = $derived({
   .contact-card { min-inline-size: 0; margin: 0; padding: var(--smrt-spacing-4); border: var(--smrt-hairline); border-radius: var(--smrt-radius-medium); background: var(--smrt-color-surface-container-low); overflow-wrap: anywhere; }
   article.contact-card { display: grid; gap: var(--smrt-spacing-2); }
   .field-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 var(--smrt-spacing-4); }
-  .field-grid :global(.form-group) { min-inline-size: 0; }
+  .field-grid :global([data-smrt-component="FormGroup"]) { min-inline-size: 0; }
   .contact-actions { display: flex; justify-content: flex-end; }
   .empty { color: var(--smrt-color-on-surface-variant); }
   .address { white-space: pre-wrap; }

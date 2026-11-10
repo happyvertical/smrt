@@ -136,7 +136,7 @@ export function getElement(): HTMLTextAreaElement | null {
 	{rows}
 	aria-describedby={resolvedDescribedBy}
 	aria-invalid={resolvedInvalid}
-		data-density={density} class="textarea {className}"
+		data-density={density} class="smrt-textarea__root {className}"
 		data-smrt-control={resolvedControlId}
 		data-smrt-form={controlInteraction?.formId}
 		data-smrt-subject-type={resolvedInteraction === false ? undefined : resolvedInteraction.subject?.type}
@@ -146,66 +146,72 @@ export function getElement(): HTMLTextAreaElement | null {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
+@layer smrt.structure {
+  .smrt-textarea__root {
+    box-sizing: border-box;
+    display: block;
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    resize: vertical;
+    min-height: 80px;
+  }
+  .smrt-textarea__root:disabled {
+    cursor: not-allowed;
+  }
+  .smrt-textarea__root {
+    min-height: max(80px, var(--smrt-control-target-min));
+  }
+  .smrt-textarea__root[data-density='touch'] {
+    --smrt-control-target-min: var(--smrt-touch-target-min);
+  }
+  .smrt-textarea__root[data-density='comfortable'] {
+    --smrt-control-target-min: 0px;
+  }
+}
+
 @layer smrt.theme {
-	.textarea {
-		box-sizing: border-box;
-		display: block;
-		width: 100%;
-		padding: 0.5rem 0.75rem;
-		font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-		line-height: var(--smrt-typography-body-medium-line-height, 1.5);
-		color: var(--smrt-color-on-surface);
-		background-color: var(--smrt-surface-control);
-		font-weight: var(--smrt-control-weight);
-		border: var(--smrt-hairline-strong);
-		border-radius: var(--smrt-control-radius);
-		resize: vertical;
-		min-height: 80px;
-		transition:
+  .smrt-textarea__root {
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+    line-height: var(--smrt-typography-body-medium-line-height, 1.5);
+    color: var(--smrt-color-on-surface);
+    background-color: var(--smrt-surface-control);
+    font-weight: var(--smrt-control-weight);
+    border: var(--smrt-hairline-strong);
+    border-radius: var(--smrt-control-radius);
+    transition:
 			border-color 0.15s ease-in-out,
 			box-shadow 0.15s ease-in-out;
-	}
-
-	.textarea:focus {
-		border-color: var(--smrt-color-primary);
-	}
-
-	.textarea:focus-visible {
-		outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
-		outline-offset: var(--smrt-focus-ring-offset);
-	}
-
-	.textarea[data-smrt-highlighted='true'] {
-		outline: 3px solid var(--smrt-color-tertiary);
-		outline-offset: 3px;
-	}
-
-	.textarea:disabled {
-		background-color: var(--smrt-color-surface-container-high);
-		cursor: not-allowed;
-		opacity: var(--smrt-state-disabled);
-	}
-
-	.textarea::placeholder {
-		color: var(--smrt-color-on-surface-variant);
-	}
-
-	/* Phones: 16px text so iOS Safari doesn't zoom the page when the field
-	   gets focus. */
-	@media (max-width: 48rem) {
-		.textarea {
-			font-size: max(var(--smrt-typography-body-medium-size, 0.875rem), 16px);
-		}
-	}
-
-	@media (prefers-reduced-motion: reduce) {
-		.textarea {
-			transition: none;
-		}
-	}
-
-  .textarea[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min); }
-  .textarea[data-density='comfortable'] { --smrt-control-target-min: 0px; }
-  .textarea { min-height: max(80px, var(--smrt-control-target-min)); }
+  }
+  .smrt-textarea__root:focus {
+    border-color: var(--smrt-color-primary);
+  }
+  .smrt-textarea__root:focus-visible {
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: var(--smrt-focus-ring-offset);
+  }
+  .smrt-textarea__root[data-smrt-highlighted='true'] {
+    outline: 3px solid var(--smrt-color-tertiary);
+    outline-offset: 3px;
+  }
+  .smrt-textarea__root:disabled {
+    background-color: var(--smrt-color-surface-container-high);
+    opacity: var(--smrt-state-disabled);
+  }
+  .smrt-textarea__root::placeholder {
+    color: var(--smrt-color-on-surface-variant);
+  }
+  /* Phones: 16px text so iOS Safari doesn't zoom the page when the field
+  gets focus. */
+  @media (max-width: 48rem) {
+    .smrt-textarea__root {
+      font-size: max(var(--smrt-typography-body-medium-size, 0.875rem), 16px);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .smrt-textarea__root {
+      transition: none;
+    }
+  }
 }
+
 </style>

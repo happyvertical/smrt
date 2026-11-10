@@ -442,8 +442,8 @@ useControlRegistration(() => {
 <div
   bind:this={rootEl}
   id={resolvedId}
-  class="camera-capture {className}"
-  class:disabled
+  class="smrt-camera-capture__root {className}"
+  class:smrt-camera-capture__disabled={disabled}
   role="group"
   aria-label={text.region}
   data-state={cameraState}
@@ -453,11 +453,12 @@ useControlRegistration(() => {
   data-smrt-subject-type={interaction === false ? undefined : interaction?.subject?.type}
   data-smrt-subject-id={interaction === false ? undefined : interaction?.subject?.id} data-smrt-component="CameraCapture"
 >
-  <div class="stage" class:empty={cameraState !== 'streaming' && !previewUrl}>
+  <div class="smrt-camera-capture__stage" data-smrt-part="stage" class:smrt-camera-capture__empty={cameraState !== 'streaming' && !previewUrl}>
     <video
       bind:this={videoEl}
-      class="media"
-      class:hidden={cameraState !== 'streaming'}
+      class="smrt-camera-capture__media"
+      data-smrt-part="media"
+      class:smrt-camera-capture__hidden={cameraState !== 'streaming'}
       aria-label={text.preview}
       autoplay
       playsinline
@@ -465,37 +466,39 @@ useControlRegistration(() => {
     ></video>
     {#if previewUrl && (cameraState === 'reviewing' || cameraState === 'committed')}
       <img
-        class="media"
+        class="smrt-camera-capture__media"
+        data-smrt-part="media"
         src={previewUrl}
         alt={cameraState === 'committed' ? text.committedAlt : text.reviewAlt}
       />
     {/if}
   </div>
 
-  <p class="message" class:problem={isProblem} role="status">{message}</p>
+  <p class="smrt-camera-capture__message" data-smrt-part="message" class:smrt-camera-capture__problem={isProblem} role="status">{message}</p>
 
-  <div class="actions">
+  <div class="smrt-camera-capture__actions" data-smrt-part="actions">
     {#if cameraState === 'permission-denied' || cameraState === 'no-camera' || cameraState === 'error'}
-      <button type="button" class="action" {disabled} onclick={() => void startCamera()}>
+      <button type="button" class="smrt-camera-capture__action" data-smrt-part="action" {disabled} onclick={() => void startCamera()}>
         {text.retry}
       </button>
     {:else if cameraState === 'streaming'}
-      <button type="button" class="action primary" {disabled} onclick={capture}>
+      <button type="button" class="smrt-camera-capture__action smrt-camera-capture__primary" data-smrt-part="action" {disabled} onclick={capture}>
         {text.capture}
       </button>
     {:else if cameraState === 'reviewing'}
-      <button type="button" class="action" {disabled} onclick={retake}>{text.retake}</button>
-      <button type="button" class="action primary" {disabled} onclick={usePhoto}>
+      <button type="button" class="smrt-camera-capture__action" data-smrt-part="action" {disabled} onclick={retake}>{text.retake}</button>
+      <button type="button" class="smrt-camera-capture__action smrt-camera-capture__primary" data-smrt-part="action" {disabled} onclick={usePhoto}>
         {text.usePhoto}
       </button>
     {:else if cameraState === 'committed' && !fallbackActive}
-      <button type="button" class="action" {disabled} onclick={retake}>{text.retake}</button>
+      <button type="button" class="smrt-camera-capture__action" data-smrt-part="action" {disabled} onclick={retake}>{text.retake}</button>
     {/if}
     {#if fallbackActive}
-      <label class="action primary picker" class:disabled>
+      <label class="smrt-camera-capture__action smrt-camera-capture__primary smrt-camera-capture__picker" data-smrt-part="picker" class:smrt-camera-capture__disabled={disabled}>
         <input
           bind:this={pickerEl}
-          class="visually-hidden"
+          class="smrt-camera-capture__visually-hidden"
+          data-smrt-part="input"
           type="file"
           accept="image/*"
           capture={facingMode}
@@ -513,7 +516,8 @@ useControlRegistration(() => {
   {#if name && !fallbackActive}
     <input
       bind:this={fieldEl}
-      class="field"
+      class="smrt-camera-capture__field"
+      data-smrt-part="field"
       type="file"
       hidden
       tabindex="-1"
@@ -525,88 +529,64 @@ useControlRegistration(() => {
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .camera-capture {
+@layer smrt.structure {
+  .smrt-camera-capture__root {
     display: grid;
     gap: var(--smrt-spacing-3);
     width: 100%;
     max-width: 40rem;
-    color: var(--smrt-color-on-surface);
   }
-  .stage {
+  .smrt-camera-capture__stage {
     position: relative;
     display: grid;
     overflow: hidden;
     aspect-ratio: 4 / 3;
-    border-radius: var(--smrt-radius-medium);
-    background: var(--smrt-color-scrim);
   }
-  .stage.empty {
-    background: var(--smrt-color-surface-container);
-  }
-  .media {
+  .smrt-camera-capture__media {
     grid-area: 1 / 1;
     width: 100%;
     height: 100%;
     object-fit: cover;
   }
-  .media.hidden,
-  .field {
+  .smrt-camera-capture__media.smrt-camera-capture__hidden,
+  .smrt-camera-capture__field {
     display: none;
   }
-  .message {
+  .smrt-camera-capture__message {
     margin: 0;
-    font: var(--smrt-typography-body-large-font);
   }
-  .message:empty {
+  .smrt-camera-capture__message:empty {
     display: none;
   }
-  .message.problem {
-    color: var(--smrt-color-error);
-  }
-  .actions {
+  .smrt-camera-capture__actions {
     display: flex;
     flex-wrap: wrap;
     gap: var(--smrt-spacing-3);
   }
-  .actions:empty {
+  .smrt-camera-capture__actions:empty {
     display: none;
   }
-  .action {
+  .smrt-camera-capture__action {
     position: relative;
     flex: 1 1 auto;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     /* Capture is a touch flow: its actions are touch targets at every
-       density, on the shared scale (smrt#3252). */
+    density, on the shared scale (smrt#3252). */
     min-width: var(--smrt-touch-target-min);
     min-height: var(--smrt-touch-target-min);
     padding: 0 var(--smrt-spacing-4);
-    border: var(--smrt-hairline-strong);
-    border-radius: var(--smrt-radius-small);
-    background: var(--smrt-color-surface);
-    color: var(--smrt-color-on-surface);
-    font: var(--smrt-typography-label-large-font);
     cursor: pointer;
   }
-  .action.primary {
+  .smrt-camera-capture__action.smrt-camera-capture__primary {
     flex-grow: 2;
-    border-color: var(--smrt-color-primary);
-    background: var(--smrt-color-primary);
-    color: var(--smrt-color-on-primary);
   }
-  .action:focus-visible,
-  .picker:has(input:focus-visible) {
-    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
-    outline-offset: var(--smrt-focus-ring-offset);
-  }
-  .action:disabled,
-  .picker.disabled {
-    opacity: 0.5;
+  .smrt-camera-capture__action:disabled,
+  .smrt-camera-capture__picker.smrt-camera-capture__disabled {
     cursor: not-allowed;
   }
-  .visually-hidden {
+  .smrt-camera-capture__visually-hidden {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -614,9 +594,50 @@ useControlRegistration(() => {
     clip-path: inset(50%);
     white-space: nowrap;
   }
-  :global(.camera-capture[data-smrt-highlighted='true']) {
+}
+
+@layer smrt.theme {
+  .smrt-camera-capture__root {
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-camera-capture__stage {
+    border-radius: var(--smrt-radius-medium);
+    background: var(--smrt-color-scrim);
+  }
+  .smrt-camera-capture__stage.smrt-camera-capture__empty {
+    background: var(--smrt-color-surface-container);
+  }
+  .smrt-camera-capture__message {
+    font: var(--smrt-typography-body-large-font);
+  }
+  .smrt-camera-capture__message.smrt-camera-capture__problem {
+    color: var(--smrt-color-error);
+  }
+  .smrt-camera-capture__action {
+    border: var(--smrt-hairline-strong);
+    border-radius: var(--smrt-radius-small);
+    background: var(--smrt-color-surface);
+    color: var(--smrt-color-on-surface);
+    font: var(--smrt-typography-label-large-font);
+  }
+  .smrt-camera-capture__action.smrt-camera-capture__primary {
+    border-color: var(--smrt-color-primary);
+    background: var(--smrt-color-primary);
+    color: var(--smrt-color-on-primary);
+  }
+  .smrt-camera-capture__action:focus-visible,
+  .smrt-camera-capture__picker:has(input:focus-visible) {
+    outline: var(--smrt-focus-ring-width) solid var(--smrt-focus-ring-color);
+    outline-offset: var(--smrt-focus-ring-offset);
+  }
+  .smrt-camera-capture__action:disabled,
+  .smrt-camera-capture__picker.smrt-camera-capture__disabled {
+    opacity: 0.5;
+  }
+  :global(.smrt-camera-capture__root[data-smrt-highlighted='true']) {
     outline: 3px solid var(--smrt-color-tertiary);
     outline-offset: 4px;
   }
 }
+
 </style>

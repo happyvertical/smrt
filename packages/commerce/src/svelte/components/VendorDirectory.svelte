@@ -214,7 +214,7 @@ function vendorMeta(vendor: VendorDisplayData): string {
 @layer smrt.theme {
   .party-directory { display: grid; gap: var(--smrt-spacing-5); max-inline-size: 64rem; min-inline-size: 0; }
   :global(.directory-search) { display: grid; grid-template-columns: minmax(12rem, 2fr) minmax(10rem, 1fr) auto; align-items: end; gap: var(--smrt-spacing-3); }
-  :global(.directory-search .form-group) { margin: 0; min-inline-size: 0; }
+  :global(.directory-search [data-smrt-component="FormGroup"]) { margin: 0; min-inline-size: 0; }
   .loading, .party-list { display: grid; gap: var(--smrt-spacing-3); }
   .result-count { margin: 0; color: var(--smrt-color-on-surface-variant); }
   .party-row { display: flex; align-items: start; justify-content: space-between; gap: var(--smrt-spacing-4); }

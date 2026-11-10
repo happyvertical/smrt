@@ -394,7 +394,7 @@ describe('DataTable', () => {
 
     const expectSelected = (name: string) => {
       expect(screen.getByRole('cell', { name }).closest('tr')).toHaveClass(
-        'data-table__row--selected',
+        'smrt-data-table__row--selected',
       );
     };
 
@@ -404,7 +404,7 @@ describe('DataTable', () => {
       expectSelected('Linus');
       expect(
         screen.getByRole('cell', { name: 'Ada' }).closest('tr'),
-      ).not.toHaveClass('data-table__row--selected');
+      ).not.toHaveClass('smrt-data-table__row--selected');
     });
   });
 
@@ -427,14 +427,16 @@ describe('DataTable', () => {
 
     const expectAdaSelectionAndExpansion = () => {
       const adaRow = screen.getByRole('cell', { name: 'Ada' }).closest('tr');
-      expect(adaRow).toHaveClass('data-table__row--selected');
+      expect(adaRow).toHaveClass('smrt-data-table__row--selected');
       expect(adaRow?.nextElementSibling).toHaveTextContent('Row detail');
     };
     const visibleNames = () =>
       screen
         .getAllByRole('row')
         .slice(1)
-        .filter((row) => !row.classList.contains('data-table__row--expanded'))
+        .filter(
+          (row) => !row.classList.contains('smrt-data-table__row--expanded'),
+        )
         .map(
           (row) =>
             within(row)
@@ -678,7 +680,7 @@ describe('DataTable', () => {
       props: { data, columns, caption: 'People' },
     });
     const tableContainer = container.querySelector(
-      '.data-table-container',
+      '.smrt-data-table__container',
     ) as HTMLDivElement;
 
     expect(tableContainer).not.toHaveAttribute('role');
@@ -714,7 +716,7 @@ describe('DataTable', () => {
       props: { data, columns, caption: 'People' },
     });
     const tableContainer = container.querySelector(
-      '.data-table-container',
+      '.smrt-data-table__container',
     ) as HTMLDivElement;
     setHorizontalOverflow(tableContainer, 320, 960);
 
@@ -784,7 +786,7 @@ describe('DataTable', () => {
     });
 
     const group = screen.getByRole('columnheader', { name: 'Detail' });
-    expect(group).toHaveClass('data-table__cell--pinned-start');
+    expect(group).toHaveClass('smrt-data-table__cell--pinned-start');
     expect(group).toHaveStyle({ left: '0px' });
   });
 
@@ -820,7 +822,9 @@ describe('DataTable', () => {
     ).toBeInTheDocument();
     expect(screen.getAllByRole('checkbox')).toHaveLength(data.length + 1);
     expect(
-      container.querySelectorAll('tbody.data-table__body--structural input'),
+      container.querySelectorAll(
+        'tbody.smrt-data-table__body--structural input',
+      ),
     ).toHaveLength(0);
     expect(container.querySelector('tfoot')).toContainElement(
       screen.getByRole('rowheader', { name: /Footer: All people/ }),
@@ -844,7 +848,7 @@ describe('DataTable', () => {
     });
 
     const nameHeader = screen.getByRole('columnheader', { name: 'Name' });
-    expect(nameHeader).toHaveClass('data-table__cell--pinned-start');
+    expect(nameHeader).toHaveClass('smrt-data-table__cell--pinned-start');
     expect(nameHeader).toHaveStyle({ width: '120px', left: '0px' });
     expect(nameHeader).toHaveAttribute('data-column-id', 'name');
     const separator = screen.getByRole('separator', { name: 'Resize Name' });
@@ -1029,7 +1033,7 @@ describe('DataTable phoneLayout', () => {
       props: { data, columns, caption: 'People' },
     });
     expect(
-      container.querySelector('.data-table-container--phone-cards'),
+      container.querySelector('.smrt-data-table__container--phone-cards'),
     ).toBeNull();
   });
 
@@ -1039,7 +1043,7 @@ describe('DataTable phoneLayout', () => {
     });
     expect(
       container.querySelector(
-        '.data-table-container.data-table-container--phone-cards',
+        '.smrt-data-table__container.smrt-data-table__container--phone-cards',
       ),
     ).not.toBeNull();
     expect(screen.getByRole('table', { name: 'People' })).toBeInTheDocument();

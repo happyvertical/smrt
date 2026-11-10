@@ -141,7 +141,7 @@ describe('cancelsSpeech', () => {
     expect(cancelsSpeech({ type: 'input', target: el('textarea') })).toBe(true);
   });
   it('pressing the microphone (or its icon) cancels', () => {
-    const inside = ['smrt-dictation-button'];
+    const inside = ['smrt-dictation-button__root'];
     expect(cancelsSpeech({ type: 'click', target: el('button', inside) })).toBe(
       true,
     );

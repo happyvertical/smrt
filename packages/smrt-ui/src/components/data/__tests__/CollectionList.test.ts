@@ -18,7 +18,9 @@ describe('CollectionList', () => {
     const { container } = render(CollectionList, {
       props: { items, itemKey: 'id', title: 'title', layout },
     });
-    expect(container.querySelector(`ul.collection--${layout}`)).not.toBeNull();
+    expect(
+      container.querySelector(`ul.smrt-collection-list__${layout}`),
+    ).not.toBeNull();
     expect(screen.getByText('First')).toBeInTheDocument();
   });
 

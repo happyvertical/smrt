@@ -22,7 +22,7 @@ for (const width of [390, 768]) {
       ).toBeVisible();
       const sizes = await page
         .locator(
-          '[data-smrt-component="Input"]:not([data-density="comfortable"]), [data-smrt-component="Select"], .textarea, [data-smrt-component="Checkbox"], [data-smrt-component="Switch"], .radio, [data-smrt-component="Button"], .smrt-filter-chips__chip, .segmented label, .data-table__sort-button',
+          '[data-smrt-component="Input"]:not([data-density="comfortable"]), [data-smrt-component="Select"], [data-smrt-component="Textarea"], [data-smrt-component="Checkbox"], [data-smrt-component="Switch"], [data-smrt-component="Radio"], [data-smrt-component="Button"], .smrt-filter-chips__chip, [data-smrt-component="SegmentedControl"] label, [data-smrt-part="sort"]',
         )
         .evaluateAll((elements) =>
           elements.map((element) => ({
@@ -71,7 +71,7 @@ for (const density of ['comfortable', 'touch']) {
         page.getByRole('button', { name: 'Use signature' }),
       ).toBeVisible();
       const sizes = await page
-        .locator('.camera-capture .action, .signature-pad .action')
+        .locator('[data-smrt-component="CameraCapture"] [data-smrt-part="action"], [data-smrt-component="SignaturePad"] [data-smrt-part="action"]')
         .evaluateAll((elements) =>
           elements.map((element) => ({
             height: element.getBoundingClientRect().height,
@@ -180,7 +180,7 @@ test('narrow table uses priority and keeps essential columns, restores wide layo
       ).toBeVisible();
       expect(
         await page
-          .locator('.data-table-container')
+          .locator('.smrt-data-table__container')
           .evaluate((element) => element.scrollWidth <= element.clientWidth),
       ).toBe(true);
     }
@@ -219,7 +219,7 @@ test('responsive table watches container width and default scroll mode retains c
   await page.setViewportSize({ width: 390, height: 1024 });
   await page.goto('/e2e/density-responsive.html?surface=table&mode=scroll');
   await expect(page.locator('tbody tr:first-child td')).toHaveCount(7);
-  await expect(page.locator('.data-table-container')).not.toHaveClass(
+  await expect(page.locator('.smrt-data-table__container')).not.toHaveClass(
     /--narrow/,
   );
 });

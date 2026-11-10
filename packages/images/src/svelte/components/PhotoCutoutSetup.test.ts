@@ -251,7 +251,9 @@ describe('photo picker', () => {
 });
 
 function dropPhoto(file: File) {
-  const picker = document.querySelector('label.file-picker');
+  const picker = document.querySelector(
+    'label[data-smrt-component="FilePicker"]',
+  );
   if (!picker) throw new Error('File picker drop target is missing');
   const event = new Event('drop', { bubbles: true, cancelable: true });
   Object.defineProperty(event, 'dataTransfer', { value: { files: [file] } });

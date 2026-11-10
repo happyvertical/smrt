@@ -19,17 +19,25 @@ let { label, for: forId, id, required = false }: Props = $props();
 </script>
 
 {#if forId}
-  <label {id} for={forId} class="smrt-field-label" data-smrt-component="FieldLabel">{label}{#if required}<span class="required" aria-hidden="true">*</span>{/if}</label>
+  <label {id} for={forId} class="smrt-field-label__root" data-smrt-component="FieldLabel">{label}{#if required}<span class="smrt-field-label__required" data-smrt-part="required" aria-hidden="true">*</span>{/if}</label>
 {:else}
-  <span {id} class="smrt-field-label" data-smrt-component="FieldLabel">{label}{#if required}<span class="required" aria-hidden="true">*</span>{/if}</span>
+  <span {id} class="smrt-field-label__root" data-smrt-component="FieldLabel">{label}{#if required}<span class="smrt-field-label__required" data-smrt-part="required" aria-hidden="true">*</span>{/if}</span>
 {/if}
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .smrt-field-label {
+@layer smrt.structure {
+  .smrt-field-label__root {
     display: block;
     margin-bottom: var(--smrt-spacing-1);
+  }
+  .smrt-field-label__required {
+    margin-left: var(--smrt-spacing-1);
+  }
+}
+
+@layer smrt.theme {
+  .smrt-field-label__root {
     font-size: var(--smrt-typography-label-large-size, 0.875rem);
     font-weight: var(--smrt-typography-weight-medium, 500);
     line-height: var(--smrt-typography-label-large-line-height, 1.4);
@@ -38,10 +46,9 @@ let { label, for: forId, id, required = false }: Props = $props();
     font-family: inherit;
     color: var(--smrt-color-on-surface);
   }
-
-  .required {
+  .smrt-field-label__required {
     color: var(--smrt-color-error);
-    margin-left: var(--smrt-spacing-1);
   }
 }
+
 </style>

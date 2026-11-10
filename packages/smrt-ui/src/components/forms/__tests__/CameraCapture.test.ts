@@ -34,7 +34,9 @@ function rejectCamera(name: string) {
 }
 
 function root(container: HTMLElement): HTMLElement {
-  return container.querySelector('.camera-capture') as HTMLElement;
+  return container.querySelector(
+    '[data-smrt-component="CameraCapture"]',
+  ) as HTMLElement;
 }
 
 async function expectState(container: HTMLElement, state: string) {
@@ -398,7 +400,9 @@ describe('CameraCapture disabled with the opt-in file-input fallback', () => {
     await expectState(container, 'committed');
 
     await rerender({ ...props, disabled: true });
-    await waitFor(() => expect(root(container)).toHaveClass('disabled'));
+    await waitFor(() =>
+      expect(root(container)).toHaveClass('smrt-camera-capture__disabled'),
+    );
     // The photo still shown is the photo still posted.
     expect(submittedEntries(form).getAll('photo')).toEqual([chosen]);
     // ...but the picker cannot be opened or tabbed to.

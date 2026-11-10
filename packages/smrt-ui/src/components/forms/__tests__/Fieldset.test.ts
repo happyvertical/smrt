@@ -18,14 +18,18 @@ describe('Fieldset', () => {
     const { container } = render(Fieldset, {
       props: { legend: 'The ad', children: fields },
     });
-    expect(container.querySelector('.content--stack')).toBeNull();
+    expect(container.querySelector('.smrt-fieldset__body--stack')).toBeNull();
   });
 
   it('stacks its fields in one column with a gap when asked', () => {
     const { container } = render(Fieldset, {
       props: { legend: 'The ad', stack: true, children: fields },
     });
-    expect(container.querySelector('.content.content--stack')).not.toBeNull();
+    expect(
+      container.querySelector(
+        '.smrt-fieldset__body.smrt-fieldset__body--stack',
+      ),
+    ).not.toBeNull();
   });
 
   it('is axe-clean', async () => {

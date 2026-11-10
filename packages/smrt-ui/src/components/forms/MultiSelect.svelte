@@ -214,20 +214,75 @@ useControlRegistration(() => {
   };
 });
 </script>
-<div bind:this={rootEl} class="multi-select {className}" data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}
+<div bind:this={rootEl} class="smrt-multi-select__root {className}" data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}
   data-smrt-subject-type={interaction === false ? undefined : interaction?.subject?.type}
   data-smrt-subject-id={interaction === false ? undefined : interaction?.subject?.id} data-smrt-component="MultiSelect">
   {#if name}{#each canonicalValues as value}<input type="hidden" {name} value={String(value)} disabled={disabled || options.some((option) => Object.is(option.value, value) && option.disabled)} />{/each}{/if}
-  <span class="label" id={`${listId}-label`}>{label}</span><button bind:this={triggerEl} id={triggerId} type="button" class="trigger" {disabled} aria-haspopup="listbox" aria-expanded={open} aria-controls={listId} aria-labelledby={`${listId}-label ${triggerId}`} onclick={() => open ? closeOptions() : openOptions()} onkeydown={handleTriggerKeydown}>{selectedLabels.length ? selectedLabels.join(', ') : placeholder}</button>
-  {#if open}<div id={listId} class="options" role="listbox" tabindex="-1" aria-multiselectable="true" aria-labelledby={`${listId}-label`} onkeydown={handleOptionsKeydown}>{#each options as option, index (option.value)}<button bind:this={optionEls[index]} type="button" role="option" tabindex="-1" aria-selected={canonicalValues.some((value) => Object.is(value, option.value))} disabled={option.disabled} onclick={() => toggle(option)}><span aria-hidden="true">{canonicalValues.some((value) => Object.is(value, option.value)) ? '✓' : ''}</span>{option.label}</button>{/each}</div>{/if}
+  <span class="smrt-multi-select__label" data-smrt-part="label" id={`${listId}-label`}>{label}</span><button bind:this={triggerEl} id={triggerId} type="button" class="smrt-multi-select__trigger" data-smrt-part="trigger" {disabled} aria-haspopup="listbox" aria-expanded={open} aria-controls={listId} aria-labelledby={`${listId}-label ${triggerId}`} onclick={() => open ? closeOptions() : openOptions()} onkeydown={handleTriggerKeydown}>{selectedLabels.length ? selectedLabels.join(', ') : placeholder}</button>
+  {#if open}<div id={listId} class="smrt-multi-select__options" data-smrt-part="listbox" role="listbox" tabindex="-1" aria-multiselectable="true" aria-labelledby={`${listId}-label`} onkeydown={handleOptionsKeydown}>{#each options as option, index (option.value)}<button bind:this={optionEls[index]} type="button" role="option" tabindex="-1" aria-selected={canonicalValues.some((value) => Object.is(value, option.value))} disabled={option.disabled} onclick={() => toggle(option)}><span aria-hidden="true">{canonicalValues.some((value) => Object.is(value, option.value)) ? '✓' : ''}</span>{option.label}</button>{/each}</div>{/if}
 </div>
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
-@layer smrt.theme {
-  .multi-select { position: relative; display: grid; gap: var(--smrt-spacing-1); color: var(--smrt-color-on-surface); } .label { font: var(--smrt-typography-label-large-font); }
-  .trigger { width: 100%; min-height: 2.5rem; padding: var(--smrt-spacing-2) var(--smrt-spacing-3); border: var(--smrt-hairline-strong); border-radius: var(--smrt-radius-small); background: var(--smrt-color-surface); color: inherit; text-align: left; }
-  .options { position: absolute; z-index: var(--smrt-z-index-dropdown); top: 100%; left: 0; right: 0; display: grid; padding: var(--smrt-spacing-1); border: var(--smrt-hairline); background: var(--smrt-color-surface-container); box-shadow: var(--smrt-elevation-2); }
-  .options button { display: grid; grid-template-columns: 1.25rem 1fr; gap: var(--smrt-spacing-2); padding: var(--smrt-spacing-2); border: 0; background: transparent; color: inherit; text-align: left; } .options button[aria-selected='true'] { background: var(--smrt-color-secondary-container); }
-  :global(.multi-select[data-smrt-highlighted='true']) { outline: 3px solid var(--smrt-color-tertiary); outline-offset: 4px; }
+@layer smrt.structure {
+  .smrt-multi-select__root {
+    position: relative;
+    display: grid;
+    gap: var(--smrt-spacing-1);
+  }
+  .smrt-multi-select__trigger {
+    width: 100%;
+    min-height: 2.5rem;
+    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+  }
+  .smrt-multi-select__options {
+    position: absolute;
+    z-index: var(--smrt-z-index-dropdown);
+    top: 100%;
+    left: 0;
+    right: 0;
+    display: grid;
+    padding: var(--smrt-spacing-1);
+  }
+  .smrt-multi-select__options button {
+    display: grid;
+    grid-template-columns: 1.25rem 1fr;
+    gap: var(--smrt-spacing-2);
+    padding: var(--smrt-spacing-2);
+  }
 }
+
+@layer smrt.theme {
+  .smrt-multi-select__root {
+    color: var(--smrt-color-on-surface);
+  }
+  .smrt-multi-select__label {
+    font: var(--smrt-typography-label-large-font);
+  }
+  .smrt-multi-select__trigger {
+    border: var(--smrt-hairline-strong);
+    border-radius: var(--smrt-radius-small);
+    background: var(--smrt-color-surface);
+    color: inherit;
+    text-align: left;
+  }
+  .smrt-multi-select__options {
+    border: var(--smrt-hairline);
+    background: var(--smrt-color-surface-container);
+    box-shadow: var(--smrt-elevation-2);
+  }
+  .smrt-multi-select__options button {
+    border: 0;
+    background: transparent;
+    color: inherit;
+    text-align: left;
+  }
+  .smrt-multi-select__options button[aria-selected='true'] {
+    background: var(--smrt-color-secondary-container);
+  }
+  :global(.smrt-multi-select__root[data-smrt-highlighted='true']) {
+    outline: 3px solid var(--smrt-color-tertiary);
+    outline-offset: 4px;
+  }
+}
+
 </style>
